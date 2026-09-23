@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "web.routing-and-live-projection",
+  "title": "Routes round-trip and live state never crosses workspaces",
+  "description": "Every supported browser route round-trips through parse/serialize, and streamed or refreshed session data is merged only into the active workspace without losing richer event detail.",
+  "kind": "unit",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["routing", "sse", "state"],
+  "preconditions": ["Repository dependencies are already installed."],
+  "steps": [
+    {
+      "id": "run-web-model-tests",
+      "action": "run",
+      "target": "pnpm --filter @foundry/web test"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-web-model-tests",
+      "type": "command-exit-zero",
+      "target": "route round-trip and projection merge cases"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "node-test",
+    "command": "pnpm --filter @foundry/web test",
+    "references": [
+      "apps/web/test/app-navigation.test.mjs",
+      "apps/web/test/foundry-data-projection.test.mjs",
+      "apps/web/src/app/navigation.ts",
+      "apps/web/src/app/foundry-data-projection.ts"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

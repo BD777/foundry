@@ -1,0 +1,7 @@
+providers:
+  claude:
+    auth: local
+    secret: local-only
+  codex:
+    auth: local
+    secret: local-only

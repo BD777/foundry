@@ -1,0 +1,6 @@
+version: 1
+repositories:
+  - id: repo_5be9adf011d9c244be13
+    path: .
+    kind: root
+    baseline: refs/heads/main

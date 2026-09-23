@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "contract.daemon-message-vocabulary",
+  "title": "Daemon message vocabulary stays compatible across TypeScript and Go",
+  "description": "Every daemon WebSocket message discriminant accepted or emitted by the worker is represented by the Go control plane and the canonical protocol vocabulary.",
+  "kind": "contract",
+  "area": "protocol",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["websocket", "compatibility", "worker"],
+  "preconditions": ["Repository dependencies are already installed."],
+  "steps": [
+    {
+      "id": "run-contract-guard",
+      "action": "run",
+      "target": "node scripts/audit-contract.mjs"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-contract-guard",
+      "type": "command-exit-zero",
+      "target": "daemon message set parity and DTO field-name parity"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "repo-script",
+    "command": "node scripts/audit-contract.mjs",
+    "references": [
+      "scripts/audit-contract.mjs",
+      "packages/protocol/src",
+      "packages/worker/src/daemon-connection.ts",
+      "apps/server/internal/httpapi/daemon_ws.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

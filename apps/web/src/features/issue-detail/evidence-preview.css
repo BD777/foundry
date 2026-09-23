@@ -1,0 +1,8 @@
+.fdy-evidence-preview-image {
+  max-width: 100%;
+}
+
+.fdy-evidence-preview-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "web.device-connections",
+  "title": "Device accounts and reusable connections have independent ownership",
+  "description": "Device browsing never changes workspace implicitly. Official authorization targets one device; server connections use explicit assignments and preserve legacy identities.",
+  "kind": "unit",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["devices", "authorization", "workspace", "connections"],
+  "preconditions": ["Repository dependencies are installed."],
+  "steps": [
+    {
+      "id": "test",
+      "action": "run",
+      "target": "pnpm --filter @foundry/web test"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "test",
+      "type": "command-exit-zero",
+      "target": "Device scope, explicit workspace open, assignment preservation and unavailable-agent selection"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "node-test",
+    "command": "pnpm --filter @foundry/web test",
+    "references": [
+      "apps/web/test/devices-feature.test.mjs",
+      "apps/web/test/model-connections.test.mjs",
+      "apps/web/test/chat-runtime-selection.test.mjs",
+      "apps/server/internal/httpapi/device_accounts_test.go",
+      "packages/worker/test/native-login.test.mjs"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

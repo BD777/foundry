@@ -1,0 +1,255 @@
+[
+  {
+    "name": "empty draft is allowed",
+    "model": "ContractContent",
+    "valid": true,
+    "value": {
+      "goal": {
+        "text": "hi",
+        "media": []
+      },
+      "inScope": [],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": []
+    }
+  },
+  {
+    "name": "null array is not an empty array",
+    "model": "ContractContent",
+    "valid": false,
+    "value": {
+      "goal": {
+        "text": "hi",
+        "media": []
+      },
+      "inScope": null,
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": []
+    }
+  },
+  {
+    "name": "caller cannot inject confirmation",
+    "model": "ContractContent",
+    "valid": false,
+    "value": {
+      "goal": {
+        "text": "hi",
+        "media": []
+      },
+      "inScope": [],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": [],
+      "confirmation": {
+        "actor": {
+          "kind": "user"
+        }
+      }
+    }
+  },
+  {
+    "name": "observable agent criterion",
+    "model": "ContractContent",
+    "valid": true,
+    "value": {
+      "goal": {
+        "text": "Write setup instructions",
+        "media": []
+      },
+      "inScope": ["Setup guide"],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": [
+        {
+          "id": "guide",
+          "title": "Setup steps",
+          "statement": "The guide covers installation and one runnable example",
+          "required": true,
+          "proofKind": "content_completeness",
+          "evaluationMode": "agent",
+          "rubric": {
+            "text": "Check prerequisites, installation, and an executable example",
+            "media": []
+          },
+          "evidenceRequirements": [
+            {
+              "id": "export",
+              "description": "Candidate guide exported from the snapshot",
+              "acceptedCarriers": ["document"],
+              "minimumCount": 1,
+              "bindingPolicy": "system_observed"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "project command criterion",
+    "model": "ContractContent",
+    "valid": true,
+    "value": {
+      "goal": {
+        "text": "Keep the test suite green",
+        "media": []
+      },
+      "inScope": ["Discount clamp"],
+      "outOfScope": [],
+      "constraints": [],
+      "criteria": [
+        {
+          "id": "suite",
+          "title": "Project tests pass",
+          "statement": "The project's own test command reports no failures on the delivered result",
+          "required": true,
+          "proofKind": "functional",
+          "evaluationMode": "deterministic",
+          "rubric": {
+            "text": "Foundry runs the project test command and reads its exit code",
+            "media": []
+          },
+          "evidenceRequirements": [
+            {
+              "id": "output",
+              "description": "Captured command output",
+              "acceptedCarriers": ["text_log"],
+              "minimumCount": 1,
+              "bindingPolicy": "system_observed"
+            }
+          ],
+          "checker": {
+            "id": "project-tests",
+            "version": 1,
+            "description": "node --test",
+            "definitionDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "timeoutMs": 120000,
+            "configuration": {
+              "kind": "project_command",
+              "executable": "node",
+              "args": ["--test"],
+              "cwdRelativePath": ".",
+              "environment": {},
+              "expectedExitCodes": [0]
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "valid image region",
+    "model": "MaterialSelector",
+    "valid": true,
+    "value": {
+      "kind": "image_region",
+      "x": 0.1,
+      "y": 0.2,
+      "width": 0.3,
+      "height": 0.4
+    }
+  },
+  {
+    "name": "image region exceeds edge",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "image_region",
+      "x": 0.9,
+      "y": 0.2,
+      "width": 0.3,
+      "height": 0.4
+    }
+  },
+  {
+    "name": "reversed text lines",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "text_lines",
+      "start": 4,
+      "end": 2
+    }
+  },
+  {
+    "name": "zero page",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "page",
+      "page": 0
+    }
+  },
+  {
+    "name": "executable selector forbidden",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "javascript",
+      "expression": "process.exit()"
+    }
+  },
+  {
+    "name": "valid pointer escaping",
+    "model": "MaterialSelector",
+    "valid": true,
+    "value": {
+      "kind": "json_pointer",
+      "pointer": "/a~1b/~0x"
+    }
+  },
+  {
+    "name": "invalid pointer escaping",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "json_pointer",
+      "pointer": "/~2"
+    }
+  },
+  {
+    "name": "finite assertion payload",
+    "model": "CheckReport",
+    "valid": true,
+    "value": {
+      "assertions": [
+        {
+          "id": "valid",
+          "expected": {
+            "status": 200
+          },
+          "observed": {
+            "status": 200
+          },
+          "verdict": "pass"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown program verdict forbidden",
+    "model": "CheckReport",
+    "valid": false,
+    "value": {
+      "assertions": [
+        {
+          "id": "valid",
+          "expected": 200,
+          "observed": 200,
+          "verdict": "success"
+        }
+      ]
+    }
+  },
+  {
+    "name": "structured selector fields do not cross variants",
+    "model": "MaterialSelector",
+    "valid": false,
+    "value": {
+      "kind": "page",
+      "page": 1,
+      "start": 1
+    }
+  }
+]

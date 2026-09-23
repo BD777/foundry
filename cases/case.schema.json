@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundry.local/schemas/regression-case-v1.json",
+  "title": "Foundry regression case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "title",
+    "description",
+    "kind",
+    "area",
+    "risk",
+    "cadence",
+    "preconditions",
+    "steps",
+    "assertions",
+    "automation",
+    "evidence",
+    "cleanup"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "unit",
+        "contract",
+        "api",
+        "daemon",
+        "storage",
+        "security",
+        "browser-interaction",
+        "browser-visual"
+      ]
+    },
+    "area": { "type": "string", "minLength": 1 },
+    "risk": { "enum": ["critical", "high", "medium", "low"] },
+    "cadence": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["commit", "pull-request", "release", "manual"]
+      }
+    },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": { "type": "string" },
+        "route": { "type": "string" },
+        "fixture": { "type": "string" },
+        "colorScheme": { "enum": ["light", "dark", "system"] },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 320 },
+            "height": { "type": "integer", "minimum": 480 }
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "action", "target"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "action": {
+            "enum": [
+              "navigate",
+              "back",
+              "click",
+              "type",
+              "select",
+              "request",
+              "run",
+              "wait",
+              "inspect"
+            ]
+          },
+          "target": { "type": "string", "minLength": 1 },
+          "value": {}
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["afterStep", "type", "target"],
+        "properties": {
+          "afterStep": { "type": "string", "minLength": 1 },
+          "type": {
+            "enum": [
+              "visible",
+              "hidden",
+              "text",
+              "url",
+              "status",
+              "json-shape",
+              "command-exit-zero",
+              "no-console-errors",
+              "no-horizontal-overflow",
+              "screenshot-match"
+            ]
+          },
+          "target": { "type": "string", "minLength": 1 },
+          "expected": {}
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "runner", "references"],
+      "properties": {
+        "status": { "enum": ["automated", "manual", "planned"] },
+        "runner": {
+          "enum": ["node-test", "go-test", "repo-script", "browser", "manual"]
+        },
+        "command": { "type": "string", "minLength": 1 },
+        "references": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capture", "retainOn"],
+      "properties": {
+        "capture": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["response", "logs", "console", "network", "screenshot"]
+          }
+        },
+        "retainOn": { "enum": ["failure", "always", "never"] }
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline", "maxPixelDiffRatio", "masks"],
+      "properties": {
+        "baseline": { "type": "string", "minLength": 1 },
+        "maxPixelDiffRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "masks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "cleanup": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

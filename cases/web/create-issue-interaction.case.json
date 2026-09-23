@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "id": "web.create-issue-interaction",
+  "title": "Issue composer creates and projects a new issue",
+  "description": "Submitting a deterministic issue through the browser reaches the Go API, appears in the active workspace, and leaves the composer ready for the next input.",
+  "kind": "browser-interaction",
+  "area": "issue-loop",
+  "risk": "high",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["issue", "mutation", "projection"],
+  "preconditions": [
+    "Start web and a server on isolated storage with a paired healthy Claude or Codex agent; select its model and effort in the shared composer.",
+    "Use the fixed input text Browser regression issue."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/issues",
+    "fixture": "demo-seed",
+    "colorScheme": "light",
+    "viewport": { "width": 1440, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/issues" },
+    {
+      "id": "enter",
+      "action": "type",
+      "target": "role=textbox[name='New issue input']",
+      "value": "Browser regression issue"
+    },
+    {
+      "id": "submit",
+      "action": "click",
+      "target": "role=button[name='Submit issue']"
+    },
+    {
+      "id": "wait",
+      "action": "wait",
+      "target": "text=Browser regression issue"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "submit",
+      "type": "status",
+      "target": "POST /api/issues",
+      "expected": 201
+    },
+    {
+      "afterStep": "wait",
+      "type": "visible",
+      "target": "text=Browser regression issue"
+    },
+    {
+      "afterStep": "wait",
+      "type": "text",
+      "target": "role=textbox[name='New issue input']",
+      "expected": ""
+    },
+    {
+      "afterStep": "wait",
+      "type": "no-console-errors",
+      "target": "browser console"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/features/issues/issues-feature.tsx",
+      "apps/web/src/components/ui/agent-composer.tsx",
+      "apps/web/src/components/ui/agent-runtime-controls.tsx",
+      "apps/server/internal/httpapi/server.go",
+      "apps/server/internal/sqlitestore/issues.go"
+    ]
+  },
+  "evidence": {
+    "capture": ["network", "console", "screenshot"],
+    "retainOn": "failure"
+  },
+  "cleanup": ["Discard the isolated SQLite database after the run."]
+}

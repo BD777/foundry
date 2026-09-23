@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "web.workspace-role-gating",
+  "title": "Actions follow the caller's workspace role and device ownership",
+  "description": "The server reports the caller's workspace role and device ownership; the web disables or hides actions the caller cannot perform and states the role it has and the role it needs, and the server's 403 names both.",
+  "kind": "unit",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authorization", "roles", "accessibility"],
+  "preconditions": ["Repository dependencies are already installed."],
+  "steps": [
+    {
+      "id": "run-role-gating-tests",
+      "action": "run",
+      "target": "web role-gating tests and the server role matrix"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-role-gating-tests",
+      "type": "command-exit-zero",
+      "target": "viewer/member/owner gating and shared-device read-only view"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "node-test",
+    "command": "cd apps/web && node --test test/workspace-access.test.mjs test/workspace-overview-access.test.mjs test/devices-feature.test.mjs && cd ../server && go test ./internal/httpapi -run TestWorkspaceRolesGateActions",
+    "references": [
+      "apps/web/test/workspace-access.test.mjs",
+      "apps/web/test/workspace-overview-access.test.mjs",
+      "apps/web/test/devices-feature.test.mjs",
+      "apps/web/src/lib/workspace-access.ts",
+      "apps/server/internal/httpapi/auth_coverage_test.go#TestWorkspaceRolesGateActions"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

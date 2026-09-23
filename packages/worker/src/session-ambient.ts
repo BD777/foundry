@@ -1,0 +1,47 @@
+/**
+ * Per-session ambient environment (CHAT-01).
+ *
+ * When the daemon dispatches a session it now carries a one-time
+ * FOUNDRY_SESSION_TOKEN plus the server URL; the spawned native agent exposes
+ * them to its child `foundry mcp` / `foundry session` processes. The values
+ * are process-scoped and never written to disk. Registered for the lifetime
+ * of one executeAgentSession run, keyed by Foundry session id.
+ */
+
+export interface SessionAmbientEnv {
+  serverURL: string;
+  sessionToken: string;
+  workspaceID: string;
+}
+
+const ambientBySession = new Map<string, SessionAmbientEnv>();
+
+export function registerSessionAmbientEnv(
+  sessionID: string,
+  ambient: SessionAmbientEnv,
+): () => void {
+  ambientBySession.set(sessionID, ambient);
+  return () => {
+    if (ambientBySession.get(sessionID) === ambient) {
+      ambientBySession.delete(sessionID);
+    }
+  };
+}
+
+/**
+ * Environment variables every spawned session process must receive, across
+ * Claude SDK, Codex CLI and custom-command execution paths. Returns an empty
+ * object for an unknown session (e.g. synthetic test invocations).
+ */
+export function sessionAmbientEnvironment(
+  sessionID: string | undefined,
+): NodeJS.ProcessEnv {
+  if (!sessionID) return {};
+  const ambient = ambientBySession.get(sessionID);
+  if (!ambient) return {};
+  return {
+    FOUNDRY_SERVER_URL: ambient.serverURL,
+    FOUNDRY_SESSION_TOKEN: ambient.sessionToken,
+    FOUNDRY_WORKSPACE_ID: ambient.workspaceID,
+  };
+}

@@ -1,0 +1,35 @@
+# Foundry 全栈 Docker Compose 部署（见 deploy/README.md）。
+# 字段保持简单，便于在各类容器管理界面中导入。
+services:
+  foundry-server:
+    image: foundry-server:${FOUNDRY_IMAGE_TAG:-local}
+    restart: always
+    ports:
+      - "31982:31982"
+    environment:
+      FOUNDRY_HOST: "0.0.0.0"
+      PORT: "31982"
+      FOUNDRY_WEB_ORIGIN: "${FOUNDRY_WEB_ORIGIN}"
+      FOUNDRY_DB_PATH: "/data/foundry.db"
+      FOUNDRY_WEB_DIST: "/app/web/dist"
+    volumes:
+      - foundry-server-data:/data
+      - "${FOUNDRY_WORKSPACE_DIR}:/workspace"
+
+  foundry-worker:
+    image: foundry-worker:${FOUNDRY_IMAGE_TAG:-local}
+    restart: always
+    depends_on:
+      - foundry-server
+    environment:
+      FOUNDRY_SERVER_URL: "http://foundry-server:31982"
+      FOUNDRY_WORKSPACE: "/workspace/default"
+      FOUNDRY_PAIRING_TOKEN: "${FOUNDRY_PAIRING_TOKEN:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    volumes:
+      - foundry-worker-home:/home/foundry
+      - "${FOUNDRY_WORKSPACE_DIR}:/workspace"
+
+volumes:
+  foundry-server-data:
+  foundry-worker-home:

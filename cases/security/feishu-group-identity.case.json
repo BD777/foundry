@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "security.feishu-group-identity",
+  "title": "Feishu groups act as the account that paired them",
+  "description": "Group pairing codes are stored only as hashes and never serialized; a paired group runs as the account that generated its code and stops when that account is disabled, removed or below Member.",
+  "kind": "security",
+  "area": "feishu",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authorization", "feishu", "secrets"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-feishu-identity-tests",
+      "action": "run",
+      "target": "focused Go pairing-code storage and group-identity tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-feishu-identity-tests",
+      "type": "command-exit-zero",
+      "target": "hashed codes, bound account and refusals"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test ./internal/feishu ./internal/httpapi -run 'TestPairingCodeIsStoredOnlyAsHash|TestBoundUserFollowsTheAccountsCurrentPermissions|TestBotJSONNeverCarriesThePairingCodeHash|TestFeishuHttpApi'",
+    "references": [
+      "apps/server/internal/feishu/pairing_test.go#TestPairingCodeIsStoredOnlyAsHash",
+      "apps/server/internal/feishu/pairing_test.go#TestBoundUserFollowsTheAccountsCurrentPermissions",
+      "apps/server/internal/feishu/pairing_test.go#TestBotJSONNeverCarriesThePairingCodeHash",
+      "apps/server/internal/httpapi/feishu_test.go#TestFeishuHttpApi"
+    ]
+  },
+  "evidence": {
+    "capture": ["logs"],
+    "retainOn": "failure"
+  },
+  "cleanup": []
+}

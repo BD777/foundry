@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "id": "web.offline-setup-dark-visual",
+  "title": "Offline setup remains visually stable in the dark desktop shell",
+  "description": "The dark theme preserves onboarding hierarchy, contrast, and desktop layout without clipping or overflow.",
+  "kind": "browser-visual",
+  "area": "web-app",
+  "risk": "medium",
+  "cadence": ["release", "manual"],
+  "tags": ["visual", "setup", "dark"],
+  "preconditions": [
+    "Start web and server with an isolated database.",
+    "Open with light theme so the semantic theme toggle is exercised."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/?device=offline",
+    "fixture": "offline-device",
+    "colorScheme": "dark",
+    "viewport": { "width": 1440, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/?device=offline" },
+    {
+      "id": "dark",
+      "action": "click",
+      "target": "role=button[name='Switch to dark mode']"
+    },
+    {
+      "id": "capture",
+      "action": "inspect",
+      "target": "full-page screenshot after theme transition settles"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "dark",
+      "type": "visible",
+      "target": "role=button[name='Switch to light mode']"
+    },
+    {
+      "afterStep": "capture",
+      "type": "no-horizontal-overflow",
+      "target": "document"
+    },
+    {
+      "afterStep": "capture",
+      "type": "no-console-errors",
+      "target": "browser console"
+    },
+    {
+      "afterStep": "capture",
+      "type": "screenshot-match",
+      "target": "offline-setup-dark-desktop"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/components/ui/app-shell.tsx",
+      "apps/web/src/components/ui/setup-flow.tsx",
+      "apps/web/src/styles"
+    ]
+  },
+  "evidence": { "capture": ["console", "screenshot"], "retainOn": "always" },
+  "visual": {
+    "baseline": "offline-setup-dark-desktop",
+    "maxPixelDiffRatio": 0.01,
+    "masks": []
+  },
+  "cleanup": [
+    "Restore light theme, close the test tab, and stop isolated services."
+  ]
+}

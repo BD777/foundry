@@ -1,0 +1,175 @@
+.fdy-chat-group-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 14px 10px;
+  padding: 0 8px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 7px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-group-search .fdy-field {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 0;
+  font-size: 12px;
+}
+
+.fdy-chat-group {
+  margin-bottom: 6px;
+}
+
+.fdy-chat-group-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.fdy-chat-group-toggle.fdy-button {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 7px 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-group-toggle span,
+.fdy-chat-group-menu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-group-toggle svg,
+.fdy-chat-group-menu svg {
+  flex: none;
+}
+
+.fdy-chat-group-header:has(.fdy-chat-group-name) .fdy-chat-group-toggle {
+  flex: none;
+}
+
+.fdy-chat-group-name.fdy-field {
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  border: 1px solid var(--fdy-blue);
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.fdy-chat-group-edit.fdy-button {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  opacity: 0;
+}
+
+.fdy-chat-group-header:hover .fdy-chat-group-edit,
+.fdy-chat-group-header:focus-within .fdy-chat-group-edit {
+  opacity: 1;
+}
+
+.fdy-chat-group-children {
+  margin-left: 12px;
+  padding-left: 3px;
+  border-left: 1px solid var(--fdy-line);
+}
+
+.fdy-chat-group-empty {
+  padding: 6px 10px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-group-menu {
+  max-width: min(280px, calc(100vw - 20px));
+  max-height: var(--radix-context-menu-content-available-height);
+  overflow-y: auto;
+}
+
+.fdy-chat-drag-row {
+  position: relative;
+}
+
+.fdy-chat-drag-row[draggable="true"] {
+  cursor: grab;
+}
+
+.fdy-chat-drag-row[data-dragging="true"] {
+  opacity: 0.4;
+}
+
+.fdy-chat-drag-row[data-drop-edge]::after {
+  position: absolute;
+  z-index: 1;
+  right: 5px;
+  left: 5px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--fdy-blue);
+  content: "";
+  pointer-events: none;
+}
+
+.fdy-chat-drag-row[data-drop-edge="before"]::after {
+  top: -2px;
+}
+
+.fdy-chat-drag-row[data-drop-edge="after"]::after {
+  bottom: 0;
+}
+
+.fdy-chat-group-header[data-drop-edge],
+.fdy-chat-ungrouped-target[data-drop-edge] {
+  border-radius: 6px;
+  background: var(--fdy-control-ghost-hover);
+  outline: 1px solid var(--fdy-blue);
+}
+
+.fdy-chat-ungrouped-target,
+.fdy-chat-layout-notice {
+  padding: 6px 10px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-layout-notice {
+  margin: 0 4px 6px;
+}
+
+.fdy-chat-layout-notice[role="alert"] {
+  color: var(--fdy-red);
+}
+
+.fdy-chat-group-delete-dialog {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-chat-group-delete-title {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-group-delete-description {
+  margin: 10px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fdy-chat-group-delete-error {
+  margin: 4px 10px 8px;
+  color: var(--fdy-red);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

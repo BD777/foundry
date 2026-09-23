@@ -1,0 +1,20 @@
+[
+  {
+    "value": {
+      "10": "ten",
+      "2": "two",
+      "script": "a < b && x > 0",
+      "unicode": "你好\u2028分隔\u2029结束"
+    }
+  },
+  {
+    "value": {
+      "negativeZero": -0,
+      "tiny": 0.0000001,
+      "small": 0.000001,
+      "large": 100000000000000000000,
+      "huge": 1e21,
+      "nested": [true, null, { "😀": "emoji", "a": "ascii" }]
+    }
+  }
+]

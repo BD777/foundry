@@ -1,0 +1,48 @@
+.fdy-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.fdy-check-row-body {
+  min-width: 0;
+  flex: 1;
+}
+.fdy-check-row-marker {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 2px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 5px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-faint);
+}
+.fdy-check-row-dot .fdy-check-row-marker::after {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+.fdy-check-row-success {
+  color: var(--fdy-success-text);
+}
+.fdy-check-row-success .fdy-check-row-marker {
+  background: var(--fdy-success-surface);
+  border-color: var(--fdy-success-border);
+  color: var(--fdy-success-text);
+}
+.fdy-check-row-warning {
+  color: var(--fdy-warning-text);
+}
+.fdy-check-row-warning .fdy-check-row-marker {
+  background: var(--fdy-warning-surface);
+  border-color: var(--fdy-warning-border);
+  color: var(--fdy-warning-text);
+}

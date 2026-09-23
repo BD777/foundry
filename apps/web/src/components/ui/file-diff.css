@@ -1,0 +1,16 @@
+.fdy-text-diff {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  --diff-background-color: var(--fdy-paper-main);
+  --diff-text-color: var(--fdy-ink);
+  --diff-selection-background-color: var(--fdy-selection);
+  --diff-code-insert-background-color: var(--fdy-success-surface);
+  --diff-code-delete-background-color: var(--fdy-error-surface);
+  --diff-gutter-insert-background-color: var(--fdy-success-surface);
+  --diff-gutter-delete-background-color: var(--fdy-error-surface);
+}
+.fdy-text-diff-content {
+  min-width: 0;
+  font-size: 12px;
+}

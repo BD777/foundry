@@ -1,0 +1,177 @@
+/* Multi-select picker for granting a device access to server connections.
+   Owns only fdy-connection-assign* classes; shared fdy-management-row rules
+   stay in 68-device-management.css. */
+
+.fdy-connection-assign-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--fdy-overlay);
+}
+
+.fdy-connection-assign-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 81;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  box-sizing: border-box;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 14px;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  transform: translate(-50%, -50%);
+}
+
+.fdy-connection-assign-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-connection-assign-header h2 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.fdy-connection-assign-header p {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-connection-assign-list {
+  display: grid;
+  min-height: 0;
+  gap: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+
+/* One selectable row. Selected uses a restrained fill plus a persistent
+   checkmark; hover uses a different surface, so the two remain distinguishable
+   when both are visible. Focus is a thin ring that never stacks with a border. */
+.fdy-connection-assign-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--fdy-panel-radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.fdy-connection-assign-row:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+/* Selection is the checkbox plus one restrained fill: no stacked border and no
+   second checkmark. The fill token differs from the hover token (verified in
+   the browser acceptance), and a selected row keeps its fill under the
+   pointer, so the two states stay distinguishable when both are visible. */
+.fdy-connection-assign-row.is-selected,
+.fdy-connection-assign-row.is-selected:hover {
+  background: var(--fdy-selection);
+}
+
+.fdy-connection-assign-check {
+  flex: none;
+}
+
+.fdy-connection-assign-check:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-connection-assign-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-connection-assign-copy strong {
+  overflow: hidden;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-connection-assign-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-connection-assign-empty {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 18px 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-connection-assign-empty p {
+  margin: 0;
+}
+
+.fdy-connection-assign-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-error-border);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  font-size: 12px;
+}
+
+.fdy-connection-assign-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-connection-assign-manage {
+  margin-right: auto;
+}
+
+/* A write that landed while the follow-up refresh failed: saved is true, so
+   this reads as a refresh problem with its own retry — never a save failure. */
+.fdy-connection-refresh-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-error-border);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 560px) {
+  .fdy-connection-assign-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+  }
+}

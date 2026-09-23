@@ -1,0 +1,546 @@
+.fdy-management-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.fdy-management-heading h1 {
+  margin: 0;
+  font-size: 23px;
+  color: var(--fdy-ink-strong);
+}
+.fdy-management-heading p,
+.fdy-device-section > p,
+.fdy-connection-devices p,
+.fdy-device-legacy p,
+.fdy-device-add-workspace p {
+  margin: 6px 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.fdy-device-content,
+.fdy-device-list,
+.fdy-device-section,
+.fdy-connection-devices {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.fdy-device-content {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+}
+.fdy-device-section,
+.fdy-connection-devices {
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.fdy-device-section h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.fdy-management-row,
+.fdy-device-list-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  height: auto;
+  padding: 15px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  text-align: left;
+}
+.fdy-management-row > span:has(> strong),
+.fdy-device-list-row > span:first-of-type {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+}
+.fdy-management-row strong,
+.fdy-device-list-row strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.fdy-management-row small,
+.fdy-device-list-row small {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+.fdy-device-account {
+  display: grid;
+  gap: 0;
+  border-bottom: 1px solid var(--fdy-line);
+}
+.fdy-device-account-defaults > p {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.fdy-device-defaults-save {
+  margin-top: 14px;
+}
+.fdy-device-authorization-card {
+  padding: 16px;
+  background: var(--fdy-paper);
+  border-radius: 8px;
+}
+.fdy-device-settings-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.fdy-device-settings-fields label,
+.fdy-device-add-workspace label {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.fdy-device-legacy summary,
+.fdy-device-section details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-offline {
+  padding: 14px;
+  background: var(--fdy-warning-surface);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.fdy-device-add-workspace {
+  display: grid;
+  gap: 12px;
+}
+.fdy-connection-editor-scroll {
+  grid-area: form;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+.fdy-connections-device-link {
+  justify-self: start;
+}
+.fdy-sidebar-workspace-slot {
+  padding: 2px 12px 12px;
+  min-width: 0;
+}
+.fdy-sidebar[data-collapsed="true"] .fdy-sidebar-workspace-slot {
+  display: none;
+}
+@media (max-width: 700px) {
+  .fdy-management-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .fdy-device-section,
+  .fdy-connection-devices {
+    padding: 14px;
+  }
+  .fdy-management-row,
+  .fdy-device-list-row {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
+  }
+  .fdy-management-row > span:has(> strong),
+  .fdy-device-list-row > span:first-of-type {
+    flex-basis: 65%;
+  }
+  .fdy-profile-card.fdy-button {
+    flex-wrap: wrap;
+  }
+  .fdy-profile-card-copy {
+    flex-basis: 65%;
+  }
+  .fdy-sidebar-workspace-slot {
+    padding: 0 8px;
+  }
+}
+.fdy-page-surface-devices {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 20px;
+  max-width: 1120px;
+}
+.fdy-device-back {
+  justify-self: start;
+}
+.fdy-device-disclosure {
+  padding: 10px 0;
+  border: 0;
+  border-radius: 4px;
+}
+.fdy-device-disclosure:hover {
+  background: var(--fdy-brass-soft);
+}
+.fdy-device-disclosure:focus-visible {
+  outline: 1px solid var(--fdy-brass);
+  outline-offset: 3px;
+}
+.fdy-device-access {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.fdy-access-intro h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.fdy-access-intro p,
+.fdy-access-explanation {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+  line-height: 1.6;
+}
+.fdy-access-explanation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.fdy-access-explanation svg {
+  flex: none;
+  margin-top: 3px;
+}
+.fdy-access-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--fdy-line);
+}
+.fdy-access-tab {
+  height: auto;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  text-align: left;
+  border: 0;
+  background: var(--fdy-panel-soft);
+}
+.fdy-access-tab > span {
+  display: grid;
+  gap: 5px;
+  white-space: normal;
+}
+.fdy-access-tab strong {
+  font-size: 13px;
+}
+.fdy-access-tab small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fdy-ink-muted);
+  line-height: 1.4;
+}
+.fdy-access-tab em {
+  margin-left: 5px;
+  font-style: normal;
+}
+.fdy-access-tab[aria-selected="true"] {
+  background: var(--fdy-selection);
+  color: var(--fdy-ink-strong);
+}
+.fdy-account-list {
+  gap: 0;
+}
+.fdy-account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  min-width: 0;
+}
+.fdy-account-open {
+  flex: 1;
+  justify-content: flex-start;
+  height: auto;
+  padding: 8px;
+  margin-left: -8px;
+  gap: 12px;
+  border: 0;
+  text-align: left;
+  white-space: normal;
+}
+.fdy-account-name {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.fdy-account-name strong {
+  font-size: 14px;
+}
+.fdy-account-name small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.fdy-account-open-label {
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.fdy-account-expanded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  padding: 8px 0 26px;
+}
+.fdy-account-inspection {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+}
+/* Result and missing-source fallback blocks stack their rows with the same
+   deliberate gap as the panel, so the Back action never touches the
+   "Foundry uses" note. Text rows stretch; the action self-aligns start via
+   .fdy-account-inline-action. */
+.fdy-account-inspection .fdy-account-result,
+.fdy-account-inspection .fdy-account-fallback {
+  display: grid;
+  gap: 14px;
+}
+.fdy-account-check-header,
+.fdy-account-verdict,
+.fdy-account-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.fdy-account-check-header {
+  justify-content: space-between;
+}
+.fdy-account-inspection p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  line-height: 1.7;
+}
+.fdy-account-source {
+  font-size: 11px;
+  color: var(--fdy-ink-muted);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.fdy-account-check-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--fdy-warning-text);
+}
+.fdy-account-source-missing {
+  color: var(--fdy-warning-text);
+}
+.fdy-account-usage {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  font-size: 12px;
+}
+.fdy-account-usage progress {
+  width: 100%;
+  height: 5px;
+  grid-column: 1 / -1;
+  accent-color: var(--fdy-brass);
+}
+.fdy-account-usage small {
+  grid-column: 1 / -1;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-account-defaults {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  min-width: 0;
+  border-left: 1px solid var(--fdy-line);
+  padding-left: 28px;
+}
+.fdy-account-form-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  line-height: 1.7;
+}
+.fdy-runtime-default-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 16px;
+}
+.fdy-account-inline-action {
+  justify-self: start;
+}
+.fdy-account-open:focus-visible,
+.fdy-access-tab:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--fdy-control-focus);
+}
+@media (max-width: 1000px) {
+  .fdy-account-expanded {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fdy-device-account-defaults {
+    border-left: 0;
+    border-top: 1px solid var(--fdy-line);
+    padding: 24px 0 0;
+  }
+  .fdy-account-open-label {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .fdy-account-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .fdy-account-open {
+    flex-basis: 70%;
+  }
+  .fdy-access-tab {
+    padding: 12px;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .fdy-access-tab small {
+    font-size: 11px;
+  }
+  .fdy-device-section {
+    padding: 0;
+  }
+}
+
+/* Device soft removal: list-row action, settings danger zone, confirmation */
+.fdy-device-removal-row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.fdy-device-removal-row-main > span:first-of-type {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 5px;
+}
+.fdy-device-removal-menu-trigger {
+  flex: 0 0 auto;
+}
+.fdy-device-removal-zone {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--fdy-line);
+}
+.fdy-device-removal-zone h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.fdy-device-removal-zone p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-removal-form {
+  display: grid;
+  gap: 12px;
+}
+.fdy-device-removal-id {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+.fdy-device-removal-scope {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-removal-scope li {
+  line-height: 1.5;
+}
+.fdy-device-removal-blocked {
+  margin: 0;
+  padding: 12px;
+  background: var(--fdy-warning-surface);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.fdy-device-removal-error {
+  margin: 0;
+  padding: 12px;
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.fdy-device-removal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.fdy-device-removal-danger {
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  border-color: var(--fdy-error-border);
+}
+.fdy-device-removal-danger:hover:not(:disabled) {
+  border-color: var(--fdy-error-text);
+}
+@media (max-width: 700px) {
+  .fdy-device-removal-row-main {
+    flex-basis: 100%;
+  }
+}
+.fdy-add-device {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.fdy-add-device-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.fdy-add-device-head strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+}
+.fdy-add-device-head p,
+.fdy-add-device-note {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.fdy-add-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

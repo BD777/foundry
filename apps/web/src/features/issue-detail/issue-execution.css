@@ -1,0 +1,233 @@
+.fdy-issue-execution-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fdy-environment-repositories {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+.fdy-environment-repositories > .fdy-issue-execution-panel {
+  margin-top: 0;
+}
+.fdy-repository-path {
+  overflow-wrap: anywhere;
+}
+.fdy-environment-pagination {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fdy-chat-screen.fdy-issue-chat-screen {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fdy-issue-details-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--fdy-panel);
+}
+.fdy-issue-details-toolbar,
+.fdy-issue-details-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--fdy-line);
+}
+.fdy-issue-details-toolbar > :last-child {
+  margin-left: auto;
+}
+.fdy-issue-details-actions {
+  border-top: 1px solid var(--fdy-line);
+}
+.fdy-issue-details-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.fdy-issue-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fdy-issue-details-content > p {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.fdy-issue-details-content > .fdy-detail-block {
+  margin: 0;
+}
+.fdy-issue-details-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.fdy-issue-details-section > p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.fdy-issue-properties {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+}
+.fdy-issue-properties dt {
+  color: var(--fdy-ink-muted);
+}
+.fdy-issue-properties dd {
+  margin: 0;
+}
+.fdy-issue-conversation-note {
+  padding: 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-issue-execution-panel > .fdy-button {
+  justify-self: start;
+}
+.fdy-issue-execution-panel textarea {
+  min-height: 90px;
+}
+.fdy-issue-conversation-text {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.fdy-issue-conversation-text h1,
+.fdy-issue-conversation-text h2,
+.fdy-issue-conversation-text h3 {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.fdy-issue-conversation-text p {
+  margin: 0 0 8px;
+}
+.fdy-issue-conversation-text pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-contract-summary,
+.fdy-contract-confirmation {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.fdy-issue-card {
+  border: 1px solid var(--fdy-line);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--fdy-panel);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-issue-card h3,
+.fdy-issue-card h4,
+.fdy-issue-card p {
+  margin: 0;
+}
+.fdy-issue-card h3 {
+  font-size: 14px;
+}
+.fdy-issue-card h4 {
+  font-size: 13px;
+}
+.fdy-issue-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.fdy-issue-card-heading {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+.fdy-issue-card-heading span,
+.fdy-criterion-summary h4 span,
+.fdy-issue-tab-intro {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-criterion-summary {
+  display: grid;
+  gap: 8px;
+  padding-block: 12px;
+}
+.fdy-criterion-summary + .fdy-criterion-summary {
+  border-top: 1px solid var(--fdy-line);
+}
+.fdy-criterion-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.fdy-issue-phase {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--fdy-line);
+  font-size: 13px;
+}
+.fdy-issue-phase p {
+  margin: 6px 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-contract-confirmation {
+  font-size: 13px;
+}
+.fdy-evidence-file-selection {
+  display: grid;
+  gap: 8px;
+}
+.fdy-evidence-file-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+}
+.fdy-evidence-file-list label {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 6px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 860px) {
+  .fdy-foundry-shell:has(.fdy-issue-chat-screen) {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .fdy-main:has(.fdy-issue-chat-screen) {
+    min-height: 0;
+  }
+  .fdy-view:has(.fdy-issue-chat-screen) {
+    display: flex;
+    min-height: 0;
+  }
+  .fdy-chat-screen.fdy-issue-chat-screen {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+  }
+}

@@ -1,0 +1,510 @@
+.fdy-device-asset-panel {
+  overflow: hidden;
+  padding: 17px 18px;
+}
+
+.fdy-device-asset-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 13px;
+}
+
+.fdy-device-asset-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-device-asset-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.fdy-device-asset-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-device-asset-title > span:last-child {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-device-asset-title .fdy-badge {
+  height: 22px;
+  min-width: 72px;
+  justify-content: flex-start;
+}
+
+.fdy-device-asset-copy > code,
+.fdy-device-asset-actions code {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-device-asset-copy > code {
+  display: block;
+  margin-bottom: 11px;
+}
+
+.fdy-device-asset-actions code {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+  line-height: 1;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-device-asset-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.fdy-device-asset-tags .fdy-meta-pill-sm:not(.fdy-meta-pill-mono) {
+  color: var(--fdy-ink-muted);
+  font-weight: 600;
+}
+
+.fdy-device-asset-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
+
+.fdy-device-action-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.fdy-device-action-buttons .fdy-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 7px;
+  background: var(--fdy-panel);
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-device-action-buttons .fdy-button:hover {
+  border-color: var(--fdy-line-strong);
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-line);
+}
+
+.fdy-fact-grid-md {
+  margin-top: 15px;
+}
+
+.fdy-fact-grid-compact {
+  margin-top: 11px;
+}
+
+.fdy-fact-grid-cell {
+  min-width: 0;
+  padding: 10px 13px;
+  background: var(--fdy-panel);
+}
+
+.fdy-fact-grid-compact .fdy-fact-grid-cell {
+  padding: 9px 11px;
+}
+
+.fdy-fact-grid-cell span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--fdy-ink-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fdy-fact-grid-cell strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-fact-grid-cell strong[data-mono="true"] {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+
+.fdy-device-asset-facts .fdy-fact-grid-cell strong[data-mono="true"] {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.fdy-asset-section {
+  display: block;
+}
+
+.fdy-asset-section > .fdy-section-label {
+  margin-bottom: 9px;
+}
+
+.fdy-asset-section-panel {
+  overflow: hidden;
+  padding: 2px 16px;
+}
+
+.fdy-asset-section-panel .fdy-info-row:first-child {
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-capacity-bars {
+  display: flex;
+  flex: none;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.fdy-capacity-bars span {
+  width: 8px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--fdy-line);
+}
+
+.fdy-capacity-bars span[data-state="used"] {
+  background: var(--fdy-warning-text);
+}
+
+.fdy-asset-end-badge-74 .fdy-badge,
+.fdy-asset-end-badge-80 .fdy-badge,
+.fdy-asset-end-badge-82 .fdy-badge,
+.fdy-asset-end-badge-92 .fdy-badge {
+  height: 22px;
+  justify-content: flex-start;
+}
+
+.fdy-asset-end-badge-74 .fdy-badge {
+  min-width: 74px;
+}
+
+.fdy-asset-end-badge-80 .fdy-badge {
+  min-width: 80px;
+}
+
+.fdy-asset-end-badge-82 .fdy-badge {
+  min-width: 82px;
+}
+
+.fdy-asset-end-badge-92 .fdy-badge {
+  min-width: 92px;
+}
+
+.fdy-page-surface {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1060px;
+  margin: 0 auto;
+}
+
+.fdy-page-surface > * {
+  flex-shrink: 0;
+}
+
+.fdy-page-surface-runs {
+  max-width: 1040px;
+  gap: 10px;
+}
+
+.fdy-runs-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.fdy-page-surface-assets {
+  max-width: 960px;
+  gap: 0;
+}
+
+.fdy-page-surface-assets > .fdy-page-heading {
+  margin-bottom: 20px;
+}
+
+.fdy-page-surface-assets > .fdy-section-label {
+  margin-bottom: 9px;
+}
+
+.fdy-page-surface-assets > .fdy-device-asset-panel,
+.fdy-page-surface-assets > .fdy-asset-section {
+  margin-bottom: 22px;
+}
+
+.fdy-page-surface-assets > .fdy-asset-section:last-child {
+  margin-bottom: 0;
+}
+
+.fdy-page-surface-assets .fdy-page-heading-action .fdy-button {
+  height: 32px;
+  gap: 7px;
+  padding: 0 13px;
+  font-size: 12px;
+}
+
+.fdy-page-surface-skills {
+  max-width: 1000px;
+  gap: 0;
+}
+
+.fdy-page-surface-settings {
+  max-width: 1040px;
+  gap: 0;
+}
+
+.fdy-page-surface-devices,
+.fdy-page-surface-workspace {
+  max-width: 1040px;
+  gap: 0;
+}
+
+.fdy-workspace-settings-panel {
+  padding: 16px 18px;
+}
+
+.fdy-workspace-settings-panel .fdy-panel-header {
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-workspace-settings-panel .fdy-panel-header p {
+  max-width: 660px;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-workspace-settings-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 14px 0;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-workspace-settings-grid div {
+  min-width: 0;
+}
+
+.fdy-workspace-settings-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-workspace-settings-grid strong,
+.fdy-workspace-settings-grid code {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-workspace-settings-grid code {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.fdy-workspace-settings-context {
+  margin: 13px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.fdy-workspace-settings-file {
+  margin-top: 14px;
+  padding: 16px 18px;
+}
+
+.fdy-workspace-settings-file .fdy-panel-header {
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-workspace-settings-file .fdy-terminal-block {
+  margin-top: 14px;
+}
+
+.fdy-page-surface-skills > .fdy-page-heading {
+  margin-bottom: 16px;
+}
+
+.fdy-page-surface-settings > .fdy-page-heading {
+  margin-bottom: 18px;
+}
+
+.fdy-page-surface-skills > .fdy-callout {
+  margin-bottom: 24px;
+}
+
+.fdy-page-surface-settings > .fdy-callout {
+  margin-bottom: 22px;
+}
+
+.fdy-page-surface-settings > .fdy-section-label {
+  margin-bottom: 4px;
+}
+
+.fdy-page-surface-settings > .fdy-helper-copy {
+  max-width: 640px;
+  margin: 0 0 12px;
+}
+
+.fdy-page-surface-skills .fdy-callout p,
+.fdy-page-surface-settings .fdy-callout p {
+  margin-top: 2px;
+}
+
+.fdy-page-surface-skills .fdy-callout-info p {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-page-surface-settings .fdy-callout-warning p {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-page-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.fdy-page-heading-two-col {
+  justify-content: space-between;
+}
+
+.fdy-page-heading-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-page-heading h1 {
+  margin: 0 0 3px;
+  color: var(--fdy-ink-strong);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.fdy-page-heading p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.fdy-page-heading code {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-page-heading-action {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex: none;
+}
+
+.fdy-provider-settings-grid {
+  display: grid;
+  width: 100%;
+  align-items: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.fdy-provider-settings-card {
+  display: flex;
+  min-height: 252px;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.fdy-provider-settings-card .fdy-feature-card-header {
+  align-items: center;
+  gap: 11px;
+}
+
+.fdy-provider-status-badge {
+  height: 22px;
+  min-width: 82px;
+  flex: none;
+  justify-content: flex-start;
+}
+
+.fdy-provider-settings-card .fdy-info-row {
+  padding: 9px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-provider-settings-card .fdy-info-row-end {
+  max-width: 58%;
+  text-align: right;
+}

@@ -1,0 +1,9 @@
+skills:
+  issue-splitting:
+    version: 0.2.0
+    scope: workspace
+    source: .foundry/skills.yaml
+  visual-qa:
+    version: 0.9.0
+    scope: workspace
+    source: .foundry/skills.yaml

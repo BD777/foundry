@@ -1,0 +1,297 @@
+.fdy-workspace-hub.fdy-page-surface {
+  width: 100%;
+  max-width: 1120px;
+  gap: 22px;
+}
+
+.fdy-workspace-hub-content,
+.fdy-page-embedded {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+
+.fdy-workspace-spinner {
+  flex: none;
+  color: var(--fdy-blue);
+  animation: fdy-context-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-workspace-spinner {
+    animation: none;
+  }
+}
+
+.fdy-workspace-hub-heading h1 {
+  margin: 0 0 6px;
+  color: var(--fdy-ink-strong);
+  font-size: 24px;
+}
+
+.fdy-workspace-hub-heading p,
+.fdy-workspace-scope-note,
+.fdy-workspace-inspection-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-overview,
+.fdy-workspace-repositories,
+.fdy-workspace-file-preview {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  padding: 22px;
+}
+
+.fdy-workspace-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin: 0;
+}
+
+.fdy-workspace-facts dt {
+  margin-bottom: 6px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-workspace-facts dd {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 15px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-repository-list {
+  display: grid;
+  min-width: 0;
+}
+
+.fdy-workspace-repository-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--fdy-line);
+  font-size: 13px;
+}
+
+.fdy-workspace-repository-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-repository-row p {
+  margin: 5px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 680px) {
+  .fdy-workspace-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fdy-workspace-hub > .fdy-segmented {
+    flex-wrap: wrap;
+  }
+  .fdy-workspace-overview,
+  .fdy-workspace-repositories {
+    padding: 16px;
+  }
+}
+
+.fdy-feishu-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fdy-feishu-panel {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 22px;
+}
+
+.fdy-feishu-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdy-feishu-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background-color: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  font-size: 13px;
+}
+
+.fdy-feishu-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fdy-feishu-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fdy-feishu-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-feishu-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.fdy-feishu-guide-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.fdy-feishu-guide-box {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--fdy-line);
+  background-color: var(--fdy-panel-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fdy-feishu-guide-heading {
+  margin: 0 0 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-feishu-external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fdy-brass);
+  text-decoration: none;
+}
+
+.fdy-feishu-guide-list {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.fdy-feishu-content-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fdy-feishu-group-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--fdy-line);
+  background-color: var(--fdy-panel-soft);
+}
+
+.fdy-feishu-group-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fdy-feishu-chat-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-feishu-chat-id {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  margin-top: 4px;
+}
+
+.fdy-feishu-chat-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-feishu-pairing-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.fdy-feishu-steps-text {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fdy-feishu-steps-text ol {
+  padding-left: 20px;
+  margin-top: 4px;
+}
+
+.fdy-feishu-pair-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border: 1px dashed var(--fdy-brass-line);
+  background-color: var(--fdy-info-surface);
+}
+
+.fdy-feishu-pair-label {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-feishu-pair-code {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: monospace;
+  letter-spacing: 0;
+  margin-top: 4px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-feishu-pair-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fdy-feishu-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fdy-feishu-generate-actions {
+  padding-top: 4px;
+}

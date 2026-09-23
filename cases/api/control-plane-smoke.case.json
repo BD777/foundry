@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "id": "api.control-plane-smoke",
+  "title": "Running control plane exposes a coherent read projection",
+  "description": "The live server reports health and returns the minimum Foundry projection shape needed by the web application.",
+  "kind": "api",
+  "area": "control-plane",
+  "risk": "high",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["smoke", "http", "projection"],
+  "preconditions": [
+    "Start the server on an isolated SQLite database.",
+    "Set FOUNDRY_API_BASE_URL when the server does not use the default port."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31982",
+    "fixture": "isolated-sqlite"
+  },
+  "steps": [
+    { "id": "health", "action": "request", "target": "GET /healthz" },
+    {
+      "id": "projection",
+      "action": "request",
+      "target": "GET /api/foundry-data"
+    },
+    { "id": "workspaces", "action": "request", "target": "GET /api/workspaces" }
+  ],
+  "assertions": [
+    {
+      "afterStep": "health",
+      "type": "status",
+      "target": "/healthz",
+      "expected": 200
+    },
+    {
+      "afterStep": "health",
+      "type": "json-shape",
+      "target": "status and startedAt"
+    },
+    {
+      "afterStep": "projection",
+      "type": "status",
+      "target": "/api/foundry-data",
+      "expected": 200
+    },
+    {
+      "afterStep": "projection",
+      "type": "json-shape",
+      "target": "workspace and projection arrays"
+    },
+    {
+      "afterStep": "workspaces",
+      "type": "json-shape",
+      "target": "workspace list"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "repo-script",
+    "command": "node scripts/smoke-api.mjs",
+    "references": [
+      "scripts/smoke-api.mjs",
+      "apps/server/internal/httpapi/server.go"
+    ]
+  },
+  "evidence": { "capture": ["response", "logs"], "retainOn": "failure" },
+  "cleanup": [
+    "Stop the isolated server and remove its temporary database directory."
+  ]
+}

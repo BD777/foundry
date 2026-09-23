@@ -1,0 +1,33 @@
+{
+  "name": "foundry",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "audit:web-buttons": "pnpm --filter @foundry/web audit:buttons",
+    "audit:web-ui": "pnpm --filter @foundry/web audit:ui",
+    "audit:contract": "node scripts/audit-contract.mjs",
+    "build": "pnpm -r build",
+    "cases:validate": "node scripts/validate-cases.mjs",
+    "dev:web": "pnpm --filter @foundry/web dev",
+    "dev:server": "cd apps/server && go run ./cmd/foundry-server",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "regression:api": "pnpm cases:validate && pnpm test:smoke:api",
+    "regression:commit": "pnpm format && pnpm verify",
+    "test": "pnpm test:js && pnpm test:go",
+    "test:go": "cd apps/server && go test ./...",
+    "test:js": "pnpm -r --if-present test",
+    "test:smoke:api": "node scripts/smoke-api.mjs",
+    "stack": "node scripts/dev-stack.mjs",
+    "typecheck": "pnpm --filter @foundry/protocol build && pnpm -r typecheck",
+    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm cases:validate && pnpm vet",
+    "vet": "cd apps/server && go vet ./..."
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3"
+  }
+}

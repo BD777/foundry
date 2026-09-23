@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "id": "security.accounts-login-boundary",
+  "title": "Accounts mode requires a login and gates owner operations",
+  "description": "With FOUNDRY_AUTH_MODE=accounts every browser API call needs a session cookie; first-owner setup needs the one-time setup code; failed logins lock out; cookie writes need the web Origin; members cannot reach owner-only routes; disabling a user or changing a password revokes sessions; invites redeem once. Every API route declares an access rule; non-public routes answer 401 anonymously; two accounts cannot reach each other's workspaces, devices, connections or events; workspace roles gate each action. Workers authenticate with per-device credentials from one-time pairing tokens; a credential only speaks for its own device and workspaces, is rotated by re-pairing and revoked by removal.",
+  "kind": "security",
+  "area": "accounts",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authentication", "authorization", "csrf", "sessions"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-accounts-tests",
+      "action": "run",
+      "target": "focused Go account store, HTTP login/role and CLI tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-accounts-tests",
+      "type": "command-exit-zero",
+      "target": "allowed and rejected login, setup, invite, CSRF and role paths"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test ./cmd/foundry-server ./internal/httpapi ./internal/sqlitestore -run 'TestEveryAPIRouteDeclaresAnAccessRule|TestEveryNonPublicAPIRouteRequiresCredentials|TestAccountsCannotReachEachOthersResources|TestWorkspaceRolesGateActions|TestEventSubscriptionsOnlyReceiveVisibleWorkspaces|TestDevicePairingIssuesPerDeviceCredentials|TestDeviceCredentialBindsDeviceAndWorkspace|TestDeviceCredentialActsWithItsOwnersRole|TestDaemonWebSocketHelloMustNameCredentialDevice|TestPairDeviceRejectsExpiredTokensAndDisabledOwners|TestPairDeviceAfterRemovalIssuesANewDevice|TestDevicesPairingTokenIsRedeemableOnce|TestUsersCreateListAndResetPassword|TestAccounts|TestLoopbackHasNoAnonymousAccess|TestHumanActorAttributesAccount|TestClientIPTrustsRealIPOnlyFromLoopback|TestCreateFirstOwnerOnlyWhileEmpty|TestUserSessionLifecycle|TestPasswordChangeAndDisableRevokeSessions|TestLastActiveOwnerIsProtected|TestInviteRedeemsOnce'",
+    "references": [
+      "apps/server/internal/httpapi/auth_coverage_test.go#TestEveryNonPublicAPIRouteRequiresCredentials",
+      "apps/server/internal/httpapi/auth_coverage_test.go#TestAccountsCannotReachEachOthersResources",
+      "apps/server/internal/httpapi/auth_coverage_test.go#TestWorkspaceRolesGateActions",
+      "apps/server/internal/httpapi/access_test.go#TestEventSubscriptionsOnlyReceiveVisibleWorkspaces",
+      "apps/server/internal/httpapi/auth_test.go#TestAccountsModeRequiresLogin",
+      "apps/server/internal/httpapi/auth_test.go#TestAccountsSetupLoginAndLogout",
+      "apps/server/internal/httpapi/auth_test.go#TestAccountsLoginIsRateLimited",
+      "apps/server/internal/httpapi/auth_test.go#TestAccountsRejectCrossSiteWrites",
+      "apps/server/internal/httpapi/auth_test.go#TestAccountsPasswordChangeRotatesSessions",
+      "apps/server/internal/sqlitestore/accounts_test.go#TestInviteRedeemsOnce",
+      "apps/server/cmd/foundry-server/users_test.go#TestUsersCreateListAndResetPassword",
+      "apps/server/internal/httpapi/device_auth_test.go#TestDeviceCredentialBindsDeviceAndWorkspace",
+      "apps/server/internal/sqlitestore/device_credentials_test.go#TestPairDeviceAfterRemovalIssuesANewDevice",
+      "packages/worker/test/device-pairing.test.mjs"
+    ]
+  },
+  "evidence": {
+    "capture": ["logs"],
+    "retainOn": "failure"
+  },
+  "cleanup": []
+}

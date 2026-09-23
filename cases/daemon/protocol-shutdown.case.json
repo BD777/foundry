@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "id": "daemon.protocol-shutdown",
+  "title": "Control-plane shutdown releases streams and pending daemon RPCs",
+  "description": "A process shutdown rejects new streams, ends live SSE and WebSocket work, and returns deterministic disconnect errors without channel races or leaked goroutines.",
+  "kind": "daemon",
+  "area": "availability",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["shutdown", "sse", "websocket", "race"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-shutdown-race-tests",
+      "action": "run",
+      "target": "go test -race shutdown tests for httpapi and foundry-server"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-shutdown-race-tests",
+      "type": "command-exit-zero",
+      "target": "idempotent shutdown, stream release, pending failure, and lifecycle drain"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test -race -run 'Shutdown|ContextCancel' ./internal/httpapi ./cmd/foundry-server",
+    "references": [
+      "apps/server/internal/httpapi/shutdown_test.go",
+      "apps/server/cmd/foundry-server/lifecycle_test.go",
+      "apps/server/internal/httpapi/server.go",
+      "apps/server/internal/httpapi/daemon_ws.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

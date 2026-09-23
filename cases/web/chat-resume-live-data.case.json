@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "id": "web.chat-resume-live-data",
+  "title": "Old chat resume converges when SSE precedes HTTP hydration",
+  "description": "Exercise the real App, composer, live-data hook, HTTP merge and virtualizer with synthetic transport and 180 background chats. Sending must remain usable across interleaved events and hydration.",
+  "kind": "browser-interaction",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["chat", "sse", "hydration", "regression"],
+  "preconditions": [
+    "Start the Vite dev server. The fixture mocks HTTP and EventSource and never calls a real provider.",
+    "Use localhost to isolate fixture storage from the normal 127.0.0.1 application.",
+    "Finish source edits before testing. To reset after a reload, reopen the fixture URL because App routing changes the address."
+  ],
+  "environment": {
+    "baseUrl": "http://localhost:31983",
+    "route": "/test/chat-live-data.html",
+    "fixture": "chat-live-data",
+    "colorScheme": "light",
+    "viewport": { "width": 1600, "height": 1000 }
+  },
+  "steps": [
+    {
+      "id": "open",
+      "action": "navigate",
+      "target": "/test/chat-live-data.html"
+    },
+    {
+      "id": "send",
+      "action": "inspect",
+      "target": "Fill Chat input, then click Send chat message; the fixture emits SSE before resolving the POST and subsequent list refresh"
+    },
+    {
+      "id": "finish",
+      "action": "click",
+      "target": "role=button[name='Stream and finish response']"
+    },
+    {
+      "id": "repeat",
+      "action": "inspect",
+      "target": "Repeat send/finish for at least three rounds, including Enter submission and navigating into history while a response is running"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "open",
+      "type": "visible",
+      "target": "Chat input and old session history"
+    },
+    {
+      "afterStep": "send",
+      "type": "visible",
+      "target": "new user turn and Stop agent response button without an error boundary"
+    },
+    {
+      "afterStep": "finish",
+      "type": "visible",
+      "target": "Completed fixture response and enabled Send chat message button"
+    },
+    {
+      "afterStep": "repeat",
+      "type": "no-console-errors",
+      "target": "browser console"
+    },
+    {
+      "afterStep": "repeat",
+      "type": "visible",
+      "target": "completed latest response, readable history and enabled composer"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/app/use-foundry-live-data.ts",
+      "apps/web/test/foundry-live-data-scheduling.test.mjs",
+      "apps/web/test/chat-live-data.html",
+      "apps/web/test/chat-live-data.tsx"
+    ]
+  },
+  "evidence": { "capture": ["console", "screenshot"], "retainOn": "failure" },
+  "cleanup": ["Close the fixture tab. No real messages were sent."]
+}

@@ -1,0 +1,20 @@
+.conversation-fixture {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+.conversation-fixture > nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+}
+.conversation-fixture > section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.conversation-fixture[data-narrow="true"] {
+  max-width: 380px;
+  margin: auto;
+}

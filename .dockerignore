@@ -1,0 +1,28 @@
+# VCS / local state
+.git/
+**/.git/
+
+# Dependencies and build output (rebuilt inside the image)
+**/node_modules/
+**/dist/
+build/
+coverage/
+
+# Runtime data
+**/.data/
+**/.foundry/worktrees/
+**/.foundry/sessions/
+**/.foundry/attachments/
+*.log
+
+# Local secrets and editor state
+.env
+deploy/.env
+**/.env.local
+**/.env.*.local
+.DS_Store
+.idea/
+.vscode/
+
+# Build artifacts (image tarballs etc.)
+artifacts/

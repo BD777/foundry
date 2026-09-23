@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "storage.issue-claim-and-sequence",
+  "title": "Concurrent claims and deleted issues cannot duplicate identity",
+  "description": "Concurrent devices receive distinct ready issues, and deleting an older issue never causes a later create to reuse and overwrite a live issue id.",
+  "kind": "storage",
+  "area": "issue-loop",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["concurrency", "identity", "transaction"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-claim-sequence-tests",
+      "action": "run",
+      "target": "race-enabled concurrent claim and delete-then-create tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-claim-sequence-tests",
+      "type": "command-exit-zero",
+      "target": "unique claims and monotonic issue identity"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test -race ./internal/sqlitestore -run 'TestClaimNextIssueDoesNotHandOneIssueToTwoDevices|TestCreateIssueAfterDeleteDoesNotOverwriteExistingIssue'",
+    "references": [
+      "apps/server/internal/sqlitestore/atomicity_test.go#TestClaimNextIssueDoesNotHandOneIssueToTwoDevices",
+      "apps/server/internal/sqlitestore/atomicity_test.go#TestCreateIssueAfterDeleteDoesNotOverwriteExistingIssue",
+      "apps/server/internal/sqlitestore/issues.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

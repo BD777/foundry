@@ -1,0 +1,503 @@
+.fdy-page-surface-profiles {
+  max-width: 1120px;
+  gap: 22px;
+}
+
+.fdy-profile-intro {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-profile-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-profile-intro p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-profile-list {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.fdy-profile-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-profile-list-title,
+.fdy-profile-editor-copy,
+.fdy-profile-card-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.fdy-profile-list-title strong,
+.fdy-profile-card-copy strong {
+  overflow: hidden;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-profile-list-title em,
+.fdy-profile-editor-copy em,
+.fdy-profile-card-copy em {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-profile-card-copy small,
+.fdy-profile-editor-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/**
+ * One profile per row across the full width: a grid of narrow cards left the
+ * page lopsided when only a couple of profiles exist.
+ */
+.fdy-profile-card-grid {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fdy-model-combobox-trigger.fdy-button {
+  width: 100%;
+  height: auto;
+  min-height: 34px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.fdy-model-combobox-popover {
+  /* Radix copies this onto its positioning wrapper, so it must clear the
+     profile modal (81) or the modal swallows every click in the list. */
+  z-index: 90;
+  /* Everything the panel puts above and below the catalog: the filter row, the
+     note, both gaps, and the padding. The catalog's floor is derived from it. */
+  --fdy-model-combobox-chrome: 66px;
+  display: grid;
+  /* The catalog takes the one flexible row and the note keeps its own; an
+     `auto` track here would size to the whole list and overflow the popover. */
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: var(--radix-popover-trigger-width);
+  /* Bounded, and normally settled at that bound: the catalog below holds a
+     floor, so filtering changes what is listed rather than how tall the panel
+     is. Without that, a content-sized panel resized on every keystroke and
+     moved the rows out from under the pointer. Still yields to a trigger with
+     less room than this beneath it. */
+  max-height: min(320px, var(--radix-popover-content-available-height));
+  min-height: 0;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--fdy-control-border);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow-hover);
+}
+
+/* The filter row stays put while only the list scrolls, so the Command wrapper
+   repeats the popover's split. Command renders a visually-hidden label of its
+   own as the first child, so the rows are addressed by area name instead of by
+   position. */
+.fdy-model-combobox-command {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "filter"
+    "catalog";
+  min-height: 0;
+}
+
+.fdy-model-combobox-header {
+  display: flex;
+  grid-area: filter;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--fdy-line);
+}
+
+.fdy-model-combobox-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fdy-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.fdy-model-combobox-list {
+  grid-area: catalog;
+  /* The floor is what keeps the panel still while typing: filtering narrows the
+     catalog, and without it the panel resized on every keystroke and moved the
+     rows out from under the pointer. Both terms subtract the panel's own chrome
+     so a clamped panel still fits its list instead of overflowing it. */
+  min-height: min(
+    320px - var(--fdy-model-combobox-chrome),
+    var(--radix-popover-content-available-height) -
+      var(--fdy-model-combobox-chrome)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Public catalog-only mode stays compact; editable provider catalogs retain
+   their stable filtering height. Both are owned by ModelCombobox. */
+.fdy-model-combobox-popover[data-catalog-only="true"] {
+  --fdy-model-combobox-chrome: 82px;
+}
+.fdy-model-combobox-popover[data-catalog-only="true"] .fdy-model-combobox-list {
+  min-height: 0;
+  max-height: 224px;
+}
+
+.fdy-model-combobox-empty {
+  padding: 8px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+.fdy-model-combobox-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--fdy-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fdy-model-combobox-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `data-selected` is cmdk's documented state attribute for the active item. */
+.fdy-model-combobox-item[data-selected="true"] {
+  background: var(--fdy-control-surface-hover);
+}
+
+.fdy-model-combobox-check {
+  flex: none;
+  opacity: 0;
+}
+
+.fdy-model-combobox-check[data-selected="true"] {
+  opacity: 1;
+}
+
+.fdy-model-combobox-note {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fdy-profile-card.fdy-button {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 62px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--fdy-control-border);
+  border-radius: var(--fdy-panel-radius);
+  background: var(--fdy-panel);
+  text-align: left;
+  box-shadow: var(--fdy-panel-shadow);
+  white-space: normal;
+}
+
+.fdy-profile-card.fdy-button:hover {
+  border-color: var(--fdy-control-border-hover);
+  background: var(--fdy-control-surface-hover);
+  box-shadow: var(--fdy-panel-shadow-hover);
+}
+
+.fdy-profile-card-copy {
+  flex: 1;
+}
+
+.fdy-profile-list-empty {
+  min-height: 280px;
+  place-content: center;
+  border: 1px dashed var(--fdy-line-strong);
+  border-radius: var(--fdy-panel-radius);
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-profile-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--fdy-overlay);
+}
+
+.fdy-profile-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 81;
+  display: grid;
+  /* The header and any error hold still while the form scrolls beneath them.
+     Rows, rather than one scrolling box, because a centred dialog whose height
+     follows its content re-centres itself on every change: switching runtime
+     swaps the fields, and the whole window jumped. The error row is optional,
+     so the rows are addressed by area name instead of by position. */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "heading"
+    "alert"
+    "form";
+  width: min(820px, calc(100vw - 32px));
+  height: min(880px, calc(100vh - 32px));
+  box-sizing: border-box;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 14px;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  transform: translate(-50%, -50%);
+}
+
+/* The form is the one row that scrolls, so the dialog's height can stay put. */
+.fdy-profile-modal > .fdy-profile-editor {
+  grid-area: form;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fdy-profile-modal > .fdy-profile-modal-header {
+  grid-area: heading;
+}
+
+.fdy-profile-modal > .fdy-profile-modal-error {
+  grid-area: alert;
+}
+
+.fdy-profile-modal-header,
+.fdy-profile-editor-header,
+.fdy-profile-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdy-profile-modal-header {
+  justify-content: space-between;
+}
+
+.fdy-profile-modal-header h2 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.fdy-profile-modal-header p {
+  margin: 5px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-profile-modal-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-error-border);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  font-size: 12px;
+}
+
+.fdy-profile-editor {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.fdy-profile-editor-copy {
+  flex: 1;
+}
+
+.fdy-profile-editor-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-profile-editor-grid {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fdy-profile-field {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 6px;
+}
+
+.fdy-profile-field-wide,
+.fdy-profile-credential {
+  grid-column: 1 / -1;
+}
+
+.fdy-profile-field .fdy-segmented {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.fdy-profile-field .fdy-segment {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-profile-field > span {
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fdy-profile-field small,
+.fdy-profile-field p {
+  margin: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fdy-profile-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.fdy-profile-credential {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.fdy-profile-credential > span {
+  grid-column: 1 / -1;
+}
+
+.fdy-profile-authorization {
+  padding: 14px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-authorization-flow {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fdy-authorization-flow > p,
+.fdy-authorization-flow > input {
+  grid-column: 1 / -1;
+}
+
+.fdy-authorization-flow code {
+  color: var(--fdy-ink-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+}
+
+.fdy-authorization-flow p[data-status="completed"] {
+  color: var(--fdy-success-text);
+}
+
+.fdy-authorization-flow p[data-status="failed"] {
+  color: var(--fdy-error-text);
+}
+
+.fdy-profile-defaults {
+  border-top: 1px solid var(--fdy-line-soft);
+  border-bottom: 1px solid var(--fdy-line-soft);
+  padding: 12px 0;
+}
+
+.fdy-profile-defaults summary {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fdy-profile-defaults[open] summary {
+  margin-bottom: 14px;
+}
+
+.fdy-profile-editor-actions {
+  flex-wrap: wrap;
+}
+
+.fdy-profile-editor-actions > span {
+  min-width: 240px;
+  flex: 1;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 680px) {
+  .fdy-profile-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+  }
+
+  .fdy-profile-editor-grid,
+  .fdy-authorization-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fdy-profile-credential {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

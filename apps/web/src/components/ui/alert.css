@@ -1,0 +1,58 @@
+.fdy-alert {
+  --alert-text: var(--fdy-info-text);
+  --alert-surface: var(--fdy-info-surface);
+  --alert-border: var(--fdy-info-border);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--alert-border);
+  border-radius: var(--fdy-panel-radius-md);
+  color: var(--alert-text);
+  background: var(--alert-surface);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.fdy-alert[data-tone="warning"] {
+  --alert-text: var(--fdy-warning-text);
+  --alert-surface: var(--fdy-warning-surface);
+  --alert-border: var(--fdy-warning-border);
+}
+.fdy-alert[data-tone="error"] {
+  --alert-text: var(--fdy-error-text);
+  --alert-surface: var(--fdy-error-surface);
+  --alert-border: var(--fdy-error-border);
+}
+.fdy-alert[data-tone="success"] {
+  --alert-text: var(--fdy-success-text);
+  --alert-surface: var(--fdy-success-surface);
+  --alert-border: var(--fdy-success-border);
+}
+.fdy-alert > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.fdy-alert-content {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-alert-content > strong {
+  display: block;
+  margin-bottom: 4px;
+  color: inherit;
+}
+.fdy-alert-content p {
+  margin: 0;
+}
+.fdy-alert-content details {
+  margin-top: 8px;
+}
+.fdy-alert-content summary {
+  cursor: pointer;
+}
+.fdy-alert-diagnostic {
+  white-space: pre-wrap;
+  margin-top: 8px;
+}

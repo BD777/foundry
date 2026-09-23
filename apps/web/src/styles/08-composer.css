@@ -1,0 +1,202 @@
+.fdy-message-composer {
+  position: relative;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 16px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow);
+  /* Progressive footer compression keys off the composer's own width, so a
+     narrow composer inside a wide split pane compresses like a phone. */
+  container: fdy-composer / inline-size;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.fdy-message-composer:focus-within {
+  border-color: var(--fdy-control-border-hover);
+  box-shadow: var(--fdy-panel-shadow-focus);
+}
+
+.fdy-message-composer .fdy-field-chat {
+  min-width: 0;
+  min-height: 54px;
+  max-height: none;
+  overflow-y: hidden;
+  padding: 4px 2px 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.fdy-message-composer .fdy-field-chat:focus {
+  box-shadow: none;
+}
+
+.fdy-composer-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* The action bar always stays on one row; narrow widths collapse labels to
+     icons via the container queries below instead of wrapping. */
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fdy-message-composer .fdy-composer-submit {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-ink-strong);
+  color: var(--fdy-panel);
+  box-shadow: none;
+}
+
+.fdy-message-composer .fdy-composer-submit:hover {
+  background: var(--fdy-ink);
+}
+
+.fdy-composer-stop-icon {
+  fill: currentColor;
+  stroke-width: 0;
+}
+
+/* Runtime menus use the same portaled surface in both composer placements. */
+.fdy-runtime-popover.fdy-chat-popover {
+  position: relative;
+  inset: auto;
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+}
+
+@media (max-width: 680px) {
+  .fdy-runtime-popover.fdy-chat-settings-popover {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+  }
+
+  .fdy-runtime-popover .fdy-chat-settings-submenu {
+    width: 100%;
+    max-width: calc(100vw - 48px);
+    margin-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--fdy-line);
+  }
+}
+.fdy-chat-fixed-runtime {
+  min-width: 0;
+  max-width: calc(100% - 48px);
+}
+.fdy-chat-fixed-runtime-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The composer action bar stays one row at every width. Compression policy:
+   below 660px the controls shrink elastically (flex + min-width:0 on their
+   public wrapper/trigger classes). The text→icon collapse for the runtime
+   controls (permissions shield, model/effort chip around the persistent
+   settings icon, agent picker) is owned by those components in 20-chat.css —
+   consumer CSS never reaches into their internal label elements. */
+@container fdy-composer (max-width: 660px) {
+  .fdy-chat-toolbar-spacer {
+    min-width: 0;
+  }
+
+  .fdy-message-composer .fdy-chat-agent-select,
+  .fdy-message-composer .fdy-chat-access-menu,
+  .fdy-message-composer .fdy-chat-settings-menu {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .fdy-message-composer .fdy-chat-access-trigger,
+  .fdy-message-composer .fdy-chat-settings-trigger {
+    min-width: 0;
+  }
+
+  .fdy-message-composer .fdy-chat-settings-trigger {
+    justify-content: flex-start;
+  }
+}
+
+/* Slash skill picker */
+.fdy-composer-input-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.fdy-slash-menu {
+  position: absolute;
+  bottom: calc(100% - 6px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 90vw);
+  max-height: 264px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 12px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow-focus);
+  list-style: none;
+}
+
+.fdy-slash-item {
+  appearance: none;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.fdy-slash-item[data-active="true"] {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-slash-item-name {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fdy-slash-item-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fdy-slash-empty {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}

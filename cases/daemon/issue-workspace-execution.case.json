@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "daemon.issue-workspace-execution",
+  "title": "Independent Issues isolate multi-repository candidates and accept explicitly",
+  "description": "Verify external persistent worktrees, lazy nested repository preparation, native subprocess write restrictions, revision-bound acceptance, idempotent Run replay and process-wide dispatch capacity.",
+  "kind": "daemon",
+  "area": "issue-execution",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["worktree", "multi-repository", "concurrency", "accept", "sandbox"],
+  "preconditions": [
+    "Git and workspace dependencies are installed. Linux requires bubblewrap and permitted user/PID/mount namespaces; macOS uses sandbox-exec."
+  ],
+  "steps": [
+    {
+      "id": "execute",
+      "action": "run",
+      "target": "worker execution tests and Go acceptance/replay/dispatch race tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "execute",
+      "type": "command-exit-zero",
+      "target": "Source remains unchanged until Accept, revision conflicts block integration, independent work dispatches in parallel and retries retain Run history."
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "repo-script",
+    "command": "pnpm --filter @foundry/worker test && cd apps/server && go test -race ./internal/httpapi ./internal/sqlitestore",
+    "references": [
+      "packages/worker/test/issue-environments.test.mjs",
+      "packages/worker/test/workspace-bootstrap.test.mjs",
+      "packages/worker/test/execution-process.test.mjs",
+      "packages/worker/test/issue-preview.test.mjs",
+      "packages/worker/test/claude-api-retry.test.mjs",
+      "apps/web/test/issue-conversation.test.mjs",
+      "scripts/verify-issue-live.mjs",
+      "packages/worker/scripts/verify-issue-loop.mjs",
+      "packages/worker/scripts/verify-concurrent-workspace.mjs",
+      "apps/server/internal/httpapi/issue_environment_test.go",
+      "apps/server/internal/sqlitestore/issue_runs_test.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": ["Tests remove their temporary repositories and candidate stores."]
+}

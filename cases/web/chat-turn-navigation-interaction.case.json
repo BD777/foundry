@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "id": "web.chat-turn-navigation-interaction",
+  "title": "Chat turn navigation follows reading position without fighting live output",
+  "description": "A long multi-turn chat stays continuously painted during fast scrolling and exposes a compact query navigator whose active marker follows the reading position, previews the correct query, and jumps through the virtual transcript without resuming follow-latest mode.",
+  "kind": "browser-interaction",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["chat", "navigation", "virtualization", "streaming", "responsive"],
+  "preconditions": [
+    "Start web and a server with an isolated long-chat fixture containing at least four user turns.",
+    "Use a fine pointer and a chat conversation width of at least 560 px."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/chats",
+    "fixture": "long-chat",
+    "colorScheme": "light",
+    "viewport": { "width": 1600, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/chats" },
+    {
+      "id": "fast-scroll",
+      "action": "inspect",
+      "target": "chat transcript during large wheel deltas in both directions"
+    },
+    {
+      "id": "hover-turn",
+      "action": "inspect",
+      "target": "role=navigation[name='Conversation turns'] third marker"
+    },
+    {
+      "id": "jump-first",
+      "action": "click",
+      "target": "role=button[name^='Go to turn 1 of']"
+    },
+    {
+      "id": "stream-update",
+      "action": "wait",
+      "target": "active response content resize"
+    },
+    {
+      "id": "narrow",
+      "action": "inspect",
+      "target": "chat conversation at 748 px, then at the 559/560 and 879/880 px boundaries"
+    },
+    {
+      "id": "directory",
+      "action": "click",
+      "target": "below 560 px or with a coarse pointer: role=button[name='会话目录']"
+    },
+    {
+      "id": "directory-jump",
+      "action": "inspect",
+      "target": "choose a turn with ArrowDown and Enter; reopen and dismiss with Escape; reopen and resize to a fine-pointer rail width"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "open",
+      "type": "visible",
+      "target": "role=navigation[name='Conversation turns']"
+    },
+    {
+      "afterStep": "fast-scroll",
+      "type": "visible",
+      "target": "real message content intersecting the viewport throughout the scroll"
+    },
+    {
+      "afterStep": "hover-turn",
+      "type": "text",
+      "target": "turn preview",
+      "expected": "third user query"
+    },
+    {
+      "afterStep": "jump-first",
+      "type": "visible",
+      "target": "first user message at the transcript reading line"
+    },
+    {
+      "afterStep": "stream-update",
+      "type": "visible",
+      "target": "first turn remains selected and scroll-to-latest control remains available"
+    },
+    {
+      "afterStep": "narrow",
+      "type": "visible",
+      "target": "role=navigation[name='Conversation turns'] at 748 px and at every fine-pointer conversation width >= 560 px"
+    },
+    {
+      "afterStep": "narrow",
+      "type": "no-horizontal-overflow",
+      "target": "chat conversation"
+    },
+    {
+      "afterStep": "narrow",
+      "type": "no-console-errors",
+      "target": "browser console"
+    },
+    {
+      "afterStep": "directory",
+      "type": "visible",
+      "target": "role=menu[name='会话目录'] with all user turns and the current turn marked"
+    },
+    {
+      "afterStep": "directory-jump",
+      "type": "visible",
+      "target": "selected user turn through the virtual transcript; menu closes on selection, Escape or switching to rail mode"
+    },
+    {
+      "afterStep": "directory-jump",
+      "type": "no-horizontal-overflow",
+      "target": "chat conversation and composer; message body and composer share left edge and width"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/features/chat/chat-transcript-stage.tsx",
+      "apps/web/src/features/chat/chat-virtualization.ts",
+      "apps/web/src/features/chat/chat-turn-navigator.tsx",
+      "apps/web/src/features/chat/chat-turn-menu.tsx",
+      "apps/web/src/features/chat/use-chat-turn-navigation.ts",
+      "apps/web/test/chat-turn-navigation.test.mjs",
+      "apps/web/test/chat-virtualization.test.mjs"
+    ]
+  },
+  "evidence": {
+    "capture": ["console", "screenshot"],
+    "retainOn": "failure"
+  },
+  "cleanup": ["Close the test tab and stop isolated services."]
+}

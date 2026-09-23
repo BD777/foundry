@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    {
+      "id": "codex-third-party",
+      "label": "Codex Third-party",
+      "runtime": "codex",
+      "connectionType": "openai_compatible",
+      "baseUrl": "https://provider.example/v1",
+      "model": "model-name",
+      "apiKey": "local-only"
+    },
+    {
+      "id": "claude-provider-a",
+      "label": "Claude Provider A",
+      "runtime": "claude",
+      "connectionType": "anthropic_compatible",
+      "baseUrl": "https://provider.example",
+      "model": "model-name",
+      "apiKey": "local-only"
+    }
+  ]
+}

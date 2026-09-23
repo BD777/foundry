@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "daemon.local-api-latency",
+  "title": "Local discovery does not block unrelated UI requests",
+  "description": "Keep CLI discovery asynchronous, coalesce duplicate requests, incrementally index subagent logs, and invalidate short-lived projection snapshots on state events.",
+  "kind": "daemon",
+  "area": "local-api-performance",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["latency", "models", "subagents", "projection"],
+  "preconditions": ["Node.js, Go and repository dependencies are installed."],
+  "steps": [
+    {
+      "id": "verify",
+      "action": "run",
+      "target": "Worker discovery/index tests and Go projection cache/routing tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "verify",
+      "type": "command-exit-zero",
+      "target": "Event loop stays responsive during a slow CLI call; concurrent discovery runs once; appended/rotated logs remain correct; cache invalidation and routing without transcript reads hold."
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "repo-script",
+    "command": "pnpm --filter @foundry/worker test && cd apps/server && go test -race ./internal/httpapi ./internal/sqlitestore",
+    "references": [
+      "packages/worker/test/models-latency.test.mjs",
+      "packages/worker/test/subagent-records.test.mjs",
+      "apps/server/internal/httpapi/projection_cache_test.go",
+      "apps/server/internal/sqlitestore/session_summary_test.go",
+      "apps/server/internal/httpapi/projection_benchmark_test.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": [
+    "Tests remove synthetic CLI fixtures and transcript files. Private database copies used for optional profiling remain outside the repository."
+  ]
+}

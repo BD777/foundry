@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "security.control-plane-boundary",
+  "title": "Remote exposure and control-plane secrets fail closed",
+  "description": "Retired shared-secret settings refuse startup, browser and daemon channels remain distinct, and provider secrets are rejected by the server projection boundary.",
+  "kind": "security",
+  "area": "control-plane",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authentication", "cors", "secrets"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-security-tests",
+      "action": "run",
+      "target": "focused Go exposure, authentication, origin, and secret-rejection tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-security-tests",
+      "type": "command-exit-zero",
+      "target": "allowed and rejected security paths"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test ./cmd/foundry-server ./internal/httpapi -run 'TestRunRefusesRetiredSettings|TestAPIAuthorizationAndCORS|TestAgentProfileRejectsControlPlaneSecrets|TestDaemonWebSocketRequiresPairingAndTrustedOrigin'",
+    "references": [
+      "apps/server/cmd/foundry-server/lifecycle_test.go#TestRunRefusesRetiredSettings",
+      "apps/server/internal/httpapi/server_test.go#TestAPIAuthorizationAndCORS",
+      "apps/server/internal/httpapi/server_test.go#TestAgentProfileRejectsControlPlaneSecrets",
+      "apps/server/internal/httpapi/server_test.go#TestDaemonWebSocketRequiresPairingAndTrustedOrigin"
+    ]
+  },
+  "evidence": {
+    "capture": ["logs"],
+    "retainOn": "failure"
+  },
+  "cleanup": []
+}

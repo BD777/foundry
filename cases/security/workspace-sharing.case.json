@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "security.workspace-sharing",
+  "title": "Workspace sharing grants exactly the role given and revokes at once",
+  "description": "Owners share a workspace by username; roles gate each action; the device owner stays an Owner; removing a member cancels their running sessions, voids their agent tokens and closes their event streams; invites carry a workspace role only for a workspace the admin owns.",
+  "kind": "security",
+  "area": "accounts",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authorization", "sharing", "sessions"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-sharing-tests",
+      "action": "run",
+      "target": "focused Go sharing lifecycle tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-sharing-tests",
+      "type": "command-exit-zero",
+      "target": "sharing, role changes, removal and invites"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test ./internal/httpapi -run 'TestOwnerSharesAWorkspaceAndRolesTakeEffect|TestRemovingAMemberStopsTheirSessionsAndAgentTokens|TestMembershipChangesEndTheAccountsEventStream|TestInviteCanCarryAWorkspaceTheAdminOwns|TestWorkspaceRolesGateActions'",
+    "references": [
+      "apps/server/internal/httpapi/workspace_members_test.go",
+      "apps/server/internal/httpapi/workspace_members.go",
+      "apps/web/test/sharing-feature.test.mjs"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

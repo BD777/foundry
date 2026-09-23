@@ -1,0 +1,16 @@
+.issue-fixture {
+  display: flex;
+  height: 100dvh;
+  flex-direction: column;
+}
+.issue-fixture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+}
+.issue-fixture > section {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@foundry/worker",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "description": "Local Foundry worker daemon and workspace CLI",
+  "type": "module",
+  "bin": {
+    "foundry-worker": "./dist/cli.js",
+    "foundry": "./dist/foundry-cli.js"
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "foundry-worker": "node scripts/run-cli.mjs",
+    "prepack": "pnpm build",
+    "test": "pnpm --filter @foundry/protocol build && pnpm build && node scripts/run-worker-tests.mjs",
+    "test:probe": "node scripts/run-worker-tests.mjs --probe",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.201",
+    "@foundry/protocol": "workspace:*",
+    "@openai/codex": "0.142.5",
+    "@openai/codex-sdk": "^0.142.5",
+    "node-pty": "^1.1.0",
+    "smol-toml": "^1.8.0",
+    "ws": "^8.21.0",
+    "yaml": "^2.9.0"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "id": "web.chat-detail-resize-interaction",
+  "title": "Repeated detail pane resizing preserves the chat when closed",
+  "description": "A Chrome layout regression can leave the main conversation's children at zero size after repeated detail dragging and closing, even though the conversation container retains its dimensions and no console error is reported.",
+  "kind": "browser-interaction",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["chat", "subagent", "resize", "responsive"],
+  "preconditions": [
+    "Use real Chrome with a long chat containing a completed subagent transcript and a context card.",
+    "Collapse the app sidebar. The conversation must contain visible message content before testing."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/chats",
+    "fixture": "long-chat-with-subagent",
+    "colorScheme": "light",
+    "viewport": { "width": 1920, "height": 958 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/chats" },
+    {
+      "id": "drag-close",
+      "action": "inspect",
+      "target": "Repeat eight rounds: open a subagent, wait for its transcript, press the vertical separator, drag left/right six times across compact/wide navigation widths, release, then click Close context detail. Verify every round, not just one drag."
+    },
+    {
+      "id": "read-history",
+      "action": "inspect",
+      "target": "Jump to an earlier user turn, repeat the drag/close sequence, and verify the transcript remains readable and the reader is not forced to the latest message."
+    },
+    {
+      "id": "narrow",
+      "action": "inspect",
+      "target": "With detail open, resize the thread through the 840 px single-pane boundary and close the detail. Also verify closing at 1512 px with an expanded app sidebar."
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "drag-close",
+      "type": "visible",
+      "target": "Main transcript, turn navigator, and composer all have nonzero layout rectangles, and real message text intersects the viewport after every round."
+    },
+    {
+      "afterStep": "drag-close",
+      "type": "no-console-errors",
+      "target": "browser console (not sufficient by itself to detect the zero-layout regression)"
+    },
+    {
+      "afterStep": "read-history",
+      "type": "visible",
+      "target": "Earlier user turn and scroll-to-latest control"
+    },
+    {
+      "afterStep": "narrow",
+      "type": "visible",
+      "target": "Chat input and main message content restore after closing the detail"
+    },
+    {
+      "afterStep": "narrow",
+      "type": "no-horizontal-overflow",
+      "target": "Chat conversation and composer"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/features/chat/chat-detail-split-pane.tsx",
+      "apps/web/src/styles/20-chat.css"
+    ]
+  },
+  "evidence": { "capture": ["console", "screenshot"], "retainOn": "failure" },
+  "cleanup": [
+    "Restore temporary viewport overrides and sidebar preferences, then close the test tab."
+  ]
+}

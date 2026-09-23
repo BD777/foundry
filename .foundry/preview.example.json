@@ -1,0 +1,7 @@
+{
+  "command": "pnpm dev --host 127.0.0.1 --port $FOUNDRY_PREVIEW_PORT",
+  "portStart": 4300,
+  "portEnd": 4399,
+  "readyPath": "/",
+  "readyTimeoutMs": 15000
+}

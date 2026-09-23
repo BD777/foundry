@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "web.accounts-gate-interaction",
+  "title": "The web app shows setup, sign-in or invite screens before the shell",
+  "description": "Open servers render the app directly; accounts servers show first-owner setup, sign-in or the invite form until a session exists; a 401 from any API call returns to sign-in; an unreachable auth endpoint keeps the app's own offline state.",
+  "kind": "unit",
+  "area": "accounts",
+  "risk": "high",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["authentication", "web"],
+  "preconditions": ["Web dependencies are installed."],
+  "steps": [
+    {
+      "id": "run-gate-tests",
+      "action": "run",
+      "target": "accounts gate DOM tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-gate-tests",
+      "type": "command-exit-zero",
+      "target": "setup, sign-in, invite, 401 and offline paths"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "node-test",
+    "command": "pnpm --filter @foundry/web exec node --test test/accounts-gate.test.mjs",
+    "references": ["apps/web/test/accounts-gate.test.mjs"]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

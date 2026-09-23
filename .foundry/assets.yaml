@@ -1,0 +1,7 @@
+assets:
+  worktree_pool:
+    kind: git_worktree
+    strategy: per_issue
+  artifact_archive:
+    kind: artifact_archive
+    path: accepted

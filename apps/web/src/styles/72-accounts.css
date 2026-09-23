@@ -1,0 +1,232 @@
+/* Sign-in, setup and invite screens render before the app shell. */
+.fdy-auth-screen {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 40px 16px;
+}
+
+.fdy-auth-card {
+  display: grid;
+  width: 100%;
+  max-width: 400px;
+  gap: 20px;
+  padding: 28px;
+}
+
+.fdy-auth-header {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.fdy-auth-header h1 {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-strong);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.fdy-auth-header p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-auth-form,
+.fdy-account-form {
+  display: grid;
+  gap: 16px;
+}
+
+.fdy-auth-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-auth-field > span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-auth-field small {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Account and Members pages. */
+.fdy-page-surface-accounts {
+  max-width: 760px;
+  gap: 18px;
+}
+
+.fdy-account-intro {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-account-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-account-intro p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-account-section {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.fdy-account-section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.fdy-account-section-head strong,
+.fdy-account-signout strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-account-section-head p,
+.fdy-account-signout p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-account-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fdy-account-signout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-member-invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdy-member-invite-link {
+  display: grid;
+  gap: 6px;
+}
+
+.fdy-member-invite-link > span {
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-member-invite-copy {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+}
+
+.fdy-member-invite-copy > input {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-member-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-member-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-member-row:first-child {
+  border-top: 0;
+}
+
+.fdy-member-row[data-disabled] .fdy-member-identity {
+  opacity: 0.6;
+}
+
+.fdy-member-identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-member-identity strong {
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-member-identity span {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-member-badges,
+.fdy-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .fdy-member-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fdy-member-badges,
+  .fdy-member-actions {
+    justify-content: flex-start;
+  }
+
+  .fdy-auth-card {
+    padding: 20px;
+  }
+}

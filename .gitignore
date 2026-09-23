@@ -1,0 +1,34 @@
+.DS_Store
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+.data/
+.tmp/
+.foundry/sessions/
+.foundry/attachments/
+
+# Local editor state
+.idea/
+.vscode/
+
+# Machine-local workspace identity (absolute path, per checkout)
+.foundry/workspace.json
+
+# Exported deployment images
+artifacts/
+
+# Go build output
+/apps/server/cmd/foundry-server/foundry-server
+/apps/server/foundry-server

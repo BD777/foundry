@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "id": "web.control-plane-recovery-interaction",
+  "title": "The web shell survives a control-plane restart and repairs its projection",
+  "description": "With an issue workspace open, a graceful Go server restart moves the shell to an explicit offline state without a render crash, then the background refresh restores the durable SQLite projection without a browser reload.",
+  "kind": "browser-interaction",
+  "area": "web-app",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["availability", "sse", "recovery", "projection"],
+  "preconditions": [
+    "Start web and a demo-seeded server on isolated SQLite storage.",
+    "Open the seeded Atlas issue board and keep the browser tab connected to SSE."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/issues",
+    "fixture": "demo-seed",
+    "colorScheme": "light",
+    "viewport": { "width": 1440, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/issues" },
+    {
+      "id": "stop-server",
+      "action": "run",
+      "target": "send SIGINT to the isolated Go server while SSE is connected"
+    },
+    {
+      "id": "inspect-offline",
+      "action": "inspect",
+      "target": "text=Offline — showing demo data"
+    },
+    {
+      "id": "restart-server",
+      "action": "run",
+      "target": "restart the Go server against the same isolated SQLite database"
+    },
+    {
+      "id": "wait-recovery",
+      "action": "wait",
+      "target": "role=button[name='Open #112'] within 15 seconds without reloading"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "stop-server",
+      "type": "status",
+      "target": "server process",
+      "expected": "exits within the graceful shutdown budget"
+    },
+    {
+      "afterStep": "inspect-offline",
+      "type": "visible",
+      "target": "text=Offline — showing demo data"
+    },
+    {
+      "afterStep": "inspect-offline",
+      "type": "hidden",
+      "target": "role=alert"
+    },
+    {
+      "afterStep": "wait-recovery",
+      "type": "visible",
+      "target": "role=button[name='Open #112']"
+    },
+    {
+      "afterStep": "wait-recovery",
+      "type": "hidden",
+      "target": "text=Offline — showing demo data"
+    }
+  ],
+  "automation": {
+    "status": "planned",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/app/use-foundry-live-data.ts",
+      "apps/web/src/components/ui/error-boundary.tsx",
+      "apps/server/cmd/foundry-server/lifecycle.go",
+      "apps/server/internal/httpapi/shutdown_test.go"
+    ]
+  },
+  "evidence": {
+    "capture": ["logs", "console", "network", "screenshot"],
+    "retainOn": "failure"
+  },
+  "cleanup": [
+    "Stop isolated services and discard the isolated SQLite database."
+  ]
+}

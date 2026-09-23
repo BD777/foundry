@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "daemon.session-roundtrip",
+  "title": "Paired daemon session completes over WebSocket",
+  "description": "A paired daemon can register, receive a session, return ordered events, and complete without bypassing the pairing and workspace-ready lifecycle.",
+  "kind": "daemon",
+  "area": "control-plane",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["websocket", "session", "lifecycle"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-roundtrip-tests",
+      "action": "run",
+      "target": "go test ./internal/httpapi -run daemon session round-trip tests"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-roundtrip-tests",
+      "type": "command-exit-zero",
+      "target": "registration, dispatch, event, and completion lifecycle"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test ./internal/httpapi -run 'TestDaemonWebSocketRoundTrip|TestAgentSessionDispatchesAfterWorkspaceReadyRegistration|TestDaemonProductionRoundTrip'",
+    "references": [
+      "apps/server/internal/httpapi/server_test.go#TestDaemonWebSocketRoundTrip",
+      "apps/server/internal/httpapi/server_test.go#TestAgentSessionDispatchesAfterWorkspaceReadyRegistration",
+      "apps/server/internal/httpapi/server_test.go#TestDaemonProductionRoundTrip"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

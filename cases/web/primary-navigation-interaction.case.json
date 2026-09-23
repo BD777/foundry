@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "id": "web.primary-navigation-interaction",
+  "title": "Primary navigation keeps browser history and feature surfaces aligned",
+  "description": "Every main sidebar destination updates the URL through the app router and renders without a console failure.",
+  "kind": "browser-interaction",
+  "area": "web-app",
+  "risk": "medium",
+  "cadence": ["pull-request", "release", "manual"],
+  "tags": ["navigation", "history", "features"],
+  "preconditions": [
+    "Start web and a demo-seeded server on isolated storage.",
+    "The paired demo device is online so feature pages are available."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/issues",
+    "fixture": "demo-seed",
+    "colorScheme": "light",
+    "viewport": { "width": 1440, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/issues" },
+    {
+      "id": "chats",
+      "action": "click",
+      "target": "role=button[name='Open Chats']"
+    },
+    {
+      "id": "runs",
+      "action": "click",
+      "target": "role=button[name='Open Runs']"
+    },
+    {
+      "id": "assets",
+      "action": "click",
+      "target": "role=button[name='Open Assets']"
+    },
+    {
+      "id": "skills",
+      "action": "click",
+      "target": "role=button[name='Open Skills']"
+    },
+    {
+      "id": "settings",
+      "action": "click",
+      "target": "role=button[name='Open Settings']"
+    },
+    { "id": "back", "action": "back", "target": "browser history" }
+  ],
+  "assertions": [
+    {
+      "afterStep": "open",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/issues"
+    },
+    {
+      "afterStep": "chats",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/chats/c1"
+    },
+    {
+      "afterStep": "runs",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/runs"
+    },
+    {
+      "afterStep": "assets",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/assets"
+    },
+    {
+      "afterStep": "skills",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/skills"
+    },
+    {
+      "afterStep": "settings",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/settings"
+    },
+    {
+      "afterStep": "back",
+      "type": "url",
+      "target": "pathname",
+      "expected": "/skills"
+    },
+    {
+      "afterStep": "back",
+      "type": "no-console-errors",
+      "target": "browser console"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/app/navigation.ts",
+      "apps/web/src/app/use-app-route-sync.ts",
+      "apps/web/src/components/ui/app-shell.tsx"
+    ]
+  },
+  "evidence": { "capture": ["console", "screenshot"], "retainOn": "failure" },
+  "cleanup": ["Close the test tab and stop isolated services."]
+}

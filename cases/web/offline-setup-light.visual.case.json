@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "id": "web.offline-setup-light-visual",
+  "title": "Offline setup remains visually stable in the light desktop shell",
+  "description": "The primary local-first onboarding state fits the desktop viewport without clipping, overflow, missing hierarchy, or unexpected console errors.",
+  "kind": "browser-visual",
+  "area": "web-app",
+  "risk": "medium",
+  "cadence": ["release", "manual"],
+  "tags": ["visual", "setup", "light"],
+  "preconditions": [
+    "Start web and server with an isolated database.",
+    "Reset theme to light."
+  ],
+  "environment": {
+    "baseUrl": "http://127.0.0.1:31983",
+    "route": "/?device=offline",
+    "fixture": "offline-device",
+    "colorScheme": "light",
+    "viewport": { "width": 1440, "height": 1000 }
+  },
+  "steps": [
+    { "id": "open", "action": "navigate", "target": "/?device=offline" },
+    {
+      "id": "capture",
+      "action": "inspect",
+      "target": "full-page screenshot after fonts and layout settle"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "open",
+      "type": "visible",
+      "target": "role=heading[name='Connect a device']"
+    },
+    {
+      "afterStep": "capture",
+      "type": "no-horizontal-overflow",
+      "target": "document"
+    },
+    {
+      "afterStep": "capture",
+      "type": "no-console-errors",
+      "target": "browser console"
+    },
+    {
+      "afterStep": "capture",
+      "type": "screenshot-match",
+      "target": "offline-setup-light-desktop"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "browser",
+    "references": [
+      "apps/web/src/components/ui/setup-flow.tsx",
+      "apps/web/src/styles"
+    ]
+  },
+  "evidence": { "capture": ["console", "screenshot"], "retainOn": "always" },
+  "visual": {
+    "baseline": "offline-setup-light-desktop",
+    "maxPixelDiffRatio": 0.01,
+    "masks": []
+  },
+  "cleanup": ["Close the test tab and stop isolated services."]
+}

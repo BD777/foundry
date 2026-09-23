@@ -1,0 +1,772 @@
+.fdy-skill-pack-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fdy-page-surface-skills > .fdy-skill-pack-section + .fdy-skill-pack-section {
+  margin-top: 28px;
+}
+
+.fdy-skill-pack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fdy-skill-registry-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(148px, auto);
+  gap: 13px;
+  align-items: flex-start;
+  padding: 15px 17px;
+}
+
+.fdy-skill-registry-row[data-tone="muted"] {
+  border-style: dashed;
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-skill-registry-icon {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.fdy-skill-registry-body {
+  min-width: 0;
+}
+
+.fdy-skill-registry-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+
+.fdy-skill-registry-title h3 {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-registry-title .fdy-meta-pill-xs {
+  height: 20px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.fdy-skill-registry-title .fdy-meta-pill-update {
+  letter-spacing: 0;
+}
+
+.fdy-skill-registry-title .fdy-meta-pill-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.fdy-skill-registry-version {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-skill-registry-body > p {
+  margin: 0 0 6px;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-skill-registry-detail {
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-skill-registry-detail span {
+  color: var(--fdy-ink-faint);
+  font-weight: 600;
+}
+
+.fdy-skill-registry-actions {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 9px;
+  padding-left: 6px;
+}
+
+.fdy-skill-registry-actions > span {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fdy-skill-registry-buttons {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 7px;
+}
+
+.fdy-skill-registry-buttons .fdy-button {
+  border-radius: 7px;
+  padding: 0 12px;
+  font-size: 11.5px;
+}
+
+.fdy-skill-registry-row[data-tone="muted"] .fdy-button {
+  padding: 0 14px;
+}
+
+.fdy-section-count-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.fdy-section-count-label > span {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.fdy-feature-card {
+  min-width: 0;
+  background-clip: padding-box;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    background 0.14s ease;
+}
+
+.fdy-feature-card-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 15px 17px;
+}
+
+.fdy-feature-card-row.fdy-skill-registry-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(148px, auto);
+}
+
+.fdy-feature-card-stack {
+  min-width: 0;
+  padding: 18px;
+}
+
+.fdy-feature-card-icon {
+  margin-bottom: 0;
+  flex: none;
+}
+
+.fdy-feature-card-selected {
+  border-color: var(--fdy-brass-line);
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-feature-card-muted {
+  border-color: var(--fdy-line-strong);
+  border-style: dashed;
+  background: var(--fdy-paper-raised);
+  box-shadow: none;
+}
+
+.fdy-feature-card-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-feature-card-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+
+.fdy-feature-card p {
+  margin: 0 0 6px;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-feature-card code {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+}
+
+.fdy-feature-card-title h3 {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 14.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.fdy-feature-card-title.fdy-skill-registry-title h3 {
+  font-weight: 600;
+}
+
+.fdy-feature-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.fdy-feature-card-header + .fdy-info-row {
+  margin-top: 16px;
+}
+
+.fdy-feature-card-actions {
+  display: flex;
+  min-width: 0;
+  flex: none;
+}
+
+.fdy-feature-card-row > .fdy-feature-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  margin-top: 14px;
+}
+
+.fdy-feature-card-row > .fdy-feature-card-actions > span {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fdy-feature-card-row > .fdy-feature-card-actions > div {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.fdy-skill-registry-row > .fdy-skill-registry-actions {
+  gap: 9px;
+  margin-top: 0;
+}
+
+.fdy-skill-registry-row > .fdy-skill-registry-actions > div {
+  flex-wrap: nowrap;
+}
+
+.fdy-feature-card-stack > .fdy-feature-card-actions {
+  align-items: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.fdy-provider-last-checked {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-provider-settings-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 11px;
+}
+
+.fdy-provider-settings-title .fdy-runtime-mark {
+  flex: none;
+}
+
+.fdy-provider-settings-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.fdy-provider-settings-title strong,
+.fdy-provider-settings-title em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-provider-settings-title strong {
+  color: var(--fdy-ink-strong);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fdy-provider-settings-title em {
+  margin-top: 3px;
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.fdy-provider-local-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fdy-success-text);
+}
+
+.fdy-provider-capabilities {
+  min-width: 0;
+  padding: 11px 0 4px;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-provider-capabilities > span {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-provider-capability-list {
+  align-items: center;
+}
+
+/* ---- Workspace skill isolation: device tab + workspace selection ---- */
+
+.fdy-device-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  min-width: 0;
+  max-width: 880px;
+}
+
+.fdy-device-skills section header h2,
+.fdy-workspace-skills-heading h2 {
+  margin: 0 0 4px;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.fdy-device-skills section header p,
+.fdy-workspace-skills-heading p {
+  margin: 0 0 12px;
+  color: var(--fdy-ink-faint);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.fdy-skill-roots ul,
+.fdy-local-skills ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-skill-root-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-skill-root-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-root-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fdy-skill-root-add .fdy-field-boxed {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-skill-root-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fdy-local-skill-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 9px;
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-local-skill-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-local-skill-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fdy-local-skill-copy span {
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-local-skill-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.fdy-skill-filter > svg {
+  position: absolute;
+  left: 11px;
+  flex: none;
+  color: var(--fdy-ink-faint);
+  pointer-events: none;
+}
+
+.fdy-skill-filter .fdy-field-boxed {
+  padding-left: 32px;
+}
+
+.fdy-skill-filter .fdy-button {
+  flex: none;
+}
+
+.fdy-skill-offline {
+  margin: 8px 0 0;
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+}
+
+.fdy-skill-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 6px 0 0;
+  color: var(--fdy-error-text);
+  font-size: 12px;
+}
+
+.fdy-spin {
+  animation: fdy-context-spin 1.15s linear infinite;
+}
+
+/* Workspace selection: checkbox rows using the shared field Checkbox and
+   the same grid pattern as connection assignment. No bespoke box drawing. */
+
+.fdy-workspace-skills-heading {
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 16px;
+}
+
+.fdy-skill-select-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fdy-skill-select-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.fdy-skill-select-row:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-skill-select-row.is-selected,
+.fdy-skill-select-row.is-selected:hover {
+  border-color: var(--fdy-brass-line);
+  background: var(--fdy-selection);
+}
+
+.fdy-skill-select-check {
+  flex: none;
+  margin-top: 2px;
+  accent-color: var(--fdy-brass);
+}
+
+.fdy-skill-select-check:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-skill-select-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-skill-select-copy strong {
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-skill-select-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fdy-skill-select-copy small {
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-workspace-skills-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.fdy-workspace-skills-count {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+.fdy-workspace-skills-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fdy-skill-row-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fdy-skill-filter-count {
+  margin: 0 0 12px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+}
+
+.fdy-skill-missing-deps {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.fdy-skill-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--fdy-panel-radius-sm);
+  background: var(--fdy-selection);
+  border: 1px solid var(--fdy-brass-line);
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+}
+
+.fdy-skill-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-skill-dependencies {
+  min-width: 0;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.fdy-skill-dependencies summary {
+  cursor: pointer;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-dependency-list,
+.fdy-skill-promotion-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-dependency-list li {
+  display: grid;
+  gap: 4px;
+}
+
+.fdy-skill-dependency-list small,
+.fdy-skill-promotion-copy small {
+  color: var(--fdy-ink-muted);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-promotion-body {
+  align-content: start;
+  overflow-y: auto;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .fdy-local-skill-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fdy-skill-search-match {
+  color: var(--fdy-ink-strong);
+  background: var(--fdy-selection);
+  border-radius: 2px;
+  text-decoration: underline;
+  text-decoration-color: var(--fdy-brass);
+  text-underline-offset: 2px;
+}
+
+.fdy-skill-server-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fdy-skill-version-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+.fdy-skill-version-choice p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-connection-assign-dialog.fdy-skill-compare-dialog {
+  width: min(960px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+}
+.fdy-skill-compare-actions,
+.fdy-skill-compare-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.fdy-skill-compare-version label {
+  display: grid;
+  gap: 6px;
+}

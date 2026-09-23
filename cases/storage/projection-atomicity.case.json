@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "id": "storage.projection-atomicity",
+  "title": "Daemon projection replacement is all-or-nothing",
+  "description": "A failure while replacing one workspace projection cannot erase or partially mix its prior agents, files, assets, and skills.",
+  "kind": "storage",
+  "area": "sqlite-projection",
+  "risk": "critical",
+  "cadence": ["commit", "pull-request"],
+  "tags": ["transaction", "daemon", "rollback"],
+  "preconditions": ["Go dependencies are present in the module cache."],
+  "steps": [
+    {
+      "id": "run-rollback-test",
+      "action": "run",
+      "target": "race-enabled daemon registration rollback test"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-rollback-test",
+      "type": "command-exit-zero",
+      "target": "prior projection remains intact after an injected SQLite failure"
+    }
+  ],
+  "automation": {
+    "status": "automated",
+    "runner": "go-test",
+    "command": "cd apps/server && go test -race ./internal/sqlitestore -run TestRegisterDaemonRollsBackFailedReplacement",
+    "references": [
+      "apps/server/internal/sqlitestore/atomicity_test.go#TestRegisterDaemonRollsBackFailedReplacement",
+      "apps/server/internal/sqlitestore/tx.go",
+      "apps/server/internal/sqlitestore/daemon.go"
+    ]
+  },
+  "evidence": { "capture": ["logs"], "retainOn": "failure" },
+  "cleanup": []
+}

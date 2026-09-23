@@ -1,0 +1,639 @@
+.fdy-local-daemon {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.fdy-local-daemon > .fdy-section-label {
+  margin-bottom: 9px;
+}
+
+.fdy-local-daemon > .fdy-panel + .fdy-section-label {
+  margin-top: 22px;
+}
+
+.fdy-daemon-overview-panel,
+.fdy-local-daemon > .fdy-panel {
+  padding: 16px 18px;
+}
+
+.fdy-daemon-overview-header {
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-daemon-overview-header h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.fdy-daemon-overview-header p {
+  max-width: 620px;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-daemon-meta-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 14px 0;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-daemon-meta-grid div {
+  min-width: 0;
+}
+
+.fdy-daemon-meta-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-daemon-meta-grid strong,
+.fdy-daemon-meta-grid code {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-daemon-meta-grid code {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+}
+
+.fdy-daemon-runtime-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-daemon-runtime-settings > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fdy-daemon-runtime-settings strong {
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fdy-daemon-runtime-settings span {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fdy-daemon-runtime-settings label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fdy-daemon-runtime-settings input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--fdy-brass);
+}
+
+.fdy-daemon-runtime-settings .fdy-text-input {
+  height: 34px;
+  min-width: 62px;
+}
+
+.fdy-daemon-profiles-hint {
+  margin: 13px 0 0;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.fdy-daemon-profile-list,
+.fdy-daemon-detected-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.fdy-daemon-profile-row {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 11px 12px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  cursor: pointer;
+}
+
+.fdy-daemon-profile-row:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-daemon-profile-row[data-state="enabled"] {
+  border-color: var(--fdy-brass-line);
+  background: var(--fdy-brass-soft);
+}
+
+.fdy-daemon-profile-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-daemon-profile-actions > span {
+  min-width: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.fdy-daemon-profile-actions .fdy-button:disabled {
+  border-color: var(--fdy-line-strong);
+  background: var(--fdy-control-surface-hover);
+  color: var(--fdy-ink-faint);
+  box-shadow: none;
+}
+
+.fdy-daemon-detected-row {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 10px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-daemon-detected-reason {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.fdy-daemon-promote {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--fdy-line-soft);
+}
+
+.fdy-daemon-promote-note {
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.fdy-daemon-promote-toggle {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.fdy-daemon-promote-toggle .fdy-checkbox {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fdy-daemon-promote-toggle > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  color: var(--fdy-ink-strong);
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.fdy-daemon-promote-toggle small {
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-daemon-promote > .fdy-button {
+  flex: none;
+}
+
+.fdy-daemon-provider-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.fdy-daemon-provider-main .fdy-runtime-mark {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+.fdy-daemon-provider-main span {
+  min-width: 0;
+}
+
+.fdy-daemon-provider-main strong,
+.fdy-daemon-provider-main em,
+.fdy-daemon-provider-main small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-daemon-provider-main strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.fdy-daemon-provider-main em {
+  margin-top: 3px;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.fdy-daemon-provider-main small {
+  margin-top: 3px;
+  color: var(--fdy-ink-muted);
+  font-size: 10.5px;
+  font-weight: 550;
+  line-height: 1.25;
+}
+
+.fdy-local-daemon-file-list,
+.fdy-local-daemon-session-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.fdy-local-daemon-file-list {
+  align-items: center;
+}
+
+.fdy-local-daemon-file-list .fdy-button {
+  max-width: 100%;
+}
+
+.fdy-local-daemon .fdy-terminal-block {
+  margin-top: 14px;
+}
+
+.fdy-local-daemon-session-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 13px;
+}
+
+.fdy-local-daemon-session-form .fdy-field-chat {
+  min-height: 92px;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-panel);
+}
+
+.fdy-local-daemon-session {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-local-daemon-session strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+}
+
+.fdy-local-daemon-session p {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.fdy-provider-capability-list .fdy-meta-pill {
+  height: 22px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 9px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 999px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.fdy-tag-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fdy-provider-settings-card > .fdy-feature-card-actions {
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.fdy-provider-actions {
+  width: 100%;
+}
+
+.fdy-provider-settings-card .fdy-button {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.fdy-provider-settings-card .fdy-info-row-key-value .fdy-info-row-body strong {
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-provider-settings-card .fdy-info-row-key-value .fdy-info-row-end {
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-provider-settings-card .fdy-info-row-key-value .fdy-info-row-end strong {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-device-profile-picker {
+  display: grid;
+  gap: 14px;
+}
+
+.fdy-device-profile-trigger.fdy-button {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.fdy-device-profile-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-device-profile-popover {
+  z-index: 95;
+  display: grid;
+  width: min(520px, calc(100vw - 24px));
+  max-height: min(420px, calc(100vh - 40px));
+  gap: 4px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  box-shadow: var(--fdy-shadow-floating);
+}
+
+.fdy-device-profile-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 7px;
+  color: var(--fdy-ink);
+  outline: none;
+  cursor: pointer;
+}
+
+.fdy-device-profile-option[data-highlighted] {
+  background: var(--fdy-control-surface-hover);
+}
+
+.fdy-device-profile-check {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 1px solid var(--fdy-control-border-hover);
+  border-radius: 5px;
+}
+
+.fdy-device-profile-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  flex: 1;
+}
+
+.fdy-device-profile-option-copy strong,
+.fdy-device-profile-option-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-device-profile-option-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-device-profile-option-copy em {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.fdy-device-authorizations {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-device-authorizations-lead {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-device-authorization {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.fdy-device-authorization .fdy-authorization-flow {
+  grid-column: 1 / -1;
+}
+
+.fdy-device-authorization-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-device-authorization-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-device-authorization-copy em {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.fdy-device-authorization-error {
+  color: var(--fdy-error-text);
+  font-size: 12px;
+}
+
+.fdy-workspace-path-picker {
+  min-width: 0;
+}
+
+/* In flow, not absolute: the dialog body clips overflow, so the list grows
+   the dialog instead of being cut off at its edge. */
+.fdy-workspace-path-menu {
+  margin-top: 6px;
+  max-height: 236px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-paper-raised);
+  box-shadow: var(--fdy-shadow-floating);
+}
+
+.fdy-workspace-path-loading {
+  padding: 8px 9px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-workspace-path-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.fdy-workspace-path-item:hover,
+.fdy-workspace-path-picker[data-navigated="true"]
+  .fdy-workspace-path-item[data-selected="true"] {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-workspace-path-item svg {
+  flex: none;
+  color: var(--fdy-warning-text);
+}
+
+.fdy-workspace-path-item > span {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-workspace-path-item strong,
+.fdy-workspace-path-item em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-workspace-path-item strong {
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.fdy-workspace-path-item em {
+  color: var(--fdy-ink-muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.25;
+}
