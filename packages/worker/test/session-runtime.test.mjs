@@ -26,6 +26,11 @@ writeFileSync(
     ],
   }),
 );
+// The fake SDKs never run the CLI, but the sandbox launcher resolves one.
+const cli = join(home, "agent-cli");
+writeFileSync(cli, "#!/bin/sh\necho 0.0.0-test\n", { mode: 0o755 });
+process.env.FOUNDRY_CLAUDE_BIN = cli;
+process.env.FOUNDRY_CODEX_BIN = cli;
 test.after(() => rmSync(home, { recursive: true, force: true }));
 
 register("./fixtures/fake-agent-sdk-hooks.mjs", import.meta.url);
