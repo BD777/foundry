@@ -5,14 +5,10 @@ import type {
   EvidenceWorkerResult,
 } from "@foundry/protocol";
 import { validateEvidenceModel, evidenceModelSchema } from "@foundry/protocol";
-import {
-  EvidenceStore,
-  digestBytes,
-  INLINE_IMAGE_LIMIT,
-} from "./evidence-store.js";
+import { EvidenceStore, INLINE_IMAGE_LIMIT } from "./evidence-store.js";
 import { identifier } from "./execution-storage.js";
+import { startSession } from "./session/index.js";
 import {
-  runEvidenceStageSession,
   stageJSONObject,
   stageTranscript,
   type VerifierPacket,
@@ -139,33 +135,23 @@ export async function clarifyIssueContract(
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)
     throw new Error("clarification_context_too_large");
-  const response = await runEvidenceStageSession({
-    identity: {
-      kind: "agent",
-      harness: request.harness,
-      profileId: request.profileId,
-      requestedModel: request.requestedModel,
-      sessionId: request.taskId,
-      isolated: true,
-      promptTemplateVersion: "foundry-clarification/v3",
-      promptDigest: digestBytes(prompt),
-    },
-    packet: { prompt, images },
+  const response = await startSession({
+    role: "clarification",
+    harness: request.harness,
+    profileId: request.profileId,
+    model: request.requestedModel,
+    title: "Foundry foundry-clarification/v3",
+    prompt: { text: prompt, images },
     directory: resolve(
       store.root,
       "verifier-output",
       identifier(request.taskId),
     ),
     controlServerURL: request.controlServerURL,
-    workspace: {
-      path: workspacePath,
-      projectInstructions: true,
-      commands: false,
-      maxTurns: 30,
-    },
+    workspace: { path: workspacePath, readRoots: [] },
     systemPrompt:
       "You are Foundry's clarification partner for one Issue. You work read-only inside the person's project: read it to ground the conversation. You do not implement, confirm, verify or accept.",
-  });
+  }).result;
   const raw = store.sealMaterial(
     "Clarification original response",
     "text_log",

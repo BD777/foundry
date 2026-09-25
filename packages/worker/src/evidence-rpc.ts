@@ -508,9 +508,6 @@ async function execute(
             environment.sourcePath,
             ...environment.repositories.map((repo) => repo.worktreePath),
           ],
-          projectInstructions: false,
-          commands: true,
-          maxTurns: 30,
         },
       });
       // The candidate must be exactly what was sealed, before and after.
