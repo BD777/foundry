@@ -136,7 +136,6 @@ export async function judgeWithAgent(options: {
   evidence: Evidence[];
   store: EvidenceStore;
   directory: string;
-  controlServerURL?: string;
   /** Candidate worktree the verification actually inspects. */
   workspace?: StageWorkspace;
   /** Internal one-shot format repair. Never repairs business verdicts. */
@@ -175,7 +174,6 @@ export async function judgeWithAgent(options: {
     profileId: identity.profileId,
     model: identity.requestedModel,
     directory: options.directory,
-    controlServerURL: options.controlServerURL,
     // Format repair is a pure rewrite of the previous answer, so it never
     // needs the worktree again.
     workspace: workspace && {

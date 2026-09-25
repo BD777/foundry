@@ -133,6 +133,8 @@ import { acquireDaemonLock, pairDevice } from "./device-pairing.js";
 interface RunIssuePayload {
   issue: Issue;
   skillRefs?: SessionSkillRef[];
+  /** Server decision: readable only for Issues the device owner started. */
+  userFiles?: "readable" | "hidden";
 }
 
 interface ReadFilePayload {
@@ -1750,6 +1752,7 @@ function runWebSocketSession(options: {
               new ReliableRunTransport(options.sessionTransport),
               undefined,
               payload.skillRefs,
+              payload.userFiles === "readable" ? "readable" : "hidden",
             );
             await syncReviews(options.serverURL, issueWorkspacePath);
           } finally {

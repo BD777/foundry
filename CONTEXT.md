@@ -80,9 +80,12 @@ Known boundaries to respect in any new work:
 
 - Worker isolation goes through the Sandbox module
   (`packages/worker/src/sandbox`, [design](docs/architecture-modules.md#51-sandbox));
-  never spawn `sandbox-exec` / `bwrap` or branch on the platform elsewhere. Linux
-  supports every Issue stage except controlled HTTP targets, and its sandbox does
-  not block the control plane (`sandboxGuarantees`). Chats are not sandboxed.
+  never spawn `sandbox-exec` / `bwrap` or branch on the platform elsewhere. The
+  sandbox enforces write boundaries and hides Foundry governance state; separation
+  of duties is enforced by identity and process (agent tokens cannot confirm,
+  verify or Accept). Issues the device owner started may read the owner's files
+  (`userFiles`). Linux supports every Issue stage except controlled HTTP targets.
+  Chats are not sandboxed.
 - Every browser API call requires an account (no anonymous mode); workspaces
   are shared by role (Viewer / Member / Maintainer / Owner). Per-sender
   Feishu identity, personal connection grants and audit are not built yet (see

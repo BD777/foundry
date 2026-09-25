@@ -18,7 +18,6 @@ import {
   type ReadonlyAgentProfile,
   type SandboxBackend,
   type SandboxErrorCode,
-  type SandboxGuarantees,
   type SandboxKind,
   type SandboxLaunch,
   type SandboxProfile,
@@ -30,7 +29,6 @@ export {
   type OfflineCommandProfile,
   type ReadonlyAgentProfile,
   type SandboxErrorCode,
-  type SandboxGuarantees,
   type SandboxKind,
   type SandboxLaunch,
   type SandboxProfile,
@@ -52,21 +50,14 @@ export function isSandboxError(
 }
 
 /**
- * What this platform's backend enforces for the kind, or undefined when no
- * verified backend exists. Static: a backend may still be missing at launch.
+ * Whether this platform has a verified backend for the kind. Static: a
+ * backend may still be missing at launch.
  */
-export function sandboxGuarantees(
-  kind: SandboxKind,
-  platform: NodeJS.Platform = process.platform,
-): SandboxGuarantees | undefined {
-  return backends[platform]?.guarantees[kind];
-}
-
 export function sandboxAvailable(
   kind: SandboxKind,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return sandboxGuarantees(kind, platform) !== undefined;
+  return backends[platform]?.kinds.includes(kind) ?? false;
 }
 
 /** The command line that runs `command` inside the profile. */
@@ -115,7 +106,7 @@ function prepare(
   command: string,
 ): { backend: SandboxBackend; profile: SandboxProfile; command: string } {
   const backend = backends[process.platform];
-  if (!backend?.guarantees[profile.kind])
+  if (!backend?.kinds.includes(profile.kind))
     throw new SandboxError(
       "unsupported_platform",
       `${profile.kind} isolation is not available on ${process.platform}`,

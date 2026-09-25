@@ -45,6 +45,12 @@ export interface IssueEnvironment {
   contractRevision?: number;
   controlIsolationVersion?: number;
   controlServerURL?: string;
+  /**
+   * Whether this Issue's processes may read the device owner's own files and
+   * credentials. The server decides per run: only for Issues the device
+   * owner started. Absent means hidden.
+   */
+  userFiles?: "readable" | "hidden";
   version: 1;
   id: string;
   workspaceId: string;

@@ -52,7 +52,7 @@ export function sandboxCommand(
           resolve(repo.worktreePath, ".git"),
         ),
         connectSockets,
-        controlServerURL: environment.controlServerURL,
+        userFiles: environment.userFiles ?? "hidden",
       },
       command,
       args,

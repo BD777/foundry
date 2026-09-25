@@ -32,6 +32,7 @@ export async function executeIssue(
   transport: RunTransport = new HttpRunTransport(serverURL),
   store = new ExecutionStore(),
   skillRefs: SessionSkillRef[] = [],
+  userFiles: "readable" | "hidden" = "hidden",
 ): Promise<void> {
   if (
     issue.contractState !== "confirmed" ||
@@ -118,6 +119,7 @@ export async function executeIssue(
       environment.contractRevision = issue.currentContractRevision;
       environment.controlIsolationVersion = 1;
       environment.controlServerURL = serverURL;
+      environment.userFiles = userFiles;
       store.saveEnvironment(environment);
       if (issue.checks.includes("Changes requested"))
         environment = await refreshCandidate(environment, store);

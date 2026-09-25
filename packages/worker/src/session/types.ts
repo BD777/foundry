@@ -18,7 +18,6 @@ export interface SessionSpec {
    * with no tools.
    */
   workspace?: { path: string; readRoots: string[] };
-  controlServerURL?: string;
   systemPrompt: string;
   prompt: {
     text: string;

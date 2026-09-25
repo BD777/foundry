@@ -17,7 +17,6 @@ import { fileURLToPath } from "node:url";
 import {
   isSandboxError,
   sandboxAvailable,
-  sandboxGuarantees,
   sandboxLaunch,
   sandboxLauncher,
 } from "../dist/sandbox/index.js";
@@ -57,25 +56,6 @@ test("each profile kind declares its verified platforms", () => {
     "loopback_service",
   ])
     assert.equal(sandboxAvailable(kind, "win32"), false);
-});
-
-test("backends state whether the control plane stays unreachable", () => {
-  for (const kind of ["writable_tree", "readonly_agent", "offline_command"])
-    assert.equal(sandboxGuarantees(kind, "darwin").controlPlaneBlocked, true);
-  // bubblewrap cannot filter ports: agent-facing kinds share the host network.
-  assert.equal(
-    sandboxGuarantees("writable_tree", "linux").controlPlaneBlocked,
-    false,
-  );
-  assert.equal(
-    sandboxGuarantees("readonly_agent", "linux").controlPlaneBlocked,
-    false,
-  );
-  assert.equal(
-    sandboxGuarantees("offline_command", "linux").controlPlaneBlocked,
-    true,
-  );
-  assert.equal(sandboxGuarantees("loopback_service", "linux"), undefined);
 });
 
 test(
@@ -174,7 +154,6 @@ test("macOS read-only agent policy confines writes to the private home", (t) => 
       home,
       readRoots: [workspace],
       workdir: workspace,
-      controlServerURL: "http://127.0.0.1:4100",
     },
     process.execPath,
     [],
@@ -186,10 +165,10 @@ test("macOS read-only agent policy confines writes to the private home", (t) => 
     '(allow file-write* (literal "/dev/null"))',
     `(allow file-write* (subpath ${JSON.stringify(home)}))`,
   ]);
-  for (const port of ["31982", "31983", "4100"])
-    assert.ok(
-      rules.includes(`(deny network-outbound (remote tcp "*:${port}"))`),
-    );
+  assert.equal(
+    rules.some((rule) => rule.includes("deny network")),
+    false,
+  );
 });
 
 test(
@@ -338,6 +317,8 @@ test(
             readOnlyDirectories: [locked],
             readOnlyPaths: [join(tree, ".git")],
             connectSockets: [],
+            userFiles: "hidden",
+            userFiles: "hidden",
           },
           "/bin/sh",
           ["-c", `echo probe > '${target}'`],
@@ -428,6 +409,7 @@ test(
           readOnlyDirectories: [],
           readOnlyPaths: [],
           connectSockets: [],
+          userFiles: "hidden",
         },
         "/bin/sh",
         [
@@ -440,5 +422,122 @@ test(
     const result = run(launch, root);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), "0");
+  },
+);
+
+/**
+ * A scratch home with a user credential and Foundry governance state, so a
+ * profile can be checked against both without touching the real home.
+ */
+function userHome(t) {
+  const root = scratch(t);
+  const home = join(root, "home");
+  const state = join(home, ".foundry-state");
+  mkdirSync(join(home, ".config/tool"), { recursive: true });
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(home, ".config/tool/token"), "user-token\n");
+  writeFileSync(join(state, "daemon-config.json"), "{}\n");
+  const previous = {
+    HOME: process.env.HOME,
+    FOUNDRY_STATE_ROOT: process.env.FOUNDRY_STATE_ROOT,
+  };
+  process.env.HOME = home;
+  process.env.FOUNDRY_STATE_ROOT = state;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  });
+  const tree = join(state, "workspaces/ws/environments/iss/workspace");
+  mkdirSync(tree, { recursive: true });
+  return { root, home, state, tree };
+}
+
+function writableTree(root, tree, userFiles) {
+  return {
+    kind: "writable_tree",
+    policyFile: join(root, "executor.sb"),
+    workdir: tree,
+    readRoots: [],
+    writeRoots: [tree],
+    protectedReadRoots: [],
+    readOnlyDirectories: [],
+    readOnlyPaths: [],
+    connectSockets: [],
+    userFiles,
+  };
+}
+
+test(
+  "macOS writable tree reads the user's files only when the profile allows",
+  { skip: !existsSync("/usr/bin/sandbox-exec") },
+  (t) => {
+    const { root, state, tree } = userHome(t);
+    const policy = (userFiles) => {
+      seatbeltBackend.launch(
+        writableTree(root, tree, userFiles),
+        "/bin/sh",
+        [],
+      );
+      return readFileSync(join(root, "executor.sb"), "utf8").split("\n");
+    };
+    const deny = (path) =>
+      `(deny file-read-data (subpath ${JSON.stringify(path)}))`;
+    const readable = policy("readable");
+    assert.equal(readable.includes("(deny file-read-data)"), false);
+    assert.ok(readable.includes(deny(state)), "governance state stays hidden");
+    assert.ok(
+      readable.includes(
+        `(allow file-read-data (subpath ${JSON.stringify(tree)}))`,
+      ),
+      "the candidate under the state root is re-allowed",
+    );
+    assert.equal(
+      readable.some((rule) => rule.includes("deny network")),
+      false,
+    );
+    const hidden = policy("hidden");
+    assert.ok(hidden.includes("(deny file-read-data)"));
+    assert.ok(hidden.includes(deny(state)));
+    assert.ok(hidden.some((rule) => rule.includes(".config")));
+  },
+);
+
+test(
+  "Linux writable tree reads the user's files only when the profile allows",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { root, home, state, tree } = userHome(t);
+    const attempt = (userFiles, script) =>
+      linuxBackend(t, () =>
+        sandboxLaunch(writableTree(root, tree, userFiles), "/bin/sh", [
+          "-c",
+          script,
+        ]),
+      );
+    const token = join(home, ".config/tool/token");
+    const governance = join(state, "daemon-config.json");
+    const readable = attempt("readable", `cat '${token}'`);
+    if (!readable) return;
+    const result = run(readable, tree);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "user-token\n");
+    for (const userFiles of ["readable", "hidden"])
+      assert.notEqual(
+        run(attempt(userFiles, `cat '${governance}'`), tree).status,
+        0,
+        `${userFiles}: governance state is never readable`,
+      );
+    assert.notEqual(run(attempt("hidden", `cat '${token}'`), tree).status, 0);
+    assert.notEqual(
+      run(attempt("readable", `echo x > '${join(home, "new")}'`), tree).status,
+      0,
+      "the home stays read-only",
+    );
+    assert.equal(
+      run(attempt("readable", `echo x > '${join(tree, "out")}'`), tree).status,
+      0,
+      "the candidate stays writable under the masked state root",
+    );
   },
 );

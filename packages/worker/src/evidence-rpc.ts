@@ -499,7 +499,6 @@ async function execute(
         evidence,
         store,
         directory,
-        controlServerURL: environment.controlServerURL,
         // Verification happens on the implementation worktree itself, at the
         // sealed candidate version, with read-only access to it.
         workspace: {
