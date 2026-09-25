@@ -20,7 +20,9 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 ### 不做
 
 - 不做 Issue 多 Agent 协作；子 Session 默认运行在 Workspace 根目录，只有
-  显式传 `issueId` 时才进入该 Issue 的候选 worktree。
+  显式传 `issueId` 时才进入该 Issue 的候选 worktree，并与 Issue 执行器在同一沙箱中
+  运行（`issue-sessions.ts`，见[模块化架构 §5.4](architecture-modules.md) 5b）；会话令牌
+  随之进入沙箱，子会话可以继续编排。
 - 不做配额计费；HTTP MCP 的 OAuth 2.1 尚未实现（见第 9 节）。
 - 不隐式转移血缘；Parent 取消不级联。
 

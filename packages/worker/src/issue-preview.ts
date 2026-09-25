@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { ExecutionStore } from "./execution-storage.js";
 import { sandboxCommand, executorEnvironment } from "./execution-sandbox.js";
-import { spawnExecution } from "./execution-process.js";
+import { spawnProcessGroup } from "./process-group.js";
 import { isPortAvailable, waitForPreview } from "./issues.js";
 
 type Preview = {
@@ -76,7 +76,7 @@ export async function runIssuePreview(
       "-lc",
       config.command,
     ]);
-    const child = spawnExecution(
+    const child = spawnProcessGroup(
       spec.command,
       spec.args,
       {
@@ -88,6 +88,7 @@ export async function runIssuePreview(
         },
       },
       preview.control.signal,
+      900_000,
     );
     child.stdin.end();
     const log = await import("node:fs");

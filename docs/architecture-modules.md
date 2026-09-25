@@ -30,7 +30,7 @@ worker / protocol），不按领域分。每个功能都要纵穿四层，并经
   服务见第 2b 步。）
 - **编排出的 Issue 子会话不受隔离**：带 `issueId` 的子会话在候选目录中运行
   （`daemon-connection.ts` `sessionExecutionPath`），但走 Chat 的 runner，没有经过
-  `sandboxCommand`；同一个候选里，Issue 执行被隔离，子会话却不被隔离。
+  `sandboxCommand`；同一个候选里，Issue 执行被隔离，子会话却不被隔离。（5b 已修复。）
 - **Linux 候选沙箱没有控制面端口限制**：macOS profile 拒绝访问 Server/Web 端口
   （`controlNetworkRestrictions`），Linux bwrap 分支未 unshare 网络，也没有等价限制。
   第 2 步核实：沙箱内确实能连到控制面；之后复查确认这条规则已不必要并取消（见 §5.1）。
@@ -203,6 +203,10 @@ M2–M4 的接口在各自开始前补充到本文，不提前设计。
   `run_issue` 时判断。给他人 Issue 使用某项凭据的显式授权属于账号 P3；外部副作用的按次
   确认属于后续 Tool Use。`readable` 下浏览器 cookie 等宿主上的其他凭据同样可读，需要更强
   隔离时使用 `hidden` 或计划中的 Docker 后端。
+- **能运行自己的工具。** `WritableTreeProfile.executables` 列出进程要运行的程序（如 Agent
+  CLI），无论 `userFiles` 如何，其安装目录都可读；Session Runtime 在宿主上解析 harness
+  CLI 的真实路径后传入。此前 CLI 装在 home 下（原生安装器默认 `~/.local`）时，Issue 执行
+  在沙箱内找不到 CLI。
 
 **对使用方：一种调用形态。** 调用方只描述路径和限制，四种 profile、所有后端都用同样的
 调用；后端由模块选择，调用方看不到。
@@ -358,10 +362,14 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
    - **5a**（已完成）：新建 `src/session/`，对外只有 `startSession(spec)`；角色决定工具、
      项目指令与轮数（`policy.ts`），harness 适配器（`claude.ts`、`codex.ts`）实现同一个
      内部接口。澄清与判定迁入，`evidence-agent.ts` 不再接触 SDK，Worker 违例基线清零。
-   - **5b**：带 `issueId` 的编排子会话改在 `writable_tree` 沙箱子进程中运行，复用 Issue
-     执行器的子进程机制。
-   - **5c**：Chat 与 Issue 执行也经 `startSession` 启动，合并 `runner.ts` 与会话模块中
-     重复的环境、凭据、模型选择与取消逻辑。
+   - **5b**（已完成）：Session Runtime 增加工作区会话入口 `runWorkspaceSession`（Chat、
+     编排子会话、Issue 执行），带沙箱时在沙箱内的宿主子进程（`session/host-child.ts`）
+     中运行 SDK，steer 与取消仍经通用登记表。带 `issueId` 的编排子会话由 Issue 模块
+     （`issue-sessions.ts`）决定：在候选工作区（不再是候选环境根目录）内、与 Issue 执行器
+     同一沙箱中运行，并携带会话令牌，可继续编排。进程组管理移到平台层 `process-group.ts`。
+   - **5c**：`startSession`（隔离的阶段会话）与 `runWorkspaceSession`（工作区会话）合并为
+     一个按角色区分的入口，合并 `runner.ts` 与会话模块中重复的环境、凭据、模型选择与取消
+     逻辑。
 6. **Server 侧统一**：Run → AgentSession，会话相关的 daemon 消息收敛；Issue 执行获得
    foundry MCP。`daemon-connection.ts` 中会话部分拆出通道与组装层。
 

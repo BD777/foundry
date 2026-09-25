@@ -56,7 +56,8 @@ function writableTree(
   const deniedReads = hidden ? protectedHostPaths() : governanceStatePaths();
   const runtime = runtimeRoot();
   const systemRoots = writableTreeSystemRoots().map(canonical);
-  systemRoots.push(...executableReadRoots(command, deniedReads));
+  for (const program of [command, ...profile.executables])
+    systemRoots.push(...executableReadRoots(program, deniedReads));
   if (!existsSync(sandboxExec))
     throw new SandboxError(
       "backend_missing",

@@ -19,6 +19,11 @@ export interface WritableTreeProfile {
   /** Unix sockets outside the roots the process may connect to. */
   connectSockets: string[];
   /**
+   * Programs the process runs besides the command itself, such as an agent
+   * CLI; their install prefixes stay readable whatever else is hidden.
+   */
+  executables: string[];
+  /**
    * `readable`: the user's files are readable, as in their own terminal.
    * `hidden`: only system roots, read roots and writable roots are.
    */

@@ -6,23 +6,20 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-test("one-shot Issue executor flushes its final result and exits despite SDK background handles", () => {
+test("one-shot session host flushes its final result and exits despite SDK background handles", () => {
   const root = mkdtempSync(resolve(tmpdir(), "foundry-executor-lifecycle-"));
   try {
     const preload = resolve(root, "sdk-background.mjs");
     writeFileSync(
       preload,
-      'if (process.argv[1]?.endsWith("/issue-executor-child.js")) setInterval(() => {}, 1000);\n',
+      'if (process.argv[1]?.endsWith("/session/host-child.js")) setInterval(() => {}, 1000);\n',
     );
     const command = resolve(root, "response.mjs");
     writeFileSync(
       command,
       'process.stdin.resume();process.stdin.on("end",()=>console.log("Synthetic completed response"));\n',
     );
-    const child = resolve(
-      import.meta.dirname,
-      "../dist/issue-executor-child.js",
-    );
+    const child = resolve(import.meta.dirname, "../dist/session/host-child.js");
     const output = execFileSync(process.execPath, [child], {
       input:
         JSON.stringify({

@@ -12,11 +12,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
-  spawnExecution,
   beginIssueExecution,
   cancelIssueExecution,
   finishIssueExecution,
 } from "../dist/execution-process.js";
+import { spawnProcessGroup } from "../dist/process-group.js";
 import {
   sandboxCommand,
   executorEnvironment,
@@ -34,7 +34,7 @@ test(
   async () => {
     const control = beginIssueExecution("iss_cancel_test");
     const program = `const {spawn}=require('node:child_process');spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});console.log('ready');setInterval(()=>{},1000)"],{stdio:['ignore','inherit','inherit']});setInterval(()=>{},1000);`;
-    const child = spawnExecution(
+    const child = spawnProcessGroup(
       process.execPath,
       ["-e", program],
       {},

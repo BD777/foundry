@@ -1,13 +1,23 @@
+/**
+ * Session host: runs one workspace session inside a sandbox, started by
+ * runWorkspaceSession. Reads the run from its first stdin line, then steer
+ * commands; writes events, the native session id and the result as JSON
+ * lines on stdout.
+ */
 import { createInterface } from "node:readline";
 import type { AgentSession } from "@foundry/protocol";
-import type { AgentProfileLocalConfig } from "./profiles.js";
-import type { ManagedSkillRuntime } from "./skill-materializer.js";
-import { steerActiveSession } from "./session-helpers.js";
+import type { AgentProfileLocalConfig } from "../profiles.js";
 import {
+  closeAllActiveRuntimes,
   runClaudeWorkspaceSession,
   runCodexWorkspaceSession,
-  closeAllActiveRuntimes,
-} from "./runner.js";
+} from "../runner.js";
+import {
+  registerSessionAmbientEnv,
+  type SessionAmbientEnv,
+} from "../session-ambient.js";
+import { steerActiveSession } from "../session-helpers.js";
+import type { ManagedSkillRuntime } from "../skill-materializer.js";
 
 const output = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -17,7 +27,7 @@ const parentPid = process.ppid;
 const parentWatch = setInterval(() => {
   if (process.ppid === parentPid) return;
   closeAllActiveRuntimes();
-  // This executor owns its process group; stop tools as well as the SDK host.
+  // This host owns its process group; stop tools as well as the SDK host.
   try {
     process.kill(-process.pid, "SIGTERM");
   } catch {
@@ -32,7 +42,10 @@ lines.once("line", async (line) => {
       session: AgentSession;
       profile: AgentProfileLocalConfig;
       managedSkills?: ManagedSkillRuntime;
+      ambient?: SessionAmbientEnv;
     };
+    if (input.ambient)
+      registerSessionAmbientEnv(input.session.id, input.ambient);
     lines.on("line", (line) => {
       void (async () => {
         let id: string | undefined;
@@ -40,7 +53,7 @@ lines.once("line", async (line) => {
           const command = JSON.parse(line);
           id = command.id;
           if (command.type !== "steer")
-            throw new Error("Unsupported executor command");
+            throw new Error("Unsupported session host command");
           await steerActiveSession(input.session.id, command.message);
           output({ type: "steer_result", id });
         } catch (error) {
@@ -56,10 +69,10 @@ lines.once("line", async (line) => {
       input.cwd,
       input.session,
       input.profile,
-      async (label, detail, level = "info") => {
-        output({ type: "event", label, detail, level });
+      async (label, detail, level = "info", metadata, message) => {
+        output({ type: "event", label, detail, level, metadata, message });
       },
-      async () => {},
+      async () => output({ type: "setup" }),
       (nativeSessionId) => output({ type: "native", nativeSessionId }),
       input.managedSkills,
     );

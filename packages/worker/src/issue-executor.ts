@@ -1,11 +1,9 @@
-import { spawnExecution } from "./execution-process.js";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { chmodSync, appendFileSync } from "node:fs";
+import { chmodSync } from "node:fs";
 import type {
   AgentSession,
   Issue,
@@ -18,12 +16,17 @@ import {
 } from "./profiles.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { ensureRepository } from "./issue-environments.js";
-import { executorEnvironment, sandboxCommand } from "./execution-sandbox.js";
+import {
+  executorEnvironment,
+  issueIsolationError,
+  issueSandboxProfile,
+} from "./execution-sandbox.js";
 import type { IssueEnvironment } from "./execution-types.js";
-import { readAgentRuntimeSettings } from "./device.js";
 import { issueRuntimeOptions } from "./issue-runtime-options.js";
 import { materializeSessionSkills } from "./skill-materializer.js";
 import { registerIssueSteering } from "./issue-steering.js";
+import { steerActiveSession } from "./session-helpers.js";
+import { runWorkspaceSession } from "./session/index.js";
 import {
   confirmedExecutionPrompt,
   executionFeedback,
@@ -47,9 +50,6 @@ export async function runIssueExecutor(
   const registration = store.registration(environment.workspaceId)!;
   const toolPath = fileURLToPath(
     new URL("./repository-tool.js", import.meta.url),
-  );
-  const childPath = fileURLToPath(
-    new URL("./issue-executor-child.js", import.meta.url),
   );
   const requested = new Set<string>();
   const token = randomUUID();
@@ -171,152 +171,70 @@ export async function runIssueExecutor(
         session.prompt += `\n\nPost-confirmation execution feedback, in order (does not amend the contract):\n${feedback.join("\n\n")}`;
       if (environment.error)
         session.prompt += `\n\nPrevious execution or integration feedback:\n${environment.error}\nResolve conflicts in candidate files. Foundry will stage and commit the resolved files after this turn.`;
-      const command = sandboxCommand(
-        environment,
-        registration,
-        process.execPath,
-        [childPath],
-        [socketPath],
-      );
-      const env = {
-        ...executorEnvironment(environment),
-        FOUNDRY_EXECUTOR_SETTINGS: JSON.stringify(readAgentRuntimeSettings()),
-        FOUNDRY_REPOSITORY_SOCKET: socketPath,
-        FOUNDRY_REPOSITORY_TOKEN: token,
-      };
       environment.status = "running";
       store.saveEnvironment(environment);
-      response = await new Promise<string>((done, reject) => {
-        const child = spawnExecution(
-          command.command,
-          command.args,
-          {
-            cwd: environment.cwd,
-            env,
-            detached: true,
-            stdio: ["pipe", "pipe", "pipe"],
-          },
-          signal,
-          Number(process.env.FOUNDRY_ISSUE_TIMEOUT_MS ?? 900_000),
+      let responseText = "";
+      let publishedText = "";
+      let events = Promise.resolve();
+      const flushResponse = () => {
+        if (responseText === publishedText) return;
+        const append =
+          Boolean(publishedText) && responseText.startsWith(publishedText);
+        const detail = append
+          ? responseText.slice(publishedText.length)
+          : responseText;
+        publishedText = responseText;
+        events = events.then(() =>
+          record(append ? "Response delta" : "Response reset", detail),
         );
-        let result: string | undefined;
-        let failure: string | undefined;
-        let events = Promise.resolve();
-        let responseText = "";
-        let publishedText = "";
-        const flushResponse = () => {
-          if (responseText === publishedText) return;
-          const append =
-            Boolean(publishedText) && responseText.startsWith(publishedText);
-          const detail = append
-            ? responseText.slice(publishedText.length)
-            : responseText;
-          publishedText = responseText;
-          events = events.then(() =>
-            record(append ? "Response delta" : "Response reset", detail),
-          );
-        };
-        const streamTimer = setInterval(flushResponse, 500);
-        const steering = new Map<
-          string,
-          { resolve: () => void; reject: (error: Error) => void }
-        >();
-        const unregisterSteering = registerIssueSteering(issue.id, {
-          runId,
-          send: (message) =>
-            new Promise<void>((resolve, reject) => {
-              const id = randomUUID();
-              const timer = setTimeout(() => {
-                steering.delete(id);
-                reject(
-                  new Error(
-                    "Steer acknowledgement timed out; check the conversation before retrying.",
-                  ),
-                );
-              }, 15_000);
-              steering.set(id, {
-                resolve: () => {
-                  clearTimeout(timer);
-                  resolve();
-                },
-                reject: (error) => {
-                  clearTimeout(timer);
-                  reject(error);
-                },
-              });
-              child.stdin.write(
-                `${JSON.stringify({ type: "steer", id, message })}\n`,
-              );
-            }),
-        });
-        child.stderr.on("data", (data) =>
-          appendFileSync(
-            resolve(environment.scratch, "executor.stderr.log"),
-            data,
-          ),
-        );
-        createInterface({ input: child.stdout }).on("line", (line) => {
-          try {
-            const value = JSON.parse(line);
-            if (value.type === "event" && value.label === "Response stream")
-              responseText = value.detail;
-            if (value.type === "steer_result") {
-              const pending = steering.get(value.id);
-              // Wait until the native steer event has been persisted by transport.
-              void events.then(
-                () =>
-                  value.error
-                    ? pending?.reject(new Error(value.error))
-                    : pending?.resolve(),
-                (error) => pending?.reject(error),
-              );
-              steering.delete(value.id);
-            }
-            // The durable Issue conversation stores the final answer. Native
-            // session logs retain streaming chunks; avoid storing hundreds of
-            // cumulative copies in every Run projection and SQLite update.
-            if (value.type === "event" && value.label !== "Response stream")
-              events = events.then(() =>
-                record(value.label, value.detail, value.level),
-              );
-            if (value.type === "native") {
-              environment.nativeSessionId = value.nativeSessionId;
-              store.saveEnvironment(environment);
-            }
-            if (value.type === "result") result = value.response ?? "";
-            if (value.type === "error") failure = value.error;
-          } catch {
-            /* Provider diagnostics are not protocol messages. */
-          }
-        });
-        child.once("error", reject);
-        child.once("close", (code) => {
-          clearInterval(streamTimer);
-          flushResponse();
-          unregisterSteering();
-          for (const pending of steering.values())
-            pending.reject(
-              new Error("Execution ended before steer was acknowledged."),
-            );
-          steering.clear();
-          void events.then(
-            () =>
-              code === 0 && result !== undefined
-                ? done(result)
-                : reject(
-                    new Error(
-                      failure ??
-                        `Issue executor exited with code ${code}; see private executor.stderr.log`,
-                    ),
-                  ),
-            reject,
-          );
-        });
-        child.stdin.on("error", () => {});
-        child.stdin.write(
-          `${JSON.stringify({ cwd: environment.cwd, session, profile, managedSkills })}\n`,
-        );
+      };
+      const streamTimer = setInterval(flushResponse, 500);
+      const unregisterSteering = registerIssueSteering(issue.id, {
+        runId,
+        send: (message) => steerActiveSession(session.id, message),
       });
+      try {
+        const result = await runWorkspaceSession({
+          cwd: environment.cwd,
+          session,
+          profile,
+          managedSkills,
+          // The durable Issue conversation stores the final answer. Native
+          // session logs retain streaming chunks; avoid storing hundreds of
+          // cumulative copies in every Run projection and SQLite update.
+          emit: async (label, detail, level) => {
+            if (label === "Response stream") responseText = detail;
+            else events = events.then(() => record(label, detail, level));
+            await events;
+          },
+          emitSetup: async () => {},
+          reportNativeSessionId: (nativeSessionId) => {
+            environment.nativeSessionId = nativeSessionId;
+            store.saveEnvironment(environment);
+          },
+          sandbox: {
+            profile: issueSandboxProfile(environment, registration, [
+              socketPath,
+            ]),
+            env: {
+              ...executorEnvironment(environment),
+              FOUNDRY_REPOSITORY_SOCKET: socketPath,
+              FOUNDRY_REPOSITORY_TOKEN: token,
+            },
+            stderrFile: resolve(environment.scratch, "executor.stderr.log"),
+            timeoutMs: Number(process.env.FOUNDRY_ISSUE_TIMEOUT_MS ?? 900_000),
+            signal,
+          },
+        }).catch((error) => {
+          throw issueIsolationError(error);
+        });
+        response = result.response;
+      } finally {
+        clearInterval(streamTimer);
+        flushResponse();
+        unregisterSteering();
+        await events;
+      }
       for (const repoId of requested) {
         environment = await ensureRepository(
           environment.workspaceId,

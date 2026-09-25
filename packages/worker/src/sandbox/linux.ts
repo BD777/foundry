@@ -118,7 +118,7 @@ function bubblewrap(): string {
  * directories; `masks` lists them so they can be sealed read-only.
  */
 function hostMounts(
-  command: string,
+  commands: string[],
   options: { runtime: boolean; home: boolean },
 ): { mounts: string[]; masks: string[] } {
   const mounts: string[] = [];
@@ -129,7 +129,8 @@ function hostMounts(
   if (options.home && existsSync(home)) mounts.push("--ro-bind", home, home);
   const systemRootPaths = writableTreeSystemRoots();
   const roots = systemRootPaths.map(canonical);
-  roots.push(...executableReadRoots(command, protectedHostPaths()));
+  for (const command of commands)
+    roots.push(...executableReadRoots(command, protectedHostPaths()));
   const runtime = runtimeRoot();
   if (options.runtime) roots.push(runtime);
   if (existsSync("/etc")) {
@@ -189,7 +190,7 @@ function writableTree(
   // creating its mount point would leave it on the host.
   const readOnlyDirectories = outermost(profile.readOnlyDirectories);
   for (const path of readOnlyDirectories) mkdirSync(path, { recursive: true });
-  const host = hostMounts(command, {
+  const host = hostMounts([command, ...profile.executables], {
     runtime: true,
     home: profile.userFiles === "readable",
   });
@@ -230,7 +231,7 @@ function readonlyAgent(
   const executable = bubblewrap();
   // Beyond these roots: no source trees, global user config, project skills or
   // original materials. Only the private home is ever writable.
-  const host = hostMounts(command, { runtime: false, home: false });
+  const host = hostMounts([command], { runtime: false, home: false });
   const options = [...namespaces, ...host.mounts];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
   options.push("--bind", profile.home, profile.home, ...seal(host.masks));
