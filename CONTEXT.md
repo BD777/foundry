@@ -26,7 +26,9 @@ Updated: 2026-09-23
    [Evidence / Verify v1](docs/evidence-and-verify-v1.md) and
    [tools/resources](docs/tool-use-and-resources.md) for the implemented
    contract and remaining design scope.
-6. [0908 Plan](docs/archive/workspace-ai-product-plan-2026-09-08.md) for full
+6. [Module architecture](docs/architecture-modules.md) for the layer rules,
+   module boundaries and milestone order that new work follows.
+7. [0908 Plan](docs/archive/workspace-ai-product-plan-2026-09-08.md) for full
    reasoning (archived); explicit later decisions in the topic docs take
    precedence.
 

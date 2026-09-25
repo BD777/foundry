@@ -52,34 +52,51 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 
 ## Roadmap
 
-目标形态见 [Workspace 与 Sandbox 总纲](docs/workspace-sandbox-overview.md)：人提出 Issue，Agent 在 Sandbox 中完成并拿出证据，经人接受后合入 Workspace。下面按总纲的模块排列，每项链接到设计与完成标准；已实现的边界与已知缺口见[当前状态](docs/current-status.md)。
+目标形态见 [Workspace 与 Sandbox 总纲](docs/workspace-sandbox-overview.md)：人提出 Issue，Agent 在 Sandbox 中完成并拿出证据，经人接受后合入 Workspace。开发按[模块化架构](docs/architecture-modules.md)的依赖顺序切分为 Milestone：每个 Milestone 交付一个模块的协议，并用一个端到端场景验收。每项链接到设计与完成标准；已实现的边界与已知缺口见[当前状态](docs/current-status.md)。
 
 ### 已可用
 
-- [x] [Chats](docs/chat-experience.md)：基于原生 Claude / Codex Harness 的 Web Chat，支持附件、排队输入、steer、中断恢复、分组与检索。
+- [x] [Chats](docs/chat-experience.md)：基于原生 Claude / Codex Harness 的 Web Chat，直接在所选 Workspace 中工作，支持附件、排队输入、steer、中断恢复、分组与检索。
 - [x] [会话编排](docs/session-orchestration-design.md)：Agent 通过 `foundry` CLI / MCP 创建、steer、交接其他会话，支持 worktree 会话、fork 与只读 verifier。
 - [x] Workspace Skills：设备扫描本地 Skill 并推送到服务器目录，Workspace 按版本选择启用，依赖随之启用；Agent 只看到当前 Workspace 启用的 Skill。
 - [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：每个 Workspace 配置自己的 Bot 并配对群，群内话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
 - [x] [账号与 Workspace 共享](docs/security.md#accounts)：所有接口要求登录，设备凭证与资源归属，按 Viewer / Member / Maintainer / Owner 共享 Workspace。
 - [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
+- [x] Issue 引擎：准出条件 → 候选执行 → 证据与验证 → 接受 → 合入已在主干并有历史闭环记录；Agent 澄清、独立判定与合入目前仅在 macOS 开通，Web 入口在体验打磨完成前暂时隐藏。
 
-### 进行中：Issue 闭环
+### M1 执行内核
 
-Issue 引擎（准出条件 → 候选执行 → 证据与验证 → 接受 → 合入）已在主干并有历史闭环记录；Web 入口在体验打磨完成前暂时隐藏。
+一套沙箱、一种启动 Agent 的方式。Chat 继续直接在 Workspace 中工作；隔离只用于 Issue 这类编排流程。
 
-- [ ] [Issue Web 体验](docs/issue-workflow.md#issues)：重新开放 Issues 入口，打磨 Board、详情与 Issue 对话。
+- [ ] [Linux 上的完整 Issue 闭环](docs/architecture-modules.md#5-m1-接口草案)：在 Linux 开放 Agent 澄清、独立判定、Accept 与合入，与 macOS 使用同一套隔离定义。
+- [ ] [编排子会话隔离](docs/architecture-modules.md#52-session-runtime)：带 Issue 的编排子会话与 Issue 执行受同一隔离约束，只能写该 Issue 的候选。
+- [ ] [统一会话记录](docs/architecture-modules.md#53-server-侧run-与-agentsession-统一)：Issue 执行、澄清与判定和 Chat 共用同一套会话记录，可读取、steer 与追溯。
+
+### M2 Agent 能力面
+
+- [ ] [Issue 内编排](docs/session-orchestration-design.md)：Issue 执行 Agent 通过 `foundry` MCP 派出子会话与独立 verifier，血缘与证据归属可追溯。
+- [ ] [Foundry MCP / CLI](docs/session-orchestration-design.md)：作为 Agent 唯一的对外接口，能力按统一 policy 注册与授权；HTTP MCP 支持 OAuth 2.1。
+
+### M3 Issue Loop v2
+
+- [ ] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转收敛为一份显式定义；准出规则带编号与版本并写入审阅快照，可在实践中扩充。
 - [ ] [准出条件](docs/issue-workflow.md#issues)：Agent 结合 Workspace 上下文起草、人修改并确认具体版本；修改须写明理由并重新确认。
 - [ ] [人工介入（Blocked）](docs/issue-conversation-design.md)：通用的提问与权限应答协议，回应后继续同一个 Issue。
-- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项，在 Linux 上开放 Agent 澄清与独立判定。
-- [ ] [接受与合入](docs/issue-workflow.md#accept-and-integration)：在 Linux 上开放 Accept 与合入；打磨 Merge Queue 的冲突解决与复验。
-- [ ] [飞书中的 Issue](docs/platform-extensions.md#im-integration)：在飞书话题里发起 Issue、跟进进度、回应 Blocked，复杂审阅回到 Web。
+- [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。
+- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项；采集方式通过统一接口扩展。
+- [ ] [接受与合入](docs/issue-workflow.md#accept-and-integration)：打磨 Merge Queue 的冲突解决与复验。
+- [ ] [Issue Web 体验](docs/issue-workflow.md#issues)：重新开放 Issues 入口，打磨 Board、详情与 Issue 对话。
 - [ ] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。
 
-### 下一步
+### M4 资源与跨设备
 
-- [ ] [Sandbox 隔离补全](docs/workspace-sandbox-overview.md)：Docker 容器隔离；凭据不以明文交给 Agent；部署、发消息等外部副作用按次授权。
-- [ ] [Resource Pool 与 Tool Use](docs/tool-use-and-resources.md#basic-tool-use)：浏览器、桌面（Computer Use）、模拟器与真机、端口与服务、内部 Infra 统一走“申请 → 使用 → 释放 → 清理”，同时采集证据。
+- [ ] [Resource Pool 与 Tool Use](docs/tool-use-and-resources.md#basic-tool-use)：浏览器、桌面（Computer Use）、模拟器与真机、端口与服务、内部 Infra 统一走“申请 → 使用 → 释放 → 清理”，同时采集证据；首个接入浏览器。
+- [ ] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备，每次调用按 policy 授权。
+
+### 并行轨道
+
 - [ ] [账号与权限后续阶段](docs/accounts-permissions-design.md)：飞书身份登录并按发送者本人授权、个人连接授权给 Workspace、审计与所有权转移、设备密钥对认证。
+- [ ] [Sandbox 隔离补全](docs/workspace-sandbox-overview.md)：Docker 容器隔离；凭据不以明文交给 Agent；部署、发消息等外部副作用按次授权。
 
 ### 探索（未排期）
 

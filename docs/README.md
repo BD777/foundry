@@ -31,6 +31,7 @@ Pages fall into three kinds:
 
 ## Architecture and operations (reference)
 
+- [Module architecture](architecture-modules.md): layers, module boundaries and the milestone split (design; M1 interface draft).
 - [Technical architecture](technical-selection.md): components, responsibilities and technology choices.
 - [Storage strategy](storage-strategy.md): what lives on the server, the worker and in the workspace.
 - [Daemon lifecycle](daemon-lifecycle.md): symbol-level map of the device daemon.
