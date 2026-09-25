@@ -1,5 +1,8 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+
+const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // Public hostname when the dev server sits behind a TLS reverse proxy
 // (e.g. dev.example.com on :443). The browser must reach HMR through the
@@ -32,6 +35,17 @@ export default defineConfig({
   optimizeDeps: { include: ["react-diff-view", "diff"] },
   server: {
     port: 31983,
+    // Serve only the web app and what it imports. Vite's default is the whole
+    // pnpm workspace, which exposes server data such as apps/server/.data
+    // (database, secret key) to anyone who can reach this port.
+    fs: {
+      allow: [
+        at("./"),
+        at("../../packages/protocol"),
+        at("../../node_modules"),
+      ],
+      deny: [".env", ".env.*", "*.{crt,pem,key}", "**/.data/**"],
+    },
     ...(publicHost && {
       allowedHosts: [publicHost],
       hmr: { host: publicHost, protocol: "wss", clientPort: 443 },
