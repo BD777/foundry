@@ -29,6 +29,11 @@ export type {
   SessionSpec,
 } from "./types.js";
 export { codexDisabledFeatures } from "./policy.js";
+export {
+  runWorkspaceSession,
+  type WorkspaceSandbox,
+  type WorkspaceSessionRun,
+} from "./workspace.js";
 
 const harnesses: Record<SessionSpec["harness"], HarnessAdapter> = {
   claude: claudeHarness,

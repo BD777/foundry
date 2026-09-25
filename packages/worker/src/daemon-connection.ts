@@ -60,11 +60,9 @@ import {
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
-import {
-  closeAllActiveRuntimes,
-  runClaudeWorkspaceSession,
-  runCodexWorkspaceSession,
-} from "./runner.js";
+import { closeAllActiveRuntimes } from "./runner.js";
+import { runWorkspaceSession, type WorkspaceSandbox } from "./session/index.js";
+import { issueSessionExecution } from "./issue-sessions.js";
 import {
   packageSkillDirectory,
   readSkillTextFile,
@@ -116,7 +114,10 @@ import {
   steerActiveSession,
   writeAgentSessionCompletionMarker,
 } from "./session-helpers.js";
-import { registerSessionAmbientEnv } from "./session-ambient.js";
+import {
+  registerSessionAmbientEnv,
+  type SessionAmbientEnv,
+} from "./session-ambient.js";
 import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
 import { issueEnvironmentAction } from "./issue-environment-rpc.js";
 import { evidenceWorkerAction } from "./evidence-rpc.js";
@@ -418,38 +419,37 @@ async function connectWebSocket(args: string[]): Promise<void> {
   }
 }
 
-// Issue-backed sessions execute in the Issue's sealed candidate worktree so
-// parallel orchestrated writes never collide in the workspace root. The
-// environment exists while an Issue run is live; its absence is fatal rather
-// than silently falling back to the root.
-async function sessionExecutionPath(
+/** Where a dispatched session runs and keeps its state. */
+interface SessionExecution {
+  /** Directory the agent works in. */
+  cwd: string;
+  /** Directory that receives Foundry's own session records. */
+  stateRoot: string;
+  sandbox?: WorkspaceSandbox;
+}
+
+// Chats run unsandboxed in the workspace itself; Issue-backed sessions run
+// where and how the Issue decides.
+function sessionExecution(
   rootPath: string,
   session: AgentSession,
-): Promise<string> {
+  ambient: SessionAmbientEnv,
+): SessionExecution {
   const issueId = session.issueId?.trim();
-  if (!issueId) return rootPath;
-  const { ExecutionStore } = await import("./execution-storage.js");
-  const environment = new ExecutionStore().environment(
-    session.workspaceId,
-    issueId,
-  );
-  const directory = environment?.directory?.trim();
-  if (!directory) {
-    throw new Error(
-      `issue environment for ${issueId} is not available; start the issue run before creating an issue-backed session`,
-    );
-  }
-  return directory;
+  return issueId
+    ? issueSessionExecution(session.workspaceId, issueId, session.id, ambient)
+    : { cwd: rootPath, stateRoot: rootPath };
 }
 
 async function executeAgentSession(
   transport: ReliableSessionTransport,
-  workspacePath: string,
+  execution: SessionExecution,
   session: AgentSession,
   dispatchCredential?: string,
   dispatchProfile?: ProfileDefinition,
-  ambient?: { serverURL: string; sessionToken: string; workspaceID: string },
+  ambient?: SessionAmbientEnv,
 ): Promise<void> {
+  const workspacePath = execution.cwd;
   const unregisterAmbient = ambient
     ? registerSessionAmbientEnv(session.id, ambient)
     : () => {};
@@ -629,28 +629,18 @@ async function executeAgentSession(
     // Session liveness is carried by the process-scoped execution claim on
     // the daemon connection. Do not manufacture visible transcript events
     // when the provider has produced no actual progress or response content.
-    const result =
-      session.provider === "codex"
-        ? await runCodexWorkspaceSession(
-            workspacePath,
-            session,
-            profile,
-            emit,
-            emitSetup,
-            reportNativeSessionId,
-            managedSkills,
-          )
-        : await runClaudeWorkspaceSession(
-            workspacePath,
-            session,
-            profile,
-            emit,
-            emitSetup,
-            reportNativeSessionId,
-            managedSkills,
-          );
+    const result = await runWorkspaceSession({
+      cwd: execution.cwd,
+      session,
+      profile,
+      managedSkills,
+      emit,
+      emitSetup,
+      reportNativeSessionId,
+      sandbox: execution.sandbox,
+    });
     flushPendingResponse();
-    writeAgentSessionCompletionMarker(workspacePath, session, result);
+    writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
       nativeSessionId: result.nativeSessionId,
@@ -1603,22 +1593,22 @@ function runWebSocketSession(options: {
               `Running ${payload.session.provider} session ${payload.session.id}`,
             );
             try {
-              const rootPath = workspacePathFor(payload.session.workspaceId);
-              const executionPath = await sessionExecutionPath(
-                rootPath,
-                payload.session,
-              );
+              const ambient: SessionAmbientEnv = {
+                serverURL: options.serverURL,
+                sessionToken: payload.sessionToken ?? "",
+                workspaceID: payload.session.workspaceId,
+              };
               await executeAgentSession(
                 options.sessionTransport,
-                executionPath,
+                sessionExecution(
+                  workspacePathFor(payload.session.workspaceId),
+                  payload.session,
+                  ambient,
+                ),
                 payload.session,
                 payload.credential,
                 payload.profile,
-                {
-                  serverURL: options.serverURL,
-                  sessionToken: payload.sessionToken ?? "",
-                  workspaceID: payload.session.workspaceId,
-                },
+                ambient,
               );
             } catch (error) {
               const message =

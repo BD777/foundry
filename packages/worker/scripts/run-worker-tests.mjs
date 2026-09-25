@@ -489,6 +489,7 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "issue-preview.test.mjs",
   "sandbox.test.mjs",
   "session-runtime.test.mjs",
+  "session-workspace.test.mjs",
 ]);
 
 /**

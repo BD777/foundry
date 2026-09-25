@@ -15,6 +15,8 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ExecutionStore } from "../dist/execution-storage.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
+import { issueSessionExecution } from "../dist/issue-sessions.js";
+import { runWorkspaceSession } from "../dist/session/index.js";
 import { git, gitCommit } from "../dist/execution-git.js";
 import {
   prepareIssueEnvironment,
@@ -608,3 +610,74 @@ process.exit(child.status ?? 1);
     );
   },
 );
+
+test("an issue-backed session runs in the candidate inside the Issue sandbox", async (t) => {
+  const { source, store } = await fixture(t);
+  const ambient = {
+    serverURL: "http://127.0.0.1:1",
+    sessionToken: "child-token",
+    workspaceID: "ws_test",
+  };
+  assert.throws(
+    () => issueSessionExecution("ws_test", "iss_missing", "s", ambient, store),
+    /issue environment for iss_missing is not available/,
+  );
+  const environment = await prepareIssueEnvironment(
+    source,
+    "ws_test",
+    "iss_child",
+    store,
+  );
+  environment.userFiles = "readable";
+  store.saveEnvironment(environment);
+  const execution = issueSessionExecution(
+    "ws_test",
+    "iss_child",
+    "sess_child",
+    ambient,
+    store,
+  );
+  assert.equal(execution.cwd, environment.cwd);
+  assert.equal(execution.stateRoot, environment.directory);
+  assert.equal(execution.sandbox.profile.userFiles, "readable");
+  assert.deepEqual(execution.sandbox.ambient, ambient);
+  assert.ok(execution.sandbox.stderrFile.startsWith(environment.scratch));
+  if (!sandboxAvailable("writable_tree")) return;
+  const result = await runWorkspaceSession({
+    cwd: execution.cwd,
+    session: {
+      id: "sess_child",
+      provider: "claude",
+      workspaceId: "ws_test",
+      threadId: "sess_child",
+      issueId: "iss_child",
+      agentId: "",
+      deviceId: "",
+      status: "running",
+      title: "Child",
+      prompt: "Change guidance",
+      createdLabel: "now",
+      updatedLabel: "now",
+    },
+    profile: {
+      runtime: "claude",
+      id: "stand_in",
+      label: "Stand-in",
+      command: `echo child > AGENTS.md; (echo bad > '${resolve(source, "AGENTS.md")}') 2>/dev/null; echo ok`,
+    },
+    emit: async () => {},
+    emitSetup: async () => {},
+    reportNativeSessionId: () => {},
+    sandbox: execution.sandbox,
+  });
+  assert.equal(result.response, "ok");
+  assert.equal(
+    readFileSync(resolve(environment.cwd, "AGENTS.md"), "utf8"),
+    "child\n",
+  );
+  assert.equal(
+    readFileSync(resolve(source, "AGENTS.md"), "utf8"),
+    "Shared workspace guidance",
+    "the source workspace is untouched",
+  );
+});

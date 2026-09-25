@@ -3,7 +3,11 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { canonical } from "./execution-storage.js";
 import { foundryStatePath } from "./state-root.js";
-import { isSandboxError, sandboxLaunch } from "./sandbox/index.js";
+import {
+  isSandboxError,
+  sandboxLaunch,
+  type WritableTreeProfile,
+} from "./sandbox/index.js";
 import type {
   IssueEnvironment,
   WorkspaceRegistration,
@@ -15,18 +19,17 @@ function skillSetsReadRoot(): string {
 }
 
 /**
- * Confine an Issue executor (or its preview) to its candidate and scratch:
- * the source workspace stays readable, and repositories that are not ready in
- * this candidate, plus each worktree's Git metadata, stay read-only.
+ * The sandbox of every process working in an Issue's candidate: the executor,
+ * its preview and orchestrated sessions bound to the Issue. The source
+ * workspace stays readable; repositories not ready in this candidate, plus
+ * each worktree's Git metadata, stay read-only.
  */
-export function sandboxCommand(
+export function issueSandboxProfile(
   environment: IssueEnvironment,
   registration: WorkspaceRegistration,
-  command: string,
-  args: string[],
-  /** Unix sockets outside the candidate the executor may connect to. */
+  /** Unix sockets outside the candidate the process may connect to. */
   connectSockets: string[] = [],
-): { command: string; args: string[] } {
+): WritableTreeProfile {
   const denied = registration.repositories
     .filter(
       (repo) =>
@@ -36,24 +39,36 @@ export function sandboxCommand(
         ),
     )
     .map((repo) => resolve(environment.cwd, repo.relativePath));
+  return {
+    kind: "writable_tree",
+    // Policy remains outside candidate/scratch: the process cannot change it.
+    policyFile: resolve(environment.directory, "executor.sb"),
+    workdir: environment.cwd,
+    readRoots: [environment.sourcePath],
+    writeRoots: [environment.cwd, environment.scratch].map(canonical),
+    // Only the verified promoted-skill tree, just downloaded and checksum-checked.
+    protectedReadRoots: [skillSetsReadRoot()],
+    readOnlyDirectories: denied,
+    readOnlyPaths: environment.repositories.map((repo) =>
+      resolve(repo.worktreePath, ".git"),
+    ),
+    connectSockets,
+    executables: [],
+    userFiles: environment.userFiles ?? "hidden",
+  };
+}
+
+/** A command line that runs inside the Issue's sandbox. */
+export function sandboxCommand(
+  environment: IssueEnvironment,
+  registration: WorkspaceRegistration,
+  command: string,
+  args: string[],
+  connectSockets: string[] = [],
+): { command: string; args: string[] } {
   try {
     return sandboxLaunch(
-      {
-        kind: "writable_tree",
-        // Policy remains outside candidate/scratch: the executor cannot change it.
-        policyFile: resolve(environment.directory, "executor.sb"),
-        workdir: environment.cwd,
-        readRoots: [environment.sourcePath],
-        writeRoots: [environment.cwd, environment.scratch].map(canonical),
-        // Only the verified promoted-skill tree, just downloaded and checksum-checked.
-        protectedReadRoots: [skillSetsReadRoot()],
-        readOnlyDirectories: denied,
-        readOnlyPaths: environment.repositories.map((repo) =>
-          resolve(repo.worktreePath, ".git"),
-        ),
-        connectSockets,
-        userFiles: environment.userFiles ?? "hidden",
-      },
+      issueSandboxProfile(environment, registration, connectSockets),
       command,
       args,
     );
@@ -62,7 +77,7 @@ export function sandboxCommand(
   }
 }
 
-function issueIsolationError(error: unknown): unknown {
+export function issueIsolationError(error: unknown): unknown {
   return isSandboxError(error)
     ? new Error(`Issue execution isolation is unavailable: ${error.message}`)
     : error;

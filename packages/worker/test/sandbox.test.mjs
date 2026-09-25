@@ -317,6 +317,7 @@ test(
             readOnlyDirectories: [locked],
             readOnlyPaths: [join(tree, ".git")],
             connectSockets: [],
+            executables: [],
             userFiles: "hidden",
             userFiles: "hidden",
           },
@@ -409,6 +410,7 @@ test(
           readOnlyDirectories: [],
           readOnlyPaths: [],
           connectSockets: [],
+          executables: [],
           userFiles: "hidden",
         },
         "/bin/sh",
@@ -464,6 +466,7 @@ function writableTree(root, tree, userFiles) {
     readOnlyDirectories: [],
     readOnlyPaths: [],
     connectSockets: [],
+    executables: [],
     userFiles,
   };
 }
