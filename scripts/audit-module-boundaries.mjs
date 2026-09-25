@@ -35,7 +35,14 @@ const baselinePath = resolve(
 export const workerModules = {
   platform: {
     dependsOn: [],
-    files: ["config", "state-root", "storage", "utils", "task-scheduler"],
+    files: [
+      "config",
+      "paths",
+      "state-root",
+      "storage",
+      "utils",
+      "task-scheduler",
+    ],
   },
   device: {
     dependsOn: ["platform"],
@@ -43,11 +50,7 @@ export const workerModules = {
   },
   sandbox: {
     dependsOn: ["platform"],
-    files: [
-      "execution-sandbox",
-      "evidence-agent-sandbox",
-      "evidence-command-sandbox",
-    ],
+    files: ["sandbox/index", "sandbox/host", "sandbox/darwin", "sandbox/linux"],
   },
   "candidate-store": {
     dependsOn: ["platform"],
@@ -150,14 +153,17 @@ export const workerModules = {
       "issue-steering",
       "evidence-acceptance",
       "evidence-agent",
+      "evidence-agent-sandbox",
       "evidence-change-manifest",
       "evidence-clarification",
       "evidence-collectors",
+      "evidence-command-sandbox",
       "evidence-http-service",
       "evidence-redaction",
       "evidence-rpc",
       "evidence-snapshots",
       "execution-process",
+      "execution-sandbox",
       "execution-process-child",
       "candidate-refresh",
       "workspace-acceptance",

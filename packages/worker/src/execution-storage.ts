@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { canonical, within } from "./paths.js";
 import { writeJSON } from "./storage.js";
 import { foundryStateRoot } from "./state-root.js";
 import type {
@@ -16,25 +17,12 @@ import type {
   WorkspaceRegistration,
 } from "./execution-types.js";
 
+export { canonical, within };
+
 export function identifier(value: string): string {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(value))
     throw new Error("Invalid execution identifier");
   return value;
-}
-
-export function within(root: string, path: string): boolean {
-  const suffix = relative(resolve(root), resolve(path));
-  return (
-    suffix === "" ||
-    (!isAbsolute(suffix) && suffix !== ".." && !suffix.startsWith("../"))
-  );
-}
-
-export function canonical(path: string): string {
-  if (existsSync(path)) return realpathSync(path);
-  const parent = dirname(resolve(path));
-  if (parent === resolve(path)) throw new Error(`Cannot resolve ${path}`);
-  return resolve(canonical(parent), relative(parent, resolve(path)));
 }
 
 export function childPath(root: string, suffix: string): string {

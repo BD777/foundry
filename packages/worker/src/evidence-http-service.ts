@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { CandidateSnapshot, TargetSnapshot } from "@foundry/protocol";
 import { childPath } from "./execution-storage.js";
 import { digestObject } from "./evidence-store.js";
+import { sandboxAvailable, sandboxLaunch } from "./sandbox/index.js";
 
 export interface LocalHTTPServiceDefinition {
   name: string;
@@ -31,7 +32,7 @@ export async function startEvidenceHTTPService(
   candidateDirectory: string,
   runtimeDirectory: string,
 ): Promise<TargetSnapshot> {
-  if (process.platform !== "darwin")
+  if (!sandboxAvailable("loopback_service"))
     throw new Error("http_service_isolation_unavailable");
   if (!definition.name.trim()) throw new Error("target_name_required");
   const entrypoint = childPath(
@@ -59,52 +60,25 @@ export async function startEvidenceHTTPService(
     ].join("\n"),
     { mode: 0o400, flag: "wx" },
   );
-  const profile = resolve(runtimeDirectory, "service.sb");
-  writeFileSync(
-    profile,
-    [
-      "(version 1)",
-      "(deny default)",
-      "(allow process-exec)",
-      "(allow process-fork)",
-      "(allow signal (target self))",
-      "(allow sysctl-read)",
-      "(allow mach-lookup)",
-      "(allow file-read-metadata)",
-      ...[
-        "/usr",
-        "/bin",
-        "/System",
-        "/Library",
-        "/opt/homebrew",
-        "/private/etc",
-        "/private/var/db",
-        candidateDirectory,
-        runtimeDirectory,
-      ].map(
-        (path) => `(allow file-read-data (subpath ${JSON.stringify(path)}))`,
-      ),
-      '(allow file-read-data (literal "/") (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))',
-      '(allow file-write* (literal "/dev/null"))',
-      '(allow network-bind (local tcp "localhost:*"))',
-      '(allow network-inbound (local tcp "localhost:*"))',
-    ].join("\n"),
-    { mode: 0o400, flag: "wx" },
-  );
-  const child = spawn(
-    "/usr/bin/sandbox-exec",
-    ["-f", profile, process.execPath, wrapper, entrypoint],
+  const launch = sandboxLaunch(
     {
-      cwd: candidateDirectory,
-      env: {
-        PATH: "/usr/bin:/bin",
-        HOME: runtimeDirectory,
-        TMPDIR: runtimeDirectory,
-      },
-      stdio: ["ignore", "ignore", "pipe", "ipc"],
-      detached: true,
+      kind: "loopback_service",
+      policyFile: resolve(runtimeDirectory, "service.sb"),
+      readRoots: [candidateDirectory, runtimeDirectory],
     },
+    process.execPath,
+    [wrapper, entrypoint],
   );
+  const child = spawn(launch.command, launch.args, {
+    cwd: candidateDirectory,
+    env: {
+      PATH: "/usr/bin:/bin",
+      HOME: runtimeDirectory,
+      TMPDIR: runtimeDirectory,
+    },
+    stdio: ["ignore", "ignore", "pipe", "ipc"],
+    detached: true,
+  });
   let errorText = "";
   child.stderr?.on("data", (chunk) => {
     if (errorText.length < 4096) errorText += chunk.toString();

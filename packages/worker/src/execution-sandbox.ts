@@ -1,39 +1,13 @@
-import {
-  existsSync,
-  mkdirSync,
-  copyFileSync,
-  lstatSync,
-  readlinkSync,
-  realpathSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 import { canonical } from "./execution-storage.js";
-import {
-  defaultStateRoot,
-  foundryStatePath,
-  foundryStateRoot,
-  stackStateParent,
-} from "./state-root.js";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { foundryStatePath } from "./state-root.js";
+import { isSandboxError, sandboxLaunch } from "./sandbox/index.js";
 import type {
   IssueEnvironment,
   WorkspaceRegistration,
 } from "./execution-types.js";
-
-export function controlNetworkRestrictions(serverURL?: string): string[] {
-  const ports = new Set(["31982", "31983"]);
-  if (serverURL) {
-    const url = new URL(serverURL);
-    ports.add(url.port || (url.protocol === "https:" ? "443" : "80"));
-  }
-  // Block this port to every address, including host LAN IP and IPv6 aliases.
-  return [...ports].map(
-    (port) => `(deny network-outbound (remote tcp "*:${port}"))`,
-  );
-}
 
 /** The one private-state subdir an issue executor may read skill files from. */
 function skillSetsReadRoot(): string {
@@ -41,44 +15,16 @@ function skillSetsReadRoot(): string {
 }
 
 /**
- * Install prefixes of the Node runtime and of the launched executable. Tool
- * managers (nvm, ~/.local, npm-global) keep them outside the system roots,
- * so without these the sandbox cannot even exec the agent CLI. A prefix that
- * is the home directory or overlaps private control state is never exposed.
+ * Confine an Issue executor (or its preview) to its candidate and scratch:
+ * the source workspace stays readable, and repositories that are not ready in
+ * this candidate, plus each worktree's Git metadata, stay read-only.
  */
-export function executableReadRoots(
-  command: string,
-  controlPaths: string[],
-): string[] {
-  const home = canonical(homedir());
-  const roots = new Set<string>();
-  for (const file of [process.execPath, command]) {
-    if (!isAbsolute(file) || !existsSync(file)) continue;
-    const directory = dirname(realpathSync(file));
-    roots.add(
-      canonical(basename(directory) === "bin" ? dirname(directory) : directory),
-    );
-  }
-  return [...roots].filter(
-    (root) =>
-      root !== "/" &&
-      root !== home &&
-      !controlPaths.some(
-        (control) =>
-          control === root ||
-          control.startsWith(`${root}/`) ||
-          root.startsWith(`${control}/`),
-      ),
-  );
-}
-
 export function sandboxCommand(
   environment: IssueEnvironment,
   registration: WorkspaceRegistration,
   command: string,
   args: string[],
 ): { command: string; args: string[] } {
-  const writable = [environment.cwd, environment.scratch].map(canonical);
   const denied = registration.repositories
     .filter(
       (repo) =>
@@ -88,169 +34,50 @@ export function sandboxCommand(
         ),
     )
     .map((repo) => resolve(environment.cwd, repo.relativePath));
-  const gitFiles = environment.repositories.map((repo) =>
-    resolve(repo.worktreePath, ".git"),
-  );
-  // Every stack's private state stays unreadable, not only the active one:
-  // parallel stacks must not be able to read each other's evidence or state.
-  const controlPaths = [
-    defaultStateRoot,
-    stackStateParent,
-    foundryStateRoot(),
-    resolve(homedir(), ".config"),
-    resolve(homedir(), "Library"),
-    resolve(homedir(), ".ssh"),
-  ]
-    .filter(existsSync)
-    .map(canonical);
-  const runtimeRoot = canonical(
-    fileURLToPath(new URL("../../../", import.meta.url)),
-  );
-  const systemRootPaths = [
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/lib",
-    "/lib64",
-    "/System",
-    "/Library",
-    "/opt/homebrew",
-    "/Applications",
-  ].filter(existsSync);
-  const systemRoots = systemRootPaths.map(canonical);
-  systemRoots.push(...executableReadRoots(command, controlPaths));
-  if (process.platform === "darwin") {
-    if (!existsSync("/usr/bin/sandbox-exec"))
-      throw new Error("Issue isolation requires sandbox-exec on this device");
-    const quote = (value: string): string => JSON.stringify(value);
-    const skillReadRule =
-      "(allow file-read-data (subpath " + quote(skillSetsReadRoot()) + "))";
-    const profile = [
-      "(version 1)",
-      "(allow default)",
-      "(deny file-read-data)",
-      '(allow file-read-data (literal "/") (subpath "/private/etc") (subpath "/private/var/db"))',
-      "(deny process-info*)",
-      // libdispatch in the native Claude CLI needs its own unique pid.
-      // Other process metadata (including the Server environment) stays denied.
-      "(allow process-info* (target self))",
-      ...[...systemRoots, runtimeRoot, environment.sourcePath, ...writable].map(
-        (path) => `(allow file-read-data (subpath ${quote(canonical(path))}))`,
-      ),
-      '(allow file-read-data (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom"))',
-      ...controlPaths.map(
-        (path) => `(deny file-read-data (subpath ${quote(path)}))`,
-      ),
-      // Re-allow only the verified promoted-skill tree under private state.
-      // It contains just downloaded, checksum-checked skill packages.
-      skillReadRule,
-      // Re-allow only this candidate/scratch under private execution storage.
-      ...writable.map(
-        (path) => `(allow file-read-data (subpath ${quote(path)}))`,
-      ),
-      '(deny file-read-data (regex #"/\\\\.env([^/]*$|/)"))',
-      `(deny file-read-data (subpath ${quote(resolve(runtimeRoot, ".data"))}))`,
-      `(deny file-read-data (subpath ${quote(resolve(runtimeRoot, "apps/server/.data"))}))`,
-      // Deny access to the local control plane and its credential-bearing UI.
-      ...controlNetworkRestrictions(environment.controlServerURL),
-      "(deny file-write*)",
-      '(allow file-write* (literal "/dev/null"))',
-      ...writable.map((path) => `(allow file-write* (subpath ${quote(path)}))`),
-      ...[...denied, ...gitFiles].map(
-        (path) => `(deny file-write* (subpath ${quote(canonical(path))}))`,
-      ),
-    ].join("\n");
-    // Profile remains outside candidate/scratch: the executor cannot change it.
-    const profilePath = resolve(environment.directory, "executor.sb");
-    writeFileSync(profilePath, profile, { mode: 0o600 });
-    return {
-      command: "/usr/bin/sandbox-exec",
-      args: ["-f", profilePath, command, ...args],
-    };
-  }
-  if (process.platform === "linux") {
-    const executable = ["/usr/bin/bwrap", "/bin/bwrap"].find(existsSync);
-    if (!executable)
-      throw new Error(
-        "Linux Issue isolation requires bubblewrap (bwrap); install it and enable user namespaces",
-      );
-    const probe = spawnSync(
-      executable,
-      [
-        "--ro-bind",
-        "/",
-        "/",
-        "--unshare-user",
-        "--unshare-pid",
-        "--unshare-ipc",
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        "--",
-        "/bin/true",
-      ],
-      { encoding: "utf8", timeout: 5000 },
+  try {
+    return sandboxLaunch(
+      {
+        kind: "writable_tree",
+        // Policy remains outside candidate/scratch: the executor cannot change it.
+        policyFile: resolve(environment.directory, "executor.sb"),
+        workdir: environment.cwd,
+        readRoots: [environment.sourcePath],
+        writeRoots: [environment.cwd, environment.scratch].map(canonical),
+        // Only the verified promoted-skill tree, just downloaded and checksum-checked.
+        protectedReadRoots: [skillSetsReadRoot()],
+        readOnlyDirectories: denied,
+        readOnlyPaths: environment.repositories.map((repo) =>
+          resolve(repo.worktreePath, ".git"),
+        ),
+        controlServerURL: environment.controlServerURL,
+      },
+      command,
+      args,
     );
-    if (probe.status !== 0)
-      throw new Error(
-        `Linux user namespaces are unavailable: ${probe.stderr?.trim() || probe.error?.message || "bubblewrap probe failed"}`,
-      );
-    // Mount source and host data read-only; only this candidate and scratch
-    // are writable. Bind nested repository boundaries back to read-only.
-    for (const path of denied) mkdirSync(path, { recursive: true });
-    const options = [
-      "--die-with-parent",
-      "--unshare-user",
-      "--unshare-pid",
-      "--unshare-ipc",
-      "--new-session",
-      "--tmpfs",
-      "/",
-      "--proc",
-      "/proc",
-      "--dev",
-      "/dev",
-    ];
-    for (const path of [...systemRoots, runtimeRoot, environment.sourcePath])
-      options.push("--ro-bind", path, path);
-    // Merged-/usr distributions make /bin, /lib and /lib64 symlinks into
-    // /usr. Only the targets are mounted above, so recreate the links: the
-    // ELF interpreter is addressed as /lib64/ld-linux-*.so.
-    for (const path of systemRootPaths)
-      if (lstatSync(path).isSymbolicLink())
-        options.push("--symlink", readlinkSync(path), path);
-    // Mount only the verified promoted-skill tree from private state.
-    mkdirSync(skillSetsReadRoot(), { recursive: true });
-    options.push("--ro-bind", skillSetsReadRoot(), skillSetsReadRoot());
-    // No host /proc: process environments and daemon control credentials
-    // are outside this PID namespace.
-    for (const path of writable) options.push("--bind", path, path);
-    for (const path of [...denied, ...gitFiles])
-      options.push("--ro-bind", path, path);
-    // Exec the resolved file: a symlink such as ~/.local/bin/claude lives in a
-    // directory that is deliberately not mounted.
-    const resolvedCommand =
-      isAbsolute(command) && existsSync(command)
-        ? realpathSync(command)
-        : command;
-    return {
-      command: executable,
-      args: [
-        ...options,
-        "--chdir",
-        environment.cwd,
-        "--",
-        resolvedCommand,
-        ...args,
-      ],
-    };
+  } catch (error) {
+    throw issueIsolationError(error);
   }
-  // Fail closed until a backend has been verified on this OS. CWD alone is
-  // deliberately never treated as write isolation.
-  throw new Error(
-    `Issue execution isolation is not available on ${process.platform}`,
-  );
+}
+
+// Keep the messages Issues have always shown for an unavailable backend.
+function issueIsolationError(error: unknown): unknown {
+  if (!isSandboxError(error)) return error;
+  switch (error.code) {
+    case "unsupported_platform":
+      return new Error(
+        `Issue execution isolation is not available on ${process.platform}`,
+      );
+    case "backend_missing":
+      return new Error(
+        `${process.platform === "linux" ? "Linux " : ""}Issue isolation ${error.message}`,
+      );
+    case "user_namespaces_unavailable":
+      return new Error(
+        `Linux user namespaces are unavailable: ${error.message}`,
+      );
+    default:
+      return error;
+  }
 }
 
 export function executorEnvironment(
