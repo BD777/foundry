@@ -1,7 +1,8 @@
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, isAbsolute, resolve } from "node:path";
-import { canonical, within } from "../paths.js";
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { canonical } from "../paths.js";
 import {
+  commandReadRoots,
   controlNetworkRestrictions,
   executableReadRoots,
   offlineCommandSystemRoots,
@@ -11,31 +12,39 @@ import {
 } from "./host.js";
 import {
   SandboxError,
-  type LaunchableProfile,
   type LoopbackServiceProfile,
   type OfflineCommandProfile,
   type ReadonlyAgentProfile,
+  type SandboxBackend,
   type SandboxLaunch,
   type WritableTreeProfile,
-} from "./index.js";
+} from "./types.js";
 
 const sandboxExec = "/usr/bin/sandbox-exec";
 const quote = (value: string): string => JSON.stringify(value);
 
-export function darwinLaunch(
-  profile: LaunchableProfile,
-  command: string,
-  args: string[],
-): SandboxLaunch {
-  switch (profile.kind) {
-    case "writable_tree":
-      return writableTree(profile, command, args);
-    case "offline_command":
-      return offlineCommand(profile, command, args);
-    case "loopback_service":
-      return loopbackService(profile, command, args);
-  }
-}
+/** macOS Seatbelt (`sandbox-exec`) policies; every kind blocks the control plane. */
+export const seatbeltBackend: SandboxBackend = {
+  id: "seatbelt",
+  guarantees: {
+    writable_tree: { controlPlaneBlocked: true },
+    readonly_agent: { controlPlaneBlocked: true },
+    offline_command: { controlPlaneBlocked: true },
+    loopback_service: { controlPlaneBlocked: true },
+  },
+  launch(profile, command, args) {
+    switch (profile.kind) {
+      case "writable_tree":
+        return writableTree(profile, command, args);
+      case "readonly_agent":
+        return readonlyAgent(profile, command, args);
+      case "offline_command":
+        return offlineCommand(profile, command, args);
+      case "loopback_service":
+        return loopbackService(profile, command, args);
+    }
+  },
+};
 
 function writableTree(
   profile: WritableTreeProfile,
@@ -120,6 +129,7 @@ function offlineCommand(
     '(allow file-write* (literal "/dev/null"))',
     ...[
       ...offlineCommandSystemRoots(),
+      ...commandReadRoots(command),
       ...profile.readRoots,
       profile.writeRoot,
     ].map((path) => `(allow file-read-data (subpath ${quote(path)}))`),
@@ -171,25 +181,12 @@ function loopbackService(
   };
 }
 
-export function darwinLauncher(
+function readonlyAgent(
   profile: ReadonlyAgentProfile,
   command: string,
-): string {
-  const home = realpathSync(profile.home);
-  const executable = isAbsolute(command)
-    ? realpathSync(command)
-    : (process.env.PATH ?? "")
-        .split(delimiter)
-        .map((root) => resolve(root, command))
-        .filter(existsSync)
-        .map((path) => realpathSync(path))[0];
-  if (!executable) throw new SandboxError("executable_missing");
-  const readRoots = profile.readRoots
-    .filter(existsSync)
-    .map((path) => realpathSync(path));
-  const workdir = profile.workdir ? realpathSync(profile.workdir) : home;
-  if (workdir !== home && !readRoots.some((root) => within(root, workdir)))
-    throw new SandboxError("workdir_not_readable");
+  args: string[],
+): SandboxLaunch {
+  const { home, readRoots } = profile;
   // Beyond these roots: no source trees, global user config, project skills or
   // original materials. Only the private home is ever writable.
   const roots = [
@@ -201,7 +198,7 @@ export function darwinLauncher(
     "/opt/homebrew",
     "/private/etc",
     "/private/var/db",
-    dirname(executable),
+    dirname(command),
     home,
     ...readRoots,
   ];
@@ -222,14 +219,9 @@ export function darwinLauncher(
     `(allow file-write* (subpath ${quote(home)}))`,
     ...controlNetworkRestrictions(profile.controlServerURL),
   ].join("\n");
-  const policyFile = resolve(home, "..", "verifier.sb");
-  writeFileSync(policyFile, rules, { mode: 0o400, flag: "wx" });
-  const wrapper = resolve(home, "..", "verifier-cli");
-  const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  writeFileSync(
-    wrapper,
-    `#!/bin/sh\ncd ${shellQuote(workdir)} || exit 1\nexec ${sandboxExec} -f ${shellQuote(policyFile)} ${shellQuote(executable)} "$@"\n`,
-    { mode: 0o500, flag: "wx" },
-  );
-  return wrapper;
+  writeFileSync(profile.policyFile, rules, { mode: 0o400, flag: "wx" });
+  return {
+    command: sandboxExec,
+    args: ["-f", profile.policyFile, command, ...args],
+  };
 }

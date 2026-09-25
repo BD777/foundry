@@ -46,7 +46,7 @@ Blocked 表示当前无法继续，必须附具体原因：Needs input、Needs p
 
 **已有基础：** [Evidence / Verify v1](evidence-and-verify-v1.md) 和[完整字段表](evidence-and-verify-v1-fields.md)记录当前实现：原始材料、条件、封存候选、程序（含项目自带命令）/独立 Agent 判断、人工接受和逐仓集成；澄清在所选 Workspace 只读探索，验证在候选 Worktree 实际检查取证。
 
-**接下来做：** 通用输入绑定与 Accept 前复核、完整中途恢复、Codex 真实图文初判、复杂媒体，以及在 Linux 上开放 Agent 阶段会话（澄清与判定）和集成——目前仅在 macOS 开通（见 [v1 §9](evidence-and-verify-v1.md#9-尚需收口的实施项)）。更多证据类型（浏览器、桌面、模拟器）依赖 [Tool Use](tool-use-and-resources.md#basic-tool-use)。旧日志、checks 和执行报告不自动成为结构化通过判断。
+**接下来做：** 通用输入绑定与 Accept 前复核、完整中途恢复、Codex 真实图文初判、复杂媒体，以及 Linux 上的受控 HTTP 目标（澄清、判定与集成已在 Linux 开通，见 [v1 §9](evidence-and-verify-v1.md#9-尚需收口的实施项)）。更多证据类型（浏览器、桌面、模拟器）依赖 [Tool Use](tool-use-and-resources.md#basic-tool-use)。旧日志、checks 和执行报告不自动成为结构化通过判断。
 
 证据需要可保存、可预览、有来源和访问边界；清理临时候选后仍可追溯。Verify 优先采用确定性检查，需要模型或人工判断时保留依据与不确定性。
 
@@ -70,7 +70,7 @@ Verification 引用材料，说明判断方法、依据与适用状态。候选�
 
 **已有基础：** 绑定精确 reviewSnapshot 的显式 Accept（需要 Workspace Maintainer 及以上角色）、锁内核对待集成候选/材料/journal、基线前移拒绝旧批准并要求在候选中对齐后重验、逐仓 fast-forward 集成 journal 与部分应用/断线恢复；全部仓成功才置 Accepted（见 [Evidence v1 §5](evidence-and-verify-v1.md#5-准出人工接受与恢复)）。
 
-**接下来做：** 在 Linux 上开放 Accept 与集成（目前仅 macOS）；完整的 Workspace Merge Queue 编排（冲突解决与复验）；外部写入的更广义处理与跨机同步；接受操作的审计视图。
+**接下来做：** 完整的 Workspace Merge Queue 编排（冲突解决与复验）；外部写入的更广义处理与跨机同步；接受操作的审计视图。
 
 **完成标准：** 人能继续修改、接受或放弃；只有具备权限的人可以接受。两个 Issue 的合入串行受控，主干前移后不沿用不适用的旧判断；合入未完成不显示已全部完成，部分失败可检测并恢复。
 

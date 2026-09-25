@@ -1,95 +1,46 @@
 /**
- * Sandbox module: wraps a process in an OS isolation policy.
+ * Sandbox module: runs a process under an OS isolation policy.
  *
- * Callers describe paths and limits in a profile; the module owns every
- * platform backend (macOS sandbox-exec, Linux bubblewrap) and fails closed
- * when no verified backend exists. It knows nothing about who launches the
- * process or why. See docs/architecture-modules.md §5.1.
+ * Callers describe paths and limits in a profile and use the same two calls
+ * for every profile kind and every backend. The module selects the backend
+ * (macOS Seatbelt, Linux bubblewrap), normalizes platform-independent inputs,
+ * and fails closed with a typed SandboxError when no verified backend exists.
+ * It knows nothing about who launches the process or why.
+ * See docs/architecture-modules.md §5.1.
  */
-import { darwinLaunch, darwinLauncher } from "./darwin.js";
-import { linuxLaunch } from "./linux.js";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { delimiter, isAbsolute, resolve } from "node:path";
+import { within } from "../paths.js";
+import { bubblewrapBackend } from "./linux.js";
+import { seatbeltBackend } from "./darwin.js";
+import {
+  SandboxError,
+  type ReadonlyAgentProfile,
+  type SandboxBackend,
+  type SandboxErrorCode,
+  type SandboxGuarantees,
+  type SandboxKind,
+  type SandboxLaunch,
+  type SandboxProfile,
+} from "./types.js";
 
-/**
- * The process may read the host broadly, except protected Foundry and user
- * state, and may write only its writable roots.
- */
-export interface WritableTreeProfile {
-  kind: "writable_tree";
-  /** Backend policy file; kept outside every writable root. */
-  policyFile: string;
-  workdir: string;
-  readRoots: string[];
-  writeRoots: string[];
-  /** Read-only roots re-allowed inside otherwise protected host state. */
-  protectedReadRoots: string[];
-  /** Directories inside writable roots kept read-only; created when missing. */
-  readOnlyDirectories: string[];
-  /** Existing paths inside writable roots kept read-only. */
-  readOnlyPaths: string[];
-  /** The Foundry control plane stays unreachable from inside. */
-  controlServerURL?: string;
-}
+export {
+  SandboxError,
+  type LoopbackServiceProfile,
+  type OfflineCommandProfile,
+  type ReadonlyAgentProfile,
+  type SandboxErrorCode,
+  type SandboxGuarantees,
+  type SandboxKind,
+  type SandboxLaunch,
+  type SandboxProfile,
+  type WritableTreeProfile,
+} from "./types.js";
 
-/**
- * The process may read only system roots and its read roots, and may write
- * only its private home.
- */
-export interface ReadonlyAgentProfile {
-  kind: "readonly_agent";
-  home: string;
-  readRoots: string[];
-  /** Initial working directory; defaults to the private home. */
-  workdir?: string;
-  controlServerURL?: string;
-}
-
-/** No network; the process reads its read roots and writes one output root. */
-export interface OfflineCommandProfile {
-  kind: "offline_command";
-  policyFile: string;
-  workdir: string;
-  readRoots: string[];
-  writeRoot: string;
-  /** Paths inside the output root kept read-only. */
-  readOnlyPaths: string[];
-}
-
-/** The process may only listen on loopback and read its read roots. */
-export interface LoopbackServiceProfile {
-  kind: "loopback_service";
-  policyFile: string;
-  readRoots: string[];
-}
-
-export type SandboxProfile =
-  | WritableTreeProfile
-  | ReadonlyAgentProfile
-  | OfflineCommandProfile
-  | LoopbackServiceProfile;
-
-export type LaunchableProfile = Exclude<SandboxProfile, ReadonlyAgentProfile>;
-
-export interface SandboxLaunch {
-  command: string;
-  args: string[];
-}
-
-export type SandboxErrorCode =
-  | "unsupported_platform"
-  | "backend_missing"
-  | "user_namespaces_unavailable"
-  | "executable_missing"
-  | "workdir_not_readable";
-
-export class SandboxError extends Error {
-  constructor(
-    readonly code: SandboxErrorCode,
-    message: string = code,
-  ) {
-    super(message);
-    this.name = "SandboxError";
-  }
-}
+const backends: Partial<Record<NodeJS.Platform, SandboxBackend>> = {
+  darwin: seatbeltBackend,
+  linux: bubblewrapBackend,
+};
 
 export function isSandboxError(
   error: unknown,
@@ -100,52 +51,101 @@ export function isSandboxError(
   );
 }
 
-const verifiedBackends: Record<
-  SandboxProfile["kind"],
-  readonly NodeJS.Platform[]
-> = {
-  writable_tree: ["darwin", "linux"],
-  readonly_agent: ["darwin"],
-  offline_command: ["darwin", "linux"],
-  loopback_service: ["darwin"],
-};
+/**
+ * What this platform's backend enforces for the kind, or undefined when no
+ * verified backend exists. Static: a backend may still be missing at launch.
+ */
+export function sandboxGuarantees(
+  kind: SandboxKind,
+  platform: NodeJS.Platform = process.platform,
+): SandboxGuarantees | undefined {
+  return backends[platform]?.guarantees[kind];
+}
 
-/** Whether this platform has a verified backend for the profile kind. */
 export function sandboxAvailable(
-  kind: SandboxProfile["kind"],
+  kind: SandboxKind,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return verifiedBackends[kind].includes(platform);
+  return sandboxGuarantees(kind, platform) !== undefined;
 }
 
-function requireBackend(kind: SandboxProfile["kind"]): void {
-  if (!sandboxAvailable(kind))
-    throw new SandboxError(
-      "unsupported_platform",
-      `${kind} isolation is not available on ${process.platform}`,
-    );
-}
-
-/** The command and arguments that run `command` inside the profile. */
+/** The command line that runs `command` inside the profile. */
 export function sandboxLaunch(
-  profile: LaunchableProfile,
+  profile: SandboxProfile,
   command: string,
   args: string[],
 ): SandboxLaunch {
-  requireBackend(profile.kind);
-  return process.platform === "darwin"
-    ? darwinLaunch(profile, command, args)
-    : linuxLaunch(profile, command, args);
+  const prepared = prepare(profile, command);
+  return prepared.backend.launch(prepared.profile, prepared.command, args);
 }
 
 /**
- * An executable wrapper that runs `command` inside the profile, for SDKs that
- * take an executable path instead of a command line.
+ * Write an executable wrapper that runs `command` inside the profile with the
+ * wrapper's own arguments, for SDKs that take an executable path instead of a
+ * command line. The wrapper is created once and never overwritten.
  */
 export function sandboxLauncher(
+  profile: SandboxProfile,
+  command: string,
+  launcherFile: string,
+): string {
+  const prepared = prepare(profile, command);
+  const launch = prepared.backend.launch(
+    prepared.profile,
+    prepared.command,
+    [],
+  );
+  const workdir = "workdir" in prepared.profile && prepared.profile.workdir;
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  writeFileSync(
+    launcherFile,
+    [
+      "#!/bin/sh",
+      ...(workdir ? [`cd ${quote(workdir)} || exit 1`] : []),
+      `exec ${[launch.command, ...launch.args].map(quote).join(" ")} "$@"`,
+      "",
+    ].join("\n"),
+    { mode: 0o500, flag: "wx" },
+  );
+  return launcherFile;
+}
+
+function prepare(
+  profile: SandboxProfile,
+  command: string,
+): { backend: SandboxBackend; profile: SandboxProfile; command: string } {
+  const backend = backends[process.platform];
+  if (!backend?.guarantees[profile.kind])
+    throw new SandboxError(
+      "unsupported_platform",
+      `${profile.kind} isolation is not available on ${process.platform}`,
+    );
+  return profile.kind === "readonly_agent"
+    ? { backend, ...readonlyAgent(profile, command) }
+    : { backend, profile, command };
+}
+
+function readonlyAgent(
   profile: ReadonlyAgentProfile,
   command: string,
-): string {
-  requireBackend(profile.kind);
-  return darwinLauncher(profile, command);
+): { profile: ReadonlyAgentProfile; command: string } {
+  const home = realpathSync(profile.home);
+  const executable = isAbsolute(command)
+    ? realpathSync(command)
+    : (process.env.PATH ?? "")
+        .split(delimiter)
+        .map((root) => resolve(root, command))
+        .filter(existsSync)
+        .map((path) => realpathSync(path))[0];
+  if (!executable) throw new SandboxError("executable_missing");
+  const readRoots = profile.readRoots
+    .filter(existsSync)
+    .map((path) => realpathSync(path));
+  const workdir = profile.workdir ? realpathSync(profile.workdir) : home;
+  if (workdir !== home && !readRoots.some((root) => within(root, workdir)))
+    throw new SandboxError("workdir_not_readable");
+  return {
+    profile: { ...profile, home, readRoots, workdir },
+    command: executable,
+  };
 }

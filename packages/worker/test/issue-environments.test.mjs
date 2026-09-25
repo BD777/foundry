@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { ExecutionStore } from "../dist/execution-storage.js";
+import { sandboxAvailable } from "../dist/sandbox/index.js";
 import { git, gitCommit } from "../dist/execution-git.js";
 import {
   prepareIssueEnvironment,
@@ -380,7 +381,7 @@ test("Accept rejects changed review and dirty source without modifying source", 
 
 test(
   "executor sandbox blocks absolute and symlink writes to source, metadata, and unprepared repos",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("writable_tree") },
   async (t) => {
     const { source, store } = await fixture(t);
     const environment = await prepareIssueEnvironment(
@@ -430,6 +431,7 @@ test(
       readFileSync(resolve(source, "AGENTS.md"), "utf8"),
       "Shared workspace guidance",
     );
+    if (process.platform !== "darwin") return;
     const profile = readFileSync(
       resolve(environment.directory, "executor.sb"),
       "utf8",
@@ -519,7 +521,7 @@ test("existing submodules use durable child worktrees and child-first Accept", a
 
 test(
   "real executor boundary prepares a repository between turns",
-  { skip: process.platform !== "darwin", timeout: 30_000 },
+  { skip: !sandboxAvailable("writable_tree"), timeout: 30_000 },
   async (t) => {
     const { source, store } = await fixture(t);
     mkdirSync(resolve(source, ".foundry"));

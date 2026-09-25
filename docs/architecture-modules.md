@@ -26,13 +26,17 @@ worker / protocol），不按领域分。每个功能都要纵穿四层，并经
   （`profiles.ts` `sessionEnvironment()`），Issue 执行走 `Run`，`issue-executor.ts` 只注入
   repository socket。
 - **Linux 上澄清、判定、合入不可用**：Linux 支持只补在了其中两处沙箱，阶段沙箱和 HTTP
-  服务仍是 macOS 专有，合入处单独做了平台拒绝。
+  服务仍是 macOS 专有，合入处单独做了平台拒绝。（第 2 步已开放澄清、判定与合入；HTTP
+  服务见第 2b 步。）
 - **编排出的 Issue 子会话不受隔离**：带 `issueId` 的子会话在候选目录中运行
   （`daemon-connection.ts` `sessionExecutionPath`），但走 Chat 的 runner，没有经过
   `sandboxCommand`；同一个候选里，Issue 执行被隔离，子会话却不被隔离。
 - **Linux 候选沙箱没有控制面端口限制**：macOS profile 拒绝访问 Server/Web 端口
   （`controlNetworkRestrictions`），Linux bwrap 分支未 unshare 网络，也没有等价限制。
-  是否构成实际风险需在 M1 核实。
+  第 2 步核实：沙箱内确实能连到控制面；按 §5.1 的决定作为已知缺口保留。同时发现并修复了
+  三个 Linux 问题：沙箱内无法解析域名（未挂载 `/etc`，Agent 连不上模型 API）、候选沙箱能
+  读到 Server 数据目录（数据库与 `foundry-secret.key`）、Issue Agent 连不上 Worker 的仓库
+  工具 socket。
 
 ## 2. 分层与依赖规则
 
@@ -173,61 +177,69 @@ M2–M4 的接口在各自开始前补充到本文，不提前设计。
 
 ### 5.1 Sandbox
 
-一个模块，一套 profile，按平台选后端。调用方只描述"需要什么"，不写平台分支。
+已实现（第 1、2 步），代码在 `packages/worker/src/sandbox/`。沙箱在 Worker 一侧，限制
+Worker 为 Issue 启动的进程能读写哪些文件、能连哪些网络；Server 没有沙箱，Chat 不经沙箱。
+
+**对使用方：一种调用形态。** 调用方只描述路径和限制，四种 profile、所有后端都用同样的两个
+调用；后端由模块选择，调用方看不到。
 
 ```ts
-type NetworkPolicy =
-  | "none" // 完全断网（检查命令）
-  | "egress_without_control"; // 可出网，但不能访问 Foundry 控制面
+// 四种 profile，按用途区分，字段只有路径和限制
+type SandboxProfile =
+  | WritableTreeProfile //   Issue 执行、preview：只写候选与 scratch
+  | ReadonlyAgentProfile //  澄清、判定：只读 Workspace / 候选，只写私有 home
+  | OfflineCommandProfile // 检查命令：断网，只写输出目录
+  | LoopbackServiceProfile; // 受控 HTTP 目标：只能在本机回环上监听
 
-interface SandboxProfile {
-  purpose: string; // 仅用于审计与诊断，后端不据此分支
-  readRoots: string[];
-  writeRoots: string[];
-  denyWrite: string[]; // 写根内再收回的子路径，例如 .git、未就绪子仓库
-  denyRead: string[]; // 私有状态、凭据目录等
-  home: string; // 私有 HOME / TMPDIR，始终可写
-  workdir: string;
-  network: NetworkPolicy;
-}
-
-interface SandboxLaunch {
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-}
-
-interface SandboxBackend {
-  platform: NodeJS.Platform;
-  probe(): { available: true } | { available: false; reason: string };
-  wrap(profile: SandboxProfile, command: string, args: string[]): SandboxLaunch;
-}
-
-/** 无可用后端时抛出带类型的错误，永不回退到无隔离执行。 */
-function sandboxed(
-  profile: SandboxProfile,
-  command: string,
-  args: string[],
-): SandboxLaunch;
+function sandboxLaunch(profile, command, args): SandboxLaunch; // 命令行
+function sandboxLauncher(profile, command, launcherFile): string; // 给只接受可执行路径的 SDK
+function sandboxAvailable(kind): boolean;
+function sandboxGuarantees(kind): SandboxGuarantees | undefined; // 例如是否挡住控制面
+// 无可用后端或输入无效时抛 SandboxError（带 code），永不回退到无隔离执行
 ```
 
-现有实现到 profile 的映射：
+**对实现方：一个后端接口。** 每种隔离技术实现 `SandboxBackend`：声明自己验证过哪些 profile
+及其保证，并把 profile 翻译成本平台的规则。与平台无关的步骤（解析可执行文件、校验工作目录、
+生成启动脚本、命令安装目录可读）在模块公共层完成，后端拿到的是已规范化的输入。
 
-| 现有                                          | profile 要点                                                                                                              |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `execution-sandbox.ts`（Issue 执行、preview） | 读：系统根、源 Workspace、skill-sets；写：候选 + scratch；denyWrite：`.git`、未就绪子仓库；网络：`egress_without_control` |
-| `evidence-agent-sandbox.ts`（澄清、判定）     | 读：Workspace 或候选 + 所需 Git 目录；写：仅私有 home；网络：`egress_without_control`（模型请求需要出网）                 |
-| `evidence-command-sandbox.ts`（检查命令）     | 读：候选、checker；写：输出目录；网络：`none`                                                                             |
-| `evidence-http-service.ts`（受控服务）        | 读：物化快照；写：私有 home；网络：`none`，只允许本地监听                                                                 |
+```ts
+interface SandboxBackend {
+  id: string;
+  guarantees: Partial<Record<SandboxKind, SandboxGuarantees>>;
+  launch(
+    profile: SandboxProfile,
+    command: string,
+    args: string[],
+  ): SandboxLaunch;
+}
+```
+
+| 后端                 | writable_tree | readonly_agent | offline_command | loopback_service   |
+| -------------------- | ------------- | -------------- | --------------- | ------------------ |
+| macOS Seatbelt       | ✅ 挡控制面   | ✅ 挡控制面    | ✅ 断网         | ✅ 只能回环监听    |
+| Linux bubblewrap     | ✅ 不挡控制面 | ✅ 不挡控制面  | ✅ 断网         | 未实现（第 2b 步） |
+| Docker（计划，见下） | —             | —              | —               | —                  |
+
+原来的四个文件（`execution-sandbox.ts`、`evidence-agent-sandbox.ts`、
+`evidence-command-sandbox.ts`、`evidence-http-service.ts`）现在只负责把 Issue / evidence 的
+信息翻译成 profile，属于 Issue 模块。
 
 **Chat 不经沙箱，这是设计而非缺口。** Chat 是最基础的能力，可以接到任意 cwd：Web 上和
 飞书话题里发起的 Chat 直接在原始 Workspace 中工作，产生的变更直接生效，不经候选、验证与
 Accept。隔离、证据和人工接受是 Issue 这类编排流程提供的保证，不泛化到 Chat。Session
 Runtime 把这一点显式写成 `sandbox: { kind: "host" }`，而不是"没写就是不隔离"。
 
-待决：Linux 上 `egress_without_control` 的实现方式。bwrap 没有端口级过滤；候选方案包括
-network namespace + slirp4netns 并加规则、仅在该命名空间内做 loopback 转发，或者接受
-"断网 + 通过 Worker 代理模型请求"。选型前先核实 Linux 上现有的实际暴露面。
+**Linux 网络（2026-09-25 决定）。** bwrap 不能按端口过滤，Linux 本机后端让 Agent 类
+profile 共享宿主网络：能访问模型 API，但也能连到 Foundry 控制面（公开接口只有登录、首次
+设置、邀请与设备配对）。这一点作为已知缺口由 `sandboxGuarantees(kind).controlPlaneBlocked`
+如实报告，不引入 pasta / slirp4netns 等新依赖。需要更强隔离时，使用计划中的 Docker 后端。
+
+**Docker 后端（计划，不在 M1）。** 作为第三种 `SandboxBackend`，按 Workspace 选择，面向
+Linux 服务器、团队共用机器和需要可复现环境的项目：容器从网桥访问不到宿主 127.0.0.1，天然
+挡住控制面，也提供独立根文件系统与资源限额。取舍：Agent 只能用镜像里的工具链；macOS 上
+经虚拟机运行，文件性能下降，也做不了 iOS / macOS 项目，所以 macOS 默认仍用 Seatbelt；
+worktree 的 `.git` 指向主仓库绝对路径，主仓库 `.git` 需按同一路径挂载；Worker 本身跑在
+容器里时需要挂载宿主 docker.sock，等于把宿主 root 权限交给 Worker。
 
 ### 5.2 Session Runtime
 
@@ -312,8 +324,11 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
    只能减少。之后每一步都应让基线缩短。
 1. **Sandbox（第 1 层）**：建模块和 macOS 后端，把四处实现迁进去，只接收
    `SandboxProfile`；输出与现在逐字节一致的 profile（用快照测试锁定）。
-2. **Sandbox Linux 后端**：补齐阶段只读和受控服务两种 profile，核实并处理控制面端口；
-   移除 `evidence-acceptance.ts` 等处的平台拒绝，改由 `probe()` 决定。
+2. **Sandbox 后端接口与 Linux 只读阶段**（已完成）：后端统一实现 `SandboxBackend`；
+   Linux 实现 `readonly_agent`，修复 DNS、Server 数据可读、仓库工具 socket 与嵌套只读
+   目录问题；`evidence-acceptance.ts` 的平台拒绝改由 `sandboxAvailable()` 决定。
+   **2b.** Linux 的 `loopback_service`（受控 HTTP 目标）：服务放进无网络的命名空间，
+   由 Worker 经 Unix socket 转接。
 3. **候选存储与 Git（第 1 层）**：从 Issue 命名中独立出来，类型去掉 Issue 概念。
 4. **Harness Profiles（第 2 层）**：把 `sessionEnvironment()` 移出，profiles 不再依赖会话。
 5. **Session Runtime（第 4 层）**：先让 `evidence-agent.ts` 的阶段会话走 `startSession`，

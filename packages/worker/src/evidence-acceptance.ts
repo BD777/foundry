@@ -15,6 +15,7 @@ import type {
 } from "./execution-types.js";
 import { git } from "./execution-git.js";
 import { writeJSON } from "./storage.js";
+import { sandboxAvailable } from "./sandbox/index.js";
 
 export async function acceptEvidenceCandidate(
   request: Extract<
@@ -35,7 +36,7 @@ export async function acceptEvidenceCandidate(
       if (!environment) throw new Error("candidate_missing");
       if (environment.controlIsolationVersion !== 1)
         throw new Error("execution_isolation_required");
-      if (process.platform !== "darwin")
+      if (!sandboxAvailable("writable_tree"))
         throw new Error("execution_isolation_unverified_on_this_platform");
       const candidate = store.readRecord<CandidateSnapshot>(
         "candidate-snapshots",

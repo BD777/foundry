@@ -14,11 +14,12 @@ import {
   stageSandboxExecutable,
   stageDisabledFeatures,
 } from "../dist/evidence-agent-sandbox.js";
+import { sandboxAvailable } from "../dist/sandbox/index.js";
 import { digestObject, digestBytes } from "../dist/evidence-store.js";
 
 test(
   "a detached stage reads only its own home and cannot touch original evidence",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("readonly_agent") },
   (t) => {
     const root = mkdtempSync(resolve(tmpdir(), "foundry-verifier-isolation-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -30,7 +31,7 @@ test(
     const executable = stageSandboxExecutable(process.execPath, home, {
       serverURL: "http://127.0.0.1:45679",
     });
-    const script = `const fs=require("fs");console.log(fs.readFileSync("selected.txt","utf8"));for(const op of [()=>fs.readFileSync(${JSON.stringify(original)}),()=>fs.writeFileSync(${JSON.stringify(original)},"changed")]){try{op();process.exit(9)}catch(e){if(!["EPERM","EACCES"].includes(e.code))throw e;}}`;
+    const script = `const fs=require("fs");console.log(fs.readFileSync("selected.txt","utf8"));for(const op of [()=>fs.readFileSync(${JSON.stringify(original)}),()=>fs.writeFileSync(${JSON.stringify(original)},"changed")]){try{op();process.exit(9)}catch(e){if(!["EPERM","EACCES","EROFS","ENOENT"].includes(e.code))throw e;}}`;
     const output = execFileSync(executable, ["-e", script], {
       cwd: root,
       env: { HOME: home, PATH: process.env.PATH },
@@ -56,7 +57,7 @@ test(
 
 test(
   "a workspace stage starts in the project, reads it and still cannot write it",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("readonly_agent") },
   (t) => {
     const root = mkdtempSync(resolve(tmpdir(), "foundry-stage-workspace-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -69,7 +70,7 @@ test(
       readRoots: [project],
       workdir: project,
     });
-    const script = `const fs=require("fs");console.log(fs.readFileSync("README.md","utf8"));try{fs.writeFileSync("README.md","changed");process.exit(9)}catch(e){if(!["EPERM","EACCES"].includes(e.code))throw e;}`;
+    const script = `const fs=require("fs");console.log(fs.readFileSync("README.md","utf8"));try{fs.writeFileSync("README.md","changed");process.exit(9)}catch(e){if(!["EPERM","EACCES","EROFS","ENOENT"].includes(e.code))throw e;}`;
     const output = execFileSync(executable, ["-e", script], {
       cwd: root,
       env: { HOME: home, PATH: process.env.PATH },

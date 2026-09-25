@@ -78,8 +78,11 @@ Main entry points:
 
 Known boundaries to respect in any new work:
 
-- Agent clarification, independent verifier sessions and Accept/integration
-  are enabled on macOS only and explicitly refused elsewhere.
+- Worker isolation goes through the Sandbox module
+  (`packages/worker/src/sandbox`, [design](docs/architecture-modules.md#51-sandbox));
+  never spawn `sandbox-exec` / `bwrap` or branch on the platform elsewhere. Linux
+  supports every Issue stage except controlled HTTP targets, and its sandbox does
+  not block the control plane (`sandboxGuarantees`). Chats are not sandboxed.
 - Every browser API call requires an account (no anonymous mode); workspaces
   are shared by role (Viewer / Member / Maintainer / Owner). Per-sender
   Feishu identity, personal connection grants and audit are not built yet (see

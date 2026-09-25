@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   captureProcess,
@@ -21,7 +22,8 @@ export async function runEvidenceCommand(
         workdir: invocation.cwd,
         readRoots: [candidate],
         writeRoot: output,
-        readOnlyPaths: [resolve(output, "checker")],
+        // Project commands run without a checker bundle.
+        readOnlyPaths: [resolve(output, "checker")].filter(existsSync),
       },
       invocation.executable,
       invocation.args,

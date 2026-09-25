@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { git, gitCommit } from "../dist/execution-git.js";
+import { sandboxAvailable, sandboxGuarantees } from "../dist/sandbox/index.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
@@ -117,7 +118,7 @@ test("baseline movement refuses old approval without changing source", async (t)
 });
 test(
   "review-bound acceptance integrates exact tree and retains material",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("writable_tree") },
   async (t) => {
     const { source, environment, store, execution } = await fixture(t);
     const candidate = await sealCandidate(environment, store);
@@ -179,7 +180,7 @@ test(
 );
 test(
   "evidence-bound multi-repository journal preserves partial application and resumes exact approval",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("writable_tree") },
   async (t) => {
     const root = mkdtempSync(resolve(tmpdir(), "foundry-evidence-partial-"));
     t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -328,7 +329,7 @@ test(
 );
 test(
   "executor cannot read unrelated control files or inherit control environment",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("writable_tree") },
   async (t) => {
     const { root, environment, execution } = await fixture(t);
     const secret = resolve(root, "private-control-config");
@@ -361,7 +362,7 @@ test(
 );
 test(
   "trusted worker executes frozen checker and persists result across duplicate RPC",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("offline_command") },
   async (t) => {
     const { environment, store, execution } = await fixture(t);
     const bundle = store.sealMaterial(
@@ -513,7 +514,7 @@ test(
 
 test(
   "the project's own command decides the verdict and its output becomes the evidence",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("offline_command") },
   async (t) => {
     const { environment, store, execution } = await fixture(t);
     const commandCriterion = (id, script, description) => {
@@ -652,7 +653,7 @@ test(
 
 test(
   "custom control port is inaccessible from executor",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxGuarantees("writable_tree")?.controlPlaneBlocked },
   async (t) => {
     const { environment, execution } = await fixture(t);
     let requests = 0;
@@ -687,7 +688,7 @@ test(
 
 test(
   "HTTP verification binds managed candidate and exports candidate files",
-  { skip: process.platform !== "darwin" },
+  { skip: !sandboxAvailable("loopback_service") },
   async (t) => {
     const { environment: original, execution, store } = await fixture(t);
     writeFileSync(
