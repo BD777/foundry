@@ -16,7 +16,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "foundry-worker": "node scripts/run-cli.mjs",
     "prepack": "pnpm build",
     "test": "pnpm --filter @foundry/protocol build && pnpm build && node scripts/run-worker-tests.mjs",
