@@ -24,6 +24,8 @@ export function sandboxCommand(
   registration: WorkspaceRegistration,
   command: string,
   args: string[],
+  /** Unix sockets outside the candidate the executor may connect to. */
+  connectSockets: string[] = [],
 ): { command: string; args: string[] } {
   const denied = registration.repositories
     .filter(
@@ -49,6 +51,7 @@ export function sandboxCommand(
         readOnlyPaths: environment.repositories.map((repo) =>
           resolve(repo.worktreePath, ".git"),
         ),
+        connectSockets,
         controlServerURL: environment.controlServerURL,
       },
       command,
@@ -59,25 +62,10 @@ export function sandboxCommand(
   }
 }
 
-// Keep the messages Issues have always shown for an unavailable backend.
 function issueIsolationError(error: unknown): unknown {
-  if (!isSandboxError(error)) return error;
-  switch (error.code) {
-    case "unsupported_platform":
-      return new Error(
-        `Issue execution isolation is not available on ${process.platform}`,
-      );
-    case "backend_missing":
-      return new Error(
-        `${process.platform === "linux" ? "Linux " : ""}Issue isolation ${error.message}`,
-      );
-    case "user_namespaces_unavailable":
-      return new Error(
-        `Linux user namespaces are unavailable: ${error.message}`,
-      );
-    default:
-      return error;
-  }
+  return isSandboxError(error)
+    ? new Error(`Issue execution isolation is unavailable: ${error.message}`)
+    : error;
 }
 
 export function executorEnvironment(

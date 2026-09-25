@@ -62,7 +62,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：每个 Workspace 配置自己的 Bot 并配对群，群内话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
 - [x] [账号与 Workspace 共享](docs/security.md#accounts)：所有接口要求登录，设备凭证与资源归属，按 Viewer / Member / Maintainer / Owner 共享 Workspace。
 - [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
-- [x] Issue 引擎：准出条件 → 候选执行 → 证据与验证 → 接受 → 合入已在主干并有历史闭环记录；Agent 澄清、独立判定与合入目前仅在 macOS 开通，Web 入口在体验打磨完成前暂时隐藏。
+- [x] Issue 引擎：准出条件 → 候选执行 → 证据与验证 → 接受 → 合入已在主干并有历史闭环记录；macOS 与 Linux 均可执行、澄清、判定与合入（Linux 暂不支持受控 HTTP 目标，沙箱内也挡不住访问控制面），Web 入口在体验打磨完成前暂时隐藏。
 
 ### M1 执行内核
 
@@ -113,7 +113,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - Node.js 22
 - pnpm 11.7.0
 - Go 1.24.0 或更高版本（以 [go.mod](apps/server/go.mod) 为准）
-- Git；本地 Worker 支持 macOS 和 Linux，Linux 的 Issue 执行需要 bubblewrap 和可用的 user namespace。Issue 的 Agent 澄清、独立判定与 Accept 集成目前只在 macOS 开通，Linux 上会显式拒绝执行；Chat 在两个平台都可用。
+- Git；本地 Worker 支持 macOS 和 Linux，Linux 的 Issue 执行需要 bubblewrap 和可用的 user namespace。Issue 的澄清、独立判定与 Accept 集成在两个平台都可用；Linux 上受控 HTTP 目标暂不可用，沙箱内的 Agent 也能访问本机 Foundry Server 端口（macOS 会拒绝）。Chat 在两个平台都可用，且不经沙箱。
 
 ### 安装与启动
 

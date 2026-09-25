@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonical } from "../paths.js";
 import {
@@ -51,6 +51,21 @@ export function executableReadRoots(
           root.startsWith(`${control}/`),
       ),
   );
+}
+
+/**
+ * Install prefixes of the runtime and of `command`, resolved through PATH when
+ * it is a bare name, so the process can load the executable it was given.
+ */
+export function commandReadRoots(command: string): string[] {
+  const file = isAbsolute(command)
+    ? command
+    : (process.env.PATH ?? "")
+        .split(delimiter)
+        .filter(Boolean)
+        .map((root) => resolve(root, command))
+        .find(existsSync);
+  return executableReadRoots(file ?? command, protectedHostPaths());
 }
 
 /**

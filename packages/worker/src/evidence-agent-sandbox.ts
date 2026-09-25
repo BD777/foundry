@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 import { isSandboxError, sandboxLauncher } from "./sandbox/index.js";
 
 /** Capabilities no evidence stage session may use, whatever its directory. */
@@ -53,17 +55,19 @@ export function stageSandboxExecutable(
   } = {},
 ): string {
   try {
-    // Beyond these roots: no source trees, global user config, project skills
-    // or original materials. Only the private home is ever writable.
+    // The policy and launcher live beside the private home, outside it.
+    const stage = resolve(realpathSync(home), "..");
     return sandboxLauncher(
       {
         kind: "readonly_agent",
+        policyFile: resolve(stage, "verifier.sb"),
         home,
         readRoots: options.readRoots ?? [],
         workdir: options.workdir,
         controlServerURL: options.serverURL,
       },
       command,
+      resolve(stage, "verifier-cli"),
     );
   } catch (error) {
     if (!isSandboxError(error)) throw error;

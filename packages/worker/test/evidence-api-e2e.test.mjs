@@ -15,6 +15,7 @@ import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { ExecutionStore } from "../dist/execution-storage.js";
+import { sandboxAvailable } from "../dist/sandbox/index.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
@@ -38,7 +39,7 @@ async function until(read, matches, timeout = 45000) {
 test(
   "real Server HTTP + Worker: fixed API evidence, dropped receipt recovery, exact Accept",
   {
-    skip: process.platform !== "darwin",
+    skip: !sandboxAvailable("loopback_service"),
     timeout: process.env.FOUNDRY_VERIFY_E2E_LIVE === "1" ? 300000 : 90000,
   },
   async (t) => {

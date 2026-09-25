@@ -50,7 +50,13 @@ export const workerModules = {
   },
   sandbox: {
     dependsOn: ["platform"],
-    files: ["sandbox/index", "sandbox/host", "sandbox/darwin", "sandbox/linux"],
+    files: [
+      "sandbox/index",
+      "sandbox/types",
+      "sandbox/host",
+      "sandbox/darwin",
+      "sandbox/linux",
+    ],
   },
   "candidate-store": {
     dependsOn: ["platform"],

@@ -62,7 +62,7 @@ The target shape is described in the [Workspace and Sandbox overview](workspace-
 - [x] [Feishu bot](platform-extensions.md#im-integration): each workspace configures its own bot and pairs groups; group threads map to sessions and replies stream into cards; a group acts with the identity and permissions of the account that generated its pairing code.
 - [x] [Accounts and workspace sharing](security.md#accounts): every API requires sign-in; device credentials and resource ownership; workspaces are shared as Viewer / Member / Maintainer / Owner.
 - [x] [Devices and deployment](development.md): daemons connect out to the server; multiple devices and workspaces; macOS / Linux process isolation; [Docker deployment](../deploy/README.md) and [parallel dev stacks](dev-stacks.md).
-- [x] Issue engine: completion criteria → candidate execution → evidence and verification → acceptance → integration is on main with historical end-to-end records. Agent clarification, independent judgments and integration are enabled on macOS only, and the web entry is hidden until the experience is polished.
+- [x] Issue engine: completion criteria → candidate execution → evidence and verification → acceptance → integration is on main with historical end-to-end records. Execution, clarification, judgments and integration run on macOS and Linux (Linux does not support controlled HTTP targets yet, and its sandbox cannot block the control plane); the web entry is hidden until the experience is polished.
 
 ### M1 Execution core
 
@@ -113,7 +113,7 @@ One sandbox definition and one way to start an agent. Chats keep working directl
 - Node.js 22
 - pnpm 11.7.0
 - Go 1.24.0 or later, as declared in [go.mod](../apps/server/go.mod)
-- Git; local workers support macOS and Linux. Issue execution on Linux requires bubblewrap and a working user namespace. Issue clarification, independent-agent verification and Accept integration are enabled on macOS only and explicitly refused on Linux today; Chat works on both.
+- Git; local workers support macOS and Linux. Issue execution on Linux requires bubblewrap and a working user namespace. Issue clarification, independent-agent verification and Accept integration work on both; on Linux, controlled HTTP targets are not available yet and sandboxed agents can still reach the local Foundry server ports (macOS denies them). Chat works on both and is not sandboxed.
 
 ### Install and run
 

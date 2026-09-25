@@ -176,6 +176,7 @@ export async function runIssueExecutor(
         registration,
         process.execPath,
         [childPath],
+        [socketPath],
       );
       const env = {
         ...executorEnvironment(environment),
