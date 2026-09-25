@@ -1,3 +1,11 @@
+import type { AgentSession } from "@foundry/protocol";
+import {
+  baseProcessEnvironment,
+  profileID,
+  profileRuntimeEnvironment,
+  type AgentProfileLocalConfig,
+} from "./profiles.js";
+
 /**
  * Per-session ambient environment (CHAT-01).
  *
@@ -43,5 +51,29 @@ export function sessionAmbientEnvironment(
     FOUNDRY_SERVER_URL: ambient.serverURL,
     FOUNDRY_SESSION_TOKEN: ambient.sessionToken,
     FOUNDRY_WORKSPACE_ID: ambient.workspaceID,
+  };
+}
+
+/**
+ * The full environment of a session process: the profile's runtime
+ * environment plus the session's identity, attachments and ambient
+ * orchestration credentials.
+ */
+export function sessionEnvironment(
+  workspacePath: string,
+  profile: AgentProfileLocalConfig,
+  session?: AgentSession,
+): NodeJS.ProcessEnv {
+  return {
+    ...baseProcessEnvironment(profile),
+    ...profileRuntimeEnvironment(profile, session),
+    ...sessionAmbientEnvironment(session?.id),
+    FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(session?.attachments ?? []),
+    FOUNDRY_AGENT_PROFILE: profileID(profile),
+    FOUNDRY_AGENT_PROFILE_LABEL: profile.label ?? profileID(profile),
+    FOUNDRY_WORKSPACE: workspacePath,
+    FOUNDRY_SESSION_ID: session?.id ?? process.env.FOUNDRY_SESSION_ID ?? "",
+    FOUNDRY_SESSION_SOURCE:
+      session?.source ?? process.env.FOUNDRY_SESSION_SOURCE ?? "chat",
   };
 }

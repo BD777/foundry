@@ -24,7 +24,6 @@ import { nativeAgentProfiles } from "./native-agent-config.js";
 import { nativeLoginHealth } from "./native-login.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { providerHealthData } from "./provider-health.js";
-import { sessionAmbientEnvironment } from "./session-ambient.js";
 import {
   projectedProfileAuthMode,
   projectedProfileStatusDetail,
@@ -633,7 +632,7 @@ export function profileRuntimeEnvironment(
  * logins and device-owned profiles are untouched: for them an inherited env
  * var is a configured credential source (see profileHasAuth).
  */
-function baseProcessEnvironment(
+export function baseProcessEnvironment(
   profile: AgentProfileLocalConfig,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
@@ -647,46 +646,6 @@ function baseProcessEnvironment(
     }
   }
   return env;
-}
-
-export function sessionEnvironment(
-  workspacePath: string,
-  profile: AgentProfileLocalConfig,
-  session?: AgentSession,
-): NodeJS.ProcessEnv {
-  return {
-    ...baseProcessEnvironment(profile),
-    ...profileRuntimeEnvironment(profile, session),
-    ...sessionAmbientEnvironment(session?.id),
-    FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(session?.attachments ?? []),
-    FOUNDRY_AGENT_PROFILE: profileID(profile),
-    FOUNDRY_AGENT_PROFILE_LABEL: profile.label ?? profileID(profile),
-    FOUNDRY_WORKSPACE: workspacePath,
-    FOUNDRY_SESSION_ID: session?.id ?? process.env.FOUNDRY_SESSION_ID ?? "",
-    FOUNDRY_SESSION_SOURCE:
-      session?.source ?? process.env.FOUNDRY_SESSION_SOURCE ?? "chat",
-  };
-}
-
-export function sessionAttachmentContext(session: AgentSession): string {
-  const attachments = session.attachments ?? [];
-  if (attachments.length === 0) {
-    return "";
-  }
-  const lines = attachments.map((attachment, index) => {
-    const label = attachment.kind === "image" ? "image" : "file";
-    const mime = attachment.mimeType ? ` (${attachment.mimeType})` : "";
-    const path = attachment.path.trim();
-    const tag =
-      attachment.kind === "image"
-        ? `\n<image name="${attachment.name}" path="${path}"></image>`
-        : "";
-    return `${index + 1}. ${label}: ${attachment.name}${mime}\n   path: ${path}${tag}`;
-  });
-  return [
-    "Attached files for this turn are available on the local filesystem. Use the paths below as the source of truth.",
-    ...lines,
-  ].join("\n");
 }
 
 export function upsertAgentProfileConfig(

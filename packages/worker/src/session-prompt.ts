@@ -4,7 +4,6 @@
 
 import type { AgentSession } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
-import { sessionAttachmentContext } from "./profiles.js";
 import { isUtilitySession } from "./utils.js";
 
 export function sessionPrompt(
@@ -33,4 +32,25 @@ export function sessionPrompt(
 You are running through Foundry's local daemon. Treat the workspace as read-only for this diagnostic session. Read files if needed, but do not edit, create, delete, or move files. Return a concise answer.`;
   }
   return prompt;
+}
+
+export function sessionAttachmentContext(session: AgentSession): string {
+  const attachments = session.attachments ?? [];
+  if (attachments.length === 0) {
+    return "";
+  }
+  const lines = attachments.map((attachment, index) => {
+    const label = attachment.kind === "image" ? "image" : "file";
+    const mime = attachment.mimeType ? ` (${attachment.mimeType})` : "";
+    const path = attachment.path.trim();
+    const tag =
+      attachment.kind === "image"
+        ? `\n<image name="${attachment.name}" path="${path}"></image>`
+        : "";
+    return `${index + 1}. ${label}: ${attachment.name}${mime}\n   path: ${path}${tag}`;
+  });
+  return [
+    "Attached files for this turn are available on the local filesystem. Use the paths below as the source of truth.",
+    ...lines,
+  ].join("\n");
 }

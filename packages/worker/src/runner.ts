@@ -147,9 +147,9 @@ import {
   profileFingerprint,
   profileID,
   profileRuntimeEnvironment,
-  sessionEnvironment,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
+import { sessionEnvironment } from "./session-ambient.js";
 import { readAgentRuntimeSettings } from "./device.js";
 
 export function codexSandboxMode(

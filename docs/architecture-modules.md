@@ -329,8 +329,11 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
    目录问题；`evidence-acceptance.ts` 的平台拒绝改由 `sandboxAvailable()` 决定。
    **2b.** Linux 的 `loopback_service`（受控 HTTP 目标）：服务放进无网络的命名空间，
    由 Worker 经 Unix socket 转接。
-3. **候选存储与 Git（第 1 层）**：从 Issue 命名中独立出来，类型去掉 Issue 概念。
-4. **Harness Profiles（第 2 层）**：把 `sessionEnvironment()` 移出，profiles 不再依赖会话。
+3. **候选存储与 Git（第 1 层）**：并入第 5 步按需处理。第 2 步之后 Sandbox 已不再依赖
+   这些类型，剩下的只是把 `IssueEnvironment` 等类型改名（11 个文件、41 处引用），不消除
+   任何违例；等 Session Runtime 真正需要时再调整。
+4. **Harness Profiles（第 2 层）**（已完成）：`sessionEnvironment()` 移入 Session Runtime
+   的 `session-ambient.ts`，附件提示移入 `session-prompt.ts`，profiles 不再依赖会话。
 5. **Session Runtime（第 4 层）**：先让 `evidence-agent.ts` 的阶段会话走 `startSession`，
    再迁移 Issue 执行、编排子会话和 Chat。
 6. **Server 侧统一**：Run → AgentSession，会话相关的 daemon 消息收敛；Issue 执行获得
