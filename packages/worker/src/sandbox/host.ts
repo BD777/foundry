@@ -9,18 +9,6 @@ import {
   stackStateParent,
 } from "../state-root.js";
 
-export function controlNetworkRestrictions(serverURL?: string): string[] {
-  const ports = new Set(["31982", "31983"]);
-  if (serverURL) {
-    const url = new URL(serverURL);
-    ports.add(url.port || (url.protocol === "https:" ? "443" : "80"));
-  }
-  // Block this port to every address, including host LAN IP and IPv6 aliases.
-  return [...ports].map(
-    (port) => `(deny network-outbound (remote tcp "*:${port}"))`,
-  );
-}
-
 /**
  * Install prefixes of the Node runtime and of the launched executable. Tool
  * managers (nvm, ~/.local, npm-global) keep them outside the system roots,
@@ -69,21 +57,39 @@ export function commandReadRoots(command: string): string[] {
 }
 
 /**
- * Host state no sandboxed process may read. Every stack's private state stays
- * unreadable, not only the active one: parallel stacks must not be able to
- * read each other's evidence or state.
+ * Foundry's own governance state: device credential, daemon config, other
+ * Issues' candidates and evidence, and every parallel stack's state. No
+ * sandboxed process may read it, whatever else it is allowed to see.
  */
-export function protectedHostPaths(): string[] {
+export function governanceStatePaths(): string[] {
+  return [defaultStateRoot, stackStateParent, foundryStateRoot()]
+    .filter(existsSync)
+    .map(canonical)
+    .filter((path, index, all) => all.indexOf(path) === index);
+}
+
+/**
+ * The user's own configuration and credentials. Hidden unless the profile
+ * lets the process use the user's files.
+ */
+export function userSecretPaths(): string[] {
   return [
-    defaultStateRoot,
-    stackStateParent,
-    foundryStateRoot(),
     resolve(homedir(), ".config"),
     resolve(homedir(), "Library"),
     resolve(homedir(), ".ssh"),
   ]
     .filter(existsSync)
     .map(canonical);
+}
+
+/** Everything a sandboxed process without the user's files may not read. */
+export function protectedHostPaths(): string[] {
+  return [...governanceStatePaths(), ...userSecretPaths()];
+}
+
+/** The runtime's server data (database, secret key); never readable. */
+export function runtimeServerData(runtime: string): string[] {
+  return [".data", "apps/server/.data"].map((path) => resolve(runtime, path));
 }
 
 /** The Foundry installation the worker runs from (repository root in development). */

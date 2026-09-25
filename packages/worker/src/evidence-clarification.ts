@@ -147,7 +147,6 @@ export async function clarifyIssueContract(
       "verifier-output",
       identifier(request.taskId),
     ),
-    controlServerURL: request.controlServerURL,
     workspace: { path: workspacePath, readRoots: [] },
     systemPrompt:
       "You are Foundry's clarification partner for one Issue. You work read-only inside the person's project: read it to ground the conversation. You do not implement, confirm, verify or accept.",

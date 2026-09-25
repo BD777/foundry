@@ -128,7 +128,7 @@ Server/Worker 都将完整配置、bundle 字节摘要、fixture 摘要和 timeo
 - candidate_changes：系统逐仓比较冻结 baseline 与 candidate，保存 Git 变更清单；用于变更范围证明，不信任实现总结。
 - human_upload：先生成 Material，再显式关联条件、验证输入和人的声明；仅 agent 条件可接受这种关联。
 
-Agent 初判只接收确认的条件/rubric/参考 Media/选定 Evidence/输入身份，不喂实现会话的“我完成了”；提示明确要求在候选 Worktree 中实际查看文件，observed 必须写清文件路径或所用命令。图片实际以媒体字节输入；未支持 PDF/视频等材料时明确失败，不把文件名当内容。判定是全新独立阶段会话（`persistSession: false`、独立私有 home），不是实现会话的续接。Claude 使用 Agent SDK：仅预批准 Read/Grep/Glob，判定阶段额外允许只读 Bash 运行检查命令，写/编辑/Task/Web 类工具一律拒绝，空 MCP/skills/plugins、不继承 settings（判定会话不加载项目指令；项目指令只在澄清阶段读取）。Codex 使用独立私有配置与 `sandboxMode: read-only`、`approvalPolicy: never`、断网，禁用 Shell（无 Worktree 的纯材料判定）、Apps、浏览器、Computer、插件、hooks、子 Agent 等能力。额外 macOS sandbox-exec 包装只放行 SDK runtime/系统只读根/独立 home/候选只读根，候选与原始证据不可写、宿主管理凭据不可读；Linux 由 bubblewrap 提供同样的只读阶段隔离（独立 home 可写，Workspace/候选只读，未挂载的路径不可见也不可写），但共享宿主网络、挡不住控制面端口；其他平台直接报 `agent_verifier_isolation_unavailable`，不回退到无隔离执行。隔离统一由 Sandbox 模块提供（见[模块化架构 §5.1](architecture-modules.md#51-sandbox)）。
+Agent 初判只接收确认的条件/rubric/参考 Media/选定 Evidence/输入身份，不喂实现会话的“我完成了”；提示明确要求在候选 Worktree 中实际查看文件，observed 必须写清文件路径或所用命令。图片实际以媒体字节输入；未支持 PDF/视频等材料时明确失败，不把文件名当内容。判定是全新独立阶段会话（`persistSession: false`、独立私有 home），不是实现会话的续接。Claude 使用 Agent SDK：仅预批准 Read/Grep/Glob，判定阶段额外允许只读 Bash 运行检查命令，写/编辑/Task/Web 类工具一律拒绝，空 MCP/skills/plugins、不继承 settings（判定会话不加载项目指令；项目指令只在澄清阶段读取）。Codex 使用独立私有配置与 `sandboxMode: read-only`、`approvalPolicy: never`、断网，禁用 Shell（无 Worktree 的纯材料判定）、Apps、浏览器、Computer、插件、hooks、子 Agent 等能力。额外 macOS sandbox-exec 包装只放行 SDK runtime/系统只读根/独立 home/候选只读根，候选与原始证据不可写、宿主管理凭据不可读；Linux 由 bubblewrap 提供同样的只读阶段隔离（独立 home 可写，Workspace/候选只读，未挂载的路径不可见也不可写）；其他平台直接报 `agent_verifier_isolation_unavailable`，不回退到无隔离执行。隔离统一由 Sandbox 模块提供（见[模块化架构 §5.1](architecture-modules.md#51-sandbox)）。
 
 判定请求向 provider 下发与解析端一致的 JSON Schema：Claude 走 Agent SDK 的 `outputFormat: { type: "json_schema", schema }`，Codex 走 `outputSchema`，Schema 由共享协议模型生成（`VerificationResult` 去掉服务端补填字段）；provider 不支持 schema 时仍按文本回答。解析侧另留有界形状容错：提取代码围栏/末个对象、单引号对象字面量重引、句子包成单元素数组、非字符串 observed 序列化、缺失的 evidenceId 按材料归属修正、删除 null selector；只对齐形状，不改 verdict、措辞与引用归属。
 
@@ -231,7 +231,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 | 1 确认边界   | 删除硬编码、人工编辑确认、claim/Worker双重校验、legacy显式导入                                                                                         | 旧任务不会被自动确认或重跑                       |
 | 2 输入与材料 | Git快照、独立物化、持久材料、命令/项目自带命令/受控HTTP/上传/导出、outbox恢复与缓存回收                                                                | 通用外部输入/依赖闭包尚缺                        |
 | 3 判定与审阅 | 固定检查器（含项目自带命令的程序判定）、候选 Worktree 内独立 SDK 初判、判定侧 JSON Schema 下发与有界形状容错、真实图文输入、覆判、最新请求/新鲜度/准出 | Codex 真实 provider 图文判定未验证；复杂媒体尚缺 |
-| 4 Accept集成 | 精确审阅包、锁内核对、基线对齐复验、新Accept、逐仓journal恢复                                                                                          | 受控 HTTP 目标仍仅 macOS；Linux 沙箱挡不住控制面 |
+| 4 Accept集成 | 精确审阅包、锁内核对、基线对齐复验、新Accept、逐仓journal恢复                                                                                          | 受控 HTTP 目标仍仅 macOS                         |
 | 5 创建澄清   | Issue内逐问Agent会话、所选 Workspace 只读探索（目录/代码/项目指令）、严格契约提议、明确人工确认                                                        | PDF/音视频等复杂参考材料解析尚缺                 |
 
 ## 9. 尚需收口的实施项
@@ -244,6 +244,6 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 4. 图像区域高亮/标注、PDF/视频/音频预览、主动删除材料的影响提示。rationale media 只能作解释性 context，不作为新 Evidence。
 5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。通用依赖安装与输入闭包尚未实现；ignored 文件存在时保守 unknown。
 6. 复杂参考材料解析（PDF/视频/音频等）尚未支持；澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
-7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标仍仅在 macOS 开通；Linux 沙箱挡不住控制面端口（见[模块化架构 §5.1](architecture-modules.md#51-sandbox)）；未验证平台保持拒绝。
+7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标仍仅在 macOS 开通；未验证平台保持拒绝。
 
 只有这些缺口收口并完成首个 provider 的全链路演示后，才应把 README 的 Evidence / Verify 能力勾为完成。

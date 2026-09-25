@@ -1,6 +1,7 @@
 /**
- * The process may read the host broadly, except protected Foundry and user
- * state, and may write only its writable roots.
+ * The process may write only its writable roots. It never reads Foundry's
+ * governance state; whether it reads the user's own files (home,
+ * configuration, credentials, project .env files) is the profile's choice.
  */
 export interface WritableTreeProfile {
   kind: "writable_tree";
@@ -17,8 +18,11 @@ export interface WritableTreeProfile {
   readOnlyPaths: string[];
   /** Unix sockets outside the roots the process may connect to. */
   connectSockets: string[];
-  /** The Foundry control plane to keep unreachable, where the backend can. */
-  controlServerURL?: string;
+  /**
+   * `readable`: the user's files are readable, as in their own terminal.
+   * `hidden`: only system roots, read roots and writable roots are.
+   */
+  userFiles: "readable" | "hidden";
 }
 
 /**
@@ -32,7 +36,6 @@ export interface ReadonlyAgentProfile {
   readRoots: string[];
   /** Initial working directory inside a read root; defaults to the home. */
   workdir?: string;
-  controlServerURL?: string;
 }
 
 /** No network; the process reads its read roots and writes one output root. */
@@ -66,12 +69,6 @@ export interface SandboxLaunch {
   args: string[];
 }
 
-/** What a backend enforces for one profile kind, beyond files. */
-export interface SandboxGuarantees {
-  /** The Foundry control plane cannot be reached from inside. */
-  controlPlaneBlocked: boolean;
-}
-
 /**
  * One isolation technology. The module selects the backend; callers never see
  * which one runs. Profiles arrive normalized: a `readonly_agent` command is an
@@ -81,7 +78,7 @@ export interface SandboxGuarantees {
 export interface SandboxBackend {
   readonly id: string;
   /** Kinds this backend has verified implementations for. */
-  readonly guarantees: Partial<Record<SandboxKind, SandboxGuarantees>>;
+  readonly kinds: readonly SandboxKind[];
   launch(
     profile: SandboxProfile,
     command: string,

@@ -89,7 +89,6 @@ async function run(
       env,
       sandboxedExecutable: (command) =>
         stageLauncher(command, home, {
-          serverURL: spec.controlServerURL,
           readRoots: spec.workspace
             ? [spec.workspace.path, ...spec.workspace.readRoots]
             : [],
@@ -115,7 +114,6 @@ export function stageLauncher(
   command: string,
   home: string,
   options: {
-    serverURL?: string;
     /** Directories the session may read. It can never write to them. */
     readRoots?: string[];
     /** Initial working directory; defaults to the private home. */
@@ -131,7 +129,6 @@ export function stageLauncher(
         home,
         readRoots: options.readRoots ?? [],
         workdir: options.workdir,
-        controlServerURL: options.serverURL,
       },
       command,
       resolve(stage, "verifier-cli"),

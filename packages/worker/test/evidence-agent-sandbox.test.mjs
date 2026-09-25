@@ -28,9 +28,7 @@ test(
     const original = resolve(root, "original.txt");
     writeFileSync(original, "private material");
     writeFileSync(resolve(home, "selected.txt"), "selected");
-    const executable = stageSandboxExecutable(process.execPath, home, {
-      serverURL: "http://127.0.0.1:45679",
-    });
+    const executable = stageSandboxExecutable(process.execPath, home);
     const script = `const fs=require("fs");console.log(fs.readFileSync("selected.txt","utf8"));for(const op of [()=>fs.readFileSync(${JSON.stringify(original)}),()=>fs.writeFileSync(${JSON.stringify(original)},"changed")]){try{op();process.exit(9)}catch(e){if(!["EPERM","EACCES","EROFS","ENOENT"].includes(e.code))throw e;}}`;
     const output = execFileSync(executable, ["-e", script], {
       cwd: root,

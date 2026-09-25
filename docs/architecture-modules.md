@@ -33,7 +33,8 @@ worker / protocol），不按领域分。每个功能都要纵穿四层，并经
   `sandboxCommand`；同一个候选里，Issue 执行被隔离，子会话却不被隔离。
 - **Linux 候选沙箱没有控制面端口限制**：macOS profile 拒绝访问 Server/Web 端口
   （`controlNetworkRestrictions`），Linux bwrap 分支未 unshare 网络，也没有等价限制。
-  第 2 步核实：沙箱内确实能连到控制面；按 §5.1 的决定作为已知缺口保留。同时发现并修复了
+  第 2 步核实：沙箱内确实能连到控制面；之后复查确认这条规则已不必要并取消（见 §5.1）。
+  同时发现并修复了
   三个 Linux 问题：沙箱内无法解析域名（未挂载 `/etc`，Agent 连不上模型 API）、候选沙箱能
   读到 Server 数据目录（数据库与 `foundry-secret.key`）、Issue Agent 连不上 Worker 的仓库
   工具 socket。
@@ -177,16 +178,39 @@ M2–M4 的接口在各自开始前补充到本文，不提前设计。
 
 ### 5.1 Sandbox
 
-已实现（第 1、2 步），代码在 `packages/worker/src/sandbox/`。沙箱在 Worker 一侧，限制
-Worker 为 Issue 启动的进程能读写哪些文件、能连哪些网络；Server 没有沙箱，Chat 不经沙箱。
+已实现，代码在 `packages/worker/src/sandbox/`。沙箱在 Worker 一侧，限制 Worker 为 Issue
+启动的进程能读写哪些文件；Server 没有沙箱，Chat 不经沙箱。
 
-**对使用方：一种调用形态。** 调用方只描述路径和限制，四种 profile、所有后端都用同样的两个
+**沙箱只管操作系统才拦得住的两件事（2026-09-26 定）：**
+
+1. **写边界**：Issue 只写自己的候选与 scratch，保护真实 Workspace 与并行的 Issue；澄清与
+   判定对所看内容只读。
+2. **治理状态不可读**：Foundry 自己的状态目录（设备凭据、daemon 配置、其他 Issue 的候选与
+   证据、各开发栈的状态）和运行目录下的 Server 数据（数据库、`foundry-secret.key`）。
+
+其余的不归沙箱：
+
+- **职责分离**（干活的 Agent 不能判定自己的结果）由身份与流程保证：Agent 的会话令牌只能
+  访问会话相关接口（`httpapi/policy.go` `agentRouteAllowed`），确认准出条件、验证结果和
+  Accept 都不对它开放；Verifier 的结论之所以算数，是因为 Worker 为已封存的候选启动独立
+  会话并记录其输出，而不是 Verifier 持有凭据。
+- **控制面端口不再封锁。** 这条规则来自 Server 允许免登录、能连上就有全部权限的时期；
+  2026-09-23 起所有接口都要求登录，它已不再必要。编排中的 Agent 凭会话令牌访问 Server。
+  （复查时发现的 Vite 开发服务器泄露 Server 数据的问题，已在 Vite 配置中修复。）
+- **任务凭据按发起人决定。** `WritableTreeProfile.userFiles`：Issue 由设备所有者本人发起
+  时为 `readable`，进程能像在本人终端里一样读取 home、配置与凭据（如 feishu-cli、ssh）；
+  其他人发起的 Issue 为 `hidden`，只能看到系统目录、读根与写根。由 Server 在派发
+  `run_issue` 时判断。给他人 Issue 使用某项凭据的显式授权属于账号 P3；外部副作用的按次
+  确认属于后续 Tool Use。`readable` 下浏览器 cookie 等宿主上的其他凭据同样可读，需要更强
+  隔离时使用 `hidden` 或计划中的 Docker 后端。
+
+**对使用方：一种调用形态。** 调用方只描述路径和限制，四种 profile、所有后端都用同样的
 调用；后端由模块选择，调用方看不到。
 
 ```ts
 // 四种 profile，按用途区分，字段只有路径和限制
 type SandboxProfile =
-  | WritableTreeProfile //   Issue 执行、preview：只写候选与 scratch
+  | WritableTreeProfile //   Issue 执行、preview：只写候选与 scratch；userFiles 决定能否读用户文件
   | ReadonlyAgentProfile //  澄清、判定：只读 Workspace / 候选，只写私有 home
   | OfflineCommandProfile // 检查命令：断网，只写输出目录
   | LoopbackServiceProfile; // 受控 HTTP 目标：只能在本机回环上监听
@@ -194,18 +218,17 @@ type SandboxProfile =
 function sandboxLaunch(profile, command, args): SandboxLaunch; // 命令行
 function sandboxLauncher(profile, command, launcherFile): string; // 给只接受可执行路径的 SDK
 function sandboxAvailable(kind): boolean;
-function sandboxGuarantees(kind): SandboxGuarantees | undefined; // 例如是否挡住控制面
 // 无可用后端或输入无效时抛 SandboxError（带 code），永不回退到无隔离执行
 ```
 
-**对实现方：一个后端接口。** 每种隔离技术实现 `SandboxBackend`：声明自己验证过哪些 profile
-及其保证，并把 profile 翻译成本平台的规则。与平台无关的步骤（解析可执行文件、校验工作目录、
+**对实现方：一个后端接口。** 每种隔离技术实现 `SandboxBackend`：声明自己验证过哪些
+profile，并把 profile 翻译成本平台的规则。与平台无关的步骤（解析可执行文件、校验工作目录、
 生成启动脚本、命令安装目录可读）在模块公共层完成，后端拿到的是已规范化的输入。
 
 ```ts
 interface SandboxBackend {
   id: string;
-  guarantees: Partial<Record<SandboxKind, SandboxGuarantees>>;
+  kinds: readonly SandboxKind[];
   launch(
     profile: SandboxProfile,
     command: string,
@@ -216,30 +239,25 @@ interface SandboxBackend {
 
 | 后端                 | writable_tree | readonly_agent | offline_command | loopback_service   |
 | -------------------- | ------------- | -------------- | --------------- | ------------------ |
-| macOS Seatbelt       | ✅ 挡控制面   | ✅ 挡控制面    | ✅ 断网         | ✅ 只能回环监听    |
-| Linux bubblewrap     | ✅ 不挡控制面 | ✅ 不挡控制面  | ✅ 断网         | 未实现（第 2b 步） |
+| macOS Seatbelt       | ✅            | ✅             | ✅ 断网         | ✅ 只能回环监听    |
+| Linux bubblewrap     | ✅            | ✅             | ✅ 断网         | 未实现（第 2b 步） |
 | Docker（计划，见下） | —             | —              | —               | —                  |
 
 原来的四个文件（`execution-sandbox.ts`、`evidence-agent-sandbox.ts`、
 `evidence-command-sandbox.ts`、`evidence-http-service.ts`）现在只负责把 Issue / evidence 的
-信息翻译成 profile，属于 Issue 模块。
+信息翻译成 profile，属于 Issue 模块（`evidence-agent-sandbox.ts` 已并入 Session Runtime）。
 
 **Chat 不经沙箱，这是设计而非缺口。** Chat 是最基础的能力，可以接到任意 cwd：Web 上和
 飞书话题里发起的 Chat 直接在原始 Workspace 中工作，产生的变更直接生效，不经候选、验证与
 Accept。隔离、证据和人工接受是 Issue 这类编排流程提供的保证，不泛化到 Chat。Session
 Runtime 把这一点显式写成 `sandbox: { kind: "host" }`，而不是"没写就是不隔离"。
 
-**Linux 网络（2026-09-25 决定）。** bwrap 不能按端口过滤，Linux 本机后端让 Agent 类
-profile 共享宿主网络：能访问模型 API，但也能连到 Foundry 控制面（公开接口只有登录、首次
-设置、邀请与设备配对）。这一点作为已知缺口由 `sandboxGuarantees(kind).controlPlaneBlocked`
-如实报告，不引入 pasta / slirp4netns 等新依赖。需要更强隔离时，使用计划中的 Docker 后端。
-
 **Docker 后端（计划，不在 M1）。** 作为第三种 `SandboxBackend`，按 Workspace 选择，面向
-Linux 服务器、团队共用机器和需要可复现环境的项目：容器从网桥访问不到宿主 127.0.0.1，天然
-挡住控制面，也提供独立根文件系统与资源限额。取舍：Agent 只能用镜像里的工具链；macOS 上
-经虚拟机运行，文件性能下降，也做不了 iOS / macOS 项目，所以 macOS 默认仍用 Seatbelt；
-worktree 的 `.git` 指向主仓库绝对路径，主仓库 `.git` 需按同一路径挂载；Worker 本身跑在
-容器里时需要挂载宿主 docker.sock，等于把宿主 root 权限交给 Worker。
+Linux 服务器、团队共用机器和需要可复现环境的项目：独立根文件系统与资源限额，宿主上的其他
+凭据天然不可见。取舍：Agent 只能用镜像里的工具链；macOS 上经虚拟机运行，文件性能下降，
+也做不了 iOS / macOS 项目，所以 macOS 默认仍用 Seatbelt；worktree 的 `.git` 指向主仓库
+绝对路径，主仓库 `.git` 需按同一路径挂载；Worker 本身跑在容器里时需要挂载宿主
+docker.sock，等于把宿主 root 权限交给 Worker。
 
 ### 5.2 Session Runtime
 

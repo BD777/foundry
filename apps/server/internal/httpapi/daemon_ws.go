@@ -151,6 +151,10 @@ type wsEnvelope struct {
 type wsRunIssuePayload struct {
 	Issue     store.Issue             `json:"issue"`
 	SkillRefs []store.SessionSkillRef `json:"skillRefs,omitempty"`
+	// UserFiles lets the Issue's processes read the device owner's own files
+	// and credentials. Only an Issue the device owner started may; anyone
+	// else's Issue must not act with the owner's credentials.
+	UserFiles string `json:"userFiles"`
 }
 
 type wsRunStartedPayload struct {
@@ -1804,7 +1808,7 @@ func (c *daemonConnection) claimAndSend() {
 		}
 		skillRefs = resolved
 	}
-	payload, err := json.Marshal(wsRunIssuePayload{Issue: issue, SkillRefs: skillRefs})
+	payload, err := json.Marshal(wsRunIssuePayload{Issue: issue, SkillRefs: skillRefs, UserFiles: issueUserFiles(issue, c.actor)})
 	if err != nil {
 		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
@@ -1893,4 +1897,13 @@ func (c *daemonConnection) closeRemoved() {
 // and latches the registry closed, so late registrations resolve too.
 func (c *daemonConnection) failAllPending() {
 	c.rpc.failAll()
+}
+
+// issueUserFiles decides whether an Issue may use the device owner's own
+// files and credentials: only when the device owner started it.
+func issueUserFiles(issue store.Issue, device Actor) string {
+	if owner := device.AccountID(); owner != "" && issue.CreatedByUserID == owner {
+		return "readable"
+	}
+	return "hidden"
 }

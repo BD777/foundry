@@ -3,11 +3,12 @@ import { dirname, resolve } from "node:path";
 import { canonical } from "../paths.js";
 import {
   commandReadRoots,
-  controlNetworkRestrictions,
   executableReadRoots,
+  governanceStatePaths,
   offlineCommandSystemRoots,
   protectedHostPaths,
   runtimeRoot,
+  runtimeServerData,
   writableTreeSystemRoots,
 } from "./host.js";
 import {
@@ -23,15 +24,15 @@ import {
 const sandboxExec = "/usr/bin/sandbox-exec";
 const quote = (value: string): string => JSON.stringify(value);
 
-/** macOS Seatbelt (`sandbox-exec`) policies; every kind blocks the control plane. */
+/** macOS Seatbelt (`sandbox-exec`) policies. */
 export const seatbeltBackend: SandboxBackend = {
   id: "seatbelt",
-  guarantees: {
-    writable_tree: { controlPlaneBlocked: true },
-    readonly_agent: { controlPlaneBlocked: true },
-    offline_command: { controlPlaneBlocked: true },
-    loopback_service: { controlPlaneBlocked: true },
-  },
+  kinds: [
+    "writable_tree",
+    "readonly_agent",
+    "offline_command",
+    "loopback_service",
+  ],
   launch(profile, command, args) {
     switch (profile.kind) {
       case "writable_tree":
@@ -51,10 +52,11 @@ function writableTree(
   command: string,
   args: string[],
 ): SandboxLaunch {
-  const controlPaths = protectedHostPaths();
+  const hidden = profile.userFiles === "hidden";
+  const deniedReads = hidden ? protectedHostPaths() : governanceStatePaths();
   const runtime = runtimeRoot();
   const systemRoots = writableTreeSystemRoots().map(canonical);
-  systemRoots.push(...executableReadRoots(command, controlPaths));
+  systemRoots.push(...executableReadRoots(command, deniedReads));
   if (!existsSync(sandboxExec))
     throw new SandboxError(
       "backend_missing",
@@ -63,22 +65,32 @@ function writableTree(
   const rules = [
     "(version 1)",
     "(allow default)",
-    "(deny file-read-data)",
-    '(allow file-read-data (literal "/") (subpath "/private/etc") (subpath "/private/var/db"))',
+    // Without the user's files, reads start closed and open only named roots.
+    ...(hidden
+      ? [
+          "(deny file-read-data)",
+          '(allow file-read-data (literal "/") (subpath "/private/etc") (subpath "/private/var/db"))',
+        ]
+      : []),
     "(deny process-info*)",
     // libdispatch in the native Claude CLI needs its own unique pid.
     // Other process metadata (including the Server environment) stays denied.
     "(allow process-info* (target self))",
-    ...[
-      ...systemRoots,
-      runtime,
-      ...profile.readRoots,
-      ...profile.writeRoots,
-    ].map(
-      (path) => `(allow file-read-data (subpath ${quote(canonical(path))}))`,
-    ),
-    '(allow file-read-data (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom"))',
-    ...controlPaths.map(
+    ...(hidden
+      ? [
+          ...[
+            ...systemRoots,
+            runtime,
+            ...profile.readRoots,
+            ...profile.writeRoots,
+          ].map(
+            (path) =>
+              `(allow file-read-data (subpath ${quote(canonical(path))}))`,
+          ),
+          '(allow file-read-data (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom"))',
+        ]
+      : []),
+    ...deniedReads.map(
       (path) => `(deny file-read-data (subpath ${quote(path)}))`,
     ),
     // Re-allow only the named read-only trees under protected state.
@@ -89,11 +101,10 @@ function writableTree(
     ...profile.writeRoots.map(
       (path) => `(allow file-read-data (subpath ${quote(path)}))`,
     ),
-    '(deny file-read-data (regex #"/\\\\.env([^/]*$|/)"))',
-    `(deny file-read-data (subpath ${quote(resolve(runtime, ".data"))}))`,
-    `(deny file-read-data (subpath ${quote(resolve(runtime, "apps/server/.data"))}))`,
-    // Deny access to the local control plane and its credential-bearing UI.
-    ...controlNetworkRestrictions(profile.controlServerURL),
+    ...(hidden ? ['(deny file-read-data (regex #"/\\\\.env([^/]*$|/)"))'] : []),
+    ...runtimeServerData(runtime).map(
+      (path) => `(deny file-read-data (subpath ${quote(path)}))`,
+    ),
     "(deny file-write*)",
     '(allow file-write* (literal "/dev/null"))',
     ...profile.writeRoots.map(
@@ -217,7 +228,6 @@ function readonlyAgent(
     ...roots.map((path) => `(allow file-read-data (subpath ${quote(path)}))`),
     '(allow file-write* (literal "/dev/null"))',
     `(allow file-write* (subpath ${quote(home)}))`,
-    ...controlNetworkRestrictions(profile.controlServerURL),
   ].join("\n");
   writeFileSync(profile.policyFile, rules, { mode: 0o400, flag: "wx" });
   return {

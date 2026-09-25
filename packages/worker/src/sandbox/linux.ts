@@ -6,14 +6,17 @@ import {
   readlinkSync,
   realpathSync,
 } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, isAbsolute } from "node:path";
 import { canonical, within } from "../paths.js";
 import {
   commandReadRoots,
   executableReadRoots,
+  governanceStatePaths,
   offlineCommandSystemRoots,
   protectedHostPaths,
   runtimeRoot,
+  runtimeServerData,
   writableTreeSystemRoots,
 } from "./host.js";
 import {
@@ -26,17 +29,12 @@ import {
 } from "./types.js";
 
 /**
- * Linux bubblewrap mounts. bwrap cannot filter ports, so agent-facing kinds
- * share the host network and do not block the control plane; offline commands
- * get no network at all. See docs/architecture-modules.md §5.1.
+ * Linux bubblewrap mounts. Agent-facing kinds share the host network;
+ * offline commands get no network at all. See docs/architecture-modules.md §5.1.
  */
 export const bubblewrapBackend: SandboxBackend = {
   id: "bubblewrap",
-  guarantees: {
-    writable_tree: { controlPlaneBlocked: false },
-    readonly_agent: { controlPlaneBlocked: false },
-    offline_command: { controlPlaneBlocked: true },
-  },
+  kinds: ["writable_tree", "readonly_agent", "offline_command"],
   launch(profile, command, args) {
     switch (profile.kind) {
       case "writable_tree":
@@ -69,11 +67,13 @@ const namespaces = [
 ];
 
 /**
- * After every mount is in place, make the scratch root read-only: writes to
- * unmounted paths then fail as they do under macOS policies, instead of
- * landing on an invisible tmpfs.
+ * After every mount is in place, make the scratch root and the masking
+ * directories read-only: writes to unmounted or masked paths then fail as
+ * they do under macOS policies, instead of landing on an invisible tmpfs.
  */
-const sealRoot = ["--remount-ro", "/"];
+function seal(masks: string[]): string[] {
+  return [...masks, "/"].flatMap((path) => ["--remount-ro", path]);
+}
 
 /** The bwrap executable, after checking that user namespaces work here. */
 function bubblewrap(): string {
@@ -111,14 +111,22 @@ function bubblewrap(): string {
 
 /**
  * Read-only system roots, the install prefixes of the command, optionally the
- * Foundry runtime, and the host configuration needed for name resolution and
- * TLS: /etc (as macOS policies allow /private/etc) plus the target of a
- * resolv.conf symlink such as systemd-resolved's stub file.
+ * user's home and the Foundry runtime, and the host configuration needed for
+ * name resolution and TLS: /etc (as macOS policies allow /private/etc) plus
+ * the target of a resolv.conf symlink such as systemd-resolved's stub file.
+ * Governance state and the runtime's server data are covered by empty
+ * directories; `masks` lists them so they can be sealed read-only.
  */
-function systemMounts(
+function hostMounts(
   command: string,
-  options: { runtime: boolean },
-): string[] {
+  options: { runtime: boolean; home: boolean },
+): { mounts: string[]; masks: string[] } {
+  const mounts: string[] = [];
+  const masks: string[] = [];
+  // The home goes first: a later mount of a parent would hide the mounts
+  // made inside it, such as the runtime and its masked server data.
+  const home = canonical(homedir());
+  if (options.home && existsSync(home)) mounts.push("--ro-bind", home, home);
   const systemRootPaths = writableTreeSystemRoots();
   const roots = systemRootPaths.map(canonical);
   roots.push(...executableReadRoots(command, protectedHostPaths()));
@@ -132,22 +140,25 @@ function systemMounts(
       if (!roots.some((root) => within(root, target))) roots.push(target);
     }
   }
-  const mounts: string[] = [];
   for (const path of roots) mounts.push("--ro-bind", path, path);
-  // The runtime's server data (database, secret key) stays hidden, as the
-  // macOS policy denies reading it.
-  if (options.runtime)
-    for (const data of [".data", "apps/server/.data"].map((path) =>
-      resolve(runtime, path),
-    ))
-      if (existsSync(data)) mounts.push("--tmpfs", data);
+  const visible = (path: string) =>
+    roots.some((root) => within(root, path)) ||
+    (options.home && within(home, path));
+  for (const path of [
+    ...(options.runtime ? runtimeServerData(runtime) : []),
+    ...governanceStatePaths(),
+  ])
+    if (existsSync(path) && visible(path)) {
+      mounts.push("--tmpfs", path);
+      masks.push(path);
+    }
   // Merged-/usr distributions make /bin, /lib and /lib64 symlinks into
   // /usr. Only the targets are mounted above, so recreate the links: the
   // ELF interpreter is addressed as /lib64/ld-linux-*.so.
   for (const path of systemRootPaths)
     if (lstatSync(path).isSymbolicLink())
       mounts.push("--symlink", readlinkSync(path), path);
-  return mounts;
+  return { mounts, masks };
 }
 
 function outermost(paths: string[]): string[] {
@@ -178,7 +189,11 @@ function writableTree(
   // creating its mount point would leave it on the host.
   const readOnlyDirectories = outermost(profile.readOnlyDirectories);
   for (const path of readOnlyDirectories) mkdirSync(path, { recursive: true });
-  const options = [...namespaces, ...systemMounts(command, { runtime: true })];
+  const host = hostMounts(command, {
+    runtime: true,
+    home: profile.userFiles === "readable",
+  });
+  const options = [...namespaces, ...host.mounts];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
   // Mount only the named read-only trees from protected state.
   for (const path of profile.protectedReadRoots) {
@@ -193,7 +208,7 @@ function writableTree(
   // Connecting needs the socket inode, not write access to its file system.
   for (const path of profile.connectSockets)
     options.push("--ro-bind", path, path);
-  options.push(...sealRoot);
+  options.push(...seal(host.masks));
   return {
     command: executable,
     args: [
@@ -215,9 +230,10 @@ function readonlyAgent(
   const executable = bubblewrap();
   // Beyond these roots: no source trees, global user config, project skills or
   // original materials. Only the private home is ever writable.
-  const options = [...namespaces, ...systemMounts(command, { runtime: false })];
+  const host = hostMounts(command, { runtime: false, home: false });
+  const options = [...namespaces, ...host.mounts];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
-  options.push("--bind", profile.home, profile.home, ...sealRoot);
+  options.push("--bind", profile.home, profile.home, ...seal(host.masks));
   return {
     command: executable,
     args: [

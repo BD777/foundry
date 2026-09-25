@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { git, gitCommit } from "../dist/execution-git.js";
-import { sandboxAvailable, sandboxGuarantees } from "../dist/sandbox/index.js";
+import { sandboxAvailable } from "../dist/sandbox/index.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
@@ -648,41 +648,6 @@ test(
     assert.equal(failed.error, undefined, failed.error);
     assert.equal(failed.verification.result.verdict, "fail");
     assert.equal(failed.evidence[0].collection.exitCode, 1);
-  },
-);
-
-test(
-  "custom control port is inaccessible from executor",
-  { skip: !sandboxGuarantees("writable_tree")?.controlPlaneBlocked },
-  async (t) => {
-    const { environment, execution } = await fixture(t);
-    let requests = 0;
-    const server = createServer((req, res) => {
-      requests++;
-      res.end("control");
-    });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    t.after(() => new Promise((resolve) => server.close(resolve)));
-    environment.controlServerURL = `http://127.0.0.1:${server.address().port}`;
-    const spec = sandboxCommand(
-      environment,
-      execution.registration("ws_verify"),
-      process.execPath,
-      [
-        "-e",
-        `fetch(${JSON.stringify(environment.controlServerURL)},{signal:AbortSignal.timeout(1500)}).then(()=>process.exit(0)).catch(()=>process.exit(19))`,
-      ],
-    );
-    assert.throws(
-      () =>
-        execFileSync(spec.command, spec.args, {
-          cwd: environment.cwd,
-          env: executorEnvironment(environment),
-          stdio: "pipe",
-        }),
-      (error) => error.status === 19,
-    );
-    assert.equal(requests, 0);
   },
 );
 
