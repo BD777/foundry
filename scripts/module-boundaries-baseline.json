@@ -1,7 +1,4 @@
 {
   "storeInterfaceMethods": 94,
-  "violations": [
-    "worker: evidence-agent (issue) loads @anthropic-ai/claude-agent-sdk",
-    "worker: evidence-agent (issue) loads @openai/codex-sdk"
-  ]
+  "violations": []
 }

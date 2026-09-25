@@ -243,7 +243,9 @@ worktree 的 `.git` 指向主仓库绝对路径，主仓库 `.git` 需按同一�
 
 ### 5.2 Session Runtime
 
-一个启动入口，差异全部由 role 推导出的 policy 表达。
+一个启动入口，差异全部由 role 推导出的 policy 表达。已实现的部分见 §5.4 的 5a：目前
+`SessionRole` 只有 `clarification` / `verification`，其余角色随 5b、5c 迁入；下面的接口是
+迁移完成后的目标形态。
 
 ```ts
 type SessionRole =
@@ -334,8 +336,14 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
    任何违例；等 Session Runtime 真正需要时再调整。
 4. **Harness Profiles（第 2 层）**（已完成）：`sessionEnvironment()` 移入 Session Runtime
    的 `session-ambient.ts`，附件提示移入 `session-prompt.ts`，profiles 不再依赖会话。
-5. **Session Runtime（第 4 层）**：先让 `evidence-agent.ts` 的阶段会话走 `startSession`，
-   再迁移 Issue 执行、编排子会话和 Chat。
+5. **Session Runtime（第 4 层）**，分三步：
+   - **5a**（已完成）：新建 `src/session/`，对外只有 `startSession(spec)`；角色决定工具、
+     项目指令与轮数（`policy.ts`），harness 适配器（`claude.ts`、`codex.ts`）实现同一个
+     内部接口。澄清与判定迁入，`evidence-agent.ts` 不再接触 SDK，Worker 违例基线清零。
+   - **5b**：带 `issueId` 的编排子会话改在 `writable_tree` 沙箱子进程中运行，复用 Issue
+     执行器的子进程机制。
+   - **5c**：Chat 与 Issue 执行也经 `startSession` 启动，合并 `runner.ts` 与会话模块中
+     重复的环境、凭据、模型选择与取消逻辑。
 6. **Server 侧统一**：Run → AgentSession，会话相关的 daemon 消息收敛；Issue 执行获得
    foundry MCP。`daemon-connection.ts` 中会话部分拆出通道与组装层。
 

@@ -11,9 +11,9 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
-  stageSandboxExecutable,
-  stageDisabledFeatures,
-} from "../dist/evidence-agent-sandbox.js";
+  codexDisabledFeatures as stageDisabledFeatures,
+  stageLauncher as stageSandboxExecutable,
+} from "../dist/session/index.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
 import { digestObject, digestBytes } from "../dist/evidence-store.js";
 

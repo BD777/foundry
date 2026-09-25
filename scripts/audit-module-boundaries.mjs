@@ -38,6 +38,7 @@ export const workerModules = {
     files: [
       "config",
       "paths",
+      "secret-redaction",
       "state-root",
       "storage",
       "utils",
@@ -132,6 +133,12 @@ export const workerModules = {
       "transcript-adapters/claude",
       "transcript-adapters/codex",
       "transcript-adapters/values",
+      "session/index",
+      "session/types",
+      "session/policy",
+      "session/harness",
+      "session/claude",
+      "session/codex",
     ],
   },
   "agent-surface": {
@@ -159,7 +166,6 @@ export const workerModules = {
       "issue-steering",
       "evidence-acceptance",
       "evidence-agent",
-      "evidence-agent-sandbox",
       "evidence-change-manifest",
       "evidence-clarification",
       "evidence-collectors",
