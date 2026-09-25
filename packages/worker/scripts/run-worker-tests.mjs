@@ -487,6 +487,7 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "execution-process.test.mjs",
   "issue-environments.test.mjs",
   "issue-preview.test.mjs",
+  "sandbox.test.mjs",
 ]);
 
 /**
