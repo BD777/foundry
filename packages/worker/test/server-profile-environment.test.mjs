@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sessionEnvironment } from "../dist/profiles.js";
+import { sessionEnvironment } from "../dist/session-ambient.js";
 
 const ambientKeys = [
   "ANTHROPIC_AUTH_TOKEN",

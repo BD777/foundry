@@ -2,7 +2,6 @@
   "storeInterfaceMethods": 94,
   "violations": [
     "worker: evidence-agent (issue) loads @anthropic-ai/claude-agent-sdk",
-    "worker: evidence-agent (issue) loads @openai/codex-sdk",
-    "worker: profiles (harness-profiles) imports session-ambient (session-runtime)"
+    "worker: evidence-agent (issue) loads @openai/codex-sdk"
   ]
 }

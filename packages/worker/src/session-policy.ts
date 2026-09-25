@@ -18,7 +18,8 @@
 
 import type { AgentSession } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
-import { profileRuntimeEnvironment, sessionEnvironment } from "./profiles.js";
+import { profileRuntimeEnvironment } from "./profiles.js";
+import { sessionEnvironment } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
   claudeManagedPrompt,
