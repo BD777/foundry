@@ -8,6 +8,7 @@
     "audit:web-buttons": "pnpm --filter @foundry/web audit:buttons",
     "audit:web-ui": "pnpm --filter @foundry/web audit:ui",
     "audit:contract": "node scripts/audit-contract.mjs",
+    "audit:modules": "node scripts/audit-module-boundaries.mjs",
     "build": "pnpm -r build",
     "cases:validate": "node scripts/validate-cases.mjs",
     "dev:web": "pnpm --filter @foundry/web dev",
@@ -22,7 +23,7 @@
     "test:smoke:api": "node scripts/smoke-api.mjs",
     "stack": "node scripts/dev-stack.mjs",
     "typecheck": "pnpm --filter @foundry/protocol build && pnpm -r typecheck",
-    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm cases:validate && pnpm vet",
+    "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm audit:modules && pnpm cases:validate && pnpm vet",
     "vet": "cd apps/server && go vet ./..."
   },
   "devDependencies": {

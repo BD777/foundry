@@ -306,6 +306,10 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
 
 按 §3.1 的层序自下而上，每一步都能单独合入，并保持现有行为：
 
+0. **依赖审计**（已完成）：`pnpm audit:modules`（`scripts/audit-module-boundaries.mjs`）
+   按 §3.1 检查 Worker 的跨模块 import、SDK 与沙箱命令的位置、Server 的包依赖和
+   `store.Store` 方法数上限；现有违例记录在 `scripts/module-boundaries-baseline.json`，
+   只能减少。之后每一步都应让基线缩短。
 1. **Sandbox（第 1 层）**：建模块和 macOS 后端，把四处实现迁进去，只接收
    `SandboxProfile`；输出与现在逐字节一致的 profile（用快照测试锁定）。
 2. **Sandbox Linux 后端**：补齐阶段只读和受控服务两种 profile，核实并处理控制面端口；
@@ -316,8 +320,6 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
    再迁移 Issue 执行、编排子会话和 Chat。
 6. **Server 侧统一**：Run → AgentSession，会话相关的 daemon 消息收敛；Issue 执行获得
    foundry MCP。`daemon-connection.ts` 中会话部分拆出通道与组装层。
-7. **依赖审计**：按 §3.1 检查 Worker 的跨模块 import；只有 Session Runtime 可以 import
-   两个 SDK，只有 Sandbox 可以出现 `sandbox-exec` / `bwrap`。
 
 ### 5.5 M1 验收
 
