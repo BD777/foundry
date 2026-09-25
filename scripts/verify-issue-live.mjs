@@ -54,6 +54,34 @@ let environment = await prepareIssueEnvironment(
   store,
 );
 const token = randomUUID();
+// Execution follows the human-confirmed contract; later instructions arrive as
+// conversation feedback after confirmation, as they do in the product.
+const confirmedAt = new Date().toISOString();
+const contract = (goal) => ({
+  goal: { text: goal, media: [] },
+  inScope: [],
+  outOfScope: [],
+  constraints: ["Never write to the original workspace."],
+  criteria: [],
+  status: "confirmed",
+  confirmation: {
+    actor: { kind: "local_owner", id: "owner", displayName: "Owner" },
+    at: confirmedAt,
+    contentDigest: `sha256:${"0".repeat(64)}`,
+  },
+});
+const feedback = (issue, text) => ({
+  ...issue,
+  messages: [
+    ...(issue.messages ?? []),
+    {
+      id: `msg_${randomUUID()}`,
+      role: "user",
+      text,
+      createdAt: new Date(Date.now() + 1000).toISOString(),
+    },
+  ],
+});
 const issue = {
   id: issueId,
   workspaceId,
@@ -63,7 +91,11 @@ const issue = {
   acceptanceCriteria: [],
   checks: [],
   skills: [],
-  sourceInput: `This is a small execution verification. Read Docs/guide.md. Remember this token in the conversation: ${token}. Do not write the token to files yet. Create initial.txt containing 'initial' in the candidate root. Use the provided repository-tool to prepare repos/library, then create repos/library/result.txt containing 'library candidate'. Never write to the original workspace. Finish with a concise result.`,
+  sourceInput: "Live execution verification",
+  messages: [],
+  executionContract: contract(
+    `This is a small execution verification. Read Docs/guide.md. Remember this token in the conversation: ${token}. Do not write the token to files yet. Create initial.txt containing 'initial' in the candidate root. Use the provided repository-tool to prepare repos/library, then create repos/library/result.txt containing 'library candidate'. Never write to the original workspace. Finish with a concise result.`,
+  ),
 };
 const record = async (label, detail) => {
   appendFileSync(
@@ -99,11 +131,10 @@ try {
     const control = new AbortController();
     const interrupted = runIssueExecutor(
       environment,
-      {
-        ...issue,
-        sourceInput:
-          "For an interruption test: create started.txt containing 'started' in the candidate root, then run a shell command that sleeps for 60 seconds. Do not change any other files. This turn will be interrupted by the host.",
-      },
+      feedback(
+        issue,
+        "For an interruption test: create started.txt containing 'started' in the candidate root, then run a shell command that sleeps for 60 seconds. Do not change any other files. This turn will be interrupted by the host.",
+      ),
       `run_${randomUUID()}`,
       record,
       store,
@@ -137,11 +168,10 @@ try {
   }
   result = await runIssueExecutor(
     environment,
-    {
-      ...issue,
-      sourceInput:
-        "Continue the same verification. Write the verification token you remember from our previous conversation into resume.txt at the candidate root, with no other content. Keep initial.txt and repos/library/result.txt. Do not search logs or session files for the token. Finish after writing it.",
-    },
+    feedback(
+      issue,
+      "Continue the same verification. Write the verification token you remember from our previous conversation into resume.txt at the candidate root, with no other content. Keep initial.txt and repos/library/result.txt. Do not search logs or session files for the token. Finish after writing it.",
+    ),
     `run_${randomUUID()}`,
     record,
     store,
