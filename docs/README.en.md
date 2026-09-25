@@ -52,34 +52,51 @@ Each Issue is verified, reviewed and accepted independently. Feedback returns to
 
 ## Roadmap
 
-The target shape is described in the [Workspace and Sandbox overview](workspace-sandbox-overview.md) (Chinese): a person raises an Issue, an agent completes it in a Sandbox and produces evidence, and accepted results are integrated into the Workspace. Items below follow the overview's modules and link to their design and completion criteria. Implemented boundaries and known gaps are in [current status](current-status.md).
+The target shape is described in the [Workspace and Sandbox overview](workspace-sandbox-overview.md) (Chinese): a person raises an Issue, an agent completes it in a Sandbox and produces evidence, and accepted results are integrated into the Workspace. Work is split into milestones following the dependency order of the [module architecture](architecture-modules.md) (Chinese): each milestone delivers one module's protocol and is accepted through one end-to-end scenario. Items link to their design and completion criteria. Implemented boundaries and known gaps are in [current status](current-status.md).
 
 ### Available
 
-- [x] [Chats](chat-experience.md): Web Chat over native Claude / Codex harnesses, with attachments, queued input, steering, recovery, groups and search.
+- [x] [Chats](chat-experience.md): Web Chat over native Claude / Codex harnesses, working directly in the selected workspace, with attachments, queued input, steering, recovery, groups and search.
 - [x] [Session orchestration](session-orchestration-design.md): agents create, steer and hand off other sessions through the `foundry` CLI / MCP, including worktree sessions, forks and read-only verifiers.
 - [x] Workspace Skills: devices scan local skills and promote them to the server catalog; each workspace selects skill versions, with dependencies enabled alongside; agents only see the skills their workspace enables.
 - [x] [Feishu bot](platform-extensions.md#im-integration): each workspace configures its own bot and pairs groups; group threads map to sessions and replies stream into cards; a group acts with the identity and permissions of the account that generated its pairing code.
 - [x] [Accounts and workspace sharing](security.md#accounts): every API requires sign-in; device credentials and resource ownership; workspaces are shared as Viewer / Member / Maintainer / Owner.
 - [x] [Devices and deployment](development.md): daemons connect out to the server; multiple devices and workspaces; macOS / Linux process isolation; [Docker deployment](../deploy/README.md) and [parallel dev stacks](dev-stacks.md).
+- [x] Issue engine: completion criteria → candidate execution → evidence and verification → acceptance → integration is on main with historical end-to-end records. Agent clarification, independent judgments and integration are enabled on macOS only, and the web entry is hidden until the experience is polished.
 
-### In progress: the Issue loop
+### M1 Execution core
 
-The Issue engine (completion criteria → candidate execution → evidence and verification → acceptance → integration) is on main with historical end-to-end records. Its web entry is hidden until the experience is polished.
+One sandbox definition and one way to start an agent. Chats keep working directly in the workspace; isolation applies only to orchestrated flows such as Issues.
 
-- [ ] [Issue web experience](issue-workflow.md#issues): reopen the Issues entry and polish the board, detail view and Issue conversation.
+- [ ] [The full Issue loop on Linux](architecture-modules.md#5-m1-接口草案): enable agent clarification, independent judgments, Accept and integration on Linux, using the same isolation definitions as macOS.
+- [ ] [Isolated orchestrated sessions](architecture-modules.md#52-session-runtime): orchestrated child sessions bound to an Issue run under the same isolation as Issue execution and can write only that Issue's candidate.
+- [ ] [One session record](architecture-modules.md#53-server-侧run-与-agentsession-统一): Issue execution, clarification and judgments share the Chat session record, so they can be read, steered and traced the same way.
+
+### M2 Agent surface
+
+- [ ] [Orchestration inside Issues](session-orchestration-design.md): the Issue execution agent starts child sessions and independent verifiers through the `foundry` MCP, with traceable lineage and evidence ownership.
+- [ ] [Foundry MCP / CLI](session-orchestration-design.md): the single interface agents use, with capabilities registered and authorized under one policy; OAuth 2.1 for the HTTP MCP.
+
+### M3 Issue loop v2
+
+- [ ] [Loop graph and exit rules](issue-workflow.md#issues): Issue state transitions converge into one explicit definition; exit rules carry ids and versions, are recorded in the review snapshot and can grow with practice.
 - [ ] [Completion criteria](issue-workflow.md#issues): the agent drafts them from workspace context; a person edits and confirms an exact version; any later change needs a stated reason and a new confirmation.
 - [ ] [Human input (Blocked)](issue-conversation-design.md): a general question and permission-response protocol; answering resumes the same Issue.
-- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) and enable agent clarification and independent judgments on Linux.
-- [ ] [Acceptance and integration](issue-workflow.md#accept-and-integration): enable Accept and integration on Linux; polish Merge Queue conflict resolution and reverification.
-- [ ] [Issues in Feishu](platform-extensions.md#im-integration): raise Issues, follow progress and answer Blocked states from Feishu threads; complex review returns to the web.
+- [ ] [External feedback and Issues in Feishu](platform-extensions.md#im-integration): feedback can come from sources other than people and agents (first a Feishu thread or CI) and returns to the Issue with its source recorded; raise Issues, follow progress and answer Blocked states from Feishu threads, with complex review on the web.
+- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md); collectors extend through one interface.
+- [ ] [Acceptance and integration](issue-workflow.md#accept-and-integration): polish Merge Queue conflict resolution and reverification.
+- [ ] [Issue web experience](issue-workflow.md#issues): reopen the Issues entry and polish the board, detail view and Issue conversation.
 - [ ] [First open-source release](issue-workflow.md#open-source-release): run the full loop on representative real tasks and reproduce installation in a clean environment.
 
-### Next
+### M4 Resources and cross-device work
 
-- [ ] [Complete Sandbox isolation](workspace-sandbox-overview.md): Docker container isolation; no plaintext credentials handed to agents; per-action authorization for external side effects such as deploying or sending messages.
-- [ ] [Resource Pool and Tool Use](tool-use-and-resources.md#basic-tool-use): browsers, desktops (Computer Use), simulators and devices, ports and services, and internal infrastructure share one request → use → release → clean-up lifecycle, with evidence capture.
+- [ ] [Resource Pool and Tool Use](tool-use-and-resources.md#basic-tool-use): browsers, desktops (Computer Use), simulators and devices, ports and services, and internal infrastructure share one request → use → release → clean-up lifecycle, with evidence capture; browsers come first.
+- [ ] [Cross-device sessions](architecture-modules.md#3-模块清单): start a session and use resources on another device, relayed through the server; credentials stay on their device and every call is authorized by policy.
+
+### Parallel tracks
+
 - [ ] [Later account phases](accounts-permissions-design.md): Feishu sign-in with per-sender authorization, personal connections authorized per workspace, auditing and ownership transfer, and device key-pair authentication.
+- [ ] [Complete Sandbox isolation](workspace-sandbox-overview.md): Docker container isolation; no plaintext credentials handed to agents; per-action authorization for external side effects such as deploying or sending messages.
 
 ### Exploring (unscheduled)
 
