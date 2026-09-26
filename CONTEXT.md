@@ -61,7 +61,7 @@ The full Issue chain is on main:
 Main entry points:
 
 - Server: `apps/server/cmd/foundry-server` (default port 31982, SQLite at
-  `apps/server/.data/foundry.db`); routes in
+  `~/.foundry/server/foundry.db`, outside the checkout); routes in
   `apps/server/internal/httpapi/server.go` with one access rule per route in
   `routes.go`; schema in `internal/sqlitestore/*.go`; Feishu bot in
   `internal/feishu`.

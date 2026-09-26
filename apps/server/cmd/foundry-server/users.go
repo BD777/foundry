@@ -25,6 +25,9 @@ func runUsers(args []string, getenv func(string) string, stdin io.Reader, stdout
 		return errors.New("users: missing subcommand")
 	}
 	cfg := loadConfig(getenv)
+	if err := checkDataLocation(cfg, fileExists); err != nil {
+		return err
+	}
 	st, err := sqlitestore.OpenWithOptions(cfg.DBPath, sqlitestore.Options{})
 	if err != nil {
 		return err
@@ -165,6 +168,7 @@ func printUsersUsage() {
   reset-password --username NAME [--password-stdin]        set a new password and sign out every session
 
 Without --password-stdin a random password is generated and printed once.
-The database path follows FOUNDRY_DB_PATH (default .data/foundry.db).
+The database path follows FOUNDRY_DB_PATH (default <state root>/server/foundry.db, where the
+state root is FOUNDRY_STATE_ROOT, ~/.foundry-stacks/<FOUNDRY_STACK> or ~/.foundry).
 `)
 }

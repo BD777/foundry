@@ -56,7 +56,7 @@ Go server:
 pnpm dev:server
 ```
 
-The server defaults to SQLite at `apps/server/.data/foundry.db` when run through `pnpm dev:server`.
+The server keeps its SQLite database and secret key outside any checkout, at `~/.foundry/server/` by default (`~/.foundry-stacks/<name>/server/` when `FOUNDRY_STACK` is set, `<FOUNDRY_STATE_ROOT>/server/` when that is set, or exactly `FOUNDRY_DB_PATH`). If data still sits at the old default `apps/server/.data/`, the server refuses to start and prints the command that moves it, or you can keep it in place with `FOUNDRY_DB_PATH`.
 Web HMR does not update a compiled Server or a running Worker. When changing the
 Issue event protocol, rebuild and reload both affected processes, preserve their
 configured database and environment, and check for active executions first. An old
@@ -96,7 +96,9 @@ The server and web development processes bind to loopback by default. Keep that 
 
 Every browser API call requires a Foundry account, including on loopback. On first start with no accounts the server logs a one-time setup code; open the web app and create the owner with it.
 
-Workers authenticate with their own device credential, obtained once from a pairing token (see the worker section below). Remote deployments must terminate TLS before the Go server. To develop behind a public TLS reverse proxy, keep both processes on loopback and route `/api/` to the server and everything else to Vite on the same host:
+Workers authenticate with their own device credential, obtained once from a pairing token (see the worker section below). Remote deployments must terminate TLS before the Go server.
+
+Never expose the Vite dev server publicly: it serves source files by design. For a public host, build the web app (`VITE_API_BASE_URL= pnpm --filter @foundry/web build`, or `vite build --watch --outDir <dir>` to rebuild on change), let the reverse proxy serve those static files, and route `/api/` to the server. The dev server stays on loopback; only behind a private, access-controlled proxy may it be reached remotely, with the proxy routing `/api/` to the server and everything else to Vite:
 
 ```bash
 FOUNDRY_WEB_ORIGIN=https://dev.foundry.example pnpm dev:server

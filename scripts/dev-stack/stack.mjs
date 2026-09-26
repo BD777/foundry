@@ -278,6 +278,10 @@ export function serviceDefinitions(stack) {
         ...shared,
         PORT: String(server),
         FOUNDRY_WEB_ORIGIN: `http://127.0.0.1:${web}`,
+        // Server data lives in the stack's own state root, outside the checkout.
+        ...(stack.name === defaultStack.name
+          ? {}
+          : { FOUNDRY_STACK: stack.name }),
       },
       StandardOutPath: resolve(logDir, "server.log"),
       StandardErrorPath: resolve(logDir, "server.err.log"),

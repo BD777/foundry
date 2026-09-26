@@ -30,6 +30,9 @@ func runDevices(args []string, getenv func(string) string, stdout io.Writer) err
 		return err
 	}
 	cfg := loadConfig(getenv)
+	if err := checkDataLocation(cfg, fileExists); err != nil {
+		return err
+	}
 	st, err := sqlitestore.OpenWithOptions(cfg.DBPath, sqlitestore.Options{})
 	if err != nil {
 		return err

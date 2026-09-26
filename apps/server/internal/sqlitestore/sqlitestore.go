@@ -41,7 +41,8 @@ func Open(path string) (*Store, error) {
 
 func OpenWithOptions(path string, options Options) (*Store, error) {
 	if path != ":memory:" {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		// The database holds credential hashes; keep its directory private.
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, fmt.Errorf("create sqlite directory: %w", err)
 		}
 	}

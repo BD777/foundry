@@ -90,7 +90,7 @@ export async function create(name, options) {
       `  web        http://127.0.0.1:${web}`,
       `  server     http://127.0.0.1:${server}`,
       `  state      ${stack.stateRoot}`,
-      `  database   ${resolve(worktree, "apps/server/.data/foundry.db")}`,
+      `  database   ${resolve(stack.stateRoot, "server/foundry.db")}`,
     ].join("\n"),
   );
   // Repair what the tool can repair itself, then prove the stack really runs an

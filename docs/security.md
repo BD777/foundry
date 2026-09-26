@@ -155,8 +155,10 @@ The envelope-encrypted secret store backs the credential rules above.
 - The KEK file is `<database directory>/foundry-secret.key` (override with
   `FOUNDRY_SECRET_KEY_PATH`), a single `FOUNDRY-SECRET-KEY-1` payload line
   plus fingerprint comments. It is generated automatically on first start,
-  written atomically with mode `0600`, and lands in `.data/`, which Git
-  ignores. It must never be committed or copied into a backup of the database
+  written atomically with mode `0600`, and lives with the database in the
+  private state root (`~/.foundry/server/` by default, directory `0700`),
+  outside any checkout, so tools that serve or mount the repository never
+  reach it. It must never be committed or copied into a backup of the database
   alone — migrating a deployment means copying database and key file together.
 - The database stores a canary sealed under the KEK. Startup verifies it and
   fails closed on mismatch, naming the expected fingerprint. A lost key file
