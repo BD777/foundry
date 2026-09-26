@@ -141,7 +141,7 @@ flowchart BT
 ```
 
 图中省略了指向第 0 层和 Identity 的大部分边。Resource Pool 在第 3 层，但它还没有实现，
-而且只有 M4 的场景需要它，所以不按层序提前做。
+而且只有 M3 的场景需要它，所以不按层序提前做。
 
 ### 现状中的违例
 
@@ -164,13 +164,18 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 每个 milestone：一个模块的协议 + 迁移现有调用方 + 删除重复实现 + 一个端到端使用场景。
 模块自身的契约测试通过但场景未跑通，不算完成。
 
-| Milestone            | 模块                                                       | 验收场景                                                                                               | 依赖           |
-| -------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------- |
-| **M1 执行内核**      | Sandbox + Session Runtime（含 Server 侧 Run/Session 统一） | 在 macOS 与 Linux 上各跑通一次完整 Issue 闭环：澄清 → 执行 → Agent 判定 → Accept → 合入；Chat 回归不变 | —              |
-| **M2 Agent 能力面**  | Foundry MCP / CLI                                          | Issue 执行 Agent 经 MCP 派出子会话并由独立 verifier 判定，血缘、证据归属可追溯                         | M1             |
-| **M3 Issue Loop v2** | Issue Loop                                                 | 朴素 loop graph 成为代码中的唯一转移表；准出规则带 id、版本并写入审阅快照；接入一个外部信号来源        | M1、M2         |
-| **M4 资源与跨设备**  | Resource Pool + Transport 路由                             | 接入一种资源（优先浏览器）并产出截图证据；经 Server 中转在另一台设备上启动会话                         | M1、M2         |
-| 并行轨道             | Identity & Access                                          | 账号 P3 / P4（个人连接授权、飞书身份绑定、审计、所有权转移）                                           | 与主线无强依赖 |
+| Milestone           | 模块                           | 验收场景                                                                                                    | 依赖           |
+| ------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------- |
+| **M1 执行内核** ✅  | Sandbox + Session Runtime      | 见 §5.5：模块测试与依赖审计为零；Chat 真实浏览器回归；执行内核真实模型端到端                                | —              |
+| **M2 Agent 能力面** | Foundry MCP / CLI              | Chat 中的 Agent 经 MCP 派出、观察、steer 子会话与只读 verifier，按角色授权                                  | M1             |
+| **M3 资源与跨设备** | Resource Pool + Transport 路由 | Chat 中的 Agent 申请浏览器并截图给人看；经 Server 中转在另一台设备上启动会话                                | M1、M2         |
+| **M4 Issue Loop**   | Issue Loop                     | 开始前按 §6 重新审视内核缺口；Issue 内编排、loop graph 与准出规则、外部信号、Issue Web 体验的真实浏览器闭环 | M1–M3          |
+| 并行轨道            | Identity & Access              | 账号 P3 / P4（个人连接授权、飞书身份绑定、审计、所有权转移）                                                | 与主线无强依赖 |
+
+**内核不依赖 Issue（2026-09-26 定）。** Issue 是建在内核之上的编排层，放在内核之后做。
+内核功能用 Chat 与编排子会话验收；做 Issue 时再按它的需求补内核，而不是让内核功能等待
+完整的 Issue 逻辑。内核里现有的"Issue 形状"部分（Sandbox 目前只由 Issue 使用、
+`startSession` 只服务澄清与判定、候选存储的类型名）暂视为 Issue 的附属，不再扩展。
 
 M2–M4 的接口在各自开始前补充到本文，不提前设计。
 
@@ -328,6 +333,8 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
 
 ### 5.3 Server 侧：Run 与 AgentSession 统一
 
+移到 M4（见 §5.4 第 6 步）：它服务于 Issue 内编排，M1 的目标不依赖它。以下是届时的设计要点。
+
 - Issue 执行、澄清、判定都创建 `AgentSession`，带 `role` 和 `issueId`。会话令牌、血缘、
   分组、transcript 读取全部复用现有实现。
 - `Run` 保留为 Issue 侧的投影：`sessionId` + 环境信息（`environmentId`、`revision`、
@@ -367,27 +374,44 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
      中运行 SDK，steer 与取消仍经通用登记表。带 `issueId` 的编排子会话由 Issue 模块
      （`issue-sessions.ts`）决定：在候选工作区（不再是候选环境根目录）内、与 Issue 执行器
      同一沙箱中运行，并携带会话令牌，可继续编排。进程组管理移到平台层 `process-group.ts`。
-   - **5c**：`startSession`（隔离的阶段会话）与 `runWorkspaceSession`（工作区会话）合并为
-     一个按角色区分的入口，合并 `runner.ts` 与会话模块中重复的环境、凭据、模型选择与取消
-     逻辑。
-6. **Server 侧统一**：Run → AgentSession，会话相关的 daemon 消息收敛；Issue 执行获得
-   foundry MCP。`daemon-connection.ts` 中会话部分拆出通道与组装层。
+   - **5c**（不做，移入 §6）：原计划把 `startSession` 与 `runWorkspaceSession` 合并。
+     复查后，`startSession` 只服务 Issue 的澄清与判定，它是否需要独立存在、判定者能用哪些
+     工具，是 Issue 产品的问题，放到 M4 决定。
+6. **Server 侧统一**（移到 M4）：Run → AgentSession，会话相关的 daemon 消息收敛；Issue
+   执行获得 foundry MCP。它服务于 Issue 内编排。
 
 ### 5.5 M1 验收
 
-- **契约测试**：每种 profile 在两个平台上的可读、可写、网络边界各有正反用例；沙箱不可用时
-  返回带类型的错误；每种 role 的工具与 MCP 注入符合 §5.2 的表格。
-- **审计**：上述依赖审计通过，基线为零。
-- **端到端**：在 macOS 和 Linux 上各跑一次完整 Issue 闭环，按
-  [准出标准 G5](foundry-conversation-release-gate.md) 使用真实浏览器和真实模型，并记录证据。
-  Chat 的对话、steer、取消与恢复做回归。
-- **负向**：澄清会话写文件失败；判定会话改动候选即判失败；未就绪子仓库不可写；
-  判定 role 拿不到 foundry 令牌；带 `issueId` 的编排子会话无法写候选之外的路径。
+M1 验收不依赖 Issue 产品（2026-09-26 调整；原先要求用浏览器跑完整 Issue 闭环，但 Issue
+入口隐藏、Issue 也放到 M4）。验收记录在 PR 与 release notes 中。
 
-## 6. 不做
+- **模块测试与审计**：Sandbox 各 profile 在 Linux 上的真实读写边界、macOS 规则文本；
+  Session Runtime 的角色策略、取消、沙箱内工作区会话；依赖审计违例为零。
+- **Chat 真实浏览器回归**：在隔离的本机环境中，Chat 在原始 Workspace 中读写文件、流式
+  回复、steer 注入进行中的回复、取消后继续对话。
+- **执行内核真实模型端到端**：`scripts/verify-issue-live.mjs`（含 `--interrupt`）在
+  Linux 上用 Claude 通过：沙箱内执行、按需准备子仓库、中断恢复、会话续接、多仓合入与清理。
+- **已知限制**：macOS 只做过规则层面的验证（新旧产物比对、规则文本检查），尚未实机运行；
+  Codex 的真实运行受本机登录失效所阻，待重新登录后补跑。
+
+## 6. M4 Issue Loop 的待决项
+
+做 Issue 前，先按 Issue 的需求重新审视以下内核部分：
+
+| 部分                 | 现状                                                       | 待决                                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 澄清与判定的会话入口 | `startSession`，独立于 `runWorkspaceSession`；只服务 Issue | 是否保留独立入口，还是成为统一入口下的两个角色                                                                                                                       |
+| 判定者可用的工具     | 只读工具；不加载 MCP、Skills、插件与项目指令；不保存会话   | "不写""不读候选里的指令""全新会话"有明确理由（被判的东西不能被判的人改，候选不能削弱自己的检查标准）；不给 Workspace 选定的 Skills 与只读 MCP 没有写明理由，倾向放开 |
+| 澄清可用的工具       | 同上，但读项目指令                                         | 澄清的结论不直接生效，倾向与普通 Chat 接近                                                                                                                           |
+| Issue 执行接入编排   | 执行器没有会话令牌                                         | §5.3：Run → AgentSession，按 Issue 限定令牌                                                                                                                          |
+| 受控 HTTP 目标       | 仅 macOS                                                   | Linux 上把服务放进无网络命名空间，经 Unix socket 转接（原第 2b 步）                                                                                                  |
+| 候选存储的类型名     | `IssueEnvironment` 等带 Issue 字样                         | 按需改名（原第 3 步）                                                                                                                                                |
+
+## 7. 不做
 
 - 不一次性重排目录。先让接口和依赖方向成立，再按模块搬文件。
 - 不在 M1 引入 Issue 多 Agent、loop graph、Resource Pool 或跨设备。这些都在后续 milestone，
   M1 只保证它们将来有唯一的落点。
+- 不让内核功能依赖 Issue 的完整逻辑。
 - 不为统一抽象重写 Harness。Session Runtime 只是对现有原生 SDK / CLI 调用的收拢，模型
   请求仍只经原生 SDK 或 CLI。

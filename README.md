@@ -64,34 +64,40 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
 - [x] Issue 引擎：准出条件 → 候选执行 → 证据与验证 → 接受 → 合入已在主干并有历史闭环记录；macOS 与 Linux 均可执行、澄清、判定与合入（Linux 暂不支持受控 HTTP 目标），Web 入口在体验打磨完成前暂时隐藏。
 
-### M1 执行内核
+### M1 执行内核（已完成）
 
-一套沙箱、一种启动 Agent 的方式。Chat 继续直接在 Workspace 中工作；隔离只用于 Issue 这类编排流程。
+一套沙箱、一种启动 Agent 的方式，按模块边界解耦。Chat 直接在 Workspace 中工作，不经沙箱。验收不依赖 Issue 产品：模块测试与依赖审计、Chat 真实浏览器回归、执行内核的真实模型端到端（见[模块化架构 §5.5](docs/architecture-modules.md#55-m1-验收)）。
 
-- [ ] [Linux 上的完整 Issue 闭环](docs/architecture-modules.md#5-m1-接口草案)：在 Linux 开放 Agent 澄清、独立判定、Accept 与合入，与 macOS 使用同一套隔离定义。
-- [ ] [编排子会话隔离](docs/architecture-modules.md#52-session-runtime)：带 Issue 的编排子会话与 Issue 执行受同一隔离约束，只能写该 Issue 的候选。
-- [ ] [统一会话记录](docs/architecture-modules.md#53-server-侧run-与-agentsession-统一)：Issue 执行、澄清与判定和 Chat 共用同一套会话记录，可读取、steer 与追溯。
+- [x] [统一执行内核](docs/architecture-modules.md#51-sandbox)：一个 Sandbox 模块（macOS Seatbelt 与 Linux bubblewrap 实现同一接口），沙箱只负责写边界与 Foundry 治理状态；Session Runtime 统一启动会话。
+- [x] [Linux 执行内核](docs/architecture-modules.md#51-sandbox)：Linux 上执行、澄清、判定与合入可用（受控 HTTP 目标除外），并修复域名解析、Server 数据可读等问题。
+- [x] [编排子会话隔离](docs/architecture-modules.md#54-迁移顺序)：带 Issue 的编排子会话在候选中、与 Issue 执行同一沙箱运行，保留编排能力。
+- [x] [模块边界审计](docs/architecture-modules.md#31-依赖图)：`pnpm audit:modules` 检查跨模块依赖，违例只减不增，当前为零。
 
 ### M2 Agent 能力面
 
-- [ ] [Issue 内编排](docs/session-orchestration-design.md)：Issue 执行 Agent 通过 `foundry` MCP 派出子会话与独立 verifier，血缘与证据归属可追溯。
+内核功能以 Chat 与编排子会话为验收场景，不依赖 Issue。
+
 - [ ] [Foundry MCP / CLI](docs/session-orchestration-design.md)：作为 Agent 唯一的对外接口，能力按统一 policy 注册与授权；HTTP MCP 支持 OAuth 2.1。
 
-### M3 Issue Loop v2
+### M3 资源与跨设备
 
+- [ ] [Resource Pool 与 Tool Use](docs/tool-use-and-resources.md#basic-tool-use)：浏览器、桌面（Computer Use）、模拟器与真机、端口与服务、内部 Infra 统一走“申请 → 使用 → 释放 → 清理”，同时采集证据；首个接入浏览器，以 Chat 中的 Agent 申请浏览器并截图作为验收。
+- [ ] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备，每次调用按 policy 授权。
+
+### M4 Issue Loop
+
+Issue 是建在内核之上的编排层，放在内核之后做；开始前先按 Issue 的需求重新审视内核缺什么（见[模块化架构 §6](docs/architecture-modules.md#6-m4-issue-loop-的待决项)）。
+
+- [ ] [Issue 内编排与统一会话记录](docs/architecture-modules.md#54-迁移顺序)：Issue 执行改为 AgentSession 并接入 `foundry` MCP，执行 Agent 可派出子会话与独立 verifier，血缘与证据归属可追溯。
+- [ ] [澄清与判定的角色策略](docs/architecture-modules.md#6-m4-issue-loop-的待决项)：决定是否保留独立的阶段会话入口，以及判定者可用的 Skills 与只读 MCP。
 - [ ] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转收敛为一份显式定义；准出规则带编号与版本并写入审阅快照，可在实践中扩充。
 - [ ] [准出条件](docs/issue-workflow.md#issues)：Agent 结合 Workspace 上下文起草、人修改并确认具体版本；修改须写明理由并重新确认。
 - [ ] [人工介入（Blocked）](docs/issue-conversation-design.md)：通用的提问与权限应答协议，回应后继续同一个 Issue。
 - [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。
-- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项；采集方式通过统一接口扩展。
+- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（含 Linux 上的受控 HTTP 目标）；采集方式通过统一接口扩展。
 - [ ] [接受与合入](docs/issue-workflow.md#accept-and-integration)：打磨 Merge Queue 的冲突解决与复验。
-- [ ] [Issue Web 体验](docs/issue-workflow.md#issues)：重新开放 Issues 入口，打磨 Board、详情与 Issue 对话。
+- [ ] [Issue Web 体验](docs/issue-workflow.md#issues)：重新开放 Issues 入口，打磨 Board、详情与 Issue 对话；按[准出标准](docs/foundry-conversation-release-gate.md)做真实浏览器闭环验收。
 - [ ] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。
-
-### M4 资源与跨设备
-
-- [ ] [Resource Pool 与 Tool Use](docs/tool-use-and-resources.md#basic-tool-use)：浏览器、桌面（Computer Use）、模拟器与真机、端口与服务、内部 Infra 统一走“申请 → 使用 → 释放 → 清理”，同时采集证据；首个接入浏览器。
-- [ ] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备，每次调用按 policy 授权。
 
 ### 并行轨道
 
