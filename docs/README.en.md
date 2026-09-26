@@ -64,34 +64,40 @@ The target shape is described in the [Workspace and Sandbox overview](workspace-
 - [x] [Devices and deployment](development.md): daemons connect out to the server; multiple devices and workspaces; macOS / Linux process isolation; [Docker deployment](../deploy/README.md) and [parallel dev stacks](dev-stacks.md).
 - [x] Issue engine: completion criteria → candidate execution → evidence and verification → acceptance → integration is on main with historical end-to-end records. Execution, clarification, judgments and integration run on macOS and Linux (Linux does not support controlled HTTP targets yet); the web entry is hidden until the experience is polished.
 
-### M1 Execution core
+### M1 Execution core (done)
 
-One sandbox definition and one way to start an agent. Chats keep working directly in the workspace; isolation applies only to orchestrated flows such as Issues.
+One sandbox definition and one way to start an agent, decoupled along module boundaries. Chats work directly in the workspace without a sandbox. Acceptance does not depend on the Issue product: module tests and the dependency audit, a real-browser Chat regression, and a real-model end-to-end run of the execution core (see [module architecture §5.5](architecture-modules.md#55-m1-验收), Chinese).
 
-- [ ] [The full Issue loop on Linux](architecture-modules.md#5-m1-接口草案): enable agent clarification, independent judgments, Accept and integration on Linux, using the same isolation definitions as macOS.
-- [ ] [Isolated orchestrated sessions](architecture-modules.md#52-session-runtime): orchestrated child sessions bound to an Issue run under the same isolation as Issue execution and can write only that Issue's candidate.
-- [ ] [One session record](architecture-modules.md#53-server-侧run-与-agentsession-统一): Issue execution, clarification and judgments share the Chat session record, so they can be read, steered and traced the same way.
+- [x] [Unified execution core](architecture-modules.md#51-sandbox): one Sandbox module (macOS Seatbelt and Linux bubblewrap implement the same interface); the sandbox enforces write boundaries and hides Foundry's governance state; the Session Runtime starts sessions.
+- [x] [Linux execution core](architecture-modules.md#51-sandbox): execution, clarification, judgments and integration run on Linux (except controlled HTTP targets), with name resolution and server-data exposure fixed.
+- [x] [Isolated orchestrated sessions](architecture-modules.md#54-迁移顺序): orchestrated sessions bound to an Issue run in its candidate inside the executor's sandbox and keep their orchestration ability.
+- [x] [Module boundary audit](architecture-modules.md#31-依赖图): `pnpm audit:modules` checks cross-module dependencies; violations may only shrink and are now zero.
 
 ### M2 Agent surface
 
-- [ ] [Orchestration inside Issues](session-orchestration-design.md): the Issue execution agent starts child sessions and independent verifiers through the `foundry` MCP, with traceable lineage and evidence ownership.
+Kernel features are accepted through Chats and orchestrated sessions, not through Issues.
+
 - [ ] [Foundry MCP / CLI](session-orchestration-design.md): the single interface agents use, with capabilities registered and authorized under one policy; OAuth 2.1 for the HTTP MCP.
 
-### M3 Issue loop v2
+### M3 Resources and cross-device work
 
+- [ ] [Resource Pool and Tool Use](tool-use-and-resources.md#basic-tool-use): browsers, desktops (Computer Use), simulators and devices, ports and services, and internal infrastructure share one request → use → release → clean-up lifecycle, with evidence capture; browsers come first, accepted by an agent in a Chat requesting a browser and returning a screenshot.
+- [ ] [Cross-device sessions](architecture-modules.md#3-模块清单): start a session and use resources on another device, relayed through the server; credentials stay on their device and every call is authorized by policy.
+
+### M4 Issue loop
+
+Issues are an orchestration layer on top of the kernel and come after it; before starting, review what the kernel lacks for them (see [module architecture §6](architecture-modules.md#6-m4-issue-loop-的待决项)).
+
+- [ ] [Orchestration inside Issues and one session record](architecture-modules.md#54-迁移顺序): Issue execution becomes an AgentSession with the `foundry` MCP, so the execution agent can start child sessions and independent verifiers with traceable lineage and evidence ownership.
+- [ ] [Role policy for clarification and judgments](architecture-modules.md#6-m4-issue-loop-的待决项): decide whether a separate stage-session entry remains, and which skills and read-only MCP a verifier may use.
 - [ ] [Loop graph and exit rules](issue-workflow.md#issues): Issue state transitions converge into one explicit definition; exit rules carry ids and versions, are recorded in the review snapshot and can grow with practice.
 - [ ] [Completion criteria](issue-workflow.md#issues): the agent drafts them from workspace context; a person edits and confirms an exact version; any later change needs a stated reason and a new confirmation.
 - [ ] [Human input (Blocked)](issue-conversation-design.md): a general question and permission-response protocol; answering resumes the same Issue.
 - [ ] [External feedback and Issues in Feishu](platform-extensions.md#im-integration): feedback can come from sources other than people and agents (first a Feishu thread or CI) and returns to the Issue with its source recorded; raise Issues, follow progress and answer Blocked states from Feishu threads, with complex review on the web.
-- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md); collectors extend through one interface.
+- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) (including controlled HTTP targets on Linux); collectors extend through one interface.
 - [ ] [Acceptance and integration](issue-workflow.md#accept-and-integration): polish Merge Queue conflict resolution and reverification.
-- [ ] [Issue web experience](issue-workflow.md#issues): reopen the Issues entry and polish the board, detail view and Issue conversation.
+- [ ] [Issue web experience](issue-workflow.md#issues): reopen the Issues entry and polish the board, detail view and Issue conversation; accept it with a real-browser loop per the [release gate](foundry-conversation-release-gate.md).
 - [ ] [First open-source release](issue-workflow.md#open-source-release): run the full loop on representative real tasks and reproduce installation in a clean environment.
-
-### M4 Resources and cross-device work
-
-- [ ] [Resource Pool and Tool Use](tool-use-and-resources.md#basic-tool-use): browsers, desktops (Computer Use), simulators and devices, ports and services, and internal infrastructure share one request → use → release → clean-up lifecycle, with evidence capture; browsers come first.
-- [ ] [Cross-device sessions](architecture-modules.md#3-模块清单): start a session and use resources on another device, relayed through the server; credentials stay on their device and every call is authorized by policy.
 
 ### Parallel tracks
 
