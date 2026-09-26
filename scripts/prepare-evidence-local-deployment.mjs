@@ -89,7 +89,13 @@ const worktreeOf = (name) => {
 };
 
 const root = worktreeOf(stack);
-const database = resolve(root, "apps/server/.data/foundry.db");
+// Server data lives in the stack's state root; stacks not yet migrated still
+// keep it at the old default inside the worktree.
+const database =
+  [
+    resolve(stateRoot, "server/foundry.db"),
+    resolve(root, "apps/server/.data/foundry.db"),
+  ].find(existsSync) ?? resolve(stateRoot, "server/foundry.db");
 if (!existsSync(database))
   throw new Error(`stack ${stack} has no database at ${database}`);
 const sqlite = (file, query) =>

@@ -51,7 +51,7 @@ const usage = [
   "  remove <name> [--purge-state]         drop services and registry entry",
   "",
   "Ports derive from the base: server = base + 982, web = base + 983.",
-  "Each stack keeps its own database (worktree .data) and private state",
+  "Each stack keeps its own database and private state in its state root",
   `root (${stackParent}/<name>); the default stack stays on ~/.foundry.`,
   "A stack whose provider secret is not in the device profile file can export",
   "it from <state root>/provider-env (mode 0600); start rewrites the launch",

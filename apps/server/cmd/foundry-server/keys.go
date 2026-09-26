@@ -20,6 +20,9 @@ func runKeys(args []string, getenv func(string) string) error {
 		return errors.New("keys: missing subcommand")
 	}
 	cfg := loadConfig(getenv)
+	if err := checkDataLocation(cfg, fileExists); err != nil {
+		return err
+	}
 	switch args[0] {
 	case "generate":
 		return runKeysGenerate(args[1:], cfg)
