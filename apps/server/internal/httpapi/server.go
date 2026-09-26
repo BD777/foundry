@@ -587,33 +587,46 @@ func (s *Server) handleListAgentModels(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !actorFromContext(r.Context()).Agent() && !s.canUseModelCatalog(r, input.Profile) {
+	actor := actorFromContext(r.Context())
+	if !actor.Agent() && !s.canUseModelCatalog(r, input.Profile) {
 		writeError(w, http.StatusNotFound, "profile not found")
 		return
 	}
-	if input.Profile.Command != "" || len(input.Profile.Env) > 0 {
-		writeError(w, http.StatusBadRequest, "command and env are local-only profile fields")
-		return
+	models, status, err := s.listAgentModels(r.Context(), actor, input.Profile)
+	switch {
+	case status == http.StatusForbidden:
+		writeForbidden(w, err.Error())
+	case status != 0:
+		writeError(w, status, err.Error())
+	default:
+		writeResult(w, models, err)
 	}
-	if actor := actorFromContext(r.Context()); actor.Agent() {
-		if input.Profile.DeviceID != "" && input.Profile.DeviceID != actor.Identity.DeviceID {
-			writeForbidden(w, "session token can only query models on its own device")
-			return
+}
+
+// listAgentModels asks a profile's device for its model catalog. A session
+// token is confined to its own device and workspace. A non-zero status
+// classifies a refusal; otherwise err is an ordinary failure.
+func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store.CreateAgentProfileInput) (any, int, error) {
+	if profile.Command != "" || len(profile.Env) > 0 {
+		return nil, http.StatusBadRequest, errors.New("command and env are local-only profile fields")
+	}
+	if actor.Agent() {
+		if profile.DeviceID != "" && profile.DeviceID != actor.Identity.DeviceID {
+			return nil, http.StatusForbidden, errors.New("session token can only query models on its own device")
 		}
-		input.Profile.DeviceID = actor.Identity.DeviceID
-		input.Profile.WorkspaceID = actor.Identity.WorkspaceID
+		profile.DeviceID = actor.Identity.DeviceID
+		profile.WorkspaceID = actor.Identity.WorkspaceID
 	}
-	s.injectModelListCredential(r.Context(), &input.Profile)
+	s.injectModelListCredential(ctx, &profile)
 	// A cold CLI catalog on macOS pays a one-time code-signing check that can run
 	// past half a minute, so the wait is generous rather than optimistic.
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	models, err := s.hub.ListAgentModels(ctx, input.Profile)
+	models, err := s.hub.ListAgentModels(ctx, profile)
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
+		return nil, http.StatusConflict, errors.New("local daemon is not connected")
 	}
-	writeResult(w, models, err)
+	return models, 0, err
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
@@ -984,64 +997,15 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	agents, err := s.store.ListAgents(r.Context(), input.WorkspaceID, "")
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	deviceID := ""
-	for _, agent := range agents {
-		if input.AgentID != "" && agent.ID == input.AgentID {
-			deviceID = agent.DeviceID
-			break
+	if status, err := s.resolveSessionDevice(r.Context(), actor, &input); err != nil {
+		switch status {
+		case 0:
+			writeResult(w, nil, err)
+		case http.StatusForbidden:
+			writeForbidden(w, err.Error())
+		default:
+			writeError(w, status, err.Error())
 		}
-		if input.AgentID == "" && input.Provider != "" && agent.Provider == input.Provider {
-			deviceID = agent.DeviceID
-			break
-		}
-	}
-	// A session token must not be able to pin an arbitrary agentId. If it did
-	// not resolve on the actor's device, drop it and resolve by provider/profile
-	// through the trusted chain like the stdio client does.
-	if actor.Agent() && deviceID != actor.Identity.DeviceID {
-		input.AgentID = ""
-		deviceID = ""
-		for _, agent := range agents {
-			if input.ProfileID != "" && agent.ProfileID == input.ProfileID {
-				deviceID, input.AgentID = agent.DeviceID, agent.ID
-				break
-			}
-			if input.Provider != "" && agent.Provider == input.Provider {
-				deviceID, input.AgentID = agent.DeviceID, agent.ID
-				break
-			}
-		}
-	}
-	// Server-owned profile agents are projected per snapshot, never persisted
-	// as agents rows (see serverProfileProjections). Resolve that id from the
-	// trusted workspace -> device -> enabled binding -> profile chain so a
-	// picker selection can start a session; client fields never authorise it.
-	if deviceID == "" && (input.AgentID != "" || input.ProfileID != "") {
-		resolved, resolveErr := s.store.ResolveSessionAgent(r.Context(), input)
-		if resolveErr == nil {
-			deviceID = resolved.DeviceID
-		} else if !errors.Is(resolveErr, store.ErrNotFound) &&
-			!errors.Is(resolveErr, store.ErrProfileNotFound) &&
-			!errors.Is(resolveErr, store.ErrDeviceRemoved) {
-			writeResult(w, nil, resolveErr)
-			return
-		}
-	}
-	if actor.Agent() && deviceID != actor.Identity.DeviceID {
-		writeForbidden(w, "session token can only start sessions on its own device")
-		return
-	}
-	if deviceID == "" {
-		writeError(w, http.StatusBadRequest, "no agent is available for the selected runtime and profile")
-		return
-	}
-	if deviceID != "" && !s.hub.HasConnection(deviceID) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
 		return
 	}
 	if input.WorkspaceID != "" {
@@ -1074,6 +1038,73 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 }
 
 var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
+
+// resolveSessionDevice finds the agent a new session runs on and checks its
+// device is reachable by the caller and connected. It may pin input.AgentID.
+// A non-zero status classifies a refusal; otherwise err is an ordinary failure.
+func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput) (int, error) {
+	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
+	if err != nil {
+		return 0, err
+	}
+	deviceID := ""
+	for _, agent := range agents {
+		if input.AgentID != "" && agent.ID == input.AgentID {
+			deviceID = agent.DeviceID
+			break
+		}
+		if input.AgentID == "" && input.Provider != "" && agent.Provider == input.Provider {
+			deviceID = agent.DeviceID
+			break
+		}
+		// A profile alone names its runtime.
+		if input.AgentID == "" && input.Provider == "" && input.ProfileID != "" && agent.ProfileID == input.ProfileID {
+			deviceID, input.Provider = agent.DeviceID, agent.Provider
+			break
+		}
+	}
+	// A session token must not be able to pin an arbitrary agentId. If it did
+	// not resolve on the actor's device, drop it and resolve by provider/profile
+	// through the trusted chain.
+	if actor.Agent() && deviceID != actor.Identity.DeviceID {
+		input.AgentID = ""
+		deviceID = ""
+		for _, agent := range agents {
+			if input.ProfileID != "" && agent.ProfileID == input.ProfileID {
+				deviceID, input.AgentID = agent.DeviceID, agent.ID
+				break
+			}
+			if input.Provider != "" && agent.Provider == input.Provider {
+				deviceID, input.AgentID = agent.DeviceID, agent.ID
+				break
+			}
+		}
+	}
+	// Server-owned profile agents are projected per snapshot, never persisted
+	// as agents rows (see serverProfileProjections). Resolve that id from the
+	// trusted workspace -> device -> enabled binding -> profile chain so a
+	// picker selection can start a session; client fields never authorise it.
+	if deviceID == "" && (input.AgentID != "" || input.ProfileID != "") {
+		resolved, resolveErr := s.store.ResolveSessionAgent(ctx, *input)
+		if resolveErr == nil {
+			deviceID = resolved.DeviceID
+		} else if !errors.Is(resolveErr, store.ErrNotFound) &&
+			!errors.Is(resolveErr, store.ErrProfileNotFound) &&
+			!errors.Is(resolveErr, store.ErrDeviceRemoved) {
+			return 0, resolveErr
+		}
+	}
+	if actor.Agent() && deviceID != actor.Identity.DeviceID {
+		return http.StatusForbidden, errors.New("session token can only start sessions on its own device")
+	}
+	if deviceID == "" {
+		return http.StatusBadRequest, errors.New("no agent is available for the selected runtime and profile")
+	}
+	if !s.hub.HasConnection(deviceID) {
+		return http.StatusConflict, errors.New("local daemon is not connected")
+	}
+	return 0, nil
+}
 
 func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
 	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")

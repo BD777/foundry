@@ -182,6 +182,43 @@ export class FoundryClient {
     return JSON.parse(raw) as T;
   }
 
+  /**
+   * Forwards one MCP JSON-RPC message to the server's tool surface and returns
+   * its reply, or undefined for a notification the server accepted.
+   */
+  async mcp(message: unknown): Promise<unknown> {
+    const url = new URL("/api/mcp", this.config.serverURL);
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), {
+        method: "POST",
+        headers: this.headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(message),
+      });
+    } catch (error) {
+      throw new FoundryClientError(
+        `cannot reach Foundry server at ${this.config.serverURL}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    const raw = await response.text();
+    if (response.status === 202 && !raw) return undefined;
+    let reply: unknown;
+    try {
+      reply = JSON.parse(raw);
+    } catch {
+      reply = undefined;
+    }
+    // Authorization failures are JSON-RPC errors too, so any JSON-RPC body is
+    // the answer whatever the HTTP status.
+    if (reply && typeof reply === "object" && "jsonrpc" in reply) return reply;
+    throw new FoundryClientError(
+      `POST /api/mcp -> ${response.status}: ${raw}`,
+      response.status,
+    );
+  }
+
   // --- Profiles / agents -------------------------------------------------
 
   async listProfiles(runtime?: string): Promise<AgentProfileLike[]> {
@@ -198,31 +235,6 @@ export class FoundryClient {
     const params = new URLSearchParams();
     if (this.workspaceId) params.set("workspaceId", this.workspaceId);
     return this.request<AgentLike[]>("GET", `/api/agents?${params.toString()}`);
-  }
-
-  async listModels(profileId: string): Promise<unknown> {
-    const profiles = await this.listProfiles();
-    const profile = profiles.find((item) => item.id === profileId);
-    if (!profile) {
-      throw new FoundryClientError(`unknown profile: ${profileId}`, 404);
-    }
-    return this.request("POST", "/api/agent-profiles/models", {
-      profile: {
-        id: profile.id,
-        runtime: profile.runtime,
-        label: profile.label,
-        connectionType: profile.connectionType,
-        baseUrl: profile.baseUrl ?? "",
-        model: profile.model ?? "",
-        models: profile.models ?? [],
-        claudeEffort: profile.claudeEffort,
-        claudePermissionMode: profile.claudePermissionMode,
-        codexReasoningEffort: profile.codexReasoningEffort,
-        codexSandboxMode: profile.codexSandboxMode,
-        codexApprovalPolicy: profile.codexApprovalPolicy,
-        codexSpeed: profile.codexSpeed,
-      },
-    });
   }
 
   // --- Sessions ----------------------------------------------------------
@@ -262,10 +274,6 @@ export class FoundryClient {
 
   async listSubagents(id: string): Promise<unknown> {
     return this.request("GET", `/api/agent-sessions/${id}/subagents`);
-  }
-
-  async getSubagentTranscript(id: string, taskId: string): Promise<unknown> {
-    return this.request("GET", `/api/agent-sessions/${id}/subagents/${taskId}`);
   }
 
   async createSession(input: {

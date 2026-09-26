@@ -188,9 +188,16 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   可读结果返回、协商协议版本；工具目录带类型定义并成为唯一一份；子会话默认沿用父会话
   的 profile，等待结束时带回回答。以真实 Chat 验收：派出子会话、等待、复用运行时的
   下一轮继续编排。
-- **M2-2**：stdio `foundry mcp` 与 `foundry session` 命令改为转发 Server 的工具目录与
-  调用，删除 TypeScript 的重复实现，补齐 `list_models`、`handoff_session`；Codex 会话
-  注入工具（需本机 Codex 登录恢复后实测）。
+- **M2-2**（已完成）：Server 的 MCP 补齐 `list_models`、`handoff_session`、
+  `read_context` 的 `subagents` 范围，以及 `create_session` 的运行时参数与
+  `list_profiles` 的 runtime 过滤；模型目录查询抽成 HTTP 与 MCP 共用的一个方法。stdio
+  `foundry mcp` 改为纯转发桥，删掉 TypeScript 里重复的工具定义与处理（约 300 行），
+  工具只剩 Server 一处实现。`foundry session` 命令保持 REST（它是人和脚本的界面，
+  不是 MCP）。REST 与 MCP 创建会话时"选哪个 Agent、在哪台设备"的判断也合并为一个方法，
+  只给 profile 时由它确定运行时；`handoff_session` 未指定 profile 时沿用被接替会话的。
+  实测中顺带修复：自定义命令不读 stdin 就退出时，Worker 写 prompt 触发的 `EPIPE`
+  未被处理，会让执行进程崩溃。
+- **M2-3**：Codex 会话注入工具（需本机 Codex 登录恢复后实测）。
 - **待定**：编排血缘目前按"轮"记（Chat 每轮是一个 `AgentSession`，两轮派出的子会话
   挂在不同父会话下），是否应按 Chat 线程记；HTTP MCP 的 OAuth 2.1 只在出现 Foundry
   之外的远程 Agent 时再做。

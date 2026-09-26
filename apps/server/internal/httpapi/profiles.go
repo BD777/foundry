@@ -565,6 +565,29 @@ func agentProfileInputFrom(profile store.ProfileDefinition, deviceID string) sto
 	}
 }
 
+// agentProfileInputFromProjection shapes a listed profile the same way, so a
+// caller that only knows a profile id can ask for its catalog.
+func agentProfileInputFromProjection(profile store.AgentProfileProjection) store.CreateAgentProfileInput {
+	return store.CreateAgentProfileInput{
+		ID:                   profile.ID,
+		DeviceID:             profile.DeviceID,
+		Runtime:              profile.Runtime,
+		Label:                profile.Label,
+		ConfigScope:          profile.ConfigScope,
+		ConnectionType:       profile.ConnectionType,
+		BaseURL:              profile.BaseURL,
+		Model:                profile.Model,
+		Models:               profile.Models,
+		PromptPrefix:         profile.PromptPrefix,
+		ClaudeEffort:         profile.ClaudeEffort,
+		ClaudePermissionMode: profile.ClaudePermissionMode,
+		CodexReasoningEffort: profile.CodexReasoningEffort,
+		CodexSandboxMode:     profile.CodexSandboxMode,
+		CodexApprovalPolicy:  profile.CodexApprovalPolicy,
+		CodexSpeed:           profile.CodexSpeed,
+	}
+}
+
 // serverProfileForSession resolves the server profile a session runs, or nil
 // when the session runs a device-local profile. The binding is what makes a
 // profile the device's to run, so an unbound profile resolves to nil and the

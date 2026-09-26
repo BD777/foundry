@@ -136,6 +136,7 @@ import { ClaudeTurnWatchdog } from "./watchdog.js";
 import {
   isUtilitySession,
   killChildProcess,
+  sendPrompt,
   resolveClaudeCommand,
   resolveCodexCommand,
   sleep,
@@ -263,7 +264,7 @@ export async function runProfileCommandSession(
       writeFileSync(stderrPath, stderrText);
       resolveRun({ code, signal, stdout: stdoutText, stderr: stderrText });
     });
-    child.stdin.end(prompt);
+    sendPrompt(child, prompt);
   });
 
   if (result.code !== 0) {
@@ -788,7 +789,7 @@ export async function runCodexCliSession(
       writeFileSync(stderrPath, Buffer.concat(stderr).toString("utf8"));
       resolveRun({ code, signal });
     });
-    child.stdin.end(prompt);
+    sendPrompt(child, prompt);
   });
 
   if (result.code !== 0) {
@@ -1707,7 +1708,7 @@ export async function runClaudeCliSession(
         );
         resolveRun({ code, signal, stderr: stderrText.trim() });
       });
-      child.stdin.end(prompt);
+      sendPrompt(child, prompt);
     });
     return result;
   }
