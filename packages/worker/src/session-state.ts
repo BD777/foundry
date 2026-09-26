@@ -79,6 +79,7 @@ export class AsyncInputQueue<T> implements AsyncIterable<T> {
 
 export interface ClaudeSDKQuery {
   close?: () => void;
+  setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown>;
   [Symbol.asyncIterator](): AsyncIterator<unknown>;
 }
 

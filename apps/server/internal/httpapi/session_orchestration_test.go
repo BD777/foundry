@@ -538,9 +538,42 @@ func TestRemoteMCP(t *testing.T) {
 	if len(list) < 9 {
 		t.Fatalf("tools = %d", len(list))
 	}
+	// Every tool declares a typed input schema, so models send real types.
+	for _, raw := range list {
+		tool := raw.(map[string]any)
+		schema, _ := tool["inputSchema"].(map[string]any)
+		if schema["type"] != "object" {
+			t.Fatalf("%v: inputSchema = %v", tool["name"], schema)
+		}
+		if tool["name"] == "create_session" {
+			wait := schema["properties"].(map[string]any)["wait"].(map[string]any)
+			if wait["type"] != "boolean" {
+				t.Fatalf("create_session.wait = %v, want boolean", wait)
+			}
+		}
+	}
 	calls := post(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_sessions","arguments":{}}}`, token)
 	if _, ok := calls["error"]; ok {
 		t.Fatalf("list_sessions error: %+v", calls["error"])
+	}
+	// Notifications are accepted without a reply.
+	notification := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	notification.Header.Set("Authorization", "Bearer "+token)
+	notified := httptest.NewRecorder()
+	server.Routes().ServeHTTP(notified, notification)
+	if notified.Code != http.StatusAccepted || notified.Body.Len() != 0 {
+		t.Fatalf("notification = %d %q, want 202 with no body", notified.Code, notified.Body.String())
+	}
+	// initialize negotiates a supported protocol revision.
+	negotiated := post(`{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`, token)
+	if got := negotiated["result"].(map[string]any)["protocolVersion"]; got != "2025-03-26" {
+		t.Fatalf("negotiated protocolVersion = %v", got)
+	}
+	// A failing tool call is a readable tool result, not a protocol error.
+	failed := post(`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"get_session","arguments":{"sessionId":"missing"}}}`, token)
+	failure, _ := failed["result"].(map[string]any)
+	if failure == nil || failure["isError"] != true {
+		t.Fatalf("failed tool call = %+v, want isError result", failed)
 	}
 	// A bad bearer is rejected before reaching MCP.
 	request := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/list"}`))
@@ -707,5 +740,78 @@ func TestHTTPIssueRecordsItsCreator(t *testing.T) {
 	created := postJSONForTest(t, server, "/api/issues", `{"sourceInput":"attributed issue","runtime":"mock"}`, http.StatusCreated)
 	if created["createdByUserId"] != testOwner.ID {
 		t.Fatalf("issue creator = %v, want %s", created["createdByUserId"], testOwner.ID)
+	}
+}
+
+// Orchestration results: a child created without a runtime choice runs like
+// its parent, and waiting on a settled child returns what it answered.
+func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
+	db, parent := lineageFixture(t)
+	ctx := context.Background()
+	token, err := db.MintAgentSessionToken(ctx, parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(db)
+	call := func(tool, arguments string) (string, bool) {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + arguments + `}}`
+		request := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, request)
+		var envelope struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+				IsError bool `json:"isError"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || len(envelope.Result.Content) == 0 {
+			t.Fatalf("%s: %d %s", tool, response.Code, response.Body.String())
+		}
+		return envelope.Result.Content[0].Text, envelope.Result.IsError
+	}
+	// Without a runtime the child used to find no agent; it now resolves the
+	// parent's runtime and only stops at dispatch, since no daemon is connected.
+	text, isError := call("create_session", `{"prompt":"Reply with exactly: CHILD-OK"}`)
+	if !isError || text != "local daemon is not connected" {
+		t.Fatalf("create_session without a runtime = %q (error %v), want it to reach dispatch", text, isError)
+	}
+	child, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
+		Prompt: "Reply with exactly: CHILD-OK", Source: "agent", ParentSessionID: parent.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteAgentSession(ctx, child.ID, "CHILD-OK", ""); err != nil {
+		t.Fatal(err)
+	}
+	text, isError = call("wait_session", `{"sessionId":"`+child.ID+`","timeoutMs":2000}`)
+	var waited map[string]any
+	if isError || json.Unmarshal([]byte(text), &waited) != nil {
+		t.Fatalf("wait_session = %q (error %v)", text, isError)
+	}
+	if waited["status"] != "completed" || waited["response"] != "CHILD-OK" {
+		t.Fatalf("wait = status %v response %v, want completed CHILD-OK", waited["status"], waited["response"])
+	}
+	if _, ok := waited["events"]; ok {
+		t.Fatal("wait result must not carry the event stream")
+	}
+}
+
+func TestMCPArgumentsTolerateStringScalars(t *testing.T) {
+	args := map[string]json.RawMessage{
+		"yes": json.RawMessage(`true`), "yesText": json.RawMessage(`"true"`),
+		"noText": json.RawMessage(`"no"`), "ms": json.RawMessage(`1500`),
+		"msText": json.RawMessage(`"2500"`), "msBad": json.RawMessage(`"soon"`),
+	}
+	if !mcpArgBool(args, "yes") || !mcpArgBool(args, "yesText") || mcpArgBool(args, "noText") || mcpArgBool(args, "missing") {
+		t.Fatal("boolean arguments must accept true and \"true\" only")
+	}
+	if mcpArgNumber(args, "ms", 1) != 1500 || mcpArgNumber(args, "msText", 1) != 2500 || mcpArgNumber(args, "msBad", 7) != 7 {
+		t.Fatal("number arguments must accept numbers and numeric strings, else the fallback")
 	}
 }

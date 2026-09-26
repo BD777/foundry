@@ -178,3 +178,56 @@ test("legacy native context resets and the receipt closure certifies the fresh s
   });
   assert.equal(second.reset, false);
 });
+
+test("sessions with an orchestration identity get the Foundry tools with their own token", async () => {
+  const { registerSessionAmbientEnv } =
+    await import("../dist/session-ambient.js");
+  const ambient = {
+    serverURL: "http://127.0.0.1:31982",
+    sessionToken: "token-for-sess_tools",
+    workspaceID: "ws_1",
+  };
+  const unregister = registerSessionAmbientEnv("sess_tools", ambient);
+  try {
+    const chat = { ...session, id: "sess_tools", source: "chat" };
+    const plan = buildClaudeLaunchPlan({
+      workspacePath: "/tmp",
+      session: chat,
+      profile: compatibleProfile({ apiKey: "k" }),
+    });
+    assert.deepEqual(plan.mcpServers, {
+      foundry: {
+        type: "http",
+        url: "http://127.0.0.1:31982/api/mcp",
+        headers: { Authorization: "Bearer token-for-sess_tools" },
+      },
+    });
+    assert.equal(
+      plan.sdk.mcpServers,
+      undefined,
+      "kept out of the runtime identity",
+    );
+    assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry"]);
+    assert.ok(plan.cliArgs.includes("mcp__foundry"));
+    const flag = plan.cliArgs.indexOf("--mcp-config");
+    assert.deepEqual(JSON.parse(plan.cliArgs[flag + 1]), {
+      mcpServers: plan.mcpServers,
+    });
+    const naming = buildClaudeLaunchPlan({
+      workspacePath: "/tmp",
+      session: { ...chat, source: "naming" },
+      profile: compatibleProfile({ apiKey: "k" }),
+    });
+    assert.equal(naming.mcpServers, undefined, "utility sessions get no tools");
+    assert.equal(naming.cliArgs.includes("--mcp-config"), false);
+    assert.equal(naming.sdk.allowedTools, undefined);
+  } finally {
+    unregister();
+  }
+  const anonymous = buildClaudeLaunchPlan({
+    workspacePath: "/tmp",
+    session: { ...session, id: "sess_without_token" },
+    profile: compatibleProfile({ apiKey: "k" }),
+  });
+  assert.equal(anonymous.mcpServers, undefined, "no token, no tools");
+});

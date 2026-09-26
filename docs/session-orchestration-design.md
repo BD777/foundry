@@ -59,10 +59,20 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
     └── foundry skill               打印 foundry-orchestrator SKILL.md
 ```
 
+- **会话如何拿到工具（2026-09-26 起）**：Session Runtime 在启动持有会话令牌的
+  Claude 会话（Chat、编排子会话；命名等工具性会话除外）时，把 Server 的 HTTP
+  MCP（`POST /api/mcp`，`Authorization: Bearer <会话令牌>`）注册为 `foundry`
+  MCP，并预先放行 `mcp__foundry`：这些能力由 Foundry 授予、由 Server 按令牌
+  逐次授权，无人值守的会话没有人去点"允许"。每轮派发都会重铸令牌，复用的长驻
+  运行时在每轮开始前用 SDK 的 `setMcpServers` 换上本轮令牌；MCP 配置不进运行时
+  复用的身份，所以不会因为令牌变化而丢掉长驻运行时。Codex 会话尚未注入（待
+  M2-2，本机 Codex 登录失效，无法实测）。
+- 工具目录只有一份：`apps/server/internal/httpapi/mcp_tools.json`，带完整的
+  参数类型定义，与实现它的处理函数放在一起。stdio 的 `foundry mcp` 目前仍是
+  独立实现（多出 `list_models`、`handoff_session`），供在 Foundry 之外手动配置
+  使用；M2-2 把它改为转发 Server 的目录与调用。
 - stdio MCP **无状态、不监听端口**；凭据只从环境变量来（MCP 规范的本地
   stdio 模式）。
-- 工具实现里“server URL + Bearer”是唯一出入口；Server 另提供同一套 Policy
-  下的 HTTP MCP（`POST /api/mcp`），供反向代理后的远程 Agent 使用。
 
 ### 身份环境变量
 
@@ -178,20 +188,20 @@ Session，除非人在 Web 上把监管权交给它。
 工具描述中写明：写者唯一、并行写同一仓库的风险、上下文默认截断、Codex
 活动 turn 不支持 steer（语义为下一轮排队）。
 
-| 工具                  | 映射                                | 备注                                                                                   |
-| --------------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `list_profiles`       | `GET /api/agent-profiles`           | 按本 device 过滤                                                                       |
-| `list_models`         | `POST /api/agent-profiles/models`   |                                                                                        |
-| `create_session`      | `POST /api/agent-sessions`          | `parentSessionId` 默认取自身；可选 `issueId`、`forkSessionId`、`verification`、`wait?` |
-| `list_sessions`       | `GET /api/agent-sessions`           | 支持 `parentOnly`                                                                      |
-| `list_group_sessions` | layout + session 列表               | 接手编排用                                                                             |
-| `get_session`         | `GET /api/agent-sessions/{id}`      | 摘要档                                                                                 |
-| `read_context`        | session / thread / chat / subagents | `scope=summary\|thread\|transcript`，`tail?`、`maxBytes?` 默认截断                     |
-| `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                               |
-| `steer_session`       | `…/steer`                           |                                                                                        |
-| `cancel_session`      | `…/cancel`                          | 不级联                                                                                 |
-| `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`                                                                   |
-| `rename_session`      | `POST /api/chats/{id}/title`        | 自己/后代                                                                              |
+| 工具                  | 映射                                | 备注                                                                                                                                                   |
+| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `list_profiles`       | `GET /api/agent-profiles`           | 按本 device 过滤                                                                                                                                       |
+| `list_models`         | `POST /api/agent-profiles/models`   |                                                                                                                                                        |
+| `create_session`      | `POST /api/agent-sessions`          | `parentSessionId` 默认取自身；不指定 profile 与 runtime 时沿用父会话的；可选 `issueId`、`forkSessionId`、`verification`、`wait?`（等到结束并带回回答） |
+| `list_sessions`       | `GET /api/agent-sessions`           | 支持 `parentOnly`                                                                                                                                      |
+| `list_group_sessions` | layout + session 列表               | 接手编排用                                                                                                                                             |
+| `get_session`         | `GET /api/agent-sessions/{id}`      | 摘要档                                                                                                                                                 |
+| `read_context`        | session / thread / chat / subagents | `scope=summary\|thread\|transcript`，`tail?`、`maxBytes?` 默认截断                                                                                     |
+| `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                                                                                               |
+| `steer_session`       | `…/steer`                           |                                                                                                                                                        |
+| `cancel_session`      | `…/cancel`                          | 不级联                                                                                                                                                 |
+| `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                   |
+| `rename_session`      | `POST /api/chats/{id}/title`        | 自己/后代                                                                                                                                              |
 
 人用 CLI 与这些工具共用同一客户端核心（`foundry-client.ts`），命令一一对应，
 默认输出 JSON。HTTP MCP（`httpapi/mcp.go`）在服务端实现同一 Policy 下的

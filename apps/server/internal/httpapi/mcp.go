@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +20,11 @@ import (
 // accounts system. Responses are plain JSON-RPC over HTTP — sufficient for the
 // request/response tool set; long waits are bounded server-side polls.
 
-const mcpProtocolVersion = "2025-03-26"
+const mcpProtocolVersion = "2025-06-18"
+
+// mcpProtocolVersions are the Streamable HTTP revisions this endpoint serves;
+// initialize echoes the client's requested one when it is listed here.
+var mcpProtocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 type mcpRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -27,70 +33,19 @@ type mcpRequest struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-type mcpToolSchema struct {
-	Type       string         `json:"type"`
-	Properties map[string]any `json:"properties,omitempty"`
-	Required   []string       `json:"required,omitempty"`
-}
+// remoteMCPTools is the Foundry tool catalog: one definition with typed
+// input schemas, kept beside the handlers that implement it.
+//
+//go:embed mcp_tools.json
+var remoteMCPToolsJSON []byte
 
-type mcpTool struct {
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	InputSchema mcpToolSchema `json:"inputSchema"`
-}
-
-var remoteMCPTools = []mcpTool{
-	{
-		Name:        "list_profiles",
-		Description: "List runnable agent profiles. Optional arguments: {\"runtime\":\"claude|codex\"}.",
-		InputSchema: mcpToolSchema{Type: "object"},
-	},
-	{
-		Name:        "create_session",
-		Description: "Create a session and deliver it a task. Arguments: {prompt, profileId?, provider?, model?, issueId?, wait?, timeoutMs?}. With a session token the parent is the caller.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"prompt"}},
-	},
-	{
-		Name:        "list_sessions",
-		Description: "List workspace sessions. Arguments: {parentOnly?}.",
-		InputSchema: mcpToolSchema{Type: "object"},
-	},
-	{
-		Name:        "list_group_sessions",
-		Description: "List every session in one layout group. Arguments: {groupId}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"groupId"}},
-	},
-	{
-		Name:        "get_session",
-		Description: "Get one session summary. Arguments: {sessionId}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId"}},
-	},
-	{
-		Name:        "read_context",
-		Description: "Read session context. Arguments: {sessionId, scope?: summary|thread|transcript|subagents, taskId?, maxBytes?}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId"}},
-	},
-	{
-		Name:        "steer_session",
-		Description: "Send an instruction to a running session you created. Arguments: {sessionId, message}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId", "message"}},
-	},
-	{
-		Name:        "cancel_session",
-		Description: "Stop a session you created; never cascades to children. Arguments: {sessionId}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId"}},
-	},
-	{
-		Name:        "wait_session",
-		Description: "Block until a status is reached. Arguments: {sessionId, until?: string[], timeoutMs?}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId"}},
-	},
-	{
-		Name:        "rename_session",
-		Description: "Rename a session you created. Arguments: {sessionId, title}.",
-		InputSchema: mcpToolSchema{Type: "object", Required: []string{"sessionId", "title"}},
-	},
-}
+var remoteMCPTools = func() []json.RawMessage {
+	var tools []json.RawMessage
+	if err := json.Unmarshal(remoteMCPToolsJSON, &tools); err != nil {
+		panic("mcp_tools.json: " + err.Error())
+	}
+	return tools
+}()
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// The session-token endpoint surface restriction does not apply to the
@@ -104,10 +59,25 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &request) {
 		return
 	}
+	// Notifications (no id) such as notifications/initialized take no reply.
+	if len(request.ID) == 0 || string(request.ID) == "null" {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
 	switch request.Method {
 	case "initialize":
+		var params struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		_ = json.Unmarshal(request.Params, &params)
+		version := mcpProtocolVersion
+		for _, supported := range mcpProtocolVersions {
+			if params.ProtocolVersion == supported {
+				version = supported
+			}
+		}
 		s.writeMCPResult(w, request.ID, map[string]any{
-			"protocolVersion": mcpProtocolVersion,
+			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "foundry", "version": "0.1.0"},
 		})
@@ -134,7 +104,11 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 				s.writeMCPError(w, request.ID, -32600, message)
 				return
 			}
-			s.writeMCPError(w, request.ID, -32000, message)
+			// A failed tool call is a result the agent can read and act on.
+			s.writeMCPResult(w, request.ID, map[string]any{
+				"content": []map[string]string{{"type": "text", "text": message}},
+				"isError": true,
+			})
 			return
 		}
 		text := result
@@ -171,7 +145,12 @@ func mcpArgBool(args map[string]json.RawMessage, key string) bool {
 		return false
 	}
 	var value bool
-	return json.Unmarshal(raw, &value) == nil && value
+	if json.Unmarshal(raw, &value) == nil {
+		return value
+	}
+	// Models sometimes send "true" for a boolean.
+	var text string
+	return json.Unmarshal(raw, &text) == nil && strings.EqualFold(strings.TrimSpace(text), "true")
 }
 
 func mcpArgNumber(args map[string]json.RawMessage, key string, fallback int) int {
@@ -179,11 +158,23 @@ func mcpArgNumber(args map[string]json.RawMessage, key string, fallback int) int
 	if !ok {
 		return fallback
 	}
-	var value int
-	if json.Unmarshal(raw, &value) != nil || value <= 0 {
+	var value float64
+	if json.Unmarshal(raw, &value) != nil {
+		// Models sometimes send "60000" for a number.
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return fallback
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
+		if err != nil {
+			return fallback
+		}
+		value = parsed
+	}
+	if value <= 0 {
 		return fallback
 	}
-	return value
+	return int(value)
 }
 
 func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]json.RawMessage) (string, error) {
@@ -311,6 +302,12 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		if actor.Agent() {
 			input.ParentSessionID = actor.Identity.SessionID
 			input.Source = "agent"
+			// Without a choice, a child runs like its parent.
+			if input.ProfileID == "" && input.Provider == "" {
+				if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
+					input.ProfileID, input.Provider = parent.ProfileID, parent.Provider
+				}
+			}
 		}
 		if input.Verification {
 			input.Source = "verification"
@@ -510,7 +507,7 @@ func (s *Server) waitMCPStatuses(ctx context.Context, id string, statuses []stri
 			return store.AgentSession{}, err
 		}
 		if wanted[session.Status] {
-			return session, nil
+			return s.mcpSessionResult(ctx, session)
 		}
 		if time.Now().After(deadline) {
 			return store.AgentSession{}, &mcpToolError{http.StatusConflict, fmt.Sprintf("timed out waiting for %s", id)}
@@ -544,4 +541,22 @@ func rawJSON(raw json.RawMessage) any {
 		return nil
 	}
 	return value
+}
+
+// mcpSessionResult adds the final response to a settled session, which the
+// summary omits, so waiting on a child returns what it answered. Events stay
+// out; read_context serves the transcript.
+func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSession) (store.AgentSession, error) {
+	switch summary.Status {
+	case "completed", "failed", "canceled":
+	default:
+		return summary, nil
+	}
+	full, err := s.store.GetAgentSession(ctx, summary.ID)
+	if err != nil {
+		return summary, nil
+	}
+	summary.Response = full.Response
+	summary.Error = full.Error
+	return summary, nil
 }

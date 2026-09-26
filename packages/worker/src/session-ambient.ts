@@ -1,4 +1,5 @@
 import type { AgentSession } from "@foundry/protocol";
+import { isUtilitySession } from "./utils.js";
 import {
   baseProcessEnvironment,
   profileID,
@@ -75,5 +76,22 @@ export function sessionEnvironment(
     FOUNDRY_SESSION_ID: session?.id ?? process.env.FOUNDRY_SESSION_ID ?? "",
     FOUNDRY_SESSION_SOURCE:
       session?.source ?? process.env.FOUNDRY_SESSION_SOURCE ?? "chat",
+  };
+}
+
+/**
+ * The Foundry tools (session orchestration over the server's MCP endpoint)
+ * for a session that holds an orchestration identity. Utility sessions such
+ * as naming never get them.
+ */
+export function foundryToolsEndpoint(
+  session: AgentSession,
+): { url: string; token: string } | undefined {
+  if (isUtilitySession(session)) return undefined;
+  const ambient = ambientBySession.get(session.id);
+  if (!ambient?.sessionToken || !ambient.serverURL) return undefined;
+  return {
+    url: new URL("/api/mcp", ambient.serverURL).toString(),
+    token: ambient.sessionToken,
   };
 }

@@ -179,6 +179,22 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 
 M2–M4 的接口在各自开始前补充到本文，不提前设计。
 
+**M2 Agent 能力面**（进行中）。起点是一个实测发现：Session 编排的服务端能力（令牌、
+Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具**——Session Runtime 没有
+为会话注册 `foundry` MCP，`foundry` 命令也不在 PATH 上，所以 Chat 里的 Agent 无法编排。
+
+- **M2-1**（已完成）：Session Runtime 为持有令牌的 Claude 会话注入 Server 的 HTTP MCP
+  并预先放行，复用的运行时逐轮换上新令牌；HTTP MCP 按协议处理通知、把工具失败作为
+  可读结果返回、协商协议版本；工具目录带类型定义并成为唯一一份；子会话默认沿用父会话
+  的 profile，等待结束时带回回答。以真实 Chat 验收：派出子会话、等待、复用运行时的
+  下一轮继续编排。
+- **M2-2**：stdio `foundry mcp` 与 `foundry session` 命令改为转发 Server 的工具目录与
+  调用，删除 TypeScript 的重复实现，补齐 `list_models`、`handoff_session`；Codex 会话
+  注入工具（需本机 Codex 登录恢复后实测）。
+- **待定**：编排血缘目前按"轮"记（Chat 每轮是一个 `AgentSession`，两轮派出的子会话
+  挂在不同父会话下），是否应按 Chat 线程记；HTTP MCP 的 OAuth 2.1 只在出现 Foundry
+  之外的远程 Agent 时再做。
+
 ## 5. M1 接口草案
 
 ### 5.1 Sandbox
