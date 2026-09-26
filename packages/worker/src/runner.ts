@@ -1250,6 +1250,7 @@ export async function runClaudeAgentSdkSession(
       if (requestedNativeSessionId) {
         options.resume = requestedNativeSessionId;
       }
+      if (plan?.mcpServers) options.mcpServers = plan.mcpServers;
       runtime = {
         closed: false,
         foundrySessionId: session.id,
@@ -1300,6 +1301,9 @@ export async function runClaudeAgentSdkSession(
       // The long-lived thread may serve continued Foundry sessions; timer
       // events between turns belong to the session currently attached.
       reusableRuntime.foundrySessionId = session.id;
+      // Each dispatch mints a new session token and revokes the previous
+      // one, so the Foundry tools are re-pointed at this turn's identity.
+      await reusableRuntime.query?.setMcpServers?.(plan?.mcpServers ?? {});
       await emit(
         "Reused active Claude Agent SDK",
         reusableRuntime.nativeSessionId || "in memory",

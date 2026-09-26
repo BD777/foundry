@@ -19,7 +19,7 @@
 import type { AgentSession } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { profileRuntimeEnvironment } from "./profiles.js";
-import { sessionEnvironment } from "./session-ambient.js";
+import { foundryToolsEndpoint, sessionEnvironment } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
   claudeManagedPrompt,
@@ -148,6 +148,9 @@ function credentialWarnings(
   ];
 }
 
+/** Claude permission rule covering every tool of the `foundry` MCP server. */
+const foundryToolsPermission = "mcp__foundry";
+
 export interface ClaudeLaunchPlan {
   session: AgentSession;
   /** Managed-slash-rewritten prompt for the SDK path. */
@@ -160,6 +163,12 @@ export interface ClaudeLaunchPlan {
   env: NodeJS.ProcessEnv;
   settings: Record<string, unknown>;
   sdk: Record<string, unknown>;
+  /**
+   * MCP servers for this turn (the Foundry tools with this turn's token). Kept
+   * out of `sdk`: a reused runtime receives them per turn, so the runtime
+   * identity does not change with every dispatch.
+   */
+  mcpServers?: Record<string, unknown>;
   cliArgs: string[];
   managedSkills?: ManagedSkillRuntime;
   /** True when legacy native context was dropped for a new policy. */
@@ -206,6 +215,14 @@ export function buildClaudeLaunchPlan(input: {
 
   const env = sessionEnvironment(workspacePath, profile, session);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
+  const tools = foundryToolsEndpoint(session);
+  const mcpServers = tools && {
+    foundry: {
+      type: "http",
+      url: tools.url,
+      headers: { Authorization: `Bearer ${tools.token}` },
+    },
+  };
 
   return {
     session,
@@ -213,8 +230,24 @@ export function buildClaudeLaunchPlan(input: {
     cliPrompt: sessionPrompt(session, profile),
     env,
     settings,
-    sdk: claudeManagedSkillOptions(managedSkills, workspacePath),
-    cliArgs: claudeManagedCliArgs(managedSkills, workspacePath),
+    sdk: {
+      ...claudeManagedSkillOptions(managedSkills, workspacePath),
+      // Foundry grants these tools and its server authorizes every call by
+      // the session token; a headless session has nobody to approve a prompt.
+      ...(mcpServers ? { allowedTools: [foundryToolsPermission] } : {}),
+    },
+    mcpServers,
+    cliArgs: [
+      ...claudeManagedCliArgs(managedSkills, workspacePath),
+      ...(mcpServers
+        ? [
+            "--mcp-config",
+            JSON.stringify({ mcpServers }),
+            "--allowedTools",
+            foundryToolsPermission,
+          ]
+        : []),
+    ],
     managedSkills,
     reset,
     warnings: credentialWarnings(profile, env),

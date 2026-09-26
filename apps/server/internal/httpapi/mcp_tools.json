@@ -1,0 +1,146 @@
+[
+  {
+    "name": "list_profiles",
+    "description": "List the agent profiles you can dispatch to (id, runtime, model, status). With a session token only your own device's profiles are listed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "description": "Device to list; ignored for a session token."
+        }
+      }
+    }
+  },
+  {
+    "name": "create_session",
+    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child on your device and joins your orchestration group; without profileId and provider it runs like you. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. Codex cannot steer an active turn (the message queues for the next turn).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "The task brief for the new session."
+        },
+        "profileId": { "type": "string" },
+        "provider": { "type": "string", "enum": ["claude", "codex"] },
+        "model": { "type": "string" },
+        "verification": {
+          "type": "boolean",
+          "description": "Run a read-only independent verifier (no Write/Edit/Bash); use for checking another session's work."
+        },
+        "forkSessionId": {
+          "type": "string",
+          "description": "Fork: resume another session's native transcript in a brand new thread."
+        },
+        "issueId": {
+          "type": "string",
+          "description": "Run inside that Issue's candidate worktree and sandbox (requires an active Issue run)."
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "Block until the session settles and return its response."
+        },
+        "timeoutMs": { "type": "number" },
+        "workspaceId": {
+          "type": "string",
+          "description": "Required without a session token."
+        }
+      },
+      "required": ["prompt"]
+    }
+  },
+  {
+    "name": "list_sessions",
+    "description": "List sessions in this workspace (id, title, status, parentSessionId). Use it to see what exists before creating or acting.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "parentOnly": {
+          "type": "boolean",
+          "description": "Only sessions you created."
+        }
+      }
+    }
+  },
+  {
+    "name": "list_group_sessions",
+    "description": "List every session in one orchestration group, in list order. A replacement orchestrator uses this to take over a group without lineage transfer.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "groupId": { "type": "string" } },
+      "required": ["groupId"]
+    }
+  },
+  {
+    "name": "get_session",
+    "description": "Get one session's current summary (status, title, lineage).",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "sessionId": { "type": "string" } },
+      "required": ["sessionId"]
+    }
+  },
+  {
+    "name": "read_context",
+    "description": "Read another session's context. scope=summary (default, cheap), thread (all turns of the conversation) or transcript (raw native chat). Output is tail-truncated by maxBytes to protect your context window.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "scope": {
+          "type": "string",
+          "enum": ["summary", "thread", "transcript"]
+        },
+        "maxBytes": { "type": "number", "description": "Default 12000." }
+      },
+      "required": ["sessionId"]
+    }
+  },
+  {
+    "name": "steer_session",
+    "description": "Send an additional instruction to a running session you created. It adjusts the active turn (Claude) or queues for the next turn (Codex).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["sessionId", "message"]
+    }
+  },
+  {
+    "name": "cancel_session",
+    "description": "Stop a running or queued session you created. Cancelling never cascades: sessions it created keep running as independent sessions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "sessionId": { "type": "string" } },
+      "required": ["sessionId"]
+    }
+  },
+  {
+    "name": "wait_session",
+    "description": "Block until a session reaches one of the requested statuses (default: completed/failed/canceled) or the timeout elapses, and return it with its response once settled. Prefer this over polling loops.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "until": { "type": "array", "items": { "type": "string" } },
+        "timeoutMs": { "type": "number" }
+      },
+      "required": ["sessionId"]
+    }
+  },
+  {
+    "name": "rename_session",
+    "description": "Rename a session you created (1-120 characters).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "required": ["sessionId", "title"]
+    }
+  }
+]
