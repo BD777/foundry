@@ -7,9 +7,31 @@
       "properties": {
         "deviceId": {
           "type": "string",
-          "description": "Device to list; ignored for a session token."
+          "description": "Device that owns the profiles; defaults to the calling device and is ignored for a session token."
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["claude", "codex"],
+          "description": "Only profiles of this runtime."
         }
       }
+    }
+  },
+  {
+    "name": "list_models",
+    "description": "List the models a profile can run (its endpoint's catalog). With a session token only your own device's profiles are reachable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Device that owns the profiles; defaults to the calling device and is ignored for a session token."
+        }
+      },
+      "required": ["profileId"]
     }
   },
   {
@@ -22,9 +44,38 @@
           "type": "string",
           "description": "The task brief for the new session."
         },
-        "profileId": { "type": "string" },
-        "provider": { "type": "string", "enum": ["claude", "codex"] },
-        "model": { "type": "string" },
+        "profileId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["claude", "codex"]
+        },
+        "model": {
+          "type": "string"
+        },
+        "claudeEffort": {
+          "type": "string"
+        },
+        "claudePermissionMode": {
+          "type": "string"
+        },
+        "codexReasoningEffort": {
+          "type": "string"
+        },
+        "codexSandboxMode": {
+          "type": "string"
+        },
+        "codexApprovalPolicy": {
+          "type": "string"
+        },
+        "codexSpeed": {
+          "type": "string"
+        },
+        "importedContext": {
+          "type": "string",
+          "description": "Background the new session should know before the prompt."
+        },
         "verification": {
           "type": "boolean",
           "description": "Run a read-only independent verifier (no Write/Edit/Bash); use for checking another session's work."
@@ -41,13 +92,38 @@
           "type": "boolean",
           "description": "Block until the session settles and return its response."
         },
-        "timeoutMs": { "type": "number" },
+        "timeoutMs": {
+          "type": "number"
+        },
         "workspaceId": {
           "type": "string",
           "description": "Required without a session token."
         }
       },
       "required": ["prompt"]
+    }
+  },
+  {
+    "name": "handoff_session",
+    "description": "Start a fresh session that continues another one from facts only: its original goal, last recorded result and status, plus your prompt. Use it instead of fork when the old transcript is misleading or too long.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "fromSessionId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "What the new session should do next."
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "issueId": {
+          "type": "string"
+        }
+      },
+      "required": ["fromSessionId", "prompt"]
     }
   },
   {
@@ -68,7 +144,11 @@
     "description": "List every session in one orchestration group, in list order. A replacement orchestrator uses this to take over a group without lineage transfer.",
     "inputSchema": {
       "type": "object",
-      "properties": { "groupId": { "type": "string" } },
+      "properties": {
+        "groupId": {
+          "type": "string"
+        }
+      },
       "required": ["groupId"]
     }
   },
@@ -77,22 +157,35 @@
     "description": "Get one session's current summary (status, title, lineage).",
     "inputSchema": {
       "type": "object",
-      "properties": { "sessionId": { "type": "string" } },
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
       "required": ["sessionId"]
     }
   },
   {
     "name": "read_context",
-    "description": "Read another session's context. scope=summary (default, cheap), thread (all turns of the conversation) or transcript (raw native chat). Output is tail-truncated by maxBytes to protect your context window.",
+    "description": "Read another session's context. scope=summary (default, cheap), thread (all turns of the conversation), transcript (raw native chat) or subagents (the session's native subagents; with taskId, one subagent's transcript). Output is tail-truncated by maxBytes to protect your context window.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "sessionId": { "type": "string" },
+        "sessionId": {
+          "type": "string"
+        },
         "scope": {
           "type": "string",
-          "enum": ["summary", "thread", "transcript"]
+          "enum": ["summary", "thread", "transcript", "subagents"]
         },
-        "maxBytes": { "type": "number", "description": "Default 12000." }
+        "taskId": {
+          "type": "string",
+          "description": "With scope=subagents: the subagent to read."
+        },
+        "maxBytes": {
+          "type": "number",
+          "description": "Default 12000."
+        }
       },
       "required": ["sessionId"]
     }
@@ -103,8 +196,12 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "sessionId": { "type": "string" },
-        "message": { "type": "string" }
+        "sessionId": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
       },
       "required": ["sessionId", "message"]
     }
@@ -114,7 +211,11 @@
     "description": "Stop a running or queued session you created. Cancelling never cascades: sessions it created keep running as independent sessions.",
     "inputSchema": {
       "type": "object",
-      "properties": { "sessionId": { "type": "string" } },
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
       "required": ["sessionId"]
     }
   },
@@ -124,9 +225,18 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "sessionId": { "type": "string" },
-        "until": { "type": "array", "items": { "type": "string" } },
-        "timeoutMs": { "type": "number" }
+        "sessionId": {
+          "type": "string"
+        },
+        "until": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeoutMs": {
+          "type": "number"
+        }
       },
       "required": ["sessionId"]
     }
@@ -137,8 +247,12 @@
     "inputSchema": {
       "type": "object",
       "properties": {
-        "sessionId": { "type": "string" },
-        "title": { "type": "string" }
+        "sessionId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
       },
       "required": ["sessionId", "title"]
     }

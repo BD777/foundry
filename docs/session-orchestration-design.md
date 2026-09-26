@@ -53,7 +53,7 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 @foundry/worker（随 daemon 安装天然到达每台 Device）
 ├── bin foundry-worker …… 运维命令（setup/connect/install-service …）
 └── bin foundry        …… 人与 Agent 的统一入口
-    ├── foundry mcp                 stdio MCP server（Agent 主用）
+    ├── foundry mcp                 stdio 桥，转发 Server 的 /api/mcp
     ├── foundry session <verb>      人 / 脚本用 CLI，默认 JSON 输出
     ├── foundry profile list
     └── foundry skill               打印 foundry-orchestrator SKILL.md
@@ -67,12 +67,13 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
   运行时在每轮开始前用 SDK 的 `setMcpServers` 换上本轮令牌；MCP 配置不进运行时
   复用的身份，所以不会因为令牌变化而丢掉长驻运行时。Codex 会话尚未注入（待
   M2-2，本机 Codex 登录失效，无法实测）。
-- 工具目录只有一份：`apps/server/internal/httpapi/mcp_tools.json`，带完整的
-  参数类型定义，与实现它的处理函数放在一起。stdio 的 `foundry mcp` 目前仍是
-  独立实现（多出 `list_models`、`handoff_session`），供在 Foundry 之外手动配置
-  使用；M2-2 把它改为转发 Server 的目录与调用。
-- stdio MCP **无状态、不监听端口**；凭据只从环境变量来（MCP 规范的本地
-  stdio 模式）。
+- 工具目录与实现只有一份：`apps/server/internal/httpapi/mcp_tools.json` 带完整
+  的参数类型定义，与实现它的处理函数（`mcp.go`）放在一起。stdio 的
+  `foundry mcp`（2026-09-26 起）只是转发桥：把每行 JSON-RPC 原样 POST 到 Server 的
+  `/api/mcp` 并写回回复，不含任何工具定义或策略，供在 Foundry 之外手动配置的客户端
+  使用。`foundry session` 命令仍走 REST。
+- stdio 桥 **无状态、不监听端口**；凭据来自会话令牌环境变量，没有令牌时用本机
+  配对的设备凭据（此时补上配置的 `FOUNDRY_WORKSPACE_ID`）。
 
 ### 身份环境变量
 
@@ -203,9 +204,8 @@ Session，除非人在 Web 上把监管权交给它。
 | `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                   |
 | `rename_session`      | `POST /api/chats/{id}/title`        | 自己/后代                                                                                                                                              |
 
-人用 CLI 与这些工具共用同一客户端核心（`foundry-client.ts`），命令一一对应，
-默认输出 JSON。HTTP MCP（`httpapi/mcp.go`）在服务端实现同一 Policy 下的
-工具子集，不含 `list_models` 与 `handoff_session`。
+工具只在服务端实现一次（`httpapi/mcp.go`），会话经注入的 HTTP MCP 或 stdio 桥
+调用它。人用 CLI 经 `foundry-client.ts` 走上表的 REST 端点，默认输出 JSON。
 
 ## 7. 端到端流程
 
@@ -214,7 +214,7 @@ Session，除非人在 Web 上把监管权交给它。
 ② Server 事务：建 queued 行（parent_session_id, source=agent）+ layout 自动入组
 ③ dispatch：铸造 session token（哈希入库），run_session.payload.sessionToken 下发
 ④ Worker 执行：注入 FOUNDRY_SERVER_URL/SESSION_ID/WORKSPACE_ID/SESSION_TOKEN
-⑤ 子 Agent 以 stdio 拉起 foundry mcp；MCP 仅从 env 取凭据，Bearer 调用
+⑤ 子 Agent 经注入的 foundry MCP（或 stdio 桥）以 Bearer 调用 /api/mcp
 ⑥ Server 鉴权中间件：token → Actor → agentRouteAllowed + Policy → 既有 handler
 ⑦ SSE 回推 agent_session_*；wait_session 据此唤醒编排者
 ⑧ 终态事务：状态落库 + 删除 token；children 不受影响

@@ -800,6 +800,27 @@ func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
 	if _, ok := waited["events"]; ok {
 		t.Fatal("wait result must not carry the event stream")
 	}
+	text, isError = call("handoff_session", `{"fromSessionId":"`+child.ID+`","prompt":"Continue."}`)
+	if !isError || text != "local daemon is not connected" {
+		t.Fatalf("handoff_session = %q (error %v), want it to reach dispatch", text, isError)
+	}
+	text, isError = call("list_models", `{"profileId":"missing"}`)
+	if !isError || text != "unknown profile: missing" {
+		t.Fatalf("list_models = %q (error %v)", text, isError)
+	}
+	if text, isError = call("read_context", `{"sessionId":"`+child.ID+`","scope":"subagents"}`); !isError {
+		t.Fatalf("read_context subagents without a daemon = %q, want an error", text)
+	}
+}
+
+func TestHandoffPromptCarriesFactsOnly(t *testing.T) {
+	prompt := handoffPrompt(store.AgentSession{
+		ID: "sess_a", Title: "Fix login", Status: "failed", Prompt: "Fix the login bug", Response: "Stuck on CSRF",
+	}, "Try the token route.")
+	want := "Handoff from session sess_a (\"Fix login\", status: failed).\n\nOriginal goal:\nFix the login bug\n\nLast recorded result:\nStuck on CSRF\n\nTry the token route."
+	if prompt != want {
+		t.Fatalf("handoff prompt = %q, want %q", prompt, want)
+	}
 }
 
 func TestMCPArgumentsTolerateStringScalars(t *testing.T) {
@@ -813,5 +834,35 @@ func TestMCPArgumentsTolerateStringScalars(t *testing.T) {
 	}
 	if mcpArgNumber(args, "ms", 1) != 1500 || mcpArgNumber(args, "msText", 1) != 2500 || mcpArgNumber(args, "msBad", 7) != 7 {
 		t.Fatal("number arguments must accept numbers and numeric strings, else the fallback")
+	}
+}
+
+func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_profile", Label: "Studio", Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: "ws_profile", Name: "Foundry", LocalPath: t.TempDir()},
+		Agents: []store.AgentProjection{{
+			ID: "agent_profile", WorkspaceID: "ws_profile", DeviceID: "dev_profile",
+			Provider: "codex", ProfileID: "codex_local", Status: "healthy", AuthMode: "local_config",
+			SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}},
+	}); err != nil {
+		t.Fatalf("register daemon: %v", err)
+	}
+	server := NewServer(db)
+	actor := Actor{Kind: ActorAccount}
+	input := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}
+	// No daemon is connected, so success stops at the connection check.
+	if status, err := server.resolveSessionDevice(ctx, actor, &input); status != http.StatusConflict {
+		t.Fatalf("profile-only resolution = %d %v, want it to reach the connection check", status, err)
+	}
+	if input.Provider != "codex" {
+		t.Fatalf("provider = %q, want the profile's runtime", input.Provider)
+	}
+	unknown := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "missing"}
+	if status, _ := server.resolveSessionDevice(ctx, actor, &unknown); status != http.StatusBadRequest {
+		t.Fatalf("unknown profile = %d, want 400", status)
 	}
 }

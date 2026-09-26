@@ -123,3 +123,37 @@ test("cancel stops a sandboxed workspace session", supported, async (t) => {
   await cancelActiveSession("sess_cancel");
   await assert.rejects(running, (error) => isAgentSessionCanceledError(error));
 });
+
+test("a command that exits without reading its prompt still finishes", async (t) => {
+  const paths = fixture(t);
+  const events = [];
+  // Larger than a pipe buffer, so the write is still pending when it exits.
+  const result = await runWorkspaceSession({
+    cwd: paths.tree,
+    session: {
+      id: "sess_unread_prompt",
+      provider: "claude",
+      workspaceId: "ws_test",
+      threadId: "sess_unread_prompt",
+      agentId: "",
+      deviceId: "",
+      status: "running",
+      title: "Chat",
+      prompt: "x".repeat(1 << 20),
+      createdLabel: "now",
+      updatedLabel: "now",
+    },
+    profile: {
+      runtime: "claude",
+      id: "stand_in",
+      label: "Stand-in",
+      command: "echo done",
+    },
+    emit: async (label, detail) => {
+      events.push({ label, detail });
+    },
+    emitSetup: async () => {},
+    reportNativeSessionId: () => {},
+  });
+  assert.equal(result.response, "done");
+});

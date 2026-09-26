@@ -87,6 +87,21 @@ export function killChildProcess(
   timer.unref();
 }
 
+/**
+ * Hand a child its prompt on stdin. A command may exit without reading it;
+ * its exit status, reported on close, is then the outcome, so a closed pipe
+ * is not an error of its own. Any other stdin failure stops the child.
+ */
+export function sendPrompt(
+  child: import("node:child_process").ChildProcess,
+  prompt: string,
+): void {
+  child.stdin?.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") killChildProcess(child);
+  });
+  child.stdin?.end(prompt);
+}
+
 export function isDiagnosticSession(session: AgentSession): boolean {
   return session.source === "diagnostic";
 }

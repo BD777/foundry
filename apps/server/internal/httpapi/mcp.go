@@ -196,14 +196,18 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	}
 	switch name {
 	case "list_profiles":
-		profiles, err := s.store.ListAgentProfiles(r.Context(), func() string {
-			if actor.Agent() {
-				return actor.Identity.DeviceID
-			}
-			return mcpArgString(args, "deviceId")
-		}())
+		profiles, err := s.store.ListAgentProfiles(r.Context(), mcpDeviceID(actor, args))
 		if err != nil {
 			return "", err
+		}
+		if runtime := mcpArgString(args, "runtime"); runtime != "" {
+			filtered := profiles[:0]
+			for _, profile := range profiles {
+				if profile.Runtime == runtime {
+					filtered = append(filtered, profile)
+				}
+			}
+			profiles = filtered
 		}
 		return encode(profiles)
 	case "list_sessions":
@@ -265,6 +269,24 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 				return "", &mcpToolError{http.StatusForbidden, "cannot read this chat"}
 			}
 			value = chat
+		case "subagents":
+			session, err := s.store.GetAgentSessionSummary(r.Context(), id)
+			if err != nil {
+				return "", err
+			}
+			if !s.canReadSession(r.Context(), actor, session) {
+				return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer cancel()
+			if taskID := mcpArgString(args, "taskId"); taskID != "" {
+				value, err = s.hub.ReadAgentSubagentTranscript(ctx, session, taskID)
+			} else {
+				value, err = s.hub.ListAgentSubagents(ctx, session)
+			}
+			if err != nil {
+				return "", err
+			}
 		default:
 			session, err := s.store.GetAgentSessionSummary(r.Context(), id)
 			if err != nil {
@@ -285,49 +307,81 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			workspace = mcpArgString(args, "workspaceId")
 		}
 		input := store.CreateAgentSessionInput{
-			WorkspaceID:     workspace,
-			Provider:        mcpArgString(args, "provider"),
-			ProfileID:       mcpArgString(args, "profileId"),
-			Model:           mcpArgString(args, "model"),
-			Prompt:          mcpArgString(args, "prompt"),
-			IssueID:         mcpArgString(args, "issueId"),
-			NativeSessionID: mcpArgString(args, "nativeSessionId"),
-			ForkSessionID:   mcpArgString(args, "forkSessionId"),
-			Verification:    mcpArgBool(args, "verification"),
-			Source:          "chat",
+			WorkspaceID:          workspace,
+			Provider:             mcpArgString(args, "provider"),
+			ProfileID:            mcpArgString(args, "profileId"),
+			Model:                mcpArgString(args, "model"),
+			ClaudeEffort:         mcpArgString(args, "claudeEffort"),
+			ClaudePermissionMode: mcpArgString(args, "claudePermissionMode"),
+			CodexReasoningEffort: mcpArgString(args, "codexReasoningEffort"),
+			CodexSandboxMode:     mcpArgString(args, "codexSandboxMode"),
+			CodexApprovalPolicy:  mcpArgString(args, "codexApprovalPolicy"),
+			CodexSpeed:           mcpArgString(args, "codexSpeed"),
+			ImportedContext:      mcpArgString(args, "importedContext"),
+			Prompt:               mcpArgString(args, "prompt"),
+			IssueID:              mcpArgString(args, "issueId"),
+			NativeSessionID:      mcpArgString(args, "nativeSessionId"),
+			ForkSessionID:        mcpArgString(args, "forkSessionId"),
+			Verification:         mcpArgBool(args, "verification"),
+			Source:               "chat",
 		}
 		if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 			return "", &mcpToolError{http.StatusBadRequest, "workspaceId is required"}
 		}
-		if actor.Agent() {
-			input.ParentSessionID = actor.Identity.SessionID
-			input.Source = "agent"
-			// Without a choice, a child runs like its parent.
-			if input.ProfileID == "" && input.Provider == "" {
-				if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
-					input.ProfileID, input.Provider = parent.ProfileID, parent.Provider
-				}
-			}
-		}
-		if input.Verification {
-			input.Source = "verification"
-		}
-		if strings.TrimSpace(input.ForkSessionID) != "" {
-			if status, forkErr := s.applySessionFork(r, &input, actor); forkErr != nil {
-				return "", &mcpToolError{status, forkErr.Error()}
-			}
-		}
-		session, err := s.createSessionForMCP(r, actor, input)
+		session, err := s.startMCPSession(r, actor, input, mcpArgBool(args, "wait"), mcpArgNumber(args, "timeoutMs", 600_000))
 		if err != nil {
 			return "", err
 		}
-		if mcpArgBool(args, "wait") {
-			session, err = s.waitMCPTerminal(r.Context(), session.ID, mcpArgNumber(args, "timeoutMs", 600_000))
-			if err != nil {
-				return "", err
-			}
+		return encode(session)
+	case "handoff_session":
+		// A factual handoff: only the goal, last result and status carry over,
+		// never the contaminated transcript.
+		source, err := s.store.GetAgentSession(r.Context(), mcpArgString(args, "fromSessionId"))
+		if err != nil {
+			return "", err
+		}
+		if !s.canReadSession(r.Context(), actor, source) {
+			return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
+		}
+		if actor.Agent() && source.WorkspaceID != workspace {
+			return "", &mcpToolError{http.StatusNotFound, "session not found"}
+		}
+		input := store.CreateAgentSessionInput{
+			WorkspaceID: source.WorkspaceID,
+			ProfileID:   mcpArgString(args, "profileId"),
+			IssueID:     mcpArgString(args, "issueId"),
+			Prompt:      handoffPrompt(source, mcpArgString(args, "prompt")),
+			Source:      "chat",
+		}
+		// Without a choice, the replacement runs like the session it continues.
+		if input.ProfileID == "" {
+			input.ProfileID, input.Provider = source.ProfileID, source.Provider
+		}
+		session, err := s.startMCPSession(r, actor, input, false, 0)
+		if err != nil {
+			return "", err
 		}
 		return encode(session)
+	case "list_models":
+		profiles, err := s.store.ListAgentProfiles(r.Context(), mcpDeviceID(actor, args))
+		if err != nil {
+			return "", err
+		}
+		profileID := mcpArgString(args, "profileId")
+		for _, profile := range profiles {
+			if profile.ID != profileID {
+				continue
+			}
+			models, status, err := s.listAgentModels(r.Context(), actor, agentProfileInputFromProjection(profile))
+			if err != nil {
+				if status == 0 {
+					return "", err
+				}
+				return "", &mcpToolError{status, err.Error()}
+			}
+			return encode(models)
+		}
+		return "", &mcpToolError{http.StatusNotFound, "unknown profile: " + profileID}
 	case "steer_session":
 		return s.controlMCP(r, actor, mcpArgString(args, "sessionId"), func(session store.AgentSession) error {
 			return s.hub.SteerAgentSession(r.Context(), session, mcpArgString(args, "message"))
@@ -380,20 +434,72 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	}
 }
 
+// handoffPrompt carries a session's facts, not its transcript, into a new one.
+func handoffPrompt(source store.AgentSession, prompt string) string {
+	facts := []string{fmt.Sprintf("Handoff from session %s (\"%s\", status: %s).", source.ID, source.Title, source.Status)}
+	if source.Prompt != "" {
+		facts = append(facts, "Original goal:\n"+source.Prompt)
+	}
+	if source.Response != "" {
+		facts = append(facts, "Last recorded result:\n"+source.Response)
+	}
+	return strings.Join(append(facts, prompt), "\n\n")
+}
+
+// startMCPSession applies the caller's lineage and defaults, then creates,
+// dispatches and optionally waits for a session.
+func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, wait bool, timeoutMs int) (store.AgentSession, error) {
+	if actor.Agent() {
+		input.ParentSessionID = actor.Identity.SessionID
+		input.Source = "agent"
+		// Without a choice, a child runs like its parent.
+		if input.ProfileID == "" && input.Provider == "" {
+			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
+				input.ProfileID, input.Provider = parent.ProfileID, parent.Provider
+			}
+		}
+	}
+	if input.Verification {
+		input.Source = "verification"
+	}
+	if strings.TrimSpace(input.ForkSessionID) != "" {
+		if status, forkErr := s.applySessionFork(r, &input, actor); forkErr != nil {
+			return store.AgentSession{}, &mcpToolError{status, forkErr.Error()}
+		}
+	}
+	session, err := s.createSessionForMCP(r, actor, input)
+	if err != nil || !wait {
+		return session, err
+	}
+	return s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
+}
+
 // createSessionForMCP mirrors handleCreateAgentSession without an HTTP body.
 // createSessionForMCP mirrors handleCreateAgentSession's resolution and
 // dispatch without an HTTP body, applying the same device confinement and
 // post-create group naming.
 // authorizeMCPTool applies workspace and device reach to people and devices;
 // per-session tools are checked by canReadSession / canControlSession.
+// mcpDeviceID is the device a profile tool reads: a session token's own
+// device, else the named one, else the calling device's own.
+func mcpDeviceID(actor Actor, args map[string]json.RawMessage) string {
+	if actor.Agent() {
+		return actor.Identity.DeviceID
+	}
+	if deviceID := mcpArgString(args, "deviceId"); deviceID != "" {
+		return deviceID
+	}
+	return actor.DeviceID
+}
+
 func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace string, args map[string]json.RawMessage) error {
 	view, err := s.visibilityFor(r.Context(), actor)
 	if err != nil {
 		return err
 	}
 	switch name {
-	case "list_profiles":
-		if !view.seesDevice(mcpArgString(args, "deviceId")) {
+	case "list_profiles", "list_models":
+		if !view.seesDevice(mcpDeviceID(actor, args)) {
 			return &mcpToolError{http.StatusNotFound, "device not found"}
 		}
 	case "list_sessions", "list_group_sessions":
@@ -419,34 +525,11 @@ func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.C
 		}
 		input.CreatedByUserID = actor.AccountID()
 	}
-	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
-	if err != nil {
-		return store.AgentSession{}, err
-	}
-	deviceID := ""
-	for _, agent := range agents {
-		if input.AgentID != "" && agent.ID == input.AgentID {
-			deviceID = agent.DeviceID
-			break
+	if status, err := s.resolveSessionDevice(ctx, actor, &input); err != nil {
+		if status == 0 {
+			return store.AgentSession{}, err
 		}
-		if input.AgentID == "" && input.Provider != "" && agent.Provider == input.Provider {
-			deviceID = agent.DeviceID
-			break
-		}
-	}
-	if deviceID == "" && input.AgentID != "" {
-		if resolved, resolveErr := s.store.ResolveSessionAgent(ctx, input); resolveErr == nil {
-			deviceID = resolved.DeviceID
-		}
-	}
-	if deviceID == "" {
-		return store.AgentSession{}, &mcpToolError{http.StatusBadRequest, "no agent is available for the selected runtime and profile"}
-	}
-	if actor.Agent() && deviceID != actor.Identity.DeviceID {
-		return store.AgentSession{}, &mcpToolError{http.StatusForbidden, "session token can only start sessions on its own device"}
-	}
-	if !s.hub.HasConnection(deviceID) {
-		return store.AgentSession{}, &mcpToolError{http.StatusConflict, "local daemon is not connected"}
+		return store.AgentSession{}, &mcpToolError{status, err.Error()}
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
 	if err != nil {
