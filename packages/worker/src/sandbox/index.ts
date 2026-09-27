@@ -32,6 +32,7 @@ export {
   type SandboxKind,
   type SandboxLaunch,
   type SandboxProfile,
+  type ServiceEndpoint,
   type WritableTreeProfile,
 } from "./types.js";
 

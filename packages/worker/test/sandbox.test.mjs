@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -10,6 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { get as httpGet, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,7 +49,7 @@ test("each profile kind declares its verified platforms", () => {
   assert.equal(sandboxAvailable("readonly_agent", "darwin"), true);
   assert.equal(sandboxAvailable("readonly_agent", "linux"), true);
   assert.equal(sandboxAvailable("loopback_service", "darwin"), true);
-  assert.equal(sandboxAvailable("loopback_service", "linux"), false);
+  assert.equal(sandboxAvailable("loopback_service", "linux"), true);
   for (const kind of [
     "writable_tree",
     "readonly_agent",
@@ -59,24 +60,65 @@ test("each profile kind declares its verified platforms", () => {
 });
 
 test(
-  "kinds without a verified backend fail closed with a typed error",
+  "Linux loopback service reaches nothing on the host and is reached only through its socket",
   { skip: process.platform !== "linux" },
-  (t) => {
+  async (t) => {
     const root = scratch(t);
-    assert.throws(
-      () =>
-        sandboxLaunch(
-          {
-            kind: "loopback_service",
-            policyFile: join(root, "service.sb"),
-            readRoots: [root],
-          },
-          "/bin/true",
-          [],
-        ),
-      (error) => isSandboxError(error, "unsupported_platform"),
+    // Unix socket paths are limited to about 100 bytes.
+    const socketDirectory = mkdtempSync("/tmp/fdy-test-");
+    t.after(() => rmSync(socketDirectory, { recursive: true, force: true }));
+    const host = createServer((_, res) => res.end("host secret"));
+    await new Promise((done) => host.listen(0, "127.0.0.1", done));
+    t.after(() => host.close());
+    const service = join(root, "service.mjs");
+    writeFileSync(
+      service,
+      [
+        'import http from "node:http";',
+        'import { writeFileSync } from "node:fs";',
+        "const probe = async () => {",
+        "  const reached = await fetch(process.argv[2]).then(() => true, () => false);",
+        "  let wrote = true;",
+        "  try { writeFileSync(process.argv[3], 'x'); } catch { wrote = false; }",
+        "  return JSON.stringify({ reached, wrote });",
+        "};",
+        "const server = http.createServer(async (_, res) => res.end(await probe()));",
+        "server.listen(process.argv[4], () => process.send('listening'));",
+        'process.on("disconnect", () => process.exit(0));',
+      ].join("\n"),
     );
-    assert.equal(existsSync(join(root, "service.sb")), false);
+    const launch = sandboxLaunch(
+      {
+        kind: "loopback_service",
+        policyFile: join(root, "service.sb"),
+        readRoots: [root],
+        socketDirectory,
+      },
+      process.execPath,
+      [],
+    );
+    assert.equal(launch.endpoint.kind, "unix");
+    const child = spawn(
+      launch.command,
+      [
+        ...launch.args,
+        service,
+        `http://127.0.0.1:${host.address().port}/`,
+        join(root, "written.txt"),
+        launch.endpoint.servicePath,
+      ],
+      { stdio: ["ignore", "ignore", "inherit", "ipc"] },
+    );
+    t.after(() => child.kill("SIGKILL"));
+    await new Promise((done) => child.once("message", done));
+    const body = await new Promise((done, reject) =>
+      httpGet({ socketPath: launch.endpoint.hostPath, path: "/" }, (res) => {
+        let text = "";
+        res.on("data", (chunk) => (text += chunk)).on("end", () => done(text));
+      }).on("error", reject),
+    );
+    assert.deepEqual(JSON.parse(body), { reached: false, wrote: false });
+    assert.equal(existsSync(join(root, "written.txt")), false);
   },
 );
 
@@ -128,8 +170,12 @@ test("macOS loopback service policy only listens on localhost and is written onc
     kind: "loopback_service",
     policyFile: join(root, "service.sb"),
     readRoots: [root],
+    socketDirectory: root,
   };
-  seatbeltBackend.launch(profile, process.execPath, ["server.mjs"]);
+  const launch = seatbeltBackend.launch(profile, process.execPath, [
+    "server.mjs",
+  ]);
+  assert.deepEqual(launch.endpoint, { kind: "loopback_tcp" });
   const rules = readFileSync(profile.policyFile, "utf8").split("\n");
   assert.ok(rules.includes('(allow network-bind (local tcp "localhost:*"))'));
   assert.equal(

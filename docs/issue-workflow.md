@@ -46,7 +46,7 @@ Blocked 表示当前无法继续，必须附具体原因：Needs input、Needs p
 
 **已有基础：** [Evidence / Verify v1](evidence-and-verify-v1.md) 和[完整字段表](evidence-and-verify-v1-fields.md)记录当前实现：原始材料、条件、封存候选、程序（含项目自带命令）/独立 Agent 判断、人工接受和逐仓集成；澄清在所选 Workspace 只读探索，验证在候选 Worktree 实际检查取证。
 
-**接下来做：** 通用输入绑定与 Accept 前复核、完整中途恢复、Codex 真实图文初判、复杂媒体，以及 Linux 上的受控 HTTP 目标（澄清、判定与集成已在 Linux 开通，见 [v1 §9](evidence-and-verify-v1.md#9-尚需收口的实施项)）。更多证据类型（浏览器、桌面、模拟器）依赖 [Tool Use](tool-use-and-resources.md#basic-tool-use)。旧日志、checks 和执行报告不自动成为结构化通过判断。
+**接下来做：** 通用输入绑定与 Accept 前复核、完整中途恢复、Codex 真实图文初判、复杂媒体（澄清、判定、集成与受控 HTTP 目标已在 Linux 开通，见 [v1 §9](evidence-and-verify-v1.md#9-尚需收口的实施项)）。更多证据类型（浏览器、桌面、模拟器）依赖 [Tool Use](tool-use-and-resources.md#basic-tool-use)。旧日志、checks 和执行报告不自动成为结构化通过判断。
 
 证据需要可保存、可预览、有来源和访问边界；清理临时候选后仍可追溯。Verify 优先采用确定性检查，需要模型或人工判断时保留依据与不确定性。
 
