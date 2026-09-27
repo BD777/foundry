@@ -213,21 +213,15 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 	}
 }
 
+// groupNameFromResponse reads a group-naming answer. The job uses the chat
+// title prompt, which asks for {"title": …}; chattitle owns that format. An
+// invalid answer returns "" and the deterministic name stays.
 func groupNameFromResponse(response string) string {
-	name := strings.TrimSpace(response)
-	if name == "" {
+	title, err := chattitle.Parse(response)
+	if err != nil {
 		return ""
 	}
-	// Models often return quotes or a leading bullet; take the first short line.
-	for _, line := range strings.Split(name, "\n") {
-		line = strings.TrimSpace(strings.TrimLeft(line, "-•*#> "))
-		line = strings.Trim(line, "\"'“”‘’ \t")
-		if line == "" {
-			continue
-		}
-		name = line
-		break
-	}
+	name := strings.Trim(strings.TrimLeft(title, "-•*#> "), "\"'“”‘’ \t")
 	if runes := []rune(name); len(runes) > 24 {
 		name = strings.TrimSpace(string(runes[:24]))
 	}

@@ -41,6 +41,7 @@ import {
 import {
   activeSessionCancelTargets,
   activeSessionSteerTargets,
+  dispatchKey,
   queuedSessionCancelRequests,
   type ActiveSessionCancelTarget,
   type ActiveSessionSteerTarget,
@@ -104,8 +105,9 @@ export function createSessionStatusEventFilter(): (
   };
 }
 
+/** Names one dispatch's response events after `dispatchID`. */
 export function createResponseStreamEventIDAllocator(
-  sessionID: string,
+  dispatchID: string,
 ): (label: string, messageID?: string) => string | undefined {
   let responseStreamOrdinal = 1;
   let responseStreamOpen = false;
@@ -124,8 +126,8 @@ export function createResponseStreamEventIDAllocator(
         responseStreamOrdinal += 1;
       const eventID =
         responseStreamOrdinal === 1
-          ? `evt_${sessionID}_response_stream`
-          : `evt_${sessionID}_response_stream_${responseStreamOrdinal}`;
+          ? `evt_${dispatchID}_response_stream`
+          : `evt_${dispatchID}_response_stream_${responseStreamOrdinal}`;
       responseStreamOpen = true;
       lastMessageID = messageID;
       if (messageID) messageEvents.set(messageID, eventID);
@@ -551,10 +553,18 @@ export function writeAgentSessionCompletionMarker(
   writePrivateJSONAtomic(markerPath, marker);
 }
 
-export async function cancelActiveSession(sessionID: string): Promise<void> {
+/**
+ * Cancels the input a session is running. A cancel that arrives before the
+ * input started is parked for that input only, never for the session's later
+ * inputs.
+ */
+export async function cancelActiveSession(
+  sessionID: string,
+  inputID = "",
+): Promise<void> {
   const target = activeSessionCancelTargets.get(sessionID);
   if (!target) {
-    queuedSessionCancelRequests.add(sessionID);
+    queuedSessionCancelRequests.add(dispatchKey(sessionID, inputID));
     return;
   }
   await target.cancel();

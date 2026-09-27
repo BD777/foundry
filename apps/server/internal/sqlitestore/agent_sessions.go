@@ -383,6 +383,37 @@ func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input 
 	}, now.Add(time.Microsecond))
 }
 
+// recordInputAnswer keeps the answer to the current input in the transcript.
+// Streaming runtimes already wrote it as events; other paths (custom command
+// profiles, CLI fallbacks) only report it on completion, and Response is
+// cleared by the next input.
+func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSession, now time.Time) error {
+	answer := strings.TrimSpace(session.Response)
+	if answer == "" || session.Input.ID == "" {
+		return nil
+	}
+	events, err := listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT payload_json FROM agent_session_events
+		WHERE session_id = ? ORDER BY created_at DESC, id DESC`, session.ID)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.ID == "evt_"+session.Input.ID {
+			break
+		}
+		if event.Message != nil && event.Message.Kind == "assistant" && strings.TrimSpace(event.Message.Text) == answer {
+			return nil
+		}
+		if event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer {
+			return nil
+		}
+	}
+	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
+		ID: "evt_" + session.Input.ID + "_answer", SessionID: session.ID, At: formatTime(now),
+		Label: "Response stream", Detail: answer, Level: "info",
+	}, now)
+}
+
 // SendAgentSessionInput gives an idle session its next input. The session
 // returns to queued on the same native session unless the input switches to
 // an incompatible runtime, which starts a new native session.
@@ -610,6 +641,9 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 		}
 	}
 	if err := s.saveAgentSession(ctx, session, time.Time{}, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.recordInputAnswer(ctx, session, now); err != nil {
 		return store.AgentSession{}, err
 	}
 	if err := s.deleteClaimedNativeChat(ctx, session); err != nil {

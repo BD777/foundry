@@ -344,6 +344,9 @@ type wsSessionSteeredPayload struct {
 
 type wsCancelSessionPayload struct {
 	SessionID string `json:"sessionId"`
+	// InputID names the input to stop, so a cancel that reaches the worker
+	// before the input starts cannot stop a later input of the session.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type wsSessionCanceledPayload struct {
@@ -580,7 +583,7 @@ func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentS
 	if connection == nil {
 		return store.ErrNotFound
 	}
-	return connection.cancelAgentSession(ctx, session.ID)
+	return connection.cancelAgentSession(ctx, session.ID, session.Input.ID)
 }
 
 func (h *DaemonHub) ReadWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) (store.WorkspaceFileRead, error) {
@@ -1512,8 +1515,8 @@ func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID stri
 	return nil
 }
 
-func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string) error {
-	payload, err := json.Marshal(wsCancelSessionPayload{SessionID: sessionID})
+func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string, inputID string) error {
+	payload, err := json.Marshal(wsCancelSessionPayload{SessionID: sessionID, InputID: inputID})
 	if err != nil {
 		return err
 	}

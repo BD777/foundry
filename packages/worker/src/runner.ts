@@ -116,6 +116,7 @@ import {
   claudeProcessEvent,
   claudeStreamEventText,
   claudeSystemProcessEvent,
+  claudeTaskNotificationBookkeeping,
   claudeTaskLifecycleChange,
   claudeToolUseDetail,
   codexExtractTouchedFiles,
@@ -877,7 +878,12 @@ export async function runClaudeWorkspaceSession(
       plan,
     );
   } catch (error) {
-    if (error instanceof ClaudeAgentTurnError) {
+    // A turn error or a cancellation is the outcome, not an unavailable SDK:
+    // falling back would run canceled work again in the CLI.
+    if (
+      error instanceof ClaudeAgentTurnError ||
+      isAgentSessionCanceledError(error)
+    ) {
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -1072,6 +1078,9 @@ export async function handleActiveClaudeMessage(
     turn.finalResult = text;
     turn.partialResult = text;
     await turn.emit("Response stream", text);
+  }
+  if (claudeTaskNotificationBookkeeping(message)) {
+    return;
   }
   if (
     message &&

@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -81,5 +82,45 @@ func TestSessionInputSwitchingRuntimeStartsANewNativeSession(t *testing.T) {
 	}
 	if len(kinds) != 3 || kinds[0] != "user" || kinds[1] != "boundary" || kinds[2] != "user" {
 		t.Fatalf("transcript kinds = %v; want the first input, the transition boundary, then the new input", kinds)
+	}
+}
+
+// Each input's answer stays in the transcript: a streamed answer is not
+// repeated, and an answer only reported on completion is recorded, since the
+// next input clears Response.
+func TestEveryInputKeepsItsAnswerInTheTranscript(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	registerAgentSessionTestDaemon(t, db, "ws_answer", "agent_answer")
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_answer", AgentID: "agent_answer", Provider: "codex", Prompt: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteAgentSession(ctx, session.ID, "reported only", "native"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SendAgentSessionInput(ctx, session.ID, store.SendAgentSessionInput{Prompt: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AppendAgentSessionEvent(ctx, store.AgentSessionEvent{ID: "evt_streamed", SessionID: session.ID, Label: "Response stream", Detail: "streamed", Level: "info"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteAgentSession(ctx, session.ID, "streamed", "native"); err != nil {
+		t.Fatal(err)
+	}
+	detail, err := db.GetAgentSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var transcript []string
+	for _, event := range detail.Events {
+		if event.Message != nil {
+			transcript = append(transcript, event.Message.Text)
+		} else if event.Label == "Response stream" {
+			transcript = append(transcript, event.Detail)
+		}
+	}
+	if got := strings.Join(transcript, "|"); got != "first|reported only|second|streamed" {
+		t.Fatalf("transcript = %s", got)
 	}
 }

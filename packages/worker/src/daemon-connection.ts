@@ -34,6 +34,7 @@ import {
   activeSessionCancelTargets,
   activeSessionSteerTargets,
   clearOutOfBandSessionEventSink,
+  dispatchKey,
   queuedSessionCancelRequests,
   SessionExecutionRegistry,
   setOutOfBandSessionEventSink,
@@ -210,6 +211,7 @@ interface SteerSessionPayload {
 
 interface CancelSessionPayload {
   sessionId?: string;
+  inputId?: string;
 }
 
 const nativeChatSyncIntervalMs = 10000;
@@ -453,7 +455,11 @@ async function executeAgentSession(
   const unregisterAmbient = ambient
     ? registerSessionAmbientEnv(session.id, ambient)
     : () => {};
-  if (queuedSessionCancelRequests.delete(session.id)) {
+  if (
+    queuedSessionCancelRequests.delete(
+      dispatchKey(session.id, session.input?.id),
+    )
+  ) {
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
       inputId: session.input?.id,
@@ -462,7 +468,11 @@ async function executeAgentSession(
     unregisterAmbient();
     return;
   }
-  const responseEventID = createResponseStreamEventIDAllocator(session.id);
+  // Response events are named per input: every input of a session has its
+  // own answers, and a later one must never overwrite an earlier one.
+  const responseEventID = createResponseStreamEventIDAllocator(
+    session.input ? `${session.id}_${session.input.id}` : session.id,
+  );
   const shouldSendEvent = createSessionStatusEventFilter();
   const responseIntervalMs = 50;
   let lastResponseSentAt = 0;
@@ -1550,7 +1560,7 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        void cancelActiveSession(sessionId)
+        void cancelActiveSession(sessionId, payload?.inputId?.trim())
           .then(() => {
             trySendWebSocket(
               socket,

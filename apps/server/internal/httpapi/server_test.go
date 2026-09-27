@@ -1292,9 +1292,10 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		t.Fatalf("expected subagent transcript through websocket, got %#v", subagentRead)
 	}
 	events, ok := detail["events"].([]any)
-	// The first event is the input itself; the daemon's event follows it.
-	if !ok || len(events) != 2 {
-		t.Fatalf("expected the input and one timestamped agent session event, got %#v", detail["events"])
+	// The input opens the transcript, the daemon's event follows, and the
+	// answer reported on completion closes it.
+	if !ok || len(events) != 3 {
+		t.Fatalf("expected the input, one timestamped agent session event and the answer, got %#v", detail["events"])
 	}
 	event, ok := events[1].(map[string]any)
 	if !ok || event["at"] == "just now" || event["at"] == "" {
@@ -1658,7 +1659,7 @@ func TestAgentSessionThreadEndpointReturnsTheWholeConversation(t *testing.T) {
 			transcript = append(transcript, "answer:"+event["detail"].(string))
 		}
 	}
-	if strings.Join(transcript, "|") != "user:first|answer:first answer|user:second" {
+	if strings.Join(transcript, "|") != "user:first|answer:first answer|user:second|answer:second answer" {
 		t.Fatalf("transcript = %v, want both inputs and the first answer in order", transcript)
 	}
 }

@@ -257,6 +257,7 @@ export class SessionExecutionRegistry {
   }
 }
 
-function dispatchKey(sessionId: string, inputId: string): string {
+/** Names one input of a session; sessions built without inputs use their id. */
+export function dispatchKey(sessionId: string, inputId = ""): string {
   return inputId ? `${sessionId}/${inputId}` : sessionId;
 }

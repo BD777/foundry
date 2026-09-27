@@ -175,7 +175,7 @@ func TestListAgentSessionThreadReturnsTheSessionWithEveryInput(t *testing.T) {
 			transcript = append(transcript, event.Detail)
 		}
 	}
-	if strings.Join(transcript, "|") != "user:first prompt|user:second prompt|second response" {
+	if strings.Join(transcript, "|") != "user:first prompt|first response|user:second prompt|second response" {
 		t.Fatalf("transcript = %v", transcript)
 	}
 }

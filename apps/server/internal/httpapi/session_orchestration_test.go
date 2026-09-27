@@ -649,14 +649,15 @@ func TestVerificationSource(t *testing.T) {
 	}
 }
 
-// AI group naming: the naming response renames the layout group; a bad
-// response is ignored by leaving the deterministic name untouched.
+// AI group naming answers in the chat title format; a bad answer leaves the
+// deterministic name untouched, and raw JSON never becomes a group name.
 func TestGroupNameFromResponse(t *testing.T) {
 	cases := map[string]string{
-		"前端优化":         "前端优化",
-		"- 支付重构":       "支付重构",
-		"\"数据库迁移\"":    "数据库迁移",
-		"第一行\nignored": "第一行",
+		`{"title":"前端优化"}`:                   "前端优化",
+		"```json\n{\"title\":\"支付重构\"}\n```": "支付重构",
+		"- 数据库迁移":                            "数据库迁移",
+		`{"title":""}`:                       "",
+		"第一行\n第二行":                           "",
 	}
 	for input, want := range cases {
 		if got := groupNameFromResponse(input); got != want {
