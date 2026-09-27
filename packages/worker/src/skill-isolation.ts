@@ -1,11 +1,12 @@
 /** Workspace skill discovery policy, shared by SDK and CLI execution. */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentSession } from "@foundry/protocol";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
+import { writePrivateTextAtomic } from "./storage.js";
 import { withCodexControl } from "./native-inspection.js";
 
 export function workspaceSkillInstructions(
@@ -143,6 +144,14 @@ function receiptPath(nativeID: string): string {
       )
     : foundryStatePath("skill-isolation", `${key}.json`);
 }
+function readReceipt(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
 function policyIdentity(
   workspace: string,
   managed: ManagedSkillRuntime,
@@ -166,15 +175,10 @@ export function isolateSkillSession(
   record: (nativeID: string) => void;
 } {
   const identity = policyIdentity(workspace, managed);
-  let trusted = false;
-  if (session.nativeSessionId) {
-    try {
-      trusted =
-        readFileSync(receiptPath(session.nativeSessionId), "utf8") === identity;
-    } catch {
-      /* legacy session */
-    }
-  }
+  // A missing receipt means legacy native context.
+  const trusted =
+    !!session.nativeSessionId &&
+    readReceipt(receiptPath(session.nativeSessionId)) === identity;
   const reset = Boolean(session.nativeSessionId && !trusted);
   return {
     session: reset
@@ -188,11 +192,14 @@ export function isolateSkillSession(
         }
       : session,
     reset,
+    // Called for every message of a run: write once, and atomically, so a
+    // worker killed mid-run never leaves an empty receipt that would cost the
+    // session its native context.
     record(nativeID) {
       if (!nativeID) return;
       const path = receiptPath(nativeID);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, identity, { mode: 0o600 });
+      if (readReceipt(path) === identity) return;
+      writePrivateTextAtomic(path, identity);
     },
   };
 }
