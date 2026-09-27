@@ -41,13 +41,13 @@
 | C16 | 附件存放在设备上                   | 上传落到工作区所在设备的 `.foundry/attachments`；作为续聊输入的附件发给 Agent，Agent 看得到（纯红图答 `red`）；附件记录在对应输入上；设备与 Server 不同机时经 `/api/local-files/image` 读回的字节一致 | 设备通道分块传输（M3-1）、续聊附件                      | 脚本 `attachment`；读回字节为手工                                                                        |       | ✔     | ✔          |
 | C19 | Worker 重启后的孤儿输入            | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                          | `recover_session`、无标记即丢失                         | 脚本 `worker-restart`（需 `--kill-worker`；Worker 由 launchd/systemd/pm2 拉起，或给 `--restart-worker`） | ✔     |       | ✔          |
 | C20 | 完成但回报丢失的输入               | 停掉 Server，输入在 Worker 上跑完写下完成标记，再 `kill -9` Worker；Server 与 Worker 重启后，输入以标记里的回答完成                                                                                   | `recover_session`、按输入的完成标记                     | 手工（需杀进程）                                                                                         | ✔     |       |            |
+| C21 | 子 Agent 跨输入读取                | 第 1 次输入用 Task 工具派出原生子 Agent（答 `MANGO-7`），第 2 次输入之后 `read_context scope=subagents` 仍列出它，带 `taskId` 读出的记录包含它的回答                                                  | 按输入存放产物、子 Agent 记录                           | 脚本 `subagents`（Claude）                                                                               |       | ✔     |            |
 
 最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17、C19、C20；L-dev：C1–C6、C11、C14–C16；M-dev：C1–C5、C11、C12、C14–C16、C19）。
 
 ## 3. 覆盖缺口（待补）
 
 - **飞书续聊**：改为给同一会话发消息，尚未实测。
-- **子 Agent 跨输入读取**：`read_context scope=subagents` 只有单元测试。
 - **Issue 沙箱会话在 macOS 实机运行**：沙箱单元测试已在 Mac 通过，端到端 Issue 执行留待 M4。
 - **间歇性断线（2026-09-28 00:21 前后，未定位）**：一次全量回归中，dev 服务器上的 Worker
   （本机回环连接）与 Mac（公网）在同一时段各断开一次，正在运行的 `attachment` 输入因
