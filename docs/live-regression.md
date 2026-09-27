@@ -39,10 +39,10 @@
 | C15 | 只读 verifier                      | `verification=true` 的子会话来源为 `verification`，写文件的尝试失败，工作区中没有探针文件                                                                                                             | verifier 只读                                           | 脚本 `verifier`（需在工作区所在设备运行）     |       | ✔     | ✔          |
 | C13 | Codex 作为编排者                   | C1、C4、C5 以 Codex profile 运行（`--profile codex_local`），子会话沿用 Codex                                                                                                                         | Codex 工具注入与预先放行                                | 脚本 `two-inputs,orchestration,handoff`       | ✔     |       |            |
 | C16 | 附件存放在设备上                   | 上传落到工作区所在设备的 `.foundry/attachments`；作为续聊输入的附件发给 Agent，Agent 看得到（纯红图答 `red`）；附件记录在对应输入上；设备与 Server 不同机时经 `/api/local-files/image` 读回的字节一致 | 设备通道分块传输（M3-1）、续聊附件                      | 脚本 `attachment`；读回字节为手工             |       | ✔     | ✔          |
-| C19 | Worker 重启后的孤儿输入            | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                          | `recover_session`、无标记即丢失                         | 手工（需杀进程）                              | ✔     |       |            |
+| C19 | Worker 重启后的孤儿输入            | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                          | `recover_session`、无标记即丢失                         | 手工（需杀进程）                              | ✔     |       | ✔          |
 | C20 | 完成但回报丢失的输入               | 停掉 Server，输入在 Worker 上跑完写下完成标记，再 `kill -9` Worker；Server 与 Worker 重启后，输入以标记里的回答完成                                                                                   | `recover_session`、按输入的完成标记                     | 手工（需杀进程）                              | ✔     |       |            |
 
-最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17；L-dev：C1–C6、C11、C14–C16；M-dev：C1–C5、C11、C12、C14–C16）。
+最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17、C19、C20；L-dev：C1–C6、C11、C14–C16；M-dev：C1–C5、C11、C12、C14–C16、C19）。
 
 ## 3. 覆盖缺口（待补）
 
