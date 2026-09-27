@@ -120,11 +120,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleFoundryData(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
-	workspaceID, allowed := effectiveWorkspace(actor, r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actor, r.URL.Query().Get("workspaceId"))
 	view, err := s.visibilityFor(r.Context(), actor)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -588,7 +584,7 @@ func (s *Server) handleListAgentModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor := actorFromContext(r.Context())
-	if !actor.Agent() && !s.canUseModelCatalog(r, input.Profile) {
+	if !s.canUseModelCatalog(r, input.Profile) {
 		writeError(w, http.StatusNotFound, "profile not found")
 		return
 	}
@@ -610,10 +606,7 @@ func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store
 	if profile.Command != "" || len(profile.Env) > 0 {
 		return nil, http.StatusBadRequest, errors.New("command and env are local-only profile fields")
 	}
-	if actor.Agent() {
-		if profile.DeviceID != "" && profile.DeviceID != actor.Identity.DeviceID {
-			return nil, http.StatusForbidden, errors.New("session token can only query models on its own device")
-		}
+	if actor.Agent() && (profile.DeviceID == "" || profile.DeviceID == actor.Identity.DeviceID) {
 		profile.DeviceID = actor.Identity.DeviceID
 		profile.WorkspaceID = actor.Identity.WorkspaceID
 	}
@@ -631,16 +624,8 @@ func (s *Server) listAgentModels(ctx context.Context, actor Actor, profile store
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
-	workspaceID, allowed := effectiveWorkspace(actor, r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
-	deviceID := r.URL.Query().Get("deviceId")
-	if actor.Agent() {
-		deviceID = actor.Identity.DeviceID
-	}
-	items, err := s.store.ListAgents(r.Context(), workspaceID, deviceID)
+	workspaceID := requestedWorkspace(actor, r.URL.Query().Get("workspaceId"))
+	items, err := s.store.ListAgents(r.Context(), workspaceID, r.URL.Query().Get("deviceId"))
 	writeResult(w, items, err)
 }
 
@@ -696,11 +681,7 @@ func (s *Server) handleListSkills(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListChats(w http.ResponseWriter, r *http.Request) {
-	workspaceID, allowed := effectiveWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListChats(r.Context(), workspaceID)
 	writeResult(w, items, err)
 }
@@ -743,12 +724,7 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor := actorFromContext(r.Context())
-	if workspaceID, allowed := effectiveWorkspace(actor, input.WorkspaceID); !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	} else {
-		input.WorkspaceID = workspaceID
-	}
+	input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return
 	}
@@ -822,11 +798,7 @@ func (s *Server) handleListRunEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request) {
-	workspaceID, allowed := effectiveWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListAgentSessionSummaries(r.Context(), workspaceID)
 	if err == nil {
 		items = summarizeAgentSessionsForList(s.reconcileAgentSessions(r.Context(), items))
@@ -873,11 +845,7 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Request) {
-	workspaceID, allowed := effectiveWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListAgentSessionThread(
 		r.Context(),
 		workspaceID,
@@ -977,9 +945,9 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	// Agents inherit their parent session's creator in the store.
 	input.CreatedByUserID = actor.AccountID()
 	if actor.Agent() {
-		// A session-scoped token always creates within its own workspace, on
-		// its own device, and the new session's lineage parent is the caller.
-		input.WorkspaceID = actor.Identity.WorkspaceID
+		// A session-scoped token creates in its own workspace unless it names
+		// another it reaches; the new session's lineage parent is the caller.
+		input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
 	}
@@ -995,7 +963,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	if status, err := s.resolveSessionDevice(r.Context(), actor, &input); err != nil {
+	if status, err := s.resolveSessionDevice(r.Context(), &input); err != nil {
 		switch status {
 		case 0:
 			writeResult(w, nil, err)
@@ -1065,7 +1033,10 @@ func pickSessionAgent(agents []store.AgentProjection, input store.CreateAgentSes
 // resolveSessionDevice finds the agent a new session runs on and checks its
 // device is reachable by the caller and connected. It may pin input.AgentID.
 // A non-zero status classifies a refusal; otherwise err is an ordinary failure.
-func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput) (int, error) {
+// Callers authorize the workspace first; an agent picked here always belongs
+// to it, so a session token reaches exactly the devices of workspaces its
+// scope grants.
+func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAgentSessionInput) (int, error) {
 	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
 	if err != nil {
 		return 0, err
@@ -1075,16 +1046,6 @@ func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *s
 		deviceID = agent.DeviceID
 		if input.AgentID == "" && input.ProfileID != "" {
 			input.AgentID, input.Provider = agent.ID, agent.Provider
-		}
-	}
-	// A session token must not be able to pin an arbitrary agentId. If it did
-	// not resolve on the actor's device, drop it and resolve by profile or
-	// provider through the trusted chain.
-	if actor.Agent() && deviceID != actor.Identity.DeviceID {
-		input.AgentID = ""
-		deviceID = ""
-		if agent, ok := pickSessionAgent(agents, *input); ok {
-			deviceID, input.AgentID = agent.DeviceID, agent.ID
 		}
 	}
 	// Server-owned profile agents are projected per snapshot, never persisted
@@ -1100,9 +1061,6 @@ func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *s
 			!errors.Is(resolveErr, store.ErrDeviceRemoved) {
 			return 0, resolveErr
 		}
-	}
-	if actor.Agent() && deviceID != actor.Identity.DeviceID {
-		return http.StatusForbidden, errors.New("session token can only start sessions on its own device")
 	}
 	if deviceID == "" {
 		return http.StatusBadRequest, errors.New("no agent is available for the selected runtime and profile")

@@ -8,11 +8,11 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Policy for session-scoped actors. An agent acts inside its session's
-// workspace, where it may read and control any session: the user names the
-// target in conversation. Lineage is a record, never a permission. People are
-// judged by their workspace role. All checks live here so handlers stay free
-// of policy.
+// Policy for session-scoped actors. An agent reaches the workspaces its
+// scope grants (agentScope, access.go) and may read and control any session
+// there: the user names the target in conversation. Lineage is a record, never
+// a permission. People are judged by their workspace role. All checks live
+// here so handlers stay free of policy.
 
 // agentRouteAllowed is the exact endpoint surface a session token may touch.
 // Anything else returns 403 even before reaching a handler.
@@ -64,24 +64,17 @@ func enforceAgentRoute(next http.Handler) http.Handler {
 	})
 }
 
-// effectiveWorkspace narrows a request's workspace to the actor's scope. An
-// empty request takes the actor workspace; a different workspace is forbidden.
-func effectiveWorkspace(actor Actor, requested string) (string, bool) {
+// requestedWorkspace is the workspace a request names; an agent that names
+// none means its own. Whether the actor reaches it is the route's access rule.
+func requestedWorkspace(actor Actor, requested string) string {
 	requested = strings.TrimSpace(requested)
-	if !actor.Agent() {
-		return requested, true
+	if requested == "" && actor.Agent() {
+		return actor.Identity.WorkspaceID
 	}
-	scope := actor.Identity.WorkspaceID
-	if requested == "" || requested == scope {
-		return scope, true
-	}
-	return "", false
+	return requested
 }
 
 func (s *Server) canReadSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
-	if actor.Agent() {
-		return target.WorkspaceID == actor.Identity.WorkspaceID
-	}
 	scope, err := s.contextScope(ctx, actor)
 	return err == nil && scope.can(target.WorkspaceID, store.WorkspaceRoleViewer)
 }
@@ -89,12 +82,13 @@ func (s *Server) canReadSession(ctx context.Context, actor Actor, target store.A
 // canControlSession: an agent controls any session of its workspace; people
 // steer and cancel their own sessions as members and anyone's as maintainers.
 func (s *Server) canControlSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
-	if actor.Agent() {
-		return target.WorkspaceID == actor.Identity.WorkspaceID
-	}
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
 		return false
+	}
+	// An agent controls any session of a workspace it reaches as a member.
+	if actor.Agent() {
+		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
 	}
 	if target.CreatedByUserID != "" && target.CreatedByUserID == scope.userID {
 		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
@@ -104,9 +98,6 @@ func (s *Server) canControlSession(ctx context.Context, actor Actor, target stor
 
 // canReadNativeChat mirrors canReadSession for daemon-projected native chats.
 func (s *Server) canReadNativeChat(ctx context.Context, actor Actor, workspaceID, chatID string) bool {
-	if actor.Agent() {
-		return workspaceID == actor.Identity.WorkspaceID
-	}
 	scope, err := s.contextScope(ctx, actor)
 	return err == nil && scope.can(workspaceID, store.WorkspaceRoleViewer)
 }

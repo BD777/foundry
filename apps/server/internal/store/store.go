@@ -82,13 +82,14 @@ type Store interface {
 	// SendAgentSessionInput queues an idle session's next input.
 	SendAgentSessionInput(ctx context.Context, sessionID string, input SendAgentSessionInput) (AgentSession, error)
 	// ValidateParentSession resolves a create request's lineage parent; an
-	// empty parent id returns a zero session and no error.
-	ValidateParentSession(ctx context.Context, workspaceID string, parentID string) (AgentSession, error)
+	// empty parent id returns a zero session and no error. crossWorkspace
+	// admits a parent in another workspace.
+	ValidateParentSession(ctx context.Context, workspaceID string, parentID string, crossWorkspace bool) (AgentSession, error)
 	// PlaceChildWithParent applies the CHAT-01 automatic group placement
 	// inside the caller's transaction.
 	PlaceChildWithParent(ctx context.Context, parent AgentSession, childID string) (groupID string, created bool, err error)
 	SessionLineageDepth(ctx context.Context, sessionID string) (int, error)
-	CountActiveAgentChildren(ctx context.Context, workspaceID string, parentID string) (int, error)
+	CountActiveAgentChildren(ctx context.Context, parentID string) (int, error)
 	RenameLayoutGroup(ctx context.Context, workspaceID string, groupID string, name string) (ChatLayout, error)
 	CreateGroupNameJob(ctx context.Context, input CreateAgentSessionInput, groupID string) (AgentSession, error)
 	SessionsInGroup(ctx context.Context, workspaceID string, groupID string) ([]string, error)

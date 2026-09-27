@@ -123,15 +123,22 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
   允许 `access_token` query 参数（EventSource 无法设置头）。
 - 无效/过期 → 401；身份有效但越权 → 403。
 
-### 4.3 Agent Policy（2026-09-27 起，见[会话模型](session-model.md)）
+### 4.3 Agent Policy（草稿：§5.6 方案 A，待定）
 
-| 操作                                              | 规则                                                            |
-| ------------------------------------------------- | --------------------------------------------------------------- |
-| `create_session`                                  | 目标 workspace 与 caller 相同，且只能在 caller 自己的设备上启动 |
-| `list_sessions` / `list_group_sessions`           | 强制限定 caller 的 workspace                                    |
-| `read_context` / `send_message` / `cancel` / 改名 | 同一 Workspace 内的**任意**会话；由用户在对话中指定对象即可     |
-| `list_profiles` / `list_models`                   | 仅返回 caller 本设备的 profile                                  |
-| SSE `/api/events`                                 | agent actor 强制按 workspace 过滤                               |
+Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace，角色封顶 Member。
+判定只在 `access.go` 的 `agentScope` 一处；选方案 B 只改这一个函数。
+
+| 操作                                              | 规则                                                                                   |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `list_workspaces`                                 | 列出可达 Workspace 及角色                                                              |
+| `create_session`                                  | 默认 caller 的 workspace；可指定可达 workspace（需 Member），跑在该 workspace 的设备上 |
+| `list_sessions` / `list_group_sessions`           | 默认 caller 的 workspace；可指定可达 workspace（需 Viewer）                            |
+| `read_context` / `send_message` / `cancel` / 改名 | 可达 Workspace 内的**任意**会话；由用户在对话中指定对象即可                            |
+| `list_profiles` / `list_models`                   | 默认本设备；可指定承载可达 workspace 的设备                                            |
+| SSE `/api/events`                                 | agent actor 按单个 workspace 过滤（默认自己的，可指定可达的）                          |
+
+跨 workspace 的子会话保留血缘（深度、扇出上限照算），但不进入父会话的编排分组
+（分组布局按 workspace 存）。不可达的 workspace 一律 404，不泄露存在性。
 
 血缘只作记录（界面归属、深度与扇出上限），不是权限来源；adopt / 监管机制已删除。
 这样 `handoff_session` 之后的接替者、同一对话的后续输入都能继续管理之前派出的会话。

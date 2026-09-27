@@ -78,8 +78,7 @@ var errNoOwnershipStore = errors.New("this server's store does not support owner
 
 // scopeFor computes the actor's access. A device credential acts as its
 // owner, limited to the workspaces on that device. An agent acts as the
-// account that started its session, limited to its own workspace and never
-// above member.
+// account that started its session, never above member (agentScope).
 func (s *Server) scopeFor(ctx context.Context, actor Actor) (accessScope, error) {
 	ownership, ok := s.store.(store.OwnershipStore)
 	if !ok {
@@ -140,34 +139,41 @@ func (s *Server) limitToDevice(ctx context.Context, scope *accessScope, deviceID
 	return nil
 }
 
+// agentScope is the one place that decides which workspaces an agent's
+// session token reaches. Option A of docs/architecture-modules.md §5.6: the
+// agent acts for the person who started its session, in every workspace
+// that person belongs to, capped at Member (an agent never administers).
+// Choosing option B would change only this function.
 func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore, actor Actor) (accessScope, error) {
-	workspaceID := actor.Identity.WorkspaceID
 	scope := accessScope{roles: map[string]string{}, owned: map[string]bool{}}
 	session, err := s.store.GetAgentSession(ctx, actor.Identity.SessionID)
 	if err != nil {
 		return scope, nil
 	}
-	role := store.WorkspaceRoleMember
 	testCreator := s.testFullAccess && s.testActor != nil && s.testActor.Account != nil &&
 		session.CreatedByUserID == s.testActor.Account.ID
-	if creator := session.CreatedByUserID; creator != "" && !testCreator {
-		scope.userID = creator
-		// A disabled account's agents lose access with it.
-		if s.accounts != nil {
-			if user, err := s.accounts.GetUser(ctx, creator); err != nil || !user.Active() {
-				return scope, nil
-			}
+	creator := session.CreatedByUserID
+	if creator == "" || testCreator {
+		// Without a person behind it (tests, legacy rows) the token keeps its
+		// own workspace only.
+		scope.roles[actor.Identity.WorkspaceID] = store.WorkspaceRoleMember
+		return scope, nil
+	}
+	scope.userID = creator
+	// A disabled account's agents lose access with it.
+	if s.accounts != nil {
+		if user, err := s.accounts.GetUser(ctx, creator); err != nil || !user.Active() {
+			return scope, nil
 		}
-		roles, err := ownership.WorkspaceRolesForUser(ctx, creator)
-		if err != nil {
-			return accessScope{}, err
-		}
-		role = roles[workspaceID]
+	}
+	roles, err := ownership.WorkspaceRolesForUser(ctx, creator)
+	if err != nil {
+		return accessScope{}, err
+	}
+	for workspaceID, role := range roles {
 		if roleAtLeast(role, store.WorkspaceRoleMaintainer) {
 			role = store.WorkspaceRoleMember
 		}
-	}
-	if role != "" {
 		scope.roles[workspaceID] = role
 	}
 	return scope, nil
@@ -203,10 +209,6 @@ func (s *Server) requireWorkspace(w http.ResponseWriter, r *http.Request, worksp
 		return false
 	}
 	have := scope.role(workspaceID)
-	if actor := actorFromContext(r.Context()); actor.Agent() && workspaceID != actor.Identity.WorkspaceID {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return false
-	}
 	if have == "" {
 		writeError(w, http.StatusNotFound, "not found")
 		return false

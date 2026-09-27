@@ -179,22 +179,40 @@ func mcpArgNumber(args map[string]json.RawMessage, key string, fallback int) int
 
 func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]json.RawMessage) (string, error) {
 	actor := actorFromContext(r.Context())
-	workspace := ""
-	if actor.Agent() {
+	// A tool acts on the workspace it names; an agent's defaults to its own.
+	workspace := mcpArgString(args, "workspaceId")
+	if workspace == "" && actor.Agent() {
 		workspace = actor.Identity.WorkspaceID
-	} else if raw, ok := args["workspaceId"]; ok {
-		_ = json.Unmarshal(raw, &workspace)
 	}
 	encode := func(value any) (string, error) {
 		raw, err := json.MarshalIndent(value, "", "  ")
 		return string(raw), err
 	}
-	if !actor.Agent() {
-		if err := s.authorizeMCPTool(r, actor, name, workspace, args); err != nil {
-			return "", err
-		}
+	if err := s.authorizeMCPTool(r, actor, name, workspace, args); err != nil {
+		return "", err
 	}
 	switch name {
+	case "list_workspaces":
+		view, err := s.visibilityFor(r.Context(), actor)
+		if err != nil {
+			return "", err
+		}
+		all, err := s.store.ListWorkspaces(r.Context())
+		if err != nil {
+			return "", err
+		}
+		type reachable struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			DeviceID    string `json:"deviceId,omitempty"`
+			DeviceLabel string `json:"deviceLabel,omitempty"`
+			AccessRole  string `json:"accessRole"`
+		}
+		workspaces := []reachable{}
+		for _, workspace := range view.scope.filterWorkspaces(all) {
+			workspaces = append(workspaces, reachable{workspace.ID, workspace.Name, workspace.DeviceID, workspace.DeviceLabel, workspace.AccessRole})
+		}
+		return encode(workspaces)
 	case "list_profiles":
 		profiles, err := s.store.ListAgentProfiles(r.Context(), mcpDeviceID(actor, args))
 		if err != nil {
@@ -303,9 +321,6 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return string(raw), nil
 	case "create_session":
-		if !actor.Agent() && workspace == "" {
-			workspace = mcpArgString(args, "workspaceId")
-		}
 		input := store.CreateAgentSessionInput{
 			WorkspaceID:          workspace,
 			Provider:             mcpArgString(args, "provider"),
@@ -486,8 +501,10 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 	if actor.Agent() {
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
-		// Without a choice, a child runs like its parent.
-		if input.ProfileID == "" && input.Provider == "" {
+		// Without a choice, a child in the same workspace runs like its
+		// parent; profiles belong to a device, so another workspace's
+		// child uses that workspace's default.
+		if input.ProfileID == "" && input.Provider == "" && input.WorkspaceID == actor.Identity.WorkspaceID {
 			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
 				input.ProfileID, input.Provider = parent.ProfileID, parent.Provider
 			}
@@ -516,12 +533,14 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 // per-session tools are checked by canReadSession / canControlSession.
 // mcpDeviceID is the device a profile tool reads: a session token's own
 // device, else the named one, else the calling device's own.
+// mcpDeviceID is the device a profile tool reads: the named one, else the
+// caller's own (a session token's device, or the calling device).
 func mcpDeviceID(actor Actor, args map[string]json.RawMessage) string {
-	if actor.Agent() {
-		return actor.Identity.DeviceID
-	}
 	if deviceID := mcpArgString(args, "deviceId"); deviceID != "" {
 		return deviceID
+	}
+	if actor.Agent() {
+		return actor.Identity.DeviceID
 	}
 	return actor.DeviceID
 }
@@ -549,17 +568,17 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 
 func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput) (store.AgentSession, error) {
 	ctx := r.Context()
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
+		return store.AgentSession{}, &mcpToolError{http.StatusNotFound, "workspace not found"}
+	}
 	if !actor.Agent() {
-		scope, err := s.contextScope(ctx, actor)
-		if err != nil {
-			return store.AgentSession{}, err
-		}
-		if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
-			return store.AgentSession{}, &mcpToolError{http.StatusNotFound, "workspace not found"}
-		}
 		input.CreatedByUserID = actor.AccountID()
 	}
-	if status, err := s.resolveSessionDevice(ctx, actor, &input); err != nil {
+	if status, err := s.resolveSessionDevice(ctx, &input); err != nil {
 		if status == 0 {
 			return store.AgentSession{}, err
 		}

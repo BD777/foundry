@@ -9,11 +9,7 @@ import (
 )
 
 func (s *Server) handleGetChatLayout(w http.ResponseWriter, r *http.Request) {
-	workspaceID, allowed := effectiveWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	if strings.TrimSpace(workspaceID) == "" {
 		writeError(w, http.StatusBadRequest, "workspaceId is required")
 		return

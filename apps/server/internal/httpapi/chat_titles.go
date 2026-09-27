@@ -10,11 +10,7 @@ import (
 )
 
 func (s *Server) handleListChatTitles(w http.ResponseWriter, r *http.Request) {
-	workspaceID, allowed := effectiveWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	if !allowed {
-		writeForbidden(w, "workspace is outside the token's scope")
-		return
-	}
+	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListChatTitles(r.Context(), workspaceID)
 	writeResult(w, items, err)
 }
