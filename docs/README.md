@@ -53,6 +53,7 @@ Pages fall into three kinds:
 
 - [Chat experience](chat-experience.md), [chat list](chat-list-design.md), [transcript pipeline](chat-transcript-design.md) and [turn navigator](chat-turn-navigator-design.md).
 - [Session model](session-model.md): one session per native agent session; inputs, tokens and permissions.
+- [Live regression](live-regression.md): test environments paired with end-to-end cases, and the runner script.
 - [Session orchestration](session-orchestration-design.md): agents creating and messaging sessions through the `foundry` CLI and MCP.
 - [Accounts and permissions](accounts-permissions-design.md): ownership and workspace sharing; phases 1–2 are built.
 - [Platform extensions](platform-extensions.md): IM, accounts, cloud workspace and workflow plugins.
