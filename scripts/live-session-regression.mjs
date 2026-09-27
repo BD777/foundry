@@ -412,6 +412,59 @@ const cases = {
     return `input lost ${seconds}s after the kill; the next message resumed with PEAR-4`;
   },
 
+  // A native subagent an earlier input ran stays readable through
+  // read_context after the session has moved on to another input.
+  async subagents() {
+    const session = await start(
+      "Use the Task tool exactly once to launch a general-purpose subagent with the prompt: 'Reply with exactly MANGO-7 and nothing else.' When it returns, reply with exactly: DONE",
+    );
+    const first = await settle(session.id);
+    check(
+      first.status === "completed",
+      `first input: ${first.status} ${first.error ?? first.response}`,
+    );
+    await client.send(session.id, "Reply with exactly: OK");
+    const second = await settle(session.id);
+    check(second.response === "OK", `second input: ${second.response}`);
+    const readContext = async (args) => {
+      const reply = await client.mcp({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "read_context",
+          arguments: { sessionId: session.id, maxBytes: 200000, ...args },
+        },
+      });
+      const text = reply?.result?.content?.[0]?.text ?? "";
+      check(
+        !reply?.error && !reply?.result?.isError,
+        `read_context ${JSON.stringify(args)}: ${reply?.error?.message ?? text}`,
+      );
+      return JSON.parse(text);
+    };
+    const subagents = await readContext({ scope: "subagents" });
+    check(
+      Array.isArray(subagents) && subagents.length > 0,
+      "read_context lists no subagents after a later input",
+    );
+    const subagent =
+      subagents.find((item) =>
+        (item.responseTexts ?? []).some((text) => text.includes("MANGO-7")),
+      ) ?? subagents[0];
+    const transcript = await readContext({
+      scope: "subagents",
+      taskId: subagent.taskId,
+    });
+    check(
+      (transcript.messages ?? []).some((message) =>
+        message.content.includes("MANGO-7"),
+      ),
+      `subagent ${subagent.taskId} transcript lacks its answer`,
+    );
+    return `subagent ${subagent.taskId} of input 1 read after input 2: MANGO-7`;
+  },
+
   async "runtime-switch"() {
     const codexProfile = values["codex-profile"];
     check(codexProfile, "needs --codex-profile");
