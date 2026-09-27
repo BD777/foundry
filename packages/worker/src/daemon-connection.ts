@@ -442,16 +442,27 @@ async function connectWebSocket(args: string[]): Promise<void> {
       backoffMs = 1000;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`Daemon connection failed: ${message}`);
+      console.error(`${logTime()} Daemon connection failed: ${message}`);
       if (once) {
         throw error;
       }
     }
 
-    console.log(`Reconnecting in ${Math.round(backoffMs / 1000)}s...`);
+    console.log(
+      `${logTime()} Reconnecting in ${Math.round(backoffMs / 1000)}s...`,
+    );
     await sleep(backoffMs);
     backoffMs = Math.min(backoffMs * 2, 30000);
   }
+}
+
+/**
+ * Timestamp for connection lifecycle lines: service managers such as launchd
+ * write the daemon's output without one, and a dropped connection is only
+ * diagnosable against the server's log by time.
+ */
+function logTime(): string {
+  return new Date().toISOString();
 }
 
 /** Where a dispatched session runs and keeps its state. */
@@ -910,7 +921,7 @@ function runWebSocketSession(options: {
         registerWorkspacePath(item);
       }
       console.log(
-        `Connected daemon ${registration.device.label} to ${options.serverURL} for ${registration.workspace.name}`,
+        `${logTime()} Connected daemon ${registration.device.label} to ${options.serverURL} for ${registration.workspace.name}`,
       );
       sendWebSocket(socket, daemonMessageTypes.hello, registration);
       for (const item of registrations) {
@@ -1931,7 +1942,7 @@ function runWebSocketSession(options: {
     socket.on("close", (code?: number, reason?: Buffer) => {
       options.sessionTransport.unbind(socket);
       console.log(
-        `Daemon connection closed (code ${code ?? "none"}${reason?.length ? `: ${reason.toString()}` : ""}).`,
+        `${logTime()} Daemon connection closed (code ${code ?? "none"}${reason?.length ? `: ${reason.toString()}` : ""}).`,
       );
       if (isDeviceRemovedSignal({ code, reason: reason?.toString() })) {
         // Permanent server decision: park instead of backing off and
