@@ -73,11 +73,13 @@ One sandbox definition and one way to start an agent, decoupled along module bou
 - [x] [Isolated orchestrated sessions](architecture-modules.md#54-迁移顺序): orchestrated sessions bound to an Issue run in its candidate inside the executor's sandbox and keep their orchestration ability.
 - [x] [Module boundary audit](architecture-modules.md#31-依赖图): `pnpm audit:modules` checks cross-module dependencies; violations may only shrink and are now zero.
 
-### M2 Agent surface
+### M2 Agent surface (done)
 
-Kernel features are accepted through Chats and orchestrated sessions, not through Issues.
+Kernel features are accepted through Chats and orchestrated sessions, not through Issues; the acceptance cases are in [live regression](live-regression.md) (Chinese).
 
-- [ ] [Foundry MCP / CLI](session-orchestration-design.md): the single interface agents use, with capabilities registered and authorized under one policy; OAuth 2.1 for the HTTP MCP.
+- [x] [Foundry MCP / CLI](session-orchestration-design.md): Claude and Codex sessions get the same `foundry` tools, implemented once on the server, with stdio `foundry mcp` as a bridge; agents start, observe, steer, cancel, continue and hand off sessions and read-only verifiers.
+- [x] [Session model](session-model.md) (Chinese): a session is one native agent session and a follow-up is a new input; any agent in a workspace may act on any of its sessions, and lineage is only a record.
+- Deferred: OAuth 2.1 for the HTTP MCP, until an agent outside Foundry needs it.
 
 ### M3 Resources and cross-device work
 

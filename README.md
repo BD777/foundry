@@ -73,11 +73,13 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [编排子会话隔离](docs/architecture-modules.md#54-迁移顺序)：带 Issue 的编排子会话在候选中、与 Issue 执行同一沙箱运行，保留编排能力。
 - [x] [模块边界审计](docs/architecture-modules.md#31-依赖图)：`pnpm audit:modules` 检查跨模块依赖，违例只减不增，当前为零。
 
-### M2 Agent 能力面
+### M2 Agent 能力面（已完成）
 
-内核功能以 Chat 与编排子会话为验收场景，不依赖 Issue。
+内核功能以 Chat 与编排子会话为验收场景，不依赖 Issue；验收用例见[实机回归](docs/live-regression.md)。
 
-- [ ] [Foundry MCP / CLI](docs/session-orchestration-design.md)：作为 Agent 唯一的对外接口，能力按统一 policy 注册与授权；HTTP MCP 支持 OAuth 2.1。
+- [x] [Foundry MCP / CLI](docs/session-orchestration-design.md)：Claude 与 Codex 会话都注入同一套 `foundry` 工具，工具只在 Server 实现一次，stdio `foundry mcp` 只做转发；Agent 可派出、观察、steer、取消、继续、交接会话与只读 verifier。
+- [x] [会话模型](docs/session-model.md)：一个会话就是一个原生会话，续聊是追加输入；同一 Workspace 内的 Agent 可操作任意会话，血缘只作记录。
+- 推迟：HTTP MCP 的 OAuth 2.1，等出现 Foundry 之外的远程 Agent 时再做。
 
 ### M3 资源与跨设备
 
