@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
-// The pid ledger lives under the home directory and is resolved at import.
+// The pid ledger lives in the state root and is resolved at import.
 const home = mkdtempSync(join(tmpdir(), "foundry-authpids-"));
 mkdirSync(join(home, ".foundry"));
 process.env.HOME = home;
+process.env.FOUNDRY_STATE_ROOT = join(home, ".foundry");
 
 const {
   forgetAuthorizationPid,

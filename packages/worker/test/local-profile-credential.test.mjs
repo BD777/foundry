@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-// The profiles file location is resolved from the home directory when the
-// module loads, so the fake home has to exist before the import.
+// The profiles file location is resolved from the state root when the module
+// loads, so the fake state root has to exist before the import.
 const home = mkdtempSync(join(tmpdir(), "foundry-credential-"));
 mkdirSync(join(home, ".foundry"));
 writeFileSync(
@@ -32,6 +32,7 @@ writeFileSync(
   }),
 );
 process.env.HOME = home;
+process.env.FOUNDRY_STATE_ROOT = join(home, ".foundry");
 
 const { localProfileCredential } = await import("../dist/profiles.js");
 

@@ -11,10 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-// Profiles are read from ~/.foundry, resolved when the modules load, so the
-// scratch home must be in place before importing them.
+// Profiles are read from the state root, resolved when the modules load, so
+// the scratch home and state root must be in place before importing them.
 const home = realpathSync(mkdtempSync(join(tmpdir(), "foundry-session-home-")));
 process.env.HOME = home;
+process.env.FOUNDRY_STATE_ROOT = join(home, ".foundry");
 mkdirSync(join(home, ".foundry"));
 writeFileSync(
   join(home, ".foundry/agent-profiles.local.json"),
