@@ -29,9 +29,9 @@
 | C4  | 编排：后续输入管理先前派出的子会话 | 子会话记录父会话、沿用父会话 profile；第 2 次输入能取消它；第 3 次输入能 `send_message` 继续它，子会话是一个会话两次输入                                                                              | 同 Workspace 权限、血缘只作记录、MCP 注入、profile 选择 | 脚本 `orchestration`                          | ✔     | ✔     | ✔          |
 | C5  | handoff 接替者接管                 | 接替者能控制不是自己派出的会话                                                                                                                                                                        | 权限不依赖血缘、`handoff_session`                       | 脚本 `handoff`                                | ✔     | ✔     | ✔          |
 | C6  | 切换 runtime                       | 同一会话换到 Codex、原生会话更换、靠导入上下文作答                                                                                                                                                    | 输入切换 runtime、导入上下文                            | 脚本 `runtime-switch`（需 `--codex-profile`） | ✔     | ✔     | — 无 Codex |
-| C7  | Web：两次问答显示                  | 页面显示两次问答与两个回答；轮次导航计数正确；自动标题只生成一次                                                                                                                                      | 事件构成聊天记录、回答事件按输入命名                    | 手工（agent-browser）                         | ✔     |       |            |
-| C8  | Web：排队后 steer                  | 运行中输入进入队列；点「Steer this message」后回答包含它                                                                                                                                              | Web 队列与 `/messages`                                  | 手工                                          | ✔     |       |            |
-| C9  | Web：切换 agent 继续               | 分隔线「Profile 从 … 切换为 …」；新 runtime 答出之前的内容                                                                                                                                            | Web 导入上下文                                          | 手工                                          | ✔     |       |            |
+| C7  | Web：两次问答显示                  | 页面显示两次问答与两个回答；轮次导航计数正确；自动标题只生成一次                                                                                                                                      | 事件构成聊天记录、回答事件按输入命名                    | Web 脚本 `conversation`                       | ✔     |       |            |
+| C8  | Web：排队后 steer                  | 运行中输入进入队列；点「Steer this message」后回答包含它                                                                                                                                              | Web 队列与 `/messages`                                  | Web 脚本 `queued-steer`                       | ✔     |       |            |
+| C9  | Web：切换 agent 继续               | 分隔线「Profile 从 … 切换为 …」；新 runtime 答出之前的内容                                                                                                                                            | Web 导入上下文                                          | Web 脚本 `agent-switch`（需 `--codex`）       | ✔     |       |            |
 | C10 | Worker 崩溃恢复                    | `kill -9` Worker 后，旧输入的完成标记不会结束当前输入；取消孤儿输入不影响下一条；继续仍有原生上下文                                                                                                   | 按输入存放产物、按输入排队取消                          | 手工（需杀进程）                              | ✔     |       |            |
 | C11 | 设备可见性                         | 所有者只看到自己的设备与工作区                                                                                                                                                                        | 访问控制                                                | 脚本外：`GET /api/devices`、`/api/workspaces` |       | ✔     | ✔          |
 | C12 | macOS 测试套件                     | `pnpm --filter @foundry/worker test`、`pnpm verify` 在 Mac 上通过（含 Seatbelt 沙箱）                                                                                                                 | macOS 平台差异                                          | 在 Mac 上执行                                 |       |       | ✔          |
@@ -48,7 +48,7 @@
 - **子 Agent 跨输入读取**：`read_context scope=subagents` 只有单元测试。
 - **Issue 沙箱会话在 macOS 实机运行**：沙箱单元测试已在 Mac 通过，端到端 Issue 执行留待 M4。
 - **Worker 中断后运行中输入**要等 30 分钟才判失败（现有设计），无自动用例。
-- C7–C10 仍是手工步骤；若回归频繁，应改成 agent-browser 脚本。
+- C10（Worker 崩溃恢复）仍是手工步骤，需要杀进程。
 
 ## 4. 准备与运行
 
@@ -78,6 +78,18 @@ HOME=$S/home FOUNDRY_STATE_ROOT=$S/state FOUNDRY_CLAUDE_BIN=$(readlink -f $(comm
    `ccrelay`，不在 Mac 上登录 Claude 或 Codex。访问中转需要用户开着 CorpLink。
 
 ### 4.3 运行脚本
+
+Web 用例（C7–C9）用 `scripts/live-web-regression.mjs`，经 agent-browser 操作真实页面：
+
+```bash
+FOUNDRY_WEB_URL=http://127.0.0.1:42983 FOUNDRY_WEB_USERNAME=<账号> FOUNDRY_WEB_PASSWORD=<密码> \
+  node scripts/live-web-regression.mjs --workspace <id> [--codex]
+```
+
+期望的回答都是算出来的 `ANSWER-<n>`，不会出现在问题原文或页面上的 id 里，所以匹配只能
+来自 Agent 的回答。
+
+API 用例：
 
 ```bash
 # L-dev（服务器上）
