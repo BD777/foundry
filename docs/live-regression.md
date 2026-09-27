@@ -35,9 +35,11 @@
 | C10 | Worker 崩溃恢复                    | `kill -9` Worker 后，旧输入的完成标记不会结束当前输入；取消孤儿输入不影响下一条；继续仍有原生上下文                      | 按输入存放产物、按输入排队取消                          | 手工（需杀进程）                              | ✔     |       |            |
 | C11 | 设备可见性                         | 所有者只看到自己的设备与工作区                                                                                           | 访问控制                                                | 脚本外：`GET /api/devices`、`/api/workspaces` |       | ✔     | ✔          |
 | C12 | macOS 测试套件                     | `pnpm --filter @foundry/worker test`、`pnpm verify` 在 Mac 上通过（含 Seatbelt 沙箱）                                    | macOS 平台差异                                          | 在 Mac 上执行                                 |       |       | ✔          |
+| C14 | 编排者 steer 运行中的子会话        | 父会话经 `send_message` 给运行中的子会话追加要求，子会话回答包含它、没有变成新输入，父会话经 `wait_session` 观察到       | 编排中的 steer 与观察                                   | 脚本 `steer-child`                            |       | ✔     | ✔          |
+| C15 | 只读 verifier                      | `verification=true` 的子会话来源为 `verification`，写文件的尝试失败，工作区中没有探针文件                                | verifier 只读                                           | 脚本 `verifier`（需在工作区所在设备运行）     |       | ✔     | ✔          |
 | C13 | Codex 作为编排者                   | C1、C4、C5 以 Codex profile 运行（`--profile codex_local`），子会话沿用 Codex                                            | Codex 工具注入与预先放行                                | 脚本 `two-inputs,orchestration,handoff`       | ✔     |       |            |
 
-最近一次全部通过：2026-09-27（L-iso：C1–C10；L-dev：C1–C6、C11；M-dev：C1–C5、C11、C12）。
+最近一次全部通过：2026-09-27（L-iso：C1–C10、C13；L-dev：C1–C6、C11、C14、C15；M-dev：C1–C5、C11、C12、C14、C15）。
 
 ## 3. 覆盖缺口（待补）
 

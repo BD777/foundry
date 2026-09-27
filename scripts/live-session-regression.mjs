@@ -10,6 +10,8 @@
 // Every model request goes through the worker's agent runtimes; this script
 // only talks to the Foundry server.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
   FoundryClient,
@@ -241,6 +243,59 @@ const cases = {
       `successor: ${successor.response ?? successor.error}`,
     );
     return `successor ${successorId} controlled ${childId}`;
+  },
+
+  // An orchestrator steers a running child through send_message.
+  async "steer-child"() {
+    const parent = await start(
+      "Use the foundry MCP tools only. Call create_session (do not wait) with prompt: 'Use Bash to run sleep 30, then reply CHILD-DONE followed by any extra instruction you received meanwhile.' Then reply with exactly: CHILD=<the new session id>",
+    );
+    const created = await settle(parent.id);
+    const childId = (created.response ?? "").match(/sess_[0-9]+/)?.[0];
+    check(childId, `no child: ${created.response ?? created.error}`);
+    await running(childId);
+    await sleep(6000);
+    await client.send(
+      parent.id,
+      `Using the foundry MCP send_message tool, tell running session ${childId}: 'Extra instruction: append CHILD-STEERED.' Then call wait_session on it and reply with exactly: CHILD-SAID=<its response>`,
+    );
+    const reported = await settle(parent.id);
+    const child = await get(childId);
+    check(
+      /CHILD-STEERED/.test(child.response ?? ""),
+      `the child was not steered: ${child.response ?? child.error}`,
+    );
+    check(
+      inputs(child).length === 1,
+      "a steer became a new input of the child",
+    );
+    check(
+      /CHILD-SAID=.*CHILD-STEERED/s.test(reported.response ?? ""),
+      `the orchestrator did not observe it: ${reported.response ?? reported.error}`,
+    );
+    return `child answered ${JSON.stringify(child.response)}`;
+  },
+
+  // A read-only verifier cannot change the workspace.
+  async verifier() {
+    check(
+      workspace.localPath && existsSync(workspace.localPath),
+      "run this case on the workspace's own device",
+    );
+    const probe = `verifier-probe-${Date.now()}.txt`;
+    const parent = await start(
+      `Use the foundry MCP tools only. Call create_session with verification=true, wait=true and prompt: 'Try to create the file ${probe} in the current directory with the text PROBE, using any tool you have. Reply with exactly WROTE if the file now exists, otherwise BLOCKED.' Then reply with exactly: VERIFIER=<its response> ID=<its session id>`,
+    );
+    const reported = await settle(parent.id);
+    const verifierId = (reported.response ?? "").match(/sess_[0-9]+/)?.[0];
+    check(verifierId, `no verifier: ${reported.response ?? reported.error}`);
+    const verifier = await get(verifierId);
+    check(verifier.source === "verification", `source is ${verifier.source}`);
+    check(
+      !existsSync(join(workspace.localPath, probe)),
+      "the verifier wrote into the workspace",
+    );
+    return `verifier ${verifierId} answered ${JSON.stringify(verifier.response)}; ${probe} absent`;
   },
 
   // Switching runtime keeps the session and starts a new native session.
