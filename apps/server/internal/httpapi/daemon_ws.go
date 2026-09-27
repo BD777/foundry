@@ -976,15 +976,40 @@ func (c *daemonConnection) registrationSnapshot() (string, store.DaemonRegistrat
 	return c.deviceID, c.registration
 }
 
-func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
+// unsettledSessions lists this device's queued, running and blocked sessions
+// in one workspace, or in all of its workspaces when workspaceID is empty.
+func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentSession, error) {
 	deviceID, _ := c.registrationSnapshot()
-	sessions, err := c.hub.store.ListAgentSessionSummaries(context.Background(), workspaceID)
+	var sessions []store.AgentSession
+	var err error
+	if devices, ok := c.hub.store.(store.DeviceSessionStore); ok {
+		sessions, err = devices.UnsettledAgentSessionsOnDevice(context.Background(), deviceID)
+	} else {
+		sessions, err = c.hub.store.ListAgentSessionSummaries(context.Background(), workspaceID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	unsettled := sessions[:0]
+	for _, session := range sessions {
+		if session.DeviceID == deviceID && isRecoverableAgentSessionStatus(session.Status) &&
+			(workspaceID == "" || session.WorkspaceID == workspaceID) {
+			unsettled = append(unsettled, session)
+		}
+	}
+	return unsettled, nil
+}
+
+// dispatchQueuedAgentSessions sends the device its queued sessions in one
+// workspace, or in all of them when workspaceID is empty.
+func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
+	sessions, err := c.unsettledSessions(workspaceID)
 	if err != nil {
 		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
 	for _, session := range sessions {
-		if session.Status != "queued" || session.DeviceID != deviceID {
+		if session.Status != "queued" {
 			continue
 		}
 		reconciled, recovered, err := c.hub.reconcileAgentSession(context.Background(), session)
@@ -1006,23 +1031,24 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 	}
 }
 
-// recoverOrphanedAgentSessions runs when a daemon (re)connects. An input the
+// recoverOrphanedAgentSessions runs when a daemon (re)connects, over every
+// workspace of the device. An input the
 // server still counts as running, which the new connection does not claim,
 // was left by an earlier daemon process; only the device knows whether it
 // finished, so the device is asked. Daemons that report no execution claims
 // predate the question and fall back to the stale-activity timeout.
-func (c *daemonConnection) recoverOrphanedAgentSessions(workspaceID string, claimsReported bool) {
+func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
 	if !claimsReported {
 		return
 	}
 	deviceID, _ := c.registrationSnapshot()
-	sessions, err := c.hub.store.ListAgentSessionSummaries(context.Background(), workspaceID)
+	sessions, err := c.unsettledSessions("")
 	if err != nil {
 		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
 	for _, session := range sessions {
-		if session.Status != "running" && session.Status != "blocked" || session.DeviceID != deviceID {
+		if session.Status != "running" && session.Status != "blocked" {
 			continue
 		}
 		if c.hasActiveSession(session.ID) {
@@ -1189,8 +1215,9 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 		go c.claimAndSend()
-		go c.dispatchQueuedAgentSessions(registration.Workspace.ID)
-		go c.recoverOrphanedAgentSessions(registration.Workspace.ID, registration.ActiveSessionIDs != nil)
+		// A daemon serves several workspaces; hello names only one of them.
+		go c.dispatchQueuedAgentSessions("")
+		go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 		return nil
 	case wsHeartbeatType:
 		c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})

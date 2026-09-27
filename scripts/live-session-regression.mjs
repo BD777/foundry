@@ -10,7 +10,8 @@
 // Every model request goes through the worker's agent runtimes; this script
 // only talks to the Foundry server.
 
-import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -18,6 +19,7 @@ import {
   FoundryClient,
   resolveConfig,
 } from "../packages/worker/dist/foundry-client.js";
+import { foundryStatePath } from "../packages/worker/dist/state-root.js";
 
 const { values } = parseArgs({
   options: {
@@ -25,11 +27,13 @@ const { values } = parseArgs({
     "codex-profile": { type: "string" },
     cases: { type: "string" },
     workspace: { type: "string" },
+    "kill-worker": { type: "boolean" },
+    "restart-worker": { type: "string" },
   },
 });
 if (!values.profile) {
   console.error(
-    "usage: live-session-regression.mjs --profile <claude profile id> [--codex-profile <id>] [--cases a,b] [--workspace <id>]",
+    "usage: live-session-regression.mjs --profile <claude profile id> [--codex-profile <id>] [--cases a,b] [--workspace <id>] [--kill-worker [--restart-worker <shell command>]]",
   );
   process.exit(2);
 }
@@ -358,6 +362,56 @@ const cases = {
   },
 
   // Switching runtime keeps the session and starts a new native session.
+  // A worker killed mid-input: once it is back, the device reports the input
+  // lost within seconds (not the 30-minute stale timeout), and the next
+  // message resumes the same native context. Kills the worker of this state
+  // root, so it only runs with --kill-worker; a supervisor (launchd, systemd,
+  // pm2) or --restart-worker brings the worker back.
+  async "worker-restart"() {
+    check(
+      values["kill-worker"],
+      "needs --kill-worker: it kills this device's worker",
+    );
+    const session = await start(
+      "Remember the codeword PEAR-4. Use Bash to run: sleep 90; then reply DONE.",
+    );
+    await running(session.id);
+    await sleep(8000);
+    const pid = Number(readFileSync(foundryStatePath("daemon.lock"), "utf8"));
+    check(Number.isInteger(pid) && pid > 0, "no worker pid in daemon.lock");
+    try {
+      execFileSync("pkill", ["-9", "-P", String(pid)]);
+    } catch {
+      // No child processes left to kill.
+    }
+    process.kill(pid, "SIGKILL");
+    if (values["restart-worker"])
+      execFileSync("sh", ["-c", values["restart-worker"]], { stdio: "ignore" });
+    const killedAt = Date.now();
+    const lost = await settle(session.id, 120_000);
+    const seconds = Math.round((Date.now() - killedAt) / 1000);
+    check(
+      lost.status === "failed" && /result was lost/.test(lost.error ?? ""),
+      `after the restart: ${lost.status} ${lost.error ?? lost.response}`,
+    );
+    await client.send(
+      session.id,
+      "Ignore the interrupted task. Which codeword did I give you? Reply with just it.",
+    );
+    const resumed = await settle(session.id);
+    check(
+      resumed.response === "PEAR-4",
+      `continue after the restart: ${resumed.response ?? resumed.error}`,
+    );
+    check(
+      !(resumed.events ?? []).some((event) =>
+        /Restarted runtime/.test(event.label),
+      ),
+      "the native context was dropped after the restart",
+    );
+    return `input lost ${seconds}s after the kill; the next message resumed with PEAR-4`;
+  },
+
   async "runtime-switch"() {
     const codexProfile = values["codex-profile"];
     check(codexProfile, "needs --codex-profile");
@@ -398,7 +452,9 @@ const cases = {
 const selected = values.cases
   ? values.cases.split(",").map((name) => name.trim())
   : Object.keys(cases).filter(
-      (name) => name !== "runtime-switch" || values["codex-profile"],
+      (name) =>
+        (name !== "runtime-switch" || values["codex-profile"]) &&
+        (name !== "worker-restart" || values["kill-worker"]),
     );
 let failed = 0;
 console.log(
