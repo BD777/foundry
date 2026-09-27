@@ -1065,7 +1065,13 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 }
 
 func (c *daemonConnection) readLoop(ctx context.Context) {
+	// Why the connection ended, so a dropped device can be explained later.
+	var reason error
 	defer func() {
+		if reason != nil && !websocket.IsCloseError(reason, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+			deviceID, _ := c.registrationSnapshot()
+			log.Printf("daemon connection %s closed: %v", deviceID, reason)
+		}
 		c.hub.unregister(c)
 		c.hub.untrack(c)
 		c.close()
@@ -1083,20 +1089,30 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 	for {
 		messageType, message, err := c.socket.ReadMessage()
 		if err != nil {
+			reason = err
 			return
 		}
 		if messageType != websocket.TextMessage {
+			reason = fmt.Errorf("unexpected websocket message type %d", messageType)
 			return
 		}
 		var envelope wsEnvelope
 		if err := decodeWebSocketEnvelope(message, &envelope); err != nil {
+			reason = fmt.Errorf("undecodable envelope: %w", err)
 			return
 		}
 		if err := validateWebSocketEnvelope(envelope); err != nil {
+			reason = fmt.Errorf("invalid envelope %q: %w", envelope.Type, err)
 			return
 		}
+		// Handling is inline with reading: a slow handler delays pongs and can
+		// run the read deadline out, so slowness is worth a line.
+		started := time.Now()
 		if err := c.handleEnvelope(ctx, envelope); err != nil {
 			c.queue(wsEnvelope{Type: wsErrorType, ID: envelope.ID, Error: err.Error()})
+		}
+		if elapsed := time.Since(started); elapsed > 10*time.Second {
+			log.Printf("daemon message %s took %s", envelope.Type, elapsed.Round(time.Millisecond))
 		}
 	}
 }
