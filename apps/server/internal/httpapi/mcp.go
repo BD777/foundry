@@ -501,12 +501,15 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 	if actor.Agent() {
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
-		// Without a choice, a child in the same workspace runs like its
-		// parent; profiles belong to a device, so another workspace's
-		// child uses that workspace's default.
-		if input.ProfileID == "" && input.Provider == "" && input.WorkspaceID == actor.Identity.WorkspaceID {
+		// Without a choice, a child runs like its parent: the same profile in
+		// the same workspace; elsewhere only the same runtime, since profiles
+		// belong to a device.
+		if input.ProfileID == "" && input.Provider == "" {
 			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
-				input.ProfileID, input.Provider = parent.ProfileID, parent.Provider
+				input.Provider = parent.Provider
+				if input.WorkspaceID == parent.WorkspaceID {
+					input.ProfileID = parent.ProfileID
+				}
 			}
 		}
 	}
@@ -525,14 +528,6 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 	return s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
 }
 
-// createSessionForMCP mirrors handleCreateAgentSession without an HTTP body.
-// createSessionForMCP mirrors handleCreateAgentSession's resolution and
-// dispatch without an HTTP body, applying the same device confinement and
-// post-create group naming.
-// authorizeMCPTool applies workspace and device reach to people and devices;
-// per-session tools are checked by canReadSession / canControlSession.
-// mcpDeviceID is the device a profile tool reads: a session token's own
-// device, else the named one, else the calling device's own.
 // mcpDeviceID is the device a profile tool reads: the named one, else the
 // caller's own (a session token's device, or the calling device).
 func mcpDeviceID(actor Actor, args map[string]json.RawMessage) string {
@@ -545,6 +540,8 @@ func mcpDeviceID(actor Actor, args map[string]json.RawMessage) string {
 	return actor.DeviceID
 }
 
+// authorizeMCPTool applies workspace and device reach to every actor;
+// per-session tools are checked by canReadSession / canControlSession.
 func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace string, args map[string]json.RawMessage) error {
 	view, err := s.visibilityFor(r.Context(), actor)
 	if err != nil {
@@ -566,6 +563,8 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 	return nil
 }
 
+// createSessionForMCP mirrors handleCreateAgentSession's resolution and
+// dispatch without an HTTP body, including post-create group naming.
 func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput) (store.AgentSession, error) {
 	ctx := r.Context()
 	scope, err := s.contextScope(ctx, actor)

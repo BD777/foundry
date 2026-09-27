@@ -29,16 +29,30 @@ const { values } = parseArgs({
     workspace: { type: "string" },
     "kill-worker": { type: "boolean" },
     "restart-worker": { type: "string" },
+    "other-workspace": { type: "string" },
+    "other-state-root": { type: "string" },
   },
 });
 if (!values.profile) {
   console.error(
-    "usage: live-session-regression.mjs --profile <claude profile id> [--codex-profile <id>] [--cases a,b] [--workspace <id>] [--kill-worker [--restart-worker <shell command>]]",
+    "usage: live-session-regression.mjs --profile <claude profile id> [--codex-profile <id>] [--cases a,b] [--workspace <id>] [--other-workspace <id> --other-state-root <dir>] [--kill-worker [--restart-worker <shell command>]]",
   );
   process.exit(2);
 }
 
 const client = new FoundryClient(resolveConfig());
+
+/** A client acting as the owner of the device paired in another state root. */
+function clientFor(stateRoot) {
+  const previous = process.env.FOUNDRY_STATE_ROOT;
+  process.env.FOUNDRY_STATE_ROOT = stateRoot;
+  try {
+    return new FoundryClient(resolveConfig());
+  } finally {
+    if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+    else process.env.FOUNDRY_STATE_ROOT = previous;
+  }
+}
 const active = new Set(["queued", "running", "blocked"]);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const get = (id) => client.request("GET", `/api/agent-sessions/${id}`);
@@ -465,6 +479,53 @@ const cases = {
     return `subagent ${subagent.taskId} of input 1 read after input 2: MANGO-7`;
   },
 
+  // An agent starts and steers work in another workspace of the same person,
+  // on that workspace's device (§5.6 option A). A device credential sees only
+  // its own device, so the child is read with the other device's credential.
+  async "cross-workspace"() {
+    const other = values["other-workspace"];
+    const otherRoot = values["other-state-root"];
+    check(other && otherRoot, "needs --other-workspace and --other-state-root");
+    const otherClient = clientFor(otherRoot);
+    const getOther = (id) =>
+      otherClient.request("GET", `/api/agent-sessions/${id}`);
+    const parent = await start(
+      `Use the foundry MCP tools only. Call list_workspaces, then create_session with workspaceId '${other}', wait=true and prompt: 'Compute 7 times 8. Reply with exactly ANSWER- followed by the product.' Then reply with exactly: CHILD=<the new session id> REACHABLE=<how many workspaces list_workspaces returned>`,
+    );
+    const created = await settle(parent.id);
+    const childId = (created.response ?? "").match(/sess_[0-9]+/)?.[0];
+    check(childId, `no child: ${created.response ?? created.error}`);
+    check(
+      /REACHABLE=([2-9]|\d{2,})/.test(created.response ?? ""),
+      `list_workspaces did not show both workspaces: ${created.response}`,
+    );
+    const child = await getOther(childId);
+    check(child.parentSessionId === parent.id, "the child lost its parent");
+    check(
+      child.workspaceId === other,
+      `the child runs in ${child.workspaceId}`,
+    );
+    check(
+      child.deviceId && child.deviceId !== claude.deviceId,
+      `the child runs on ${child.deviceId}, not the other workspace's device`,
+    );
+    check(!child.createdGroupId, "the child joined a group across workspaces");
+    check(
+      child.response === "ANSWER-56",
+      `child: ${child.status} ${child.response ?? child.error}`,
+    );
+    await client.send(
+      parent.id,
+      `Using the foundry MCP send_message tool with wait=true, tell session ${childId}: 'Add 10 to your previous answer. Reply with exactly ANSWER- followed by the result.' Then reply with exactly: CHILD-SAID=<its response>`,
+    );
+    const continued = await settle(parent.id);
+    check(
+      /CHILD-SAID=ANSWER-66/.test(continued.response ?? ""),
+      `second input: ${continued.response ?? continued.error}`,
+    );
+    return `child ${childId} in ${other} on ${child.deviceId}: ANSWER-56, then ANSWER-66`;
+  },
+
   async "runtime-switch"() {
     const codexProfile = values["codex-profile"];
     check(codexProfile, "needs --codex-profile");
@@ -507,7 +568,8 @@ const selected = values.cases
   : Object.keys(cases).filter(
       (name) =>
         (name !== "runtime-switch" || values["codex-profile"]) &&
-        (name !== "worker-restart" || values["kill-worker"]),
+        (name !== "worker-restart" || values["kill-worker"]) &&
+        (name !== "cross-workspace" || values["other-workspace"]),
     );
 let failed = 0;
 console.log(

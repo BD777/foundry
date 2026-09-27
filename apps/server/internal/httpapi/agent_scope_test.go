@@ -83,6 +83,14 @@ func TestAgentReachesItsPersonsWorkspaces(t *testing.T) {
 		t.Fatalf("agent of a Member starts a session in the shared workspace: %d %s", created.Code, created.Body.String())
 	}
 
+	// Without a runtime choice, a child in another workspace keeps its parent's
+	// runtime and resolves that workspace's agent.
+	mcpCreate := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_session","arguments":{"workspaceId":"ws_alice","prompt":"help alice"}}}`
+	if body := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: mcpCreate,
+		headers: map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}}).Body.String(); !strings.Contains(body, "not connected") {
+		t.Fatalf("MCP create in the shared workspace without a runtime = %s, want it to stop only at dispatch", body)
+	}
+
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodDelete, "/api/workspaces/ws_alice/members/"+f.bobID, "")),
 		http.StatusNoContent, "remove bob")
 	if got := agent(http.MethodGet, "/api/agent-sessions?workspaceId=ws_alice", ""); got != http.StatusNotFound {
