@@ -1868,6 +1868,9 @@ function runWebSocketSession(options: {
 
     socket.on("close", (code?: number, reason?: Buffer) => {
       options.sessionTransport.unbind(socket);
+      console.log(
+        `Daemon connection closed (code ${code ?? "none"}${reason?.length ? `: ${reason.toString()}` : ""}).`,
+      );
       if (isDeviceRemovedSignal({ code, reason: reason?.toString() })) {
         // Permanent server decision: park instead of backing off and
         // reconnecting. Local config is untouched pending an explicit repair.
