@@ -47,6 +47,7 @@ export const daemonMessageTypes = {
   readSkillContent: "read_skill_content",
   readSubagentTranscript: "read_subagent_transcript",
   readyForIssue: "ready_for_issue",
+  recoverSession: "recover_session",
   registered: "registered",
   runEvent: "run_event",
   runIssue: "run_issue",

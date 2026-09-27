@@ -545,18 +545,25 @@ export function inputScopedMessage(
   return { ...message, id: `${session.input.id}/${message.id}` };
 }
 
+function completionMarkerPath(
+  workspacePath: string,
+  session: Pick<AgentSession, "id" | "input">,
+): string {
+  return resolve(
+    sessionInputDirectory(
+      resolve(workspacePath, ".foundry", "sessions"),
+      session as AgentSession,
+    ),
+    "completion.json",
+  );
+}
+
 export function writeAgentSessionCompletionMarker(
   workspacePath: string,
   session: AgentSession,
   result: AgentSessionRunResult,
 ): void {
-  const markerPath = resolve(
-    sessionInputDirectory(
-      resolve(workspacePath, ".foundry", "sessions"),
-      session,
-    ),
-    "completion.json",
-  );
+  const markerPath = completionMarkerPath(workspacePath, session);
   const marker: AgentSessionCompletionMarker = {
     completedAt: new Date().toISOString(),
     nativeSessionId: result.nativeSessionId,
@@ -565,6 +572,58 @@ export function writeAgentSessionCompletionMarker(
     status: "completed",
   };
   writePrivateJSONAtomic(markerPath, marker);
+}
+
+/** The completion this device recorded for one input, if it finished. */
+export function readAgentSessionCompletionMarker(
+  workspacePath: string,
+  sessionId: string,
+  inputId: string,
+): AgentSessionCompletionMarker | undefined {
+  const markerPath = completionMarkerPath(workspacePath, {
+    id: sessionId,
+    input: inputId ? { id: inputId, prompt: "" } : undefined,
+  });
+  if (!existsSync(markerPath)) return undefined;
+  const marker = JSON.parse(
+    readFileSync(markerPath, "utf8"),
+  ) as AgentSessionCompletionMarker;
+  return marker.sessionId === sessionId &&
+    marker.status === "completed" &&
+    marker.response?.trim()
+    ? marker
+    : undefined;
+}
+
+/**
+ * The session_completed report for an input this worker process does not
+ * run: the recorded result, or that the result was lost with an earlier
+ * process.
+ */
+export function recoveredSessionCompletion(
+  workspacePath: string,
+  sessionId: string,
+  inputId: string,
+): Record<string, string | undefined> {
+  const marker = readAgentSessionCompletionMarker(
+    workspacePath,
+    sessionId,
+    inputId,
+  );
+  if (marker) {
+    return {
+      sessionId,
+      inputId: inputId || undefined,
+      nativeSessionId: marker.nativeSessionId,
+      response: marker.response,
+    };
+  }
+  return {
+    sessionId,
+    inputId: inputId || undefined,
+    error:
+      "The worker stopped while this message was running, so its result was lost. Send it again to continue.",
+  };
 }
 
 /**

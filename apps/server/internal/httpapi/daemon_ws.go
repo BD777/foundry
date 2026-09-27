@@ -83,6 +83,7 @@ const (
 	wsSessionResumedType                = "session_resumed"
 	wsSessionNativeSessionIDType        = "session_native_session_id"
 	wsSessionCompleteType               = "session_completed"
+	wsRecoverSessionType                = "recover_session"
 )
 
 type DaemonHub struct {
@@ -380,6 +381,16 @@ type wsSessionCompletedPayload struct {
 	NativeSessionID string `json:"nativeSessionId,omitempty"`
 	Response        string `json:"response,omitempty"`
 	Error           string `json:"error,omitempty"`
+}
+
+// wsRecoverSessionPayload asks a device about an input it no longer runs. The
+// device answers with session_completed: the result it recorded, or that the
+// result was lost.
+type wsRecoverSessionPayload struct {
+	SessionID   string `json:"sessionId"`
+	InputID     string `json:"inputId,omitempty"`
+	WorkspaceID string `json:"workspaceId"`
+	IssueID     string `json:"issueId,omitempty"`
 }
 
 // staleSessionInput reports a lifecycle message about an input the session
@@ -995,13 +1006,15 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 	}
 }
 
-// reconcileRunningAgentSessions cleans up orphaned "running" sessions when a
-// daemon (re)connects. When the WebSocket drops mid-session, the daemon's SDK
-// process dies but the server still marks the session as "running". On
-// reconnect, reconcile each running session for this device: recover
-// completed ones from artifacts, and fail stale ones (no activity for the
-// stale threshold) so the UI doesn't show a forever-running session.
-func (c *daemonConnection) reconcileRunningAgentSessions(workspaceID string) {
+// recoverOrphanedAgentSessions runs when a daemon (re)connects. An input the
+// server still counts as running, which the new connection does not claim,
+// was left by an earlier daemon process; only the device knows whether it
+// finished, so the device is asked. Daemons that report no execution claims
+// predate the question and fall back to the stale-activity timeout.
+func (c *daemonConnection) recoverOrphanedAgentSessions(workspaceID string, claimsReported bool) {
+	if !claimsReported {
+		return
+	}
 	deviceID, _ := c.registrationSnapshot()
 	sessions, err := c.hub.store.ListAgentSessionSummaries(context.Background(), workspaceID)
 	if err != nil {
@@ -1012,12 +1025,17 @@ func (c *daemonConnection) reconcileRunningAgentSessions(workspaceID string) {
 		if session.Status != "running" && session.Status != "blocked" || session.DeviceID != deviceID {
 			continue
 		}
-		if _, recovered, err := c.hub.reconcileAgentSession(context.Background(), session); err != nil {
-			c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
-			return
-		} else if recovered {
-			log.Printf("reconciled orphaned running session %s on reconnect", session.ID)
+		if c.hasActiveSession(session.ID) {
+			continue
 		}
+		payload, err := json.Marshal(wsRecoverSessionPayload{
+			SessionID: session.ID, InputID: session.Input.ID, WorkspaceID: session.WorkspaceID, IssueID: session.IssueID,
+		})
+		if err != nil {
+			continue
+		}
+		log.Printf("asking %s about orphaned session %s input %s", deviceID, session.ID, session.Input.ID)
+		c.queue(wsEnvelope{Type: wsRecoverSessionType, Payload: payload})
 	}
 }
 
@@ -1172,7 +1190,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 		go c.claimAndSend()
 		go c.dispatchQueuedAgentSessions(registration.Workspace.ID)
-		go c.reconcileRunningAgentSessions(registration.Workspace.ID)
+		go c.recoverOrphanedAgentSessions(registration.Workspace.ID, registration.ActiveSessionIDs != nil)
 		return nil
 	case wsHeartbeatType:
 		c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})

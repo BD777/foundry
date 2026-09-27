@@ -92,14 +92,6 @@ interface CancelSessionPayload {
   sessionId?: string;
 }
 
-interface AgentSessionCompletionMarker {
-  completedAt: string;
-  nativeSessionId?: string;
-  response: string;
-  sessionId: string;
-  status: "completed";
-}
-
 export function sessionSchedulingKey(session: AgentSession): string {
   const conversationID =
     session.threadId?.trim() || session.nativeSessionId?.trim();

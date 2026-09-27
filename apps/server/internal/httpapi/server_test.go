@@ -12,8 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1558,73 +1556,6 @@ func TestDaemonRegistrationRedeliversQueuedAgentSessions(t *testing.T) {
 	}
 }
 
-func TestListAgentSessionsRecoversCompletedSessionArtifacts(t *testing.T) {
-	store := newEmptyTestStore(t)
-	workspacePath := t.TempDir()
-	if err := store.RegisterDaemon(context.Background(), storepkg.DaemonRegistration{
-		Device: storepkg.DeviceProjection{
-			ID:            "dev_recover",
-			Label:         "Recover Device",
-			Status:        "connected",
-			LastSeenLabel: "online",
-		},
-		Workspace: storepkg.WorkspaceProjection{
-			ID:        "ws_recover",
-			Name:      "Recover Workspace",
-			LocalPath: workspacePath,
-			Baseline:  "main",
-		},
-		Agents: []storepkg.AgentProjection{{
-			ID:            "agent_recover_claude",
-			WorkspaceID:   "ws_recover",
-			DeviceID:      "dev_recover",
-			DeviceLabel:   "Recover Device",
-			Provider:      "claude",
-			ProfileID:     "profile_recover",
-			Status:        "healthy",
-			AuthMode:      "local_config",
-			SecretStored:  "local",
-			ConfigScope:   "workspace",
-			ConfigLabel:   ".foundry/providers.yaml",
-			LastSeenLabel: "online",
-		}},
-	}); err != nil {
-		t.Fatalf("register daemon: %v", err)
-	}
-	session, err := store.CreateAgentSession(context.Background(), storepkg.CreateAgentSessionInput{
-		WorkspaceID: "ws_recover",
-		AgentID:     "agent_recover_claude",
-		Provider:    "claude",
-		ProfileID:   "profile_recover",
-		Prompt:      "Recover me",
-	})
-	if err != nil {
-		t.Fatalf("create queued session: %v", err)
-	}
-	writeClaudeSuccessArtifacts(t, workspacePath, session, "Recovered response", "native_recovered")
-
-	server := NewServer(store)
-	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId=ws_recover", http.StatusOK)
-	if len(sessions) != 1 {
-		t.Fatalf("expected one recovered session, got %#v", sessions)
-	}
-	if sessions[0]["status"] != "completed" {
-		t.Fatalf("expected recovered session to be completed, got %#v", sessions[0])
-	}
-	if sessions[0]["nativeSessionId"] != "native_recovered" {
-		t.Fatalf("expected recovered native session id, got %#v", sessions[0])
-	}
-	if sessions[0]["completedAt"] == nil || sessions[0]["completedAt"] == "" {
-		t.Fatalf("expected recovered session completion time, got %#v", sessions[0])
-	}
-	assertNoAgentSessionDetailsForTest(t, sessions[0])
-
-	detail := getJSONObjectForTest(t, server, "/api/agent-sessions/"+session.ID, http.StatusOK)
-	if detail["response"] != "Recovered response" {
-		t.Fatalf("expected recovered detail response, got %#v", detail)
-	}
-}
-
 func TestAgentSessionThreadEndpointReturnsTheWholeConversation(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
@@ -1714,68 +1645,6 @@ func TestAgentSessionThreadEndpointReturnsTheWholeConversation(t *testing.T) {
 	}
 }
 
-func TestListAgentSessionsRecoversCompletionMarkerWithoutProviderLogs(t *testing.T) {
-	store := newEmptyTestStore(t)
-	workspacePath := t.TempDir()
-	if err := store.RegisterDaemon(context.Background(), storepkg.DaemonRegistration{
-		Device: storepkg.DeviceProjection{
-			ID:            "dev_marker_recover",
-			Label:         "Marker Recover Device",
-			Status:        "connected",
-			LastSeenLabel: "online",
-		},
-		Workspace: storepkg.WorkspaceProjection{
-			ID:        "ws_marker_recover",
-			Name:      "Marker Recover Workspace",
-			LocalPath: workspacePath,
-			Baseline:  "main",
-		},
-		Agents: []storepkg.AgentProjection{{
-			ID:            "agent_marker_recover",
-			WorkspaceID:   "ws_marker_recover",
-			DeviceID:      "dev_marker_recover",
-			DeviceLabel:   "Marker Recover Device",
-			Provider:      "codex",
-			Status:        "healthy",
-			AuthMode:      "local_config",
-			SecretStored:  "local",
-			ConfigScope:   "workspace",
-			ConfigLabel:   ".foundry/providers.yaml",
-			LastSeenLabel: "online",
-		}},
-	}); err != nil {
-		t.Fatalf("register daemon: %v", err)
-	}
-	session, err := store.CreateAgentSession(context.Background(), storepkg.CreateAgentSessionInput{
-		WorkspaceID: "ws_marker_recover",
-		AgentID:     "agent_marker_recover",
-		Provider:    "codex",
-		Prompt:      "Recover from marker",
-	})
-	if err != nil {
-		t.Fatalf("create queued session: %v", err)
-	}
-	writeSessionCompletionMarker(t, workspacePath, session, "Marker recovered response", "native_marker_recovered")
-
-	server := NewServer(store)
-	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId=ws_marker_recover", http.StatusOK)
-	if len(sessions) != 1 {
-		t.Fatalf("expected one recovered session, got %#v", sessions)
-	}
-	if sessions[0]["status"] != "completed" {
-		t.Fatalf("expected marker recovered completed session, got %#v", sessions[0])
-	}
-	if sessions[0]["nativeSessionId"] != "native_marker_recovered" {
-		t.Fatalf("expected marker recovered native session id, got %#v", sessions[0])
-	}
-	assertNoAgentSessionDetailsForTest(t, sessions[0])
-
-	detail := getJSONObjectForTest(t, server, "/api/agent-sessions/"+session.ID, http.StatusOK)
-	if detail["response"] != "Marker recovered response" {
-		t.Fatalf("expected marker recovered detail response, got %#v", detail)
-	}
-}
-
 func TestListAgentSessionsFailsStaleRunningSession(t *testing.T) {
 	store := newEmptyTestStore(t)
 	workspacePath := t.TempDir()
@@ -1834,73 +1703,6 @@ func TestListAgentSessionsFailsStaleRunningSession(t *testing.T) {
 	if !strings.Contains(fmt.Sprint(detail["error"]), "stopped reporting session activity") {
 		t.Fatalf("expected stale-session error, got %#v", detail)
 	}
-}
-
-func TestDaemonRegistrationSkipsRecoveredQueuedAgentSessions(t *testing.T) {
-	store := newEmptyTestStore(t)
-	workspacePath := t.TempDir()
-	workspace := storepkg.WorkspaceProjection{
-		ID:             "ws_redeliver_recovered",
-		Name:           "Redeliver Recovered Workspace",
-		LocalPath:      workspacePath,
-		Baseline:       "main",
-		ContextSummary: "redeliver recovered",
-		AcceptedCount:  0,
-		ResolvedCount:  0,
-		DeviceID:       "dev_redeliver_recovered",
-		DeviceLabel:    "Redeliver Recovered Device",
-	}
-	device := storepkg.DeviceProjection{
-		ID:            "dev_redeliver_recovered",
-		Label:         "Redeliver Recovered Device",
-		Status:        "connected",
-		LastSeenLabel: "online",
-	}
-	agent := storepkg.AgentProjection{
-		ID:            "agent_redeliver_recovered_claude",
-		WorkspaceID:   "ws_redeliver_recovered",
-		DeviceID:      "dev_redeliver_recovered",
-		DeviceLabel:   "Redeliver Recovered Device",
-		Provider:      "claude",
-		ProfileID:     "profile_redeliver_recovered",
-		Status:        "healthy",
-		AuthMode:      "local_config",
-		SecretStored:  "local",
-		ConfigScope:   "workspace",
-		ConfigLabel:   ".foundry/providers.yaml",
-		LastSeenLabel: "online",
-	}
-	if err := store.RegisterDaemon(context.Background(), storepkg.DaemonRegistration{
-		Device:         device,
-		Workspace:      workspace,
-		ProviderHealth: []storepkg.ProviderHealth{},
-		Assets:         []storepkg.AssetProjection{},
-		Agents:         []storepkg.AgentProjection{agent},
-	}); err != nil {
-		t.Fatalf("register daemon seed: %v", err)
-	}
-	session, err := store.CreateAgentSession(context.Background(), storepkg.CreateAgentSessionInput{
-		WorkspaceID: workspace.ID,
-		AgentID:     agent.ID,
-		Provider:    "claude",
-		ProfileID:   agent.ProfileID,
-		Prompt:      "Already finished",
-	})
-	if err != nil {
-		t.Fatalf("create queued agent session: %v", err)
-	}
-	writeClaudeSuccessArtifacts(t, workspacePath, session, "Already recovered", "native_redeliver_recovered")
-
-	server := NewServer(store)
-	if err := server.hub.DispatchAgentSession(session); err != nil {
-		t.Fatalf("dispatch recovered session: %v", err)
-	}
-
-	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId="+workspace.ID, http.StatusOK)
-	if len(sessions) != 1 || sessions[0]["status"] != "completed" {
-		t.Fatalf("expected recovered completed session summary, got %#v", sessions)
-	}
-	assertNoAgentSessionDetailsForTest(t, sessions[0])
 }
 
 func TestLateSessionStartedDoesNotReopenCompletedAgentSession(t *testing.T) {
@@ -2165,47 +1967,6 @@ func readWSPayloadEnvelopeForTest(t *testing.T, conn *websocket.Conn, expectedTy
 		t.Fatalf("decode websocket payload %s: %v", expectedType, err)
 	}
 	return envelope.ID
-}
-
-func writeClaudeSuccessArtifacts(t *testing.T, workspacePath string, session storepkg.AgentSession, response string, nativeSessionID string) {
-	t.Helper()
-	sessionDir := agentSessionInputDir(workspacePath, session)
-	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
-		t.Fatalf("create session artifact dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sessionDir, "result.md"), []byte(response+"\n"), 0o600); err != nil {
-		t.Fatalf("write session result artifact: %v", err)
-	}
-	messages := strings.Join([]string{
-		`{"type":"assistant","session_id":"` + nativeSessionID + `"}`,
-		`{"type":"result","subtype":"success","is_error":false,"session_id":"` + nativeSessionID + `"}`,
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(sessionDir, "claude-sdk.messages.jsonl"), []byte(messages), 0o600); err != nil {
-		t.Fatalf("write session messages artifact: %v", err)
-	}
-}
-
-func writeSessionCompletionMarker(t *testing.T, workspacePath string, session storepkg.AgentSession, response string, nativeSessionID string) {
-	t.Helper()
-	sessionDir := agentSessionInputDir(workspacePath, session)
-	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
-		t.Fatalf("create session artifact dir: %v", err)
-	}
-	marker := map[string]any{
-		"completedAt":     time.Now().UTC().Format(time.RFC3339Nano),
-		"nativeSessionId": nativeSessionID,
-		"response":        response,
-		"sessionId":       session.ID,
-		"status":          "completed",
-	}
-	bytes, err := json.Marshal(marker)
-	if err != nil {
-		t.Fatalf("encode completion marker: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(sessionDir, "completion.json"), append(bytes, '\n'), 0o600); err != nil {
-		t.Fatalf("write completion marker: %v", err)
-	}
 }
 
 func newTestStore(t *testing.T) *sqlitestore.Store {
