@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { foundryStatePath } from "./state-root.js";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -25,11 +25,7 @@ import { nativeLoginEnvironment } from "./native-login-environment.js";
  * this daemon spawns are recorded on disk, outliving restarts, so the next
  * attempt can end the abandoned one instead of waiting out its timeout.
  */
-const authorizationPidsPath = resolve(
-  homedir(),
-  ".foundry",
-  "authorization-pids.json",
-);
+const authorizationPidsPath = foundryStatePath("authorization-pids.json");
 
 function readAuthorizationPids(): Record<string, number[]> {
   try {
