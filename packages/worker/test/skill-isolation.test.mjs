@@ -120,3 +120,53 @@ test("arbitrary custom commands fail closed for managed workspace runs", async (
       /cannot enforce workspace skill isolation/,
     );
 });
+
+test("a receipt is written once and never left empty by a rewrite", async (t) => {
+  const { createHash } = await import("node:crypto");
+  const { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } =
+    await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "foundry-receipts-"));
+  const previous = process.env.FOUNDRY_EXECUTION_SESSION_ROOT;
+  process.env.FOUNDRY_EXECUTION_SESSION_ROOT = root;
+  t.after(() => {
+    if (previous === undefined)
+      delete process.env.FOUNDRY_EXECUTION_SESSION_ROOT;
+    else process.env.FOUNDRY_EXECUTION_SESSION_ROOT = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
+  const nativeId = randomUUID();
+  const run = isolateSkillSession(
+    { id: "sess", nativeSessionId: "", input: { id: "in", prompt: "x" } },
+    "/workspace-a",
+    managed,
+  );
+  const receipt = join(
+    root,
+    "skill-isolation",
+    `${createHash("sha256").update(nativeId).digest("hex")}.json`,
+  );
+  run.record(nativeId);
+  const written = statSync(receipt);
+  // Every message of a run reports the same id.
+  for (let i = 0; i < 5; i++) run.record(nativeId);
+  assert.equal(statSync(receipt).ino, written.ino);
+  assert.equal(statSync(receipt).mtimeMs, written.mtimeMs);
+  assert.notEqual(readFileSync(receipt, "utf8"), "");
+  assert.deepEqual(readdirSync(join(root, "skill-isolation")), [
+    receipt.split("/").pop(),
+  ]);
+  assert.equal(
+    isolateSkillSession(
+      {
+        id: "sess",
+        nativeSessionId: nativeId,
+        input: { id: "in2", prompt: "y" },
+      },
+      "/workspace-a",
+      managed,
+    ).reset,
+    false,
+  );
+});
