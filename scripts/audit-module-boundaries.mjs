@@ -110,8 +110,15 @@ export const workerModules = {
       "skill-zip",
     ],
   },
+  // Resources a session can hold (browsers first): identity, occupancy and
+  // clean-up. docs/architecture-modules.md §5.6.
+  "resource-pool": {
+    dependsOn: ["platform"],
+    files: ["browser-resource"],
+  },
   "session-runtime": {
     dependsOn: [
+      "resource-pool",
       "sandbox",
       "harness-profiles",
       "skills",

@@ -41,6 +41,7 @@
 | C16 | 附件存放在设备上                   | 上传落到工作区所在设备的 `.foundry/attachments`；作为续聊输入的附件发给 Agent，Agent 看得到（纯红图答 `red`）；附件记录在对应输入上；设备与 Server 不同机时经 `/api/local-files/image` 读回的字节一致 | 设备通道分块传输（M3-1）、续聊附件                      | 脚本 `attachment`；读回字节为手工                                                                        |       | ✔     | ✔          |
 | C19 | Worker 重启后的孤儿输入            | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                          | `recover_session`、无标记即丢失                         | 脚本 `worker-restart`（需 `--kill-worker`；Worker 由 launchd/systemd/pm2 拉起，或给 `--restart-worker`） | ✔     |       | ✔          |
 | C20 | 完成但回报丢失的输入               | 停掉 Server，输入在 Worker 上跑完写下完成标记，再 `kill -9` Worker；Server 与 Worker 重启后，输入以标记里的回答完成                                                                                   | `recover_session`、按输入的完成标记                     | 手工（需杀进程）                                                                                         | ✔     |       |            |
+| C17 | 浏览器截图给人看（M3 验收）        | Chat 中的 Agent 打开网页并截图，截图保存在 `.foundry/attachments/browser/<会话>/`，回复中以 `<image>` 引用，Web 页面显示该图                                                                          | 浏览器资源、MCP instructions、设备通道读图              | 脚本 `browser`；页面显示为手工                                                                           | ✔     |       |            |
 
 最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17、C19、C20；L-dev：C1–C6、C11、C14–C16；M-dev：C1–C5、C11、C12、C14–C16、C19）。
 

@@ -29,6 +29,7 @@ import {
   webSocketURL,
   ReliableRunTransport,
 } from "./transport.js";
+import { ensureBrowserInstalled } from "./browser-resource.js";
 import {
   AttachmentError,
   abortAttachmentUpload,
@@ -294,6 +295,15 @@ export async function connect(args: string[]): Promise<void> {
   for (const runtime of ["claude", "codex"]) {
     reapAbandonedAuthorizations(runtime);
   }
+  // Sessions are offered a browser only once it is installed; prepare it in
+  // the background so startup never waits on the download.
+  ensureBrowserInstalled().then(
+    () => console.log("Browser ready for sessions."),
+    (error: unknown) =>
+      console.error(
+        `Browser unavailable for sessions: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+  );
   if (optionEnabled(args, "--polling")) {
     await connectPolling(args);
     return;

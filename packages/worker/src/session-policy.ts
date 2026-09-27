@@ -20,6 +20,11 @@ import type { AgentSession } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { profileRuntimeEnvironment } from "./profiles.js";
 import {
+  browserInstalled,
+  browserMcpServer,
+  type BrowserMcpServer,
+} from "./browser-resource.js";
+import {
   foundryTokenEnvName,
   foundryToolsEndpoint,
   sessionEnvironment,
@@ -33,6 +38,7 @@ import {
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
+import { isUtilitySession } from "./utils.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -153,7 +159,6 @@ function credentialWarnings(
 }
 
 /** Claude permission rule covering every tool of the `foundry` MCP server. */
-const foundryToolsPermission = "mcp__foundry";
 
 export interface ClaudeLaunchPlan {
   session: AgentSession;
@@ -183,33 +188,66 @@ export interface ClaudeLaunchPlan {
 }
 
 /**
- * The Foundry tools for a Codex session: the server's HTTP MCP, authorized by
- * the session token Codex reads from its own environment. Codex takes it as
- * config (SDK) or as the equivalent `-c` overrides (CLI).
+ * The browser a session may use (docs/architecture-modules.md §5.6). Utility
+ * sessions get none, nor do Issue-bound sessions until their sandbox admits
+ * a browser.
  */
-export function codexFoundryTools(
+export function sessionBrowser(
   session: AgentSession,
+  workspacePath: string,
+): BrowserMcpServer | undefined {
+  if (isUtilitySession(session) || session.issueId || !browserInstalled())
+    return undefined;
+  return browserMcpServer(session, workspacePath);
+}
+
+/**
+ * `-c` overrides for a Codex config subtree. Tables become dotted keys; a
+ * string or a string array is written as its JSON form, which is also valid
+ * TOML.
+ */
+function codexConfigArgs(prefix: string, value: unknown): string[] {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return Object.entries(value).flatMap(([key, child]) =>
+      codexConfigArgs(`${prefix}.${key}`, child),
+    );
+  }
+  return ["-c", `${prefix}=${JSON.stringify(value)}`];
+}
+
+/**
+ * The MCP servers of a Codex session: the Foundry tools (the server's HTTP
+ * MCP, authorized by the session token Codex reads from its own environment)
+ * and the browser. Codex takes them as config (SDK) or as the equivalent
+ * `-c` overrides (CLI). All are pre-approved like Claude's allowedTools:
+ * Foundry grants them and a headless session has nobody to approve a prompt.
+ */
+export function codexSessionTools(
+  session: AgentSession,
+  workspacePath: string,
 ): { config: Record<string, unknown>; cliArgs: string[] } | undefined {
+  const servers: Record<string, Record<string, unknown>> = {};
   const tools = foundryToolsEndpoint(session);
-  if (!tools) return undefined;
-  // Pre-approved like Claude's allowedTools: Foundry grants these tools and
-  // its server authorizes every call by the session token; a headless
-  // session has nobody to approve a prompt.
-  const server = {
-    url: tools.url,
-    bearer_token_env_var: foundryTokenEnvName,
-    default_tools_approval_mode: "approve",
-  };
+  if (tools) {
+    servers.foundry = {
+      url: tools.url,
+      bearer_token_env_var: foundryTokenEnvName,
+      default_tools_approval_mode: "approve",
+    };
+  }
+  const browser = sessionBrowser(session, workspacePath);
+  if (browser) {
+    servers.browser = {
+      command: browser.command,
+      args: browser.args,
+      env: browser.env,
+      default_tools_approval_mode: "approve",
+    };
+  }
+  if (Object.keys(servers).length === 0) return undefined;
   return {
-    config: { mcp_servers: { foundry: server } },
-    cliArgs: [
-      "-c",
-      `mcp_servers.foundry.url=${JSON.stringify(server.url)}`,
-      "-c",
-      `mcp_servers.foundry.bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)}`,
-      "-c",
-      `mcp_servers.foundry.default_tools_approval_mode=${JSON.stringify(server.default_tools_approval_mode)}`,
-    ],
+    config: { mcp_servers: servers },
+    cliArgs: codexConfigArgs("mcp_servers", servers),
   };
 }
 
@@ -251,13 +289,26 @@ export function buildClaudeLaunchPlan(input: {
   const env = sessionEnvironment(workspacePath, profile, session);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const tools = foundryToolsEndpoint(session);
-  const mcpServers = tools && {
-    foundry: {
-      type: "http",
-      url: tools.url,
-      headers: { Authorization: `Bearer ${tools.token}` },
-    },
+  const browser = sessionBrowser(session, workspacePath);
+  const servers: Record<string, unknown> = {
+    ...(tools && {
+      foundry: {
+        type: "http",
+        url: tools.url,
+        headers: { Authorization: `Bearer ${tools.token}` },
+      },
+    }),
+    ...(browser && {
+      browser: {
+        type: "stdio",
+        command: browser.command,
+        args: browser.args,
+        env: browser.env,
+      },
+    }),
   };
+  const mcpServers = Object.keys(servers).length ? servers : undefined;
+  const permissions = Object.keys(servers).map((name) => `mcp__${name}`);
 
   return {
     session,
@@ -269,7 +320,7 @@ export function buildClaudeLaunchPlan(input: {
       ...claudeManagedSkillOptions(managedSkills, workspacePath),
       // Foundry grants these tools and its server authorizes every call by
       // the session token; a headless session has nobody to approve a prompt.
-      ...(mcpServers ? { allowedTools: [foundryToolsPermission] } : {}),
+      ...(mcpServers ? { allowedTools: permissions } : {}),
     },
     mcpServers,
     cliArgs: [
@@ -279,7 +330,7 @@ export function buildClaudeLaunchPlan(input: {
             "--mcp-config",
             JSON.stringify({ mcpServers }),
             "--allowedTools",
-            foundryToolsPermission,
+            permissions.join(","),
           ]
         : []),
     ],

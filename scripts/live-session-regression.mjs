@@ -361,6 +361,24 @@ const cases = {
     return `stored on the device at ${attachment.path}; the agent answered ${JSON.stringify(answered.response)}`;
   },
 
+  // An agent in a Chat takes a browser screenshot and shows it to the person
+  // (M3 acceptance; docs/architecture-modules.md §5.6).
+  async browser() {
+    const session = await start(
+      "Open https://example.com in the browser and show me a screenshot of it.",
+    );
+    const done = await settle(session.id);
+    const path = (done.response ?? "").match(/<image path="([^"]+)"/)?.[1];
+    check(path, `no image in the reply: ${done.response ?? done.error}`);
+    check(
+      path.includes(`/.foundry/attachments/browser/${session.id}/`),
+      `screenshot outside the session's attachments: ${path}`,
+    );
+    if (existsSync(workspace.localPath))
+      check(existsSync(path), `${path} does not exist on the device`);
+    return `shown ${path}`;
+  },
+
   // Switching runtime keeps the session and starts a new native session.
   // A worker killed mid-input: once it is back, the device reports the input
   // lost within seconds (not the 30-minute stale timeout), and the next

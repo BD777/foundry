@@ -1,16 +1,43 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildClaudeLaunchPlan,
-  codexFoundryTools,
+  codexSessionTools,
   foundryClaudeSettings,
   resolvedClaudeCredential,
 } from "../dist/session-policy.js";
 
 const session = { id: "sess_1", prompt: "hello", workspaceId: "ws_1" };
+
+// The browser is offered once installed; the launcher's scratch state root
+// holds the install marker for these tests.
+function markBrowserInstalled() {
+  const version = JSON.parse(
+    readFileSync(
+      new URL("../node_modules/@playwright/mcp/package.json", import.meta.url),
+      "utf8",
+    ),
+  ).version;
+  const marker = join(
+    process.env.FOUNDRY_STATE_ROOT,
+    "browsers",
+    `.installed-${version}`,
+  );
+  mkdirSync(join(process.env.FOUNDRY_STATE_ROOT, "browsers"), {
+    recursive: true,
+  });
+  writeFileSync(marker, "test");
+  return () => rmSync(marker, { force: true });
+}
 
 // Managed plans resolve real workspace paths for project instructions.
 const workspaceRoot = mkdtempSync(join(tmpdir(), "session-policy-ws-"));
@@ -180,7 +207,8 @@ test("legacy native context resets and the receipt closure certifies the fresh s
   assert.equal(second.reset, false);
 });
 
-test("sessions with an orchestration identity get the Foundry tools with their own token", async () => {
+test("sessions with an orchestration identity get the Foundry tools with their own token", async (t) => {
+  t.after(markBrowserInstalled());
   const { registerSessionAmbientEnv } =
     await import("../dist/session-ambient.js");
   const ambient = {
@@ -196,20 +224,20 @@ test("sessions with an orchestration identity get the Foundry tools with their o
       session: chat,
       profile: compatibleProfile({ apiKey: "k" }),
     });
-    assert.deepEqual(plan.mcpServers, {
-      foundry: {
-        type: "http",
-        url: "http://127.0.0.1:31982/api/mcp",
-        headers: { Authorization: "Bearer token-for-sess_tools" },
-      },
+    assert.deepEqual(plan.mcpServers.foundry, {
+      type: "http",
+      url: "http://127.0.0.1:31982/api/mcp",
+      headers: { Authorization: "Bearer token-for-sess_tools" },
     });
+    assert.equal(plan.mcpServers.browser.type, "stdio");
+    assert.ok(plan.mcpServers.browser.args.includes("--isolated"));
     assert.equal(
       plan.sdk.mcpServers,
       undefined,
       "kept out of the runtime identity",
     );
-    assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry"]);
-    assert.ok(plan.cliArgs.includes("mcp__foundry"));
+    assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry", "mcp__browser"]);
+    assert.ok(plan.cliArgs.includes("mcp__foundry,mcp__browser"));
     const flag = plan.cliArgs.indexOf("--mcp-config");
     assert.deepEqual(JSON.parse(plan.cliArgs[flag + 1]), {
       mcpServers: plan.mcpServers,
@@ -230,10 +258,16 @@ test("sessions with an orchestration identity get the Foundry tools with their o
     session: { ...session, id: "sess_without_token" },
     profile: compatibleProfile({ apiKey: "k" }),
   });
-  assert.equal(anonymous.mcpServers, undefined, "no token, no tools");
+  assert.deepEqual(
+    Object.keys(anonymous.mcpServers),
+    ["browser"],
+    "no token, no Foundry tools; the browser needs none",
+  );
 });
 
-test("Codex sessions get the same pre-approved Foundry tools, token read from their env", async () => {
+test("Codex sessions get the same pre-approved Foundry tools and browser; the token stays in their env", async (t) => {
+  const unmark = markBrowserInstalled();
+  t.after(unmark);
   const { registerSessionAmbientEnv } =
     await import("../dist/session-ambient.js");
   const unregister = registerSessionAmbientEnv("sess_codex_tools", {
@@ -242,44 +276,60 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
     workspaceID: "ws_1",
   });
   try {
-    const tools = codexFoundryTools({
-      ...session,
-      id: "sess_codex_tools",
-      source: "chat",
-    });
-    const server = {
+    const chat = { ...session, id: "sess_codex_tools", source: "chat" };
+    const tools = codexSessionTools(chat, "/workspace");
+    assert.deepEqual(tools.config.mcp_servers.foundry, {
       url: "http://127.0.0.1:31982/api/mcp",
       bearer_token_env_var: "FOUNDRY_SESSION_TOKEN",
       default_tools_approval_mode: "approve",
-    };
-    assert.deepEqual(tools.config, { mcp_servers: { foundry: server } });
+    });
+    const browser = tools.config.mcp_servers.browser;
+    assert.equal(browser.default_tools_approval_mode, "approve");
+    assert.ok(
+      browser.args.includes(
+        "/workspace/.foundry/attachments/browser/sess_codex_tools",
+      ),
+      "screenshots land in this session's attachments",
+    );
     assert.equal(
-      JSON.stringify(tools.config).includes("token-for-sess_codex_tools"),
+      JSON.stringify(tools).includes("token-for-sess_codex_tools"),
       false,
       "the token stays in the environment, never in config or argv",
     );
-    assert.deepEqual(tools.cliArgs, [
-      "-c",
-      `mcp_servers.foundry.url="${server.url}"`,
-      "-c",
-      'mcp_servers.foundry.bearer_token_env_var="FOUNDRY_SESSION_TOKEN"',
-      "-c",
-      'mcp_servers.foundry.default_tools_approval_mode="approve"',
-    ]);
+    assert.ok(
+      tools.cliArgs.includes(
+        'mcp_servers.foundry.bearer_token_env_var="FOUNDRY_SESSION_TOKEN"',
+      ),
+    );
+    assert.ok(
+      tools.cliArgs.includes(
+        'mcp_servers.browser.default_tools_approval_mode="approve"',
+      ),
+    );
     assert.equal(
-      codexFoundryTools({
-        ...session,
-        id: "sess_codex_tools",
-        source: "naming",
-      }),
+      codexSessionTools({ ...chat, source: "naming" }, "/workspace"),
       undefined,
       "utility sessions get no tools",
+    );
+    assert.equal(
+      codexSessionTools({ ...chat, issueId: "iss_1" }, "/workspace").config
+        .mcp_servers.browser,
+      undefined,
+      "no browser inside the Issue sandbox yet",
+    );
+    assert.ok(
+      tools.cliArgs.some((arg) =>
+        arg.startsWith("mcp_servers.browser.env.PLAYWRIGHT_BROWSERS_PATH="),
+      ),
+      "nested tables become dotted keys Codex can parse",
+    );
+    unmark();
+    assert.equal(
+      codexSessionTools(chat, "/workspace").config.mcp_servers.browser,
+      undefined,
+      "an uninstalled browser is not offered",
     );
   } finally {
     unregister();
   }
-  assert.equal(
-    codexFoundryTools({ ...session, id: "sess_unknown" }),
-    undefined,
-  );
 });

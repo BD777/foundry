@@ -47,6 +47,12 @@ var remoteMCPTools = func() []json.RawMessage {
 	return tools
 }()
 
+// mcpInstructions is what every Foundry session learns at connect time about
+// working with the people it serves, beyond the tool catalog.
+const mcpInstructions = `Foundry runs this session for a person who reads your replies in the Foundry app.
+To show them an image, put the file inside this workspace's .foundry/attachments directory and write <image path="ABSOLUTE PATH" name="SHORT CAPTION"></image> in your reply; the app displays it, even when the workspace is on another machine.
+Browser screenshots already land there: call browser_take_screenshot without a filename, then reference the saved path it reports.`
+
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// The session-token endpoint surface restriction does not apply to the
 	// /api/mcp path itself; the tools below enforce the same policy using the
@@ -80,6 +86,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": version,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo":      map[string]any{"name": "foundry", "version": "0.1.0"},
+			"instructions":    mcpInstructions,
 		})
 	case "ping":
 		s.writeMCPResult(w, request.ID, map[string]any{})
