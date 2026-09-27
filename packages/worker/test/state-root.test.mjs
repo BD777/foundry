@@ -172,3 +172,15 @@ test(
       );
   },
 );
+
+test("device profiles live in the stack's own state root", async () => {
+  // The launcher sets FOUNDRY_STATE_ROOT before any dist module loads.
+  const root = process.env.FOUNDRY_STATE_ROOT;
+  assert.ok(root, "tests run under a scratch state root");
+  const { deviceAgentProfilesPath } = await import("../dist/profiles.js");
+  assert.equal(
+    deviceAgentProfilesPath,
+    resolve(root, "agent-profiles.local.json"),
+    "a named stack must never read another stack's device profiles",
+  );
+});

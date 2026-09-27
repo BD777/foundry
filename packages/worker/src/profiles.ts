@@ -3,8 +3,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { foundryStatePath } from "./state-root.js";
 import type {
   AgentConfigScope,
   AgentConnectionType,
@@ -90,9 +89,7 @@ export interface UpsertAgentProfilePayload {
 
 // --- Constants ---
 
-export const deviceAgentProfilesPath = resolve(
-  homedir(),
-  ".foundry",
+export const deviceAgentProfilesPath = foundryStatePath(
   "agent-profiles.local.json",
 );
 
