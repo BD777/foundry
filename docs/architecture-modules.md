@@ -503,6 +503,22 @@ M4 的交付是[对话式准出标准](foundry-conversation-release-gate.md) G1�
 4. **重新开放 Issues Web 入口**，按 G1–G5 修到真实浏览器准出；证据记录在 PR。
 5. 候选存储类型改名（`IssueEnvironment` 等）只在上面某步真正需要时顺带做。
 
+**D2 的现状与落点**（2026-09-28 核对代码）：
+
+- 三个角色在 Server 上都没有 `AgentSession`：执行只有 `Run`（`runs` / `run_events` 表，
+  `StartIssueRun` / `AppendRunEvent` / `CompleteIssue`）；澄清与判定经 `evidence_request`
+  RPC 一次性启动，结果只落在证据记录里（原生 session id 存在响应字段中）。
+- Worker 执行每轮合成一个 `${runId}_${turn}` 的临时会话再调 `runWorkspaceSession`，与 Chat
+  共用的只有这一层；中断恢复另有一套（`issue-recovery.ts`、`completion.json` 回放）。
+- 已有的连接点：`AgentSession.IssueID`、带 `issueId` 的编排子会话已在候选与 Issue 沙箱内
+  运行（`issue-sessions.ts`）；`AgentSession` 还没有 `role` 字段。
+- 读 `Run` 的地方：Issue 投影与详情页（`issue-data-projection.ts`、`issue-detail/*`）、
+  steer 的 `expectedRunId`、删除 Workspace / 移除设备的在跑检查、若干证据对齐逻辑；
+  `/api/runs`、`/api/run-events` 与 `features/runs` 已无调用方。
+- 因此第 1 步按"执行会话 = AgentSession(role, issueId)，`Run` 由它投影"落地，
+  `claimAndSend` 的容量与认领逻辑保留，只把派发从 `run_issue` 换成 `run_session`；
+  恢复改由 M3-2 的 `recover_session` 覆盖，删除 `issue-recovery.ts` 的平行实现。
+
 ## 7. 不做
 
 - 不一次性重排目录。先让接口和依赖方向成立，再按模块搬文件。
