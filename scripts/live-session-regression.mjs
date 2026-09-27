@@ -11,6 +11,7 @@
 // only talks to the Foundry server.
 
 import { existsSync } from "node:fs";
+import { crc32, deflateSync } from "node:zlib";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
@@ -62,6 +63,32 @@ async function running(id) {
     await sleep(2000);
   }
   throw new Error(`${id} never started running`);
+}
+
+/** A square PNG of one RGB color, built without an image library. */
+function solidPNG(side, rgb) {
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(Array(side).fill(rgb).flat()),
+  ]);
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(side, 0);
+  header.writeUInt32BE(side, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(Buffer.concat(Array(side).fill(row)))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 function check(condition, message) {
@@ -296,6 +323,38 @@ const cases = {
       "the verifier wrote into the workspace",
     );
     return `verifier ${verifierId} answered ${JSON.stringify(verifier.response)}; ${probe} absent`;
+  },
+
+  // An attachment is stored on the workspace's device and reaches the agent
+  // with a follow-up input.
+  async attachment() {
+    const session = await start("Reply with exactly: READY");
+    await settle(session.id);
+    const attachment = await client.uploadAttachment(workspace.id, {
+      name: "red.png",
+      mimeType: "image/png",
+      bytes: solidPNG(64, [0xff, 0, 0]),
+    });
+    check(
+      attachment.kind === "image" &&
+        attachment.path.startsWith(workspace.localPath),
+      `stored at ${attachment.path}`,
+    );
+    await client.request("POST", `/api/agent-sessions/${session.id}/messages`, {
+      prompt:
+        "What single color fills the attached image? Reply with one lowercase word.",
+      attachments: [attachment],
+    });
+    const answered = await settle(session.id);
+    check(
+      /red/i.test(answered.response ?? ""),
+      `the agent did not see the image: ${answered.response ?? answered.error}`,
+    );
+    const carried = (answered.events ?? [])
+      .filter((event) => event.label === "User message")
+      .map((event) => event.message.attachments?.length ?? 0);
+    check(carried.join(",") === "0,1", `attachments per input: ${carried}`);
+    return `stored on the device at ${attachment.path}; the agent answered ${JSON.stringify(answered.response)}`;
   },
 
   // Switching runtime keeps the session and starts a new native session.

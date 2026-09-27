@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { DaemonConfig } from "./config.js";
 import { foundryStatePath } from "./state-root.js";
+import type { ChatAttachment } from "@foundry/protocol";
 
 export interface FoundryClientConfig {
   serverURL: string;
@@ -373,6 +374,40 @@ export class FoundryClient {
       profileId: input.profileId,
       issueId: input.issueId,
     });
+  }
+
+  /**
+   * Uploads a file into a workspace's attachments on its device, ready to be
+   * sent with a message.
+   */
+  async uploadAttachment(
+    workspaceId: string,
+    file: { name: string; mimeType: string; bytes: Uint8Array },
+  ): Promise<ChatAttachment> {
+    const form = new FormData();
+    form.set("workspaceId", workspaceId);
+    form.set(
+      "files",
+      new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }),
+      file.name,
+    );
+    const url = new URL("/api/attachments", this.config.serverURL);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: this.headers(),
+      body: form,
+    });
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new FoundryClientError(
+        `POST /api/attachments -> ${response.status}: ${raw}`,
+        response.status,
+      );
+    }
+    const [attachment] = JSON.parse(raw) as ChatAttachment[];
+    if (!attachment)
+      throw new FoundryClientError("upload returned no attachment");
+    return attachment;
   }
 
   /**
