@@ -77,3 +77,27 @@ test("each input of a session names its own response events", () => {
     "a later answer must never overwrite an earlier one",
   );
 });
+
+test("transcript messages are named within their input", async () => {
+  const { inputScopedMessage } = await import("../dist/session-helpers.js");
+  const answer = { id: "item_0", kind: "assistant", text: "ANSWER-42" };
+  const first = inputScopedMessage(
+    { id: "s", input: { id: "in_1", prompt: "a" } },
+    answer,
+  );
+  const second = inputScopedMessage(
+    { id: "s", input: { id: "in_2", prompt: "b" } },
+    answer,
+  );
+  assert.notEqual(first.id, second.id, "Codex restarts item ids every turn");
+  assert.equal(first.text, "ANSWER-42");
+  assert.equal(
+    inputScopedMessage({ id: "s" }, answer).id,
+    "item_0",
+    "worker-built sessions keep their ids",
+  );
+  assert.equal(
+    inputScopedMessage({ id: "s", input: { id: "in_1" } }, undefined),
+    undefined,
+  );
+});

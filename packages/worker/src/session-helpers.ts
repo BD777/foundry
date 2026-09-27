@@ -531,6 +531,20 @@ export function isAgentSessionCanceledError(error: unknown): boolean {
   );
 }
 
+/**
+ * A transcript message named within the input that produced it. Runtimes
+ * number their items per turn (Codex restarts at item_0) while a session
+ * holds many inputs, so a bare item id would let one input's answer replace
+ * another's in the transcript.
+ */
+export function inputScopedMessage(
+  session: AgentSession,
+  message: AgentSessionEvent["message"],
+): AgentSessionEvent["message"] {
+  if (!message || !session.input) return message;
+  return { ...message, id: `${session.input.id}/${message.id}` };
+}
+
 export function writeAgentSessionCompletionMarker(
   workspacePath: string,
   session: AgentSession,

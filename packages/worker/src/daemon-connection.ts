@@ -106,6 +106,7 @@ import {
   workspacePathFromArgs,
 } from "./workspace-ops.js";
 import {
+  inputScopedMessage,
   cancelActiveSession,
   createResponseStreamEventIDAllocator,
   createSessionStatusEventFilter,
@@ -565,6 +566,7 @@ async function executeAgentSession(
     metadata?: AgentSessionEventMetadata,
     message?: AgentSessionEvent["message"],
   ): Promise<void> => {
+    message = inputScopedMessage(session, message);
     const retrying = level === "warning" && blockOnRateLimitLabels.has(label);
     if (retrying && !markedBlocked) {
       markedBlocked = true;
