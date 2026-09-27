@@ -190,6 +190,7 @@ function loopbackService(
   return {
     command: sandboxExec,
     args: ["-f", profile.policyFile, command, ...args],
+    endpoint: { kind: "loopback_tcp" },
   };
 }
 

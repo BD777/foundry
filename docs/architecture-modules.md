@@ -26,8 +26,8 @@ worker / protocol），不按领域分。每个功能都要纵穿四层，并经
   （`profiles.ts` `sessionEnvironment()`），Issue 执行走 `Run`，`issue-executor.ts` 只注入
   repository socket。
 - **Linux 上澄清、判定、合入不可用**：Linux 支持只补在了其中两处沙箱，阶段沙箱和 HTTP
-  服务仍是 macOS 专有，合入处单独做了平台拒绝。（第 2 步已开放澄清、判定与合入；HTTP
-  服务见第 2b 步。）
+  服务仍是 macOS 专有，合入处单独做了平台拒绝。（第 2 步已开放澄清、判定与合入；第 2b 步
+  开放了 HTTP 服务。）
 - **编排出的 Issue 子会话不受隔离**：带 `issueId` 的子会话在候选目录中运行
   （`daemon-connection.ts` `sessionExecutionPath`），但走 Chat 的 runner，没有经过
   `sandboxCommand`；同一个候选里，Issue 执行被隔离，子会话却不被隔离。（5b 已修复。）
@@ -292,11 +292,11 @@ interface SandboxBackend {
 }
 ```
 
-| 后端                 | writable_tree | readonly_agent | offline_command | loopback_service   |
-| -------------------- | ------------- | -------------- | --------------- | ------------------ |
-| macOS Seatbelt       | ✅            | ✅             | ✅ 断网         | ✅ 只能回环监听    |
-| Linux bubblewrap     | ✅            | ✅             | ✅ 断网         | 未实现（第 2b 步） |
-| Docker（计划，见下） | —             | —              | —               | —                  |
+| 后端                 | writable_tree | readonly_agent | offline_command | loopback_service        |
+| -------------------- | ------------- | -------------- | --------------- | ----------------------- |
+| macOS Seatbelt       | ✅            | ✅             | ✅ 断网         | ✅ 只能回环监听         |
+| Linux bubblewrap     | ✅            | ✅             | ✅ 断网         | ✅ 断网，经 Unix socket |
+| Docker（计划，见下） | —             | —              | —               | —                       |
 
 原来的四个文件（`execution-sandbox.ts`、`evidence-agent-sandbox.ts`、
 `evidence-command-sandbox.ts`、`evidence-http-service.ts`）现在只负责把 Issue / evidence 的
@@ -404,8 +404,10 @@ role 到 policy 的映射集中在一处（草案，实施时以现有行为为�
 2. **Sandbox 后端接口与 Linux 只读阶段**（已完成）：后端统一实现 `SandboxBackend`；
    Linux 实现 `readonly_agent`，修复 DNS、Server 数据可读、仓库工具 socket 与嵌套只读
    目录问题；`evidence-acceptance.ts` 的平台拒绝改由 `sandboxAvailable()` 决定。
-   **2b.** Linux 的 `loopback_service`（受控 HTTP 目标）：服务放进无网络的命名空间，
-   由 Worker 经 Unix socket 转接。
+   **2b.**（已完成）Linux 的 `loopback_service`（受控 HTTP 目标）：服务放进无网络的
+   命名空间，只在一个私有目录里的 Unix socket 上监听，Worker 用本机回环端口转接。
+   `SandboxLaunch.endpoint` 告诉调用方服务在哪里监听（macOS 回环 TCP，Linux Unix
+   socket），调用方始终拿到 `127.0.0.1` URL。
 3. **候选存储与 Git（第 1 层）**：并入第 5 步按需处理。第 2 步之后 Sandbox 已不再依赖
    这些类型，剩下的只是把 `IssueEnvironment` 等类型改名（11 个文件、41 处引用），不消除
    任何违例；等 Session Runtime 真正需要时再调整。
@@ -450,7 +452,6 @@ M1 验收不依赖 Issue 产品（2026-09-26 调整；原先要求用浏览器�
 | 判定者可用的工具     | 只读工具；不加载 MCP、Skills、插件与项目指令；不保存会话   | "不写""不读候选里的指令""全新会话"有明确理由（被判的东西不能被判的人改，候选不能削弱自己的检查标准）；不给 Workspace 选定的 Skills 与只读 MCP 没有写明理由，倾向放开 |
 | 澄清可用的工具       | 同上，但读项目指令                                         | 澄清的结论不直接生效，倾向与普通 Chat 接近                                                                                                                           |
 | Issue 执行接入编排   | 执行器没有会话令牌                                         | §5.3：Run → AgentSession，按 Issue 限定令牌                                                                                                                          |
-| 受控 HTTP 目标       | 仅 macOS                                                   | Linux 上把服务放进无网络命名空间，经 Unix socket 转接（原第 2b 步）                                                                                                  |
 | 候选存储的类型名     | `IssueEnvironment` 等带 Issue 字样                         | 按需改名（原第 3 步）                                                                                                                                                |
 
 ## 7. 不做

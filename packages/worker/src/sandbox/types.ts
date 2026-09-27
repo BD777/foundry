@@ -54,12 +54,28 @@ export interface OfflineCommandProfile {
   readOnlyPaths: string[];
 }
 
-/** The process may only listen on loopback and read its read roots. */
+/**
+ * The process may only serve local connections and read its read roots; it
+ * writes nothing and reaches no network.
+ */
 export interface LoopbackServiceProfile {
   kind: "loopback_service";
   policyFile: string;
   readRoots: string[];
+  /**
+   * Private host directory for the service's Unix socket, used where the
+   * service gets a network namespace of its own. Keep its path short: Unix
+   * socket paths are limited to about 100 bytes.
+   */
+  socketDirectory: string;
 }
+
+/** Where a loopback service listens, and how the host reaches it. */
+export type ServiceEndpoint =
+  /** The service binds 127.0.0.1 on a free port and reports the port. */
+  | { kind: "loopback_tcp" }
+  /** The service listens at `servicePath`; the host connects at `hostPath`. */
+  | { kind: "unix"; servicePath: string; hostPath: string };
 
 export type SandboxProfile =
   | WritableTreeProfile
@@ -72,6 +88,8 @@ export type SandboxKind = SandboxProfile["kind"];
 export interface SandboxLaunch {
   command: string;
   args: string[];
+  /** Set for `loopback_service`. */
+  endpoint?: ServiceEndpoint;
 }
 
 /**

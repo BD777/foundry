@@ -231,7 +231,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 | 1 确认边界   | 删除硬编码、人工编辑确认、claim/Worker双重校验、legacy显式导入                                                                                         | 旧任务不会被自动确认或重跑                       |
 | 2 输入与材料 | Git快照、独立物化、持久材料、命令/项目自带命令/受控HTTP/上传/导出、outbox恢复与缓存回收                                                                | 通用外部输入/依赖闭包尚缺                        |
 | 3 判定与审阅 | 固定检查器（含项目自带命令的程序判定）、候选 Worktree 内独立 SDK 初判、判定侧 JSON Schema 下发与有界形状容错、真实图文输入、覆判、最新请求/新鲜度/准出 | Codex 真实 provider 图文判定未验证；复杂媒体尚缺 |
-| 4 Accept集成 | 精确审阅包、锁内核对、基线对齐复验、新Accept、逐仓journal恢复                                                                                          | 受控 HTTP 目标仍仅 macOS                         |
+| 4 Accept集成 | 精确审阅包、锁内核对、基线对齐复验、新Accept、逐仓journal恢复                                                                                          |                                                  |
 | 5 创建澄清   | Issue内逐问Agent会话、所选 Workspace 只读探索（目录/代码/项目指令）、严格契约提议、明确人工确认                                                        | PDF/音视频等复杂参考材料解析尚缺                 |
 
 ## 9. 尚需收口的实施项
@@ -244,6 +244,6 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 4. 图像区域高亮/标注、PDF/视频/音频预览、主动删除材料的影响提示。rationale media 只能作解释性 context，不作为新 Evidence。
 5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。通用依赖安装与输入闭包尚未实现；ignored 文件存在时保守 unknown。
 6. 复杂参考材料解析（PDF/视频/音频等）尚未支持；澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
-7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标仍仅在 macOS 开通；未验证平台保持拒绝。
+7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标自 2026-09-28 起在 Linux 开通（服务在无网络的命名空间中，经 Unix socket 转接）；未验证平台保持拒绝。
 
 只有这些缺口收口并完成首个 provider 的全链路演示后，才应把 README 的 Evidence / Verify 能力勾为完成。

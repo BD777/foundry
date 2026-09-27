@@ -21,6 +21,7 @@ import {
 } from "./host.js";
 import {
   SandboxError,
+  type LoopbackServiceProfile,
   type OfflineCommandProfile,
   type ReadonlyAgentProfile,
   type SandboxBackend,
@@ -30,11 +31,17 @@ import {
 
 /**
  * Linux bubblewrap mounts. Agent-facing kinds share the host network;
- * offline commands get no network at all. See docs/architecture-modules.md §5.1.
+ * offline commands and loopback services get no network at all.
+ * See docs/architecture-modules.md §5.1.
  */
 export const bubblewrapBackend: SandboxBackend = {
   id: "bubblewrap",
-  kinds: ["writable_tree", "readonly_agent", "offline_command"],
+  kinds: [
+    "writable_tree",
+    "readonly_agent",
+    "offline_command",
+    "loopback_service",
+  ],
   launch(profile, command, args) {
     switch (profile.kind) {
       case "writable_tree":
@@ -44,10 +51,7 @@ export const bubblewrapBackend: SandboxBackend = {
       case "offline_command":
         return offlineCommand(profile, command, args);
       case "loopback_service":
-        throw new SandboxError(
-          "unsupported_platform",
-          "loopback_service isolation is not available on linux",
-        );
+        return loopbackService(profile, command, args);
     }
   },
 };
@@ -248,6 +252,19 @@ function readonlyAgent(
   };
 }
 
+/** No network namespace shared with the host; only a loopback interface. */
+const isolatedNamespaces = [
+  "--die-with-parent",
+  "--unshare-all",
+  "--new-session",
+  "--tmpfs",
+  "/",
+  "--proc",
+  "/proc",
+  "--dev",
+  "/dev",
+];
+
 function offlineCommand(
   profile: OfflineCommandProfile,
   command: string,
@@ -259,17 +276,7 @@ function offlineCommand(
       "backend_missing",
       "requires bubblewrap (bwrap); install it and enable user namespaces",
     );
-  const options = [
-    "--die-with-parent",
-    "--unshare-all",
-    "--new-session",
-    "--tmpfs",
-    "/",
-    "--proc",
-    "/proc",
-    "--dev",
-    "/dev",
-  ];
+  const options = [...isolatedNamespaces];
   for (const root of [
     ...offlineCommandSystemRoots(),
     ...commandReadRoots(command),
@@ -282,5 +289,43 @@ function offlineCommand(
   return {
     command: executable,
     args: [...options, "--chdir", profile.workdir, "--", command, ...args],
+  };
+}
+
+/** The service's socket directory inside the sandbox. */
+const serviceSocketDirectory = "/run/foundry-service";
+
+/**
+ * A service in its own network namespace: nothing on the host network is
+ * reachable from it, and the host reaches it only through a Unix socket in
+ * the one writable directory. Everything else is read-only.
+ */
+function loopbackService(
+  profile: LoopbackServiceProfile,
+  command: string,
+  args: string[],
+): SandboxLaunch {
+  const executable = bubblewrap();
+  const options = [...isolatedNamespaces];
+  for (const root of [
+    ...offlineCommandSystemRoots(),
+    ...commandReadRoots(command),
+    ...profile.readRoots,
+  ])
+    options.push("--ro-bind", root, root);
+  options.push(
+    "--bind",
+    profile.socketDirectory,
+    serviceSocketDirectory,
+    ...seal([]),
+  );
+  return {
+    command: executable,
+    args: [...options, "--", resolvedCommand(command), ...args],
+    endpoint: {
+      kind: "unix",
+      servicePath: `${serviceSocketDirectory}/http.sock`,
+      hostPath: `${profile.socketDirectory}/http.sock`,
+    },
   };
 }
