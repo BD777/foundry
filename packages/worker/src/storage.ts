@@ -31,6 +31,14 @@ export function writePrivateJSONAtomic(path: string, value: unknown): void {
   });
 }
 
+/** Owner-only text, replaced atomically: readers see the old or the new file. */
+export function writePrivateTextAtomic(path: string, contents: string): void {
+  writeTextAtomic(path, contents, {
+    directoryMode: privateDirectoryMode,
+    fileMode: privateFileMode,
+  });
+}
+
 /** Alias for writePrivateJSONAtomic — writes owner-only JSON. */
 export function writeJSON(path: string, value: unknown): void {
   writePrivateJSONAtomic(path, value);
