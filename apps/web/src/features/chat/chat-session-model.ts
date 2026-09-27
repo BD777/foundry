@@ -1,7 +1,8 @@
-import type {
-  AgentProjection,
-  AgentSession,
-  ChatThread,
+import {
+  sessionInputEventLabel,
+  type AgentProjection,
+  type AgentSession,
+  type ChatThread,
 } from "@foundry/protocol";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import {
@@ -162,23 +163,6 @@ function sessionMatchesAgentProfile(
   );
 }
 
-export function latestThreadSessionForAgent(
-  thread: ChatSessionThread | undefined,
-  agent: AgentProjection | undefined,
-): AgentSession | undefined {
-  if (!thread || !agent) {
-    return undefined;
-  }
-  return [...thread.sessions]
-    .reverse()
-    .find(
-      (session) =>
-        isTerminalSession(session) &&
-        session.nativeSessionId &&
-        sessionMatchesAgentProfile(session, agent),
-    );
-}
-
 export function activeThreadSessionForAgent(
   thread: ChatSessionThread | undefined,
   agent: AgentProjection | undefined,
@@ -216,12 +200,39 @@ export function isTerminalSession(session: AgentSession): boolean {
   );
 }
 
-function transcriptLineForSession(session: AgentSession): string {
+/**
+ * The conversation so far as plain text, for a runtime that cannot resume the
+ * session's native transcript. The tail is kept when it is long.
+ */
+function sessionTranscriptText(session: AgentSession): string {
   const label = session.profileLabel ?? runtimeMeta(session.provider).label;
-  const response = agentSessionMessageText(session);
-  return [`User: ${session.prompt}`, response ? `${label}: ${response}` : ""]
-    .filter(Boolean)
-    .join("\n");
+  const lines: string[] = [];
+  let answer = "";
+  const flush = () => {
+    if (answer) lines.push(`${label}: ${answer}`);
+    answer = "";
+  };
+  for (const event of session.events ?? []) {
+    if (event.label === sessionInputEventLabel && event.message) {
+      flush();
+      lines.push(`User: ${event.message.text}`);
+    } else if (event.message?.kind === "assistant") {
+      answer = event.message.text;
+    } else if (
+      event.label === responseStreamLabel &&
+      !event.metadata?.taskId &&
+      event.detail.trim()
+    ) {
+      answer = event.detail;
+    }
+  }
+  flush();
+  if (lines.length === 0) {
+    const response = agentSessionMessageText(session);
+    lines.push(`User: ${session.prompt}`);
+    if (response) lines.push(`${label}: ${response}`);
+  }
+  return lines.join("\n\n").slice(-12000);
 }
 
 function profileLabelForAgent(agent: AgentProjection): string {
@@ -258,30 +269,21 @@ export function profileTransitionNoteForSend(input: {
   return undefined;
 }
 
+/**
+ * Context for an input that leaves the session's native transcript: either
+ * the session switches to an incompatible runtime, or a native chat from
+ * another runtime is being picked up.
+ */
 export function importedContextForSend(input: {
   agent: AgentProjection;
-  compatibleSession?: AgentSession;
   selectedChat?: ChatThread;
-  thread?: ChatSessionThread;
+  session?: AgentSession;
 }): string | undefined {
-  const { agent, compatibleSession, selectedChat, thread } = input;
-  if (thread) {
-    const compatibleIndex = compatibleSession
-      ? thread.sessions.findIndex(
-          (session) => session.id === compatibleSession.id,
-        )
-      : -1;
-    const delta = thread.sessions
-      .slice(compatibleIndex + 1)
-      .filter(
-        (session) =>
-          isTerminalSession(session) &&
-          !sessionMatchesAgentProfile(session, agent),
-      );
-    if (delta.length > 0) {
-      return delta.map(transcriptLineForSession).join("\n\n").slice(0, 12000);
-    }
-    return undefined;
+  const { agent, selectedChat, session } = input;
+  if (session) {
+    return sessionMatchesAgentProfile(session, agent)
+      ? undefined
+      : sessionTranscriptText(session);
   }
   if (selectedChat && !chatMatchesAgentProfile(selectedChat, agent)) {
     return [

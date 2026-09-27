@@ -58,7 +58,7 @@ const SESSION_VERBS = new Set([
   "subagents",
   "create",
   "handoff",
-  "steer",
+  "send",
   "cancel",
   "wait",
   "rename",
@@ -154,15 +154,15 @@ async function runSessionCommand(args: string[]): Promise<void> {
       );
       return;
     }
-    case "steer": {
+    case "send": {
       const id = rest[0];
       const message = flag(rest, "--message") ?? flag(rest, "--prompt");
       if (!id || !message) {
         throw new FoundryClientError(
-          "usage: steer <sessionId> --message <text>",
+          "usage: send <sessionId> --message <text>",
         );
       }
-      print(await foundry.steer(id, message));
+      print(await foundry.send(id, message));
       return;
     }
     case "cancel":
@@ -240,7 +240,7 @@ function usage(): string {
     "",
     "Usage:",
     "  foundry mcp",
-    "  foundry session list|children|get|thread|chat|subagents|create|handoff|steer|cancel|wait|rename|groups|group [flags]",
+    "  foundry session list|children|get|thread|chat|subagents|create|handoff|send|cancel|wait|rename|groups|group [flags]",
     "  foundry profile list",
     "  foundry skill",
     "",

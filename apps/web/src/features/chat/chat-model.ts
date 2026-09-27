@@ -1,7 +1,8 @@
-import type {
-  AgentSession,
-  ChatThread,
-  WorkerRuntimeId,
+import {
+  sessionInputEventLabel,
+  type AgentSession,
+  type ChatThread,
+  type WorkerRuntimeId,
 } from "@foundry/protocol";
 import {
   agentSessionHasStreamedResponse,
@@ -364,21 +365,19 @@ function chatMessagesForSession(
     return [];
   }
   const messages: ChatViewMessage[] = [];
-  if (session.profileTransitionNote?.trim()) {
+  // Every input is a transcript event; only legacy per-turn rows carried
+  // their prompt alone, and a list projection has no events yet.
+  if (
+    !session.events?.some((event) => event.label === sessionInputEventLabel)
+  ) {
     messages.push({
-      id: `agent-session:${session.id}:profile-transition`,
-      kind: "boundary",
-      role: "bot",
-      text: session.profileTransitionNote.trim(),
+      attachments: session.input?.attachments ?? [],
+      id: `agent-session:${session.id}:prompt`,
+      at: session.startedAt,
+      role: "user",
+      text: session.input?.prompt ?? session.prompt,
     });
   }
-  messages.push({
-    attachments: session.attachments ?? [],
-    id: `agent-session:${session.id}:prompt`,
-    at: session.startedAt,
-    role: "user",
-    text: session.prompt,
-  });
   const sessionActive =
     session.status === "queued" || session.status === "running";
   const hasLiveResponse = agentSessionHasStreamedResponse(session);
@@ -391,6 +390,7 @@ function chatMessagesForSession(
     const isLastSegment = index === segments.length - 1;
     if (segment.role === "user") {
       messages.push({
+        attachments: segment.attachments,
         id: segment.id,
         role: "user",
         at: segment.at,

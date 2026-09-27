@@ -119,36 +119,31 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
   允许 `access_token` query 参数（EventSource 无法设置头）。
 - 无效/过期 → 401；身份有效但越权 → 403。
 
-### 4.3 Agent Policy（同 Workspace 前提下）
+### 4.3 Agent Policy（2026-09-27 起，见[会话模型](session-model.md)）
 
-| 操作                                            | 规则                                                                        |
-| ----------------------------------------------- | --------------------------------------------------------------------------- |
-| `create_session`                                | 目标 workspace 与 caller 相同，且只能在 caller 自己的设备上启动             |
-| `list_sessions` / `list_group_sessions`         | 强制限定 caller 的 workspace                                                |
-| `read_context`（session/thread/subagents/chat） | 目标是自己、自己的后代，或与自己**同组**的 Session                          |
-| `steer` / `cancel`                              | 目标是自己、自己的后代，或由自己监管（adopt）的 Session；**不能动同组兄弟** |
-| `rename`                                        | 仅限自己与自己的后代；Agent 不能写 layout                                   |
-| `list_profiles` / `list_models`                 | 仅返回 caller 本设备的 profile                                              |
-| SSE `/api/events`                               | agent actor 强制按 workspace 过滤                                           |
+| 操作                                              | 规则                                                            |
+| ------------------------------------------------- | --------------------------------------------------------------- |
+| `create_session`                                  | 目标 workspace 与 caller 相同，且只能在 caller 自己的设备上启动 |
+| `list_sessions` / `list_group_sessions`           | 强制限定 caller 的 workspace                                    |
+| `read_context` / `send_message` / `cancel` / 改名 | 同一 Workspace 内的**任意**会话；由用户在对话中指定对象即可     |
+| `list_profiles` / `list_models`                   | 仅返回 caller 本设备的 profile                                  |
+| SSE `/api/events`                                 | agent actor 强制按 workspace 过滤                               |
 
-后代判定走 `parent_session_id` 的递归 CTE（`IsSessionDescendant`）；同组
-判定查 chat layout 的 positions。人（account / daemon actor）对会话的读取与
-控制按 Workspace 角色判定：成员可控制自己创建的会话，Maintainer 可控制任意
-会话。
-
-“列全组、读全组”放开，“控制”收窄到血缘：新编排者可以无耦合地通过
-`list_group_sessions` + 读上下文接手了解情况，但不能操控别人派出的
-Session，除非人在 Web 上把监管权交给它。
+血缘只作记录（界面归属、深度与扇出上限），不是权限来源；adopt / 监管机制已删除。
+这样 `handoff_session` 之后的接替者、同一对话的后续输入都能继续管理之前派出的会话。
+人（account / daemon actor）对会话的读取与控制按 Workspace 角色判定：成员可控制
+自己创建的会话，Maintainer 可控制任意会话。
 
 ## 5. 血缘与自动入组
 
 ### 5.1 数据模型
 
 - `agent_sessions.parent_session_id`（带索引），在 payload JSON 中以
-  `AgentSession.parentSessionId` 暴露；监管者为 `supervisorSessionId`。
+  `AgentSession.parentSessionId` 暴露。
 - `source = "agent"`：由 Session（携带 session token）创建的子 Session 一律
   落 `agent`；浏览器创建的仍是 `chat`；只读 verifier 为 `verification`。
-- `threadId`（同一会话续聊）与 `parentSessionId`（编排血缘）正交，不复用。
+- 一个会话就是一行，续聊是给同一会话发新输入（[会话模型](session-model.md)）；
+  `parentSessionId` 指向派出它的会话。
 - 派生深度上限 4，每个 parent 最多 8 个活动子会话。
 
 ### 5.2 创建事务
@@ -180,9 +175,8 @@ Session，除非人在 Web 上把监管权交给它。
 ### 5.4 孤儿与接手
 
 - Parent 取消/失败不影响 children：token 不连带吊销，不级联 cancel。
-- `list_group_sessions` 加同组读权限，让新编排者读完上下文即可接手。
-- 显式 `adopt`（`POST /api/agent-sessions/{id}/adopt`）设置监管者字段，
-  出生 parent 永不改；只有人能分配监管权（Web 行菜单「由当前会话接管」）。
+- 新编排者用 `list_group_sessions` / `list_sessions` 找到会话，读完上下文即可
+  直接接手：同 Workspace 内无需额外授权。
 
 ## 6. MCP 工具面
 
@@ -199,10 +193,10 @@ Session，除非人在 Web 上把监管权交给它。
 | `get_session`         | `GET /api/agent-sessions/{id}`      | 摘要档                                                                                                                                                 |
 | `read_context`        | session / thread / chat / subagents | `scope=summary\|thread\|transcript`，`tail?`、`maxBytes?` 默认截断                                                                                     |
 | `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                                                                                               |
-| `steer_session`       | `…/steer`                           |                                                                                                                                                        |
+| `send_message`        | `…/messages`                        | 运行中则 steer；空闲则作为下一条输入继续同一原生会话，可切换 runtime；可选 `wait`                                                                      |
 | `cancel_session`      | `…/cancel`                          | 不级联                                                                                                                                                 |
 | `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                   |
-| `rename_session`      | `POST /api/chats/{id}/title`        | 自己/后代                                                                                                                                              |
+| `rename_session`      | `POST /api/chats/{id}/title`        | 同 Workspace                                                                                                                                           |
 
 工具只在服务端实现一次（`httpapi/mcp.go`），会话经注入的 HTTP MCP 或 stdio 桥
 调用它。人用 CLI 经 `foundry-client.ts` 走上表的 REST 端点，默认输出 JSON。
@@ -245,8 +239,8 @@ Session，除非人在 Web 上把监管权交给它。
   MCP、`foundry-orchestrator` Skill；第 8 节全部场景。
 - **P1（已交付）**：worktree-backed 子 Session（`issueId`，在候选 worktree
   执行，校验 Issue 处于活动状态）；UI 血缘 badge；`blocked` 状态（模型限流
-  等待时由 worker 上报、恢复时清除）；派生深度与活动子会话上限；显式
-  `adopt`。
+  等待时由 worker 上报、恢复时清除）；派生深度与活动子会话上限。显式
+  `adopt` 已于 2026-09-27 随会话模型重构删除。
 - **P2（已交付）**：服务端 HTTP MCP（`POST /api/mcp`）；`handoff_session`；
   只读 verifier（`verification:true`，复用 naming 同构的 utility 限制）；
   session fork（`forkSessionId` 续接原生 transcript、开新 Foundry thread）；

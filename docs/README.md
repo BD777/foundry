@@ -52,7 +52,8 @@ Pages fall into three kinds:
 ## Chats and platform (design)
 
 - [Chat experience](chat-experience.md), [chat list](chat-list-design.md), [transcript pipeline](chat-transcript-design.md) and [turn navigator](chat-turn-navigator-design.md).
-- [Session orchestration](session-orchestration-design.md): agents creating and steering sessions through the `foundry` CLI and MCP.
+- [Session model](session-model.md): one session per native agent session; inputs, tokens and permissions.
+- [Session orchestration](session-orchestration-design.md): agents creating and messaging sessions through the `foundry` CLI and MCP.
 - [Accounts and permissions](accounts-permissions-design.md): ownership and workspace sharing; phases 1–2 are built.
 - [Platform extensions](platform-extensions.md): IM, accounts, cloud workspace and workflow plugins.
 

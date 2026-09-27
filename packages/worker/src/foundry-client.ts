@@ -375,20 +375,13 @@ export class FoundryClient {
     });
   }
 
-  async adopt(
-    targetSessionId: string,
-    supervisorSessionId: string,
-  ): Promise<SessionSummary> {
-    return this.request(
-      "POST",
-      `/api/agent-sessions/${targetSessionId}/adopt`,
-      { supervisorSessionId },
-    );
-  }
-
-  async steer(id: string, message: string): Promise<SessionSummary> {
-    return this.request("POST", `/api/agent-sessions/${id}/steer`, {
-      message,
+  /**
+   * Talks to a session: a running one is steered, an idle one takes the
+   * message as its next input and continues its native session.
+   */
+  async send(id: string, message: string): Promise<SessionSummary> {
+    return this.request("POST", `/api/agent-sessions/${id}/messages`, {
+      prompt: message,
     });
   }
 

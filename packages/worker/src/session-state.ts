@@ -216,31 +216,38 @@ export function emitOutOfBandSessionEvent(
  * time to persist and acknowledge the terminal envelope.
  */
 export class SessionExecutionRegistry {
-  private readonly active = new Set<string>();
+  /** Active dispatch key → its session id. */
+  private readonly active = new Map<string, string>();
   private readonly recent = new Set<string>();
   private readonly recentOrder: string[] = [];
 
   constructor(private readonly maxRecent = 2048) {}
 
-  claim(sessionId: string): boolean {
-    if (this.active.has(sessionId) || this.recent.has(sessionId)) {
+  /**
+   * Claims one input of a session. A session runs many inputs over its life;
+   * each is delivered once.
+   */
+  claim(sessionId: string, inputId = ""): boolean {
+    const key = dispatchKey(sessionId, inputId);
+    if (this.active.has(key) || this.recent.has(key)) {
       return false;
     }
-    this.active.add(sessionId);
+    this.active.set(key, sessionId);
     return true;
   }
 
   activeSessionIds(): string[] {
-    return [...this.active].sort();
+    return [...new Set(this.active.values())].sort();
   }
 
-  complete(sessionId: string): void {
-    this.active.delete(sessionId);
-    if (this.maxRecent <= 0 || this.recent.has(sessionId)) {
+  complete(sessionId: string, inputId = ""): void {
+    const key = dispatchKey(sessionId, inputId);
+    this.active.delete(key);
+    if (this.maxRecent <= 0 || this.recent.has(key)) {
       return;
     }
-    this.recent.add(sessionId);
-    this.recentOrder.push(sessionId);
+    this.recent.add(key);
+    this.recentOrder.push(key);
     while (this.recentOrder.length > this.maxRecent) {
       const expired = this.recentOrder.shift();
       if (expired) {
@@ -248,4 +255,8 @@ export class SessionExecutionRegistry {
       }
     }
   }
+}
+
+function dispatchKey(sessionId: string, inputId: string): string {
+  return inputId ? `${sessionId}/${inputId}` : sessionId;
 }

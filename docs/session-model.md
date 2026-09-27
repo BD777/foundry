@@ -16,11 +16,11 @@
 
 ## 模型
 
-| 概念 | 含义 |
-| --- | --- |
-| 会话 `AgentSession` | 一个原生会话。`id` 即对话 id（`threadId == id`，保留字段仅为兼容读取）。`prompt` 是开场目标，`response` 是最近一次回答，`status` 反映最近一次输入的处理状态。 |
+| 概念                | 含义                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 会话 `AgentSession` | 一个原生会话。`id` 即对话 id（`threadId == id`，保留字段仅为兼容读取）。`prompt` 是开场目标，`response` 是最近一次回答，`status` 反映最近一次输入的处理状态。                                          |
 | 输入 `SessionInput` | 发给会话的一条消息：`{id, prompt, attachments, importedContext, profileTransitionNote}`。它是派发单位，不是会话：不带身份、不参与权限、不记血缘。Claude 路径把输入 id 作为原生用户消息的 `uuid` 传入。 |
-| 事件 | 挂在会话上。每条输入写入一条 `User message` 事件（`message.kind = "user"`），聊天记录只由事件构成。 |
+| 事件                | 挂在会话上。每条输入写入一条 `User message` 事件（`message.kind = "user"`），聊天记录只由事件构成。                                                                                                    |
 
 状态：`queued → running → completed | failed | canceled`，`blocked` 为运行中的等待。
 结束态不是会话终点：给会话发新输入会让它回到 `queued`，沿用同一个原生会话。

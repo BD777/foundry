@@ -6,6 +6,7 @@ import {
   profileRuntimeEnvironment,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
+import { currentInput } from "./session-prompt.js";
 
 /**
  * Per-session ambient environment (CHAT-01).
@@ -69,7 +70,9 @@ export function sessionEnvironment(
     ...baseProcessEnvironment(profile),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
-    FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(session?.attachments ?? []),
+    FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(
+      session ? (currentInput(session).attachments ?? []) : [],
+    ),
     FOUNDRY_AGENT_PROFILE: profileID(profile),
     FOUNDRY_AGENT_PROFILE_LABEL: profile.label ?? profileID(profile),
     FOUNDRY_WORKSPACE: workspacePath,

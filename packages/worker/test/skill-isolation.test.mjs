@@ -40,13 +40,17 @@ test("catalog points exclusively at managed copies and covers dependency referen
 test("legacy resume resets native history; trusted identical policy resumes; workspace and selection changes reset", () => {
   const session = {
     nativeSessionId: randomUUID(),
-    importedContext: "old skill body",
     prompt: "continue",
+    input: {
+      id: randomUUID(),
+      prompt: "continue",
+      importedContext: "old skill body",
+    },
   };
   const first = isolateSkillSession(session, "/workspace-a", managed);
   assert.equal(first.reset, true);
   assert.equal(first.session.nativeSessionId, undefined);
-  assert.equal(first.session.importedContext, undefined);
+  assert.equal(first.session.input.importedContext, undefined);
   first.record(session.nativeSessionId);
   assert.equal(
     isolateSkillSession(session, "/workspace-a", managed).reset,
@@ -63,7 +67,7 @@ test("legacy resume resets native history; trusted identical policy resumes; wor
     }).reset,
     true,
   );
-  assert.equal(session.importedContext, "old skill body");
+  assert.equal(session.input.importedContext, "old skill body");
 });
 
 test("selected Claude slash commands resolve to the managed plugin namespace", async () => {

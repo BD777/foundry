@@ -31,9 +31,6 @@ export interface ChatListItem {
   foundrySessionId: string;
   nativeSessionId?: string;
   renaming?: boolean;
-  /** Assign the currently open session as human-confirmed supervisor. */
-  onAdopt?: () => void;
-  adoptDisabled?: boolean;
   onRename: (title: string) => Promise<void>;
   onAutoRename: () => Promise<void>;
   onMarkUnread: () => void;

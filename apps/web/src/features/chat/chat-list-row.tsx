@@ -184,22 +184,6 @@ export const ChatListRow = memo(function ChatListRow({
                 标记为未读
               </Button>
             </ContextMenu.Item>
-            {chat.spawned && chat.onAdopt ? (
-              <ContextMenu.Item
-                asChild
-                disabled={readOnly || chat.adoptDisabled}
-                onSelect={chat.onAdopt}
-              >
-                <Button
-                  className="fdy-chat-list-menu-item"
-                  variant="ghost"
-                  disabled={readOnly || chat.adoptDisabled}
-                  title="让当前打开的会话接管编排（需要人工确认，出生血缘不变）"
-                >
-                  由当前会话接管
-                </Button>
-              </ContextMenu.Item>
-            ) : null}
             <ContextMenu.Separator className="fdy-chat-list-menu-separator" />
             <ChatGroupMenu
               {...groupMenu}

@@ -561,10 +561,30 @@ export interface ChatAttachment {
   kind: "image" | "file";
 }
 
+/**
+ * One message delivered to a session: the unit of dispatch. It is not a
+ * session of its own; identity, permissions and lineage stay with the session.
+ */
+export interface SessionInput {
+  id: string;
+  prompt: string;
+  attachments?: ChatAttachment[];
+  profileTransitionNote?: string;
+  importedContext?: string;
+}
+
+/** Label of the transcript event each session input writes. */
+export const sessionInputEventLabel = "User message";
+
+/**
+ * One native agent session (a Claude Code or Codex session) for its whole
+ * life. Conversation turns stay inside the native agent.
+ */
 export interface AgentSession {
   /** Account that started it; agent-created sessions inherit their parent's. */
   createdByUserId?: string;
   id: string;
+  /** Equals `id`; kept so readers of legacy per-turn rows still group them. */
   threadId?: string;
   nativeSessionId?: string;
   workspaceId: string;
@@ -575,10 +595,8 @@ export interface AgentSession {
   profileFingerprint?: string;
   profileLabel?: string;
   source?: "chat" | "diagnostic" | "naming" | "verification" | "agent";
-  /** Orchestration lineage: the agent session that created this one. */
+  /** Orchestration lineage: the session that created this one. A record, not a permission. */
   parentSessionId?: string;
-  /** Human-confirmed supervising session; birth lineage never changes. */
-  supervisorSessionId?: string;
   /** When set, the session executes inside an Issue candidate worktree. */
   issueId?: string;
   /** Present for the active status "blocked" (rate limit / permission wait). */
@@ -596,15 +614,16 @@ export interface AgentSession {
   codexSpeed?: CodexSpeed;
   status: RunStatus;
   title: string;
+  /** The session's opening goal. */
   prompt: string;
-  attachments?: ChatAttachment[];
-  profileTransitionNote?: string;
-  importedContext?: string;
+  /** The latest input; `status` describes handling it. */
+  input?: SessionInput;
   /**
    * Server-resolved workspace skill selection for this session. The runtime
    * is forced to expose only these; an empty present list means none.
    */
   skillRefs?: SessionSkillRef[];
+  /** The answer to the latest input. */
   response?: string;
   error?: string;
   startedAt?: string;
@@ -684,6 +703,8 @@ export interface TranscriptMessage {
   title?: string;
   callId?: string;
   status?: "running" | "completed" | "failed";
+  /** Files that travelled with a user message. */
+  attachments?: ChatAttachment[];
 }
 
 export interface ChatLayoutGroup {

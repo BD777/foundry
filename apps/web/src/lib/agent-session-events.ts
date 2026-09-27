@@ -196,11 +196,19 @@ export function mergeLoadedAgentSession(
     ...normalizedIncoming,
     error: normalizedIncoming.error || existing.error,
     events: existing.events,
-    importedContext:
-      normalizedIncoming.importedContext || existing.importedContext,
-    profileTransitionNote:
-      normalizedIncoming.profileTransitionNote ||
-      existing.profileTransitionNote,
+    input:
+      normalizedIncoming.input?.id === existing.input?.id && existing.input
+        ? {
+            ...existing.input,
+            ...normalizedIncoming.input,
+            importedContext:
+              normalizedIncoming.input?.importedContext ||
+              existing.input.importedContext,
+            profileTransitionNote:
+              normalizedIncoming.input?.profileTransitionNote ||
+              existing.input.profileTransitionNote,
+          }
+        : normalizedIncoming.input,
     response: normalizedIncoming.response || existing.response,
   });
 }
@@ -247,7 +255,7 @@ function agentSessionHasDetails(session: AgentSession): boolean {
     session.events !== undefined ||
     session.response ||
     session.error ||
-    session.importedContext ||
-    session.profileTransitionNote,
+    session.input?.importedContext ||
+    session.input?.profileTransitionNote,
   );
 }

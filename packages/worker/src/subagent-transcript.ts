@@ -1,6 +1,8 @@
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
 import { readSubagentRecords } from "./subagent-records.js";
+import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import { sessionArtifactDirectories } from "./session-artifacts.js";
 import type {
   AgentSubagentSummary,
   AgentSubagentTranscript,
@@ -60,17 +62,16 @@ function pushWithinLimit(
   return total;
 }
 
+/**
+ * A session's native message records across all of its inputs, oldest
+ * first, so a subagent is found whichever input started it.
+ */
 async function readSessionRecords(
   workspacePath: string,
   sessionId: string,
 ): Promise<Record<string, unknown>[]> {
   const sessionsRoot = resolve(workspacePath, ".foundry", "sessions");
-  const transcriptPath = resolve(
-    sessionsRoot,
-    sessionId,
-    "claude-sdk.messages.jsonl",
-  );
-  const relativePath = relative(sessionsRoot, transcriptPath);
+  const relativePath = relative(sessionsRoot, resolve(sessionsRoot, sessionId));
   if (
     !sessionId.trim() ||
     relativePath.startsWith("..") ||
@@ -78,7 +79,16 @@ async function readSessionRecords(
   ) {
     throw new Error("invalid subagent transcript target");
   }
-  return readSubagentRecords(transcriptPath);
+  const transcripts = sessionArtifactDirectories(sessionsRoot, sessionId)
+    .map((directory) => resolve(directory, "claude-sdk.messages.jsonl"))
+    .filter((path) => existsSync(path));
+  if (transcripts.length === 0) {
+    throw new Error("subagent transcript is unavailable");
+  }
+  const records: Record<string, unknown>[] = [];
+  for (const path of transcripts)
+    records.push(...(await readSubagentRecords(path)));
+  return records;
 }
 
 function taskStatus(

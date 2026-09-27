@@ -456,6 +456,7 @@ async function executeAgentSession(
   if (queuedSessionCancelRequests.delete(session.id)) {
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       error: "Session canceled before it started.",
     });
     unregisterAmbient();
@@ -583,6 +584,7 @@ async function executeAgentSession(
 
   transport.send(daemonMessageTypes.sessionStarted, {
     sessionId: session.id,
+    inputId: session.input?.id,
   });
   const unregisterUnsupportedCodexSteer =
     session.provider === "codex"
@@ -643,6 +645,7 @@ async function executeAgentSession(
     writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       nativeSessionId: result.nativeSessionId,
       response: result.response,
     });
@@ -655,6 +658,7 @@ async function executeAgentSession(
     await emit("Session failed", message, "error");
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       error: message,
     });
   } finally {
@@ -1580,9 +1584,10 @@ function runWebSocketSession(options: {
           console.error("Received run_session without a session payload.");
           return;
         }
-        if (!options.sessionExecutions.claim(payload.session.id)) {
+        const inputId = payload.session.input?.id ?? "";
+        if (!options.sessionExecutions.claim(payload.session.id, inputId)) {
           console.log(
-            `Ignoring duplicate run_session for ${payload.session.id}`,
+            `Ignoring duplicate run_session for ${payload.session.id} ${inputId}`,
           );
           return;
         }
@@ -1617,18 +1622,19 @@ function runWebSocketSession(options: {
                 daemonMessageTypes.sessionCompleted,
                 {
                   sessionId: payload.session.id,
+                  inputId: payload.session.input?.id,
                   error: message,
                 },
               );
             } finally {
-              options.sessionExecutions.complete(payload.session.id);
+              options.sessionExecutions.complete(payload.session.id, inputId);
               if (options.once) {
                 finish("exit");
               }
             }
           })
           .catch((error: unknown) => {
-            options.sessionExecutions.complete(payload.session.id);
+            options.sessionExecutions.complete(payload.session.id, inputId);
             const message =
               error instanceof Error ? error.message : String(error);
             console.error(

@@ -142,9 +142,24 @@ export interface CreateAgentSessionInput {
   prompt: string;
   provider: AgentSession["provider"];
   source?: "chat" | "diagnostic" | "naming" | "agent";
-  threadId?: string;
   workspaceId: string;
 }
+
+/**
+ * A message for an existing session: steers it while it runs, otherwise it
+ * is the next input. Agent and runtime fields switch the session first.
+ */
+export type SendAgentSessionMessageInput = Omit<
+  CreateAgentSessionInput,
+  | "agentId"
+  | "issueId"
+  | "nativeSessionId"
+  | "parentSessionId"
+  | "provider"
+  | "source"
+  | "workspaceId"
+> &
+  Partial<Pick<CreateAgentSessionInput, "agentId" | "provider">>;
 
 export interface CreateAgentProfileInput {
   apiKey?: string;

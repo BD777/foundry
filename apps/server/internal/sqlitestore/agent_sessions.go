@@ -2,6 +2,7 @@ package sqlitestore
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -350,8 +351,18 @@ func (s *Store) assertNativeSessionIdle(ctx context.Context, workspaceID string,
 	return nil
 }
 
+// newSessionInputID is a UUIDv7: Claude accepts it as the native user
+// message uuid, and ids sort by time, which keeps artifact order.
 func newSessionInputID(now time.Time) string {
-	return fmt.Sprintf("in_%d", now.UnixNano())
+	var id [16]byte
+	ms := uint64(now.UnixMilli())
+	for i := 0; i < 6; i++ {
+		id[i] = byte(ms >> (40 - 8*i))
+	}
+	rand.Read(id[6:]) // never fails since Go 1.24
+	id[6] = id[6]&0x0f | 0x70
+	id[8] = id[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
 }
 
 // recordSessionInput writes the input into the session's transcript: a

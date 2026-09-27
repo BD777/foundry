@@ -47,6 +47,7 @@ import {
   type AgentSessionRunResult,
 } from "./session-state.js";
 import { safeID } from "./utils.js";
+import { sessionInputDirectory } from "./session-artifacts.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 
 // --- Payload types ---
@@ -534,10 +535,10 @@ export function writeAgentSessionCompletionMarker(
   result: AgentSessionRunResult,
 ): void {
   const markerPath = resolve(
-    workspacePath,
-    ".foundry",
-    "sessions",
-    session.id,
+    sessionInputDirectory(
+      resolve(workspacePath, ".foundry", "sessions"),
+      session,
+    ),
     "completion.json",
   );
   const marker: AgentSessionCompletionMarker = {
