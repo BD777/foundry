@@ -53,6 +53,7 @@ import {
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
 import {
+  codexFoundryTools,
   buildClaudeLaunchPlan,
   claudeManagedSkillOptions,
   type ClaudeLaunchPlan,
@@ -525,6 +526,7 @@ export async function runCodexWorkspaceSession(
         config: {
           ...codexProfileConfig(profile),
           ...codexManagedSkillConfig(managedSkills),
+          ...codexFoundryTools(session)?.config,
         },
       });
       await emit("Started Codex SDK", `${packageName} · ${codexPathOverride}`);
@@ -720,6 +722,7 @@ export async function runCodexCliSession(
       ];
   args.push("--json");
   args.push(...codexManagedSkillArgs(managedSkills));
+  args.push(...(codexFoundryTools(session)?.cliArgs ?? []));
   const model = session.model?.trim() || profile.model?.trim();
   if (model) {
     args.splice(1, 0, "--model", model);

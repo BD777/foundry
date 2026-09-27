@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildClaudeLaunchPlan,
+  codexFoundryTools,
   foundryClaudeSettings,
   resolvedClaudeCredential,
 } from "../dist/session-policy.js";
@@ -230,4 +231,55 @@ test("sessions with an orchestration identity get the Foundry tools with their o
     profile: compatibleProfile({ apiKey: "k" }),
   });
   assert.equal(anonymous.mcpServers, undefined, "no token, no tools");
+});
+
+test("Codex sessions get the same pre-approved Foundry tools, token read from their env", async () => {
+  const { registerSessionAmbientEnv } =
+    await import("../dist/session-ambient.js");
+  const unregister = registerSessionAmbientEnv("sess_codex_tools", {
+    serverURL: "http://127.0.0.1:31982",
+    sessionToken: "token-for-sess_codex_tools",
+    workspaceID: "ws_1",
+  });
+  try {
+    const tools = codexFoundryTools({
+      ...session,
+      id: "sess_codex_tools",
+      source: "chat",
+    });
+    const server = {
+      url: "http://127.0.0.1:31982/api/mcp",
+      bearer_token_env_var: "FOUNDRY_SESSION_TOKEN",
+      default_tools_approval_mode: "approve",
+    };
+    assert.deepEqual(tools.config, { mcp_servers: { foundry: server } });
+    assert.equal(
+      JSON.stringify(tools.config).includes("token-for-sess_codex_tools"),
+      false,
+      "the token stays in the environment, never in config or argv",
+    );
+    assert.deepEqual(tools.cliArgs, [
+      "-c",
+      `mcp_servers.foundry.url="${server.url}"`,
+      "-c",
+      'mcp_servers.foundry.bearer_token_env_var="FOUNDRY_SESSION_TOKEN"',
+      "-c",
+      'mcp_servers.foundry.default_tools_approval_mode="approve"',
+    ]);
+    assert.equal(
+      codexFoundryTools({
+        ...session,
+        id: "sess_codex_tools",
+        source: "naming",
+      }),
+      undefined,
+      "utility sessions get no tools",
+    );
+  } finally {
+    unregister();
+  }
+  assert.equal(
+    codexFoundryTools({ ...session, id: "sess_unknown" }),
+    undefined,
+  );
 });
