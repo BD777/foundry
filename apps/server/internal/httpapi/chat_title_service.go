@@ -36,9 +36,15 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 		input.ClaudeEffort, input.CodexReasoningEffort = latest.ClaudeEffort, latest.CodexReasoningEffort
 		profileID, deviceID = latest.ProfileID, latest.DeviceID
 		for _, session := range sessions {
-			messages = append(messages, chattitle.Message{Role: "user", Text: session.Prompt})
+			if !sessionRecordsInputs(session) {
+				messages = append(messages, chattitle.Message{Role: "user", Text: session.Prompt})
+			}
 			for _, event := range session.Events {
 				switch event.Label {
+				case store.SessionInputEventLabel:
+					if event.Message != nil {
+						messages = append(messages, chattitle.Message{Role: "user", Text: event.Message.Text})
+					}
 				case "Steered into active turn":
 					messages = append(messages, chattitle.Message{Role: "user", Text: event.Detail})
 				case "Response stream":
@@ -133,10 +139,11 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		s.publish("chat_layout_changed", layout)
 		return
 	}
-	if session.Source != "chat" || session.ThreadID != session.ID {
+	// Automatic naming happens once per chat; the title record guards reruns.
+	if session.Source != "chat" {
 		return
 	}
-	if _, err := s.Start(ctx, session.WorkspaceID, session.ThreadID, true); err != nil {
+	if _, err := s.Start(ctx, session.WorkspaceID, session.ID, true); err != nil {
 		log.Printf("automatic chat naming: %v", err)
 	}
 }
@@ -225,4 +232,15 @@ func groupNameFromResponse(response string) string {
 		name = strings.TrimSpace(string(runes[:24]))
 	}
 	return name
+}
+
+// sessionRecordsInputs tells a session whose inputs are transcript events
+// from a legacy per-turn row that only carried its prompt.
+func sessionRecordsInputs(session store.AgentSession) bool {
+	for _, event := range session.Events {
+		if event.Label == store.SessionInputEventLabel {
+			return true
+		}
+	}
+	return false
 }

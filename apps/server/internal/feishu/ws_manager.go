@@ -18,7 +18,7 @@ import (
 
 type SessionDispatcher interface {
 	CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error)
-	SteerSessionAndDispatch(ctx context.Context, sessionID, message string) error
+	SendSessionMessage(ctx context.Context, sessionID, message string) error
 	PublishEvent(eventType string, payload any)
 }
 
@@ -347,7 +347,6 @@ func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, clie
 	// Create AgentSession in Foundry
 	session, err := m.dispatcher.CreateSessionAndDispatch(ctx, store.CreateAgentSessionInput{
 		WorkspaceID:     workspaceID,
-		ThreadID:        messageID,
 		Prompt:          prompt,
 		Source:          "chat",
 		CreatedByUserID: userID,
@@ -379,47 +378,45 @@ func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, clie
 }
 
 func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string, client *Client, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
-	userID, refusal := m.boundUser(ctx, workspaceID)
+	_, refusal := m.boundUser(ctx, workspaceID)
 	if refusal != "" {
 		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", refusal, "无权执行")); err != nil {
 			log.Printf("[feishu] failed to reply card: %v", err)
 		}
 		return nil
 	}
-	latestSession, sessionErr := m.store.GetAgentSession(ctx, thread.LatestSessionID)
-	if sessionErr == nil && (latestSession.Status == "running" || latestSession.Status == "queued") {
-		// Session is still active: steer it
-		_ = m.dispatcher.SteerSessionAndDispatch(ctx, latestSession.ID, prompt)
-		m.streamBuffer.Update(latestSession.ID, client, thread.CardMessageID, latestSession.Title, latestSession.Response, "收到补充指令: "+prompt)
+	// The topic is one session: a running one is steered, an idle one takes
+	// the message as its next input.
+	session, err := m.store.GetAgentSession(ctx, thread.LatestSessionID)
+	if err != nil {
+		if _, replyErr := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", "找不到该话题的智能体会话", err.Error())); replyErr != nil {
+			log.Printf("[feishu] failed to reply card: %v", replyErr)
+		}
+		return nil
+	}
+	if session.Status == "running" || session.Status == "queued" || session.Status == "blocked" {
+		if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
+			log.Printf("[feishu] failed to steer session %s: %v", session.ID, err)
+		}
+		m.streamBuffer.Update(session.ID, client, thread.CardMessageID, session.Title, session.Response, "收到补充指令: "+prompt)
 		return nil
 	}
 
-	// Previous session finished: start new turn in the same thread
 	title := prompt
 	if len([]rune(title)) > 28 {
 		title = string([]rune(title)[:28]) + "..."
 	}
-
 	cardJSON := BuildRunningCard(title, "继续话题执行中...", "连续执行")
 	cardMessageID, err := client.ReplyCard(ctx, messageID, cardJSON)
 	if err != nil {
 		log.Printf("[feishu] failed to reply follow-up card: %v", err)
 		return nil
 	}
-
-	session, err := m.dispatcher.CreateSessionAndDispatch(ctx, store.CreateAgentSessionInput{
-		WorkspaceID:     workspaceID,
-		ThreadID:        thread.RootMessageID,
-		Prompt:          prompt,
-		Source:          "chat",
-		CreatedByUserID: userID,
-	})
-	if err != nil {
-		_ = client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "创建连续执行会话失败", err.Error()))
+	if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
+		_ = client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "继续会话失败", err.Error()))
 		return nil
 	}
 
-	thread.LatestSessionID = session.ID
 	thread.CardMessageID = cardMessageID
 	_ = m.store.SaveFeishuChatThread(ctx, thread)
 

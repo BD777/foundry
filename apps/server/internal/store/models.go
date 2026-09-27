@@ -480,11 +480,31 @@ type ChatAttachment struct {
 	Kind     string `json:"kind"`
 }
 
+// SessionInputEventLabel marks the transcript event each session input
+// writes; the transcript of a session is its events alone.
+const SessionInputEventLabel = "User message"
+
+// SessionInput is one message delivered to a session: the unit of dispatch.
+// It is not a session of its own; identity, permissions and lineage belong
+// to the session it was sent to.
+type SessionInput struct {
+	ID                    string           `json:"id"`
+	Prompt                string           `json:"prompt"`
+	Attachments           []ChatAttachment `json:"attachments,omitempty"`
+	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
+	ImportedContext       string           `json:"importedContext,omitempty"`
+}
+
+// AgentSession is one native agent session (a Claude Code or Codex session)
+// for its whole life. Conversation turns stay inside the native agent; the
+// session carries its latest input and the status of handling it.
 type AgentSession struct {
 	// CreatedByUserID is the account that started it; agent-created sessions
 	// inherit their parent's. Set by the server, never by clients.
-	CreatedByUserID    string `json:"createdByUserId,omitempty"`
-	ID                 string `json:"id"`
+	CreatedByUserID string `json:"createdByUserId,omitempty"`
+	ID              string `json:"id"`
+	// ThreadID equals ID; it remains so readers that grouped legacy
+	// per-turn rows keep working.
 	ThreadID           string `json:"threadId,omitempty"`
 	NativeSessionID    string `json:"nativeSessionId,omitempty"`
 	WorkspaceID        string `json:"workspaceId"`
@@ -496,13 +516,9 @@ type AgentSession struct {
 	ProfileLabel       string `json:"profileLabel,omitempty"`
 	Source             string `json:"source,omitempty"`
 	// ParentSessionID records orchestration lineage: the agent session that
-	// created this one. Empty for human/browser chats. It is orthogonal to
-	// ThreadID, which links turns of one continued conversation.
+	// created this one. Empty for human/browser chats. It is a record for
+	// display and limits, never a source of permission.
 	ParentSessionID string `json:"parentSessionId,omitempty"`
-	// SupervisorSessionID is a human-confirmed takeover of control: set via an
-	// explicit adopt action, never transferred implicitly. Birth lineage in
-	// ParentSessionID never changes.
-	SupervisorSessionID string `json:"supervisorSessionId,omitempty"`
 	// IssueID runs the session inside an existing Issue candidate worktree
 	// instead of the workspace root, enabling safe parallel writes.
 	IssueID string `json:"issueId,omitempty"`
@@ -511,31 +527,32 @@ type AgentSession struct {
 	GroupNameTarget string `json:"groupNameTarget,omitempty"`
 	// CreatedGroupID is populated on a session that caused a new orchestration
 	// group to be created, so the HTTP layer can trigger async naming.
-	CreatedGroupID        string              `json:"createdGroupId,omitempty"`
-	Model                 string              `json:"model,omitempty"`
-	ClaudeEffort          string              `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode  string              `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort  string              `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode      string              `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy   string              `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed            string              `json:"codexSpeed,omitempty"`
-	Status                string              `json:"status"`
-	BlockedReason         string              `json:"blockedReason,omitempty"`
-	Title                 string              `json:"title"`
-	Prompt                string              `json:"prompt"`
-	Attachments           []ChatAttachment    `json:"attachments,omitempty"`
-	SkillRefs             []SessionSkillRef   `json:"skillRefs,omitempty"`
-	ProfileTransitionNote string              `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string              `json:"importedContext,omitempty"`
-	Response              string              `json:"response,omitempty"`
-	Error                 string              `json:"error,omitempty"`
-	StartedAt             string              `json:"startedAt,omitempty"`
-	LastActivityAt        string              `json:"lastActivityAt,omitempty"`
-	CompletedAt           string              `json:"completedAt,omitempty"`
-	AnswerRevision        string              `json:"answerRevision,omitempty"`
-	CreatedLabel          string              `json:"createdLabel"`
-	UpdatedLabel          string              `json:"updatedLabel"`
-	Events                []AgentSessionEvent `json:"events,omitempty"`
+	CreatedGroupID       string `json:"createdGroupId,omitempty"`
+	Model                string `json:"model,omitempty"`
+	ClaudeEffort         string `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string `json:"codexSpeed,omitempty"`
+	Status               string `json:"status"`
+	BlockedReason        string `json:"blockedReason,omitempty"`
+	Title                string `json:"title"`
+	// Prompt is the session's opening goal.
+	Prompt string `json:"prompt"`
+	// Input is the latest message sent to the session; Status describes it.
+	Input     SessionInput      `json:"input"`
+	SkillRefs []SessionSkillRef `json:"skillRefs,omitempty"`
+	// Response is the answer to the latest input.
+	Response       string              `json:"response,omitempty"`
+	Error          string              `json:"error,omitempty"`
+	StartedAt      string              `json:"startedAt,omitempty"`
+	LastActivityAt string              `json:"lastActivityAt,omitempty"`
+	CompletedAt    string              `json:"completedAt,omitempty"`
+	AnswerRevision string              `json:"answerRevision,omitempty"`
+	CreatedLabel   string              `json:"createdLabel"`
+	UpdatedLabel   string              `json:"updatedLabel"`
+	Events         []AgentSessionEvent `json:"events,omitempty"`
 }
 
 type IssueConversationMessage struct {
@@ -620,6 +637,8 @@ type TranscriptMessage struct {
 	Title  string `json:"title,omitempty"`
 	CallID string `json:"callId,omitempty"`
 	Status string `json:"status,omitempty"`
+	// Attachments travel with a user message.
+	Attachments []ChatAttachment `json:"attachments,omitempty"`
 }
 
 type ChatLayoutGroup struct {
@@ -715,10 +734,28 @@ type CreateAgentProfileInput struct {
 	Env                  map[string]string `json:"env,omitempty"`
 }
 
+// SendAgentSessionInput is a new message for an idle session. Setting the
+// agent, provider or profile switches the runtime the session continues on.
+type SendAgentSessionInput struct {
+	AgentID               string           `json:"agentId,omitempty"`
+	Provider              string           `json:"provider,omitempty"`
+	ProfileID             string           `json:"profileId,omitempty"`
+	Model                 string           `json:"model,omitempty"`
+	ClaudeEffort          string           `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode  string           `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort  string           `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode      string           `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy   string           `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed            string           `json:"codexSpeed,omitempty"`
+	Prompt                string           `json:"prompt"`
+	Attachments           []ChatAttachment `json:"attachments,omitempty"`
+	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
+	ImportedContext       string           `json:"importedContext,omitempty"`
+}
+
 type CreateAgentSessionInput struct {
 	CreatedByUserID       string           `json:"-"`
 	WorkspaceID           string           `json:"workspaceId"`
-	ThreadID              string           `json:"threadId"`
 	NativeSessionID       string           `json:"nativeSessionId,omitempty"`
 	AgentID               string           `json:"agentId"`
 	Provider              string           `json:"provider"`
@@ -735,7 +772,6 @@ type CreateAgentSessionInput struct {
 	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
 	ImportedContext       string           `json:"importedContext,omitempty"`
 	ParentSessionID       string           `json:"parentSessionId,omitempty"`
-	SupervisorSessionID   string           `json:"supervisorSessionId,omitempty"`
 	IssueID               string           `json:"issueId,omitempty"`
 	// ForkSessionID resumes another session's native transcript in a brand
 	// new thread without continuing its Foundry thread.

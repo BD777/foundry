@@ -298,17 +298,20 @@ func (s *Store) migrate(ctx context.Context) error {
 			initialized_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
-		// Ephemeral bearer tokens minted at dispatch for the session-scoped
-		// MCP/CLI surface (CHAT-01). Only SHA-256 hashes are stored; plaintext
-		// lives just long enough to ride run_session to the daemon. Rows are
-		// deleted when a session reaches a terminal state.
-		`CREATE TABLE IF NOT EXISTS agent_session_tokens (
-			session_id TEXT PRIMARY KEY,
-			token_hash TEXT NOT NULL,
+		// Bearer tokens for the session-scoped MCP/CLI surface. Each dispatch
+		// mints one; all of a session's tokens stay valid while the session
+		// exists, so a long-lived agent process never holds a stale one. Only
+		// SHA-256 hashes are stored; plaintext rides run_session to the daemon.
+		// It replaces agent_session_tokens, which kept one token per turn.
+		`DROP TABLE IF EXISTS agent_session_tokens`,
+		`CREATE TABLE IF NOT EXISTS session_tokens (
+			token_hash TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
 			created_at TEXT NOT NULL,
 			last_used_at TEXT NOT NULL,
 			expires_at TEXT NOT NULL
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_tokens_session ON session_tokens (session_id)`,
 	}
 	statements = append(statements, indexStatements()...)
 
@@ -1393,13 +1396,6 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 	)
 	if err != nil {
 		return fmt.Errorf("save agent session: %w", err)
-	}
-	// A session reaching a terminal state can no longer drive the MCP/CLI
-	// surface; revoke its dispatch token in the same transaction.
-	if isTerminalAgentSession(value.Status) {
-		if _, err := s.conn().ExecContext(ctx, `DELETE FROM agent_session_tokens WHERE session_id = ?`, value.ID); err != nil {
-			return fmt.Errorf("revoke agent session token: %w", err)
-		}
 	}
 	return nil
 }

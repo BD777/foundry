@@ -344,9 +344,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler()),
 		// Members control their own sessions; maintainers anyone's (in handler).
-		fn("POST /api/agent-sessions/{id}/steer", s.handleSteerAgentSession, workspaceRole(member, sessionWorkspace("id"))),
+		fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id"))),
-		fn("POST /api/agent-sessions/{id}/adopt", s.handleAdoptAgentSession, workspaceRole(member, sessionWorkspace("id"))),
 
 		fn("POST /api/daemon/pair", s.handleDaemonPair, publicRoute()),
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),

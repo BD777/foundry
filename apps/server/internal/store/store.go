@@ -73,21 +73,18 @@ type Store interface {
 	GetAgentSession(ctx context.Context, id string) (AgentSession, error)
 	GetAgentSessionSummary(ctx context.Context, id string) (AgentSession, error)
 	CreateAgentSession(ctx context.Context, input CreateAgentSessionInput) (AgentSession, error)
+	// SendAgentSessionInput queues an idle session's next input.
+	SendAgentSessionInput(ctx context.Context, sessionID string, input SendAgentSessionInput) (AgentSession, error)
 	// ValidateParentSession resolves a create request's lineage parent; an
 	// empty parent id returns a zero session and no error.
 	ValidateParentSession(ctx context.Context, workspaceID string, parentID string) (AgentSession, error)
 	// PlaceChildWithParent applies the CHAT-01 automatic group placement
 	// inside the caller's transaction.
 	PlaceChildWithParent(ctx context.Context, parent AgentSession, childID string) (groupID string, created bool, err error)
-	// IsSessionDescendant includes the ancestor itself and all depths.
-	IsSessionDescendant(ctx context.Context, ancestorID string, candidateID string) (bool, error)
 	SessionLineageDepth(ctx context.Context, sessionID string) (int, error)
 	CountActiveAgentChildren(ctx context.Context, workspaceID string, parentID string) (int, error)
-	AdoptSupervisor(ctx context.Context, targetID string, supervisorID string) (AgentSession, error)
-	ClearSupervisor(ctx context.Context, targetID string) (AgentSession, error)
 	RenameLayoutGroup(ctx context.Context, workspaceID string, groupID string, name string) (ChatLayout, error)
 	CreateGroupNameJob(ctx context.Context, input CreateAgentSessionInput, groupID string) (AgentSession, error)
-	SessionGroupID(ctx context.Context, workspaceID string, chatID string) (string, error)
 	SessionsInGroup(ctx context.Context, workspaceID string, groupID string) ([]string, error)
 	// MintAgentSessionToken returns a one-time plaintext bearer token.
 	MintAgentSessionToken(ctx context.Context, sessionID string) (string, error)

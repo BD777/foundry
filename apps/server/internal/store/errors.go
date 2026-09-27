@@ -51,5 +51,6 @@ var ErrAgentFanOutLimit = errors.New("parent session has too many active childre
 // the requested Issue-backed session.
 var ErrIssueEnvironmentUnavailable = errors.New("issue environment is not available for a session")
 
-// ErrAgentAdoptInvalid means an adopt request targeted an ineligible session.
-var ErrAgentAdoptInvalid = errors.New("session cannot be adopted")
+// ErrAgentSessionActive means a session is still handling an input, so a new
+// input must steer it instead.
+var ErrAgentSessionActive = errors.New("agent session is still active")

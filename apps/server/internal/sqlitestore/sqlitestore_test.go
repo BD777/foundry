@@ -38,10 +38,11 @@ func TestAgentSessionPayloadDoesNotPersistEventsInline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
-	if len(listed) != 1 || len(listed[0].Events) != 1 {
+	// Every session's transcript opens with its input.
+	if len(listed) != 1 || len(listed[0].Events) != 2 {
 		t.Fatalf("expected attached event from event table, got %#v", listed)
 	}
-	message := listed[0].Events[0].Message
+	message := listed[0].Events[1].Message
 	if message == nil || message.ID != "item_payload" || message.Kind != "assistant" || message.Text != "Answer" {
 		t.Fatalf("typed event message did not survive persistence: %#v", message)
 	}
@@ -100,18 +101,18 @@ func TestAgentSessionEventReplacementMovesToLatestPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get agent session: %v", err)
 	}
-	if len(detail.Events) != 2 {
-		t.Fatalf("expected 2 events, got %#v", detail.Events)
+	if len(detail.Events) != 3 {
+		t.Fatalf("expected the input and 2 events, got %#v", detail.Events)
 	}
-	if detail.Events[0].ID != "evt_tool" || detail.Events[1].ID != "evt_response" {
+	if detail.Events[1].ID != "evt_tool" || detail.Events[2].ID != "evt_response" {
 		t.Fatalf("expected replaced response to sort at latest position, got %#v", detail.Events)
 	}
-	if detail.Events[1].Detail != "final answer" {
-		t.Fatalf("expected final response detail, got %#v", detail.Events[1])
+	if detail.Events[2].Detail != "final answer" {
+		t.Fatalf("expected final response detail, got %#v", detail.Events[2])
 	}
 }
 
-func TestListAgentSessionThreadReturnsOneCompleteTranscript(t *testing.T) {
+func TestListAgentSessionThreadReturnsTheSessionWithEveryInput(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	registerAgentSessionTestDaemon(t, db, "ws_thread", "agent_thread")
@@ -129,16 +130,9 @@ func TestListAgentSessionThreadReturnsOneCompleteTranscript(t *testing.T) {
 		t.Fatalf("complete first session: %v", err)
 	}
 
-	second, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID:     "ws_thread",
-		ThreadID:        first.ID,
-		NativeSessionID: "native_thread",
-		AgentID:         "agent_thread",
-		Provider:        "codex",
-		Prompt:          "second prompt",
-	})
+	second, err := db.SendAgentSessionInput(ctx, first.ID, store.SendAgentSessionInput{Prompt: "second prompt"})
 	if err != nil {
-		t.Fatalf("create second session: %v", err)
+		t.Fatalf("send second input: %v", err)
 	}
 	if err := db.AppendAgentSessionEvent(ctx, store.AgentSessionEvent{
 		ID:        "evt_second_response",
@@ -170,17 +164,19 @@ func TestListAgentSessionThreadReturnsOneCompleteTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list thread by continuation session: %v", err)
 	}
-	if len(thread) != 2 {
-		t.Fatalf("expected two sessions in thread, got %#v", thread)
+	if len(thread) != 1 || thread[0].ID != first.ID || thread[0].Response != "second response" {
+		t.Fatalf("expected the one session with its latest answer, got %#v", thread)
 	}
-	if thread[0].ID != first.ID || thread[0].Response != "first response" {
-		t.Fatalf("expected first complete turn, got %#v", thread[0])
+	var transcript []string
+	for _, event := range thread[0].Events {
+		if event.Message != nil {
+			transcript = append(transcript, event.Message.Kind+":"+event.Message.Text)
+		} else {
+			transcript = append(transcript, event.Detail)
+		}
 	}
-	if thread[1].ID != second.ID || thread[1].Response != "second response" {
-		t.Fatalf("expected second complete turn, got %#v", thread[1])
-	}
-	if len(thread[1].Events) != 1 || thread[1].Events[0].Detail != "second response" {
-		t.Fatalf("expected attached second-turn events, got %#v", thread[1].Events)
+	if strings.Join(transcript, "|") != "user:first prompt|user:second prompt|second response" {
+		t.Fatalf("transcript = %v", transcript)
 	}
 }
 
@@ -236,7 +232,7 @@ func TestMigratePrunesLegacyAgentSessionInlineEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list reopened sessions: %v", err)
 	}
-	if len(listed) != 1 || len(listed[0].Events) != 1 {
+	if len(listed) != 1 || len(listed[0].Events) != 2 {
 		t.Fatalf("expected event table data to remain attached, got %#v", listed)
 	}
 }
