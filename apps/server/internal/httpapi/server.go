@@ -1037,6 +1037,31 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 
 var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
 
+// pickSessionAgent chooses the agent a request names, most specific first:
+// its agent id, else its profile (within the requested runtime), else the
+// first agent of its runtime.
+func pickSessionAgent(agents []store.AgentProjection, input store.CreateAgentSessionInput) (store.AgentProjection, bool) {
+	match := func(ok func(store.AgentProjection) bool) (store.AgentProjection, bool) {
+		for _, agent := range agents {
+			if ok(agent) {
+				return agent, true
+			}
+		}
+		return store.AgentProjection{}, false
+	}
+	switch {
+	case input.AgentID != "":
+		return match(func(agent store.AgentProjection) bool { return agent.ID == input.AgentID })
+	case input.ProfileID != "":
+		return match(func(agent store.AgentProjection) bool {
+			return agent.ProfileID == input.ProfileID && (input.Provider == "" || agent.Provider == input.Provider)
+		})
+	case input.Provider != "":
+		return match(func(agent store.AgentProjection) bool { return agent.Provider == input.Provider })
+	}
+	return store.AgentProjection{}, false
+}
+
 // resolveSessionDevice finds the agent a new session runs on and checks its
 // device is reachable by the caller and connected. It may pin input.AgentID.
 // A non-zero status classifies a refusal; otherwise err is an ordinary failure.
@@ -1046,36 +1071,20 @@ func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *s
 		return 0, err
 	}
 	deviceID := ""
-	for _, agent := range agents {
-		if input.AgentID != "" && agent.ID == input.AgentID {
-			deviceID = agent.DeviceID
-			break
-		}
-		if input.AgentID == "" && input.Provider != "" && agent.Provider == input.Provider {
-			deviceID = agent.DeviceID
-			break
-		}
-		// A profile alone names its agent and runtime.
-		if input.AgentID == "" && input.Provider == "" && input.ProfileID != "" && agent.ProfileID == input.ProfileID {
-			deviceID, input.AgentID, input.Provider = agent.DeviceID, agent.ID, agent.Provider
-			break
+	if agent, ok := pickSessionAgent(agents, *input); ok {
+		deviceID = agent.DeviceID
+		if input.AgentID == "" && input.ProfileID != "" {
+			input.AgentID, input.Provider = agent.ID, agent.Provider
 		}
 	}
 	// A session token must not be able to pin an arbitrary agentId. If it did
-	// not resolve on the actor's device, drop it and resolve by provider/profile
-	// through the trusted chain.
+	// not resolve on the actor's device, drop it and resolve by profile or
+	// provider through the trusted chain.
 	if actor.Agent() && deviceID != actor.Identity.DeviceID {
 		input.AgentID = ""
 		deviceID = ""
-		for _, agent := range agents {
-			if input.ProfileID != "" && agent.ProfileID == input.ProfileID {
-				deviceID, input.AgentID = agent.DeviceID, agent.ID
-				break
-			}
-			if input.Provider != "" && agent.Provider == input.Provider {
-				deviceID, input.AgentID = agent.DeviceID, agent.ID
-				break
-			}
+		if agent, ok := pickSessionAgent(agents, *input); ok {
+			deviceID, input.AgentID = agent.DeviceID, agent.ID
 		}
 	}
 	// Server-owned profile agents are projected per snapshot, never persisted
