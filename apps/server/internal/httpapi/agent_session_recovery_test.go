@@ -206,3 +206,78 @@ func TestReconnectDoesNotAskDaemonsWithoutClaims(t *testing.T) {
 		t.Fatalf("a daemon without claims got %s", extra.Type)
 	}
 }
+
+// A daemon serves several workspaces but its hello names one: reconnecting
+// settles orphans and dispatches queued sessions in all of them.
+func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	register := func(workspaceID string) store.DaemonRegistration {
+		registration := store.DaemonRegistration{
+			Device:    store.DeviceProjection{ID: "dev_multi", Label: "Device", Status: "connected", LastSeenLabel: "online"},
+			Workspace: store.WorkspaceProjection{ID: workspaceID, Name: workspaceID, LocalPath: t.TempDir(), Baseline: "main"},
+			Agents: []store.AgentProjection{{
+				ID: "agent_" + workspaceID, WorkspaceID: workspaceID, DeviceID: "dev_multi", Provider: "claude", Status: "healthy",
+				AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+			}},
+		}
+		if err := db.RegisterDaemon(ctx, registration); err != nil {
+			t.Fatal(err)
+		}
+		return registration
+	}
+	primary := register("ws_primary")
+	register("ws_secondary")
+	create := func(prompt string) store.AgentSession {
+		session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+			WorkspaceID: "ws_secondary", AgentID: "agent_ws_secondary", Provider: "claude", Prompt: prompt,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	orphan := create("orphaned in the second workspace")
+	if _, err := db.StartAgentSession(ctx, orphan.ID); err != nil {
+		t.Fatal(err)
+	}
+	queued := create("queued in the second workspace")
+
+	live := httptest.NewServer(NewServer(db).Routes())
+	defer live.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	hello, _ := json.Marshal(primary)
+	var body map[string]any
+	_ = json.Unmarshal(hello, &body)
+	body["activeSessionIds"] = []string{}
+	writeWSForTest(t, conn, "hello", body)
+	readWSTypeForTest(t, conn, "registered")
+
+	asked, dispatched := false, false
+	for !asked || !dispatched {
+		var envelope struct {
+			Type    string          `json:"type"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if err := conn.ReadJSON(&envelope); err != nil {
+			t.Fatalf("asked=%v dispatched=%v: %v", asked, dispatched, err)
+		}
+		switch envelope.Type {
+		case "recover_session":
+			var payload wsRecoverSessionPayload
+			_ = json.Unmarshal(envelope.Payload, &payload)
+			asked = asked || payload.SessionID == orphan.ID
+		case "run_session":
+			var payload struct {
+				Session store.AgentSession `json:"session"`
+			}
+			_ = json.Unmarshal(envelope.Payload, &payload)
+			dispatched = dispatched || payload.Session.ID == queued.ID
+		}
+	}
+}

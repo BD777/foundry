@@ -115,6 +115,21 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	return sessions, nil
 }
 
+// UnsettledAgentSessionsOnDevice returns summaries of the device's queued,
+// running and blocked sessions in every workspace, oldest first.
+func (s *Store) UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]store.AgentSession, error) {
+	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE device_id = ? AND status IN ('queued','running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	for index := range sessions {
+		sessions[index].Input.ImportedContext = ""
+		sessions[index].Response = ""
+		sessions[index].Events = nil
+	}
+	return sessions, nil
+}
+
 func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSession, error) {
 	session, err := getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
 	if err != nil {

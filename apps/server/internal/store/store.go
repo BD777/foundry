@@ -2,6 +2,12 @@ package store
 
 import "context"
 
+// DeviceSessionStore lists what a device still owes: every queued, running or
+// blocked session on it, across all of its workspaces and without a page limit.
+type DeviceSessionStore interface {
+	UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]AgentSession, error)
+}
+
 type Store interface {
 	Close() error
 
