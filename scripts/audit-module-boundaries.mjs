@@ -73,6 +73,7 @@ export const workerModules = {
     dependsOn: ["candidate-store", "device"],
     files: [
       "workspaces",
+      "workspace-attachments",
       "workspace-registration",
       "workspace-bootstrap",
       "workspace-inspection",

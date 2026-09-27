@@ -45,6 +45,10 @@ const (
 	wsUpsertRuntimeSettingsType         = "upsert_agent_runtime_settings"
 	wsRuntimeSettingsUpsertedType       = "agent_runtime_settings_upserted"
 	wsListAgentModelsType               = "list_agent_models"
+	wsAttachmentWriteType               = "attachment_write"
+	wsAttachmentWrittenType             = "attachment_written"
+	wsAttachmentReadType                = "attachment_read"
+	wsAttachmentChunkReadType           = "attachment_chunk_read"
 	wsAgentModelsListedType             = "agent_models_listed"
 	wsReadProfileCredentialType         = "read_profile_credential"
 	wsProfileCredentialReadType         = "profile_credential_read"
@@ -1236,6 +1240,10 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		})
 	case wsWorkspaceForgottenType:
 		return deliverDaemonResponse[wsWorkspaceForgottenPayload](c, envelope, nil)
+	case wsAttachmentWrittenType:
+		return deliverDaemonResponse[wsAttachmentWrittenPayload](c, envelope, nil)
+	case wsAttachmentChunkReadType:
+		return deliverDaemonResponse[wsAttachmentChunkReadPayload](c, envelope, nil)
 	case wsAgentModelsListedType:
 		return deliverDaemonResponse(c, envelope, func(payload wsAgentModelsListedPayload) error {
 			if payload.Error != "" {

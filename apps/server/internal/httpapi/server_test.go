@@ -2,13 +2,13 @@ package httpapi
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -180,62 +180,112 @@ func TestDaemonWebSocketRequiresPairingAndTrustedOrigin(t *testing.T) {
 	conn.Close()
 }
 
-func TestLocalImageFileIsLimitedToWorkspaceAttachments(t *testing.T) {
-	db := newEmptyTestStore(t)
-	workspacePath := t.TempDir()
-	if err := db.RegisterDaemon(context.Background(), storepkg.DaemonRegistration{
-		Device: storepkg.DeviceProjection{
-			ID:            "dev_image",
-			Label:         "Image Device",
-			Status:        "connected",
-			LastSeenLabel: "online",
-		},
-		Workspace: storepkg.WorkspaceProjection{
-			ID:        "ws_image",
-			Name:      "Image Workspace",
-			LocalPath: workspacePath,
-			Baseline:  "main",
-		},
-	}); err != nil {
-		t.Fatalf("register image workspace: %v", err)
+// Attachments live on the workspace's device: the server relays uploads and
+// images over the daemon channel and never touches a workspace path itself.
+// The registered path does not even exist on the server's disk.
+func TestAttachmentsGoThroughTheWorkspaceDevice(t *testing.T) {
+	store := newEmptyTestStore(t)
+	server := NewServer(store)
+	testServer := httptest.NewServer(server.Routes())
+	defer testServer.Close()
+	const workspacePath = "/nonexistent-on-server/remote-ws"
+	attachments := workspacePath + "/.foundry/attachments"
+
+	outside := httptest.NewRecorder()
+	server.Routes().ServeHTTP(outside, httptest.NewRequest(http.MethodGet, "/api/local-files/image?path="+url.QueryEscape("/etc/passwd"), nil))
+	if outside.Code != http.StatusNotFound {
+		t.Fatalf("a path outside every workspace = %d, want 404", outside.Code)
 	}
 
-	attachmentDir := filepath.Join(workspacePath, ".foundry", "attachments", "20260719")
-	if err := os.MkdirAll(attachmentDir, 0o700); err != nil {
-		t.Fatalf("create attachment directory: %v", err)
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatalf("dial daemon websocket: %v", err)
 	}
-	attachmentPath := filepath.Join(attachmentDir, "image.png")
-	writePNGForTest(t, attachmentPath)
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	writeWSForTest(t, conn, "hello", map[string]any{
+		"device":    map[string]any{"id": "dev_remote", "label": "Remote", "status": "connected", "lastSeenLabel": "online"},
+		"workspace": map[string]any{"id": "ws_remote", "name": "Remote", "localPath": workspacePath, "baseline": "main", "contextSummary": "", "acceptedCount": 0, "resolvedCount": 0},
+	})
+	readWSTypeForTest(t, conn, "registered")
 
-	server := NewServer(db)
-	imageURL := "/api/local-files/image?path=" + url.QueryEscape(attachmentPath)
-	imageResponse := httptest.NewRecorder()
-	server.Routes().ServeHTTP(imageResponse, httptest.NewRequest(http.MethodGet, imageURL, nil))
-	if imageResponse.Code != http.StatusOK {
-		t.Fatalf("expected registered attachment image, got %d: %s", imageResponse.Code, imageResponse.Body.String())
+	// An image arrives in the chunks the device reads.
+	image := append([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, 1, 2, 3, 4)
+	imagePath := attachments + "/20260927/shot.png"
+	type imageResult struct {
+		code int
+		kind string
+		body []byte
 	}
-	if imageResponse.Header().Get("Content-Type") != "image/png" {
-		t.Fatalf("expected image/png, got %q", imageResponse.Header().Get("Content-Type"))
+	served := make(chan imageResult, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/local-files/image?path="+url.QueryEscape(imagePath), nil))
+		served <- imageResult{response.Code, response.Header().Get("Content-Type"), response.Body.Bytes()}
+	}()
+	for _, part := range [][2]int{{0, 8}, {8, 12}} {
+		var request wsAttachmentReadPayload
+		id := readWSPayloadEnvelopeForTest(t, conn, "attachment_read", &request)
+		if request.Path != imagePath || request.Offset != int64(part[0]) || request.WorkspaceID != "ws_remote" {
+			t.Fatalf("read request = %+v, want offset %d of %s", request, part[0], imagePath)
+		}
+		writeWSIDForTest(t, conn, id, "attachment_chunk_read", map[string]any{
+			"size": len(image), "mimeType": "image/png",
+			"dataBase64": base64.StdEncoding.EncodeToString(image[part[0]:part[1]]),
+		})
+	}
+	result := <-served
+	if result.code != http.StatusOK || result.kind != "image/png" || !bytes.Equal(result.body, image) {
+		t.Fatalf("image = %d %q %v, want the device's bytes", result.code, result.kind, result.body)
 	}
 
-	outsidePath := filepath.Join(t.TempDir(), "outside.png")
-	writePNGForTest(t, outsidePath)
-	outsideURL := "/api/local-files/image?path=" + url.QueryEscape(outsidePath)
-	outsideResponse := httptest.NewRecorder()
-	server.Routes().ServeHTTP(outsideResponse, httptest.NewRequest(http.MethodGet, outsideURL, nil))
-	if outsideResponse.Code != http.StatusNotFound {
-		t.Fatalf("expected outside image to be rejected, got %d", outsideResponse.Code)
+	// A device refusal keeps its meaning.
+	refused := make(chan int, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/local-files/image?path="+url.QueryEscape(attachments+"/20260927/link.png"), nil))
+		refused <- response.Code
+	}()
+	id := readWSPayloadEnvelopeForTest(t, conn, "attachment_read", &wsAttachmentReadPayload{})
+	writeWSIDForTest(t, conn, id, "attachment_chunk_read", map[string]any{"error": "image not found", "code": "not_found"})
+	if code := <-refused; code != http.StatusNotFound {
+		t.Fatalf("refused image = %d, want 404", code)
 	}
 
-	symlinkPath := filepath.Join(attachmentDir, "outside-link.png")
-	if err := os.Symlink(outsidePath, symlinkPath); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+	// An upload larger than one chunk reaches the device in order.
+	upload := bytes.Repeat([]byte("x"), attachmentChunkBytes+attachmentChunkBytes/2)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	_ = writer.WriteField("workspaceId", "ws_remote")
+	part, _ := writer.CreateFormFile("files", "notes.txt")
+	_, _ = part.Write(upload)
+	_ = writer.Close()
+	uploaded := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		request := httptest.NewRequest(http.MethodPost, "/api/attachments", &form)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, request)
+		uploaded <- response
+	}()
+	var received []byte
+	for _, final := range []bool{false, true} {
+		var chunk wsAttachmentWritePayload
+		id := readWSPayloadEnvelopeForTest(t, conn, "attachment_write", &chunk)
+		data, _ := base64.StdEncoding.DecodeString(chunk.DataBase64)
+		if chunk.Offset != int64(len(received)) || chunk.Final != final || !strings.HasSuffix(chunk.RelativePath, "_notes.txt") {
+			t.Fatalf("chunk = offset %d final %v path %q, want offset %d final %v", chunk.Offset, chunk.Final, chunk.RelativePath, len(received), final)
+		}
+		received = append(received, data...)
+		writeWSIDForTest(t, conn, id, "attachment_written", map[string]any{"path": attachments + "/" + chunk.RelativePath, "size": len(received)})
 	}
-	symlinkURL := "/api/local-files/image?path=" + url.QueryEscape(symlinkPath)
-	symlinkResponse := httptest.NewRecorder()
-	server.Routes().ServeHTTP(symlinkResponse, httptest.NewRequest(http.MethodGet, symlinkURL, nil))
-	if symlinkResponse.Code != http.StatusNotFound {
-		t.Fatalf("expected escaping symlink to be rejected, got %d", symlinkResponse.Code)
+	response := <-uploaded
+	if response.Code != http.StatusCreated || !bytes.Equal(received, upload) {
+		t.Fatalf("upload = %d %s (device got %d bytes)", response.Code, response.Body.String(), len(received))
+	}
+	var saved []storepkg.ChatAttachment
+	if err := json.Unmarshal(response.Body.Bytes(), &saved); err != nil || len(saved) != 1 || !strings.HasPrefix(saved[0].Path, attachments+"/") || saved[0].Size != int64(len(upload)) {
+		t.Fatalf("saved = %+v, %v; want the device path", saved, err)
 	}
 }
 
@@ -1968,20 +2018,6 @@ func TestDevResetDemo(t *testing.T) {
 	listAfter := getJSONForTest(t, server, "/api/issues", http.StatusOK)
 	if len(listAfter) != 10 {
 		t.Fatalf("expected 10 seeded issues after reset, got %d", len(listAfter))
-	}
-}
-
-func writePNGForTest(t *testing.T, path string) {
-	t.Helper()
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatalf("create test PNG: %v", err)
-	}
-	defer file.Close()
-	pixel := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	pixel.Set(0, 0, color.RGBA{R: 120, G: 80, B: 40, A: 255})
-	if err := png.Encode(file, pixel); err != nil {
-		t.Fatalf("encode test PNG: %v", err)
 	}
 }
 
