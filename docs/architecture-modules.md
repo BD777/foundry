@@ -205,6 +205,24 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   编排血缘、令牌、恢复和列表问题，是 L4 Session Runtime 的内核改动。
 - HTTP MCP 的 OAuth 2.1 只在出现 Foundry 之外的远程 Agent 时再做。
 
+**M3 资源与跨设备**（进行中）。起点：工作区在设备上，但 Server 里有几处直接读写**自己的
+磁盘**上的 `workspace.LocalPath`，只在 Server 与设备同机时成立；设备通过公网连上时，Chat
+附件上传直接失败（实测：Mac 连 dev.foundryapp.app，上传返回 500）。
+
+- **M3-1 设备上的工作区文件**：Chat 附件的上传与图片读取改经设备通道分块转发
+  （`attachment_write` / `attachment_read`，每块 1 MiB，低于 Worker 2 MiB 的消息上限）。
+  Server 只负责鉴权与命名，路径由设备按真实路径校验（`workspace-attachments.ts`），
+  Server 不再触碰工作区路径。它也是之后"截图给人看"的传输基础。
+- **仍在 Server 本地读写工作区的地方**：会话中断恢复读取 `.foundry/sessions` 下的完成标记
+  （`agent_session_recovery.go`）。设备不同机时它只是找不到文件、退回超时判定，不会出错；
+  需要时改为向设备查询。
+- **待定（需要确认后再做）**：
+  1. 浏览器资源的实现方式：由 Worker 管理一个受控浏览器实例，以 MCP 工具（例如
+     Playwright MCP 或 Chrome DevTools MCP）交给会话，截图作为附件回到 Chat；还是直接让
+     Agent 运行时自带的浏览器能力接入。
+  2. 跨设备的授权边界：Agent 能否在另一台设备上启动会话，取决于"同一 Workspace"规则如何
+     扩展，例如"会话创建者可见的设备"。设备与工作区一一绑定，跨设备意味着跨工作区。
+
 ## 5. M1 接口草案
 
 ### 5.1 Sandbox

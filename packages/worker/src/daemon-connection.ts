@@ -29,6 +29,12 @@ import {
   webSocketURL,
   ReliableRunTransport,
 } from "./transport.js";
+import {
+  AttachmentError,
+  abortAttachmentUpload,
+  readAttachmentImageChunk,
+  writeAttachmentChunk,
+} from "./workspace-attachments.js";
 import { ConcurrentTaskScheduler } from "./task-scheduler.js";
 import {
   activeSessionCancelTargets,
@@ -142,6 +148,22 @@ interface RunIssuePayload {
 interface ReadFilePayload {
   path: string;
   workspaceId: string;
+}
+
+interface AttachmentWritePayload {
+  workspaceId: string;
+  relativePath: string;
+  offset: number;
+  dataBase64?: string;
+  final?: boolean;
+  abort?: boolean;
+}
+
+interface AttachmentReadPayload {
+  workspaceId: string;
+  path: string;
+  offset: number;
+  maxBytes: number;
 }
 
 interface ReadSubagentTranscriptPayload {
@@ -927,6 +949,66 @@ function runWebSocketSession(options: {
         if (options.once && options.idleTimeoutMs > 0) {
           idleTimer = setTimeout(() => finish("exit"), options.idleTimeoutMs);
         }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.attachmentWrite) {
+        const payload = envelope.payload as AttachmentWritePayload;
+        let reply: Record<string, unknown>;
+        try {
+          const workspacePath = workspacePathFor(payload.workspaceId);
+          if (payload.abort) {
+            abortAttachmentUpload(workspacePath, payload.relativePath);
+            reply = { size: 0 };
+          } else {
+            reply = writeAttachmentChunk({
+              workspacePath,
+              relativePath: payload.relativePath,
+              offset: payload.offset,
+              data: Buffer.from(payload.dataBase64 ?? "", "base64"),
+              final: payload.final === true,
+            });
+          }
+        } catch (error) {
+          reply = {
+            error: error instanceof Error ? error.message : String(error),
+            code: error instanceof AttachmentError ? error.code : undefined,
+          };
+        }
+        sendWebSocket(
+          socket,
+          daemonMessageTypes.attachmentWritten,
+          reply,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.attachmentRead) {
+        const payload = envelope.payload as AttachmentReadPayload;
+        let reply: Record<string, unknown>;
+        try {
+          const chunk = readAttachmentImageChunk({
+            workspacePath: workspacePathFor(payload.workspaceId),
+            path: payload.path,
+            offset: payload.offset,
+            maxBytes: payload.maxBytes,
+          });
+          reply = {
+            size: chunk.size,
+            mimeType: chunk.mimeType,
+            dataBase64: chunk.data.toString("base64"),
+          };
+        } catch (error) {
+          reply = {
+            error: error instanceof Error ? error.message : String(error),
+            code: error instanceof AttachmentError ? error.code : undefined,
+          };
+        }
+        sendWebSocket(
+          socket,
+          daemonMessageTypes.attachmentChunkRead,
+          reply,
+          envelope.id,
+        );
         return;
       }
       if (envelope.type === daemonMessageTypes.readFile) {

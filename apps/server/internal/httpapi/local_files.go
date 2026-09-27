@@ -1,12 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -51,7 +51,11 @@ func (s *Server) handleUploadAttachments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	attachments, err := saveAttachments(workspace, files)
+	attachments, err := s.saveAttachments(r.Context(), workspace, files)
+	if errors.Is(err, ErrLocalDaemonNotConnected) {
+		writeError(w, http.StatusConflict, "the workspace's device is offline")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -59,16 +63,13 @@ func (s *Server) handleUploadAttachments(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, attachments)
 }
 
-func saveAttachments(workspace store.WorkspaceProjection, files []*multipart.FileHeader) ([]store.ChatAttachment, error) {
+// saveAttachments stores uploads on the workspace's device, where agents
+// read them; the server only names them and relays the bytes.
+func (s *Server) saveAttachments(ctx context.Context, workspace store.WorkspaceProjection, files []*multipart.FileHeader) ([]store.ChatAttachment, error) {
 	now := time.Now().UTC()
-	dir := filepath.Join(workspace.LocalPath, ".foundry", "attachments", now.Format("20060102"))
-	if err := ensurePrivateDirectory(dir); err != nil {
-		return nil, errors.New("could not create attachment directory")
-	}
-
 	attachments := make([]store.ChatAttachment, 0, len(files))
 	for index, header := range files {
-		attachment, err := saveAttachment(dir, now, index, header)
+		attachment, err := s.saveAttachment(ctx, workspace, now, index, header)
 		if err != nil {
 			return nil, err
 		}
@@ -77,7 +78,7 @@ func saveAttachments(workspace store.WorkspaceProjection, files []*multipart.Fil
 	return attachments, nil
 }
 
-func saveAttachment(dir string, now time.Time, index int, header *multipart.FileHeader) (store.ChatAttachment, error) {
+func (s *Server) saveAttachment(ctx context.Context, workspace store.WorkspaceProjection, now time.Time, index int, header *multipart.FileHeader) (store.ChatAttachment, error) {
 	src, err := header.Open()
 	if err != nil {
 		return store.ChatAttachment{}, errors.New("could not read attachment")
@@ -97,11 +98,29 @@ func saveAttachment(dir string, now time.Time, index int, header *multipart.File
 	}
 	name = ensureAttachmentExtension(name, mimeType)
 	id := "att_" + strconv.FormatInt(now.UnixNano(), 36) + "_" + strconv.FormatInt(int64(index), 36)
-	dstPath := filepath.Join(dir, id+"_"+name)
+	relativePath := now.Format("20060102") + "/" + id + "_" + name
 
-	size, err := copyAttachmentAtomically(dstPath, src)
-	if err != nil {
-		return store.ChatAttachment{}, errors.New("could not save attachment")
+	var devicePath string
+	buffer := make([]byte, attachmentChunkBytes)
+	for offset := int64(0); ; {
+		count, readErr := io.ReadFull(src, buffer[:min(int64(len(buffer)), header.Size-offset)])
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
+			return store.ChatAttachment{}, errors.New("could not read attachment")
+		}
+		final := offset+int64(count) >= header.Size
+		devicePath, err = s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, offset, buffer[:count], final)
+		if err != nil {
+			if !errors.Is(err, ErrLocalDaemonNotConnected) {
+				s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
+				err = errors.New("could not save attachment on the workspace's device")
+			}
+			return store.ChatAttachment{}, err
+		}
+		offset += int64(count)
+		if final {
+			break
+		}
 	}
 	kind := "file"
 	if strings.HasPrefix(strings.ToLower(mimeType), "image/") {
@@ -110,48 +129,11 @@ func saveAttachment(dir string, now time.Time, index int, header *multipart.File
 	return store.ChatAttachment{
 		ID:       id,
 		Name:     name,
-		Path:     dstPath,
+		Path:     devicePath,
 		MIMEType: mimeType,
-		Size:     size,
+		Size:     header.Size,
 		Kind:     kind,
 	}, nil
-}
-
-func copyAttachmentAtomically(dstPath string, src io.Reader) (int64, error) {
-	temp, err := os.CreateTemp(filepath.Dir(dstPath), ".attachment-*.tmp")
-	if err != nil {
-		return 0, err
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-
-	if err := temp.Chmod(0o600); err != nil {
-		_ = temp.Close()
-		return 0, err
-	}
-	size, copyErr := io.Copy(temp, src)
-	syncErr := temp.Sync()
-	closeErr := temp.Close()
-	if copyErr != nil {
-		return 0, copyErr
-	}
-	if syncErr != nil {
-		return 0, syncErr
-	}
-	if closeErr != nil {
-		return 0, closeErr
-	}
-	if err := os.Rename(tempPath, dstPath); err != nil {
-		return 0, err
-	}
-	return size, os.Chmod(dstPath, 0o600)
-}
-
-func ensurePrivateDirectory(path string) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0o700)
 }
 
 func ensureAttachmentExtension(name string, mimeType string) string {
@@ -184,74 +166,76 @@ func sanitizeAttachmentName(name string) string {
 	return strings.Trim(name, " .")
 }
 
+// handleLocalImageFile serves an image attachment by its device path. The
+// workspace's device resolves links, checks the path stays within the
+// attachments and that the file is an image; the server streams its chunks.
 func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 	requestedPath := strings.TrimSpace(r.URL.Query().Get("path"))
-	if requestedPath == "" || !filepath.IsAbs(requestedPath) {
+	if requestedPath == "" || !filepath.IsAbs(requestedPath) || filepath.Clean(requestedPath) != requestedPath {
 		writeError(w, http.StatusBadRequest, "absolute image path is required")
 		return
 	}
-	path, err := s.resolveAttachmentPath(r, requestedPath)
+	workspace, err := s.attachmentWorkspace(r, requestedPath)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "image not found")
 		return
 	}
-
-	file, err := os.Open(path)
+	chunk, err := s.hub.ReadAttachmentImageChunk(r.Context(), workspace, requestedPath, 0, maxLocalImageBytes)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "image not found")
+		writeError(w, attachmentReadStatus(err), err.Error())
 		return
 	}
-	defer file.Close()
-	stat, err := file.Stat()
-	if err != nil || !stat.Mode().IsRegular() {
-		writeError(w, http.StatusNotFound, "image not found")
-		return
-	}
-	if stat.Size() > maxLocalImageBytes {
-		writeError(w, http.StatusRequestEntityTooLarge, "image is too large")
-		return
-	}
-	contentType, err := detectSupportedImageType(file)
-	if err != nil {
-		writeError(w, http.StatusUnsupportedMediaType, "not a supported image")
-		return
-	}
-
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", chunk.MIMEType)
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-	if _, err := io.Copy(w, file); err != nil {
-		return
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.FormatInt(chunk.Size, 10))
+	for offset := int64(0); ; {
+		if _, err := w.Write(chunk.Data); err != nil {
+			return
+		}
+		offset += int64(len(chunk.Data))
+		if offset >= chunk.Size || len(chunk.Data) == 0 {
+			return
+		}
+		if chunk, err = s.hub.ReadAttachmentImageChunk(r.Context(), workspace, requestedPath, offset, maxLocalImageBytes); err != nil {
+			return
+		}
 	}
 }
 
-func (s *Server) resolveAttachmentPath(r *http.Request, requestedPath string) (string, error) {
-	resolvedTarget, err := filepath.EvalSymlinks(requestedPath)
-	if err != nil {
-		return "", err
+func attachmentReadStatus(err error) int {
+	var refusal attachmentRefusal
+	switch {
+	case errors.Is(err, ErrLocalDaemonNotConnected):
+		return http.StatusConflict
+	case errors.As(err, &refusal) && refusal.code == "too_large":
+		return http.StatusRequestEntityTooLarge
+	case errors.As(err, &refusal) && refusal.code == "unsupported":
+		return http.StatusUnsupportedMediaType
+	default:
+		return http.StatusNotFound
 	}
-	// Only attachment roots of workspaces the caller may view qualify.
+}
+
+// attachmentWorkspace finds the viewable workspace whose attachments hold
+// the path. The check is lexical; the device re-checks after resolving links.
+func (s *Server) attachmentWorkspace(r *http.Request, path string) (store.WorkspaceProjection, error) {
 	view, err := s.visibilityFor(r.Context(), actorFromContext(r.Context()))
 	if err != nil {
-		return "", err
+		return store.WorkspaceProjection{}, err
 	}
 	workspaces := view.workspaces
 	if view.scope.all {
 		if workspaces, err = s.store.ListWorkspaces(r.Context()); err != nil {
-			return "", err
+			return store.WorkspaceProjection{}, err
 		}
 	}
 	for _, workspace := range workspaces {
-		root := filepath.Join(workspace.LocalPath, ".foundry", "attachments")
-		resolvedRoot, err := filepath.EvalSymlinks(root)
-		if err != nil {
-			continue
-		}
-		if pathWithinRoot(resolvedRoot, resolvedTarget) {
-			return resolvedTarget, nil
+		if workspace.LocalPath != "" && pathWithinRoot(filepath.Join(workspace.LocalPath, ".foundry", "attachments"), path) {
+			return workspace, nil
 		}
 	}
-	return "", errAttachmentOutsideWorkspace
+	return store.WorkspaceProjection{}, errAttachmentOutsideWorkspace
 }
 
 func pathWithinRoot(root string, target string) bool {
@@ -263,22 +247,4 @@ func pathWithinRoot(root string, target string) bool {
 		relativePath != ".." &&
 		!strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) &&
 		!filepath.IsAbs(relativePath)
-}
-
-func detectSupportedImageType(file *os.File) (string, error) {
-	header := make([]byte, 512)
-	count, err := file.Read(header)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return "", err
-	}
-	contentType := http.DetectContentType(header[:count])
-	switch contentType {
-	case "image/gif", "image/jpeg", "image/png", "image/webp":
-		return contentType, nil
-	default:
-		return "", errors.New("unsupported image type")
-	}
 }
