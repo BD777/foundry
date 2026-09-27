@@ -121,6 +121,9 @@ import {
   sessionEvent,
   steerActiveSession,
   writeAgentSessionCompletionMarker,
+  readAgentSessionCompletionMarker,
+  recoveredSessionCompletion,
+  type AgentSessionCompletionMarker,
 } from "./session-helpers.js";
 import {
   registerSessionAmbientEnv,
@@ -235,6 +238,13 @@ interface SteerSessionPayload {
 interface CancelSessionPayload {
   sessionId?: string;
   inputId?: string;
+}
+
+interface RecoverSessionPayload {
+  sessionId?: string;
+  inputId?: string;
+  workspaceId: string;
+  issueId?: string;
 }
 
 const nativeChatSyncIntervalMs = 10000;
@@ -1665,6 +1675,33 @@ function runWebSocketSession(options: {
           });
         return;
       }
+      if (envelope.type === daemonMessageTypes.recoverSession) {
+        const payload = envelope.payload as RecoverSessionPayload | undefined;
+        const sessionId = payload?.sessionId?.trim();
+        const inputId = payload?.inputId?.trim() ?? "";
+        // This process runs or just finished the input: its own report is
+        // in the session outbox. Issue sessions recover with their Issue.
+        if (
+          !payload ||
+          !sessionId ||
+          payload.issueId ||
+          options.sessionExecutions.handled(sessionId, inputId)
+        ) {
+          return;
+        }
+        let workspacePath: string;
+        try {
+          workspacePath = workspacePathFor(payload.workspaceId);
+        } catch {
+          return;
+        }
+        console.log(`Reporting orphaned session ${sessionId} ${inputId}`);
+        options.sessionTransport.send(
+          daemonMessageTypes.sessionCompleted,
+          recoveredSessionCompletion(workspacePath, sessionId, inputId),
+        );
+        return;
+      }
       if (envelope.type === daemonMessageTypes.runSession) {
         if (options.once && acceptedRun) {
           return;
@@ -1686,6 +1723,31 @@ function runWebSocketSession(options: {
           return;
         }
         acceptedRun = true;
+        // An input that already finished here (its report lost with an
+        // earlier process) is reported again rather than run twice.
+        let recorded: AgentSessionCompletionMarker | undefined;
+        try {
+          recorded = payload.session.issueId
+            ? undefined
+            : readAgentSessionCompletionMarker(
+                workspacePathFor(payload.session.workspaceId),
+                payload.session.id,
+                inputId,
+              );
+        } catch {
+          recorded = undefined;
+        }
+        if (recorded) {
+          options.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
+            sessionId: payload.session.id,
+            inputId: inputId || undefined,
+            nativeSessionId: recorded.nativeSessionId,
+            response: recorded.response,
+          });
+          options.sessionExecutions.complete(payload.session.id, inputId);
+          if (options.once) finish("exit");
+          return;
+        }
         void taskScheduler
           .schedule(sessionSchedulingKey(payload.session), async () => {
             console.log(

@@ -48,3 +48,13 @@ test("a session runs each of its inputs once and reports itself while active", (
   assert.equal(registry.claim("session_1", "input_2"), true);
   assert.deepEqual(registry.activeSessionIds(), ["session_1"]);
 });
+
+test("handled covers inputs running or recently finished in this process", () => {
+  const registry = new SessionExecutionRegistry();
+  assert.equal(registry.handled("sess", "in_1"), false);
+  registry.claim("sess", "in_1");
+  assert.equal(registry.handled("sess", "in_1"), true);
+  registry.complete("sess", "in_1");
+  assert.equal(registry.handled("sess", "in_1"), true);
+  assert.equal(registry.handled("sess", "in_2"), false);
+});

@@ -39,6 +39,8 @@
 | C15 | 只读 verifier                      | `verification=true` 的子会话来源为 `verification`，写文件的尝试失败，工作区中没有探针文件                                                                                                             | verifier 只读                                           | 脚本 `verifier`（需在工作区所在设备运行）     |       | ✔     | ✔          |
 | C13 | Codex 作为编排者                   | C1、C4、C5 以 Codex profile 运行（`--profile codex_local`），子会话沿用 Codex                                                                                                                         | Codex 工具注入与预先放行                                | 脚本 `two-inputs,orchestration,handoff`       | ✔     |       |            |
 | C16 | 附件存放在设备上                   | 上传落到工作区所在设备的 `.foundry/attachments`；作为续聊输入的附件发给 Agent，Agent 看得到（纯红图答 `red`）；附件记录在对应输入上；设备与 Server 不同机时经 `/api/local-files/image` 读回的字节一致 | 设备通道分块传输（M3-1）、续聊附件                      | 脚本 `attachment`；读回字节为手工             |       | ✔     | ✔          |
+| C19 | Worker 重启后的孤儿输入            | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                          | `recover_session`、无标记即丢失                         | 手工（需杀进程）                              | ✔     |       |            |
+| C20 | 完成但回报丢失的输入               | 停掉 Server，输入在 Worker 上跑完写下完成标记，再 `kill -9` Worker；Server 与 Worker 重启后，输入以标记里的回答完成                                                                                   | `recover_session`、按输入的完成标记                     | 手工（需杀进程）                              | ✔     |       |            |
 
 最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17；L-dev：C1–C6、C11、C14–C16；M-dev：C1–C5、C11、C12、C14–C16）。
 
@@ -47,12 +49,11 @@
 - **飞书续聊**：改为给同一会话发消息，尚未实测。
 - **子 Agent 跨输入读取**：`read_context scope=subagents` 只有单元测试。
 - **Issue 沙箱会话在 macOS 实机运行**：沙箱单元测试已在 Mac 通过，端到端 Issue 执行留待 M4。
-- **Worker 中断后运行中输入**要等 30 分钟才判失败（现有设计），无自动用例。
 - **间歇性断线（2026-09-28 00:21 前后，未定位）**：一次全量回归中，dev 服务器上的 Worker
   （本机回环连接）与 Mac（公网）在同一时段各断开一次，正在运行的 `attachment` 输入因
   Claude SDK 空闲超时失败；重跑全部通过。当时 Server 断开设备连接不记原因，现已记录断开
   原因、耗时超过 10 秒的设备消息，以及 Worker 端的关闭码，再出现时据此定位。
-- C10（Worker 崩溃恢复）仍是手工步骤，需要杀进程。
+- C10、C19、C20（Worker 崩溃与恢复）仍是手工步骤，需要杀进程。
 
 ## 4. 准备与运行
 

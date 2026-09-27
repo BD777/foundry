@@ -236,6 +236,12 @@ export class SessionExecutionRegistry {
     return true;
   }
 
+  /** True while this process runs the input or recently finished it. */
+  handled(sessionId: string, inputId = ""): boolean {
+    const key = dispatchKey(sessionId, inputId);
+    return this.active.has(key) || this.recent.has(key);
+  }
+
   activeSessionIds(): string[] {
     return [...new Set(this.active.values())].sort();
   }

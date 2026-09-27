@@ -213,9 +213,11 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   （`attachment_write` / `attachment_read`，每块 1 MiB，低于 Worker 2 MiB 的消息上限）。
   Server 只负责鉴权与命名，路径由设备按真实路径校验（`workspace-attachments.ts`），
   Server 不再触碰工作区路径。它也是之后"截图给人看"的传输基础。
-- **仍在 Server 本地读写工作区的地方**：会话中断恢复读取 `.foundry/sessions` 下的完成标记
-  （`agent_session_recovery.go`）。设备不同机时它只是找不到文件、退回超时判定，不会出错；
-  需要时改为向设备查询。
+- **M3-2 会话恢复问设备**：Worker 重连时，Server 对仍记为运行中、但新进程未声明在跑的输入
+  发 `recover_session`；设备按自己的完成标记回报结果，没有标记就回报"结果随上一个进程丢失"，
+  输入立刻结束，不再等 30 分钟超时。重新派发一个已有完成标记的输入时，设备直接回报而不重跑。
+  Server 不再读取任何工作区路径；不声明执行中会话的旧 Worker 不会被询问，仍走超时判定。
+  Issue 会话随 Issue 恢复，不在此列。
 - **待定（需要确认后再做）**：
   1. 浏览器资源的实现方式：由 Worker 管理一个受控浏览器实例，以 MCP 工具（例如
      Playwright MCP 或 Chrome DevTools MCP）交给会话，截图作为附件回到 Chat；还是直接让
