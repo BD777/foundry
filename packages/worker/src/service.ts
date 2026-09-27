@@ -16,12 +16,36 @@ import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
 import { daemonConfigPath, readDaemonConfig } from "./config.js";
 import { optionEnabled } from "./utils.js";
-import { foundryStackSuffix, foundryStatePath } from "./state-root.js";
+import {
+  foundryStackSuffix,
+  foundryStatePath,
+  foundryStateRoot,
+} from "./state-root.js";
 
 export const daemonLogDir = foundryStatePath("logs");
 
+// Every service name and path carries the stack, so installing one stack's
+// service never replaces or watches another's.
 export function serviceLabel(): string {
   return `dev.foundry${foundryStackSuffix()}.worker`;
+}
+
+export function watchdogLabel(): string {
+  return `${serviceLabel()}-watchdog`;
+}
+
+function systemdUnitName(): string {
+  return `foundry-worker${foundryStackSuffix()}.service`;
+}
+
+/** The variables that select this stack; a service must run with them. */
+function stackEnvironment(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of ["FOUNDRY_STACK", "FOUNDRY_STATE_ROOT"]) {
+    const value = process.env[key]?.trim();
+    if (value) env[key] = value;
+  }
+  return env;
 }
 
 export function serviceLogPaths(): { err: string; out: string } {
@@ -45,6 +69,7 @@ export function serviceArgs(config: DaemonConfig): string[] {
 export function serviceEnvironment(): Record<string, string> {
   const user = process.env.USER ?? basename(homedir());
   const env: Record<string, string> = {
+    ...stackEnvironment(),
     HOME: homedir(),
     LOGNAME: process.env.LOGNAME ?? user,
     PATH:
@@ -107,13 +132,7 @@ export function launchdPlistPath(): string {
 }
 
 export function systemdUnitPath(): string {
-  return resolve(
-    homedir(),
-    ".config",
-    "systemd",
-    "user",
-    "foundry-worker.service",
-  );
+  return resolve(homedir(), ".config", "systemd", "user", systemdUnitName());
 }
 
 export function bestEffort(command: string, args: string[]): void {
@@ -190,7 +209,7 @@ ${environmentVariablesXML()}
     // and kills the daemon if the event loop is blocked (>5min stale).
     const watchdogPath = resolve(
       dirname(plistPath),
-      "dev.foundry.worker-watchdog.plist",
+      `${watchdogLabel()}.plist`,
     );
     const watchdogScript = resolve(
       dirname(fileURLToPath(import.meta.url)),
@@ -205,11 +224,13 @@ ${environmentVariablesXML()}
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.foundry.worker-watchdog</string>
+  <string>${watchdogLabel()}</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
     <string>${xmlEscape(watchdogScript)}</string>
+    <string>${xmlEscape(foundryStateRoot())}</string>
+    <string>${xmlEscape(serviceLabel())}</string>
   </array>
   <key>StartInterval</key>
   <integer>60</integer>
@@ -225,10 +246,7 @@ ${environmentVariablesXML()}
       const target = `gui/${process.getuid()}`;
       bestEffort("launchctl", ["bootout", target, watchdogPath]);
       bestEffort("launchctl", ["bootstrap", target, watchdogPath]);
-      bestEffort("launchctl", [
-        "enable",
-        `${target}/dev.foundry.worker-watchdog`,
-      ]);
+      bestEffort("launchctl", ["enable", `${target}/${watchdogLabel()}`]);
     }
     console.log(`Installed watchdog: ${watchdogPath}`);
     return;
@@ -250,7 +268,9 @@ After=network-online.target
 Type=simple
 WorkingDirectory=${config.workspacePath}
 ExecStart=${command}
-Restart=always
+${Object.entries(stackEnvironment())
+  .map(([key, value]) => `Environment=${key}=${value}\n`)
+  .join("")}Restart=always
 RestartSec=5
 StandardOutput=append:${logs.out}
 StandardError=append:${logs.err}
@@ -261,12 +281,7 @@ WantedBy=default.target
     );
     if (!noStart) {
       bestEffort("systemctl", ["--user", "daemon-reload"]);
-      bestEffort("systemctl", [
-        "--user",
-        "enable",
-        "--now",
-        "foundry-worker.service",
-      ]);
+      bestEffort("systemctl", ["--user", "enable", "--now", systemdUnitName()]);
     }
     console.log(`Installed systemd user service: ${unitPath}`);
     return;
@@ -280,15 +295,15 @@ WantedBy=default.target
 export function uninstallService(): void {
   if (process.platform === "darwin") {
     const plistPath = launchdPlistPath();
-    if (typeof process.getuid === "function") {
-      bestEffort("launchctl", [
-        "bootout",
-        `gui/${process.getuid()}`,
-        plistPath,
-      ]);
-    }
-    if (existsSync(plistPath)) {
-      rmSync(plistPath);
+    const watchdogPath = resolve(
+      dirname(plistPath),
+      `${watchdogLabel()}.plist`,
+    );
+    for (const path of [watchdogPath, plistPath]) {
+      if (typeof process.getuid === "function") {
+        bestEffort("launchctl", ["bootout", `gui/${process.getuid()}`, path]);
+      }
+      if (existsSync(path)) rmSync(path);
     }
     console.log(`Removed launchd service: ${plistPath}`);
     return;
@@ -296,12 +311,7 @@ export function uninstallService(): void {
 
   if (process.platform === "linux") {
     const unitPath = systemdUnitPath();
-    bestEffort("systemctl", [
-      "--user",
-      "disable",
-      "--now",
-      "foundry-worker.service",
-    ]);
+    bestEffort("systemctl", ["--user", "disable", "--now", systemdUnitName()]);
     if (existsSync(unitPath)) {
       rmSync(unitPath);
     }
@@ -345,7 +355,7 @@ export function status(): void {
     );
     const result = spawnSync(
       "systemctl",
-      ["--user", "is-active", "foundry-worker.service"],
+      ["--user", "is-active", systemdUnitName()],
       {
         encoding: "utf8",
       },
