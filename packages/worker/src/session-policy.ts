@@ -19,7 +19,11 @@
 import type { AgentSession } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { profileRuntimeEnvironment } from "./profiles.js";
-import { foundryToolsEndpoint, sessionEnvironment } from "./session-ambient.js";
+import {
+  foundryTokenEnvName,
+  foundryToolsEndpoint,
+  sessionEnvironment,
+} from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
   claudeManagedPrompt,
@@ -176,6 +180,37 @@ export interface ClaudeLaunchPlan {
   warnings: string[];
   recordNativeSession: (nativeSessionId: string) => void;
   validatePrompt: (text: string) => void;
+}
+
+/**
+ * The Foundry tools for a Codex session: the server's HTTP MCP, authorized by
+ * the session token Codex reads from its own environment. Codex takes it as
+ * config (SDK) or as the equivalent `-c` overrides (CLI).
+ */
+export function codexFoundryTools(
+  session: AgentSession,
+): { config: Record<string, unknown>; cliArgs: string[] } | undefined {
+  const tools = foundryToolsEndpoint(session);
+  if (!tools) return undefined;
+  // Pre-approved like Claude's allowedTools: Foundry grants these tools and
+  // its server authorizes every call by the session token; a headless
+  // session has nobody to approve a prompt.
+  const server = {
+    url: tools.url,
+    bearer_token_env_var: foundryTokenEnvName,
+    default_tools_approval_mode: "approve",
+  };
+  return {
+    config: { mcp_servers: { foundry: server } },
+    cliArgs: [
+      "-c",
+      `mcp_servers.foundry.url=${JSON.stringify(server.url)}`,
+      "-c",
+      `mcp_servers.foundry.bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)}`,
+      "-c",
+      `mcp_servers.foundry.default_tools_approval_mode=${JSON.stringify(server.default_tools_approval_mode)}`,
+    ],
+  };
 }
 
 /**

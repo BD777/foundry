@@ -197,7 +197,8 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   只给 profile 时由它确定运行时；`handoff_session` 未指定 profile 时沿用被接替会话的。
   实测中顺带修复：自定义命令不读 stdin 就退出时，Worker 写 prompt 触发的 `EPIPE`
   未被处理，会让执行进程崩溃。
-- **M2-3**：Codex 会话注入工具（需本机 Codex 登录恢复后实测）。
+- **M2-3**（已完成）：Codex 会话注入同一套 foundry 工具，预先放行，令牌从 Codex 自己的环境
+  变量读取。实测 Codex 作为编排者完成派出、取消、继续子会话与 handoff 接管。
 - **会话模型重构**（2026-09-27，[设计](session-model.md)）：一个会话就是一个原生会话，
   一行到底；续聊是给会话发新输入，"轮"降为派发用的输入 id。令牌跟会话走，权限改为
   同 Workspace 内任意 Agent 可操作任意会话，adopt 删除。它纠正了此前"每轮一行"导致的

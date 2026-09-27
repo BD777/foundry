@@ -38,6 +38,9 @@ export function registerSessionAmbientEnv(
   };
 }
 
+/** The variable a session process reads its Foundry bearer token from. */
+export const foundryTokenEnvName = "FOUNDRY_SESSION_TOKEN";
+
 /**
  * Environment variables every spawned session process must receive, across
  * Claude SDK, Codex CLI and custom-command execution paths. Returns an empty
@@ -51,7 +54,7 @@ export function sessionAmbientEnvironment(
   if (!ambient) return {};
   return {
     FOUNDRY_SERVER_URL: ambient.serverURL,
-    FOUNDRY_SESSION_TOKEN: ambient.sessionToken,
+    [foundryTokenEnvName]: ambient.sessionToken,
     FOUNDRY_WORKSPACE_ID: ambient.workspaceID,
   };
 }
