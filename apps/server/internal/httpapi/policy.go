@@ -8,10 +8,11 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Policy for session-scoped actors (CHAT-01). Full-access actors bypass all
-// checks; the agent actor is confined to its workspace and, for control verbs,
-// to sessions it created. All checks live here so the upcoming accounts system
-// can replace internals without touching handlers.
+// Policy for session-scoped actors. An agent acts inside its session's
+// workspace, where it may read and control any session: the user names the
+// target in conversation. Lineage is a record, never a permission. People are
+// judged by their workspace role. All checks live here so handlers stay free
+// of policy.
 
 // agentRouteAllowed is the exact endpoint surface a session token may touch.
 // Anything else returns 403 even before reaching a handler.
@@ -41,7 +42,7 @@ func agentRouteAllowed(method string, path string) bool {
 		return true
 	case method == http.MethodPost && strings.HasPrefix(path, "/api/agent-sessions/"):
 		rest := strings.TrimPrefix(path, "/api/agent-sessions/")
-		return strings.HasSuffix(rest, "/steer") || strings.HasSuffix(rest, "/cancel")
+		return strings.HasSuffix(rest, "/messages") || strings.HasSuffix(rest, "/cancel")
 	case method == http.MethodPost && strings.HasPrefix(path, "/api/chats/"):
 		return strings.HasSuffix(path, "/title")
 	case method == http.MethodPost && path == "/api/agent-profiles/models":
@@ -78,72 +79,34 @@ func effectiveWorkspace(actor Actor, requested string) (string, bool) {
 }
 
 func (s *Server) canReadSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
-	if !actor.Agent() {
-		scope, err := s.contextScope(ctx, actor)
-		return err == nil && scope.can(target.WorkspaceID, store.WorkspaceRoleViewer)
+	if actor.Agent() {
+		return target.WorkspaceID == actor.Identity.WorkspaceID
 	}
-	if actor.Kind != ActorAgent || target.WorkspaceID != actor.Identity.WorkspaceID {
-		return false
-	}
-	if target.ID == actor.Identity.SessionID {
-		return true
-	}
-	if descendant, err := s.store.IsSessionDescendant(ctx, actor.Identity.SessionID, target.ID); err == nil && descendant {
-		return true
-	}
-	if s.shareLayoutGroup(ctx, target.WorkspaceID, actor.Identity.SessionID, target.ID) {
-		return true
-	}
-	return false
+	scope, err := s.contextScope(ctx, actor)
+	return err == nil && scope.can(target.WorkspaceID, store.WorkspaceRoleViewer)
 }
 
-// canControlSession: people steer and cancel their own sessions as members
-// and anyone's as maintainers.
+// canControlSession: an agent controls any session of its workspace; people
+// steer and cancel their own sessions as members and anyone's as maintainers.
 func (s *Server) canControlSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
-	if !actor.Agent() {
-		scope, err := s.contextScope(ctx, actor)
-		if err != nil {
-			return false
-		}
-		if target.CreatedByUserID != "" && target.CreatedByUserID == scope.userID {
-			return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
-		}
-		return scope.can(target.WorkspaceID, store.WorkspaceRoleMaintainer)
+	if actor.Agent() {
+		return target.WorkspaceID == actor.Identity.WorkspaceID
 	}
-	if actor.Kind != ActorAgent || target.WorkspaceID != actor.Identity.WorkspaceID {
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil {
 		return false
 	}
-	if target.ID == actor.Identity.SessionID {
-		return true
+	if target.CreatedByUserID != "" && target.CreatedByUserID == scope.userID {
+		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
 	}
-	if target.SupervisorSessionID != "" && target.SupervisorSessionID == actor.Identity.SessionID {
-		return true
-	}
-	descendant, err := s.store.IsSessionDescendant(ctx, actor.Identity.SessionID, target.ID)
-	return err == nil && descendant
+	return scope.can(target.WorkspaceID, store.WorkspaceRoleMaintainer)
 }
 
-// canReadNativeChat mirrors canReadSession for daemon-projected native chat
-// ids, which never carry lineage: visibility is same-group membership.
+// canReadNativeChat mirrors canReadSession for daemon-projected native chats.
 func (s *Server) canReadNativeChat(ctx context.Context, actor Actor, workspaceID, chatID string) bool {
-	if !actor.Agent() {
-		scope, err := s.contextScope(ctx, actor)
-		return err == nil && scope.can(workspaceID, store.WorkspaceRoleViewer)
+	if actor.Agent() {
+		return workspaceID == actor.Identity.WorkspaceID
 	}
-	if actor.Kind != ActorAgent || workspaceID != actor.Identity.WorkspaceID {
-		return false
-	}
-	return s.shareLayoutGroup(ctx, workspaceID, actor.Identity.SessionID, chatID)
-}
-
-func (s *Server) shareLayoutGroup(ctx context.Context, workspaceID, firstID, secondID string) bool {
-	first, err := s.store.SessionGroupID(ctx, workspaceID, firstID)
-	if err != nil || first == "" {
-		return false
-	}
-	second, err := s.store.SessionGroupID(ctx, workspaceID, secondID)
-	if err != nil || second == "" {
-		return false
-	}
-	return first == second
+	scope, err := s.contextScope(ctx, actor)
+	return err == nil && scope.can(workspaceID, store.WorkspaceRoleViewer)
 }

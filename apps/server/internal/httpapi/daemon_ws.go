@@ -130,9 +130,10 @@ type daemonConnection struct {
 	registration        store.DaemonRegistration
 	registrations       map[string]store.DaemonRegistration
 	registrationMu      sync.Mutex
-	// dispatchedSessions guards re-dispatching a session this connection was
-	// already handed; it is bookkeeping, not request correlation.
-	dispatchedSessions map[string]bool
+	// dispatchedSessions maps a session to the input this connection last
+	// sent, guarding against sending the same input twice; it is
+	// bookkeeping, not request correlation.
+	dispatchedSessions map[string]string
 	dispatchedMu       sync.Mutex
 	send               chan wsEnvelope
 	socket             *websocket.Conn
@@ -343,6 +344,9 @@ type wsSessionSteeredPayload struct {
 
 type wsCancelSessionPayload struct {
 	SessionID string `json:"sessionId"`
+	// InputID names the input to stop, so a cancel that reaches the worker
+	// before the input starts cannot stop a later input of the session.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type wsSessionCanceledPayload struct {
@@ -352,6 +356,9 @@ type wsSessionCanceledPayload struct {
 
 type wsSessionStartedPayload struct {
 	SessionID string `json:"sessionId"`
+	// InputID names the input this lifecycle message belongs to; a message
+	// about an earlier input of the session is stale and ignored.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type wsSessionEventPayload struct {
@@ -365,9 +372,16 @@ type wsSessionNativeSessionIDPayload struct {
 
 type wsSessionCompletedPayload struct {
 	SessionID       string `json:"sessionId"`
+	InputID         string `json:"inputId,omitempty"`
 	NativeSessionID string `json:"nativeSessionId,omitempty"`
 	Response        string `json:"response,omitempty"`
 	Error           string `json:"error,omitempty"`
+}
+
+// staleSessionInput reports a lifecycle message about an input the session
+// has already moved past.
+func staleSessionInput(session store.AgentSession, inputID string) bool {
+	return inputID != "" && session.Input.ID != "" && inputID != session.Input.ID
 }
 
 func NewDaemonHub(store store.Store, events *browserEventHub, allowedOrigin string) *DaemonHub {
@@ -418,7 +432,7 @@ func newDaemonConnection(hub *DaemonHub, socket *websocket.Conn) *daemonConnecti
 	return &daemonConnection{
 		activeSessions:     make(map[string]bool),
 		done:               make(chan struct{}),
-		dispatchedSessions: make(map[string]bool),
+		dispatchedSessions: make(map[string]string),
 		finished:           make(chan struct{}),
 		hub:                hub,
 		registrations:      make(map[string]store.DaemonRegistration),
@@ -569,7 +583,7 @@ func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentS
 	if connection == nil {
 		return store.ErrNotFound
 	}
-	return connection.cancelAgentSession(ctx, session.ID)
+	return connection.cancelAgentSession(ctx, session.ID, session.Input.ID)
 }
 
 func (h *DaemonHub) ReadWorkspaceFile(ctx context.Context, workspace store.WorkspaceProjection, path string) (store.WorkspaceFileRead, error) {
@@ -967,7 +981,7 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 			continue
 		}
 		session = reconciled
-		if c.sessionDispatched(session.ID) {
+		if c.sessionDispatched(session.ID, session.Input.ID) {
 			continue
 		}
 		if err := c.dispatchAgentSession(session); err != nil {
@@ -1317,7 +1331,11 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
 			return err
 		}
-		existing, existingErr := c.hub.store.GetAgentSession(ctx, payload.SessionID)
+		existing, existingErr := c.hub.store.GetAgentSessionSummary(ctx, payload.SessionID)
+		if existingErr == nil && staleSessionInput(existing, payload.InputID) {
+			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			return nil
+		}
 		if existingErr == nil && (existing.Status == "running" || !isRecoverableAgentSessionStatus(existing.Status)) {
 			c.setActiveSession(payload.SessionID, existing.Status == "running")
 			c.clearDispatchedSession(payload.SessionID)
@@ -1388,6 +1406,10 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			return err
 		}
 		existing, existingErr := c.hub.store.GetAgentSession(ctx, payload.SessionID)
+		if existingErr == nil && staleSessionInput(existing, payload.InputID) {
+			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			return nil
+		}
 		if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
@@ -1493,8 +1515,8 @@ func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID stri
 	return nil
 }
 
-func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string) error {
-	payload, err := json.Marshal(wsCancelSessionPayload{SessionID: sessionID})
+func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string, inputID string) error {
+	payload, err := json.Marshal(wsCancelSessionPayload{SessionID: sessionID, InputID: inputID})
 	if err != nil {
 		return err
 	}
@@ -1710,9 +1732,9 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 	} else {
 		session.SkillRefs = refs
 	}
-	// Mint the session-scoped MCP token per dispatch. Failure does not block a
-	// chat run (the web UI needs no token); the agent-facing surface simply
-	// stays unavailable for this process until the next dispatch.
+	// Mint a session token per dispatch; earlier ones stay valid. Failure does
+	// not block a chat run (the web UI needs no token); the agent-facing
+	// surface simply stays unavailable for this process until the next one.
 	sessionToken, tokenErr := c.hub.store.MintAgentSessionToken(ctx, session.ID)
 	if tokenErr != nil {
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
@@ -1723,7 +1745,7 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 		return err
 	}
 	c.dispatchedMu.Lock()
-	c.dispatchedSessions[session.ID] = true
+	c.dispatchedSessions[session.ID] = session.Input.ID
 	c.dispatchedMu.Unlock()
 	if !c.queue(wsEnvelope{Type: wsRunSessionType, Payload: payload}) {
 		c.clearDispatchedSession(session.ID)
@@ -1732,10 +1754,12 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 	return nil
 }
 
-func (c *daemonConnection) sessionDispatched(sessionID string) bool {
+// sessionDispatched reports that this input of the session was already sent.
+func (c *daemonConnection) sessionDispatched(sessionID string, inputID string) bool {
 	c.dispatchedMu.Lock()
 	defer c.dispatchedMu.Unlock()
-	return c.dispatchedSessions[sessionID]
+	sent, ok := c.dispatchedSessions[sessionID]
+	return ok && sent == inputID
 }
 
 func (c *daemonConnection) clearDispatchedSession(sessionID string) {

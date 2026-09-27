@@ -1,12 +1,13 @@
 import type { SessionEventEmitter } from "./session-state.js";
 import { SessionOutputFiles } from "./session-output-files.js";
+import { sessionInputDirectory } from "./session-artifacts.js";
 /**
  * Claude and Codex session runners — active runtime management,
  * SDK/CLI execution, and session option helpers.
  */
 
 import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, type UUID } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -56,7 +57,7 @@ import {
   claudeManagedSkillOptions,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
-import { sessionPrompt } from "./session-prompt.js";
+import { currentInput, sessionPrompt } from "./session-prompt.js";
 
 // Re-exported for existing callers/tests; the launch-policy module now owns
 // these definitions.
@@ -115,6 +116,7 @@ import {
   claudeProcessEvent,
   claudeStreamEventText,
   claudeSystemProcessEvent,
+  claudeTaskNotificationBookkeeping,
   claudeTaskLifecycleChange,
   claudeToolUseDetail,
   codexExtractTouchedFiles,
@@ -297,7 +299,7 @@ export function codexSessionInput(
   session: AgentSession,
   prompt: string,
 ): CodexSDKInput {
-  const images = (session.attachments ?? [])
+  const images = (currentInput(session).attachments ?? [])
     .filter((attachment) => attachment.kind === "image")
     .map((attachment) => attachment.path.trim())
     .filter(Boolean);
@@ -407,7 +409,7 @@ export async function runCodexWorkspaceSession(
 ): Promise<AgentSessionRunResult> {
   const outputs = await SessionOutputFiles.start(workspacePath, emit);
   if (managedSkills) {
-    validateWorkspaceSkillPrompt(session.prompt, managedSkills);
+    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     if (profile.command?.trim())
       throw new Error(
         "Custom runtime commands cannot enforce workspace skill isolation.",
@@ -434,9 +436,11 @@ export async function runCodexWorkspaceSession(
       codexSessionEnvironment(workspacePath, profile, session),
     );
   }
-  const sessionDir = process.env.FOUNDRY_EXECUTION_SESSION_ROOT
-    ? resolve(process.env.FOUNDRY_EXECUTION_SESSION_ROOT, session.id)
-    : resolve(workspacePath, ".foundry", "sessions", session.id);
+  const sessionDir = sessionInputDirectory(
+    process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
+      resolve(workspacePath, ".foundry", "sessions"),
+    session,
+  );
   mkdirSync(sessionDir, { recursive: true });
   if (profile.command?.trim()) {
     await emitSetup();
@@ -732,7 +736,7 @@ export async function runCodexCliSession(
   if (speed) {
     args.splice(1, 0, "-c", `model_speed="${speed}"`);
   }
-  const imageAttachments = (session.attachments ?? []).filter(
+  const imageAttachments = (currentInput(session).attachments ?? []).filter(
     (attachment) => attachment.kind === "image",
   );
   for (const attachment of imageAttachments) {
@@ -831,9 +835,11 @@ export async function runClaudeWorkspaceSession(
     managedSkills,
   });
   session = plan.session;
-  const sessionDir = process.env.FOUNDRY_EXECUTION_SESSION_ROOT
-    ? resolve(process.env.FOUNDRY_EXECUTION_SESSION_ROOT, session.id)
-    : resolve(workspacePath, ".foundry", "sessions", session.id);
+  const sessionDir = sessionInputDirectory(
+    process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
+      resolve(workspacePath, ".foundry", "sessions"),
+    session,
+  );
   mkdirSync(sessionDir, { recursive: true });
   if (profile.command?.trim()) {
     await emitSetup();
@@ -872,7 +878,12 @@ export async function runClaudeWorkspaceSession(
       plan,
     );
   } catch (error) {
-    if (error instanceof ClaudeAgentTurnError) {
+    // A turn error or a cancellation is the outcome, not an unavailable SDK:
+    // falling back would run canceled work again in the CLI.
+    if (
+      error instanceof ClaudeAgentTurnError ||
+      isAgentSessionCanceledError(error)
+    ) {
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -1067,6 +1078,9 @@ export async function handleActiveClaudeMessage(
     turn.finalResult = text;
     turn.partialResult = text;
     await turn.emit("Response stream", text);
+  }
+  if (claudeTaskNotificationBookkeeping(message)) {
+    return;
   }
   if (
     message &&
@@ -1408,6 +1422,8 @@ export async function runClaudeAgentSdkSession(
             message: { role: "user", content: prompt },
             parent_tool_use_id: null,
             type: "user",
+            // The Foundry input is Claude's user message: one identity.
+            ...(session.input ? { uuid: session.input.id as UUID } : {}),
           });
           if (runtimeStartOptions) {
             startActiveClaudePump(
@@ -1609,7 +1625,7 @@ export async function runClaudeCliSession(
   if (plan) {
     baseArgs.push(...plan.cliArgs);
   } else if (managedSkills) {
-    validateWorkspaceSkillPrompt(session.prompt, managedSkills);
+    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     baseArgs.push(
       "--disable-slash-commands",
       "--setting-sources",

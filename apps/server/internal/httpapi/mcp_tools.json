@@ -36,7 +36,7 @@
   },
   {
     "name": "create_session",
-    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child on your device and joins your orchestration group; without profileId and provider it runs like you. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. Codex cannot steer an active turn (the message queues for the next turn).",
+    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child on your device and joins your orchestration group; without profileId and provider it runs like you. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -167,7 +167,7 @@
   },
   {
     "name": "read_context",
-    "description": "Read another session's context. scope=summary (default, cheap), thread (all turns of the conversation), transcript (raw native chat) or subagents (the session's native subagents; with taskId, one subagent's transcript). Output is tail-truncated by maxBytes to protect your context window.",
+    "description": "Read another session's context. scope=summary (default, cheap), thread (the session's full transcript), transcript (raw native chat) or subagents (the session's native subagents; with taskId, one subagent's transcript). Output is tail-truncated by maxBytes to protect your context window.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -191,8 +191,8 @@
     }
   },
   {
-    "name": "steer_session",
-    "description": "Send an additional instruction to a running session you created. It adjusts the active turn (Claude) or queues for the next turn (Codex).",
+    "name": "send_message",
+    "description": "Send a message to any session in this workspace. A running session is steered (Claude adjusts its active turn; Codex queues it for the next one). An idle session takes it as its next input and continues the same native session; profileId/provider/model switch its runtime first. wait=true blocks until it settles and returns its response.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -201,6 +201,23 @@
         },
         "message": {
           "type": "string"
+        },
+        "profileId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["claude", "codex"]
+        },
+        "model": {
+          "type": "string"
+        },
+        "wait": {
+          "type": "boolean",
+          "description": "Block until the session settles and return its response."
+        },
+        "timeoutMs": {
+          "type": "number"
         }
       },
       "required": ["sessionId", "message"]
@@ -208,7 +225,7 @@
   },
   {
     "name": "cancel_session",
-    "description": "Stop a running or queued session you created. Cancelling never cascades: sessions it created keep running as independent sessions.",
+    "description": "Stop the work a session in this workspace is doing. Cancelling never cascades: sessions it created keep running. The session stays usable: send_message continues it.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -243,7 +260,7 @@
   },
   {
     "name": "rename_session",
-    "description": "Rename a session you created (1-120 characters).",
+    "description": "Rename a session in this workspace (1-120 characters).",
     "inputSchema": {
       "type": "object",
       "properties": {

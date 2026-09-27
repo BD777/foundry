@@ -30,8 +30,9 @@ orchestration group and records you as its parent.
 - Context is cheap to duplicate; a waiting session is expensive. Put a shared
   context block (project state, hard constraints, report format) into every
   brief.
-- Prefer reusing an idle child you already briefed over spawning a fresh one —
-  but never interrupt a `running` child to save a briefing.
+- Prefer reusing an idle child you already briefed over spawning a fresh one:
+  `send_message` continues it on the same native session with its context
+  intact. Never interrupt a `running` child to save a briefing.
 - Every brief states: the goal, authoritative sources of fact, what to produce
   and where, hard constraints (read-only? may it commit?), and how to report.
   Tell the child to finish rather than stall when blocked.
@@ -51,11 +52,12 @@ orchestration group and records you as its parent.
   response; do not infer from the status alone.
 - Refresh your watch list as you add or retire children.
 
-## Steering
+## Talking to sessions
 
-- Add information or correct a running child with `steer_session`. Give the
-  reason for the constraint, not just the correction, so the child applies it
-  to cases you did not name.
+- `send_message` is the one way to talk to an existing session. A running one
+  is steered; an idle one takes the message as its next input. Give the reason
+  for a constraint, not just the correction, so the child applies it to cases
+  you did not name.
 - Codex cannot steer an active turn; the message queues for the next turn.
 - When a child pushes back with evidence, take it seriously and verify against
   the raw record before relaying either side.
@@ -78,9 +80,11 @@ orchestration group and records you as its parent.
 
 ## Control and lifecycle
 
-- You can steer, cancel, rename or read sessions **you created**. Other
-  sessions in the group are readable (so a replacement orchestrator can take
-  over via `list_group_sessions`) but not controllable by you.
+- You can read, message, cancel and rename **any session in your workspace**,
+  not only those you created, so a replacement orchestrator (for example after
+  `handoff_session`) takes over by finding them with `list_group_sessions` or
+  `list_sessions`. Act on sessions the user pointed you at or you created;
+  leave unrelated work alone.
 - Cancelling a session never cascades: children it created are first-class and
   keep running. Do not cancel a child merely because you stopped waiting on it.
 - Sessions run directly in the workspace, not an isolated sandbox by default.

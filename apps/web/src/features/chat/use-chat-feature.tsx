@@ -18,13 +18,12 @@ import type {
 import { chatUpdateTime, latestChatTime } from "./chat-time";
 import { toChatSendError } from "./chat-send-error";
 import {
-  adoptAgentSession,
   cancelAgentSession,
   createAgentSession,
   getAgentSessionThread,
   getChat,
   listAgentSubagents,
-  steerAgentSession,
+  sendAgentSessionMessage,
   uploadChatAttachments,
 } from "../../api";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
@@ -46,7 +45,6 @@ import {
   isTerminalSession,
   latestCopyableResponseIndex,
   latestThreadSession,
-  latestThreadSessionForAgent,
   nativeChatKey,
   profileTransitionNoteForSend,
   selectedChatThread,
@@ -545,10 +543,10 @@ export function useChatFeature({
         selectedChat && !selectedThread && !selectedChat.handoffContext
           ? await getChat(selectedChat.id).catch(() => selectedChat)
           : selectedChat;
-      const compatibleSession = latestThreadSessionForAgent(
-        selectedThread,
-        selectedAgent,
-      );
+      // An open Foundry chat is one session: the message continues it.
+      const continuedSession = selectedThread
+        ? latestThreadSession(selectedThread)
+        : undefined;
       const selectedNativeChatId = chatMatchesAgentProfile(
         chatForSend,
         selectedAgent,
@@ -558,52 +556,51 @@ export function useChatFeature({
       const submittedAttachmentIds = new Set(
         effectiveAttachments.map((attachment) => attachment.id),
       );
+      const message = {
+        agentId: selectedAgent.id,
+        attachments: effectiveAttachments,
+        claudeEffort:
+          selectedAgent.provider === "claude" && claudeEffort
+            ? claudeEffort
+            : undefined,
+        claudePermissionMode:
+          selectedAgent.provider === "claude"
+            ? claudePermissionMode
+            : undefined,
+        codexApprovalPolicy:
+          selectedAgent.provider === "codex" ? codexApprovalPolicy : undefined,
+        codexReasoningEffort:
+          selectedAgent.provider === "codex" && codexReasoningEffort
+            ? codexReasoningEffort
+            : undefined,
+        codexSandboxMode:
+          selectedAgent.provider === "codex" ? codexSandboxMode : undefined,
+        codexSpeed: selectedAgent.provider === "codex" ? codexSpeed : undefined,
+        importedContext: importedContextForSend({
+          agent: selectedAgent,
+          selectedChat: chatForSend,
+          session: continuedSession,
+        }),
+        model: modelValue || undefined,
+        profileId: selectedAgent.profileId,
+        profileTransitionNote: profileTransitionNoteForSend({
+          agent: selectedAgent,
+          selectedChat: chatForSend,
+          thread: selectedThread,
+        }),
+        prompt,
+        provider: selectedAgent.provider,
+      };
       let session: AgentSession;
       try {
-        session = await createAgentSession({
-          agentId: selectedAgent.id,
-          attachments: effectiveAttachments,
-          claudeEffort:
-            selectedAgent.provider === "claude" && claudeEffort
-              ? claudeEffort
-              : undefined,
-          claudePermissionMode:
-            selectedAgent.provider === "claude"
-              ? claudePermissionMode
-              : undefined,
-          codexApprovalPolicy:
-            selectedAgent.provider === "codex"
-              ? codexApprovalPolicy
-              : undefined,
-          codexReasoningEffort:
-            selectedAgent.provider === "codex" && codexReasoningEffort
-              ? codexReasoningEffort
-              : undefined,
-          codexSandboxMode:
-            selectedAgent.provider === "codex" ? codexSandboxMode : undefined,
-          codexSpeed:
-            selectedAgent.provider === "codex" ? codexSpeed : undefined,
-          importedContext: importedContextForSend({
-            agent: selectedAgent,
-            compatibleSession,
-            selectedChat: chatForSend,
-            thread: selectedThread,
-          }),
-          model: modelValue || undefined,
-          nativeSessionId:
-            compatibleSession?.nativeSessionId ?? selectedNativeChatId,
-          profileId: selectedAgent.profileId,
-          profileTransitionNote: profileTransitionNoteForSend({
-            agent: selectedAgent,
-            selectedChat: chatForSend,
-            thread: selectedThread,
-          }),
-          prompt,
-          provider: selectedAgent.provider,
-          source: "chat",
-          threadId: selectedThread?.id ?? chatForSend?.id,
-          workspaceId,
-        });
+        session = continuedSession
+          ? await sendAgentSessionMessage(continuedSession.id, message)
+          : await createAgentSession({
+              ...message,
+              nativeSessionId: selectedNativeChatId,
+              source: "chat",
+              workspaceId,
+            });
       } catch (reason) {
         // Surface a safe, specific cause in the composer Alert. Throwing lets
         // useConversationInput retain the draft/attachments and require an
@@ -673,7 +670,7 @@ export function useChatFeature({
       return false;
     }
     try {
-      await steerAgentSession(targetSession.id, message);
+      await sendAgentSessionMessage(targetSession.id, { prompt: message });
       await emit({ type: "data.refresh.requested" });
       await emit({
         message: "Steered into the active response.",
@@ -757,23 +754,11 @@ export function useChatFeature({
     selectedAnswer,
   );
   const menuActions = (id: string) => {
-    const supervisor = selectedThread
-      ? latestThreadSession(selectedThread)
-      : undefined;
     return {
       onRename: (title: string) => titleState.rename(id, title),
       onAutoRename: () => titleState.recap(id),
       onMarkUnread: () => readState.markUnread(id),
       onNotify: notify,
-      onAdopt: () => {
-        if (!supervisor || supervisor.id === id) return;
-        void adoptAgentSession(id, supervisor.id)
-          .then(() => notify("已将当前会话设为接管者"))
-          .catch((error: unknown) =>
-            notify(error instanceof Error ? error.message : "接管失败"),
-          );
-      },
-      adoptDisabled: !supervisor || supervisor.id === id,
       renaming: ["queued", "running"].includes(
         titleState.titles[id]?.generationStatus ?? "",
       ),

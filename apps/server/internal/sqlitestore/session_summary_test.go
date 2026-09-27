@@ -26,7 +26,7 @@ func TestRoutingSummaryDoesNotReadTranscriptEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.ID != session.ID || summary.DeviceID != session.DeviceID || summary.WorkspaceID != session.WorkspaceID || len(summary.Events) != 0 || summary.ImportedContext != "" {
+	if summary.ID != session.ID || summary.DeviceID != session.DeviceID || summary.WorkspaceID != session.WorkspaceID || len(summary.Events) != 0 || summary.Input.ImportedContext != "" {
 		t.Fatalf("incorrect routing summary: %#v", summary)
 	}
 	if _, err := db.GetAgentSession(ctx, session.ID); err == nil {

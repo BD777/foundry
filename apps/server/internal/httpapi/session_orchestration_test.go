@@ -86,15 +86,6 @@ func TestLineageAutoGroupsUngroupedParent(t *testing.T) {
 	if last.ChatID != grandchild.ID || last.GroupID != groupID {
 		t.Fatalf("grandchild placement = %+v", last)
 	}
-
-	descendant, err := db.IsSessionDescendant(ctx, parent.ID, grandchild.ID)
-	if err != nil || !descendant {
-		t.Fatalf("grandchild descendant of parent = %v, %v", descendant, err)
-	}
-	sibling, err := db.IsSessionDescendant(ctx, grandchild.ID, parent.ID)
-	if err != nil || sibling {
-		t.Fatalf("parent must not be a descendant of grandchild: %v, %v", sibling, err)
-	}
 }
 
 // CHAT-01 scenario: a grouped parent keeps children inside its existing group.
@@ -184,21 +175,39 @@ func TestSessionTokenMintResolveRevoke(t *testing.T) {
 		t.Fatal("bad token resolved")
 	}
 
-	// Re-minting rotates the credential.
+	// Each dispatch mints another token; a long-lived agent process may still
+	// hold an earlier one, so earlier tokens stay valid, including after the
+	// session settles: it can be continued.
 	replacement, err := db.MintAgentSessionToken(ctx, parent.ID)
 	if err != nil || replacement == token {
-		t.Fatalf("token rotation failed: %v", err)
+		t.Fatalf("second mint failed: %v", err)
 	}
-	if _, err := db.ResolveSessionToken(ctx, token); err == nil {
-		t.Fatal("old token stayed valid after rotation")
-	}
-
-	// A terminal session loses its token in the same write.
 	if _, err := db.CancelAgentSession(ctx, parent.ID, "test cancel"); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	if _, err := db.ResolveSessionToken(ctx, replacement); err == nil {
-		t.Fatal("token survived session termination")
+	for _, held := range []string{token, replacement} {
+		if identity, err := db.ResolveSessionToken(ctx, held); err != nil || identity.SessionID != parent.ID {
+			t.Fatalf("a settled session's token = %+v, %v; want it still valid", identity, err)
+		}
+	}
+
+	// Deleting the session revokes every token it was given.
+	layout, err := db.GetChatLayout(ctx, "ws_lineage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout.Groups = append(layout.Groups, store.ChatLayoutGroup{ID: "doomed", Name: "Doomed"})
+	layout.Positions = append(layout.Positions, store.ChatPlacement{ChatID: parent.ID, GroupID: "doomed"})
+	if layout, err = db.SaveChatLayout(ctx, store.SaveChatLayoutInput{WorkspaceID: "ws_lineage", ExpectedRevision: &layout.Revision, Layout: layout}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DeleteChatGroup(ctx, store.DeleteChatGroupInput{WorkspaceID: "ws_lineage", GroupID: "doomed", ExpectedRevision: &layout.Revision}); err != nil {
+		t.Fatalf("delete session: %v", err)
+	}
+	for _, held := range []string{token, replacement} {
+		if _, err := db.ResolveSessionToken(ctx, held); err == nil {
+			t.Fatal("a deleted session's token still resolves")
+		}
 	}
 }
 
@@ -318,23 +327,7 @@ func TestSessionTokenHTTPPolicy(t *testing.T) {
 	}
 	childToken := readDispatchedToken()
 
-	// A second, unrelated session in the same workspace is a sibling: its
-	// creator (browser) can control it, the parent token must not.
-	status, sibling := create(parentBody, "")
-	if status != http.StatusCreated {
-		t.Fatalf("sibling create status = %d", status)
-	}
-	_ = readDispatchedToken()
-	if status := doRequest(http.MethodPost, "/api/agent-sessions/"+sibling.ID+"/steer", parentToken); status != http.StatusForbidden {
-		t.Fatalf("sibling steer status = %d, want 403", status)
-	}
-	if status := doRequest(http.MethodPost, "/api/agent-sessions/"+sibling.ID+"/cancel", parentToken); status != http.StatusForbidden {
-		t.Fatalf("sibling cancel status = %d, want 403", status)
-	}
-
-	// Group membership grants read visibility to the sibling (they share the
-	// auto-created group via their own children? sibling has no child, so it
-	// is ungrouped — the parent can still read itself and its child).
+	// Any session of the workspace is readable by any session token in it.
 	if status := doRequest(http.MethodGet, "/api/agent-sessions/"+child.ID, parentToken); status != http.StatusOK {
 		t.Fatalf("child read status = %d, want 200", status)
 	}
@@ -467,37 +460,27 @@ func TestBlockedResumeLifecycle(t *testing.T) {
 	}
 }
 
-// Adopt assigns a human-confirmed supervisor; birth lineage is unchanged.
-func TestAdoptSupervisor(t *testing.T) {
+// Inside one workspace any agent may read and control any session, whoever
+// created it; lineage grants nothing and other workspaces stay closed.
+func TestAgentsControlAnySessionOfTheirWorkspace(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
-	child, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+	stranger, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
-		Prompt: "child", Source: "agent", ParentSessionID: parent.ID,
+		Prompt: "started by a person, not by the parent", Source: "chat",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
-		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
-		Prompt: "replacement", Source: "chat",
-	})
-	if err != nil {
-		t.Fatal(err)
+	server := NewServer(db)
+	agent := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: parent.ID, WorkspaceID: "ws_lineage", DeviceID: "dev_lineage"}}
+	if !server.canReadSession(ctx, agent, stranger) || !server.canControlSession(ctx, agent, stranger) {
+		t.Fatal("an agent must read and control an unrelated session of its workspace")
 	}
-	adopted, err := db.AdoptSupervisor(ctx, child.ID, other.ID)
-	if err != nil {
-		t.Fatalf("adopt: %v", err)
-	}
-	if adopted.SupervisorSessionID != other.ID || adopted.ParentSessionID != parent.ID {
-		t.Fatalf("adopted = %+v", adopted)
-	}
-	if _, err := db.AdoptSupervisor(ctx, child.ID, child.ID); err != store.ErrAgentAdoptInvalid {
-		t.Fatalf("self adopt error = %v", err)
-	}
-	cleared, err := db.ClearSupervisor(ctx, child.ID)
-	if err != nil || cleared.SupervisorSessionID != "" {
-		t.Fatalf("clear supervisor = %+v, %v", cleared, err)
+	elsewhere := stranger
+	elsewhere.WorkspaceID = "ws_other"
+	if server.canReadSession(ctx, agent, elsewhere) || server.canControlSession(ctx, agent, elsewhere) {
+		t.Fatal("an agent must not reach sessions of another workspace")
 	}
 }
 
@@ -638,7 +621,6 @@ func TestSessionFork(t *testing.T) {
 		Prompt:          "continue from a fork",
 		ForkSessionID:   original.ID,
 		NativeSessionID: "native_abc",
-		ThreadID:        "",
 	}
 	fork, err := db.CreateAgentSession(ctx, input)
 	if err != nil {
@@ -647,8 +629,8 @@ func TestSessionFork(t *testing.T) {
 	if fork.NativeSessionID != "native_abc" {
 		t.Fatalf("fork native session = %q, want native_abc", fork.NativeSessionID)
 	}
-	if fork.ThreadID == original.ThreadID || fork.ThreadID != fork.ID {
-		t.Fatalf("fork thread = %q, original = %q (must be a fresh thread)", fork.ThreadID, original.ThreadID)
+	if fork.ID == original.ID || fork.ThreadID != fork.ID {
+		t.Fatalf("fork = %q (thread %q), original = %q: a fork is a new session", fork.ID, fork.ThreadID, original.ID)
 	}
 }
 
@@ -667,14 +649,15 @@ func TestVerificationSource(t *testing.T) {
 	}
 }
 
-// AI group naming: the naming response renames the layout group; a bad
-// response is ignored by leaving the deterministic name untouched.
+// AI group naming answers in the chat title format; a bad answer leaves the
+// deterministic name untouched, and raw JSON never becomes a group name.
 func TestGroupNameFromResponse(t *testing.T) {
 	cases := map[string]string{
-		"前端优化":         "前端优化",
-		"- 支付重构":       "支付重构",
-		"\"数据库迁移\"":    "数据库迁移",
-		"第一行\nignored": "第一行",
+		`{"title":"前端优化"}`:                   "前端优化",
+		"```json\n{\"title\":\"支付重构\"}\n```": "支付重构",
+		"- 数据库迁移":                            "数据库迁移",
+		`{"title":""}`:                       "",
+		"第一行\n第二行":                           "",
 	}
 	for input, want := range cases {
 		if got := groupNameFromResponse(input); got != want {
@@ -864,5 +847,15 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 	unknown := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "missing"}
 	if status, _ := server.resolveSessionDevice(ctx, actor, &unknown); status != http.StatusBadRequest {
 		t.Fatalf("unknown profile = %d, want 400", status)
+	}
+}
+
+func TestLifecycleMessagesAboutAnEarlierInputAreStale(t *testing.T) {
+	session := store.AgentSession{ID: "sess_a", Input: store.SessionInput{ID: "in_2"}}
+	if !staleSessionInput(session, "in_1") {
+		t.Fatal("a completion for an earlier input must not settle the current one")
+	}
+	if staleSessionInput(session, "in_2") || staleSessionInput(session, "") {
+		t.Fatal("the current input, or a message without an input id, is not stale")
 	}
 }

@@ -60,7 +60,6 @@ func (s *Store) CreateGroupNameJob(ctx context.Context, input store.CreateAgentS
 	// inherited transcript/native context.
 	input.Source = "naming"
 	input.NativeSessionID = ""
-	input.ThreadID = ""
 	input.ImportedContext = ""
 	input.ProfileTransitionNote = ""
 	input.Attachments = nil

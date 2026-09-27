@@ -442,7 +442,6 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 
 	session, err := db.CreateAgentSession(ctx, storepkg.CreateAgentSessionInput{
 		WorkspaceID: "ws_test",
-		ThreadID:    "thread_foundry",
 		AgentID:     "agent_claude",
 		Provider:    "claude",
 		ProfileID:   "profile_claude",
@@ -1172,7 +1171,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		Session storepkg.AgentSession `json:"session"`
 	}
 	readWSPayloadForTest(t, conn, "run_session", &naming)
-	if naming.Session.Source != "naming" || naming.Session.NativeSessionID != "" || naming.Session.ThreadID != "" || naming.Session.AgentID != "agent_session_codex" {
+	if naming.Session.Source != "naming" || naming.Session.NativeSessionID != "" || naming.Session.ID == sessionID || naming.Session.AgentID != "agent_session_codex" {
 		t.Fatalf("expected isolated first-answer recap: %+v", naming.Session)
 	}
 	writeWSForTest(t, conn, "session_completed", map[string]any{"sessionId": naming.Session.ID, "response": `{"title":"Workspace inspection"}`})
@@ -1293,12 +1292,14 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		t.Fatalf("expected subagent transcript through websocket, got %#v", subagentRead)
 	}
 	events, ok := detail["events"].([]any)
-	if !ok || len(events) != 1 {
-		t.Fatalf("expected one timestamped agent session event, got %#v", detail["events"])
+	// The input opens the transcript, the daemon's event follows, and the
+	// answer reported on completion closes it.
+	if !ok || len(events) != 3 {
+		t.Fatalf("expected the input, one timestamped agent session event and the answer, got %#v", detail["events"])
 	}
-	event, ok := events[0].(map[string]any)
+	event, ok := events[1].(map[string]any)
 	if !ok || event["at"] == "just now" || event["at"] == "" {
-		t.Fatalf("expected server timestamp on agent session event, got %#v", events[0])
+		t.Fatalf("expected server timestamp on agent session event, got %#v", events[1])
 	}
 }
 
@@ -1550,7 +1551,7 @@ func TestListAgentSessionsRecoversCompletedSessionArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create queued session: %v", err)
 	}
-	writeClaudeSuccessArtifacts(t, workspacePath, session.ID, "Recovered response", "native_recovered")
+	writeClaudeSuccessArtifacts(t, workspacePath, session, "Recovered response", "native_recovered")
 
 	server := NewServer(store)
 	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId=ws_recover", http.StatusOK)
@@ -1574,7 +1575,7 @@ func TestListAgentSessionsRecoversCompletedSessionArtifacts(t *testing.T) {
 	}
 }
 
-func TestAgentSessionThreadEndpointReturnsCompleteTurnsAtomically(t *testing.T) {
+func TestAgentSessionThreadEndpointReturnsTheWholeConversation(t *testing.T) {
 	db := newEmptyTestStore(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, storepkg.DaemonRegistration{
@@ -1627,19 +1628,15 @@ func TestAgentSessionThreadEndpointReturnsCompleteTurnsAtomically(t *testing.T) 
 	if _, err := db.CompleteAgentSession(ctx, first.ID, "first answer", "native_thread_api"); err != nil {
 		t.Fatalf("complete first thread API session: %v", err)
 	}
-	second, err := db.CreateAgentSession(ctx, storepkg.CreateAgentSessionInput{
-		WorkspaceID:     "ws_thread_api",
-		ThreadID:        first.ID,
-		NativeSessionID: "native_thread_api",
-		AgentID:         "agent_thread_api",
-		Provider:        "codex",
-		Prompt:          "second",
-	})
+	second, err := db.SendAgentSessionInput(ctx, first.ID, storepkg.SendAgentSessionInput{Prompt: "second"})
 	if err != nil {
-		t.Fatalf("create second thread API session: %v", err)
+		t.Fatalf("send second input: %v", err)
 	}
-	if _, err := db.CompleteAgentSession(ctx, second.ID, "second answer", "native_thread_api"); err != nil {
-		t.Fatalf("complete second thread API session: %v", err)
+	if second.ID != first.ID || second.NativeSessionID != "native_thread_api" || second.Status != "queued" {
+		t.Fatalf("second input = %+v, want the same queued session on its native session", second)
+	}
+	if _, err := db.CompleteAgentSession(ctx, first.ID, "second answer", "native_thread_api"); err != nil {
+		t.Fatalf("complete second input: %v", err)
 	}
 
 	server := NewServer(db)
@@ -1649,14 +1646,21 @@ func TestAgentSessionThreadEndpointReturnsCompleteTurnsAtomically(t *testing.T) 
 		"/api/agent-session-threads/"+second.ID+"?workspaceId=ws_thread_api",
 		http.StatusOK,
 	)
-	if len(thread) != 2 {
-		t.Fatalf("expected two complete turns, got %#v", thread)
+	if len(thread) != 1 || thread[0]["response"] != "second answer" {
+		t.Fatalf("expected one session answering its latest input, got %#v", thread)
 	}
-	if thread[0]["response"] != "first answer" || thread[1]["response"] != "second answer" {
-		t.Fatalf("expected complete thread responses, got %#v", thread)
+	events, _ := thread[0]["events"].([]any)
+	var transcript []string
+	for _, raw := range events {
+		event := raw.(map[string]any)
+		if message, ok := event["message"].(map[string]any); ok && message["kind"] == "user" {
+			transcript = append(transcript, "user:"+message["text"].(string))
+		} else if event["label"] == "Response stream" {
+			transcript = append(transcript, "answer:"+event["detail"].(string))
+		}
 	}
-	if _, ok := thread[0]["events"]; !ok {
-		t.Fatalf("expected thread endpoint to include event arrays, got %#v", thread[0])
+	if strings.Join(transcript, "|") != "user:first|answer:first answer|user:second|answer:second answer" {
+		t.Fatalf("transcript = %v, want both inputs and the first answer in order", transcript)
 	}
 }
 
@@ -1701,7 +1705,7 @@ func TestListAgentSessionsRecoversCompletionMarkerWithoutProviderLogs(t *testing
 	if err != nil {
 		t.Fatalf("create queued session: %v", err)
 	}
-	writeSessionCompletionMarker(t, workspacePath, session.ID, "Marker recovered response", "native_marker_recovered")
+	writeSessionCompletionMarker(t, workspacePath, session, "Marker recovered response", "native_marker_recovered")
 
 	server := NewServer(store)
 	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId=ws_marker_recover", http.StatusOK)
@@ -1835,7 +1839,7 @@ func TestDaemonRegistrationSkipsRecoveredQueuedAgentSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create queued agent session: %v", err)
 	}
-	writeClaudeSuccessArtifacts(t, workspacePath, session.ID, "Already recovered", "native_redeliver_recovered")
+	writeClaudeSuccessArtifacts(t, workspacePath, session, "Already recovered", "native_redeliver_recovered")
 
 	server := NewServer(store)
 	if err := server.hub.DispatchAgentSession(session); err != nil {
@@ -2127,9 +2131,9 @@ func readWSPayloadEnvelopeForTest(t *testing.T, conn *websocket.Conn, expectedTy
 	return envelope.ID
 }
 
-func writeClaudeSuccessArtifacts(t *testing.T, workspacePath string, sessionID string, response string, nativeSessionID string) {
+func writeClaudeSuccessArtifacts(t *testing.T, workspacePath string, session storepkg.AgentSession, response string, nativeSessionID string) {
 	t.Helper()
-	sessionDir := filepath.Join(workspacePath, ".foundry", "sessions", sessionID)
+	sessionDir := agentSessionInputDir(workspacePath, session)
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
 		t.Fatalf("create session artifact dir: %v", err)
 	}
@@ -2146,9 +2150,9 @@ func writeClaudeSuccessArtifacts(t *testing.T, workspacePath string, sessionID s
 	}
 }
 
-func writeSessionCompletionMarker(t *testing.T, workspacePath string, sessionID string, response string, nativeSessionID string) {
+func writeSessionCompletionMarker(t *testing.T, workspacePath string, session storepkg.AgentSession, response string, nativeSessionID string) {
 	t.Helper()
-	sessionDir := filepath.Join(workspacePath, ".foundry", "sessions", sessionID)
+	sessionDir := agentSessionInputDir(workspacePath, session)
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
 		t.Fatalf("create session artifact dir: %v", err)
 	}
@@ -2156,7 +2160,7 @@ func writeSessionCompletionMarker(t *testing.T, workspacePath string, sessionID 
 		"completedAt":     time.Now().UTC().Format(time.RFC3339Nano),
 		"nativeSessionId": nativeSessionID,
 		"response":        response,
-		"sessionId":       sessionID,
+		"sessionId":       session.ID,
 		"status":          "completed",
 	}
 	bytes, err := json.Marshal(marker)

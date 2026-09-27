@@ -21,13 +21,12 @@ func TestChatTitleGenerationIsolationAndManualPrecedence(t *testing.T) {
 	}
 	input.Prompt = "isolated title prompt"
 	input.NativeSessionID = "must not resume"
-	input.ThreadID = original.ID
 	input.ImportedContext = "must not inherit"
 	job, err := db.CreateChatTitleJob(ctx, original.ID, input, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Source != "naming" || job.NativeSessionID != "" || job.ThreadID != "" || job.ImportedContext != "" || job.AgentID != original.AgentID {
+	if job.Source != "naming" || job.NativeSessionID != "" || job.ID == original.ID || job.Input.ImportedContext != "" || job.AgentID != original.AgentID {
 		t.Fatalf("naming not isolated: %+v", job)
 	}
 	duplicate, err := db.CreateChatTitleJob(ctx, original.ID, input, true)

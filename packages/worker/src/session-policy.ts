@@ -28,7 +28,7 @@ import {
   workspaceProjectInstructions,
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
-import { sessionPrompt } from "./session-prompt.js";
+import { currentInput, sessionPrompt } from "./session-prompt.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -197,7 +197,7 @@ export function buildClaudeLaunchPlan(input: {
   let receipt: ((nativeSessionId: string) => void) | undefined;
   let reset = false;
   if (managedSkills) {
-    validateWorkspaceSkillPrompt(session.prompt, managedSkills);
+    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     if (profile.command?.trim()) {
       throw new ClaudePolicyError(
         "Custom runtime commands cannot enforce workspace skill isolation.",

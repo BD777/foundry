@@ -67,3 +67,13 @@ test("response stream event ids advance after tools following text", () => {
   assert.equal(nextID("已使用工具"), undefined);
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream_2");
 });
+
+test("each input of a session names its own response events", () => {
+  const first = createResponseStreamEventIDAllocator("sess_a_input_1");
+  const second = createResponseStreamEventIDAllocator("sess_a_input_2");
+  assert.notEqual(
+    first("Response stream"),
+    second("Response stream"),
+    "a later answer must never overwrite an earlier one",
+  );
+});

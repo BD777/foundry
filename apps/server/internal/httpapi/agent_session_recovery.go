@@ -127,7 +127,7 @@ func completedAgentSessionFromArtifacts(workspacePath string, session store.Agen
 	if workspacePath == "" || strings.TrimSpace(session.ID) == "" {
 		return recoveredAgentSession{}, false, nil
 	}
-	sessionDir := filepath.Join(workspacePath, ".foundry", "sessions", session.ID)
+	sessionDir := agentSessionInputDir(workspacePath, session)
 	if recovered, ok, err := completedAgentSessionFromMarker(sessionDir, session.ID); err != nil || ok {
 		return recovered, ok, err
 	}
@@ -154,6 +154,17 @@ func completedAgentSessionFromArtifacts(workspacePath string, session store.Agen
 		return recovered, ok, err
 	}
 	return recoveredAgentSession{}, false, nil
+}
+
+// agentSessionInputDir is where the worker keeps the artifacts of a
+// session's current input. They are kept per input, so an earlier input's
+// completion marker can never settle the input now in flight.
+func agentSessionInputDir(workspacePath string, session store.AgentSession) string {
+	dir := filepath.Join(workspacePath, ".foundry", "sessions", session.ID)
+	if session.Input.ID == "" {
+		return dir
+	}
+	return filepath.Join(dir, "inputs", session.Input.ID)
 }
 
 func completedAgentSessionFromMarker(sessionDir string, sessionID string) (recoveredAgentSession, bool, error) {

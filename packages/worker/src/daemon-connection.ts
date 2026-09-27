@@ -34,6 +34,7 @@ import {
   activeSessionCancelTargets,
   activeSessionSteerTargets,
   clearOutOfBandSessionEventSink,
+  dispatchKey,
   queuedSessionCancelRequests,
   SessionExecutionRegistry,
   setOutOfBandSessionEventSink,
@@ -210,6 +211,7 @@ interface SteerSessionPayload {
 
 interface CancelSessionPayload {
   sessionId?: string;
+  inputId?: string;
 }
 
 const nativeChatSyncIntervalMs = 10000;
@@ -453,15 +455,24 @@ async function executeAgentSession(
   const unregisterAmbient = ambient
     ? registerSessionAmbientEnv(session.id, ambient)
     : () => {};
-  if (queuedSessionCancelRequests.delete(session.id)) {
+  if (
+    queuedSessionCancelRequests.delete(
+      dispatchKey(session.id, session.input?.id),
+    )
+  ) {
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       error: "Session canceled before it started.",
     });
     unregisterAmbient();
     return;
   }
-  const responseEventID = createResponseStreamEventIDAllocator(session.id);
+  // Response events are named per input: every input of a session has its
+  // own answers, and a later one must never overwrite an earlier one.
+  const responseEventID = createResponseStreamEventIDAllocator(
+    session.input ? `${session.id}_${session.input.id}` : session.id,
+  );
   const shouldSendEvent = createSessionStatusEventFilter();
   const responseIntervalMs = 50;
   let lastResponseSentAt = 0;
@@ -583,6 +594,7 @@ async function executeAgentSession(
 
   transport.send(daemonMessageTypes.sessionStarted, {
     sessionId: session.id,
+    inputId: session.input?.id,
   });
   const unregisterUnsupportedCodexSteer =
     session.provider === "codex"
@@ -643,6 +655,7 @@ async function executeAgentSession(
     writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       nativeSessionId: result.nativeSessionId,
       response: result.response,
     });
@@ -655,6 +668,7 @@ async function executeAgentSession(
     await emit("Session failed", message, "error");
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
+      inputId: session.input?.id,
       error: message,
     });
   } finally {
@@ -1546,7 +1560,7 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        void cancelActiveSession(sessionId)
+        void cancelActiveSession(sessionId, payload?.inputId?.trim())
           .then(() => {
             trySendWebSocket(
               socket,
@@ -1580,9 +1594,10 @@ function runWebSocketSession(options: {
           console.error("Received run_session without a session payload.");
           return;
         }
-        if (!options.sessionExecutions.claim(payload.session.id)) {
+        const inputId = payload.session.input?.id ?? "";
+        if (!options.sessionExecutions.claim(payload.session.id, inputId)) {
           console.log(
-            `Ignoring duplicate run_session for ${payload.session.id}`,
+            `Ignoring duplicate run_session for ${payload.session.id} ${inputId}`,
           );
           return;
         }
@@ -1617,18 +1632,19 @@ function runWebSocketSession(options: {
                 daemonMessageTypes.sessionCompleted,
                 {
                   sessionId: payload.session.id,
+                  inputId: payload.session.input?.id,
                   error: message,
                 },
               );
             } finally {
-              options.sessionExecutions.complete(payload.session.id);
+              options.sessionExecutions.complete(payload.session.id, inputId);
               if (options.once) {
                 finish("exit");
               }
             }
           })
           .catch((error: unknown) => {
-            options.sessionExecutions.complete(payload.session.id);
+            options.sessionExecutions.complete(payload.session.id, inputId);
             const message =
               error instanceof Error ? error.message : String(error);
             console.error(

@@ -36,3 +36,15 @@ test("exposes only process-owned active sessions for reconnect claims", () => {
 
   assert.deepEqual(registry.activeSessionIds(), ["session_a"]);
 });
+
+test("a session runs each of its inputs once and reports itself while active", () => {
+  const registry = new SessionExecutionRegistry();
+
+  assert.equal(registry.claim("session_1", "input_1"), true);
+  assert.equal(registry.claim("session_1", "input_1"), false);
+  assert.deepEqual(registry.activeSessionIds(), ["session_1"]);
+  registry.complete("session_1", "input_1");
+  assert.equal(registry.claim("session_1", "input_1"), false);
+  assert.equal(registry.claim("session_1", "input_2"), true);
+  assert.deepEqual(registry.activeSessionIds(), ["session_1"]);
+});

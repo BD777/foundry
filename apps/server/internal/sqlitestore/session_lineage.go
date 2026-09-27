@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -132,35 +131,6 @@ func (s *Store) persistLayout(ctx context.Context, workspaceID string, layout st
 	return nil
 }
 
-// IsSessionDescendant reports whether candidate was created (at any depth) by
-// ancestor. Direct parenting is included.
-func (s *Store) IsSessionDescendant(ctx context.Context, ancestorID, candidateID string) (bool, error) {
-	var matched bool
-	err := s.conn().QueryRowContext(ctx, `WITH RECURSIVE lineage(id) AS (
-			SELECT ?
-			UNION ALL
-			SELECT child.id FROM agent_sessions child
-			JOIN lineage ON child.parent_session_id = lineage.id
-		)
-		SELECT EXISTS (SELECT 1 FROM lineage WHERE id = ?)`, ancestorID, candidateID).Scan(&matched)
-	return matched, err
-}
-
-// SessionGroupID returns the layout group of a chat; empty means ungrouped or
-// unpositioned.
-func (s *Store) SessionGroupID(ctx context.Context, workspaceID, chatID string) (string, error) {
-	layout, err := s.GetChatLayout(ctx, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	for _, position := range layout.Positions {
-		if position.ChatID == chatID {
-			return strings.TrimSpace(position.GroupID), nil
-		}
-	}
-	return "", nil
-}
-
 // SessionsInGroup lists positioned chat ids of one layout group, in list order.
 func (s *Store) SessionsInGroup(ctx context.Context, workspaceID, groupID string) ([]string, error) {
 	layout, err := s.GetChatLayout(ctx, workspaceID)
@@ -262,45 +232,4 @@ func (s *Store) CountActiveAgentChildren(ctx context.Context, workspaceID, paren
 			AND status IN ('queued', 'running', 'blocked')`,
 		workspaceID, parentID).Scan(&count)
 	return count, err
-}
-
-// AdoptSupervisor assigns a human-confirmed supervisor without changing birth
-// lineage. Both sessions must live in the same workspace.
-func (s *Store) AdoptSupervisor(ctx context.Context, targetID, supervisorID string) (store.AgentSession, error) {
-	return s.adoptSupervisor(ctx, targetID, supervisorID, false)
-}
-
-// ClearSupervisor removes a previously confirmed supervision assignment.
-func (s *Store) ClearSupervisor(ctx context.Context, targetID string) (store.AgentSession, error) {
-	return s.adoptSupervisor(ctx, targetID, "", true)
-}
-
-func (s *Store) adoptSupervisor(ctx context.Context, targetID, supervisorID string, clear bool) (store.AgentSession, error) {
-	var result store.AgentSession
-	err := s.withTx(ctx, func(tx *Store) error {
-		target, err := tx.GetAgentSession(ctx, targetID)
-		if err != nil {
-			return err
-		}
-		if !clear {
-			supervisor, err := tx.GetAgentSessionSummary(ctx, supervisorID)
-			if err != nil {
-				return store.ErrAgentAdoptInvalid
-			}
-			if supervisor.WorkspaceID != target.WorkspaceID || supervisor.ID == target.ID {
-				return store.ErrAgentAdoptInvalid
-			}
-		}
-		target.SupervisorSessionID = ""
-		if !clear {
-			target.SupervisorSessionID = supervisorID
-		}
-		now := time.Now().UTC()
-		if err := tx.saveAgentSession(ctx, target, time.Time{}, now); err != nil {
-			return err
-		}
-		result = target
-		return nil
-	})
-	return result, err
 }

@@ -198,9 +198,11 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   实测中顺带修复：自定义命令不读 stdin 就退出时，Worker 写 prompt 触发的 `EPIPE`
   未被处理，会让执行进程崩溃。
 - **M2-3**：Codex 会话注入工具（需本机 Codex 登录恢复后实测）。
-- **待定**：编排血缘目前按"轮"记（Chat 每轮是一个 `AgentSession`，两轮派出的子会话
-  挂在不同父会话下），是否应按 Chat 线程记；HTTP MCP 的 OAuth 2.1 只在出现 Foundry
-  之外的远程 Agent 时再做。
+- **会话模型重构**（2026-09-27，[设计](session-model.md)）：一个会话就是一个原生会话，
+  一行到底；续聊是给会话发新输入，"轮"降为派发用的输入 id。令牌跟会话走，权限改为
+  同 Workspace 内任意 Agent 可操作任意会话，adopt 删除。它纠正了此前"每轮一行"导致的
+  编排血缘、令牌、恢复和列表问题，是 L4 Session Runtime 的内核改动。
+- HTTP MCP 的 OAuth 2.1 只在出现 Foundry 之外的远程 Agent 时再做。
 
 ## 5. M1 接口草案
 

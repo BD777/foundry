@@ -36,9 +36,15 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 		input.ClaudeEffort, input.CodexReasoningEffort = latest.ClaudeEffort, latest.CodexReasoningEffort
 		profileID, deviceID = latest.ProfileID, latest.DeviceID
 		for _, session := range sessions {
-			messages = append(messages, chattitle.Message{Role: "user", Text: session.Prompt})
+			if !sessionRecordsInputs(session) {
+				messages = append(messages, chattitle.Message{Role: "user", Text: session.Prompt})
+			}
 			for _, event := range session.Events {
 				switch event.Label {
+				case store.SessionInputEventLabel:
+					if event.Message != nil {
+						messages = append(messages, chattitle.Message{Role: "user", Text: event.Message.Text})
+					}
 				case "Steered into active turn":
 					messages = append(messages, chattitle.Message{Role: "user", Text: event.Detail})
 				case "Response stream":
@@ -133,10 +139,11 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		s.publish("chat_layout_changed", layout)
 		return
 	}
-	if session.Source != "chat" || session.ThreadID != session.ID {
+	// Automatic naming happens once per chat; the title record guards reruns.
+	if session.Source != "chat" {
 		return
 	}
-	if _, err := s.Start(ctx, session.WorkspaceID, session.ThreadID, true); err != nil {
+	if _, err := s.Start(ctx, session.WorkspaceID, session.ID, true); err != nil {
 		log.Printf("automatic chat naming: %v", err)
 	}
 }
@@ -206,23 +213,28 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 	}
 }
 
+// groupNameFromResponse reads a group-naming answer. The job uses the chat
+// title prompt, which asks for {"title": …}; chattitle owns that format. An
+// invalid answer returns "" and the deterministic name stays.
 func groupNameFromResponse(response string) string {
-	name := strings.TrimSpace(response)
-	if name == "" {
+	title, err := chattitle.Parse(response)
+	if err != nil {
 		return ""
 	}
-	// Models often return quotes or a leading bullet; take the first short line.
-	for _, line := range strings.Split(name, "\n") {
-		line = strings.TrimSpace(strings.TrimLeft(line, "-•*#> "))
-		line = strings.Trim(line, "\"'“”‘’ \t")
-		if line == "" {
-			continue
-		}
-		name = line
-		break
-	}
+	name := strings.Trim(strings.TrimLeft(title, "-•*#> "), "\"'“”‘’ \t")
 	if runes := []rune(name); len(runes) > 24 {
 		name = strings.TrimSpace(string(runes[:24]))
 	}
 	return name
+}
+
+// sessionRecordsInputs tells a session whose inputs are transcript events
+// from a legacy per-turn row that only carried its prompt.
+func sessionRecordsInputs(session store.AgentSession) bool {
+	for _, event := range session.Events {
+		if event.Label == store.SessionInputEventLabel {
+			return true
+		}
+	}
+	return false
 }

@@ -42,6 +42,7 @@ import { issueDisplayStatus } from "./lib/issue-meta";
 import type {
   CreateAgentProfileInput,
   CreateAgentSessionInput,
+  SendAgentSessionMessageInput,
   CreateIssueInput,
   CreateWorkspaceInput,
   WorkspaceInspection,
@@ -714,31 +715,19 @@ export function getChat(
   );
 }
 
-export function steerAgentSession(
+export function sendAgentSessionMessage(
   sessionId: string,
-  message: string,
+  input: SendAgentSessionMessageInput,
 ): Promise<AgentSession> {
   return postJSON<AgentSession>(
-    `/api/agent-sessions/${encodeURIComponent(sessionId)}/steer`,
-    {
-      message,
-    },
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/messages`,
+    input,
   );
 }
 
 export function cancelAgentSession(sessionId: string): Promise<AgentSession> {
   return postJSON<AgentSession>(
     `/api/agent-sessions/${encodeURIComponent(sessionId)}/cancel`,
-  );
-}
-
-export function adoptAgentSession(
-  sessionId: string,
-  supervisorSessionId: string,
-): Promise<AgentSession> {
-  return postJSON<AgentSession>(
-    `/api/agent-sessions/${encodeURIComponent(sessionId)}/adopt`,
-    { supervisorSessionId },
   );
 }
 

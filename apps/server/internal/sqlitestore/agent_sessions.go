@@ -2,6 +2,7 @@ package sqlitestore
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -30,8 +31,8 @@ func (s *Store) ListAgentSessionSummaries(ctx context.Context, workspaceID strin
 		return nil, err
 	}
 	for index := range sessions {
-		sessions[index].ImportedContext = ""
-		sessions[index].ProfileTransitionNote = ""
+		sessions[index].Input.ImportedContext = ""
+		sessions[index].Input.ProfileTransitionNote = ""
 		sessions[index].Response = ""
 		sessions[index].Error = ""
 		sessions[index].Events = nil
@@ -127,7 +128,7 @@ func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSess
 
 // Routing a daemon request needs identity and status, not the entire transcript.
 func (s *Store) GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error) {
-	return getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.importedContext', '$.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	return getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
 }
 
 func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
@@ -188,11 +189,10 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
 		source = "chat"
 	}
-	if source == "naming" && (input.NativeSessionID != "" || input.ThreadID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
+	if source == "naming" && (input.NativeSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
 		return store.AgentSession{}, errors.New("naming must start an independent session without inherited context")
 	}
-	threadID := strings.TrimSpace(input.ThreadID)
-	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, threadID, agent.Provider, strings.TrimSpace(input.NativeSessionID))
+	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -228,36 +228,42 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if createdBy == "" {
 		createdBy = parent.CreatedByUserID
 	}
+	id := fmt.Sprintf("sess_%d", now.UnixNano())
 	session := store.AgentSession{
-		CreatedByUserID:       createdBy,
-		ID:                    fmt.Sprintf("sess_%d", now.UnixNano()),
-		NativeSessionID:       strings.TrimSpace(input.NativeSessionID),
-		WorkspaceID:           agent.WorkspaceID,
-		AgentID:               agent.ID,
-		DeviceID:              agent.DeviceID,
-		Provider:              agent.Provider,
-		ProfileID:             agent.ProfileID,
-		ProfileFingerprint:    agent.ProfileFingerprint,
-		ProfileLabel:          agent.ProfileLabel,
-		Source:                source,
-		ParentSessionID:       parent.ID,
-		IssueID:               issueID,
-		Model:                 strings.TrimSpace(input.Model),
-		ClaudeEffort:          strings.TrimSpace(input.ClaudeEffort),
-		ClaudePermissionMode:  strings.TrimSpace(input.ClaudePermissionMode),
-		CodexReasoningEffort:  strings.TrimSpace(input.CodexReasoningEffort),
-		CodexSandboxMode:      strings.TrimSpace(input.CodexSandboxMode),
-		CodexApprovalPolicy:   strings.TrimSpace(input.CodexApprovalPolicy),
-		CodexSpeed:            strings.TrimSpace(input.CodexSpeed),
-		Status:                "queued",
-		Title:                 titleFromInput(titleInput),
-		Prompt:                prompt,
-		Attachments:           attachments,
-		ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
-		ImportedContext:       strings.TrimSpace(input.ImportedContext),
-		CreatedLabel:          "just now",
-		UpdatedLabel:          "queued",
-		Events:                []store.AgentSessionEvent{},
+		CreatedByUserID:      createdBy,
+		ID:                   id,
+		ThreadID:             id,
+		NativeSessionID:      strings.TrimSpace(input.NativeSessionID),
+		WorkspaceID:          agent.WorkspaceID,
+		AgentID:              agent.ID,
+		DeviceID:             agent.DeviceID,
+		Provider:             agent.Provider,
+		ProfileID:            agent.ProfileID,
+		ProfileFingerprint:   agent.ProfileFingerprint,
+		ProfileLabel:         agent.ProfileLabel,
+		Source:               source,
+		ParentSessionID:      parent.ID,
+		IssueID:              issueID,
+		Model:                strings.TrimSpace(input.Model),
+		ClaudeEffort:         strings.TrimSpace(input.ClaudeEffort),
+		ClaudePermissionMode: strings.TrimSpace(input.ClaudePermissionMode),
+		CodexReasoningEffort: strings.TrimSpace(input.CodexReasoningEffort),
+		CodexSandboxMode:     strings.TrimSpace(input.CodexSandboxMode),
+		CodexApprovalPolicy:  strings.TrimSpace(input.CodexApprovalPolicy),
+		CodexSpeed:           strings.TrimSpace(input.CodexSpeed),
+		Status:               "queued",
+		Title:                titleFromInput(titleInput),
+		Prompt:               prompt,
+		Input: store.SessionInput{
+			ID:                    newSessionInputID(now),
+			Prompt:                prompt,
+			Attachments:           attachments,
+			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
+			ImportedContext:       strings.TrimSpace(input.ImportedContext),
+		},
+		CreatedLabel: "just now",
+		UpdatedLabel: "queued",
+		Events:       []store.AgentSessionEvent{},
 	}
 	// Verification sessions are independent read-only judges: force the
 	// read-only runtime knobs server-side, never trusting client input.
@@ -266,17 +272,13 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		session.CodexSandboxMode = "read-only"
 		session.CodexApprovalPolicy = "never"
 	}
-	if threadID != "" && (source == "chat" || source == "agent") {
-		session.ThreadID = threadID
-	} else if source == "chat" || source == "agent" {
-		session.ThreadID = session.ID
-	}
-	if source == "chat" || source == "agent" {
-		if err := s.prepareChatNativeLeg(ctx, &session); err != nil {
-			return store.AgentSession{}, err
-		}
+	if err := s.assertNativeSessionIdle(ctx, session.WorkspaceID, session.NativeSessionID); err != nil {
+		return store.AgentSession{}, err
 	}
 	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
 		return store.AgentSession{}, err
 	}
 	if parent.ID != "" {
@@ -330,38 +332,164 @@ func normalizeChatAttachments(attachments []store.ChatAttachment) []store.ChatAt
 	return result
 }
 
-func (s *Store) prepareChatNativeLeg(ctx context.Context, session *store.AgentSession) error {
-	if session.ThreadID == "" {
+// assertNativeSessionIdle refuses to start a second session on a native
+// session another session is still running.
+func (s *Store) assertNativeSessionIdle(ctx context.Context, workspaceID string, nativeSessionID string) error {
+	if nativeSessionID == "" {
 		return nil
 	}
-	sessions, err := s.ListAgentSessionSummaries(ctx, session.WorkspaceID)
+	var active bool
+	err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_sessions
+		WHERE workspace_id = ? AND status IN ('queued','running','blocked')
+		AND json_extract(payload_json, '$.nativeSessionId') = ?)`, workspaceID, nativeSessionID).Scan(&active)
 	if err != nil {
 		return err
 	}
-	for _, existing := range sessions {
-		if session.NativeSessionID != "" &&
-			existing.NativeSessionID == session.NativeSessionID &&
-			isActiveAgentSession(existing.Status) {
-			return errors.New("agent session is already active for this native session")
+	if active {
+		return errors.New("agent session is already active for this native session")
+	}
+	return nil
+}
+
+// newSessionInputID is a UUIDv7: Claude accepts it as the native user
+// message uuid, and ids sort by time, which keeps artifact order.
+func newSessionInputID(now time.Time) string {
+	var id [16]byte
+	ms := uint64(now.UnixMilli())
+	for i := 0; i < 6; i++ {
+		id[i] = byte(ms >> (40 - 8*i))
+	}
+	rand.Read(id[6:]) // never fails since Go 1.24
+	id[6] = id[6]&0x0f | 0x70
+	id[8] = id[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
+}
+
+// recordSessionInput writes the input into the session's transcript: a
+// boundary when the runtime changed, then the user's message.
+func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input store.SessionInput, now time.Time) error {
+	at := formatTime(now)
+	if note := strings.TrimSpace(input.ProfileTransitionNote); note != "" {
+		if err := s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
+			ID: "evt_" + input.ID + "_transition", SessionID: sessionID, At: at, Label: "Profile transition", Level: "info",
+			Message: &store.TranscriptMessage{ID: input.ID + ":transition", At: at, Kind: "boundary", Text: note},
+		}, now); err != nil {
+			return err
 		}
-		if existing.ThreadID == session.ThreadID && isActiveAgentSession(existing.Status) {
-			return errors.New("agent session is already active in this chat")
+	}
+	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
+		ID: "evt_" + input.ID, SessionID: sessionID, At: at, Label: store.SessionInputEventLabel, Level: "info",
+		Message: &store.TranscriptMessage{ID: input.ID, At: at, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
+	}, now.Add(time.Microsecond))
+}
+
+// recordInputAnswer keeps the answer to the current input in the transcript.
+// Streaming runtimes already wrote it as events; other paths (custom command
+// profiles, CLI fallbacks) only report it on completion, and Response is
+// cleared by the next input.
+func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSession, now time.Time) error {
+	answer := strings.TrimSpace(session.Response)
+	if answer == "" || session.Input.ID == "" {
+		return nil
+	}
+	events, err := listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT payload_json FROM agent_session_events
+		WHERE session_id = ? ORDER BY created_at DESC, id DESC`, session.ID)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if event.ID == "evt_"+session.Input.ID {
+			break
 		}
-		if existing.ThreadID != session.ThreadID ||
-			!compatibleAgentSessionProfile(existing, *session) {
-			continue
+		if event.Message != nil && event.Message.Kind == "assistant" && strings.TrimSpace(event.Message.Text) == answer {
+			return nil
 		}
-		if isActiveAgentSession(existing.Status) {
-			return errors.New("agent session is already active for this profile in this chat")
-		}
-		if session.NativeSessionID == "" &&
-			existing.NativeSessionID != "" &&
-			existing.Status == "completed" {
-			session.NativeSessionID = existing.NativeSessionID
+		if event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer {
 			return nil
 		}
 	}
-	return nil
+	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
+		ID: "evt_" + session.Input.ID + "_answer", SessionID: session.ID, At: formatTime(now),
+		Label: "Response stream", Detail: answer, Level: "info",
+	}, now)
+}
+
+// SendAgentSessionInput gives an idle session its next input. The session
+// returns to queued on the same native session unless the input switches to
+// an incompatible runtime, which starts a new native session.
+func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, error) {
+	var result store.AgentSession
+	err := s.withTx(ctx, func(tx *Store) error {
+		session, err := tx.GetAgentSessionSummary(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		if isActiveAgentSession(session.Status) {
+			return store.ErrAgentSessionActive
+		}
+		if session.Source == "naming" || session.Source == "diagnostic" {
+			return errors.New("utility sessions take no further input")
+		}
+		prompt := strings.TrimSpace(input.Prompt)
+		attachments := normalizeChatAttachments(input.Attachments)
+		if prompt == "" && len(attachments) == 0 {
+			return errors.New("agent session prompt is required")
+		}
+		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" {
+			agent, err := tx.resolveSessionAgent(ctx, store.CreateAgentSessionInput{
+				WorkspaceID: session.WorkspaceID, AgentID: input.AgentID, Provider: input.Provider, ProfileID: input.ProfileID,
+			})
+			if err != nil {
+				return err
+			}
+			if input.Provider != "" && agent.Provider != input.Provider {
+				return store.ErrNotFound
+			}
+			if err := tx.assertDeviceNotRemoved(ctx, agent.DeviceID); err != nil {
+				return err
+			}
+			next := session
+			next.AgentID, next.DeviceID, next.Provider = agent.ID, agent.DeviceID, agent.Provider
+			next.ProfileID, next.ProfileFingerprint, next.ProfileLabel = agent.ProfileID, agent.ProfileFingerprint, agent.ProfileLabel
+			if !compatibleAgentSessionProfile(session, next) {
+				next.NativeSessionID = ""
+			}
+			session = next
+		}
+		if model := strings.TrimSpace(input.Model); model != "" {
+			session.Model = model
+		}
+		for target, value := range map[*string]string{
+			&session.ClaudeEffort: input.ClaudeEffort, &session.ClaudePermissionMode: input.ClaudePermissionMode,
+			&session.CodexReasoningEffort: input.CodexReasoningEffort, &session.CodexSandboxMode: input.CodexSandboxMode,
+			&session.CodexApprovalPolicy: input.CodexApprovalPolicy, &session.CodexSpeed: input.CodexSpeed,
+		} {
+			if value = strings.TrimSpace(value); value != "" && session.Source != "verification" {
+				*target = value
+			}
+		}
+		now := time.Now().UTC()
+		session.Input = store.SessionInput{
+			ID:                    newSessionInputID(now),
+			Prompt:                prompt,
+			Attachments:           attachments,
+			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
+			ImportedContext:       strings.TrimSpace(input.ImportedContext),
+		}
+		session.Status = "queued"
+		session.Response, session.Error, session.BlockedReason = "", "", ""
+		session.StartedAt, session.CompletedAt = "", ""
+		session.UpdatedLabel = "queued"
+		if err := tx.saveAgentSession(ctx, session, time.Time{}, now); err != nil {
+			return err
+		}
+		if err := tx.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
+			return err
+		}
+		result = session
+		return nil
+	})
+	return result, err
 }
 
 func isActiveAgentSession(status string) bool {
@@ -513,6 +641,9 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 		}
 	}
 	if err := s.saveAgentSession(ctx, session, time.Time{}, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.recordInputAnswer(ctx, session, now); err != nil {
 		return store.AgentSession{}, err
 	}
 	if err := s.deleteClaimedNativeChat(ctx, session); err != nil {

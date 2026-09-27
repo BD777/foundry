@@ -382,14 +382,48 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			return encode(models)
 		}
 		return "", &mcpToolError{http.StatusNotFound, "unknown profile: " + profileID}
-	case "steer_session":
-		return s.controlMCP(r, actor, mcpArgString(args, "sessionId"), func(session store.AgentSession) error {
-			return s.hub.SteerAgentSession(r.Context(), session, mcpArgString(args, "message"))
+	case "send_message":
+		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpArgString(args, "sessionId"))
+		if err != nil {
+			return "", err
+		}
+		if !s.canControlSession(r.Context(), actor, target) {
+			return "", &mcpToolError{http.StatusForbidden, "cannot send messages to this session"}
+		}
+		session, status, err := s.sendSessionMessage(r.Context(), target.ID, store.SendAgentSessionInput{
+			Prompt:    mcpArgString(args, "message"),
+			ProfileID: mcpArgString(args, "profileId"),
+			Provider:  mcpArgString(args, "provider"),
+			Model:     mcpArgString(args, "model"),
 		})
+		if err != nil {
+			if status != 0 {
+				return "", &mcpToolError{status, err.Error()}
+			}
+			return "", err
+		}
+		if mcpArgBool(args, "wait") {
+			if session, err = s.waitMCPTerminal(r.Context(), session.ID, mcpArgNumber(args, "timeoutMs", 600_000)); err != nil {
+				return "", err
+			}
+		}
+		return encode(session)
 	case "cancel_session":
-		return s.controlMCP(r, actor, mcpArgString(args, "sessionId"), func(session store.AgentSession) error {
-			return s.hub.CancelAgentSession(r.Context(), session)
-		})
+		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpArgString(args, "sessionId"))
+		if err != nil {
+			return "", err
+		}
+		if !s.canControlSession(r.Context(), actor, target) {
+			return "", &mcpToolError{http.StatusForbidden, "cannot cancel this session"}
+		}
+		session, status, err := s.cancelSession(r.Context(), actor, target.ID)
+		if err != nil {
+			if status != 0 {
+				return "", &mcpToolError{status, err.Error()}
+			}
+			return "", err
+		}
+		return encode(session)
 	case "wait_session":
 		id := mcpArgString(args, "sessionId")
 		session, err := s.store.GetAgentSessionSummary(r.Context(), id)
@@ -419,7 +453,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			return "", err
 		}
 		if !s.canControlSession(r.Context(), actor, target) {
-			return "", &mcpToolError{http.StatusForbidden, "can only rename sessions you created"}
+			return "", &mcpToolError{http.StatusForbidden, "cannot rename this session"}
 		}
 		updated, err := s.store.RenameChat(r.Context(), id, store.RenameChatInput{
 			WorkspaceID: target.WorkspaceID,
@@ -544,27 +578,6 @@ func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.C
 		return failed, &mcpToolError{http.StatusConflict, "local daemon is not connected"}
 	}
 	return session, nil
-}
-
-func (s *Server) controlMCP(r *http.Request, actor Actor, id string, action func(store.AgentSession) error) (string, error) {
-	session, err := s.store.GetAgentSession(r.Context(), id)
-	if err != nil {
-		return "", err
-	}
-	if !s.canControlSession(r.Context(), actor, session) {
-		return "", &mcpToolError{http.StatusForbidden, "can only control sessions you created"}
-	}
-	if !activeOrBlocked(session.Status) {
-		return "", &mcpToolError{http.StatusConflict, "agent session is not active"}
-	}
-	if err := action(session); err != nil {
-		return "", &mcpToolError{http.StatusConflict, err.Error()}
-	}
-	updated, err := s.store.GetAgentSessionSummary(r.Context(), id)
-	if err != nil {
-		return "", err
-	}
-	return encodeJSON(updated)
 }
 
 func encodeJSON(value any) (string, error) {

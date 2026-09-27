@@ -2,17 +2,26 @@
 // and profile/utility helpers, so both the runner and the launch-policy layer
 // can import it without a cycle.
 
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession, SessionInput } from "@foundry/protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { isUtilitySession } from "./utils.js";
+
+/**
+ * The input this dispatch runs. Sessions built inside the worker (Issue
+ * execution, evidence) carry no input; their prompt is the input.
+ */
+export function currentInput(session: AgentSession): SessionInput {
+  return session.input ?? { id: session.id, prompt: session.prompt };
+}
 
 export function sessionPrompt(
   session: AgentSession,
   profile?: AgentProfileLocalConfig,
 ): string {
-  if (session.source === "naming") return session.prompt.trim();
+  const input = currentInput(session);
+  if (session.source === "naming") return input.prompt.trim();
   const importedContext = !isUtilitySession(session)
-    ? session.importedContext?.trim()
+    ? input.importedContext?.trim()
     : "";
   const attachmentContext = !isUtilitySession(session)
     ? sessionAttachmentContext(session)
@@ -22,7 +31,7 @@ export function sessionPrompt(
       ? `Context imported from the same Foundry chat before this turn:\n\n${importedContext}`
       : "",
     attachmentContext,
-    session.prompt.trim(),
+    input.prompt.trim(),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -35,7 +44,7 @@ You are running through Foundry's local daemon. Treat the workspace as read-only
 }
 
 export function sessionAttachmentContext(session: AgentSession): string {
-  const attachments = session.attachments ?? [];
+  const attachments = currentInput(session).attachments ?? [];
   if (attachments.length === 0) {
     return "";
   }

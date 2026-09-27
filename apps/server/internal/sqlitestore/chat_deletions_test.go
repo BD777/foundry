@@ -22,11 +22,11 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 	if _, err := db.CompleteAgentSession(ctx, first.ID, "answer", "native_first"); err != nil {
 		t.Fatal(err)
 	}
-	second, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_delete", AgentID: "agent_delete", Provider: "codex", ThreadID: first.ThreadID, Prompt: "second"})
+	second, err := db.SendAgentSessionInput(ctx, first.ID, store.SendAgentSessionInput{Prompt: "second"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CompleteAgentSession(ctx, second.ID, "answer", "native_second"); err != nil {
+	if _, err := db.CompleteAgentSession(ctx, second.ID, "answer", "native_first"); err != nil {
 		t.Fatal(err)
 	}
 	history := store.ChatThread{ID: "history", WorkspaceID: "ws_delete", Provider: "claude", NativeSessionID: "history_native", Title: "history"}
@@ -77,16 +77,16 @@ func TestDeleteGroupSoftDeletesAllTurnsAndNativeHistoryAcrossSyncAndRestart(t *t
 		t.Fatal("deleted history still readable", err)
 	}
 	if _, err := db.GetAgentSession(ctx, second.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Fatal("deleted turn still readable", err)
+		t.Fatal("deleted session still readable", err)
 	}
 	if sessions, err := db.ListAgentSessionThread(ctx, "ws_delete", first.ThreadID); err == nil || len(sessions) != 0 {
 		t.Fatal("deleted transcript still readable")
 	}
-	if _, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_delete", AgentID: "agent_delete", Provider: "codex", ThreadID: first.ThreadID, Prompt: "stale browser"}); !errors.Is(err, store.ErrNotFound) {
-		t.Fatal("deleted thread resumed", err)
+	if _, err := db.SendAgentSessionInput(ctx, first.ID, store.SendAgentSessionInput{Prompt: "stale browser"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatal("deleted session resumed", err)
 	}
 	var count int
-	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_sessions WHERE workspace_id = 'ws_delete'`).Scan(&count); err != nil || count != 2 {
+	if err := db.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_sessions WHERE workspace_id = 'ws_delete'`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("soft deletion removed source records", count, err)
 	}
 	registerAgentSessionTestDaemon(t, db, "ws_other", "agent_other")

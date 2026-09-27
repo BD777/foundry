@@ -842,8 +842,8 @@ func summarizeAgentSessionsForList(sessions []store.AgentSession) []store.AgentS
 }
 
 func summarizeAgentSessionForList(session store.AgentSession) store.AgentSession {
-	session.ImportedContext = ""
-	session.ProfileTransitionNote = ""
+	session.Input.ImportedContext = ""
+	session.Input.ProfileTransitionNote = ""
 	session.Response = ""
 	session.Error = ""
 	session.Events = nil
@@ -943,8 +943,7 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 }
 
 // applySessionFork resolves forkSessionId: the forked session's native
-// transcript, provider and profile are inherited, but the new session starts a
-// fresh Foundry thread. Forking needs ordinary read visibility into the source.
+// transcript, provider and profile are inherited by a new Foundry session. Forking needs ordinary read visibility into the source.
 func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessionInput, actor Actor) (int, error) {
 	target, err := s.store.GetAgentSessionSummary(r.Context(), strings.TrimSpace(input.ForkSessionID))
 	if err != nil {
@@ -958,7 +957,6 @@ func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessi
 	}
 	input.ForkSessionID = ""
 	input.NativeSessionID = target.NativeSessionID
-	input.ThreadID = ""
 	input.Provider = target.Provider
 	input.AgentID = target.AgentID
 	if input.ProfileID == "" {
@@ -1057,9 +1055,9 @@ func (s *Server) resolveSessionDevice(ctx context.Context, actor Actor, input *s
 			deviceID = agent.DeviceID
 			break
 		}
-		// A profile alone names its runtime.
+		// A profile alone names its agent and runtime.
 		if input.AgentID == "" && input.Provider == "" && input.ProfileID != "" && agent.ProfileID == input.ProfileID {
-			deviceID, input.Provider = agent.DeviceID, agent.Provider
+			deviceID, input.AgentID, input.Provider = agent.DeviceID, agent.ID, agent.Provider
 			break
 		}
 	}
@@ -1171,22 +1169,65 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 	return session, nil
 }
 
-func (s *Server) SteerSessionAndDispatch(ctx context.Context, sessionID, message string) error {
-	session, err := s.store.GetAgentSession(ctx, sessionID)
-	if err != nil {
-		return err
-	}
-	session, _, err = s.reconcileAgentSession(ctx, session)
-	if err != nil {
-		return err
-	}
-	if !isRecoverableAgentSessionStatus(session.Status) {
-		return fmt.Errorf("session %s is already %s", session.ID, session.Status)
-	}
-	return s.hub.SteerAgentSession(ctx, session, message)
+// SendSessionMessage delivers a follow-up to a session on behalf of an
+// integration (Feishu) that acts with the workspace owner's authority.
+func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message string) error {
+	_, _, err := s.sendSessionMessage(ctx, sessionID, store.SendAgentSessionInput{Prompt: message})
+	return err
 }
 
-func (s *Server) handleSteerAgentSession(w http.ResponseWriter, r *http.Request) {
+// sendSessionMessage is the one way to talk to an existing session: a
+// running session is steered, an idle one takes the message as its next
+// input and is dispatched again. A non-zero status classifies a refusal.
+func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, int, error) {
+	session, err := s.store.GetAgentSession(ctx, sessionID)
+	if err != nil {
+		return store.AgentSession{}, 0, err
+	}
+	if session, _, err = s.reconcileAgentSession(ctx, session); err != nil {
+		return store.AgentSession{}, 0, err
+	}
+	message := strings.TrimSpace(input.Prompt)
+	if activeOrBlocked(session.Status) {
+		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" || len(input.Attachments) > 0 {
+			return store.AgentSession{}, http.StatusConflict, errors.New("a running session only takes text; switch runtime or attach files once it settles")
+		}
+		if message == "" {
+			return store.AgentSession{}, http.StatusBadRequest, errors.New("message is required")
+		}
+		if !s.hub.HasConnection(session.DeviceID) {
+			return store.AgentSession{}, http.StatusConflict, ErrLocalDaemonNotConnected
+		}
+		steerCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		if err := s.hub.SteerAgentSession(steerCtx, session, message); err != nil {
+			return store.AgentSession{}, http.StatusConflict, err
+		}
+		session, err = s.store.GetAgentSession(ctx, session.ID)
+		return session, 0, err
+	}
+	session, err = s.store.SendAgentSessionInput(ctx, session.ID, input)
+	if err != nil {
+		if errors.Is(err, store.ErrAgentSessionActive) {
+			return store.AgentSession{}, http.StatusConflict, err
+		}
+		return store.AgentSession{}, 0, err
+	}
+	s.events.Publish("agent_session_created", session)
+	if !s.hub.HasConnection(session.DeviceID) {
+		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
+		s.events.Publish("agent_session_completed", session)
+		return session, http.StatusConflict, ErrLocalDaemonNotConnected
+	}
+	if err := s.hub.DispatchAgentSession(session); err != nil {
+		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
+		s.events.Publish("agent_session_completed", session)
+		return session, http.StatusConflict, ErrLocalDaemonNotConnected
+	}
+	return session, 0, nil
+}
+
+func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	anchor, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -1194,52 +1235,27 @@ func (s *Server) handleSteerAgentSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !s.canControlSession(r.Context(), actor, anchor) {
-		writeForbidden(w, "session token can only steer sessions it created")
+		writeForbidden(w, "you cannot send messages to this session")
 		return
 	}
-	session, err := s.store.GetAgentSession(r.Context(), anchor.ID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	var recovered bool
-	session, recovered, err = s.reconcileAgentSession(r.Context(), session)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	if recovered {
-		writeError(w, http.StatusConflict, "agent session is not active")
-		return
-	}
-	if !activeOrBlocked(session.Status) {
-		writeError(w, http.StatusConflict, "agent session is not active")
-		return
-	}
-	if !s.hub.HasConnection(session.DeviceID) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
-	}
-	var input struct {
-		Message string `json:"message"`
-	}
+	var input store.SendAgentSessionInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	message := strings.TrimSpace(input.Message)
-	if message == "" {
-		writeError(w, http.StatusBadRequest, "steer message is required")
+	wasActive := activeOrBlocked(anchor.Status)
+	session, status, err := s.sendSessionMessage(r.Context(), anchor.ID, input)
+	if err != nil {
+		if status == 0 {
+			writeResult(w, nil, err)
+		} else {
+			writeError(w, status, err.Error())
+		}
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
-	defer cancel()
-	if err := s.hub.SteerAgentSession(ctx, session, message); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
+	if wasActive {
+		s.appendSessionControlAudit(r.Context(), session.ID, "Steered by orchestrator", actor)
 	}
-	s.appendSessionControlAudit(r.Context(), session.ID, "Steered by orchestrator", actor)
-	session, err = s.store.GetAgentSession(r.Context(), session.ID)
-	writeResult(w, session, err)
+	writeResult(w, session, nil)
 }
 
 func (s *Server) handleCancelAgentSession(w http.ResponseWriter, r *http.Request) {
@@ -1250,50 +1266,50 @@ func (s *Server) handleCancelAgentSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !s.canControlSession(r.Context(), actor, anchor) {
-		writeForbidden(w, "session token can only cancel sessions it created")
+		writeForbidden(w, "you cannot cancel this session")
 		return
 	}
-	session, err := s.store.GetAgentSession(r.Context(), anchor.ID)
+	session, status, err := s.cancelSession(r.Context(), actor, anchor.ID)
+	if status != 0 {
+		writeError(w, status, err.Error())
+		return
+	}
+	writeResult(w, session, err)
+}
+
+// cancelSession stops the work a session is doing. It never cascades:
+// sessions it created keep running. A non-zero status classifies a refusal.
+func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID string) (store.AgentSession, int, error) {
+	session, err := s.store.GetAgentSession(ctx, sessionID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.AgentSession{}, 0, err
 	}
-	var recovered bool
-	session, recovered, err = s.reconcileAgentSession(r.Context(), session)
+	session, recovered, err := s.reconcileAgentSession(ctx, session)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.AgentSession{}, 0, err
 	}
-	if recovered {
-		writeError(w, http.StatusConflict, "agent session is not active")
-		return
-	}
-	if !activeOrBlocked(session.Status) {
-		writeError(w, http.StatusConflict, "agent session is not active")
-		return
+	if recovered || !activeOrBlocked(session.Status) {
+		return store.AgentSession{}, http.StatusConflict, errors.New("agent session is not active")
 	}
 	if !s.hub.HasConnection(session.DeviceID) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
+		return store.AgentSession{}, http.StatusConflict, ErrLocalDaemonNotConnected
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	cancelCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	if err := s.hub.CancelAgentSession(ctx, session); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
+	if err := s.hub.CancelAgentSession(cancelCtx, session); err != nil {
+		return store.AgentSession{}, http.StatusConflict, err
 	}
-	// Cancellation is never cascaded: sessions are first-class, child
-	// sessions keep running after their parent stops (CHAT-01).
 	cancelMessage := "Canceled by user"
 	if actor.Agent() {
 		cancelMessage = "Canceled by orchestrator session"
 	}
-	session, err = s.store.CancelAgentSession(r.Context(), session.ID, cancelMessage)
-	if err == nil {
-		s.appendSessionControlAudit(r.Context(), session.ID, "Canceled by orchestrator", actor)
-		s.events.Publish("agent_session_completed", session)
+	session, err = s.store.CancelAgentSession(ctx, session.ID, cancelMessage)
+	if err != nil {
+		return store.AgentSession{}, 0, err
 	}
-	writeResult(w, session, err)
+	s.appendSessionControlAudit(ctx, session.ID, "Canceled by orchestrator", actor)
+	s.events.Publish("agent_session_completed", session)
+	return session, 0, nil
 }
 
 func (s *Server) appendSessionControlAudit(ctx context.Context, sessionID string, label string, actor Actor) {
@@ -1311,39 +1327,6 @@ func (s *Server) appendSessionControlAudit(ctx context.Context, sessionID string
 		},
 	}
 	_ = s.store.AppendAgentSessionEvent(ctx, event)
-}
-
-// handleAdoptAgentSession assigns (or clears, with an empty supervisorId) a
-// human-confirmed supervisor. Session tokens cannot adopt: a takeover is a
-// human decision in the Web, never an agent self-promotion.
-func (s *Server) handleAdoptAgentSession(w http.ResponseWriter, r *http.Request) {
-	actor := actorFromContext(r.Context())
-	if !actor.FullAccess() {
-		writeForbidden(w, "session supervision can only be assigned by a human")
-		return
-	}
-	var input struct {
-		SupervisorSessionID string `json:"supervisorSessionId"`
-	}
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	targetID := r.PathValue("id")
-	var (
-		session store.AgentSession
-		err     error
-	)
-	if strings.TrimSpace(input.SupervisorSessionID) == "" {
-		session, err = s.store.ClearSupervisor(r.Context(), targetID)
-	} else {
-		session, err = s.store.AdoptSupervisor(r.Context(), targetID, input.SupervisorSessionID)
-	}
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	s.events.Publish("agent_session_supervisor_changed", session)
-	writeResult(w, session, err)
 }
 
 func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
@@ -1510,8 +1493,8 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		if errors.Is(err, store.ErrAgentAdoptInvalid) {
-			writeError(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, store.ErrAgentSessionActive) {
+			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

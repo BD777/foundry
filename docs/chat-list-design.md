@@ -90,8 +90,8 @@ summaries and loaded only when naming is requested.
   and expose their error for retry. Naming jobs cannot recursively name themselves.
 
 Automatic first-answer naming applies only to a new Foundry chat's first
-completed execution (`threadId == id`, source `chat`, nonempty response), not to
-historical imports or every subsequent answer. An existing manual title or prior
+completed answer (source `chat`, nonempty response), not to historical
+imports or every subsequent answer. An existing manual title or prior
 automatic attempt prevents automatic re-execution. Explicit recap remains available.
 
 Naming keeps the selected agent/profile and model, uses a fresh runtime identity,

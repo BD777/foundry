@@ -22,6 +22,22 @@ export class ClaudeAgentTurnError extends Error {
 }
 
 /**
+ * A result the harness produced for a background task notification without
+ * running the model (for example a task stopped with the previous process,
+ * replayed on resume). It answers no input, so it must not settle one.
+ */
+export function claudeTaskNotificationBookkeeping(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const record = message as Record<string, unknown>;
+  const origin = record.origin as Record<string, unknown> | undefined;
+  return (
+    record.type === "result" &&
+    origin?.kind === "task-notification" &&
+    record.num_turns === 0
+  );
+}
+
+/**
  * A synthetic assistant message the CLI emits when the API rejects the turn
  * before any real response (e.g. 401 or an overlong prompt). It carries
  * `model: "<synthetic>"`, zero usage, an `error` code, and a `stop_reason`

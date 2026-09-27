@@ -441,7 +441,7 @@ func TestProjectedServerAgentSession410WhenDeviceRemoved(t *testing.T) {
 		done:               make(chan struct{}),
 		send:               make(chan wsEnvelope, 1),
 		activeSessions:     map[string]bool{},
-		dispatchedSessions: map[string]bool{},
+		dispatchedSessions: map[string]string{},
 	}
 	body := `{"agentId":` + jsonString(store.ServerAgentID(deviceID, "ws_gone", profile.ID)) +
 		`,"workspaceId":"ws_gone","provider":"claude","profileId":` + jsonString(profile.ID) +

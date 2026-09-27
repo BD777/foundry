@@ -178,7 +178,14 @@ export function isolateSkillSession(
   const reset = Boolean(session.nativeSessionId && !trusted);
   return {
     session: reset
-      ? { ...session, nativeSessionId: undefined, importedContext: undefined }
+      ? {
+          ...session,
+          nativeSessionId: undefined,
+          input: session.input && {
+            ...session.input,
+            importedContext: undefined,
+          },
+        }
       : session,
     reset,
     record(nativeID) {

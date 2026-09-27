@@ -121,6 +121,7 @@ export const workerModules = {
       "runner",
       "sdk-messages",
       "session-ambient",
+      "session-artifacts",
       "session-helpers",
       "session-output-files",
       "session-policy",
