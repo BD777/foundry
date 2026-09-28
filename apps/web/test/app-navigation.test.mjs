@@ -48,6 +48,7 @@ const routes = [
     deviceSection: "agents",
   },
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "workspaces" },
+  { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
   { view: "profiles" },
 ];
 

@@ -8,6 +8,20 @@
     }
   },
   {
+    "name": "list_resources",
+    "description": "List what each device you can reach offers sessions (installed browsers, macOS screen control), whether it is online, and the workspaces on it where you may start a session. To use a resource on another device, start a session in one of that device's workspaces (create_session with workspaceId). Resources are the device's own software; nothing is installed for you.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["browser", "computer_use"],
+          "description": "Only resources of this kind."
+        }
+      }
+    }
+  },
+  {
     "name": "list_profiles",
     "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: yours by default, or another device hosting a workspace you reach (see list_workspaces).",
     "inputSchema": {

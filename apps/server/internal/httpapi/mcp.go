@@ -213,6 +213,8 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			workspaces = append(workspaces, reachable{workspace.ID, workspace.Name, workspace.DeviceID, workspace.DeviceLabel, workspace.AccessRole})
 		}
 		return encode(workspaces)
+	case "list_resources":
+		return s.listResourcesForMCP(r, actor, mcpArgString(args, "kind"))
 	case "list_profiles":
 		profiles, err := s.store.ListAgentProfiles(r.Context(), mcpDeviceID(actor, args))
 		if err != nil {
@@ -673,4 +675,58 @@ func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSessio
 	summary.Response = full.Response
 	summary.Error = full.Error
 	return summary, nil
+}
+
+// listResourcesForMCP is the Resource Pool directory as an agent sees it:
+// every device it can reach, what each offers, whether it is online, and the
+// workspaces on it where the agent may start a session.
+func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind string) (string, error) {
+	view, err := s.visibilityFor(r.Context(), actor)
+	if err != nil {
+		return "", err
+	}
+	devices, err := s.store.ListDevices(r.Context())
+	if err != nil {
+		return "", err
+	}
+	all, err := s.store.ListWorkspaces(r.Context())
+	if err != nil {
+		return "", err
+	}
+	type workspaceOnDevice struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		AccessRole string `json:"accessRole"`
+	}
+	type deviceResources struct {
+		DeviceID    string                 `json:"deviceId"`
+		DeviceLabel string                 `json:"deviceLabel"`
+		Online      bool                   `json:"online"`
+		Workspaces  []workspaceOnDevice    `json:"workspaces"`
+		Resources   []store.DeviceResource `json:"resources"`
+	}
+	reachable := view.scope.filterWorkspaces(all)
+	result := []deviceResources{}
+	for _, device := range view.filterDevices(devices) {
+		if device.Status == "removed" {
+			continue
+		}
+		entry := deviceResources{
+			DeviceID: device.ID, DeviceLabel: device.Label, Online: s.hub.HasConnection(device.ID),
+			Workspaces: []workspaceOnDevice{}, Resources: []store.DeviceResource{},
+		}
+		for _, workspace := range reachable {
+			if workspace.DeviceID == device.ID {
+				entry.Workspaces = append(entry.Workspaces, workspaceOnDevice{workspace.ID, workspace.Name, workspace.AccessRole})
+			}
+		}
+		for _, resource := range device.Resources {
+			if kind == "" || resource.Kind == kind {
+				entry.Resources = append(entry.Resources, resource)
+			}
+		}
+		result = append(result, entry)
+	}
+	raw, err := json.MarshalIndent(result, "", "  ")
+	return string(raw), err
 }

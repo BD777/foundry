@@ -22,7 +22,7 @@ export type DevicePairingMode = "auto" | "offline" | "online";
 
 export interface AppRoute {
   selectedDeviceId?: string;
-  deviceSection?: "workspaces" | "agents" | "skills" | "settings";
+  deviceSection?: "workspaces" | "resources" | "agents" | "skills" | "settings";
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -72,6 +72,7 @@ export function parseAppRoute(pathname: string): AppRoute {
             view: "devices",
             selectedDeviceId: decodePathSegment(id),
             deviceSection:
+              segments[2] === "resources" ||
               segments[2] === "agents" ||
               segments[2] === "skills" ||
               segments[2] === "settings"

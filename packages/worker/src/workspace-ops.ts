@@ -3,6 +3,7 @@
  * and daemon connection helpers.
  */
 
+import { discoverResources } from "./resource-pool.js";
 import {
   existsSync,
   mkdirSync,
@@ -459,7 +460,7 @@ export function daemonRegistration(workspacePath: string): {
       agentProfiles,
     ),
     chats: [],
-    device,
+    device: { ...device, resources: discoverResources() },
     providerHealth,
     skills: skillsForWorkspace(workspaceProjection, workspacePath),
     workspace: workspaceProjection,

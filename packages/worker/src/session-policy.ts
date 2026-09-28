@@ -32,7 +32,7 @@ import {
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
-import { sessionDeviceNotes } from "./device-capabilities.js";
+import { sessionResourceNotes } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
@@ -253,7 +253,7 @@ export function buildClaudeLaunchPlan(input: {
   const env = sessionEnvironment(workspacePath, profile, session);
   const deviceNotes = isUtilitySession(session)
     ? ""
-    : sessionDeviceNotes(workspacePath);
+    : sessionResourceNotes(workspacePath);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const tools = foundryToolsEndpoint(session);
   const mcpServers = tools && {

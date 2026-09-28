@@ -106,7 +106,7 @@ function codexDeviceNotes(
   workspacePath: string,
   session: AgentSession,
 ): string {
-  return isUtilitySession(session) ? "" : sessionDeviceNotes(workspacePath);
+  return isUtilitySession(session) ? "" : sessionResourceNotes(workspacePath);
 }
 
 export function codexSessionArgs(
@@ -186,7 +186,7 @@ import {
 } from "./profiles.js";
 import { sessionEnvironment } from "./session-ambient.js";
 import { readAgentRuntimeSettings } from "./device.js";
-import { sessionDeviceNotes } from "./device-capabilities.js";
+import { sessionResourceNotes } from "./resource-pool.js";
 
 export function codexSandboxMode(
   session: AgentSession,

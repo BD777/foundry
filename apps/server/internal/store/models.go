@@ -22,6 +22,19 @@ type DeviceProjection struct {
 	RuntimeSettings *AgentRuntimeSettings `json:"runtimeSettings,omitempty"`
 	// Owned reports whether the caller owns (and may manage) the device.
 	Owned bool `json:"owned,omitempty"`
+	// Resources is what the device offers sessions, reported by its worker.
+	Resources []DeviceResource `json:"resources,omitempty"`
+}
+
+// DeviceResource is a capability already present on a device that sessions
+// may use, such as an installed browser.
+type DeviceResource struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Name       string            `json:"name"`
+	Available  bool              `json:"available"`
+	Detail     string            `json:"detail,omitempty"`
+	Attributes map[string]string `json:"attributes,omitempty"`
 }
 
 type AgentRuntimeSettings struct {

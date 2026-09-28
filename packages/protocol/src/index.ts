@@ -120,6 +120,25 @@ export interface DeviceProjection {
   runtimeSettings?: AgentRuntimeSettings;
   /** Whether the caller owns, and so may manage, this device. */
   owned?: boolean;
+  /** What the device offers sessions, detected by its worker at registration. */
+  resources?: DeviceResource[];
+}
+
+/**
+ * A capability already present on a device that sessions may use, such as an
+ * installed browser. Foundry discovers resources; it never installs them.
+ */
+export interface DeviceResource {
+  /** Unique on the device, e.g. `browser:google-chrome`. */
+  id: string;
+  kind: "browser" | "computer_use";
+  name: string;
+  /** Whether a session can use it right now. */
+  available: boolean;
+  /** Why it is unavailable, or what a session should know about it. */
+  detail?: string;
+  /** Kind-specific facts, e.g. a browser's executable `path`. */
+  attributes?: Record<string, string>;
 }
 
 export interface AgentRuntimeSettings {
