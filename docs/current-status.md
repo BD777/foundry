@@ -7,7 +7,7 @@ boundary; use Git history for delivered changes and the
 [roadmap](../README.md#roadmap) for future work. Product/design goals are not
 proof of implementation; code presence is not proof of operational acceptance.
 
-## Snapshot: 2026-09-28 (at `9507797`)
+## Snapshot: 2026-09-28 (at `c95e4cd`)
 
 Since the 2026-09-23 pass, the session model, orchestration, Codex tools,
 device-relayed attachments and stack isolation changed and **were exercised
@@ -17,8 +17,10 @@ isolated local stack — cases and results in [live regression](live-regression.
 Later the same day, at `c671f3c`: inputs orphaned by a worker restart are
 settled by asking the device (M3-2), skill-isolation receipts survive a killed
 worker, controlled HTTP targets run on Linux, and a reconnecting device is
-settled across all of its workspaces — all re-run live on the dev server and
-the Mac. Everything else below keeps the date of its own evidence.
+settled across all of its workspaces, and the Resource Pool (device
+resources discovered, listed via MCP `list_resources` and the device page,
+browsers leased per session and reclaimed) — all re-run live on the dev server
+and the Mac. Everything else below keeps the date of its own evidence.
 
 ### Earlier snapshot: 2026-09-23 (at `18cd558`)
 
