@@ -16,6 +16,7 @@ import {
   discoverComputerUse,
   reclaimSessionResources,
   sessionResourceNotes,
+  sessionBrowserLaunchers,
   sessionScratchDirectory,
   sessionScratchEnvironment,
 } from "../dist/resource-pool.js";
@@ -233,3 +234,63 @@ test("browsers other tools downloaded into Playwright's cache count, newest firs
     join(cache, "chromium-120", "chrome-linux64", "chrome"),
   );
 });
+
+test(
+  "a browser started through its launcher is leased to the session exactly",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { child } = fakeBrowser(t);
+    const [launcher] = Object.values(
+      sessionBrowserLaunchers("sess_lease", [
+        {
+          id: "browser:chromium",
+          kind: "browser",
+          name: "Chromium",
+          available: true,
+          attributes: { path: child },
+        },
+      ]),
+    );
+    assert.match(launcher, /\/bin\/chromium$/);
+    // No session marker in its environment and no use of the scratch dir:
+    // only the lease ties it to the session.
+    const browser = spawn(launcher, ["60"], {
+      env: { PATH: "/usr/bin:/bin" },
+      stdio: "ignore",
+      cwd: tmpdir(),
+    });
+    t.after(() => browser.kill("SIGKILL"));
+    await new Promise((done) => setTimeout(done, 300));
+    // exec keeps the pid: the leased process is the browser itself.
+    assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-child"]);
+    assert.ok(await waitFor(() => !alive(browser.pid)));
+    assert.deepEqual(reclaimSessionResources("sess_lease"), []);
+    const notes = sessionResourceNotes(
+      "/w",
+      [
+        {
+          id: "browser:chromium",
+          kind: "browser",
+          name: "Chromium",
+          available: true,
+          attributes: { path: child },
+        },
+      ],
+      "sess_lease",
+    );
+    assert.ok(notes.includes(launcher), notes);
+  },
+);
+
+test(
+  "a leased pid reused by something else is left alone",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const scratch = sessionScratchDirectory("sess_reused");
+    const other = spawn("/bin/sleep", ["60"], { stdio: "ignore" });
+    t.after(() => other.kill("SIGKILL"));
+    writeFileSync(join(scratch, "browser-leases"), `${other.pid}\n`);
+    assert.deepEqual(reclaimSessionResources("sess_reused"), []);
+    assert.ok(alive(other.pid));
+  },
+);

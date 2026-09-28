@@ -9,10 +9,12 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   readlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
@@ -253,10 +255,14 @@ export function discoverResources(): DeviceResource[] {
 export function sessionResourceNotes(
   workspacePath: string,
   resources: DeviceResource[] = discoverResources(),
+  sessionId?: string,
 ): string {
   const browsers = resources.filter(
     (resource) => resource.kind === "browser" && resource.available,
   );
+  const launchers = sessionId
+    ? sessionBrowserLaunchers(sessionId, browsers)
+    : {};
   const control = resources.find(
     (resource) => resource.kind === "computer_use",
   );
@@ -265,7 +271,9 @@ export function sessionResourceNotes(
     "Foundry device notes:",
     "- This session runs on the person's own device. Use the software installed here when a task needs it; do not download or install a tool the device already has.",
     browsers.length
-      ? `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name} (${browser.attributes?.path})`).join("; ")}. Run them directly (headless when no window is needed), each run with its own --user-data-dir in a temporary directory so the person's own browser profile is left untouched. Browser processes this session leaves running are closed when your reply ends.`
+      ? Object.keys(launchers).length
+        ? `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name}: start it with ${launchers[browser.id]} (Foundry's launcher for ${browser.attributes?.path}; it takes the browser's own arguments)`).join("; ")}. The launcher reserves the browser for this session and it is closed when your reply ends. Run headless when no window is needed, each run with its own --user-data-dir under $TMPDIR so the person's own browser profile is left untouched.`
+        : `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name} (${browser.attributes?.path})`).join("; ")}. Run them directly (headless when no window is needed), each run with its own --user-data-dir in a temporary directory so the person's own browser profile is left untouched. Browser processes this session leaves running are closed when your reply ends.`
       : "- No browser was found on this device.",
     ...(control
       ? [
@@ -306,6 +314,59 @@ export function sessionScratchEnvironment(
 ): NodeJS.ProcessEnv {
   const directory = sessionScratchDirectory(sessionId);
   return { TMPDIR: directory, TMP: directory, TEMP: directory };
+}
+
+function leaseFile(scratch: string): string {
+  return join(scratch, "browser-leases");
+}
+
+/**
+ * Per-session launchers for the device's browsers: each records its process
+ * id in the session's lease file and then becomes the browser (exec keeps the
+ * id), so the session's browsers are known exactly, whatever the browser
+ * later does to its environment and wherever its profile lives. Returns the
+ * launcher path by resource id; none on Windows or for undispatched sessions.
+ */
+export function sessionBrowserLaunchers(
+  sessionId: string,
+  browsers: DeviceResource[],
+): Record<string, string> {
+  if (process.platform === "win32") return {};
+  const scratch = sessionScratchDirectory(sessionId);
+  const bin = join(scratch, "bin");
+  mkdirSync(bin, { recursive: true, mode: 0o700 });
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const launchers: Record<string, string> = {};
+  for (const browser of browsers) {
+    const path = browser.attributes?.path;
+    if (!path) continue;
+    const launcher = join(bin, browser.id.replace(/^browser:/, ""));
+    writeFileSync(
+      launcher,
+      [
+        "#!/bin/sh",
+        `# Foundry lease: ${browser.name} for session ${sessionId}.`,
+        `echo $$ >> ${quote(leaseFile(scratch))}`,
+        `exec ${quote(path)} "$@"`,
+        "",
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+    launchers[browser.id] = launcher;
+  }
+  return launchers;
+}
+
+function leasedPids(scratch: string | undefined): number[] {
+  if (!scratch) return [];
+  try {
+    return readFileSync(leaseFile(scratch), "utf8")
+      .split("\n")
+      .map(Number)
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
+  }
 }
 
 interface ProcessEntry {
@@ -420,6 +481,11 @@ export function reclaimSessionResources(sessionId: string): string[] {
         : [];
   const byPid = new Map(entries.map((entry) => [entry.pid, entry]));
   const targets = new Map<number, ProcessEntry>();
+  // Leased browsers first: exact, whatever the browser did since.
+  for (const pid of leasedPids(scratch)) {
+    const entry = byPid.get(pid);
+    if (entry && isBrowser(entry.executable)) targets.set(pid, entry);
+  }
   for (const entry of entries) {
     if (!entry.marked || !isBrowser(entry.executable)) continue;
     let top = entry;
@@ -431,6 +497,7 @@ export function reclaimSessionResources(sessionId: string): string[] {
     targets.set(top.pid, top);
     targets.set(entry.pid, entry);
   }
+  if (scratch) writeFileSync(leaseFile(scratch), "");
   const reclaimed: string[] = [];
   for (const target of targets.values()) {
     try {

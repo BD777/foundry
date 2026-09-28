@@ -23,6 +23,7 @@ import {
   foundryTokenEnvName,
   foundryToolsEndpoint,
   sessionEnvironment,
+  usesSessionScratch,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
@@ -253,7 +254,11 @@ export function buildClaudeLaunchPlan(input: {
   const env = sessionEnvironment(workspacePath, profile, session);
   const deviceNotes = isUtilitySession(session)
     ? ""
-    : sessionResourceNotes(workspacePath);
+    : sessionResourceNotes(
+        workspacePath,
+        undefined,
+        usesSessionScratch(session) ? session.id : undefined,
+      );
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const tools = foundryToolsEndpoint(session);
   const mcpServers = tools && {

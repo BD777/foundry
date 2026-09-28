@@ -106,7 +106,13 @@ function codexDeviceNotes(
   workspacePath: string,
   session: AgentSession,
 ): string {
-  return isUtilitySession(session) ? "" : sessionResourceNotes(workspacePath);
+  return isUtilitySession(session)
+    ? ""
+    : sessionResourceNotes(
+        workspacePath,
+        undefined,
+        usesSessionScratch(session) ? session.id : undefined,
+      );
 }
 
 export function codexSessionArgs(
@@ -184,7 +190,7 @@ import {
   profileRuntimeEnvironment,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
-import { sessionEnvironment } from "./session-ambient.js";
+import { sessionEnvironment, usesSessionScratch } from "./session-ambient.js";
 import { readAgentRuntimeSettings } from "./device.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 
