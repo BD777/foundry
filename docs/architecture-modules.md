@@ -477,17 +477,47 @@ M1 验收不依赖 Issue 产品（2026-09-26 调整；原先要求用浏览器�
 - **已知限制**：macOS 只做过规则层面的验证（新旧产物比对、规则文本检查），尚未实机运行；
   Codex 的真实运行受本机登录失效所阻，待重新登录后补跑。
 
-## 6. M4 Issue Loop 的待决项
+## 6. M4 计划（2026-09-28 确认）
 
-做 Issue 前，先按 Issue 的需求重新审视以下内核部分：
+M4 的交付是[对话式准出标准](foundry-conversation-release-gate.md) G1–G5 的真实浏览器闭环，
+加上 Issue 内编排。下面几项已按推荐确认；在 M3 收尾后按"实施顺序"逐步合入。
+（原 §6 的"受控 HTTP 目标仅 macOS"已在 2026-09-28 完成，见 §5.4 第 2b 步。）
 
-| 部分                 | 现状                                                       | 待决                                                                                                                                                                 |
-| -------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 澄清与判定的会话入口 | `startSession`，独立于 `runWorkspaceSession`；只服务 Issue | 是否保留独立入口，还是成为统一入口下的两个角色                                                                                                                       |
-| 判定者可用的工具     | 只读工具；不加载 MCP、Skills、插件与项目指令；不保存会话   | "不写""不读候选里的指令""全新会话"有明确理由（被判的东西不能被判的人改，候选不能削弱自己的检查标准）；不给 Workspace 选定的 Skills 与只读 MCP 没有写明理由，倾向放开 |
-| 澄清可用的工具       | 同上，但读项目指令                                         | 澄清的结论不直接生效，倾向与普通 Chat 接近                                                                                                                           |
-| Issue 执行接入编排   | 执行器没有会话令牌                                         | §5.3：Run → AgentSession，按 Issue 限定令牌                                                                                                                          |
-| 候选存储的类型名     | `IssueEnvironment` 等带 Issue 字样                         | 按需改名（原第 3 步）                                                                                                                                                |
+### 决定
+
+| #   | 决定                     | 现状                                                                                                        | 推荐                                                                                                                                                                                             |
+| --- | ------------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| D1  | M4 的范围                | 路线图写了 Issue 内编排、loop graph 与准出规则、外部信号、Web 闭环                                          | **M4 = G1–G5 闭环 + Issue 内编排**（执行者能派子会话、判定者独立）。loop graph（多步骤依赖图）与外部信号（CI、Webhook 触发）移到 M5：它们没有具体场景，先让单 Issue 闭环可信                     |
+| D2  | Issue 的会话统一（§5.3） | 执行走 `Run`（`run_issue` / `run_event` / `issue_completed`），执行者没有会话令牌；澄清与判定各自一次性启动 | **做**，且放在最前：执行、澄清、判定都成为带 `role` 与 `issueId` 的 `AgentSession`，复用令牌、血缘、transcript、steer、取消、以及 M3-2 的恢复；`Run` 退为 Issue 侧投影。这是"Issue 内编排"的前提 |
+| D3  | 澄清与判定的会话入口     | `startSession`（`src/session/`）只服务这两个角色，与 `runWorkspaceSession` 分开                             | 随 D2 **合并为一个入口下的角色**：角色只决定工具、项目指令、是否续接与沙箱 profile（`session/policy.ts` 已是这个形状）。判定仍是全新会话、不保存原生上下文                                       |
+| D4  | 判定者可用的工具         | 只读工具；不加载 MCP、Skills、插件与项目指令                                                                | **放开 Workspace 选定的 Skills**（来自 Server 目录的已选版本，不来自候选，不会被候选削弱）；**MCP 仍不给**，包括 foundry 工具（判定者不派活）。"不写、不读候选里的指令、全新会话"保持不变        |
+| D5  | 澄清可用的工具           | 同判定，但读项目指令，不能运行命令                                                                          | **接近普通 Chat 但只读**：项目指令 + 选定 Skills + 只读 foundry 工具（`list_sessions`、`read_context`，便于引用已有对话）；仍在 `readonly_agent` 沙箱内，不写、不跑命令（G1）                    |
+| D6  | 执行者的编排范围         | 带 `issueId` 的编排子会话已在候选工作区、同一沙箱中运行并携带令牌                                           | 执行者的令牌**限定于本 Issue**：只能派出同 Issue 的子会话（落在同一候选），不能在 Issue 之外开会话或跨工作区（M3 方案 A 不适用于 Issue 执行者）；判定者没有令牌                                  |
+
+### 实施顺序
+
+1. **D2 Server 侧**：Issue 执行创建 `AgentSession(role=issue_execution)`，`Run` 只保留环境
+   投影；旧 `Run` 记录只读兼容。daemon 消息收敛到 `run_session` / `session_*`。
+2. **D2/D3 Worker 侧**：澄清、判定改走统一入口的角色；`startSession` 删除。
+3. **D4/D5/D6 策略**：按角色调整工具与令牌范围；policy 单测覆盖每个角色的允许与拒绝。
+4. **重新开放 Issues Web 入口**，按 G1–G5 修到真实浏览器准出；证据记录在 PR。
+5. 候选存储类型改名（`IssueEnvironment` 等）只在上面某步真正需要时顺带做。
+
+**D2 的现状与落点**（2026-09-28 核对代码）：
+
+- 三个角色在 Server 上都没有 `AgentSession`：执行只有 `Run`（`runs` / `run_events` 表，
+  `StartIssueRun` / `AppendRunEvent` / `CompleteIssue`）；澄清与判定经 `evidence_request`
+  RPC 一次性启动，结果只落在证据记录里（原生 session id 存在响应字段中）。
+- Worker 执行每轮合成一个 `${runId}_${turn}` 的临时会话再调 `runWorkspaceSession`，与 Chat
+  共用的只有这一层；中断恢复另有一套（`issue-recovery.ts`、`completion.json` 回放）。
+- 已有的连接点：`AgentSession.IssueID`、带 `issueId` 的编排子会话已在候选与 Issue 沙箱内
+  运行（`issue-sessions.ts`）；`AgentSession` 还没有 `role` 字段。
+- 读 `Run` 的地方：Issue 投影与详情页（`issue-data-projection.ts`、`issue-detail/*`）、
+  steer 的 `expectedRunId`、删除 Workspace / 移除设备的在跑检查、若干证据对齐逻辑；
+  `/api/runs`、`/api/run-events` 与 `features/runs` 已无调用方。
+- 因此第 1 步按"执行会话 = AgentSession(role, issueId)，`Run` 由它投影"落地，
+  `claimAndSend` 的容量与认领逻辑保留，只把派发从 `run_issue` 换成 `run_session`；
+  恢复改由 M3-2 的 `recover_session` 覆盖，删除 `issue-recovery.ts` 的平行实现。
 
 ## 7. 不做
 
