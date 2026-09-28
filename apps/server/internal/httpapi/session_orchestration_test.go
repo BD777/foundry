@@ -126,7 +126,7 @@ func TestLineageInheritsExistingGroup(t *testing.T) {
 	}
 }
 
-func TestLineageRejectsForeignParent(t *testing.T) {
+func TestLineageForeignParent(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
 	if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
@@ -142,10 +142,25 @@ func TestLineageRejectsForeignParent(t *testing.T) {
 	}
 	_, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_other", AgentID: "agent_other", Provider: "claude",
-		Prompt: "cross workspace", Source: "agent", ParentSessionID: parent.ID,
+		Prompt: "cross workspace", Source: "chat", ParentSessionID: parent.ID,
 	})
 	if err != store.ErrSessionParentMismatch {
 		t.Fatalf("foreign parent error = %v, want ErrSessionParentMismatch", err)
+	}
+	// An agent may start work in another workspace; the child keeps its
+	// lineage but stays out of the parent's chat layout.
+	child, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_other", AgentID: "agent_other", Provider: "claude",
+		Prompt: "cross workspace", Source: "agent", ParentSessionID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("cross-workspace agent child: %v", err)
+	}
+	if child.ParentSessionID != parent.ID || child.WorkspaceID != "ws_other" || child.CreatedGroupID != "" {
+		t.Fatalf("cross-workspace child = parent %q workspace %q group %q", child.ParentSessionID, child.WorkspaceID, child.CreatedGroupID)
+	}
+	if count, err := db.CountActiveAgentChildren(ctx, parent.ID); err != nil || count != 1 {
+		t.Fatalf("active children = %d, %v; want the cross-workspace child counted", count, err)
 	}
 	_, err = db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
@@ -301,9 +316,10 @@ func TestSessionTokenHTTPPolicy(t *testing.T) {
 		t.Fatalf("bad token status = %d, want 401", status)
 	}
 
-	// Workspace scoping: the token cannot read another workspace.
-	if status := doRequest(http.MethodGet, "/api/agent-sessions?workspaceId=ws_elsewhere", parentToken); status != http.StatusForbidden {
-		t.Fatalf("cross-workspace list status = %d, want 403", status)
+	// Workspace scoping: the token cannot read a workspace outside its scope,
+	// and, as for people, cannot learn whether it exists.
+	if status := doRequest(http.MethodGet, "/api/agent-sessions?workspaceId=ws_elsewhere", parentToken); status != http.StatusNotFound {
+		t.Fatalf("cross-workspace list status = %d, want 404", status)
 	}
 	if status := doRequest(http.MethodGet, "/api/agent-sessions?workspaceId=ws_http", parentToken); status != http.StatusOK {
 		t.Fatalf("same-workspace list status = %d", status)
@@ -317,8 +333,12 @@ func TestSessionTokenHTTPPolicy(t *testing.T) {
 		t.Fatalf("agent profiles status = %d", status)
 	}
 
+	// A workspace outside the token's scope is not found; none means its own.
+	if status, _ := create(`{"agentId":"agent_http","workspaceId":"ws_whatever","provider":"claude","prompt":"child"}`, parentToken); status != http.StatusNotFound {
+		t.Fatalf("child create in an unreachable workspace = %d, want 404", status)
+	}
 	// The token creates a child: lineage and source are server-assigned.
-	status, child := create(`{"agentId":"agent_http","workspaceId":"ws_whatever","provider":"claude","prompt":"child","source":"chat"}`, parentToken)
+	status, child := create(`{"agentId":"agent_http","provider":"claude","prompt":"child","source":"chat"}`, parentToken)
 	if status != http.StatusCreated {
 		t.Fatalf("child create status = %d", status)
 	}
@@ -835,17 +855,16 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 		t.Fatalf("register daemon: %v", err)
 	}
 	server := NewServer(db)
-	actor := Actor{Kind: ActorAccount}
 	input := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}
 	// No daemon is connected, so success stops at the connection check.
-	if status, err := server.resolveSessionDevice(ctx, actor, &input); status != http.StatusConflict {
+	if status, err := server.resolveSessionDevice(ctx, &input); status != http.StatusConflict {
 		t.Fatalf("profile-only resolution = %d %v, want it to reach the connection check", status, err)
 	}
 	if input.Provider != "codex" {
 		t.Fatalf("provider = %q, want the profile's runtime", input.Provider)
 	}
 	unknown := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "missing"}
-	if status, _ := server.resolveSessionDevice(ctx, actor, &unknown); status != http.StatusBadRequest {
+	if status, _ := server.resolveSessionDevice(ctx, &unknown); status != http.StatusBadRequest {
 		t.Fatalf("unknown profile = %d, want 400", status)
 	}
 }

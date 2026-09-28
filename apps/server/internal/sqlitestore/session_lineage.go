@@ -30,8 +30,9 @@ const (
 )
 
 // ValidateParentSession resolves a create request's parent: it must be a
-// visible session in the same workspace.
-func (s *Store) ValidateParentSession(ctx context.Context, workspaceID, parentID string) (store.AgentSession, error) {
+// visible session in the same workspace, unless crossWorkspace allows an agent
+// to start work in another workspace its token reaches (the caller decides).
+func (s *Store) ValidateParentSession(ctx context.Context, workspaceID, parentID string, crossWorkspace bool) (store.AgentSession, error) {
 	parentID = strings.TrimSpace(parentID)
 	if parentID == "" {
 		return store.AgentSession{}, nil
@@ -43,7 +44,7 @@ func (s *Store) ValidateParentSession(ctx context.Context, workspaceID, parentID
 		}
 		return store.AgentSession{}, err
 	}
-	if parent.WorkspaceID != workspaceID {
+	if parent.WorkspaceID != workspaceID && !crossWorkspace {
 		return store.AgentSession{}, store.ErrSessionParentMismatch
 	}
 	return parent, nil
@@ -224,12 +225,12 @@ func (s *Store) SessionLineageDepth(ctx context.Context, sessionID string) (int,
 }
 
 // CountActiveAgentChildren counts direct children that still occupy an
-// execution slot (queued / running / blocked).
-func (s *Store) CountActiveAgentChildren(ctx context.Context, workspaceID, parentID string) (int, error) {
+// execution slot (queued / running / blocked), in any workspace.
+func (s *Store) CountActiveAgentChildren(ctx context.Context, parentID string) (int, error) {
 	var count int
 	err := s.conn().QueryRowContext(ctx, `SELECT COUNT(*) FROM agent_sessions
-		WHERE workspace_id = ? AND parent_session_id = ?
+		WHERE parent_session_id = ?
 			AND status IN ('queued', 'running', 'blocked')`,
-		workspaceID, parentID).Scan(&count)
+		parentID).Scan(&count)
 	return count, err
 }

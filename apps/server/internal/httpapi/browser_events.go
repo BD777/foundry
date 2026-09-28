@@ -175,8 +175,10 @@ func (h *browserEventHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		subscription.scope = &scope
 	}
 	if actor := actorFromContext(r.Context()); actor.Agent() {
-		subscription.workspace = actor.Identity.WorkspaceID
-		if requested := r.URL.Query().Get("workspaceId"); requested != "" && requested != subscription.workspace {
+		// An agent's stream follows one workspace: its own, or another it reaches.
+		subscription.workspace = requestedWorkspace(actor, r.URL.Query().Get("workspaceId"))
+		if subscription.workspace != actor.Identity.WorkspaceID &&
+			(subscription.scope == nil || !subscription.scope.can(subscription.workspace, store.WorkspaceRoleViewer)) {
 			http.Error(w, "workspace is outside the token's scope", http.StatusForbidden)
 			return
 		}

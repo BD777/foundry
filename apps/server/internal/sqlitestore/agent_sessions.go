@@ -176,10 +176,16 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if err := s.assertDeviceNotRemoved(ctx, agent.DeviceID); err != nil {
 		return store.AgentSession{}, err
 	}
+	source := strings.TrimSpace(input.Source)
+	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
+		source = "chat"
+	}
 	// Lineage: a parent must be a visible session in the same workspace the
-	// request resolves to. The automatic group placement happens in this same
-	// transaction once the child row exists.
-	parent, err := s.ValidateParentSession(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID))
+	// request resolves to, except that an agent may start a session in another
+	// workspace its token reaches (authorized before the store is called). The
+	// automatic group placement happens in this same transaction once the child
+	// row exists, and only within one workspace's layout.
+	parent, err := s.ValidateParentSession(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID), source == "agent")
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -191,7 +197,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		if depth >= maxAgentSessionLineageDepth {
 			return store.AgentSession{}, store.ErrAgentLineageTooDeep
 		}
-		activeChildren, err := s.CountActiveAgentChildren(ctx, agent.WorkspaceID, parent.ID)
+		activeChildren, err := s.CountActiveAgentChildren(ctx, parent.ID)
 		if err != nil {
 			return store.AgentSession{}, err
 		}
@@ -200,10 +206,6 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		}
 	}
 	now := time.Now().UTC()
-	source := strings.TrimSpace(input.Source)
-	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
-		source = "chat"
-	}
 	if source == "naming" && (input.NativeSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
 		return store.AgentSession{}, errors.New("naming must start an independent session without inherited context")
 	}
@@ -296,7 +298,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
 		return store.AgentSession{}, err
 	}
-	if parent.ID != "" {
+	if parent.ID != "" && parent.WorkspaceID == session.WorkspaceID {
 		createdGroupID, created, err := s.PlaceChildWithParent(ctx, parent, session.ID)
 		if err != nil {
 			return store.AgentSession{}, err

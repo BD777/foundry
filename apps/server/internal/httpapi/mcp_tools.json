@@ -1,13 +1,21 @@
 [
   {
+    "name": "list_workspaces",
+    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A session token reaches every workspace of the person who started it, as at most Member; start work in another one only when the user asks for it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
     "name": "list_profiles",
-    "description": "List the agent profiles you can dispatch to (id, runtime, model, status). With a session token only your own device's profiles are listed.",
+    "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: yours by default, or another device hosting a workspace you reach (see list_workspaces).",
     "inputSchema": {
       "type": "object",
       "properties": {
         "deviceId": {
           "type": "string",
-          "description": "Device that owns the profiles; defaults to the calling device and is ignored for a session token."
+          "description": "Device that owns the profiles; defaults to the calling device."
         },
         "runtime": {
           "type": "string",
@@ -19,7 +27,7 @@
   },
   {
     "name": "list_models",
-    "description": "List the models a profile can run (its endpoint's catalog). With a session token only your own device's profiles are reachable.",
+    "description": "List the models a profile can run (its endpoint's catalog), on your device by default or another device hosting a workspace you reach.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -28,7 +36,7 @@
         },
         "deviceId": {
           "type": "string",
-          "description": "Device that owns the profiles; defaults to the calling device and is ignored for a session token."
+          "description": "Device that owns the profiles; defaults to the calling device."
         }
       },
       "required": ["profileId"]
@@ -36,7 +44,7 @@
   },
   {
     "name": "create_session",
-    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child on your device and joins your orchestration group; without profileId and provider it runs like you. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
+    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child; in your own workspace (the default) it runs on your device, joins your orchestration group and, without profileId and provider, runs like you. Name workspaceId to start it in another workspace you reach (list_workspaces), on that workspace's device, only when the user asked for work there. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -97,7 +105,7 @@
         },
         "workspaceId": {
           "type": "string",
-          "description": "Required without a session token."
+          "description": "Workspace to start the session in; defaults to yours with a session token, required without one."
         }
       },
       "required": ["prompt"]
@@ -128,10 +136,14 @@
   },
   {
     "name": "list_sessions",
-    "description": "List sessions in this workspace (id, title, status, parentSessionId). Use it to see what exists before creating or acting.",
+    "description": "List sessions in a workspace (id, title, status, parentSessionId): yours by default. Use it to see what exists before creating or acting.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "Workspace to list; defaults to yours with a session token."
+        },
         "parentOnly": {
           "type": "boolean",
           "description": "Only sessions you created."
