@@ -585,36 +585,33 @@ const cases = {
     return `${here.deviceLabel}: ${here.resources.map((resource) => `${resource.name}${resource.available ? "" : " (unavailable)"}`).join(", ")}`;
   },
 
-  // A browser the agent leaves running is closed when its reply ends.
+  // A browser the agent leaves running does not outlive its reply. The
+  // device itself is asked afterwards (the device may be remote); whether the
+  // worker reclaimed it or the runtime already stopped it is the evidence.
   async "resource-reclaim"() {
     const session = await start(
       "Start a browser installed on this device in headless mode in the background so that it keeps running after your command returns (for example with nohup, --remote-debugging-port=0 and &). Check that it is running, then reply with exactly: STARTED",
     );
-    const done = await settle(session.id);
+    const started = await settle(session.id);
     check(
-      /STARTED/.test(done.response ?? ""),
-      `${done.status}: ${done.response ?? done.error}`,
+      /STARTED/.test(started.response ?? ""),
+      `${started.status}: ${started.response ?? started.error}`,
     );
-    const closed = (done.events ?? []).find(
+    const closed = (started.events ?? []).find(
       (event) => event.label === "Closed leftover browser processes",
     );
-    check(closed, "the browser left running was not reclaimed");
-    // The browser itself, not only its helper processes, must be closed.
-    const names = String(closed.detail ?? closed.message?.text ?? "").split(
-      ", ",
+    await client.send(
+      session.id,
+      "Check with ps whether the browser you started in your previous reply is still running. Reply with exactly GONE or RUNNING.",
     );
+    const checked = await settle(session.id);
     check(
-      names.some((name) =>
-        /^(chrome|chromium|Chromium|Google Chrome|msedge|Microsoft Edge|brave|Brave Browser|firefox)$/.test(
-          name,
-        ),
-      ),
-      `only helpers were closed: ${names.join(", ")}`,
+      /\bGONE\b/.test(checked.response ?? ""),
+      `the browser outlived the reply: ${checked.response ?? checked.error}`,
     );
-    return `reclaimed: ${closed.detail ?? closed.message?.text ?? ""}`.slice(
-      0,
-      160,
-    );
+    return closed
+      ? `closed by the worker: ${String(closed.detail ?? closed.message?.text ?? "").slice(0, 120)}`
+      : "already stopped by the agent runtime; nothing to reclaim";
   },
 
   async "runtime-switch"() {
