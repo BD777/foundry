@@ -89,11 +89,10 @@ browser automation.
 
 Keep these as roadmap scope; do not describe them as shipped:
 
-- general Tool Use: no Browser Use / Computer Use / Simulator automation exists
-  on `main` (the verifier configuration explicitly disables those capabilities);
-  a browser for Chat sessions is an unmerged draft awaiting a design decision
-  ([architecture §5.6](architecture-modules.md));
-- cross-device sessions: an agent can only start sessions on its own device;
+- general Tool Use: no Computer Use / Simulator automation exists on `main`,
+  and Foundry ships no browser of its own; Chat sessions use the browsers
+  installed on their device (detected by the worker at launch, since
+  2026-09-28), and the verifier configuration keeps those capabilities off;
 - a general IM Bot Adapter (only the Feishu-specific bot exists), Issues in
   Feishu, per-sender Feishu identity, cloud workspaces, cross-host scheduling,
   multiple agents per Issue, Docker container isolation for execution (Docker
