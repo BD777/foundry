@@ -123,7 +123,7 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
   允许 `access_token` query 参数（EventSource 无法设置头）。
 - 无效/过期 → 401；身份有效但越权 → 403。
 
-### 4.3 Agent Policy（草稿：§5.6 方案 A，待定）
+### 4.3 Agent Policy（§5.6 方案 A，2026-09-28 确认）
 
 Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace，角色封顶 Member。
 判定只在 `access.go` 的 `agentScope` 一处；选方案 B 只改这一个函数。
