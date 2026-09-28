@@ -100,14 +100,15 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
   });
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
   assert.equal(plan.cliPrompt, "/qa run checks");
-  assert.deepEqual(plan.sdk.settingSources, []);
+  assert.equal(plan.sdk.settingSources, undefined);
+  assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
   assert.deepEqual(plan.sdk.skills, ["foundry-workspace:qa"]);
   assert.deepEqual(plan.sdk.plugins, [
     { type: "local", path: "/managed/set-a" },
   ]);
   const args = plan.cliArgs;
   assert.ok(args.includes("--disable-slash-commands"));
-  assert.equal(args[args.indexOf("--setting-sources") + 1], "");
+  assert.equal(args.includes("--setting-sources"), false);
   assert.match(
     args[args.indexOf("--append-system-prompt") + 1],
     /\/qa\/SKILL.md/,

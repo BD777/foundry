@@ -29,10 +29,11 @@ import {
   claudeManagedPrompt,
   isolateSkillSession,
   validateWorkspaceSkillPrompt,
-  workspaceProjectInstructions,
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
+import { sessionDeviceNotes } from "./device-capabilities.js";
+import { isUtilitySession } from "./utils.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -43,55 +44,56 @@ export class ClaudePolicyError extends Error {
 }
 
 /**
- * SDK-only launch keys for workspace skill isolation. Kept here so the
- * encapsulation owns the full managed surface; runner re-exports it for the
- * existing tests/script callers.
+ * SDK launch keys for what a session is told and which skills it sees: the
+ * device notes for every workspace session, plus the managed skill catalog.
+ * Only the skill listing is filtered; the device's own Claude settings,
+ * project instructions and MCP servers load as in the person's terminal.
  */
-export function claudeManagedSkillOptions(
+export function claudeSessionOptions(
   managed: ManagedSkillRuntime | undefined,
-  workspacePath?: string,
+  deviceNotes = "",
 ): Record<string, unknown> {
-  if (!managed) return {};
+  const append = [
+    deviceNotes,
+    managed ? workspaceSkillInstructions(managed) : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return {
-    settingSources: [],
-    skills: managed.skills.map((skill) => `foundry-workspace:${skill.name}`),
-    plugins: managed.skills.length
-      ? [{ type: "local", path: managed.pluginDir }]
-      : [],
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      append: [
-        workspacePath ? workspaceProjectInstructions(workspacePath) : "",
-        workspaceSkillInstructions(managed),
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-    },
+    ...(managed
+      ? {
+          skills: managed.skills.map(
+            (skill) => `foundry-workspace:${skill.name}`,
+          ),
+          plugins: managed.skills.length
+            ? [{ type: "local", path: managed.pluginDir }]
+            : [],
+        }
+      : {}),
+    ...(append
+      ? { systemPrompt: { type: "preset", preset: "claude_code", append } }
+      : {}),
   };
 }
 
 /**
- * CLI-fallback-only flags for workspace skill isolation. The CLI cannot take
- * the SDK's structured `skills`/`plugins` options, so native slash skills are
- * disabled and the managed catalog is supplied through system instructions.
+ * The CLI fallback's equivalent. The CLI cannot take the SDK's structured
+ * skill list, so under a managed catalog native slash skills are disabled and
+ * the catalog arrives through the system prompt.
  */
-export function claudeManagedCliArgs(
+export function claudeSessionCliArgs(
   managed: ManagedSkillRuntime | undefined,
-  workspacePath: string,
+  deviceNotes = "",
 ): string[] {
-  if (!managed) return [];
+  const append = [
+    deviceNotes,
+    managed ? workspaceSkillInstructions(managed) : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return [
-    "--disable-slash-commands",
-    "--setting-sources",
-    "",
-    "--append-system-prompt",
-    [
-      workspaceProjectInstructions(workspacePath),
-      workspaceSkillInstructions(managed),
-    ]
-      .filter(Boolean)
-      .join("\n\n"),
+    ...(managed ? ["--disable-slash-commands"] : []),
+    ...(append ? ["--append-system-prompt", append] : []),
   ];
 }
 
@@ -249,6 +251,9 @@ export function buildClaudeLaunchPlan(input: {
   }
 
   const env = sessionEnvironment(workspacePath, profile, session);
+  const deviceNotes = isUtilitySession(session)
+    ? ""
+    : sessionDeviceNotes(workspacePath);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const tools = foundryToolsEndpoint(session);
   const mcpServers = tools && {
@@ -266,14 +271,14 @@ export function buildClaudeLaunchPlan(input: {
     env,
     settings,
     sdk: {
-      ...claudeManagedSkillOptions(managedSkills, workspacePath),
+      ...claudeSessionOptions(managedSkills, deviceNotes),
       // Foundry grants these tools and its server authorizes every call by
       // the session token; a headless session has nobody to approve a prompt.
       ...(mcpServers ? { allowedTools: [foundryToolsPermission] } : {}),
     },
     mcpServers,
     cliArgs: [
-      ...claudeManagedCliArgs(managedSkills, workspacePath),
+      ...claudeSessionCliArgs(managedSkills, deviceNotes),
       ...(mcpServers
         ? [
             "--mcp-config",

@@ -1,8 +1,7 @@
 /** Workspace skill discovery policy, shared by SDK and CLI execution. */
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentSession } from "@foundry/protocol";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
@@ -26,36 +25,6 @@ export function workspaceSkillInstructions(
       ? []
       : ["No skills are configured for this workspace session."]),
   ].join("\n");
-}
-
-/** Preserve repository instructions explicitly without enabling project skill discovery. */
-export function workspaceProjectInstructions(cwd: string): string {
-  const git = spawnSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
-    encoding: "utf8",
-    timeout: 2000,
-  });
-  const canonicalCwd = realpathSync(cwd);
-  const root =
-    git.status === 0 ? realpathSync(git.stdout.trim()) : canonicalCwd;
-  const dirs: string[] = [];
-  for (let dir = canonicalCwd; ; dir = dirname(dir)) {
-    dirs.unshift(dir);
-    if (dir === root || dirname(dir) === dir) break;
-  }
-  const documents: string[] = [];
-  for (const dir of dirs)
-    for (const name of ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"]) {
-      const path = join(dir, name);
-      try {
-        const text = readFileSync(path, "utf8");
-        if (Buffer.byteLength(text) > 256 * 1024)
-          throw new Error(`Workspace instruction file is too large: ${path}`);
-        documents.push(`Project instructions from ${path}:\n${text}`);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
-  return documents.join("\n\n");
 }
 
 export function claudeManagedPrompt(

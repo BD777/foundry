@@ -526,6 +526,42 @@ const cases = {
     return `child ${childId} in ${other} on ${child.deviceId}: ANSWER-56, then ANSWER-66`;
   },
 
+  // The agent uses a browser already installed on its device, found by the
+  // worker at launch (no path in the prompt), and the screenshot reaches the
+  // person the way the web reads it: through the device.
+  async "device-browser"() {
+    const session = await start(
+      "Take a screenshot of https://example.com with a browser and show it to me.",
+    );
+    const done = await settle(session.id);
+    check(
+      done.status === "completed",
+      `${done.status}: ${done.error ?? done.response}`,
+    );
+    const path = (done.response ?? "").match(
+      /<image\b[^>]*\bpath="([^"]+)"/,
+    )?.[1];
+    check(path, `no image in the answer: ${done.response}`);
+    check(
+      path.includes("/.foundry/attachments/"),
+      `the image is outside the attachments: ${path}`,
+    );
+    const config = resolveConfig();
+    const image = await fetch(
+      new URL(
+        `/api/local-files/image?path=${encodeURIComponent(path)}`,
+        config.serverURL,
+      ),
+      { headers: { "X-Foundry-Device-Credential": config.deviceCredential } },
+    );
+    const bytes = Buffer.from(await image.arrayBuffer());
+    check(
+      image.ok && bytes.subarray(1, 4).toString("latin1") === "PNG",
+      `reading the image through the device: ${image.status}`,
+    );
+    return `${path} (${bytes.length} bytes) shown through the device`;
+  },
+
   async "runtime-switch"() {
     const codexProfile = values["codex-profile"];
     check(codexProfile, "needs --codex-profile");

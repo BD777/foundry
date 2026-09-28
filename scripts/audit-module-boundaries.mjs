@@ -49,7 +49,12 @@ export const workerModules = {
   },
   device: {
     dependsOn: ["platform"],
-    files: ["device", "device-pairing", "device-removal"],
+    files: [
+      "device",
+      "device-capabilities",
+      "device-pairing",
+      "device-removal",
+    ],
   },
   sandbox: {
     dependsOn: ["platform"],

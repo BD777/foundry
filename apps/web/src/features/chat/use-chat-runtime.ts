@@ -119,10 +119,10 @@ export function useChatRuntime({
   const claudePermissionCandidate =
     selectedOverride.claudePermissionMode ??
     selectedProfile?.claudePermissionMode ??
-    "acceptEdits";
+    "bypassPermissions";
   const claudePermissionMode =
     claudePermissionCandidate === "default"
-      ? "acceptEdits"
+      ? "bypassPermissions"
       : claudePermissionCandidate;
   const codexReasoningEffort =
     selectedOverride.codexReasoningEffort ??
@@ -131,7 +131,7 @@ export function useChatRuntime({
   const codexSandboxMode =
     selectedOverride.codexSandboxMode ??
     selectedProfile?.codexSandboxMode ??
-    "workspace-write";
+    "danger-full-access";
   const codexApprovalPolicy =
     selectedOverride.codexApprovalPolicy ??
     selectedProfile?.codexApprovalPolicy ??

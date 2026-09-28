@@ -79,29 +79,6 @@ test("selected Claude slash commands resolve to the managed plugin namespace", a
   assert.equal(claudeManagedPrompt("/compact", managed), "/compact");
 });
 
-test("repository instructions survive discovery isolation without reading above the Git root", async (t) => {
-  const { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } =
-    await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { execFileSync } = await import("node:child_process");
-  const { workspaceProjectInstructions } =
-    await import("../dist/skill-isolation.js");
-  const dir = mkdtempSync(join(tmpdir(), "skill-policy-docs-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const root = join(dir, "project");
-  mkdirSync(join(root, "nested"), { recursive: true });
-  execFileSync("git", ["init", "-q", root]);
-  writeFileSync(join(dir, "CLAUDE.md"), "UNRELATED_ANCESTOR");
-  writeFileSync(join(root, "AGENTS.md"), "PROJECT_GUIDANCE");
-  writeFileSync(join(root, "nested", "CLAUDE.md"), "NESTED_GUIDANCE");
-  symlinkSync(join(root, "nested"), join(dir, "alias"));
-  const docs = workspaceProjectInstructions(join(dir, "alias"));
-  assert.match(docs, /PROJECT_GUIDANCE/);
-  assert.match(docs, /NESTED_GUIDANCE/);
-  assert.doesNotMatch(docs, /UNRELATED_ANCESTOR/);
-});
-
 test("arbitrary custom commands fail closed for managed workspace runs", async () => {
   const { runClaudeWorkspaceSession, runCodexWorkspaceSession } =
     await import("../dist/runner.js");
