@@ -49,12 +49,7 @@ export const workerModules = {
   },
   device: {
     dependsOn: ["platform"],
-    files: [
-      "device",
-      "device-capabilities",
-      "device-pairing",
-      "device-removal",
-    ],
+    files: ["device", "device-pairing", "device-removal"],
   },
   sandbox: {
     dependsOn: ["platform"],
@@ -115,8 +110,13 @@ export const workerModules = {
       "skill-zip",
     ],
   },
+  "resource-pool": {
+    dependsOn: ["platform"],
+    files: ["resource-pool"],
+  },
   "session-runtime": {
     dependsOn: [
+      "resource-pool",
       "sandbox",
       "harness-profiles",
       "skills",

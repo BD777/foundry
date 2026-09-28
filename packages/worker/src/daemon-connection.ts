@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { reclaimSessionResources } from "./resource-pool.js";
 import { homedir } from "node:os";
 import { existingWorkspaceFolder } from "./workspace-registration.js";
 import { resolve } from "node:path";
@@ -623,6 +624,13 @@ async function executeAgentSession(
     flushPendingResponse();
     sendEvent(label, detail, level, metadata, message);
   };
+  // Resource Pool lease: browser processes this session started and left
+  // running are closed when its input ends.
+  const reclaimResources = async (): Promise<void> => {
+    const reclaimed = reclaimSessionResources(session.id);
+    if (reclaimed.length)
+      await emit("Closed leftover browser processes", reclaimed.join(", "));
+  };
 
   const reportedNativeSessionIds = new Set<string>();
   const reportNativeSessionId = (nativeSessionId: string): void => {
@@ -697,6 +705,7 @@ async function executeAgentSession(
       sandbox: execution.sandbox,
     });
     flushPendingResponse();
+    await reclaimResources();
     writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
@@ -705,6 +714,7 @@ async function executeAgentSession(
       response: result.response,
     });
   } catch (error) {
+    await reclaimResources();
     if (isAgentSessionCanceledError(error)) {
       await emit("Session canceled", "Canceled by user.", "warning");
       return;

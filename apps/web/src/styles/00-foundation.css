@@ -1569,6 +1569,8 @@ a {
 
 /* Explicit public navigation tone, owned by SegmentedControl. */
 .fdy-segmented-navigation {
+  /* Section navigation wraps instead of hiding sections on narrow screens. */
+  flex-wrap: wrap;
   align-self: start;
   justify-self: start;
   background: var(--fdy-control-ghost-hover);

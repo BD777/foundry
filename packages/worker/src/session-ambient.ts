@@ -1,4 +1,5 @@
 import type { AgentSession } from "@foundry/protocol";
+import { sessionScratchEnvironment } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
 import {
   baseProcessEnvironment,
@@ -82,6 +83,15 @@ export function sessionEnvironment(
     FOUNDRY_SESSION_ID: session?.id ?? process.env.FOUNDRY_SESSION_ID ?? "",
     FOUNDRY_SESSION_SOURCE:
       session?.source ?? process.env.FOUNDRY_SESSION_SOURCE ?? "chat",
+    // A session the daemon dispatched gets its own TMPDIR so the Resource
+    // Pool can tell which browsers it left running. Issue sessions run in a
+    // sandbox with their own temporary space and keep it.
+    ...(session?.id &&
+    ambientBySession.has(session.id) &&
+    !session.issueId &&
+    !isUtilitySession(session)
+      ? sessionScratchEnvironment(session.id)
+      : {}),
   };
 }
 

@@ -77,7 +77,7 @@ flowchart TB
 | L1  | Sandbox            | 按隔离 profile 包装进程；平台后端；探测与 fail closed                 | 谁在用、为什么用       | 见 §1 四处实现                                                                                     |
 | L1  | Session Runtime    | 以统一规格启动 Claude/Codex，事件流、steer、cancel、恢复、transcript  | Issue、Chat 的流程语义 | `runner.ts`、`sdk-messages.ts`、`session-*.ts`、`evidence-agent.ts` 中的启动部分                   |
 | L1  | Material Store     | 按内容寻址的材料存储、摘要校验、归属与可用性                          | 判定规则               | `evidence-store.ts`、`evidence-uploads.ts`                                                         |
-| L1  | Resource Pool      | 申请 → 使用 → 释放 → 清理；资源身份与占用                             | 由哪个 Workflow 使用   | 未实现                                                                                             |
+| L1  | Resource Pool      | 发现 → 登记 → 使用 → 回收；资源身份与占用（独占与排队待 M4）          | 由哪个 Workflow 使用   | `resource-pool.ts`、MCP `list_resources`                                                           |
 | L2  | Agent 能力面       | Agent 唯一的对外 API（MCP / CLI），capability 注册，统一经 policy     | 调用它的 Workflow      | `foundry-cli.ts`、`foundry-mcp.ts`、`foundry-client.ts`、`httpapi/mcp.go`                          |
 | L3  | Chat               | 会话列表、分组、对话 UI 所需的投影                                    | 沙箱与启动细节         | `sqlitestore/chat_*.go`、`apps/web/src/features/chat`                                              |
 | L3  | Issue Loop         | 契约、候选、采集、判定、准出规则、Accept、合入；loop graph 与信号入口 | 沙箱与启动细节         | `issue-*.ts`、`evidence-*.ts`（除启动与沙箱部分）、`sqlitestore/issue*.go`、`evidence*.go`         |
@@ -128,6 +128,7 @@ flowchart BT
     SR --> SK
     SR --> CS
     SR --> TR
+    SR --> RP
     AS --> SR
     AS --> RP
     CH --> SR
@@ -140,8 +141,7 @@ flowchart BT
     EN --> IL
 ```
 
-图中省略了指向第 0 层和 Identity 的大部分边。Resource Pool 在第 3 层，但它还没有实现，
-而且只有 M3 的场景需要它，所以不按层序提前做。
+图中省略了指向第 0 层和 Identity 的大部分边。Resource Pool 在第 3 层，于 M3 实现（§5.6）。
 
 ### 现状中的违例
 
@@ -164,13 +164,13 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 每个 milestone：一个模块的协议 + 迁移现有调用方 + 删除重复实现 + 一个端到端使用场景。
 模块自身的契约测试通过但场景未跑通，不算完成。
 
-| Milestone              | 模块                           | 验收场景                                                                                                    | 依赖           |
-| ---------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------- |
-| **M1 执行内核** ✅     | Sandbox + Session Runtime      | 见 §5.5：模块测试与依赖审计为零；Chat 真实浏览器回归；执行内核真实模型端到端                                | —              |
-| **M2 Agent 能力面** ✅ | Foundry MCP / CLI              | Chat 中的 Agent 经 MCP 派出、观察、steer 子会话与只读 verifier，按角色授权                                  | M1             |
-| **M3 资源与跨设备**    | Resource Pool + Transport 路由 | Chat 中的 Agent 申请浏览器并截图给人看；经 Server 中转在另一台设备上启动会话                                | M1、M2         |
-| **M4 Issue Loop**      | Issue Loop                     | 开始前按 §6 重新审视内核缺口；Issue 内编排、loop graph 与准出规则、外部信号、Issue Web 体验的真实浏览器闭环 | M1–M3          |
-| 并行轨道               | Identity & Access              | 账号 P3 / P4（个人连接授权、飞书身份绑定、审计、所有权转移）                                                | 与主线无强依赖 |
+| Milestone              | 模块                           | 验收场景                                                                                                     | 依赖           |
+| ---------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------- |
+| **M1 执行内核** ✅     | Sandbox + Session Runtime      | 见 §5.5：模块测试与依赖审计为零；Chat 真实浏览器回归；执行内核真实模型端到端                                 | —              |
+| **M2 Agent 能力面** ✅ | Foundry MCP / CLI              | Chat 中的 Agent 经 MCP 派出、观察、steer 子会话与只读 verifier，按角色授权                                   | M1             |
+| **M3 资源与跨设备**    | Resource Pool + Transport 路由 | Chat 中的 Agent 用设备上已有的浏览器截图给人看，用完回收；按资源选设备，经 Server 中转在另一台设备上启动会话 | M1、M2         |
+| **M4 Issue Loop**      | Issue Loop                     | 开始前按 §6 重新审视内核缺口；Issue 内编排、loop graph 与准出规则、外部信号、Issue Web 体验的真实浏览器闭环  | M1–M3          |
+| 并行轨道               | Identity & Access              | 账号 P3 / P4（个人连接授权、飞书身份绑定、审计、所有权转移）                                                 | 与主线无强依赖 |
 
 **内核不依赖 Issue（2026-09-26 定）。** Issue 是建在内核之上的编排层，放在内核之后做。
 内核功能用 Chat 与编排子会话验收；做 Issue 时再按它的需求补内核，而不是让内核功能等待
@@ -218,33 +218,33 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   输入立刻结束，不再等 30 分钟超时。重新派发一个已有完成标记的输入时，设备直接回报而不重跑。
   Server 不再读取任何工作区路径；不声明执行中会话的旧 Worker 不会被询问，仍走超时判定。
   Issue 会话随 Issue 恢复，不在此列。
-- **两项决定**（见 §5.6）：跨设备的授权边界已定（方案 A，2026-09-28）；浏览器资源的实现方式待确认。
+- **两项决定**（见 §5.6）：跨设备的授权边界（方案 A）与 Resource Pool（设备已有资源的发现、登记与回收），均已于 2026-09-28 确定并实现。
 
 ## 5.6 M3 提案
 
-### 浏览器资源（待确认）
+### Resource Pool（已定，2026-09-28）
 
-**推荐：Worker 为会话挂一个受控的浏览器 MCP**，第一版用 Playwright MCP（`@playwright/mcp`，
-固定版本，随 Worker 安装）。2026-09-27 的原型中，Claude 通过它打开页面并截图成功。
+资源是设备上**已有**、会话可以用的能力，例如装好的浏览器、macOS 的屏幕控制。Foundry
+不自带、不下载资源，只做四件事：发现、登记、告诉会话、回收。早先"Worker 为会话挂一个
+自带 Chromium 的 Playwright MCP"的提案已放弃：设备上本来就有浏览器，挡住会话使用它们的
+是 Foundry 自己的默认权限与配置隔离（已修正，见 `docs/development.md`）。
 
-- **怎么接入**：与 `foundry` 工具同样的注入方式（Claude 为 `mcpServers`，Codex 为
-  `mcp_servers.browser.command`），预先放行。参数固定为 `--isolated`（每个会话独立的内存
-  浏览器资料）、`--headless`、`--idle-timeout`（空闲即关闭，实现"释放 → 清理"）、
-  `--output-dir <工作区>/.foundry/attachments/browser/<会话 id>`。
-- **"申请"的含义**：浏览器在第一次调用工具时才启动，空闲超时后关闭；会话结束时 Worker
-  回收进程。资源身份是"设备 + 实例 + 持有的会话"，登记在 Worker 的 Resource Pool 模块里，
-  第一版只做单机独占，不排队。
-- **给人看**：截图保存在工作区附件目录，Agent 在回答里用 `<image path="...">` 引用；Web 经
-  M3-1 的设备通道读取，所以设备与 Server 不同机时也能显示。截图工具要求不带文件名（带
-  相对文件名时 Playwright MCP 会写到当前目录而不是输出目录，原型中实测）。
-- **平台**：Linux 上 Chromium 需要 `--no-sandbox`（这台服务器的内核不允许 Chrome 自带
-  沙箱，原型中实测）；Chat 本来就不在 Foundry 沙箱里。macOS 优先用已安装的 Chrome。
-  浏览器二进制由 `npx playwright install chromium` 在 Worker 安装时准备。
-- **备选**：Chrome DevTools MCP（功能相近、更偏调试）；Agent 运行时自带的浏览器能力
-  （如 Codex 的 `browser_use`）无法统一在 Claude 与 Codex 之间，也不经 Foundry 登记。
-
-需要确认：是否采用 Playwright MCP；默认所有 Chat 会话都带浏览器，还是按 profile 或
-Workspace 开关。
+- **资源描述** `DeviceResource`：`id`（设备内唯一，如 `browser:google-chrome`）、`kind`
+  （`browser` | `computer_use`）、`name`、`available`（此刻能否用）、`detail`（不可用的
+  原因）、`attributes`（如浏览器的 `path`）。
+- **发现**（`packages/worker/src/resource-pool.ts`）：Worker 在每次向 Server 注册（启动与
+  重连）时探测，会话启动时再探测一次。浏览器按各平台标准安装位置与 `PATH` 查找；
+  `computer_use` 仅 macOS，实际查询 Worker 进程上下文的屏幕录制与辅助功能授权
+  （`CGPreflightScreenCaptureAccess`、`AXIsProcessTrusted`，不弹窗），不以"是 Mac"推断。
+- **目录**：随注册上报，作为设备的一部分保存（`DeviceProjection.resources`）。读取方共用
+  同一份：会话的设备说明（可用的浏览器与屏幕控制、截图放到哪里才能在聊天里显示）、
+  MCP `list_resources`（按调用方可达的设备列出资源、在线状态与可进入的工作区，编排时据此
+  选设备）、Web 设备页的 Resources。
+- **租约与回收**：第一版的租约是隐式的：会话启动的资源进程即为该会话占用。一次输入结束时，
+  Worker 关闭该会话启动、仍在运行的浏览器进程（按环境变量 `FOUNDRY_SESSION_ID` 识别属于
+  哪个会话，按可执行文件名识别是浏览器；Agent 运行时本身与其他进程不动）。
+- **独占与排队**：第一版没有独占资源。带登录态的浏览器资料、模拟器、预览端口等独占资源，
+  在第一个实际场景（M4 验收取证：预览服务 + 浏览器截图）中加入显式的申请 / 释放与排队。
 
 ### 跨设备会话（已定：方案 A，2026-09-28）
 

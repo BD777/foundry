@@ -562,6 +562,61 @@ const cases = {
     return `${path} (${bytes.length} bytes) shown through the device`;
   },
 
+  // The Resource Pool directory lists this device and what it offers, as an
+  // orchestrating agent would read it.
+  async resources() {
+    const reply = await client.mcp({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "list_resources", arguments: {} },
+    });
+    const text = reply?.result?.content?.[0]?.text ?? "";
+    check(!reply?.error && !reply?.result?.isError, `list_resources: ${text}`);
+    const here = JSON.parse(text).find((device) =>
+      device.workspaces.some((item) => item.id === workspace.id),
+    );
+    check(here, "list_resources does not list this workspace's device");
+    check(here.online, "this device is listed offline");
+    const browsers = here.resources.filter(
+      (resource) => resource.kind === "browser" && resource.available,
+    );
+    check(browsers.length > 0, `no browser on ${here.deviceLabel}`);
+    return `${here.deviceLabel}: ${here.resources.map((resource) => `${resource.name}${resource.available ? "" : " (unavailable)"}`).join(", ")}`;
+  },
+
+  // A browser the agent leaves running is closed when its reply ends.
+  async "resource-reclaim"() {
+    const session = await start(
+      "Start a browser installed on this device in headless mode in the background so that it keeps running after your command returns (for example with nohup, --remote-debugging-port=0 and &). Check that it is running, then reply with exactly: STARTED",
+    );
+    const done = await settle(session.id);
+    check(
+      /STARTED/.test(done.response ?? ""),
+      `${done.status}: ${done.response ?? done.error}`,
+    );
+    const closed = (done.events ?? []).find(
+      (event) => event.label === "Closed leftover browser processes",
+    );
+    check(closed, "the browser left running was not reclaimed");
+    // The browser itself, not only its helper processes, must be closed.
+    const names = String(closed.detail ?? closed.message?.text ?? "").split(
+      ", ",
+    );
+    check(
+      names.some((name) =>
+        /^(chrome|chromium|Chromium|Google Chrome|msedge|Microsoft Edge|brave|Brave Browser|firefox)$/.test(
+          name,
+        ),
+      ),
+      `only helpers were closed: ${names.join(", ")}`,
+    );
+    return `reclaimed: ${closed.detail ?? closed.message?.text ?? ""}`.slice(
+      0,
+      160,
+    );
+  },
+
   async "runtime-switch"() {
     const codexProfile = values["codex-profile"];
     check(codexProfile, "needs --codex-profile");

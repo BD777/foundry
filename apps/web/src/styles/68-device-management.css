@@ -544,3 +544,18 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.fdy-device-resources {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-device-resource-detail {
+  margin: 4px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}

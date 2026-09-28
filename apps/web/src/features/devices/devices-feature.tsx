@@ -18,13 +18,15 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { DeviceWorkspaces } from "./device-workspaces";
 import { DeviceAccess } from "./device-access";
+import { DeviceResources } from "./device-resources";
 import { DeviceSettings } from "./device-settings";
 import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
 import { AddDevicePanel } from "./add-device-panel";
 import { Alert } from "../../components/ui/alert";
 
-export type DeviceSection = "workspaces" | "agents" | "skills" | "settings";
+export type DeviceSection =
+  "workspaces" | "resources" | "agents" | "skills" | "settings";
 export interface DevicesFeatureProps {
   devices: DeviceProjection[];
   selectedDeviceId?: string;
@@ -218,6 +220,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               onValueChange={(next) => onSelect(device.id, next)}
               options={[
                 { value: "workspaces", label: "Workspaces" },
+                { value: "resources", label: "Resources" },
                 { value: "agents", label: "Models & accounts" },
                 { value: "skills", label: "Skills" },
                 { value: "settings", label: "Settings" },
@@ -240,6 +243,9 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                 onOpen={props.onOpenWorkspace}
                 onRefresh={onRefresh}
               />
+            ) : null}
+            {section === "resources" || !device.owned ? (
+              <DeviceResources device={device} />
             ) : null}
             {section === "agents" && device.owned ? (
               <DeviceAccess
