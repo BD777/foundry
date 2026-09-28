@@ -98,6 +98,11 @@ export function runtimeRoot(): string {
 }
 
 /** System roots a confined process with host-wide reads may use. */
+/**
+ * Where a device keeps its installed software. A sandbox limits what a
+ * process writes and hides Foundry's own state; it never hides the device's
+ * software (a browser under /opt or /Applications, a tool from snap or nix).
+ */
 export function writableTreeSystemRoots(): string[] {
   return [
     "/usr",
@@ -107,8 +112,10 @@ export function writableTreeSystemRoots(): string[] {
     "/lib64",
     "/System",
     "/Library",
-    "/opt/homebrew",
+    "/opt",
     "/Applications",
+    "/snap",
+    "/nix",
   ].filter(existsSync);
 }
 

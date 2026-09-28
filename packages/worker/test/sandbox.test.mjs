@@ -590,3 +590,10 @@ test(
     );
   },
 );
+
+test("sandboxes never hide the device's installed software", async () => {
+  const { writableTreeSystemRoots } = await import("../dist/sandbox/host.js");
+  const roots = writableTreeSystemRoots();
+  for (const path of ["/opt", "/Applications", "/snap", "/nix"])
+    assert.equal(roots.includes(path), existsSync(path), path);
+});

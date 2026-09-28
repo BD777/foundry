@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  claudeManagedSkillOptions,
-  codexManagedSkillArgs,
-  codexManagedSkillConfig,
+  claudeSessionOptions,
+  codexSessionArgs,
+  codexSessionConfig,
   tomlBasicString,
 } from "../dist/runner.js";
 
@@ -13,15 +13,15 @@ const managed = (skills, hostSkillPaths = []) => ({
   hostSkillPaths,
 });
 
-test("Claude disables host discovery even for empty selections and direct slash dispatch", () => {
-  const options = claudeManagedSkillOptions(managed([]));
-  assert.deepEqual(options.settingSources, []);
+test("Claude filters skills without turning off the device's own settings", () => {
+  const options = claudeSessionOptions(managed([]));
+  assert.equal(options.settingSources, undefined);
   assert.deepEqual(options.skills, []);
   assert.deepEqual(options.plugins, []);
 });
 
 test("Claude selects only plugin-qualified managed skills", () => {
-  const options = claudeManagedSkillOptions(
+  const options = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
   );
   assert.deepEqual(options.skills, ["foundry-workspace:qa"]);
@@ -32,7 +32,7 @@ test("Claude selects only plugin-qualified managed skills", () => {
 });
 
 test("Codex disables native document paths, even a same-name local copy", () => {
-  const config = codexManagedSkillConfig(
+  const config = codexSessionConfig(
     managed(
       [{ name: "qa", dir: "/sets/qa" }],
       ["/home/.agents/skills/qa/SKILL.md"],
@@ -49,20 +49,20 @@ test("Codex disables native document paths, even a same-name local copy", () => 
 
 test("Codex empty selections still disable automatic catalog and bundled skills", () => {
   assert.equal(
-    codexManagedSkillConfig(managed([])).skills.include_instructions,
+    codexSessionConfig(managed([])).skills.include_instructions,
     false,
   );
   assert.ok(
-    codexManagedSkillArgs(managed([])).includes("skills.bundled.enabled=false"),
+    codexSessionArgs(managed([])).includes("skills.bundled.enabled=false"),
   );
   assert.throws(
-    () => codexManagedSkillConfig({ skills: [], pluginDir: "/empty" }),
+    () => codexSessionConfig({ skills: [], pluginDir: "/empty" }),
     /not verified/,
   );
 });
 
 test("Codex CLI config uses valid path-only selectors, not a nonexistent mount API", () => {
-  const args = codexManagedSkillArgs(managed([], ["/host/qa/SKILL.md"]));
+  const args = codexSessionArgs(managed([], ["/host/qa/SKILL.md"]));
   assert.ok(
     args.includes('skills.config=[{enabled=false,path="/host/qa/SKILL.md"}]'),
   );
@@ -124,4 +124,31 @@ test("compatible Codex routing pins the chosen endpoint and native credential va
     }).CODEX_API_KEY,
     "",
   );
+});
+
+test("device notes reach Claude and Codex with or without a managed catalog", () => {
+  const notes = "Foundry device notes: test";
+  assert.equal(
+    claudeSessionOptions(undefined, notes).systemPrompt.append,
+    notes,
+  );
+  assert.equal(claudeSessionOptions(undefined, notes).skills, undefined);
+  assert.deepEqual(claudeSessionOptions(undefined), {});
+  const withSkills = claudeSessionOptions(
+    managed([{ name: "qa", dir: "/sets/qa" }]),
+    notes,
+  ).systemPrompt.append;
+  assert.ok(
+    withSkills.startsWith(notes) && /\/sets\/qa\/SKILL.md/.test(withSkills),
+  );
+  assert.equal(
+    codexSessionConfig(undefined, notes).developer_instructions,
+    notes,
+  );
+  assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
+  assert.deepEqual(codexSessionArgs(undefined), []);
+  assert.deepEqual(codexSessionArgs(undefined, notes), [
+    "-c",
+    `developer_instructions=${tomlBasicString(notes)}`,
+  ]);
 });

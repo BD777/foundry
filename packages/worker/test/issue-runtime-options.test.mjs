@@ -3,7 +3,7 @@ import test from "node:test";
 import { issueRuntimeOptions } from "../dist/issue-runtime-options.js";
 import {
   claudeEffort,
-  claudeSdkPermissionMode,
+  claudePermissionMode,
   codexReasoningEffort,
   codexApprovalPolicy,
   codexSandboxMode,
@@ -30,10 +30,7 @@ test("Issue model/effort survive session construction and autonomous permissions
     const session = { ...issueRuntimeOptions(issue), provider: runtime };
     assert.equal(session.model, "chosen-model");
     assert.equal(session.profileId, "chosen-profile");
-    assert.equal(
-      claudeSdkPermissionMode(session, profile, {}),
-      "bypassPermissions",
-    );
+    assert.equal(claudePermissionMode(session, profile), "bypassPermissions");
     assert.equal(codexApprovalPolicy(session, profile), "never");
     assert.equal(codexSandboxMode(session, profile), "danger-full-access");
     if (runtime === "claude") {

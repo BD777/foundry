@@ -553,8 +553,7 @@ import { spawnSync } from 'node:child_process';
 const args = process.argv.slice(2);
 if (args.includes('--version')) { console.log('Claude Code test fixture'); process.exit(0); }
 if (args.includes('stream-json')) process.exit(1);
-const index = args.indexOf('--setting-sources');
-if (index < 0 || args[index + 1] !== '') process.exit(4);
+if (!args.includes('--disable-slash-commands')) process.exit(4);
 const child = spawnSync(process.execPath, [${JSON.stringify(script)}], {stdio:'inherit'});
 process.exit(child.status ?? 1);
 `,

@@ -74,10 +74,10 @@ export function defaultProfileDraft(
     apiKey: "",
     baseUrl: "",
     claudeEffort: "high",
-    claudePermissionMode: "acceptEdits",
+    claudePermissionMode: "bypassPermissions",
     codexApprovalPolicy: "never",
     codexReasoningEffort: "high",
-    codexSandboxMode: "workspace-write",
+    codexSandboxMode: "danger-full-access",
     codexSpeed: "standard",
     label: defaultProfileLabel(runtime),
     model: "",
@@ -102,10 +102,10 @@ export function draftFromProfile(profile?: ProfileDefinition): ProfileDraft {
     claudePermissionMode:
       profile.claudePermissionMode && profile.claudePermissionMode !== "default"
         ? profile.claudePermissionMode
-        : "acceptEdits",
+        : "bypassPermissions",
     codexApprovalPolicy: profile.codexApprovalPolicy ?? "never",
     codexReasoningEffort: profile.codexReasoningEffort ?? "high",
-    codexSandboxMode: profile.codexSandboxMode ?? "workspace-write",
+    codexSandboxMode: profile.codexSandboxMode ?? "danger-full-access",
     codexSpeed: profile.codexSpeed ?? "standard",
     id: profile.id,
     label: profile.label || defaultProfileLabel(profile.runtime),

@@ -46,7 +46,6 @@ import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
 import {
   claudeManagedPrompt,
-  workspaceProjectInstructions,
   isolateSkillSession,
   prepareCodexSkillIsolation,
   validateWorkspaceSkillPrompt,
@@ -55,54 +54,86 @@ import {
 import {
   codexFoundryTools,
   buildClaudeLaunchPlan,
-  claudeManagedSkillOptions,
+  claudeSessionOptions,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 
 // Re-exported for existing callers/tests; the launch-policy module now owns
 // these definitions.
-export { claudeManagedSkillOptions, sessionPrompt };
+export { claudeSessionOptions, sessionPrompt };
 
 /** Discovery must be disabled: the SDK name allowlist does not restrict /name. */
 export function tomlBasicString(value: string): string {
   return JSON.stringify(value);
 }
 
-export function codexManagedSkillConfig(
+/**
+ * Codex launch config for what a session is told and which skills it sees:
+ * the device notes for every workspace session, plus the managed catalog with
+ * host skill discovery turned off.
+ */
+export function codexSessionConfig(
   managed: ManagedSkillRuntime | undefined,
+  deviceNotes = "",
 ): Record<string, unknown> {
-  if (!managed) return {};
-  if (!managed.hostSkillPaths)
+  if (managed && !managed.hostSkillPaths)
     throw new Error("Codex skill inventory was not verified.");
+  const instructions = [
+    deviceNotes,
+    managed ? workspaceSkillInstructions(managed) : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return {
-    skills: {
-      include_instructions: false,
-      bundled: { enabled: false },
-      config: managed.hostSkillPaths.map((path) => ({ enabled: false, path })),
-    },
-    developer_instructions: workspaceSkillInstructions(managed),
+    ...(managed
+      ? {
+          skills: {
+            include_instructions: false,
+            bundled: { enabled: false },
+            config: managed.hostSkillPaths!.map((path) => ({
+              enabled: false,
+              path,
+            })),
+          },
+        }
+      : {}),
+    ...(instructions ? { developer_instructions: instructions } : {}),
   };
 }
 
-export function codexManagedSkillArgs(
+function codexDeviceNotes(
+  workspacePath: string,
+  session: AgentSession,
+): string {
+  return isUtilitySession(session) ? "" : sessionDeviceNotes(workspacePath);
+}
+
+export function codexSessionArgs(
   managed: ManagedSkillRuntime | undefined,
+  deviceNotes = "",
 ): string[] {
-  const config = codexManagedSkillConfig(managed);
-  if (!managed) return [];
-  const rows = managed.hostSkillPaths!.map(
-    (path) => `{enabled=false,path=${tomlBasicString(path)}}`,
-  );
-  return [
-    "-c",
-    "skills.include_instructions=false",
-    "-c",
-    "skills.bundled.enabled=false",
-    "-c",
-    `skills.config=[${rows.join(",")}]`,
-    "-c",
-    `developer_instructions=${tomlBasicString(config.developer_instructions as string)}`,
-  ];
+  const config = codexSessionConfig(managed, deviceNotes);
+  const args: string[] = [];
+  if (managed) {
+    const rows = managed.hostSkillPaths!.map(
+      (path) => `{enabled=false,path=${tomlBasicString(path)}}`,
+    );
+    args.push(
+      "-c",
+      "skills.include_instructions=false",
+      "-c",
+      "skills.bundled.enabled=false",
+      "-c",
+      `skills.config=[${rows.join(",")}]`,
+    );
+  }
+  if (config.developer_instructions)
+    args.push(
+      "-c",
+      `developer_instructions=${tomlBasicString(config.developer_instructions as string)}`,
+    );
+  return args;
 }
 import {
   ClaudeAgentTurnError,
@@ -155,6 +186,7 @@ import {
 } from "./profiles.js";
 import { sessionEnvironment } from "./session-ambient.js";
 import { readAgentRuntimeSettings } from "./device.js";
+import { sessionDeviceNotes } from "./device-capabilities.js";
 
 export function codexSandboxMode(
   session: AgentSession,
@@ -164,7 +196,9 @@ export function codexSandboxMode(
     return "read-only";
   }
   return (
-    session.codexSandboxMode ?? profile.codexSandboxMode ?? "workspace-write"
+    session.codexSandboxMode ??
+    profile.codexSandboxMode ??
+    defaultCodexSandboxMode
   );
 }
 
@@ -196,6 +230,16 @@ export function claudeEffort(
   return session.claudeEffort ?? profile.claudeEffort;
 }
 
+/**
+ * A workspace session is the person's own agent on their own device, run
+ * headless: nobody is there to answer a permission prompt, so an unanswered
+ * prompt only blocks the device's own software. Unless the profile or session
+ * chooses otherwise, it runs as the person's terminal agent would with
+ * permissions granted. Utility sessions (titles, naming) stay read-only.
+ */
+export const defaultClaudePermissionMode = "bypassPermissions";
+export const defaultCodexSandboxMode = "danger-full-access";
+
 export function claudePermissionMode(
   session: AgentSession,
   profile: AgentProfileLocalConfig,
@@ -206,7 +250,7 @@ export function claudePermissionMode(
   return (
     session.claudePermissionMode ??
     profile.claudePermissionMode ??
-    "acceptEdits"
+    defaultClaudePermissionMode
   );
 }
 
@@ -476,6 +520,7 @@ export async function runCodexWorkspaceSession(
     writeFileSync(eventsPath, "");
     writeFileSync(stderrPath, "");
     const codexPathOverride = resolveCodexCommand();
+    const deviceNotes = codexDeviceNotes(workspacePath, session);
     const threadOptions = {
       approvalPolicy: codexApprovalPolicy(session, profile),
       model: session.model?.trim() || profile.model?.trim() || undefined,
@@ -493,7 +538,7 @@ export async function runCodexWorkspaceSession(
       workspacePath,
       session,
       profile,
-      { ...threadOptions, ...codexManagedSkillConfig(managedSkills) },
+      { ...threadOptions, ...codexSessionConfig(managedSkills, deviceNotes) },
     );
     const activeThread = activeCodexThreads.get(runtimeKey);
     let thread: CodexSDKThread;
@@ -525,7 +570,7 @@ export async function runCodexWorkspaceSession(
         env: codexSessionEnvironment(workspacePath, profile, session),
         config: {
           ...codexProfileConfig(profile),
-          ...codexManagedSkillConfig(managedSkills),
+          ...codexSessionConfig(managedSkills, deviceNotes),
           ...codexFoundryTools(session)?.config,
         },
       });
@@ -721,7 +766,12 @@ export async function runCodexCliSession(
         "-",
       ];
   args.push("--json");
-  args.push(...codexManagedSkillArgs(managedSkills));
+  args.push(
+    ...codexSessionArgs(
+      managedSkills,
+      codexDeviceNotes(workspacePath, session),
+    ),
+  );
   args.push(...(codexFoundryTools(session)?.cliArgs ?? []));
   const model = session.model?.trim() || profile.model?.trim();
   if (model) {
@@ -1190,7 +1240,7 @@ export async function runClaudeAgentSdkSession(
   const query = sdk.query;
   const model = session.model?.trim() || profile.model?.trim();
   const effort = claudeEffort(session, profile);
-  const permissionMode = claudeSdkPermissionMode(session, profile, env);
+  const permissionMode = claudePermissionMode(session, profile);
   const maxTurns = claudeMaxTurns(session);
   // Claude Code applies ~/.claude/settings.json's `env` block ON TOP of the
   // spawned process environment, so a pinned gateway/base URL/model in that
@@ -1220,7 +1270,7 @@ export async function runClaudeAgentSdkSession(
     permissionMode,
     settings: flagSettings,
     tools: { type: "preset", preset: "claude_code" },
-    ...(plan?.sdk ?? claudeManagedSkillOptions(managedSkills, workspacePath)),
+    ...(plan?.sdk ?? claudeSessionOptions(managedSkills)),
   };
   if (maxTurns !== undefined) {
     baseOptions.maxTurns = maxTurns;
@@ -1509,22 +1559,6 @@ export function claudeMaxTurns(session: AgentSession): number | undefined {
     : undefined;
 }
 
-export function claudeSdkPermissionMode(
-  session: AgentSession,
-  profile: AgentProfileLocalConfig,
-  env: NodeJS.ProcessEnv,
-): NonNullable<AgentProfileProjection["claudePermissionMode"]> {
-  if (
-    !isUtilitySession(session) &&
-    !session.claudePermissionMode &&
-    !profile.claudePermissionMode &&
-    env.FOUNDRY_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS === "1"
-  ) {
-    return "bypassPermissions";
-  }
-  return claudePermissionMode(session, profile);
-}
-
 // --- Session steer/cancel targets ---
 
 export function registerActiveSessionSteerTarget(
@@ -1631,15 +1665,8 @@ export async function runClaudeCliSession(
     validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     baseArgs.push(
       "--disable-slash-commands",
-      "--setting-sources",
-      "",
       "--append-system-prompt",
-      [
-        workspaceProjectInstructions(workspacePath),
-        workspaceSkillInstructions(managedSkills),
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
+      workspaceSkillInstructions(managedSkills),
     );
   }
   if (isUtilitySession(session)) {
@@ -1649,12 +1676,6 @@ export async function runClaudeCliSession(
       "--disallowedTools",
       "Write,Edit,Bash",
     );
-  } else if (
-    !session.claudePermissionMode &&
-    !profile.claudePermissionMode &&
-    env.FOUNDRY_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS === "1"
-  ) {
-    baseArgs.push("--dangerously-skip-permissions");
   } else {
     baseArgs.push("--permission-mode", claudePermissionMode(session, profile));
   }
