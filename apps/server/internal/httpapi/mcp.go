@@ -345,7 +345,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 			return "", &mcpToolError{http.StatusBadRequest, "workspaceId is required"}
 		}
-		session, err := s.startMCPSession(r, actor, input, mcpArgBool(args, "wait"), mcpArgNumber(args, "timeoutMs", 600_000))
+		session, err := s.startMCPSession(r, actor, input, mcpArgBool(args, "wait"), mcpWaitMs(args))
 		if err != nil {
 			return "", err
 		}
@@ -420,7 +420,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			return "", err
 		}
 		if mcpArgBool(args, "wait") {
-			if session, err = s.waitMCPTerminal(r.Context(), session.ID, mcpArgNumber(args, "timeoutMs", 600_000)); err != nil {
+			if session, err = s.waitMCPTerminal(r.Context(), session.ID, mcpWaitMs(args)); err != nil {
 				return "", err
 			}
 		}
@@ -450,7 +450,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		if !s.canReadSession(r.Context(), actor, session) {
 			return "", &mcpToolError{http.StatusForbidden, "cannot wait on this session"}
 		}
-		timeout := mcpArgNumber(args, "timeoutMs", 600_000)
+		timeout := mcpWaitMs(args)
 		var until []string
 		if raw, ok := args["until"]; ok {
 			_ = json.Unmarshal(raw, &until)
@@ -729,4 +729,17 @@ func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind string) 
 	}
 	raw, err := json.MarshalIndent(result, "", "  ")
 	return string(raw), err
+}
+
+// maxMCPWaitMs bounds one waiting tool call. The worker gives the agent's MCP
+// client a longer limit (foundryToolTimeoutMs), so the server always answers
+// first; a caller that needs longer waits again.
+const maxMCPWaitMs = 600_000
+
+func mcpWaitMs(args map[string]json.RawMessage) int {
+	wait := mcpArgNumber(args, "timeoutMs", maxMCPWaitMs)
+	if wait <= 0 || wait > maxMCPWaitMs {
+		return maxMCPWaitMs
+	}
+	return wait
 }

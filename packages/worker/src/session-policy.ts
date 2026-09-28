@@ -155,6 +155,14 @@ function credentialWarnings(
   ];
 }
 
+/**
+ * Client-side limit for one Foundry tool call. The server waits at most ten
+ * minutes in a waiting call (create_session / send_message with wait,
+ * wait_session); the client must outlast that, or it gives up on a call the
+ * server is still answering.
+ */
+export const foundryToolTimeoutMs = 11 * 60 * 1000;
+
 /** Claude permission rule covering every tool of the `foundry` MCP server. */
 const foundryToolsPermission = "mcp__foundry";
 
@@ -202,6 +210,7 @@ export function codexFoundryTools(
     url: tools.url,
     bearer_token_env_var: foundryTokenEnvName,
     default_tools_approval_mode: "approve",
+    tool_timeout_sec: foundryToolTimeoutMs / 1000,
   };
   return {
     config: { mcp_servers: { foundry: server } },
@@ -212,6 +221,8 @@ export function codexFoundryTools(
       `mcp_servers.foundry.bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)}`,
       "-c",
       `mcp_servers.foundry.default_tools_approval_mode=${JSON.stringify(server.default_tools_approval_mode)}`,
+      "-c",
+      `mcp_servers.foundry.tool_timeout_sec=${server.tool_timeout_sec}`,
     ],
   };
 }
@@ -266,6 +277,7 @@ export function buildClaudeLaunchPlan(input: {
       type: "http",
       url: tools.url,
       headers: { Authorization: `Bearer ${tools.token}` },
+      timeout: foundryToolTimeoutMs,
     },
   };
 

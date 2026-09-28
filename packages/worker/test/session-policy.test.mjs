@@ -202,6 +202,8 @@ test("sessions with an orchestration identity get the Foundry tools with their o
         type: "http",
         url: "http://127.0.0.1:31982/api/mcp",
         headers: { Authorization: "Bearer token-for-sess_tools" },
+        // Outlasts the server's 10-minute cap on a waiting call.
+        timeout: 660000,
       },
     });
     assert.equal(
@@ -252,6 +254,8 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
       url: "http://127.0.0.1:31982/api/mcp",
       bearer_token_env_var: "FOUNDRY_SESSION_TOKEN",
       default_tools_approval_mode: "approve",
+      // Outlasts the server's 10-minute cap on a waiting call.
+      tool_timeout_sec: 660,
     };
     assert.deepEqual(tools.config, { mcp_servers: { foundry: server } });
     assert.equal(
@@ -266,6 +270,8 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
       'mcp_servers.foundry.bearer_token_env_var="FOUNDRY_SESSION_TOKEN"',
       "-c",
       'mcp_servers.foundry.default_tools_approval_mode="approve"',
+      "-c",
+      "mcp_servers.foundry.tool_timeout_sec=660",
     ]);
     assert.equal(
       codexFoundryTools({

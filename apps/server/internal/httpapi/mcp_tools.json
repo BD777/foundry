@@ -115,7 +115,8 @@
           "description": "Block until the session settles and return its response."
         },
         "timeoutMs": {
-          "type": "number"
+          "type": "number",
+          "description": "How long to wait, at most 600000 (10 minutes, the default). If the session is still running when it elapses, call wait_session again."
         },
         "workspaceId": {
           "type": "string",
@@ -243,7 +244,8 @@
           "description": "Block until the session settles and return its response."
         },
         "timeoutMs": {
-          "type": "number"
+          "type": "number",
+          "description": "How long to wait, at most 600000 (10 minutes, the default). If the session is still running when it elapses, call wait_session again."
         }
       },
       "required": ["sessionId", "message"]
@@ -278,7 +280,8 @@
           }
         },
         "timeoutMs": {
-          "type": "number"
+          "type": "number",
+          "description": "How long to wait, at most 600000 (10 minutes, the default). If the session is still running when it elapses, call wait_session again."
         }
       },
       "required": ["sessionId"]
