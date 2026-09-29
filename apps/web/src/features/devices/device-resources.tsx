@@ -73,7 +73,7 @@ export function DeviceResources({
         <div className="fdy-device-resource-actions">
           <Button
             size="sm"
-            variant="ghost"
+            variant="secondary"
             disabled={busy !== null}
             onClick={() => void refresh()}
           >
