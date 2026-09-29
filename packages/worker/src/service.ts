@@ -7,6 +7,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,6 +16,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
 import { daemonConfigPath, readDaemonConfig } from "./config.js";
+import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
 import { optionEnabled } from "./utils.js";
 import {
   foundryStackSuffix,
@@ -55,9 +57,19 @@ export function serviceLogPaths(): { err: string; out: string } {
   };
 }
 
-export function serviceArgs(config: DaemonConfig): string[] {
+/**
+ * How the service runs the worker: the CLI to start (by default the one that
+ * is running now; `install` passes the installed runtime's), and on macOS
+ * whether Foundry Worker.app hosts it so privacy grants name Foundry.
+ */
+export interface ServiceHost {
+  cliPath?: string;
+  macApp?: boolean;
+}
+
+export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
   return [
-    process.argv[1] ?? "foundry-worker",
+    cliPath ?? process.argv[1] ?? "foundry-worker",
     "daemon",
     "--server",
     config.serverURL,
@@ -145,7 +157,7 @@ export function bestEffort(command: string, args: string[]): void {
   }
 }
 
-export function installService(args: string[]): void {
+export function installService(args: string[], host: ServiceHost = {}): void {
   const config = readDaemonConfig();
   if (!config) {
     throw new Error(
@@ -159,7 +171,13 @@ export function installService(args: string[]): void {
   if (process.platform === "darwin") {
     const plistPath = launchdPlistPath();
     mkdirSync(dirname(plistPath), { recursive: true });
-    const argsXML = [process.execPath, ...serviceArgs(config)]
+    const command = [process.execPath, ...serviceArgs(config, host.cliPath)];
+    const appExecutable = host.macApp
+      ? ensureWorkerApp(
+          workerLauncherScript({ command, env: serviceEnvironment(), logs }),
+        )
+      : undefined;
+    const argsXML = (appExecutable ? [appExecutable] : command)
       .map((value) => `    <string>${xmlEscape(value)}</string>`)
       .join("\n");
     writeFileSync(
@@ -194,7 +212,8 @@ ${environmentVariablesXML()}
     );
     if (!noStart && typeof process.getuid === "function") {
       const target = `gui/${process.getuid()}`;
-      bestEffort("launchctl", ["bootout", target, plistPath]);
+      // Nothing to boot out on a fresh install; not worth a warning.
+      spawnSync("launchctl", ["bootout", target, plistPath]);
       bestEffort("launchctl", ["bootstrap", target, plistPath]);
       bestEffort("launchctl", ["enable", `${target}/${serviceLabel()}`]);
       bestEffort("launchctl", [
@@ -244,7 +263,7 @@ ${environmentVariablesXML()}
     );
     if (!noStart && typeof process.getuid === "function") {
       const target = `gui/${process.getuid()}`;
-      bestEffort("launchctl", ["bootout", target, watchdogPath]);
+      spawnSync("launchctl", ["bootout", target, watchdogPath]);
       bestEffort("launchctl", ["bootstrap", target, watchdogPath]);
       bestEffort("launchctl", ["enable", `${target}/${watchdogLabel()}`]);
     }
@@ -255,7 +274,7 @@ ${environmentVariablesXML()}
   if (process.platform === "linux") {
     const unitPath = systemdUnitPath();
     mkdirSync(dirname(unitPath), { recursive: true });
-    const command = [process.execPath, ...serviceArgs(config)]
+    const command = [process.execPath, ...serviceArgs(config, host.cliPath)]
       .map((value) => `'${value.replace(/'/g, "'\\''")}'`)
       .join(" ");
     writeFileSync(
@@ -292,6 +311,64 @@ WantedBy=default.target
   );
 }
 
+/** Whether this stack has a login service installed. */
+export function serviceInstalled(): boolean {
+  if (process.platform === "darwin") return existsSync(launchdPlistPath());
+  if (process.platform === "linux") return existsSync(systemdUnitPath());
+  return false;
+}
+
+/**
+ * Stop the running daemon of this stack. Under Foundry Worker.app the daemon
+ * is the app's child, so removing or restarting the launchd job alone would
+ * leave it running; the daemon lock names its process.
+ */
+export async function stopDaemonProcess(): Promise<void> {
+  let pid: number;
+  try {
+    pid = Number(readFileSync(foundryStatePath("daemon.lock"), "utf8"));
+  } catch {
+    return;
+  }
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return;
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!alive()) return;
+  process.kill(pid, "SIGTERM");
+  for (let i = 0; i < 50 && alive(); i++)
+    await new Promise((done) => setTimeout(done, 100));
+  if (alive()) process.kill(pid, "SIGKILL");
+}
+
+/**
+ * Rewrite and restart the installed service for a new runtime. On macOS the
+ * launchd job is removed first, which stops Foundry Worker.app (so the app
+ * can be rebuilt when its own content changed, without the old one reacting),
+ * then the worker is stopped and the job installed again.
+ */
+export async function reinstallService(host: ServiceHost): Promise<void> {
+  if (process.platform === "darwin") {
+    if (typeof process.getuid === "function")
+      spawnSync("launchctl", [
+        "bootout",
+        `gui/${process.getuid()}`,
+        launchdPlistPath(),
+      ]);
+    await stopDaemonProcess();
+    installService([], host);
+    return;
+  }
+  installService(["--no-start"], host);
+  bestEffort("systemctl", ["--user", "daemon-reload"]);
+  bestEffort("systemctl", ["--user", "restart", systemdUnitName()]);
+}
+
 export function uninstallService(): void {
   if (process.platform === "darwin") {
     const plistPath = launchdPlistPath();
@@ -325,6 +402,15 @@ export function uninstallService(): void {
 export function status(): void {
   const config = readDaemonConfig();
   console.log(`Config: ${config ? daemonConfigPath : "not paired"}`);
+  // Set when installed with `install`; a source checkout has no runtime.
+  try {
+    const version = readlinkSync(foundryStatePath("runtime", "current"));
+    console.log(`Installed version: ${version}`);
+  } catch {
+    // Not installed from npm.
+  }
+  if (existsSync(foundryStatePath("Foundry Worker.app")))
+    console.log(`Hosted by: ${foundryStatePath("Foundry Worker.app")}`);
   if (config) {
     console.log(`Server: ${config.serverURL}`);
     console.log(`Workspace: ${config.workspacePath}`);

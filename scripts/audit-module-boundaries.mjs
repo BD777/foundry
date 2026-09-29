@@ -201,6 +201,8 @@ export const workerModules = {
       "daemon-connection",
       "workspace-ops",
       "service",
+      "mac-worker-app",
+      "worker-install",
     ],
   },
 };

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { workerPackageName } from "@foundry/protocol";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -16,8 +17,9 @@ function expiryLabel(value: string): string {
 }
 
 /**
- * Issues a one-time pairing token and shows the command that pairs a worker
- * on another machine. The token is shown once; only its hash is stored.
+ * Issues a one-time pairing token and shows the one command that installs a
+ * worker on another machine from npm. The token is shown once; only its hash
+ * is stored.
  */
 export function AddDevicePanel({ onClose }: { onClose: () => void }) {
   const [pairing, setPairing] = useState<{
@@ -28,8 +30,9 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
+  const npx = `npx -y ${workerPackageName}@latest`;
   const command = pairing
-    ? `pnpm --filter @foundry/worker foundry-worker -- setup --server ${workerServerURL()} --workspace /absolute/path/to/workspace --token ${pairing.token}`
+    ? `${npx} install --server ${workerServerURL()} --token ${pairing.token}`
     : "";
 
   async function issue(): Promise<void> {
@@ -64,8 +67,9 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
         <div>
           <strong>Add a device</strong>
           <p>
-            Run the command on the machine that should execute work, from a
-            Foundry checkout. The device will belong to your account.
+            Run one command in a terminal on the machine that should do the work
+            (macOS or Linux with Node.js 20 or later). It installs the worker,
+            pairs it with your account and starts it at login.
           </p>
         </div>
         <Button onClick={onClose} size="sm" variant="ghost">
@@ -78,8 +82,22 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
             lines={[{ id: "setup", prompt: "$", value: command }]}
           />
           <p className="fdy-add-device-note">
-            Replace the workspace path. The token works once and expires at{" "}
-            {expiryLabel(pairing.expiresAt)}.
+            The token works once and expires at {expiryLabel(pairing.expiresAt)}
+            . The first workspace is ~/Foundry; add{" "}
+            <code>--workspace &lt;path&gt;</code> to choose another, and add
+            more later under the device&apos;s Workspaces.
+          </p>
+          <p className="fdy-add-device-note">
+            A machine that already runs a Foundry worker is left as it is. To
+            update a worker later, run <code>{npx} update</code> on it;{" "}
+            <code>{npx} uninstall</code> removes it.
+          </p>
+          <p className="fdy-add-device-note">
+            From a Foundry source checkout instead:{" "}
+            <code>
+              pnpm --filter {workerPackageName} foundry-worker -- setup --server{" "}
+              {workerServerURL()} --workspace &lt;path&gt; --token &lt;token&gt;
+            </code>
           </p>
           <div className="fdy-add-device-actions">
             <Button onClick={() => void copy()}>

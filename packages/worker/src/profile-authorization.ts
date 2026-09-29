@@ -13,7 +13,6 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { IPty } from "node-pty";
-import * as pty from "node-pty";
 import type { ProfileAuthorization, WorkerRuntimeId } from "@foundry/protocol";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { clearNativeLoginHealth } from "./native-login.js";
@@ -105,6 +104,21 @@ export function ensurePtySpawnHelperExecutable(
   } catch {
     chmodSync(helper, statSync(helper).mode | 0o111);
     return helper;
+  }
+}
+
+/**
+ * node-pty is an optional dependency: its Linux build needs a native
+ * toolchain, and without one the worker still installs. Only signing in from
+ * the web needs it.
+ */
+async function loadPty(): Promise<typeof import("node-pty")> {
+  try {
+    return await import("node-pty");
+  } catch {
+    throw new Error(
+      "Signing in from the web needs node-pty, which is not installed on this device (its build needs a C/C++ toolchain). Sign in with the Claude or Codex CLI in a terminal on this device, or install a toolchain (build-essential and python3) and run `update`.",
+    );
   }
 }
 
@@ -207,6 +221,7 @@ export async function startProfileAuthorization(
   reapAbandonedAuthorizations(runtime);
 
   const id = `auth_${randomUUID()}`;
+  const pty = await loadPty();
   ensurePtySpawnHelperExecutable();
   const native = commandFor(runtime);
   const child = pty.spawn(native.command, native.args, {

@@ -119,9 +119,6 @@ importers:
       '@openai/codex-sdk':
         specifier: ^0.142.5
         version: 0.142.5
-      node-pty:
-        specifier: ^1.1.0
-        version: 1.1.0
       smol-toml:
         specifier: ^1.8.0
         version: 1.8.0
@@ -135,6 +132,10 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+    optionalDependencies:
+      node-pty:
+        specifier: ^1.1.0
+        version: 1.1.0
 
 packages:
 
@@ -4611,11 +4612,13 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  node-addon-api@7.1.1: {}
+  node-addon-api@7.1.1:
+    optional: true
 
   node-pty@1.1.0:
     dependencies:
       node-addon-api: 7.1.1
+    optional: true
 
   node-releases@2.0.50: {}
 

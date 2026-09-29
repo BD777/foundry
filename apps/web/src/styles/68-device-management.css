@@ -539,6 +539,13 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+.fdy-add-device-note code {
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .fdy-add-device-actions {
   display: flex;
   flex-wrap: wrap;
