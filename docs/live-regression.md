@@ -100,7 +100,7 @@ stack，pm2 进程 `foundry-windeng-worker`，工作区 `~/foundry-windeng-works
   `list_resources` 选中 Mac、在 Mac 的工作区用 CC Relay 开子会话并等到截图。
 - Mac 上的父会话在服务器的工作区开子会话算题，再用 `send_message` 继续它。
 
-### 4.3 运行脚本
+### 4.4 运行脚本
 
 Web 用例（C7–C9）用 `scripts/live-web-regression.mjs`，经 agent-browser 操作真实页面：
 
