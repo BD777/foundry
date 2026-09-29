@@ -20,6 +20,7 @@ import {
   sessionScratchDirectory,
   sessionScratchEnvironment,
 } from "../dist/resource-pool.js";
+import * as resourcePool from "../dist/resource-pool.js";
 
 test("browsers on PATH become one resource per browser", (t) => {
   const bin = mkdtempSync(join(tmpdir(), "foundry-browsers-"));
@@ -294,3 +295,38 @@ test(
     assert.ok(alive(other.pid));
   },
 );
+
+test("asking for screen control prompts, then opens only the panes still missing", () => {
+  const { requestResourceAccess } = resourcePool;
+  if (process.platform !== "darwin") {
+    assert.throws(
+      () => requestResourceAccess("computer_use:macos"),
+      /needs no access/,
+    );
+    return;
+  }
+  const opened = [];
+  let prompted = false;
+  assert.deepEqual(
+    requestResourceAccess(
+      "computer_use:macos",
+      () => ({ screenRecording: true, accessibility: false }),
+      (url) => opened.push(url),
+      () => (prompted = true),
+    ),
+    ["Accessibility"],
+  );
+  assert.ok(prompted);
+  assert.deepEqual(opened, [
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  ]);
+});
+
+test("unavailable screen control names the program to allow", () => {
+  const [resource] = discoverComputerUse("darwin", () => ({
+    screenRecording: false,
+    accessibility: false,
+  }));
+  assert.equal(resource.attributes.grantTo, process.execPath);
+  assert.match(resource.detail, /Screen Recording and Accessibility/);
+});

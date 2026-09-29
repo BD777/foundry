@@ -262,6 +262,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/pairing-tokens", s.handleCreateDevicePairingToken, signedIn()),
 		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceOwner("deviceId")),
 		fn("POST /api/devices/runtime-settings", s.handleUpsertAgentRuntimeSettings, inHandler()),
+		fn("POST /api/devices/{id}/resources/refresh", s.handleRefreshDeviceResources, inHandler()),
 		fn("GET /api/provider-health", s.handleProviderHealth, filtered()),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/inspect", s.handleInspectNativeAccount, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/profiles", s.handleSetDeviceProfiles, deviceOwner("deviceId")),

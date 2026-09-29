@@ -281,3 +281,60 @@ func TestReconnectCoversEveryWorkspaceOfTheDevice(t *testing.T) {
 		}
 	}
 }
+
+// Refreshing resources asks the device, which may first ask its person for
+// access, and stores what it reports with the device.
+func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	registration := store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_res", Label: "Mac", Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: "ws_res", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
+	}
+	server := NewServer(db)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	writeWSForTest(t, conn, "hello", registration)
+	readWSTypeForTest(t, conn, "registered")
+
+	type outcome struct {
+		value wsResourcesRefreshedPayload
+		err   error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		value, err := server.hub.RefreshDeviceResources(ctx, "dev_res", "computer_use:macos")
+		done <- outcome{value, err}
+	}()
+	var request wsRefreshResourcesPayload
+	id := readWSPayloadEnvelopeForTest(t, conn, "refresh_resources", &request)
+	if request.RequestAccess != "computer_use:macos" {
+		t.Fatalf("request = %+v", request)
+	}
+	granted := store.DeviceResource{ID: "computer_use:macos", Kind: "computer_use", Name: "macOS screen control", Available: true}
+	registration.Device.Resources = []store.DeviceResource{granted}
+	writeWSIDForTest(t, conn, id, "resources_refreshed", map[string]any{
+		"registration": registration, "resources": []store.DeviceResource{granted}, "opened": []string{"Accessibility"},
+	})
+	result := <-done
+	if result.err != nil || len(result.value.Resources) != 1 || !result.value.Resources[0].Available ||
+		len(result.value.Opened) != 1 {
+		t.Fatalf("refresh = %+v, %v", result.value, result.err)
+	}
+	devices, err := db.ListDevices(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || len(devices[0].Resources) != 1 || !devices[0].Resources[0].Available {
+		t.Fatalf("stored device = %+v", devices)
+	}
+	if _, err := server.hub.RefreshDeviceResources(ctx, "dev_missing", ""); err != store.ErrNotFound {
+		t.Fatalf("offline device: %v, want ErrNotFound", err)
+	}
+}

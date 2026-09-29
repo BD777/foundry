@@ -179,3 +179,22 @@ func TestListResourcesFollowsReach(t *testing.T) {
 		t.Fatalf("after sharing, browsers = %v", names)
 	}
 }
+
+// Only a device's owner may make it ask its person for access.
+func TestRefreshDeviceResourcesIsOwnerOnly(t *testing.T) {
+	f := newIsolationFixture(t)
+	path := "/api/devices/dev_alice/resources/refresh"
+	body := `{"requestAccess":"computer_use:macos"}`
+	if got := doAuthCall(t, f.handler, f.as(f.bob, http.MethodPost, path, body)).Code; got != http.StatusForbidden && got != http.StatusNotFound {
+		t.Fatalf("a stranger asks alice's device for access: %d", got)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"maintainer"}`)),
+		http.StatusNoContent, "share with bob")
+	if got := doAuthCall(t, f.handler, f.as(f.bob, http.MethodPost, path, body)).Code; got != http.StatusForbidden && got != http.StatusNotFound {
+		t.Fatalf("a maintainer of a workspace on it asks alice's device for access: %d", got)
+	}
+	// The owner reaches the device; it is not connected in this fixture.
+	if got := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, path, body)).Code; got != http.StatusConflict {
+		t.Fatalf("owner, device offline: %d, want 409", got)
+	}
+}

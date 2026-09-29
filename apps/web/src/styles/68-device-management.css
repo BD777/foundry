@@ -559,3 +559,29 @@
   color: var(--fdy-ink-muted);
   font-size: 13px;
 }
+
+.fdy-device-resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-device-resource-access {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fdy-device-resource-access p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-device-resource-error {
+  margin: 0;
+  color: var(--fdy-error-text);
+  font-size: 13px;
+}

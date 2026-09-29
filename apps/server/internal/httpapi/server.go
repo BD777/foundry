@@ -498,6 +498,36 @@ func (s *Server) handleUpsertAgentRuntimeSettings(w http.ResponseWriter, r *http
 	writeResult(w, settings, err)
 }
 
+// handleRefreshDeviceResources re-detects a device's resources, first asking
+// the person at the device for access to one resource when the owner asks.
+func (s *Server) handleRefreshDeviceResources(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		RequestAccess string `json:"requestAccess"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	deviceID := r.PathValue("id")
+	if !s.requireDeviceOwner(w, r, deviceID) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	value, err := s.hub.RefreshDeviceResources(ctx, deviceID, strings.TrimSpace(input.RequestAccess))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusConflict, "local daemon is not connected")
+		return
+	}
+	resources := value.Resources
+	if resources == nil {
+		resources = []store.DeviceResource{}
+	}
+	writeResult(w, struct {
+		Resources []store.DeviceResource `json:"resources"`
+		Opened    []string               `json:"opened"`
+	}{resources, append([]string{}, value.Opened...)}, err)
+}
+
 func (s *Server) handleProviderHealth(w http.ResponseWriter, r *http.Request) {
 	view, err := s.visibilityFor(r.Context(), actorFromContext(r.Context()))
 	if err != nil {

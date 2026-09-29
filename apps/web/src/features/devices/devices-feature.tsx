@@ -245,7 +245,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               />
             ) : null}
             {section === "resources" || !device.owned ? (
-              <DeviceResources device={device} />
+              <DeviceResources device={device} onRefresh={onRefresh} />
             ) : null}
             {section === "agents" && device.owned ? (
               <DeviceAccess
