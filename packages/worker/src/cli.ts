@@ -19,8 +19,14 @@ import { workspacePathFromArgs } from "./workspace-ops.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { cleanupEnvironment } from "./issue-environments.js";
 import { optionEnabled } from "./utils.js";
+import {
+  ownPackage,
+  installCommand,
+  uninstallCommand,
+  updateCommand,
+} from "./worker-install.js";
 
-const VERSION = "0.0.0";
+const VERSION = ownPackage().version;
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -68,6 +74,15 @@ async function main(): Promise<void> {
     }
     case "setup":
       await setup(commandArgs);
+      break;
+    case "install":
+      await installCommand(commandArgs);
+      break;
+    case "update":
+      await updateCommand(commandArgs);
+      break;
+    case "uninstall":
+      await uninstallCommand(commandArgs);
       break;
     case "init":
       initWorkspace(invocation.positionals[0]);

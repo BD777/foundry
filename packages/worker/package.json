@@ -1,6 +1,6 @@
 {
   "name": "@foundry/worker",
-  "version": "0.0.0",
+  "version": "0.4.0",
   "license": "Apache-2.0",
   "description": "Local Foundry worker daemon and workspace CLI",
   "type": "module",
@@ -10,7 +10,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "scripts/watchdog.sh"
   ],
   "engines": {
     "node": ">=20"
@@ -31,9 +32,11 @@
     "@foundry/protocol": "workspace:*",
     "@openai/codex": "0.142.5",
     "@openai/codex-sdk": "^0.142.5",
-    "node-pty": "^1.1.0",
     "smol-toml": "^1.8.0",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
   }
 }

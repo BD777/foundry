@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import type { ServiceHost } from "./service.js";
 import {
   reclaimSessionResources,
   requestResourceAccess,
@@ -2087,7 +2088,10 @@ export async function pair(args: string[]): Promise<void> {
   );
 }
 
-export async function setup(args: string[]): Promise<void> {
+export async function setup(
+  args: string[],
+  host: ServiceHost = {},
+): Promise<void> {
   const serverURL = serverURLFromArgs(args);
   const workspacePath = workspacePathFromArgs(args);
   const noService = optionEnabled(args, "--no-service");
@@ -2107,7 +2111,7 @@ export async function setup(args: string[]): Promise<void> {
   if (noService) {
     console.log("Service installation skipped (--no-service).");
   } else {
-    installService(noStart ? ["--no-start"] : []);
+    installService(noStart ? ["--no-start"] : [], host);
   }
 
   console.log("");

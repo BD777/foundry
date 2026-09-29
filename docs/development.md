@@ -224,6 +224,38 @@ Check provider readiness for a workspace:
 pnpm --filter @foundry/worker foundry-worker providers --workspace /tmp/foundry-workspace
 ```
 
+## Installing a worker with npx
+
+A machine joins Foundry with one command, shown with a fresh pairing token in
+Devices → Add device (macOS or Linux, Node.js 20+):
+
+```bash
+npx -y @foundry/worker@latest install --server <server-url> --token <pairing-token> [--workspace <path>]
+npx -y @foundry/worker@latest update      # latest version, then restart
+npx -y @foundry/worker@latest status
+npx -y @foundry/worker@latest uninstall   # --purge also removes local state
+```
+
+- `install` puts the package in `<state root>/runtime/<version>` (`current`
+  points at the one in use) and the login service runs the worker from there,
+  never from the npx cache. A machine already running a worker for that server
+  is left unchanged; one paired with another server is refused. The first
+  workspace defaults to `~/Foundry`.
+- On macOS the service is hosted by `<state root>/Foundry Worker.app`, built at
+  install time with system tools only (`osacompile`, `PlistBuddy`, `codesign`;
+  no Xcode). macOS privacy grants such as Screen Recording then name
+  "Foundry Worker" instead of the shared Node.js binary. The app only runs the
+  fixed launcher `<state root>/worker.sh`, so updates never change its
+  signature and grants survive them.
+- `update` installs the new version next to the current one, keeps the previous
+  one for a manual rollback and restarts the service.
+- `node-pty` is optional: without a C/C++ toolchain on Linux the worker still
+  installs, and only signing in to Claude or Codex from the web needs it.
+- Until the packages are published, install from tarballs: `pnpm --filter
+@foundry/protocol pack` and `pnpm --filter @foundry/worker pack`, then
+  `npm exec --package=<protocol.tgz> --package=<worker.tgz> -- foundry-worker
+install … --from <protocol.tgz> --from <worker.tgz>`.
+
 ## Verify
 
 Run the same two gates used in CI:

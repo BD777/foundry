@@ -234,8 +234,9 @@ export function discoverComputerUse(
     resource.attributes = {
       screenRecording: granted.screenRecording ? "granted" : "not granted",
       accessibility: granted.accessibility ? "granted" : "not granted",
-      // macOS grants these to the program that runs the worker.
-      grantTo: process.execPath,
+      // macOS grants these to the program that hosts the worker: Foundry
+      // Worker.app when installed with `install`, else the Node binary.
+      grantTo: process.env.FOUNDRY_WORKER_APP?.trim() || process.execPath,
     };
     if (missing.length)
       resource.detail = `${missing.join(" and ")} not granted to the Foundry worker (System Settings → Privacy & Security).`;

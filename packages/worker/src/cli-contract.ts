@@ -214,6 +214,111 @@ export const cliCommands: CliCommandContract[] = [
     path: ["setup"],
   },
   {
+    brief: "Install the worker on this machine from its npm package.",
+    description:
+      "The one-command install (`npx -y <package>@latest install …`). Installs the package into a stable runtime directory, pairs this machine with the server, registers the workspace and starts a login service that runs the worker from that directory (on macOS hosted by Foundry Worker.app, so privacy grants name Foundry). A machine already running a worker for that server is left unchanged.",
+    examples: [
+      {
+        command:
+          "npx -y <package>@latest install --server https://foundry.example.com --token <pairing-token>",
+        description: "Install from the command shown in Devices → Add device.",
+        label: "RECOMMENDED",
+      },
+      {
+        command:
+          "foundry-worker install --server <url> --token <pairing-token> --workspace ~/work/project",
+        description:
+          "Install with an explicit first workspace (default ~/Foundry).",
+      },
+      {
+        command:
+          "foundry-worker install --server <url> --token <pairing-token> --from ./protocol.tgz --from ./worker.tgz",
+        description:
+          "Install from local package tarballs instead of the registry.",
+        label: "TEMPLATE",
+      },
+    ],
+    id: "install",
+    options: [
+      serverOption,
+      pairingTokenOption,
+      {
+        defaultValue: "~/Foundry",
+        description: "First workspace to register",
+        name: "--workspace",
+        type: "string",
+      },
+      {
+        defaultValue: "this package's name and version",
+        description: "npm spec or tarball to install instead (repeatable)",
+        name: "--from",
+        type: "string",
+      },
+      {
+        defaultValue: "false",
+        description: "Install the service without starting it",
+        name: "--no-start",
+        type: "bool",
+      },
+    ],
+    path: ["install"],
+  },
+  {
+    brief: "Update the installed worker to the latest version.",
+    description:
+      "Installs the latest published version next to the current one, switches to it and restarts the worker. Does nothing when already up to date; keeps the previous version for a manual rollback.",
+    examples: [
+      {
+        command: "npx -y <package>@latest update",
+        description: "Update to the latest published version.",
+        label: "RECOMMENDED",
+      },
+      {
+        command:
+          "foundry-worker update --from ./protocol.tgz --from ./worker.tgz",
+        description: "Update from local package tarballs.",
+        label: "TEMPLATE",
+      },
+    ],
+    id: "update",
+    options: [
+      {
+        defaultValue: "the latest published version",
+        description: "npm spec or tarball to install instead (repeatable)",
+        name: "--from",
+        type: "string",
+      },
+    ],
+    path: ["update"],
+  },
+  {
+    brief: "Stop the worker and remove its login service.",
+    description:
+      "Stops the worker, removes its login service and Foundry Worker.app. Pairing, runtime and workspaces are kept unless --purge is given. The device stays listed on the server until it is removed there.",
+    examples: [
+      {
+        command: "npx -y <package>@latest uninstall",
+        description: "Stop and remove the service, keep local state.",
+        label: "RECOMMENDED",
+      },
+      {
+        command: "foundry-worker uninstall --purge",
+        description: "Also remove pairing, runtime and local records.",
+        label: "TEMPLATE",
+      },
+    ],
+    id: "uninstall",
+    options: [
+      {
+        defaultValue: "false",
+        description: "Also remove this stack's local state",
+        name: "--purge",
+        type: "bool",
+      },
+    ],
+    path: ["uninstall"],
+  },
+  {
     arguments: [
       {
         description: "Workspace directory to initialize",
