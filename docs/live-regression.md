@@ -42,13 +42,13 @@
 | C19 | Worker 重启后的孤儿输入               | 运行中 `kill -9` Worker 并重启：输入在重连后数秒内以"结果丢失"失败（不是 30 分钟）；再发消息能续上原生上下文                                                                                                                   | `recover_session`、无标记即丢失                             | 脚本 `worker-restart`（需 `--kill-worker`；Worker 由 launchd/systemd/pm2 拉起，或给 `--restart-worker`） | ✔     | ✔     | ✔          |
 | C20 | 完成但回报丢失的输入                  | 停掉 Server，输入在 Worker 上跑完写下完成标记，再 `kill -9` Worker；Server 与 Worker 重启后，输入以标记里的回答完成                                                                                                            | `recover_session`、按输入的完成标记                         | 手工（需杀进程）                                                                                         | ✔     |       |            |
 | C21 | 子 Agent 跨输入读取                   | 第 1 次输入用 Task 工具派出原生子 Agent（答 `MANGO-7`），第 2 次输入之后 `read_context scope=subagents` 仍列出它，带 `taskId` 读出的记录包含它的回答                                                                           | 按输入存放产物、子 Agent 记录                               | 脚本 `subagents`（Claude）                                                                               |       | ✔     | ✔          |
-| C18 | 跨 Workspace 编排（§5.6 方案 A）      | `list_workspaces` 列出同一人的两个 Workspace；`create_session` 指定另一 Workspace 后子会话记录父会话、落在该 Workspace 的设备上、不进父会话分组、沿用父会话 runtime；父会话下一次输入能 `send_message` 继续它                  | Agent 可达范围（`agentScope`）、跨 Workspace 血缘           | 脚本 `cross-workspace`（需 `--other-workspace`、`--other-state-root`，两台设备凭据都在本机）             | ✔     |       |            |
+| C18 | 跨 Workspace 编排（§5.6 方案 A）      | `list_workspaces` 列出同一人的两个 Workspace；`create_session` 指定另一 Workspace 后子会话记录父会话、落在该 Workspace 的设备上、不进父会话分组、沿用父会话 runtime；父会话下一次输入能 `send_message` 继续它                  | Agent 可达范围（`agentScope`）、跨 Workspace 血缘           | 脚本 `cross-workspace`（需 `--other-workspace`、`--other-state-root`，两台设备凭据都在本机）             | ✔     |       | ✔          |
 | C22 | 用设备上的浏览器截图给人看（M3 验收） | 提示里不给路径："截图 example.com 给我看"；Agent 用设备已装的浏览器截图，回答里的 `<image path>` 在工作区附件目录中，经设备通道读回的是 PNG                                                                                    | Worker 运行时探测浏览器、会话设备说明、默认权限不挡设备软件 | 脚本 `device-browser`                                                                                    | ✔     | ✔     | ✔          |
 | C23 | Resource Pool 目录                    | MCP `list_resources` 列出本工作区所在设备、在线、至少一个可用浏览器（Mac 上另有屏幕控制及其真实授权状态）                                                                                                                      | 资源发现、随注册上报、按可达范围列出                        | 脚本 `resources`                                                                                         | ✔     | ✔     | ✔          |
 | C24 | 资源回收                              | Agent 在后台启动浏览器并让它一直运行；下一条消息让设备上的 Agent 用 `ps` 检查，浏览器已不在（GONE）；证据里注明是 Worker 按租约关闭的，还是运行时自己已停止                                                                    | 会话租约（启动器）、按会话标记回收                          | 脚本 `resource-reclaim`                                                                                  | ✔     | ✔     | ✔          |
-| C25 | 按资源选设备（M3 验收）               | 同一账号两台设备，只有设备 B 有浏览器；设备 A 上的父会话只被告知"需要一张截图"，自己用 `list_resources` 找到 B，在 B 的工作区 `create_session wait=true`，等到子会话完成；子会话在 B 上用已装的浏览器截图并返回 `<image path>` | Resource Pool 目录、跨设备编排、等待不被客户端提前截断      | 手工（两台设备：`FOUNDRY_STACK=iso2` 配对第二台，第一台不给浏览器）                                      | ✔     |       |            |
+| C25 | 按资源选设备（M3 验收）               | 同一账号两台设备，只有设备 B 有浏览器；设备 A 上的父会话只被告知"需要一张截图"，自己用 `list_resources` 找到 B，在 B 的工作区 `create_session wait=true`，等到子会话完成；子会话在 B 上用已装的浏览器截图并返回 `<image path>` | Resource Pool 目录、跨设备编排、等待不被客户端提前截断      | 手工（两台设备：`FOUNDRY_STACK=iso2` 配对第二台，第一台不给浏览器）                                      | ✔     |       | ✔          |
 
-最近一次全部通过：2026-09-28（L-iso：C1–C10、C13、C17、C19、C20、C22–C25；L-dev：C1–C6、C11、C14–C16、C19、C21–C24；M-dev：C1–C5、C11、C12、C14–C16、C19、C21–C24）。
+最近一次全部通过：2026-09-29（L-iso：C1–C10、C13、C17–C20、C22–C25；L-dev：C1–C6、C11、C14–C16、C19、C21–C24；M-dev：C1–C5、C11、C12、C14–C16、C18、C19、C21–C25）。
 
 ## 3. 覆盖缺口（待补）
 
@@ -89,6 +89,16 @@ C18 需要同一账号的第二台设备：以 `FOUNDRY_STACK=iso2`、独立 sta
 3. `dev` stack：`FOUNDRY_STACK=dev foundry-worker setup --token <windeng 的配对令牌> --server https://dev.foundryapp.app --workspace ~/foundry-dev-workspace`。
 4. CC Relay profile 写入 `~/.foundry-stacks/dev/agent-profiles.local.json`，取值来自用户 shell 的
    `ccrelay`，不在 Mac 上登录 Claude 或 Codex。访问中转需要用户开着 CorpLink。
+
+### 4.3 真实环境的两台设备（C18、C25 的 M-dev）
+
+同一账号 `windeng` 名下有两台真实设备：用户的 Mac（`dev` stack）和这台服务器（`windeng`
+stack，pm2 进程 `foundry-windeng-worker`，工作区 `~/foundry-windeng-workspace`）。服务器
+这台是用 Mac 上 `dev` stack 的设备凭据申请配对码配对的，不需要网页登录。验证方式：
+
+- 服务器上的父会话要一张"用 Microsoft Edge 截的图"（Edge 只在 Mac 上），它经
+  `list_resources` 选中 Mac、在 Mac 的工作区用 CC Relay 开子会话并等到截图。
+- Mac 上的父会话在服务器的工作区开子会话算题，再用 `send_message` 继续它。
 
 ### 4.3 运行脚本
 
