@@ -234,6 +234,8 @@ export function discoverComputerUse(
     resource.attributes = {
       screenRecording: granted.screenRecording ? "granted" : "not granted",
       accessibility: granted.accessibility ? "granted" : "not granted",
+      // macOS grants these to the program that runs the worker.
+      grantTo: process.execPath,
     };
     if (missing.length)
       resource.detail = `${missing.join(" and ")} not granted to the Foundry worker (System Settings → Privacy & Security).`;
@@ -241,6 +243,58 @@ export function discoverComputerUse(
     resource.detail = `Could not read the macOS privacy grants: ${error instanceof Error ? error.message : String(error)}`;
   }
   return [resource];
+}
+
+const macPrivacyPanes = {
+  screenRecording: {
+    name: "Screen Recording",
+    url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  },
+  accessibility: {
+    name: "Accessibility",
+    url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  },
+} as const;
+
+/**
+ * Ask the person at this device for access to a resource: macOS shows its
+ * own permission prompts (which also list the worker in System Settings) and
+ * the settings panes for grants still missing are opened. Returns the names
+ * of the panes opened. Nothing is granted by Foundry itself.
+ */
+export function requestResourceAccess(
+  resourceId: string,
+  grants: () => MacControlGrants = macControlGrants,
+  open: (url: string) => void = (url) =>
+    execFileSync("/usr/bin/open", [url], { timeout: 10000 }),
+  prompt: () => void = promptMacControlGrants,
+): string[] {
+  if (resourceId !== "computer_use:macos" || process.platform !== "darwin")
+    throw new Error(`${resourceId} needs no access on this device`);
+  prompt();
+  const granted = grants();
+  const opened: string[] = [];
+  for (const key of ["screenRecording", "accessibility"] as const) {
+    if (granted[key]) continue;
+    open(macPrivacyPanes[key].url);
+    opened.push(macPrivacyPanes[key].name);
+  }
+  return opened;
+}
+
+/** The system's own prompts for Screen Recording and Accessibility. */
+function promptMacControlGrants(): void {
+  const script = [
+    'ObjC.import("CoreGraphics");',
+    'ObjC.import("ApplicationServices");',
+    'ObjC.bindFunction("CGRequestScreenCaptureAccess", ["bool", []]);',
+    'ObjC.bindFunction("AXIsProcessTrustedWithOptions", ["bool", ["id"]]);',
+    "$.CGRequestScreenCaptureAccess();",
+    "$.AXIsProcessTrustedWithOptions($({AXTrustedCheckOptionPrompt: true}));",
+  ].join(" ");
+  execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-e", script], {
+    timeout: 10000,
+  });
 }
 
 /** Everything this device offers sessions right now. */

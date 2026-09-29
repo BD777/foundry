@@ -44,6 +44,8 @@ const (
 	wsAgentProfileUpsertedType          = "agent_profile_upserted"
 	wsUpsertRuntimeSettingsType         = "upsert_agent_runtime_settings"
 	wsRuntimeSettingsUpsertedType       = "agent_runtime_settings_upserted"
+	wsRefreshResourcesType              = "refresh_resources"
+	wsResourcesRefreshedType            = "resources_refreshed"
 	wsListAgentModelsType               = "list_agent_models"
 	wsAttachmentWriteType               = "attachment_write"
 	wsAttachmentWrittenType             = "attachment_written"
@@ -279,6 +281,20 @@ type wsAgentRuntimeSettingsUpsertedPayload struct {
 	Registration store.DaemonRegistration   `json:"registration"`
 	Settings     store.AgentRuntimeSettings `json:"settings"`
 	Error        string                     `json:"error,omitempty"`
+}
+
+// wsRefreshResourcesPayload asks a device to detect its resources again,
+// first asking the person there for access to one (RequestAccess) if set.
+type wsRefreshResourcesPayload struct {
+	RequestAccess string `json:"requestAccess,omitempty"`
+}
+
+type wsResourcesRefreshedPayload struct {
+	Registration store.DaemonRegistration `json:"registration"`
+	Resources    []store.DeviceResource   `json:"resources"`
+	// Opened names the settings panes the device opened for the person.
+	Opened []string `json:"opened,omitempty"`
+	Error  string   `json:"error,omitempty"`
 }
 
 type wsListAgentModelsPayload struct {
@@ -843,6 +859,33 @@ func (h *DaemonHub) UpsertAgentRuntimeSettings(ctx context.Context, input store.
 	return connection.upsertAgentRuntimeSettings(ctx, input.Settings)
 }
 
+// RefreshDeviceResources has a device detect its resources again, after
+// asking the person there for access to requestAccess when it is set, and
+// stores what it reports.
+func (h *DaemonHub) RefreshDeviceResources(ctx context.Context, deviceID, requestAccess string) (wsResourcesRefreshedPayload, error) {
+	connection := h.connectionFor(deviceID)
+	if connection == nil {
+		return wsResourcesRefreshedPayload{}, store.ErrNotFound
+	}
+	payload, err := json.Marshal(wsRefreshResourcesPayload{RequestAccess: requestAccess})
+	if err != nil {
+		return wsResourcesRefreshedPayload{}, err
+	}
+	value, err := daemonRequest[wsResourcesRefreshedPayload](ctx, connection, wsRefreshResourcesType, payload)
+	if err != nil {
+		return wsResourcesRefreshedPayload{}, err
+	}
+	if value.Error != "" {
+		return wsResourcesRefreshedPayload{}, errors.New(value.Error)
+	}
+	if value.Registration.Device.ID != "" {
+		if err := connection.syncRegistration(value.Registration); err != nil {
+			return wsResourcesRefreshedPayload{}, err
+		}
+	}
+	return value, nil
+}
+
 func (h *DaemonHub) register(connection *daemonConnection, registration store.DaemonRegistration) error {
 	return connection.syncRegistration(registration)
 }
@@ -1377,6 +1420,13 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 					return err
 				}
 				go c.dispatchQueuedAgentSessions(payload.Registration.Workspace.ID)
+			}
+			return nil
+		})
+	case wsResourcesRefreshedType:
+		return deliverDaemonResponse(c, envelope, func(payload wsResourcesRefreshedPayload) error {
+			if payload.Error != "" {
+				return errors.New(payload.Error)
 			}
 			return nil
 		})

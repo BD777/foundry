@@ -17,6 +17,7 @@ import type {
   ChatLayout,
   DeviceProfileBinding,
   DeviceProjection,
+  DeviceResource,
   DeviceSkill,
   DeviceSkillRoot,
   PromotedSkill,
@@ -850,6 +851,26 @@ export function saveAgentRuntimeSettings(
   input: SaveAgentRuntimeSettingsInput,
 ): Promise<AgentRuntimeSettings> {
   return postJSON<AgentRuntimeSettings>("/api/devices/runtime-settings", input);
+}
+
+export interface RefreshedDeviceResources {
+  resources: DeviceResource[];
+  /** System settings panes the device opened for its person. */
+  opened: string[];
+}
+
+/**
+ * Has a device detect its resources again; with requestAccess, it first asks
+ * the person at the device for access to that resource.
+ */
+export function refreshDeviceResources(
+  deviceId: string,
+  requestAccess?: string,
+): Promise<RefreshedDeviceResources> {
+  return postJSON<RefreshedDeviceResources>(
+    `/api/devices/${encodeURIComponent(deviceId)}/resources/refresh`,
+    requestAccess ? { requestAccess } : {},
+  );
 }
 
 export function resetDemoData(): Promise<{ status: string }> {

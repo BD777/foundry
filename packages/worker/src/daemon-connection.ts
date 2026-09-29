@@ -1,5 +1,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { reclaimSessionResources } from "./resource-pool.js";
+import {
+  reclaimSessionResources,
+  requestResourceAccess,
+} from "./resource-pool.js";
 import { homedir } from "node:os";
 import { existingWorkspaceFolder } from "./workspace-registration.js";
 import { resolve } from "node:path";
@@ -1585,6 +1588,37 @@ function runWebSocketSession(options: {
             socket,
             daemonMessageTypes.agentProfileUpserted,
             { error: message },
+            envelope.id,
+          );
+        }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.refreshResources) {
+        const payload = envelope.payload as
+          { requestAccess?: string } | undefined;
+        try {
+          const opened = payload?.requestAccess
+            ? requestResourceAccess(payload.requestAccess)
+            : [];
+          const registration = daemonRegistrationWithActiveSessions(
+            options.workspacePath,
+            options.sessionExecutions,
+          );
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.resourcesRefreshed,
+            {
+              registration,
+              resources: registration.device.resources ?? [],
+              opened,
+            },
+            envelope.id,
+          );
+        } catch (error) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.resourcesRefreshed,
+            { error: error instanceof Error ? error.message : String(error) },
             envelope.id,
           );
         }
