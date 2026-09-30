@@ -210,6 +210,8 @@ func TestIssueTitleFromGoal(t *testing.T) {
 		"修复空名字的问候。其余不变":                                                    "修复空名字的问候",
 		"One line only.":          "One line only",
 		"First line\nSecond line": "First line",
+		"给 greeting-lib 加一个告别功能：在 greet.mjs 里导出 farewell(name)，写法照着现有的 greet，返回告别语。": "给 greeting-lib 加一个告别功能",
+		"Fix bug: parse the date": "Fix bug: parse the date",
 	} {
 		if got := issueTitleFromGoal(goal); got != want {
 			t.Errorf("issueTitleFromGoal(%q) = %q, want %q", goal, got, want)

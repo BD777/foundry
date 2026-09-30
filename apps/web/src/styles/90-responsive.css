@@ -366,9 +366,12 @@
     max-width: none;
   }
 
+  /* The hint explains the flow; on a phone it wraps instead of spilling. */
   .fdy-issue-composer-status {
-    flex: 0 1 120px;
+    flex: 1 1 100%;
     margin-left: 0;
+    line-height: 1.35;
+    white-space: normal;
   }
 
   .fdy-setup-screen {
