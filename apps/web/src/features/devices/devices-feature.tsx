@@ -24,6 +24,7 @@ import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
 import { AddDevicePanel } from "./add-device-panel";
 import { Alert } from "../../components/ui/alert";
+import { countLabel } from "../../lib/count-label";
 
 export type DeviceSection =
   "workspaces" | "resources" | "agents" | "skills" | "settings";
@@ -118,8 +119,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                   <span>
                     <strong>{row.label}</strong>
                     <small>
-                      {deviceWorkspaces(row.id).length} workspaces · Last seen{" "}
-                      {row.lastSeenLabel}
+                      {countLabel(deviceWorkspaces(row.id).length, "workspace")}
                     </small>
                   </span>
                   <Badge

@@ -1141,7 +1141,7 @@ export function App() {
       : "contained";
 
   return (
-    <FoundryShell theme={themeMode}>
+    <FoundryShell scrollMode={viewScrollMode} theme={themeMode}>
       <FoundrySidebar
         activeItemId={sidebarActiveView}
         collapsed={sidebarCollapsed}

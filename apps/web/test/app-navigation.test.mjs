@@ -122,9 +122,9 @@ test("issue route without an id degrades to the issues list", () => {
   assert.deepEqual(parseAppRoute("/issues"), { view: "issues" });
 });
 
-test("unknown and empty paths fall back to issues", () => {
+test("unknown and empty paths open the workspace overview", () => {
   for (const path of ["", "/", "/nope", "/unknown/deep/path"]) {
-    assert.deepEqual(parseAppRoute(path), { view: "issues" });
+    assert.deepEqual(parseAppRoute(path), { view: "workspace" });
   }
 });
 

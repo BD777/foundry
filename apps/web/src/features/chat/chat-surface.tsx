@@ -1,5 +1,5 @@
-import { PanelRight, Terminal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronLeft, PanelRight, Terminal } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -36,6 +36,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
     threadKey,
   } = props;
   const [contextCardOpen, setContextCardOpen] = useState(false);
+  // Narrow screens show one pane at a time: the list, or the open chat.
+  const [narrowPane, setNarrowPane] = useState<"list" | "thread">("list");
+  const listChats = useMemo(
+    () =>
+      chats.map((chat) => ({
+        ...chat,
+        onSelect: () => {
+          setNarrowPane("thread");
+          chat.onSelect();
+        },
+      })),
+    [chats],
+  );
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
   const contextDetail = useChatContextDetail(threadKey);
@@ -47,24 +60,34 @@ export function ChatSurface(props: ChatSurfaceProps) {
   useEffect(() => setContextCardOpen(false), [threadKey]);
   const handleNewChat = () => {
     setDraftResetKey((value) => value + 1);
+    setNarrowPane("thread");
     onNewChat();
   };
   const disabledAgentDeviceId = props.agentOptions.find(
     (agent) => agent.disabled,
   )?.deviceId;
   return (
-    <section className="fdy-chat-screen">
+    <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
       <ChatSidebar
         onChatsDeleted={onChatsDeleted}
         key={workspaceId}
         workspaceId={workspaceId}
-        chats={chats}
+        chats={listChats}
         onNewChat={handleNewChat}
         readOnly={Boolean(props.readOnlyReason)}
       />
 
       <div className="fdy-chat-thread">
         <div className="fdy-chat-thread-header">
+          <Button
+            className="fdy-chat-back"
+            onClick={() => setNarrowPane("list")}
+            size="sm"
+            variant="ghost"
+          >
+            <ChevronLeft size={16} />
+            Chats
+          </Button>
           <div className="fdy-chat-thread-title">
             <strong>{chatTitle}</strong>
           </div>

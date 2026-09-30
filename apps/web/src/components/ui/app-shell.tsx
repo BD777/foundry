@@ -23,16 +23,24 @@ export type FoundryThemeMode = "light" | "dark";
 
 export interface FoundryShellProps extends HTMLAttributes<HTMLElement> {
   theme?: FoundryThemeMode;
+  /**
+   * How the current view scrolls. A contained view (a chat) fills the
+   * viewport and scrolls its own parts, so on narrow screens the shell keeps
+   * a fixed height instead of letting the page grow.
+   */
+  scrollMode?: FoundryViewScrollMode;
 }
 
 export function FoundryShell({
   className,
   theme = "light",
+  scrollMode = "page",
   ...props
 }: FoundryShellProps) {
   return (
     <main
       className={cn("fdy-foundry-shell", className)}
+      data-scroll-mode={scrollMode}
       data-theme={theme}
       {...props}
     />
@@ -347,6 +355,7 @@ function SidebarNavButton<T extends string>({
 
   return (
     <Button
+      aria-current={active ? "page" : undefined}
       aria-label={`Open ${item.label}`}
       className="fdy-sidebar-nav-link"
       data-nav-id={item.id}

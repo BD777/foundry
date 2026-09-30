@@ -326,7 +326,7 @@ a {
 .fdy-foundry-shell {
   display: flex;
   width: 100%;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--fdy-paper);
 }
@@ -371,7 +371,7 @@ a {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0;
-  line-height: 1;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -379,7 +379,7 @@ a {
 .fdy-sidebar-brand-copy {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 0;
 }
 
 .fdy-sidebar-brand-copy small {
@@ -1111,14 +1111,19 @@ a {
   padding: 13px 18px;
 }
 
-.fdy-action-row-side:hover,
-.fdy-action-row-side.fdy-action-row-selected {
+.fdy-action-row-side:hover {
   background: var(--fdy-control-ghost-hover);
 }
 
-.fdy-action-row-table:hover,
-.fdy-action-row-table.fdy-action-row-selected {
+.fdy-action-row-table:hover {
   background: var(--fdy-paper-raised);
+}
+
+/* Selected stays distinguishable from hovered, in both themes. */
+.fdy-action-row-side.fdy-action-row-selected,
+.fdy-action-row-table.fdy-action-row-selected {
+  background: var(--fdy-selection);
+  color: var(--fdy-ink-strong);
 }
 
 .fdy-info-row {
@@ -1265,9 +1270,21 @@ a {
 
 .fdy-panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+}
+
+/* The heading takes the room; actions keep their size and wrap below it
+   on narrow panels instead of squeezing their labels. */
+.fdy-panel-header > :first-child {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.fdy-panel-header > .fdy-button {
+  flex: none;
 }
 
 .fdy-panel-header h2,
