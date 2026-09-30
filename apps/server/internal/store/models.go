@@ -497,6 +497,13 @@ type ChatAttachment struct {
 // writes; the transcript of a session is its events alone.
 const SessionInputEventLabel = "User message"
 
+// AgentSessionRoleIssueExecution is the session that implements an Issue.
+const AgentSessionRoleIssueExecution = "issue_execution"
+
+// DaemonCapabilityIssueSessions: the worker runs Issue executions dispatched
+// as run_session with the issue_execution role.
+const DaemonCapabilityIssueSessions = "issue_sessions"
+
 // SessionInput is one message delivered to a session: the unit of dispatch.
 // It is not a session of its own; identity, permissions and lineage belong
 // to the session it was sent to.
@@ -528,6 +535,10 @@ type AgentSession struct {
 	ProfileFingerprint string `json:"profileFingerprint,omitempty"`
 	ProfileLabel       string `json:"profileLabel,omitempty"`
 	Source             string `json:"source,omitempty"`
+	// Role is the job the session does for Foundry; empty for a chat.
+	// AgentSessionRoleIssueExecution implements an Issue's confirmed contract
+	// in its candidate workspace.
+	Role string `json:"role,omitempty"`
 	// ParentSessionID records orchestration lineage: the agent session that
 	// created this one. Empty for human/browser chats. It is a record for
 	// display and limits, never a source of permission.
@@ -809,6 +820,9 @@ type UpsertAgentRuntimeSettingsInput struct {
 }
 
 type DaemonRegistration struct {
+	// Capabilities name the protocol features this worker implements, so the
+	// server never sends work an older worker would misread.
+	Capabilities []string `json:"capabilities,omitempty"`
 	// ActiveSessionIDs are execution claims owned by this daemon process. An
 	// empty, present list means the process owns no sessions; a missing list is
 	// retained for compatibility with workers predating session-level claims.
@@ -849,14 +863,6 @@ type FoundryDataProjection struct {
 type SyncChatsInput struct {
 	WorkspaceID string       `json:"workspaceId"`
 	Chats       []ChatThread `json:"chats"`
-}
-
-type StartRunInput struct {
-	Run Run `json:"run"`
-}
-
-type AppendRunEventInput struct {
-	Event RunEvent `json:"event"`
 }
 
 type CompleteIssueInput struct {

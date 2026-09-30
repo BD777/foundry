@@ -87,9 +87,102 @@ func (s *Store) RegisterDaemon(ctx context.Context, input store.DaemonRegistrati
 }
 
 func (s *Store) ClaimNextIssue(ctx context.Context, deviceID string, workspaceID string) (store.Issue, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
 	var issue store.Issue
 	err := s.withTx(ctx, func(tx *Store) error {
+		claimed, err := tx.claimNextIssue(ctx, deviceID, workspaceID)
+		issue = claimed
+		return err
+	})
+	if err != nil {
+		return store.Issue{}, err
+	}
+	return issue, nil
+}
+
+// ClaimIssueExecution claims the next ready Issue for the device and creates
+// the session that implements it, in one transaction: a claimed Issue always
+// has its execution session.
+func (s *Store) ClaimIssueExecution(ctx context.Context, deviceID string, workspaceID string) (store.Issue, store.AgentSession, error) {
+	var (
+		issue   store.Issue
+		session store.AgentSession
+	)
+	err := s.withTx(ctx, func(tx *Store) error {
+		claimed, err := tx.claimNextIssue(ctx, deviceID, workspaceID)
+		if err != nil {
+			return err
+		}
+		created, err := tx.createIssueExecutionSession(ctx, claimed, deviceID)
+		if err != nil {
+			return err
+		}
+		issue, session = claimed, created
+		return nil
+	})
+	if err != nil {
+		return store.Issue{}, store.AgentSession{}, err
+	}
+	return issue, session, nil
+}
+
+func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Issue, deviceID string) (store.AgentSession, error) {
+	now := time.Now().UTC()
+	id := fmt.Sprintf("sess_%d", now.UnixNano())
+	prompt := fmt.Sprintf("Implement %s under its confirmed contract (revision %d).", issue.ShortID, *issue.CurrentContractRevision)
+	session := store.AgentSession{
+		CreatedByUserID:      issue.CreatedByUserID,
+		ID:                   id,
+		ThreadID:             id,
+		WorkspaceID:          issue.WorkspaceID,
+		DeviceID:             deviceID,
+		Provider:             issue.Runtime,
+		ProfileID:            issue.ProfileID,
+		Source:               "issue",
+		Role:                 store.AgentSessionRoleIssueExecution,
+		IssueID:              issue.ID,
+		Model:                issue.Model,
+		ClaudeEffort:         issue.ClaudeEffort,
+		CodexReasoningEffort: issue.CodexReasoningEffort,
+		CodexSpeed:           issue.CodexSpeed,
+		Status:               "queued",
+		Title:                titleFromInput(issue.Title),
+		Prompt:               prompt,
+		Input:                store.SessionInput{ID: newSessionInputID(now), Prompt: prompt},
+		CreatedLabel:         "just now",
+		UpdatedLabel:         "queued",
+		Events:               []store.AgentSessionEvent{},
+	}
+	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	return session, nil
+}
+
+// ExecutionIssue is the Issue an execution session implements, with the
+// confirmed contract it runs under attached.
+func (s *Store) ExecutionIssue(ctx context.Context, issueID string) (store.Issue, error) {
+	issue, err := s.GetIssue(ctx, issueID)
+	if err != nil {
+		return store.Issue{}, err
+	}
+	if err := s.requireConfirmedContract(ctx, issue); err != nil {
+		return store.Issue{}, err
+	}
+	contract, err := s.contractByRevision(ctx, issue.ID, *issue.CurrentContractRevision)
+	if err != nil {
+		return store.Issue{}, err
+	}
+	issue.ExecutionContract = &contract
+	return issue, nil
+}
+
+func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID string) (store.Issue, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	var issue store.Issue
+	err := func(tx *Store) error {
 		// Gate the claiming worker itself, regardless of which workspace the
 		// issue belongs to. The check shares this serialized transaction with
 		// the claim update, so it cannot race a concurrent SoftRemoveDevice.
@@ -132,7 +225,7 @@ func (s *Store) ClaimNextIssue(ctx context.Context, deviceID string, workspaceID
 		// Attach only to the dispatch result. The immutable record remains canonical.
 		issue.ExecutionContract = &contract
 		return nil
-	})
+	}(s)
 	if err != nil {
 		return store.Issue{}, err
 	}

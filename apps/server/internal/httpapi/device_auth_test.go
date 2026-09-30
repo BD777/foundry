@@ -97,8 +97,6 @@ func TestDeviceCredentialBindsDeviceAndWorkspace(t *testing.T) {
 		http.StatusForbidden, "desktop claims to be the laptop")
 	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_desktop", "ws_shared"), desktop)),
 		http.StatusConflict, "desktop takes over the laptop's workspace")
-	expectStatus(t, doAuthCall(t, handler, deviceCall(http.MethodPost, "/api/daemon/issues/claim", `{"deviceId":"dev_laptop"}`, desktop)),
-		http.StatusForbidden, "desktop claims work as the laptop")
 	expectStatus(t, doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/daemon/register", body: registrationBody("dev_laptop", "ws_shared")}),
 		http.StatusUnauthorized, "daemon route without a credential")
 

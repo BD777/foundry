@@ -98,12 +98,6 @@ const connectOptions: CliOptionContract[] = [
   workspaceOption,
   {
     defaultValue: "false",
-    description: "Use HTTP polling instead of WebSocket",
-    name: "--polling",
-    type: "bool",
-  },
-  {
-    defaultValue: "false",
     description: "Exit after one issue or idle cycle",
     name: "--once",
     type: "bool",
@@ -351,7 +345,7 @@ export const cliCommands: CliCommandContract[] = [
   {
     brief: "Connect this machine to the Foundry control plane.",
     description:
-      "Runs the local daemon and reconnects after transient failures. WebSocket transport is the default; --polling enables compatibility mode.",
+      "Runs the local daemon and reconnects after transient failures.",
     examples: [
       {
         command: "foundry-worker connect --workspace .",

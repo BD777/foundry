@@ -32,7 +32,8 @@ import {
   sendWebSocket,
   trySendWebSocket,
   webSocketURL,
-  ReliableRunTransport,
+  SessionRunTransport,
+  issueSessionCompletion,
 } from "./transport.js";
 import {
   AttachmentError,
@@ -142,17 +143,13 @@ import type { EvidenceWorkerRequest } from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 import { readWorkspace } from "./workspaces.js";
-import { recoverIssueRuns } from "./issue-recovery.js";
+import {
+  recordedIssueCompletion,
+  recoveredIssueCompletion,
+} from "./issue-recovery.js";
 import { queuePreview, runIssuePreview } from "./issue-preview.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock, pairDevice } from "./device-pairing.js";
-
-interface RunIssuePayload {
-  issue: Issue;
-  skillRefs?: SessionSkillRef[];
-  /** Server decision: readable only for Issues the device owner started. */
-  userFiles?: "readable" | "hidden";
-}
 
 interface ReadFilePayload {
   path: string;
@@ -233,6 +230,10 @@ interface RunSessionPayload {
    * that exists only in the control plane keeps its endpoint and knobs.
    */
   profile?: ProfileDefinition;
+  /** The Issue an issue_execution session implements, with its contract. */
+  issue?: Issue;
+  /** Server decision: readable only for Issues the device owner started. */
+  userFiles?: "readable" | "hidden";
 }
 
 interface SteerSessionPayload {
@@ -299,10 +300,6 @@ export async function connect(args: string[]): Promise<void> {
   for (const runtime of ["claude", "codex"]) {
     reapAbandonedAuthorizations(runtime);
   }
-  if (optionEnabled(args, "--polling")) {
-    await connectPolling(args);
-    return;
-  }
   await connectWebSocket(args);
 }
 
@@ -327,57 +324,6 @@ async function registerAtStartup(
       return undefined;
     }
     throw error;
-  }
-}
-
-async function connectPolling(args: string[]): Promise<void> {
-  const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
-  const once = optionEnabled(args, "--once");
-  const device = await registerAtStartup(serverURL, workspacePath);
-  if (!device) return;
-  const workspace = workspaceProjectionForPath(workspacePath, device);
-  await syncNativeChats(serverURL, workspacePath);
-  await syncReviews(serverURL, workspacePath);
-  let lastNativeChatSyncAt = Date.now();
-
-  while (true) {
-    let issue: Issue | undefined;
-    try {
-      issue = await postJSON<Issue>(serverURL, "/api/daemon/issues/claim", {
-        deviceId: device.id,
-        workspaceId: workspace.id,
-      });
-    } catch (error) {
-      if (
-        isDeviceRemovedSignal(
-          error instanceof Error ? error.message : String(error),
-        )
-      ) {
-        await stopAfterDeviceRemoval(serverURL);
-        return;
-      }
-      throw error;
-    }
-    if (!issue) {
-      console.log("No ready issues available.");
-      if (once) {
-        return;
-      }
-      if (Date.now() - lastNativeChatSyncAt > nativeChatSyncIntervalMs) {
-        await syncNativeChats(serverURL, workspacePath);
-        lastNativeChatSyncAt = Date.now();
-      }
-      await sleep(2500);
-      continue;
-    }
-
-    console.log(`Claimed ${issue.shortId}: ${issue.title}`);
-    await executeIssue(serverURL, workspacePath, issue);
-    await syncReviews(serverURL, workspacePath);
-    if (once) {
-      return;
-    }
   }
 }
 
@@ -406,21 +352,10 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (!(await registerAtStartup(serverURL, workspacePath))) return;
   await syncReviews(serverURL, workspacePath);
   const sessionTransport = new ReliableSessionTransport();
-  for (const path of new Set([
-    workspacePath,
-    ...readRegistry().map((entry) => entry.path),
-  ])) {
-    try {
-      await recoverIssueRuns(serverURL, path);
-    } catch (error) {
-      console.error(`Issue recovery for ${path}: ${String(error)}`);
-    }
-  }
   const sessionExecutions = new SessionExecutionRegistry();
   const taskScheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,
   );
-  const activeIssues = new Set<string>();
 
   let backoffMs = 1000;
   while (true) {
@@ -430,7 +365,6 @@ async function connectWebSocket(args: string[]): Promise<void> {
         once,
         sessionExecutions,
         taskScheduler,
-        activeIssues,
         sessionTransport,
         serverURL,
         workspacePath,
@@ -757,7 +691,6 @@ type sessionOutcome = "exit" | "reconnect" | "removed";
 
 function runWebSocketSession(options: {
   taskScheduler: ConcurrentTaskScheduler;
-  activeIssues: Set<string>;
   idleTimeoutMs: number;
   once: boolean;
   sessionExecutions: SessionExecutionRegistry;
@@ -873,6 +806,96 @@ function runWebSocketSession(options: {
         announcedIssueSlots += 1;
         sendWebSocket(socket, daemonMessageTypes.readyForIssue);
       }
+    }
+
+    // An Issue execution is a session with the issue_execution role: it
+    // implements the confirmed contract in the Issue's candidate and reports
+    // through the session. A result recorded earlier, whose report was lost,
+    // is sent again instead of running the attempt twice.
+    function runIssueExecution(
+      payload: RunSessionPayload,
+      inputId: string,
+    ): void {
+      const session = payload.session;
+      const issue = payload.issue;
+      const settle = (): void => {
+        options.sessionExecutions.complete(session.id, inputId);
+        if (options.once) finish("exit");
+        else
+          options.sessionTransport.send(daemonMessageTypes.readyForIssue, {});
+      };
+      const fail = (error: string): void => {
+        options.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
+          sessionId: session.id,
+          inputId: inputId || undefined,
+          error,
+        });
+      };
+      if (!issue || issue.id !== session.issueId) {
+        fail("The Issue to execute was not sent with its session.");
+        settle();
+        return;
+      }
+      const recorded = recordedIssueCompletion(
+        session.workspaceId,
+        issue.id,
+        session.id,
+      );
+      if (recorded) {
+        options.sessionTransport.send(
+          daemonMessageTypes.sessionCompleted,
+          issueSessionCompletion(session.id, inputId || undefined, recorded),
+        );
+        settle();
+        return;
+      }
+      void taskScheduler
+        .schedule(`issue:${issue.id}`, async () => {
+          console.log(
+            `Running ${issue.shortId} (${issue.title}) as session ${session.id}`,
+          );
+          try {
+            const workspacePath = workspacePathFor(session.workspaceId);
+            const profile =
+              issue.runtime === "mock"
+                ? undefined
+                : withDispatchCredential(
+                    profileConfigForSession(
+                      workspacePath,
+                      session,
+                      payload.profile,
+                    ),
+                    payload.credential,
+                  );
+            await executeIssue(
+              options.serverURL,
+              workspacePath,
+              issue,
+              new SessionRunTransport(
+                options.sessionTransport,
+                session.id,
+                inputId || undefined,
+              ),
+              undefined,
+              session.skillRefs ?? [],
+              payload.userFiles === "readable" ? "readable" : "hidden",
+              session.id,
+              profile,
+            );
+            await syncReviews(options.serverURL, workspacePath);
+          } catch (error) {
+            // executeIssue reports its own failures once the run started;
+            // this is a refusal before it did (an unconfirmed contract).
+            fail(error instanceof Error ? error.message : String(error));
+          } finally {
+            settle();
+          }
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.error(`Issue ${issue.shortId} scheduling failed: ${message}`);
+        });
     }
 
     function syncKnownNativeChats(): void {
@@ -1736,13 +1759,32 @@ function runWebSocketSession(options: {
         const sessionId = payload?.sessionId?.trim();
         const inputId = payload?.inputId?.trim() ?? "";
         // This process runs or just finished the input: its own report is
-        // in the session outbox. Issue sessions recover with their Issue.
+        // in the session outbox.
         if (
           !payload ||
           !sessionId ||
-          payload.issueId ||
           options.sessionExecutions.handled(sessionId, inputId)
         ) {
+          return;
+        }
+        if (payload.issueId) {
+          console.log(`Reporting orphaned Issue execution ${sessionId}`);
+          const completion = recoveredIssueCompletion(
+            payload.workspaceId,
+            payload.issueId,
+            sessionId,
+          );
+          options.sessionTransport.send(
+            daemonMessageTypes.sessionCompleted,
+            completion
+              ? issueSessionCompletion(sessionId, inputId, completion)
+              : {
+                  sessionId,
+                  inputId: inputId || undefined,
+                  error:
+                    "The worker restarted before this execution started; retry to run it again.",
+                },
+          );
           return;
         }
         let workspacePath: string;
@@ -1779,6 +1821,10 @@ function runWebSocketSession(options: {
           return;
         }
         acceptedRun = true;
+        if (payload.session.role === "issue_execution") {
+          runIssueExecution(payload, inputId);
+          return;
+        }
         // An input that already finished here (its report lost with an
         // earlier process) is reported again rather than run twice.
         let recorded: AgentSessionCompletionMarker | undefined;
@@ -1920,68 +1966,6 @@ function runWebSocketSession(options: {
         }
         return;
       }
-      if (envelope.type !== daemonMessageTypes.runIssue) {
-        return;
-      }
-      if (options.once && acceptedRun) {
-        return;
-      }
-
-      if (idleTimer) {
-        clearTimeout(idleTimer);
-        idleTimer = undefined;
-      }
-
-      const payload = envelope.payload as RunIssuePayload | undefined;
-      if (!payload?.issue) {
-        console.error("Received run_issue without an issue payload.");
-        return;
-      }
-      if (options.activeIssues.has(payload.issue.id)) return;
-      options.activeIssues.add(payload.issue.id);
-      acceptedRun = true;
-
-      void taskScheduler
-        .schedule(`issue:${payload.issue.id}`, async () => {
-          console.log(
-            `Claimed ${payload.issue.shortId}: ${payload.issue.title}`,
-          );
-          // Route to the workspace that owns this issue. The daemon can
-          // register multiple workspaces, so using the main workspace path
-          // here would execute secondary-workspace issues in the wrong place.
-          const issueWorkspacePath = payload.issue.workspaceId
-            ? workspacePathFor(payload.issue.workspaceId)
-            : options.workspacePath;
-          try {
-            await executeIssue(
-              options.serverURL,
-              issueWorkspacePath,
-              payload.issue,
-              new ReliableRunTransport(options.sessionTransport),
-              undefined,
-              payload.skillRefs,
-              payload.userFiles === "readable" ? "readable" : "hidden",
-            );
-            await syncReviews(options.serverURL, issueWorkspacePath);
-          } finally {
-            options.activeIssues.delete(payload.issue.id);
-            if (options.once) {
-              finish("exit");
-            } else {
-              options.sessionTransport.send(
-                daemonMessageTypes.readyForIssue,
-                {},
-              );
-            }
-          }
-        })
-        .catch((error: unknown) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          console.error(
-            `Issue ${payload.issue.shortId} scheduling failed: ${message}`,
-          );
-        });
     });
 
     socket.on("close", (code?: number, reason?: Buffer) => {

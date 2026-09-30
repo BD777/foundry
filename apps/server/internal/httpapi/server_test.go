@@ -545,49 +545,6 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 	}
 }
 
-func TestDaemonProductionRoundTrip(t *testing.T) {
-	store := newTestStore(t)
-	server := NewServer(store)
-
-	created := postJSONForTest(t, server, "/api/issues", `{"sourceInput":"Produce a text acceptance artifact","runtime":"mock"}`, http.StatusCreated)
-	testfixture.ConfirmContract(t, store, created["id"].(string))
-	if created["status"] != "pending" {
-		t.Fatalf("expected created issue to be ready, got %#v", created["status"])
-	}
-
-	postJSONForTest(t, server, "/api/daemon/register", `{
-		"device":{"id":"dev_test","label":"Test Device","status":"connected","lastSeenLabel":"online"},
-		"workspace":{"id":"ws_test","name":"Test Workspace","localPath":"/tmp/test","baseline":"main","contextSummary":"test","acceptedCount":0,"resolvedCount":0},
-		"providerHealth":[{"provider":"claude","status":"missing_auth","authMode":"missing","secretStored":"local"}],
-		"assets":[{"id":"asset_test","name":"Artifact archive","kind":"artifact_archive","status":"available","detail":"ready"}]
-	}`, http.StatusOK)
-
-	claimed := postJSONForTest(t, server, "/api/daemon/issues/claim", `{"deviceId":"dev_test"}`, http.StatusOK)
-	issueID := claimed["id"].(string)
-	if claimed["status"] != "in_progress" {
-		t.Fatalf("expected claimed issue to be producing, got %#v", claimed["status"])
-	}
-
-	postJSONForTest(t, server, "/api/daemon/issues/"+issueID+"/runs", `{
-		"run":{"id":"run_test","issueId":"`+issueID+`","status":"running","runtime":"mock","startedLabel":"just now","events":[]}
-	}`, http.StatusOK)
-	postJSONForTest(t, server, "/api/daemon/runs/run_test/events", `{
-		"event":{"id":"evt_test","runId":"run_test","at":"just now","label":"Produced artifact","detail":"Wrote acceptance.md","level":"info"}
-	}`, http.StatusOK)
-	completed := postJSONForTest(t, server, "/api/daemon/issues/"+issueID+"/complete", `{
-		"runId":"run_test",
-		"artifact":{"id":"art_test","issueId":"`+issueID+`","kind":"text","title":"Acceptance artifact","summary":"Mock artifact produced"},
-		"checks":["Mock worker completed"]
-	}`, http.StatusOK)
-
-	if completed["status"] != "verifying" {
-		t.Fatalf("expected review status, got %#v", completed["status"])
-	}
-	if completed["artifact"] == nil {
-		t.Fatal("expected completed issue to include artifact")
-	}
-}
-
 func TestCreateAgentSessionRequiresConnectedDaemon(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
@@ -919,6 +876,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	}
 
 	writeWSForTest(t, conn, "hello", map[string]any{
+		"capabilities": []string{"issue_sessions"},
 		"device": map[string]any{
 			"id":            "dev_ws",
 			"label":         "WS Device",
@@ -939,35 +897,45 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	})
 	readWSTypeForTest(t, conn, "registered")
 
-	var runIssue struct {
+	// The Issue arrives as its execution session, with the Issue attached.
+	var dispatched struct {
+		Session struct {
+			ID      string `json:"id"`
+			Role    string `json:"role"`
+			IssueID string `json:"issueId"`
+			Source  string `json:"source"`
+			Input   struct {
+				ID string `json:"id"`
+			} `json:"input"`
+		} `json:"session"`
 		Issue map[string]any `json:"issue"`
 	}
-	readWSPayloadForTest(t, conn, "run_issue", &runIssue)
-	issueID := runIssue.Issue["id"].(string)
-	if runIssue.Issue["status"] != "in_progress" {
-		t.Fatalf("expected websocket issue to be producing, got %#v", runIssue.Issue["status"])
+	readWSPayloadForTest(t, conn, "run_session", &dispatched)
+	issueID := dispatched.Issue["id"].(string)
+	sessionID := dispatched.Session.ID
+	if dispatched.Session.Role != "issue_execution" || dispatched.Session.IssueID != issueID || dispatched.Session.Source != "issue" {
+		t.Fatalf("expected an issue_execution session for %s, got %#v", issueID, dispatched.Session)
+	}
+	if dispatched.Issue["status"] != "in_progress" || dispatched.Issue["executionContract"] == nil {
+		t.Fatalf("expected the claimed Issue with its contract, got %#v", dispatched.Issue)
 	}
 
-	writeWSForTest(t, conn, "run_started", map[string]any{
-		"issueId": issueID,
-		"run": map[string]any{
-			"id":           "run_ws",
-			"issueId":      issueID,
-			"status":       "running",
-			"runtime":      "mock",
-			"startedLabel": "just now",
-			"events":       []map[string]any{},
-		},
-	})
+	writeWSForTest(t, conn, "session_started", map[string]any{"sessionId": sessionID, "inputId": dispatched.Session.Input.ID})
 	readWSTypeForTest(t, conn, "ack")
-	writeWSForTest(t, conn, "run_event", map[string]any{
+	started, err := store.GetIssue(context.Background(), issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Run == nil || started.Run.ID != sessionID || started.Run.Status != "running" {
+		t.Fatalf("expected the Issue run to be the session, got %#v", started.Run)
+	}
+	writeWSForTest(t, conn, "session_event", map[string]any{
 		"event": map[string]any{
-			"id":     "evt_ws",
-			"runId":  "run_ws",
-			"at":     "just now",
-			"label":  "Response delta",
-			"detail": "live response chunk",
-			"level":  "info",
+			"id":        "evt_ws",
+			"sessionId": sessionID,
+			"label":     "Response delta",
+			"detail":    "live response chunk",
+			"level":     "info",
 		},
 	})
 	readWSTypeForTest(t, conn, "ack")
@@ -978,7 +946,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 				continue
 			}
 			payload := event.Payload.(map[string]any)
-			if payload["runId"] != "run_ws" || payload["detail"] != "live response chunk" {
+			if payload["runId"] != sessionID || payload["detail"] != "live response chunk" {
 				t.Fatalf("unexpected Issue stream event: %#v", payload)
 			}
 			received = true
@@ -986,17 +954,22 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 			t.Fatal("Issue output did not reach browser SSE before completion")
 		}
 	}
-	writeWSForTest(t, conn, "issue_completed", map[string]any{
-		"issueId": issueID,
-		"runId":   "run_ws",
-		"artifact": map[string]any{
-			"id":      "art_ws",
-			"issueId": issueID,
-			"kind":    "text",
-			"title":   "WS artifact",
-			"summary": "Produced over websocket",
+	writeWSForTest(t, conn, "session_completed", map[string]any{
+		"sessionId": sessionID,
+		"inputId":   dispatched.Session.Input.ID,
+		"response":  "done",
+		"issueResult": map[string]any{
+			"runId":    sessionID,
+			"response": "done",
+			"artifact": map[string]any{
+				"id":      "art_ws",
+				"issueId": issueID,
+				"kind":    "text",
+				"title":   "WS artifact",
+				"summary": "Produced over websocket",
+			},
+			"checks": []string{"WebSocket worker completed"},
 		},
-		"checks": []string{"WebSocket worker completed"},
 	})
 	readWSTypeForTest(t, conn, "ack")
 
@@ -1009,6 +982,81 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	}
 	if issue.Artifact == nil || issue.Artifact.ID != "art_ws" {
 		t.Fatalf("expected websocket artifact, got %#v", issue.Artifact)
+	}
+	if issue.Run == nil || issue.Run.ID != sessionID || issue.Run.Status != "completed" || len(issue.Run.Events) != 1 {
+		t.Fatalf("expected the completed run projection of the session, got %#v", issue.Run)
+	}
+	session, err := store.GetAgentSession(context.Background(), sessionID)
+	if err != nil || session.Status != "completed" {
+		t.Fatalf("expected the execution session completed, got %#v %v", session.Status, err)
+	}
+}
+
+func TestIssueExecutionWithoutResultBlocksTheIssue(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	server := NewServer(db)
+	registration := storepkg.DaemonRegistration{Capabilities: []string{storepkg.DaemonCapabilityIssueSessions}, Device: storepkg.DeviceProjection{ID: "dev_lost"}, Workspace: storepkg.WorkspaceProjection{ID: "ws_lost"}}
+	if err := db.RegisterDaemon(ctx, registration); err != nil {
+		t.Fatal(err)
+	}
+	created, err := db.CreateIssue(ctx, storepkg.CreateIssueInput{WorkspaceID: "ws_lost", Title: "lost", Runtime: "mock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testfixture.ConfirmContract(t, db, created.ID)
+	_, session, err := db.ClaimIssueExecution(ctx, "dev_lost", "ws_lost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := db.StartAgentSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.hub.startIssueExecution(ctx, started)
+	// The worker restarted before recording anything: the device reports the
+	// session failed without an Issue result.
+	failed, err := db.FailAgentSession(ctx, session.ID, "The worker restarted before this execution started; retry to run it again.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.hub.settleIssueExecution(ctx, failed, nil)
+	issue, err := db.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Status != "blocked" || issue.BlockedReason == nil || issue.BlockedReason.Kind != "system_error" || issue.Run == nil || issue.Run.Status != "failed" {
+		t.Fatalf("expected a blocked Issue with a failed run, got %s %#v %#v", issue.Status, issue.BlockedReason, issue.Run)
+	}
+}
+
+func TestIssueExecutionSessionIsControlledThroughItsIssue(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	server := NewServer(db)
+	if err := db.RegisterDaemon(ctx, storepkg.DaemonRegistration{Device: storepkg.DeviceProjection{ID: "dev_fence"}, Workspace: storepkg.WorkspaceProjection{ID: "ws_fence"}}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := db.CreateIssue(ctx, storepkg.CreateIssueInput{WorkspaceID: "ws_fence", Title: "fenced", Runtime: "mock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testfixture.ConfirmContract(t, db, created.ID)
+	_, session, err := db.ClaimIssueExecution(ctx, "dev_fence", "ws_fence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, status, err := server.sendSessionMessage(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}); status != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+		t.Fatalf("a message to an Issue execution must be refused, got %d %v", status, err)
+	}
+	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, err := server.cancelSession(ctx, Actor{}, session.ID); status != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+		t.Fatalf("canceling an Issue execution as a session must be refused, got %d %v", status, err)
+	}
+	if _, err := db.SendAgentSessionInput(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "x"}); err == nil {
+		t.Fatal("the store accepted input for an Issue execution")
 	}
 }
 

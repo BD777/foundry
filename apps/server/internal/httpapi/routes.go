@@ -336,8 +336,6 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/issues/{id}/environment", s.handleIssueEnvironment, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/environment/{action}", s.handleIssueEnvironment, workspaceRole(member, issueWorkspace("id"))),
 
-		fn("GET /api/runs", s.handleListRuns, workspaceRole(viewer, queryWorkspace())),
-		fn("GET /api/run-events", s.handleListRunEvents, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/agent-sessions", s.handleListAgentSessions, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/agent-session-threads/{id}", s.handleGetAgentSessionThread, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}", s.handleGetAgentSession, workspaceRole(viewer, sessionWorkspace("id"))),
@@ -352,11 +350,6 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
-		fn("POST /api/daemon/issues/claim", s.handleDaemonClaimIssue, daemonProtocol()),
-		fn("POST /api/daemon/issues/{id}/recover-claim", s.handleRecoverIssueClaim, daemonProtocol()),
-		fn("POST /api/daemon/issues/{id}/runs", s.handleDaemonStartRun, daemonProtocol()),
-		fn("POST /api/daemon/runs/{id}/events", s.handleDaemonAppendRunEvent, daemonProtocol()),
-		fn("POST /api/daemon/issues/{id}/complete", s.handleDaemonCompleteIssue, daemonProtocol()),
 	}
 	if s.options.EnableDevReset {
 		routes = append(routes, fn("POST /api/dev/reset-demo", s.handleDevResetDemo, adminOnly()))

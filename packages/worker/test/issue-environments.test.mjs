@@ -33,6 +33,11 @@ import {
   executorEnvironment,
 } from "../dist/execution-sandbox.js";
 import { executeIssue } from "../dist/issue-execution.js";
+import { SessionRunTransport } from "../dist/transport.js";
+import {
+  recordedIssueCompletion,
+  recoveredIssueCompletion,
+} from "../dist/issue-recovery.js";
 import { registerExecutionWorkspace } from "../dist/repository-registry.js";
 import { runIssueExecutor } from "../dist/issue-executor.js";
 import { refreshCandidate } from "../dist/candidate-refresh.js";
@@ -227,6 +232,104 @@ test("mock runs reuse one Issue environment and archive each attempt outside sou
     existsSync(resolve(source, "foundry-result-iss_mock.md")),
     false,
   );
+});
+
+test("an Issue execution reports through its session and its result can be recovered", async (t) => {
+  const { source, store } = await fixture(t);
+  mkdirSync(resolve(source, ".foundry"));
+  writeJSON(resolve(source, ".foundry/workspace.json"), {
+    id: "ws_session",
+    path: source,
+    name: "Test",
+    baseline: "main",
+    schemaVersion: 1,
+  });
+  const actor = { kind: "local_owner", id: "owner", displayName: "Owner" };
+  const digest = `sha256:${"b".repeat(64)}`;
+  const issue = {
+    id: "iss_session",
+    contractState: "confirmed",
+    currentContractRevision: 1,
+    workspaceId: "ws_session",
+    shortId: "ISS-session",
+    title: "Write",
+    sourceInput: "Write report",
+    runtime: "mock",
+    skills: [],
+    acceptanceCriteria: [],
+    checks: [],
+  };
+  issue.executionContract = {
+    ...JSON.parse(
+      readFileSync(
+        new URL("../../protocol/test/evidence-fixtures.json", import.meta.url),
+        "utf8",
+      ),
+    ).find((item) => item.name === "observable agent criterion").value,
+    schemaVersion: 1,
+    id: "contract_session",
+    workspaceId: issue.workspaceId,
+    issueId: issue.id,
+    revision: 1,
+    origin: "user",
+    createdAt: "2026-09-10T00:00:00Z",
+    createdBy: actor,
+    contentDigest: digest,
+    status: "confirmed",
+    confirmation: { actor, at: "2026-09-10T00:00:00Z", contentDigest: digest },
+  };
+  const sent = [];
+  const outbox = { send: (type, payload) => sent.push({ type, payload }) };
+  await executeIssue(
+    "",
+    source,
+    issue,
+    new SessionRunTransport(outbox, "sess_exec", "input_1"),
+    store,
+    [],
+    "hidden",
+    "sess_exec",
+  );
+  assert.deepEqual(sent[0], {
+    type: "session_started",
+    payload: { sessionId: "sess_exec", inputId: "input_1" },
+  });
+  const events = sent.filter((message) => message.type === "session_event");
+  assert.ok(events.length > 0);
+  assert.ok(
+    events.every((message) => message.payload.event.sessionId === "sess_exec"),
+  );
+  const completed = sent.at(-1);
+  assert.equal(completed.type, "session_completed");
+  assert.equal(completed.payload.sessionId, "sess_exec");
+  assert.equal(completed.payload.error, undefined);
+  assert.equal(completed.payload.issueResult.runId, "sess_exec");
+  assert.ok(completed.payload.issueResult.environmentId);
+
+  // A lost report is replayed from the attempt's record, not run again.
+  assert.deepEqual(
+    recordedIssueCompletion("ws_session", issue.id, "sess_exec", store),
+    JSON.parse(JSON.stringify(completed.payload.issueResult)),
+  );
+  assert.equal(
+    recoveredIssueCompletion("ws_session", issue.id, "sess_other", store),
+    undefined,
+  );
+  // An attempt that stopped mid-run is reported as interrupted, keeping
+  // its candidate for a retry.
+  const environment = store.environment("ws_session", issue.id);
+  const interrupted = store.runDirectory(environment, "sess_crashed");
+  mkdirSync(interrupted, { recursive: true });
+  writeJSON(resolve(interrupted, "run.json"), { id: "sess_crashed" });
+  const recovered = recoveredIssueCompletion(
+    "ws_session",
+    issue.id,
+    "sess_crashed",
+    store,
+  );
+  assert.match(recovered.error, /Worker process stopped/);
+  assert.equal(recovered.environmentId, environment.id);
+  assert.equal(store.environment("ws_session", issue.id).status, "failed");
 });
 
 async function fixture(t) {

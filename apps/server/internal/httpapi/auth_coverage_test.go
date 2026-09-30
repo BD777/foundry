@@ -180,8 +180,6 @@ func TestAccountsCannotReachEachOthersResources(t *testing.T) {
 		http.StatusNotFound, "bob's device reads alice's issues")
 	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/chats/sync", `{"workspaceId":"ws_alice","chats":[]}`, f.bobDevice)),
 		http.StatusNotFound, "bob's device syncs chats into alice's workspace")
-	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/issues/"+f.aliceIssue+"/complete", `{}`, f.bobDevice)),
-		http.StatusNotFound, "bob's device completes alice's issue")
 }
 
 func TestWorkspaceRolesGateActions(t *testing.T) {

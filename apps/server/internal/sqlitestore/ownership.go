@@ -162,18 +162,6 @@ func (s *Store) DevicesOwnedBy(ctx context.Context, userID string) ([]string, er
 	return devices, rows.Err()
 }
 
-func (s *Store) RunWorkspace(ctx context.Context, runID string) (string, error) {
-	var workspaceID string
-	err := s.conn().QueryRowContext(ctx, `SELECT workspace_id FROM runs WHERE id = ?`, runID).Scan(&workspaceID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", store.ErrNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("find run workspace: %w", err)
-	}
-	return workspaceID, nil
-}
-
 func (s *Store) RemoveWorkspaceMember(ctx context.Context, workspaceID, userID string) error {
 	result, err := s.conn().ExecContext(ctx,
 		`DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID)

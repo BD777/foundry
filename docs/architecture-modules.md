@@ -507,6 +507,15 @@ M4 的交付是[对话式准出标准](foundry-conversation-release-gate.md) G1�
 4. **重新开放 Issues Web 入口**，按 G1–G5 修到真实浏览器准出；证据记录在 PR。
 5. 候选存储类型改名（`IssueEnvironment` 等）只在上面某步真正需要时顺带做。
 
+**第 1 步已落地**（2026-09-30）：认领 Issue 时在同一事务里创建执行会话（`source=issue`、
+`role=issue_execution`），经 `run_session` 派发并附带 Issue 与已确认契约；会话的
+started / event / completed 驱动原有的 `Run` 投影（`Run.id` 即会话 id，`runs` 表保留为
+尝试历史），完成消息以 `issueResult` 携带候选与验收产物。`run_issue` / `run_started` /
+`run_event` / `issue_completed`、HTTP 轮询模式与 `recover-claim` 已删除；中断恢复走
+`recover_session`（Worker 回放 `completion.json` 或报告中断）。Worker 以
+`capabilities: ["issue_sessions"]` 声明能力，旧 Worker 不会被派发 Issue。执行会话不能作为
+会话被发消息或取消（经 Issue 控制），也暂不发会话令牌（D6 在第 3 步）。
+
 **D2 的现状与落点**（2026-09-28 核对代码）：
 
 - 三个角色在 Server 上都没有 `AgentSession`：执行只有 `Run`（`runs` / `run_events` 表，
