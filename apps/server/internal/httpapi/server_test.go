@@ -929,6 +929,9 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 	if started.Run == nil || started.Run.ID != sessionID || started.Run.Status != "running" {
 		t.Fatalf("expected the Issue run to be the session, got %#v", started.Run)
 	}
+	if encoded, _ := json.Marshal(started.Run); !strings.Contains(string(encoded), `"events":[]`) {
+		t.Fatalf("a started run must carry an empty events list, got %s", encoded)
+	}
 	writeWSForTest(t, conn, "session_event", map[string]any{
 		"event": map[string]any{
 			"id":        "evt_ws",

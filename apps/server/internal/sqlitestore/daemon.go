@@ -289,6 +289,10 @@ func (s *Store) startIssueRun(ctx context.Context, issueID string, run store.Run
 	run.IssueID = issue.ID
 	run.WorkspaceID = issue.WorkspaceID
 	run.Status = "running"
+	// Readers iterate events; a run always carries a list, empty at start.
+	if run.Events == nil {
+		run.Events = []store.RunEvent{}
+	}
 	if run.StartedAt == "" {
 		run.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
