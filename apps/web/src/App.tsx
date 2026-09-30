@@ -896,6 +896,11 @@ export function App() {
         providerHealth={workspaceProviderHealth}
         agents={workspaceAgents}
         profiles={data.agentProfiles}
+        workerRunsIssues={
+          device
+            ? Boolean(device.capabilities?.includes("issue_sessions"))
+            : undefined
+        }
       />
     );
   }

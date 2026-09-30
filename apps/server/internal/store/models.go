@@ -24,6 +24,9 @@ type DeviceProjection struct {
 	Owned bool `json:"owned,omitempty"`
 	// Resources is what the device offers sessions, reported by its worker.
 	Resources []DeviceResource `json:"resources,omitempty"`
+	// Capabilities are the protocol features its worker declared at its
+	// last registration; an older worker declares none.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // DeviceResource is a capability already present on a device that sessions

@@ -122,6 +122,8 @@ export interface DeviceProjection {
   owned?: boolean;
   /** What the device offers sessions, detected by its worker at registration. */
   resources?: DeviceResource[];
+  /** Protocol features its worker declared; an older worker declares none. */
+  capabilities?: string[];
 }
 
 /**
