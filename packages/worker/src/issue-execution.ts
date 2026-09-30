@@ -15,8 +15,9 @@ import {
   snapshotEnvironment,
 } from "./issue-environments.js";
 import { runIssueExecutor } from "./issue-executor.js";
+import type { AgentProfileLocalConfig } from "./profiles.js";
 import { readWorkspace } from "./workspaces.js";
-import { HttpRunTransport, type RunTransport } from "./transport.js";
+import type { RunTransport } from "./transport.js";
 import { writeJSON } from "./storage.js";
 import type { IssueEnvironment } from "./execution-types.js";
 import { refreshCandidate } from "./candidate-refresh.js";
@@ -25,14 +26,20 @@ import {
   finishIssueExecution,
 } from "./execution-process.js";
 
+/**
+ * Implement a confirmed Issue in its candidate workspace. `runId` names this
+ * attempt: the id of the execution session the server dispatched.
+ */
 export async function executeIssue(
   serverURL: string,
   workspacePath: string,
   issue: Issue,
-  transport: RunTransport = new HttpRunTransport(serverURL),
+  transport: RunTransport,
   store = new ExecutionStore(),
   skillRefs: SessionSkillRef[] = [],
   userFiles: "readable" | "hidden" = "hidden",
+  runId = `run_${randomUUID()}`,
+  profileOverride?: AgentProfileLocalConfig,
 ): Promise<void> {
   if (
     issue.contractState !== "confirmed" ||
@@ -58,7 +65,6 @@ export async function executeIssue(
   if (issue.workspaceId && issue.workspaceId !== workspace.id)
     throw new Error("Issue belongs to another workspace");
   return store.lock(workspace.id, `execution-${issue.id}`, async () => {
-    const runId = `run_${randomUUID()}`;
     const retained = store.environment(workspace.id, issue.id);
     const runDir = retained
       ? store.runDirectory(retained, runId)
@@ -137,7 +143,7 @@ export async function executeIssue(
           runId,
           record,
           store,
-          undefined,
+          profileOverride,
           control.signal,
           serverURL,
           skillRefs,

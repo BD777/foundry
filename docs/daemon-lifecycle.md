@@ -33,7 +33,6 @@ symbol name to find the current code.
 cli.ts main() → dispatch "connect"
   │
   └─ connect()                    [daemon-connection.ts]
-       ├─ connectPolling()         ← HTTP fallback
        └─ connectWebSocket()       ← reconnect loop
             ├─ process heartbeat file: ~/.foundry/daemon-heartbeat every 30s
             ├─ syncReviews()       [issues.ts] once before connecting

@@ -613,7 +613,10 @@ export interface AgentSession {
   profileId?: string;
   profileFingerprint?: string;
   profileLabel?: string;
-  source?: "chat" | "diagnostic" | "naming" | "verification" | "agent";
+  source?:
+    "chat" | "diagnostic" | "naming" | "verification" | "agent" | "issue";
+  /** The job the session does for Foundry; absent for a chat. */
+  role?: "issue_execution";
   /** Orchestration lineage: the session that created this one. A record, not a permission. */
   parentSessionId?: string;
   /** When set, the session executes inside an Issue candidate worktree. */

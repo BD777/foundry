@@ -60,12 +60,12 @@ type Invite struct {
 	// of that workspace on acceptance.
 	WorkspaceID   string     `json:"workspaceId,omitempty"`
 	WorkspaceRole string     `json:"workspaceRole,omitempty"`
-	CreatedBy string     `json:"createdBy"`
-	CreatedAt time.Time  `json:"createdAt"`
-	ExpiresAt time.Time  `json:"expiresAt"`
-	UsedBy    string     `json:"usedBy,omitempty"`
-	UsedAt    *time.Time `json:"usedAt,omitempty"`
-	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+	CreatedBy     string     `json:"createdBy"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	ExpiresAt     time.Time  `json:"expiresAt"`
+	UsedBy        string     `json:"usedBy,omitempty"`
+	UsedAt        *time.Time `json:"usedAt,omitempty"`
+	RevokedAt     *time.Time `json:"revokedAt,omitempty"`
 }
 
 // AccountStore holds Foundry's own login identities. Tokens (sessions and
@@ -145,6 +145,4 @@ type OwnershipStore interface {
 	SetWorkspaceMember(ctx context.Context, workspaceID, userID, role, addedBy string) error
 	// RemoveWorkspaceMember deletes a membership (ErrNotFound if none).
 	RemoveWorkspaceMember(ctx context.Context, workspaceID, userID string) error
-	// RunWorkspace is the workspace a run belongs to (ErrNotFound if none).
-	RunWorkspace(ctx context.Context, runID string) (string, error)
 }

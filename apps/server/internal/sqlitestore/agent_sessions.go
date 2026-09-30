@@ -447,6 +447,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		if session.Source == "naming" || session.Source == "diagnostic" {
 			return errors.New("utility sessions take no further input")
 		}
+		if session.Role != "" {
+			return store.ErrSessionControlledByIssue
+		}
 		prompt := strings.TrimSpace(input.Prompt)
 		attachments := normalizeChatAttachments(input.Attachments)
 		if prompt == "" && len(attachments) == 0 {

@@ -95,71 +95,56 @@ export async function ensureServerReachable(serverURL: string): Promise<void> {
   }
 }
 
-export class HttpRunTransport implements RunTransport {
-  serverURL: string;
-
-  constructor(serverURL: string) {
-    this.serverURL = serverURL;
-  }
-
-  async startRun(issueId: string, run: Run): Promise<void> {
-    await postJSON(this.serverURL, `/api/daemon/issues/${issueId}/runs`, {
-      run,
+/**
+ * An Issue execution reports through its session (role issue_execution): the
+ * run starts and ends with the session, run events are session events, and
+ * the Issue result travels with session_completed.
+ */
+export class SessionRunTransport implements RunTransport {
+  constructor(
+    private readonly transport: ReliableSessionTransport,
+    private readonly sessionId: string,
+    private readonly inputId?: string,
+  ) {}
+  async startRun(): Promise<void> {
+    this.transport.send(daemonMessageTypes.sessionStarted, {
+      sessionId: this.sessionId,
+      inputId: this.inputId,
     });
   }
-
-  async appendRunEvent(runId: string, event: RunEvent): Promise<void> {
-    await postJSON(this.serverURL, `/api/daemon/runs/${runId}/events`, {
-      event,
+  async appendRunEvent(_runId: string, event: RunEvent): Promise<void> {
+    this.transport.send(daemonMessageTypes.sessionEvent, {
+      event: {
+        id: event.id,
+        sessionId: this.sessionId,
+        at: event.at,
+        label: event.label,
+        detail: event.detail,
+        level: event.level,
+      },
     });
   }
-
-  async completeIssue(issueId: string, input: IssueCompletion): Promise<void> {
-    await postJSON(
-      this.serverURL,
-      `/api/daemon/issues/${issueId}/complete`,
-      input,
+  async completeIssue(_issueId: string, input: IssueCompletion): Promise<void> {
+    this.transport.send(
+      daemonMessageTypes.sessionCompleted,
+      issueSessionCompletion(this.sessionId, this.inputId, input),
     );
   }
 }
 
-export class WebSocketRunTransport implements RunTransport {
-  socket: WebSocket;
-
-  constructor(socket: WebSocket) {
-    this.socket = socket;
-  }
-
-  async startRun(issueId: string, run: Run): Promise<void> {
-    sendWebSocket(this.socket, daemonMessageTypes.runStarted, { issueId, run });
-  }
-
-  async appendRunEvent(_runId: string, event: RunEvent): Promise<void> {
-    sendWebSocket(this.socket, daemonMessageTypes.runEvent, { event });
-  }
-
-  async completeIssue(issueId: string, input: IssueCompletion): Promise<void> {
-    sendWebSocket(this.socket, daemonMessageTypes.issueCompleted, {
-      issueId,
-      ...input,
-    });
-  }
-}
-
-export class ReliableRunTransport implements RunTransport {
-  constructor(private readonly transport: ReliableSessionTransport) {}
-  async startRun(issueId: string, run: Run): Promise<void> {
-    this.transport.send(daemonMessageTypes.runStarted, { issueId, run });
-  }
-  async appendRunEvent(_runId: string, event: RunEvent): Promise<void> {
-    this.transport.send(daemonMessageTypes.runEvent, { event });
-  }
-  async completeIssue(issueId: string, input: IssueCompletion): Promise<void> {
-    this.transport.send(daemonMessageTypes.issueCompleted, {
-      issueId,
-      ...input,
-    });
-  }
+/** The session_completed message that hands an Issue result to the server. */
+export function issueSessionCompletion(
+  sessionId: string,
+  inputId: string | undefined,
+  completion: IssueCompletion,
+): Record<string, unknown> {
+  return {
+    sessionId,
+    inputId,
+    response: completion.response,
+    error: completion.error,
+    issueResult: completion,
+  };
 }
 
 interface WebSocketSender {

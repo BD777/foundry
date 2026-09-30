@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -65,10 +66,6 @@ const (
 	wsCompleteProfileAuthorizationType  = "complete_profile_authorization"
 	wsProfileAuthorizationCompletedType = "profile_authorization_completed"
 	wsRegisteredType                    = "registered"
-	wsRunIssueType                      = "run_issue"
-	wsRunStartedType                    = "run_started"
-	wsRunEventType                      = "run_event"
-	wsIssueCompletedType                = "issue_completed"
 	wsIssueEnvironmentType              = "issue_environment"
 	wsIssueEnvironmentResultType        = "issue_environment_result"
 	wsEvidenceRequestType               = "evidence_request"
@@ -127,8 +124,8 @@ type daemonConnection struct {
 	// actor is the device credential behind the socket; every registration
 	// on it must name that device.
 	actor Actor
-	// sessionWorkspaces caches the workspace of streamed session events.
-	sessionWorkspaces   map[string]string
+	// sessionWorkspaces caches where streamed session events belong.
+	sessionWorkspaces   map[string]sessionTarget
 	sessionWorkspacesMu sync.Mutex
 	done                chan struct{}
 	finished            chan struct{}
@@ -154,37 +151,6 @@ type wsEnvelope struct {
 	ID      string          `json:"id,omitempty"`
 	Payload json.RawMessage `json:"payload,omitempty"`
 	Type    string          `json:"type"`
-}
-
-type wsRunIssuePayload struct {
-	Issue     store.Issue             `json:"issue"`
-	SkillRefs []store.SessionSkillRef `json:"skillRefs,omitempty"`
-	// UserFiles lets the Issue's processes read the device owner's own files
-	// and credentials. Only an Issue the device owner started may; anyone
-	// else's Issue must not act with the owner's credentials.
-	UserFiles string `json:"userFiles"`
-}
-
-type wsRunStartedPayload struct {
-	IssueID string    `json:"issueId"`
-	Run     store.Run `json:"run"`
-}
-
-type wsRunEventPayload struct {
-	Event store.RunEvent `json:"event"`
-}
-
-type wsIssueCompletedPayload struct {
-	Canceled            bool                     `json:"canceled,omitempty"`
-	Response            string                   `json:"response,omitempty"`
-	EnvironmentID       string                   `json:"environmentId,omitempty"`
-	EnvironmentRevision int                      `json:"environmentRevision,omitempty"`
-	ExecutionCwd        string                   `json:"executionCwd,omitempty"`
-	Error               string                   `json:"error,omitempty"`
-	Artifact            store.AcceptanceArtifact `json:"artifact"`
-	Checks              []string                 `json:"checks"`
-	IssueID             string                   `json:"issueId"`
-	RunID               string                   `json:"runId"`
 }
 
 type wsReadFilePayload struct {
@@ -351,6 +317,13 @@ type wsRunSessionPayload struct {
 	// the MCP/CLI surface. Minted per dispatch (so reconnects rotate it);
 	// never persisted in plaintext.
 	SessionToken string `json:"sessionToken,omitempty"`
+	// Issue is the Issue an issue_execution session implements, with its
+	// confirmed contract attached.
+	Issue *store.Issue `json:"issue,omitempty"`
+	// UserFiles lets the Issue's processes read the device owner's own files
+	// and credentials. Only an Issue the device owner started may; anyone
+	// else's Issue must not act with the owner's credentials.
+	UserFiles string `json:"userFiles,omitempty"`
 }
 
 type wsSteerSessionPayload struct {
@@ -397,6 +370,9 @@ type wsSessionCompletedPayload struct {
 	NativeSessionID string `json:"nativeSessionId,omitempty"`
 	Response        string `json:"response,omitempty"`
 	Error           string `json:"error,omitempty"`
+	// IssueResult is what an issue_execution session produced: the candidate
+	// it left and the acceptance artifact.
+	IssueResult *store.CompleteIssueInput `json:"issueResult,omitempty"`
 }
 
 // wsRecoverSessionPayload asks a device about an input it no longer runs. The
@@ -695,16 +671,13 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 		return nil
 	}
 	var probe struct {
-		IssueID   string `json:"issueId"`
 		SessionID string `json:"sessionId"`
 		Event     struct {
-			RunID     string `json:"runId"`
 			SessionID string `json:"sessionId"`
 		} `json:"event"`
 	}
 	switch envelope.Type {
-	case wsRunStartedType, wsIssueCompletedType, wsRunEventType,
-		wsSessionSteeredType, wsSessionCanceledType, wsSessionStartedType, wsSessionEventType,
+	case wsSessionSteeredType, wsSessionCanceledType, wsSessionStartedType, wsSessionEventType,
 		wsSessionBlockedType, wsSessionResumedType, wsSessionNativeSessionIDType, wsSessionCompleteType:
 	default:
 		return nil
@@ -712,24 +685,13 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 	if err := json.Unmarshal(envelope.Payload, &probe); err != nil {
 		return err
 	}
-	switch envelope.Type {
-	case wsRunStartedType, wsIssueCompletedType:
-		if !c.hub.issueOnDevice(ctx, probe.IssueID, deviceID) {
-			return errForeignTarget
-		}
-	case wsRunEventType:
-		if !c.hub.workspaceOnDevice(ctx, c.hub.runWorkspace(ctx, probe.Event.RunID), deviceID) {
-			return errForeignTarget
-		}
-	default:
-		sessionID := probe.SessionID
-		if envelope.Type == wsSessionEventType {
-			sessionID = probe.Event.SessionID
-		}
-		session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
-		if err != nil || session.DeviceID != deviceID {
-			return errForeignTarget
-		}
+	sessionID := probe.SessionID
+	if envelope.Type == wsSessionEventType {
+		sessionID = probe.Event.SessionID
+	}
+	session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil || session.DeviceID != deviceID {
+		return errForeignTarget
 	}
 	return nil
 }
@@ -747,37 +709,44 @@ func (h *DaemonHub) issueOnDevice(ctx context.Context, issueID, deviceID string)
 	return err == nil && h.workspaceOnDevice(ctx, issue.WorkspaceID, deviceID)
 }
 
-// runWorkspace finds a run's workspace so its events reach only viewers of
-// that workspace; "" (delivered to nobody) when unknown.
-func (h *DaemonHub) runWorkspace(ctx context.Context, runID string) string {
-	ownership, ok := h.store.(store.OwnershipStore)
-	if !ok {
-		return ""
-	}
-	workspaceID, err := ownership.RunWorkspace(ctx, runID)
-	if err != nil {
-		return ""
-	}
-	return workspaceID
-}
-
 // sessionWorkspace resolves (and remembers) the workspace of a session whose
 // events stream over this connection.
 func (c *daemonConnection) sessionWorkspace(ctx context.Context, sessionID string) string {
+	return c.sessionTarget(ctx, sessionID).workspaceID
+}
+
+// sessionTarget is where a session's events belong: its workspace, and the
+// Issue it executes (empty for any other session).
+type sessionTarget struct {
+	workspaceID    string
+	executionIssue string
+}
+
+func (c *daemonConnection) sessionTarget(ctx context.Context, sessionID string) sessionTarget {
 	c.sessionWorkspacesMu.Lock()
 	defer c.sessionWorkspacesMu.Unlock()
-	if workspaceID, ok := c.sessionWorkspaces[sessionID]; ok {
-		return workspaceID
+	if target, ok := c.sessionWorkspaces[sessionID]; ok {
+		return target
 	}
 	session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
 	if err != nil {
-		return ""
+		return sessionTarget{}
 	}
 	if c.sessionWorkspaces == nil {
-		c.sessionWorkspaces = map[string]string{}
+		c.sessionWorkspaces = map[string]sessionTarget{}
 	}
-	c.sessionWorkspaces[sessionID] = session.WorkspaceID
-	return session.WorkspaceID
+	target := sessionTarget{workspaceID: session.WorkspaceID}
+	if session.Role == store.AgentSessionRoleIssueExecution {
+		target.executionIssue = session.IssueID
+	}
+	c.sessionWorkspaces[sessionID] = target
+	return target
+}
+
+// hasCapability reports whether the worker declared a protocol feature.
+func (c *daemonConnection) hasCapability(capability string) bool {
+	_, registration := c.registrationSnapshot()
+	return slices.Contains(registration.Capabilities, capability)
 }
 
 // closeDevice drops a device's live connection without the permanent
@@ -1269,46 +1238,6 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		go c.claimAndSend()
 		return nil
-	case wsRunStartedType:
-		var payload wsRunStartedPayload
-		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
-			return err
-		}
-		issue, err := c.hub.store.StartIssueRun(ctx, payload.IssueID, payload.Run)
-		if err == nil {
-			c.hub.events.Publish("issue_updated", issue)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-		}
-		return err
-	case wsRunEventType:
-		var payload wsRunEventPayload
-		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
-			return err
-		}
-		err := c.hub.store.AppendRunEvent(ctx, payload.Event)
-		if err == nil {
-			c.hub.events.PublishIn(c.hub.runWorkspace(ctx, payload.Event.RunID), "issue_run_event", payload.Event)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-		}
-		return err
-	case wsIssueCompletedType:
-		var payload wsIssueCompletedPayload
-		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
-			return err
-		}
-		issue, err := c.hub.store.CompleteIssue(ctx, payload.IssueID, store.CompleteIssueInput{
-			Canceled:      payload.Canceled,
-			Response:      payload.Response,
-			EnvironmentID: payload.EnvironmentID, EnvironmentRevision: payload.EnvironmentRevision, ExecutionCwd: payload.ExecutionCwd, Error: payload.Error,
-			RunID:    payload.RunID,
-			Artifact: payload.Artifact,
-			Checks:   payload.Checks,
-		})
-		if err == nil {
-			c.hub.events.Publish("issue_updated", issue)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-		}
-		return err
 	case wsFileReadType:
 		return deliverDaemonResponse[wsFileReadPayload](c, envelope, nil)
 	case wsIssueEnvironmentResultType:
@@ -1466,6 +1395,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.setActiveSession(payload.SessionID, true)
 			c.clearDispatchedSession(payload.SessionID)
 			c.hub.events.Publish("agent_session_started", session)
+			c.hub.startIssueExecution(ctx, session)
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
@@ -1477,7 +1407,13 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		payload.Event.At = time.Now().UTC().Format(time.RFC3339Nano)
 		err := c.hub.store.AppendAgentSessionEvent(ctx, payload.Event)
 		if err == nil {
-			c.hub.events.PublishIn(c.sessionWorkspace(ctx, payload.Event.SessionID), "agent_session_event", payload.Event)
+			target := c.sessionTarget(ctx, payload.Event.SessionID)
+			c.hub.events.PublishIn(target.workspaceID, "agent_session_event", payload.Event)
+			if target.executionIssue != "" {
+				err = c.hub.appendIssueExecutionEvent(ctx, target.workspaceID, payload.Event)
+			}
+		}
+		if err == nil {
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
@@ -1532,6 +1468,9 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
+			// A session the server already settled (a stale reconcile) still
+			// hands over the Issue result the device recorded.
+			c.hub.settleIssueExecution(ctx, existing, payload.IssueResult)
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, existing)
@@ -1551,6 +1490,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
 			c.hub.events.Publish("agent_session_completed", session)
+			c.hub.settleIssueExecution(ctx, session, payload.IssueResult)
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, session)
@@ -1830,6 +1770,23 @@ func (c *daemonConnection) upsertAgentRuntimeSettings(ctx context.Context, setti
 }
 
 func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) error {
+	// Reserve the input before resolving anything: concurrent dispatchers
+	// (a claim and the queued-session sweep on hello) send it once.
+	c.dispatchedMu.Lock()
+	if sent, ok := c.dispatchedSessions[session.ID]; ok && sent == session.Input.ID {
+		c.dispatchedMu.Unlock()
+		return nil
+	}
+	c.dispatchedSessions[session.ID] = session.Input.ID
+	c.dispatchedMu.Unlock()
+	if err := c.sendAgentSession(session); err != nil {
+		c.clearDispatchedSession(session.ID)
+		return err
+	}
+	return nil
+}
+
+func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 	ctx := context.Background()
 	profile, err := c.hub.serverProfileForSession(ctx, session)
 	if err != nil {
@@ -1851,23 +1808,42 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 	} else {
 		session.SkillRefs = refs
 	}
-	// Mint a session token per dispatch; earlier ones stay valid. Failure does
-	// not block a chat run (the web UI needs no token); the agent-facing
-	// surface simply stays unavailable for this process until the next one.
-	sessionToken, tokenErr := c.hub.store.MintAgentSessionToken(ctx, session.ID)
-	if tokenErr != nil {
-		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
-		sessionToken = ""
+	var (
+		issue        *store.Issue
+		userFiles    string
+		sessionToken string
+	)
+	if session.Role == store.AgentSessionRoleIssueExecution {
+		if !c.hasCapability(store.DaemonCapabilityIssueSessions) {
+			return errIssueSessionsUnsupported
+		}
+		executions, ok := c.hub.store.(store.IssueExecutionStore)
+		if !ok {
+			return errIssueSessionsUnsupported
+		}
+		loaded, err := executions.ExecutionIssue(ctx, session.IssueID)
+		if err != nil {
+			return fmt.Errorf("load the issue to execute: %w", err)
+		}
+		issue = &loaded
+		userFiles = issueUserFiles(loaded, c.actor)
+	} else {
+		// Mint a session token per dispatch; earlier ones stay valid. Failure
+		// does not block a chat run (the web UI needs no token); the
+		// agent-facing surface simply stays unavailable for this process
+		// until the next one. An Issue executor gets no token until its
+		// scope is limited to its Issue (architecture-modules.md §6, D6).
+		minted, tokenErr := c.hub.store.MintAgentSessionToken(ctx, session.ID)
+		if tokenErr != nil {
+			log.Printf("mint session token for %s: %v", session.ID, tokenErr)
+		}
+		sessionToken = minted
 	}
-	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken})
+	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles})
 	if err != nil {
 		return err
 	}
-	c.dispatchedMu.Lock()
-	c.dispatchedSessions[session.ID] = session.Input.ID
-	c.dispatchedMu.Unlock()
 	if !c.queue(wsEnvelope{Type: wsRunSessionType, Payload: payload}) {
-		c.clearDispatchedSession(session.ID)
 		return store.ErrNotFound
 	}
 	return nil
@@ -1892,6 +1868,11 @@ func (c *daemonConnection) claimAndSend() {
 	defer c.claimMu.Unlock()
 	deviceID, registration := c.registrationSnapshot()
 	if deviceID == "" || registration.Workspace.ID == "" {
+		return
+	}
+	// An older worker would run an Issue as a plain chat; it gets no Issues.
+	executions, ok := c.hub.store.(store.IssueExecutionStore)
+	if !ok || !slices.Contains(registration.Capabilities, store.DaemonCapabilityIssueSessions) {
 		return
 	}
 	c.registrationMu.Lock()
@@ -1923,11 +1904,13 @@ func (c *daemonConnection) claimAndSend() {
 	if producing >= capacity {
 		return
 	}
-	var issue store.Issue
-	var err error
+	var (
+		session store.AgentSession
+		err     error
+	)
 	for offset := 0; offset < len(ids); offset++ {
 		index := (c.claimCursor + offset) % len(ids)
-		issue, err = c.hub.store.ClaimNextIssue(context.Background(), deviceID, ids[index])
+		_, session, err = executions.ClaimIssueExecution(context.Background(), deviceID, ids[index])
 		if !errors.Is(err, store.ErrNotFound) {
 			c.claimCursor = (index + 1) % len(ids)
 			break
@@ -1940,24 +1923,10 @@ func (c *daemonConnection) claimAndSend() {
 		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
-	// Resolve the owning workspace's skill selection so Issues enforce the
-	// same allowlist as Chats. An empty list means none are exposed.
-	skillRefs := []store.SessionSkillRef{}
-	if issue.WorkspaceID != "" {
-		resolved, err := c.hub.store.ResolveSessionSkills(context.Background(), issue.WorkspaceID)
-		if err != nil {
-			c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
-			return
-		}
-		skillRefs = resolved
-	}
-	payload, err := json.Marshal(wsRunIssuePayload{Issue: issue, SkillRefs: skillRefs, UserFiles: issueUserFiles(issue, c.actor)})
-	if err != nil {
-		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
-		return
-	}
-	if !c.queue(wsEnvelope{Type: wsRunIssueType, Payload: payload}) {
-		_, _ = c.hub.store.UpdateIssueStatus(context.Background(), issue.ID, "pending")
+	// A dispatch that does not reach the worker leaves the session queued;
+	// the device's next registration sends it again.
+	if err := c.dispatchAgentSession(session); err != nil {
+		log.Printf("dispatch issue execution %s: %v", session.ID, err)
 	}
 }
 

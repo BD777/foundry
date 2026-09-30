@@ -149,11 +149,7 @@ Re-running `setup` or `pair` without `--token` keeps the saved credential. One m
 
 Use `--no-start` to write the login service without starting it, or `--no-service` for a foreground-only smoke test.
 
-`connect` defaults to the WebSocket daemon protocol at `/api/daemon/ws`. Use `--polling` to force the older HTTP polling loop:
-
-```bash
-pnpm --filter @bd777/foundry-worker foundry-worker -- connect --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --polling --once
-```
+`connect` speaks the WebSocket daemon protocol at `/api/daemon/ws`.
 
 Pair and install a login service:
 

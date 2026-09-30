@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
 func TestStaleAgentSessionIsNotKeptAliveByUnrelatedDeviceConnection(t *testing.T) {
@@ -336,5 +337,75 @@ func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
 	}
 	if _, err := server.hub.RefreshDeviceResources(ctx, "dev_missing", ""); err != store.ErrNotFound {
 		t.Fatalf("offline device: %v, want ErrNotFound", err)
+	}
+}
+
+// An Issue execution orphaned by a worker restart recovers like any session:
+// the device is asked, and its recorded Issue result completes the Issue.
+func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	registration := store.DaemonRegistration{
+		Capabilities: []string{store.DaemonCapabilityIssueSessions},
+		Device:       store.DeviceProjection{ID: "dev_issue_recover", Label: "Device", Status: "connected", LastSeenLabel: "online"},
+		Workspace:    store.WorkspaceProjection{ID: "ws_issue_recover", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
+	}
+	if err := db.RegisterDaemon(ctx, registration); err != nil {
+		t.Fatal(err)
+	}
+	created, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_issue_recover", Title: "orphaned", Runtime: "mock"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testfixture.ConfirmContract(t, db, created.ID)
+	server := NewServer(db)
+	_, session, err := db.ClaimIssueExecution(ctx, "dev_issue_recover", "ws_issue_recover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := db.StartAgentSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.hub.startIssueExecution(ctx, started)
+
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	hello, _ := json.Marshal(registration)
+	var body map[string]any
+	_ = json.Unmarshal(hello, &body)
+	body["activeSessionIds"] = []string{}
+	writeWSForTest(t, conn, "hello", body)
+	readWSTypeForTest(t, conn, "registered")
+
+	var asked wsRecoverSessionPayload
+	readWSPayloadForTest(t, conn, "recover_session", &asked)
+	if asked.SessionID != session.ID || asked.IssueID != created.ID {
+		t.Fatalf("recover_session = %+v, want the execution of %s", asked, created.ID)
+	}
+	writeWSForTest(t, conn, "session_completed", map[string]any{
+		"sessionId": session.ID,
+		"inputId":   session.Input.ID,
+		"response":  "finished while the worker was down",
+		"issueResult": map[string]any{
+			"runId":    session.ID,
+			"response": "finished while the worker was down",
+			"artifact": map[string]any{"id": "art_recovered", "issueId": created.ID, "kind": "text", "title": "Report", "summary": "done"},
+			"checks":   []string{"Recovered"},
+		},
+	})
+	readWSTypeForTest(t, conn, "ack")
+	issue, err := db.GetIssue(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issue.Status != "verifying" || issue.Artifact == nil || issue.Artifact.ID != "art_recovered" || issue.Run == nil || issue.Run.ID != session.ID {
+		t.Fatalf("recovered Issue = %s %#v %#v", issue.Status, issue.Artifact, issue.Run)
 	}
 }
