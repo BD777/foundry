@@ -213,3 +213,30 @@ func TestAbandonEndpointRetainsIssueAndRejectsAcceptance(t *testing.T) {
 		t.Fatalf("abandoned candidate accepted: %d", response.Code)
 	}
 }
+
+// The web tells a person when a workspace's worker cannot execute Issues;
+// what a worker declared at registration is kept on its device.
+func TestWorkerCapabilitiesAreKeptOnItsDevice(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	server := NewServer(db)
+	for _, registration := range []store.DaemonRegistration{
+		{Capabilities: []string{store.DaemonCapabilityIssueSessions}, Device: store.DeviceProjection{ID: "dev_new"}, Workspace: store.WorkspaceProjection{ID: "ws_new"}},
+		{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}},
+	} {
+		if err := server.hub.syncRegistration(registration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devices, err := db.ListDevices(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string][]string{}
+	for _, device := range devices {
+		found[device.ID] = device.Capabilities
+	}
+	if len(found["dev_new"]) != 1 || found["dev_new"][0] != store.DaemonCapabilityIssueSessions || len(found["dev_old"]) != 0 {
+		t.Fatalf("device capabilities = %#v", found)
+	}
+}

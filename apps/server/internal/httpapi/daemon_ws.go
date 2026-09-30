@@ -868,6 +868,7 @@ func (h *DaemonHub) syncRegistration(registration store.DaemonRegistration) erro
 	}
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
+	registration.Device.Capabilities = registration.Capabilities
 	return h.store.RegisterDaemon(context.Background(), registration)
 }
 
@@ -883,6 +884,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	}
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
+	registration.Device.Capabilities = registration.Capabilities
 	if err := c.hub.store.RegisterDaemon(context.Background(), registration); err != nil {
 		if errors.Is(err, store.ErrDeviceRemoved) {
 			// Permanent refusal: emit the application close frame so the worker

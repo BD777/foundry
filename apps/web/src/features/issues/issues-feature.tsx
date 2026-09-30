@@ -11,8 +11,8 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { createIssue } from "../../api";
+import { IssueListStatus, WorkerUpdateNotice } from "./issue-notices";
 import { useIssueModels } from "./use-issue-models";
-import { Badge } from "../../components/ui/badge";
 import { IssueCard } from "./issue-board-card";
 import { AgentComposer } from "../../components/ui/agent-composer";
 import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
@@ -33,7 +33,6 @@ import {
   statusMeta,
   issueStatuses,
   issueDisplayStatus,
-  blockedReasonMeta,
 } from "../../lib/issue-meta";
 
 type BoardMode = "board" | "list";
@@ -63,6 +62,8 @@ export interface IssuesFeatureProps {
   providerHealth: ProviderHealth[];
   agents: AgentProjection[];
   profiles: AgentProfileProjection[];
+  /** The workspace's worker can execute Issues; false for an older one. */
+  workerRunsIssues?: boolean;
 }
 
 /**
@@ -71,6 +72,7 @@ export interface IssuesFeatureProps {
  * mode remain private.
  */
 export function IssuesFeature({
+  workerRunsIssues,
   draftRequest,
   issues,
   onEvent,
@@ -243,8 +245,6 @@ export function IssuesFeature({
     status: issueDisplayStatus(issue),
   }));
   const listRows = sortedIssues.map((issue) => {
-    const status = statusMeta(issueDisplayStatus(issue));
-    const blocked = blockedReasonMeta(issue);
     return {
       id: issue.id,
       issueId: issueDisplayId(issue),
@@ -252,12 +252,7 @@ export function IssuesFeature({
         void onEvent({ issueId: issue.id, type: "issue.open.requested" }),
       runtimeLabel: runtimeMeta(issue.runtime).label,
       selected: issue.id === selectedIssueId,
-      status: (
-        <span title={blocked?.message}>
-          <Badge tone={status.tone}>{status.label}</Badge>
-          {blocked ? <small> · {blocked.label}</small> : null}
-        </span>
-      ),
+      status: <IssueListStatus issue={issue} />,
       title: issue.title,
       updatedLabel: issue.updatedLabel.replace("Updated ", ""),
     };
@@ -286,6 +281,8 @@ export function IssuesFeature({
         }
         workspaceName={workspace.name}
       />
+
+      {workerRunsIssues === false ? <WorkerUpdateNotice /> : null}
 
       <AgentComposer
         className="fdy-issue-composer"

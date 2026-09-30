@@ -306,6 +306,15 @@
   margin: 0 24px;
 }
 
+/* Aligned with the composer it sits above. */
+.fdy-issue-worker-notice {
+  width: calc(100% - 48px);
+  max-width: calc(100% - 48px);
+  box-sizing: border-box;
+  flex: none;
+  margin: 0 24px 12px;
+}
+
 .fdy-issue-composer-context {
   display: inline-flex;
   min-width: 0;
