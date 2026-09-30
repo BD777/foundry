@@ -5,7 +5,10 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { AgentRuntimeSettings, DeviceProjection } from "@bd777/foundry-protocol";
+import type {
+  AgentRuntimeSettings,
+  DeviceProjection,
+} from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { normalizeMaxConcurrentTasks } from "./task-scheduler.js";
 import { foundryStatePath } from "./state-root.js";

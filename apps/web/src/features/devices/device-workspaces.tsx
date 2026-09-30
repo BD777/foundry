@@ -10,7 +10,10 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import type { DeviceProjection, WorkspaceProjection } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { Badge } from "../../components/ui/badge";

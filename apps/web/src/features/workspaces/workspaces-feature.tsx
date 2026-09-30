@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
-import type { DeviceProjection, WorkspaceProjection } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { prefetchFoundryWorkspace } from "../../api";
 import { WorkspaceSelectionPanel } from "./workspace-selection-panel";
 

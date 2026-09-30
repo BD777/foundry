@@ -4,7 +4,10 @@ import type {
   EvidenceWorkerRequest,
   EvidenceWorkerResult,
 } from "@bd777/foundry-protocol";
-import { validateEvidenceModel, evidenceModelSchema } from "@bd777/foundry-protocol";
+import {
+  validateEvidenceModel,
+  evidenceModelSchema,
+} from "@bd777/foundry-protocol";
 import { EvidenceStore, INLINE_IMAGE_LIMIT } from "./evidence-store.js";
 import { identifier } from "./execution-storage.js";
 import { startSession } from "./session/index.js";

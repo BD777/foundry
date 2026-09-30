@@ -92,13 +92,6 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
             update a worker later, run <code>{npx} update</code> on it;{" "}
             <code>{npx} uninstall</code> removes it.
           </p>
-          <p className="fdy-add-device-note">
-            From a Foundry source checkout instead:{" "}
-            <code>
-              pnpm --filter {workerPackageName} foundry-worker -- setup --server{" "}
-              {workerServerURL()} --workspace &lt;path&gt; --token &lt;token&gt;
-            </code>
-          </p>
           <div className="fdy-add-device-actions">
             <Button onClick={() => void copy()}>
               {copied ? "Copied" : "Copy command"}

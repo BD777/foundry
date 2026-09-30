@@ -13,7 +13,10 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { IPty } from "node-pty";
-import type { ProfileAuthorization, WorkerRuntimeId } from "@bd777/foundry-protocol";
+import type {
+  ProfileAuthorization,
+  WorkerRuntimeId,
+} from "@bd777/foundry-protocol";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";

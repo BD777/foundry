@@ -8,7 +8,10 @@ import {
   Monitor,
   Search,
 } from "lucide-react";
-import type { DeviceProjection, WorkspaceProjection } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";

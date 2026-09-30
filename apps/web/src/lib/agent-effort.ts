@@ -1,4 +1,7 @@
-import type { ClaudeEffort, CodexReasoningEffort } from "@bd777/foundry-protocol";
+import type {
+  ClaudeEffort,
+  CodexReasoningEffort,
+} from "@bd777/foundry-protocol";
 
 export const codexEffortOptions: Array<{
   label: string;
