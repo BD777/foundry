@@ -6,6 +6,35 @@ import type { HarnessAdapter } from "./harness.js";
 import { codexDisabledFeatures } from "./policy.js";
 
 /**
+ * The private Codex configuration of a stage session. Codex discovers skills
+ * in its working directory, which for a verifier is the candidate: a
+ * candidate could plant a skill telling the judge what to decide. Native
+ * skill discovery is therefore off, as are MCP servers and the features no
+ * read-only session may use.
+ */
+export function codexStageConfig(
+  projectInstructions: boolean,
+  hasDirectory: boolean,
+): { toml: string; overrides: Record<string, unknown> } {
+  const features = codexDisabledFeatures(hasDirectory);
+  const projectDocBytes = projectInstructions ? 32768 : 0;
+  return {
+    toml:
+      `project_doc_max_bytes = ${projectDocBytes}\n[features]\n` +
+      Object.keys(features)
+        .map((key) => `${key} = false`)
+        .join("\n") +
+      "\n[skills]\ninclude_instructions = false\n[skills.bundled]\nenabled = false\n",
+    overrides: {
+      project_doc_max_bytes: projectDocBytes,
+      features,
+      mcp_servers: {},
+      skills: { include_instructions: false, bundled: { enabled: false } },
+    },
+  };
+}
+
+/**
  * Codex SDK session with a fresh private config. No skills or MCP
  * configuration is inherited; a session with a directory keeps Codex's
  * sandboxed read-only shell so it can actually look at the files.
@@ -30,17 +59,11 @@ export const codexHarness: HarnessAdapter = {
     );
     if (existsSync(auth)) copyFileSync(auth, resolve(config, "auth.json"));
     env.CODEX_HOME = config;
-    const features = codexDisabledFeatures(Boolean(workspace));
-    const projectDocBytes = policy.projectInstructions ? 32768 : 0;
-    writeFileSync(
-      resolve(config, "config.toml"),
-      `project_doc_max_bytes = ${projectDocBytes}\n[features]\n` +
-        Object.keys(features)
-          .map((key) => `${key} = false`)
-          .join("\n") +
-        "\n",
-      { mode: 0o600 },
+    const stage = codexStageConfig(
+      policy.projectInstructions,
+      Boolean(workspace),
     );
+    writeFileSync(resolve(config, "config.toml"), stage.toml, { mode: 0o600 });
     const sdkName = "@openai/codex-sdk";
     const sdk = (await import(sdkName)) as {
       Codex: new (options: Record<string, unknown>) => {
@@ -61,11 +84,7 @@ export const codexHarness: HarnessAdapter = {
       baseUrl: profile.baseUrl,
       apiKey: profile.apiKey,
       env,
-      config: {
-        project_doc_max_bytes: projectDocBytes,
-        features,
-        mcp_servers: {},
-      },
+      config: stage.overrides,
     });
     const thread = codex.startThread({
       workingDirectory: workspace?.path ?? home,

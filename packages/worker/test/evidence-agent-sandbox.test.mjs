@@ -12,6 +12,7 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   codexDisabledFeatures as stageDisabledFeatures,
+  codexStageConfig,
   stageLauncher as stageSandboxExecutable,
 } from "../dist/session/index.js";
 import { sandboxAvailable } from "../dist/sandbox/index.js";
@@ -103,4 +104,22 @@ test("digest handles numeric keys, HTML characters and Unicode separators", () =
       '{"10":"ten","2":"two","script":"a < b && x > 0","unicode":"你好\\u2028分隔\\u2029结束"}',
     ),
   );
+});
+
+test("a Codex stage session loads no native skills, so a candidate cannot plant one for its judge", () => {
+  for (const [instructions, directory] of [
+    [false, true],
+    [true, true],
+    [false, false],
+  ]) {
+    const { toml, overrides } = codexStageConfig(instructions, directory);
+    assert.match(toml, /\[skills\]\ninclude_instructions = false\n/);
+    assert.match(toml, /\[skills\.bundled\]\nenabled = false\n/);
+    assert.deepEqual(overrides.skills, {
+      include_instructions: false,
+      bundled: { enabled: false },
+    });
+    assert.deepEqual(overrides.mcp_servers, {});
+    assert.equal(overrides.project_doc_max_bytes, instructions ? 32768 : 0);
+  }
 });
