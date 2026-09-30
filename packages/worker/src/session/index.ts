@@ -29,6 +29,7 @@ export type {
   SessionSpec,
 } from "./types.js";
 export { codexDisabledFeatures } from "./policy.js";
+export { codexStageConfig } from "./codex.js";
 export {
   runWorkspaceSession,
   type WorkspaceSandbox,
