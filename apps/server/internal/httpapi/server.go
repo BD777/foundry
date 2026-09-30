@@ -970,6 +970,10 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		input.WorkspaceID = requestedWorkspace(actor, input.WorkspaceID)
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
+		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
+			writeForbidden(w, err.Error())
+			return
+		}
 	}
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return

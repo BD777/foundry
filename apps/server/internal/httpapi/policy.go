@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -86,14 +87,41 @@ func (s *Server) canControlSession(ctx context.Context, actor Actor, target stor
 	if err != nil {
 		return false
 	}
-	// An agent controls any session of a workspace it reaches as a member.
+	// An agent controls any session of a workspace it reaches as a member;
+	// an agent working in an Issue, only that Issue's sessions.
 	if actor.Agent() {
-		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
+		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember) &&
+			(scope.issueID == "" || target.IssueID == scope.issueID)
 	}
 	if target.CreatedByUserID != "" && target.CreatedByUserID == scope.userID {
 		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)
 	}
 	return scope.can(target.WorkspaceID, store.WorkspaceRoleMaintainer)
+}
+
+// errOutsideIssue refuses a session an Issue's agent would start elsewhere.
+var errOutsideIssue = errors.New("an agent working in an Issue starts sessions only inside that Issue")
+
+// keepAgentInIssue makes a session an Issue's agent starts work in the same
+// Issue candidate and workspace; naming another Issue or workspace is refused.
+func (s *Server) keepAgentInIssue(ctx context.Context, actor Actor, input *store.CreateAgentSessionInput) error {
+	if !actor.Agent() {
+		return nil
+	}
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil {
+		return err
+	}
+	if scope.issueID == "" {
+		return nil
+	}
+	if (input.IssueID != "" && input.IssueID != scope.issueID) ||
+		(input.WorkspaceID != "" && input.WorkspaceID != actor.Identity.WorkspaceID) {
+		return errOutsideIssue
+	}
+	input.IssueID = scope.issueID
+	input.WorkspaceID = actor.Identity.WorkspaceID
+	return nil
 }
 
 // canReadNativeChat mirrors canReadSession for daemon-projected native chats.

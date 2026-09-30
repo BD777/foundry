@@ -42,6 +42,10 @@ type accessScope struct {
 	owned  map[string]bool
 	// all is set only for package-test servers (testFullAccess).
 	all bool
+	// issueID limits an agent working in an Issue's candidate to that Issue:
+	// it reaches only the Issue's workspace, controls only the Issue's
+	// sessions, and every session it starts works in the same candidate.
+	issueID string
 }
 
 func (a accessScope) role(workspaceID string) string {
@@ -153,6 +157,9 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 	testCreator := s.testFullAccess && s.testActor != nil && s.testActor.Account != nil &&
 		session.CreatedByUserID == s.testActor.Account.ID
 	creator := session.CreatedByUserID
+	// An agent in an Issue's candidate (its executor, and every session it
+	// starts) acts only within that Issue (architecture-modules.md §6, D6).
+	scope.issueID = strings.TrimSpace(session.IssueID)
 	if creator == "" || testCreator {
 		// Without a person behind it (tests, legacy rows) the token keeps its
 		// own workspace only.
@@ -165,6 +172,10 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 		if user, err := s.accounts.GetUser(ctx, creator); err != nil || !user.Active() {
 			return scope, nil
 		}
+	}
+	if scope.issueID != "" {
+		scope.roles[actor.Identity.WorkspaceID] = store.WorkspaceRoleMember
+		return scope, nil
 	}
 	roles, err := ownership.WorkspaceRolesForUser(ctx, creator)
 	if err != nil {

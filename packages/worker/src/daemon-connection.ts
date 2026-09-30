@@ -881,6 +881,11 @@ function runWebSocketSession(options: {
               payload.userFiles === "readable" ? "readable" : "hidden",
               session.id,
               profile,
+              {
+                serverURL: options.serverURL,
+                sessionToken: payload.sessionToken ?? "",
+                workspaceID: session.workspaceId,
+              },
             );
             await syncReviews(options.serverURL, workspacePath);
           } catch (error) {

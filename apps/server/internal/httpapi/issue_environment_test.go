@@ -151,8 +151,8 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 		if envelope.Type != wsRunSessionType || payload.Session.Role != store.AgentSessionRoleIssueExecution || payload.Issue == nil || payload.Issue.ID != payload.Session.IssueID || payload.Issue.ExecutionContract == nil {
 			t.Fatalf("issue execution was not dispatched as its session: %s %#v", envelope.Type, payload.Session)
 		}
-		if payload.SessionToken != "" {
-			t.Fatal("an issue executor must not get a session token before its scope is limited to the Issue")
+		if payload.SessionToken == "" {
+			t.Fatal("an issue executor gets a session token scoped to its Issue")
 		}
 		seen[payload.Issue.WorkspaceID] = true
 	}
