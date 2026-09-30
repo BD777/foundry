@@ -162,7 +162,7 @@ const contracts = [
     declarations: {
       display: "flex",
       width: "100%",
-      height: "100vh",
+      height: "100dvh",
       overflow: "hidden",
       background: "var(--fdy-paper)",
     },
@@ -219,7 +219,7 @@ const contracts = [
       "font-size": "16px",
       "font-weight": "700",
       "letter-spacing": "0",
-      "line-height": "1",
+      "line-height": "1.25",
       "text-overflow": "ellipsis",
       "white-space": "nowrap",
     },
@@ -3852,7 +3852,7 @@ const contracts = [
     selector: ".fdy-foundry-shell",
     declarations: {
       height: "auto",
-      "min-height": "100vh",
+      "min-height": "100dvh",
       "flex-direction": "column",
       overflow: "visible",
     },
@@ -4307,9 +4307,17 @@ const contracts = [
     media: "(max-width: 860px)",
     selector: ".fdy-chat-screen",
     declarations: {
-      display: "block",
-      height: "auto",
-      overflow: "visible",
+      "min-height": "0",
+      "flex-direction": "column",
+    },
+  },
+  {
+    media: "(max-width: 860px)",
+    selector: '.fdy-foundry-shell[data-scroll-mode="contained"]',
+    declarations: {
+      height: "100dvh",
+      "min-height": "0",
+      overflow: "hidden",
     },
   },
   {
@@ -4317,10 +4325,9 @@ const contracts = [
     selector: ".fdy-chat-list",
     declarations: {
       width: "100%",
-      "max-height": "224px",
-      flex: "none",
+      "min-height": "0",
+      flex: "1",
       "border-right": "0",
-      "border-bottom": "1px solid var(--fdy-line)",
     },
   },
   {

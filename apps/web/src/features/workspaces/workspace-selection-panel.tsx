@@ -18,6 +18,7 @@ import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { WorkspaceDetails } from "../../components/workspace/workspace-details";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
+import { countLabel } from "../../lib/count-label";
 
 interface Props {
   compact?: boolean;
@@ -187,7 +188,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                   <small>
                     {removed
                       ? "Removed · history kept read-only"
-                      : `${device.status === "connected" ? "Online" : "Offline"} · ${props.workspaces.filter((row) => row.deviceId === device.id).length} workspaces`}
+                      : `${device.status === "connected" ? "Online" : "Offline"} · ${countLabel(props.workspaces.filter((row) => row.deviceId === device.id).length, "workspace")}`}
                   </small>
                 </span>
                 {device.id === previewDeviceId ? (

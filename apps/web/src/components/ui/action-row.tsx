@@ -50,6 +50,7 @@ export function ActionRow({
         className,
       )}
       {...(!asChild ? { type } : {})}
+      aria-current={selected ? "true" : undefined}
       {...props}
     />
   );

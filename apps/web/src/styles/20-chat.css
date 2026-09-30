@@ -4,6 +4,13 @@
   animation: fdyFade 0.25s ease both;
 }
 
+/* Returns to the chat list; only narrow screens show one pane at a time. */
+.fdy-chat-back.fdy-button {
+  display: none;
+  flex: none;
+  padding-left: 4px;
+}
+
 .fdy-chat-list {
   position: relative;
   display: flex;
@@ -103,10 +110,6 @@
   overflow: hidden;
   padding: 6px 10px;
   border-radius: 9px;
-}
-
-.fdy-chat-row.fdy-action-row-selected {
-  background: var(--fdy-control-ghost-hover);
 }
 
 .fdy-chat-row-status {

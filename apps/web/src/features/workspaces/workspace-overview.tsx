@@ -7,6 +7,7 @@ import { Badge } from "../../components/ui/badge";
 import { TextInput } from "../../components/ui/field";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { workspaceDenial } from "../../lib/workspace-access";
+import { countLabel } from "../../lib/count-label";
 
 const gitLabels = {
   ready: "Git initialized",
@@ -166,7 +167,7 @@ export function WorkspaceOverview({
             <h2>Git repositories</h2>
             <p>
               {inspection?.scannedAt
-                ? `${inspection.uniqueRepositoryCount ?? "Unknown"} unique repositories · ${repositories.length} Git locations · ${inspection.linkedWorktreeCount ?? "Unknown"} linked worktrees · Last scanned ${new Date(inspection.scannedAt).toLocaleString()}`
+                ? `${inspection.uniqueRepositoryCount == null ? "Unknown unique repositories" : countLabel(inspection.uniqueRepositoryCount, "unique repository", "unique repositories")} · ${countLabel(repositories.length, "Git location")} · ${inspection.linkedWorktreeCount == null ? "Unknown linked worktrees" : countLabel(inspection.linkedWorktreeCount, "linked worktree")} · Last scanned ${new Date(inspection.scannedAt).toLocaleString()}`
                 : "No repository scan has been recorded."}
             </p>
             {rescanDenial ? <p role="note">{rescanDenial}</p> : null}

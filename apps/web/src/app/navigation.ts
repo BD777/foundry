@@ -106,7 +106,7 @@ export function parseAppRoute(pathname: string): AppRoute {
         return { view: id };
       return { view: "workspace" };
     default:
-      return { view: "issues" };
+      return { view: "workspace" };
   }
 }
 

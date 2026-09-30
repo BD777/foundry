@@ -88,9 +88,21 @@
 
   .fdy-foundry-shell {
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
     flex-direction: column;
     overflow: visible;
+  }
+
+  /* A contained view (a chat) fills the rest of the viewport under the
+     header and scrolls its own parts. */
+  .fdy-foundry-shell[data-scroll-mode="contained"] {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .fdy-foundry-shell[data-scroll-mode="contained"] .fdy-main {
+    min-height: 0;
   }
 
   .fdy-sidebar {
@@ -184,7 +196,9 @@
     white-space: nowrap;
   }
 
+  /* Without the desktop accent bar, the current tab needs its own fill. */
   .fdy-sidebar-nav-link[data-state="active"] {
+    background: var(--fdy-selection);
     box-shadow: none;
   }
 
@@ -193,7 +207,7 @@
   }
 
   .fdy-main {
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .fdy-notice-stack {
@@ -484,11 +498,29 @@
     box-sizing: border-box;
   }
 
-  .fdy-issue-detail-screen,
-  .fdy-chat-screen {
+  .fdy-issue-detail-screen {
     display: block;
     height: auto;
     overflow: visible;
+  }
+
+  .fdy-chat-screen {
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .fdy-chat-screen[data-narrow-pane="list"] > .fdy-chat-thread,
+  .fdy-chat-screen[data-narrow-pane="thread"] > .fdy-chat-list {
+    display: none;
+  }
+
+  .fdy-chat-screen > .fdy-chat-thread {
+    min-height: 0;
+    flex: 1;
+  }
+
+  .fdy-chat-back.fdy-button {
+    display: inline-flex;
   }
 
   .fdy-issue-detail-main .fdy-scroll-viewport {
@@ -497,10 +529,9 @@
 
   .fdy-chat-list {
     width: 100%;
-    max-height: 224px;
-    flex: none;
+    min-height: 0;
+    flex: 1;
     border-right: 0;
-    border-bottom: 1px solid var(--fdy-line);
   }
 
   .fdy-chat-list-resizer {
