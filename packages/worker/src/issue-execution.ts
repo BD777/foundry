@@ -16,6 +16,7 @@ import {
 } from "./issue-environments.js";
 import { runIssueExecutor } from "./issue-executor.js";
 import type { AgentProfileLocalConfig } from "./profiles.js";
+import type { SessionAmbientEnv } from "./session-ambient.js";
 import { readWorkspace } from "./workspaces.js";
 import type { RunTransport } from "./transport.js";
 import { writeJSON } from "./storage.js";
@@ -40,6 +41,7 @@ export async function executeIssue(
   userFiles: "readable" | "hidden" = "hidden",
   runId = `run_${randomUUID()}`,
   profileOverride?: AgentProfileLocalConfig,
+  ambient?: SessionAmbientEnv,
 ): Promise<void> {
   if (
     issue.contractState !== "confirmed" ||
@@ -147,6 +149,7 @@ export async function executeIssue(
           control.signal,
           serverURL,
           skillRefs,
+          ambient,
         );
         environment = result.environment;
         response = result.response;

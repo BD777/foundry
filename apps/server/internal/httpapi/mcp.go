@@ -501,6 +501,9 @@ func handoffPrompt(source store.AgentSession, prompt string) string {
 // dispatches and optionally waits for a session.
 func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, wait bool, timeoutMs int) (store.AgentSession, error) {
 	if actor.Agent() {
+		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
+			return store.AgentSession{}, &mcpToolError{http.StatusForbidden, err.Error()}
+		}
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
 		// Without a choice, a child runs like its parent: the same profile in
