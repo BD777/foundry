@@ -1809,9 +1809,8 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		session.SkillRefs = refs
 	}
 	var (
-		issue        *store.Issue
-		userFiles    string
-		sessionToken string
+		issue     *store.Issue
+		userFiles string
 	)
 	if session.Role == store.AgentSessionRoleIssueExecution {
 		if !c.hasCapability(store.DaemonCapabilityIssueSessions) {
@@ -1827,17 +1826,15 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		}
 		issue = &loaded
 		userFiles = issueUserFiles(loaded, c.actor)
-	} else {
-		// Mint a session token per dispatch; earlier ones stay valid. Failure
-		// does not block a chat run (the web UI needs no token); the
-		// agent-facing surface simply stays unavailable for this process
-		// until the next one. An Issue executor gets no token until its
-		// scope is limited to its Issue (architecture-modules.md §6, D6).
-		minted, tokenErr := c.hub.store.MintAgentSessionToken(ctx, session.ID)
-		if tokenErr != nil {
-			log.Printf("mint session token for %s: %v", session.ID, tokenErr)
-		}
-		sessionToken = minted
+	}
+	// Mint a session token per dispatch; earlier ones stay valid. Failure does
+	// not block a run (the web UI needs no token); the agent-facing surface
+	// simply stays unavailable for this process until the next one. A token
+	// of a session in an Issue reaches only that Issue (agentScope).
+	sessionToken, tokenErr := c.hub.store.MintAgentSessionToken(ctx, session.ID)
+	if tokenErr != nil {
+		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
+		sessionToken = ""
 	}
 	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles})
 	if err != nil {

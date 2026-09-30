@@ -27,6 +27,7 @@ import { materializeSessionSkills } from "./skill-materializer.js";
 import { registerIssueSteering } from "./issue-steering.js";
 import { steerActiveSession } from "./session-helpers.js";
 import { runWorkspaceSession } from "./session/index.js";
+import type { SessionAmbientEnv } from "./session-ambient.js";
 import {
   confirmedExecutionPrompt,
   executionFeedback,
@@ -46,6 +47,8 @@ export async function runIssueExecutor(
   signal?: AbortSignal,
   serverURL?: string,
   skillRefs: SessionSkillRef[] = [],
+  /** The execution session's Foundry credentials, scoped to this Issue. */
+  ambient?: SessionAmbientEnv,
 ): Promise<{ response: string; environment: IssueEnvironment }> {
   const registration = store.registration(environment.workspaceId)!;
   const toolPath = fileURLToPath(
@@ -224,6 +227,7 @@ export async function runIssueExecutor(
             stderrFile: resolve(environment.scratch, "executor.stderr.log"),
             timeoutMs: Number(process.env.FOUNDRY_ISSUE_TIMEOUT_MS ?? 900_000),
             signal,
+            ambient,
           },
         }).catch((error) => {
           throw issueIsolationError(error);

@@ -514,7 +514,12 @@ started / event / completed 驱动原有的 `Run` 投影（`Run.id` 即会话 id
 `run_event` / `issue_completed`、HTTP 轮询模式与 `recover-claim` 已删除；中断恢复走
 `recover_session`（Worker 回放 `completion.json` 或报告中断）。Worker 以
 `capabilities: ["issue_sessions"]` 声明能力，旧 Worker 不会被派发 Issue。执行会话不能作为
-会话被发消息或取消（经 Issue 控制），也暂不发会话令牌（D6 在第 3 步）。
+会话被发消息或取消（经 Issue 控制）。
+
+**D6 已落地**（2026-09-30）：在 Issue 候选中工作的会话（执行者，以及它派出的会话）的令牌
+只到达该 Issue 所在的 Workspace（不适用 M3 方案 A），只能控制同 Issue 的会话，派出的会话
+一律落在同一候选（点名其他 Issue 或 Workspace 返回 403）；执行者因此拿到会话令牌，Worker
+把它交给执行沙箱里的 Foundry 工具。
 
 **D2 的现状与落点**（2026-09-28 核对代码）：
 
