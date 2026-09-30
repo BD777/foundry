@@ -35,7 +35,8 @@ export interface IssueBoardProps {
 
 export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
   return (
-    <ScrollArea className="fdy-board-scroll">
+    // Six columns rarely fit; a visible scrollbar shows there is more.
+    <ScrollArea className="fdy-board-scroll" type="always">
       <div className="fdy-issue-board">
         {columns.map((column) => {
           const cards = issues.filter(

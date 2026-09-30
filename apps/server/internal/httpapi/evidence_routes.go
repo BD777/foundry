@@ -282,6 +282,9 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	if err == nil && result.Verification != nil {
 		unlock := s.lockIssueMutation(issue.ID)
 		err = st.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence)
+		if err == nil {
+			s.refreshIssueReview(ctx, st, issue)
+		}
 		unlock()
 		if err == nil {
 			s.publishEvidenceUpdate(issue, v.ID, v.Sequence, result.Verification.Status)
@@ -300,7 +303,9 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	defer finishCancel()
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
-	_ = st.CompleteVerification(finishCtx, issue.ID, v, nil)
+	if st.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
+		s.refreshIssueReview(finishCtx, st, issue)
+	}
 	s.publishEvidenceUpdate(issue, v.ID, v.Sequence, v.Status)
 }
 func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {

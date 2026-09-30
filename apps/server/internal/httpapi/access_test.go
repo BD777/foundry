@@ -45,3 +45,19 @@ func TestRoleOrder(t *testing.T) {
 		}
 	}
 }
+
+// Evidence updates reach the viewers of the Issue's workspace; they used to be
+// published without a workspace and were dropped for every signed-in viewer.
+func TestEvidenceUpdatesReachTheIssueWorkspace(t *testing.T) {
+	server := NewServer(newTestStore(t))
+	scope := accessScope{roles: map[string]string{"ws_mine": store.WorkspaceRoleViewer}}
+	viewer := &eventSubscription{ch: make(chan []byte, 4), scope: &scope, ended: make(chan struct{})}
+	server.events.mu.Lock()
+	server.events.subscribers[viewer] = struct{}{}
+	server.events.mu.Unlock()
+	server.publishEvidenceUpdate(store.Issue{ID: "iss_1", WorkspaceID: "ws_mine"}, "verify_1", 2, "passed")
+	server.publishEvidenceUpdate(store.Issue{ID: "iss_2", WorkspaceID: "ws_other"}, "verify_2", 1, "passed")
+	if len(viewer.ch) != 1 {
+		t.Fatalf("viewer received %d evidence updates, want exactly its workspace's one", len(viewer.ch))
+	}
+}

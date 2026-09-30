@@ -1,3 +1,11 @@
+import {
+  Columns2,
+  FolderOpen,
+  KeyRound,
+  MessageSquareText,
+  Monitor,
+} from "lucide-react";
+import type { SidebarNavSection } from "../components/ui/app-shell";
 import type { FoundryThemeMode } from "../components/ui/app-shell";
 
 export type NavView =
@@ -241,3 +249,41 @@ export function persistSidebarCollapsed(collapsed: boolean): void {
     return;
   }
 }
+
+/** Pages that scroll as a whole; the others (chats, Issues) scroll their parts. */
+const pageViews = new Set<string>([
+  "account",
+  "members",
+  "assets",
+  "skills",
+  "settings",
+  "feishu",
+  "sharing",
+  "workspace",
+  "devices",
+  "locations",
+  "profiles",
+]);
+
+export function scrollModeForView(view: string): "page" | "contained" {
+  return pageViews.has(view) ? "page" : "contained";
+}
+
+/** The sidebar: what a person works on, then what they manage. */
+export const navSections: Array<SidebarNavSection<SidebarView>> = [
+  {
+    label: "Workspace",
+    items: [
+      { id: "workspace", label: "Overview", icon: FolderOpen },
+      { id: "issues", label: "Issues", icon: Columns2 },
+      { id: "chats", label: "Chats", icon: MessageSquareText },
+    ],
+  },
+  {
+    label: "Manage",
+    items: [
+      { id: "devices", label: "Devices", icon: Monitor },
+      { id: "profiles", label: "Server connections", icon: KeyRound },
+    ],
+  },
+];

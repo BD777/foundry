@@ -160,6 +160,13 @@ func (s *Store) createContractDraft(ctx context.Context, issueID string, input s
 			return nil, err
 		}
 		issue.DraftContractRevision = &sequence
+		// An Issue still named after its raw input ("hi") takes the goal the
+		// agent proposes; a title someone chose is kept.
+		if origin == "agent_proposal" && issue.Title == titleFromInput(issue.SourceInput) {
+			if title := issueTitleFromGoal(input.Content.Goal.Text); title != "" {
+				issue.Title = title
+			}
+		}
 		issue.ContractState = "draft"
 		if issue.CurrentContractRevision != nil {
 			issue.ContractState = "amendment_pending"
@@ -290,4 +297,15 @@ func (s *Store) DiscardContract(ctx context.Context, issueID string, revision in
 		return c, err
 	}, &result)
 	return result, err
+}
+
+// issueTitleFromGoal is the first sentence of a goal, short enough for a title.
+func issueTitleFromGoal(goal string) string {
+	goal = strings.TrimSpace(goal)
+	for _, end := range []string{"\n", ". ", "。"} {
+		if index := strings.Index(goal, end); index > 0 {
+			goal = goal[:index]
+		}
+	}
+	return titleFromInput(strings.TrimSuffix(goal, "."))
 }

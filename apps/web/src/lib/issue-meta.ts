@@ -63,6 +63,30 @@ export function statusMeta(status: IssueStatus): {
   return meta[status];
 }
 
+/**
+ * The badge for one Issue: its state, except that a blocked Issue says why,
+ * since waiting for the person's reply is a normal step, not a failure.
+ */
+export function issueBadgeMeta(issue: Issue): {
+  label: string;
+  tone: BadgeTone;
+} {
+  const status = issueDisplayStatus(issue);
+  if (status !== "blocked") return statusMeta(status);
+  const kind =
+    issue.blockedReason?.kind ??
+    (issue.run?.status === "failed" ? "system_error" : "needs_input");
+  const badges: Record<
+    IssueBlockedReason["kind"],
+    { label: string; tone: BadgeTone }
+  > = {
+    needs_input: { label: "Needs your reply", tone: "brass" },
+    needs_permission: { label: "Needs permission", tone: "warn" },
+    system_error: { label: "Needs attention", tone: "error" },
+  };
+  return badges[kind];
+}
+
 export function readinessMeta(readiness: IssueReadiness | undefined): {
   label: string;
   tone: BadgeTone;

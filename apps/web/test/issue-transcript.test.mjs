@@ -4,8 +4,13 @@ import { register } from "node:module";
 register("./bundler-resolve.mjs", import.meta.url);
 const { issueTranscript } =
   await import("../src/features/issue-detail/issue-transcript.ts");
-const { issueDisplayStatus, issueStatuses, statusMeta, blockedReasonMeta } =
-  await import("../src/lib/issue-meta.ts");
+const {
+  issueBadgeMeta,
+  issueDisplayStatus,
+  issueStatuses,
+  statusMeta,
+  blockedReasonMeta,
+} = await import("../src/lib/issue-meta.ts");
 const { applyFoundryStreamEvent, mergeLoadedFoundryData } =
   await import("../src/app/foundry-data-projection.ts");
 
@@ -285,8 +290,29 @@ test("interruption retains partial output and represents execution failure as Bl
     assert.ok(
       messages.some((m) => m.text === "Partial answer" && !m.streaming),
     );
-    assert.ok(messages.some((m) => m.kind === "failure" && m.recoverable));
+    const failure = messages.find((m) => m.kind === "failure");
+    assert.ok(failure?.recoverable);
+    // Why, what it means and what to do, with the reason last.
+    assert.match(failure.text, /候选文件已保留/);
+    assert.match(failure.text, /原因：Connection lost$/);
   }
+  // A blocked Issue's badge says why, and waiting for a reply is not an alarm.
+  for (const [kind, label, tone] of [
+    ["needs_input", "Needs your reply", "brass"],
+    ["needs_permission", "Needs permission", "warn"],
+    ["system_error", "Needs attention", "error"],
+  ])
+    assert.deepEqual(
+      issueBadgeMeta({
+        status: "blocked",
+        blockedReason: { kind, message: "m" },
+      }),
+      { label, tone },
+    );
+  assert.deepEqual(
+    issueBadgeMeta({ status: "verifying" }),
+    statusMeta("verifying"),
+  );
   assert.equal(
     statusMeta(issueDisplayStatus({ status: "blocked" })).label,
     "Blocked",

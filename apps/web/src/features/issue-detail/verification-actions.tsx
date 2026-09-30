@@ -296,13 +296,12 @@ export function VerificationActions({
               <p>
                 系统自己运行项目的命令，退出码决定通过与否，输出原样留作依据。
               </p>
-              <p>
-                将运行：
-                <code>
-                  {[configuration.executable, ...configuration.args].join(" ")}
-                </code>
-                （工作目录 {configuration.cwdRelativePath}，无网络）。
-              </p>
+              <ProgramCommand
+                command={[configuration.executable, ...configuration.args].join(
+                  " ",
+                )}
+                cwd={configuration.cwdRelativePath}
+              />
             </div>
           ))}
           <Button
@@ -372,5 +371,23 @@ export function VerificationActions({
       )}
       {error ? <p role="alert">{error}</p> : null}
     </section>
+  );
+}
+
+/** A short command reads inline; a long script sits behind a disclosure. */
+function ProgramCommand({ command, cwd }: { command: string; cwd: string }) {
+  const where = `（工作目录 ${cwd}，无网络）`;
+  if (command.length <= 80)
+    return (
+      <p>
+        将运行：<code>{command}</code>
+        {where}。
+      </p>
+    );
+  return (
+    <details>
+      <summary>查看要运行的命令{where}</summary>
+      <code>{command}</code>
+    </details>
   );
 }

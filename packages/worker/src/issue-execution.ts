@@ -175,7 +175,9 @@ export async function executeIssue(
       run.status = control.signal.aborted ? "canceled" : "failed";
       run.error = control.signal.aborted
         ? "Issue execution canceled; candidate files are retained"
-        : String(error);
+        : error instanceof Error
+          ? error.message
+          : String(error);
       if (environment) {
         environment = store.environment(workspace.id, issue.id) ?? environment;
         environment.status = "failed";

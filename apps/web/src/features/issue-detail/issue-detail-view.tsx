@@ -6,11 +6,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
-import {
-  issueDisplayId,
-  issueDisplayStatus,
-  statusMeta,
-} from "../../lib/issue-meta";
+import { issueBadgeMeta, issueDisplayId } from "../../lib/issue-meta";
 import { IssueContractPanel } from "./issue-contract-panel";
 import { IssueEvidencePanel } from "./issue-evidence-panel";
 import { CandidateReview } from "./candidate-review";
@@ -60,7 +56,7 @@ function IssueDetail({
   const [tab, setTab] = useState<
     "details" | "changes" | "environment" | "evidence"
   >("details");
-  const meta = statusMeta(issueDisplayStatus(issue));
+  const meta = issueBadgeMeta(issue);
   const contract = useIssueContract(issue, callbacks.onRefresh);
   const phase = issuePhase(issue);
   const [abandoning, setAbandoning] = useState(false);

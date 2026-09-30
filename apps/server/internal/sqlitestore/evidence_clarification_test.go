@@ -58,6 +58,9 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	if proposal.Origin != "agent_proposal" || proposal.CreatedBy.Kind != "agent" || proposal.Confirmation != nil || current.CurrentContractRevision != nil {
 		t.Fatal("proposal impersonated human confirmation")
 	}
+	if current.Title != "Fix API validation" {
+		t.Fatalf("an Issue named after its raw input takes the proposed goal as its title, got %q", current.Title)
+	}
 	same := store.ContractContentOf(proposal)
 	noChange := store.ClarificationResponse{Message: "继续不等于确认，请核对已保存草案。", ProposedContent: &same, RawOutputMaterialID: raw.ID}
 	unchanged, err := db.RecordClarification(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, "继续", "继续讨论", noChange, owner, "no-change")
@@ -198,5 +201,18 @@ func TestConfirmationRejectsDeterministicCriterionWithoutChecker(t *testing.T) {
 	}
 	if _, err = db.ConfirmContract(ctx, issue.ID, unrunnable.Revision, unrunnable.ContentDigest, owner, "confirm-unrunnable"); err == nil {
 		t.Fatal("confirmed a criterion no checker can ever run")
+	}
+}
+
+func TestIssueTitleFromGoal(t *testing.T) {
+	for goal, want := range map[string]string{
+		"Make greet(name) handle blank names. Normal names stay the same.": "Make greet(name) handle blank names",
+		"修复空名字的问候。其余不变":                                                    "修复空名字的问候",
+		"One line only.":          "One line only",
+		"First line\nSecond line": "First line",
+	} {
+		if got := issueTitleFromGoal(goal); got != want {
+			t.Errorf("issueTitleFromGoal(%q) = %q, want %q", goal, got, want)
+		}
 	}
 }

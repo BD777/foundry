@@ -119,8 +119,9 @@ export function issueTranscript(
         role: "bot",
         kind: "failure",
         recoverable: true,
-        text: run.error,
-        title: "Execution interrupted",
+        // Why, what it means and what to do; the raw reason stays last.
+        text: `候选文件已保留。在下方回复即可在同一个候选里重试，也可以先打开“执行环境”检查。\n\n原因：${run.error}`,
+        title: "执行中断",
         runtime,
       });
   }
