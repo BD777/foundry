@@ -130,6 +130,7 @@ test(
     const workspaceId = "ws_api_e2e",
       deviceId = "dev_api_e2e";
     const registration = {
+      capabilities: ["issue_sessions"],
       device: {
         id: deviceId,
         label: "Synthetic evidence Worker",
@@ -161,17 +162,22 @@ test(
         const send = (type, payload) =>
           connection.send(JSON.stringify({ type, payload, id: message.id }));
         try {
-          if (message.type === "run_issue") {
+          if (
+            message.type === "run_session" &&
+            message.payload.session.role === "issue_execution"
+          ) {
             const issue = message.payload.issue;
-            const runId = `run_${randomUUID()}`;
-            await api(`/api/daemon/issues/${issue.id}/runs`, {
-              run: {
-                id: runId,
-                issueId: issue.id,
-                runtime: issue.runtime,
-                events: [],
-              },
-            });
+            const sessionId = message.payload.session.id;
+            const inputId = message.payload.session.input?.id;
+            const report = (type, payload) =>
+              connection.send(
+                JSON.stringify({
+                  type,
+                  payload,
+                  id: `${type}_${randomUUID()}`,
+                }),
+              );
+            report("session_started", { sessionId, inputId });
             let environment = await prepareIssueEnvironment(
               source,
               workspaceId,
@@ -192,17 +198,22 @@ test(
             environment.controlIsolationVersion = 1;
             environment.controlServerURL = base;
             execution.saveEnvironment(environment);
-            await api(`/api/daemon/issues/${issue.id}/complete`, {
-              runId,
+            report("session_completed", {
+              sessionId,
+              inputId,
               response: "Synthetic implementation ready",
-              environmentId: environment.id,
-              environmentRevision: environment.revision,
-              checks: [],
-              artifact: {
-                id: `art_${randomUUID()}`,
-                issueId: issue.id,
-                title: "Summary",
-                kind: "text",
+              issueResult: {
+                runId: sessionId,
+                response: "Synthetic implementation ready",
+                environmentId: environment.id,
+                environmentRevision: environment.revision,
+                checks: [],
+                artifact: {
+                  id: `art_${randomUUID()}`,
+                  issueId: issue.id,
+                  title: "Summary",
+                  kind: "text",
+                },
               },
             });
           } else if (message.type === "evidence_request") {

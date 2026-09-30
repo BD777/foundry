@@ -817,16 +817,6 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, item, err)
 }
 
-func (s *Server) handleListRuns(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListRuns(r.Context(), r.URL.Query().Get("workspaceId"))
-	writeResult(w, items, err)
-}
-
-func (s *Server) handleListRunEvents(w http.ResponseWriter, r *http.Request) {
-	items, err := s.store.ListRunEvents(r.Context(), r.URL.Query().Get("workspaceId"))
-	writeResult(w, items, err)
-}
-
 func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListAgentSessionSummaries(r.Context(), workspaceID)
@@ -1184,6 +1174,9 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 	if session, _, err = s.reconcileAgentSession(ctx, session); err != nil {
 		return store.AgentSession{}, 0, err
 	}
+	if session.Role != "" {
+		return store.AgentSession{}, http.StatusConflict, store.ErrSessionControlledByIssue
+	}
 	message := strings.TrimSpace(input.Prompt)
 	if activeOrBlocked(session.Status) {
 		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" || len(input.Attachments) > 0 {
@@ -1285,6 +1278,9 @@ func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID strin
 	if err != nil {
 		return store.AgentSession{}, 0, err
 	}
+	if session.Role != "" {
+		return store.AgentSession{}, http.StatusConflict, store.ErrSessionControlledByIssue
+	}
 	if recovered || !activeOrBlocked(session.Status) {
 		return store.AgentSession{}, http.StatusConflict, errors.New("agent session is not active")
 	}
@@ -1367,90 +1363,6 @@ func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDaemonWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.hub.ServeHTTP(w, r)
-}
-
-func (s *Server) handleDaemonClaimIssue(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		DeviceID    string `json:"deviceId"`
-		WorkspaceID string `json:"workspaceId"`
-	}
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if !actorFromContext(r.Context()).ActsAsDevice(input.DeviceID) {
-		writeError(w, http.StatusForbidden, "claim device does not match its credential")
-		return
-	}
-	if input.WorkspaceID != "" && !s.requireDeviceWorkspace(w, r, input.WorkspaceID) {
-		return
-	}
-	issue, err := s.store.ClaimNextIssue(r.Context(), input.DeviceID, input.WorkspaceID)
-	if errors.Is(err, store.ErrDeviceRemoved) {
-		writeError(w, http.StatusGone, "device_removed")
-		return
-	}
-	if errors.Is(err, store.ErrNotFound) {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	writeResult(w, issue, err)
-}
-
-func (s *Server) handleDaemonStartRun(w http.ResponseWriter, r *http.Request) {
-	var input store.StartRunInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if !s.requireDeviceIssue(w, r, r.PathValue("id")) {
-		return
-	}
-	issue, err := s.store.StartIssueRun(r.Context(), r.PathValue("id"), input.Run)
-	if errors.Is(err, store.ErrDeviceRemoved) {
-		writeError(w, http.StatusGone, "device_removed")
-		return
-	}
-	if err == nil {
-		s.events.Publish("issue_updated", issue)
-	}
-	writeResult(w, issue, err)
-}
-
-func (s *Server) handleDaemonAppendRunEvent(w http.ResponseWriter, r *http.Request) {
-	var input store.AppendRunEventInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if input.Event.RunID == "" {
-		input.Event.RunID = r.PathValue("id")
-	}
-	if !s.requireDeviceWorkspace(w, r, s.hub.runWorkspace(r.Context(), input.Event.RunID)) {
-		return
-	}
-	if err := s.store.AppendRunEvent(r.Context(), input.Event); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	s.events.PublishIn(s.hub.runWorkspace(r.Context(), input.Event.RunID), "issue_run_event", input.Event)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "recorded"})
-}
-
-func (s *Server) handleDaemonCompleteIssue(w http.ResponseWriter, r *http.Request) {
-	var input store.CompleteIssueInput
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	if !s.requireDeviceIssue(w, r, r.PathValue("id")) {
-		return
-	}
-	issue, err := s.store.CompleteIssue(r.Context(), r.PathValue("id"), input)
-	if err == nil {
-		s.events.Publish("issue_updated", issue)
-	}
-	writeResult(w, issue, err)
 }
 
 func (s *Server) handleDevResetDemo(w http.ResponseWriter, r *http.Request) {

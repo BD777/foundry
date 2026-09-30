@@ -18,23 +18,6 @@ func (s *Server) lockIssueMutation(id string) func() {
 	return mutex.Unlock
 }
 
-func (s *Server) handleRecoverIssueClaim(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDeviceIssue(w, r, r.PathValue("id")) {
-		return
-	}
-	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
-	if err != nil {
-		writeResult(w, issue, err)
-		return
-	}
-	if issue.Status != "in_progress" || (issue.Run != nil && issue.Run.Status == "running") {
-		http.Error(w, "Only an unstarted claim can be recovered", http.StatusConflict)
-		return
-	}
-	issue, err = s.store.UpdateIssueStatus(r.Context(), issue.ID, "pending")
-	writeResult(w, issue, err)
-}
-
 type wsIssueEnvironmentResult struct {
 	Environment json.RawMessage `json:"environment,omitempty"`
 	Review      json.RawMessage `json:"review,omitempty"`

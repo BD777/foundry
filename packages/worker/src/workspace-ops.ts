@@ -433,7 +433,14 @@ export async function syncNativeChats(
   return chats.length;
 }
 
+/**
+ * Protocol features this worker implements; the server sends only work a
+ * worker declares it can run.
+ */
+export const daemonCapabilities = ["issue_sessions"];
+
 export function daemonRegistration(workspacePath: string): {
+  capabilities: string[];
   assets: AssetProjection[];
   agentProfiles: AgentProfileProjection[];
   agents: AgentProjection[];
@@ -451,6 +458,7 @@ export function daemonRegistration(workspacePath: string): {
   const agentProfiles = agentProfilesForWorkspace(device, workspacePath);
 
   return {
+    capabilities: daemonCapabilities,
     assets: assetsForWorkspace(workspaceProjection, workspacePath),
     agentProfiles,
     agents: agentsForWorkspace(

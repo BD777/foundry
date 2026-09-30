@@ -51,6 +51,10 @@ var ErrAgentFanOutLimit = errors.New("parent session has too many active childre
 // the requested Issue-backed session.
 var ErrIssueEnvironmentUnavailable = errors.New("issue environment is not available for a session")
 
+// ErrSessionControlledByIssue refuses session-level control of an Issue's
+// execution: it is steered, stopped and retried through its Issue.
+var ErrSessionControlledByIssue = errors.New("this session implements an Issue; steer or stop it from the Issue")
+
 // ErrAgentSessionActive means a session is still handling an input, so a new
 // input must steer it instead.
 var ErrAgentSessionActive = errors.New("agent session is still active")

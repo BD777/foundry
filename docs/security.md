@@ -26,7 +26,7 @@ The controls below make accidental network exposure fail closed. Every browser A
 
 Browser control-plane requests authenticate with the account session cookie described below.
 
-Daemon registration, polling, and WebSocket requests use the device's own credential:
+Daemon registration and WebSocket requests use the device's own credential:
 
 ```text
 X-Foundry-Device-Credential: <device credential>

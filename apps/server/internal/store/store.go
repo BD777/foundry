@@ -8,6 +8,15 @@ type DeviceSessionStore interface {
 	UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]AgentSession, error)
 }
 
+// IssueExecutionStore runs an Issue as the session that implements it.
+type IssueExecutionStore interface {
+	// ClaimIssueExecution claims the next ready Issue and creates the session
+	// that implements it (role issue_execution), atomically.
+	ClaimIssueExecution(ctx context.Context, deviceID string, workspaceID string) (Issue, AgentSession, error)
+	// ExecutionIssue returns an Issue with the confirmed contract it executes under.
+	ExecutionIssue(ctx context.Context, issueID string) (Issue, error)
+}
+
 type Store interface {
 	Close() error
 

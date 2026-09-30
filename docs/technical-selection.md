@@ -14,7 +14,7 @@ execution boundary is the user's paired device, not the web server.
 React Web UI  (apps/web)
   -> HTTP + SSE
 Go Foundry Server  (apps/server)
-  <- outbound WebSocket (HTTP polling fallback)
+  <- outbound WebSocket
 Local Foundry Worker Daemon  (packages/worker)
   -> local filesystem workspace
   -> local credentials and native CLI logins
@@ -134,7 +134,7 @@ Main commands (`packages/worker/src/cli-contract.ts` is the authority):
 ```bash
 foundry-worker setup --server <url> --workspace <path>   # init + pair + install service
 foundry-worker init <path>
-foundry-worker connect [--polling]
+foundry-worker connect
 foundry-worker install-service | status | logs | uninstall-service
 foundry-worker doctor
 foundry-worker providers
@@ -154,7 +154,7 @@ The daemon owns:
 
 The daemon initiates the connection to the server through an outbound
 WebSocket (`/api/daemon/ws`), so no inbound access to the user's machine is
-required. HTTP polling (`--polling`) remains for debugging and compatibility.
+required.
 
 ## 4. Workspace Model
 

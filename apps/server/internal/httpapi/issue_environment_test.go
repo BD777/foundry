@@ -116,7 +116,7 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
 	server := NewServer(db)
-	first := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_capacity", RuntimeSettings: &store.AgentRuntimeSettings{MaxConcurrentTasks: 2}}, Workspace: store.WorkspaceProjection{ID: "ws_a"}}
+	first := store.DaemonRegistration{Capabilities: []string{store.DaemonCapabilityIssueSessions}, Device: store.DeviceProjection{ID: "dev_capacity", RuntimeSettings: &store.AgentRuntimeSettings{MaxConcurrentTasks: 2}}, Workspace: store.WorkspaceProjection{ID: "ws_a"}}
 	second := first
 	second.Workspace.ID = "ws_b"
 	for _, registration := range []store.DaemonRegistration{first, second} {
@@ -131,7 +131,7 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 			testfixture.ConfirmContract(t, db, issue.ID)
 		}
 	}
-	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 16), deviceID: first.Device.ID, registration: first, registrations: map[string]store.DaemonRegistration{first.Workspace.ID: first, second.Workspace.ID: second}}
+	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 16), dispatchedSessions: map[string]string{}, deviceID: first.Device.ID, registration: first, registrations: map[string]store.DaemonRegistration{first.Workspace.ID: first, second.Workspace.ID: second}}
 	var wait sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wait.Add(1)
@@ -143,14 +143,44 @@ func TestIssueDispatchCapacitySpansRegisteredWorkspaces(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for len(connection.send) > 0 {
-		var payload wsRunIssuePayload
-		if err := json.Unmarshal((<-connection.send).Payload, &payload); err != nil {
+		envelope := <-connection.send
+		var payload wsRunSessionPayload
+		if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
 			t.Fatal(err)
+		}
+		if envelope.Type != wsRunSessionType || payload.Session.Role != store.AgentSessionRoleIssueExecution || payload.Issue == nil || payload.Issue.ID != payload.Session.IssueID || payload.Issue.ExecutionContract == nil {
+			t.Fatalf("issue execution was not dispatched as its session: %s %#v", envelope.Type, payload.Session)
+		}
+		if payload.SessionToken != "" {
+			t.Fatal("an issue executor must not get a session token before its scope is limited to the Issue")
 		}
 		seen[payload.Issue.WorkspaceID] = true
 	}
 	if len(seen) != 2 {
 		t.Fatalf("secondary workspace starved: %#v", seen)
+	}
+}
+
+func TestIssuesAreNotDispatchedToWorkersWithoutIssueSessions(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	server := NewServer(db)
+	registration := store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_old"}, Workspace: store.WorkspaceProjection{ID: "ws_old"}}
+	if err := db.RegisterDaemon(ctx, registration); err != nil {
+		t.Fatal(err)
+	}
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_old", Title: "waits for an updated worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testfixture.ConfirmContract(t, db, issue.ID)
+	connection := &daemonConnection{hub: server.hub, done: make(chan struct{}), send: make(chan wsEnvelope, 4), deviceID: "dev_old", registration: registration}
+	connection.claimAndSend()
+	if len(connection.send) != 0 {
+		t.Fatalf("a worker without issue_sessions must not receive an Issue, got %d messages", len(connection.send))
+	}
+	if current, _ := db.GetIssue(ctx, issue.ID); current.Status == "in_progress" {
+		t.Fatal("the Issue was claimed for a worker that cannot run it")
 	}
 }
 
