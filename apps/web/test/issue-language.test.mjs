@@ -9,7 +9,7 @@ const {
   verdictText,
   blockerText,
 } = await import("../src/features/issue-detail/issue-language.ts");
-const { suggestedEvidenceFiles } =
+const { changedEvidenceFiles, suggestedEvidenceFiles } =
   await import("../src/features/issue-detail/verification-actions.tsx");
 
 test("stage guidance distinguishes an unconfirmed draft from execution and acceptance", () => {
@@ -48,4 +48,36 @@ test("candidate suggestions use actual manifest paths, never invented evidence I
     files[0],
   ]);
   assert.deepEqual(suggestedEvidenceFiles(files, "截图证明页面效果"), []);
+});
+
+test("an agent judgment that names no file defaults to the files the candidate changed", () => {
+  const changed = changedEvidenceFiles(
+    {
+      cwd: "/c",
+      repositories: [
+        {
+          path: ".",
+          baseline: "a",
+          candidate: "b",
+          truncated: false,
+          diff: "diff --git a/greet.mjs b/greet.mjs\n+x\ndiff --git a/greet.test.mjs b/greet.test.mjs\n+y\n",
+        },
+        {
+          path: "repos/unknown",
+          baseline: "a",
+          truncated: false,
+          diff: "diff --git a/x b/x\n",
+        },
+      ],
+    },
+    [{ repoId: "root", relativePath: "." }],
+  );
+  assert.deepEqual([...changed].sort(), [
+    "root:greet.mjs",
+    "root:greet.test.mjs",
+  ]);
+  assert.match(
+    blockerText({ code: "verification_pending" }),
+    /没有针对这一版的检查结果/,
+  );
 });

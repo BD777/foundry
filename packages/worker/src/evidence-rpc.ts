@@ -618,7 +618,7 @@ async function execute(
       );
       const summary =
         configuration.kind === "project_command"
-          ? `系统运行 ${[configuration.executable, ...configuration.args].join(" ")}，退出码 ${capture.evidence.collection.exitCode ?? "未知"}`
+          ? `系统运行 ${shortCommand([configuration.executable, ...configuration.args].join(" "))}，退出码 ${capture.evidence.collection.exitCode ?? "未知"}`
           : `Fixed checker ${capture.verdict}`;
       const findings = (capture.assertions ?? []).map((a) => ({
         id: a.id,
@@ -685,4 +685,9 @@ async function execute(
     store.sealRecord("verifier-output", verification, "Verification");
     return { taskId, verification };
   }
+}
+
+/** A command short enough to read in a result; the full one stays in the checker and its log. */
+function shortCommand(command: string): string {
+  return command.length > 80 ? `${command.slice(0, 77)}…` : command;
 }

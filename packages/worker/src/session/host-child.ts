@@ -57,7 +57,7 @@ lines.once("line", async (line) => {
           await steerActiveSession(input.session.id, command.message);
           output({ type: "steer_result", id });
         } catch (error) {
-          output({ type: "steer_result", id, error: String(error) });
+          output({ type: "steer_result", id, error: errorText(error) });
         }
       })();
     });
@@ -78,7 +78,7 @@ lines.once("line", async (line) => {
     );
     output({ type: "result", ...result });
   } catch (error) {
-    output({ type: "error", error: String(error) });
+    output({ type: "error", error: errorText(error) });
     process.exitCode = 1;
   } finally {
     lines.close();
@@ -90,3 +90,8 @@ lines.once("line", async (line) => {
     process.stdout.write("", () => process.exit(process.exitCode ?? 0));
   }
 });
+
+/** The error's message; the parent wraps it in an Error of its own. */
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

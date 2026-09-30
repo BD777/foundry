@@ -10,16 +10,11 @@ import {
   BookOpen,
   CheckCircle2,
   Code2,
-  Columns2,
   File as FileIcon,
   FileText,
-  FolderOpen,
   Gauge,
   GitBranch,
   Hammer,
-  KeyRound,
-  MessageSquareText,
-  Monitor,
   Terminal,
   Zap,
 } from "lucide-react";
@@ -55,7 +50,9 @@ import {
   parseAppRoute,
   persistSidebarCollapsed,
   persistThemeMode,
+  navSections,
   persistWorkspaceId,
+  scrollModeForView,
   storedSidebarCollapsed,
   storedThemeMode,
   workspaceIdFromLocation,
@@ -159,23 +156,6 @@ import {
 } from "@bd777/foundry-protocol";
 
 type BadgeTone = "neutral" | "online" | "brass" | "warn" | "slate" | "error";
-
-const navSections: Array<SidebarNavSection<SidebarView>> = [
-  {
-    label: "Workspace",
-    items: [
-      { id: "workspace", label: "Overview", icon: FolderOpen },
-      { id: "chats", label: "Chats", icon: MessageSquareText },
-    ],
-  },
-  {
-    label: "Manage",
-    items: [
-      { id: "devices", label: "Devices", icon: Monitor },
-      { id: "profiles", label: "Server connections", icon: KeyRound },
-    ],
-  },
-];
 
 // Project a freshly-loaded payload into the chat identities the selection
 // policy needs. Thread grouping stays owned by the chat feature.
@@ -1097,8 +1077,30 @@ export function App() {
           />
         );
       case "issues":
+        if (!deviceOnline) {
+          return renderSetupView();
+        }
+        return renderIssuesView();
       case "issue":
-        return renderWorkspaceView();
+        return (
+          <IssueDetailView
+            callbacks={{
+              onAcceptIssue: () => void handleAcceptIssue(),
+              onDraftFromSource: draftFromSource,
+              onNavigate: (view) => setActiveView(view as never),
+              onNewIssue: focusComposer,
+              onNotice: setNotice,
+              onRefresh: (issueId) => void refreshData(issueId),
+              onRequestChanges: () => void handleRequestChanges(),
+              onStartProduction: workerCommandNotice,
+            }}
+            deviceLabel={device?.label ?? "No device"}
+            issue={selectedIssue}
+            history={data.runs}
+            onBack={() => setActiveView("issues")}
+            workspaceBaseline={data.workspace.baseline}
+          />
+        );
       case "chats":
         return renderChatsView();
       case "assets":
@@ -1125,20 +1127,7 @@ export function App() {
     }
   }
 
-  const viewScrollMode: "page" | "contained" =
-    activeView === "account" ||
-    activeView === "members" ||
-    activeView === "assets" ||
-    activeView === "skills" ||
-    activeView === "settings" ||
-    activeView === "feishu" ||
-    activeView === "sharing" ||
-    activeView === "workspace" ||
-    activeView === "devices" ||
-    activeView === "locations" ||
-    activeView === "profiles"
-      ? "page"
-      : "contained";
+  const viewScrollMode = scrollModeForView(activeView);
 
   return (
     <FoundryShell scrollMode={viewScrollMode} theme={themeMode}>

@@ -4131,8 +4131,9 @@ const contracts = [
     media: "(max-width: 860px)",
     selector: ".fdy-issue-composer-status",
     declarations: {
-      flex: "0 1 120px",
+      flex: "1 1 100%",
       "margin-left": "0",
+      "white-space": "normal",
     },
   },
   {

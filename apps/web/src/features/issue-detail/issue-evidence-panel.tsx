@@ -104,9 +104,7 @@ export function IssueEvidencePanel({
         {review &&
         !review.candidateSnapshotId &&
         issue.status !== "in_progress" ? (
-          <p>
-            尚未准备本次验收候选。请在下方“准备当前版本的验收”，再采集真实材料。
-          </p>
+          <p>尚未准备本次验收候选。先“准备当前版本的验收”，再采集真实材料。</p>
         ) : null}
         {review?.blockingReasons.length ? (
           <ul>
@@ -124,6 +122,19 @@ export function IssueEvidencePanel({
           刷新结果
         </Button>
       </section>
+      {/* The next step comes right after the conclusion (G4). */}
+      {!terminal &&
+      review &&
+      contract &&
+      issue.contractState === "confirmed" ? (
+        <VerificationActions
+          issue={issue}
+          contract={contract}
+          review={review}
+          disabled={busy || running || issue.status === "in_progress"}
+          run={run}
+        />
+      ) : null}
       {review?.criterionResults.map((entry) => (
         <CriterionResultCard
           key={entry.criterionId}
@@ -150,18 +161,6 @@ export function IssueEvidencePanel({
           }
         />
       ))}
-      {!terminal &&
-      review &&
-      contract &&
-      issue.contractState === "confirmed" ? (
-        <VerificationActions
-          issue={issue}
-          contract={contract}
-          review={review}
-          disabled={busy || running || issue.status === "in_progress"}
-          run={run}
-        />
-      ) : null}
       {review && issue.currentContractRevision ? (
         <section className="fdy-issue-card">
           <h3>最终接受</h3>

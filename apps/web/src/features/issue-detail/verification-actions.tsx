@@ -7,6 +7,7 @@ import type {
   SnapshotFile,
   VerificationInput,
 } from "@bd777/foundry-protocol";
+import { readCandidateReview, type CandidateReviewData } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Checkbox, TextInput } from "../../components/ui/field";
 import {
@@ -18,6 +19,29 @@ import {
   sealCandidate,
   verifyCriteria,
 } from "./evidence-api";
+
+/**
+ * Files the candidate changed, as `repoId:path`, read from the Git diff of
+ * each repository. They are the default material for an agent judgment that
+ * names no file: what was delivered.
+ */
+export function changedEvidenceFiles(
+  review: CandidateReviewData["review"],
+  repositories: { repoId: string; relativePath: string }[],
+): Set<string> {
+  const changed = new Set<string>();
+  for (const repository of review.repositories) {
+    const repoId = repositories.find(
+      (r) => r.relativePath === repository.path,
+    )?.repoId;
+    if (!repoId) continue;
+    for (const match of repository.diff.matchAll(
+      /^diff --git a\/.+? b\/(.+)$/gm,
+    ))
+      changed.add(`${repoId}:${match[1]}`);
+  }
+  return changed;
+}
 
 export function suggestedEvidenceFiles(
   files: SnapshotFile[],
@@ -109,6 +133,19 @@ export function VerificationActions({
     const manifest = JSON.parse(
       await (await readPreviewMaterial(issue.id, material)).text(),
     ) as SnapshotFile[];
+    const changed = await readCandidateReview(issue.id)
+      .then((data) => changedEvidenceFiles(data.review, snapshot.repositories))
+      .catch(() => new Set<string>());
+    const suggested = (text: string) => {
+      const named = suggestedEvidenceFiles(manifest, text);
+      return named.length
+        ? named
+        : manifest.filter(
+            (file) =>
+              file.kind === "file" &&
+              changed.has(`${file.repoId}:${file.path}`),
+          );
+    };
     setFiles(manifest.filter((f) => f.kind === "file"));
     setSelected(
       Object.fromEntries(
@@ -116,8 +153,7 @@ export function VerificationActions({
           `${criterion.id}/${requirement.id}`,
           isChangesRequirement(requirement)
             ? [changesEvidence]
-            : suggestedEvidenceFiles(
-                manifest,
+            : suggested(
                 `${requirement.description} ${criterion.statement}`,
               ).map((f) => `${f.repoId}:${f.path}`),
         ]),
@@ -137,6 +173,17 @@ export function VerificationActions({
   const aligned = review.blockingReasons.some(
     (b) => b.code === "baseline_changed",
   );
+  const missingMaterial = [
+    ...new Set(
+      requirements
+        .filter(
+          ({ criterion, requirement }) =>
+            (selected[`${criterion.id}/${requirement.id}`]?.length ?? 0) <
+            requirement.minimumCount,
+        )
+        .map(({ criterion }) => `“${criterion.title}”`),
+    ),
+  ];
   const canCollect =
     input &&
     requirements.every(
@@ -296,15 +343,20 @@ export function VerificationActions({
               <p>
                 系统自己运行项目的命令，退出码决定通过与否，输出原样留作依据。
               </p>
-              <p>
-                将运行：
-                <code>
-                  {[configuration.executable, ...configuration.args].join(" ")}
-                </code>
-                （工作目录 {configuration.cwdRelativePath}，无网络）。
-              </p>
+              <ProgramCommand
+                command={[configuration.executable, ...configuration.args].join(
+                  " ",
+                )}
+                cwd={configuration.cwdRelativePath}
+              />
             </div>
           ))}
+          {input && missingMaterial.length ? (
+            <p role="note">
+              还不能采集：{missingMaterial.join("、")}
+              还没有选定取证材料。展开“调整取证材料”选择文件。
+            </p>
+          ) : null}
           <Button
             disabled={disabled || !canCollect}
             onClick={() =>
@@ -372,5 +424,23 @@ export function VerificationActions({
       )}
       {error ? <p role="alert">{error}</p> : null}
     </section>
+  );
+}
+
+/** A short command reads inline; a long script sits behind a disclosure. */
+function ProgramCommand({ command, cwd }: { command: string; cwd: string }) {
+  const where = `（工作目录 ${cwd}，无网络）`;
+  if (command.length <= 80)
+    return (
+      <p>
+        将运行：<code>{command}</code>
+        {where}。
+      </p>
+    );
+  return (
+    <details>
+      <summary>查看要运行的命令{where}</summary>
+      <code>{command}</code>
+    </details>
   );
 }

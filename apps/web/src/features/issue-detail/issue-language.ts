@@ -121,7 +121,7 @@ export function blockerText(blocker: ReviewBlocker): string {
     contract_unconfirmed: "完成标准尚未确认。请回到主聊天核对草案。",
     contract_amendment_pending: "有待确认的标准修改。确认或撤回后再继续。",
     checker_missing: "固定检查器尚未准备好，不能把实现说明当成通过。",
-    verification_pending: "仍有条件等待检查或正在检查，请等待结果。",
+    verification_pending: "还有标准没有针对这一版的检查结果。",
     verification_error: "检查没有正常完成。查看原因后重新检查。",
     required_failed: "有必须满足的标准未通过，请在主聊天中要求修复。",
     required_inconclusive: "有必须满足的标准还无法判断，需要补充依据。",
