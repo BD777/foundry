@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { workerPackageName } from "@foundry/protocol";
+import { workerPackageName } from "@bd777/foundry-protocol";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";

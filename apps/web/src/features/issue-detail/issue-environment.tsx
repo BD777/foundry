@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Issue } from "@foundry/protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import {
   readIssueEnvironment,
   issueEnvironmentAction,

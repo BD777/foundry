@@ -2,7 +2,7 @@ import type {
   AgentProfileProjection,
   AgentProjection,
   ProviderStatus,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../components/ui/runtime-mark";
 
 /**

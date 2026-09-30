@@ -7,7 +7,7 @@ import type {
   AgentSubagentSummary,
   AgentSubagentTranscript,
   AgentSubagentTranscriptMessage,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 const maxToolResultCharacters = 6000;
 const maxTranscriptCharacters = 512 * 1024;

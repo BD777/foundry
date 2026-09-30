@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { createAgentProfile, listAgentModels } from "../../api";
 import { Button } from "../../components/ui/button";

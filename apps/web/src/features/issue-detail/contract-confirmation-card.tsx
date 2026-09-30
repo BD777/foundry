@@ -1,4 +1,4 @@
-import type { Issue } from "@foundry/protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { ContractSummary } from "./contract-summary";
 import type { IssueContractController } from "./use-issue-contract";

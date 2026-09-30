@@ -3,7 +3,7 @@ import { delimiter, isAbsolute, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 import { readAgentRuntimeSettings } from "../device.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { spawnProcessGroup } from "../process-group.js";

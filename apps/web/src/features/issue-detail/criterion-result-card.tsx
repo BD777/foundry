@@ -4,7 +4,7 @@ import type {
   CriterionReviewEntry,
   HumanAssessment,
   Verification,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/field";
 import { EvidencePreview, ReferencePreviews } from "./evidence-preview";

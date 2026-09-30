@@ -1,6 +1,6 @@
 import { ArrowRight, Pencil } from "lucide-react";
 import { memo, type RefObject } from "react";
-import type { ChatAttachment } from "@foundry/protocol";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
 import { Alert } from "../ui/alert";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";

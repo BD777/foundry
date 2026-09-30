@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, join } from "node:path";
-import type { DeviceResource } from "@foundry/protocol";
+import type { DeviceResource } from "@bd777/foundry-protocol";
 
 interface BrowserFamily {
   id: string;

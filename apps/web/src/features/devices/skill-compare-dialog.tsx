@@ -6,7 +6,7 @@ import type {
   SkillComparison,
   SkillFileComparison,
   SkillComparisonInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   compareSkillVersions,
   compareSkillFile,

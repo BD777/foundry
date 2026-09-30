@@ -4,7 +4,7 @@ import type {
   AgentSessionTimerFire,
   AgentScheduledTask,
   AgentSubagentSummary,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type {
   ChatContextCardData,
   ChatContextResourceItem,

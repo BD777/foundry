@@ -129,11 +129,11 @@ See [Security](security.md) before changing bind, origin, authentication, attach
 Worker CLI:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- --help
-pnpm --filter @foundry/worker foundry-worker -- --commands
-pnpm --filter @foundry/worker foundry-worker -- setup --schema
-pnpm --filter @foundry/worker foundry-worker -- setup --man
-pnpm --filter @foundry/worker pack --dry-run
+pnpm --filter @bd777/foundry-worker foundry-worker -- --help
+pnpm --filter @bd777/foundry-worker foundry-worker -- --commands
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --schema
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --man
+pnpm --filter @bd777/foundry-worker pack --dry-run
 ```
 
 The repo-local `foundry-worker` script auto-builds the worker CLI when `dist/` is missing or stale.
@@ -142,7 +142,7 @@ CLI help and discovery commands return before filesystem, network, or service si
 Initialize, pair, register, and install the local daemon. Start the server at `http://127.0.0.1:31982` first, then create a one-time pairing token in the web app (**Devices → Add device**) or on the server host (`go run ./cmd/foundry-server devices pairing-token --username <you>` in `apps/server`). The token expires quickly and works once; the worker exchanges it for its own device credential, stored owner-only in `~/.foundry/daemon-config.json`:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --token <pairing-token>
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --token <pairing-token>
 ```
 
 Re-running `setup` or `pair` without `--token` keeps the saved credential. One machine is one device per account (identified by a hash of the OS machine id); pairing it again rotates the credential of the same device. Only one daemon runs per state root.
@@ -152,18 +152,18 @@ Use `--no-start` to write the login service without starting it, or `--no-servic
 `connect` defaults to the WebSocket daemon protocol at `/api/daemon/ws`. Use `--polling` to force the older HTTP polling loop:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- connect --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --polling --once
+pnpm --filter @bd777/foundry-worker foundry-worker -- connect --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --polling --once
 ```
 
 Pair and install a login service:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- init /tmp/foundry-workspace
-pnpm --filter @foundry/worker foundry-worker -- pair --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --token <pairing-token>
-pnpm --filter @foundry/worker foundry-worker -- install-service
-pnpm --filter @foundry/worker foundry-worker -- status
-pnpm --filter @foundry/worker foundry-worker -- logs --lines 120
-pnpm --filter @foundry/worker foundry-worker -- uninstall-service
+pnpm --filter @bd777/foundry-worker foundry-worker -- init /tmp/foundry-workspace
+pnpm --filter @bd777/foundry-worker foundry-worker -- pair --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --token <pairing-token>
+pnpm --filter @bd777/foundry-worker foundry-worker -- install-service
+pnpm --filter @bd777/foundry-worker foundry-worker -- status
+pnpm --filter @bd777/foundry-worker foundry-worker -- logs --lines 120
+pnpm --filter @bd777/foundry-worker foundry-worker -- uninstall-service
 ```
 
 `install-service` writes a user-level launch-on-login service:
@@ -221,7 +221,7 @@ Preview is opt-in per workspace. Copy `.foundry/preview.example.json` to `.found
 Check provider readiness for a workspace:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker providers --workspace /tmp/foundry-workspace
+pnpm --filter @bd777/foundry-worker foundry-worker providers --workspace /tmp/foundry-workspace
 ```
 
 ## Installing a worker with npx
@@ -230,10 +230,10 @@ A machine joins Foundry with one command, shown with a fresh pairing token in
 Devices → Add device (macOS or Linux, Node.js 20+):
 
 ```bash
-npx -y @foundry/worker@latest install --server <server-url> --token <pairing-token> [--workspace <path>]
-npx -y @foundry/worker@latest update      # latest version, then restart
-npx -y @foundry/worker@latest status
-npx -y @foundry/worker@latest uninstall   # --purge also removes local state
+npx -y @bd777/foundry-worker@latest install --server <server-url> --token <pairing-token> [--workspace <path>]
+npx -y @bd777/foundry-worker@latest update      # latest version, then restart
+npx -y @bd777/foundry-worker@latest status
+npx -y @bd777/foundry-worker@latest uninstall   # --purge also removes local state
 ```
 
 - `install` puts the package in `<state root>/runtime/<version>` (`current`
@@ -252,7 +252,7 @@ npx -y @foundry/worker@latest uninstall   # --purge also removes local state
 - `node-pty` is optional: without a C/C++ toolchain on Linux the worker still
   installs, and only signing in to Claude or Codex from the web needs it.
 - Until the packages are published, install from tarballs: `pnpm --filter
-@foundry/protocol pack` and `pnpm --filter @foundry/worker pack`, then
+@bd777/foundry-protocol pack` and `pnpm --filter @bd777/foundry-worker pack`, then
   `npm exec --package=<protocol.tgz> --package=<worker.tgz> -- foundry-worker
 install … --from <protocol.tgz> --from <worker.tgz>`.
 

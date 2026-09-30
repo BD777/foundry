@@ -1,4 +1,4 @@
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 
 /** Internal attempts are ordered into one conversation, without a Run selector. */

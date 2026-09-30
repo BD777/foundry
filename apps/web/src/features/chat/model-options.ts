@@ -1,4 +1,4 @@
-import type { AgentModelOption } from "@foundry/protocol";
+import type { AgentModelOption } from "@bd777/foundry-protocol";
 
 /**
  * The models a run may pick: the profile's configured list first, then anything

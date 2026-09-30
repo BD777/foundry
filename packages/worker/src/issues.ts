@@ -20,7 +20,7 @@ import type {
   Issue,
   RunEvent,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { writeJSON } from "./storage.js";
 import { sleep } from "./utils.js";
 import { getDevice } from "./device.js";

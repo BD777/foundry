@@ -4,7 +4,7 @@ import type {
   CriterionReviewEntry,
   Issue,
   ReviewBlocker,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 const carriers: Record<CarrierKind, string> = {
   text_log: "运行日志",

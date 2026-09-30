@@ -16,7 +16,7 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname } from "node:path";
-import type { DeviceProjection } from "@foundry/protocol";
+import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { devicePath, getDevice } from "./device.js";
 import { foundryStackSuffix, foundryStatePath } from "./state-root.js";
 import { writeJSON, writePublicTextIfMissing } from "./storage.js";

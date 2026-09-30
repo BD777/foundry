@@ -6,7 +6,7 @@ import {
   ExternalLink,
   HelpCircle,
 } from "lucide-react";
-import type { WorkspaceFeishuConfig } from "@foundry/protocol";
+import type { WorkspaceFeishuConfig } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";

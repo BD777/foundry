@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ProfileAuthorization } from "@foundry/protocol";
+import type { ProfileAuthorization } from "@bd777/foundry-protocol";
 import { Button } from "./button";
 import { TextInput } from "./field";
 

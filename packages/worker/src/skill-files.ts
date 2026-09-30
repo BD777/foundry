@@ -1,6 +1,6 @@
 /** One inventory is shared by scanning, dependency analysis and packaging. */
 import { isUtf8 } from "node:buffer";
-import type { SkillFileInfo } from "@foundry/protocol";
+import type { SkillFileInfo } from "@bd777/foundry-protocol";
 import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

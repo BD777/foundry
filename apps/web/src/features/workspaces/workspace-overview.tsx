@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { WorkspaceProjection } from "@foundry/protocol";
+import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../../components/ui/button";

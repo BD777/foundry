@@ -7,8 +7,8 @@ import type {
   VerificationInput,
   VerificationResult,
   VerifierIdentity,
-} from "@foundry/protocol";
-import { evidenceJSONSchema, validateEvidenceModel } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { evidenceJSONSchema, validateEvidenceModel } from "@bd777/foundry-protocol";
 import {
   EvidenceStore,
   INLINE_IMAGE_LIMIT,

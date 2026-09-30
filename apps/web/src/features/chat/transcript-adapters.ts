@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSubagentTranscript } from "@foundry/protocol";
+import type { AgentSession, AgentSubagentTranscript } from "@bd777/foundry-protocol";
 import {
   responseStreamLabel,
   shouldDisplayAgentSessionEvent,

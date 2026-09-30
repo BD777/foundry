@@ -192,8 +192,8 @@ bubblewrap 与可用的 user namespace，缺失时按设计拒绝执行。因此
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter @foundry/protocol build
-pnpm --filter @foundry/worker build
+pnpm --filter @bd777/foundry-protocol build
+pnpm --filter @bd777/foundry-worker build
 
 node packages/worker/dist/cli.js setup \
   --server http://<server-host>:31982 \

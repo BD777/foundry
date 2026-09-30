@@ -9,7 +9,7 @@ import type {
   Issue,
   RunEvent,
   SessionSkillRef,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   profileConfigForSession,
   type AgentProfileLocalConfig,

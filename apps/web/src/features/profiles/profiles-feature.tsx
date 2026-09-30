@@ -7,7 +7,7 @@ import type {
   DeviceProjection,
   ProfileDefinition,
   SaveProfileInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";

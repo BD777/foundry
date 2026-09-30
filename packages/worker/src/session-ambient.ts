@@ -1,4 +1,4 @@
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 import { sessionScratchEnvironment } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
 import {

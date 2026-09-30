@@ -2,7 +2,7 @@
 // and profile/utility helpers, so both the runner and the launch-policy layer
 // can import it without a cycle.
 
-import type { AgentSession, SessionInput } from "@foundry/protocol";
+import type { AgentSession, SessionInput } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { isUtilitySession } from "./utils.js";
 

@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
-import type { IssueStatus } from "@foundry/protocol";
+import type { IssueStatus } from "@bd777/foundry-protocol";
 import { cn } from "../../lib/cn";
 import { ActionRow } from "../../components/ui/action-row";
 import { Button } from "../../components/ui/button";

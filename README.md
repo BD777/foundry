@@ -148,7 +148,7 @@ pnpm dev:web
 服务端启动后，将下方路径替换为你的 Workspace 路径，执行初始化、配对与本地守护进程安装：
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
 ```
 
 随后在界面中配置本地 Claude 或 Codex Profile。更多安装选项、认证配置、预览与排查说明见[开发指南](docs/development.md)。

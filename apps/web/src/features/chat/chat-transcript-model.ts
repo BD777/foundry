@@ -1,4 +1,4 @@
-import type { AgentSubagentTranscript } from "@foundry/protocol";
+import type { AgentSubagentTranscript } from "@bd777/foundry-protocol";
 import type { ChatMessageItem } from "./chat-surface-types";
 import { subagentTranscriptEntries } from "./transcript-adapters";
 import { projectTranscript } from "./transcript-projection";

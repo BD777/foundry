@@ -8,7 +8,7 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../../components/ui/runtime-mark";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import type { ChatContextCardData } from "./chat-types";

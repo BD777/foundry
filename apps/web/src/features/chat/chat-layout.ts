@@ -1,4 +1,4 @@
-import type { ChatLayout, ChatPlacement } from "@foundry/protocol";
+import type { ChatLayout, ChatPlacement } from "@bd777/foundry-protocol";
 import type { ChatGroupState } from "./chat-group-state";
 
 export interface ChatDropTarget {

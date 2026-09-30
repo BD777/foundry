@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { workerPackageName } from "@foundry/protocol";
+import { workerPackageName } from "@bd777/foundry-protocol";
 import { installDecision, ownPackage } from "../dist/worker-install.js";
 import { workerLauncherScript } from "../dist/mac-worker-app.js";
 

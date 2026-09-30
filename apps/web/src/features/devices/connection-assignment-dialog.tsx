@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ProfileDefinition } from "@foundry/protocol";
+import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import { RuntimeMark } from "../../components/ui/runtime-mark";

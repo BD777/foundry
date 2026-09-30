@@ -9,7 +9,7 @@ import type {
   ReviewSnapshot,
   Verification,
   VerificationInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { apiFetch } from "../../api";
 
 const base = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:31982";

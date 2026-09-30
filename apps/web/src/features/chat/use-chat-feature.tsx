@@ -14,7 +14,7 @@ import type {
   ChatAttachment,
   ChatThread,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { chatUpdateTime, latestChatTime } from "./chat-time";
 import { toChatSendError } from "./chat-send-error";
 import {

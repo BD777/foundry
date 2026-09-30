@@ -1,4 +1,4 @@
-import type { ProfileAuthorization } from "@foundry/protocol";
+import type { ProfileAuthorization } from "@bd777/foundry-protocol";
 import {
   completeProfileAuthorization,
   startProfileAuthorization,

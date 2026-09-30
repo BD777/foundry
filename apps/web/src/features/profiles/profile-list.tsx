@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import type {
   DeviceProfileBinding,
   ProfileDefinition,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";

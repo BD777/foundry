@@ -9,7 +9,7 @@ import type {
   ProfileAuthMode,
   ProfileDefinition,
   SaveProfileInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 /** Runtimes a server profile can target. `mock` is a test-only daemon runtime. */
 export type ProfileRuntime = ProfileDefinition["runtime"];

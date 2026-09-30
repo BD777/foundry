@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DeviceProjection } from "@foundry/protocol";
+import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { saveAgentRuntimeSettings } from "../../api";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";

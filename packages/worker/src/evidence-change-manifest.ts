@@ -1,4 +1,4 @@
-import type { CandidateSnapshot } from "@foundry/protocol";
+import type { CandidateSnapshot } from "@bd777/foundry-protocol";
 import type { IssueEnvironment } from "./execution-types.js";
 import { git } from "./execution-git.js";
 

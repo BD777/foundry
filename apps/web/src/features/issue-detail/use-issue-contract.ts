@@ -5,7 +5,7 @@ import type {
   ContractDraftInput,
   Issue,
   IssueContract,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   clarifyContract,
   confirmContract,

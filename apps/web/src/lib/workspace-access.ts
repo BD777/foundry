@@ -1,7 +1,7 @@
 import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 const roleRank: Record<WorkspaceAccessRole, number> = {
   viewer: 1,

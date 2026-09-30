@@ -2,7 +2,7 @@ import type {
   RunEvent,
   SkillPackRef,
   WorkerRuntimeId,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { ChecklistRow } from "../../components/ui/checklist-row";
 import { EmptyState } from "../../components/ui/empty-state";
 import {

@@ -1,4 +1,4 @@
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import type { FoundryData, FoundryStreamEvent } from "../api-types";
 
 export function mergeIssueRun(current: Run | undefined, incoming: Run): Run {

@@ -1,4 +1,4 @@
-import type { NativeAccountInspection } from "@foundry/protocol";
+import type { NativeAccountInspection } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { Badge } from "../../components/ui/badge";

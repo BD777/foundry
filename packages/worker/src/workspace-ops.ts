@@ -28,7 +28,7 @@ import type {
   WorkspaceFileEntry,
   WorkspaceFileRead,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { nativeChatThreadsForWorkspace } from "./native-chat.js";
 import {
   readDaemonConfig,

@@ -15,7 +15,7 @@ import type {
   ProfileOrigin,
   ProviderHealth,
   SecretPlacement,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { readOptionalText, safeID, yamlScalar } from "./utils.js";
 import { getDevice } from "./device.js";

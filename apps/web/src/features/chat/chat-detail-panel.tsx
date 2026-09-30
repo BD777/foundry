@@ -5,7 +5,7 @@ import {
   type AgentScheduledTask,
   type AgentSubagentTranscript,
   type WorkspaceFileRead,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   Bot,
   ChevronLeft,

@@ -4,7 +4,7 @@ import type {
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { promoteProfile, setDeviceProfiles } from "../../api";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";

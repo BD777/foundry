@@ -7,7 +7,7 @@ import type {
   ProviderHealth,
   SkillPackRef,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 // Providers the local daemon can run. Provider health is always reported for
 // this set so Settings and Devices show a stable row order.

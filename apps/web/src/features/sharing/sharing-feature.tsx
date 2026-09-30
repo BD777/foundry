@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   addWorkspaceMember,
   createInvite,

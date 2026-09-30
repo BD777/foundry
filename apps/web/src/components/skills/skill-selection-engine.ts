@@ -1,4 +1,4 @@
-import type { SkillDependency } from "@foundry/protocol";
+import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { NormalizedSkill } from "./skill-models";
 
 export interface MissingSkillDependency {

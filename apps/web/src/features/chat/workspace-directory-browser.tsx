@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { WorkspaceTreeEntry } from "@foundry/protocol";
+import type { WorkspaceTreeEntry } from "@bd777/foundry-protocol";
 import {
   ChevronDown,
   ChevronRight,

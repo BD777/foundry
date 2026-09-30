@@ -14,7 +14,7 @@ import type {
   DeviceProjection,
   DeviceSkill,
   DeviceSkillRoot,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { scanDeviceSkills, setDeviceSkillRoots } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";

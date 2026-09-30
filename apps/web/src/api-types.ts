@@ -30,7 +30,7 @@ import type {
   WorkspaceFeishuConfig,
   WorkspaceProjection,
   WorkspaceSkillBinding,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 export type FoundryData = FoundryDataProjection;
 

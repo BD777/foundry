@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ProfileDefinition } from "@foundry/protocol";
+import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import {
   defaultProfileDraft,
   draftForRuntime,

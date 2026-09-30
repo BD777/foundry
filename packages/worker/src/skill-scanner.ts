@@ -21,7 +21,7 @@ import type {
   DeviceSkill,
   SkillDependency,
   SkillFileInfo,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { packZip, assertSafeEntryPath } from "./skill-zip.js";
 import {
   createSkillDependencyAnalyzer,

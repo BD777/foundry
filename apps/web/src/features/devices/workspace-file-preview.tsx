@@ -1,4 +1,4 @@
-import type { WorkspaceFileRead } from "@foundry/protocol";
+import type { WorkspaceFileRead } from "@bd777/foundry-protocol";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 

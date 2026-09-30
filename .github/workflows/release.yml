@@ -1,15 +1,16 @@
 name: Release
 
 # Pushing a version tag (v0.4.0) publishes the worker packages to npm, so
-# `npx -y @foundry/worker@latest install` installs that release. The tag must
-# match the packages' version. Needs the NPM_TOKEN repository secret.
+# `npx -y @bd777/foundry-worker@latest install` installs that release. The tag must
+# match the packages' version. npm trusts this workflow (Trusted Publishing,
+# OIDC) for both packages, so no npm token is stored anywhere.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: read
-  id-token: write # npm provenance
+  id-token: write # npm trusted publishing
 
 jobs:
   publish:
@@ -27,7 +28,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
+
+      - name: Use an npm with trusted publishing (>= 11.5.1)
+        run: npm install -g npm@^11.5.1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -45,17 +48,16 @@ jobs:
 
       - name: Build and test the packages
         run: |
-          pnpm --filter @foundry/protocol test
-          pnpm --filter @foundry/worker build
+          pnpm --filter @bd777/foundry-protocol test
+          pnpm --filter @bd777/foundry-worker build
 
       - name: Publish (protocol first; the worker depends on it)
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN is not set; nothing is published." >&2
-            exit 1
-          fi
+          mkdir -p "$RUNNER_TEMP/packages"
           for package in protocol worker; do
-            pnpm --filter "./packages/$package" publish --access public --provenance --no-git-checks
+            # pnpm pack turns workspace:* into the released version.
+            pnpm --filter "./packages/$package" pack --pack-destination "$RUNNER_TEMP/packages"
+          done
+          for package in protocol worker; do
+            npm publish "$RUNNER_TEMP"/packages/bd777-foundry-$package-*.tgz --access public
           done

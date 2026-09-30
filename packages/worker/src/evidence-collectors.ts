@@ -9,8 +9,8 @@ import type {
   Material,
   VerificationInput,
   Verdict,
-} from "@foundry/protocol";
-import { validateEvidenceModel } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import { EvidenceStore, digestObject } from "./evidence-store.js";
 import { childPath, identifier } from "./execution-storage.js";
 import {

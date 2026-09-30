@@ -156,7 +156,7 @@ import {
   type WorkspaceFileEntry,
   type WorkspaceFileRead,
   type WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 type BadgeTone = "neutral" | "online" | "brass" | "warn" | "slate" | "error";
 

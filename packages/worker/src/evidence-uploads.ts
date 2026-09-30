@@ -7,7 +7,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { resolve } from "node:path";
-import type { EvidenceWorkerResult } from "@foundry/protocol";
+import type { EvidenceWorkerResult } from "@bd777/foundry-protocol";
 import {
   atomicEvidenceFile,
   EvidenceStore,

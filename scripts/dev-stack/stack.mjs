@@ -390,8 +390,8 @@ export function build(stack, { install = true } = {}) {
   };
   if (install && !existsSync(resolve(stack.worktree, "node_modules")))
     run("pnpm", ["install"], stack.worktree);
-  run("pnpm", ["--filter", "@foundry/protocol", "build"], stack.worktree);
-  run("pnpm", ["--filter", "@foundry/worker", "build"], stack.worktree);
+  run("pnpm", ["--filter", "@bd777/foundry-protocol", "build"], stack.worktree);
+  run("pnpm", ["--filter", "@bd777/foundry-worker", "build"], stack.worktree);
   run(
     "go",
     ["build", "-o", ".tmp/foundry-server", "./cmd/foundry-server"],

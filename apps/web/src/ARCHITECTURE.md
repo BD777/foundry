@@ -10,7 +10,7 @@ flowchart TB
   FEATURE["features/*\nprivate state + controller + feature UI"]
   SHARED["components/ui + lib\nstateless primitives and shared helpers"]
   API["api.ts\ntransport only"]
-  PROTOCOL["@foundry/protocol\nDTO contract"]
+  PROTOCOL["@bd777/foundry-protocol\nDTO contract"]
 
   APP -->|domain input| FEATURE
   FEATURE -->|semantic event| APP
@@ -71,7 +71,7 @@ feature instead of adding it to `components/ui`.
 
 ### Transport and protocol
 
-`api.ts` performs HTTP/SSE transport. `@foundry/protocol` defines transport DTOs.
+`api.ts` performs HTTP/SSE transport. `@bd777/foundry-protocol` defines transport DTOs.
 Feature view models may derive from protocol data, but UI-only state must not be
 added to protocol DTOs.
 

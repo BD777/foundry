@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Streamdown, type Components } from "streamdown";
-import type { ChatAttachment } from "@foundry/protocol";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
 import { Button } from "../ui/button";
 import {

@@ -210,7 +210,7 @@ Evidence 写操作及 `POST /api/issues` 要求 `Idempotency-Key`；同键异内
 ```sh
 node scripts/generate-evidence-models.mjs --check
 pnpm verify
-pnpm --filter @foundry/worker build
+pnpm --filter @bd777/foundry-worker build
 node --test packages/worker/test/evidence*.test.mjs
 node --test apps/web/test/evidence*.test.mjs
 node --test --test-concurrency=1 apps/web/test/*.test.mjs

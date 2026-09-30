@@ -4,7 +4,7 @@ import type {
   CandidateSnapshot,
   EvidenceWorkerRequest,
   EvidenceWorkerResult,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { EvidenceStore } from "./evidence-store.js";
 import { ExecutionStore, identifier } from "./execution-storage.js";
 import { assertSnapshotCurrent } from "./evidence-snapshots.js";

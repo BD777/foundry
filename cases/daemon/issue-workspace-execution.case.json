@@ -28,7 +28,7 @@
   "automation": {
     "status": "automated",
     "runner": "repo-script",
-    "command": "pnpm --filter @foundry/worker test && cd apps/server && go test -race ./internal/httpapi ./internal/sqlitestore",
+    "command": "pnpm --filter @bd777/foundry-worker test && cd apps/server && go test -race ./internal/httpapi ./internal/sqlitestore",
     "references": [
       "packages/worker/test/issue-environments.test.mjs",
       "packages/worker/test/workspace-bootstrap.test.mjs",

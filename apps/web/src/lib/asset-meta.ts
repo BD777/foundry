@@ -5,7 +5,7 @@ import {
   Terminal,
   type LucideIcon,
 } from "lucide-react";
-import type { AssetProjection } from "@foundry/protocol";
+import type { AssetProjection } from "@bd777/foundry-protocol";
 import type { BadgeProps } from "../components/ui/badge";
 
 export type BadgeTone = NonNullable<BadgeProps["tone"]>;

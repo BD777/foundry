@@ -4,7 +4,7 @@ import type {
   AgentProfileProjection,
   AgentProjection,
   ChatThread,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { listAgentModels } from "../../api";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { mergeModelOptionLists } from "./model-options";

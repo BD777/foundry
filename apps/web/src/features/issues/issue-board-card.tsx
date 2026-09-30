@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Issue } from "@foundry/protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import {
   issueDisplayId,
   issuePhaseLabel,

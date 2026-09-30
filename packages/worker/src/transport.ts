@@ -10,7 +10,7 @@ import {
   type ProtocolEnvelope,
   type Run,
   type RunEvent,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "./config.js";
 
 export type IssueCompletion = {

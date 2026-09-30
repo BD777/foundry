@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
 import { writePrivateTextAtomic } from "./storage.js";

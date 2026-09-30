@@ -7,7 +7,7 @@ import type {
   CodexReasoningEffort,
   CodexSpeed,
   WorkerRuntimeId,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { listAgentModels } from "../../api";
 import type { AgentRuntimeControlsProps } from "../../components/ui/agent-runtime-controls";
 

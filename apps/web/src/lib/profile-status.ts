@@ -7,7 +7,7 @@ import type {
   ProfileDefinition,
   ProviderHealth,
   ProviderStatus,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { BadgeTone } from "./asset-meta";
 
 export interface ResolvedProfileStatus {

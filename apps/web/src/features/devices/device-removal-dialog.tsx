@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { DeviceProjection, WorkspaceProjection } from "@foundry/protocol";
+import type { DeviceProjection, WorkspaceProjection } from "@bd777/foundry-protocol";
 import { removeDevice } from "../../api";
 import { Button } from "../../components/ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";

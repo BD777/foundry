@@ -19,8 +19,8 @@ import type {
   CarrierKind,
   EvidenceRecord,
   Material,
-} from "@foundry/protocol";
-import { validateEvidenceModel } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import { ExecutionStore, identifier, within } from "./execution-storage.js";
 
 export const MATERIAL_LIMIT = 100 * 1024 * 1024;

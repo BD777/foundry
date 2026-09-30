@@ -20,11 +20,11 @@ import {
   type AgentSessionEvent,
   type AgentSessionTimerFire,
   type AgentScheduledTask,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 // Cron parsing/humanization is shared with the web UI through the protocol
 // package; re-exported so worker code can keep importing it from this module.
-export { humanizeCron, nextCronFire, parseCron } from "@foundry/protocol";
+export { humanizeCron, nextCronFire, parseCron } from "@bd777/foundry-protocol";
 
 // --- Capability surface ---------------------------------------------------
 

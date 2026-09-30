@@ -5,7 +5,7 @@ import {
   fixtureWorkspace,
   type AgentSession,
   type FoundryDataProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import "../src/styles.css";
 
 // Full App / HTTP / SSE fixture. Only the transport is replaced; sending never

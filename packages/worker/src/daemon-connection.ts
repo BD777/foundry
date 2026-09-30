@@ -22,7 +22,7 @@ import {
   type ProfileDefinition,
   type ProfileAuthorization,
   type ProtocolEnvelope,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { readDaemonConfig, writeDaemonConfig } from "./config.js";
 import {
   daemonRequestHeaders,
@@ -138,7 +138,7 @@ import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
 import { issueEnvironmentAction } from "./issue-environment-rpc.js";
 import { evidenceWorkerAction } from "./evidence-rpc.js";
 import { stopAllEvidenceHTTPServices } from "./evidence-http-service.js";
-import type { EvidenceWorkerRequest } from "@foundry/protocol";
+import type { EvidenceWorkerRequest } from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 import { readWorkspace } from "./workspaces.js";

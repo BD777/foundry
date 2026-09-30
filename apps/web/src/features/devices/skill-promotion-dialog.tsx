@@ -10,7 +10,7 @@ import type {
   DeviceSkill,
   PromotedSkill,
   SkillPromotionResolution,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import {

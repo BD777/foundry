@@ -50,7 +50,7 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 一个分发工件，两个使用面，一份 Skill：
 
 ```text
-@foundry/worker（随 daemon 安装天然到达每台 Device）
+@bd777/foundry-worker（随 daemon 安装天然到达每台 Device）
 ├── bin foundry-worker …… 运维命令（setup/connect/install-service …）
 └── bin foundry        …… 人与 Agent 的统一入口
     ├── foundry mcp                 stdio 桥，转发 Server 的 /api/mcp
