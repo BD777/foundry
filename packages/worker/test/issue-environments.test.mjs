@@ -688,6 +688,8 @@ process.exit(child.status ?? 1);
       issue.id,
       store,
     );
+    // With the execution session's Foundry credentials, as the daemon runs
+    // it: the executor still uses the sandbox's temporary space.
     const result = await runIssueExecutor(
       initial,
       issue,
@@ -697,6 +699,14 @@ process.exit(child.status ?? 1);
       {
         runtime: "claude",
         id: "fixture",
+      },
+      undefined,
+      "http://127.0.0.1:9",
+      [],
+      {
+        serverURL: "http://127.0.0.1:9",
+        sessionToken: "fixture-token",
+        workspaceID: "ws_test",
       },
     );
     assert.match(result.response, /Changed backend/);

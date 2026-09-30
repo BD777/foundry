@@ -133,6 +133,8 @@ export async function runIssueExecutor(
       const session: AgentSession = {
         ...issueRuntimeOptions(issue),
         id: `${runId}_${++turn}`,
+        // An Issue session: the sandbox provides its temporary space.
+        issueId: issue.id,
         threadId: environment.id,
         nativeSessionId: environment.nativeSessionId,
         workspaceId: environment.workspaceId,
