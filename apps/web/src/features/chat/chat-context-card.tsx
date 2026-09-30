@@ -10,7 +10,7 @@ import {
   Repeat,
   X,
 } from "lucide-react";
-import { nextCronFire } from "@foundry/protocol";
+import { nextCronFire } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import type {
   ChatContextCardData,

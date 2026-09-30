@@ -23,7 +23,7 @@ import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
   Issue,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   activeClaudeRuntimes,
   activeCodexThreads,

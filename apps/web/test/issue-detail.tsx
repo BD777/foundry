@@ -5,7 +5,7 @@ import {
   type Issue,
   type Run,
   type IssueContract,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { IssueDetailView } from "../src/features/issue-detail";
 import { IssuesFeature } from "../src/features/issues";
 import { issueStatuses } from "../src/lib/issue-meta";

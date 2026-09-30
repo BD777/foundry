@@ -1,7 +1,13 @@
 {
-  "name": "@foundry/protocol",
+  "name": "@bd777/foundry-protocol",
   "version": "0.4.0",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BD777/foundry.git",
+    "directory": "packages/protocol"
+  },
+  "homepage": "https://github.com/BD777/foundry#readme",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

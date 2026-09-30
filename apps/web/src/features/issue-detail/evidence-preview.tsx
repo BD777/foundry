@@ -3,7 +3,7 @@ import type {
   Material,
   MaterialSelector,
   ReferenceMedia,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import {
   getMaterial,

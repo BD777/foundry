@@ -1,4 +1,4 @@
-import type { DeviceSkill, SkillDependency } from "@foundry/protocol";
+import type { DeviceSkill, SkillDependency } from "@bd777/foundry-protocol";
 
 export interface SkillPromotionSelection {
   skills: DeviceSkill[];

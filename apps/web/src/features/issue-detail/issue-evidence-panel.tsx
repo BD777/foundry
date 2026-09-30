@@ -5,7 +5,7 @@ import type {
   IssueContract,
   ReviewSnapshot,
   Verification,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
 import {

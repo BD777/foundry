@@ -3,7 +3,7 @@ import {
   type AgentProjection,
   type AgentSession,
   type ChatThread,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import {
   agentSessionIsAwaitingDetails,

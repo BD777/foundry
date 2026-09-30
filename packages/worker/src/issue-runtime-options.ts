@@ -1,4 +1,4 @@
-import type { AgentSession, Issue } from "@foundry/protocol";
+import type { AgentSession, Issue } from "@bd777/foundry-protocol";
 
 /** Autonomous Issue execution still runs inside Foundry's candidate sandbox. */
 export function issueRuntimeOptions(

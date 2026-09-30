@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import { ExecutionStore } from "./execution-storage.js";
 import { readWorkspace } from "./workspaces.js";
 import {

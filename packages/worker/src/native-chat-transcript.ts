@@ -1,4 +1,4 @@
-import type { TranscriptMessage } from "@foundry/protocol";
+import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { codexTranscriptRecord } from "./transcript-adapters/codex.js";
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
 import { record } from "./transcript-adapters/values.js";

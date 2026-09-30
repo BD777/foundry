@@ -1,5 +1,5 @@
 import type { ReactNode, Ref } from "react";
-import type { ChatAttachment } from "@foundry/protocol";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../ui/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { AgentComposerProps } from "../ui/agent-composer";

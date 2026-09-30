@@ -1,4 +1,4 @@
-import type { ChatLayout } from "@foundry/protocol";
+import type { ChatLayout } from "@bd777/foundry-protocol";
 
 export type LayoutChange = (layout: ChatLayout) => ChatLayout;
 

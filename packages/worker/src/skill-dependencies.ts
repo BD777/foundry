@@ -1,7 +1,7 @@
 /** Device-wide indexed analysis. File contents are never executed. */
 import { homedir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
-import type { SkillDependency } from "@foundry/protocol";
+import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { ZipEntry } from "./skill-zip.js";
 export interface KnownSkill {
   name: string;

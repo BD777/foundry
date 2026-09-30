@@ -22,7 +22,7 @@
     "test:js": "pnpm -r --if-present test",
     "test:smoke:api": "node scripts/smoke-api.mjs",
     "stack": "node scripts/dev-stack.mjs",
-    "typecheck": "pnpm --filter @foundry/protocol build && pnpm -r typecheck",
+    "typecheck": "pnpm --filter @bd777/foundry-protocol build && pnpm -r typecheck",
     "verify": "pnpm typecheck && pnpm build && pnpm test && pnpm audit:web-ui && pnpm audit:contract && pnpm audit:modules && pnpm cases:validate && pnpm vet",
     "vet": "cd apps/server && go vet ./..."
   },

@@ -1,4 +1,4 @@
-import type { Issue } from "@foundry/protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 
 /** Confirmation ends clarification. Only post-confirmation execution feedback can guide a run. */
 export function executionFeedback(issue: Issue): string[] {

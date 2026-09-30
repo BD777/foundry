@@ -5,7 +5,7 @@
  * lines on stdout.
  */
 import { createInterface } from "node:readline";
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import {
   closeAllActiveRuntimes,

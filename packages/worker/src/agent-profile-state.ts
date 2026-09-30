@@ -2,7 +2,7 @@ import type {
   AgentConnectionType,
   AgentProfileProjection,
   ProviderHealth,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 interface ProjectedProfileStateInput {
   baseUrl?: string;

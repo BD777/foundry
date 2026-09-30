@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { WorkspaceProjection } from "@foundry/protocol";
+import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 

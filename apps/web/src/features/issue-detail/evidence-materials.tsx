@@ -5,7 +5,7 @@ import type {
   IssueContract,
   Material,
   VerificationInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { FileInput, Textarea, TextInput } from "../../components/ui/field";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";

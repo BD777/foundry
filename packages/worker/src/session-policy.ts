@@ -16,7 +16,7 @@
 // The model never infers credentials: a missing credential is announced before
 // the first request rather than surfacing as an opaque provider 401.
 
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { profileRuntimeEnvironment } from "./profiles.js";
 import {

@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import type { SkillDependency } from "@foundry/protocol";
+import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { MissingSkillDependency } from "./skill-selection-engine";
 
 export interface SkillDependenciesViewProps {

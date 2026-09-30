@@ -1,4 +1,4 @@
-import type { WorkspaceAccessRole } from "@foundry/protocol";
+import type { WorkspaceAccessRole } from "@bd777/foundry-protocol";
 import type { SelectMenuOption } from "../../components/ui/select-menu";
 
 export const roleOptions: SelectMenuOption[] = [

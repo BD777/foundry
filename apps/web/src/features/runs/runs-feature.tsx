@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
 import { PageSurface } from "../../components/ui/page-surface";
 import {

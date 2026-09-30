@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   authModeLabel,
   connectionTypeLabel,

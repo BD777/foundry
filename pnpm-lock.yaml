@@ -20,7 +20,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@foundry/protocol':
+      '@bd777/foundry-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       '@radix-ui/react-context-menu':
@@ -110,7 +110,7 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.201
         version: 0.3.201(@anthropic-ai/sdk@0.110.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
-      '@foundry/protocol':
+      '@bd777/foundry-protocol':
         specifier: workspace:*
         version: link:../protocol
       '@openai/codex':

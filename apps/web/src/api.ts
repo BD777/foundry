@@ -3,7 +3,7 @@ import type {
   SkillComparison,
   SkillFileComparison,
   SkillPromotionResolution,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type {
   SkillPromotionPlan,
   AgentModelOption,
@@ -37,8 +37,8 @@ import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
   WorkspaceTreeEntry,
-} from "@foundry/protocol";
-import { parseProtocolEnvelopeJSON } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { parseProtocolEnvelopeJSON } from "@bd777/foundry-protocol";
 import { issueDisplayStatus } from "./lib/issue-meta";
 import type {
   CreateAgentProfileInput,
@@ -764,7 +764,7 @@ export function inspectDeviceAccount(
   deviceId: string,
   runtime: "claude" | "codex",
   source?: string,
-): Promise<import("@foundry/protocol").NativeAccountInspection> {
+): Promise<import("@bd777/foundry-protocol").NativeAccountInspection> {
   return postJSON(
     `/api/devices/${encodeURIComponent(deviceId)}/accounts/${runtime}/inspect`,
     { source },

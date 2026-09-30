@@ -3,7 +3,7 @@ import type {
   IssueBlockedReason,
   IssueReadiness,
   IssueStatus,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { BadgeTone } from "./asset-meta";
 import { runPhase } from "./run-meta";
 

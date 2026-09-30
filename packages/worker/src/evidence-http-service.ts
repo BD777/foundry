@@ -4,7 +4,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { CandidateSnapshot, TargetSnapshot } from "@foundry/protocol";
+import type {
+  CandidateSnapshot,
+  TargetSnapshot,
+} from "@bd777/foundry-protocol";
 import { childPath } from "./execution-storage.js";
 import { digestObject } from "./evidence-store.js";
 import {

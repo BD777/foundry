@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, type Ref } from "react";
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import { issueEnvironmentAction, requestChanges, steerIssue } from "../../api";
 import { Conversation } from "../../components/conversation/conversation";
 import { issueTranscript } from "./issue-transcript";
@@ -38,7 +38,7 @@ export function IssueConversation({
   const send = useCallback(
     async (
       text: string,
-      attachments?: import("@foundry/protocol").ChatAttachment[],
+      attachments?: import("@bd777/foundry-protocol").ChatAttachment[],
     ) => {
       if (
         isStatusQuestion(text) &&

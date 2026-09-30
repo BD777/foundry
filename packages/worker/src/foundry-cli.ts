@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * `foundry` — the human/agent entry point shipped with @foundry/worker.
+ * `foundry` — the human/agent entry point shipped with @bd777/foundry-worker.
  *
  *   foundry mcp                 stdio MCP server for agents
  *   foundry session <verb>      JSON-first session control for people/scripts

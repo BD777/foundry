@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import type { ProviderHealth } from "@foundry/protocol";
+import type { ProviderHealth } from "@bd777/foundry-protocol";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type {
   FeishuPairingCodeResult,
   WorkspaceFeishuConfig,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   generateFeishuPairingCode,
   getWorkspaceFeishuBot,

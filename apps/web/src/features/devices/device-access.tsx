@@ -4,7 +4,7 @@ import type { DevicesFeatureProps } from "./devices-feature";
 import type {
   DeviceProjection,
   AgentProfileProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { DeviceAccounts } from "./device-accounts";
 import { DeviceConnections } from "./device-connections";

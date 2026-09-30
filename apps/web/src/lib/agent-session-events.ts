@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSessionEvent } from "@foundry/protocol";
+import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
 
 export const responseStreamLabel = "Response stream";
 

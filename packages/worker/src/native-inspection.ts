@@ -8,7 +8,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentModelOption,
   NativeAccountInspection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { isNativeAccountStatus } from "./native-login.js";

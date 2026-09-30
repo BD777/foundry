@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { daemonMessageTypes } from "@foundry/protocol";
+import { daemonMessageTypes } from "@bd777/foundry-protocol";
 import { ReliableSessionTransport } from "../dist/transport.js";
 
 function socket() {

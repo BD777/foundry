@@ -3,7 +3,7 @@
 
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 
 /**
  * One input's artifacts: `<root>/<sessionId>/inputs/<inputId>`. They are kept

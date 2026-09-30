@@ -6,7 +6,7 @@ import type {
   ProfileDefinition,
   DeviceProfileBinding,
   ProviderHealth,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   completeDeviceAuthorization,
   startDeviceAuthorization,

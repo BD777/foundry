@@ -1,5 +1,5 @@
 import { KeyRound, Save, Trash2 } from "lucide-react";
-import type { ProfileDefinition } from "@foundry/protocol";
+import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";

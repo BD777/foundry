@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 
 export function readOptionalText(path: string): string | undefined {
   try {

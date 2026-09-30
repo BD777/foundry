@@ -1,4 +1,4 @@
-import type { DeviceSkill } from "@foundry/protocol";
+import type { DeviceSkill } from "@bd777/foundry-protocol";
 
 export type SkillServerFilter =
   "all" | "unpublished" | "different" | "same_name" | "in_sync" | "unknown";

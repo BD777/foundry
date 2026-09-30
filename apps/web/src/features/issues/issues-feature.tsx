@@ -9,7 +9,7 @@ import type {
   ProviderHealth,
   WorkerRuntimeId,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { createIssue } from "../../api";
 import { useIssueModels } from "./use-issue-models";
 import { Badge } from "../../components/ui/badge";

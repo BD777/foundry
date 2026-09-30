@@ -9,8 +9,8 @@ import type {
   Material,
   VerificationInput,
   VerificationResult,
-} from "@foundry/protocol";
-import { validateEvidenceModel } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import {
   EvidenceStore,
   digestBytes,
@@ -239,7 +239,7 @@ async function execute(
     if (request.alignFromSnapshotId) {
       assertMutable(environment);
       const before = store.readRecord<
-        import("@foundry/protocol").CandidateSnapshot
+        import("@bd777/foundry-protocol").CandidateSnapshot
       >("candidate-snapshots", request.alignFromSnapshotId);
       await assertSnapshotCurrent(before, environment, store, false);
       environment = await refreshCandidate(environment, execution);
@@ -265,7 +265,7 @@ async function execute(
           `${repo.repoId}: ignored files exist; explicitly register any verification-affecting dependencies`,
         );
     }
-    const targets: import("@foundry/protocol").TargetSnapshot[] = [];
+    const targets: import("@bd777/foundry-protocol").TargetSnapshot[] = [];
     if (request.httpTargets?.length) {
       if (
         request.httpTargets.length > 10 ||
@@ -355,12 +355,12 @@ async function execute(
     )
       throw new Error("input_changed");
     const snapshot = store.readRecord<
-      import("@foundry/protocol").CandidateSnapshot
+      import("@bd777/foundry-protocol").CandidateSnapshot
     >("candidate-snapshots", input.candidateSnapshotId);
     await assertSnapshotCurrent(snapshot, environment, store, false);
     const manifest = JSON.parse(
       store.readMaterial(snapshot.fileManifestMaterialId).toString(),
-    ) as import("@foundry/protocol").SnapshotFile[];
+    ) as import("@bd777/foundry-protocol").SnapshotFile[];
     const file = manifest.find(
       (f) => f.repoId === request.repoId && f.path === request.relativePath,
     );
@@ -421,7 +421,7 @@ async function execute(
       ),
     );
     const now = new Date().toISOString();
-    const evidence: import("@foundry/protocol").Evidence = {
+    const evidence: import("@bd777/foundry-protocol").Evidence = {
       ...store.record("ev"),
       title: changes ? "系统生成的候选变更清单" : file!.path,
       description: changes
@@ -464,7 +464,7 @@ async function execute(
   )
     throw new Error("verification_input_mismatch");
   const candidate = store.readRecord<
-    import("@foundry/protocol").CandidateSnapshot
+    import("@bd777/foundry-protocol").CandidateSnapshot
   >("candidate-snapshots", input.candidateSnapshotId);
   await assertSnapshotCurrent(candidate, environment, store, false);
   const criterion = request.contract.criteria.find(
@@ -481,7 +481,7 @@ async function execute(
         request.action === "assess"
           ? request.evidence
           : verification.evidenceIds.map((id) =>
-              store.readRecord<import("@foundry/protocol").Evidence>(
+              store.readRecord<import("@bd777/foundry-protocol").Evidence>(
                 "evidence",
                 id,
               ),

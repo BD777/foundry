@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Copy, Link2, RefreshCw, Unlink } from "lucide-react";
-import type { WorkspaceFeishuConfig } from "@foundry/protocol";
+import type { WorkspaceFeishuConfig } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Panel, PanelHeader } from "../../components/ui/panel";

@@ -10,7 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { DaemonConfig } from "./config.js";
 import { foundryStatePath } from "./state-root.js";
-import type { ChatAttachment } from "@foundry/protocol";
+import type { ChatAttachment } from "@bd777/foundry-protocol";
 
 export interface FoundryClientConfig {
   serverURL: string;

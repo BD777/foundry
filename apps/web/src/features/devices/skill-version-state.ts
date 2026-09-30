@@ -1,4 +1,7 @@
-import type { DeviceSkill, SkillPromotionResolution } from "@foundry/protocol";
+import type {
+  DeviceSkill,
+  SkillPromotionResolution,
+} from "@bd777/foundry-protocol";
 export const skillSourceKey = (s: Pick<DeviceSkill, "root" | "dirName">) =>
   `${s.root}\0${s.dirName}`;
 export function skillServerLabel(s: DeviceSkill): string {

@@ -1,4 +1,4 @@
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 
 export function runPhase(run: Run): string {
   if (run.status === "running") {

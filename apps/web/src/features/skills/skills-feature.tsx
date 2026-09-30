@@ -5,7 +5,7 @@ import type {
   DeviceSkill,
   PromotedSkill,
   WorkspaceSkillBinding,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { setWorkspaceSkills } from "../../api";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";

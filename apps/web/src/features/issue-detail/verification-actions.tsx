@@ -6,7 +6,7 @@ import type {
   ReviewSnapshot,
   SnapshotFile,
   VerificationInput,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Checkbox, TextInput } from "../../components/ui/field";
 import {

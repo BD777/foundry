@@ -10,7 +10,7 @@ import type {
   CodexSandboxMode,
   CodexSpeed,
   WorkerRuntimeId,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { ProcessDisplayItem } from "./chat-process-display";
 
 /** User-editable runtime settings for one selected Chat agent. */

@@ -1,7 +1,7 @@
 import type {
   DeviceProfileBinding,
   ProfileDefinition,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 export function isModelConnection(profile: ProfileDefinition): boolean {
   return (

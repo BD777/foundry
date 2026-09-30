@@ -1,4 +1,4 @@
-import type { TranscriptMessage } from "@foundry/protocol";
+import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import {
   record,
   string,

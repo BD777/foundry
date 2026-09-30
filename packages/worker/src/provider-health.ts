@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { claudeAccount, codexAccount } from "./native-account.js";
 import { claudeCommandCandidates, codexCommandCandidates } from "./utils.js";
-import type { ProviderHealth, WorkerRuntimeId } from "@foundry/protocol";
+import type { ProviderHealth, WorkerRuntimeId } from "@bd777/foundry-protocol";
 
 type LocalProviderId = Exclude<WorkerRuntimeId, "mock">;
 

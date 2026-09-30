@@ -148,7 +148,7 @@ Open [http://127.0.0.1:31983](http://127.0.0.1:31983/).
 With the server running, replace the path below with your workspace path to initialize it, pair the device and install the local daemon:
 
 ```bash
-pnpm --filter @foundry/worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
 ```
 
 Then configure a local Claude or Codex profile in the interface. See the [development guide](development.md) for installation options, authentication, previews and troubleshooting.

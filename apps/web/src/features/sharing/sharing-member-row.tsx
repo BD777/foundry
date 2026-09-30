@@ -1,4 +1,4 @@
-import type { WorkspaceAccessRole } from "@foundry/protocol";
+import type { WorkspaceAccessRole } from "@bd777/foundry-protocol";
 import type { WorkspaceMember } from "../../api-types";
 import { Badge } from "../../components/ui/badge";
 import { ConfirmButton } from "../../components/ui/confirm-button";

@@ -17,7 +17,7 @@ import type {
   ProviderHealth,
   WorkspaceFileEntry,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { AssetSection } from "./asset-section";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";

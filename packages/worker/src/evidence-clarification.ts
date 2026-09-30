@@ -3,8 +3,11 @@ import type {
   ContractContent,
   EvidenceWorkerRequest,
   EvidenceWorkerResult,
-} from "@foundry/protocol";
-import { validateEvidenceModel, evidenceModelSchema } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import {
+  validateEvidenceModel,
+  evidenceModelSchema,
+} from "@bd777/foundry-protocol";
 import { EvidenceStore, INLINE_IMAGE_LIMIT } from "./evidence-store.js";
 import { identifier } from "./execution-storage.js";
 import { startSession } from "./session/index.js";

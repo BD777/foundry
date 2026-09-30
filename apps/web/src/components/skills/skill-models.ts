@@ -2,7 +2,7 @@ import type {
   DeviceSkill,
   PromotedSkill,
   SkillDependency,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 export interface NormalizedSkill {
   id: string;

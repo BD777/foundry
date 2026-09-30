@@ -18,7 +18,7 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "./button";
 import {
   claudeEffortOptions,

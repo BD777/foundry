@@ -37,7 +37,7 @@ RUN pnpm install --frozen-lockfile
 COPY packages/protocol packages/protocol
 COPY apps/web apps/web
 RUN printf 'VITE_API_BASE_URL=\n' > apps/web/.env.production
-RUN pnpm --filter @foundry/protocol build \
+RUN pnpm --filter @bd777/foundry-protocol build \
  && pnpm --filter @foundry/web build
 
 # ---------- server ----------
@@ -69,12 +69,12 @@ COPY apps/web/package.json apps/web/
 RUN pnpm install --frozen-lockfile
 
 COPY packages packages
-RUN pnpm --filter @foundry/protocol build \
- && pnpm --filter @foundry/worker build
+RUN pnpm --filter @bd777/foundry-protocol build \
+ && pnpm --filter @bd777/foundry-worker build
 # Self-contained production tree (workspace deps + linux-x64 optional
 # native packages such as @openai/codex for the target platform are bundled). --legacy is
 # required by pnpm >=10 because this workspace does not inject deps.
-RUN pnpm deploy --legacy --filter @foundry/worker --prod /opt/worker
+RUN pnpm deploy --legacy --filter @bd777/foundry-worker --prod /opt/worker
 
 # ---------- final: server ----------
 FROM alpine:3.20 AS foundry-server

@@ -2,7 +2,7 @@ import type {
   DeviceSkill,
   SkillPromotionResolution,
   PromotedSkill,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { TextInput } from "../../components/ui/field";
 import { Button } from "../../components/ui/button";

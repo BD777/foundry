@@ -3,7 +3,7 @@ import type {
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { ConfirmButton } from "../../components/ui/confirm-button";

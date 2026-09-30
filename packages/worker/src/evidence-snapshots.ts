@@ -14,7 +14,7 @@ import type {
   CandidateSnapshot,
   SnapshotFile,
   SnapshotRepository,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import type { IssueEnvironment } from "./execution-types.js";
 import { EvidenceStore, digestBytes, digestObject } from "./evidence-store.js";
 import { git } from "./execution-git.js";

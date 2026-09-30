@@ -7,8 +7,8 @@ import type {
   RunEvent,
   AcceptanceArtifact,
   SessionSkillRef,
-} from "@foundry/protocol";
-import { validateEvidenceModel } from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
+import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import { ExecutionStore } from "./execution-storage.js";
 import {
   prepareIssueEnvironment,

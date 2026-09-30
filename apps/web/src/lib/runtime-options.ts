@@ -5,7 +5,7 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 type Options<T> = Array<{ label: string; value: T }>;
 export const claudeEffortOptions: Options<ClaudeEffort> = [

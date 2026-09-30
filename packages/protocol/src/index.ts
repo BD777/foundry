@@ -1257,4 +1257,4 @@ export interface SkillFileComparison {
  * The npm package that installs a worker: `npx -y <name>@latest install`.
  * The web shows its commands; the worker installs and updates itself from it.
  */
-export const workerPackageName = "@foundry/worker";
+export const workerPackageName = "@bd777/foundry-worker";

@@ -18,14 +18,14 @@
     "audit:ui": "pnpm audit:buttons && pnpm audit:native-controls && pnpm audit:app-boundary && pnpm audit:component-boundaries && pnpm audit:feature-architecture && pnpm audit:inline-styles && pnpm audit:css && pnpm audit:v3-layout && pnpm audit:web-entry",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "pnpm --filter @foundry/protocol build",
-    "predev": "pnpm --filter @foundry/protocol build",
+    "prebuild": "pnpm --filter @bd777/foundry-protocol build",
+    "predev": "pnpm --filter @bd777/foundry-protocol build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@foundry/protocol": "workspace:*",
+    "@bd777/foundry-protocol": "workspace:*",
     "@radix-ui/react-context-menu": "^2.3.7",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",

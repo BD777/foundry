@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ArrowLeft, PanelRight, X } from "lucide-react";
-import type { Issue, Run } from "@foundry/protocol";
+import type { Issue, Run } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";

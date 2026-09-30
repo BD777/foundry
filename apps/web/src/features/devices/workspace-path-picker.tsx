@@ -1,7 +1,7 @@
 import { Command } from "cmdk";
 import { FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
-import type { WorkspaceDirectoryEntry } from "@foundry/protocol";
+import type { WorkspaceDirectoryEntry } from "@bd777/foundry-protocol";
 import { listWorkspaceSubdirectories } from "../../api";
 import { fieldVariants } from "../../components/ui/field";
 import {

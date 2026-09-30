@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DeviceProjection, DeviceResource } from "@foundry/protocol";
+import type { DeviceProjection, DeviceResource } from "@bd777/foundry-protocol";
 import { refreshDeviceResources } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";

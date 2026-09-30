@@ -1,4 +1,4 @@
-import type { IssueContract } from "@foundry/protocol";
+import type { IssueContract } from "@bd777/foundry-protocol";
 import { ReferencePreviews } from "./evidence-preview";
 import { evidenceRequirementText, verificationMethod } from "./issue-language";
 

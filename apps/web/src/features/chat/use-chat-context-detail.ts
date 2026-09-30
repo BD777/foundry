@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type {
   AgentSubagentTranscript,
   WorkspaceFileRead,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   isAbortError,
   readAgentSubagentTranscript,

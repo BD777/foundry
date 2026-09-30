@@ -11,7 +11,7 @@ import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
   TranscriptMessage,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { ClaudeTurnWatchdog } from "./watchdog.js";
 import type { SessionOutputFiles } from "./session-output-files.js";
 import type { ClaudeTimerTracker } from "./agent-timers.js";

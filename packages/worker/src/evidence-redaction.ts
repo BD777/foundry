@@ -1,4 +1,4 @@
-import type { Material } from "@foundry/protocol";
+import type { Material } from "@bd777/foundry-protocol";
 import { redactSecrets } from "./secret-redaction.js";
 
 /** Conservative baseline policy; configured secret bindings are never materialized. */

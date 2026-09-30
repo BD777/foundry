@@ -32,7 +32,7 @@ import {
   type WorkspaceFileEntry,
   type WorkspaceFileRead,
   type WorkspaceTreeEntry,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import { sendWebSocket, trySendWebSocket } from "./transport.js";
 import {
   listAgentSubagents,

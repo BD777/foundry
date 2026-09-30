@@ -14,7 +14,7 @@ import type {
   ChatThread,
   WorkerRuntimeId,
   WorkspaceProjection,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 interface CodexSessionIndexEntry {
   id: string;

@@ -7,7 +7,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import type { Issue } from "@foundry/protocol";
+import type { Issue } from "@bd777/foundry-protocol";
 import { issueDisplayId } from "../../lib/issue-meta";
 
 export interface IssueDetailAction {

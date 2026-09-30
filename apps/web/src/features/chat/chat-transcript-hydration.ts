@@ -1,4 +1,4 @@
-import type { AgentSession } from "@foundry/protocol";
+import type { AgentSession } from "@bd777/foundry-protocol";
 
 const defaultRetryDelaysMs = [500, 1_500, 5_000, 10_000] as const;
 

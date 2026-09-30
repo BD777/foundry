@@ -3,7 +3,7 @@ import {
   type AgentSession,
   type ChatThread,
   type WorkerRuntimeId,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 import {
   agentSessionHasStreamedResponse,
   agentSessionMessageText,

@@ -9,7 +9,7 @@ import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
   TranscriptMessage,
-} from "@foundry/protocol";
+} from "@bd777/foundry-protocol";
 
 export class ClaudeAgentTurnError extends Error {
   readonly subtype: string;
