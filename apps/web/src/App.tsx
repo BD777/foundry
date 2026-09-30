@@ -165,6 +165,7 @@ const navSections: Array<SidebarNavSection<SidebarView>> = [
     label: "Workspace",
     items: [
       { id: "workspace", label: "Overview", icon: FolderOpen },
+      { id: "issues", label: "Issues", icon: Columns2 },
       { id: "chats", label: "Chats", icon: MessageSquareText },
     ],
   },
@@ -1097,8 +1098,30 @@ export function App() {
           />
         );
       case "issues":
+        if (!deviceOnline) {
+          return renderSetupView();
+        }
+        return renderIssuesView();
       case "issue":
-        return renderWorkspaceView();
+        return (
+          <IssueDetailView
+            callbacks={{
+              onAcceptIssue: () => void handleAcceptIssue(),
+              onDraftFromSource: draftFromSource,
+              onNavigate: (view) => setActiveView(view as never),
+              onNewIssue: focusComposer,
+              onNotice: setNotice,
+              onRefresh: (issueId) => void refreshData(issueId),
+              onRequestChanges: () => void handleRequestChanges(),
+              onStartProduction: workerCommandNotice,
+            }}
+            deviceLabel={device?.label ?? "No device"}
+            issue={selectedIssue}
+            history={data.runs}
+            onBack={() => setActiveView("issues")}
+            workspaceBaseline={data.workspace.baseline}
+          />
+        );
       case "chats":
         return renderChatsView();
       case "assets":
