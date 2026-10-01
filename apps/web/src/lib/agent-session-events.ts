@@ -1,5 +1,6 @@
 import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
 
+// i18n-ignore: protocol event label the worker emits, never shown as copy
 export const responseStreamLabel = "Response stream";
 
 export function shouldDisplayAgentSessionEvent(

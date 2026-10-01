@@ -44,6 +44,8 @@ test("directory context menu renames and requires explicit confirmation before d
       value,
     });
   }
+  const { i18n } = await import("../src/i18n/index.ts");
+  await i18n.changeLanguage("en");
   const { ChatGroupSection } =
     await import("../src/features/chat/chat-group-section.tsx");
   const container = window.document.createElement("div");
@@ -90,26 +92,26 @@ test("directory context menu renames and requires explicit confirmation before d
       [...window.document.querySelectorAll('[role="menuitem"]')].map((node) =>
         node.textContent.trim(),
       ),
-      ["重命名", "删除"],
+      ["Rename", "Delete"],
     );
-    await act(() => text('[role="menuitem"]', "重命名").click());
+    await act(() => text('[role="menuitem"]', "Rename").click());
     assert.equal(renames, 1);
     await openMenu();
-    await act(() => text('[role="menuitem"]', "删除").click());
+    await act(() => text('[role="menuitem"]', "Delete").click());
     assert.equal(deletions, 0);
     assert.match(
       window.document.querySelector('[role="dialog"]').textContent,
-      /全部 7 个 Session/,
+      /all 7 sessions/,
     );
-    assert.equal(window.document.activeElement.textContent, "取消");
-    await act(() => text("button", "取消").click());
+    assert.equal(window.document.activeElement.textContent, "Cancel");
+    await act(() => text("button", "Cancel").click());
     assert.equal(deletions, 0);
     await openMenu();
-    await act(() => text('[role="menuitem"]', "删除").click());
-    await act(() => text("button", "删除目录及 Session").click());
+    await act(() => text('[role="menuitem"]', "Delete").click());
+    await act(() => text("button", "Delete group and sessions").click());
     assert.equal(deletions, 1);
-    assert.equal(text("button", "删除中…").disabled, true);
-    assert.equal(text("button", "取消").disabled, true);
+    assert.equal(text("button", "Deleting…").disabled, true);
+    assert.equal(text("button", "Cancel").disabled, true);
     await act(async () => {
       finish();
     });
@@ -120,11 +122,11 @@ test("directory context menu renames and requires explicit confirmation before d
       ),
     );
     await openMenu();
-    await act(() => text('[role="menuitem"]', "删除").click());
+    await act(() => text('[role="menuitem"]', "Delete").click());
     assert.equal(deletions, 2, "empty directories delete immediately");
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     await openMenu();
-    assert.equal(text('[role="menuitem"]', "删除").disabled, true);
+    assert.equal(text('[role="menuitem"]', "Delete").disabled, true);
     await act(() =>
       window.document.dispatchEvent(
         new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
@@ -146,7 +148,7 @@ test("directory context menu renames and requires explicit confirmation before d
     );
     await openMenu();
     await act(async () => {
-      text('[role="menuitem"]', "删除").click();
+      text('[role="menuitem"]', "Delete").click();
     });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     assert.match(

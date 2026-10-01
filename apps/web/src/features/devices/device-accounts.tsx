@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -35,6 +36,7 @@ export function DeviceAccounts({
   bindings: DeviceProfileBinding[];
   onRefresh: () => Promise<void>;
 }) {
+  const { t } = useTranslation("profiles");
   const [authorization, setAuthorization] = useState<ProfileAuthorization>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -73,7 +75,9 @@ export function DeviceAccounts({
         .catch((cause) => {
           if (!canceled) {
             setError(
-              cause instanceof Error ? cause.message : "Could not check login.",
+              cause instanceof Error
+                ? cause.message
+                : t("accounts.checkFailed"),
             );
             setPollAttempt((attempt) => attempt + 1);
           }
@@ -100,6 +104,7 @@ export function DeviceAccounts({
         const status = local?.status ?? nativeHealth?.status;
         const signedIn = !!local && status === "healthy";
         const unavailable = status === "unavailable";
+        // i18n-ignore: runtime product names
         const name = runtime === "claude" ? "Claude Code" : "Codex";
         const active = authorization?.runtime === runtime;
         return (
@@ -118,16 +123,16 @@ export function DeviceAccounts({
                   <strong>{name}</strong>
                   <small>
                     {signedIn
-                      ? "Local login detected · Online validity not checked"
+                      ? t("accounts.localLoginDetected")
                       : unavailable
                         ? (local?.statusDetail ??
                           nativeHealth?.statusDetail ??
-                          "Install the native agent on this device.")
-                        : "No login in the worker’s configuration · Check other local configurations"}
+                          t("accounts.installNative"))
+                        : t("accounts.noLogin")}
                   </small>
                 </span>
                 <span className="fdy-account-open-label">
-                  Account & defaults
+                  {t("accounts.accountAndDefaults")}
                 </span>
                 {expanded === runtime ? (
                   <ChevronDown size={15} />
@@ -139,18 +144,23 @@ export function DeviceAccounts({
                 tone={device.status !== "connected" ? "neutral" : "neutral"}
               >
                 {device.status !== "connected"
-                  ? "Device offline"
+                  ? t("accounts.deviceOffline")
                   : signedIn
-                    ? "Local login"
+                    ? t("accounts.localLogin")
                     : unavailable
-                      ? "Unavailable"
-                      : "Worker: no login"}
+                      ? t("accounts.unavailable")
+                      : t("accounts.workerNoLogin")}
               </Badge>
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={busy || device.status !== "connected" || unavailable}
-                aria-label={`${signedIn ? "Re-authorize" : "Sign in to"} ${name} on ${device.label}`}
+                aria-label={t(
+                  signedIn
+                    ? "accounts.reauthorizeLabel"
+                    : "accounts.signInLabel",
+                  { name, device: device.label },
+                )}
                 onClick={async () => {
                   setBusy(true);
                   setError("");
@@ -165,14 +175,14 @@ export function DeviceAccounts({
                     setError(
                       cause instanceof Error
                         ? cause.message
-                        : "Could not start login on this device.",
+                        : t("accounts.startFailed"),
                     );
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                {signedIn ? "Re-authorize" : "Sign in"}
+                {signedIn ? t("accounts.reauthorize") : t("accounts.signIn")}
               </Button>
             </div>
             {active && authorization ? (
@@ -188,7 +198,7 @@ export function DeviceAccounts({
                       setError(
                         cause instanceof Error
                           ? cause.message
-                          : "Login failed.",
+                          : t("accounts.loginFailed"),
                       ),
                     )
                     .finally(() => setBusy(false));
@@ -219,27 +229,24 @@ export function DeviceAccounts({
       {legacy.length ? (
         <details className="fdy-device-legacy">
           <summary className="fdy-device-disclosure">
-            Earlier official profile settings ({legacy.length})
+            {t("accounts.legacyTitle", { count: legacy.length })}
           </summary>
-          <p>
-            Preserved for existing sessions; these are runtime presets, not
-            separate accounts. New logins use the device accounts above. No
-            historical records have been changed.
-          </p>
+          <p>{t("accounts.legacyIntro")}</p>
           {legacy.map((profile) => (
             <div key={profile.id} className="fdy-management-row">
               <span>
                 <strong>{profile.label}</strong>
                 <small>
-                  {profile.runtime} · {profile.model || "Runtime default"} ·{" "}
+                  {profile.runtime} ·{" "}
+                  {profile.model || t("accounts.runtimeDefault")} ·{" "}
                   {bindings.some(
                     (row) =>
                       row.deviceId === device.id &&
                       row.profileId === profile.id &&
                       row.enabled,
                   )
-                    ? "Previously assigned to this device"
-                    : "Not assigned to this device"}
+                    ? t("accounts.previouslyAssigned")
+                    : t("accounts.notAssigned")}
                 </small>
               </span>
             </div>

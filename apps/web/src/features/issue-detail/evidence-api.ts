@@ -11,6 +11,7 @@ import type {
   VerificationInput,
 } from "@bd777/foundry-protocol";
 import { apiFetch } from "../../api";
+import { i18n } from "../../i18n";
 
 const base = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:31982";
 async function request<T>(
@@ -143,9 +144,7 @@ export async function readPreviewMaterial(
     (!isImage && !isText) ||
     material.byteSize > (isImage ? 25 * 1024 * 1024 : 2 * 1024 * 1024)
   )
-    throw new Error(
-      "Preview unavailable for this format or size; download the original.",
-    );
+    throw new Error(i18n.t("issueDetail:preview.unavailable"));
   const response = await apiFetch(
     `${base}${path(id)}/materials/${encodeURIComponent(material.id)}/content`,
   );

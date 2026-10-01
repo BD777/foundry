@@ -1,4 +1,5 @@
 import type { IssueContract } from "@bd777/foundry-protocol";
+import { useTranslation } from "react-i18next";
 import { ReferencePreviews } from "./evidence-preview";
 import { evidenceRequirementText, verificationMethod } from "./issue-language";
 
@@ -10,33 +11,38 @@ export function ContractSummary({
   contract: IssueContract;
   compact?: boolean;
 }) {
+  const { t } = useTranslation("issueDetail");
   return (
     <div className="fdy-contract-summary">
       <section className="fdy-issue-card">
         <div className="fdy-issue-card-heading">
-          <h3>任务目标</h3>
+          <h3>{t("contract.goal")}</h3>
           <span>
-            {contract.status === "confirmed" ? "已确认" : "待确认草案"} · 第{" "}
-            {contract.revision} 版
+            {contract.status === "confirmed"
+              ? t("contract.confirmed")
+              : t("contract.draft")}{" "}
+            · {t("contract.revision", { revision: contract.revision })}
           </span>
         </div>
-        <p>{contract.goal.text || "还需要明确希望达成的结果。"}</p>
+        <p>{contract.goal.text || t("contract.goalMissing")}</p>
       </section>
       <section className="fdy-issue-card">
-        <h3>完成标准</h3>
-        {!contract.criteria.length ? (
-          <p>还没有可观察的完成标准。请在聊天中告诉 Agent 你想解决什么问题。</p>
-        ) : null}
+        <h3>{t("contract.criteria")}</h3>
+        {!contract.criteria.length ? <p>{t("contract.noCriteria")}</p> : null}
         {contract.criteria.map((criterion, index) => (
           <article className="fdy-criterion-summary" key={criterion.id}>
             <h4>
               {index + 1}. {criterion.title}{" "}
-              <span>{criterion.required ? "必须满足" : "补充目标"}</span>
+              <span>
+                {criterion.required
+                  ? t("shared.required")
+                  : t("shared.optional")}
+              </span>
             </h4>
             <p>{criterion.statement}</p>
             {compact ? (
               <details>
-                <summary>如何验证与判断</summary>
+                <summary>{t("contract.howVerified")}</summary>
                 <p>{verificationMethod(criterion)}</p>
                 <p>{criterion.rubric.text}</p>
                 <ul>
@@ -48,11 +54,11 @@ export function ContractSummary({
             ) : (
               <>
                 <p>
-                  <strong>如何验证：</strong>
+                  <strong>{t("contract.howVerify")}</strong>
                   {verificationMethod(criterion)}
                 </p>
                 <p>
-                  <strong>判断依据：</strong>
+                  <strong>{t("contract.basis")}</strong>
                   {criterion.rubric.text}
                 </p>
                 <ul>
@@ -76,11 +82,11 @@ export function ContractSummary({
         contract.constraints.length >
       0 ? (
         <section className="fdy-issue-card">
-          <h3>范围与限制</h3>
+          <h3>{t("contract.scope")}</h3>
           {[
-            ["本次包含", contract.inScope],
-            ["本次不做", contract.outOfScope],
-            ["必须遵守", contract.constraints],
+            [t("contract.inScope"), contract.inScope],
+            [t("contract.outOfScope"), contract.outOfScope],
+            [t("contract.constraints"), contract.constraints],
           ].map(([label, values]) =>
             (values as string[]).length ? (
               <div key={label as string}>
@@ -97,8 +103,8 @@ export function ContractSummary({
       ) : null}
       {!compact && contract.goal.media.length ? (
         <section className="fdy-issue-card">
-          <h3>参考与背景</h3>
-          <p>这些是判断方向的参考，不是执行结果的证明。</p>
+          <h3>{t("contract.references")}</h3>
+          <p>{t("contract.referencesNote")}</p>
           <ReferencePreviews
             issueId={contract.issueId}
             media={contract.goal.media}

@@ -20,6 +20,7 @@ import {
   type ChatSessionThread,
 } from "./chat-model";
 import type { ChatAgentOption } from "./chat-surface-types";
+import { i18n } from "../../i18n";
 
 export interface UseChatRuntimeInput {
   active: boolean;
@@ -183,7 +184,12 @@ export function useChatRuntime({
         const models = await listAgentModels(input);
         setModelOptions((current) => ({ ...current, [profileId]: models }));
         if (!quiet) {
-          await onNotice(`${models.length} models loaded from ${input.label}.`);
+          await onNotice(
+            i18n.t("chat:models.loaded", {
+              count: models.length,
+              source: input.label,
+            }),
+          );
         }
         return models;
       } catch {
@@ -192,7 +198,7 @@ export function useChatRuntime({
           [profileId]: true,
         }));
         if (!quiet) {
-          await onNotice("Could not load models from this provider.");
+          await onNotice(i18n.t("chat:models.loadFailed"));
         }
         return [];
       } finally {

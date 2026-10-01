@@ -1,4 +1,5 @@
 import type { ChatLayout } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 
 export type LayoutChange = (layout: ChatLayout) => ChatLayout;
 
@@ -62,7 +63,7 @@ export class ChatLayoutSync {
 
   async deleteGroup(remove: (revision: number) => Promise<ChatLayout>) {
     if (!this.active || this.running || this.queue.length || this.recovering)
-      throw new Error("分组正在同步，请稍后再删除。");
+      throw new Error(i18n.t("chat:layoutSync.busyDelete"));
     this.running = true;
     this.deleting = true;
     if (this.active) this.io.changed(this.confirmed, true);
@@ -91,18 +92,15 @@ export class ChatLayoutSync {
       this.recovering = true;
       this.publish();
       if (this.active)
-        this.io.failed("分组或排序保存失败，正在恢复服务器状态…", false);
+        this.io.failed(i18n.t("chat:layoutSync.saveFailed"), false);
       try {
         this.confirmed = await this.io.load();
         this.publish();
         if (this.active)
-          this.io.failed("更改未能确认保存，已恢复服务器状态，请重试。", true);
+          this.io.failed(i18n.t("chat:layoutSync.restored"), true);
       } catch {
         if (this.active)
-          this.io.failed(
-            "无法连接服务器，更改未能确认保存。请重新加载分组后再试。",
-            false,
-          );
+          this.io.failed(i18n.t("chat:layoutSync.unreachable"), false);
       }
       this.recovering = false;
     } finally {

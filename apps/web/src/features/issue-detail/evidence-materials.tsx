@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   CandidateSnapshot,
   Issue,
@@ -29,6 +30,7 @@ export function EvidenceMaterials({
   issue: Issue;
   onChange: () => Promise<void>;
 }) {
+  const { t } = useTranslation("issueDetail");
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
   const [materials, setMaterials] = useState<Material[]>([]);
   const [input, setInput] = useState<VerificationInput>(),
@@ -75,7 +77,10 @@ export function EvidenceMaterials({
     contract?.criteria.flatMap((c) =>
       c.evidenceRequirements.map((r) => ({
         value: `${c.id}/${r.id}`,
-        label: `${c.title}: ${r.description}`,
+        label: t("materials.requirementOption", {
+          criterion: c.title,
+          requirement: r.description,
+        }),
       })),
     ) ?? [];
   const selected = contract?.criteria
@@ -107,7 +112,7 @@ export function EvidenceMaterials({
   };
   return (
     <details>
-      <summary>Actual materials and collection</summary>
+      <summary>{t("materials.summary")}</summary>
       <ul>
         {materials.map((m) => (
           <li key={m.id}>
@@ -121,25 +126,25 @@ export function EvidenceMaterials({
             <EvidencePreview
               issueId={issue.id}
               materialId={m.id}
-              label="Preview sealed material"
+              label={t("materials.previewSealed")}
             />
           </li>
         ))}
       </ul>
       <SelectMenu
-        ariaLabel="Evidence requirement"
+        ariaLabel={t("materials.requirement")}
         options={options}
         value={selection}
         onChange={setSelection}
-        placeholder="Select the exact evidence requirement"
+        placeholder={t("materials.requirementPlaceholder")}
       />
       <FileInput
-        aria-label="Upload actual evidence or reference material"
+        aria-label={t("materials.upload")}
         onChange={(e) => setFile(e.target.files?.[0])}
       />
       <Textarea
-        aria-label="Material provenance and candidate attestation"
-        placeholder="Where was this captured, and why does it represent this exact candidate?"
+        aria-label={t("materials.attestationLabel")}
+        placeholder={t("materials.attestationPlaceholder")}
         value={attestation}
         onChange={(e) => setAttestation(e.target.value)}
       />
@@ -160,7 +165,7 @@ export function EvidenceMaterials({
               selected.r.bindingPolicy !== "system_or_human_attested"
             )
               throw new Error(
-                `Material ${material.id} saved. This requirement does not permit human-attested evidence.`,
+                t("materials.notAttestable", { id: material.id }),
               );
             const parameters = await uploadMaterial(
               issue.id,
@@ -190,15 +195,13 @@ export function EvidenceMaterials({
           })
         }
       >
-        Upload material
-        {selected && attestation.trim() ? " and attest candidate binding" : ""}
+        {selected && attestation.trim()
+          ? t("materials.uploadAndAttest")
+          : t("materials.uploadButton")}
       </Button>
-      <p>
-        Upload alone creates a Material, not proof. Reference material IDs can
-        be added to the next contract draft’s media fields.
-      </p>
+      <p>{t("materials.uploadNote")}</p>
       <SelectMenu
-        ariaLabel="Snapshot repository"
+        ariaLabel={t("materials.repository")}
         options={
           candidate?.repositories.map((r) => ({
             value: r.repoId,
@@ -209,8 +212,8 @@ export function EvidenceMaterials({
         onChange={setRepoId}
       />
       <TextInput
-        aria-label="Candidate file path"
-        placeholder="Relative file path in the sealed snapshot"
+        aria-label={t("materials.path")}
+        placeholder={t("materials.pathPlaceholder")}
         value={path}
         onChange={(e) => setPath(e.target.value)}
       />
@@ -229,7 +232,7 @@ export function EvidenceMaterials({
           })
         }
       >
-        Export candidate file as evidence
+        {t("materials.export")}
       </Button>
       {error ? <p role="alert">{error}</p> : null}
     </details>

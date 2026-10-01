@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProfileBinding,
@@ -32,6 +33,7 @@ export function DeviceConnections({
   onRefresh: () => Promise<void>;
   onManage: () => void;
 }) {
+  const { t } = useTranslation("profiles");
   const [busy, setBusy] = useState(false);
   const [writeError, setWriteError] = useState("");
   // A write can land while the follow-up snapshot refresh fails. The change
@@ -62,7 +64,7 @@ export function DeviceConnections({
       setRefreshError(
         cause instanceof Error
           ? cause.message
-          : "Saved, but the list could not be refreshed.",
+          : t("deviceConnections.refreshFailed"),
       );
     } finally {
       setRefreshing(false);
@@ -85,7 +87,9 @@ export function DeviceConnections({
       await action();
     } catch (cause) {
       const message =
-        cause instanceof Error ? cause.message : "Could not save this change.";
+        cause instanceof Error
+          ? cause.message
+          : t("deviceConnections.saveFailed");
       if (surfaceError) setWriteError(message);
       setBusy(false);
       return message;
@@ -100,23 +104,22 @@ export function DeviceConnections({
     <section className="fdy-device-section">
       <header className="fdy-management-heading">
         <div>
-          <h2>Server API connections</h2>
-          <p>
-            API keys and model defaults are saved on the server. Grant this
-            device access to use a connection.
-          </p>
+          <h2>{t("deviceConnections.title")}</h2>
+          <p>{t("deviceConnections.intro")}</p>
         </div>
         <Button
           size="sm"
           variant="secondary"
           onClick={() => setPickerOpen(true)}
         >
-          Add connection
+          {t("deviceConnections.add")}
         </Button>
       </header>
       {savedNote && !refreshError ? (
         <p role="status">
-          {refreshing ? "Saved · updating the list…" : "Saved."}
+          {refreshing
+            ? t("deviceConnections.savedRefreshing")
+            : t("deviceConnections.saved")}
         </p>
       ) : null}
       {assignedConnections.map((profile) => (
@@ -125,13 +128,20 @@ export function DeviceConnections({
           <span>
             <strong>{profile.label}</strong>
             <small>
-              {profile.model || profile.baseUrl} · Stored on server
-              {profile.hasCredential ? "" : " · No key configured"}
+              {t(
+                profile.hasCredential
+                  ? "deviceConnections.storedOnServer"
+                  : "deviceConnections.storedOnServerNoKey",
+                { detail: profile.model || profile.baseUrl },
+              )}
             </small>
           </span>
-          <Badge tone="neutral">Assigned</Badge>
+          <Badge tone="neutral">{t("deviceConnections.assigned")}</Badge>
           <ConfirmButton
-            confirmLabel={`Remove ${profile.label} from ${device.label}?`}
+            confirmLabel={t("deviceConnections.removeConfirm", {
+              connection: profile.label,
+              device: device.label,
+            })}
             disabled={busy}
             onConfirm={() =>
               void commitWrite(() =>
@@ -149,15 +159,12 @@ export function DeviceConnections({
             size="sm"
             variant="secondary"
           >
-            Remove access
+            {t("deviceConnections.removeAccess")}
           </ConfirmButton>
         </div>
       ))}
       {assignedConnections.length === 0 ? (
-        <p>
-          No server connections assigned. Official device accounts work
-          independently.
-        </p>
+        <p>{t("deviceConnections.none")}</p>
       ) : null}
       <Button
         className="fdy-account-inline-action"
@@ -165,13 +172,15 @@ export function DeviceConnections({
         variant="ghost"
         onClick={onManage}
       >
-        Manage server connections →
+        {t("deviceConnections.manage")}
       </Button>
       {writeError ? <p role="alert">{writeError}</p> : null}
       {refreshError ? (
         <div className="fdy-connection-refresh-error" role="alert">
           <span>
-            Saved, but the list could not be refreshed: {refreshError}
+            {t("deviceConnections.refreshFailedDetail", {
+              error: refreshError,
+            })}
           </span>
           <Button
             disabled={refreshing}
@@ -179,7 +188,9 @@ export function DeviceConnections({
             size="sm"
             variant="secondary"
           >
-            {refreshing ? "Retrying…" : "Retry refresh"}
+            {refreshing
+              ? t("deviceConnections.retrying")
+              : t("deviceConnections.retryRefresh")}
           </Button>
         </div>
       ) : null}
@@ -215,11 +226,8 @@ export function DeviceConnections({
         (row) => row.connectionType !== "local_login" && !row.promotedProfileId,
       ) ? (
         <details>
-          <summary>Local configuration</summary>
-          <p>
-            Detected on this device. Kept local unless you explicitly copy a
-            connection and its key to the server.
-          </p>
+          <summary>{t("deviceConnections.localConfiguration")}</summary>
+          <p>{t("deviceConnections.localIntro")}</p>
           {detected
             .filter(
               (row) =>
@@ -237,7 +245,7 @@ export function DeviceConnections({
                     size="sm"
                     variant="secondary"
                     disabled={busy || device.status !== "connected"}
-                    confirmLabel="Copy connection and key?"
+                    confirmLabel={t("deviceConnections.copyConfirm")}
                     onConfirm={() =>
                       void commitWrite(() =>
                         promoteProfile({
@@ -247,10 +255,12 @@ export function DeviceConnections({
                       )
                     }
                   >
-                    Copy to server
+                    {t("deviceConnections.copyToServer")}
                   </ConfirmButton>
                 ) : (
-                  <Badge tone="neutral">Device only</Badge>
+                  <Badge tone="neutral">
+                    {t("deviceConnections.deviceOnly")}
+                  </Badge>
                 )}
               </div>
             ))}

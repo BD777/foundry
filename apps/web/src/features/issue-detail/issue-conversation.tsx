@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, type Ref } from "react";
+import { useTranslation } from "react-i18next";
 import type { Issue, Run } from "@bd777/foundry-protocol";
 import { issueEnvironmentAction, requestChanges, steerIssue } from "../../api";
 import { Conversation } from "../../components/conversation/conversation";
@@ -26,6 +27,7 @@ export function IssueConversation({
   onRefresh: (issueId?: string) => void;
   contract?: IssueContractController;
 }) {
+  const { t } = useTranslation("issueDetail");
   const statusRequest = useRef<{ text: string; key: string } | undefined>(
     undefined,
   );
@@ -54,21 +56,21 @@ export function IssueConversation({
       }
       if (clarifying && contract) return contract.send(text, attachments);
       if (contract && issue.contractState !== "confirmed")
-        throw new Error("请先在“目标与约定”发起澄清，确认标准后再执行。");
+        throw new Error(t("conversation.clarifyFirst"));
       await requestChanges(issue.id, text, runId);
       onRefresh(issue.id);
       return true;
     },
-    [issue, runId, onRefresh, clarifying, contract],
+    [issue, runId, onRefresh, clarifying, contract, t],
   );
   const steer = useCallback(
     async (text: string, executionId?: string) => {
-      if (!executionId) throw new Error("No active Issue execution");
+      if (!executionId) throw new Error(t("conversation.noExecution"));
       await steerIssue(issue.id, text, executionId);
       onRefresh(issue.id);
       return true;
     },
-    [issue.id, onRefresh],
+    [issue.id, onRefresh, t],
   );
   const stop = useCallback(async () => {
     await issueEnvironmentAction(issue.id, "cancel");
@@ -88,7 +90,7 @@ export function IssueConversation({
       role: "bot",
       kind: "process",
       text: "",
-      title: "正在整理目标与完成标准…",
+      title: t("conversation.organizing"),
       streaming: true,
     });
   } else if (contract && clarifying) {
@@ -102,7 +104,7 @@ export function IssueConversation({
       displayed.push({
         id: "clarification-welcome",
         role: "bot",
-        text: "我会先和你明确目标与完成标准，确认后再开始修改。",
+        text: t("conversation.welcome"),
       });
   }
   if (contract?.error)
@@ -110,7 +112,7 @@ export function IssueConversation({
       id: "contract-error",
       role: "bot",
       text: (
-        <Alert tone="warning" title="这一步尚未完成">
+        <Alert tone="warning" title={t("shared.stepUnfinished")}>
           <p>{contract.error}</p>
           {!issue.messages?.length ? (
             <Button
@@ -118,10 +120,10 @@ export function IssueConversation({
               variant="secondary"
               onClick={() => void contract.retryInitial().catch(() => {})}
             >
-              重试目标澄清
+              {t("conversation.retryClarify")}
             </Button>
           ) : null}
-          <p>输入与已保存内容保留；处理原因后可再次发送。</p>
+          <p>{t("conversation.keptNote")}</p>
         </Alert>
       ),
     });
@@ -138,14 +140,14 @@ export function IssueConversation({
       }
       activeExecutionId={runId}
       draftStorageKey={`foundry.issue-draft:${issue.id}`}
-      inputLabel="Issue follow-up"
-      sendLabel="Send issue message"
+      inputLabel={t("conversation.inputLabel")}
+      sendLabel={t("conversation.sendLabel")}
       placeholder={
         clarifying
-          ? "说说想达到的结果、回答追问，或上传参考…"
+          ? t("conversation.placeholderClarifying")
           : issue.status === "in_progress"
-            ? "Guide the agent while it works…"
-            : "Continue this Issue in its candidate workspace…"
+            ? t("conversation.placeholderWorking")
+            : t("conversation.placeholderContinue")
       }
       onSend={send}
       canSendDuringExecution={isStatusQuestion}
@@ -161,9 +163,9 @@ export function IssueConversation({
         terminal ? (
           <p className="fdy-issue-conversation-note">
             {issue.status === "accepted"
-              ? "Accepted into Workspace."
-              : "Abandoned. Candidate and conversation history are retained."}{" "}
-            Create a follow-up Issue for further changes.
+              ? t("conversation.readOnlyAccepted")
+              : t("conversation.readOnlyAbandoned")}{" "}
+            {t("conversation.readOnlyFollowUp")}
           </p>
         ) : undefined
       }

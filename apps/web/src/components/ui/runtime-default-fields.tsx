@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { CreateAgentProfileInput } from "../../api-types";
 import { SelectMenu } from "./select-menu";
 import {
@@ -33,40 +34,41 @@ export function RuntimeDefaultFields({
   insideDialog?: boolean;
   inherit?: boolean;
 }) {
+  const { t } = useTranslation("agents");
   const fields =
     runtime === "claude"
       ? [
           {
             field: "claudeEffort" as const,
-            label: "Claude effort",
-            options: claudeEffortOptions,
+            label: t("defaults.claudeEffort"),
+            options: claudeEffortOptions(),
           },
           {
             field: "claudePermissionMode" as const,
-            label: "Claude permission",
-            options: claudePermissionOptions,
+            label: t("defaults.claudePermission"),
+            options: claudePermissionOptions(),
           },
         ]
       : [
           {
             field: "codexReasoningEffort" as const,
-            label: "Codex reasoning effort",
-            options: codexEffortOptions,
+            label: t("defaults.codexEffort"),
+            options: codexEffortOptions(),
           },
           {
             field: "codexSandboxMode" as const,
-            label: "Codex sandbox",
-            options: codexSandboxOptions,
+            label: t("defaults.codexSandbox"),
+            options: codexSandboxOptions(),
           },
           {
             field: "codexApprovalPolicy" as const,
-            label: "Codex approval",
-            options: codexApprovalOptions,
+            label: t("defaults.codexApproval"),
+            options: codexApprovalOptions(),
           },
           {
             field: "codexSpeed" as const,
-            label: "Codex speed",
-            options: codexSpeedOptions,
+            label: t("defaults.codexSpeed"),
+            options: codexSpeedOptions(),
           },
         ];
   return (
@@ -80,7 +82,10 @@ export function RuntimeDefaultFields({
             value={value[field] ?? ""}
             options={
               inherit
-                ? [{ value: "", label: "Foundry default" }, ...options]
+                ? [
+                    { value: "", label: t("defaults.foundryDefault") },
+                    ...options,
+                  ]
                 : options
             }
             onChange={(next) => onChange({ [field]: next || undefined })}

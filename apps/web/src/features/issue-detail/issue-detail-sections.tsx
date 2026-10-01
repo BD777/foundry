@@ -3,6 +3,7 @@ import type {
   SkillPackRef,
   WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
+import { useTranslation } from "react-i18next";
 import { ChecklistRow } from "../../components/ui/checklist-row";
 import { EmptyState } from "../../components/ui/empty-state";
 import {
@@ -25,33 +26,33 @@ export function IssueRunTimeline({
   runtime,
   skills,
 }: IssueRunTimelineProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <section className="fdy-detail-block">
-      <SectionLabel>Worker runtime & skills</SectionLabel>
+      <SectionLabel>{t("sections.runtimeSkills")}</SectionLabel>
       <div className="fdy-runtime-pack-row">
         <MetaPill>
           <RuntimeMark runtime={runtime} />
           {runtimeMeta(runtime).label}
-          <MetaPillCaption>runtime · stateless</MetaPillCaption>
+          <MetaPillCaption>{t("sections.runtimeCaption")}</MetaPillCaption>
         </MetaPill>
-        <span className="fdy-with-label">with</span>
+        <span className="fdy-with-label">{t("sections.with")}</span>
         {skills.map((skill) => (
           <MetaPill key={skill.id} mono>
             <MetaPillDot />
             {skill.name}
-            <MetaPillCaption>v{skill.version}</MetaPillCaption>
+            <MetaPillCaption>
+              {t("shared.version", { version: skill.version })}
+            </MetaPillCaption>
           </MetaPill>
         ))}
       </div>
-      <p className="fdy-detail-helper-copy">
-        Workers do not remember. Everything for this run comes from the
-        workspace context and the loaded skill packs.
-      </p>
+      <p className="fdy-detail-helper-copy">{t("sections.workersNote")}</p>
       <div className="fdy-timeline-heading">
-        <SectionLabel>Run events</SectionLabel>
+        <SectionLabel>{t("sections.runEvents")}</SectionLabel>
         <span className="fdy-live-chip">
           <span />
-          live
+          {t("sections.live")}
         </span>
       </div>
       <Panel className="fdy-timeline-panel">
@@ -70,8 +71,8 @@ export function IssueRunTimeline({
           ))
         ) : (
           <EmptyState
-            body="Run events appear after a local worker starts."
-            title="No run events"
+            body={t("sections.noEventsBody")}
+            title={t("sections.noEventsTitle")}
           />
         )}
       </Panel>
@@ -84,9 +85,10 @@ export interface IssueCriteriaProps {
 }
 
 export function IssueCriteria({ criteria }: IssueCriteriaProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <section className="fdy-detail-block">
-      <SectionLabel>Acceptance criteria</SectionLabel>
+      <SectionLabel>{t("sections.acceptanceCriteria")}</SectionLabel>
       <Panel className="fdy-criteria-panel">
         {criteria.map((criterion) => (
           <ChecklistRow key={criterion} marker="dot" tone="neutral">

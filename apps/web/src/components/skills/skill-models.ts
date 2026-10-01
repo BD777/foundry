@@ -3,6 +3,7 @@ import type {
   PromotedSkill,
   SkillDependency,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 
 export interface NormalizedSkill {
   id: string;
@@ -53,8 +54,12 @@ export function toNormalizedPromotedSkill(
   const originDevice =
     deviceLabels.get(skill.originDeviceId) ??
     skill.originDeviceLabel ??
-    "another device";
-  const subtitle = `From ${originDevice} · rev ${skill.latestRevision} · ${skill.originRoot || "promoted skill"}`;
+    i18n.t("skills:models.anotherDevice");
+  const subtitle = i18n.t("skills:models.promotedSubtitle", {
+    device: originDevice,
+    revision: skill.latestRevision,
+    root: skill.originRoot || i18n.t("skills:models.promotedSkill"),
+  });
 
   // Fallback to client-loaded deviceSkills if server catalog hasn't populated dependencies yet
   let dependencies = skill.dependencies;

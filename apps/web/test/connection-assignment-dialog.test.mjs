@@ -51,6 +51,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 });
 
 const { createRoot } = await import("react-dom/client");
+await import("../src/i18n/index.ts");
 const { ConnectionAssignmentDialog } =
   await import("../src/features/devices/connection-assignment-dialog.tsx");
 

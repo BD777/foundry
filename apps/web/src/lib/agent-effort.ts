@@ -2,27 +2,32 @@ import type {
   ClaudeEffort,
   CodexReasoningEffort,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
 
-export const codexEffortOptions: Array<{
+export interface EffortOption<T> {
   label: string;
-  summary: string;
-  value: CodexReasoningEffort;
-}> = [
-  { label: "Minimal", summary: "极轻", value: "minimal" },
-  { label: "Low", summary: "轻度", value: "low" },
-  { label: "Medium", summary: "中", value: "medium" },
-  { label: "High", summary: "高", value: "high" },
-  { label: "Xhigh", summary: "极高", value: "xhigh" },
-];
+  value: T;
+}
 
-export const claudeEffortOptions: Array<{
-  label: string;
-  summary: string;
-  value: ClaudeEffort;
-}> = [
-  { label: "Low", summary: "轻度", value: "low" },
-  { label: "Medium", summary: "中", value: "medium" },
-  { label: "High", summary: "高", value: "high" },
-  { label: "Xhigh", summary: "极高", value: "xhigh" },
-  { label: "Max", summary: "最高", value: "max" },
+const codexEfforts: CodexReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
 ];
+const claudeEfforts: ClaudeEffort[] = ["low", "medium", "high", "xhigh", "max"];
+
+export function effortLabel(
+  value: ClaudeEffort | CodexReasoningEffort,
+): string {
+  return i18n.t(`agents:effort.${value}`);
+}
+
+export function codexEffortOptions(): EffortOption<CodexReasoningEffort>[] {
+  return codexEfforts.map((value) => ({ label: effortLabel(value), value }));
+}
+
+export function claudeEffortOptions(): EffortOption<ClaudeEffort>[] {
+  return claudeEfforts.map((value) => ({ label: effortLabel(value), value }));
+}

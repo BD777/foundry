@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button, type ButtonProps } from "../../components/ui/button";
 import {
@@ -73,9 +74,10 @@ export type IssueInspectorProps =
     };
 
 export function IssueInspector(props: IssueInspectorProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <aside className="fdy-issue-inspector">
-      <SectionLabel>Status</SectionLabel>
+      <SectionLabel>{t("inspector.status")}</SectionLabel>
       <Badge className="fdy-inspector-status-badge" tone={props.status.tone}>
         {props.status.label}
       </Badge>
@@ -90,10 +92,11 @@ export function IssueInspector(props: IssueInspectorProps) {
 function ReviewInspector(
   props: Extract<IssueInspectorProps, { mode: "review" }>,
 ) {
+  const { t } = useTranslation("issueDetail");
   return (
     <>
       <div className="fdy-inspector-block">
-        <SectionLabel>Checks</SectionLabel>
+        <SectionLabel>{t("inspector.checks")}</SectionLabel>
         <div className="fdy-check-list">
           {props.checks.map((check) => (
             <ChecklistRow
@@ -108,13 +111,15 @@ function ReviewInspector(
       </div>
 
       <div className="fdy-inspector-block">
-        <SectionLabel>Skill packs used</SectionLabel>
+        <SectionLabel>{t("inspector.skillPacksUsed")}</SectionLabel>
         <div className="fdy-skill-chip-list">
           {props.skills.map((skill) => (
             <MetaPill key={skill.id} mono size="chip">
               <MetaPillDot />
               {skill.name}
-              <MetaPillCaption>v{skill.version}</MetaPillCaption>
+              <MetaPillCaption>
+                {t("shared.version", { version: skill.version })}
+              </MetaPillCaption>
             </MetaPill>
           ))}
         </div>
@@ -129,45 +134,58 @@ function ReviewInspector(
 function ProducingInspector(
   props: Extract<IssueInspectorProps, { mode: "producing" }>,
 ) {
+  const { t } = useTranslation("issueDetail");
   return (
     <>
       <div className="fdy-inspector-block fdy-producing-contract-block">
         <Panel className="fdy-inspector-detail-panel">
-          <InfoRow density="compact" label="Runtime" variant="keyValue">
+          <InfoRow
+            density="compact"
+            label={t("inspector.runtime")}
+            variant="keyValue"
+          >
             <strong>{props.runtimeLabel}</strong>
           </InfoRow>
-          <InfoRow density="compact" label="Device" variant="keyValue">
+          <InfoRow
+            density="compact"
+            label={t("inspector.device")}
+            variant="keyValue"
+          >
             <code>{props.deviceLabel}</code>
           </InfoRow>
-          <InfoRow density="compact" label="Started" variant="keyValue">
+          <InfoRow
+            density="compact"
+            label={t("inspector.started")}
+            variant="keyValue"
+          >
             <strong>{props.startedLabel}</strong>
           </InfoRow>
         </Panel>
       </div>
 
       <div className="fdy-inspector-block">
-        <SectionLabel>Context priority</SectionLabel>
+        <SectionLabel>{t("inspector.contextPriority")}</SectionLabel>
         <Panel className="fdy-context-priority-panel">
           <InfoRow
             className="fdy-priority-row fdy-priority-row-primary"
             density="compact"
             icon={<span className="fdy-priority-step">1</span>}
-            label="Workspace context"
-            meta="authoritative"
+            label={t("inspector.workspaceContext")}
+            meta={t("inspector.authoritative")}
           />
           <InfoRow
             className="fdy-priority-row"
             density="compact"
             icon={<span className="fdy-priority-step">2</span>}
-            label="Skill packs"
-            meta="reusable"
+            label={t("inspector.skillPacks")}
+            meta={t("inspector.reusable")}
           />
           <InfoRow
             className="fdy-priority-row"
             density="compact"
             icon={<span className="fdy-priority-step">3</span>}
-            label="Worker runtime"
-            meta="execution only"
+            label={t("inspector.workerRuntime")}
+            meta={t("inspector.executionOnly")}
           />
         </Panel>
       </div>
@@ -179,7 +197,7 @@ function ProducingInspector(
           size="lg"
           variant="secondary"
         >
-          Artifact appears here when ready
+          {t("inspector.artifactPending")}
         </Button>
         <Button
           className="fdy-danger-action"
@@ -187,7 +205,7 @@ function ProducingInspector(
           size="lg"
           variant="secondary"
         >
-          Stop execution
+          {t("inspector.stop")}
         </Button>
       </div>
     </>
@@ -197,14 +215,23 @@ function ProducingInspector(
 function ContractInspector(
   props: Extract<IssueInspectorProps, { mode: "contract" }>,
 ) {
+  const { t } = useTranslation("issueDetail");
   return (
     <>
       <div className="fdy-inspector-block fdy-contract-detail-block">
         <Panel className="fdy-inspector-detail-panel">
-          <InfoRow density="compact" label="Readiness" variant="keyValue">
+          <InfoRow
+            density="compact"
+            label={t("inspector.readiness")}
+            variant="keyValue"
+          >
             <strong>{props.readinessLabel}</strong>
           </InfoRow>
-          <InfoRow density="compact" label="Runtime" variant="keyValue">
+          <InfoRow
+            density="compact"
+            label={t("inspector.runtime")}
+            variant="keyValue"
+          >
             <strong>{props.runtimeLabel}</strong>
           </InfoRow>
         </Panel>

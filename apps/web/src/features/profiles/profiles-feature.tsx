@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentModelOption,
   DeviceProfileBinding,
@@ -46,6 +47,7 @@ export function ProfilesFeature({
   onOpenDevices,
   profiles,
 }: ProfilesFeatureProps) {
+  const { t } = useTranslation("profiles");
   const connections = profiles.filter(isModelConnection);
   const state = useProfilesState(connections);
   const [modalOpen, setModalOpen] = useState(false);
@@ -71,7 +73,9 @@ export function ProfilesFeature({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The request failed.");
+      setError(
+        cause instanceof Error ? cause.message : t("page.requestFailed"),
+      );
     } finally {
       setSaving(false);
     }
@@ -86,18 +90,15 @@ export function ProfilesFeature({
   return (
     <PageSurface variant="profiles">
       <div className="fdy-profile-intro">
-        <strong>Server API connections</strong>
-        <p>
-          Reusable API and gateway connections, stored on this server. Assign
-          them to the devices that may use them.
-        </p>
+        <strong>{t("page.title")}</strong>
+        <p>{t("page.intro")}</p>
         <Button
           className="fdy-connections-device-link"
           variant="ghost"
           size="sm"
           onClick={onOpenDevices}
         >
-          Use a ChatGPT or Claude subscription? Open device accounts →
+          {t("page.openDeviceAccounts")}
         </Button>
       </div>
       <ProfileList
@@ -122,16 +123,17 @@ export function ProfilesFeature({
             <header className="fdy-profile-modal-header">
               <div>
                 <Dialog.Title>
-                  {state.isNew ? "New connection" : "Edit connection"}
+                  {state.isNew
+                    ? t("page.newConnection")
+                    : t("page.editConnection")}
                 </Dialog.Title>
                 <Dialog.Description>
-                  Configure an API or gateway. Official logins stay on each
-                  device.
+                  {t("page.modalDescription")}
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
                 <Button
-                  aria-label="Close connection editor"
+                  aria-label={t("page.closeEditor")}
                   size="icon"
                   variant="ghost"
                 >
@@ -182,28 +184,26 @@ export function ProfilesFeature({
                       input: buildSaveProfileInput(state.draft),
                     });
                     if (!saved || !("updatedAtLabel" in saved))
-                      throw new Error(
-                        "The server did not return the saved connection.",
-                      );
+                      throw new Error(t("page.savedMissing"));
                     state.acceptSavedProfile(saved);
                   })
                 }
               />
               <section className="fdy-connection-devices">
-                <strong>Catalog device</strong>
+                <strong>{t("page.catalogDevice")}</strong>
                 <p>
                   {catalogDevice
-                    ? "Model discovery runs on this device; it does not change your active workspace."
-                    : "The catalog device is unavailable. Select an online device, or enter models and save without discovery."}
+                    ? t("page.catalogDeviceReady")
+                    : t("page.catalogDeviceUnavailable")}
                 </p>
                 {onlineDevices.length ? (
                   <SelectMenu
-                    ariaLabel="Catalog device"
+                    ariaLabel={t("page.catalogDevice")}
                     insideDialog
                     value={catalogDevice?.id ?? ""}
                     options={[
                       ...(!catalogDevice
-                        ? [{ value: "", label: "Choose an online device" }]
+                        ? [{ value: "", label: t("page.chooseOnlineDevice") }]
                         : []),
                       ...onlineDevices.map((device) => ({
                         value: device.id,
@@ -228,9 +228,7 @@ export function ProfilesFeature({
                   }
                 />
               ) : (
-                <p className="fdy-helper-copy">
-                  Save this connection first, then assign devices here.
-                </p>
+                <p className="fdy-helper-copy">{t("page.saveFirst")}</p>
               )}
             </div>
           </Dialog.Content>

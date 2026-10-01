@@ -1,16 +1,18 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { workerPackageName } from "@bd777/foundry-protocol";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Panel } from "../../components/ui/panel";
 import { TerminalBlock } from "../../components/ui/terminal-block";
+import { i18n } from "../../i18n";
 
 function expiryLabel(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleTimeString(undefined, {
+    : date.toLocaleTimeString(i18n.language, {
         hour: "2-digit",
         minute: "2-digit",
       });
@@ -26,6 +28,7 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
     token: string;
     expiresAt: string;
   }>();
+  const { t } = useTranslation(["devices", "common"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -45,7 +48,7 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
       setError(
         reason instanceof Error && reason.message
           ? reason.message
-          : "The Foundry server did not answer. Try again.",
+          : t("common:errors.serverUnreachable"),
       );
     } finally {
       setBusy(false);
@@ -65,15 +68,11 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
     <Panel className="fdy-add-device">
       <div className="fdy-add-device-head">
         <div>
-          <strong>Add a device</strong>
-          <p>
-            Run one command in a terminal on the machine that should do the work
-            (macOS or Linux with Node.js 20 or later). It installs the worker,
-            pairs it with your account and starts it at login.
-          </p>
+          <strong>{t("add.title")}</strong>
+          <p>{t("add.intro")}</p>
         </div>
         <Button onClick={onClose} size="sm" variant="ghost">
-          Close
+          {t("common:actions.close")}
         </Button>
       </div>
       {pairing ? (
@@ -82,26 +81,37 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
             lines={[{ id: "setup", prompt: "$", value: command }]}
           />
           <p className="fdy-add-device-note">
-            The token works once and expires at {expiryLabel(pairing.expiresAt)}
-            . The first workspace is ~/Foundry; add{" "}
-            <code>--workspace &lt;path&gt;</code> to choose another, and add
-            more later under the device&apos;s Workspaces.
+            <Trans
+              ns="devices"
+              i18nKey="add.tokenNote"
+              values={{
+                time: expiryLabel(pairing.expiresAt),
+                flag: "--workspace <path>",
+              }}
+              components={{ code: <code /> }}
+            />
           </p>
           <p className="fdy-add-device-note">
-            A machine that already runs a Foundry worker is left as it is. To
-            update a worker later, run <code>{npx} update</code> on it;{" "}
-            <code>{npx} uninstall</code> removes it.
+            <Trans
+              ns="devices"
+              i18nKey="add.updateNote"
+              values={{
+                update: `${npx} update`,
+                uninstall: `${npx} uninstall`,
+              }}
+              components={{ code: <code /> }}
+            />
           </p>
           <div className="fdy-add-device-actions">
             <Button onClick={() => void copy()}>
-              {copied ? "Copied" : "Copy command"}
+              {copied ? t("common:actions.copied") : t("add.copyCommand")}
             </Button>
             <Button
               disabled={busy}
               onClick={() => void issue()}
               variant="ghost"
             >
-              New token
+              {t("add.newToken")}
             </Button>
           </div>
         </>
@@ -112,12 +122,12 @@ export function AddDevicePanel({ onClose }: { onClose: () => void }) {
             onClick={() => void issue()}
             variant="primary"
           >
-            {busy ? "Creating…" : "Create pairing command"}
+            {busy ? t("add.creating") : t("add.create")}
           </Button>
         </div>
       )}
       {error ? (
-        <Alert tone="error" title="Could not create a pairing token">
+        <Alert tone="error" title={t("add.failedTitle")}>
           {error}
         </Alert>
       ) : null}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   Issue,
   AgentProjection,
@@ -36,11 +37,6 @@ import {
 } from "../../lib/issue-meta";
 
 type BoardMode = "board" | "list";
-
-const columns = issueStatuses.map((status) => ({
-  status,
-  label: statusMeta(status).label,
-}));
 
 export interface IssueDraftRequest {
   id: number;
@@ -82,6 +78,7 @@ export function IssuesFeature({
   agents,
   profiles,
 }: IssuesFeatureProps) {
+  const { t } = useTranslation("issues");
   const [boardMode, setBoardMode] = useState<BoardMode>("board");
   const [draft, setDraft] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -166,20 +163,20 @@ export function IssuesFeature({
 
   async function submit(): Promise<void> {
     if (!runtimeReady || runtime === "mock") {
-      setFeedback("Configure a real agent in Settings first.");
+      setFeedback(t("notices.needsRealAgent"));
       return;
     }
     const sourceInput = composerRef.current?.value ?? draft;
     if (submitting) {
       await onEvent({
-        message: "Still saving the current issue.",
+        message: t("notices.stillSaving"),
         type: "notice.requested",
       });
       return;
     }
     if (sourceInput.trim() === "") {
       await onEvent({
-        message: "Describe the issue first.",
+        message: t("notices.describeFirst"),
         type: "notice.requested",
       });
       composerRef.current?.focus();
@@ -189,7 +186,7 @@ export function IssuesFeature({
       setSubmitting(true);
       setFeedback("");
       await onEvent({
-        message: "Creating issue...",
+        message: t("notices.creating"),
         type: "notice.requested",
       });
       const issue = await createIssue({
@@ -217,13 +214,12 @@ export function IssuesFeature({
       } catch {}
       setDraft("");
       setBoardMode("board");
-      setFeedback("Issue created · awaiting contract confirmation");
+      setFeedback(t("notices.created"));
       await onEvent({ issue, type: "issue.created" });
     } catch {
       setFeedback("");
       await onEvent({
-        message:
-          "Could not create issue because the local API is not reachable.",
+        message: t("notices.unreachable"),
         type: "notice.requested",
       });
     } finally {
@@ -231,6 +227,10 @@ export function IssuesFeature({
     }
   }
 
+  const columns = issueStatuses.map((status) => ({
+    status,
+    label: statusMeta(status).label,
+  }));
   const boardItems = sortedIssues.map((issue) => ({
     content: (
       <IssueCard
@@ -270,11 +270,11 @@ export function IssuesFeature({
         resolvedCount={workspace.resolvedCount}
         viewControl={
           <WorkspaceStripControl
-            ariaLabel="Issue view"
+            ariaLabel={t("page.viewLabel")}
             onValueChange={setBoardMode}
             options={[
-              { label: "Board", value: "board" },
-              { label: "List", value: "list" },
+              { label: t("page.board"), value: "board" },
+              { label: t("page.list"), value: "list" },
             ]}
             value={boardMode}
           />
@@ -290,11 +290,10 @@ export function IssuesFeature({
         side="bottom"
         controlsDisabled={submitting}
         input={{
-          "aria-label": "New issue input",
+          "aria-label": t("page.inputLabel"),
           ref: composerRef,
           value: draft,
-          placeholder:
-            "Describe a task for Claude or Codex in this workspace...",
+          placeholder: t("page.placeholder"),
           onChange: (event) => {
             setFeedback("");
             setDraft(event.target.value);
@@ -302,7 +301,7 @@ export function IssuesFeature({
           onSubmit: () => void submit(),
           submitDisabled: submitBlocked,
         }}
-        agentLabel="Issue agent"
+        agentLabel={t("page.agentLabel")}
         agentOptions={agentOptions}
         agentPickerFooter={
           <AgentPickerFooter
@@ -319,16 +318,14 @@ export function IssuesFeature({
           }
         }}
         runtimeControls={modelSettings.controls}
-        actionLabel={submitting ? "Opening" : "Submit issue"}
+        actionLabel={submitting ? t("page.opening") : t("page.submit")}
         actionDisabled={submitBlocked}
         onAction={() => void submit()}
       >
         <span className="fdy-issue-composer-status" role="status">
           {createDenial ||
             feedback ||
-            (!runtimeReady
-              ? "Configure an agent in Settings to create an Issue"
-              : "先描述目标，进入主对话后可上传参考。确认完成标准后才开始执行。")}
+            (!runtimeReady ? t("page.needsAgent") : t("page.hint"))}
         </span>
       </AgentComposer>
 

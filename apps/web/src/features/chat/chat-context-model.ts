@@ -11,18 +11,24 @@ import type {
   ChatSubagentItem,
   ChatTimerItem,
 } from "./chat-types";
+import { i18n } from "../../i18n";
 
+// Event labels emitted by workers (protocol values): matched, never shown.
 const subagentStartLabels = new Set([
+  // i18n-ignore: worker event label
   "正在启动子任务",
   "Starting subtask",
   "Subtask started",
 ]);
+// i18n-ignore: event labels emitted by workers (protocol values)
 const subagentProgressLabels = new Set(["子任务进行中", "Subtask running"]);
 const subagentCompletedLabels = new Set([
+  // i18n-ignore: worker event label
   "子任务完成",
   "Subtask completed",
   "Subtask finished",
 ]);
+// i18n-ignore: event labels emitted by workers (protocol values)
 const subagentFailedLabels = new Set(["子任务失败", "Subtask failed"]);
 
 function isSubagentLifecycleEvent(event: AgentSessionEvent): boolean {
@@ -127,7 +133,10 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
         detail: event.detail.trim() || undefined,
         id: event.id,
         kind: "subagent",
-        label: firstDetailLine(event.detail, "Subagent"),
+        label: firstDetailLine(
+          event.detail,
+          i18n.t("chat:contextCard.subagentFallback"),
+        ),
         runtime: session.provider,
         sessionId: session.id,
         status: "running",
@@ -337,7 +346,8 @@ export function chatContextCardForSessions(
           kind: webURL ? "web" : "file",
           label: webURL
             ? webResourceLabel(webURL)
-            : resourceLabel(target) || "Output",
+            : resourceLabel(target) ||
+              i18n.t("chat:contextCard.outputFallback"),
           target: webURL ?? target,
           workspaceId: focusSession.workspaceId,
         });

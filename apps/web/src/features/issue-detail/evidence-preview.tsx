@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   Material,
   MaterialSelector,
@@ -23,6 +24,7 @@ export function EvidencePreview({
   selector?: MaterialSelector;
   label?: string;
 }) {
+  const { t } = useTranslation("issueDetail");
   const [opened, setOpened] = useState(false);
   const [material, setMaterial] = useState<Material>();
   const [text, setText] = useState<string>();
@@ -70,13 +72,13 @@ export function EvidencePreview({
       <summary>{label ?? material?.name ?? materialId}</summary>
       {selector?.kind === "text_lines" ? (
         <p>
-          第 {selector.start}–{selector.end} 行
+          {t("preview.lines", { start: selector.start, end: selector.end })}
         </p>
       ) : null}
       {image ? (
         <img
           src={image}
-          alt={label ?? material?.name ?? "Sealed evidence"}
+          alt={label ?? material?.name ?? t("preview.sealedAlt")}
           className="fdy-evidence-preview-image"
         />
       ) : null}
@@ -93,12 +95,12 @@ export function EvidencePreview({
             )
           }
         >
-          下载原始材料
+          {t("preview.download")}
         </Button>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
       <details>
-        <summary>材料技术信息</summary>
+        <summary>{t("preview.technical")}</summary>
         <code>{materialId}</code>
         {selector ? <pre>{JSON.stringify(selector)}</pre> : null}
       </details>
@@ -113,6 +115,7 @@ export function ReferencePreviews({
   issueId: string;
   media: ReferenceMedia[];
 }) {
+  const { t } = useTranslation("issueDetail");
   return (
     <>
       {media.map((ref, i) => (
@@ -121,7 +124,10 @@ export function ReferencePreviews({
           issueId={issueId}
           materialId={ref.materialId}
           selector={ref.selector}
-          label={`参考${{ target: "目标", example: "示例", counterexample: "反例", context: "背景" }[ref.role]}：${ref.caption}`}
+          label={t("preview.reference", {
+            role: t(`preview.role.${ref.role}`),
+            caption: ref.caption,
+          })}
         />
       ))}
     </>

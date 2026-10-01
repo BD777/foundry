@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import type { CreateAgentProfileInput } from "../../api-types";
+import { i18n } from "../../i18n";
 import { mergeDiscoveredModels } from "../../components/ui/model-combobox";
 import type { ProfileDraft } from "./profile-draft";
 
@@ -67,18 +68,18 @@ export function useModelCatalog({
       runtime: draft.runtime,
     };
     setBusy(true);
-    setNote("Asking for the catalog…");
+    setNote(i18n.t("profiles:catalog.asking"));
     try {
       const result = await onLoad(profile);
       if (request !== generation.current) return;
       if (
         requestSource !== source(latest.current.draft, latest.current.deviceId)
       ) {
-        setNote("Connection changed. Refresh again for its current catalog.");
+        setNote(i18n.t("profiles:catalog.changed"));
         return;
       }
       if (!Array.isArray(result)) {
-        throw new Error("The device did not return a model list.");
+        throw new Error(i18n.t("profiles:catalog.notAList"));
       }
       // Discovery adds to the profile's list; it never replaces entries the
       // user added by hand or moves their default.
@@ -87,13 +88,13 @@ export function useModelCatalog({
         result.map((option) => option.id),
       );
       latest.current.updateDraft({ models });
-      setNote(
-        `${result.length} model${result.length === 1 ? "" : "s"} from the endpoint.`,
-      );
+      setNote(i18n.t("profiles:catalog.found", { count: result.length }));
     } catch (cause) {
       if (request !== generation.current) return;
       setNote(
-        cause instanceof Error ? cause.message : "The catalog read failed.",
+        cause instanceof Error
+          ? cause.message
+          : i18n.t("profiles:catalog.failed"),
       );
     } finally {
       if (request === generation.current) setBusy(false);

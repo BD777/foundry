@@ -1,5 +1,6 @@
 import { Plus } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { IssueStatus } from "@bd777/foundry-protocol";
 import { cn } from "../../lib/cn";
 import { ActionRow } from "../../components/ui/action-row";
@@ -34,6 +35,7 @@ export interface IssueBoardProps {
 }
 
 export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
+  const { t } = useTranslation("issues");
   return (
     // Six columns rarely fit; a visible scrollbar shows there is more.
     <ScrollArea className="fdy-board-scroll" type="always">
@@ -50,9 +52,9 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
                   <strong>{column.label}</strong>
                   <span className="fdy-issue-column-count">{cards.length}</span>
                 </div>
-                <Tooltip content={`Add ${column.label} issue`}>
+                <Tooltip content={t("board.add", { status: column.label })}>
                   <Button
-                    aria-label={`Add ${column.label} issue`}
+                    aria-label={t("board.add", { status: column.label })}
                     onClick={() => onAdd(column.status)}
                     size="icon"
                     variant="icon"
@@ -67,7 +69,7 @@ export function IssueBoard({ columns, issues, onAdd }: IssueBoardProps) {
                     <div key={issue.id}>{issue.content}</div>
                   ))}
                   {cards.length === 0 ? (
-                    <div className="fdy-column-empty">No issues</div>
+                    <div className="fdy-column-empty">{t("board.empty")}</div>
                   ) : null}
                 </div>
               </ScrollArea>
@@ -95,15 +97,16 @@ export interface IssueListTableProps {
 }
 
 export function IssueListTable({ rows }: IssueListTableProps) {
+  const { t } = useTranslation("issues");
   return (
     <Panel className="fdy-issue-list-panel">
       <ScrollArea className="fdy-issue-list-scroll">
         <div className="fdy-issue-list-head">
-          <span>ID</span>
-          <span>Issue</span>
-          <span>Status</span>
-          <span>Runtime</span>
-          <span>Updated</span>
+          <span>{t("list.id")}</span>
+          <span>{t("list.issue")}</span>
+          <span>{t("list.status")}</span>
+          <span>{t("list.runtime")}</span>
+          <span>{t("list.updated")}</span>
         </div>
         {rows.map((row) => (
           <ActionRow
@@ -136,11 +139,11 @@ export function IssueListTable({ rows }: IssueListTableProps) {
             <strong>{row.title}</strong>
             <span className="fdy-issue-list-card-meta">
               <span>
-                <em>Runtime</em>
+                <em>{t("list.runtime")}</em>
                 <strong>{row.runtimeLabel}</strong>
               </span>
               <span>
-                <em>Updated</em>
+                <em>{t("list.updated")}</em>
                 <strong>{row.updatedLabel}</strong>
               </span>
             </span>

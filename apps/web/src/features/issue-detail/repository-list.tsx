@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
@@ -19,6 +20,7 @@ export function RepositoryList({
   repositories: EnvironmentRepository[];
   environmentStatus: string;
 }) {
+  const { t } = useTranslation("issueDetail");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -44,12 +46,12 @@ export function RepositoryList({
   return (
     <section
       className="fdy-environment-repositories"
-      aria-label="Repository inventory"
+      aria-label={t("repositories.label")}
     >
-      <SectionLabel>Repositories</SectionLabel>
+      <SectionLabel>{t("repositories.title")}</SectionLabel>
       <TextInput
-        aria-label="Search repositories"
-        placeholder="Search repository paths…"
+        aria-label={t("repositories.search")}
+        placeholder={t("repositories.searchPlaceholder")}
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -57,22 +59,26 @@ export function RepositoryList({
         }}
       />
       <SelectMenu
-        ariaLabel="Repository filter"
+        ariaLabel={t("repositories.filter")}
         value={filter}
         onChange={(value) => {
           setFilter(value);
           setPage(0);
         }}
         options={[
-          { value: "all", label: "All registered repositories" },
-          { value: "unavailable", label: "Unavailable / needs attention" },
-          { value: "prepared", label: "Prepared candidates" },
+          { value: "all", label: t("repositories.all") },
+          { value: "unavailable", label: t("repositories.unavailable") },
+          { value: "prepared", label: t("repositories.prepared") },
         ]}
       />
       <p>
         {filtered.length
-          ? `${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)} of ${filtered.length}`
-          : "No matching repositories"}
+          ? t("repositories.range", {
+              from: start + 1,
+              to: Math.min(start + PAGE_SIZE, filtered.length),
+              total: filtered.length,
+            })
+          : t("repositories.none")}
       </p>
       {filtered.slice(start, start + PAGE_SIZE).map((repo) => {
         const state = repositoryState(repo, environmentStatus);
@@ -84,7 +90,7 @@ export function RepositoryList({
           >
             <code className="fdy-repository-path">{repo.path}</code>
             <InfoRow
-              label="Source availability"
+              label={t("repositories.sourceAvailability")}
               density="compact"
               variant="keyValue"
             >
@@ -93,7 +99,7 @@ export function RepositoryList({
               </Badge>
             </InfoRow>
             <InfoRow
-              label="Issue candidate"
+              label={t("repositories.candidate")}
               density="compact"
               variant="keyValue"
             >
@@ -101,7 +107,7 @@ export function RepositoryList({
             </InfoRow>
             {repo.kind ? (
               <InfoRow
-                label="Repository type"
+                label={t("repositories.type")}
                 density="compact"
                 variant="keyValue"
               >
@@ -119,7 +125,7 @@ export function RepositoryList({
           disabled={currentPage === 0}
           onClick={() => setPage(currentPage - 1)}
         >
-          Previous repositories
+          {t("repositories.previous")}
         </Button>
         <Button
           size="sm"
@@ -127,7 +133,7 @@ export function RepositoryList({
           disabled={start + PAGE_SIZE >= filtered.length}
           onClick={() => setPage(currentPage + 1)}
         >
-          Next repositories
+          {t("repositories.next")}
         </Button>
       </div>
     </section>

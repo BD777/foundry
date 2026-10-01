@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { i18n } from "../../i18n";
 import type { ConversationProps, QueuedDraft } from "./conversation-types";
 
 function storedDraft(key?: string): string {
@@ -169,8 +170,7 @@ export function useConversationInput(
     followLatest();
     try {
       const outcome = await host.onSend(text, item?.attachments);
-      if (!outcome)
-        throw new Error("Message was not sent. Your draft has been retained.");
+      if (!outcome) throw new Error(i18n.t("conversation:errors.notSent"));
       if (item) remove(item.id);
       const latest = current.current;
       if (
@@ -246,9 +246,7 @@ export function useConversationInput(
       item.targetExecutionId !== host.activeExecutionId
     ) {
       report(
-        new Error(
-          "The active response changed. This message remains queued for the next turn.",
-        ),
+        new Error(i18n.t("conversation:errors.responseChanged")),
         host.threadKey,
       );
       return;
@@ -263,9 +261,7 @@ export function useConversationInput(
           item.targetExecutionId ?? host.activeExecutionId,
         ))
       )
-        throw new Error(
-          "The message could not be steered. It remains in the queue.",
-        );
+        throw new Error(i18n.t("conversation:errors.notSteered"));
       if (item.attachments?.length)
         host.onAttachmentsRestore?.(item.attachments);
       remove(item.id);

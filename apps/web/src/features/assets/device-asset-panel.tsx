@@ -1,4 +1,5 @@
 import { Monitor } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import { Badge } from "../../components/ui/badge";
 import { FactGrid, type FactGridItem } from "./fact-grid";
@@ -26,6 +27,7 @@ export function DeviceAssetPanel({
   online,
   tags,
 }: DeviceAssetPanelProps) {
+  const { t } = useTranslation("assets");
   return (
     <Panel className="fdy-device-asset-panel">
       <div className="fdy-device-asset-main">
@@ -36,7 +38,7 @@ export function DeviceAssetPanel({
           <div className="fdy-device-asset-title">
             <strong>{label}</strong>
             <Badge tone={online ? "online" : "neutral"}>
-              {online ? "Online" : "Offline"}
+              {online ? t("device.online") : t("device.offline")}
             </Badge>
             <span>{activeWorkers}</span>
           </div>

@@ -293,8 +293,8 @@ test("interruption retains partial output and represents execution failure as Bl
     const failure = messages.find((m) => m.kind === "failure");
     assert.ok(failure?.recoverable);
     // Why, what it means and what to do, with the reason last.
-    assert.match(failure.text, /候选文件已保留/);
-    assert.match(failure.text, /原因：Connection lost$/);
+    assert.match(failure.text, /The candidate files are kept/);
+    assert.match(failure.text, /Reason: Connection lost$/);
   }
   // A blocked Issue's badge says why, and waiting for a reply is not an alarm.
   for (const [kind, label, tone] of [

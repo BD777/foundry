@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../ui/agent-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
@@ -15,6 +16,7 @@ import type { ConversationProps } from "./conversation-types";
 
 /** Complete Chat/Issue UI. Hosts provide data and transport callbacks, never input markup. */
 export function Conversation(props: ConversationProps) {
+  const { t } = useTranslation("conversation");
   const scroll = useChatScrollFollow(props.threadKey);
   const input = useConversationInput(props, scroll.followLatest);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
@@ -54,7 +56,7 @@ export function Conversation(props: ConversationProps) {
         <AgentComposer
           slashItems={selectable?.slashItems}
           input={{
-            "aria-label": props.inputLabel ?? "Chat input",
+            "aria-label": props.inputLabel ?? t("composer.inputLabel"),
             ref: (node) => {
               textarea.current = node;
               if (typeof props.inputRef === "function") props.inputRef(node);
@@ -73,15 +75,13 @@ export function Conversation(props: ConversationProps) {
                   }
                 }
               : undefined,
-            placeholder:
-              props.placeholder ??
-              "Message Codex or Claude in this workspace...",
+            placeholder: props.placeholder ?? t("composer.placeholder"),
           }}
           agentOptions={selectable?.agentOptions}
           agentPickerFooter={selectable?.agentPickerFooter}
           agentValue={selectable?.agentValue}
           onAgentChange={selectable?.onAgentChange}
-          agentLabel="Chat agent"
+          agentLabel={t("composer.agentLabel")}
           runtimeControls={
             selectable
               ? {
@@ -111,8 +111,8 @@ export function Conversation(props: ConversationProps) {
           active={input.active}
           actionLabel={
             input.active
-              ? "Stop agent response"
-              : (props.sendLabel ?? "Send chat message")
+              ? t("composer.stop")
+              : (props.sendLabel ?? t("composer.send"))
           }
           actionDisabled={
             input.active
@@ -167,13 +167,13 @@ export function Conversation(props: ConversationProps) {
               {props.attachmentUploading ? (
                 <span className="fdy-chat-attachment-uploading">
                   <Paperclip size={14} />
-                  Uploading...
+                  {t("composer.uploading")}
                 </span>
               ) : null}
             </div>
           ) : null}
           {input.error ? (
-            <Alert tone="error" title="Could not complete request">
+            <Alert tone="error" title={t("composer.requestFailed")}>
               {input.error}
             </Alert>
           ) : null}

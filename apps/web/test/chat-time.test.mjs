@@ -7,8 +7,8 @@ import {
 } from "../src/features/chat/chat-time.ts";
 
 test("legacy labels are normalized before reaching the row, never used as raw UI fallback", () => {
-  assert.equal(chatUpdateTime(undefined, "29d").label, "29天前");
-  assert.equal(chatUpdateTime(undefined, "1d").label, "昨天");
+  assert.equal(chatUpdateTime(undefined, "29d").label, "29 days ago");
+  assert.equal(chatUpdateTime(undefined, "1d").label, "yesterday");
   for (const label of [
     "4h",
     "12m",
@@ -18,7 +18,7 @@ test("legacy labels are normalized before reaching the row, never used as raw UI
     undefined,
   ]) {
     const display = chatUpdateTime(undefined, label);
-    assert.equal(display.label, "时间未知");
+    assert.equal(display.label, "Time unknown");
     assert.equal(display.dateTime, undefined);
   }
   const at = new Date(2026, 8, 8, 14, 5).toISOString();
@@ -26,7 +26,7 @@ test("legacy labels are normalized before reaching the row, never used as raw UI
     chatUpdateTime(at, "29d", new Date(2026, 8, 8, 15)).label,
     "14:05",
   );
-  assert.equal(chatUpdateTime("invalid", "29d").label, "29天前");
+  assert.equal(chatUpdateTime("invalid", "29d").label, "29 days ago");
 });
 
 test("latest update uses the newest valid activity across sessions and native history", () => {
@@ -52,15 +52,15 @@ test("update labels follow local calendar dates across midnight and year boundar
   );
   assert.equal(
     chatUpdateLabel(new Date(2025, 11, 31, 23, 59).toISOString(), now),
-    "昨天",
+    "yesterday",
   );
   assert.equal(
     chatUpdateLabel(new Date(2025, 11, 30, 23, 59).toISOString(), now),
-    "2天前",
+    "2 days ago",
   );
   assert.equal(
     chatUpdateLabel(new Date(2025, 11, 1).toISOString(), now),
-    "31天前",
+    "31 days ago",
   );
 });
 
@@ -70,13 +70,13 @@ test("day labels remain calendar based across daylight saving changes", () => {
       new Date(2026, 2, 7, 23, 30).toISOString(),
       new Date(2026, 2, 9, 0, 5),
     ),
-    "2天前",
+    "2 days ago",
   );
   assert.equal(
     chatUpdateLabel(
       new Date(2026, 9, 31, 23, 30).toISOString(),
       new Date(2026, 10, 2, 0, 5),
     ),
-    "2天前",
+    "2 days ago",
   );
 });

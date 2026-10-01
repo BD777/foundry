@@ -11,6 +11,8 @@ import {
   X,
 } from "lucide-react";
 import { nextCronFire } from "@bd777/foundry-protocol";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import type {
   ChatContextCardData,
@@ -19,13 +21,6 @@ import type {
   ChatSubagentItem,
   ChatTimerItem,
 } from "./chat-types";
-
-const subagentStatusLabel: Record<ChatSubagentItem["status"], string> = {
-  canceled: "已取消",
-  completed: "已完成",
-  failed: "失败",
-  running: "运行中",
-};
 
 function ResourceRow({
   item,
@@ -93,18 +88,18 @@ function formatNextFireLabel(iso?: string): string {
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
   const isTomorrow = date.toDateString() === tomorrow.toDateString();
-  const time = date.toLocaleTimeString("zh-CN", {
+  const time = date.toLocaleTimeString(i18n.language, {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
   });
   if (sameDay) {
-    return `今天 ${time}`;
+    return i18n.t("chat:contextCard.today", { time });
   }
   if (isTomorrow) {
-    return `明天 ${time}`;
+    return i18n.t("chat:contextCard.tomorrow", { time });
   }
-  return date.toLocaleString("zh-CN", {
+  return date.toLocaleString(i18n.language, {
     hour12: false,
     month: "2-digit",
     day: "2-digit",
@@ -122,6 +117,7 @@ function TimerRow({
   onSelect?: (item: ChatContextSelection) => void;
   selected: boolean;
 }) {
+  const { t } = useTranslation("chat");
   // Recompute from the cron expression on each render: the worker snapshot
   // captures the next fire at emit time, which goes stale within a cycle.
   const liveNext = nextCronFire(item.task.schedule);
@@ -148,9 +144,11 @@ function TimerRow({
       <span className="fdy-chat-context-row-copy">
         <strong>{item.label}</strong>
         <em>
-          {nextFire ? `下次 ${nextFire}` : ""}
+          {nextFire ? t("contextCard.nextFire", { time: nextFire }) : ""}
           {nextFire && fireCount > 0 ? " · " : ""}
-          {fireCount > 0 ? `已触发 ${fireCount} 次` : ""}
+          {fireCount > 0
+            ? t("contextCard.fireCount", { count: fireCount })
+            : ""}
         </em>
       </span>
     </Button>
@@ -168,11 +166,15 @@ export function ChatContextCard({
   onSelect?: (item: ChatContextSelection) => void;
   selectedId?: string;
 }) {
+  const { t } = useTranslation("chat");
   return (
-    <aside className="fdy-chat-context-card" aria-label="Chat details">
+    <aside
+      className="fdy-chat-context-card"
+      aria-label={t("contextCard.label")}
+    >
       {onClose ? (
         <Button
-          aria-label="Hide chat details"
+          aria-label={t("contextCard.hide")}
           className="fdy-chat-context-close"
           onClick={onClose}
           size="icon"
@@ -184,7 +186,7 @@ export function ChatContextCard({
 
       {data.outputs.length > 0 ? (
         <section className="fdy-chat-context-section">
-          <h3>输出</h3>
+          <h3>{t("contextCard.outputs")}</h3>
           <div className="fdy-chat-context-list">
             {data.outputs.map((item) => (
               <ResourceRow
@@ -201,7 +203,7 @@ export function ChatContextCard({
 
       {data.timers.length > 0 ? (
         <section className="fdy-chat-context-section">
-          <h3>定时任务</h3>
+          <h3>{t("contextCard.timers")}</h3>
           <div className="fdy-chat-context-list">
             {data.timers.map((item) => (
               <TimerRow
@@ -217,7 +219,7 @@ export function ChatContextCard({
 
       {data.subagents.length > 0 ? (
         <section className="fdy-chat-context-section">
-          <h3>子智能体</h3>
+          <h3>{t("contextCard.subagents")}</h3>
           <div className="fdy-chat-context-list">
             {data.subagents.map((subagent, index) => (
               <Button
@@ -241,7 +243,7 @@ export function ChatContextCard({
                 </span>
                 <span className="fdy-chat-subagent-status">
                   <SubagentStatusIcon status={subagent.status} />
-                  {subagentStatusLabel[subagent.status]}
+                  {t(`contextCard.subagentStatus.${subagent.status}`)}
                 </span>
               </Button>
             ))}
@@ -251,7 +253,7 @@ export function ChatContextCard({
 
       {data.sources.length > 0 ? (
         <section className="fdy-chat-context-section">
-          <h3>来源</h3>
+          <h3>{t("contextCard.sources")}</h3>
           <div className="fdy-chat-context-list">
             {data.sources.map((item) => (
               <ResourceRow

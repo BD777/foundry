@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   HumanAssessment,
   Issue,
@@ -29,6 +30,7 @@ export function IssueEvidencePanel({
   issue: Issue;
   onRefresh: (id: string) => void;
 }) {
+  const { t } = useTranslation("issueDetail");
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
   const [review, setReview] = useState<ReviewSnapshot>();
   const [contract, setContract] = useState<IssueContract>();
@@ -77,34 +79,30 @@ export function IssueEvidencePanel({
   );
   return (
     <div className="fdy-contract-summary">
-      <p className="fdy-issue-tab-intro">
-        这里看实际做到了什么、判断依据和还缺什么。目标与检查方式保留在“目标与约定”。
-      </p>
+      <p className="fdy-issue-tab-intro">{t("evidence.intro")}</p>
       <section className="fdy-issue-card">
         <h3>
           {issue.status === "accepted"
-            ? "成果已接受并集成"
+            ? t("evidence.titleAccepted")
             : !issue.currentContractRevision
-              ? "尚未进入验收"
+              ? t("evidence.titleNotStarted")
               : review?.eligible
-                ? "已具备接受条件，请审阅实际依据"
-                : "尚不能接受"}
+                ? t("evidence.titleEligible")
+                : t("evidence.titleNotYet")}
         </h3>
         {!issue.currentContractRevision ? (
-          <p>
-            先在主聊天明确并确认标准。参考材料和实现说明都不能代替实际证据。
-          </p>
+          <p>{t("evidence.confirmFirst")}</p>
         ) : null}
         {issue.status === "in_progress" ? (
-          <p>实现仍在进行中。完成后再准备固定候选并采集材料，目前不能接受。</p>
+          <p>{t("evidence.inProgress")}</p>
         ) : null}
         {issue.currentContractRevision && !review ? (
-          <p role="status">正在读取验收状态与已确认标准…</p>
+          <p role="status">{t("evidence.loading")}</p>
         ) : null}
         {review &&
         !review.candidateSnapshotId &&
         issue.status !== "in_progress" ? (
-          <p>尚未准备本次验收候选。先“准备当前版本的验收”，再采集真实材料。</p>
+          <p>{t("evidence.noCandidate")}</p>
         ) : null}
         {review?.blockingReasons.length ? (
           <ul>
@@ -115,11 +113,9 @@ export function IssueEvidencePanel({
             )}
           </ul>
         ) : null}
-        {running ? (
-          <p role="status">正在检查实际材料。完成后这里会自动更新。</p>
-        ) : null}
+        {running ? <p role="status">{t("evidence.checking")}</p> : null}
         <Button variant="ghost" disabled={busy} onClick={() => void run(load)}>
-          刷新结果
+          {t("evidence.refresh")}
         </Button>
       </section>
       {/* The next step comes right after the conclusion (G4). */}
@@ -163,11 +159,8 @@ export function IssueEvidencePanel({
       ))}
       {review && issue.currentContractRevision ? (
         <section className="fdy-issue-card">
-          <h3>最终接受</h3>
-          <p>
-            接受这里展示的准确版本与审阅结果，系统再次核对后集成到
-            Workspace。全部集成成功才显示“已接受”。
-          </p>
+          <h3>{t("evidence.finalTitle")}</h3>
+          <p>{t("evidence.finalBody")}</p>
           <Button
             disabled={terminal || busy || !review.eligible || running}
             onClick={() =>
@@ -181,21 +174,21 @@ export function IssueEvidencePanel({
             }
           >
             {issue.status === "accepted"
-              ? "已接受并集成"
+              ? t("evidence.accepted")
               : issue.status === "abandoned"
-                ? "已放弃 · 只读历史"
-                : "接受这版成果"}
+                ? t("evidence.abandoned")
+                : t("evidence.accept")}
           </Button>
         </section>
       ) : null}
       {error ? (
-        <Alert tone="warning" title="这一步尚未完成">
+        <Alert tone="warning" title={t("shared.stepUnfinished")}>
           <p>{error}</p>
-          <p>没有绕过验收门槛；处理原因后重试。</p>
+          <p>{t("evidence.errorBody")}</p>
         </Alert>
       ) : null}
       <details className="fdy-issue-card">
-        <summary>高级材料管理与技术记录</summary>
+        <summary>{t("evidence.advanced")}</summary>
         <EvidenceMaterials issue={issue} onChange={load} />
         <pre>{JSON.stringify(review, null, 2)}</pre>
       </details>

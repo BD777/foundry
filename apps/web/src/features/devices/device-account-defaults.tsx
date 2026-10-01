@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -19,6 +20,7 @@ export function DeviceAccountDefaults({
   profile: AgentProfileProjection;
   onRefresh: () => Promise<void>;
 }) {
+  const { t } = useTranslation(["profiles", "common"]);
   const [draft, setDraft] = useState<CreateAgentProfileInput>({
     id: profile.id,
     deviceId: device.id,
@@ -49,14 +51,14 @@ export function DeviceAccountDefaults({
       setModels(result.map((row) => row.id));
       setNote(
         profile.runtime === "codex"
-          ? "Official catalog from Codex. The native CLI may use its built-in fallback; account availability can differ."
-          : "Official options reported by Claude Code on this device.",
+          ? t("accountDefaults.codexCatalog")
+          : t("accountDefaults.claudeCatalog"),
       );
     } catch (cause) {
       setNote(
         cause instanceof Error
           ? cause.message
-          : "Could not load official models. Retry.",
+          : t("accountDefaults.loadFailed"),
       );
     } finally {
       setLoading(false);
@@ -70,32 +72,32 @@ export function DeviceAccountDefaults({
   return (
     <section
       className="fdy-device-account-defaults"
-      aria-label={`${profile.runtime} runtime defaults`}
+      aria-label={t("accountDefaults.sectionLabel", {
+        runtime: profile.runtime,
+      })}
     >
       <p className="fdy-account-form-hint">
-        Defaults for new sessions on {device.label}. Existing sessions are
-        unchanged.
+        {t("accountDefaults.hint", { device: device.label })}
       </p>
       <div className="fdy-profile-field">
-        <span>Default model</span>
+        <span>{t("accountDefaults.defaultModel")}</span>
         <ModelCombobox
-          ariaLabel={`${profile.runtime} official default model`}
+          ariaLabel={t("accountDefaults.modelLabel", {
+            runtime: profile.runtime,
+          })}
           allowCustom={false}
           disabled={device.status !== "connected"}
           value={draft.model ?? ""}
           options={models}
           busy={loading}
-          placeholder="Native agent default"
+          placeholder={t("accountDefaults.nativeDefault")}
           onRefresh={() => void load()}
           note={note}
           onChange={({ value }) => setDraft({ ...draft, model: value })}
         />
-        <small>{loading ? "Loading official models…" : note}</small>
+        <small>{loading ? t("accountDefaults.loading") : note}</small>
         {invalidModel ? (
-          <small role="status">
-            The saved model is not in this official catalog. Select an official
-            model or use the native default.
-          </small>
+          <small role="status">{t("accountDefaults.invalidModel")}</small>
         ) : null}
         {draft.model ? (
           <Button
@@ -104,7 +106,7 @@ export function DeviceAccountDefaults({
             className="fdy-account-inline-action"
             onClick={() => setDraft({ ...draft, model: "" })}
           >
-            Use native default
+            {t("accountDefaults.useNativeDefault")}
           </Button>
         ) : null}
       </div>
@@ -131,19 +133,19 @@ export function DeviceAccountDefaults({
             try {
               await createAgentProfile(draft);
               await onRefresh();
-              setMessage("Device defaults saved.");
+              setMessage(t("accountDefaults.saved"));
             } catch (cause) {
               setMessage(
                 cause instanceof Error
                   ? cause.message
-                  : "Could not save defaults.",
+                  : t("accountDefaults.saveFailed"),
               );
             } finally {
               setBusy(false);
             }
           }}
         >
-          {busy ? "Saving…" : "Save defaults"}
+          {busy ? t("common:actions.saving") : t("accountDefaults.save")}
         </Button>
         {message ? <span role="status">{message}</span> : null}
       </div>

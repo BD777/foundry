@@ -6,6 +6,7 @@ import {
 } from "./skill-version-state";
 import * as Dialog from "@radix-ui/react-dialog";
 import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceSkill,
   PromotedSkill,
@@ -35,6 +36,7 @@ export function SkillPromotionDialog({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  const { t } = useTranslation(["skills", "common"]);
   const returnFocus = useRef(
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -89,9 +91,7 @@ export function SkillPromotionDialog({
       if (reviewed.problems.length)
         throw new Error(reviewed.problems.join("\n"));
       if (!sameSkillPromotionSources(plan.skills, reviewed.skills)) {
-        throw new Error(
-          "The saved graph has changed. Close this preview and reopen it to review the updated skills.",
-        );
+        throw new Error(t("promotion.graphChanged"));
       }
       await promoteSkill({
         ...input,
@@ -118,7 +118,9 @@ export function SkillPromotionDialog({
   return (
     <>
       {comparison ? (
-        <Suspense fallback={<p role="status">Loading comparison…</p>}>
+        <Suspense
+          fallback={<p role="status">{t("device.loadingComparison")}</p>}
+        >
           <SkillCompareDialog
             skill={comparison.skill}
             target={comparison.target}
@@ -143,20 +145,17 @@ export function SkillPromotionDialog({
           >
             <header className="fdy-connection-assign-header">
               <div>
-                <Dialog.Title>Promote {skill.name}</Dialog.Title>
-                <Dialog.Description>
-                  Required dependencies from the last device scan are included,
-                  including dependencies of dependencies. Workspace selection
-                  remains separate.
-                </Dialog.Description>
+                <Dialog.Title>
+                  {t("promotion.title", { name: skill.name })}
+                </Dialog.Title>
+                <Dialog.Description>{t("promotion.body")}</Dialog.Description>
               </div>
             </header>
             <div className="fdy-skill-promotion-body" aria-busy={busy}>
               {plan ? (
                 <>
                   <h3>
-                    {plan.skills.length}{" "}
-                    {plan.skills.length === 1 ? "skill" : "skills"} to publish
+                    {t("promotion.toPublish", { count: plan.skills.length })}
                   </h3>
                   <ul className="fdy-skill-dependency-list">
                     {plan.skills.map((item) => (
@@ -186,7 +185,10 @@ export function SkillPromotionDialog({
                           .filter((d) => d.strength === "required")
                           .map((d) => (
                             <small key={`${d.skillName}:${d.evidence}`}>
-                              Requires {d.skillName} — {d.evidence}
+                              {t("promotion.requires", {
+                                name: d.skillName,
+                                evidence: d.evidence,
+                              })}
                             </small>
                           ))}
                       </li>
@@ -194,11 +196,8 @@ export function SkillPromotionDialog({
                   </ul>
                   {hints.length ? (
                     <>
-                      <h3>Possible references</h3>
-                      <p>
-                        All references are selected by default. Uncheck any that
-                        this skill does not need.
-                      </p>
+                      <h3>{t("promotion.referencesTitle")}</h3>
+                      <p>{t("promotion.referencesBody")}</p>
                       {hints.map((dep) => (
                         <label
                           className={
@@ -223,7 +222,7 @@ export function SkillPromotionDialog({
                             <strong>
                               {dep.skillName}
                               {dep.status !== "resolved"
-                                ? ` · ${dep.status ?? "unresolved"}`
+                                ? ` · ${t(`dependencies.status.${dep.status ?? "unresolved"}`)}`
                                 : ""}
                             </strong>
                             <small>{dep.evidence}</small>
@@ -239,11 +238,7 @@ export function SkillPromotionDialog({
                   ))}
                 </>
               ) : null}
-              {!online ? (
-                <p role="status">
-                  Device offline. Connect it to publish this saved selection.
-                </p>
-              ) : null}
+              {!online ? <p role="status">{t("promotion.offline")}</p> : null}
               {error ? (
                 <p className="fdy-skill-error" role="alert">
                   {error}
@@ -252,7 +247,7 @@ export function SkillPromotionDialog({
             </div>
             <footer className="fdy-connection-assign-actions">
               <Button variant="secondary" disabled={busy} onClick={onClose}>
-                Cancel
+                {t("common:actions.cancel")}
               </Button>
               <Button
                 disabled={
@@ -265,10 +260,12 @@ export function SkillPromotionDialog({
                 onClick={() => void publish()}
               >
                 {busy
-                  ? "Publishing…"
+                  ? t("promotion.publishing")
                   : alreadySynced
-                    ? "Already in sync"
-                    : `${onlyReuse ? "Reuse" : "Publish"} ${plan.skills.length} ${plan.skills.length === 1 ? "skill" : "skills"}`}
+                    ? t("promotion.alreadyInSync")
+                    : onlyReuse
+                      ? t("promotion.reuse", { count: plan.skills.length })
+                      : t("promotion.publish", { count: plan.skills.length })}
               </Button>
             </footer>
           </Dialog.Content>

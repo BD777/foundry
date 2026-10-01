@@ -1,5 +1,6 @@
 import { ChevronLeft, PanelRight, Terminal } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -35,6 +36,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
     onNewChat,
     threadKey,
   } = props;
+  const { t } = useTranslation("chat");
   const [contextCardOpen, setContextCardOpen] = useState(false);
   // Narrow screens show one pane at a time: the list, or the open chat.
   const [narrowPane, setNarrowPane] = useState<"list" | "thread">("list");
@@ -86,7 +88,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             variant="ghost"
           >
             <ChevronLeft size={16} />
-            Chats
+            {t("list.title")}
           </Button>
           <div className="fdy-chat-thread-title">
             <strong>{chatTitle}</strong>
@@ -95,7 +97,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
             {contextCard ? (
               <Button
                 aria-label={
-                  contextCardOpen ? "Hide chat details" : "Show chat details"
+                  contextCardOpen
+                    ? t("contextCard.hide")
+                    : t("contextCard.show")
                 }
                 className="fdy-chat-context-toggle"
                 data-active={contextCardOpen ? "true" : "false"}
@@ -108,7 +112,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             ) : null}
             <Badge className="fdy-readonly-badge" dot={false} tone="slate">
               <Terminal size={12} />
-              CLI session
+              {t("thread.cliSession")}
             </Badge>
           </div>
         </div>
@@ -126,7 +130,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
               />
             ) : undefined
           }
-          detailLabel={contextDetail.selection?.label ?? "Chat detail"}
+          detailLabel={contextDetail.selection?.label ?? t("detail.label")}
         >
           <Conversation
             threadKey={props.threadKey}
@@ -147,7 +151,9 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onImagePreview={setPreviewImage}
             readOnly={
               props.readOnlyReason ? (
-                <Alert title="Read-only access">{props.readOnlyReason}</Alert>
+                <Alert title={t("thread.readOnly")}>
+                  {props.readOnlyReason}
+                </Alert>
               ) : undefined
             }
             composer={{

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { readCandidateReview, type CandidateReviewData } from "../../api";
 import { Panel, SectionLabel } from "../../components/ui/panel";
 import "./issue-execution.css";
@@ -10,6 +11,7 @@ export function CandidateReview({
   issueId: string;
   revision: number;
 }) {
+  const { t } = useTranslation("issueDetail");
   const [data, setData] = useState<CandidateReviewData>();
   const [error, setError] = useState("");
   useEffect(() => {
@@ -19,8 +21,7 @@ export function CandidateReview({
     void readCandidateReview(issueId).then(
       (result) => {
         if (active) {
-          if (result.revision !== revision)
-            setError("Candidate changed. Refresh the Issue before accepting.");
+          if (result.revision !== revision) setError(t("candidate.changed"));
           else setData(result);
         }
       },
@@ -34,11 +35,11 @@ export function CandidateReview({
   }, [issueId, revision]);
   return (
     <section className="fdy-detail-block">
-      <SectionLabel>Workspace candidate · revision {revision}</SectionLabel>
+      <SectionLabel>{t("candidate.title", { revision })}</SectionLabel>
       {error ? (
         <p role="alert">{error}</p>
       ) : !data ? (
-        <p role="status">Loading candidate changes…</p>
+        <p role="status">{t("candidate.loading")}</p>
       ) : (
         <>
           <p className="fdy-detail-helper-copy">{data.review.cwd}</p>
@@ -50,14 +51,9 @@ export function CandidateReview({
                 <code>{repo.candidate?.slice(0, 10)}</code>
               </p>
               <pre className="fdy-candidate-diff">
-                {repo.diff || "No file changes."}
+                {repo.diff || t("candidate.noChanges")}
               </pre>
-              {repo.truncated ? (
-                <p>
-                  Diff truncated. Review the remaining changes in the candidate
-                  directory before accepting.
-                </p>
-              ) : null}
+              {repo.truncated ? <p>{t("candidate.truncated")}</p> : null}
             </Panel>
           ))}
         </>

@@ -4,6 +4,7 @@ import {
   type ChatThread,
   type WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 import {
   agentSessionHasStreamedResponse,
   agentSessionMessageText,
@@ -58,9 +59,9 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
           title:
             message.title ??
             (message.kind === "reasoning"
-              ? "思考摘要"
+              ? i18n.t("chat:transcript.reasoning")
               : message.kind === "commentary"
-                ? "过程"
+                ? i18n.t("chat:transcript.commentary")
                 : undefined),
         },
       ];
@@ -89,8 +90,8 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
       agentLabel: chat.profileLabel,
       role: "bot",
       runtime: chat.provider,
-      statusLabel: "Loaded",
-      text: "This native session is available, but no displayable transcript was found.",
+      statusLabel: i18n.t("chat:transcript.loaded"),
+      text: i18n.t("chat:transcript.noTranscript"),
     },
   ];
 }
@@ -165,7 +166,7 @@ function transcriptDisplayMessages({
       id: `chat:${chat.id}:truncated-boundary`,
       kind: "boundary",
       role: "bot",
-      text: "上文已被原生 CLI 截断，无法从本地 session 完整恢复；下面从可读取的内容继续。",
+      text: i18n.t("chat:transcript.truncated"),
     };
     if (!truncated.remaining) {
       return [boundaryMessage];
@@ -204,7 +205,7 @@ function transcriptDisplayMessages({
     pendingTools.push(
       transcriptToolMessage(
         skillInvocation[0].trim(),
-        `已使用技能 ${skillInvocation[1]}`,
+        i18n.t("chat:transcript.usedSkill", { name: skillInvocation[1] }),
       ),
     );
   }
@@ -324,34 +325,38 @@ function splitAnnotatedUserPrompt(
 function transcriptContextTitle(text: string): string {
   const skillName = text.match(/<name>([^<]+)<\/name>/)?.[1];
   if (skillName) {
-    return `已加载技能 ${skillName}`;
+    return i18n.t("chat:transcript.loadedSkill", { name: skillName });
   }
   if (text.includes("# Files mentioned by the user:")) {
-    return "已读取文件";
+    return i18n.t("chat:transcript.readFiles");
   }
   if (text.includes("# Response annotations:")) {
-    return "已读取引用上下文";
+    return i18n.t("chat:transcript.readAnnotations");
   }
   if (
     text.includes("AGENTS.md instructions") ||
     text.includes("Personal Codex Profile")
   ) {
-    return "已读取工作区指令";
+    return i18n.t("chat:transcript.readInstructions");
   }
   if (text.startsWith("<environment_context")) {
-    return "已读取运行环境";
+    return i18n.t("chat:transcript.readEnvironment");
   }
   if (text.startsWith("<recommended_plugins")) {
-    return "已读取可用插件";
+    return i18n.t("chat:transcript.readPlugins");
   }
   if (text.startsWith("<permissions instructions")) {
-    return "已读取权限配置";
+    return i18n.t("chat:transcript.readPermissions");
   }
   if (text.startsWith("<")) {
     const tag = text.match(/^<([a-z_-]+)/i)?.[1];
-    return tag ? `已读取 ${tag.replace(/[_-]/g, " ")} 上下文` : "已读取上下文";
+    return tag
+      ? i18n.t("chat:transcript.readTagContext", {
+          tag: tag.replace(/[_-]/g, " "),
+        })
+      : i18n.t("chat:transcript.readContext");
   }
-  return "已读取上下文";
+  return i18n.t("chat:transcript.readContext");
 }
 
 function chatMessagesForSession(
@@ -408,10 +413,8 @@ function chatMessagesForSession(
           sessionActive && isLastSegment
             ? agentSessionActivityTitle(session)
             : isLastSegment
-              ? duration
-                ? `已处理 ${duration}`
-                : "已处理"
-              : (segment.title ?? (duration ? `已处理 ${duration}` : "已处理")),
+              ? processedTitle(duration)
+              : (segment.title ?? processedTitle(duration)),
       });
     } else if (segment.kind === "boundary" || segment.kind === "failure") {
       messages.push(segment);
@@ -456,6 +459,12 @@ function chatMessagesForSession(
   return messages;
 }
 
+function processedTitle(duration: string | undefined): string {
+  return duration
+    ? i18n.t("chat:transcript.processedIn", { duration })
+    : i18n.t("chat:transcript.processed");
+}
+
 function agentSessionFailureMessage(
   session: AgentSession,
   error: string,
@@ -468,21 +477,21 @@ function agentSessionFailureMessage(
     /maximum number of turns(?:\s*\((\d+)\))?/i,
   );
   if (maxTurnsMatch) {
-    const count = maxTurnsMatch[1]
-      ? `${maxTurnsMatch[1]} 个 turn`
-      : "本轮允许的 turn";
+    const turns = maxTurnsMatch[1]
+      ? i18n.t("chat:failure.turns", { count: Number(maxTurnsMatch[1]) })
+      : i18n.t("chat:failure.allowedTurns");
     return {
       recoverable: Boolean(session.nativeSessionId),
       text: session.nativeSessionId
-        ? `Claude 已运行 ${count} 后暂停。发送“继续”即可从同一个 native session 接着执行，已有上下文和工作区修改都会保留。`
-        : `Claude 已运行 ${count} 后暂停。此轮没有返回可恢复的 native session，请重新描述希望继续的工作。`,
-      title: "本轮已达到执行上限",
+        ? i18n.t("chat:failure.maxTurnsResumable", { turns })
+        : i18n.t("chat:failure.maxTurnsLost", { turns }),
+      title: i18n.t("chat:failure.maxTurnsTitle"),
     };
   }
   return {
     recoverable: false,
     text: error,
-    title: "执行失败",
+    title: i18n.t("chat:failure.title"),
   };
 }
 
@@ -528,15 +537,15 @@ function chatMessageItemId(message: ChatViewMessage, index: number): string {
 }
 
 function agentSessionActivityTitle(session: AgentSession): string {
-  const latestActivity = [...(session.events ?? [])]
-    .reverse()
-    .find(
-      (event) => event.label.startsWith("正在") || event.label.startsWith("已"),
-    );
+  const latestActivity = [...(session.events ?? [])].reverse().find(
+    // i18n-ignore: matches worker-provided event labels, not copy
+    (event) => event.label.startsWith("正在") || event.label.startsWith("已"),
+  );
+  // i18n-ignore: matches a worker-provided event label, not copy
   if (latestActivity?.label.startsWith("正在")) {
     return latestActivity.label;
   }
-  return "处理中";
+  return i18n.t("chat:transcript.processing");
 }
 
 function agentSessionDurationLabel(session: AgentSession): string | undefined {

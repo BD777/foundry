@@ -1,5 +1,6 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Check, ChevronRight, FolderPlus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import type { ChatGroup } from "./chat-group-state";
 
@@ -20,6 +21,7 @@ export function ChatGroupMenu({
   onNewGroup,
   disabled,
 }: ChatGroupMenuProps) {
+  const { t } = useTranslation("chat");
   return (
     <ContextMenu.Sub>
       <ContextMenu.SubTrigger asChild disabled={disabled}>
@@ -28,7 +30,7 @@ export function ChatGroupMenu({
           variant="ghost"
           disabled={disabled}
         >
-          移至分组
+          {t("groups.moveTo")}
           <ChevronRight size={14} />
         </Button>
       </ContextMenu.SubTrigger>
@@ -49,7 +51,7 @@ export function ChatGroupMenu({
                   {group.name}
                 </span>
                 {group.id === currentGroupId ? (
-                  <Check size={14} aria-label="当前分组" />
+                  <Check size={14} aria-label={t("groups.current")} />
                 ) : null}
               </Button>
             </ContextMenu.Item>
@@ -57,7 +59,7 @@ export function ChatGroupMenu({
           {currentGroupId ? (
             <ContextMenu.Item asChild onSelect={() => onMove()}>
               <Button className="fdy-chat-list-menu-item" variant="ghost">
-                移出分组
+                {t("groups.removeFrom")}
               </Button>
             </ContextMenu.Item>
           ) : null}
@@ -66,7 +68,7 @@ export function ChatGroupMenu({
           ) : null}
           <ContextMenu.Item asChild onSelect={onNewGroup}>
             <Button className="fdy-chat-list-menu-item" variant="ghost">
-              新建分组
+              {t("groups.new")}
               <FolderPlus size={14} />
             </Button>
           </ContextMenu.Item>

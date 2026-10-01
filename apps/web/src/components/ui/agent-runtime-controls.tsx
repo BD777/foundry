@@ -19,62 +19,37 @@ import type {
   CodexSandboxMode,
   CodexSpeed,
 } from "@bd777/foundry-protocol";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 import {
   claudeEffortOptions,
   codexEffortOptions,
+  effortLabel,
 } from "../../lib/agent-effort";
+import { i18n } from "../../i18n";
 import type { RuntimeKind } from "./runtime-mark";
 
 type SettingsPanel = "main" | "model" | "effort" | "speed";
 
-const claudePermissionOptions: Array<{
-  label: string;
-  summary: string;
-  value: Exclude<ClaudePermissionMode, "default">;
-}> = [
-  {
-    label: "Accept edits",
-    summary: "允许编辑，敏感操作仍按 Claude Code 规则处理",
-    value: "acceptEdits",
-  },
-  { label: "Auto", summary: "由 Claude Code 自动选择权限行为", value: "auto" },
-  {
-    label: "Bypass permissions",
-    summary: "跳过 Claude Code 权限确认",
-    value: "bypassPermissions",
-  },
-  { label: "Don't ask", summary: "不再询问权限确认", value: "dontAsk" },
-  { label: "Plan", summary: "先规划，不直接执行修改", value: "plan" },
+const claudePermissionModes: Exclude<ClaudePermissionMode, "default">[] = [
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+  "dontAsk",
+  "plan",
 ];
 
-const codexSandboxOptions: Array<{
-  label: string;
-  summary: string;
-  value: CodexSandboxMode;
-}> = [
-  { label: "read-only", summary: "只读访问", value: "read-only" },
-  {
-    label: "workspace-write",
-    summary: "可写当前 workspace",
-    value: "workspace-write",
-  },
-  {
-    label: "danger-full-access",
-    summary: "完整本机访问",
-    value: "danger-full-access",
-  },
+const codexSandboxModes: CodexSandboxMode[] = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
 ];
 
-const codexApprovalOptions: Array<{
-  label: string;
-  summary: string;
-  value: CodexApprovalPolicy;
-}> = [
-  { label: "untrusted", summary: "不可信模式", value: "untrusted" },
-  { label: "on-request", summary: "按请求确认", value: "on-request" },
-  { label: "on-failure", summary: "失败后请求权限", value: "on-failure" },
-  { label: "never", summary: "不请求确认", value: "never" },
+const codexApprovalPolicies: CodexApprovalPolicy[] = [
+  "untrusted",
+  "on-request",
+  "on-failure",
+  "never",
 ];
 
 function compactModelLabel(
@@ -83,7 +58,7 @@ function compactModelLabel(
 ): string {
   const label = model?.label ?? value;
   if (!label) {
-    return "Model";
+    return i18n.t("agents:controls.model");
   }
   return label
     .replace(/^gpt-/i, "")
@@ -96,25 +71,13 @@ function compactModelLabel(
     .replace(/\bluna\b/gi, "Luna");
 }
 
-function labelForEffort(
-  runtime: Exclude<RuntimeKind, "mock">,
-  value: ClaudeEffort | CodexReasoningEffort,
-): string {
-  const options =
-    runtime === "claude" ? claudeEffortOptions : codexEffortOptions;
-  return options.find((option) => option.value === value)?.summary ?? value;
-}
-
 function labelForSpeed(value: CodexSpeed): string {
-  return value === "fast" ? "快速" : "标准";
+  return i18n.t(`agents:codexSpeed.${value}`);
 }
 
 function labelForClaudePermission(value: ClaudePermissionMode): string {
   const normalized = value === "default" ? "acceptEdits" : value;
-  return (
-    claudePermissionOptions.find((option) => option.value === normalized)
-      ?.label ?? normalized
-  );
+  return i18n.t(`agents:claudePermission.${normalized}`);
 }
 
 export interface ModelPanelState {
@@ -140,7 +103,7 @@ export function resolveModelPanelState(input: {
 }): ModelPanelState {
   if (input.loading) {
     return {
-      triggerLabel: "Loading models",
+      triggerLabel: i18n.t("agents:controls.loadingModels"),
       showOptions: false,
       refreshFailed: false,
     };
@@ -150,17 +113,17 @@ export function resolveModelPanelState(input: {
       return { showOptions: true, refreshFailed: true };
     }
     return {
-      triggerLabel: "Models unavailable",
+      triggerLabel: i18n.t("agents:controls.modelsUnavailable"),
       showOptions: false,
-      emptyLabel: "Models unavailable",
+      emptyLabel: i18n.t("agents:controls.modelsUnavailable"),
       refreshFailed: true,
     };
   }
   if (!input.hasOptions) {
     return {
-      triggerLabel: "No models",
+      triggerLabel: i18n.t("agents:controls.noModels"),
       showOptions: false,
-      emptyLabel: "No models",
+      emptyLabel: i18n.t("agents:controls.noModels"),
       refreshFailed: false,
     };
   }
@@ -221,6 +184,7 @@ export function AgentRuntimeControls({
   onRetryModels,
   selectedRuntime,
 }: AgentRuntimeControlsProps) {
+  const { t } = useTranslation("agents");
   const [accessOpen, setAccessOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPanel, setSettingsPanel] = useState<SettingsPanel>("main");
@@ -234,14 +198,16 @@ export function AgentRuntimeControls({
     codexReasoningEffort || "high";
   const effortValue =
     selectedRuntime === "claude" ? effectiveClaudeEffort : effectiveCodexEffort;
-  const effortLabel = labelForEffort(selectedRuntime, effortValue);
+  const currentEffortLabel = effortLabel(effortValue);
   const effectiveClaudePermission: Exclude<ClaudePermissionMode, "default"> =
     claudePermissionMode === "default" ? "acceptEdits" : claudePermissionMode;
   const permissionTriggerLabel =
     selectedRuntime === "claude"
       ? labelForClaudePermission(effectiveClaudePermission)
       : codexSandboxMode;
-  const permissionTriggerDescription = `Permissions: ${permissionTriggerLabel}`;
+  const permissionTriggerDescription = t("controls.permissionsTrigger", {
+    label: permissionTriggerLabel,
+  });
   const permissionDanger =
     selectedRuntime === "claude"
       ? effectiveClaudePermission === "bypassPermissions" ||
@@ -253,9 +219,12 @@ export function AgentRuntimeControls({
     hasOptions: modelOptions.length > 0,
   });
   const modelStatusLabel = modelPanel.triggerLabel;
-  const modelTriggerDescription = `Model and effort: ${modelStatusLabel ?? modelLabel} · ${effortLabel}`;
+  const modelTriggerDescription = t("controls.modelAndEffortTrigger", {
+    model: modelStatusLabel ?? modelLabel,
+    effort: currentEffortLabel,
+  });
   const effortOptions =
-    selectedRuntime === "claude" ? claudeEffortOptions : codexEffortOptions;
+    selectedRuntime === "claude" ? claudeEffortOptions() : codexEffortOptions();
 
   const applyClaudePermission = (
     value: Exclude<ClaudePermissionMode, "default">,
@@ -315,7 +284,7 @@ export function AgentRuntimeControls({
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content
-                aria-label="Permissions"
+                aria-label={t("controls.permissions")}
                 side={side}
                 sideOffset={12}
                 align="start"
@@ -325,24 +294,22 @@ export function AgentRuntimeControls({
                 {selectedRuntime === "claude" ? (
                   <>
                     <div className="fdy-chat-popover-note">
-                      <span>Claude Code permission</span>
+                      <span>{t("controls.claudePermission")}</span>
                     </div>
-                    {claudePermissionOptions.map((option) => (
+                    {claudePermissionModes.map((mode) => (
                       <Button
                         className="fdy-chat-menu-option"
-                        data-selected={
-                          option.value === effectiveClaudePermission
-                        }
-                        key={option.value}
-                        onClick={() => applyClaudePermission(option.value)}
+                        data-selected={mode === effectiveClaudePermission}
+                        key={mode}
+                        onClick={() => applyClaudePermission(mode)}
                         variant="ghost"
                       >
                         <Hand size={18} />
                         <span>
-                          <strong>{option.label}</strong>
-                          <em>{option.summary}</em>
+                          <strong>{t(`claudePermission.${mode}`)}</strong>
+                          <em>{t(`claudePermissionSummary.${mode}`)}</em>
                         </span>
-                        {option.value === effectiveClaudePermission ? (
+                        {mode === effectiveClaudePermission ? (
                           <Check size={17} />
                         ) : null}
                       </Button>
@@ -351,44 +318,44 @@ export function AgentRuntimeControls({
                 ) : (
                   <>
                     <div className="fdy-chat-popover-note">
-                      <span>Codex permissions</span>
+                      <span>{t("controls.codexPermissions")}</span>
                     </div>
-                    <div className="fdy-chat-permission-section">Sandbox</div>
-                    {codexSandboxOptions.map((option) => (
+                    <div className="fdy-chat-permission-section">
+                      {t("controls.sandbox")}
+                    </div>
+                    {codexSandboxModes.map((mode) => (
                       <Button
                         className="fdy-chat-menu-option"
-                        data-selected={option.value === codexSandboxMode}
-                        key={option.value}
-                        onClick={() => onCodexSandboxModeChange(option.value)}
+                        data-selected={mode === codexSandboxMode}
+                        key={mode}
+                        onClick={() => onCodexSandboxModeChange(mode)}
                         variant="ghost"
                       >
                         <ShieldAlert size={18} />
                         <span>
-                          <strong>{option.label}</strong>
-                          <em>{option.summary}</em>
+                          <strong>{mode}</strong>
+                          <em>{t(`codexSandboxSummary.${mode}`)}</em>
                         </span>
-                        {option.value === codexSandboxMode ? (
-                          <Check size={17} />
-                        ) : null}
+                        {mode === codexSandboxMode ? <Check size={17} /> : null}
                       </Button>
                     ))}
-                    <div className="fdy-chat-permission-section">Approval</div>
-                    {codexApprovalOptions.map((option) => (
+                    <div className="fdy-chat-permission-section">
+                      {t("controls.approval")}
+                    </div>
+                    {codexApprovalPolicies.map((policy) => (
                       <Button
                         className="fdy-chat-menu-option"
-                        data-selected={option.value === codexApprovalPolicy}
-                        key={option.value}
-                        onClick={() =>
-                          onCodexApprovalPolicyChange(option.value)
-                        }
+                        data-selected={policy === codexApprovalPolicy}
+                        key={policy}
+                        onClick={() => onCodexApprovalPolicyChange(policy)}
                         variant="ghost"
                       >
                         <Hand size={18} />
                         <span>
-                          <strong>{option.label}</strong>
-                          <em>{option.summary}</em>
+                          <strong>{policy}</strong>
+                          <em>{t(`codexApprovalSummary.${policy}`)}</em>
                         </span>
-                        {option.value === codexApprovalPolicy ? (
+                        {policy === codexApprovalPolicy ? (
                           <Check size={17} />
                         ) : null}
                       </Button>
@@ -430,13 +397,13 @@ export function AgentRuntimeControls({
               <span className="fdy-chat-settings-model">
                 {modelStatusLabel ?? modelLabel}
               </span>
-              <em className="fdy-chat-settings-effort">{effortLabel}</em>
+              <em className="fdy-chat-settings-effort">{currentEffortLabel}</em>
               <ChevronDown size={15} />
             </Button>
           </DropdownMenu.Trigger>
           <DropdownMenu.Portal>
             <DropdownMenu.Content
-              aria-label="Model and effort"
+              aria-label={t("controls.modelAndEffort")}
               side={side}
               sideOffset={12}
               align="end"
@@ -450,7 +417,7 @@ export function AgentRuntimeControls({
                   onClick={() => openSettingsPanel("model")}
                   variant="ghost"
                 >
-                  <strong>模型</strong>
+                  <strong>{t("controls.model")}</strong>
                   <span>{modelStatusLabel ?? modelLabel}</span>
                   <ChevronRight size={17} />
                 </Button>
@@ -459,8 +426,8 @@ export function AgentRuntimeControls({
                   onClick={() => openSettingsPanel("effort")}
                   variant="ghost"
                 >
-                  <strong>推理强度</strong>
-                  <span>{effortLabel}</span>
+                  <strong>{t("controls.effort")}</strong>
+                  <span>{currentEffortLabel}</span>
                   <ChevronRight size={17} />
                 </Button>
                 {selectedRuntime === "codex" ? (
@@ -469,7 +436,7 @@ export function AgentRuntimeControls({
                     onClick={() => openSettingsPanel("speed")}
                     variant="ghost"
                   >
-                    <strong>速度</strong>
+                    <strong>{t("controls.speed")}</strong>
                     <span>{labelForSpeed(codexSpeed)}</span>
                     <ChevronRight size={17} />
                   </Button>
@@ -484,21 +451,22 @@ export function AgentRuntimeControls({
                   }}
                   variant="ghost"
                 >
-                  <strong>恢复 Profile 配置</strong>
+                  <strong>{t("controls.resetToProfile")}</strong>
                   <RotateCcw size={17} />
                 </Button>
               </div>
               <div className="fdy-chat-settings-submenu">
                 {settingsPanel === "model" ? (
                   <>
-                    <div className="fdy-chat-submenu-title">模型</div>
+                    <div className="fdy-chat-submenu-title">
+                      {t("controls.model")}
+                    </div>
                     {modelPanel.refreshFailed ? (
                       <div className="fdy-chat-model-refresh">
                         <span>
-                          模型目录刷新失败
                           {modelPanel.showOptions
-                            ? "，已保留 Profile 配置模型"
-                            : ""}
+                            ? t("controls.modelRefreshFailedKept")
+                            : t("controls.modelRefreshFailed")}
                         </span>
                         {onRetryModels ? (
                           <Button
@@ -508,7 +476,7 @@ export function AgentRuntimeControls({
                             variant="ghost"
                           >
                             <RotateCcw size={14} />
-                            重试刷新
+                            {t("controls.retryRefresh")}
                           </Button>
                         ) : null}
                       </div>
@@ -539,7 +507,9 @@ export function AgentRuntimeControls({
                 ) : null}
                 {settingsPanel === "effort" ? (
                   <>
-                    <div className="fdy-chat-submenu-title">推理强度</div>
+                    <div className="fdy-chat-submenu-title">
+                      {t("controls.effort")}
+                    </div>
                     {effortOptions.map((option) => (
                       <Button
                         className="fdy-chat-submenu-option"
@@ -548,7 +518,7 @@ export function AgentRuntimeControls({
                         onClick={() => applyEffort(option.value)}
                         variant="ghost"
                       >
-                        <span>{option.summary}</span>
+                        <span>{option.label}</span>
                         {option.value === effortValue ? (
                           <Check size={18} />
                         ) : null}
@@ -558,7 +528,9 @@ export function AgentRuntimeControls({
                 ) : null}
                 {settingsPanel === "speed" ? (
                   <>
-                    <div className="fdy-chat-submenu-title">速度</div>
+                    <div className="fdy-chat-submenu-title">
+                      {t("controls.speed")}
+                    </div>
                     <Button
                       className="fdy-chat-submenu-option fdy-chat-submenu-option-stacked"
                       data-selected={codexSpeed === "standard"}
@@ -570,8 +542,8 @@ export function AgentRuntimeControls({
                       variant="ghost"
                     >
                       <span>
-                        <strong>标准</strong>
-                        <em>常规速度</em>
+                        <strong>{t("codexSpeed.standard")}</strong>
+                        <em>{t("codexSpeedSummary.standard")}</em>
                       </span>
                       {codexSpeed === "standard" ? <Check size={18} /> : null}
                     </Button>
@@ -586,8 +558,8 @@ export function AgentRuntimeControls({
                       variant="ghost"
                     >
                       <span>
-                        <strong>快速</strong>
-                        <em>1.5 倍速度，用量更多</em>
+                        <strong>{t("codexSpeed.fast")}</strong>
+                        <em>{t("codexSpeedSummary.fast")}</em>
                       </span>
                       {codexSpeed === "fast" ? <Check size={18} /> : null}
                     </Button>

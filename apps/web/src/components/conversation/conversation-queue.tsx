@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   CornerDownRight,
   FileText,
@@ -17,10 +18,11 @@ export function ConversationQueue({
   input: ReturnType<typeof useConversationInput>;
   focus: () => void;
 }) {
+  const { t } = useTranslation("conversation");
   const [dragged, setDragged] = useState<string>();
   if (!input.queue.length) return null;
   return (
-    <div className="fdy-chat-queue" aria-label="Queued messages">
+    <div className="fdy-chat-queue" aria-label={t("queue.label")}>
       {input.queue.map((item) => (
         <div
           className="fdy-chat-queue-item"
@@ -75,10 +77,10 @@ export function ConversationQueue({
             <Button
               aria-label={
                 input.canSteer
-                  ? "Steer this message into the active response"
+                  ? t("queue.steerHint")
                   : input.active
-                    ? "Queued for the next turn"
-                    : "Send this queued message next"
+                    ? t("queue.queuedHint")
+                    : t("queue.sendHint")
               }
               disabled={
                 input.unavailable ||
@@ -94,16 +96,16 @@ export function ConversationQueue({
               <CornerDownRight size={15} />
               <span>
                 {input.steeringId === item.id
-                  ? "引导中"
+                  ? t("queue.steering")
                   : input.canSteer
-                    ? "引导"
+                    ? t("queue.steer")
                     : input.active
-                      ? "下一轮"
-                      : "发送"}
+                      ? t("queue.nextTurn")
+                      : t("queue.send")}
               </span>
             </Button>
             <Button
-              aria-label="Edit queued message"
+              aria-label={t("queue.edit")}
               disabled={input.pending}
               onClick={() => {
                 input.edit(item);
@@ -114,7 +116,7 @@ export function ConversationQueue({
               <Pencil size={15} />
             </Button>
             <Button
-              aria-label="Delete queued message"
+              aria-label={t("queue.remove")}
               disabled={input.pending}
               onClick={() => input.remove(item.id)}
               variant="ghost"

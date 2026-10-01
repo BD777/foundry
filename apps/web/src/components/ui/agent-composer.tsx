@@ -1,9 +1,10 @@
 import { Plus } from "lucide-react";
 import type { ReactNode, Ref } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 import { FileInput, type FileInputProps } from "./field";
 import { MetaPill } from "./meta-pill";
-import { RuntimeMark, type RuntimeKind } from "./runtime-mark";
+import { RuntimeMark, runtimeMeta, type RuntimeKind } from "./runtime-mark";
 import { SelectMenu } from "./select-menu";
 import {
   AgentRuntimeControls,
@@ -60,7 +61,7 @@ export function AgentComposer({
   agentOptions = [],
   agentPickerFooter,
   agentValue = "",
-  agentLabel = "Agent",
+  agentLabel,
   onAgentChange,
   runtimeControls,
   fixedRuntime,
@@ -76,6 +77,7 @@ export function AgentComposer({
   slashItems,
   ...panel
 }: AgentComposerProps) {
+  const { t } = useTranslation("agents");
   return (
     <MessageComposer {...panel}>
       {children}
@@ -86,7 +88,7 @@ export function AgentComposer({
         ) : null}
         {onAttach ? (
           <Button
-            aria-label="Attach context"
+            aria-label={t("composer.attachContext")}
             className="fdy-chat-context-button"
             onClick={onAttach}
             disabled={controlsDisabled}
@@ -105,17 +107,13 @@ export function AgentComposer({
           >
             <RuntimeMark runtime={fixedRuntime.runtime} size="sm" />
             <span className="fdy-chat-fixed-runtime-label">
-              {fixedRuntime.runtime === "claude"
-                ? "Claude"
-                : fixedRuntime.runtime === "codex"
-                  ? "Codex"
-                  : "Mock"}
+              {runtimeMeta(fixedRuntime.runtime).label}
               {fixedRuntime.model ? ` · ${fixedRuntime.model}` : ""}
             </span>
           </MetaPill>
         ) : agentOptions.length && runtimeControls && onAgentChange ? (
           <SelectMenu
-            ariaLabel={agentLabel}
+            ariaLabel={agentLabel ?? t("composer.agent")}
             side={side}
             className="fdy-chat-agent-select"
             footer={agentPickerFooter}
@@ -142,7 +140,7 @@ export function AgentComposer({
           />
         ) : (
           <MetaPill mono size="sm" tone="muted">
-            No agent
+            {t("composer.noAgent")}
           </MetaPill>
         )}
         {runtimeControls && !fixedRuntime ? (

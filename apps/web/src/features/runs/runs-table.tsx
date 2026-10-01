@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { ActionRow } from "../../components/ui/action-row";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Panel } from "../../components/ui/panel";
@@ -54,14 +55,15 @@ export interface RunsFilterControlProps<T extends string> {
 }
 
 export function RunsFilterControl<T extends string>({
-  ariaLabel = "Run status filter",
+  ariaLabel,
   onValueChange,
   options,
   value,
 }: RunsFilterControlProps<T>) {
+  const { t } = useTranslation("runs");
   return (
     <SegmentedControl
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? t("filter.label")}
       className="fdy-runs-filter"
       onValueChange={onValueChange}
       options={options}
@@ -75,24 +77,28 @@ export function RunsToolbar({ children }: RunsToolbarProps) {
 }
 
 export function RunsTable({ emptyState, rows }: RunsTableProps) {
+  const { t } = useTranslation("runs");
   return (
     <Panel className="fdy-runs-table-panel">
-      <ScrollArea className="fdy-runs-table-scroll" aria-label="Runs table">
+      <ScrollArea
+        className="fdy-runs-table-scroll"
+        aria-label={t("table.label")}
+      >
         <div className="fdy-runs-table-inner">
           <div className="fdy-runs-table-head">
-            <span>Run</span>
-            <span>Issue</span>
-            <span>Runtime</span>
-            <span>Phase</span>
-            <span>Duration</span>
-            <span>Status</span>
+            <span>{t("table.run")}</span>
+            <span>{t("table.issue")}</span>
+            <span>{t("table.runtime")}</span>
+            <span>{t("table.phase")}</span>
+            <span>{t("table.duration")}</span>
+            <span>{t("table.status")}</span>
           </div>
           {rows.map((row) => (
             <RunsTableGroup key={row.id} row={row} />
           ))}
         </div>
       </ScrollArea>
-      <div className="fdy-runs-mobile-list" aria-label="Runs list">
+      <div className="fdy-runs-mobile-list" aria-label={t("table.mobileLabel")}>
         {rows.map((row) => (
           <RunsMobileCard key={row.id} row={row} />
         ))}
@@ -138,6 +144,7 @@ function RunsTableGroup({ row }: RunsTableGroupProps) {
 }
 
 function RunsMobileCard({ row }: RunsTableGroupProps) {
+  const { t } = useTranslation("runs");
   return (
     <div className="fdy-runs-mobile-group" data-status={row.status}>
       <ActionRow
@@ -155,18 +162,18 @@ function RunsMobileCard({ row }: RunsTableGroupProps) {
         <span className="fdy-runs-mobile-issue">{row.issueId}</span>
         <span className="fdy-runs-mobile-meta">
           <span>
-            <em>Runtime</em>
+            <em>{t("table.runtime")}</em>
             <RunRuntimeCell runtime={row.runtime} />
           </span>
           <span>
-            <em>Phase</em>
+            <em>{t("table.phase")}</em>
             <strong className="fdy-run-phase-cell">
               {row.running ? <i /> : null}
               {row.phase}
             </strong>
           </span>
           <span>
-            <em>Duration</em>
+            <em>{t("table.duration")}</em>
             <strong>{row.duration}</strong>
           </span>
         </span>

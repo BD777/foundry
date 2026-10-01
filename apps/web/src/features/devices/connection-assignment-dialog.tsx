@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
@@ -39,6 +40,7 @@ export function ConnectionAssignmentDialog({
   onManage,
   onSave,
 }: ConnectionAssignmentDialogProps) {
+  const { t } = useTranslation(["profiles", "common"]);
   const [draft, setDraft] = useState<Set<string>>(
     () => new Set(initialSelectedIds),
   );
@@ -86,9 +88,7 @@ export function ConnectionAssignmentDialog({
       onOpenChange(false);
     } catch (cause) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not update this device's connections. Try again.",
+        cause instanceof Error ? cause.message : t("assignment.saveFailed"),
       );
     } finally {
       setBusy(false);
@@ -110,15 +110,14 @@ export function ConnectionAssignmentDialog({
         >
           <header className="fdy-connection-assign-header">
             <div>
-              <Dialog.Title>Choose server connections</Dialog.Title>
+              <Dialog.Title>{t("assignment.title")}</Dialog.Title>
               <Dialog.Description id="connection-assign-description">
-                Checked connections can be used on this device. Changes apply
-                only when you save.
+                {t("assignment.description")}
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
               <Button
-                aria-label="Close connection picker"
+                aria-label={t("assignment.close")}
                 disabled={busy}
                 size="icon"
                 variant="ghost"
@@ -130,10 +129,10 @@ export function ConnectionAssignmentDialog({
 
           {connections.length === 0 ? (
             <div className="fdy-connection-assign-empty">
-              <p>No server connections yet.</p>
+              <p>{t("assignment.empty")}</p>
               <Button onClick={onManage} size="sm" variant="secondary">
                 <ExternalLink size={14} />
-                Open Server connections
+                {t("assignment.openConnections")}
               </Button>
             </div>
           ) : (
@@ -152,7 +151,9 @@ export function ConnectionAssignmentDialog({
                   >
                     <Checkbox
                       aria-checked={checked}
-                      aria-label={`Grant ${connection.label} on this device`}
+                      aria-label={t("assignment.grant", {
+                        connection: connection.label,
+                      })}
                       checked={checked}
                       className="fdy-connection-assign-check"
                       disabled={busy}
@@ -163,7 +164,9 @@ export function ConnectionAssignmentDialog({
                       <strong>{connection.label}</strong>
                       <small>
                         {connection.model || connection.baseUrl} ·{" "}
-                        {checked ? "Selected for this device" : "Not selected"}
+                        {checked
+                          ? t("assignment.selected")
+                          : t("assignment.notSelected")}
                       </small>
                     </span>
                   </label>
@@ -187,11 +190,11 @@ export function ConnectionAssignmentDialog({
               variant="ghost"
             >
               <ExternalLink size={14} />
-              Create or edit connections
+              {t("assignment.manage")}
             </Button>
             <Dialog.Close asChild>
               <Button disabled={busy} size="sm" variant="secondary">
-                Cancel
+                {t("common:actions.cancel")}
               </Button>
             </Dialog.Close>
             <Button
@@ -200,7 +203,7 @@ export function ConnectionAssignmentDialog({
               size="sm"
               variant="primary"
             >
-              {busy ? "Saving…" : "Save"}
+              {busy ? t("common:actions.saving") : t("common:actions.save")}
             </Button>
           </footer>
         </Dialog.Content>

@@ -4,6 +4,7 @@ import type {
   ProviderStatus,
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../components/ui/runtime-mark";
+import { i18n } from "../i18n";
 
 /**
  * A promoted connection exists as two agent rows with a real linkage: the
@@ -147,23 +148,23 @@ export function shortUnavailableReason(
   const text = statusDetail ?? "";
   if (status === "unavailable") {
     if (/offline/i.test(text)) {
-      return "Device is offline.";
+      return i18n.t("agents:picker.deviceOffline");
     }
-    return "Unavailable on this device.";
+    return i18n.t("agents:picker.unavailableOnDevice");
   }
   if (status === "missing_auth") {
     if (/not enabled|no device|unbound/i.test(text)) {
-      return "Not enabled on a device yet.";
+      return i18n.t("agents:picker.notEnabledOnDevice");
     }
     if (/credential|api key|key is stored/i.test(text)) {
-      return "No credential stored for this profile.";
+      return i18n.t("agents:picker.noCredential");
     }
     if (/login|sign|\.codex|claude/i.test(text)) {
-      return "Worker configuration is not signed in.";
+      return i18n.t("agents:picker.workerNotSignedIn");
     }
-    return "No sign-in or credential on this device.";
+    return i18n.t("agents:picker.noSignIn");
   }
-  return "Unavailable.";
+  return i18n.t("agents:picker.unavailable");
 }
 
 /**
@@ -184,7 +185,9 @@ export function pickerAgentMeta(agent: AgentProjection): PickerAgentMeta {
 /** Current label rule shared by the chat and issue pickers. */
 export function pickerAgentLabel(agent: AgentProjection): string {
   return agent.connectionType === "local_login"
-    ? `${runtimeMeta(agent.provider).label} · Device account`
+    ? i18n.t("agents:picker.deviceAccount", {
+        runtime: runtimeMeta(agent.provider).label,
+      })
     : (agent.profileLabel ?? runtimeMeta(agent.provider).label);
 }
 

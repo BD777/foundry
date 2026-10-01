@@ -1,6 +1,7 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 
 export function ChatGroupContextMenu({
@@ -18,6 +19,7 @@ export function ChatGroupContextMenu({
   onDelete: () => Promise<void>;
   children: ReactNode;
 }) {
+  const { t } = useTranslation(["chat", "common"]);
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -32,7 +34,9 @@ export function ChatGroupContextMenu({
       await onDelete();
       setOpen(false);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "删除失败，请重试。");
+      setError(
+        error instanceof Error ? error.message : t("groups.deleteFailed"),
+      );
     } finally {
       setDeleting(false);
     }
@@ -65,7 +69,7 @@ export function ChatGroupContextMenu({
                 variant="ghost"
                 disabled={busy}
               >
-                重命名
+                {t("groups.rename")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Item
@@ -86,7 +90,7 @@ export function ChatGroupContextMenu({
                 variant="ghost"
                 disabled={busy}
               >
-                删除
+                {t("groups.delete")}
               </Button>
             </ContextMenu.Item>
           </ContextMenu.Content>
@@ -94,7 +98,7 @@ export function ChatGroupContextMenu({
       </ContextMenu.Root>
       {!open && error ? (
         <p className="fdy-chat-group-delete-error" role="alert">
-          删除目录失败：{error}
+          {t("groups.deleteError", { error })}
         </p>
       ) : null}
       <Dialog.Root
@@ -113,11 +117,10 @@ export function ChatGroupContextMenu({
             }}
           >
             <Dialog.Title className="fdy-chat-group-delete-title">
-              删除目录「{name}」？
+              {t("groups.deleteTitle", { name })}
             </Dialog.Title>
             <Dialog.Description className="fdy-chat-group-delete-description">
-              此目录及其下的全部 {sessionCount} 个 Session 将从 Foundry
-              中删除。本机原始会话记录会保留。
+              {t("groups.deleteDescription", { count: sessionCount })}
             </Dialog.Description>
             {error ? (
               <p className="fdy-chat-rename-error" role="alert">
@@ -127,7 +130,7 @@ export function ChatGroupContextMenu({
             <div className="fdy-chat-rename-actions">
               <Dialog.Close asChild>
                 <Button ref={cancelRef} variant="ghost" disabled={deleting}>
-                  取消
+                  {t("common:actions.cancel")}
                 </Button>
               </Dialog.Close>
               <Button
@@ -135,7 +138,7 @@ export function ChatGroupContextMenu({
                 disabled={disabled || deleting}
                 onClick={() => void remove()}
               >
-                {deleting ? "删除中…" : "删除目录及 Session"}
+                {deleting ? t("groups.deleting") : t("groups.deleteConfirm")}
               </Button>
             </div>
           </Dialog.Content>

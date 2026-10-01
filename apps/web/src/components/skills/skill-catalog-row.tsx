@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Checkbox } from "../../components/ui/field";
 import { Badge } from "../../components/ui/badge";
 import { SkillSearchHighlight } from "./skill-search-filter";
@@ -41,6 +42,7 @@ export function SkillCatalogRow({
   renderBadges,
   renderActions,
 }: SkillCatalogRowProps) {
+  const { t } = useTranslation("skills");
   const isWorkspace = mode === "workspace";
 
   const handleRowClick = (e: React.MouseEvent) => {
@@ -71,7 +73,7 @@ export function SkillCatalogRow({
     >
       {isWorkspace ? (
         <Checkbox
-          aria-label={`Select ${skill.name}`}
+          aria-label={t("row.select", { name: skill.name })}
           checked={checked}
           className="fdy-skill-select-check"
           disabled={disabled}
@@ -91,18 +93,26 @@ export function SkillCatalogRow({
           {isRequired ? (
             <Badge
               tone="neutral"
-              title={`Required by: ${requiredBy!.join(", ")}`}
+              title={t("row.requiredByTitle", {
+                names: requiredBy!.join(", "),
+              })}
             >
-              Required by {requiredBy![0]}
-              {requiredBy!.length > 1 ? ` +${requiredBy!.length - 1}` : ""}
+              {t("row.requiredBy", { name: requiredBy![0] })}
+              {requiredBy!.length > 1
+                ? t("row.more", { count: requiredBy!.length - 1 })
+                : ""}
             </Badge>
           ) : isRelated ? (
             <Badge
               tone="neutral"
-              title={`Referenced by: ${relatedTo!.join(", ")}`}
+              title={t("row.relatedToTitle", {
+                names: relatedTo!.join(", "),
+              })}
             >
-              Related to {relatedTo![0]}
-              {relatedTo!.length > 1 ? ` +${relatedTo!.length - 1}` : ""}
+              {t("row.relatedTo", { name: relatedTo![0] })}
+              {relatedTo!.length > 1
+                ? t("row.more", { count: relatedTo!.length - 1 })
+                : ""}
             </Badge>
           ) : null}
         </div>
