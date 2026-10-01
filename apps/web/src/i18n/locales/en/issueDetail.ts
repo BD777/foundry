@@ -260,7 +260,7 @@ export const issueDetail = {
       details: "Goal and agreement",
       evidence: "Acceptance results",
       changes: "Changes",
-      environment: "Execution environment",
+      environment: "Environment",
     },
     closeDetails: "Close issue details",
     environmentIntro:
