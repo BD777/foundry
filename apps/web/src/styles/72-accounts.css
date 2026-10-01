@@ -230,3 +230,8 @@
     padding: 20px;
   }
 }
+
+/* The language choice before sign-in stays a compact control. */
+.fdy-auth-language {
+  justify-self: start;
+}

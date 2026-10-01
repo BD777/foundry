@@ -1,4 +1,5 @@
 import {
+  Fragment,
   createContext,
   useCallback,
   useContext,
@@ -7,10 +8,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { getAuthState, logout, onAuthRequired } from "../api";
+import { getAuthState, logout, onAuthRequired, updateMyLocale } from "../api";
 import type { AccountUser, AuthState } from "../api-types";
 import { AuthScreen } from "../features/accounts";
 import { storedThemeMode } from "./navigation";
+import { useTranslation } from "react-i18next";
+import {
+  applyLocalePreference,
+  storedLocalePreference,
+  type LocalePreference,
+} from "../i18n";
 
 export interface AccountSession {
   /** Undefined only while the server is unreachable. */
@@ -95,6 +102,34 @@ export function AccountsGate({ children }: { children: ReactNode }) {
   );
 
   const signedOut = auth !== undefined && !auth.user;
+  const locale = auth?.user?.locale;
+  const signedIn = Boolean(auth?.user);
+  useEffect(() => {
+    // Signed out, this browser's choice applies. Signed in, the account's
+    // choice wins; an account without one adopts the choice made on the
+    // sign-in screen, so it follows the person to their other devices.
+    if (!signedIn) {
+      void applyLocalePreference(undefined);
+      return;
+    }
+    const chosenHere = storedLocalePreference();
+    if (!locale && chosenHere) {
+      void updateMyLocale(chosenHere)
+        .then((user) =>
+          setState((current) =>
+            current.status === "ready"
+              ? { status: "ready", auth: { ...current.auth, user } }
+              : current,
+          ),
+        )
+        .catch(() => applyLocalePreference(undefined));
+      return;
+    }
+    void applyLocalePreference((locale ?? "") as LocalePreference);
+  }, [signedIn, locale]);
+  // A language change renders the app afresh, so copy from plain helpers
+  // (labels, relative times) follows it everywhere, memoized parts included.
+  const { i18n: translations } = useTranslation();
   useEffect(() => {
     // A signed-in visitor opening an invite link lands in the app instead.
     if (state.status !== "loading" && !signedOut) leaveInvitePath();
@@ -120,7 +155,7 @@ export function AccountsGate({ children }: { children: ReactNode }) {
 
   return (
     <AccountSessionContext.Provider value={session}>
-      {children}
+      <Fragment key={translations.language}>{children}</Fragment>
     </AccountSessionContext.Provider>
   );
 }

@@ -32,6 +32,9 @@ type User struct {
 	Username    string     `json:"username"`
 	DisplayName string     `json:"displayName"`
 	Role        string     `json:"role"`
+	// Locale is the interface language the person chose ("en", "zh-CN");
+	// empty follows the browser.
+	Locale string `json:"locale"`
 	DisabledAt  *time.Time `json:"disabledAt,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	UpdatedAt   time.Time  `json:"updatedAt"`
@@ -47,8 +50,22 @@ type NewUser struct {
 	PasswordHash string
 }
 
+// Locales the interface is translated into; "" follows the browser.
+var Locales = []string{"", "en", "zh-CN"}
+
+// ValidLocale reports whether a person may choose this interface language.
+func ValidLocale(locale string) bool {
+	for _, known := range Locales {
+		if locale == known {
+			return true
+		}
+	}
+	return false
+}
+
 type UserUpdate struct {
 	DisplayName *string
+	Locale      *string
 	Role        *string
 	Disabled    *bool
 }

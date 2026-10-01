@@ -8,6 +8,7 @@ import {
   type AccountFeatureEvent,
 } from "../features/accounts";
 import { useAccountSession } from "./accounts-gate";
+import { i18n } from "../i18n";
 import type { SidebarView } from "./navigation";
 
 /** Members is admin-only; Account is for every signed-in user. */
@@ -18,12 +19,12 @@ export function withAccountNav(
   if (!role) return sections;
   const accountItems: SidebarNavSection<SidebarView>["items"] = [
     ...(role === "admin"
-      ? [{ id: "members" as const, label: "Members", icon: Users }]
+      ? [{ id: "members" as const, label: "members", icon: Users }]
       : []),
-    { id: "account", label: "Account", icon: UserRound },
+    { id: "account", label: "account", icon: UserRound },
   ];
   return sections.map((section) =>
-    section.label === "Manage"
+    section.label === "manage"
       ? { ...section, items: [...section.items, ...accountItems] }
       : section,
   );
@@ -54,7 +55,11 @@ export function AccountView({ view, fallback, onNotice }: AccountViewProps) {
     try {
       await session.signOut();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : "Sign out failed");
+      onNotice(
+        error instanceof Error
+          ? error.message
+          : i18n.t("account:page.signOutFailed"),
+      );
     }
   }
 

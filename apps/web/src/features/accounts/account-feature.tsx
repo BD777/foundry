@@ -1,10 +1,17 @@
 import { useState, type FormEvent } from "react";
-import { changeMyPassword, updateMyDisplayName } from "../../api";
+import { Trans, useTranslation } from "react-i18next";
+import {
+  changeMyPassword,
+  updateMyDisplayName,
+  updateMyLocale,
+} from "../../api";
 import type { AccountUser } from "../../api-types";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
+import { LanguageSelect } from "../../components/ui/language-select";
+import { applyLocalePreference, i18n, type LocalePreference } from "../../i18n";
 import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { roleLabel } from "./account-format";
@@ -21,6 +28,9 @@ export interface AccountFeatureProps {
 type Feedback = { tone: "success" | "error"; text: string } | undefined;
 
 export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
+  const { t } = useTranslation(["account", "common"]);
+  const [languageBusy, setLanguageBusy] = useState(false);
+  const [languageFeedback, setLanguageFeedback] = useState<Feedback>();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [nameBusy, setNameBusy] = useState(false);
   const [nameFeedback, setNameFeedback] = useState<Feedback>();
@@ -36,7 +46,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
     try {
       const updated = await updateMyDisplayName(displayName);
       onEvent({ type: "account.updated", user: updated });
-      setNameFeedback({ tone: "success", text: "Display name saved." });
+      setNameFeedback({ tone: "success", text: t("page.nameSaved") });
     } catch (reason) {
       setNameFeedback({ tone: "error", text: messageOf(reason) });
     } finally {
@@ -54,10 +64,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
       await changeMyPassword(currentPassword, newPassword);
       setCurrentPassword("");
       setNewPassword("");
-      setPasswordFeedback({
-        tone: "success",
-        text: "Password changed. Other devices were signed out.",
-      });
+      setPasswordFeedback({ tone: "success", text: t("page.passwordChanged") });
     } catch (reason) {
       setPasswordFeedback({ tone: "error", text: messageOf(reason) });
     } finally {
@@ -65,12 +72,32 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
     }
   }
 
+  async function saveLanguage(locale: LocalePreference): Promise<void> {
+    setLanguageBusy(true);
+    setLanguageFeedback(undefined);
+    try {
+      // This browser remembers the same choice ("" clears it), so following
+      // the browser is not undone by an earlier choice made here.
+      await applyLocalePreference(locale);
+      onEvent({ type: "account.updated", user: await updateMyLocale(locale) });
+    } catch (reason) {
+      setLanguageFeedback({ tone: "error", text: messageOf(reason) });
+    } finally {
+      setLanguageBusy(false);
+    }
+  }
+
   return (
     <PageSurface variant="accounts">
       <div className="fdy-account-intro">
-        <strong>Account</strong>
+        <strong>{t("page.title")}</strong>
         <p>
-          Signed in as <b>{user.username}</b>{" "}
+          <Trans
+            components={{ b: <b /> }}
+            i18nKey="page.signedInAs"
+            ns="account"
+            values={{ username: user.username }}
+          />{" "}
           <Badge tone={user.role === "admin" ? "brass" : "neutral"}>
             {roleLabel(user.role)}
           </Badge>
@@ -83,7 +110,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
           onSubmit={(event) => void saveName(event)}
         >
           <label className="fdy-auth-field">
-            <span>Display name</span>
+            <span>{t("page.displayName")}</span>
             <TextInput
               maxLength={64}
               onChange={(event) => setDisplayName(event.target.value)}
@@ -91,9 +118,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               tone="boxed"
               value={displayName}
             />
-            <small>
-              Shown on Issues, contracts and Accept decisions you make.
-            </small>
+            <small>{t("page.displayNameHint")}</small>
           </label>
           {nameFeedback ? (
             <Alert tone={nameFeedback.tone} title={nameFeedback.text} />
@@ -104,7 +129,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               type="submit"
               variant="primary"
             >
-              {nameBusy ? "Saving…" : "Save name"}
+              {nameBusy ? t("common:actions.saving") : t("page.saveName")}
             </Button>
           </div>
         </form>
@@ -116,7 +141,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
           onSubmit={(event) => void savePassword(event)}
         >
           <label className="fdy-auth-field">
-            <span>Current password</span>
+            <span>{t("page.currentPassword")}</span>
             <TextInput
               autoComplete="current-password"
               onChange={(event) => setCurrentPassword(event.target.value)}
@@ -127,7 +152,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
             />
           </label>
           <label className="fdy-auth-field">
-            <span>New password</span>
+            <span>{t("page.newPassword")}</span>
             <TextInput
               autoComplete="new-password"
               minLength={10}
@@ -137,28 +162,43 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
               type="password"
               value={newPassword}
             />
-            <small>
-              At least 10 characters. Changing it signs out your other devices.
-            </small>
+            <small>{t("page.newPasswordHint")}</small>
           </label>
           {passwordFeedback ? (
             <Alert tone={passwordFeedback.tone} title={passwordFeedback.text} />
           ) : null}
           <div className="fdy-account-actions">
             <Button disabled={passwordBusy} type="submit" variant="primary">
-              {passwordBusy ? "Changing…" : "Change password"}
+              {passwordBusy
+                ? t("page.changingPassword")
+                : t("page.changePassword")}
             </Button>
           </div>
         </form>
       </Panel>
 
+      <Panel className="fdy-account-section">
+        <div className="fdy-auth-field">
+          <span>{t("common:language.label")}</span>
+          <LanguageSelect
+            disabled={languageBusy}
+            onChange={(locale) => void saveLanguage(locale)}
+            value={user.locale ?? ""}
+          />
+          <small>{t("page.languageHint")}</small>
+        </div>
+        {languageFeedback ? (
+          <Alert tone={languageFeedback.tone} title={languageFeedback.text} />
+        ) : null}
+      </Panel>
+
       <Panel className="fdy-account-section fdy-account-signout">
         <div>
-          <strong>Sign out</strong>
-          <p>Ends the session in this browser.</p>
+          <strong>{t("page.signOutTitle")}</strong>
+          <p>{t("page.signOutBody")}</p>
         </div>
         <Button onClick={() => onEvent({ type: "account.signOutRequested" })}>
-          Sign out
+          {t("page.signOut")}
         </Button>
       </Panel>
     </PageSurface>
@@ -168,5 +208,5 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
 function messageOf(reason: unknown): string {
   return reason instanceof Error && reason.message
     ? reason.message
-    : "The Foundry server did not answer. Try again.";
+    : i18n.t("common:errors.serverUnreachable");
 }

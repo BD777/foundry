@@ -1,3 +1,4 @@
+import { i18n } from "../i18n";
 import type { NavView } from "./navigation";
 
 export interface ViewErrorResetInput {
@@ -33,23 +34,6 @@ export function viewErrorResetKey({
   ].join("|");
 }
 
-const viewLabels: Record<NavView, string> = {
-  account: "Account",
-  members: "Members",
-  assets: "Assets",
-  chats: "Chats",
-  devices: "Devices",
-  locations: "Working location",
-  issue: "Issue detail",
-  issues: "Issues",
-  profiles: "Model connections",
-  settings: "Settings",
-  skills: "Skills",
-  feishu: "Feishu Bot",
-  sharing: "Sharing",
-  workspace: "Workspace",
-};
-
 export function viewErrorLabel(view: NavView): string {
-  return viewLabels[view];
+  return i18n.t(`shell:views.${view}`);
 }

@@ -2,19 +2,13 @@ import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
 
 const roleRank: Record<WorkspaceAccessRole, number> = {
   viewer: 1,
   member: 2,
   maintainer: 3,
   owner: 4,
-};
-
-const roleLabel: Record<WorkspaceAccessRole, string> = {
-  viewer: "Viewer",
-  member: "Member",
-  maintainer: "Maintainer",
-  owner: "Owner",
 };
 
 /**
@@ -28,9 +22,12 @@ export function workspaceDenial(
 ): string | undefined {
   const have = workspace?.accessRole;
   if (!have || roleRank[have] >= roleRank[need]) return undefined;
-  return `You are a ${roleLabel[have]} in this workspace; this needs ${roleLabel[need]} or higher.`;
+  return i18n.t("common:access.denied", {
+    have: workspaceRoleLabel(have),
+    need: workspaceRoleLabel(need),
+  });
 }
 
 export function workspaceRoleLabel(role: WorkspaceAccessRole): string {
-  return roleLabel[role];
+  return i18n.t(`common:roles.${role}`);
 }

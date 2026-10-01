@@ -280,3 +280,26 @@ func TestHumanActorAttributesAccount(t *testing.T) {
 		t.Fatalf("with an account = %+v", got)
 	}
 }
+
+// A person's interface language is part of their account, so it follows them
+// to every browser; empty follows the browser.
+func TestAccountKeepsTheChosenInterfaceLanguage(t *testing.T) {
+	server, handler := newAccountsTestServer(t)
+	session := setupOwner(t, server, handler)
+	call := func(body string) *httptest.ResponseRecorder {
+		return doAuthCall(t, handler, authCall{method: http.MethodPatch, path: "/api/auth/me", cookie: session, origin: accountsTestOrigin, body: body})
+	}
+	expectStatus(t, call(`{"locale":"zh-CN"}`), http.StatusOK, "choose Chinese")
+	state := doAuthCall(t, handler, authCall{method: http.MethodGet, path: "/api/auth/state", cookie: session})
+	if !strings.Contains(state.Body.String(), `"locale":"zh-CN"`) {
+		t.Fatalf("auth state does not carry the chosen language: %s", state.Body.String())
+	}
+	expectStatus(t, call(`{"locale":"tlh"}`), http.StatusBadRequest, "unknown language")
+	expectStatus(t, call(`{}`), http.StatusBadRequest, "nothing to update")
+	renamed := call(`{"displayName":"Owner Renamed"}`)
+	expectStatus(t, renamed, http.StatusOK, "rename keeps the language")
+	if !strings.Contains(renamed.Body.String(), `"locale":"zh-CN"`) {
+		t.Fatalf("renaming changed the language: %s", renamed.Body.String())
+	}
+	expectStatus(t, call(`{"locale":""}`), http.StatusOK, "follow the browser again")
+}

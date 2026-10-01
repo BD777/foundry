@@ -193,6 +193,8 @@ export interface AccountUser {
   username: string;
   displayName: string;
   role: AccountRole;
+  /** Interface language the person chose; "" follows the browser. */
+  locale?: "" | "en" | "zh-CN";
   disabledAt?: string;
   createdAt: string;
   updatedAt: string;
