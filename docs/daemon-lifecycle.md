@@ -91,7 +91,7 @@ Inbound handlers in `runWebSocketSession`, keyed by `daemonMessageTypes`:
 | `scanSkills`                                                 | `scanSkillRoots()` over the requested roots                             | `skillsScanned`                                                 |
 | `readSkillFile` / `readSkillContent`                         | read one skill file / `packageSkillDirectory()` for promotion           | `skillFileRead` / `skillContentRead`                            |
 | `issueEnvironment`                                           | prepare/inspect/cleanup Issue environments [issue-environments]         | `issueEnvironmentResult`                                        |
-| `evidenceRequest`                                            | clarify/seal/collect/assess/accept/recover RPC [evidence-rpc]           | `evidenceResult`                                                |
+| `evidenceRequest`                                            | seal/collect/assess/accept/recover RPC [evidence-rpc]                   | `evidenceResult`                                                |
 | `steerSession`                                               | active steer target [session-state]                                     | `sessionSteered`                                                |
 | `cancelSession`                                              | `cancelActiveSession()`                                                 | `sessionCanceled`                                               |
 | `runSession`                                                 | claim, `taskScheduler.schedule()` → `executeAgentSession()`             | `sessionStarted` … `sessionCompleted`                           |

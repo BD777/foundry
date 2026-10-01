@@ -617,8 +617,12 @@ export interface AgentSession {
   profileLabel?: string;
   source?:
     "chat" | "diagnostic" | "naming" | "verification" | "agent" | "issue";
-  /** The job the session does for Foundry; absent for a chat. */
-  role?: "issue_execution";
+  /**
+   * The job the session does for Foundry; absent for a chat. An
+   * issue_execution session implements its Issue; an issue_clarification
+   * session talks the Issue through with the person, read-only.
+   */
+  role?: "issue_execution" | "issue_clarification";
   /** Orchestration lineage: the session that created this one. A record, not a permission. */
   parentSessionId?: string;
   /** When set, the session executes inside an Issue candidate worktree. */
@@ -667,6 +671,34 @@ export interface IssueConversationMessage {
   createdAt: string;
 }
 
+/** The Issue's clarification session and the person's latest message to it. */
+export interface IssueClarification {
+  sessionId: string;
+  /** "replying" while the Agent answers, "failed" when it could not, "answered" once recorded. */
+  status: "replying" | "failed" | "answered";
+  error?: string;
+  inputId: string;
+  messageId: string;
+  /** The draft the message was about. */
+  revision: number;
+  contentDigest: string;
+  changeReason: string;
+}
+
+/** What a clarification input is about, sent with the session. */
+export interface ClarificationTurn {
+  draft: import("./evidence.js").IssueContract;
+  /** The conversation before this message, for a session without native context. */
+  messages: ChatRecapMessage[];
+  message: string;
+}
+
+/** A clarification session's reply to one message. */
+export interface ClarificationResponse {
+  message: string;
+  proposedContent?: import("./evidence.js").ContractContent;
+}
+
 export interface Issue {
   /** Account that started it; agent-created sessions inherit their parent's. */
   createdByUserId?: string;
@@ -686,6 +718,7 @@ export interface Issue {
   claudeEffort?: ClaudeEffort;
   codexReasoningEffort?: CodexReasoningEffort;
   messages?: IssueConversationMessage[];
+  clarification?: IssueClarification;
   id: string;
   workspaceId?: string;
   shortId: string;

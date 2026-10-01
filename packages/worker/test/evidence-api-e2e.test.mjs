@@ -259,24 +259,9 @@ test(
     assert.equal(issue.contractState, "draft");
     await delay(100);
     assert.equal((await api(`/api/issues/${issue.id}`)).run, undefined);
-    let baseRevision = 1;
-    if (liveAgent) {
-      const initial = (await api(`/api/issues/${issue.id}/contracts`)).items[0];
-      const clarified = await api(`/api/issues/${issue.id}/clarify`, {
-        expectedRevision: initial.revision,
-        expectedContentDigest: initial.contentDigest,
-        message:
-          "Please ask me the most important unanswered question before proposing criteria. Do not propose a contract yet.",
-        changeReason: "Clarify expected API behavior",
-      });
-      assert.equal(clarified.currentContractRevision, undefined);
-      assert.equal(clarified.run, undefined);
-      assert.equal(
-        clarified.messages.filter((m) => m.id.startsWith("clarify_")).length,
-        2,
-      );
-      baseRevision = clarified.draftContractRevision;
-    }
+    // Clarification is a session of the Issue that a real worker runs; the
+    // real-browser acceptance covers it. This test drives the draft directly.
+    const baseRevision = 1;
     const criteria = [
       ["valid", "/?value=hello", 200, true],
       ["invalid", "/", 400, false],

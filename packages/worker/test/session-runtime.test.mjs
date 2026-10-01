@@ -64,28 +64,22 @@ function spec(root, overrides) {
 }
 
 test(
-  "the role decides tools, instructions and turn limits",
+  "a verifier reads and checks the candidate; without a directory it has no tools",
   supported,
   async (t) => {
     const root = fixture(t);
     await startSession(spec(root, {})).result;
     await startSession(
-      spec(root, { role: "clarification", directory: join(root, "c") }),
-    ).result;
-    await startSession(
       spec(root, { workspace: undefined, directory: join(root, "d") }),
     ).result;
-    const [verify, clarify, detached] = calls.map((call) => call.options);
+    const [verify, detached] = calls.map((call) => call.options);
     assert.deepEqual(verify.allowedTools, ["Read", "Grep", "Glob", "Bash"]);
     assert.deepEqual(verify.settingSources, []);
     assert.equal(verify.maxTurns, 30);
-    assert.deepEqual(clarify.allowedTools, ["Read", "Grep", "Glob"]);
-    assert.ok(clarify.disallowedTools.includes("Bash"));
-    assert.deepEqual(clarify.settingSources, ["project"]);
     assert.deepEqual(detached.allowedTools, []);
     assert.deepEqual(detached.tools, []);
     assert.equal(detached.maxTurns, 1);
-    for (const options of [verify, clarify, detached]) {
+    for (const options of [verify, detached]) {
       assert.deepEqual(options.mcpServers, {});
       assert.equal(options.persistSession, false);
       const write = await options.canUseTool("Write", {});

@@ -10,19 +10,6 @@ import type {
 
 export type EvidenceWorkerRequest =
   | {
-      action: "clarify";
-      workspaceId: string;
-      issueId: string;
-      deviceId: string;
-      taskId: string;
-      draft: IssueContract;
-      messages: { role: "user" | "assistant"; text: string }[];
-      harness: "claude" | "codex";
-      profileId: string;
-      requestedModel: string;
-      controlServerURL: string;
-    }
-  | {
       action: "recover";
       workspaceId: string;
       issueId: string;
@@ -148,10 +135,4 @@ export interface EvidenceWorkerResult {
   integrationSnapshot?: CandidateSnapshot;
   recovered?: EvidenceWorkerResult;
   total?: number;
-  clarification?: {
-    message: string;
-    proposedContent?: import("./evidence.js").ContractContent;
-    sessionId?: string;
-    rawOutputMaterialId: string;
-  };
 }

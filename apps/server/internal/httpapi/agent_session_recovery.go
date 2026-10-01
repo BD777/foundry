@@ -13,7 +13,7 @@ func (s *Server) reconcileAgentSession(ctx context.Context, session store.AgentS
 	result, recovered, err := reconcileAgentSession(ctx, s.store, s.events, session, s.options.AgentSessionStaleAfter, s.hub.HasActiveSession)
 	if recovered && err == nil {
 		s.titles.SessionCompleted(ctx, result)
-		s.hub.settleIssueExecution(ctx, result, nil)
+		s.hub.settleIssueSession(ctx, result, nil, nil)
 	}
 	return result, recovered, err
 }
@@ -34,7 +34,7 @@ func (s *Server) reconcileAgentSessions(ctx context.Context, sessions []store.Ag
 func (h *DaemonHub) reconcileAgentSession(ctx context.Context, session store.AgentSession) (store.AgentSession, bool, error) {
 	result, recovered, err := reconcileAgentSession(ctx, h.store, h.events, session, defaultAgentSessionStaleAfter, h.HasActiveSession)
 	if recovered && err == nil {
-		h.settleIssueExecution(ctx, result, nil)
+		h.settleIssueSession(ctx, result, nil, nil)
 	}
 	return result, recovered, err
 }

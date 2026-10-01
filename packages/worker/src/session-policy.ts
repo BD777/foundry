@@ -35,6 +35,11 @@ import {
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
+import {
+  claudeRoleOptions,
+  clarificationFoundryTools,
+  isClarificationSession,
+} from "./session-roles.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -206,11 +211,16 @@ export function codexFoundryTools(
   // Pre-approved like Claude's allowedTools: Foundry grants these tools and
   // its server authorizes every call by the session token; a headless
   // session has nobody to approve a prompt.
+  // A clarification sees only the tools that read other sessions.
+  const enabledTools = isClarificationSession(session)
+    ? clarificationFoundryTools
+    : undefined;
   const server = {
     url: tools.url,
     bearer_token_env_var: foundryTokenEnvName,
     default_tools_approval_mode: "approve",
     tool_timeout_sec: foundryToolTimeoutMs / 1000,
+    ...(enabledTools ? { enabled_tools: enabledTools } : {}),
   };
   return {
     config: { mcp_servers: { foundry: server } },
@@ -223,6 +233,12 @@ export function codexFoundryTools(
       `mcp_servers.foundry.default_tools_approval_mode=${JSON.stringify(server.default_tools_approval_mode)}`,
       "-c",
       `mcp_servers.foundry.tool_timeout_sec=${server.tool_timeout_sec}`,
+      ...(enabledTools
+        ? [
+            "-c",
+            `mcp_servers.foundry.enabled_tools=${JSON.stringify(enabledTools)}`,
+          ]
+        : []),
     ],
   };
 }
@@ -271,6 +287,7 @@ export function buildClaudeLaunchPlan(input: {
         usesSessionScratch(session) ? session.id : undefined,
       );
   const settings = foundryClaudeSettings(profile, session, managedSkills);
+  const role = claudeRoleOptions(session);
   const tools = foundryToolsEndpoint(session);
   const mcpServers = tools && {
     foundry: {
@@ -292,18 +309,18 @@ export function buildClaudeLaunchPlan(input: {
       // Foundry grants these tools and its server authorizes every call by
       // the session token; a headless session has nobody to approve a prompt.
       ...(mcpServers ? { allowedTools: [foundryToolsPermission] } : {}),
+      // A role names every tool it may use, the Foundry ones included.
+      ...role?.sdk,
     },
     mcpServers,
     cliArgs: [
       ...claudeSessionCliArgs(managedSkills, deviceNotes),
-      ...(mcpServers
-        ? [
-            "--mcp-config",
-            JSON.stringify({ mcpServers }),
-            "--allowedTools",
-            foundryToolsPermission,
-          ]
-        : []),
+      ...(mcpServers ? ["--mcp-config", JSON.stringify({ mcpServers })] : []),
+      ...(role
+        ? role.cliArgs
+        : mcpServers
+          ? ["--allowedTools", foundryToolsPermission]
+          : []),
     ],
     managedSkills,
     reset,

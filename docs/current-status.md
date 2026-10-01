@@ -45,7 +45,8 @@ Foundry is a self-hosted, multi-account product:
   models and JSON Schema.
 
 The Issue loop on main is: raw input → read-only Agent clarification in the
-selected workspace → human-confirmed contract pinned to `revision + digest` →
+selected workspace (the Issue's own `issue_clarification` session since
+2026-10-01) → human-confirmed contract pinned to `revision + digest` →
 execution in a per-Issue git worktree outside the source tree → sealed
 candidate snapshot → deterministic or independent-agent verification over real
 materials → immutable review snapshot → explicit human Accept → per-repository

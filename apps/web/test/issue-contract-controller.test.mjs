@@ -171,3 +171,46 @@ test("confirmation submits the displayed revision and digest, not a newer loaded
   assert.deepEqual(writes[0].body, { expectedContentDigest: "digest-4" });
   assert.equal(h.state.draft.revision, 5);
 });
+
+test("the reply arrives with the Issue: waiting and a failure with its retry come from the clarification state", async (t) => {
+  const writes = [];
+  const h = await harness(t, async (url, options) => {
+    if (options.method === "GET")
+      return Response.json({ items: [draft()], total: 1 });
+    writes.push({ url, body: JSON.parse(options.body) });
+    return Response.json({});
+  });
+  await h.render({
+    messages: [{ id: "clarify_1", role: "user", text: "Which file?" }],
+    clarification: {
+      sessionId: "sess_1",
+      status: "replying",
+      inputId: "i1",
+      messageId: "clarify_1",
+      revision: 1,
+      contentDigest: "digest-1",
+      changeReason: "x",
+    },
+  });
+  assert.equal(h.state.replying, true);
+  assert.equal(h.state.replyFailure, "");
+  await h.render({
+    clarification: {
+      sessionId: "sess_1",
+      status: "failed",
+      error: "provider unavailable",
+      inputId: "i1",
+      messageId: "clarify_1",
+      revision: 1,
+      contentDigest: "digest-1",
+      changeReason: "x",
+    },
+  });
+  assert.equal(h.state.replying, false);
+  assert.equal(h.state.replyFailure, "provider unavailable");
+  await act(async () => {
+    await h.state.retryReply();
+  });
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].url, /\/clarify\/retry$/);
+});

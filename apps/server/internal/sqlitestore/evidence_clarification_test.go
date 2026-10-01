@@ -8,9 +8,49 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
+// clarify asks the clarification session about the current draft and has it
+// answer with reply, as the worker would.
+func clarify(t *testing.T, db *Store, issueID, message, reason, key string, reply *store.ClarificationResponse) (store.Issue, store.AgentSession) {
+	t.Helper()
+	ctx := context.Background()
+	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
+	current, err := db.GetIssue(ctx, issueID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := db.contractByRevision(ctx, issueID, *current.DraftContractRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked, session, err := db.AskClarification(ctx, store.AskClarificationInput{IssueID: issueID, Revision: draft.Revision, ContentDigest: draft.ContentDigest, Message: message, ChangeReason: reason}, owner, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asked.Clarification == nil || asked.Clarification.Status != "replying" || session.Role != store.AgentSessionRoleIssueClarification || session.Input.Prompt != message {
+		t.Fatalf("message was not queued to the clarification session: %+v %+v", asked.Clarification, session)
+	}
+	if _, err = db.StartAgentSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if reply == nil {
+		session, err = db.FailAgentSession(ctx, session.ID, "provider unavailable")
+	} else {
+		session, err = db.CompleteAgentSession(ctx, session.ID, reply.Message, "native-1")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	answered, err := db.AnswerClarification(ctx, session, reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return answered, session
+}
+
 func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
+	registerForOwnershipTest(t, db, "dev_clarify", "ws_clarify")
 	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_clarify", SourceInput: "hi", Runtime: "claude"})
 	if err != nil {
 		t.Fatal(err)
@@ -20,18 +60,12 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
-	now := evidenceNow()
-	raw := store.Material{SchemaVersion: 1, ID: "clarifier_raw", WorkspaceID: issue.WorkspaceID, IssueID: issue.ID, CreatedAt: now, CreatedBy: store.ActorRef{Kind: "daemon", ID: "worker", DisplayName: "Worker"}, Name: "Raw", Carrier: "text_log", MimeType: "text/plain", ByteSize: 3, Digest: evidenceDigest("raw"), StorageDeviceID: "worker", CapturedAt: now, Redaction: store.MaterialRedaction{Status: "none"}, PreviewMaterialIDs: []string{}, Availability: "available", AvailabilityCheckedAt: now}
-	if err = db.RegisterMaterial(ctx, issue.ID, raw); err != nil {
-		t.Fatal(err)
-	}
-	reply := store.ClarificationResponse{Message: "What observable result should the Issue deliver?", RawOutputMaterialID: raw.ID}
-	current, err := db.RecordClarification(ctx, issue.ID, 1, draft.ContentDigest, "Help define this", "Clarify the target", reply, owner, "question")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.Status != "blocked" || current.CurrentContractRevision != nil || len(current.Messages) != 2 {
+	current, first := clarify(t, db, issue.ID, "Help define this", "Clarify the target", "question", &store.ClarificationResponse{Message: "What observable result should the Issue deliver?"})
+	if current.Status != "blocked" || current.CurrentContractRevision != nil || len(current.Messages) != 2 || current.Clarification.Status != "answered" {
 		t.Fatal("clarification launched execution or lost dialogue")
+	}
+	if first.DeviceID != "dev_clarify" || first.Source != "issue" || first.IssueID != issue.ID {
+		t.Fatalf("clarification session is not the Issue's: %+v", first)
 	}
 	if _, err = db.ClaimNextIssue(ctx, "worker", issue.WorkspaceID); err == nil {
 		t.Fatal("claimed unconfirmed clarification")
@@ -45,11 +79,10 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	criterion.EvidenceRequirements[0].Description = "Actual HTTP exchange"
 	content.Goal.Text = "Fix API validation"
 	content.Criteria = []store.AcceptanceCriterion{criterion}
-	reply.ProposedContent = &content
-	reply.Message = "The proposed contract is ready for your review, not confirmed."
-	current, err = db.RecordClarification(ctx, issue.ID, 1, draft.ContentDigest, "Valid 200; invalid 400", "Specify status behavior", reply, owner, "proposal")
-	if err != nil {
-		t.Fatal(err)
+	reply := store.ClarificationResponse{Message: "The proposed contract is ready for your review, not confirmed.", ProposedContent: &content}
+	current, second := clarify(t, db, issue.ID, "Valid 200; invalid 400", "Specify status behavior", "proposal", &reply)
+	if second.ID != first.ID || second.NativeSessionID != "native-1" {
+		t.Fatal("the next message did not continue the same clarification session")
 	}
 	proposal, err := db.contractByRevision(ctx, issue.ID, *current.DraftContractRevision)
 	if err != nil {
@@ -62,16 +95,15 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 		t.Fatalf("an Issue named after its raw input takes the proposed goal as its title, got %q", current.Title)
 	}
 	same := store.ContractContentOf(proposal)
-	noChange := store.ClarificationResponse{Message: "继续不等于确认，请核对已保存草案。", ProposedContent: &same, RawOutputMaterialID: raw.ID}
-	unchanged, err := db.RecordClarification(ctx, issue.ID, proposal.Revision, proposal.ContentDigest, "继续", "继续讨论", noChange, owner, "no-change")
-	if err != nil || *unchanged.DraftContractRevision != proposal.Revision || unchanged.CurrentContractRevision != nil {
-		t.Fatal("identical proposal created a revision or confirmed", err)
+	unchanged, _ := clarify(t, db, issue.ID, "继续", "继续讨论", "no-change", &store.ClarificationResponse{Message: "继续不等于确认，请核对已保存草案。", ProposedContent: &same})
+	if *unchanged.DraftContractRevision != proposal.Revision || unchanged.CurrentContractRevision != nil {
+		t.Fatal("identical proposal created a revision or confirmed")
 	}
-	replayed, found, err := db.ReplayClarification(ctx, issue.ID, 1, draft.ContentDigest, "Valid 200; invalid 400", "Specify status behavior", owner, "proposal")
-	if err != nil || !found || len(replayed.Messages) != 4 {
+	replayed, _, err := db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: 1, ContentDigest: draft.ContentDigest, Message: "Valid 200; invalid 400", ChangeReason: "Specify status behavior"}, owner, "proposal")
+	if err != nil || len(replayed.Messages) != 3 {
 		t.Fatal("clarification replay failed", err)
 	}
-	if _, _, err = db.ReplayClarification(ctx, issue.ID, 1, draft.ContentDigest, "Continue", "Specify status behavior", owner, "proposal"); err == nil {
+	if _, _, err = db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: 1, ContentDigest: draft.ContentDigest, Message: "Continue", ChangeReason: "Specify status behavior"}, owner, "proposal"); err == nil {
 		t.Fatal("changed clarification replay accepted")
 	}
 	for _, kind := range []string{"agent", "daemon"} {
@@ -85,14 +117,13 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	}
 	reason := "用户要求讨论新的完成标准"
 	base := confirmed.Revision
-	amendment, err := db.CreateContract(ctx, issue.ID, store.ContractDraftInput{BaseRevision: &base, Content: store.ContractContentOf(confirmed), ChangeReason: &reason}, owner, "begin-amendment")
-	if err != nil {
+	if _, err = db.CreateContract(ctx, issue.ID, store.ContractDraftInput{BaseRevision: &base, Content: store.ContractContentOf(confirmed), ChangeReason: &reason}, owner, "begin-amendment"); err != nil {
 		t.Fatal(err)
 	}
 	content.Goal.Text = "Fix validation and explain errors"
-	current, err = db.RecordClarification(ctx, issue.ID, amendment.Revision, amendment.ContentDigest, "建议加上错误说明", reason, reply, owner, "amendment-proposal")
-	if err != nil || current.CurrentContractRevision == nil || *current.CurrentContractRevision != confirmed.Revision {
-		t.Fatal("Agent proposal replaced effective standard before user approval", err)
+	current, _ = clarify(t, db, issue.ID, "建议加上错误说明", reason, "amendment-proposal", &reply)
+	if current.CurrentContractRevision == nil || *current.CurrentContractRevision != confirmed.Revision {
+		t.Fatal("Agent proposal replaced effective standard before user approval")
 	}
 	next, err := db.contractByRevision(ctx, issue.ID, *current.DraftContractRevision)
 	if err != nil || next.CreatedBy.Kind != "agent" || next.Confirmation != nil {
@@ -104,6 +135,56 @@ func TestClarificationPreservesHumanConfirmationBoundary(t *testing.T) {
 	current, err = db.GetIssue(ctx, issue.ID)
 	if err != nil || *current.CurrentContractRevision != next.Revision {
 		t.Fatal("user confirmation did not activate new standard", err)
+	}
+}
+
+func TestFailedClarificationKeepsTheMessageForARetry(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	owner := store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}
+	registerForOwnershipTest(t, db, "dev_retry", "ws_retry")
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_retry", SourceInput: "fix pricing", Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, session := clarify(t, db, issue.ID, "What is wrong with pricing?", "Clarify the target", "ask", nil)
+	if failed.Clarification.Status != "failed" || failed.Clarification.Error != "provider unavailable" || len(failed.Messages) != 1 || failed.Messages[0].Role != "user" {
+		t.Fatalf("a failed reply lost the message or its reason: %+v %+v", failed.Clarification, failed.Messages)
+	}
+	draft, err := db.contractByRevision(ctx, issue.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = db.AskClarification(ctx, store.AskClarificationInput{IssueID: issue.ID, Revision: 1, ContentDigest: draft.ContentDigest, Message: "again", ChangeReason: "x"}, owner, "other"); err != nil {
+		t.Fatal("a new message after a failure was refused", err)
+	}
+	retried, err := db.GetIssue(ctx, issue.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = db.RetryClarification(ctx, issue.ID, owner, "retry"); err == nil {
+		t.Fatal("retried while the Agent is replying")
+	}
+	// A late answer to the earlier input settles nothing.
+	if late, err := db.AnswerClarification(ctx, session, &store.ClarificationResponse{Message: "late"}); err != nil || len(late.Messages) != len(retried.Messages) || late.Clarification.Status != "replying" {
+		t.Fatal("an answer to an earlier input changed the conversation", err)
+	}
+	current, err := db.GetAgentSession(ctx, retried.Clarification.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.StartAgentSession(ctx, current.ID); err != nil {
+		t.Fatal(err)
+	}
+	if current, err = db.FailAgentSession(ctx, current.ID, "still down"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.AnswerClarification(ctx, current, nil); err != nil {
+		t.Fatal(err)
+	}
+	again, queued, err := db.RetryClarification(ctx, issue.ID, owner, "retry")
+	if err != nil || again.Clarification.Status != "replying" || queued.Input.Prompt != "again" || len(again.Messages) != 2 {
+		t.Fatal("retry did not send the same message again", err, again.Clarification)
 	}
 }
 

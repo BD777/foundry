@@ -9,6 +9,7 @@ import type {
 import {
   clarifyContract,
   confirmContract,
+  retryClarification,
   discardContract,
   importLegacyContract,
   listContracts,
@@ -50,6 +51,13 @@ export function useIssueContract(
     (c) => c.revision === issue.currentContractRevision,
   );
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  // The clarification session answers the person's latest message after the
+  // send returns; its state travels with the Issue.
+  const replying = issue.clarification?.status === "replying";
+  const replyFailure =
+    issue.clarification?.status === "failed"
+      ? issue.clarification.error || i18n.t("issueDetail:conversation.noReply")
+      : "";
   const load = useCallback(async () => {
     const result = await listContracts(issue.id);
     setContracts(result.items);
@@ -248,6 +256,8 @@ export function useIssueContract(
     latest,
     busy,
     error,
+    replying,
+    replyFailure,
     pendingText,
     attachments,
     uploading,
@@ -295,6 +305,8 @@ export function useIssueContract(
         );
       }),
     retryInitial: () => send(issue.sourceInput, [], true),
+    retryReply: () =>
+      perform(() => retryClarification(issue.id, crypto.randomUUID())),
   };
 }
 

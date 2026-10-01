@@ -16,6 +16,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
+  type ClarificationTurn,
   type DeviceProjection,
   type Issue,
   type SessionSkillRef,
@@ -50,6 +51,7 @@ import {
   queuedSessionCancelRequests,
   SessionExecutionRegistry,
   setOutOfBandSessionEventSink,
+  type AgentSessionRunResult,
   type OutOfBandSessionEvent,
 } from "./session-state.js";
 import {
@@ -76,6 +78,10 @@ import {
 import { closeAllActiveRuntimes } from "./runner.js";
 import { runWorkspaceSession, type WorkspaceSandbox } from "./session/index.js";
 import { issueSessionExecution } from "./issue-sessions.js";
+import {
+  prepareClarification,
+  recoveredClarificationCompletion,
+} from "./issue-clarification.js";
 import {
   packageSkillDirectory,
   readSkillTextFile,
@@ -129,7 +135,6 @@ import {
   writeAgentSessionCompletionMarker,
   readAgentSessionCompletionMarker,
   recoveredSessionCompletion,
-  type AgentSessionCompletionMarker,
 } from "./session-helpers.js";
 import {
   registerSessionAmbientEnv,
@@ -234,6 +239,8 @@ interface RunSessionPayload {
   issue?: Issue;
   /** Server decision: readable only for Issues the device owner started. */
   userFiles?: "readable" | "hidden";
+  /** The draft and conversation an issue_clarification input is about. */
+  clarification?: ClarificationTurn;
 }
 
 interface SteerSessionPayload {
@@ -251,6 +258,7 @@ interface RecoverSessionPayload {
   inputId?: string;
   workspaceId: string;
   issueId?: string;
+  role?: AgentSession["role"];
 }
 
 const nativeChatSyncIntervalMs = 10000;
@@ -433,6 +441,8 @@ async function executeAgentSession(
   dispatchCredential?: string,
   dispatchProfile?: ProfileDefinition,
   ambient?: SessionAmbientEnv,
+  /** What the session's role adds to its completion report. */
+  settle?: (result: AgentSessionRunResult) => Record<string, unknown>,
 ): Promise<void> {
   const workspacePath = execution.cwd;
   const unregisterAmbient = ambient
@@ -644,12 +654,14 @@ async function executeAgentSession(
     });
     flushPendingResponse();
     await reclaimResources();
+    const settled = settle?.(result);
     writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
     transport.send(daemonMessageTypes.sessionCompleted, {
       sessionId: session.id,
       inputId: session.input?.id,
       nativeSessionId: result.nativeSessionId,
       response: result.response,
+      ...settled,
     });
   } catch (error) {
     await reclaimResources();
@@ -1772,6 +1784,19 @@ function runWebSocketSession(options: {
         ) {
           return;
         }
+        if (payload.role === "issue_clarification" && payload.issueId) {
+          console.log(`Reporting orphaned Issue clarification ${sessionId}`);
+          options.sessionTransport.send(
+            daemonMessageTypes.sessionCompleted,
+            recoveredClarificationCompletion(
+              payload.workspaceId,
+              payload.issueId,
+              sessionId,
+              inputId,
+            ),
+          );
+          return;
+        }
         if (payload.issueId) {
           console.log(`Reporting orphaned Issue execution ${sessionId}`);
           const completion = recoveredIssueCompletion(
@@ -1832,25 +1857,38 @@ function runWebSocketSession(options: {
         }
         // An input that already finished here (its report lost with an
         // earlier process) is reported again rather than run twice.
-        let recorded: AgentSessionCompletionMarker | undefined;
+        const clarifying = payload.session.role === "issue_clarification";
+        let recorded: Record<string, unknown> | undefined;
         try {
-          recorded = payload.session.issueId
-            ? undefined
-            : readAgentSessionCompletionMarker(
-                workspacePathFor(payload.session.workspaceId),
-                payload.session.id,
-                inputId,
-              );
+          if (clarifying) {
+            const report = recoveredClarificationCompletion(
+              payload.session.workspaceId,
+              payload.session.issueId ?? "",
+              payload.session.id,
+              inputId,
+            );
+            recorded = report.clarificationResult ? report : undefined;
+          } else if (!payload.session.issueId) {
+            const marker = readAgentSessionCompletionMarker(
+              workspacePathFor(payload.session.workspaceId),
+              payload.session.id,
+              inputId,
+            );
+            recorded = marker && {
+              sessionId: payload.session.id,
+              inputId: inputId || undefined,
+              nativeSessionId: marker.nativeSessionId,
+              response: marker.response,
+            };
+          }
         } catch {
           recorded = undefined;
         }
         if (recorded) {
-          options.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
-            sessionId: payload.session.id,
-            inputId: inputId || undefined,
-            nativeSessionId: recorded.nativeSessionId,
-            response: recorded.response,
-          });
+          options.sessionTransport.send(
+            daemonMessageTypes.sessionCompleted,
+            recorded,
+          );
           options.sessionExecutions.complete(payload.session.id, inputId);
           if (options.once) finish("exit");
           return;
@@ -1866,17 +1904,28 @@ function runWebSocketSession(options: {
                 sessionToken: payload.sessionToken ?? "",
                 workspaceID: payload.session.workspaceId,
               };
+              const workspacePath = workspacePathFor(
+                payload.session.workspaceId,
+              );
+              // An Issue's clarification runs read-only in the workspace with
+              // its turn's draft; its answer becomes the reply on the Issue.
+              const clarification = clarifying
+                ? prepareClarification(
+                    payload.session,
+                    payload.clarification,
+                    workspacePath,
+                    ambient,
+                  )
+                : undefined;
               await executeAgentSession(
                 options.sessionTransport,
-                sessionExecution(
-                  workspacePathFor(payload.session.workspaceId),
-                  payload.session,
-                  ambient,
-                ),
-                payload.session,
+                clarification?.execution ??
+                  sessionExecution(workspacePath, payload.session, ambient),
+                clarification?.session ?? payload.session,
                 payload.credential,
                 payload.profile,
                 ambient,
+                clarification?.settle,
               );
             } catch (error) {
               const message =
@@ -1950,11 +1999,7 @@ function runWebSocketSession(options: {
       if (envelope.type === daemonMessageTypes.evidenceRequest) {
         const payload = envelope.payload as EvidenceWorkerRequest;
         try {
-          const result = await evidenceWorkerAction(
-            payload,
-            undefined,
-            workspacePathFor(payload.workspaceId),
-          );
+          const result = await evidenceWorkerAction(payload);
           trySendWebSocket(
             socket,
             daemonMessageTypes.evidenceResult,

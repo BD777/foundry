@@ -160,10 +160,16 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 	// An agent in an Issue's candidate (its executor, and every session it
 	// starts) acts only within that Issue (architecture-modules.md §6, D6).
 	scope.issueID = strings.TrimSpace(session.IssueID)
+	// An Issue's clarification only reads: it may look at the sessions of its
+	// workspace, never start, message or stop one (D5).
+	issueRole := store.WorkspaceRoleMember
+	if session.Role == store.AgentSessionRoleIssueClarification {
+		issueRole = store.WorkspaceRoleViewer
+	}
 	if creator == "" || testCreator {
 		// Without a person behind it (tests, legacy rows) the token keeps its
 		// own workspace only.
-		scope.roles[actor.Identity.WorkspaceID] = store.WorkspaceRoleMember
+		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}
 	scope.userID = creator
@@ -174,7 +180,7 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 		}
 	}
 	if scope.issueID != "" {
-		scope.roles[actor.Identity.WorkspaceID] = store.WorkspaceRoleMember
+		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}
 	roles, err := ownership.WorkspaceRolesForUser(ctx, creator)

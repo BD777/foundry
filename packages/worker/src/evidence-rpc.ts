@@ -39,7 +39,6 @@ import { judgeWithAgent } from "./evidence-agent.js";
 import { git } from "./execution-git.js";
 import { acceptEvidenceCandidate } from "./evidence-acceptance.js";
 import { redactEvidence } from "./evidence-redaction.js";
-import { clarifyIssueContract } from "./evidence-clarification.js";
 import { candidateChangeManifest } from "./evidence-change-manifest.js";
 import { refreshCandidate } from "./candidate-refresh.js";
 import { snapshotEnvironment, assertMutable } from "./issue-environments.js";
@@ -55,8 +54,6 @@ const activeEvidenceTasks = new Set<string>();
 export async function evidenceWorkerAction(
   request: EvidenceWorkerRequest,
   execution = new ExecutionStore(),
-  /** Local path of the selected workspace; the clarification stage works in it. */
-  workspacePath?: string,
 ): Promise<EvidenceWorkerResult> {
   const store = new EvidenceStore(
     request.workspaceId,
@@ -173,9 +170,9 @@ export async function evidenceWorkerAction(
           ? await execution.lock(
               request.workspaceId,
               `execution-${request.issueId}`,
-              () => execute(request, store, execution, workspacePath),
+              () => execute(request, store, execution),
             )
-          : await execute(request, store, execution, workspacePath);
+          : await execute(request, store, execution);
       } catch (error) {
         result = { taskId, error: String(error) };
       } finally {
@@ -193,15 +190,8 @@ async function execute(
   request: EvidenceWorkerRequest,
   store: EvidenceStore,
   execution: ExecutionStore,
-  workspacePath?: string,
 ): Promise<EvidenceWorkerResult> {
   const taskId = request.taskId;
-  if (request.action === "clarify") {
-    const source =
-      workspacePath ?? execution.registration(request.workspaceId)?.sourcePath;
-    if (!source) throw new Error("clarification_requires_local_workspace");
-    return clarifyIssueContract(request, store, source);
-  }
   if (request.action === "upload_seal") {
     if (request.actor.kind !== "user" && request.actor.kind !== "local_owner")
       throw new Error("human_upload_required");

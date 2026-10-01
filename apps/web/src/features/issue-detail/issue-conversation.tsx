@@ -78,8 +78,12 @@ export function IssueConversation({
   }, [issue.id, onRefresh]);
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
   const displayed: ChatMessageItem[] = [...messages];
-  if (contract?.busy) {
-    if (contract.pendingText && contract.pendingText !== issue.sourceInput)
+  if (contract?.busy || contract?.replying) {
+    if (
+      contract.busy &&
+      contract.pendingText &&
+      contract.pendingText !== issue.sourceInput
+    )
       displayed.push({
         id: "clarification-pending-input",
         role: "user",
@@ -94,6 +98,24 @@ export function IssueConversation({
       streaming: true,
     });
   } else if (contract && clarifying) {
+    if (contract.replyFailure)
+      displayed.push({
+        id: "clarification-failed",
+        role: "bot",
+        text: (
+          <Alert tone="warning" title={t("conversation.replyFailedTitle")}>
+            <p>{contract.replyFailure}</p>
+            <Button
+              disabled={contract.busy}
+              variant="secondary"
+              onClick={() => void contract.retryReply().catch(() => {})}
+            >
+              {t("conversation.retryReply")}
+            </Button>
+            <p>{t("conversation.replyKeptNote")}</p>
+          </Alert>
+        ),
+      });
     if (contract.draft?.criteria.some((c) => c.required))
       displayed.push({
         id: `confirmation-${contract.draft.id}`,
@@ -136,6 +158,7 @@ export function IssueConversation({
       active={issue.status === "in_progress"}
       sending={
         contract?.busy ||
+        contract?.replying ||
         (issue.status === "pending" && issue.contractState === "confirmed")
       }
       activeExecutionId={runId}

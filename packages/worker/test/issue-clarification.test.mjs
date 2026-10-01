@@ -4,7 +4,7 @@ import {
   validateClarificationResponse,
   parseClarificationResponse,
   readClarificationAnswer,
-} from "../dist/evidence-clarification.js";
+} from "../dist/issue-clarification.js";
 import {
   stageJSONObject,
   normalizeVerificationShape,
@@ -42,9 +42,16 @@ test("prose is a chat message and only JSON can carry a proposal", () => {
     ),
     { message: "What should change?" },
   );
+  // What the Agent wrote before the block is part of its reply.
   assert.deepEqual(
     parseClarificationResponse(
       'I read src/app.ts.\n```json\n{"message":"Shall I start there?"}\n```',
+    ),
+    { message: "I read src/app.ts.\n\nShall I start there?" },
+  );
+  assert.deepEqual(
+    parseClarificationResponse(
+      'Shall I start there?\n```json\n{"message":"Shall I start there?"}\n```',
     ),
     { message: "Shall I start there?" },
   );
@@ -142,4 +149,154 @@ test("judgment shape is aligned without changing what was judged", () => {
     { evidenceId: "ev_x", materialId: "mat_unknown" },
   ]);
   assert.equal(aligned.verdict, "pass");
+});
+
+test("a clarification turn reads its references as files, read-only in the workspace", async () => {
+  const { mkdtempSync, readFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "clarification-"));
+  process.env.FOUNDRY_STATE_ROOT = join(root, "state");
+  const {
+    clarificationExecution,
+    clarificationInput,
+    clarificationReply,
+    recordClarificationReply,
+    recoveredClarificationCompletion,
+  } = await import("../dist/issue-clarification.js");
+  const workspacePath = join(root, "project");
+  (await import("node:fs")).mkdirSync(workspacePath);
+  const session = {
+    id: "sess_c",
+    workspaceId: "ws_c",
+    issueId: "iss_c",
+    deviceId: "dev_c",
+    role: "issue_clarification",
+    input: { id: "input_1", prompt: "Which file?" },
+  };
+  const ambient = {
+    serverURL: "http://127.0.0.1:1",
+    sessionToken: "t",
+    workspaceID: "ws_c",
+  };
+  const execution = clarificationExecution(session, workspacePath, ambient);
+  const profile = execution.sandbox.profile;
+  assert.equal(execution.cwd, workspacePath);
+  assert.deepEqual(profile.readRoots, [workspacePath]);
+  assert.equal(profile.writeRoots.includes(workspacePath), false);
+  assert.equal(profile.userFiles, "hidden");
+  assert.equal(execution.sandbox.env.HOME, profile.writeRoots[0]);
+
+  const material = {
+    id: "mat_ref",
+    name: "style.txt",
+    mimeType: "text/plain",
+  };
+  const store = {
+    getMaterial: (id) => {
+      assert.equal(id, "mat_ref");
+      return material;
+    },
+    readMaterial: () => Buffer.from("See you, <name>!"),
+  };
+  const draft = {
+    revision: 2,
+    goal: {
+      text: "Add farewell",
+      media: [{ materialId: "mat_ref", role: "context" }],
+    },
+    criteria: [],
+  };
+  const turn = {
+    draft,
+    messages: [{ role: "user", text: "earlier" }],
+    message: "Which file?",
+  };
+  const fresh = clarificationInput(session, turn, workspacePath, store);
+  const body = JSON.parse(fresh.prompt);
+  assert.match(body.instruction, /read-only|Never change anything/);
+  assert.ok(body.instruction.includes(workspacePath));
+  assert.deepEqual(body.earlierMessages, turn.messages);
+  assert.equal(body.message, "Which file?");
+  assert.equal(fresh.id, "input_1");
+  assert.equal(fresh.attachments.length, 1);
+  assert.equal(
+    readFileSync(fresh.attachments[0].path, "utf8"),
+    "See you, <name>!",
+  );
+  assert.ok(
+    execution.sandbox.profile.protectedReadRoots.some((r) =>
+      fresh.attachments[0].path.startsWith(r),
+    ),
+  );
+  // A session that kept its context gets only the new turn.
+  const resumed = JSON.parse(
+    clarificationInput(
+      { ...session, nativeSessionId: "native" },
+      turn,
+      workspacePath,
+      store,
+    ).prompt,
+  );
+  assert.equal(resumed.instruction, undefined);
+  assert.equal(resumed.earlierMessages, undefined);
+  assert.ok(resumed.reminder);
+
+  // A proposal citing a reference that was never supplied is not saved.
+  const proposal = {
+    goal: { text: "x", media: [{ materialId: "mat_other", role: "context" }] },
+    inScope: [],
+    outOfScope: [],
+    constraints: [],
+    criteria: [
+      {
+        id: "c1",
+        title: "t",
+        statement: "s",
+        required: true,
+        proofKind: "functional",
+        evaluationMode: "agent",
+        rubric: { text: "r", media: [] },
+        evidenceRequirements: [
+          {
+            id: "r1",
+            description: "d",
+            acceptedCarriers: ["document"],
+            minimumCount: 1,
+            bindingPolicy: "system_observed",
+          },
+        ],
+      },
+    ],
+  };
+  const reply = clarificationReply(
+    "```json\n" +
+      JSON.stringify({
+        message: "Here is a draft.",
+        proposedContent: proposal,
+      }) +
+      "\n```",
+    turn,
+  );
+  assert.equal(reply.proposedContent, undefined);
+  assert.match(reply.message, /Here is a draft\./);
+
+  // A reply this device recorded is reported again; otherwise it is lost.
+  assert.match(
+    recoveredClarificationCompletion("ws_c", "iss_c", "sess_c", "input_1")
+      .error,
+    /lost/,
+  );
+  recordClarificationReply("ws_c", "iss_c", "input_1", {
+    message: "greet.mjs",
+  });
+  const recovered = recoveredClarificationCompletion(
+    "ws_c",
+    "iss_c",
+    "sess_c",
+    "input_1",
+  );
+  assert.deepEqual(recovered.clarificationResult, { message: "greet.mjs" });
+  assert.equal(recovered.error, undefined);
+  assert.ok(existsSync(join(root, "state")));
 });

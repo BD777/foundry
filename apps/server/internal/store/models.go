@@ -503,9 +503,18 @@ const SessionInputEventLabel = "User message"
 // AgentSessionRoleIssueExecution is the session that implements an Issue.
 const AgentSessionRoleIssueExecution = "issue_execution"
 
+// AgentSessionRoleIssueClarification is the Issue's clarification
+// conversation: one read-only session in the Issue's workspace whose every
+// message from the person is a new input.
+const AgentSessionRoleIssueClarification = "issue_clarification"
+
 // DaemonCapabilityIssueSessions: the worker runs Issue executions dispatched
 // as run_session with the issue_execution role.
 const DaemonCapabilityIssueSessions = "issue_sessions"
+
+// DaemonCapabilityIssueClarification: the worker runs an Issue's
+// clarification as a session with the issue_clarification role.
+const DaemonCapabilityIssueClarification = "issue_clarification"
 
 // SessionInput is one message delivered to a session: the unit of dispatch.
 // It is not a session of its own; identity, permissions and lineage belong
@@ -540,7 +549,8 @@ type AgentSession struct {
 	Source             string `json:"source,omitempty"`
 	// Role is the job the session does for Foundry; empty for a chat.
 	// AgentSessionRoleIssueExecution implements an Issue's confirmed contract
-	// in its candidate workspace.
+	// in its candidate workspace; AgentSessionRoleIssueClarification talks
+	// the Issue through with the person, read-only.
 	Role string `json:"role,omitempty"`
 	// ParentSessionID records orchestration lineage: the agent session that
 	// created this one. Empty for human/browser chats. It is a record for
@@ -590,6 +600,40 @@ type IssueConversationMessage struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// IssueClarification is the Issue's clarification session and the state of
+// the person's latest message to it.
+type IssueClarification struct {
+	SessionID string `json:"sessionId"`
+	// Status is "replying" while the Agent answers the latest message,
+	// "failed" when it could not, and "answered" once its reply is recorded.
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	// InputID is the session input carrying the latest message.
+	InputID string `json:"inputId"`
+	// MessageID is the person's latest message in the Issue conversation.
+	MessageID string `json:"messageId"`
+	// Revision and ContentDigest name the draft the message was about; a
+	// proposal in the reply revises exactly that draft.
+	Revision      int    `json:"revision"`
+	ContentDigest string `json:"contentDigest"`
+	ChangeReason  string `json:"changeReason"`
+}
+
+// ClarificationResponse is the clarification session's reply to one message.
+type ClarificationResponse struct {
+	Message         string           `json:"message"`
+	ProposedContent *ContractContent `json:"proposedContent,omitempty"`
+}
+
+// ClarificationTurn travels with a clarification input: the draft the
+// message is about and the conversation before it, for a session that has
+// lost its native context.
+type ClarificationTurn struct {
+	Draft    IssueContract      `json:"draft"`
+	Messages []ChatRecapMessage `json:"messages"`
+	Message  string             `json:"message"`
+}
+
 type IssueBlockedReason struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
@@ -613,6 +657,7 @@ type Issue struct {
 	ClaudeEffort               string                     `json:"claudeEffort,omitempty"`
 	CodexReasoningEffort       string                     `json:"codexReasoningEffort,omitempty"`
 	Messages                   []IssueConversationMessage `json:"messages,omitempty"`
+	Clarification              *IssueClarification        `json:"clarification,omitempty"`
 	ID                         string                     `json:"id"`
 	WorkspaceID                string                     `json:"workspaceId,omitempty"`
 	ShortID                    string                     `json:"shortId"`

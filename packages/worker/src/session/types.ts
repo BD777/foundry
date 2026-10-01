@@ -1,8 +1,9 @@
 /**
- * Session roles this runtime starts today. Chat, orchestrated and Issue
- * execution sessions join as they migrate (docs/architecture-modules.md §5.2).
+ * Session roles this runtime starts: the independent verifier, a fresh
+ * session per judgment. Chats and the sessions working for an Issue run
+ * through runWorkspaceSession (docs/architecture-modules.md §6, D3).
  */
-export type SessionRole = "clarification" | "verification";
+export type SessionRole = "verification";
 
 export interface SessionSpec {
   role: SessionRole;
