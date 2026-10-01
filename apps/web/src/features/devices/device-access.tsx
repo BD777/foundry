@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { KeyRound, Monitor, Network } from "lucide-react";
 import type { DevicesFeatureProps } from "./devices-feature";
 import type {
@@ -18,6 +19,7 @@ export function DeviceAccess({
   device: DeviceProjection;
   ownProfiles: AgentProfileProjection[];
 }) {
+  const { t } = useTranslation("devices");
   const [source, setSource] = useState<"accounts" | "connections">("accounts");
   const accountsTab = useRef<HTMLButtonElement>(null);
   const connectionsTab = useRef<HTMLButtonElement>(null);
@@ -33,16 +35,20 @@ export function DeviceAccess({
   return (
     <section className="fdy-device-access">
       <div className="fdy-access-intro">
-        <h2>How this device connects to AI</h2>
+        <h2>{t("access.title")}</h2>
         <p>
-          Choose an account or API connection when starting a chat. Both run on{" "}
-          <strong>{device.label}</strong>.
+          <Trans
+            ns="devices"
+            i18nKey="access.intro"
+            values={{ device: device.label }}
+            components={{ strong: <strong /> }}
+          />
         </p>
       </div>
       <div
         className="fdy-access-tabs"
         role="tablist"
-        aria-label="AI access sources"
+        aria-label={t("access.sources")}
         onKeyDown={(event) => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
             return;
@@ -72,8 +78,8 @@ export function DeviceAccess({
         >
           <Monitor size={18} />
           <span>
-            <strong>Official accounts</strong>
-            <small>Sign in separately on this device</small>
+            <strong>{t("access.accountsTitle")}</strong>
+            <small>{t("access.accountsHint")}</small>
           </span>
         </Button>
         <Button
@@ -90,9 +96,14 @@ export function DeviceAccess({
           <Network size={18} />
           <span>
             <strong>
-              Server API connections <em>{count}</em>
+              <Trans
+                ns="devices"
+                i18nKey="access.connectionsTitle"
+                values={{ total: count }}
+                components={{ em: <em /> }}
+              />
             </strong>
-            <small>Shared configuration · Explicit device access</small>
+            <small>{t("access.connectionsHint")}</small>
           </span>
         </Button>
       </div>
@@ -112,8 +123,7 @@ export function DeviceAccess({
         {source === "accounts" ? (
           <>
             <p className="fdy-access-explanation">
-              <KeyRound size={14} /> Use your ChatGPT or Claude subscription.
-              Credentials stay on this device; no server connection is needed.
+              <KeyRound size={14} /> {t("access.accountsExplanation")}
             </p>
             <DeviceAccounts
               device={device}

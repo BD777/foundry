@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
   WorkspaceProjection,
@@ -18,6 +19,7 @@ export function WorkspaceDetails({
   device: DeviceProjection;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("workspaces");
   const [inspection, setInspection] = useState<WorkspaceInspection>();
   const [err, setErr] = useState("");
   const [revision, setRevision] = useState(0);
@@ -37,7 +39,7 @@ export function WorkspaceDetails({
       })
       .catch((cause) => {
         if (!disposed)
-          setErr(cause instanceof Error ? cause.message : "Inspection failed.");
+          setErr(cause instanceof Error ? cause.message : t("details.failed"));
       })
       .finally(() => {
         if (!disposed) setBusy(false);
@@ -49,55 +51,53 @@ export function WorkspaceDetails({
   return (
     <WorkspaceDialog
       title={workspace.name}
-      description="Workspace details · Viewing details does not switch your working location."
+      description={t("details.description")}
       onClose={onClose}
     >
       <dl className="fdy-workspace-details">
-        <dt>Device</dt>
+        <dt>{t("details.device")}</dt>
         <dd>
           {device.label} ·{" "}
-          {removed ? "Removed from Foundry" : connected ? "Online" : "Offline"}
+          {removed
+            ? t("details.deviceRemoved")
+            : connected
+              ? t("shared.online")
+              : t("shared.offline")}
         </dd>
-        <dt>Folder</dt>
+        <dt>{t("details.folder")}</dt>
         <dd>
           <code>{workspace.localPath}</code>
         </dd>
         {connected && inspection ? (
           <>
-            <dt>Repository</dt>
+            <dt>{t("details.repository")}</dt>
             <dd>
               {inspection.containingRepository ||
                 (inspection.gitState === "not_git"
-                  ? "Not a Git repository"
-                  : "No containing repository")}
+                  ? t("details.notGit")
+                  : t("details.noContainingRepository"))}
             </dd>
-            <dt>Branch</dt>
+            <dt>{t("details.branch")}</dt>
             <dd>
-              {inspection.branch || "No branch"} ·{" "}
+              {inspection.branch || t("details.noBranch")} ·{" "}
               {inspection.trackedChanges
-                ? "Uncommitted changes"
+                ? t("details.uncommittedChanges")
                 : inspection.gitState === "ready"
-                  ? "Clean tracked files"
-                  : inspection.gitState}
+                  ? t("details.cleanTracked")
+                  : t(`overview.gitStates.${inspection.gitState}`)}
             </dd>
-            <dt>Repositories</dt>
+            <dt>{t("details.repositories")}</dt>
             <dd>{inspection.uniqueRepositoryCount}</dd>
-            <dt>Inspected</dt>
+            <dt>{t("details.inspected")}</dt>
             <dd>{inspection.inspectedAt}</dd>
           </>
         ) : null}
       </dl>
-      {busy ? <p role="status">Inspecting the folder on this device…</p> : null}
+      {busy ? <p role="status">{t("details.inspecting")}</p> : null}
       {removed ? (
-        <p className="fdy-location-description">
-          Removed device · This workspace is retained as read-only history and
-          can no longer be inspected live or switched to. Local files were not
-          deleted.
-        </p>
+        <p className="fdy-location-description">{t("details.removedNote")}</p>
       ) : !connected ? (
-        <p className="fdy-location-description">
-          Offline · Saved path only. Live repository status is unavailable.
-        </p>
+        <p className="fdy-location-description">{t("details.offlineNote")}</p>
       ) : null}
       {err ? (
         <p className="fdy-location-error" role="alert">
@@ -115,7 +115,7 @@ export function WorkspaceDetails({
           disabled={busy}
           onClick={() => setRevision((value) => value + 1)}
         >
-          {err ? "Retry inspection" : "Refresh inspection"}
+          {err ? t("details.retry") : t("details.refresh")}
         </Button>
       ) : null}
     </WorkspaceDialog>

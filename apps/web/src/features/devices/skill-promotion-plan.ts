@@ -1,4 +1,5 @@
 import type { DeviceSkill, SkillDependency } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 
 export interface SkillPromotionSelection {
   skills: DeviceSkill[];
@@ -30,34 +31,48 @@ export function buildSkillPromotionSelection(
     visited.add(source);
     const skill = byKey.get(source);
     if (!skill) {
-      result.problems.push(
-        "Skill source is missing. Run Scan now to update the graph.",
-      );
+      result.problems.push(i18n.t("skills:plan.sourceMissing"));
       continue;
     }
     if (
       names.has(skill.name.toLowerCase()) &&
       names.get(skill.name.toLowerCase()) !== source
     ) {
-      result.problems.push(`Conflicting installed versions of ${skill.name}`);
+      result.problems.push(
+        i18n.t("skills:plan.conflictingVersions", { name: skill.name }),
+      );
       continue;
     }
     names.set(skill.name.toLowerCase(), source);
     result.skills.push(skill);
     if (skill.dependencyAnalysisError)
-      result.problems.push(`${skill.name}: ${skill.dependencyAnalysisError}`);
+      result.problems.push(
+        i18n.t("skills:plan.analysisError", {
+          name: skill.name,
+          error: skill.dependencyAnalysisError,
+        }),
+      );
     else if (!skill.dependenciesAnalyzed || !skill.sourceDigest)
       result.problems.push(
-        `${skill.name}: run Scan now once to build the device dependency graph`,
+        i18n.t("skills:plan.needsScan", { name: skill.name }),
       );
     if (skill.sizeBytes < 0 && !skill.dependencyAnalysisError)
-      result.problems.push(`${skill.name}: source could not be read`);
+      result.problems.push(
+        i18n.t("skills:plan.unreadable", { name: skill.name }),
+      );
     for (const dep of skill.dependencies ?? []) {
       if (dep.strength !== "required") result.related.push(dep);
       if (dep.strength !== "required" && !included.has(dep.skillName)) continue;
       if (dep.status !== "resolved" || !dep.targetRoot || !dep.targetDirName)
         result.problems.push(
-          `${skill.name} needs ${dep.skillName} (${dep.status ?? "unresolved"}): ${dep.evidence}`,
+          i18n.t("skills:plan.needsDependency", {
+            name: skill.name,
+            dependency: dep.skillName,
+            status: i18n.t(
+              `skills:dependencies.status.${dep.status ?? "unresolved"}`,
+            ),
+            evidence: dep.evidence,
+          }),
         );
       else stack.push(`${dep.targetRoot}\0${dep.targetDirName}`);
     }

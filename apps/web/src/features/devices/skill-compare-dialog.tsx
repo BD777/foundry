@@ -1,5 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceSkill,
   PromotedSkill,
@@ -30,6 +31,7 @@ export default function SkillCompareDialog({
   target: PromotedSkill;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(["skills", "common"]);
   const focus = useRef(
     document.activeElement instanceof HTMLElement
       ? document.activeElement
@@ -177,23 +179,30 @@ export default function SkillCompareDialog({
         >
           <header className="fdy-connection-assign-header">
             <div>
-              <Dialog.Title>Compare {skill.name}</Dialog.Title>
+              <Dialog.Title>
+                {t("compare.title", { name: skill.name })}
+              </Dialog.Title>
               <Dialog.Description>
-                Server rev {revision} → local scan. File contents load only when
-                selected. Publishing is a separate action.
+                {t("compare.body", { revision })}
               </Dialog.Description>
             </div>
           </header>
           <div className="fdy-skill-promotion-body">
             <SelectMenu
               insideDialog
-              ariaLabel="Server skill to compare"
+              ariaLabel={t("compare.targetLabel")}
               tone="field"
               value={selected.id}
               options={candidates.map((c) => ({
                 value: c.id,
                 label: c.name,
-                meta: `${c.originDeviceLabel || "Another device"} · ${c.originDirName} · ${c.originRoot} · rev ${c.latestRevision}`,
+                meta: t("compare.targetMeta", {
+                  device:
+                    c.originDeviceLabel || t("versionChoice.anotherDevice"),
+                  dirName: c.originDirName,
+                  root: c.originRoot,
+                  revision: c.latestRevision,
+                }),
               }))}
               onChange={(id) => {
                 const c = candidates.find((c) => c.id === id)!;
@@ -204,9 +213,9 @@ export default function SkillCompareDialog({
             />
             <div className="fdy-skill-compare-version">
               <label>
-                Server revision{" "}
+                {t("compare.revisionLabel")}{" "}
                 <TextInput
-                  aria-label="Server revision"
+                  aria-label={t("compare.revisionLabel")}
                   tone="boxed"
                   type="number"
                   min={1}
@@ -225,7 +234,7 @@ export default function SkillCompareDialog({
                 }
                 onClick={() => setRevision(Number(revisionDraft))}
               >
-                Compare revision
+                {t("compare.compareRevision")}
               </Button>
             </div>
             {error && loadedKey === requestKey ? (
@@ -233,37 +242,36 @@ export default function SkillCompareDialog({
                 {error}
               </p>
             ) : !comparison || loadedKey !== requestKey ? (
-              <p role="status">Loading file index…</p>
+              <p role="status">{t("compare.loadingIndex")}</p>
             ) : (
               <>
                 <p>
-                  {comparison.files.length} changed files ·{" "}
-                  {comparison.unchanged} unchanged
+                  {t("compare.summary", {
+                    count: comparison.files.length,
+                    unchanged: comparison.unchanged,
+                  })}
                 </p>
                 {comparison.files.length ? (
                   <>
                     <TextInput
-                      aria-label="Filter changed files"
+                      aria-label={t("compare.filterLabel")}
                       tone="boxed"
                       value={fileFilter}
                       onChange={(e) => setFileFilter(e.target.value)}
-                      placeholder="Find a changed file"
+                      placeholder={t("compare.filterPlaceholder")}
                     />
                     {filteredFiles.length > 200 ? (
-                      <p>
-                        Showing the first 200 matching files. Narrow the filter
-                        to find a specific file.
-                      </p>
+                      <p>{t("compare.truncated")}</p>
                     ) : null}
                     <SelectMenu
                       insideDialog
-                      ariaLabel="Changed file"
+                      ariaLabel={t("compare.fileLabel")}
                       tone="field"
                       value={path}
                       options={filteredFiles.slice(0, 200).map((f) => ({
                         value: f.path,
                         label: f.path,
-                        meta: f.kind,
+                        meta: t(`compare.fileKind.${f.kind}`),
                       }))}
                       onChange={setPath}
                     />
@@ -272,12 +280,14 @@ export default function SkillCompareDialog({
                         {fileError}
                       </p>
                     ) : !file || loadedFileKey !== currentFileKey ? (
-                      <p role="status">Loading selected file…</p>
+                      <p role="status">{t("compare.loadingFile")}</p>
                     ) : file.unavailable ? (
                       <p>{file.unavailable}</p>
                     ) : (
                       <Suspense
-                        fallback={<p role="status">Loading diff viewer…</p>}
+                        fallback={
+                          <p role="status">{t("compare.loadingViewer")}</p>
+                        }
                       >
                         <FileDiff
                           before={file.before}
@@ -289,7 +299,7 @@ export default function SkillCompareDialog({
                     )}
                   </>
                 ) : (
-                  <p>The local scan matches this server revision.</p>
+                  <p>{t("compare.identical")}</p>
                 )}
               </>
             )}
@@ -305,7 +315,7 @@ export default function SkillCompareDialog({
               variant="ghost"
               onClick={() => setRetry((n) => n + 1)}
             >
-              Retry
+              {t("common:actions.retry")}
             </Button>
             <Button
               size="sm"
@@ -313,7 +323,7 @@ export default function SkillCompareDialog({
               disabled={downloading}
               onClick={() => void download("server")}
             >
-              Download server ZIP
+              {t("compare.downloadServer")}
             </Button>
             <Button
               size="sm"
@@ -321,10 +331,10 @@ export default function SkillCompareDialog({
               disabled={downloading}
               onClick={() => void download("local")}
             >
-              Download local ZIP
+              {t("compare.downloadLocal")}
             </Button>
             <Button size="sm" onClick={onClose}>
-              Close
+              {t("common:actions.close")}
             </Button>
           </footer>
         </Dialog.Content>

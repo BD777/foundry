@@ -1,4 +1,5 @@
 import { AlertTriangle } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { MissingSkillDependency } from "./skill-selection-engine";
 
@@ -15,6 +16,7 @@ export function SkillDependenciesView({
   missingDependencies,
   activeSkillNames,
 }: SkillDependenciesViewProps) {
+  const { t } = useTranslation("skills");
   const hasDeps = Boolean(dependencies && dependencies.length > 0);
   const hasError = Boolean(dependencyAnalysisError);
   const hasMissing = Boolean(
@@ -33,7 +35,10 @@ export function SkillDependenciesView({
       {hasDeps ? (
         <details className="fdy-skill-dependencies">
           <summary>
-            {requiredCount} required · {relatedCount} possible references
+            {t("dependencies.summary", {
+              required: requiredCount,
+              related: relatedCount,
+            })}
           </summary>
           <ul className="fdy-skill-dependency-list">
             {dependencies!.map((dep, index) => {
@@ -43,11 +48,12 @@ export function SkillDependenciesView({
               return (
                 <li key={index}>
                   <strong>
-                    {dep.skillName} · {dep.strength}
+                    {dep.skillName} ·{" "}
+                    {t(`dependencies.strength.${dep.strength}`)}
                     {dep.status && dep.status !== "resolved"
-                      ? ` · ${dep.status}`
+                      ? ` · ${t(`dependencies.status.${dep.status}`)}`
                       : ""}
-                    {isActive ? " · active in workspace" : ""}
+                    {isActive ? t("dependencies.activeInWorkspace") : ""}
                   </strong>
                   {dep.evidence ? <small>{dep.evidence}</small> : null}
                 </li>
@@ -62,8 +68,12 @@ export function SkillDependenciesView({
           {missingDependencies!.map((missing, index) => (
             <li className="fdy-skill-error" role="alert" key={index}>
               <AlertTriangle size={13} />
-              Missing required dependency:{" "}
-              <strong>{missing.missingSkillName}</strong>
+              <Trans
+                components={{ b: <strong /> }}
+                i18nKey="dependencies.missing"
+                ns="skills"
+                values={{ name: missing.missingSkillName }}
+              />
               {missing.evidence ? ` (${missing.evidence})` : ""}
             </li>
           ))}
@@ -72,8 +82,10 @@ export function SkillDependenciesView({
 
       {hasError ? (
         <p className="fdy-skill-error" role="alert">
-          <AlertTriangle size={13} /> Dependency analysis incomplete:{" "}
-          {dependencyAnalysisError}
+          <AlertTriangle size={13} />{" "}
+          {t("dependencies.analysisIncomplete", {
+            error: dependencyAnalysisError,
+          })}
         </p>
       ) : null}
     </div>

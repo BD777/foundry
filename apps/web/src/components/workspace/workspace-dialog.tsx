@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useRef, type ReactNode, type RefObject } from "react";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 
 /** Owns its layout classes; Radix owns focus trapping and dismissal. */
@@ -21,6 +22,7 @@ export function WorkspaceDialog({
   initialFocus?: RefObject<HTMLInputElement | null>;
   returnFocusTo?: HTMLElement | null;
 }) {
+  const { t } = useTranslation("workspaces");
   const returnFocus = useRef(returnFocusTo ?? document.activeElement);
   return (
     <Dialog.Root
@@ -65,7 +67,7 @@ export function WorkspaceDialog({
                 variant="ghost"
                 size="icon"
                 disabled={busy}
-                aria-label={`Close ${title}`}
+                aria-label={t("details.closeLabel", { title })}
               >
                 <X size={18} />
               </Button>

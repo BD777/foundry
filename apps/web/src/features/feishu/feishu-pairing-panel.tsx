@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { Copy, Link2, RefreshCw, Unlink } from "lucide-react";
 import type { WorkspaceFeishuConfig } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
@@ -27,18 +28,21 @@ export function FeishuPairingPanel({
   onUnbind,
   onNotice,
 }: FeishuPairingPanelProps) {
+  const { t } = useTranslation(["feishu", "common"]);
   const [copied, setCopied] = useState(false);
+  // The bot's command syntax, the same in every language.
+  const pairCommand = `/pair ${pairingCode}`;
 
   async function handleCopyPairCommand() {
     if (!pairingCode) return;
-    const cmd = `/pair ${pairingCode}`;
+    const cmd = pairCommand;
     try {
       await navigator.clipboard.writeText(cmd);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-      onNotice?.("配对指令已复制到剪贴板");
+      onNotice?.(t("notices.commandCopied"));
     } catch {
-      onNotice?.(`指令内容：${cmd}`);
+      onNotice?.(t("notices.commandText", { command: cmd }));
     }
   }
 
@@ -48,18 +52,21 @@ export function FeishuPairingPanel({
         <div className="fdy-feishu-header-title">
           <Link2 size={20} />
           <div>
-            <h2>飞书群配对 (Group Chat Pairing)</h2>
+            <h2>{t("pairing.title")}</h2>
             <p>
-              将一个飞书群关联至工作区{" "}
-              <strong>{workspaceName || bot?.workspaceId}</strong>
-              。群内的每个话题将独立映射为 Foundry 的 Agent 会话。
+              <Trans
+                ns="feishu"
+                i18nKey="pairing.intro"
+                values={{ workspace: workspaceName || bot?.workspaceId }}
+                components={{ b: <strong /> }}
+              />
             </p>
           </div>
         </div>
         {bot?.chatId ? (
-          <Badge tone="online">已绑定群聊</Badge>
+          <Badge tone="online">{t("pairing.bound")}</Badge>
         ) : (
-          <Badge tone="neutral">未绑定群聊</Badge>
+          <Badge tone="neutral">{t("pairing.unbound")}</Badge>
         )}
       </PanelHeader>
 
@@ -69,10 +76,15 @@ export function FeishuPairingPanel({
             <div className="fdy-feishu-group-row">
               <div>
                 <div className="fdy-feishu-chat-name">
-                  {bot.chatName || "飞书群聊"}
+                  {bot.chatName || t("pairing.defaultChatName")}
                 </div>
                 <div className="fdy-feishu-chat-id">
-                  群 ID: <code>{bot.chatId}</code>
+                  <Trans
+                    ns="feishu"
+                    i18nKey="pairing.chatId"
+                    values={{ id: bot.chatId }}
+                    components={{ code: <code /> }}
+                  />
                 </div>
               </div>
               <Button
@@ -81,43 +93,51 @@ export function FeishuPairingPanel({
                 className="fdy-feishu-action-btn"
               >
                 <Unlink size={16} />
-                解除绑定
+                {t("pairing.unbind")}
               </Button>
             </div>
 
             <div className="fdy-feishu-chat-hint">
-              💡 <strong>已就绪</strong>：在群内{" "}
-              <code>@机器人 &lt;需求&gt;</code>{" "}
-              将自动开启一个会话，机器人在该话题（Thread）中流式回复卡片；在话题下的连续跟帖将作为补充指令继续执行。
+              <Trans
+                ns="feishu"
+                i18nKey="pairing.readyHint"
+                values={{ command: t("pairing.mentionCommand") }}
+                components={{ b: <strong />, code: <code /> }}
+              />
             </div>
           </div>
         ) : (
           <div className="fdy-feishu-pairing-guide">
             <div className="fdy-feishu-steps-text">
-              <p>只需两步即可完成群聊绑定：</p>
+              <p>{t("pairing.stepsIntro")}</p>
               <ol>
-                <li>将你的飞书机器人拉入目标飞书群；</li>
+                <li>{t("pairing.step1")}</li>
                 <li>
-                  在群内艾特机器人并发送配对指令：
-                  <code>@机器人 /pair &lt;配对码&gt;</code>。
+                  <Trans
+                    ns="feishu"
+                    i18nKey="pairing.step2"
+                    values={{ command: t("pairing.pairCommand") }}
+                    components={{ code: <code /> }}
+                  />
                 </li>
               </ol>
             </div>
 
             <p className="fdy-feishu-chat-hint">
-              群里的请求将以<strong>生成配对码的账号</strong>
-              身份执行，并受该账号在此工作区的权限约束（至少需要 Member）。
+              <Trans
+                ns="feishu"
+                i18nKey="pairing.identityHint"
+                components={{ b: <strong /> }}
+              />
             </p>
 
             {pairingCode ? (
               <div className="fdy-feishu-pair-box">
                 <div>
                   <div className="fdy-feishu-pair-label">
-                    群配对指令 (10分钟内有效)
+                    {t("pairing.commandLabel")}
                   </div>
-                  <div className="fdy-feishu-pair-code">
-                    /pair {pairingCode}
-                  </div>
+                  <div className="fdy-feishu-pair-code">{pairCommand}</div>
                 </div>
 
                 <div className="fdy-feishu-pair-actions">
@@ -127,12 +147,15 @@ export function FeishuPairingPanel({
                     className="fdy-feishu-action-btn"
                   >
                     <Copy size={16} />
-                    {copied ? "已复制" : "复制指令"}
+                    {copied
+                      ? t("common:actions.copied")
+                      : t("pairing.copyCommand")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={onGenerateCode}
                     disabled={pairing}
+                    aria-label={t("pairing.regenerate")}
                   >
                     <RefreshCw size={16} />
                   </Button>
@@ -146,7 +169,7 @@ export function FeishuPairingPanel({
                   disabled={loading || pairing}
                 >
                   <RefreshCw size={16} />
-                  {pairing ? "正在生成..." : "生成群配对码"}
+                  {pairing ? t("pairing.generating") : t("pairing.generate")}
                 </Button>
               </div>
             )}

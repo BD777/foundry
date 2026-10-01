@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { saveAgentRuntimeSettings } from "../../api";
 import { Button } from "../../components/ui/button";
@@ -19,18 +20,19 @@ export function DeviceSettings({
       maxConcurrentTasks: 4,
     },
   );
+  const { t } = useTranslation("devices");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   return (
     <section className="fdy-device-section">
-      <h2>Execution settings</h2>
-      <p>Shared by every workspace on {device.label}.</p>
+      <h2>{t("settings.title")}</h2>
+      <p>{t("settings.intro", { device: device.label })}</p>
       <div className="fdy-device-settings-fields">
         <label>
-          Maximum concurrent tasks
+          {t("settings.maxTasks")}
           <TextInput
             tone="boxed"
-            aria-label="Maximum concurrent tasks"
+            aria-label={t("settings.maxTasks")}
             type="number"
             min={1}
             max={16}
@@ -44,10 +46,10 @@ export function DeviceSettings({
           />
         </label>
         <label>
-          Active runtime cache (minutes)
+          {t("settings.runtimeCache")}
           <TextInput
             tone="boxed"
-            aria-label="Runtime cache minutes"
+            aria-label={t("settings.runtimeCacheLabel")}
             type="number"
             min={1}
             value={draft.activeRuntimeTtlMs / 60000}
@@ -81,19 +83,17 @@ export function DeviceSettings({
               settings: draft,
             });
             await onRefresh();
-            setMessage("Settings saved.");
+            setMessage(t("settings.saved"));
           } catch (cause) {
             setMessage(
-              cause instanceof Error
-                ? cause.message
-                : "Could not save settings.",
+              cause instanceof Error ? cause.message : t("settings.saveFailed"),
             );
           } finally {
             setBusy(false);
           }
         }}
       >
-        Save settings
+        {t("settings.save")}
       </Button>
       {message ? <p role="status">{message}</p> : null}
 
@@ -101,14 +101,10 @@ export function DeviceSettings({
         className="fdy-device-removal-zone"
         aria-labelledby="fdy-device-removal-heading"
       >
-        <h3 id="fdy-device-removal-heading">Remove device</h3>
-        <p>
-          Unregister {device.label} from this Foundry server. Its workspaces
-          leave the available lists; chats, issues and run history are kept.
-          Nothing on the machine is deleted.
-        </p>
+        <h3 id="fdy-device-removal-heading">{t("settings.removeTitle")}</h3>
+        <p>{t("settings.removeBody", { device: device.label })}</p>
         <Button size="sm" variant="ghost" onClick={onRemoveDevice}>
-          Remove from Foundry…
+          {t("list.removeFromFoundry")}
         </Button>
       </section>
     </section>

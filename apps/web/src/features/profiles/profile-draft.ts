@@ -10,6 +10,7 @@ import type {
   ProfileDefinition,
   SaveProfileInput,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 
 /** Runtimes a server profile can target. `mock` is a test-only daemon runtime. */
 export type ProfileRuntime = ProfileDefinition["runtime"];
@@ -38,7 +39,9 @@ export interface ProfileDraft {
 export const newProfileKey = "__new_profile__";
 
 export const runtimeOptions: Array<{ label: string; value: ProfileRuntime }> = [
+  // i18n-ignore: runtime product name
   { label: "Codex", value: "codex" },
+  // i18n-ignore: runtime product name
   { label: "Claude", value: "claude" },
 ];
 
@@ -50,20 +53,14 @@ export function profileConnectionType(
   return runtime === "claude" ? "anthropic_compatible" : "openai_compatible";
 }
 
+/** Default name saved with a new connection; data, so not translated. */
 export function defaultProfileLabel(runtime: ProfileRuntime): string {
+  // i18n-ignore: saved as the connection's name and compared on runtime switch
   return runtime === "codex" ? "Codex Provider" : "Claude Provider";
 }
 
 export function connectionLabel(connectionType: AgentConnectionType): string {
-  const labels: Record<AgentConnectionType, string> = {
-    anthropic_compatible: "Anthropic compatible",
-    custom_command: "Custom command",
-    env: "Environment",
-    local_login: "Local login",
-    openai_compatible: "OpenAI compatible",
-  };
-
-  return labels[connectionType];
+  return i18n.t(`profiles:connectionTypes.${connectionType}`);
 }
 
 export function defaultProfileDraft(

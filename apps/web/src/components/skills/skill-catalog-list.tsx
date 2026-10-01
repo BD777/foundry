@@ -1,5 +1,6 @@
 import { useState, useMemo, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { TextInput } from "../../components/ui/field";
@@ -53,7 +54,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   skills,
   title,
   description,
-  searchPlaceholder = "Filter by name or description",
+  searchPlaceholder,
   statusFilterOptions,
   statusFilterValue = "all",
   onStatusFilterChange,
@@ -70,6 +71,8 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   footerActions,
   emptyState,
 }: SkillCatalogListProps<T>) {
+  const { t } = useTranslation("skills");
+  const placeholder = searchPlaceholder ?? t("catalog.searchPlaceholder");
   const [query, setQuery] = useState("");
 
   const filteredSkills = useMemo(() => {
@@ -106,16 +109,16 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
           <div className="fdy-skill-filter">
             <Search size={14} aria-hidden="true" />
             <TextInput
-              aria-label={searchPlaceholder}
+              aria-label={placeholder}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={searchPlaceholder}
+              placeholder={placeholder}
               tone="boxed"
               type="text"
               value={query}
             />
             {query ? (
               <Button
-                aria-label="Clear filter"
+                aria-label={t("catalog.clearFilter")}
                 onClick={() => setQuery("")}
                 size="icon"
                 variant="ghost"
@@ -128,7 +131,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
           {statusFilterOptions && onStatusFilterChange ? (
             <div className="fdy-skill-server-filter">
               <SelectMenu
-                ariaLabel="Filter by status"
+                ariaLabel={t("catalog.filterByStatus")}
                 onChange={onStatusFilterChange}
                 options={statusFilterOptions}
                 tone="field"
@@ -139,8 +142,11 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
 
           <p className="fdy-skill-filter-count">
             {hasActiveFilter
-              ? `${filteredSkills.length} of ${skills.length} match this filter.`
-              : `${skills.length} skills available.`}
+              ? t("catalog.matchCount", {
+                  matched: filteredSkills.length,
+                  total: skills.length,
+                })
+              : t("catalog.available", { count: skills.length })}
           </p>
         </>
       ) : null}
@@ -152,16 +158,19 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             {emptyState.action}
           </div>
         ) : (
-          <EmptyState body="No skills available." title="No skills found" />
+          <EmptyState
+            body={t("catalog.emptyBody")}
+            title={t("catalog.emptyTitle")}
+          />
         )
       ) : filteredSkills.length === 0 ? (
         <EmptyState
           body={
             hasActiveFilter
-              ? "No skills match this filter. Try adjusting your search query or status filter."
-              : "No skills match."
+              ? t("catalog.noMatchFiltered")
+              : t("catalog.noMatch")
           }
-          title="No matching skills"
+          title={t("catalog.noMatchTitle")}
         />
       ) : (
         <ul className={isWorkspace ? "fdy-skill-select-list" : undefined}>

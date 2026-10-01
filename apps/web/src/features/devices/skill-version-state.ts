@@ -2,23 +2,28 @@ import type {
   DeviceSkill,
   SkillPromotionResolution,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 export const skillSourceKey = (s: Pick<DeviceSkill, "root" | "dirName">) =>
   `${s.root}\0${s.dirName}`;
 export function skillServerLabel(s: DeviceSkill): string {
-  const rev = s.serverRevision ? ` · rev ${s.serverRevision}` : "";
+  const revision = s.serverRevision
+    ? i18n.t("skills:serverState.revision", { revision: s.serverRevision })
+    : "";
   switch (s.serverState) {
     case "in_sync":
-      return `In sync${rev}`;
+      return i18n.t("skills:serverState.inSync", { revision });
     case "different":
-      return `Local differs${rev}`;
+      return i18n.t("skills:serverState.different", { revision });
     case "reusable":
-      return "Identical on server";
+      return i18n.t("skills:serverState.reusable");
     case "name_conflict":
-      return "Same-name conflict";
+      return i18n.t("skills:serverState.nameConflict");
     case "unknown":
-      return "Comparison unavailable";
+      return i18n.t("skills:serverState.unknown");
     default:
-      return s.promotedSkillId ? "On server" : "Not published";
+      return s.promotedSkillId
+        ? i18n.t("skills:serverState.onServer")
+        : i18n.t("skills:serverState.notPublished");
   }
 }
 export function defaultSkillResolution(
@@ -49,16 +54,16 @@ export function skillResolutionProblem(
   s: DeviceSkill,
   r: SkillPromotionResolution,
 ): string | undefined {
-  if (!s.serverState) return "Refresh server status before publishing.";
+  if (!s.serverState) return i18n.t("skills:resolution.refreshFirst");
   if (r.action === "create" && s.serverCandidates?.length)
-    return `Choose how to resolve ${s.name}'s same-name server entry.`;
+    return i18n.t("skills:resolution.chooseSameName", { name: s.name });
   if (
     r.action === "fork" &&
     ((r.name ?? "").length > 64 ||
       !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(r.name ?? ""))
   )
-    return "Enter a distinct invocation name (lowercase letters, numbers and hyphens).";
+    return i18n.t("skills:resolution.invalidName");
   if (r.action === "fork" && r.name === s.name)
-    return "A fork must use a distinct invocation name.";
+    return i18n.t("skills:resolution.forkSameName");
   return undefined;
 }

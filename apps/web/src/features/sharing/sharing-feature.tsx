@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
@@ -12,6 +13,7 @@ import {
   updateWorkspaceMember,
 } from "../../api";
 import type { WorkspaceMember } from "../../api-types";
+import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
@@ -40,6 +42,7 @@ export function SharingFeature({
   canInvite,
   onLeft,
 }: SharingFeatureProps) {
+  const { t } = useTranslation("sharing");
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
@@ -47,7 +50,7 @@ export function SharingFeature({
   const [role, setRole] = useState<WorkspaceAccessRole>("viewer");
   const [invite, setInvite] = useState("");
   const manage = workspace.accessRole === "owner";
-  const device = deviceLabel ?? "this workspace's device";
+  const device = deviceLabel ?? t("thisDevice");
   const owner = members.find((member) => member.deviceOwner);
 
   const reload = useCallback(async () => {
@@ -113,21 +116,21 @@ export function SharingFeature({
   return (
     <div className="fdy-sharing">
       {error ? (
-        <Alert tone="error" title="Sharing could not be updated">
+        <Alert tone="error" title={t("updateFailed")}>
           {error}
         </Alert>
       ) : null}
       {manage ? (
         <Panel className="fdy-account-section">
           <div className="fdy-account-section-head">
-            <strong>Add a person</strong>
-            <p>Enter the exact username of someone with a Foundry account.</p>
+            <strong>{t("add.title")}</strong>
+            <p>{t("add.body")}</p>
           </div>
           <div className="fdy-member-invite-row">
             <TextInput
-              aria-label="Username to add"
+              aria-label={t("add.username")}
               className="fdy-sharing-username"
-              placeholder="Username"
+              placeholder={t("add.usernamePlaceholder")}
               tone="boxed"
               value={username}
               onChange={(event) => setUsername(event.currentTarget.value)}
@@ -136,8 +139,8 @@ export function SharingFeature({
               }}
             />
             <SelectMenu
-              ariaLabel="Role for the new person"
-              options={roleOptions}
+              ariaLabel={t("add.role")}
+              options={roleOptions()}
               value={role}
               onChange={(value) => setRole(value as WorkspaceAccessRole)}
             />
@@ -146,7 +149,7 @@ export function SharingFeature({
               disabled={busy === "add" || !username.trim()}
               onClick={() => void add()}
             >
-              {busy === "add" ? "Adding…" : "Add"}
+              {busy === "add" ? t("add.submitting") : t("add.submit")}
             </Button>
             {canInvite ? (
               <Button
@@ -161,27 +164,27 @@ export function SharingFeature({
                   })
                 }
               >
-                Invite someone new
+                {t("add.invite")}
               </Button>
             ) : null}
           </div>
           {runsCode(role) ? (
-            <Alert tone="warning" title="This role can run code">
-              A {workspaceRoleLabel(role)} can start Chats and Issues that run
-              commands on {device} as {owner?.displayName ?? "its owner"}'s OS
-              account, inside this workspace. Choose Viewer for people who only
-              need to read.
+            <Alert tone="warning" title={t("runsCode.title")}>
+              {t("runsCode.body", {
+                role: workspaceRoleLabel(role),
+                device,
+                owner: owner?.displayName ?? t("itsOwner"),
+              })}
             </Alert>
           ) : null}
           {invite ? (
             <div className="fdy-member-invite-link">
               <span>
-                Invite link for a new account that joins as{" "}
-                {workspaceRoleLabel(role)} · shown only once, expires in 7 days
+                {t("inviteLink.body", { role: workspaceRoleLabel(role) })}
               </span>
               <div className="fdy-member-invite-copy">
                 <TextInput
-                  aria-label="Invite link"
+                  aria-label={t("inviteLink.label")}
                   readOnly
                   tone="boxed"
                   value={invite}
@@ -190,7 +193,7 @@ export function SharingFeature({
                 <Button
                   onClick={() => void navigator.clipboard?.writeText(invite)}
                 >
-                  Copy link
+                  {t("inviteLink.copy")}
                 </Button>
               </div>
             </div>
@@ -199,12 +202,8 @@ export function SharingFeature({
       ) : null}
       <Panel className="fdy-account-section">
         <div className="fdy-account-section-head">
-          <strong>People with access</strong>
-          <p>
-            {manage
-              ? "Owners manage who can see and run in this workspace."
-              : "Only Owners can change who has access."}
-          </p>
+          <strong>{t("people.title")}</strong>
+          <p>{manage ? t("people.manageHint") : t("people.readOnlyHint")}</p>
         </div>
         <ul className="fdy-member-list">
           {members.map((member) => (
@@ -237,5 +236,5 @@ export function SharingFeature({
 function messageOf(reason: unknown): string {
   return reason instanceof Error && reason.message
     ? reason.message
-    : "The Foundry server did not answer. Try again.";
+    : i18n.t("common:errors.serverUnreachable");
 }

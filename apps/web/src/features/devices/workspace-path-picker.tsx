@@ -1,6 +1,7 @@
 import { Command } from "cmdk";
 import { FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
+import { useTranslation } from "react-i18next";
 import type { WorkspaceDirectoryEntry } from "@bd777/foundry-protocol";
 import { listWorkspaceSubdirectories } from "../../api";
 import { fieldVariants } from "../../components/ui/field";
@@ -28,6 +29,7 @@ export function WorkspacePathPicker({
   onChange: (value: string) => void;
   value: string;
 }) {
+  const { t } = useTranslation("workspaces");
   const lookup = useMemo(() => workspacePathLookup(value), [value]);
   const [folders, setFolders] = useState<WorkspaceDirectoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -98,7 +100,7 @@ export function WorkspacePathPicker({
     <Command
       className="fdy-workspace-path-picker"
       data-navigated={navigated}
-      label="Workspace folder"
+      label={t("pathPicker.label")}
       loop
       onKeyDown={(event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -126,7 +128,7 @@ export function WorkspacePathPicker({
       value={active}
     >
       <Command.Input
-        aria-label="Workspace folder"
+        aria-label={t("pathPicker.label")}
         className={fieldVariants({ tone: "boxed" })}
         disabled={disabled}
         onFocus={() => setOpen(true)}
@@ -135,7 +137,7 @@ export function WorkspacePathPicker({
           setNavigated(false);
           setOpen(true);
         }}
-        placeholder="/absolute/path/to/project"
+        placeholder={t("pathPicker.placeholder")}
         ref={inputRef}
         required
         value={value}
@@ -144,7 +146,7 @@ export function WorkspacePathPicker({
         <Command.List className="fdy-workspace-path-menu">
           {loading && suggestions.length === 0 ? (
             <Command.Loading className="fdy-workspace-path-loading">
-              Loading folders…
+              {t("pathPicker.loading")}
             </Command.Loading>
           ) : null}
           {suggestions.map((folder) => (

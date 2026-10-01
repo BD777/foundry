@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
 import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
@@ -7,15 +8,8 @@ import { Badge } from "../../components/ui/badge";
 import { TextInput } from "../../components/ui/field";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { workspaceDenial } from "../../lib/workspace-access";
-import { countLabel } from "../../lib/count-label";
+import { i18n } from "../../i18n";
 
-const gitLabels = {
-  ready: "Git initialized",
-  unborn: "Git initialized · no initial commit",
-  not_git: "Not a Git repository",
-  nested: "Inside another Git repository",
-  error: "Git unavailable",
-};
 export function WorkspaceOverview({
   workspace,
   deviceOnline,
@@ -27,6 +21,7 @@ export function WorkspaceOverview({
   deviceLabel?: string;
   acceptedCount: number;
 }) {
+  const { t } = useTranslation("workspaces");
   const rescanDenial = workspaceDenial(workspace, "member");
   const [data, setData] = useState<WorkspaceInspection>();
   const [error, setError] = useState("");
@@ -72,76 +67,88 @@ export function WorkspaceOverview({
       <Panel className="fdy-workspace-overview">
         <PanelHeader>
           <div>
-            <h2>Workspace status</h2>
+            <h2>{t("overview.statusTitle")}</h2>
             <p>{workspace.contextSummary}</p>
           </div>
           <Badge tone={deviceOnline ? "online" : "neutral"}>
-            {deviceOnline ? "Device online" : "Device offline"}
+            {deviceOnline
+              ? t("overview.deviceOnline")
+              : t("overview.deviceOffline")}
           </Badge>
         </PanelHeader>
         <dl className="fdy-workspace-facts">
           <div>
-            <dt>Root repository</dt>
+            <dt>{t("overview.rootRepository")}</dt>
             <dd>
               {inspection
-                ? gitLabels[inspection.gitState]
+                ? t(`overview.gitStates.${inspection.gitState}`)
                 : loading
-                  ? "Checking…"
-                  : "Unknown"}
+                  ? t("overview.checking")
+                  : t("overview.unknown")}
             </dd>
           </div>
           <div>
-            <dt>Current branch</dt>
+            <dt>{t("overview.currentBranch")}</dt>
             <dd>
               {inspection
-                ? inspection.branch || (inspection.head ? "Detached HEAD" : "—")
+                ? inspection.branch ||
+                  (inspection.head ? t("overview.detachedHead") : "—")
                 : "—"}
             </dd>
           </div>
           <div>
-            <dt>Tracked files</dt>
+            <dt>{t("overview.trackedFiles")}</dt>
             <dd>
               {inspection?.trackedChanges === undefined
-                ? "Unknown"
+                ? t("overview.unknown")
                 : inspection.trackedChanges
-                  ? "Uncommitted changes"
-                  : "Clean"}
+                  ? t("overview.uncommittedChanges")
+                  : t("overview.clean")}
             </dd>
           </div>
           <div>
-            <dt>Unique repositories</dt>
+            <dt>{t("overview.uniqueRepositories")}</dt>
             <dd>
               {inspection?.scannedAt
-                ? (inspection.uniqueRepositoryCount ?? "Unknown")
-                : "Not scanned"}
+                ? (inspection.uniqueRepositoryCount ?? t("overview.unknown"))
+                : t("overview.notScanned")}
             </dd>
           </div>
           <div>
-            <dt>Device</dt>
-            <dd>{deviceLabel ?? "No device"}</dd>
+            <dt>{t("overview.device")}</dt>
+            <dd>{deviceLabel ?? t("overview.noDevice")}</dd>
           </div>
           <div>
-            <dt>Accepted Issues</dt>
+            <dt>{t("overview.acceptedIssues")}</dt>
             <dd>{acceptedCount}</dd>
           </div>
         </dl>
         {inspection?.gitState === "not_git" ? (
-          <p>
-            Root Git is not initialized. Inspection and rescanning do not
-            initialize Git or commit files.
-          </p>
+          <p>{t("overview.notGitNote")}</p>
         ) : null}
         {inspection?.gitState === "nested" ? (
           <p>
-            Containing repository:{" "}
-            <code>{inspection.containingRepository}</code>. Issue isolation
-            requires its repository root.
+            <Trans
+              t={t}
+              i18nKey="overview.nestedNote"
+              values={{ path: inspection.containingRepository }}
+              components={{ code: <code /> }}
+            />
           </p>
         ) : null}
         {inspection?.head ? (
           <p className="fdy-workspace-inspection-note">
-            HEAD <code>{inspection.head.slice(0, 12)}</code> · Checked{" "}
-            {new Date(inspection.inspectedAt).toLocaleString()}
+            <Trans
+              t={t}
+              i18nKey="overview.checked"
+              values={{
+                head: inspection.head.slice(0, 12),
+                time: new Date(inspection.inspectedAt).toLocaleString(
+                  i18n.language,
+                ),
+              }}
+              components={{ code: <code /> }}
+            />
           </p>
         ) : null}
         <div className="fdy-workspace-inspection-actions">
@@ -150,25 +157,41 @@ export function WorkspaceOverview({
             disabled={loading || !deviceOnline || !workspace.id}
             variant="secondary"
           >
-            {loading ? "Checking…" : "Refresh status"}
+            {loading ? t("overview.checking") : t("overview.refreshStatus")}
           </Button>
         </div>
         {!deviceOnline ? (
-          <p role="status">
-            Connect the device to inspect this workspace. No Git state is
-            inferred while offline.
-          </p>
+          <p role="status">{t("overview.offlineNote")}</p>
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
       </Panel>
       <Panel className="fdy-workspace-repositories">
         <PanelHeader>
           <div>
-            <h2>Git repositories</h2>
+            <h2>{t("overview.repositoriesTitle")}</h2>
             <p>
               {inspection?.scannedAt
-                ? `${inspection.uniqueRepositoryCount == null ? "Unknown unique repositories" : countLabel(inspection.uniqueRepositoryCount, "unique repository", "unique repositories")} · ${countLabel(repositories.length, "Git location")} · ${inspection.linkedWorktreeCount == null ? "Unknown linked worktrees" : countLabel(inspection.linkedWorktreeCount, "linked worktree")} · Last scanned ${new Date(inspection.scannedAt).toLocaleString()}`
-                : "No repository scan has been recorded."}
+                ? t("overview.scanSummary", {
+                    unique:
+                      inspection.uniqueRepositoryCount == null
+                        ? t("overview.uniqueUnknown")
+                        : t("overview.uniqueCount", {
+                            count: inspection.uniqueRepositoryCount,
+                          }),
+                    locations: t("overview.locationCount", {
+                      count: repositories.length,
+                    }),
+                    worktrees:
+                      inspection.linkedWorktreeCount == null
+                        ? t("overview.worktreeUnknown")
+                        : t("overview.worktreeCount", {
+                            count: inspection.linkedWorktreeCount,
+                          }),
+                    time: new Date(inspection.scannedAt).toLocaleString(
+                      i18n.language,
+                    ),
+                  })
+                : t("overview.noScan")}
             </p>
             {rescanDenial ? <p role="note">{rescanDenial}</p> : null}
           </div>
@@ -180,13 +203,13 @@ export function WorkspaceOverview({
             variant="secondary"
           >
             {loading && scanning
-              ? "Scanning repositories…"
-              : "Rescan repositories"}
+              ? t("overview.scanning")
+              : t("overview.rescan")}
           </Button>
         </PanelHeader>
         <TextInput
-          aria-label="Filter repositories"
-          placeholder="Filter by path, type or status"
+          aria-label={t("overview.filterLabel")}
+          placeholder={t("overview.filterPlaceholder")}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -198,12 +221,14 @@ export function WorkspaceOverview({
             <div className="fdy-workspace-repository-row" key={repo.id}>
               <div>
                 <strong>
-                  {repo.path === "." ? ". · Root workspace" : repo.path}
+                  {repo.path === "." ? t("overview.rootWorkspace") : repo.path}
                 </strong>
                 <p>
                   {repo.kind}
-                  {repo.linkedWorktree ? " · linked worktree" : ""} ·{" "}
-                  {repo.baseline}
+                  {repo.linkedWorktree
+                    ? ` · ${t("overview.linkedWorktree")}`
+                    : ""}{" "}
+                  · {repo.baseline}
                 </p>
                 {repo.error ? <p role="status">{repo.error}</p> : null}
               </div>
@@ -215,10 +240,10 @@ export function WorkspaceOverview({
           {!visible.length ? (
             <p>
               {query
-                ? "No matching repositories."
+                ? t("overview.noMatches")
                 : inspection?.scannedAt
-                  ? "No Git repositories were found in the last scan."
-                  : "Rescan to discover repositories without changing source files."}
+                  ? t("overview.noneFound")
+                  : t("overview.rescanHint")}
             </p>
           ) : null}
         </div>
@@ -227,7 +252,7 @@ export function WorkspaceOverview({
             onClick={() => setLimit((value) => value + 30)}
             variant="ghost"
           >
-            Show more ({visible.length - limit} remaining)
+            {t("overview.showMore", { count: visible.length - limit })}
           </Button>
         ) : null}
         {inspection?.errors.length ? (
@@ -237,7 +262,7 @@ export function WorkspaceOverview({
               aria-expanded={showWarnings}
               onClick={() => setShowWarnings((value) => !value)}
             >
-              Scan warnings ({inspection.errors.length})
+              {t("overview.scanWarnings", { count: inspection.errors.length })}
             </Button>
             {showWarnings
               ? inspection.errors.map((message, index) => (
@@ -247,10 +272,7 @@ export function WorkspaceOverview({
           </div>
         ) : null}
         <p className="fdy-workspace-inspection-note">
-          Unique repositories share no Git common directory; locations include
-          linked worktrees and uninitialized submodules. Repository statuses
-          reflect the last scan. Scans skip symlinks and dependency/cache
-          directories; only repos used by an Issue get candidate worktrees.
+          {t("overview.footnote")}
         </p>
       </Panel>
     </>

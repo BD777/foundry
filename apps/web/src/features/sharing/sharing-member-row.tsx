@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { WorkspaceAccessRole } from "@bd777/foundry-protocol";
 import type { WorkspaceMember } from "../../api-types";
 import { Badge } from "../../components/ui/badge";
@@ -21,6 +22,7 @@ export function SharingMemberRow({
   onRoleChange: (role: WorkspaceAccessRole) => void;
   onRemove: () => void;
 }) {
+  const { t } = useTranslation("sharing");
   // The device owner always stays an Owner; everyone else may be changed by
   // an Owner, and anyone but the device owner may leave.
   const editable = manage && !member.deviceOwner;
@@ -29,14 +31,19 @@ export function SharingMemberRow({
     <li className="fdy-member-row" data-disabled={member.disabled || undefined}>
       <div className="fdy-member-identity">
         <strong>
-          {member.displayName}
-          {self ? " (you)" : ""}
+          {self
+            ? t("member.you", { name: member.displayName })
+            : member.displayName}
         </strong>
         <span>{member.username}</span>
       </div>
       <div className="fdy-member-badges">
-        {member.deviceOwner ? <Badge tone="brass">Device owner</Badge> : null}
-        {member.disabled ? <Badge tone="warn">Disabled</Badge> : null}
+        {member.deviceOwner ? (
+          <Badge tone="brass">{t("member.deviceOwner")}</Badge>
+        ) : null}
+        {member.disabled ? (
+          <Badge tone="warn">{t("member.disabled")}</Badge>
+        ) : null}
         {editable ? null : (
           <Badge tone="neutral">{workspaceRoleLabel(member.role)}</Badge>
         )}
@@ -44,9 +51,9 @@ export function SharingMemberRow({
       <div className="fdy-member-actions">
         {editable ? (
           <SelectMenu
-            ariaLabel={`Role for ${member.displayName}`}
+            ariaLabel={t("member.roleFor", { name: member.displayName })}
             disabled={busy}
-            options={roleOptions}
+            options={roleOptions()}
             value={member.role}
             onChange={(value) => {
               if (value !== member.role)
@@ -56,12 +63,14 @@ export function SharingMemberRow({
         ) : null}
         {removable ? (
           <ConfirmButton
-            confirmLabel={self ? "Leave for good?" : "Remove access?"}
+            confirmLabel={
+              self ? t("member.leaveConfirm") : t("member.removeConfirm")
+            }
             disabled={busy}
             onConfirm={onRemove}
             size="sm"
           >
-            {self ? "Leave" : "Remove"}
+            {self ? t("member.leave") : t("member.remove")}
           </ConfirmButton>
         ) : null}
       </div>

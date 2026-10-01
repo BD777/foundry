@@ -1,4 +1,5 @@
 import { KeyRound, Save, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -45,6 +46,7 @@ export function ProfileEditor({
   onSave,
   profile,
 }: ProfileEditorProps) {
+  const { t } = useTranslation("profiles");
   const isClaude = draft.runtime === "claude";
   const hasCredential = profile?.hasCredential ?? false;
   // Refresh works wherever something can answer: the Codex CLI for its own
@@ -56,9 +58,9 @@ export function ProfileEditor({
   // usable it is, from the same resolver the Device page and the list use.
   // A sealed key is optional, so a profile without one is stated, never warned.
   const statusBadge = isNew
-    ? { label: "Unsaved", tone: "slate" as const }
+    ? { label: t("editor.unsaved"), tone: "slate" as const }
     : profile && !profile.hasCredential
-      ? { label: "No key configured", tone: "slate" as const }
+      ? { label: t("editor.noKey"), tone: "slate" as const }
       : undefined;
 
   return (
@@ -66,9 +68,13 @@ export function ProfileEditor({
       <div className="fdy-profile-editor-header">
         <RuntimeMark runtime={draft.runtime} size="lg" />
         <span className="fdy-profile-editor-copy">
-          <strong>{draft.label.trim() || "New connection"}</strong>
-          <em>API / gateway connection</em>
-          {profile ? <small>Updated {profile.updatedAtLabel}</small> : null}
+          <strong>{draft.label.trim() || t("editor.newConnection")}</strong>
+          <em>{t("editor.kind")}</em>
+          {profile ? (
+            <small>
+              {t("editor.updated", { time: profile.updatedAtLabel })}
+            </small>
+          ) : null}
         </span>
         {statusBadge ? (
           <Badge tone={statusBadge.tone}>{statusBadge.label}</Badge>
@@ -77,20 +83,20 @@ export function ProfileEditor({
 
       <div className="fdy-profile-editor-grid">
         <label className="fdy-profile-field">
-          <span>Name</span>
+          <span>{t("editor.name")}</span>
           <TextInput
-            aria-label="Profile name"
+            aria-label={t("editor.nameLabel")}
             onChange={(event) => onChange({ label: event.currentTarget.value })}
-            placeholder="My model connection"
+            placeholder={t("editor.namePlaceholder")}
             tone="boxed"
             value={draft.label}
           />
         </label>
 
         <label className="fdy-profile-field">
-          <span>Runtime</span>
+          <span>{t("editor.runtime")}</span>
           <SegmentedControl
-            aria-label="Profile runtime"
+            aria-label={t("editor.runtimeLabel")}
             onValueChange={onRuntimeChange}
             options={runtimeOptions}
             size="sm"
@@ -100,9 +106,9 @@ export function ProfileEditor({
 
         <>
           <label className="fdy-profile-field">
-            <span>Base URL</span>
+            <span>{t("editor.baseUrl")}</span>
             <TextInput
-              aria-label="Profile base URL"
+              aria-label={t("editor.baseUrlLabel")}
               onChange={(event) =>
                 onChange({ baseUrl: event.currentTarget.value })
               }
@@ -115,57 +121,56 @@ export function ProfileEditor({
               value={draft.baseUrl}
             />
             <small>
-              {isClaude ? "Claude" : "Codex"} protocol is selected from the
-              runtime. Provider type does not need separate configuration.
+              {t("editor.protocolHint", {
+                // i18n-ignore: runtime product names
+                runtime: isClaude ? "Claude" : "Codex",
+              })}
             </small>
           </label>
 
           <div className="fdy-profile-field fdy-profile-credential">
-            <span>API key · Optional</span>
+            <span>{t("editor.apiKey")}</span>
             <TextInput
-              aria-label="Profile API key"
+              aria-label={t("editor.apiKeyLabel")}
               autoComplete="off"
               onChange={(event) =>
                 onChange({ apiKey: event.currentTarget.value })
               }
               placeholder={
                 hasCredential
-                  ? "Sealed on this server — leave blank to keep it"
-                  : "Leave blank for a keyless gateway"
+                  ? t("editor.apiKeySealed")
+                  : t("editor.apiKeyKeyless")
               }
               tone="boxed"
               type="password"
               value={draft.apiKey}
             />
-            <small>
-              Optional. Leave it empty for internal gateways or proxies that
-              authenticate themselves; nothing is sent without a key.
-            </small>
+            <small>{t("editor.apiKeyHint")}</small>
             {hasCredential ? (
               <ConfirmButton
-                confirmLabel="Clear it for good?"
+                confirmLabel={t("editor.clearConfirm")}
                 disabled={busy}
                 onConfirm={onClearCredential}
                 size="sm"
                 variant="ghost"
               >
                 <KeyRound size={14} />
-                Clear credential
+                {t("editor.clearCredential")}
               </ConfirmButton>
             ) : null}
           </div>
         </>
 
         <div className="fdy-profile-field fdy-profile-field-wide">
-          <span>Model</span>
+          <span>{t("editor.model")}</span>
           <ModelCombobox
-            ariaLabel="Profile model"
+            ariaLabel={t("editor.modelLabel")}
             busy={modelsBusy}
             note={
               modelsNote ||
               (canDiscoverModels
-                ? "Refresh asks this endpoint for its catalog. Anything you type is kept as an option."
-                : "Type the model you want. Connect a device and enter an endpoint to refresh its catalog.")
+                ? t("editor.modelRefreshNote")
+                : t("editor.modelTypeNote"))
             }
             onChange={({ options, value }) =>
               onChange({ model: value, models: options })
@@ -175,15 +180,12 @@ export function ProfileEditor({
             placeholder={isClaude ? "claude-sonnet-4-5" : "gpt-6-astra"}
             value={draft.model}
           />
-          <small>
-            Every model here is selectable in chat and issue runs; the checked
-            one is the default.
-          </small>
+          <small>{t("editor.modelHint")}</small>
         </div>
       </div>
 
       <details className="fdy-profile-defaults">
-        <summary>Runtime defaults</summary>
+        <summary>{t("editor.runtimeDefaults")}</summary>
         <RuntimeDefaultFields
           runtime={draft.runtime}
           value={draft}
@@ -193,17 +195,17 @@ export function ProfileEditor({
       </details>
 
       <div className="fdy-profile-editor-actions">
-        <span>Save first, then assign devices below.</span>
+        <span>{t("editor.saveThenAssign")}</span>
         {profile ? (
           <ConfirmButton
-            confirmLabel="Delete this connection?"
+            confirmLabel={t("editor.deleteConfirm")}
             disabled={busy}
             onConfirm={onDelete}
             size="sm"
             variant="ghost"
           >
             <Trash2 size={14} />
-            Delete
+            {t("editor.delete")}
           </ConfirmButton>
         ) : null}
         <Button
@@ -213,7 +215,7 @@ export function ProfileEditor({
           variant="primary"
         >
           <Save size={14} />
-          {isNew ? "Create connection" : "Save connection"}
+          {isNew ? t("editor.create") : t("editor.save")}
         </Button>
       </div>
     </div>

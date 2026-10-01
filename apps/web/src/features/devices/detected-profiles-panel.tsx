@@ -1,5 +1,6 @@
 import { ArrowUpFromLine } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProjection,
@@ -30,6 +31,7 @@ export function DetectedProfilesPanel({
   onPromote,
   serverProfileCount,
 }: DetectedProfilesPanelProps) {
+  const { t } = useTranslation("profiles");
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const dataSignature = `${serverProfileCount}|${detectedProfiles
     .map((profile) => `${profile.id}:${profile.serverCredential ? 1 : 0}`)
@@ -43,20 +45,19 @@ export function DetectedProfilesPanel({
     <Panel radius="md" variant="surface">
       <PanelHeader>
         <div>
-          <h2>Daemon-reported profiles</h2>
-          <p>
-            Profiles the daemon found in local configuration. Remote endpoints
-            can be promoted into server profiles usable from any device.
-          </p>
+          <h2>{t("detected.title")}</h2>
+          <p>{t("detected.intro")}</p>
         </div>
-        <Badge tone="neutral">{detectedProfiles.length} found</Badge>
+        <Badge tone="neutral">
+          {t("detected.found", { count: detectedProfiles.length })}
+        </Badge>
       </PanelHeader>
 
       <div className="fdy-daemon-detected-list">
         {detectedProfiles.length === 0 ? (
           <EmptyState
-            body="The daemon has not reported any locally configured agent profile."
-            title="Nothing detected"
+            body={t("detected.emptyBody")}
+            title={t("detected.emptyTitle")}
           />
         ) : (
           detectedProfiles.map((profile) => {
@@ -79,7 +80,9 @@ export function DetectedProfilesPanel({
                     </em>
                     <small>
                       {profile.accountLabel
-                        ? `Signed in as ${profile.accountLabel}`
+                        ? t("detected.signedInAs", {
+                            account: profile.accountLabel,
+                          })
                         : (profile.statusDetail ?? profile.configLabel)}
                     </small>
                   </span>
@@ -89,8 +92,8 @@ export function DetectedProfilesPanel({
                 </Badge>
                 {profile.promotedProfileId ? (
                   <p className="fdy-daemon-detected-reason">
-                    <Badge tone="slate">Promoted</Badge> Already a server
-                    profile any device can run. Edit it in Profile settings.
+                    <Badge tone="slate">{t("detected.promoted")}</Badge>{" "}
+                    {t("detected.promotedBody")}
                   </p>
                 ) : blockReason ? (
                   <p className="fdy-daemon-detected-reason">{blockReason}</p>
@@ -98,8 +101,8 @@ export function DetectedProfilesPanel({
                   <div className="fdy-daemon-promote">
                     <span className="fdy-daemon-promote-note">
                       {profile.serverCredential
-                        ? "The server already holds this credential. Promoting it needs no key from you."
-                        : "The key this machine uses is sealed into the server so any device can run the profile."}
+                        ? t("detected.serverHasCredential")
+                        : t("detected.keySealed")}
                     </span>
                     <Button
                       disabled={!device?.id || pending}
@@ -111,7 +114,9 @@ export function DetectedProfilesPanel({
                       variant="secondary"
                     >
                       <ArrowUpFromLine size={13} />
-                      {pending ? "Promoting" : "Promote"}
+                      {pending
+                        ? t("detected.promoting")
+                        : t("detected.promote")}
                     </Button>
                   </div>
                 )}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,7 +19,6 @@ import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { WorkspaceDetails } from "../../components/workspace/workspace-details";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
-import { countLabel } from "../../lib/count-label";
 
 interface Props {
   compact?: boolean;
@@ -48,6 +48,7 @@ const isRemovedDevice = (device?: DeviceProjection): boolean =>
 
 /** The sidebar is an entrance; selection has its own route, never a popover. */
 export function WorkspaceSelectionPanel(props: Props) {
+  const { t } = useTranslation("workspaces");
   const current = props.workspaces.find(
     (row) => row.id === props.activeWorkspaceId,
   );
@@ -80,19 +81,19 @@ export function WorkspaceSelectionPanel(props: Props) {
   const busy = !!props.busyWorkspaceId;
   if (props.compact)
     return (
-      <section className="fdy-location" aria-label="Current working location">
+      <section className="fdy-location" aria-label={t("location.regionLabel")}>
         <Button
           className="fdy-location-trigger fdy-location-entry"
           variant="ghost"
-          aria-label="Open working location"
-          title="Working location"
+          aria-label={t("location.open")}
+          title={t("location.title")}
           onClick={props.onBrowse}
         >
           <span className="fdy-location-entry-rows">
             <span className="fdy-location-entry-row fdy-location-entry-device">
               <Monitor size={14} />
               <span className="fdy-location-trigger-name">
-                {activeDevice?.label ?? "Select device"}
+                {activeDevice?.label ?? t("location.selectDevice")}
               </span>
               <span
                 className="fdy-location-dot"
@@ -100,17 +101,17 @@ export function WorkspaceSelectionPanel(props: Props) {
                 data-removed={isRemovedDevice(activeDevice)}
                 aria-label={
                   isRemovedDevice(activeDevice)
-                    ? "Device removed"
+                    ? t("shared.deviceRemoved")
                     : activeDevice?.status === "connected"
-                      ? "Online"
-                      : "Offline"
+                      ? t("shared.online")
+                      : t("shared.offline")
                 }
               />
             </span>
             <span className="fdy-location-entry-row fdy-location-entry-workspace">
               <FolderOpen size={15} />
               <span className="fdy-location-trigger-name">
-                {current?.name ?? "Select workspace"}
+                {current?.name ?? t("location.selectWorkspace")}
               </span>
             </span>
           </span>
@@ -135,35 +136,36 @@ export function WorkspaceSelectionPanel(props: Props) {
         onClick={props.onReturn}
       >
         <ArrowLeft size={14} />
-        Back to workspace
+        {t("location.back")}
       </Button>
       <header className="fdy-management-heading">
         <div>
-          <h1>Working location</h1>
-          <p>
-            Choose a device, then switch to one of its workspaces. Your current
-            work stays unchanged until you switch; switching keeps you on this
-            page.
-          </p>
+          <h1>{t("location.title")}</h1>
+          <p>{t("location.intro")}</p>
         </div>
       </header>
       <div className="fdy-location-current">
         <Check size={15} />
         <span>
-          Current:{" "}
-          <strong>
-            {activeDevice && current
-              ? `${activeDevice.label} / ${current.name}`
-              : "No workspace selected"}
-          </strong>
+          <Trans
+            t={t}
+            i18nKey="location.currentLocation"
+            values={{
+              location:
+                activeDevice && current
+                  ? `${activeDevice.label} / ${current.name}`
+                  : t("location.noWorkspaceSelected"),
+            }}
+            components={{ strong: <strong /> }}
+          />
         </span>
       </div>
       <div className="fdy-location-browser">
         <section
           className="fdy-location-device-list"
-          aria-label="Choose device"
+          aria-label={t("location.devicesLabel")}
         >
-          <h2>1. Device</h2>
+          <h2>{t("location.deviceStep")}</h2>
           {pickerDevices.map((device) => {
             const removed = isRemovedDevice(device);
             return (
@@ -174,7 +176,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                 disabled={busy || removed}
                 aria-pressed={device.id === previewDeviceId}
                 aria-disabled={removed || undefined}
-                title={removed ? "Device removed from Foundry" : undefined}
+                title={removed ? t("location.deviceRemovedTitle") : undefined}
                 onClick={() => {
                   if (removed) return;
                   setPreviewDeviceId(device.id);
@@ -187,8 +189,18 @@ export function WorkspaceSelectionPanel(props: Props) {
                   <strong>{device.label}</strong>
                   <small>
                     {removed
-                      ? "Removed · history kept read-only"
-                      : `${device.status === "connected" ? "Online" : "Offline"} · ${countLabel(props.workspaces.filter((row) => row.deviceId === device.id).length, "workspace")}`}
+                      ? t("location.removedHistory")
+                      : t("location.deviceSummary", {
+                          status:
+                            device.status === "connected"
+                              ? t("shared.online")
+                              : t("shared.offline"),
+                          workspaces: t("shared.workspaceCount", {
+                            count: props.workspaces.filter(
+                              (row) => row.deviceId === device.id,
+                            ).length,
+                          }),
+                        })}
                   </small>
                 </span>
                 {device.id === previewDeviceId ? (
@@ -200,43 +212,38 @@ export function WorkspaceSelectionPanel(props: Props) {
             );
           })}
           {!pickerDevices.length ? (
-            <p className="fdy-location-empty">No devices registered.</p>
+            <p className="fdy-location-empty">{t("location.noDevices")}</p>
           ) : null}
         </section>
         <section
           className="fdy-location-workspace-list"
-          aria-label="Choose workspace"
+          aria-label={t("location.workspacesLabel")}
         >
           <div className="fdy-location-workspace-heading">
-            <h2>2. Workspace</h2>
+            <h2>{t("location.workspaceStep")}</h2>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => props.onManage(preview?.id)}
               disabled={busy || previewRemoved || !preview}
             >
-              Manage workspaces <ArrowRight size={13} />
+              {t("location.manage")} <ArrowRight size={13} />
             </Button>
           </div>
           <label className="fdy-location-page-search">
             <Search size={15} />
             <TextInput
-              aria-label="Find workspace"
-              placeholder="Search by name or folder…"
+              aria-label={t("location.findLabel")}
+              placeholder={t("location.searchPlaceholder")}
               value={query}
               disabled={busy}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
           {previewRemoved ? (
-            <p className="fdy-location-hint">
-              Removed device · Its workspaces stay as read-only history and
-              cannot be switched to.
-            </p>
+            <p className="fdy-location-hint">{t("location.removedHint")}</p>
           ) : preview?.status === "disconnected" ? (
-            <p className="fdy-location-hint">
-              Offline · You can browse history; execution needs reconnection.
-            </p>
+            <p className="fdy-location-hint">{t("location.offlineHint")}</p>
           ) : null}
           {visible.map((workspace) => {
             const isCurrent = workspace.id === current?.id;
@@ -259,7 +266,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                   className="fdy-location-workspace-details"
                   disabled={busy}
                   aria-current={isCurrent ? "location" : undefined}
-                  aria-label={`View details for ${workspace.name}`}
+                  aria-label={t("shared.viewDetails", { name: workspace.name })}
                   onClick={() => setDetailsWorkspace(workspace)}
                 >
                   <FolderOpen size={19} />
@@ -268,42 +275,48 @@ export function WorkspaceSelectionPanel(props: Props) {
                     <small>{workspace.localPath}</small>
                   </span>
                   <span className="fdy-workspace-details-label">
-                    Details
+                    {t("shared.details")}
                     <ChevronRight size={14} />
                   </span>
                 </Button>
                 <div className="fdy-location-workspace-actions">
                   {workspace.accessRole && workspace.accessRole !== "owner" ? (
                     <Badge tone="neutral">
-                      Shared · {workspaceRoleLabel(workspace.accessRole)}
+                      {t("location.sharedRole", {
+                        role: workspaceRoleLabel(workspace.accessRole),
+                      })}
                     </Badge>
                   ) : null}
                   {isCurrent ? (
                     <>
                       <Badge tone="online">
                         <Check size={13} />
-                        Current
+                        {t("location.currentBadge")}
                       </Badge>
                       {previewRemoved ? (
-                        <Badge tone="neutral">Device removed</Badge>
+                        <Badge tone="neutral">
+                          {t("shared.deviceRemoved")}
+                        </Badge>
                       ) : null}
                     </>
                   ) : previewRemoved ? (
-                    <Badge tone="neutral">Device removed</Badge>
+                    <Badge tone="neutral">{t("shared.deviceRemoved")}</Badge>
                   ) : (
                     <Button
                       size="sm"
                       variant="secondary"
                       disabled={busy}
                       aria-busy={isBusy}
-                      aria-label={`Switch to ${workspace.name}`}
+                      aria-label={t("location.switchTo", {
+                        name: workspace.name,
+                      })}
                       onClick={() =>
                         void props.onSelect(workspace, {
                           stayOnLocation: true,
                         })
                       }
                     >
-                      {isBusy ? "Switching…" : "Switch"}
+                      {isBusy ? t("shared.switching") : t("location.switch")}
                       {!isBusy ? <ArrowRight size={14} /> : null}
                     </Button>
                   )}
@@ -313,9 +326,7 @@ export function WorkspaceSelectionPanel(props: Props) {
           })}
           {!visible.length ? (
             <p className="fdy-location-empty">
-              {query
-                ? "No matching workspaces."
-                : "No workspaces on this device. Add one in Manage workspaces."}
+              {query ? t("location.noMatches") : t("location.noWorkspaces")}
             </p>
           ) : null}
           {props.error ? (
