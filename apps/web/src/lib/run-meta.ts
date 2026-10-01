@@ -1,20 +1,21 @@
 import type { Issue, Run } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
 
 export function runPhase(run: Run): string {
   if (run.status === "running") {
     // Runtime identity does not tell us whether the agent is editing or testing.
-    return "Executing";
+    return i18n.t("runs:phase.executing");
   }
   if (run.status === "completed") {
-    return "Complete";
+    return i18n.t("runs:phase.complete");
   }
   if (run.status === "failed") {
-    return "Failed";
+    return i18n.t("runs:phase.failed");
   }
   if (run.status === "queued") {
-    return "Queued";
+    return i18n.t("runs:phase.queued");
   }
-  return "Canceled";
+  return i18n.t("runs:phase.canceled");
 }
 
 function formatDuration(ms: number): string {
@@ -22,9 +23,12 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   if (minutes > 0) {
-    return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+    return i18n.t("runs:duration.minutes", {
+      minutes,
+      seconds: seconds.toString().padStart(2, "0"),
+    });
   }
-  return `${seconds}s`;
+  return i18n.t("runs:duration.seconds", { seconds });
 }
 
 export function runDuration(run: Run): string {
@@ -44,16 +48,7 @@ export function runDuration(run: Run): string {
 }
 
 export function runStatusLabel(status: Run["status"]): string {
-  const labels: Record<Run["status"], string> = {
-    blocked: "Blocked",
-    canceled: "Canceled",
-    completed: "Succeeded",
-    failed: "Failed",
-    queued: "Queued",
-    running: "Running",
-  };
-
-  return labels[status];
+  return i18n.t(`runs:status.${status}`);
 }
 
 export function runDisplayId(id: string): string {

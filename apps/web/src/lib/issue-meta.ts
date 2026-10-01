@@ -4,6 +4,7 @@ import type {
   IssueReadiness,
   IssueStatus,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
 import type { BadgeTone } from "./asset-meta";
 import { runPhase } from "./run-meta";
 
@@ -35,32 +36,28 @@ export function blockedReasonMeta(
   if (issueDisplayStatus(issue) !== "blocked") return undefined;
   const reason: IssueBlockedReason = issue.blockedReason ?? {
     kind: issue.run?.status === "failed" ? "system_error" : "needs_input",
-    message:
-      issue.run?.error ??
-      "Provide the information or decision needed to continue.",
+    message: issue.run?.error ?? i18n.t("issues:blocked.defaultMessage"),
   };
-  const labels = {
-    needs_input: "Needs input",
-    needs_permission: "Needs permission",
-    system_error: "System error",
+  return {
+    label: i18n.t(`issues:blocked.reason.${reason.kind}`),
+    message: reason.message,
   };
-  return { label: labels[reason.kind], message: reason.message };
 }
 
 export function statusMeta(status: IssueStatus): {
   label: string;
   tone: BadgeTone;
 } {
-  const meta: Record<IssueStatus, { label: string; tone: BadgeTone }> = {
-    pending: { label: "Pending", tone: "neutral" },
-    in_progress: { label: "In progress", tone: "brass" },
-    blocked: { label: "Blocked", tone: "warn" },
-    verifying: { label: "Verifying", tone: "warn" },
-    accepted: { label: "Accepted", tone: "online" },
-    abandoned: { label: "Abandoned", tone: "slate" },
+  const tones: Record<IssueStatus, BadgeTone> = {
+    pending: "neutral",
+    in_progress: "brass",
+    blocked: "warn",
+    verifying: "warn",
+    accepted: "online",
+    abandoned: "slate",
   };
 
-  return meta[status];
+  return { label: i18n.t(`issues:status.${status}`), tone: tones[status] };
 }
 
 /**
@@ -76,31 +73,28 @@ export function issueBadgeMeta(issue: Issue): {
   const kind =
     issue.blockedReason?.kind ??
     (issue.run?.status === "failed" ? "system_error" : "needs_input");
-  const badges: Record<
-    IssueBlockedReason["kind"],
-    { label: string; tone: BadgeTone }
-  > = {
-    needs_input: { label: "Needs your reply", tone: "brass" },
-    needs_permission: { label: "Needs permission", tone: "warn" },
-    system_error: { label: "Needs attention", tone: "error" },
+  const tones: Record<IssueBlockedReason["kind"], BadgeTone> = {
+    needs_input: "brass",
+    needs_permission: "warn",
+    system_error: "error",
   };
-  return badges[kind];
+  return { label: i18n.t(`issues:blocked.badge.${kind}`), tone: tones[kind] };
 }
 
 export function readinessMeta(readiness: IssueReadiness | undefined): {
   label: string;
   tone: BadgeTone;
 } {
-  const labels: Record<IssueReadiness, { label: string; tone: BadgeTone }> = {
-    direction: { label: "Needs human direction", tone: "slate" },
-    inferring: { label: "Inferring readiness…", tone: "neutral" },
-    proposal: { label: "Needs proposal", tone: "brass" },
-    ready: { label: "Ready to execute", tone: "online" },
-    split: { label: "Needs split", tone: "warn" },
-    unsuitable: { label: "Not automatable", tone: "neutral" },
+  const tones: Record<IssueReadiness, BadgeTone> = {
+    direction: "slate",
+    inferring: "neutral",
+    proposal: "brass",
+    ready: "online",
+    split: "warn",
+    unsuitable: "neutral",
   };
-
-  return labels[readiness ?? "ready"];
+  const key = readiness ?? "ready";
+  return { label: i18n.t(`issues:readiness.${key}`), tone: tones[key] };
 }
 
 export function issueReadinessMeta(issue: Issue): {
@@ -108,9 +102,9 @@ export function issueReadinessMeta(issue: Issue): {
   tone: BadgeTone;
 } {
   if (issue.contractState === "amendment_pending")
-    return { label: "Contract amendment pending", tone: "warn" };
+    return { label: i18n.t("issues:readiness.amendmentPending"), tone: "warn" };
   if (issue.contractState !== "confirmed")
-    return { label: "Awaiting contract confirmation", tone: "warn" };
+    return { label: i18n.t("issues:readiness.awaitingContract"), tone: "warn" };
   return readinessMeta(issue.readiness);
 }
 
@@ -133,18 +127,24 @@ export function issuePhaseLabel(issue: Issue): string {
   if (issue.run) {
     return runPhase(issue.run);
   }
-  return "Preparing execution";
+  return i18n.t("issues:phase.preparing");
 }
 
 export function issueReviewMeta(issue: Issue): {
   checks: string;
+  needsAttention: boolean;
   tone: BadgeTone;
 } {
   const needsAttention = issue.checks.some((check) =>
     check.toLowerCase().includes("attention"),
   );
   return {
-    checks: needsAttention ? "Needs attention" : "Awaiting your review",
+    checks: i18n.t(
+      needsAttention
+        ? "issues:review.needsAttention"
+        : "issues:review.awaitingReview",
+    ),
+    needsAttention,
     tone: "warn",
   };
 }
@@ -175,13 +175,5 @@ export function issueDisplayId(issue: Issue): string {
 }
 
 export function issueTemplate(status: IssueStatus): string {
-  const labels: Record<IssueStatus, string> = {
-    blocked: "Describe the information or decision needed to continue.",
-    pending: "Capture this idea and prepare the goal and completion criteria.",
-    accepted: "Describe a follow-up after the last accepted workspace change.",
-    in_progress: "Create an issue that can start working locally.",
-    verifying: "Create an issue with clear verification criteria.",
-    abandoned: "Describe a new direction after an abandoned Issue.",
-  };
-  return labels[status];
+  return i18n.t(`issues:template.${status}`);
 }

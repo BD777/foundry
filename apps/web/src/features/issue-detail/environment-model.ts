@@ -1,4 +1,6 @@
 import type { IssueEnvironmentData } from "../../api";
+import { en } from "../../i18n/resources";
+import { i18n } from "../../i18n";
 export type EnvironmentRepository =
   IssueEnvironmentData["repositories"][number];
 
@@ -32,20 +34,9 @@ export function environmentCounts(data: IssueEnvironmentData) {
 }
 
 export function environmentLabel(status: string): string {
-  const labels: Record<string, string> = {
-    not_prepared: "Not prepared",
-    unprepared: "Not prepared",
-    ready: "Ready",
-    preparing: "Preparing",
-    running: "Running",
-    review: "Awaiting review",
-    failed: "Preparation failed",
-    integrated: "Integrated",
-    cleaned: "Cleaned",
-    unavailable: "Unavailable",
-    unborn: "Needs initial commit",
-    conflict: "Boundary conflict",
-    unknown: "Unknown",
-  };
-  return labels[status] ?? status;
+  return status in en.issueDetail.environmentStatus
+    ? i18n.t(
+        `issueDetail:environmentStatus.${status as keyof typeof en.issueDetail.environmentStatus}`,
+      )
+    : status;
 }

@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { IconBox } from "../../components/ui/icon-box";
 import {
@@ -27,6 +28,7 @@ export function WorkspaceStrip({
   workspaceName,
   ...props
 }: WorkspaceStripProps) {
+  const { t } = useTranslation("issues");
   return (
     <div className={cn("fdy-workspace-strip", className)} {...props}>
       <span className="fdy-workspace-chip">
@@ -38,10 +40,13 @@ export function WorkspaceStrip({
       <span className="fdy-mono-muted">{localPath}</span>
       <span className="fdy-branch-chip">
         <span className="fdy-branch-chip-dot" />
-        {baseline} · clean
+        {t("strip.clean", { baseline })}
       </span>
       <span className="fdy-workspace-strip-muted">
-        {acceptedCount} accepted · {resolvedCount} resolved
+        {t("strip.counts", {
+          accepted: acceptedCount,
+          resolved: resolvedCount,
+        })}
       </span>
       {viewControl}
     </div>
@@ -56,14 +61,15 @@ export interface WorkspaceStripControlProps<T extends string> {
 }
 
 export function WorkspaceStripControl<T extends string>({
-  ariaLabel = "Workspace view",
+  ariaLabel,
   onValueChange,
   options,
   value,
 }: WorkspaceStripControlProps<T>) {
+  const { t } = useTranslation("issues");
   return (
     <SegmentedControl
-      aria-label={ariaLabel}
+      aria-label={ariaLabel ?? t("strip.viewLabel")}
       className="fdy-workspace-strip-control"
       onValueChange={onValueChange}
       options={options}

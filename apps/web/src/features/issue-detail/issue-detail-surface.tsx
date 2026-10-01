@@ -1,5 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { Children, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
@@ -55,6 +56,7 @@ export function IssueDetailHeader({
   statusTone,
   title,
 }: IssueDetailHeaderProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <header className="fdy-issue-detail-header">
       <Button
@@ -64,7 +66,7 @@ export function IssueDetailHeader({
         variant="ghost"
       >
         <ArrowLeft size={14} />
-        Issues
+        {t("surface.back")}
       </Button>
       <div className="fdy-issue-detail-title-row">
         <h1>{title}</h1>
@@ -72,11 +74,12 @@ export function IssueDetailHeader({
         <Badge tone={statusTone}>{statusLabel}</Badge>
       </div>
       <p className="fdy-issue-detail-subtitle">
-        Primary artifact: <strong>{artifactLabel}</strong> · {runtimeLabel}
+        {t("surface.primaryArtifact")} <strong>{artifactLabel}</strong> ·{" "}
+        {runtimeLabel}
         {runLabel ? (
           <>
             {" "}
-            · run <code>{runLabel}</code>
+            · {t("surface.run")} <code>{runLabel}</code>
           </>
         ) : null}
       </p>
@@ -93,13 +96,15 @@ export function IssueContractBody({
   inferredTask,
   sourceInput,
 }: IssueContractBodyProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <div className="fdy-issue-contract-body fdy-issue-conversation">
       <article className="fdy-issue-turn" data-role="user">
-        <span>User</span>
+        <span>{t("surface.user")}</span>
         <p>{sourceInput}</p>
       </article>
       <article className="fdy-issue-turn" data-role="bot">
+        {/* i18n-ignore: product name */}
         <span>Foundry</span>
         <p>{inferredTask}</p>
       </article>

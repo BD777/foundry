@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, PanelRight, X } from "lucide-react";
 import type { Issue, Run } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -28,12 +29,13 @@ export interface IssueDetailViewProps {
 }
 
 export function IssueDetailView(props: IssueDetailViewProps) {
+  const { t } = useTranslation("issueDetail");
   // A new Issue owns a new draft, inspector selection and scroll position.
   if (!props.issue)
     return (
       <EmptyState
-        title="Issue not found"
-        body="Return to Issues to select a task."
+        title={t("view.notFoundTitle")}
+        body={t("view.notFoundBody")}
       />
     );
   return <IssueDetail key={props.issue.id} {...props} issue={props.issue} />;
@@ -47,6 +49,7 @@ function IssueDetail({
   onBack,
   callbacks,
 }: IssueDetailViewProps & { issue: Issue }) {
+  const { t } = useTranslation("issueDetail");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [detailsOpen, setDetailsOpen] = useState(
     () =>
@@ -83,16 +86,12 @@ function IssueDetail({
       <div className="fdy-issue-phase" role="status">
         <strong>
           {contract.busy
-            ? "正在整理标准…"
+            ? t("view.organizing")
             : contract.draft?.criteria.length
-              ? "请核对完成标准"
+              ? t("view.reviewDraft")
               : phase.title}
         </strong>
-        <p>
-          {contract.busy
-            ? "Agent 正在处理；这一阶段不会启动实现。"
-            : phase.next}
-        </p>
+        <p>{contract.busy ? t("view.organizingNext") : phase.next}</p>
         <Button
           size="sm"
           variant="ghost"
@@ -101,10 +100,10 @@ function IssueDetail({
           }
         >
           {phase.tab === "evidence"
-            ? "查看验收结果"
+            ? t("view.gotoEvidence")
             : phase.tab === "environment"
-              ? "检查执行环境"
-              : "回到主聊天"}
+              ? t("view.gotoEnvironment")
+              : t("view.gotoChat")}
         </Button>
       </div>
       <header className="fdy-issue-details-toolbar">
@@ -113,31 +112,31 @@ function IssueDetail({
           variant={tab === "details" ? "secondary" : "ghost"}
           onClick={() => setTab("details")}
         >
-          目标与约定
+          {t("view.tabs.details")}
         </Button>
         <Button
           size="sm"
           variant={tab === "evidence" ? "secondary" : "ghost"}
           onClick={() => setTab("evidence")}
         >
-          验收结果
+          {t("view.tabs.evidence")}
         </Button>
         <Button
           size="sm"
           variant={tab === "changes" ? "secondary" : "ghost"}
           onClick={() => setTab("changes")}
         >
-          改动
+          {t("view.tabs.changes")}
         </Button>
         <Button
           size="sm"
           variant={tab === "environment" ? "secondary" : "ghost"}
           onClick={() => setTab("environment")}
         >
-          执行环境
+          {t("view.tabs.environment")}
         </Button>
         <Button
-          aria-label="Close issue details"
+          aria-label={t("view.closeDetails")}
           size="icon"
           variant="ghost"
           onClick={() => setDetailsOpen(false)}
@@ -152,14 +151,14 @@ function IssueDetail({
           ) : tab === "environment" ? (
             <>
               <p className="fdy-issue-tab-intro">
-                查看运行位置、候选仓库及环境阻碍；一般不需要在这里操作。
+                {t("view.environmentIntro")}
               </p>
               <section className="fdy-issue-card">
-                <h3>运行位置</h3>
+                <h3>{t("view.location")}</h3>
                 <dl className="fdy-issue-properties">
-                  <dt>设备</dt>
+                  <dt>{t("view.device")}</dt>
                   <dd>{deviceLabel}</dd>
-                  <dt>Workspace 基线</dt>
+                  <dt>{t("view.baseline")}</dt>
                   <dd>{workspaceBaseline}</dd>
                 </dl>
               </section>
@@ -174,10 +173,8 @@ function IssueDetail({
               />
             ) : (
               <section className="fdy-issue-card">
-                <h3>还没有可审阅的改动</h3>
-                <p>
-                  确认标准并完成实现后，这里展示候选的实际文件差异。实现尚未开始时不会生成示例改动。
-                </p>
+                <h3>{t("view.noChangesTitle")}</h3>
+                <p>{t("view.noChangesBody")}</p>
               </section>
             )
           ) : (
@@ -197,10 +194,10 @@ function IssueDetail({
               disabled={abandoning}
               onClick={() => setTab("evidence")}
             >
-              查看验收结果
+              {t("view.gotoEvidence")}
             </Button>
             <Button variant="secondary" onClick={focusComposer}>
-              要求修改
+              {t("view.requestChanges")}
             </Button>
           </>
         ) : terminal ? (
@@ -208,17 +205,21 @@ function IssueDetail({
             variant="secondary"
             onClick={() =>
               callbacks.onDraftFromSource(
-                `Follow up on ${issueDisplayId(issue)}: ${issue.title}\n\n${issue.sourceInput}`,
+                t("view.followUpDraft", {
+                  id: issueDisplayId(issue),
+                  title: issue.title,
+                  source: issue.sourceInput,
+                }),
               )
             }
           >
-            Create follow-up
+            {t("view.createFollowUp")}
           </Button>
         ) : (
           <Button variant="secondary" onClick={focusComposer}>
             {issue.status === "in_progress"
-              ? "Guide this Issue"
-              : "Continue conversation"}
+              ? t("view.guide")
+              : t("view.continue")}
           </Button>
         )}
         {!terminal ? (
@@ -227,12 +228,12 @@ function IssueDetail({
             disabled={abandoning || issue.status === "in_progress"}
             title={
               issue.status === "in_progress"
-                ? "Stop execution before abandoning"
-                : "Retain history and candidate without integrating"
+                ? t("view.abandonBlocked")
+                : t("view.abandonHint")
             }
             onClick={() => void abandon()}
           >
-            {abandoning ? "Abandoning…" : "Abandon issue"}
+            {abandoning ? t("view.abandoning") : t("view.abandon")}
           </Button>
         ) : null}
       </footer>
@@ -243,7 +244,7 @@ function IssueDetail({
       <div className="fdy-chat-thread">
         <header className="fdy-chat-thread-header">
           <Button
-            aria-label="Back to Issues"
+            aria-label={t("view.back")}
             size="icon"
             variant="ghost"
             onClick={onBack}
@@ -259,7 +260,7 @@ function IssueDetail({
           <Badge tone={meta.tone}>{meta.label}</Badge>
           <Button
             aria-label={
-              detailsOpen ? "Hide issue details" : "Show issue details"
+              detailsOpen ? t("view.hideDetails") : t("view.showDetails")
             }
             size="icon"
             variant="ghost"
@@ -270,7 +271,7 @@ function IssueDetail({
         </header>
         <ChatDetailSplitPane
           detail={detailsOpen ? inspector : undefined}
-          detailLabel="Issue details"
+          detailLabel={t("view.detailsLabel")}
         >
           <IssueConversation
             issue={issue}

@@ -1,5 +1,6 @@
 import type { Issue } from "@bd777/foundry-protocol";
 import { workerPackageName } from "@bd777/foundry-protocol";
+import { Trans, useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import {
@@ -10,16 +11,20 @@ import {
 
 /** An older worker clarifies and verifies but cannot execute Issues. */
 export function WorkerUpdateNotice() {
+  const { t } = useTranslation("issues");
   return (
     <Alert
       className="fdy-issue-worker-notice"
       tone="warning"
-      title="这台设备的 Worker 需要更新"
+      title={t("worker.title")}
     >
       <p>
-        它可以澄清和验收，但还不能执行已确认的 Issue；确认后的 Issue
-        会一直等待。在这台设备上运行{" "}
-        <code>npx -y {workerPackageName}@latest update</code> 更新后即可执行。
+        <Trans
+          ns="issues"
+          i18nKey="worker.body"
+          values={{ command: `npx -y ${workerPackageName}@latest update` }}
+          components={{ code: <code /> }}
+        />
       </p>
     </Alert>
   );

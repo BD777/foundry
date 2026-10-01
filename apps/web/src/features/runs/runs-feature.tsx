@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Issue, Run } from "@bd777/foundry-protocol";
 import { EmptyState } from "../../components/ui/empty-state";
 import { PageSurface } from "../../components/ui/page-surface";
@@ -43,6 +44,7 @@ export function RunsFeature({
   history,
   onEvent,
 }: RunsFeatureProps) {
+  const { t } = useTranslation("runs");
   const [filter, setFilter] = useState<RunFilter>("all");
   const [selectedRunId, setSelectedRunId] = useState(
     () => focusRunId ?? preferredRunId(issues),
@@ -116,13 +118,13 @@ export function RunsFeature({
     <PageSurface variant="runs">
       <RunsToolbar>
         <RunsFilterControl
-          ariaLabel="Run status filter"
+          ariaLabel={t("filter.label")}
           onValueChange={setFilter}
           options={[
-            { label: "All", value: "all" },
-            { label: "Running", value: "running" },
-            { label: "Succeeded", value: "completed" },
-            { label: "Failed", value: "failed" },
+            { label: t("filter.all"), value: "all" },
+            { label: t("filter.running"), value: "running" },
+            { label: t("filter.succeeded"), value: "completed" },
+            { label: t("filter.failed"), value: "failed" },
           ]}
           value={filter}
         />
@@ -130,10 +132,7 @@ export function RunsFeature({
 
       <RunsTable
         emptyState={
-          <EmptyState
-            title="No runs"
-            body="Runs appear after a local worker claims an issue."
-          />
+          <EmptyState title={t("empty.title")} body={t("empty.body")} />
         }
         rows={rows}
       />

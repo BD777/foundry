@@ -1,4 +1,5 @@
 import type { Issue } from "@bd777/foundry-protocol";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { ContractSummary } from "./contract-summary";
 import type { IssueContractController } from "./use-issue-contract";
@@ -10,6 +11,7 @@ export function ContractConfirmationCard({
   issue: Issue;
   controller: IssueContractController;
 }) {
+  const { t } = useTranslation("issueDetail");
   const draft = controller.draft;
   if (!draft || !draft.criteria.some((c) => c.required)) return null;
   return (
@@ -17,14 +19,11 @@ export function ContractConfirmationCard({
       className="fdy-contract-confirmation"
       data-contract-revision={draft.revision}
     >
-      <h3>请核对这版完成标准</h3>
-      <p>
-        下面是实际保存的第 {draft.revision}{" "}
-        版。确认后才会开始实现；要调整，直接在下方聊天。
-      </p>
+      <h3>{t("confirmation.title")}</h3>
+      <p>{t("confirmation.body", { revision: draft.revision })}</p>
       {draft.changeReason ? (
         <details>
-          <summary>本次整理依据</summary>
+          <summary>{t("confirmation.basis")}</summary>
           <p>{draft.changeReason}</p>
         </details>
       ) : null}
@@ -33,7 +32,7 @@ export function ContractConfirmationCard({
         disabled={controller.busy || issue.status === "in_progress"}
         onClick={() => void controller.confirm(draft).catch(() => {})}
       >
-        确认标准并开始
+        {t("confirmation.confirm")}
       </Button>
     </div>
   );

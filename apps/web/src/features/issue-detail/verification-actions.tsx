@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type {
   CandidateSnapshot,
   Issue,
@@ -60,6 +61,7 @@ const isChangesRequirement = (requirement: {
   description: string;
 }) =>
   requirement.acceptedCarriers.includes("data") &&
+  // i18n-ignore: recognizes a requirement's own wording, in either language
   /变更|改动|change|diff/i.test(requirement.description);
 
 export function VerificationActions({
@@ -75,6 +77,7 @@ export function VerificationActions({
   disabled: boolean;
   run: (action: () => Promise<unknown>) => Promise<void>;
 }) {
+  const { t } = useTranslation("issueDetail");
   const [candidate, setCandidate] = useState<CandidateSnapshot>();
   const [input, setInput] = useState<VerificationInput>();
   const [files, setFiles] = useState<SnapshotFile[]>([]);
@@ -181,7 +184,7 @@ export function VerificationActions({
             (selected[`${criterion.id}/${requirement.id}`]?.length ?? 0) <
             requirement.minimumCount,
         )
-        .map(({ criterion }) => `“${criterion.title}”`),
+        .map(({ criterion }) => t("shared.quoted", { text: criterion.title })),
     ),
   ];
   const canCollect =
@@ -197,18 +200,20 @@ export function VerificationActions({
 
   return (
     <section className="fdy-issue-card">
-      <h3>{candidate ? "采集与检查" : "准备实际验收材料"}</h3>
-      <p>
-        系统从固定候选读取真实文件，保存原始材料，再逐条检查。不会把实现总结当成证据。
-      </p>
+      <h3>
+        {candidate
+          ? t("verification.titleCollect")
+          : t("verification.titlePrepare")}
+      </h3>
+      <p>{t("verification.intro")}</p>
       {!candidate || aligned ? (
         <>
           {targetNames.map((name) => (
             <label key={name}>
-              服务“{name}”的候选入口文件
+              {t("verification.entryLabel", { name })}
               <TextInput
-                aria-label={`服务 ${name} 入口文件`}
-                placeholder="例如 handler.mjs（默认导出 Node HTTP handler）"
+                aria-label={t("verification.entryAria", { name })}
+                placeholder={t("verification.entryPlaceholder")}
                 value={targets[name] ?? ""}
                 onChange={(e) =>
                   setTargets((t) => ({ ...t, [name]: e.target.value }))
@@ -230,9 +235,9 @@ export function VerificationActions({
               })
             }
           >
-            {aligned ? "对齐 Workspace 并准备新一轮验收" : "准备当前版本的验收"}
+            {aligned ? t("verification.align") : t("verification.prepare")}
           </Button>
-          {aligned ? <p>对齐会生成新的候选，旧判断和批准不能复用。</p> : null}
+          {aligned ? <p>{t("verification.alignNote")}</p> : null}
         </>
       ) : (
         <>
@@ -248,25 +253,29 @@ export function VerificationActions({
                 {accepted ? (
                   <>
                     <p>
-                      计划采集：
-                      {(selected[key] ?? [])
-                        .map((identity) => {
-                          if (identity === changesEvidence)
-                            return "系统生成的候选变更清单";
-                          const file = files.find(
-                            (f) => `${f.repoId}:${f.path}` === identity,
-                          );
-                          const repo = candidate.repositories.find(
-                            (r) => r.repoId === file?.repoId,
-                          );
-                          return `${repo?.relativePath && repo.relativePath !== "." ? `${repo.relativePath}/` : ""}${file?.path ?? "材料不可用"}`;
-                        })
-                        .join("、") || "尚未找到合适材料，请展开选择"}
-                      。
+                      {t("verification.planned", {
+                        items:
+                          (selected[key] ?? [])
+                            .map((identity) => {
+                              if (identity === changesEvidence)
+                                return t("verification.changesList");
+                              const file = files.find(
+                                (f) => `${f.repoId}:${f.path}` === identity,
+                              );
+                              const repo = candidate.repositories.find(
+                                (r) => r.repoId === file?.repoId,
+                              );
+                              return `${repo?.relativePath && repo.relativePath !== "." ? `${repo.relativePath}/` : ""}${file?.path ?? t("verification.materialUnavailable")}`;
+                            })
+                            .join(t("shared.listSeparator")) ||
+                          t("verification.noneFound"),
+                      })}
                     </p>
                     <details>
                       <summary>
-                        调整取证材料（至少 {requirement.minimumCount} 份）
+                        {t("verification.adjust", {
+                          minimum: requirement.minimumCount,
+                        })}
                       </summary>
                       <div className="fdy-evidence-file-list">
                         {requirement.acceptedCarriers.includes("data") ? (
@@ -288,10 +297,7 @@ export function VerificationActions({
                                 }))
                               }
                             />
-                            <span>
-                              系统生成的候选变更清单（与原始基线比较，不是 Agent
-                              自述）
-                            </span>
+                            <span>{t("verification.changesOption")}</span>
                           </label>
                         ) : null}
                         {files.map((file) => {
@@ -330,9 +336,7 @@ export function VerificationActions({
                     </details>
                   </>
                 ) : (
-                  <p>
-                    这里需要非文件类材料。本轮不能自动采集这种材料，不能用文稿替代；请调整取证方案或使用材料管理。
-                  </p>
+                  <p>{t("verification.nonFile")}</p>
                 )}
               </div>
             );
@@ -340,9 +344,7 @@ export function VerificationActions({
           {programChecks.map(({ criterion, configuration }) => (
             <div className="fdy-evidence-file-selection" key={criterion.id}>
               <h4>{criterion.title}</h4>
-              <p>
-                系统自己运行项目的命令，退出码决定通过与否，输出原样留作依据。
-              </p>
+              <p>{t("verification.programIntro")}</p>
               <ProgramCommand
                 command={[configuration.executable, ...configuration.args].join(
                   " ",
@@ -353,8 +355,9 @@ export function VerificationActions({
           ))}
           {input && missingMaterial.length ? (
             <p role="note">
-              还不能采集：{missingMaterial.join("、")}
-              还没有选定取证材料。展开“调整取证材料”选择文件。
+              {t("verification.missing", {
+                criteria: missingMaterial.join(t("shared.listSeparator")),
+              })}
             </p>
           ) : null}
           <Button
@@ -417,9 +420,9 @@ export function VerificationActions({
               })
             }
           >
-            采集所选材料并检查全部标准
+            {t("verification.collect")}
           </Button>
-          <p>材料和结果会保留。再次点击将创建新一轮检查，不复用旧通过。</p>
+          <p>{t("verification.collectNote")}</p>
         </>
       )}
       {error ? <p role="alert">{error}</p> : null}
@@ -429,17 +432,21 @@ export function VerificationActions({
 
 /** A short command reads inline; a long script sits behind a disclosure. */
 function ProgramCommand({ command, cwd }: { command: string; cwd: string }) {
-  const where = `（工作目录 ${cwd}，无网络）`;
+  const { t } = useTranslation("issueDetail");
   if (command.length <= 80)
     return (
       <p>
-        将运行：<code>{command}</code>
-        {where}。
+        <Trans
+          ns="issueDetail"
+          i18nKey="verification.commandInline"
+          values={{ command, cwd }}
+          components={{ code: <code /> }}
+        />
       </p>
     );
   return (
     <details>
-      <summary>查看要运行的命令{where}</summary>
+      <summary>{t("verification.commandSummary", { cwd })}</summary>
       <code>{command}</code>
     </details>
   );

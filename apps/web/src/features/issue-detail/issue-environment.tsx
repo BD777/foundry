@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
 import {
   readIssueEnvironment,
@@ -21,6 +22,7 @@ export function IssueEnvironment({
   issue: Issue;
   onRefresh: (issueId?: string) => void;
 }) {
+  const { t, i18n } = useTranslation("issueDetail");
   const [data, setData] = useState<IssueEnvironmentData>();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -65,38 +67,47 @@ export function IssueEnvironment({
   }
   return (
     <section className="fdy-detail-block">
-      <SectionLabel>Execution environment</SectionLabel>
+      <SectionLabel>{t("environment.title")}</SectionLabel>
       <Panel className="fdy-issue-execution-panel">
         {error ? (
-          <Alert tone="error" title="Could not load environment">
+          <Alert tone="error" title={t("environment.loadFailed")}>
             {error}
           </Alert>
         ) : null}
         {data ? (
           <>
-            <InfoRow label="Candidate status" variant="keyValue">
+            <InfoRow
+              label={t("environment.candidateStatus")}
+              variant="keyValue"
+            >
               {environmentLabel(data.status)}
             </InfoRow>
-            <InfoRow label="Candidate size" variant="keyValue">
+            <InfoRow label={t("environment.candidateSize")} variant="keyValue">
               {data.bytes === undefined
-                ? "Not measured"
-                : `${(data.bytes / 1048576).toFixed(1)} MiB · ${data.files ?? 0} files`}
+                ? t("environment.notMeasured")
+                : t("environment.size", {
+                    size: (data.bytes / 1048576).toLocaleString(i18n.language, {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    }),
+                    count: data.files ?? 0,
+                  })}
             </InfoRow>
             <p>
-              {counts!.registered} registered · {counts!.prepared} prepared ·{" "}
-              {counts!.unavailable} unavailable
+              {t("environment.counts", {
+                registered: counts!.registered,
+                prepared: counts!.prepared,
+                unavailable: counts!.unavailable,
+              })}
             </p>
-            <p>
-              Source availability describes registered repositories. Only
-              prepared candidates belong to this Issue’s execution environment.
-            </p>
+            <p>{t("environment.availabilityNote")}</p>
             {data.cwd ? (
               <p className="fdy-detail-helper-copy">{data.cwd}</p>
             ) : null}
             {data.error ? (
               <Alert
                 tone="warning"
-                title="Environment needs attention"
+                title={t("environment.needsAttention")}
                 details={diagnosticSummary(data.error).details}
               >
                 {diagnosticSummary(data.error).summary}
@@ -105,24 +116,22 @@ export function IssueEnvironment({
             {data.content?.untracked.length ? (
               <details>
                 <summary>
-                  Files outside the accepted baseline (
-                  {data.content.untracked.length})
+                  {t("environment.untracked", {
+                    total: data.content.untracked.length,
+                  })}
                 </summary>
                 <pre className="fdy-candidate-diff">
                   {data.content.untracked.join("\n")}
                 </pre>
-                <p>
-                  Commit these files into the source baseline or add intended
-                  ignore rules before Accept.
-                </p>
+                <p>{t("environment.untrackedNote")}</p>
               </details>
             ) : null}
             {data.preview ? (
               <p>
-                Preview: {data.preview.state}{" "}
+                {t("environment.preview", { state: data.preview.state })}{" "}
                 {data.preview.url ? (
                   <a href={data.preview.url} target="_blank" rel="noreferrer">
-                    Open preview
+                    {t("environment.openPreview")}
                   </a>
                 ) : null}{" "}
                 {data.preview.error}
@@ -134,7 +143,7 @@ export function IssueEnvironment({
                 onClick={() => void act("cancel")}
                 variant="secondary"
               >
-                Stop execution
+                {t("environment.stop")}
               </Button>
             ) : null}
             {issue.status === "verifying" &&
@@ -145,7 +154,7 @@ export function IssueEnvironment({
                 onClick={() => void act("preview_start")}
                 variant="secondary"
               >
-                Start preview
+                {t("environment.startPreview")}
               </Button>
             ) : null}
             {["running", "queued"].includes(data.preview?.state ?? "") ? (
@@ -154,7 +163,7 @@ export function IssueEnvironment({
                 onClick={() => void act("preview_stop")}
                 variant="secondary"
               >
-                Stop preview
+                {t("environment.stopPreview")}
               </Button>
             ) : null}
             {issue.status === "accepted" && data.status !== "cleaned" ? (
@@ -163,12 +172,12 @@ export function IssueEnvironment({
                 onClick={() => void act("cleanup")}
                 variant="secondary"
               >
-                Clean accepted worktrees
+                {t("environment.cleanup")}
               </Button>
             ) : null}
           </>
         ) : !error ? (
-          <p>Loading environment…</p>
+          <p>{t("environment.loading")}</p>
         ) : null}
       </Panel>
       {data ? (

@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
 import {
   issueDisplayId,
@@ -32,7 +33,10 @@ import {
 } from "./issue-card";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 
-function priorityMeta(priority: Issue["priority"]): {
+function priorityMeta(
+  priority: Issue["priority"],
+  labels: Record<"high" | "medium" | "low", string>,
+): {
   icon: ReactNode;
   label: string;
   priority: "high" | "low" | "medium";
@@ -50,7 +54,7 @@ function priorityMeta(priority: Issue["priority"]): {
   if (priority === "high") {
     return {
       icon: <ArrowRight size={11} />,
-      label: "High",
+      label: labels.high,
       priority,
       visible: true,
     };
@@ -59,7 +63,7 @@ function priorityMeta(priority: Issue["priority"]): {
   if (priority === "medium") {
     return {
       icon: <IssuePriorityDashMark />,
-      label: "Medium",
+      label: labels.medium,
       priority,
       visible: true,
     };
@@ -67,7 +71,7 @@ function priorityMeta(priority: Issue["priority"]): {
 
   return {
     icon: <ArrowLeft size={11} />,
-    label: "Low",
+    label: labels.low,
     priority: "low",
     visible: true,
   };
@@ -82,7 +86,12 @@ export function IssueCard({
   onOpen: () => void;
   selected: boolean;
 }) {
-  const priority = priorityMeta(issue.priority);
+  const { t } = useTranslation("issues");
+  const priority = priorityMeta(issue.priority, {
+    high: t("card.priority.high"),
+    medium: t("card.priority.medium"),
+    low: t("card.priority.low"),
+  });
   const readiness = issueReadinessMeta(issue);
   const review = issueReviewMeta(issue);
   const showRuntime = issueShowsRuntime(issue);
@@ -90,7 +99,7 @@ export function IssueCard({
 
   return (
     <IssueCardRoot
-      aria-label={`Open ${displayId}`}
+      aria-label={t("card.open", { id: displayId })}
       onClick={onOpen}
       selected={selected}
       status={issueDisplayStatus(issue)}
@@ -118,14 +127,14 @@ export function IssueCard({
       {issue.status === "verifying" ? (
         <IssueCardReviewLine meta={review.checks}>
           <IssueCardPill dot={false} tone={review.tone}>
-            {review.checks === "Needs attention"
-              ? "Needs attention"
-              : "Review candidate"}
+            {review.needsAttention
+              ? t("review.needsAttention")
+              : t("review.reviewCandidate")}
           </IssueCardPill>
         </IssueCardReviewLine>
       ) : null}
       {issue.status === "accepted" ? (
-        <IssueCardIntegratedLine>Accepted</IssueCardIntegratedLine>
+        <IssueCardIntegratedLine>{t("card.accepted")}</IssueCardIntegratedLine>
       ) : null}
       {issue.status === "blocked" ? (
         <IssueCardStatusLine>

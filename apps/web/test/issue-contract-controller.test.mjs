@@ -148,7 +148,7 @@ test("successful clarification stays successful when subsequent refresh fails; o
   await act(async () => {
     assert.equal(await h.state.send("Clarify this", []), "replied");
   });
-  assert.match(h.state.error, /操作已保存/);
+  assert.match(h.state.error, /Saved, but the page could not refresh/);
   assert.equal(writes, 1);
 });
 

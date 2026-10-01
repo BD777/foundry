@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentModelOption,
   AgentProfileProjection,
@@ -23,6 +24,7 @@ export function useIssueModels(
   profiles: AgentProfileProjection[],
   workspaceId: string,
 ) {
+  const { t } = useTranslation("issues");
   const [agentId, setAgentId] = useState("");
   const agent =
     agents.find(
@@ -99,7 +101,7 @@ export function useIssueModels(
   // The profile's configured models stay selectable even when the native
   // directory refresh fails; discovery only augments the curated list.
   const options: Array<{ value: string; label: string }> = [
-    { value: "", label: "Provider default" },
+    { value: "", label: t("models.providerDefault") },
   ];
   const seenValues = new Set([""]);
   for (const configured of profile?.models ?? []) {

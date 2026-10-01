@@ -15,29 +15,35 @@ const { changedEvidenceFiles, suggestedEvidenceFiles } =
 test("stage guidance distinguishes an unconfirmed draft from execution and acceptance", () => {
   assert.match(
     issuePhase({ status: "pending", contractState: "draft" }).next,
-    /确认前不会/,
+    /no new implementation starts before you confirm/,
   );
   assert.equal(
     issuePhase({ status: "verifying", contractState: "confirmed" }).tab,
     "evidence",
   );
-  assert.match(issuePhase({ status: "accepted" }).title, /集成/);
+  assert.match(issuePhase({ status: "accepted" }).title, /integrated/);
   assert.equal(isStatusQuestion("这里是什么状态？"), true);
   assert.equal(isStatusQuestion("继续"), false);
   assert.equal(isStatusQuestion("What is the status?"), true);
   assert.equal(isStatusQuestion("状态接口缺少参数时返回400"), false);
 });
 test("verification wording preserves missing checker, stale results and independent judgment", () => {
-  assert.match(verificationMethod({ evaluationMode: "agent" }), /独立 Agent/);
+  assert.match(
+    verificationMethod({ evaluationMode: "agent" }),
+    /independent Agent/,
+  );
   assert.match(
     verificationMethod({ evaluationMode: "deterministic" }),
-    /尚未准备好/,
+    /not ready yet/,
   );
   assert.match(
     verdictText({ freshness: "stale", effectiveVerdict: "pass" }),
-    /不再适用/,
+    /no longer applies/,
   );
-  assert.match(blockerText({ code: "evidence_missing" }), /材料不足/);
+  assert.match(
+    blockerText({ code: "evidence_missing" }),
+    /Not enough actual material/,
+  );
 });
 test("candidate suggestions use actual manifest paths, never invented evidence IDs", () => {
   const files = [
@@ -78,6 +84,6 @@ test("an agent judgment that names no file defaults to the files the candidate c
   ]);
   assert.match(
     blockerText({ code: "verification_pending" }),
-    /没有针对这一版的检查结果/,
+    /no check result for this version/,
   );
 });

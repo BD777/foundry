@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Issue } from "@bd777/foundry-protocol";
+import { i18n } from "../../i18n";
 import { issueDisplayId } from "../../lib/issue-meta";
 
 export interface IssueDetailAction {
@@ -43,12 +44,12 @@ export function issueActions(
     return {
       primary: {
         icon: Plus,
-        label: "New issue",
+        label: i18n.t("issueDetail:actions.newIssue"),
         onClick: callbacks.onNewIssue,
       },
       secondary: {
         icon: RefreshCw,
-        label: "Refresh",
+        label: i18n.t("common:actions.refresh"),
         onClick: () => void callbacks.onRefresh(),
       },
     };
@@ -58,11 +59,11 @@ export function issueActions(
     return {
       primary: {
         icon: Check,
-        label: "Review evidence and acceptance",
+        label: i18n.t("issueDetail:actions.reviewEvidence"),
         onClick: callbacks.onAcceptIssue,
       },
       secondary: {
-        label: "Request changes",
+        label: i18n.t("issueDetail:actions.requestChanges"),
         onClick: callbacks.onRequestChanges,
       },
     };
@@ -71,7 +72,7 @@ export function issueActions(
   if (issue.status === "pending") {
     return {
       primary: {
-        label: "Start production",
+        label: i18n.t("issueDetail:actions.startProduction"),
         onClick: callbacks.onStartProduction,
       },
     };
@@ -80,7 +81,7 @@ export function issueActions(
     return {
       primary: {
         icon: RefreshCw,
-        label: "Retry in candidate",
+        label: i18n.t("issueDetail:actions.retryInCandidate"),
         onClick: callbacks.onRequestChanges,
       },
     };
@@ -89,12 +90,12 @@ export function issueActions(
   if (issue.status === "in_progress") {
     return {
       primary: {
-        label: "Guide this Issue",
+        label: i18n.t("issueDetail:actions.guide"),
         onClick: callbacks.onRequestChanges,
       },
       secondary: {
         icon: RefreshCw,
-        label: "Refresh",
+        label: i18n.t("common:actions.refresh"),
         onClick: () => void callbacks.onRefresh(issue.id),
       },
     };
@@ -104,15 +105,19 @@ export function issueActions(
     return {
       primary: {
         icon: Plus,
-        label: "Create follow-up",
+        label: i18n.t("issueDetail:actions.createFollowUp"),
         onClick: () =>
           callbacks.onDraftFromSource(
-            `Follow up on ${issueDisplayId(issue)}: ${issue.title}\n\n${issue.sourceInput}`,
+            i18n.t("issueDetail:view.followUpDraft", {
+              id: issueDisplayId(issue),
+              title: issue.title,
+              source: issue.sourceInput,
+            }),
           ),
       },
       secondary: {
         icon: CircleDot,
-        label: "Issues",
+        label: i18n.t("issueDetail:actions.issues"),
         onClick: () => callbacks.onNavigate("issues"),
       },
     };
@@ -121,15 +126,19 @@ export function issueActions(
   return {
     primary: {
       icon: Boxes,
-      label: "Open assets",
+      label: i18n.t("issueDetail:actions.openAssets"),
       onClick: () => callbacks.onNavigate("assets"),
     },
     secondary: {
       icon: Wrench,
-      label: "Unblock issue",
+      label: i18n.t("issueDetail:actions.unblock"),
       onClick: () =>
         callbacks.onDraftFromSource(
-          `Unblock ${issueDisplayId(issue)}: ${issue.title}\n\n${issue.checks.join("\n")}`,
+          i18n.t("issueDetail:actions.unblockDraft", {
+            id: issueDisplayId(issue),
+            title: issue.title,
+            checks: issue.checks.join("\n"),
+          }),
         ),
     },
   };

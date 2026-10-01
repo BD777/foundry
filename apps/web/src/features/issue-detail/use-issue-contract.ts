@@ -16,6 +16,7 @@ import {
   uploadMaterial,
 } from "./evidence-api";
 import { useEvidenceUpdates } from "./use-evidence-updates";
+import { i18n } from "../../i18n";
 
 export function contractContent(contract: IssueContract): ContractContent {
   const { goal, inScope, outOfScope, constraints, criteria } = contract;
@@ -59,7 +60,8 @@ export function useIssueContract(
   }, [load, issue.currentContractRevision, issue.draftContractRevision]);
 
   const perform = async (action: () => Promise<unknown>) => {
-    if (lock.current) throw new Error("上一项操作还在处理中，请稍候。");
+    if (lock.current)
+      throw new Error(i18n.t("issueDetail:contractErrors.busy"));
     lock.current = true;
     setBusy(true);
     setError("");
@@ -67,9 +69,7 @@ export function useIssueContract(
       await action();
       // A completed mutation must not become a failed send when only refresh fails.
       await load().catch(() =>
-        setError(
-          "操作已保存，但页面暂时未能刷新。恢复连接后会自动更新，请勿重复提交。",
-        ),
+        setError(i18n.t("issueDetail:contractErrors.savedNotRefreshed")),
       );
       onRefresh(issue.id);
     } catch (e) {
@@ -87,9 +87,12 @@ export function useIssueContract(
     selected = attachments,
     initial = false,
   ) => {
-    if (!draft) throw new Error("请先发起标准调整，再讨论新的完成标准。");
+    if (!draft)
+      throw new Error(i18n.t("issueDetail:contractErrors.amendFirst"));
     const message =
-      text.trim() || "请阅读我上传的参考，帮助明确目标和完成标准。";
+      text.trim() ||
+      // i18n-ignore: the message the clarifying Agent receives for bare uploads
+      "请阅读我上传的参考，帮助明确目标和完成标准。";
     const signature = JSON.stringify([message, selected.map((a) => a.id)]);
     await perform(async () => {
       setPendingText(message);
@@ -109,6 +112,7 @@ export function useIssueContract(
                 input: {
                   baseRevision: draft.revision,
                   changeReason:
+                    // i18n-ignore: contract history recorded on the server
                     "用户在主对话中提供参考材料；不是执行结果证据。",
                   content: {
                     ...contractContent(draft),
@@ -146,8 +150,10 @@ export function useIssueContract(
         attempt.draft,
         message,
         initial
-          ? "根据原始输入开始澄清，不授权执行。"
-          : `主对话补充：${message.slice(0, 1000)}`,
+          ? // i18n-ignore: clarification reason recorded on the server
+            "根据原始输入开始澄清，不授权执行。"
+          : // i18n-ignore: clarification reason recorded on the server
+            `主对话补充：${message.slice(0, 1000)}`,
         attempt.key,
       );
       pending.current = undefined;
@@ -201,13 +207,15 @@ export function useIssueContract(
           !/\.(txt|md|json)$/i.test(file.name)
         )
           throw new Error(
-            "本轮参考支持文本、JSON、PNG、JPEG 和 GIF；其他格式暂不能交给澄清 Agent。",
+            i18n.t("issueDetail:contractErrors.unsupportedReference"),
           );
         if (
           file.size >
           (file.type.startsWith("image/") ? 25 * 1024 * 1024 : 512 * 1024)
         )
-          throw new Error("参考过大：图片最多 25 MiB，文本最多 512 KiB。");
+          throw new Error(
+            i18n.t("issueDetail:contractErrors.referenceTooLarge"),
+          );
         const material = await uploadMaterial(
           issue.id,
           file,
@@ -266,6 +274,7 @@ export function useIssueContract(
           {
             baseRevision: latest.revision,
             content: contractContent(confirmed ?? latest),
+            // i18n-ignore: contract history recorded on the server
             changeReason: "用户选择调整完成标准；保持旧版本待新草案确认。",
           },
           crypto.randomUUID(),
@@ -273,10 +282,14 @@ export function useIssueContract(
       }),
     discard: () =>
       perform(() => {
-        if (!draft) throw new Error("没有可撤回的草案。");
+        if (!draft)
+          throw new Error(
+            i18n.t("issueDetail:contractErrors.nothingToDiscard"),
+          );
         return discardContract(
           issue.id,
           draft,
+          // i18n-ignore: contract history recorded on the server
           "用户撤回本次标准调整，保留上一版已确认标准。",
           `discard-${draft.id}`,
         );

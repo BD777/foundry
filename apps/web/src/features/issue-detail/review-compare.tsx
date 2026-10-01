@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 import { SectionLabel } from "../../components/ui/panel";
 
@@ -32,6 +33,7 @@ function PreviewFrame({
   meta: ReactNode;
   tone: "baseline" | "candidate";
 }) {
+  const { t } = useTranslation("issueDetail");
   const isCandidate = tone === "candidate";
 
   return (
@@ -47,7 +49,7 @@ function PreviewFrame({
         <span className="fdy-skel-line" />
         {isCandidate ? (
           <div className="fdy-candidate-change">
-            <strong>New</strong>
+            <strong>{t("compare.new")}</strong>
             <div className="fdy-skel-grid">
               <span />
               <span />
@@ -71,28 +73,33 @@ export function ReviewCompare({
   files,
   ...props
 }: ReviewCompareProps) {
+  const { t } = useTranslation("issueDetail");
   return (
     <section
       className={cn("fdy-detail-block fdy-review-compare", className)}
       {...props}
     >
       <div className="fdy-compare-heading">
-        <SectionLabel>Artifact · baseline compare</SectionLabel>
-        <CompareKey tone="baseline">Baseline</CompareKey>
-        <CompareKey tone="candidate">Candidate</CompareKey>
+        <SectionLabel>{t("compare.title")}</SectionLabel>
+        <CompareKey tone="baseline">{t("compare.baseline")}</CompareKey>
+        <CompareKey tone="candidate">{t("compare.candidate")}</CompareKey>
       </div>
       <div className="fdy-compare-grid">
-        <PreviewFrame label="Baseline" meta={baselineLabel} tone="baseline" />
         <PreviewFrame
-          label="Candidate"
+          label={t("compare.baseline")}
+          meta={baselineLabel}
+          tone="baseline"
+        />
+        <PreviewFrame
+          label={t("compare.candidate")}
           meta={candidateLabel}
           tone="candidate"
         />
       </div>
       {files && files.length > 0 ? (
         <>
-          <SectionLabel>Files</SectionLabel>
-          <div className="fdy-file-diff" aria-label="Changed files">
+          <SectionLabel>{t("compare.files")}</SectionLabel>
+          <div className="fdy-file-diff" aria-label={t("compare.changedFiles")}>
             {files.map((file) => (
               <div className="fdy-file-diff-row" key={file.path}>
                 <span>{file.path}</span>
