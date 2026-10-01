@@ -526,8 +526,10 @@ started / event / completed 驱动原有的 `Run` 投影（`Run.id` 即会话 id
 中断经 `recover_session` 补报。Worker 侧它与 Chat 走同一入口（`executeAgentSession` → `runWorkspaceSession`），
 角色只决定工具与沙箱（`session-roles.ts`、`issue-clarification.ts`）：Workspace 只读、项目指令与选定 Skills、只读
 foundry 工具；令牌在 Server 端为 Viewer。`startSession` 只剩判定者使用。
-判定（D4）的建议（待确认）：只放开 Workspace 选定的 Skills，仍无 MCP、无令牌，并留在 Worker 的验收流程里，不升级为 Server
-会话——它夹在候选版本两次校验之间、全新且不续接，会话化带来的续接、引导与编排它都用不上，完整过程已作为材料封存。
+**D4 已落地**（2026-10-01，用户确认）：判定者拿到 Workspace 选定的 Skills——Server 随 `assess` 下发选定版本，Worker 从
+Server 目录物化成只读副本，以技能目录（名称、说明、`SKILL.md` 路径）告诉判定者、把副本目录加入只读根；原生技能发现仍关闭，
+候选里放的技能不会被加载。仍无 MCP、无令牌，仍是全新会话，并留在 Worker 的验收流程里，不升级为 Server 会话——它夹在候选
+版本两次校验之间，会话化带来的续接、引导与编排它都用不上，完整过程已作为材料封存。
 
 **D2 的现状与落点**（2026-09-28 核对代码）：
 

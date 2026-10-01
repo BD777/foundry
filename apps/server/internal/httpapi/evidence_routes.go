@@ -260,6 +260,11 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 				evidence = append(evidence, e)
 			}
 			request["evidence"] = evidence
+			// The judge may use the workspace's selected skills (D4), as
+			// resolved from the server catalog, never the candidate's.
+			if err == nil {
+				request["skillRefs"], err = s.store.ResolveSessionSkills(ctx, issue.WorkspaceID)
+			}
 		}
 		request["action"] = action
 		if err == nil {

@@ -18,6 +18,8 @@ import {
   digestBytes,
 } from "./evidence-store.js";
 import { startSession } from "./session/index.js";
+import { workspaceSkillInstructions } from "./skill-isolation.js";
+import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
 export interface VerifierPacket {
   prompt: string;
@@ -32,6 +34,12 @@ export interface StageWorkspace {
   path: string;
   /** Additional readable roots, such as the Git directories a worktree needs. */
   readRoots?: string[];
+  /**
+   * The workspace's selected skills, materialized from the server catalog.
+   * The verifier reads them as files; native skill discovery stays off, so a
+   * candidate can never plant a skill for its judge.
+   */
+  skills?: ManagedSkillRuntime;
 }
 export function verifierPacket(
   contract: IssueContract,
@@ -124,6 +132,9 @@ export function verifierPacket(
     redactionLimitations: [...selected]
       .filter((id) => store.getMaterial(id).redaction.status === "applied")
       .map((id) => ({ materialId: id, ...store.getMaterial(id).redaction })),
+    ...(workspace?.skills?.skills.length
+      ? { workspaceSkills: workspaceSkillInstructions(workspace.skills) }
+      : {}),
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)
     throw new Error("verifier_input_too_large");
@@ -181,7 +192,12 @@ export async function judgeWithAgent(options: {
     // needs the worktree again.
     workspace: workspace && {
       path: workspace.path,
-      readRoots: workspace.readRoots ?? [],
+      readRoots: [
+        ...(workspace.readRoots ?? []),
+        ...(workspace.skills?.skills.length
+          ? [workspace.skills.pluginDir]
+          : []),
+      ],
     },
     prompt: { text: packet.prompt, images: packet.images },
     title: `Foundry ${identity.promptTemplateVersion}`,
