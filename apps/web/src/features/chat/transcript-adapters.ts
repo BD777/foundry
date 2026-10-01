@@ -9,6 +9,7 @@ import {
 import { shouldDisplayResponseEvent } from "./subagent-response-filter";
 import type { ChatViewMessage } from "./chat-types";
 import type { TranscriptEntry } from "./transcript-projection";
+import { i18n } from "../../i18n";
 
 /** Compatibility for old handoff records, kept outside the grouping core. */
 export function legacyTranscriptEntries(
@@ -81,7 +82,7 @@ export function sessionTranscriptEntries(
         : undefined;
       const when =
         firedAt && !Number.isNaN(firedAt.getTime())
-          ? firedAt.toLocaleString("zh-CN", {
+          ? firedAt.toLocaleString(i18n.language, {
               hour12: false,
               month: "2-digit",
               day: "2-digit",
@@ -93,7 +94,9 @@ export function sessionTranscriptEntries(
         id: `${id}:timer-fire-boundary`,
         at: event.at,
         kind: "boundary",
-        text: when ? `⏰ 定时任务触发 · ${when}` : "⏰ 定时任务触发",
+        text: when
+          ? i18n.t("chat:transcript.timerFiredAt", { when })
+          : i18n.t("chat:transcript.timerFired"),
       });
       if (timerFire.response) {
         entries.push({

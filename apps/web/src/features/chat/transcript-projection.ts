@@ -1,5 +1,6 @@
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import type { ChatViewMessage } from "./chat-types";
+import { i18n } from "../../i18n";
 
 export type TranscriptEntry = TranscriptMessage &
   Pick<
@@ -36,7 +37,9 @@ export function projectTranscript(
       kind: "process",
       role: "bot",
       streaming: last.streaming,
-      title: last.streaming ? (last.title ?? "处理中") : "已处理",
+      title: last.streaming
+        ? (last.title ?? i18n.t("chat:transcript.processing"))
+        : i18n.t("chat:transcript.processed"),
       text: pending.map((item) => item.text).join("\n\n"),
       processItems: pending.map((item) => ({
         id: item.id,
@@ -46,10 +49,10 @@ export function projectTranscript(
         title:
           item.title ??
           (item.kind === "reasoning"
-            ? "思考摘要"
+            ? i18n.t("chat:transcript.reasoning")
             : item.kind === "tool"
-              ? "工具"
-              : "过程"),
+              ? i18n.t("chat:transcript.tool")
+              : i18n.t("chat:transcript.commentary")),
         detail: item.text,
       })),
     });

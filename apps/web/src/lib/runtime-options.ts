@@ -1,46 +1,61 @@
 import type {
-  ClaudeEffort,
   ClaudePermissionMode,
   CodexApprovalPolicy,
-  CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
+
+export { claudeEffortOptions, codexEffortOptions } from "./agent-effort";
 
 type Options<T> = Array<{ label: string; value: T }>;
-export const claudeEffortOptions: Options<ClaudeEffort> = [
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-  { label: "XHigh", value: "xhigh" },
-  { label: "Max", value: "max" },
+
+const claudePermissions: Exclude<ClaudePermissionMode, "default">[] = [
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+  "dontAsk",
+  "plan",
 ];
-export const claudePermissionOptions: Options<ClaudePermissionMode> = [
-  { label: "Accept edits", value: "acceptEdits" },
-  { label: "Auto", value: "auto" },
-  { label: "Bypass permissions", value: "bypassPermissions" },
-  { label: "Don't ask", value: "dontAsk" },
-  { label: "Plan", value: "plan" },
+const codexSandboxes: CodexSandboxMode[] = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
 ];
-export const codexEffortOptions: Options<CodexReasoningEffort> = [
-  { label: "Minimal", value: "minimal" },
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-  { label: "XHigh", value: "xhigh" },
+const codexApprovals: CodexApprovalPolicy[] = [
+  "untrusted",
+  "on-request",
+  "on-failure",
+  "never",
 ];
-export const codexSandboxOptions: Options<CodexSandboxMode> = [
-  { label: "Read only", value: "read-only" },
-  { label: "Workspace write", value: "workspace-write" },
-  { label: "Danger full access", value: "danger-full-access" },
-];
-export const codexApprovalOptions: Options<CodexApprovalPolicy> = [
-  { label: "Untrusted", value: "untrusted" },
-  { label: "On request", value: "on-request" },
-  { label: "On failure", value: "on-failure" },
-  { label: "Never", value: "never" },
-];
-export const codexSpeedOptions: Options<CodexSpeed> = [
-  { label: "Standard", value: "standard" },
-  { label: "Fast", value: "fast" },
-];
+const codexSpeeds: CodexSpeed[] = ["standard", "fast"];
+
+export function claudePermissionOptions(): Options<
+  Exclude<ClaudePermissionMode, "default">
+> {
+  return claudePermissions.map((value) => ({
+    label: i18n.t(`agents:claudePermission.${value}`),
+    value,
+  }));
+}
+
+export function codexSandboxOptions(): Options<CodexSandboxMode> {
+  return codexSandboxes.map((value) => ({
+    label: i18n.t(`agents:codexSandbox.${value}`),
+    value,
+  }));
+}
+
+export function codexApprovalOptions(): Options<CodexApprovalPolicy> {
+  return codexApprovals.map((value) => ({
+    label: i18n.t(`agents:codexApproval.${value}`),
+    value,
+  }));
+}
+
+export function codexSpeedOptions(): Options<CodexSpeed> {
+  return codexSpeeds.map((value) => ({
+    label: i18n.t(`agents:codexSpeed.${value}`),
+    value,
+  }));
+}

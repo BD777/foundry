@@ -9,6 +9,7 @@ import type {
   ProviderStatus,
 } from "@bd777/foundry-protocol";
 import type { BadgeTone } from "./asset-meta";
+import { i18n } from "../i18n";
 
 export interface ResolvedProfileStatus {
   status: ProviderStatus;
@@ -64,8 +65,7 @@ export function resolveServerProfileStatus({
   if (deviceProfiles && !enabledOnAnyDevice(deviceProfiles, profile.id)) {
     return {
       status: "missing_auth",
-      statusDetail:
-        "Not enabled on any device yet. Choose the devices that may run it on the Device page.",
+      statusDetail: i18n.t("agents:profileStatus.notEnabledAnywhere"),
       unbound: true,
     };
   }
@@ -73,7 +73,10 @@ export function resolveServerProfileStatus({
     return { status: projection.status, statusDetail: projection.statusDetail };
   }
   if (device?.status !== "connected") {
-    return { status: "unavailable", statusDetail: "Device is offline." };
+    return {
+      status: "unavailable",
+      statusDetail: i18n.t("agents:profileStatus.deviceOffline"),
+    };
   }
   const health = providerHealth.find(
     (row) =>
@@ -84,7 +87,8 @@ export function resolveServerProfileStatus({
     return {
       status: "unavailable",
       statusDetail:
-        health.statusDetail ?? "Runtime is unavailable on this device.",
+        health.statusDetail ??
+        i18n.t("agents:profileStatus.runtimeUnavailable"),
     };
   }
   if (profile.authMode === "official") {
@@ -92,7 +96,7 @@ export function resolveServerProfileStatus({
       ? { status: "healthy" }
       : {
           status: "missing_auth",
-          statusDetail: "Authorize this profile on the device.",
+          statusDetail: i18n.t("agents:profileStatus.authorizeOnDevice"),
         };
   }
   // Custom API/gateway profiles do not need a sealed key — internal proxies
@@ -136,30 +140,22 @@ export function secretsSummaryLabel({
     }
   }
   if (serverHeld === 0 && localHeld === 0) {
-    return "None stored";
+    return i18n.t("agents:profileStatus.secrets.none");
   }
   if (localHeld === 0) {
-    return "Server";
+    return i18n.t("agents:profileStatus.secrets.server");
   }
   if (serverHeld === 0) {
-    return "Local";
+    return i18n.t("agents:profileStatus.secrets.local");
   }
 
-  return "Mixed";
+  return i18n.t("agents:profileStatus.secrets.mixed");
 }
 
 export function connectionTypeLabel(
   connectionType: AgentConnectionType,
 ): string {
-  const labels: Record<AgentConnectionType, string> = {
-    anthropic_compatible: "Anthropic-compatible",
-    custom_command: "Custom command",
-    env: "Environment",
-    local_login: "Local login",
-    openai_compatible: "OpenAI-compatible",
-  };
-
-  return labels[connectionType];
+  return i18n.t(`agents:profileStatus.connectionType.${connectionType}`);
 }
 
 /**
@@ -175,14 +171,14 @@ export function promotionBlockReason(
 ): string | undefined {
   if (connectionType === "local_login") {
     return authMode === "missing"
-      ? "Not signed in yet. Official logins are per machine and never move to the server."
-      : "Signed in on this machine. Official logins are per machine and never move to the server.";
+      ? i18n.t("agents:profileStatus.promotionBlock.notSignedIn")
+      : i18n.t("agents:profileStatus.promotionBlock.signedIn");
   }
   if (connectionType === "env") {
-    return "Backed by an environment variable that only exists on this machine.";
+    return i18n.t("agents:profileStatus.promotionBlock.env");
   }
   if (connectionType === "custom_command") {
-    return "Runs a local command that only exists on this machine.";
+    return i18n.t("agents:profileStatus.promotionBlock.customCommand");
   }
 
   return undefined;
@@ -217,13 +213,7 @@ export function statusTone(
 }
 
 export function providerStatusLabel(status: ProviderStatus): string {
-  const labels: Record<ProviderStatus, string> = {
-    healthy: "Configured",
-    missing_auth: "Needs auth",
-    unavailable: "Unavailable",
-  };
-
-  return labels[status];
+  return i18n.t(`agents:profileStatus.provider.${status}`);
 }
 
 export interface ProfileBadge {
@@ -240,7 +230,11 @@ export function profileBadge(
   resolved: ResolvedProfileStatus,
 ): ProfileBadge | undefined {
   if (resolved.status === "healthy") return undefined;
-  if (resolved.unbound) return { label: "Not enabled", tone: "warn" };
+  if (resolved.unbound)
+    return {
+      label: i18n.t("agents:profileStatus.notEnabled"),
+      tone: "warn",
+    };
 
   return {
     label: providerStatusLabel(resolved.status),
@@ -249,11 +243,5 @@ export function profileBadge(
 }
 
 export function authModeLabel(mode: ProviderHealth["authMode"]): string {
-  const labels: Record<ProviderHealth["authMode"], string> = {
-    env: "Environment",
-    local_config: "Local config",
-    missing: "Not configured",
-  };
-
-  return labels[mode];
+  return i18n.t(`agents:profileStatus.authMode.${mode}`);
 }

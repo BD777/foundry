@@ -43,7 +43,7 @@ test("projects subagent transcripts into the shared chat message model", () => {
         copyAlways: false,
         kind: "process",
         role: "bot",
-        title: "已处理",
+        title: "Processed",
       },
       { copyAlways: true, kind: undefined, role: "bot", title: undefined },
     ],

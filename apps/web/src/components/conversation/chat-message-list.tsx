@@ -1,8 +1,10 @@
 import { ArrowRight, Pencil } from "lucide-react";
 import { memo, type RefObject } from "react";
+import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
 import { Alert } from "../ui/alert";
+import { i18n } from "../../i18n";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
 import {
   AttachmentList,
@@ -87,6 +89,7 @@ export const ChatMessageRow = memo(
     onEditMessage?: (text: string) => void;
     onImagePreview?: (image: ParsedImageTag) => void;
   }) {
+    const { t } = useTranslation("conversation");
     const messageTime = message.at ? new Date(message.at) : undefined;
     const validMessageTime =
       messageTime && !Number.isNaN(messageTime.getTime());
@@ -107,7 +110,7 @@ export const ChatMessageRow = memo(
       return (
         <Alert
           tone={message.recoverable ? "warning" : "error"}
-          title={message.title ?? "执行失败"}
+          title={message.title ?? t("message.failed")}
           details={diagnostic.details}
         >
           <p>{diagnostic.summary}</p>
@@ -121,7 +124,7 @@ export const ChatMessageRow = memo(
           onImagePreview={onImagePreview}
           streaming={message.streaming}
           text={message.text}
-          title={message.title ?? "已处理"}
+          title={message.title ?? t("process.processed")}
         />
       );
     }
@@ -130,7 +133,7 @@ export const ChatMessageRow = memo(
         <ToolCallItem
           streaming={message.streaming}
           text={message.text}
-          title={message.title ?? "Context"}
+          title={message.title ?? t("message.context")}
         />
       );
     }
@@ -163,9 +166,9 @@ export const ChatMessageRow = memo(
           <time
             className="fdy-chat-message-time"
             dateTime={message.at}
-            title={messageTime.toLocaleString()}
+            title={messageTime.toLocaleString(i18n.language)}
           >
-            {messageTime.toLocaleString(undefined, {
+            {messageTime.toLocaleString(i18n.language, {
               month: "2-digit",
               day: "2-digit",
               hour: "2-digit",
@@ -177,7 +180,7 @@ export const ChatMessageRow = memo(
         ) : null}
         {onEditMessage && message.editable && message.editText ? (
           <Button
-            aria-label="Edit message"
+            aria-label={t("message.editMessage")}
             className="fdy-chat-copy-button fdy-chat-edit-button"
             onClick={() => onEditMessage(message.editText ?? "")}
             size="icon"
@@ -188,16 +191,14 @@ export const ChatMessageRow = memo(
         ) : null}
         {message.idea ? (
           <div className="fdy-chat-issue-draft">
-            <span>
-              Keep this thread moving here, or capture it as an issue.
-            </span>
+            <span>{t("message.ideaHint")}</span>
             <Button
               onClick={message.onTurnIntoIssue}
               size="sm"
               variant="primary"
             >
               <ArrowRight size={13} />
-              Turn into issue
+              {t("message.turnIntoIssue")}
             </Button>
           </div>
         ) : null}

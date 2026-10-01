@@ -1,5 +1,6 @@
 import { FolderPlus, Plus, Search } from "lucide-react";
 import { memo, useId, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { ChatListRow } from "./chat-list-row";
@@ -37,6 +38,7 @@ export const ChatSidebar = memo(function ChatSidebar({
   /** Viewers browse chats but cannot start, rename, move or group them. */
   readOnly?: boolean;
 }) {
+  const { t } = useTranslation("chat");
   const listId = useId();
   // The workspace key on ChatSidebar remounts all local state on workspace changes.
   const layout = useChatLayout(workspaceId, readOnly);
@@ -139,10 +141,10 @@ export const ChatSidebar = memo(function ChatSidebar({
   return (
     <aside className="fdy-chat-list" id={listId} ref={sidebarRef}>
       <div className="fdy-side-list-title">
-        <strong>Chats</strong>
+        <strong>{t("list.title")}</strong>
         <Button
-          aria-label="新建分组"
-          title="新建分组"
+          aria-label={t("groups.new")}
+          title={t("groups.new")}
           disabled={!editable}
           onClick={() => createGroup()}
           size="icon"
@@ -151,7 +153,7 @@ export const ChatSidebar = memo(function ChatSidebar({
           <FolderPlus size={15} />
         </Button>
         <Button
-          aria-label="New chat"
+          aria-label={t("list.newChat")}
           disabled={readOnly}
           onClick={onNewChat}
           size="icon"
@@ -169,19 +171,19 @@ export const ChatSidebar = memo(function ChatSidebar({
             disabled={layout.saving}
             onClick={layout.retry}
           >
-            重新加载
+            {t("list.reloadGroups")}
           </Button>
         </div>
       ) : !layout.ready || layout.saving ? (
         <p className="fdy-chat-layout-notice" role="status">
-          {layout.saving ? "正在保存分组和顺序…" : "正在加载分组…"}
+          {layout.saving ? t("list.savingLayout") : t("list.loadingLayout")}
         </p>
       ) : null}
       <div className="fdy-chat-group-search">
         <Search size={14} aria-hidden="true" />
         <TextInput
-          aria-label="搜索会话或分组"
-          placeholder="搜索会话或分组"
+          aria-label={t("list.search")}
+          placeholder={t("list.search")}
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
@@ -226,7 +228,7 @@ export const ChatSidebar = memo(function ChatSidebar({
             {group.chats.length ? (
               group.chats.map(renderChat)
             ) : (
-              <p className="fdy-chat-group-empty">暂无会话</p>
+              <p className="fdy-chat-group-empty">{t("list.groupEmpty")}</p>
             )}
           </ChatGroupSection>
         ))}
@@ -237,7 +239,7 @@ export const ChatSidebar = memo(function ChatSidebar({
             data-group-id=""
             data-drop-edge={drag.indicator("")}
           >
-            未分组
+            {t("list.ungrouped")}
           </div>
         ) : null}
         {filtered.ungrouped.map(renderChat)}
@@ -245,14 +247,14 @@ export const ChatSidebar = memo(function ChatSidebar({
         !filtered.groups.length &&
         !filtered.ungrouped.length ? (
           <p className="fdy-chat-group-empty" role="status">
-            未找到会话或分组
+            {t("list.noMatches")}
           </p>
         ) : null}
       </ScrollArea>
       <div
         {...resizeHandlers}
         aria-controls={listId}
-        aria-label="Resize chats list"
+        aria-label={t("list.resize")}
         aria-orientation="vertical"
         aria-valuemin={CHAT_LIST_MIN_WIDTH}
         aria-valuemax={CHAT_LIST_MAX_WIDTH}
@@ -261,7 +263,7 @@ export const ChatSidebar = memo(function ChatSidebar({
         ref={resizerRef}
         role="separator"
         tabIndex={0}
-        title="Drag to resize. Double-click to reset."
+        title={t("list.resizeHint")}
       />
     </aside>
   );

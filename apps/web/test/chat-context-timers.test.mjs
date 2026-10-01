@@ -103,7 +103,7 @@ test("timer snapshot events are not rendered in the conversation, but fires are"
   assert.ok(!kinds.includes("status"), "snapshot sync must not appear");
   assert.ok(kinds.includes("boundary"));
   const boundary = entries.find((entry) => entry.kind === "boundary");
-  assert.match(boundary?.text ?? "", /定时任务触发/);
+  assert.match(boundary?.text ?? "", /Scheduled task fired/);
   const answer = entries.find((entry) => entry.kind === "assistant");
   assert.equal(answer?.text, "群里暂无新消息");
 });

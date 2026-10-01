@@ -130,7 +130,7 @@ test("builds a compact completed summary from unique behavior types", () => {
 
   assert.equal(
     processDisplaySummaryTitle(rows, "已处理 12s", false),
-    "已读取文件并运行了命令",
+    "Read files and ran commands",
   );
 });
 

@@ -5,6 +5,7 @@ import {
   type ChatThread,
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { i18n } from "../../i18n";
 import {
   agentSessionIsAwaitingDetails,
   responseStreamLabel,
@@ -38,20 +39,22 @@ export function agentSessionMessageText(
         candidate.status === "running",
     );
     if (blockingSession) {
-      return `等待本地 daemon 完成当前任务：${blockingSession.title}`;
+      return i18n.t("chat:session.waitingForTask", {
+        title: blockingSession.title,
+      });
     }
-    return "已投递给本地 daemon，正在等待接收；daemon 重连或空闲后会自动重试。";
+    return i18n.t("chat:session.delivered");
   }
   if (session.status === "running") {
     if (session.events === undefined) {
-      return "Loading the persisted live transcript…";
+      return i18n.t("chat:session.loadingTranscript");
     }
-    return "Waiting for the local agent to stream a response.";
+    return i18n.t("chat:session.waitingForResponse");
   }
   if (agentSessionIsAwaitingDetails(session)) {
-    return "Loading response…";
+    return i18n.t("chat:session.loadingResponse");
   }
-  return "No response yet.";
+  return i18n.t("chat:session.noResponse");
 }
 
 export function agentSessionTerminalError(
@@ -60,13 +63,12 @@ export function agentSessionTerminalError(
   if (session.error?.trim()) {
     return session.error.trim();
   }
-  const failureEvent = [...(session.events ?? [])]
-    .reverse()
-    .find(
-      (event) =>
-        event.level === "error" &&
-        (event.label === "执行失败" || event.label === "Session failed"),
-    );
+  const failureEvent = [...(session.events ?? [])].reverse().find(
+    (event) =>
+      event.level === "error" &&
+      // i18n-ignore: worker-provided event labels (protocol values)
+      (event.label === "执行失败" || event.label === "Session failed"),
+  );
   return failureEvent?.detail.trim() || undefined;
 }
 
@@ -261,10 +263,16 @@ export function profileTransitionNoteForSend(input: {
     if (!latest || sessionMatchesAgentProfile(latest, input.agent)) {
       return undefined;
     }
-    return `从这里开始，Profile 从 ${profileLabelForSession(latest)} 切换为 ${targetLabel}。`;
+    return i18n.t("chat:session.profileSwitched", {
+      from: profileLabelForSession(latest),
+      to: targetLabel,
+    });
   }
   if (input.selectedChat) {
-    return `从这里开始，已从原生 ${profileLabelForChat(input.selectedChat)} 会话接入 ${targetLabel}。`;
+    return i18n.t("chat:session.nativeImported", {
+      from: profileLabelForChat(input.selectedChat),
+      to: targetLabel,
+    });
   }
   return undefined;
 }
@@ -287,6 +295,7 @@ export function importedContextForSend(input: {
   }
   if (selectedChat && !chatMatchesAgentProfile(selectedChat, agent)) {
     return [
+      // i18n-ignore: context handed to the agent, not interface copy
       `Imported native chat: ${selectedChat.title}`,
       selectedChat.handoffContext ||
         (selectedChat.preview ? `Recap: ${selectedChat.preview}` : ""),
@@ -312,7 +321,7 @@ export function chatThreadsFromSessions(
       return {
         id,
         sessions: sorted,
-        title: sorted[0]?.title ?? "Chat",
+        title: sorted[0]?.title ?? i18n.t("chat:session.defaultTitle"),
       };
     })
     .sort((left, right) => {
@@ -335,19 +344,19 @@ export function selectedChatThread(
 
 export function agentSessionStatusLabel(session: AgentSession): string {
   if (session.status === "queued") {
-    return "Queued";
+    return i18n.t("chat:session.status.queued");
   }
   if (session.status === "running") {
-    return "Streaming";
+    return i18n.t("chat:session.status.streaming");
   }
   if (agentSessionTerminalError(session)) {
-    return "Failed";
+    return i18n.t("chat:session.status.failed");
   }
   if (session.status === "completed") {
-    return "Completed";
+    return i18n.t("chat:session.status.completed");
   }
   if (session.status === "failed") {
-    return "Failed";
+    return i18n.t("chat:session.status.failed");
   }
   return session.status;
 }

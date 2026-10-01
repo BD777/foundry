@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   errorBoundaryMessage,
   requiresPageReload,
@@ -36,6 +37,7 @@ export class ErrorBoundary extends Component<
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
+    // i18n-ignore: console log, never shown
     console.error("Foundry view failed to render", error, info.componentStack);
     this.props.onError?.(errorBoundaryMessage(error));
   }
@@ -65,21 +67,43 @@ export class ErrorBoundary extends Component<
       return this.props.children;
     }
     return (
-      <EmptyState
-        aria-live="assertive"
-        body={
-          <>
-            {this.state.message} Other areas of Foundry are still available.{" "}
-            <Button onClick={this.retry} size="sm" variant="secondary">
-              {requiresPageReload(this.state.message)
-                ? "Reload page"
-                : (this.props.retryLabel ?? "Try again")}
-            </Button>
-          </>
-        }
-        role="alert"
-        title={`${this.props.label} could not be displayed`}
+      <ErrorFallback
+        label={this.props.label}
+        message={this.state.message}
+        onRetry={this.retry}
+        retryLabel={this.props.retryLabel}
       />
     );
   }
+}
+
+function ErrorFallback({
+  label,
+  message,
+  onRetry,
+  retryLabel,
+}: {
+  label: string;
+  message: string;
+  onRetry: () => void;
+  retryLabel?: string;
+}) {
+  const { t } = useTranslation("ui");
+  return (
+    <EmptyState
+      aria-live="assertive"
+      body={
+        <>
+          {message} {t("errorBoundary.stillAvailable")}{" "}
+          <Button onClick={onRetry} size="sm" variant="secondary">
+            {requiresPageReload(message)
+              ? t("errorBoundary.reload")
+              : (retryLabel ?? t("errorBoundary.tryAgain"))}
+          </Button>
+        </>
+      }
+      role="alert"
+      title={t("errorBoundary.title", { label })}
+    />
+  );
 }

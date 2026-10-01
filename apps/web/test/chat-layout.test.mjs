@@ -45,7 +45,7 @@ test("group deletion is exclusive, uses the confirmed revision and preserves lay
   sync.enqueue((layout) => addChatGroup(layout, "concurrent", undefined, []));
   await assert.rejects(
     sync.deleteGroup(async () => initial),
-    /正在同步/,
+    /still syncing/,
   );
   const deleted = { ...emptyChatLayout(), revision: 4 };
   finish(deleted);
@@ -81,7 +81,7 @@ test("group deletion cannot overtake an unsaved membership change", async () => 
     sync.deleteGroup(async () => {
       assert.fail("must not delete");
     }),
-    /正在同步/,
+    /still syncing/,
   );
   finish({ ...emptyChatLayout(), revision: 1 });
   await tick();

@@ -11,6 +11,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <I18nextProvider i18n={i18n}>
       <ErrorBoundary
+        // i18n-ignore: product name
         label="Foundry"
         retryLabel={i18n.t("shell:notices.reloadApp")}
       >

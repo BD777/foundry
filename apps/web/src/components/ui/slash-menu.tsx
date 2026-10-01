@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 
 export interface SlashSuggestion {
@@ -28,6 +29,7 @@ export function SlashMenu({
   onSelect,
   onActiveIndex,
 }: SlashMenuProps) {
+  const { t } = useTranslation("ui");
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
@@ -39,11 +41,12 @@ export function SlashMenu({
 
   if (items.length === 0) {
     return (
-      <div className="fdy-slash-menu" role="listbox" aria-label="Skills">
-        <p className="fdy-slash-empty">
-          No skills match “{query}”. Promote and select one in workspace →
-          Skills.
-        </p>
+      <div
+        className="fdy-slash-menu"
+        role="listbox"
+        aria-label={t("slashMenu.label")}
+      >
+        <p className="fdy-slash-empty">{t("slashMenu.empty", { query })}</p>
       </div>
     );
   }
@@ -51,7 +54,7 @@ export function SlashMenu({
   return (
     <ul
       aria-activedescendant={`slash-item-${activeIndex}`}
-      aria-label="Skills"
+      aria-label={t("slashMenu.label")}
       className="fdy-slash-menu"
       ref={listRef}
       role="listbox"

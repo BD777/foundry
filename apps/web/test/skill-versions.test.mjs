@@ -58,7 +58,7 @@ test("mature diff engine produces renderable hunks and bounds pathological files
   const changes = parseDiff(result.patch)[0].hunks.flatMap((h) => h.changes);
   assert.ok(changes.some((c) => c.type === "delete" && c.content === "old"));
   assert.ok(changes.some((c) => c.type === "insert" && c.content === "new"));
-  assert.match(createFileDiff("x".repeat(30000), "y").error, /long lines/);
+  assert.equal(createFileDiff("x".repeat(30000), "y").error, "longLines");
   assert.equal(
     parseDiff(createFileDiff("same\n", "same\n").patch)[0].hunks.length,
     0,

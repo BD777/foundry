@@ -9,8 +9,11 @@ export function runtimeMeta(runtime: RuntimeKind): {
   mark: string;
 } {
   const meta: Record<RuntimeKind, { label: string; mark: string }> = {
+    // i18n-ignore: runtime brand name
     claude: { label: "Claude", mark: "C" },
+    // i18n-ignore: runtime brand name
     codex: { label: "Codex", mark: "Cx" },
+    // i18n-ignore: runtime brand name
     mock: { label: "Mock", mark: "M" },
   };
 

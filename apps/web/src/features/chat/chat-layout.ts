@@ -1,5 +1,6 @@
 import type { ChatLayout, ChatPlacement } from "@bd777/foundry-protocol";
 import type { ChatGroupState } from "./chat-group-state";
+import { i18n } from "../../i18n";
 
 export interface ChatDropTarget {
   groupId: string;
@@ -98,8 +99,9 @@ export function addChatGroup(
   chatIds: readonly string[],
 ): ChatLayout {
   const names = new Set(layout.groups.map((g) => g.name));
-  let name = "新建分组";
-  for (let suffix = 2; names.has(name); suffix++) name = `新建分组 ${suffix}`;
+  let name = i18n.t("chat:groups.defaultName");
+  for (let suffix = 2; names.has(name); suffix++)
+    name = i18n.t("chat:groups.defaultNameNumbered", { number: suffix });
   const next = { ...layout, groups: [{ id, name }, ...layout.groups] };
   return chatId
     ? moveChat(next, chatId, { groupId: id, edge: "before" }, chatIds)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { WorkspaceTreeEntry } from "@bd777/foundry-protocol";
 import {
   ChevronDown,
@@ -124,6 +125,7 @@ function TreeNode({
   onToggleFolder,
   selectedPath,
 }: TreeNodeProps) {
+  const { t } = useTranslation("chat");
   const isDir = entry.isDirectory;
   const isExpanded = isDir && expandedPaths.has(entry.path);
   const isLoading = isDir && loadingPaths.has(entry.path);
@@ -246,7 +248,7 @@ function TreeNode({
               className="fdy-workspace-tree-empty-note"
               data-depth={Math.min(depth + 1, 10)}
             >
-              空文件夹
+              {t("directory.emptyFolder")}
             </div>
           ) : null}
         </div>
@@ -261,6 +263,7 @@ export function WorkspaceDirectoryBrowser({
   selectedPath,
   workspaceId,
 }: WorkspaceDirectoryBrowserProps) {
+  const { t } = useTranslation(["chat", "common"]);
   const [entries, setEntries] = useState<WorkspaceTreeEntry[]>([]);
   const [folderChildren, setFolderChildren] = useState<
     Map<string, WorkspaceTreeEntry[]>
@@ -359,16 +362,16 @@ export function WorkspaceDirectoryBrowser({
             size={14}
           />
           <TextInput
-            aria-label="筛选已展开的文件"
+            aria-label={t("directory.filter")}
             className="fdy-workspace-browser-input"
             onChange={(e) => setFilterText(e.target.value)}
-            placeholder="筛选已展开的文件…"
+            placeholder={t("directory.filterPlaceholder")}
             type="search"
             value={filterText}
           />
           {filterText ? (
             <Button
-              aria-label="清除筛选"
+              aria-label={t("directory.clearFilter")}
               className="fdy-workspace-browser-clear"
               onClick={() => setFilterText("")}
               size="icon"
@@ -379,11 +382,11 @@ export function WorkspaceDirectoryBrowser({
           ) : null}
         </div>
         <Button
-          aria-label="刷新目录树"
+          aria-label={t("directory.refreshTree")}
           className="fdy-workspace-browser-refresh"
           onClick={() => loadDirectory("")}
           size="icon"
-          title="刷新目录"
+          title={t("directory.refresh")}
           variant="ghost"
         >
           <RefreshCw size={13} />
@@ -400,7 +403,7 @@ export function WorkspaceDirectoryBrowser({
         {initialLoading ? (
           <div className="fdy-workspace-browser-loading">
             <LoaderCircle className="fdy-workspace-tree-spinner" size={16} />
-            <span>正在读取工作区目录…</span>
+            <span>{t("directory.loading")}</span>
           </div>
         ) : error ? (
           <div className="fdy-workspace-browser-error">
@@ -410,17 +413,20 @@ export function WorkspaceDirectoryBrowser({
               size="sm"
               variant="secondary"
             >
-              重试
+              {t("common:actions.retry")}
             </Button>
           </div>
         ) : filteredRootEntries.length === 0 ? (
           <div className="fdy-workspace-browser-empty">
             {filterText
-              ? `未找到与 “${filterText}” 匹配的文件`
-              : "工作区目录为空"}
+              ? t("directory.noMatches", { query: filterText })
+              : t("directory.empty")}
           </div>
         ) : (
-          <div className="fdy-workspace-tree-root" aria-label="工作区文件">
+          <div
+            className="fdy-workspace-tree-root"
+            aria-label={t("detail.kind.workspaceFile")}
+          >
             {filteredRootEntries.map((entry) => (
               <TreeNode
                 depth={0}

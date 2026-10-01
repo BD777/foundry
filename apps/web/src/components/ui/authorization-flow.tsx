@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type { ProfileAuthorization } from "@bd777/foundry-protocol";
 import { Button } from "./button";
 import { TextInput } from "./field";
@@ -23,6 +24,7 @@ export function AuthorizationFlow({
   busy = false,
   onComplete,
 }: AuthorizationFlowProps) {
+  const { t } = useTranslation("ui");
   const [authorizationResult, setAuthorizationResult] = useState("");
   const needsPastedCode = authorization.runtime === "claude";
   const waiting = authorization.status === "waiting_for_user";
@@ -41,23 +43,27 @@ export function AuthorizationFlow({
         <Button asChild size="sm" variant="secondary">
           <a href={authorization.url} rel="noreferrer" target="_blank">
             <ExternalLink size={14} />
-            Open authorization page
+            {t("authorization.openPage")}
           </a>
         </Button>
       ) : null}
       {authorization.code ? (
         <p>
-          Enter code <code>{authorization.code}</code> on the authorization
-          page.
+          <Trans
+            ns="ui"
+            i18nKey="authorization.enterCode"
+            values={{ code: authorization.code }}
+            components={{ code: <code /> }}
+          />
         </p>
       ) : null}
       {needsPastedCode && waiting ? (
         <TextInput
-          aria-label="Authorization code or callback URL"
+          aria-label={t("authorization.resultLabel")}
           onChange={(event) =>
             setAuthorizationResult(event.currentTarget.value)
           }
-          placeholder="Paste the authorization code or callback URL"
+          placeholder={t("authorization.resultPlaceholder")}
           value={authorizationResult}
         />
       ) : null}
@@ -68,7 +74,9 @@ export function AuthorizationFlow({
           size="sm"
           variant="primary"
         >
-          {needsPastedCode ? "Complete authorization" : "Check authorization"}
+          {needsPastedCode
+            ? t("authorization.complete")
+            : t("authorization.check")}
         </Button>
       ) : null}
       {authorization.message ? (

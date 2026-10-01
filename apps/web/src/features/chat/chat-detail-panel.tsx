@@ -18,6 +18,7 @@ import {
   Repeat,
   X,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { readWorkspaceFile } from "../../api";
 import { Button } from "../../components/ui/button";
 import { MarkdownContent } from "./chat-message-content";
@@ -26,27 +27,28 @@ import { chatMessagesForSubagentTranscript } from "./chat-transcript-model";
 import type { ChatContextSelection, ChatTimerItem } from "./chat-types";
 import type { ParsedImageTag } from "./chat-message-content";
 import { WorkspaceDirectoryBrowser } from "./workspace-directory-browser";
+import { i18n } from "../../i18n";
 
 function panelKindLabel(
   selection: ChatContextSelection,
   browsedFileName?: string,
 ): string {
   if (browsedFileName) {
-    return "工作区文件";
+    return i18n.t("chat:detail.kind.workspaceFile");
   }
   if (selection.kind === "subagent") {
-    return "子智能体对话";
+    return i18n.t("chat:detail.kind.subagent");
   }
   if (selection.kind === "timer") {
-    return "定时任务";
+    return i18n.t("chat:detail.kind.timer");
   }
   if (selection.kind === "web") {
-    return "网页预览";
+    return i18n.t("chat:detail.kind.web");
   }
   if (selection.kind === "source") {
-    return "来源";
+    return i18n.t("chat:detail.kind.source");
   }
-  return "文件";
+  return i18n.t("chat:detail.kind.file");
 }
 
 function PanelKindIcon({
@@ -79,10 +81,11 @@ function PanelKindIcon({
 }
 
 function FileDetail({ file }: { file: WorkspaceFileRead }) {
+  const { t } = useTranslation("chat");
   return (
     <article className="fdy-chat-detail-document">
       {file.truncated ? (
-        <p className="fdy-chat-detail-note">文件较大，仅展示前 128 KB。</p>
+        <p className="fdy-chat-detail-note">{t("detail.fileTruncated")}</p>
       ) : null}
       <MarkdownContent>{file.content}</MarkdownContent>
     </article>
@@ -96,11 +99,10 @@ function SubagentDetail({
   onImagePreview?: (image: ParsedImageTag) => void;
   transcript: AgentSubagentTranscript;
 }) {
+  const { t } = useTranslation("chat");
   if (transcript.messages.length === 0) {
     return (
-      <div className="fdy-chat-detail-empty">
-        暂时还没有可展示的子智能体消息。
-      </div>
+      <div className="fdy-chat-detail-empty">{t("detail.subagentEmpty")}</div>
     );
   }
   return (
@@ -114,20 +116,21 @@ function SubagentDetail({
 }
 
 function WebDetail({ url }: { url: string }) {
+  const { t } = useTranslation("chat");
   return (
     <div className="fdy-chat-detail-web">
       <div className="fdy-chat-detail-web-bar">
         <span>{url}</span>
         <a href={url} rel="noreferrer" target="_blank">
           <ExternalLink aria-hidden="true" size={14} />
-          新窗口打开
+          {t("detail.openInNewWindow")}
         </a>
       </div>
       <iframe
         referrerPolicy="no-referrer"
         sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
         src={url}
-        title={`Preview ${url}`}
+        title={t("detail.webPreviewTitle", { url })}
       />
     </div>
   );
@@ -141,16 +144,17 @@ function formatTimerDateTime(iso?: string): string {
   if (Number.isNaN(date.getTime())) {
     return "—";
   }
-  return date.toLocaleString("zh-CN", { hour12: false });
+  return date.toLocaleString(i18n.language, { hour12: false });
 }
 
 function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
+  const { t } = useTranslation("chat");
   if (fires.length === 0) {
-    return <p className="fdy-chat-detail-note">还没有自动触发记录。</p>;
+    return <p className="fdy-chat-detail-note">{t("detail.timer.noFires")}</p>;
   }
   return (
     <div className="fdy-chat-timer-fires">
-      <h4>触发记录（{fires.length}）</h4>
+      <h4>{t("detail.timer.fireHistory", { count: fires.length })}</h4>
       {fires.map((fire, index) => (
         <details
           className="fdy-chat-timer-fire"
@@ -164,7 +168,9 @@ function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
           {fire.response ? (
             <MarkdownContent>{fire.response}</MarkdownContent>
           ) : (
-            <p className="fdy-chat-detail-note">该次触发没有文本结果。</p>
+            <p className="fdy-chat-detail-note">
+              {t("detail.timer.noFireText")}
+            </p>
           )}
         </details>
       ))}
@@ -175,25 +181,30 @@ function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
 function TimerDetail({ item }: { item: ChatTimerItem }) {
   const task: AgentScheduledTask = item.task;
   const liveNext = nextCronFire(task.schedule)?.toISOString();
+  const { t } = useTranslation("chat");
   return (
     <article className="fdy-chat-timer-detail">
       <dl className="fdy-chat-timer-meta">
         <div>
-          <dt>类型</dt>
-          <dd>{task.recurring ? "周期任务" : "单次提醒"}</dd>
+          <dt>{t("detail.timer.type")}</dt>
+          <dd>
+            {task.recurring
+              ? t("detail.timer.recurring")
+              : t("detail.timer.oneShot")}
+          </dd>
         </div>
         <div>
-          <dt>下次触发</dt>
+          <dt>{t("detail.timer.nextFire")}</dt>
           <dd>{formatTimerDateTime(liveNext ?? task.nextFireAt)}</dd>
         </div>
         <div>
-          <dt>Cron 表达式</dt>
+          <dt>{t("detail.timer.cron")}</dt>
           <dd>
             <code>{task.schedule}</code>
           </dd>
         </div>
       </dl>
-      <h4>触发时执行</h4>
+      <h4>{t("detail.timer.prompt")}</h4>
       <pre className="fdy-chat-timer-prompt">{task.prompt}</pre>
       <TimerFireHistory fires={item.fires} />
     </article>
@@ -217,6 +228,7 @@ export function ChatDetailPanel({
   selection: ChatContextSelection;
   transcript?: AgentSubagentTranscript;
 }) {
+  const { t } = useTranslation(["chat", "common"]);
   const [browsedFile, setBrowsedFile] = useState<{
     name: string;
     path: string;
@@ -266,15 +278,15 @@ export function ChatDetailPanel({
   }, [browsedFile, selection.workspaceId]);
 
   return (
-    <aside className="fdy-chat-detail-panel" aria-label="Context detail">
+    <aside className="fdy-chat-detail-panel" aria-label={t("detail.label")}>
       <header className="fdy-chat-detail-header">
         {browsedFile ? (
           <Button
-            aria-label="返回工作区目录"
+            aria-label={t("detail.backToDirectory")}
             className="fdy-chat-detail-back"
             onClick={() => setBrowsedFile(undefined)}
             size="icon"
-            title="返回工作区目录"
+            title={t("detail.backToDirectory")}
             variant="ghost"
           >
             <ChevronLeft size={16} />
@@ -291,7 +303,7 @@ export function ChatDetailPanel({
           <strong>{browsedFile?.name ?? selection.label}</strong>
         </span>
         <Button
-          aria-label="Close context detail"
+          aria-label={t("detail.close")}
           onClick={onClose}
           size="icon"
           variant="ghost"
@@ -306,7 +318,7 @@ export function ChatDetailPanel({
             browsedFileLoading ? (
               <div className="fdy-chat-detail-loading">
                 <LoaderCircle aria-hidden="true" size={18} />
-                正在加载…
+                {t("common:states.loading")}
               </div>
             ) : browsedFileError ? (
               <div className="fdy-chat-detail-error">{browsedFileError}</div>
@@ -323,7 +335,7 @@ export function ChatDetailPanel({
         ) : loading ? (
           <div className="fdy-chat-detail-loading">
             <LoaderCircle aria-hidden="true" size={18} />
-            正在加载…
+            {t("common:states.loading")}
           </div>
         ) : error ? (
           <div className="fdy-chat-detail-error">{error}</div>
