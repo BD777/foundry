@@ -51,6 +51,7 @@ import {
   persistSidebarCollapsed,
   persistThemeMode,
   navSections,
+  type NavLabel,
   persistWorkspaceId,
   scrollModeForView,
   storedSidebarCollapsed,
@@ -83,6 +84,7 @@ import { useFoundryLiveData } from "./app/use-foundry-live-data";
 import { useViewScrollReset } from "./app/use-view-scroll-reset";
 import { useAccountSession } from "./app/accounts-gate";
 import { AccountView, withAccountNav } from "./app/account-views";
+import { useTranslation } from "react-i18next";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Alert } from "./components/ui/alert";
@@ -96,7 +98,7 @@ import {
   MetaPillDot,
 } from "./components/ui/meta-pill";
 import { RuntimeMark, runtimeMeta } from "./components/ui/runtime-mark";
-import { SetupFlow } from "./components/ui/setup-flow";
+import { ConnectDeviceSetup } from "./app/connect-device-setup";
 import { Tooltip } from "./components/ui/tooltip";
 import { AssetsFeature } from "./features/assets";
 import {
@@ -203,6 +205,7 @@ function applyLoadedData(
 
 export function App() {
   const account = useAccountSession();
+  const { t } = useTranslation(["shell", "common"]);
   const initialRouteRef = useRef<AppRoute>(
     parseAppRoute(window.location.pathname),
   );
@@ -329,7 +332,7 @@ export function App() {
         );
         setApiState("connected");
         if (!options.silent) {
-          setNotice("Data refreshed.");
+          setNotice(t("notices.dataRefreshed"));
         }
         return;
       }
@@ -351,7 +354,7 @@ export function App() {
       );
       setApiState("connected");
       if (!options.silent) {
-        setNotice("Data refreshed.");
+        setNotice(t("notices.dataRefreshed"));
       }
     } catch {
       if (workspaceSeq !== workspaceLoadSeqRef.current) return;
@@ -415,9 +418,7 @@ export function App() {
         return false;
       }
       setApiState("fallback");
-      setNotice(
-        "Could not switch workspace because the local API is not reachable.",
-      );
+      setNotice(t("notices.switchFailed"));
       return false;
     } finally {
       if (workspaceLoadSeqRef.current === requestSeq) {
@@ -639,8 +640,10 @@ export function App() {
     () =>
       withAccountNav(navSections, account.user?.role).map((section) => ({
         ...section,
+        label: t(`nav.${section.label as NavLabel}`),
         items: section.items.map((item) => ({
           ...item,
+          label: t(`nav.${item.label as NavLabel}`),
           badge:
             item.id === "issues" && reviewCount
               ? { children: reviewCount, tone: "brass" }
@@ -682,7 +685,7 @@ export function App() {
   const draftFromSource = useCallback(
     (source: string, runtime?: WorkerRuntimeId): void => {
       focusComposer(source, runtime);
-      setNotice("Draft loaded into the issue composer.");
+      setNotice(t("notices.draftLoaded"));
     },
     [focusComposer],
   );
@@ -708,7 +711,7 @@ export function App() {
 
   async function handleAcceptIssue(): Promise<void> {
     if (!selectedIssue) {
-      setNotice("Select an issue first.");
+      setNotice(t("notices.selectIssue"));
       return;
     }
     if (selectedIssue.status !== "verifying") {
@@ -737,7 +740,7 @@ export function App() {
 
   async function handleRequestChanges(): Promise<void> {
     if (!selectedIssue) {
-      setNotice("Select an issue first.");
+      setNotice(t("notices.selectIssue"));
       return;
     }
     if (selectedIssue.status !== "verifying") {
@@ -761,7 +764,7 @@ export function App() {
 
   async function handleReadWorkspacePath(path: string): Promise<void> {
     if (!data.workspace.id) {
-      setNotice("Connect a local workspace first.");
+      setNotice(t("notices.connectWorkspace"));
       return;
     }
     try {
@@ -819,7 +822,7 @@ export function App() {
       setNotice(`Credential cleared for ${profile.label}.`);
       return profile;
     } catch (error) {
-      setNotice("Could not save this change to the server.");
+      setNotice(t("notices.saveFailed"));
       throw error;
     }
   }
@@ -839,48 +842,7 @@ export function App() {
 
   function renderSetupView() {
     return (
-      <SetupFlow
-        actionLabel="Simulate device online"
-        body={
-          <>
-            Foundry runs workers on <em>your</em> machine. Pair a device and it
-            owns filesystem and runtime access — the server only coordinates and
-            never sees your credentials.
-          </>
-        }
-        kicker="No device connected"
-        onAction={() => {
-          setDevicePairingMode("online");
-          setNotice("Device marked online for this workspace.");
-        }}
-        status="Waiting for pairing… the device appears here automatically."
-        steps={[
-          {
-            commands: [
-              <>
-                npx @foundry/agent init{" "}
-                {data.workspace.localPath.replace("/Users/you/", "~/")}
-              </>,
-              "npx @foundry/agent device connect",
-            ],
-            hint: "runs via npx, no global install",
-            number: "1",
-            state: "primary",
-            title: "Install & pair the device",
-          },
-          {
-            hint: "Claude · Codex",
-            number: "2",
-            title: "Install worker runtimes locally",
-          },
-          {
-            hint: "secrets stay on this machine",
-            number: "3",
-            title: "Submit your first issue",
-          },
-        ]}
-        title="Connect a device"
-      />
+      <ConnectDeviceSetup onOpenDevices={() => setActiveView("devices")} />
     );
   }
 
@@ -922,7 +884,7 @@ export function App() {
           if (event.type === "data.refresh.requested") {
             void refreshData();
           } else {
-            setNotice("Open the local daemon logs from the paired device.");
+            setNotice(t("notices.openDaemonLogs"));
           }
         }}
         providerHealth={workspaceProviderHealth}
@@ -978,9 +940,8 @@ export function App() {
         ) : null}
         {section === "settings" ? (
           device && !device.owned ? (
-            <Alert title="Managed by the device owner">
-              Agents and execution on {device.label} are managed by the account
-              that paired it. This workspace is shared with you.
+            <Alert title={t("settings.managedByOwner")}>
+              {t("settings.managedByOwnerBody", { device: device.label })}
             </Alert>
           ) : (
             <Button
@@ -991,7 +952,9 @@ export function App() {
                 setActiveView("devices");
               }}
             >
-              Manage agents and execution on {device?.label ?? "this device"} →
+              {t("settings.manageAgents", {
+                device: device?.label ?? t("settings.thisDevice"),
+              })}
             </Button>
           )
         ) : null}
@@ -1099,7 +1062,7 @@ export function App() {
               onRequestChanges: () => void handleRequestChanges(),
               onStartProduction: workerCommandNotice,
             }}
-            deviceLabel={device?.label ?? "No device"}
+            deviceLabel={device?.label ?? t("notices.noDevice")}
             issue={selectedIssue}
             history={data.runs}
             onBack={() => setActiveView("issues")}
@@ -1163,12 +1126,16 @@ export function App() {
           {apiState === "fallback" ? (
             <NoticeLine>
               {demoFallbackEnabled
-                ? "Offline — showing demo data"
-                : "Local API is not reachable"}
+                ? t("notices.demoFallback")
+                : t("notices.apiUnreachable")}
             </NoticeLine>
           ) : null}
-          {apiState === "saving" ? <NoticeLine>Saving…</NoticeLine> : null}
-          {apiState === "loading" ? <NoticeLine>Loading…</NoticeLine> : null}
+          {apiState === "saving" ? (
+            <NoticeLine>{t("common:states.saving")}</NoticeLine>
+          ) : null}
+          {apiState === "loading" ? (
+            <NoticeLine>{t("common:states.loading")}</NoticeLine>
+          ) : null}
           {notice ? <NoticeLine>{notice}</NoticeLine> : null}
         </NoticeStack>
         <FoundryView scrollMode={viewScrollMode}>
@@ -1182,7 +1149,7 @@ export function App() {
               view: activeView,
               workspaceId: data.workspace.id,
             })}
-            retryLabel="Reload this view"
+            retryLabel={t("notices.reloadView")}
           >
             {renderActiveView()}
           </ErrorBoundary>

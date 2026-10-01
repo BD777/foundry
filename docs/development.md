@@ -26,6 +26,27 @@ raw feature colors and checks semantic text/surface contrast at 4.5:1. The layou
 contract audit (`scripts/audit-v3-layout-contract.mjs`) also expects semantic
 color references.
 
+## Interface copy (i18n)
+
+The web app is translated with [i18next](https://www.i18next.com/) and
+[react-i18next](https://react.i18next.com/). Every visible string lives in
+`apps/web/src/i18n/locales/<locale>/<namespace>.ts` (English and Simplified
+Chinese today). Each person chooses a language on the Account page; the
+choice is saved on their account (`PATCH /api/auth/me {"locale"}`), and an
+empty choice follows the browser.
+
+- Components read copy with `useTranslation("<namespace>")` and `t("key")`,
+  plain helpers with `i18n.t("<namespace>:key")` from `src/i18n`. Markup in a
+  string uses `<Trans components={…}>`; counts use i18next plurals.
+- A feature owns one namespace: add `en/<namespace>.ts`, its `zh-CN`
+  counterpart typed as `Translation<typeof en>` (a missing or extra key fails
+  `tsc`), and register both in `src/i18n/resources.ts`.
+- `pnpm audit:copy` (part of `audit:ui`) finds copy written straight into
+  components. Its baseline only shrinks: after moving copy, run
+  `FOUNDRY_AUDIT_UPDATE=1 pnpm --filter @foundry/web audit:copy`.
+- `test/i18n.test.mjs` checks that every locale has every key with the same
+  placeholders and markup.
+
 ## Install
 
 Normal local install:

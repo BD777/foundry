@@ -1083,6 +1083,12 @@ export function updateMyDisplayName(displayName: string): Promise<AccountUser> {
   return accountRequest("PATCH", "/api/auth/me", { displayName });
 }
 
+export function updateMyLocale(
+  locale: "" | "en" | "zh-CN",
+): Promise<AccountUser> {
+  return accountRequest("PATCH", "/api/auth/me", { locale });
+}
+
 export function changeMyPassword(
   currentPassword: string,
   newPassword: string,

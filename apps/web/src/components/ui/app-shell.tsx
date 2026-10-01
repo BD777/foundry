@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/cn";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 import { ScrollArea } from "./scroll-area";
 
@@ -187,10 +188,12 @@ export function SidebarBrand({
   onToggleCollapsed,
   theme = "light",
 }: SidebarBrandProps) {
+  const { t } = useTranslation("shell");
   const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
   const ThemeIcon = theme === "dark" ? Sun : Moon;
   const themeLabel =
-    theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+    theme === "dark" ? t("sidebar.lightMode") : t("sidebar.darkMode");
+  const collapseLabel = collapsed ? t("sidebar.expand") : t("sidebar.collapse");
 
   return (
     <div className="fdy-sidebar-brand">
@@ -214,11 +217,11 @@ export function SidebarBrand({
           <ThemeIcon size={15} />
         </Button>
         <Button
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapseLabel}
           className="fdy-sidebar-collapse-button"
           onClick={onToggleCollapsed}
           size="icon"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapseLabel}
           variant="ghost"
         >
           <CollapseIcon size={15} />
@@ -351,12 +354,13 @@ function SidebarNavButton<T extends string>({
   onSelect,
   refCallback,
 }: SidebarNavButtonProps<T>) {
+  const { t } = useTranslation("shell");
   const Icon = item.icon;
 
   return (
     <Button
       aria-current={active ? "page" : undefined}
-      aria-label={`Open ${item.label}`}
+      aria-label={t("sidebar.open", { label: item.label })}
       className="fdy-sidebar-nav-link"
       data-nav-id={item.id}
       data-foundry-sidebar-nav-link="true"

@@ -63,7 +63,7 @@ func (s *Store) setupAccounts(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return s.ensureColumn(ctx, "users", "locale", `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT ''`)
 }
 
 // migrateAdminRole renames the instance role "owner" to "admin" in databases
@@ -131,13 +131,13 @@ func usernameKey(username string) string {
 	return strings.ToLower(strings.TrimSpace(username))
 }
 
-const userColumns = `id, username, display_name, role, disabled_at, created_at, updated_at`
+const userColumns = `id, username, display_name, role, disabled_at, created_at, updated_at, locale`
 
 func scanUser(row interface{ Scan(...any) error }, extra ...any) (store.User, error) {
 	var user store.User
 	var disabledAt sql.NullString
 	var createdAt, updatedAt string
-	dest := append([]any{&user.ID, &user.Username, &user.DisplayName, &user.Role, &disabledAt, &createdAt, &updatedAt}, extra...)
+	dest := append([]any{&user.ID, &user.Username, &user.DisplayName, &user.Role, &disabledAt, &createdAt, &updatedAt, &user.Locale}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return store.User{}, err
 	}
@@ -285,6 +285,12 @@ func (s *Store) UpdateUser(ctx context.Context, id string, update store.UserUpda
 			}
 			next.DisplayName = name
 		}
+		if update.Locale != nil {
+			if !store.ValidLocale(*update.Locale) {
+				return fmt.Errorf("unknown locale %q", *update.Locale)
+			}
+			next.Locale = *update.Locale
+		}
 		if update.Role != nil {
 			if !store.ValidRole(*update.Role) {
 				return fmt.Errorf("invalid role %q", *update.Role)
@@ -317,8 +323,8 @@ func (s *Store) UpdateUser(ctx context.Context, id string, update store.UserUpda
 		}
 		next.UpdatedAt = now
 		if _, err := tx.conn().ExecContext(ctx,
-			`UPDATE users SET display_name = ?, role = ?, disabled_at = ?, updated_at = ? WHERE id = ?`,
-			next.DisplayName, next.Role, disabledAt, formatTime(now), id); err != nil {
+			`UPDATE users SET display_name = ?, role = ?, disabled_at = ?, locale = ?, updated_at = ? WHERE id = ?`,
+			next.DisplayName, next.Role, disabledAt, next.Locale, formatTime(now), id); err != nil {
 			return fmt.Errorf("update user: %w", err)
 		}
 		if !next.Active() {
@@ -362,7 +368,7 @@ func (s *Store) CreateUserSession(ctx context.Context, userID, tokenHash string,
 func (s *Store) ResolveUserSession(ctx context.Context, tokenHash string, now, refreshBefore, extendTo time.Time) (store.User, bool, error) {
 	var expiresAt string
 	user, err := scanUser(s.conn().QueryRowContext(ctx, `SELECT u.id, u.username, u.display_name, u.role,
-			u.disabled_at, u.created_at, u.updated_at, s.expires_at
+			u.disabled_at, u.created_at, u.updated_at, u.locale, s.expires_at
 		FROM user_sessions AS s JOIN users AS u ON u.id = s.user_id
 		WHERE s.token_hash = ?`, tokenHash), &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {

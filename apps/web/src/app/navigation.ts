@@ -6,6 +6,10 @@ import {
   Monitor,
 } from "lucide-react";
 import type { SidebarNavSection } from "../components/ui/app-shell";
+import type { shell } from "../i18n/locales/en/shell";
+
+/** A sidebar label: a key of the shell namespace's `nav`. */
+export type NavLabel = keyof typeof shell.nav;
 import type { FoundryThemeMode } from "../components/ui/app-shell";
 
 export type NavView =
@@ -269,21 +273,24 @@ export function scrollModeForView(view: string): "page" | "contained" {
   return pageViews.has(view) ? "page" : "contained";
 }
 
-/** The sidebar: what a person works on, then what they manage. */
+/**
+ * The sidebar: what a person works on, then what they manage. Labels are
+ * keys of the shell namespace's `nav`; the shell translates them.
+ */
 export const navSections: Array<SidebarNavSection<SidebarView>> = [
   {
-    label: "Workspace",
+    label: "workspace",
     items: [
-      { id: "workspace", label: "Overview", icon: FolderOpen },
-      { id: "issues", label: "Issues", icon: Columns2 },
-      { id: "chats", label: "Chats", icon: MessageSquareText },
+      { id: "workspace", label: "overview", icon: FolderOpen },
+      { id: "issues", label: "issues", icon: Columns2 },
+      { id: "chats", label: "chats", icon: MessageSquareText },
     ],
   },
   {
-    label: "Manage",
+    label: "manage",
     items: [
-      { id: "devices", label: "Devices", icon: Monitor },
-      { id: "profiles", label: "Server connections", icon: KeyRound },
+      { id: "devices", label: "devices", icon: Monitor },
+      { id: "profiles", label: "profiles", icon: KeyRound },
     ],
   },
 ];

@@ -179,22 +179,37 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Each field is optional: a request changes the name, the interface
+	// language, or both.
 	var input struct {
-		DisplayName string `json:"displayName"`
+		DisplayName *string `json:"displayName"`
+		Locale      *string `json:"locale"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	name := strings.TrimSpace(input.DisplayName)
-	if name == "" {
-		writeError(w, http.StatusBadRequest, "display name must not be empty")
+	update := store.UserUpdate{Locale: input.Locale}
+	if input.DisplayName != nil {
+		name := strings.TrimSpace(*input.DisplayName)
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "display name must not be empty")
+			return
+		}
+		if err := accounts.ValidateDisplayName(name); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		update.DisplayName = &name
+	}
+	if input.Locale != nil && !store.ValidLocale(*input.Locale) {
+		writeError(w, http.StatusBadRequest, "unknown interface language")
 		return
 	}
-	if err := accounts.ValidateDisplayName(name); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if update.DisplayName == nil && update.Locale == nil {
+		writeError(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
-	user, err := s.accounts.UpdateUser(r.Context(), account.ID, store.UserUpdate{DisplayName: &name})
+	user, err := s.accounts.UpdateUser(r.Context(), account.ID, update)
 	if err != nil {
 		writeAccountError(w, err)
 		return

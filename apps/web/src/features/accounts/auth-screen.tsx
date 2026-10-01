@@ -9,7 +9,14 @@ import {
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
-import { roleLabel } from "./account-format";
+import { LanguageSelect } from "../../components/ui/language-select";
+import { useTranslation } from "react-i18next";
+import {
+  applyLocalePreference,
+  i18n,
+  storedLocalePreference,
+} from "../../i18n";
+import { roleNoun } from "./account-format";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 
 export type AuthScreenKind = "login" | "setup" | "invite";
@@ -20,27 +27,6 @@ export interface AuthScreenProps {
   theme: FoundryThemeMode;
   onAuthenticated: (state: AuthState) => void;
 }
-
-const copy: Record<
-  AuthScreenKind,
-  { title: string; body: string; submit: string }
-> = {
-  login: {
-    title: "Sign in to Foundry",
-    body: "Use the account an admin created or invited you to.",
-    submit: "Sign in",
-  },
-  setup: {
-    title: "Create the admin account",
-    body: "No account exists yet. Enter the one-time setup code printed in the Foundry server log, then choose your login.",
-    submit: "Create admin account",
-  },
-  invite: {
-    title: "Join Foundry",
-    body: "Choose a login to accept this invite.",
-    submit: "Create account",
-  },
-};
 
 export function AuthScreen({
   kind,
@@ -56,6 +42,8 @@ export function AuthScreen({
   const [busy, setBusy] = useState(false);
   const [invite, setInvite] = useState<InvitePreview | undefined>();
   const [inviteError, setInviteError] = useState("");
+  const { t } = useTranslation(["account", "common"]);
+  const [language, setLanguage] = useState(storedLocalePreference);
 
   useEffect(() => {
     if (kind !== "invite" || !inviteToken) return;
@@ -73,7 +61,11 @@ export function AuthScreen({
   }, [kind, inviteToken]);
 
   const creating = kind !== "login";
-  const text = copy[kind];
+  const text = {
+    title: t(`auth.${kind}.title`),
+    body: t(`auth.${kind}.body`),
+    submit: t(`auth.${kind}.submit`),
+  };
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -111,7 +103,17 @@ export function AuthScreen({
             <h1>{text.title}</h1>
             <p>
               {kind === "invite" && invite
-                ? `You are invited as ${roleLabel(invite.role).toLowerCase()}${invite.workspaceName && invite.workspaceRole ? ` and will join ${invite.workspaceName} as ${workspaceRoleLabel(invite.workspaceRole)}` : ""}. ${text.body}`
+                ? `${
+                    invite.workspaceName && invite.workspaceRole
+                      ? t("auth.invitedAsInWorkspace", {
+                          role: roleNoun(invite.role),
+                          workspace: invite.workspaceName,
+                          workspaceRole: workspaceRoleLabel(
+                            invite.workspaceRole,
+                          ),
+                        })
+                      : t("auth.invitedAs", { role: roleNoun(invite.role) })
+                  } ${text.body}`
                 : text.body}
             </p>
           </header>
@@ -119,10 +121,9 @@ export function AuthScreen({
             <Alert
               details={inviteError || undefined}
               tone="error"
-              title="This invite cannot be used"
+              title={t("auth.inviteUnavailableTitle")}
             >
-              It may have expired, been revoked or already been used. Ask an
-              admin for a new link.
+              {t("auth.inviteUnavailableBody")}
             </Alert>
           ) : (
             <form
@@ -131,12 +132,12 @@ export function AuthScreen({
             >
               {kind === "setup" ? (
                 <label className="fdy-auth-field">
-                  <span>Setup code</span>
+                  <span>{t("auth.setupCode")}</span>
                   <TextInput
                     autoComplete="one-time-code"
                     autoFocus
                     onChange={(event) => setSetupCode(event.target.value)}
-                    placeholder="XXXX-XXXX-XXXX"
+                    placeholder={t("auth.setupCodePlaceholder")}
                     required
                     tone="boxed"
                     value={setupCode}
@@ -144,7 +145,7 @@ export function AuthScreen({
                 </label>
               ) : null}
               <label className="fdy-auth-field">
-                <span>Username</span>
+                <span>{t("auth.username")}</span>
                 <TextInput
                   autoComplete="username"
                   autoFocus={kind !== "setup"}
@@ -153,13 +154,11 @@ export function AuthScreen({
                   tone="boxed"
                   value={username}
                 />
-                {creating ? (
-                  <small>3–32 letters, digits, “.”, “_” or “-”.</small>
-                ) : null}
+                {creating ? <small>{t("auth.usernameHint")}</small> : null}
               </label>
               {creating ? (
                 <label className="fdy-auth-field">
-                  <span>Display name (optional)</span>
+                  <span>{t("auth.displayNameOptional")}</span>
                   <TextInput
                     autoComplete="name"
                     maxLength={64}
@@ -170,7 +169,7 @@ export function AuthScreen({
                 </label>
               ) : null}
               <label className="fdy-auth-field">
-                <span>Password</span>
+                <span>{t("auth.password")}</span>
                 <TextInput
                   autoComplete={creating ? "new-password" : "current-password"}
                   minLength={creating ? 10 : undefined}
@@ -180,18 +179,26 @@ export function AuthScreen({
                   type="password"
                   value={password}
                 />
-                {creating ? <small>At least 10 characters.</small> : null}
+                {creating ? <small>{t("auth.passwordHint")}</small> : null}
               </label>
               {error ? (
-                <Alert tone="error" title="Could not continue">
+                <Alert tone="error" title={t("auth.failedTitle")}>
                   {error}
                 </Alert>
               ) : null}
               <Button disabled={busy} type="submit" variant="primary">
-                {busy ? "Please wait…" : text.submit}
+                {busy ? t("common:actions.pleaseWait") : text.submit}
               </Button>
             </form>
           )}
+          <LanguageSelect
+            className="fdy-auth-language"
+            onChange={(next) => {
+              setLanguage(next);
+              void applyLocalePreference(next);
+            }}
+            value={language}
+          />
         </Panel>
       </div>
     </FoundryShell>
@@ -201,5 +208,5 @@ export function AuthScreen({
 function errorText(reason: unknown): string {
   return reason instanceof Error && reason.message
     ? reason.message
-    : "The Foundry server did not answer. Try again.";
+    : i18n.t("common:errors.serverUnreachable");
 }

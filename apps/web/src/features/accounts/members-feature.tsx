@@ -26,19 +26,24 @@ import {
   inviteLink,
   invitePending,
   roleLabel,
+  roleNoun,
 } from "./account-format";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n";
 
 export interface MembersFeatureProps {
   currentUserId: string;
 }
 
-const roleOptions: Array<{ label: string; value: AccountRole }> = [
-  { label: "Member", value: "member" },
-  { label: "Admin", value: "admin" },
-];
+const inviteRoles: AccountRole[] = ["member", "admin"];
 
 export function MembersFeature({ currentUserId }: MembersFeatureProps) {
+  const { t } = useTranslation(["account", "common"]);
+  const roleOptions = inviteRoles.map((value) => ({
+    label: roleLabel(value),
+    value,
+  }));
   const [users, setUsers] = useState<AccountUser[]>([]);
   const [invites, setInvites] = useState<AccountInvite[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -102,27 +107,24 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
   return (
     <PageSurface variant="accounts">
       <div className="fdy-account-intro">
-        <strong>Members</strong>
-        <p>
-          People who can sign in to this Foundry server. Admins manage members,
-          devices, connections and Accept; members chat, create and run Issues.
-        </p>
+        <strong>{t("members.title")}</strong>
+        <p>{t("members.intro")}</p>
       </div>
 
       {error ? (
-        <Alert tone="error" title="Members could not be updated">
+        <Alert tone="error" title={t("members.updateFailed")}>
           {error}
         </Alert>
       ) : null}
 
       <Panel className="fdy-account-section">
         <div className="fdy-account-section-head">
-          <strong>Invite someone</strong>
-          <p>Invite links work once and expire after 7 days.</p>
+          <strong>{t("members.inviteTitle")}</strong>
+          <p>{t("members.inviteHint")}</p>
         </div>
         <div className="fdy-member-invite-row">
           <SegmentedControl
-            aria-label="Role for the new member"
+            aria-label={t("members.inviteRole")}
             onValueChange={setInviteRole}
             options={roleOptions}
             value={inviteRole}
@@ -137,25 +139,26 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
             }
             variant="primary"
           >
-            {busyId === "invite" ? "Creating…" : "Create invite link"}
+            {busyId === "invite"
+              ? t("members.creatingInvite")
+              : t("members.createInvite")}
           </Button>
         </div>
         {created ? (
           <div className="fdy-member-invite-link">
             <span>
-              {roleLabel(created.role)} invite · copy it now, it is shown only
-              once
+              {t("members.createdInvite", { role: roleLabel(created.role) })}
             </span>
             <div className="fdy-member-invite-copy">
               <TextInput
-                aria-label="Invite link"
+                aria-label={t("members.inviteLink")}
                 onFocus={(event) => event.currentTarget.select()}
                 readOnly
                 tone="boxed"
                 value={createdLink}
               />
               <Button onClick={() => void copyLink(createdLink)}>
-                {copied ? "Copied" : "Copy link"}
+                {copied ? t("common:actions.copied") : t("members.copyLink")}
               </Button>
             </div>
           </div>
@@ -166,24 +169,30 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
               <li className="fdy-member-row" key={invite.id}>
                 <div className="fdy-member-identity">
                   <strong>
-                    Pending {roleLabel(invite.role).toLowerCase()} invite
+                    {t("members.pendingInvite", {
+                      role: roleNoun(invite.role),
+                    })}
                   </strong>
                   <span>
                     {invite.workspaceRole
-                      ? `Joins a workspace as ${workspaceRoleLabel(invite.workspaceRole)} · `
+                      ? t("members.joinsWorkspaceAs", {
+                          role: workspaceRoleLabel(invite.workspaceRole),
+                        })
                       : ""}
-                    Expires {formatAccountDate(invite.expiresAt)}
+                    {t("members.expires", {
+                      date: formatAccountDate(invite.expiresAt),
+                    })}
                   </span>
                 </div>
                 <ConfirmButton
-                  confirmLabel="Revoke for good?"
+                  confirmLabel={t("members.revokeConfirm")}
                   disabled={busyId === invite.id}
                   onConfirm={() =>
                     void run(invite.id, () => revokeInvite(invite.id))
                   }
                   size="sm"
                 >
-                  Revoke
+                  {t("members.revoke")}
                 </ConfirmButton>
               </li>
             ))}
@@ -193,12 +202,12 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
 
       <Panel className="fdy-account-section">
         <div className="fdy-account-section-head">
-          <strong>People</strong>
+          <strong>{t("members.people")}</strong>
         </div>
         {loaded && users.length === 0 ? (
           <EmptyState
-            title="No members yet"
-            body="Create an invite link above."
+            title={t("members.noMembers")}
+            body={t("members.noMembersBody")}
           />
         ) : (
           <ul className="fdy-member-list">
@@ -215,19 +224,24 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                 >
                   <div className="fdy-member-identity">
                     <strong>
-                      {user.displayName}
-                      {self ? " (you)" : ""}
+                      {self
+                        ? t("members.you", { name: user.displayName })
+                        : user.displayName}
                     </strong>
                     <span>
-                      {user.username} · joined{" "}
-                      {formatAccountDate(user.createdAt)}
+                      {t("members.joined", {
+                        username: user.username,
+                        date: formatAccountDate(user.createdAt),
+                      })}
                     </span>
                   </div>
                   <div className="fdy-member-badges">
                     <Badge tone={user.role === "admin" ? "brass" : "neutral"}>
                       {roleLabel(user.role)}
                     </Badge>
-                    {disabled ? <Badge tone="warn">Disabled</Badge> : null}
+                    {disabled ? (
+                      <Badge tone="warn">{t("members.disabled")}</Badge>
+                    ) : null}
                   </div>
                   <div className="fdy-member-actions">
                     {self ? null : (
@@ -240,7 +254,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         }
                         size="sm"
                       >
-                        Make {roleLabel(nextRole).toLowerCase()}
+                        {t("members.makeRole", { role: roleNoun(nextRole) })}
                       </Button>
                     )}
                     {self ? null : disabled ? (
@@ -253,11 +267,11 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         }
                         size="sm"
                       >
-                        Enable
+                        {t("members.enable")}
                       </Button>
                     ) : (
                       <ConfirmButton
-                        confirmLabel="Disable and sign out?"
+                        confirmLabel={t("members.disableConfirm")}
                         disabled={busyId === user.id}
                         onConfirm={() =>
                           void run(user.id, () =>
@@ -266,7 +280,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         }
                         size="sm"
                       >
-                        Disable
+                        {t("members.disable")}
                       </ConfirmButton>
                     )}
                   </div>
@@ -283,5 +297,5 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
 function messageOf(reason: unknown): string {
   return reason instanceof Error && reason.message
     ? reason.message
-    : "The Foundry server did not answer. Try again.";
+    : i18n.t("common:errors.serverUnreachable");
 }
