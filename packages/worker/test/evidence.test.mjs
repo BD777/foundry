@@ -243,6 +243,27 @@ test("Agent packet carries actual image bytes separately from reference roles", 
     () => verifierPacket(contract, criterion, { id: "wrong" }, evidence, store),
     /cross_input/,
   );
+  // A judge in the candidate gets the workspace's selected skills as files
+  // to read; without a selection, or for a materials-only judgment, none.
+  assert.equal(JSON.parse(packet.prompt).workspaceSkills, undefined);
+  const skills = {
+    pluginDir: "/state/skill-sets/abc",
+    skills: [
+      {
+        name: "ui-review",
+        dir: "/state/skill-sets/abc/skills/ui-review",
+        description: "How to review UI",
+      },
+    ],
+  };
+  const withSkills = JSON.parse(
+    verifierPacket(contract, criterion, { id: "i" }, evidence, store, {
+      path: "/candidate",
+      skills,
+    }).prompt,
+  );
+  assert.match(withSkills.workspaceSkills, /ui-review/);
+  assert.match(withSkills.workspaceSkills, /skills\/ui-review\/SKILL\.md/);
 });
 test("worker rejects unconfirmed issue before touching its workspace", async () => {
   await assert.rejects(

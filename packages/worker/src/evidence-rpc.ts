@@ -36,6 +36,7 @@ import {
 } from "./evidence-http-service.js";
 import { runEvidenceCommand } from "./evidence-command-sandbox.js";
 import { judgeWithAgent } from "./evidence-agent.js";
+import { materializeSessionSkills } from "./skill-materializer.js";
 import { git } from "./execution-git.js";
 import { acceptEvidenceCandidate } from "./evidence-acceptance.js";
 import { redactEvidence } from "./evidence-redaction.js";
@@ -497,6 +498,14 @@ async function execute(
             environment.sourcePath,
             ...environment.repositories.map((repo) => repo.worktreePath),
           ],
+          skills:
+            request.action === "assess" && request.skillRefs?.length
+              ? await materializeSessionSkills(
+                  request.skillRefs,
+                  environment.controlServerURL ?? "",
+                  environment.cwd,
+                )
+              : undefined,
         },
       });
       // The candidate must be exactly what was sealed, before and after.
