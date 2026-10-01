@@ -95,7 +95,18 @@ for (const path of listSourceFiles(sourceRoot)) {
     path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
   const file = relative(sourceRoot, path);
+  const lines = source.text.split("\n");
+  // Text that is not interface copy (a prompt sent to an agent, a protocol
+  // value) is marked on the line above: `// i18n-ignore: <reason>`.
+  const ignored = (node) => {
+    const line = source.getLineAndCharacterOfPosition(node.getStart()).line;
+    return (
+      /i18n-ignore: \S/.test(lines[line - 1] ?? "") ||
+      /i18n-ignore: \S/.test(lines[line] ?? "")
+    );
+  };
   const report = (node, text, reason) =>
+    ignored(node) ||
     failures.push({
       path: file,
       line: source.getLineAndCharacterOfPosition(node.getStart()).line + 1,

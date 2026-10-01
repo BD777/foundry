@@ -46,6 +46,8 @@ empty choice follows the browser.
   `FOUNDRY_AUDIT_UPDATE=1 pnpm --filter @foundry/web audit:copy`.
 - `test/i18n.test.mjs` checks that every locale has every key with the same
   placeholders and markup.
+- Text that is not interface copy (a prompt sent to an agent, a protocol
+  value) stays in code with `// i18n-ignore: <reason>` on the line above it.
 
 ## Install
 
