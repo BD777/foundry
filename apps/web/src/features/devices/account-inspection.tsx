@@ -1,4 +1,5 @@
-import type { NativeAccountInspection } from "@bd777/foundry-protocol";
+import { Trans, useTranslation } from "react-i18next";
+import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { Badge } from "../../components/ui/badge";
@@ -9,13 +10,6 @@ import {
   useDeviceAccountInspection,
 } from "./account-inspection-store";
 
-const STATUS_BADGE: Record<NativeAccountInspection["status"], string> = {
-  verified: "Verified online",
-  local_login: "Local login · unverified online",
-  not_signed_in: "No login in this configuration",
-  unavailable: "Check unavailable",
-};
-
 export function AccountInspection({
   deviceId,
   runtime,
@@ -25,6 +19,7 @@ export function AccountInspection({
   runtime: "claude" | "codex";
   online: boolean;
 }) {
+  const { t } = useTranslation("profiles");
   const snapshot = useDeviceAccountInspection(deviceId, runtime, online);
 
   // Identity for the configuration IN VIEW comes from that configuration's own
@@ -62,19 +57,21 @@ export function AccountInspection({
   const claude = runtime === "claude";
   const checkLabel = claude
     ? result
-      ? "Re-check local login"
-      : "Check local login"
-    : "Check account & usage";
-  const busyLabel = claude ? "Checking local login…" : "Checking…";
+      ? t("inspection.recheckLocal")
+      : t("inspection.checkLocal")
+    : t("inspection.checkAccount");
+  const busyLabel = claude
+    ? t("inspection.checkingLocal")
+    : t("inspection.checking");
 
   return (
     <section
       className="fdy-account-inspection"
-      aria-label={`${runtime} account verification`}
+      aria-label={t("inspection.sectionLabel", { runtime })}
       aria-busy={loading}
     >
       <header className="fdy-account-check-header">
-        <strong>Account status</strong>
+        <strong>{t("inspection.title")}</strong>
         <Button
           size="sm"
           variant="secondary"
@@ -85,16 +82,12 @@ export function AccountInspection({
           {loading ? busyLabel : checkLabel}
         </Button>
       </header>
-      {!online ? (
-        <p role="status">
-          Connect this device to check its native account configuration.
-        </p>
-      ) : null}
+      {!online ? <p role="status">{t("inspection.offline")}</p> : null}
       {error ? (
         <div className="fdy-account-check-error" role="alert">
           <span>{error}</span>
           <Button size="sm" variant="secondary" onClick={checkCurrent}>
-            Retry
+            {t("inspection.retry")}
           </Button>
         </div>
       ) : null}
@@ -102,7 +95,7 @@ export function AccountInspection({
         <div className="fdy-account-result" aria-live="polite">
           <div className="fdy-account-verdict">
             <Badge tone={result.status === "verified" ? "online" : "neutral"}>
-              {STATUS_BADGE[result.status]}
+              {t(`inspection.status.${result.status}`)}
             </Badge>
             <span>
               {result.accountLabel}
@@ -115,42 +108,55 @@ export function AccountInspection({
               <span>
                 {usage.windowMinutes
                   ? usage.windowMinutes >= 1440
-                    ? `${usage.windowMinutes / 1440}-day window`
-                    : `${usage.windowMinutes / 60}h window`
-                  : "Usage window"}
+                    ? t("inspection.windowDays", {
+                        days: usage.windowMinutes / 1440,
+                      })
+                    : t("inspection.windowHours", {
+                        hours: usage.windowMinutes / 60,
+                      })
+                  : t("inspection.usageWindow")}
               </span>
-              <strong>{usage.usedPercent}% used</strong>
+              <strong>
+                {t("inspection.used", { percent: usage.usedPercent })}
+              </strong>
               {usage.usedPercent >= 100 ? (
-                <small>
-                  Limit reached · Login is valid, but this window has no
-                  remaining allowance.
-                </small>
+                <small>{t("inspection.limitReached")}</small>
               ) : null}
               <progress
-                aria-label="Account usage"
+                aria-label={t("inspection.usageLabel")}
                 max={100}
                 value={usage.usedPercent}
               />
               {usage.resetsAt ? (
                 <small>
-                  Resets {new Date(usage.resetsAt * 1000).toLocaleString()}
+                  {t("inspection.resets", {
+                    time: new Date(usage.resetsAt * 1000).toLocaleString(
+                      i18n.language,
+                    ),
+                  })}
                 </small>
               ) : null}
             </div>
           ))}
           {sourceMissing ? (
             <p className="fdy-account-source-missing" role="status">
-              <code>{viewedSource}</code> is no longer present on this device.
-              {result.status === "unavailable"
-                ? " It cannot be checked from here."
-                : " The read below is the last stored result, not a fresh online check."}
+              <Trans
+                ns="profiles"
+                i18nKey={
+                  result.status === "unavailable"
+                    ? "inspection.sourceGoneUnavailable"
+                    : "inspection.sourceGoneStale"
+                }
+                values={{ source: viewedSource }}
+                components={{ code: <code /> }}
+              />
             </p>
           ) : null}
           {sources.length > 1 ? (
             <label className="fdy-profile-field">
-              <span>Inspect another local configuration</span>
+              <span>{t("inspection.inspectAnother")}</span>
               <SelectMenu
-                ariaLabel="Account configuration to inspect"
+                ariaLabel={t("inspection.inspectLabel")}
                 disabled={loading}
                 value={viewedSource}
                 options={sources.map((source) => ({
@@ -158,8 +164,8 @@ export function AccountInspection({
                   label: source,
                   meta:
                     source === executionSource
-                      ? "Used by Foundry"
-                      : "Other app · inspection only",
+                      ? t("inspection.usedByFoundry")
+                      : t("inspection.otherApp"),
                 }))}
                 onChange={(source) =>
                   selectInspectionSource(deviceId, runtime, source)
@@ -174,27 +180,41 @@ export function AccountInspection({
               className="fdy-account-inline-action"
               onClick={backToExecution}
             >
-              Back to Foundry’s configuration
+              {t("inspection.backToFoundry")}
             </Button>
           ) : null}
           <small className="fdy-account-source">
-            Foundry uses: <code>{executionSource}</code>
+            <Trans
+              ns="profiles"
+              i18nKey="inspection.foundryUses"
+              values={{ source: executionSource }}
+              components={{ code: <code /> }}
+            />
             {result.source !== executionSource
-              ? " · Viewing another configuration does not change the execution account."
+              ? t("inspection.viewingOther")
               : ""}
             <br />
-            Last checked {new Date(result.checkedAt).toLocaleTimeString()} ·
-            Credentials stay on this device.
+            {t("inspection.lastChecked", {
+              time: new Date(result.checkedAt).toLocaleTimeString(
+                i18n.language,
+              ),
+            })}
           </small>
         </div>
       ) : sourceMissing ? (
         <div className="fdy-account-fallback" aria-live="polite">
           <div className="fdy-account-verdict">
-            <Badge tone="neutral">Configuration unavailable</Badge>
+            <Badge tone="neutral">
+              {t("inspection.configurationUnavailable")}
+            </Badge>
           </div>
           <p role="status">
-            <code>{viewedSource}</code> is no longer present on this device. The
-            configuration Foundry actually uses is still shown below.
+            <Trans
+              ns="profiles"
+              i18nKey="inspection.fallback"
+              values={{ source: viewedSource }}
+              components={{ code: <code /> }}
+            />
           </p>
           {executionSource ? (
             <Button
@@ -203,15 +223,20 @@ export function AccountInspection({
               className="fdy-account-inline-action"
               onClick={backToExecution}
             >
-              Back to Foundry’s configuration
+              {t("inspection.backToFoundry")}
             </Button>
           ) : null}
           <small className="fdy-account-source">
-            Foundry uses: <code>{executionSource}</code>
+            <Trans
+              ns="profiles"
+              i18nKey="inspection.foundryUses"
+              values={{ source: executionSource }}
+              components={{ code: <code /> }}
+            />
           </small>
         </div>
       ) : online && loading ? (
-        <p role="status">Asking the native agent; no model request is sent.</p>
+        <p role="status">{t("inspection.asking")}</p>
       ) : null}
     </section>
   );

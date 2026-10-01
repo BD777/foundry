@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
   WorkspaceProjection,
@@ -30,6 +31,7 @@ export function DeviceRemovalDialog({
   onRemoved: (device: DeviceProjection) => Promise<void>;
   returnFocusTo?: HTMLElement | null;
 }) {
+  const { t } = useTranslation(["devices", "common"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const pending = useRef(false);
@@ -51,14 +53,12 @@ export function DeviceRemovalDialog({
     } catch (cause) {
       const status = errorStatus(cause);
       const fallback =
-        cause instanceof Error
-          ? cause.message
-          : "Could not remove this device.";
+        cause instanceof Error ? cause.message : t("removal.failed");
       const message =
         status === 409
           ? fallback
           : status === 404
-            ? "This device is no longer registered. Refresh the list."
+            ? t("removal.notFound")
             : fallback;
       setError(message);
     } finally {
@@ -69,8 +69,8 @@ export function DeviceRemovalDialog({
 
   return (
     <WorkspaceDialog
-      title="Remove device from Foundry?"
-      description="This unregisters the device on this Foundry server. It cannot be undone from the list, but nothing on the machine itself is deleted."
+      title={t("removal.title")}
+      description={t("removal.description")}
       busy={busy}
       onClose={onClose}
       returnFocusTo={returnFocusTo}
@@ -86,30 +86,14 @@ export function DeviceRemovalDialog({
         <strong>{device.label}</strong>
         <code className="fdy-device-removal-id">{device.id}</code>
         <ul className="fdy-device-removal-scope">
-          <li>
-            {workspaces.length} workspace
-            {workspaces.length === 1 ? "" : "s"} on this device leave the device
-            and workspace lists. Chats, issues and run history are kept and
-            still shown where the device is marked removed.
-          </li>
-          <li>
-            Local folders and repositories, Claude/Codex sign-ins, provider keys
-            stored on the machine, and worker settings are not deleted.
-          </li>
-          <li>
-            Server API connections and their sealed keys stay available for
-            every other device; only this device&apos;s access is revoked.
-          </li>
-          <li>
-            {online
-              ? "The worker is online. It will be disconnected now, will not reconnect, and must be set up again on this machine to return."
-              : "The device is offline. It will be refused if it contacts this server again; set it up again on the machine to bring it back."}
-          </li>
+          <li>{t("removal.workspaces", { count: workspaces.length })}</li>
+          <li>{t("removal.localKept")}</li>
+          <li>{t("removal.connectionsKept")}</li>
+          <li>{t(online ? "removal.online" : "removal.offline")}</li>
         </ul>
         {blocked ? (
           <p className="fdy-device-removal-blocked" role="status">
-            This device owns your current working location. Switch to a
-            workspace on another device before removing it.
+            {t("removal.blocked")}
           </p>
         ) : null}
         {error ? (
@@ -119,7 +103,7 @@ export function DeviceRemovalDialog({
         ) : null}
         <footer className="fdy-device-removal-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -127,7 +111,7 @@ export function DeviceRemovalDialog({
             className="fdy-device-removal-danger"
             disabled={busy || blocked}
           >
-            {busy ? "Removing…" : "Remove device"}
+            {busy ? t("removal.removing") : t("removal.remove")}
           </Button>
         </footer>
       </form>

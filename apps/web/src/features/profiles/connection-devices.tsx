@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProfileBinding,
   DeviceProjection,
@@ -20,18 +21,14 @@ export function ConnectionDevices({
   profile: ProfileDefinition;
   onSave: (deviceId: string, profileIds: string[]) => Promise<unknown>;
 }) {
+  const { t } = useTranslation("profiles");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
     <section className="fdy-connection-devices">
-      <strong>Device access</strong>
-      <p>
-        Choose which devices may use this connection. The key stays sealed on
-        the server and is sent only for execution or an explicit catalog read.
-      </p>
-      {!devices.length ? (
-        <p>Connect a device from Devices to assign this connection.</p>
-      ) : null}
+      <strong>{t("connectionDevices.title")}</strong>
+      <p>{t("connectionDevices.intro")}</p>
+      {!devices.length ? <p>{t("connectionDevices.noDevices")}</p> : null}
       {devices.map((device) => {
         const assigned = bindings.some(
           (row) =>
@@ -45,18 +42,23 @@ export function ConnectionDevices({
               <strong>{device.label}</strong>
               <small>
                 {device.status === "connected"
-                  ? "Online"
-                  : "Offline · assignment applies when it reconnects"}
+                  ? t("connectionDevices.online")
+                  : t("connectionDevices.offline")}
               </small>
             </span>
             <Badge tone="neutral">
-              {assigned ? "Assigned" : "Not assigned"}
+              {assigned
+                ? t("connectionDevices.assigned")
+                : t("connectionDevices.notAssigned")}
             </Badge>
             {/* Granting access is a single click; removing it — a destructive
                 change on another device — needs an explicit second click. */}
             {assigned ? (
               <ConfirmButton
-                confirmLabel={`Remove ${profile.label} from ${device.label}?`}
+                confirmLabel={t("connectionDevices.removeConfirm", {
+                  connection: profile.label,
+                  device: device.label,
+                })}
                 disabled={busy}
                 onConfirm={async () => {
                   setBusy(true);
@@ -75,7 +77,7 @@ export function ConnectionDevices({
                     setError(
                       cause instanceof Error
                         ? cause.message
-                        : "Could not update device access.",
+                        : t("connectionDevices.updateFailed"),
                     );
                   } finally {
                     setBusy(false);
@@ -83,16 +85,22 @@ export function ConnectionDevices({
                 }}
                 size="sm"
                 variant="secondary"
-                aria-label={`Remove ${profile.label} from ${device.label}`}
+                aria-label={t("connectionDevices.removeLabel", {
+                  connection: profile.label,
+                  device: device.label,
+                })}
               >
-                Remove access
+                {t("connectionDevices.removeAccess")}
               </ConfirmButton>
             ) : (
               <Button
                 disabled={busy}
                 size="sm"
                 variant="secondary"
-                aria-label={`Assign ${profile.label} to ${device.label}`}
+                aria-label={t("connectionDevices.assignLabel", {
+                  connection: profile.label,
+                  device: device.label,
+                })}
                 onClick={async () => {
                   setBusy(true);
                   setError("");
@@ -110,14 +118,14 @@ export function ConnectionDevices({
                     setError(
                       cause instanceof Error
                         ? cause.message
-                        : "Could not update device access.",
+                        : t("connectionDevices.updateFailed"),
                     );
                   } finally {
                     setBusy(false);
                   }
                 }}
               >
-                Assign
+                {t("connectionDevices.assign")}
               </Button>
             )}
           </div>

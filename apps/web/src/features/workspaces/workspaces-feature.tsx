@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
   WorkspaceProjection,
@@ -32,6 +33,7 @@ export interface WorkspacesFeatureProps {
 
 /** Previewing a device never changes the active location. */
 export function WorkspacesFeature(props: WorkspacesFeatureProps) {
+  const { t } = useTranslation("workspaces");
   const [busyWorkspaceId, setBusyWorkspaceId] = useState("");
   const [error, setError] = useState("");
   const selecting = useRef(false);
@@ -51,15 +53,13 @@ export function WorkspacesFeature(props: WorkspacesFeatureProps) {
       const result = await props.onEvent({
         type: "workspace.activation.requested",
         workspaceId: workspace.id,
-        notice: `${workspace.name} is now active.`,
+        notice: t("switcher.activated", { name: workspace.name }),
         stayOnLocation: options.stayOnLocation,
       });
       if (result === false) throw new Error("Switch failed");
       return true;
     } catch {
-      setError(
-        `Could not switch to ${workspace.name}. Your current location is unchanged. Try again.`,
-      );
+      setError(t("switcher.failed", { name: workspace.name }));
       return false;
     } finally {
       selecting.current = false;

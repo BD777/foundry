@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type {
   DeviceProjection,
@@ -36,12 +37,6 @@ export interface SkillsFeatureProps {
   onChanged?: () => Promise<void>;
 }
 
-const STATUS_FILTER_OPTIONS = [
-  { value: "all", label: "All skills" },
-  { value: "selected", label: "Selected in workspace" },
-  { value: "unselected", label: "Not selected" },
-];
-
 /**
  * Workspace skill selection. The catalog is server-owned (entries arrive via
  * device promotion); this view chooses which entries the workspace exposes
@@ -59,6 +54,12 @@ export function SkillsFeature({
   embedded,
   onChanged,
 }: SkillsFeatureProps) {
+  const { t } = useTranslation(["skills", "common"]);
+  const statusFilterOptions = [
+    { value: "all", label: t("workspace.filterAll") },
+    { value: "selected", label: t("workspace.filterSelected") },
+    { value: "unselected", label: t("workspace.filterUnselected") },
+  ];
   const initial = useMemo(
     () => new Set(bindings.map((binding) => binding.skillId)),
     [bindings],
@@ -156,7 +157,9 @@ export function SkillsFeature({
 
     if (result.newlyActivatedNames.length > 0) {
       setNotice(
-        `Auto-enabled related skills: ${result.newlyActivatedNames.join(", ")}`,
+        t("workspace.autoEnabled", {
+          names: result.newlyActivatedNames.join(", "),
+        }),
       );
     }
   }
@@ -174,27 +177,27 @@ export function SkillsFeature({
           <CheckCircle2 size={14} />
           <span>{notice}</span>
           <Button
-            aria-label="Dismiss notice"
+            aria-label={t("workspace.dismissNotice")}
             onClick={() => setNotice(undefined)}
             size="sm"
             variant="ghost"
           >
-            Dismiss
+            {t("workspace.dismiss")}
           </Button>
         </p>
       ) : null}
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}
-        description="Only selected skills are exposed to this workspace's Chats and Issues. Skills are promoted from a device's Settings → Skills tab; personal skills on any machine are never exposed unless promoted and selected here."
+        description={t("workspace.description")}
         emptyState={{
-          title: "No skills on the server yet",
-          body: "Promote a local skill from a device's Skills tab, then select it here.",
+          title: t("workspace.emptyTitle"),
+          body: t("workspace.emptyBody"),
           action: (
             <Button
               onClick={() => onEvent?.({ type: "manage-devices.requested" })}
             >
-              Go to Devices
+              {t("workspace.goToDevices")}
               <ArrowRight size={14} />
             </Button>
           ),
@@ -204,14 +207,17 @@ export function SkillsFeature({
             <>
               {duplicateNames.length ? (
                 <p className="fdy-skill-error" role="alert">
-                  Choose only one server entry for each invocation name:{" "}
-                  {duplicateNames.join(", ")}.
+                  {t("workspace.duplicateNames", {
+                    names: duplicateNames.join(", "),
+                  })}
                 </p>
               ) : null}
               {readOnlyReason ? <p role="note">{readOnlyReason}</p> : null}
               <div className="fdy-workspace-skills-actions">
                 <span className="fdy-workspace-skills-count">
-                  {resolution.selectedIds.size} selected
+                  {t("workspace.selectedCount", {
+                    count: resolution.selectedIds.size,
+                  })}
                 </span>
                 <Button
                   disabled={
@@ -222,7 +228,9 @@ export function SkillsFeature({
                   }
                   onClick={save}
                 >
-                  {saving ? "Saving…" : "Save selection"}
+                  {saving
+                    ? t("common:actions.saving")
+                    : t("workspace.saveSelection")}
                 </Button>
               </div>
             </>
@@ -234,10 +242,10 @@ export function SkillsFeature({
         onToggleSelect={handleToggle}
         relatedToMap={resolution.relatedTo}
         requiredByMap={resolution.requiredBy}
-        searchPlaceholder="Filter skills by name or description"
+        searchPlaceholder={t("workspace.searchPlaceholder")}
         selectedIds={resolution.selectedIds}
         skills={normalizedSkills}
-        statusFilterOptions={STATUS_FILTER_OPTIONS}
+        statusFilterOptions={statusFilterOptions}
         statusFilterPredicate={(skill, filterVal) => {
           if (filterVal === "selected")
             return resolution.selectedIds.has(skill.id);
@@ -246,7 +254,7 @@ export function SkillsFeature({
           return true;
         }}
         statusFilterValue={statusFilter}
-        title="Skills available to this workspace"
+        title={t("workspace.title")}
       />
     </PageSurface>
   );

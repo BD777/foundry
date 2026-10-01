@@ -1,15 +1,21 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import type { DeviceProjection, DeviceResource } from "@bd777/foundry-protocol";
 import { refreshDeviceResources } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { InfoRow } from "../../components/ui/info-row";
+import { i18n } from "../../i18n";
 
-const kindLabels: Record<DeviceResource["kind"], string> = {
-  browser: "Browser",
-  computer_use: "Screen control",
-};
+function kindLabel(kind: DeviceResource["kind"]): string {
+  return kind in kindKeys ? i18n.t(kindKeys[kind]) : kind;
+}
+
+const kindKeys = {
+  browser: "devices:resources.kinds.browser",
+  computer_use: "devices:resources.kinds.computer_use",
+} as const;
 
 /**
  * The Resource Pool directory for one device: what its worker found that
@@ -27,6 +33,7 @@ export function DeviceResources({
 }) {
   const resources = device.resources ?? [];
   const manageable = Boolean(device.owned) && device.status === "connected";
+  const { t } = useTranslation("devices");
   const [busy, setBusy] = useState<"detect" | "access" | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -43,16 +50,19 @@ export function DeviceResources({
       );
       setMessage(
         !requestAccess
-          ? "Resources detected again."
+          ? t("resources.detected")
           : result.opened.length && pending
-            ? `System Settings is open on ${device.label} (${result.opened.join(", ")}). Turn on the Foundry worker there, then choose Detect again.`
+            ? t("resources.settingsOpen", {
+                device: device.label,
+                panes: result.opened.join(", "),
+              })
             : pending
-              ? `${device.label} showed its permission prompts. Allow them there, then choose Detect again.`
-              : "Access is granted.",
+              ? t("resources.promptsShown", { device: device.label })
+              : t("resources.granted"),
       );
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not reach the device.",
+        cause instanceof Error ? cause.message : t("resources.unreachable"),
       );
     } finally {
       setBusy(null);
@@ -64,11 +74,8 @@ export function DeviceResources({
       className="fdy-device-section"
       aria-labelledby="fdy-device-resources-heading"
     >
-      <h2 id="fdy-device-resources-heading">Resources</h2>
-      <p>
-        Software on {device.label} that sessions may use, detected by its worker
-        when it connects. Foundry never installs resources.
-      </p>
+      <h2 id="fdy-device-resources-heading">{t("resources.title")}</h2>
+      <p>{t("resources.intro", { device: device.label })}</p>
       {manageable ? (
         <div className="fdy-device-resource-actions">
           <Button
@@ -77,29 +84,38 @@ export function DeviceResources({
             disabled={busy !== null}
             onClick={() => void refresh()}
           >
-            {busy === "detect" ? "Detecting…" : "Detect again"}
+            {busy === "detect"
+              ? t("resources.detecting")
+              : t("resources.detectAgain")}
           </Button>
         </div>
       ) : null}
       {resources.length === 0 ? (
         <EmptyState
-          title="No resources reported"
-          body={
+          title={t("resources.emptyTitle")}
+          body={t(
             device.status === "connected"
-              ? "The worker found no browser or screen control on this device."
-              : "The device has not reported its resources; they appear after its worker connects."
-          }
+              ? "resources.emptyOnline"
+              : "resources.emptyOffline",
+          )}
         />
       ) : (
-        <ul className="fdy-device-resources" aria-label="Device resources">
+        <ul
+          className="fdy-device-resources"
+          aria-label={t("resources.listLabel")}
+        >
           {resources.map((resource) => (
             <li key={resource.id}>
               <InfoRow
-                label={`${resource.name} · ${kindLabels[resource.kind] ?? resource.kind}`}
+                label={`${resource.name} · ${kindLabel(resource.kind)}`}
                 meta={resource.attributes?.path}
               >
                 <Badge tone={resource.available ? "online" : "warn"}>
-                  {resource.available ? "Available" : "Not available"}
+                  {t(
+                    resource.available
+                      ? "resources.available"
+                      : "resources.unavailable",
+                  )}
                 </Badge>
               </InfoRow>
               {resource.detail ? (
@@ -110,16 +126,19 @@ export function DeviceResources({
               manageable ? (
                 <div className="fdy-device-resource-access">
                   <p>
-                    To let sessions capture and control this Mac, allow the
-                    program running the Foundry worker
-                    {resource.attributes?.grantTo ? (
-                      <>
-                        {" "}
-                        (<code>{resource.attributes.grantTo}</code>)
-                      </>
-                    ) : null}{" "}
-                    under Screen Recording and Accessibility. The prompts and
-                    System Settings open on {device.label}.
+                    <Trans
+                      ns="devices"
+                      i18nKey={
+                        resource.attributes?.grantTo
+                          ? "resources.screenAccessGrantTo"
+                          : "resources.screenAccess"
+                      }
+                      values={{
+                        device: device.label,
+                        grantTo: resource.attributes?.grantTo,
+                      }}
+                      components={{ code: <code /> }}
+                    />
                   </p>
                   <Button
                     size="sm"
@@ -128,8 +147,8 @@ export function DeviceResources({
                     onClick={() => void refresh(resource.id)}
                   >
                     {busy === "access"
-                      ? "Asking the device…"
-                      : "Open System Settings…"}
+                      ? t("resources.asking")
+                      : t("resources.openSettings")}
                   </Button>
                 </div>
               ) : null}

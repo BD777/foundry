@@ -1,4 +1,5 @@
 import { Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProfileBinding,
   ProfileDefinition,
@@ -22,23 +23,21 @@ export function ProfileList({
   onSelect: (profileId: string) => void;
   profiles: ProfileDefinition[];
 }) {
+  const { t } = useTranslation("profiles");
   return (
     <section className="fdy-profile-list">
       <header className="fdy-profile-list-header">
         <span className="fdy-profile-list-title">
-          <strong>Connections</strong>
-          <em>{profiles.length} saved on this server</em>
+          <strong>{t("list.title")}</strong>
+          <em>{t("list.saved", { count: profiles.length })}</em>
         </span>
         <Button disabled={busy} onClick={onCreate} size="sm" variant="primary">
           <Plus size={14} />
-          New connection
+          {t("list.newConnection")}
         </Button>
       </header>
       {profiles.length === 0 ? (
-        <EmptyState
-          title="Add your first model connection"
-          body="Connect an API or gateway here. Official Claude and Codex accounts are managed on each device."
-        />
+        <EmptyState title={t("list.emptyTitle")} body={t("list.emptyBody")} />
       ) : (
         <div className="fdy-profile-card-grid">
           {profiles.map((profile) => (
@@ -54,7 +53,7 @@ export function ProfileList({
                 <em>
                   {runtimeMeta(profile.runtime).label} · {profile.baseUrl}
                 </em>
-                <small>{profile.model || "Runtime default model"}</small>
+                <small>{profile.model || t("list.runtimeDefaultModel")}</small>
               </span>
               <Badge tone={profile.hasCredential ? "neutral" : "slate"}>
                 {connectionUsage(profile, deviceProfiles)}

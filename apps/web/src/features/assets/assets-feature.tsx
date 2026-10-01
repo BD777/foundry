@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Zap,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProjection,
   AssetProjection,
@@ -60,6 +61,7 @@ export function AssetsFeature({
   skillCount,
   workspace,
 }: AssetsFeatureProps) {
+  const { t } = useTranslation("assets");
   const worktreeAsset = assets.find((asset) => asset.kind === "worktree_pool");
   const previewAsset = assets.find((asset) => asset.kind === "preview_ports");
   const artifactAsset = assets.find(
@@ -72,21 +74,23 @@ export function AssetsFeature({
   ).length;
   const deviceLastSeenLabel =
     device?.lastSeenLabel === "online"
-      ? "just now"
-      : (device?.lastSeenLabel ?? "never");
+      ? t("device.justNow")
+      : (device?.lastSeenLabel ?? t("device.never"));
+  const deviceLabel = device?.label ?? t("device.noDevice");
+  const notReported = t("status.notReported");
 
   return (
     <PageSurface variant="assets" embedded={embedded}>
       <SectionLabel>
         <Monitor size={13} />
-        Device
+        {t("device.section")}
       </SectionLabel>
       <DeviceAssetPanel
         actions={
           <>
-            <Tooltip content="Logs">
+            <Tooltip content={t("device.logs")}>
               <Button
-                aria-label="Open device logs"
+                aria-label={t("device.openLogs")}
                 onClick={() => onEvent?.({ type: "device.logs.requested" })}
                 size="icon"
                 variant="icon"
@@ -94,9 +98,9 @@ export function AssetsFeature({
                 <FileText size={15} />
               </Button>
             </Tooltip>
-            <Tooltip content="Refresh">
+            <Tooltip content={t("device.refresh")}>
               <Button
-                aria-label="Refresh device"
+                aria-label={t("device.refreshDevice")}
                 onClick={() => onEvent?.({ type: "data.refresh.requested" })}
                 size="icon"
                 variant="icon"
@@ -106,27 +110,28 @@ export function AssetsFeature({
             </Tooltip>
           </>
         }
-        activeWorkers={`${runningCount} workers active`}
-        code={
-          <>
-            {device?.label ?? "No device"} · last connected{" "}
-            {deviceLastSeenLabel}
-          </>
-        }
+        activeWorkers={t("device.workersActive", { count: runningCount })}
+        code={t("device.lastConnected", {
+          device: deviceLabel,
+          when: deviceLastSeenLabel,
+        })}
         facts={[
           {
-            label: "Workdir",
+            label: t("device.workdir"),
             mono: true,
             value: workspace.localPath.replace("/Users/you/", "~/"),
           },
           {
-            label: "Agents",
-            value: `${configuredAgentCount}/${agents.length} configured`,
+            label: t("device.agents"),
+            value: t("device.agentsConfigured", {
+              configured: configuredAgentCount,
+              total: agents.length,
+            }),
           },
-          { label: "Scope", value: "Local device" },
+          { label: t("device.scope"), value: t("device.localDevice") },
         ]}
-        identifier={device?.id ?? "No device"}
-        label={device?.label ?? "No device"}
+        identifier={device?.id ?? t("device.noDevice")}
+        label={deviceLabel}
         online={deviceOnline}
         tags={
           <>
@@ -152,14 +157,14 @@ export function AssetsFeature({
               >
                 {worktreeAsset
                   ? assetStatusLabel(worktreeAsset.status)
-                  : "Missing"}
+                  : t("status.missing")}
               </Badge>
             ),
             icon: Gauge,
             iconTone: "brass",
             id: "worktree-pool",
-            label: worktreeAsset?.name ?? "Worktree pool",
-            meta: worktreeAsset?.detail ?? "not reported by daemon",
+            label: worktreeAsset?.name ?? t("capacity.worktreePool"),
+            meta: worktreeAsset?.detail ?? notReported,
           },
           {
             end: (
@@ -168,15 +173,15 @@ export function AssetsFeature({
               >
                 {previewAsset
                   ? assetStatusLabel(previewAsset.status)
-                  : "Available"}
+                  : t("status.available")}
               </Badge>
             ),
             endWidth: 92,
             icon: Monitor,
             iconTone: "neutral",
             id: "preview-ports",
-            label: previewAsset?.name ?? "Preview ports",
-            meta: previewAsset?.detail ?? "not reported by daemon",
+            label: previewAsset?.name ?? t("capacity.previewPorts"),
+            meta: previewAsset?.detail ?? notReported,
           },
           {
             end: (
@@ -187,59 +192,65 @@ export function AssetsFeature({
               >
                 {artifactAsset
                   ? assetStatusLabel(artifactAsset.status)
-                  : "Missing"}
+                  : t("status.missing")}
               </Badge>
             ),
             endWidth: 82,
             icon: FolderOpen,
             iconTone: "green",
             id: "artifact-archive",
-            label: artifactAsset?.name ?? "Artifact archive",
-            meta: artifactAsset?.detail ?? "not reported by daemon",
+            label: artifactAsset?.name ?? t("capacity.artifactArchive"),
+            meta: artifactAsset?.detail ?? notReported,
           },
         ]}
-        title="Execution capacity"
+        title={t("capacity.title")}
       />
 
       <AssetSection
         icon={<BookOpen size={13} />}
         rows={[
           {
-            end: <Badge tone="online">Synced</Badge>,
+            end: <Badge tone="online">{t("status.synced")}</Badge>,
             endWidth: 80,
             icon: GitBranch,
             id: "repository",
-            label: "Workspace",
-            meta: `${workspace.name} · configured baseline: ${workspace.baseline}`,
+            label: t("context.workspace"),
+            meta: t("context.workspaceMeta", {
+              name: workspace.name,
+              baseline: workspace.baseline,
+            }),
           },
           {
             end: (
               <Badge tone={agentsFile ? "online" : "neutral"}>
-                {agentsFile ? "Present" : "Missing"}
+                {agentsFile ? t("status.present") : t("status.missing")}
               </Badge>
             ),
             endWidth: 80,
             icon: FileIcon,
             id: "agents",
             label: "AGENTS.md",
-            meta: agentsFile?.path ?? "not reported by daemon",
+            meta: agentsFile?.path ?? notReported,
           },
           {
             end: (
               <Badge dot={false} tone={skillsFile ? "brass" : "neutral"}>
-                {skillsFile ? "Present" : "Missing"}
+                {skillsFile ? t("status.present") : t("status.missing")}
               </Badge>
             ),
             endWidth: 74,
             icon: Package,
             id: "skills-config",
-            label: "Skills config",
+            label: t("context.skillsConfig"),
             meta: skillsFile
-              ? `${skillCount} skills · ${skillsFile.path}`
-              : "not reported by daemon",
+              ? t("context.skillsMeta", {
+                  count: skillCount,
+                  path: skillsFile.path,
+                })
+              : notReported,
           },
         ]}
-        title="Context"
+        title={t("context.title")}
       />
     </PageSurface>
   );

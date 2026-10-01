@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   FeishuPairingCodeResult,
   WorkspaceFeishuConfig,
@@ -23,8 +24,9 @@ export interface FeishuBotFeatureProps {
 }
 
 export function FeishuBotFeature(props: FeishuBotFeatureProps) {
+  const { t } = useTranslation("feishu");
   return props.readOnlyReason ? (
-    <Alert title="Read-only access">{props.readOnlyReason}</Alert>
+    <Alert title={t("readOnlyTitle")}>{props.readOnlyReason}</Alert>
   ) : (
     <FeishuBotSettings {...props} />
   );
@@ -35,6 +37,7 @@ function FeishuBotSettings({
   workspaceName,
   onNotice,
 }: FeishuBotFeatureProps) {
+  const { t } = useTranslation("feishu");
   const [bot, setBot] = useState<WorkspaceFeishuConfig>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -50,9 +53,7 @@ function FeishuBotSettings({
       const data = await getWorkspaceFeishuBot(workspaceId);
       setBot(data);
     } catch (err) {
-      onNotice?.(
-        `获取飞书 Bot 配置失败: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      onNotice?.(t("notices.loadFailed", { error: errorText(err) }));
     } finally {
       setLoading(false);
     }
@@ -73,7 +74,7 @@ function FeishuBotSettings({
 
   async function handleSaveConfig(appId: string, appSecret: string) {
     if (!appId.trim()) {
-      onNotice?.("请输入飞书应用 App ID");
+      onNotice?.(t("notices.appIdRequired"));
       return;
     }
     setSaving(true);
@@ -83,11 +84,9 @@ function FeishuBotSettings({
         appSecret: appSecret.trim() || undefined,
       });
       setBot(saved);
-      onNotice?.("飞书应用凭据已保存，正在建立长连接...");
+      onNotice?.(t("notices.saved"));
     } catch (err) {
-      onNotice?.(
-        `保存失败: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      onNotice?.(t("notices.saveFailed", { error: errorText(err) }));
     } finally {
       setSaving(false);
     }
@@ -98,26 +97,22 @@ function FeishuBotSettings({
     try {
       const res = await generateFeishuPairingCode(workspaceId);
       setIssuedCode(res);
-      onNotice?.(`配对码 ${res.pairingCode} 已生成，请在飞书群内发送`);
+      onNotice?.(t("notices.codeIssued", { code: res.pairingCode }));
     } catch (err) {
-      onNotice?.(
-        `生成配对码失败: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      onNotice?.(t("notices.codeFailed", { error: errorText(err) }));
     } finally {
       setPairing(false);
     }
   }
 
   async function handleUnbind() {
-    if (!confirm("确定要解除当前飞书群与工作区的绑定吗？")) return;
+    if (!confirm(t("notices.unbindConfirm"))) return;
     try {
       const updated = await unbindFeishuGroup(workspaceId);
       setBot(updated);
-      onNotice?.("已解除飞书群关联");
+      onNotice?.(t("notices.unbound"));
     } catch (err) {
-      onNotice?.(
-        `解除绑定失败: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      onNotice?.(t("notices.unbindFailed", { error: errorText(err) }));
     }
   }
 
@@ -141,4 +136,8 @@ function FeishuBotSettings({
       />
     </div>
   );
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

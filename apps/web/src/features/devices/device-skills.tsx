@@ -2,6 +2,8 @@ import { skillServerLabel } from "./skill-version-state";
 import { type SkillServerFilter } from "./skill-search";
 import { SkillPromotionDialog } from "./skill-promotion-dialog";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   FolderPlus,
   RefreshCw,
@@ -34,14 +36,16 @@ interface DeviceSkillsProps {
   onChanged: () => Promise<void>;
 }
 
-const SERVER_STATUS_OPTIONS = [
-  { value: "all", label: "All server states" },
-  { value: "unpublished", label: "Not on server only" },
-  { value: "different", label: "Local differs" },
-  { value: "same_name", label: "Same-name entries" },
-  { value: "in_sync", label: "In sync" },
-  { value: "unknown", label: "Comparison unavailable" },
-];
+function serverStatusOptions(t: TFunction<"skills">) {
+  return [
+    { value: "all", label: t("device.serverFilter.all") },
+    { value: "unpublished", label: t("device.serverFilter.unpublished") },
+    { value: "different", label: t("device.serverFilter.different") },
+    { value: "same_name", label: t("device.serverFilter.sameName") },
+    { value: "in_sync", label: t("device.serverFilter.inSync") },
+    { value: "unknown", label: t("device.serverFilter.unknown") },
+  ];
+}
 
 /**
  * Device-local skills: maintain scan roots, scan the machine, and promote
@@ -54,6 +58,7 @@ export function DeviceSkills({
   skills,
   onChanged,
 }: DeviceSkillsProps) {
+  const { t } = useTranslation("skills");
   const [draftPaths, setDraftPaths] = useState<string[]>([]);
   const [draftDirty, setDraftDirty] = useState(false);
   const [newPath, setNewPath] = useState("");
@@ -110,7 +115,9 @@ export function DeviceSkills({
   return (
     <div className="fdy-device-skills">
       {comparison ? (
-        <Suspense fallback={<p role="status">Loading comparison…</p>}>
+        <Suspense
+          fallback={<p role="status">{t("device.loadingComparison")}</p>}
+        >
           <SkillCompareDialog
             onClose={() => setComparison(undefined)}
             skill={comparison.skill}
@@ -129,11 +136,8 @@ export function DeviceSkills({
       ) : null}
       <section className="fdy-skill-roots">
         <header>
-          <h2>Scan directories</h2>
-          <p>
-            Folders this device scans for local skills. Defaults cover Claude
-            Code and Codex. Add a folder to expose other skill locations.
-          </p>
+          <h2>{t("device.rootsTitle")}</h2>
+          <p>{t("device.rootsBody")}</p>
         </header>
         <ul>
           {draftPaths.map((path, index) => (
@@ -142,10 +146,10 @@ export function DeviceSkills({
                 {path}
               </span>
               {roots[index]?.isDefault ? (
-                <Badge tone="neutral">Default</Badge>
+                <Badge tone="neutral">{t("device.defaultRoot")}</Badge>
               ) : null}
               <Button
-                aria-label={`Remove ${path}`}
+                aria-label={t("device.removeRoot", { path })}
                 disabled={rootsBusy}
                 onClick={() => {
                   setDraftPaths((rows) => rows.filter((_, i) => i !== index));
@@ -161,9 +165,9 @@ export function DeviceSkills({
         </ul>
         <div className="fdy-skill-root-add">
           <TextInput
-            aria-label="Add skill directory"
+            aria-label={t("device.addRootLabel")}
             onChange={(event) => setNewPath(event.target.value)}
-            placeholder="~/work/team-skills or /opt/skills"
+            placeholder={t("device.addRootPlaceholder")}
             tone="boxed"
             value={newPath}
           />
@@ -180,12 +184,12 @@ export function DeviceSkills({
             variant="secondary"
           >
             <FolderPlus size={14} />
-            Add
+            {t("device.add")}
           </Button>
         </div>
         <div className="fdy-skill-root-actions">
           <Button disabled={!draftDirty || rootsBusy} onClick={saveRoots}>
-            Save directories
+            {t("device.saveRoots")}
           </Button>
           <Button
             disabled={!online || scanning}
@@ -196,12 +200,12 @@ export function DeviceSkills({
               className={scanning ? "fdy-spin" : undefined}
               size={14}
             />
-            {scanning ? "Scanning…" : "Scan now"}
+            {scanning ? t("device.scanning") : t("device.scanNow")}
           </Button>
         </div>
         {!online ? (
           <p className="fdy-skill-offline" role="status">
-            Device offline. Connect it to scan or promote local skills.
+            {t("device.offline")}
           </p>
         ) : null}
         {scanError ? (
@@ -212,10 +216,10 @@ export function DeviceSkills({
       </section>
 
       <SkillCatalogList<NormalizedSkill>
-        description="Promote one to publish it to the server catalog so a workspace can use it. Server status reflects the last device scan."
+        description={t("device.description")}
         emptyState={{
-          title: "No local skills scanned yet",
-          body: "Connect the device and run a scan to list its skills.",
+          title: t("device.emptyTitle"),
+          body: t("device.emptyBody"),
         }}
         mode="device"
         onStatusFilterChange={(v) => setServerFilter(v as SkillServerFilter)}
@@ -239,7 +243,7 @@ export function DeviceSkills({
                   size="sm"
                   variant="ghost"
                 >
-                  Compare
+                  {t("device.compare")}
                 </Button>
               ) : null}
               <Button
@@ -249,7 +253,7 @@ export function DeviceSkills({
                 variant="secondary"
               >
                 <UploadCloud size={14} />
-                Review & promote
+                {t("device.reviewPromote")}
               </Button>
             </>
           );
@@ -273,9 +277,9 @@ export function DeviceSkills({
             </Badge>
           ) : null;
         }}
-        searchPlaceholder="Filter local skills by name or description"
+        searchPlaceholder={t("device.searchPlaceholder")}
         skills={normalizedSkills}
-        statusFilterOptions={SERVER_STATUS_OPTIONS}
+        statusFilterOptions={serverStatusOptions(t)}
         statusFilterPredicate={(skill, filterVal) => {
           const raw = skill.deviceSkill;
           if (!raw) return true;
@@ -296,7 +300,7 @@ export function DeviceSkills({
           return true;
         }}
         statusFilterValue={serverFilter}
-        title="Local skills"
+        title={t("device.title")}
       />
     </div>
   );

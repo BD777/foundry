@@ -29,6 +29,7 @@ for (const key of [
   });
 
 const { createRoot } = await import("react-dom/client");
+await import("../src/i18n/index.ts");
 const { DetectedProfilesPanel } =
   await import("../src/features/devices/detected-profiles-panel.tsx");
 

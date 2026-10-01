@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
   WorkspaceProjection,
@@ -31,6 +32,7 @@ export function WorkspaceEditor({
   ) => Promise<void>;
   returnFocusTo?: HTMLElement | null;
 }) {
+  const { t } = useTranslation(["workspaces", "common"]);
   const [value, setValue] = useState(
     edit.kind === "rename" ? edit.workspace.name : "",
   );
@@ -41,12 +43,7 @@ export function WorkspaceEditor({
   const removing = edit.kind === "remove";
   const blocked = removing && edit.workspace.id === activeWorkspaceId;
   const offline = device.status !== "connected";
-  const title =
-    edit.kind === "add"
-      ? "Add workspace"
-      : removing
-        ? "Remove workspace"
-        : "Rename workspace";
+  const title = t(`editor.titles.${edit.kind}`);
   async function submit() {
     if (pending.current || blocked || (edit.kind !== "rename" && offline))
       return;
@@ -64,11 +61,7 @@ export function WorkspaceEditor({
       await onSaved(edit.kind, saved);
       onClose();
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Could not save. Please try again.",
-      );
+      setError(cause instanceof Error ? cause.message : t("editor.saveFailed"));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -79,13 +72,9 @@ export function WorkspaceEditor({
       initialFocus={field}
       returnFocusTo={returnFocusTo}
       title={title}
-      description={
-        edit.kind === "add"
-          ? `Register an existing folder on ${device.label}. Foundry adds its setup files and working folders; existing project files are preserved. Your current workspace does not change.`
-          : removing
-            ? "Remove this registration and its Foundry history. This cannot be undone."
-            : "Change the display name in Foundry only. The folder, repository and workspace identity stay unchanged."
-      }
+      description={t(`editor.descriptions.${edit.kind}`, {
+        device: device.label,
+      })}
       busy={busy}
       onClose={onClose}
     >
@@ -98,10 +87,7 @@ export function WorkspaceEditor({
         }}
       >
         {edit.kind === "add" ? (
-          <p className="fdy-location-description">
-            Initial setup may also initialize Git in a folder without a
-            repository. Check the device and path before registering.
-          </p>
+          <p className="fdy-location-description">{t("editor.addNote")}</p>
         ) : null}
         {removing ? (
           <>
@@ -109,20 +95,14 @@ export function WorkspaceEditor({
             <code className="fdy-workspace-path">
               {edit.workspace.localPath}
             </code>
-            <p className="fdy-location-description">
-              Chats, issues and run history in this workspace will be deleted
-              from Foundry. Local files will not be deleted.
-            </p>
-            {blocked ? (
-              <p role="status">
-                This is your current workspace. Switch to another workspace
-                before removing it.
-              </p>
-            ) : null}
+            <p className="fdy-location-description">{t("editor.removeNote")}</p>
+            {blocked ? <p role="status">{t("editor.blocked")}</p> : null}
           </>
         ) : (
           <label className="fdy-workspace-field">
-            {edit.kind === "add" ? `Folder on ${device.label}` : "Display name"}
+            {edit.kind === "add"
+              ? t("editor.folderOn", { device: device.label })
+              : t("editor.displayName")}
             {edit.kind === "add" ? (
               <WorkspacePathPicker
                 deviceId={device.id}
@@ -135,12 +115,12 @@ export function WorkspaceEditor({
             ) : (
               <TextInput
                 ref={field}
-                aria-label="Workspace display name"
+                aria-label={t("editor.displayNameLabel")}
                 tone="boxed"
                 value={value}
                 required
                 maxLength={120}
-                placeholder="Workspace name"
+                placeholder={t("editor.namePlaceholder")}
                 disabled={busy}
                 onChange={(event) => setValue(event.currentTarget.value)}
               />
@@ -149,8 +129,7 @@ export function WorkspaceEditor({
         )}
         {offline && edit.kind !== "rename" ? (
           <p role="status">
-            Reconnect this device to{" "}
-            {removing ? "remove its registration" : "register a folder"}.
+            {removing ? t("editor.reconnectRemove") : t("editor.reconnectAdd")}
           </p>
         ) : null}
         {error ? (
@@ -160,7 +139,7 @@ export function WorkspaceEditor({
         ) : null}
         <footer className="fdy-workspace-form-actions">
           <Button variant="secondary" disabled={busy} onClick={onClose}>
-            Cancel
+            {t("common:actions.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -174,12 +153,8 @@ export function WorkspaceEditor({
             }
           >
             {busy
-              ? "Saving…"
-              : removing
-                ? "Remove workspace and history"
-                : edit.kind === "add"
-                  ? "Register folder"
-                  : "Save display name"}
+              ? t("common:actions.saving")
+              : t(`editor.submit.${edit.kind}`)}
           </Button>
         </footer>
       </form>

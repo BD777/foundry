@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ArrowRight,
@@ -34,6 +35,7 @@ export function DeviceWorkspaces({
   onOpen: (workspaceId: string) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
+  const { t } = useTranslation("workspaces");
   const [query, setQuery] = useState("");
   const [edit, setEdit] = useState<WorkspaceEdit>();
   const [details, setDetails] = useState<WorkspaceProjection>();
@@ -57,13 +59,12 @@ export function DeviceWorkspaces({
     setBusyId(id);
     setError("");
     try {
-      if (!(await onOpen(id)))
-        throw new Error(
-          "Could not switch workspace. Your current location is unchanged. Try again.",
-        );
+      if (!(await onOpen(id))) throw new Error(t("deviceList.switchFailed"));
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Could not switch workspace.",
+        cause instanceof Error
+          ? cause.message
+          : t("deviceList.switchFailedShort"),
       );
     } finally {
       pending.current = false;
@@ -79,11 +80,11 @@ export function DeviceWorkspaces({
     <section className="fdy-device-section">
       <header className="fdy-management-heading">
         <div>
-          <h2>Workspaces</h2>
+          <h2>{t("deviceList.title")}</h2>
           <p>
             {device.owned
-              ? `Manage folders on ${device.label}. Select a name for details; use Switch here to change your working location.`
-              : `Workspaces on ${device.label} shared with you. Only the account that paired this device can add folders.`}
+              ? t("deviceList.ownedIntro", { device: device.label })
+              : t("deviceList.sharedIntro", { device: device.label })}
           </p>
         </div>
         {device.owned ? (
@@ -97,20 +98,17 @@ export function DeviceWorkspaces({
             }}
           >
             <Plus size={15} />
-            Add workspace
+            {t("deviceList.add")}
           </Button>
         ) : null}
       </header>
       {device.status !== "connected" ? (
-        <p>
-          Reconnect this device to add or remove folders. Saved names and
-          history remain available.
-        </p>
+        <p>{t("deviceList.reconnect")}</p>
       ) : null}
       <TextInput
         tone="boxed"
-        aria-label="Search device workspaces"
-        placeholder="Search workspace name or path…"
+        aria-label={t("deviceList.searchLabel")}
+        placeholder={t("deviceList.searchPlaceholder")}
         value={query}
         onChange={(event) => setQuery(event.currentTarget.value)}
       />
@@ -124,7 +122,7 @@ export function DeviceWorkspaces({
               disabled={!!busyId}
               onClick={() => void open(created.id)}
             >
-              Switch to this workspace
+              {t("deviceList.switchToThis")}
               <ArrowRight size={14} />
             </Button>
           ) : null}
@@ -148,7 +146,7 @@ export function DeviceWorkspaces({
                 className="fdy-workspace-details-trigger"
                 variant="ghost"
                 disabled={!!busyId}
-                aria-label={`View details for ${workspace.name}`}
+                aria-label={t("shared.viewDetails", { name: workspace.name })}
                 onClick={() => setDetails(workspace)}
               >
                 <FolderOpen size={20} />
@@ -157,7 +155,7 @@ export function DeviceWorkspaces({
                   <small>{workspace.localPath}</small>
                 </span>
                 <span className="fdy-workspace-details-label">
-                  Details
+                  {t("shared.details")}
                   <ChevronRight size={14} />
                 </span>
               </Button>
@@ -165,7 +163,7 @@ export function DeviceWorkspaces({
                 {current ? (
                   <Badge tone="online">
                     <Check size={13} />
-                    Current workspace
+                    {t("deviceList.currentWorkspace")}
                   </Badge>
                 ) : (
                   <Button
@@ -175,13 +173,17 @@ export function DeviceWorkspaces({
                     aria-busy={busyId === workspace.id}
                     onClick={() => void open(workspace.id)}
                   >
-                    {busyId === workspace.id ? "Switching…" : "Switch here"}
+                    {busyId === workspace.id
+                      ? t("shared.switching")
+                      : t("deviceList.switchHere")}
                     <ArrowRight size={14} />
                   </Button>
                 )}
                 {workspace.accessRole && workspace.accessRole !== "owner" ? (
                   <Badge tone="neutral">
-                    {workspaceRoleLabel(workspace.accessRole)} access
+                    {t("deviceList.roleAccess", {
+                      role: workspaceRoleLabel(workspace.accessRole),
+                    })}
                   </Badge>
                 ) : (
                   <DropdownMenu.Root>
@@ -190,7 +192,9 @@ export function DeviceWorkspaces({
                         size="sm"
                         variant="ghost"
                         disabled={!!busyId}
-                        aria-label={`Actions for ${workspace.name}`}
+                        aria-label={t("deviceList.actionsFor", {
+                          name: workspace.name,
+                        })}
                         ref={(element) => {
                           if (element)
                             actionTriggers.current.set(workspace.id, element);
@@ -198,7 +202,7 @@ export function DeviceWorkspaces({
                         }}
                       >
                         <MoreHorizontal size={17} />
-                        Actions
+                        {t("deviceList.actions")}
                       </Button>
                     </DropdownMenu.Trigger>
                     <DropdownMenu.Portal>
@@ -212,14 +216,14 @@ export function DeviceWorkspaces({
                           onSelect={() => editWorkspace("rename", workspace)}
                         >
                           <Pencil size={15} />
-                          Rename display name
+                          {t("deviceList.rename")}
                         </DropdownMenu.Item>
                         <DropdownMenu.Item
                           className="fdy-workspace-menu-item"
                           onSelect={() => editWorkspace("remove", workspace)}
                         >
                           <Trash2 size={15} />
-                          Remove from Foundry…
+                          {t("deviceList.remove")}
                         </DropdownMenu.Item>
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
@@ -231,11 +235,7 @@ export function DeviceWorkspaces({
         })}
       </div>
       {!visible.length ? (
-        <p>
-          {query
-            ? "No matching workspaces. Try another name or path."
-            : "No workspaces registered yet. Add a folder on this device to get started."}
-        </p>
+        <p>{query ? t("deviceList.noMatches") : t("deviceList.empty")}</p>
       ) : null}
       {edit ? (
         <WorkspaceEditor
@@ -246,19 +246,20 @@ export function DeviceWorkspaces({
           onClose={() => setEdit(undefined)}
           onSaved={async (kind, workspace) => {
             setMessage(
-              kind === "add"
-                ? `${workspace.name} registered. Your current location is unchanged.`
-                : kind === "rename"
-                  ? `Display name saved as ${workspace.name}.`
-                  : `${workspace.name} and its Foundry history removed. Local files preserved.`,
+              t(
+                kind === "add"
+                  ? "deviceList.added"
+                  : kind === "rename"
+                    ? "deviceList.renamed"
+                    : "deviceList.removed",
+                { name: workspace.name },
+              ),
             );
             setCreated(kind === "add" ? workspace : undefined);
             try {
               await onRefresh();
             } catch {
-              setError(
-                "Saved successfully, but the list could not refresh. Reload this page; do not repeat the action.",
-              );
+              setError(t("deviceList.refreshFailed"));
             }
           }}
         />

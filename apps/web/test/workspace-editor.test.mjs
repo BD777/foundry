@@ -36,6 +36,7 @@ Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 const { createRoot } = await import("react-dom/client");
+await import("../src/i18n/index.ts");
 const { WorkspaceEditor } =
   await import("../src/features/devices/workspace-editor.tsx");
 const workspace = {

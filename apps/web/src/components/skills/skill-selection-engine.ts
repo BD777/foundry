@@ -1,5 +1,6 @@
 import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { NormalizedSkill } from "./skill-models";
+import { i18n } from "../../i18n";
 
 export interface MissingSkillDependency {
   sourceSkillName: string;
@@ -216,7 +217,10 @@ export function toggleSkillSelection(
     if (activeRequirers.length > 0) {
       return {
         allowed: false,
-        blockedReason: `${targetSkill?.name ?? "This skill"} is required by ${activeRequirers.join(", ")} and cannot be disabled.`,
+        blockedReason: i18n.t("skills:selection.requiredBlocked", {
+          name: targetSkill?.name ?? i18n.t("skills:selection.thisSkill"),
+          requirers: activeRequirers.join(", "),
+        }),
         nextExplicit: currentExplicit,
         nextDeselectedRelated: currentDeselectedRelated,
         resolution: currentResolution,

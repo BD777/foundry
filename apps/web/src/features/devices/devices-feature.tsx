@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ArrowLeft, Monitor, MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import type {
@@ -24,7 +25,6 @@ import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
 import { AddDevicePanel } from "./add-device-panel";
 import { Alert } from "../../components/ui/alert";
-import { countLabel } from "../../lib/count-label";
 
 export type DeviceSection =
   "workspaces" | "resources" | "agents" | "skills" | "settings";
@@ -65,6 +65,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   const [removalTarget, setRemovalTarget] = useState<DeviceProjection>();
   const [addingDevice, setAddingDevice] = useState(false);
   const removalTriggers = useRef(new Map<string, HTMLButtonElement>());
+  const { t } = useTranslation("devices");
 
   function deviceWorkspaces(deviceId: string): WorkspaceProjection[] {
     return workspaces.filter((workspace) => workspace.deviceId === deviceId);
@@ -88,16 +89,13 @@ export function DevicesFeature(props: DevicesFeatureProps) {
         <>
           <header className="fdy-management-heading">
             <div>
-              <h1>Devices</h1>
-              <p>
-                Choose a device to browse its workspaces, manage agent logins,
-                or configure execution.
-              </p>
+              <h1>{t("list.title")}</h1>
+              <p>{t("list.intro")}</p>
             </div>
             {addingDevice ? null : (
               <Button onClick={() => setAddingDevice(true)} variant="primary">
                 <Plus size={15} />
-                Add device
+                {t("list.add")}
               </Button>
             )}
           </header>
@@ -119,18 +117,24 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                   <span>
                     <strong>{row.label}</strong>
                     <small>
-                      {countLabel(deviceWorkspaces(row.id).length, "workspace")}
+                      {t("list.workspaceCount", {
+                        count: deviceWorkspaces(row.id).length,
+                      })}
                     </small>
                   </span>
                   <Badge
                     tone={row.status === "connected" ? "online" : "neutral"}
                   >
-                    {row.status === "connected" ? "Online" : "Offline"}
+                    {t(
+                      row.status === "connected"
+                        ? "status.online"
+                        : "status.offline",
+                    )}
                   </Badge>
-                  <span>View →</span>
+                  <span>{t("list.view")}</span>
                 </Button>
                 {!row.owned ? (
-                  <Badge tone="neutral">Shared with you</Badge>
+                  <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
                 ) : (
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger asChild>
@@ -138,7 +142,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                         className="fdy-device-removal-menu-trigger"
                         size="sm"
                         variant="ghost"
-                        aria-label={`Actions for ${row.label}`}
+                        aria-label={t("list.actionsFor", { device: row.label })}
                         ref={(element) => {
                           if (element)
                             removalTriggers.current.set(row.id, element);
@@ -159,7 +163,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                           onSelect={() => setRemovalTarget(row)}
                         >
                           <Trash2 size={15} />
-                          Remove from Foundry…
+                          {t("list.removeFromFoundry")}
                         </DropdownMenu.Item>
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
@@ -170,18 +174,20 @@ export function DevicesFeature(props: DevicesFeatureProps) {
           </div>
           {!availableDevices.length ? (
             <EmptyState
-              title="No devices connected"
-              body="Use Add device to pair a Foundry worker with this server. It will appear here, along with its registered workspaces."
+              title={t("list.emptyTitle")}
+              body={t("list.emptyBody")}
             />
           ) : null}
         </>
       ) : !device ? (
         <>
           <EmptyState
-            title="Device not found"
-            body="This device is no longer registered. Your active workspace has not changed."
+            title={t("detail.notFoundTitle")}
+            body={t("detail.notFoundBody")}
           />
-          <Button onClick={() => onSelect()}>Back to devices</Button>
+          <Button onClick={() => onSelect()}>
+            {t("detail.backToDevices")}
+          </Button>
         </>
       ) : (
         <>
@@ -192,44 +198,45 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             onClick={() => onSelect()}
           >
             <ArrowLeft size={14} />
-            All devices
+            {t("detail.allDevices")}
           </Button>
           <header className="fdy-management-heading">
             <div>
               <h1>{device.label}</h1>
               <p>
-                {device.owned ? "Device settings" : "Shared device"} · Viewing
-                this device does not switch your workspace.
+                {t(device.owned ? "detail.ownedNote" : "detail.sharedNote")}
               </p>
             </div>
             <Badge tone={device.status === "connected" ? "online" : "neutral"}>
-              {device.status === "connected" ? "Online" : "Offline"}
+              {t(
+                device.status === "connected"
+                  ? "status.online"
+                  : "status.offline",
+              )}
             </Badge>
           </header>
           {device.status !== "connected" ? (
             <p className="fdy-device-offline" role="status">
-              This device is offline. Saved workspaces and history remain
-              available; sign-in and execution require reconnection.
+              {t("detail.offline")}
             </p>
           ) : null}
           {device.owned ? (
             <SegmentedControl
               tone="navigation"
-              aria-label="Device sections"
+              aria-label={t("detail.sections")}
               value={section}
               onValueChange={(next) => onSelect(device.id, next)}
               options={[
-                { value: "workspaces", label: "Workspaces" },
-                { value: "resources", label: "Resources" },
-                { value: "agents", label: "Models & accounts" },
-                { value: "skills", label: "Skills" },
-                { value: "settings", label: "Settings" },
+                { value: "workspaces", label: t("detail.sectionWorkspaces") },
+                { value: "resources", label: t("detail.sectionResources") },
+                { value: "agents", label: t("detail.sectionAgents") },
+                { value: "skills", label: t("detail.sectionSkills") },
+                { value: "settings", label: t("detail.sectionSettings") },
               ]}
             />
           ) : (
-            <Alert title="Shared with you">
-              You reach this device through its workspaces. Models, accounts,
-              skills and settings are managed by the account that paired it.
+            <Alert title={t("detail.sharedTitle")}>
+              {t("detail.sharedBody")}
             </Alert>
           )}
           <div key={device.id} className="fdy-device-content">
