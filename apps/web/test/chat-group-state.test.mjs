@@ -15,8 +15,8 @@ test("new groups go first, start expanded, and can receive the source chat atomi
   assert.deepEqual(
     second.groups.map(({ id, name, collapsed }) => [id, name, collapsed]),
     [
-      ["two", "新建分组 2", false],
-      ["one", "新建分组", false],
+      ["two", "New group 2", false],
+      ["one", "New group", false],
     ],
   );
   assert.equal(second.membership.chat, "one");

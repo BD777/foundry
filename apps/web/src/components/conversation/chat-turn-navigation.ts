@@ -1,3 +1,4 @@
+import { i18n } from "../../i18n";
 import type { ChatMessageItem } from "./conversation-types";
 
 const CHAT_TURN_QUERY_PREVIEW_LIMIT = 480;
@@ -66,7 +67,8 @@ export function buildChatTurnAnchors(
       ?.map((attachment) => attachment.name.trim())
       .filter(Boolean)
       .join(", ");
-    const query = normalized || attachmentLabel || "User message";
+    const query =
+      normalized || attachmentLabel || i18n.t("conversation:turns.userMessage");
     anchors.push({
       accessibleLabel: truncateText(query, CHAT_TURN_ACCESSIBLE_LABEL_LIMIT),
       id: message.id,

@@ -1,3 +1,5 @@
+import { i18n } from "../../i18n";
+
 export interface ChatGroup {
   id: string;
   name: string;
@@ -76,8 +78,9 @@ export function createChatGroup(
   chatId?: string,
 ): ChatGroupState {
   const names = new Set(state.groups.map((group) => group.name));
-  let name = "新建分组";
-  for (let suffix = 2; names.has(name); suffix++) name = `新建分组 ${suffix}`;
+  let name = i18n.t("chat:groups.defaultName");
+  for (let suffix = 2; names.has(name); suffix++)
+    name = i18n.t("chat:groups.defaultNameNumbered", { number: suffix });
   return {
     groups: [{ id, name, collapsed: false }, ...state.groups],
     membership: chatId

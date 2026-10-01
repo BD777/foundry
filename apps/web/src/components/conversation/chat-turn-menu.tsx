@@ -1,6 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { List, Check } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import type { ChatTurnAnchor } from "./chat-turn-navigation";
 
@@ -14,6 +15,7 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
   anchors: readonly ChatTurnAnchor[];
   onNavigate: (anchor: ChatTurnAnchor) => void;
 }) {
+  const { t } = useTranslation("conversation");
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -34,13 +36,13 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
       <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
         <DropdownMenu.Trigger asChild>
           <Button
-            aria-label="会话目录"
+            aria-label={t("turns.outline")}
             className="fdy-chat-turn-menu-trigger"
             ref={triggerRef}
             variant="ghost"
           >
             <List size={16} />
-            会话目录
+            {t("turns.outline")}
             <span>
               {activeIndex + 1} / {anchors.length}
             </span>
@@ -48,7 +50,7 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
-            aria-label="会话目录"
+            aria-label={t("turns.outline")}
             align="end"
             className="fdy-chat-turn-menu"
             collisionPadding={12}
@@ -59,7 +61,7 @@ export const ChatTurnMenu = memo(function ChatTurnMenu({
             }}
           >
             <DropdownMenu.Label className="fdy-chat-turn-menu-label">
-              会话目录 · {anchors.length} 个轮次
+              {t("turns.outlineHeading", { count: anchors.length })}
             </DropdownMenu.Label>
             {anchors.map((anchor, index) => (
               <DropdownMenu.Item

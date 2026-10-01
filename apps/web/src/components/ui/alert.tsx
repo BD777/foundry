@@ -1,5 +1,6 @@
 import { CircleAlert, Info } from "lucide-react";
 import type { HTMLAttributes, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../lib/cn";
 
 /** Status surface with a paired foreground/background for both themes. */
@@ -15,6 +16,7 @@ export function Alert({
   title: ReactNode;
   details?: ReactNode;
 }) {
+  const { t } = useTranslation("ui");
   const Icon = tone === "info" || tone === "success" ? Info : CircleAlert;
   return (
     <section
@@ -29,7 +31,7 @@ export function Alert({
         <div>{children}</div>
         {details ? (
           <details>
-            <summary>Diagnostic details</summary>
+            <summary>{t("alert.diagnosticDetails")}</summary>
             <div className="fdy-alert-diagnostic">{details}</div>
           </details>
         ) : null}

@@ -1,4 +1,5 @@
 import { Settings2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 
 /**
@@ -14,6 +15,7 @@ export function AgentPickerFooter({
   deviceId?: string;
   onManage?: (deviceId: string) => void;
 }) {
+  const { t } = useTranslation("agents");
   if (!deviceId || !onManage) {
     return null;
   }
@@ -25,7 +27,7 @@ export function AgentPickerFooter({
       variant="ghost"
     >
       <Settings2 size={13} />
-      Manage device accounts…
+      {t("composer.manageDeviceAccounts")}
     </Button>
   );
 }

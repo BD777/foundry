@@ -1,3 +1,5 @@
+import { i18n } from "../../i18n";
+
 export interface ProcessDisplayItem {
   id?: string;
   kind?: string;
@@ -16,10 +18,13 @@ export interface CompactProcessToolDetail {
   label: string;
 }
 
-interface ProcessSummaryPhrase {
-  continuation: string;
-  initial: string;
-}
+type ProcessSummaryPhrase =
+  | "readFiles"
+  | "ranCommands"
+  | "searched"
+  | "editedFiles"
+  | "calledTools"
+  | "thought";
 
 export function plainProcessLine(value: unknown): string {
   if (typeof value !== "string") {
@@ -27,7 +32,7 @@ export function plainProcessLine(value: unknown): string {
   }
   return (
     value
-      .replace(/<image\b[^>]*>/gi, "image attached")
+      .replace(/<image\b[^>]*>/gi, i18n.t("conversation:process.imageAttached"))
       .replace(/[`*_>#]/g, " ")
       .replace(/^\s*[-+]\s+/, "")
       .split(/\r?\n/)
@@ -36,18 +41,29 @@ export function plainProcessLine(value: unknown): string {
   );
 }
 
+/**
+ * Rewrites an agent-provided in-progress title into result language, in the
+ * language the agent wrote it in. The titles are data, not interface copy.
+ */
 export function completedProcessTitle(title: string): string {
   const trimmed = title.trim();
+  // i18n-ignore: rewrites agent-provided titles, which are data
   const exactTitles: Record<string, string> = {
+    // i18n-ignore: agent-provided title
     正在思考: "思考完成",
+    // i18n-ignore: agent-provided title
     正在运行: "已运行",
+    // i18n-ignore: agent-provided title
     处理中: "已处理",
+    "Working…": "Processed",
   };
   const exact = exactTitles[trimmed];
   if (exact) {
     return exact;
   }
+  // i18n-ignore: matches agent-provided titles
   if (trimmed.startsWith("正在")) {
+    // i18n-ignore: rewrites an agent-provided title
     return `已${trimmed.slice(2)}`;
   }
   const englishPrefixes: Array<[RegExp, string]> = [
@@ -66,7 +82,7 @@ export function completedProcessTitle(title: string): string {
 }
 
 function isInProgressTitle(title: string): boolean {
-  return /^(?:正在|处理中|Running\b|Using\b|Reading\b|Searching\b|Editing\b)/i.test(
+  return /^(?:正在|处理中|Working\b|Running\b|Using\b|Reading\b|Searching\b|Editing\b)/i.test(
     title.trim(),
   );
 }
@@ -145,6 +161,7 @@ export function compactProcessToolDetail(
     const output = plainCodeBlockContent(body);
     return {
       content: `$ ${item.snippet}${output ? `\n\n${output}` : ""}`,
+      // i18n-ignore: tool kind name, same in every language
       label: "Shell",
     };
   }
@@ -158,6 +175,7 @@ export function compactProcessToolDetail(
   if (command) {
     return {
       content: `$ ${command.trim()}`,
+      // i18n-ignore: tool kind name, same in every language
       label: shellTool ? "Shell" : item.snippet,
     };
   }
@@ -167,7 +185,10 @@ export function compactProcessToolDetail(
   }
   return {
     content,
-    label: shellTool ? "Shell" : item.snippet || "Tool",
+    label: shellTool
+      ? // i18n-ignore: tool kind name, same in every language
+        "Shell"
+      : item.snippet || i18n.t("conversation:process.tool"),
   };
 }
 
@@ -184,7 +205,7 @@ function hasMeaningfulDetail(detail: string, snippet: string): boolean {
 
 /**
  * Collapses matching start/completion lifecycle events into one display row.
- * Completed turns also rewrite any orphaned "正在…" labels to result language.
+ * Completed turns also rewrite any orphaned in-progress labels to result language.
  */
 export function processDisplayRows(
   items: ProcessDisplayItem[] | undefined,
@@ -266,22 +287,22 @@ export function processDisplayRows(
 function summaryPhrase(title: string): ProcessSummaryPhrase | undefined {
   const normalized = completedProcessTitle(title).toLowerCase();
   if (/读取.*文件|read.*file/.test(normalized)) {
-    return { initial: "已读取文件", continuation: "读取了文件" };
+    return "readFiles";
   }
   if (/命令|command|\bran\b/.test(normalized)) {
-    return { initial: "已运行命令", continuation: "运行了命令" };
+    return "ranCommands";
   }
   if (/搜索|search/.test(normalized)) {
-    return { initial: "已完成搜索", continuation: "完成了搜索" };
+    return "searched";
   }
   if (/编辑.*文件|file change|edited.*file/.test(normalized)) {
-    return { initial: "已编辑文件", continuation: "编辑了文件" };
+    return "editedFiles";
   }
   if (/工具|tool/.test(normalized)) {
-    return { initial: "已调用工具", continuation: "调用了工具" };
+    return "calledTools";
   }
   if (/思考|reason/.test(normalized)) {
-    return { initial: "已完成思考", continuation: "完成了思考" };
+    return "thought";
   }
   return undefined;
 }
@@ -292,29 +313,40 @@ export function processDisplaySummaryTitle(
   streaming: boolean,
 ): string {
   if (streaming) {
-    return rows[rows.length - 1]?.title || fallbackTitle || "正在运行";
+    return (
+      rows[rows.length - 1]?.title ||
+      fallbackTitle ||
+      i18n.t("conversation:process.running")
+    );
   }
   const phrases: ProcessSummaryPhrase[] = [];
-  const seen = new Set<string>();
   for (const row of rows) {
     const phrase = summaryPhrase(row.title);
-    if (!phrase || seen.has(phrase.initial)) {
-      continue;
+    if (phrase && !phrases.includes(phrase)) {
+      phrases.push(phrase);
     }
-    seen.add(phrase.initial);
-    phrases.push(phrase);
   }
-  if (phrases.length === 0) {
-    return completedProcessTitle(fallbackTitle) || "已处理";
+  const [first, second, third] = phrases;
+  if (!first) {
+    return (
+      completedProcessTitle(fallbackTitle) ||
+      i18n.t("conversation:process.processed")
+    );
   }
-  if (phrases.length === 1) {
-    return phrases[0]?.initial ?? "已处理";
+  const initial = i18n.t(`conversation:process.summary.${first}.initial`);
+  if (!second) {
+    return initial;
   }
-  const visible = phrases.slice(0, 3);
-  const first = visible[0]?.initial ?? "已处理";
-  const rest = visible.slice(1).map((phrase) => phrase.continuation);
-  if (rest.length === 1) {
-    return `${first}并${rest[0]}`;
-  }
-  return `${first}、${rest.slice(0, -1).join("、")}并${rest.at(-1)}`;
+  const continuation = (phrase: ProcessSummaryPhrase) =>
+    i18n.t(`conversation:process.summary.${phrase}.continuation`);
+  return third
+    ? i18n.t("conversation:process.summary.three", {
+        first: initial,
+        second: continuation(second),
+        third: continuation(third),
+      })
+    : i18n.t("conversation:process.summary.two", {
+        first: initial,
+        second: continuation(second),
+      });
 }

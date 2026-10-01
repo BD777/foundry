@@ -2,6 +2,7 @@ import type {
   DeviceProfileBinding,
   ProfileDefinition,
 } from "@bd777/foundry-protocol";
+import { i18n } from "../i18n";
 
 export function isModelConnection(profile: ProfileDefinition): boolean {
   return (
@@ -59,13 +60,15 @@ export function connectionUsage(
 ): string {
   // A sealed key is optional: internal gateways can authenticate themselves,
   // so a connection without one is described neutrally, never as a warning.
-  const keyLabel = profile.hasCredential ? "Configured" : "No key configured";
+  const key = profile.hasCredential
+    ? i18n.t("agents:connections.keyConfigured")
+    : i18n.t("agents:connections.noKey");
   const count = new Set(
     bindings
       .filter((row) => row.profileId === profile.id && row.enabled)
       .map((row) => row.deviceId),
   ).size;
   return count
-    ? `${keyLabel} · ${count} device${count === 1 ? "" : "s"}`
-    : `${keyLabel} · Not assigned`;
+    ? i18n.t("agents:connections.devices", { key, count })
+    : i18n.t("agents:connections.notAssigned", { key });
 }

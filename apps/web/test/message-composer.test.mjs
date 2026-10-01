@@ -198,7 +198,7 @@ test("shared composer protects IME input and portaled selection works outside cl
     assert.equal(container.querySelector('[role="menu"]'), null);
     assert.match(
       window.document.querySelector('[role="menu"]').textContent,
-      /推理强度/,
+      /Effort/,
     );
     await act(() =>
       root.render(

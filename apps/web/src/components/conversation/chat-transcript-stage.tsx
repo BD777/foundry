@@ -1,6 +1,7 @@
 import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import type { ParsedImageTag } from "./chat-message-content";
 import { ChatMessageRow } from "./chat-message-list";
@@ -64,6 +65,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   showScrollToLatest: boolean;
   threadKey: string;
 }) {
+  const { t } = useTranslation("conversation");
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
   const { contentRef, contentResized, readHistory, viewportRef } =
@@ -151,7 +153,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         />
       ) : null}
       <Button
-        aria-label="Scroll to latest message"
+        aria-label={t("turns.scrollToLatest")}
         className="fdy-chat-scroll-latest"
         data-visible={showScrollToLatest ? "true" : "false"}
         onClick={() => scrollController.followLatest("smooth")}

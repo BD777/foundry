@@ -3,6 +3,7 @@ import { deleteChatGroup, getChatLayout, saveChatLayout } from "../../api";
 import { loadChatGroups } from "./chat-group-state";
 import { emptyChatLayout, mergeLegacyGroups } from "./chat-layout";
 import { ChatLayoutSync, type LayoutChange } from "./chat-layout-sync";
+import { i18n } from "../../i18n";
 
 function loadCollapsed(workspaceId: string): Record<string, boolean> {
   const legacy = Object.fromEntries(
@@ -94,8 +95,7 @@ export function useChatLayout(workspaceId: string, readOnly = false) {
     };
     if (workspaceId)
       void start().catch(() => {
-        if (active)
-          setError("分组加载或迁移失败，请重试；原有本地分组仍保留。");
+        if (active) setError(i18n.t("chat:layoutSync.loadFailed"));
       });
     const refresh = () => {
       if (document.visibilityState === "visible")
@@ -131,7 +131,7 @@ export function useChatLayout(workspaceId: string, readOnly = false) {
     retry: () => setReload((value) => value + 1),
     deleteGroup: async (groupId: string) => {
       const sync = syncRef.current;
-      if (!ready || !sync) throw new Error("请等待分组加载完成。");
+      if (!ready || !sync) throw new Error(i18n.t("chat:layoutSync.notReady"));
       setDeleting(true);
       try {
         await sync.deleteGroup((revision) =>

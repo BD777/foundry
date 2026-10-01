@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { memo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ActionRow } from "../../components/ui/action-row";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
@@ -27,6 +28,7 @@ export const ChatListRow = memo(function ChatListRow({
   groupMenu: ChatGroupMenuProps;
   readOnly?: boolean;
 }) {
+  const { t } = useTranslation(["chat", "common"]);
   const [renameOpen, setRenameOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -35,16 +37,16 @@ export const ChatListRow = memo(function ChatListRow({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const rawLabel =
     chat.runtime === "codex"
-      ? "Codex session ID"
+      ? t("listRow.codexSessionId")
       : chat.runtime === "claude"
-        ? "Claude Code session ID"
-        : "Raw session ID";
+        ? t("listRow.claudeSessionId")
+        : t("listRow.rawSessionId");
   const copy = async (value: string) => {
     try {
       await navigator.clipboard.writeText(value);
-      chat.onNotify("已复制");
+      chat.onNotify(t("common:actions.copied"));
     } catch {
-      chat.onNotify("复制失败，请检查浏览器剪贴板权限");
+      chat.onNotify(t("listRow.copyFailed"));
     }
   };
   const save = async () => {
@@ -55,7 +57,9 @@ export const ChatListRow = memo(function ChatListRow({
       await chat.onRename(draft.trim());
       setRenameOpen(false);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "重命名失败");
+      setError(
+        error instanceof Error ? error.message : t("listRow.renameFailed"),
+      );
     } finally {
       setSaving(false);
     }
@@ -83,7 +87,7 @@ export const ChatListRow = memo(function ChatListRow({
                 <GitBranch
                   size={12}
                   className="fdy-chat-row-spawned"
-                  aria-label="由编排会话创建"
+                  aria-label={t("listRow.spawned")}
                   role="img"
                 />
               ) : null}
@@ -103,8 +107,8 @@ export const ChatListRow = memo(function ChatListRow({
                 className="fdy-chat-row-status"
                 data-tone="warning"
                 role="img"
-                aria-label={chat.blockedReason ?? "等待中"}
-                title={chat.blockedReason ?? "等待中（限流或权限）"}
+                aria-label={chat.blockedReason ?? t("listRow.blocked")}
+                title={chat.blockedReason ?? t("listRow.blockedTitle")}
               >
                 <PauseCircle size={14} />
               </span>
@@ -112,8 +116,8 @@ export const ChatListRow = memo(function ChatListRow({
               <span
                 className="fdy-chat-row-status"
                 role="img"
-                aria-label="处理中"
-                title="处理中"
+                aria-label={t("listRow.processing")}
+                title={t("listRow.processing")}
               >
                 <LoaderCircle className="fdy-chat-row-spinner" size={14} />
               </span>
@@ -122,8 +126,8 @@ export const ChatListRow = memo(function ChatListRow({
                 className="fdy-chat-row-status"
                 data-tone="error"
                 role="img"
-                aria-label="失败"
-                title="失败"
+                aria-label={t("listRow.failed")}
+                title={t("listRow.failed")}
               >
                 <CircleAlert size={14} />
               </span>
@@ -131,8 +135,8 @@ export const ChatListRow = memo(function ChatListRow({
               <span
                 className="fdy-chat-row-unread"
                 role="img"
-                aria-label="未读"
-                title="未读"
+                aria-label={t("listRow.unread")}
+                title={t("listRow.unread")}
               />
             ) : null}
           </ActionRow>
@@ -163,7 +167,7 @@ export const ChatListRow = memo(function ChatListRow({
                 variant="ghost"
                 disabled={readOnly}
               >
-                重命名
+                {t("listRow.rename")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Item
@@ -176,12 +180,14 @@ export const ChatListRow = memo(function ChatListRow({
                 variant="ghost"
                 disabled={readOnly || chat.renaming}
               >
-                {chat.renaming ? "正在自动命名…" : "自动重命名"}
+                {chat.renaming
+                  ? t("listRow.autoRenaming")
+                  : t("listRow.autoRename")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Item asChild onSelect={chat.onMarkUnread}>
               <Button className="fdy-chat-list-menu-item" variant="ghost">
-                标记为未读
+                {t("listRow.markUnread")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Separator className="fdy-chat-list-menu-separator" />
@@ -202,7 +208,7 @@ export const ChatListRow = memo(function ChatListRow({
                 variant="ghost"
                 disabled={groupMenu.disabled || !groupMenu.onMoveUp}
               >
-                上移
+                {t("listRow.moveUp")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Item
@@ -215,13 +221,13 @@ export const ChatListRow = memo(function ChatListRow({
                 variant="ghost"
                 disabled={groupMenu.disabled || !groupMenu.onMoveDown}
               >
-                下移
+                {t("listRow.moveDown")}
               </Button>
             </ContextMenu.Item>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger asChild>
                 <Button className="fdy-chat-list-menu-item" variant="ghost">
-                  复制
+                  {t("common:actions.copy")}
                   <ChevronRight size={14} />
                 </Button>
               </ContextMenu.SubTrigger>
@@ -236,7 +242,7 @@ export const ChatListRow = memo(function ChatListRow({
                     onSelect={() => void copy(chat.foundrySessionId)}
                   >
                     <Button className="fdy-chat-list-menu-item" variant="ghost">
-                      Foundry session ID
+                      {t("listRow.foundrySessionId")}
                     </Button>
                   </ContextMenu.Item>
                   <ContextMenu.Item
@@ -278,10 +284,10 @@ export const ChatListRow = memo(function ChatListRow({
             }}
           >
             <Dialog.Title className="fdy-chat-rename-title">
-              重命名会话
+              {t("listRow.renameTitle")}
             </Dialog.Title>
             <TextInput
-              aria-label="会话名称"
+              aria-label={t("listRow.nameLabel")}
               className="fdy-chat-rename-input"
               maxLength={120}
               ref={inputRef}
@@ -303,7 +309,7 @@ export const ChatListRow = memo(function ChatListRow({
             <div className="fdy-chat-rename-actions">
               <Dialog.Close asChild>
                 <Button variant="ghost" disabled={saving}>
-                  取消
+                  {t("common:actions.cancel")}
                 </Button>
               </Dialog.Close>
               <Button
@@ -311,12 +317,12 @@ export const ChatListRow = memo(function ChatListRow({
                 disabled={saving || !draft.trim()}
                 onClick={() => void save()}
               >
-                {saving ? "保存中…" : "保存"}
+                {saving ? t("common:actions.saving") : t("common:actions.save")}
               </Button>
             </div>
             <Dialog.Close asChild>
               <Button
-                aria-label="关闭重命名"
+                aria-label={t("listRow.closeRename")}
                 className="fdy-chat-rename-close"
                 variant="ghost"
                 size="icon"

@@ -9,6 +9,7 @@ import {
   readWorkspaceFile,
 } from "../../api";
 import type { ChatContextSelection } from "./chat-types";
+import { i18n } from "../../i18n";
 
 export function useChatContextDetail(threadKey: string) {
   const [selection, setSelection] = useState<ChatContextSelection>();
@@ -55,7 +56,7 @@ export function useChatContextDetail(threadKey: string) {
                 setFile(value);
               }
             })
-          : Promise.reject(new Error("这个文件没有关联工作区，无法读取。"));
+          : Promise.reject(new Error(i18n.t("chat:detail.noWorkspace")));
     void request
       .catch((reason: unknown) => {
         if (signal.aborted || isAbortError(reason)) {

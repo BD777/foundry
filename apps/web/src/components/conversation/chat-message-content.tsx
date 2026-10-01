@@ -10,9 +10,11 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Streamdown, type Components } from "streamdown";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
+import { i18n } from "../../i18n";
 import { Button } from "../ui/button";
 import {
   compactProcessToolDetail,
@@ -62,7 +64,7 @@ function parseImageTagAttributes(
     nameMatch?.[1] ??
     nameMatch?.[2] ??
     nameMatch?.[3] ??
-    "Attached image"
+    i18n.t("conversation:message.attachedImage")
   ).trim();
   return { alt, path };
 }
@@ -190,16 +192,21 @@ export function MarkdownContent({
 
 function ProcessItemIcon({ title }: { title: string }) {
   const normalized = title.toLowerCase();
+  // Recognizes agent-provided titles (data) in either language.
+  // i18n-ignore: matches agent-provided titles
   if (normalized.includes("搜索") || normalized.includes("search")) {
     return <Search size={15} />;
   }
   if (
+    // i18n-ignore: matches agent-provided titles
     normalized.includes("读取") ||
+    // i18n-ignore: matches agent-provided titles
     normalized.includes("加载") ||
     normalized.includes("loaded") ||
     normalized.includes("file") ||
     normalized.includes("skill") ||
     normalized.includes("workspace") ||
+    // i18n-ignore: matches agent-provided titles
     normalized.includes("上下文")
   ) {
     return <FileText size={15} />;
@@ -208,11 +215,14 @@ function ProcessItemIcon({ title }: { title: string }) {
     normalized.includes("sdk") ||
     normalized.includes("cli") ||
     normalized.includes("profile") ||
+    // i18n-ignore: matches agent-provided titles
     normalized.includes("命令") ||
+    // i18n-ignore: matches agent-provided titles
     normalized.includes("工具")
   ) {
     return <Terminal size={15} />;
   }
+  // i18n-ignore: matches agent-provided titles
   if (normalized.includes("权限") || normalized.includes("permission")) {
     return <ShieldAlert size={15} />;
   }
@@ -224,7 +234,10 @@ function processDisplaySummary(
   title: ReactNode,
   streaming: boolean,
 ): ProcessDisplaySummary {
-  const fallbackTitle = typeof title === "string" ? title : "已处理";
+  const fallbackTitle =
+    typeof title === "string"
+      ? title
+      : i18n.t("conversation:process.processed");
   const activeItem = processItems?.[processItems.length - 1];
   if (activeItem) {
     return {
@@ -247,13 +260,16 @@ function CompactToolDetailCard({
   content: string;
   label: string;
 }) {
+  const { t } = useTranslation("conversation");
   const [copied, setCopied] = useState(false);
 
   return (
     <div className="fdy-chat-process-tool-detail">
       <span>{label}</span>
       <Button
-        aria-label={copied ? "Copied tool detail" : "Copy tool detail"}
+        aria-label={
+          copied ? t("message.copiedToolDetail") : t("message.copyToolDetail")
+        }
         className="fdy-chat-process-tool-copy"
         data-copied={copied ? "true" : "false"}
         onClick={async () => {
@@ -437,11 +453,14 @@ export function CopyButton({
   always?: boolean;
   text: string;
 }) {
+  const { t } = useTranslation(["conversation", "common"]);
   const [copied, setCopied] = useState(false);
 
   return (
     <Button
-      aria-label={copied ? "Copied" : "Copy message"}
+      aria-label={
+        copied ? t("common:actions.copied") : t("message.copyMessage")
+      }
       className="fdy-chat-copy-button"
       data-always={always ? "true" : "false"}
       data-copied={copied ? "true" : "false"}
@@ -549,6 +568,7 @@ export function ToolCallItem({
   text: ReactNode;
   title: ReactNode;
 }) {
+  const { t } = useTranslation("conversation");
   const [open, setOpen] = useState(false);
 
   // Extract a one-line summary snippet from the text content.
@@ -582,7 +602,7 @@ export function ToolCallItem({
           )}
         </span>
         <span className="fdy-chat-tool-call-title">
-          <strong>{title ?? "Context"}</strong>
+          <strong>{title ?? t("message.context")}</strong>
           {snippet ? (
             <span className="fdy-chat-tool-call-snippet">{snippet}</span>
           ) : null}
@@ -601,6 +621,7 @@ export function ImagePreviewOverlay({
   image: ParsedImageTag;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("conversation");
   const src = localImageUrl(image.path);
 
   useEffect(() => {
@@ -620,13 +641,13 @@ export function ImagePreviewOverlay({
 
   return (
     <div
-      aria-label="Image preview"
+      aria-label={t("message.imagePreview")}
       aria-modal="true"
       className="fdy-image-preview"
       role="dialog"
     >
       <Button
-        aria-label="Close image preview"
+        aria-label={t("message.closeImagePreview")}
         className="fdy-image-preview-backdrop"
         onClick={onClose}
         variant="ghost"
@@ -635,7 +656,7 @@ export function ImagePreviewOverlay({
         <div className="fdy-image-preview-topbar">
           <span>{image.alt}</span>
           <Button
-            aria-label="Close image preview"
+            aria-label={t("message.closeImagePreview")}
             className="fdy-image-preview-close"
             onClick={onClose}
             size="icon"

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Diff, Hunk, parseDiff, type FileData } from "react-diff-view";
 import "react-diff-view/style/index.css";
 import "./file-diff.css";
+import type { FileDiffError } from "./file-diff-engine";
 import { SegmentedControl } from "./segmented-control";
 
 /** Shared lazy file viewer. Algorithms run in a cancellable worker, never in the list render. */
@@ -16,8 +18,11 @@ export function FileDiff({
   viewType?: "unified" | "split";
   onViewTypeChange?: (view: "unified" | "split") => void;
 }) {
+  const { t } = useTranslation("ui");
   const [files, setFiles] = useState<FileData[]>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<
+    FileDiffError | "timedOut" | "display" | "worker" | ""
+  >("");
   const [localView, setLocalView] = useState<"unified" | "split">("unified");
   const view = viewType ?? localView;
   const setView = (next: "unified" | "split") => {
@@ -33,12 +38,10 @@ export function FileDiff({
     );
     const timer = setTimeout(() => {
       worker.terminate();
-      setError(
-        "Diff timed out. Download the archives for external comparison.",
-      );
+      setError("timedOut");
     }, 2500);
     worker.onmessage = (
-      event: MessageEvent<{ patch?: string; error?: string }>,
+      event: MessageEvent<{ patch?: string; error?: FileDiffError }>,
     ) => {
       clearTimeout(timer);
       worker.terminate();
@@ -49,12 +52,12 @@ export function FileDiff({
       try {
         setFiles(parseDiff(event.data.patch ?? "", { nearbySequences: "zip" }));
       } catch {
-        setError("Could not display this diff.");
+        setError("display");
       }
     };
     worker.onerror = () => {
       clearTimeout(timer);
-      setError("Could not load the diff worker.");
+      setError("worker");
       worker.terminate();
     };
     worker.postMessage({ before, after });
@@ -66,21 +69,21 @@ export function FileDiff({
   return (
     <div className="fdy-text-diff">
       <SegmentedControl
-        aria-label="Diff layout"
+        aria-label={t("fileDiff.layout")}
         size="sm"
         value={view}
         onValueChange={setView}
         options={[
-          { label: "Unified", value: "unified" },
-          { label: "Side by side", value: "split" },
+          { label: t("fileDiff.unified"), value: "unified" },
+          { label: t("fileDiff.split"), value: "split" },
         ]}
       />
       {error ? (
-        <p role="alert">{error}</p>
+        <p role="alert">{t(`fileDiff.errors.${error}`)}</p>
       ) : !files ? (
-        <p role="status">Calculating this file’s diff…</p>
+        <p role="status">{t("fileDiff.calculating")}</p>
       ) : files.every((f) => !f.hunks.length) ? (
-        <p>No text changes.</p>
+        <p>{t("fileDiff.noChanges")}</p>
       ) : (
         <div className="fdy-text-diff-content">
           {files.map((f, i) => (
@@ -101,7 +104,9 @@ export function FileDiff({
                     {sign ? (
                       <span
                         aria-label={
-                          sign === "+" ? "Added line" : "Removed line"
+                          sign === "+"
+                            ? t("fileDiff.addedLine")
+                            : t("fileDiff.removedLine")
                         }
                       >
                         {sign}

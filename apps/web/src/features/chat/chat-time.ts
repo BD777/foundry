@@ -1,3 +1,5 @@
+import { i18n } from "../../i18n";
+
 /** Ignore missing/invalid legacy dates and keep the most recent known activity. */
 export function latestChatTime(
   values: (string | undefined)[],
@@ -23,7 +25,14 @@ export function chatUpdateLabel(
   if (days <= 0) {
     return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   }
-  return days === 1 ? "昨天" : `${days}天前`;
+  return daysAgoLabel(days);
+}
+
+/** "yesterday", "3 days ago" in the interface language. */
+function daysAgoLabel(days: number): string {
+  return new Intl.RelativeTimeFormat(i18n.language, {
+    numeric: "auto",
+  }).format(-days, "day");
 }
 
 export interface ChatUpdateTime {
@@ -43,21 +52,24 @@ export function chatUpdateTime(
     return {
       label,
       dateTime: value,
-      title: `最新更新：${new Date(value!).toLocaleString()}`,
+      title: i18n.t("chat:time.updatedAt", {
+        time: new Date(value!).toLocaleString(i18n.language),
+      }),
     };
   }
+  // i18n-ignore: parses a stored legacy label ("3d" / "3天前"), not copy
   const days = legacyLabel?.trim().match(/^(\d+)(?:d|天前)$/);
   if (days && Number(days[1]) > 0) {
     const count = Number(days[1]);
     return {
-      label: count === 1 ? "昨天" : `${count}天前`,
-      title: "旧记录仅保存相对更新时间，尚未恢复准确日期",
+      label: daysAgoLabel(count),
+      title: i18n.t("chat:time.legacyRelative"),
     };
   }
   // A stored duration has no reference date; subtracting it from now invents
   // a fresh timestamp every render. Wait for native history to supply one.
   return {
-    label: "时间未知",
-    title: "旧记录缺少准确更新时间，等待历史记录补全",
+    label: i18n.t("chat:time.unknown"),
+    title: i18n.t("chat:time.unknownTitle"),
   };
 }

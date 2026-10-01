@@ -1,21 +1,19 @@
 import { createTwoFilesPatch } from "diff";
+
+/** Why a diff could not be produced; the viewer turns it into copy. */
+export type FileDiffError =
+  "longLines" | "tooLarge" | "timeLimit" | "tooManyLines" | "failed";
+
 export function createFileDiff(
   before: string,
   after: string,
-): { patch?: string; error?: string } {
+): { patch?: string; error?: FileDiffError } {
   if (
     before.split("\n").some((line) => line.length > 20000) ||
     after.split("\n").some((line) => line.length > 20000)
   )
-    return {
-      error:
-        "This file contains very long lines. Download the archives for external comparison.",
-    };
-  if (before.length + after.length > 1024 * 1024)
-    return {
-      error:
-        "This file is too large for inline diff. Download the archives for the complete contents.",
-    };
+    return { error: "longLines" };
+  if (before.length + after.length > 1024 * 1024) return { error: "tooLarge" };
   const patch = createTwoFilesPatch(
     "a/server",
     "b/local",
@@ -25,15 +23,7 @@ export function createFileDiff(
     "",
     { context: 3, timeout: 800, maxEditLength: 12000 },
   );
-  if (!patch)
-    return {
-      error:
-        "Diff computation reached its time limit. Download the archives to compare externally.",
-    };
-  if (patch.split("\n").length > 5000)
-    return {
-      error:
-        "This diff has more than 5,000 lines. Download the archives to inspect all changes.",
-    };
+  if (!patch) return { error: "timeLimit" };
+  if (patch.split("\n").length > 5000) return { error: "tooManyLines" };
   return { patch: "diff --git a/server b/local\n" + patch };
 }

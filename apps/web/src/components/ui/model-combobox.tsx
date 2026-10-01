@@ -2,6 +2,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
 import { Check, ChevronDown, Plus, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 
 export interface ModelComboboxProps {
@@ -38,6 +39,7 @@ export function ModelCombobox({
   allowCustom = true,
   disabled = false,
 }: ModelComboboxProps) {
+  const { t } = useTranslation("agents");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const candidate = query.trim();
@@ -73,7 +75,7 @@ export function ModelCombobox({
           className="fdy-model-combobox-trigger"
           variant="secondary"
         >
-          <span>{value || placeholder || "Select a model"}</span>
+          <span>{value || placeholder || t("modelCombobox.selectModel")}</span>
           <ChevronDown size={14} />
         </Button>
       </Popover.Trigger>
@@ -100,8 +102,8 @@ export function ModelCombobox({
                 onValueChange={setQuery}
                 placeholder={
                   allowCustom
-                    ? "Filter or type a model"
-                    : "Search official models"
+                    ? t("modelCombobox.filterOrType")
+                    : t("modelCombobox.searchOfficial")
                 }
                 value={query}
               />
@@ -110,8 +112,8 @@ export function ModelCombobox({
                   aria-busy={busy}
                   aria-label={
                     allowCustom
-                      ? "Refresh models from the endpoint"
-                      : "Refresh official models"
+                      ? t("modelCombobox.refreshFromEndpoint")
+                      : t("modelCombobox.refreshOfficial")
                   }
                   // Never disabled: disabling the focused button drops focus out
                   // of the popover, which closes it mid-refresh.
@@ -127,7 +129,7 @@ export function ModelCombobox({
             </div>
             <Command.List className="fdy-model-combobox-list">
               <Command.Empty className="fdy-model-combobox-empty">
-                {busy ? "Loading models…" : "No matching model."}
+                {busy ? t("modelCombobox.loading") : t("modelCombobox.noMatch")}
               </Command.Empty>
               {options.map((option) => (
                 <Command.Item
@@ -146,7 +148,7 @@ export function ModelCombobox({
                   </span>
                   {allowCustom ? (
                     <Button
-                      aria-label={`Remove ${option}`}
+                      aria-label={t("modelCombobox.remove", { model: option })}
                       onClick={(event) => {
                         event.stopPropagation();
                         remove(option);
@@ -168,7 +170,7 @@ export function ModelCombobox({
                 >
                   <Plus size={13} />
                   <span className="fdy-model-combobox-item-label">
-                    Use “{candidate}”
+                    {t("modelCombobox.use", { model: candidate })}
                   </span>
                 </Command.Item>
               ) : null}

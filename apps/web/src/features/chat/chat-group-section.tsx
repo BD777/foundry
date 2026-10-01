@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import type { ChatGroup } from "./chat-group-state";
@@ -34,6 +35,7 @@ export function ChatGroupSection({
   sessionCount: number;
   onDelete: () => Promise<void>;
 }) {
+  const { t } = useTranslation("chat");
   const contentId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(group.name);
@@ -60,7 +62,11 @@ export function ChatGroupSection({
           data-drop-edge={dropEdge}
         >
           <Button
-            aria-label={`${group.collapsed ? "展开" : "折叠"}分组 ${group.name}`}
+            aria-label={
+              group.collapsed
+                ? t("groups.expand", { name: group.name })
+                : t("groups.collapse", { name: group.name })
+            }
             aria-expanded={!group.collapsed}
             aria-controls={contentId}
             className="fdy-chat-group-toggle"
@@ -77,7 +83,7 @@ export function ChatGroupSection({
           </Button>
           {editing ? (
             <TextInput
-              aria-label="分组名称"
+              aria-label={t("groups.nameLabel")}
               className="fdy-chat-group-name"
               maxLength={120}
               ref={inputRef}
@@ -98,7 +104,7 @@ export function ChatGroupSection({
             />
           ) : (
             <Button
-              aria-label={`重命名分组 ${group.name}`}
+              aria-label={t("groups.renameGroup", { name: group.name })}
               className="fdy-chat-group-edit"
               size="icon"
               variant="ghost"

@@ -9,6 +9,7 @@ import {
   type FocusEvent,
   type KeyboardEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import {
   sampleChatTurnIndexes,
@@ -26,6 +27,7 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
   anchors: readonly ChatTurnAnchor[];
   onNavigate: (anchor: ChatTurnAnchor) => void;
 }) {
+  const { t } = useTranslation("conversation");
   const markerRefs = useRef(new Map<number, HTMLButtonElement>());
   const pendingFocusRef = useRef<number | undefined>(undefined);
   const [keyboardIndex, setKeyboardIndex] = useState<number>();
@@ -114,7 +116,7 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
   return (
     <TooltipPrimitive.Provider delayDuration={140} skipDelayDuration={180}>
       <nav
-        aria-label="Conversation turns"
+        aria-label={t("turns.navigator")}
         className="fdy-chat-turn-nav"
         data-expanded={previewIndex !== undefined ? "true" : "false"}
         onBlurCapture={handleBlurCapture}
@@ -138,11 +140,11 @@ export const ChatTurnNavigator = memo(function ChatTurnNavigator({
                 <TooltipPrimitive.Trigger asChild>
                   <Button
                     aria-current={current ? "step" : undefined}
-                    aria-label={`${
-                      current ? "Current" : "Go to"
-                    } turn ${index + 1} of ${anchors.length}: ${
-                      anchor.accessibleLabel
-                    }`}
+                    aria-label={t(current ? "turns.current" : "turns.goTo", {
+                      index: index + 1,
+                      total: anchors.length,
+                      label: anchor.accessibleLabel,
+                    })}
                     className="fdy-chat-turn-marker"
                     data-current={current ? "true" : "false"}
                     data-distance={previewDistance}

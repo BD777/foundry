@@ -27,6 +27,7 @@ import {
   uploadChatAttachments,
 } from "../../api";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { i18n } from "../../i18n";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import { agentSessionNeedsDetails } from "../../lib/agent-session-events";
 import {
@@ -365,7 +366,10 @@ export function useChatFeature({
     void emit({
       message:
         session.status === "failed"
-          ? `${session.profileLabel ?? runtimeMeta(session.provider).label} failed.`
+          ? i18n.t("chat:notices.agentFailed", {
+              agent:
+                session.profileLabel ?? runtimeMeta(session.provider).label,
+            })
           : "",
       type: "notice.requested",
     });
@@ -435,7 +439,7 @@ export function useChatFeature({
       }
       if (!workspaceId) {
         await emit({
-          message: "Connect a local workspace before attaching files.",
+          message: i18n.t("chat:notices.attachNeedsWorkspace"),
           type: "notice.requested",
         });
         return;
@@ -448,13 +452,15 @@ export function useChatFeature({
         await emit({
           message:
             uploaded.length === 1 && firstUpload
-              ? `${firstUpload.name} attached.`
-              : `${uploaded.length} files attached.`,
+              ? i18n.t("chat:notices.attachedOne", { name: firstUpload.name })
+              : i18n.t("chat:notices.attachedMany", {
+                  count: uploaded.length,
+                }),
           type: "notice.requested",
         });
       } catch {
         await emit({
-          message: "Could not attach those files.",
+          message: i18n.t("chat:notices.attachFailed"),
           type: "notice.requested",
         });
       } finally {
@@ -486,7 +492,7 @@ export function useChatFeature({
   ): Promise<boolean> {
     if (!deviceOnline) {
       await emit({
-        message: "Local daemon is offline. Reconnect it before sending.",
+        message: i18n.t("chat:notices.offlineSend"),
         type: "notice.requested",
       });
       return false;
@@ -494,26 +500,33 @@ export function useChatFeature({
     const prompt = draft.trim();
     const effectiveAttachments = queuedAttachments ?? attachments;
     if (!prompt && effectiveAttachments.length === 0) {
-      await emit({ message: "Ask something first.", type: "notice.requested" });
+      await emit({
+        message: i18n.t("chat:notices.emptyPrompt"),
+        type: "notice.requested",
+      });
       return false;
     }
     if (attachmentUploading) {
       await emit({
-        message: "Wait for attachments to finish uploading.",
+        message: i18n.t("chat:notices.uploading"),
         type: "notice.requested",
       });
       return false;
     }
     if (!workspaceId || !selectedAgent) {
       await emit({
-        message: "Connect a local agent first.",
+        message: i18n.t("chat:notices.noAgent"),
         type: "notice.requested",
       });
       return false;
     }
     if (selectedAgent.status !== "healthy") {
       await emit({
-        message: `${selectedAgent.profileLabel ?? runtimeMeta(selectedAgent.provider).label} is not ready on this workspace.`,
+        message: i18n.t("chat:notices.agentNotReady", {
+          agent:
+            selectedAgent.profileLabel ??
+            runtimeMeta(selectedAgent.provider).label,
+        }),
         type: "notice.requested",
       });
       return false;
@@ -523,7 +536,11 @@ export function useChatFeature({
       setSubmitting(true);
       if (activeSession) {
         await emit({
-          message: `${activeSession.profileLabel ?? runtimeMeta(activeSession.provider).label} is still responding in this chat.`,
+          message: i18n.t("chat:notices.stillResponding", {
+            agent:
+              activeSession.profileLabel ??
+              runtimeMeta(activeSession.provider).label,
+          }),
           type: "notice.requested",
         });
         return false;
@@ -534,7 +551,11 @@ export function useChatFeature({
       );
       if (activeSameProfile) {
         await emit({
-          message: `${selectedAgent.profileLabel ?? runtimeMeta(selectedAgent.provider).label} is already responding in this chat.`,
+          message: i18n.t("chat:notices.alreadyResponding", {
+            agent:
+              selectedAgent.profileLabel ??
+              runtimeMeta(selectedAgent.provider).label,
+          }),
           type: "notice.requested",
         });
         return false;
@@ -626,7 +647,11 @@ export function useChatFeature({
           type: "chat.selected",
         });
         await emit({
-          message: `${selectedAgent.profileLabel ?? runtimeMeta(selectedAgent.provider).label} is responding.`,
+          message: i18n.t("chat:notices.responding", {
+            agent:
+              selectedAgent.profileLabel ??
+              runtimeMeta(selectedAgent.provider).label,
+          }),
           type: "notice.requested",
         });
       } catch {
@@ -641,7 +666,7 @@ export function useChatFeature({
   async function steer(draft: string, sessionId?: string): Promise<boolean> {
     if (!deviceOnline) {
       await emit({
-        message: "Local daemon is offline. Reconnect it before steering.",
+        message: i18n.t("chat:notices.offlineSteer"),
         type: "notice.requested",
       });
       return false;
@@ -649,7 +674,7 @@ export function useChatFeature({
     const message = draft.trim();
     if (!message) {
       await emit({
-        message: "Write the steering note first.",
+        message: i18n.t("chat:notices.emptySteer"),
         type: "notice.requested",
       });
       return false;
@@ -664,7 +689,7 @@ export function useChatFeature({
       activeSession;
     if (!targetSession) {
       await emit({
-        message: "No active response to steer.",
+        message: i18n.t("chat:notices.noSteerTarget"),
         type: "notice.requested",
       });
       return false;
@@ -673,7 +698,7 @@ export function useChatFeature({
       await sendAgentSessionMessage(targetSession.id, { prompt: message });
       await emit({ type: "data.refresh.requested" });
       await emit({
-        message: "Steered into the active response.",
+        message: i18n.t("chat:notices.steered"),
         type: "notice.requested",
       });
       return true;
@@ -682,7 +707,7 @@ export function useChatFeature({
         message:
           error instanceof Error
             ? error.message
-            : "Could not steer the active response.",
+            : i18n.t("chat:notices.steerFailed"),
         type: "notice.requested",
       });
       return false;
@@ -700,14 +725,14 @@ export function useChatFeature({
       activeSession;
     if (!targetSession) {
       await emit({
-        message: "No active response to stop.",
+        message: i18n.t("chat:notices.noStopTarget"),
         type: "notice.requested",
       });
       return;
     }
     if (!deviceOnline) {
       await emit({
-        message: "Local daemon is offline. Reconnect it before stopping.",
+        message: i18n.t("chat:notices.offlineStop"),
         type: "notice.requested",
       });
       return;
@@ -722,7 +747,7 @@ export function useChatFeature({
         type: "chat.selected",
       });
       await emit({
-        message: "Stopped the active response.",
+        message: i18n.t("chat:notices.stopped"),
         type: "notice.requested",
       });
     } catch (error) {
@@ -730,7 +755,7 @@ export function useChatFeature({
         message:
           error instanceof Error
             ? error.message
-            : "Could not stop the active response.",
+            : i18n.t("chat:notices.stopFailed"),
         type: "notice.requested",
       });
     }
@@ -881,7 +906,7 @@ export function useChatFeature({
         titleState.titles[selectedId]?.title ||
         selectedThread?.title ||
         selectedChat?.title ||
-        "New chat"
+        i18n.t("chat:list.newChat")
       }
       contextCard={contextCard}
       claudeEffort={claudeEffort}

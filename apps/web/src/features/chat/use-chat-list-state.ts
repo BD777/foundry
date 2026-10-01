@@ -10,6 +10,7 @@ import {
   renameChat,
   type ChatTitleMetadata,
 } from "../../api";
+import { i18n } from "../../i18n";
 
 export function useChatReadState(
   workspaceId: string,
@@ -115,7 +116,7 @@ export function useChatTitles(
         workspaceRef.current === workspaceId
       )
         notifyRef.current(
-          title.generationError || "自动命名失败，请重试或手动重命名",
+          title.generationError || i18n.t("chat:autoName.failedRetry"),
         );
     }
     if (workspaceRef.current === workspaceId && request === requestRef.current)
@@ -154,10 +155,12 @@ export function useChatTitles(
         const job = await recapChatTitle(id, workspaceId);
         watchedJobsRef.current.add(job.id);
         await refresh();
-        notifyRef.current("正在用此会话的 provider 生成标题…");
+        notifyRef.current(i18n.t("chat:autoName.generating"));
       } catch (error) {
         notifyRef.current(
-          error instanceof Error ? error.message : "自动命名失败",
+          error instanceof Error
+            ? error.message
+            : i18n.t("chat:autoName.failed"),
         );
       }
     },

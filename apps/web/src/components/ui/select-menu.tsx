@@ -1,6 +1,7 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 
 export interface SelectMenuOption {
@@ -66,13 +67,15 @@ export function SelectMenu({
   insideDialog = false,
   onChange,
   options,
-  placeholder = "Select",
+  placeholder: placeholderProp,
   renderOptionPrefix,
   renderTriggerPrefix,
   side = "bottom",
   tone = "field",
   value,
 }: SelectMenuProps) {
+  const { t } = useTranslation("ui");
+  const placeholder = placeholderProp ?? t("selectMenu.placeholder");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const selectedOption = options.find((option) => option.value === value);
