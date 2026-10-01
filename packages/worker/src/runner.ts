@@ -191,6 +191,7 @@ import {
   type AgentProfileLocalConfig,
 } from "./profiles.js";
 import { sessionEnvironment, usesSessionScratch } from "./session-ambient.js";
+import { codexRoleOptions, isClarificationSession } from "./session-roles.js";
 import { readAgentRuntimeSettings } from "./device.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 
@@ -198,7 +199,7 @@ export function codexSandboxMode(
   session: AgentSession,
   profile: AgentProfileLocalConfig,
 ): NonNullable<AgentProfileProjection["codexSandboxMode"]> {
-  if (isUtilitySession(session)) {
+  if (isUtilitySession(session) || isClarificationSession(session)) {
     return "read-only";
   }
   return (
@@ -212,6 +213,7 @@ export function codexApprovalPolicy(
   session: AgentSession,
   profile: AgentProfileLocalConfig,
 ): NonNullable<AgentProfileProjection["codexApprovalPolicy"]> {
+  if (isClarificationSession(session)) return "never";
   return session.codexApprovalPolicy ?? profile.codexApprovalPolicy ?? "never";
 }
 
@@ -241,7 +243,8 @@ export function claudeEffort(
  * headless: nobody is there to answer a permission prompt, so an unanswered
  * prompt only blocks the device's own software. Unless the profile or session
  * chooses otherwise, it runs as the person's terminal agent would with
- * permissions granted. Utility sessions (titles, naming) stay read-only.
+ * permissions granted. Utility sessions (titles, naming) stay read-only, and
+ * an Issue's clarification runs only the tools its role allows.
  */
 export const defaultClaudePermissionMode = "bypassPermissions";
 export const defaultCodexSandboxMode = "danger-full-access";
@@ -253,6 +256,7 @@ export function claudePermissionMode(
   if (isUtilitySession(session)) {
     return "plan";
   }
+  if (isClarificationSession(session)) return "dontAsk";
   return (
     session.claudePermissionMode ??
     profile.claudePermissionMode ??
@@ -527,6 +531,7 @@ export async function runCodexWorkspaceSession(
     writeFileSync(stderrPath, "");
     const codexPathOverride = resolveCodexCommand();
     const deviceNotes = codexDeviceNotes(workspacePath, session);
+    const role = codexRoleOptions(session);
     const threadOptions = {
       approvalPolicy: codexApprovalPolicy(session, profile),
       model: session.model?.trim() || profile.model?.trim() || undefined,
@@ -535,6 +540,7 @@ export async function runCodexWorkspaceSession(
       sandboxMode: codexSandboxMode(session, profile),
       skipGitRepoCheck: true,
       workingDirectory: workspacePath,
+      ...role?.thread,
     };
     const requestedNativeSessionId = session.nativeSessionId?.trim();
     cleanupActiveCodexThreads();
@@ -578,6 +584,7 @@ export async function runCodexWorkspaceSession(
           ...codexProfileConfig(profile),
           ...codexSessionConfig(managedSkills, deviceNotes),
           ...codexFoundryTools(session)?.config,
+          ...role?.config,
         },
       });
       await emit("Started Codex SDK", `${packageName} · ${codexPathOverride}`);

@@ -132,6 +132,7 @@ export const workerModules = {
       "session-output-files",
       "session-policy",
       "session-prompt",
+      "session-roles",
       "session-state",
       "agent-timers",
       "watchdog",
@@ -166,6 +167,7 @@ export const workerModules = {
     files: [
       "issues",
       "issue-sessions",
+      "issue-clarification",
       "issue-environment-rpc",
       "issue-environments",
       "issue-execution",
@@ -178,7 +180,6 @@ export const workerModules = {
       "evidence-acceptance",
       "evidence-agent",
       "evidence-change-manifest",
-      "evidence-clarification",
       "evidence-collectors",
       "evidence-command-sandbox",
       "evidence-http-service",

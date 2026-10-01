@@ -521,6 +521,14 @@ started / event / completed 驱动原有的 `Run` 投影（`Run.id` 即会话 id
 一律落在同一候选（点名其他 Issue 或 Workspace 返回 403）；执行者因此拿到会话令牌，Worker
 把它交给执行沙箱里的 Foundry 工具。
 
+**D3/D5 澄清部分已落地**（2026-10-01）：澄清是 Issue 的一条会话（`role=issue_clarification`），每条消息是一次新输入，
+续接原生上下文；Server 立即记录消息并派发，回复随 `session_completed` 的 `clarificationResult` 到达，失败可“重新提问”，
+中断经 `recover_session` 补报。Worker 侧它与 Chat 走同一入口（`executeAgentSession` → `runWorkspaceSession`），
+角色只决定工具与沙箱（`session-roles.ts`、`issue-clarification.ts`）：Workspace 只读、项目指令与选定 Skills、只读
+foundry 工具；令牌在 Server 端为 Viewer。`startSession` 只剩判定者使用。
+判定（D4）的建议（待确认）：只放开 Workspace 选定的 Skills，仍无 MCP、无令牌，并留在 Worker 的验收流程里，不升级为 Server
+会话——它夹在候选版本两次校验之间、全新且不续接，会话化带来的续接、引导与编排它都用不上，完整过程已作为材料封存。
+
 **D2 的现状与落点**（2026-09-28 核对代码）：
 
 - 三个角色在 Server 上都没有 `AgentSession`：执行只有 `Run`（`runs` / `run_events` 表，

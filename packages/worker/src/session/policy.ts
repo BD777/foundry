@@ -1,6 +1,4 @@
-import type { SessionRole } from "./types.js";
-
-/** What a session may do, derived only from its role and whether it has a directory. */
+/** What a verification session may do, derived only from whether it has a directory. */
 export interface SessionPolicy {
   /** Built-in tools the session may use without asking. */
   tools: string[];
@@ -15,15 +13,10 @@ export interface SessionPolicy {
 }
 
 /**
- * Clarification reads the person's own project, including its instructions,
- * but never runs commands. Verification may run read-only checks on the
- * candidate and ignores the project's instructions. Without a directory a
- * session has no tools at all.
+ * Verification may run read-only checks on the candidate and ignores the
+ * project's instructions. Without a directory a session has no tools at all.
  */
-export function sessionPolicy(
-  role: SessionRole,
-  hasDirectory: boolean,
-): SessionPolicy {
+export function sessionPolicy(hasDirectory: boolean): SessionPolicy {
   if (!hasDirectory)
     return {
       tools: [],
@@ -33,9 +26,8 @@ export function sessionPolicy(
       maxTurns: 1,
       timeoutMs: 180000,
     };
-  const commands = role === "verification";
   return {
-    tools: ["Read", "Grep", "Glob", ...(commands ? ["Bash"] : [])],
+    tools: ["Read", "Grep", "Glob", "Bash"],
     deniedTools: [
       "Write",
       "Edit",
@@ -44,10 +36,9 @@ export function sessionPolicy(
       "Task",
       "WebFetch",
       "WebSearch",
-      ...(commands ? [] : ["Bash"]),
     ],
-    projectInstructions: role === "clarification",
-    commands,
+    projectInstructions: false,
+    commands: true,
     maxTurns: 30,
     timeoutMs: 900000,
   };

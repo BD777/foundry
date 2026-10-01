@@ -14,7 +14,7 @@ import type {
 } from "./execution-types.js";
 
 /** The one private-state subdir an issue executor may read skill files from. */
-function skillSetsReadRoot(): string {
+export function skillSetsReadRoot(): string {
   return foundryStatePath("skill-sets");
 }
 
@@ -86,9 +86,23 @@ export function issueIsolationError(error: unknown): unknown {
 export function executorEnvironment(
   environment: IssueEnvironment,
 ): NodeJS.ProcessEnv {
-  const codexHome = resolve(environment.scratch, "codex");
-  const claudeHome = resolve(environment.scratch, "claude");
-  const temp = resolve(environment.scratch, "tmp");
+  return {
+    ...isolatedAgentEnvironment(environment.scratch),
+    FOUNDRY_WORKSPACE: environment.cwd,
+    FOUNDRY_ROOT_WORKSPACE: environment.sourcePath,
+  };
+}
+
+/**
+ * The environment of an agent working for an Issue inside a sandbox: its
+ * home, temporary space and native session records live in a private
+ * scratch directory that holds a copy of the provider login, never in the
+ * workspace. Foundry's own credentials are not passed on.
+ */
+export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
+  const codexHome = resolve(scratch, "codex");
+  const claudeHome = resolve(scratch, "claude");
+  const temp = resolve(scratch, "tmp");
   for (const directory of [codexHome, claudeHome, temp])
     mkdirSync(directory, { recursive: true, mode: 0o700 });
   // Provider authentication stays private and is never staged in the candidate.
@@ -125,15 +139,13 @@ export function executorEnvironment(
   }
   return {
     ...inherited,
-    HOME: environment.scratch,
+    HOME: scratch,
     CODEX_HOME: codexHome,
     CLAUDE_CONFIG_DIR: claudeHome,
     TMPDIR: temp,
     CLAUDE_CODE_TMPDIR: temp,
     TMP: temp,
     TEMP: temp,
-    FOUNDRY_WORKSPACE: environment.cwd,
-    FOUNDRY_ROOT_WORKSPACE: environment.sourcePath,
-    FOUNDRY_EXECUTION_SESSION_ROOT: resolve(environment.scratch, "sessions"),
+    FOUNDRY_EXECUTION_SESSION_ROOT: resolve(scratch, "sessions"),
   };
 }

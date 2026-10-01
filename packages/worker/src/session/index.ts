@@ -1,12 +1,13 @@
 /**
- * Session Runtime: the one way the worker starts an agent session.
- *
- * Callers give a role, a harness and a prompt; the role decides the tools,
- * instructions and limits (./policy.ts), the runtime owns the private home,
- * provider environment, sandbox, timeout and cancellation, and a harness
- * adapter (./claude.ts, ./codex.ts) talks to the native SDK. Today it runs
- * isolated read-only sessions; Chat, orchestrated and Issue execution
- * sessions migrate onto it next. See docs/architecture-modules.md §5.2.
+ * Session Runtime. Chats and the sessions working for an Issue (execution,
+ * clarification, orchestrated children) run through runWorkspaceSession
+ * (./workspace.ts), their role deciding tools and sandbox
+ * (../session-roles.ts). startSession runs the independent verifier: a
+ * fresh, isolated, read-only session per judgment whose tools and limits
+ * come from ./policy.ts; the runtime owns its private home, provider
+ * environment, sandbox, timeout and cancellation, and a harness adapter
+ * (./claude.ts, ./codex.ts) talks to the native SDK. See
+ * docs/architecture-modules.md §6.
  */
 import { mkdirSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -69,7 +70,7 @@ async function run(
   );
   if (!profile || profile.command)
     throw new Error("isolated_verifier_profile_unavailable");
-  const policy = sessionPolicy(spec.role, Boolean(spec.workspace));
+  const policy = sessionPolicy(Boolean(spec.workspace));
   const home = resolve(spec.directory, "isolated-home");
   mkdirSync(home, { recursive: true, mode: 0o700 });
   const activity: string[] = [];

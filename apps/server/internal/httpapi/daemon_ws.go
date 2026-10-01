@@ -324,6 +324,9 @@ type wsRunSessionPayload struct {
 	// and credentials. Only an Issue the device owner started may; anyone
 	// else's Issue must not act with the owner's credentials.
 	UserFiles string `json:"userFiles,omitempty"`
+	// Clarification is the draft and conversation an issue_clarification
+	// input is about.
+	Clarification *store.ClarificationTurn `json:"clarification,omitempty"`
 }
 
 type wsSteerSessionPayload struct {
@@ -373,6 +376,8 @@ type wsSessionCompletedPayload struct {
 	// IssueResult is what an issue_execution session produced: the candidate
 	// it left and the acceptance artifact.
 	IssueResult *store.CompleteIssueInput `json:"issueResult,omitempty"`
+	// ClarificationResult is an issue_clarification session's reply.
+	ClarificationResult *store.ClarificationResponse `json:"clarificationResult,omitempty"`
 }
 
 // wsRecoverSessionPayload asks a device about an input it no longer runs. The
@@ -383,6 +388,8 @@ type wsRecoverSessionPayload struct {
 	InputID     string `json:"inputId,omitempty"`
 	WorkspaceID string `json:"workspaceId"`
 	IssueID     string `json:"issueId,omitempty"`
+	// Role tells the device where the session kept its result.
+	Role string `json:"role,omitempty"`
 }
 
 // staleSessionInput reports a lifecycle message about an input the session
@@ -1069,7 +1076,7 @@ func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
 			continue
 		}
 		payload, err := json.Marshal(wsRecoverSessionPayload{
-			SessionID: session.ID, InputID: session.Input.ID, WorkspaceID: session.WorkspaceID, IssueID: session.IssueID,
+			SessionID: session.ID, InputID: session.Input.ID, WorkspaceID: session.WorkspaceID, IssueID: session.IssueID, Role: session.Role,
 		})
 		if err != nil {
 			continue
@@ -1472,7 +1479,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.clearDispatchedSession(payload.SessionID)
 			// A session the server already settled (a stale reconcile) still
 			// hands over the Issue result the device recorded.
-			c.hub.settleIssueExecution(ctx, existing, payload.IssueResult)
+			c.hub.settleIssueSession(ctx, existing, payload.IssueResult, payload.ClarificationResult)
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, existing)
@@ -1492,7 +1499,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
 			c.hub.events.Publish("agent_session_completed", session)
-			c.hub.settleIssueExecution(ctx, session, payload.IssueResult)
+			c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
 			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, session)
@@ -1811,9 +1818,15 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		session.SkillRefs = refs
 	}
 	var (
-		issue     *store.Issue
-		userFiles string
+		issue         *store.Issue
+		userFiles     string
+		clarification *store.ClarificationTurn
 	)
+	if session.Role == store.AgentSessionRoleIssueClarification {
+		if clarification, err = c.clarificationTurn(ctx, session); err != nil {
+			return err
+		}
+	}
 	if session.Role == store.AgentSessionRoleIssueExecution {
 		if !c.hasCapability(store.DaemonCapabilityIssueSessions) {
 			return errIssueSessionsUnsupported
@@ -1838,7 +1851,7 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles})
+	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles, Clarification: clarification})
 	if err != nil {
 		return err
 	}

@@ -290,3 +290,69 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
     undefined,
   );
 });
+
+test("an Issue's clarification runs only the read tools its role allows", async () => {
+  const { registerSessionAmbientEnv } =
+    await import("../dist/session-ambient.js");
+  const { claudePermissionMode, codexSandboxMode, codexApprovalPolicy } =
+    await import("../dist/runner.js");
+  const clarification = {
+    ...session,
+    id: "sess_clarify",
+    source: "issue",
+    role: "issue_clarification",
+    issueId: "iss_1",
+  };
+  const unregister = registerSessionAmbientEnv("sess_clarify", {
+    serverURL: "http://127.0.0.1:31982",
+    sessionToken: "token-for-sess_clarify",
+    workspaceID: "ws_1",
+  });
+  try {
+    // Whatever the profile asks for, the role decides.
+    const profile = compatibleProfile({
+      apiKey: "k",
+      claudePermissionMode: "bypassPermissions",
+      codexSandboxMode: "danger-full-access",
+      codexApprovalPolicy: "on-request",
+    });
+    const plan = buildClaudeLaunchPlan({
+      workspacePath,
+      session: clarification,
+      profile,
+    });
+    assert.equal(plan.sdk.permissionMode, "dontAsk");
+    assert.deepEqual(plan.sdk.allowedTools, [
+      "Read",
+      "Grep",
+      "Glob",
+      "mcp__foundry__list_sessions",
+      "mcp__foundry__read_context",
+    ]);
+    for (const tool of ["Bash", "Write", "Edit", "Task", "WebFetch"])
+      assert.ok(plan.sdk.disallowedTools.includes(tool), tool);
+    assert.deepEqual(plan.sdk.settingSources, ["project"]);
+    assert.equal(plan.sdk.strictMcpConfig, true);
+    assert.ok(plan.mcpServers.foundry, "the Foundry tools are still there");
+    const cli = plan.cliArgs.join(" ");
+    assert.match(cli, /--permission-mode dontAsk/);
+    assert.equal(cli.includes("mcp__foundry "), false);
+    assert.equal(claudePermissionMode(clarification, profile), "dontAsk");
+    assert.equal(codexSandboxMode(clarification, profile), "read-only");
+    assert.equal(codexApprovalPolicy(clarification, profile), "never");
+    const codex = codexFoundryTools(clarification);
+    assert.deepEqual(codex.config.mcp_servers.foundry.enabled_tools, [
+      "list_sessions",
+      "read_context",
+    ]);
+    assert.ok(
+      codex.cliArgs.includes(
+        'mcp_servers.foundry.enabled_tools=["list_sessions","read_context"]',
+      ),
+    );
+    // A chat keeps the person's own choice.
+    assert.equal(claudePermissionMode(session, profile), "bypassPermissions");
+  } finally {
+    unregister();
+  }
+});

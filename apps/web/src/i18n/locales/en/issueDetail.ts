@@ -418,6 +418,11 @@ export const issueDetail = {
     retryClarify: "Retry goal clarification",
     keptNote:
       "Your input and saved content are kept; send again after dealing with the reason.",
+    replyFailedTitle: "The Agent could not reply",
+    noReply: "The Agent ended without a reply.",
+    retryReply: "Ask again",
+    replyKeptNote:
+      "Your message is kept. Ask again, or send a new message instead.",
     inputLabel: "Issue follow-up",
     sendLabel: "Send issue message",
     placeholderClarifying:
@@ -432,7 +437,7 @@ export const issueDetail = {
   transcript: {
     failureTitle: "Execution interrupted",
     failure:
-      "The candidate files are kept. Reply below to retry in the same candidate, or open “Execution environment” to check first.\n\nReason: {{reason}}",
+      "The candidate files are kept. Reply below to retry in the same candidate, or open “Environment” to check first.\n\nReason: {{reason}}",
     working: "Working in candidate workspace…",
   },
   actions: {

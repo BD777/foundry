@@ -63,7 +63,7 @@ IssueContract（人确认 revision + digest）
 
 新 Issue 只保存原始目标草案：不生成 inferredTask、不填三条通用条件、不声称使用过 skill。空目标或 `hi` 可以保存但不能确认，更不能 claim。Agent 通过主聊天与用户共同明确可观察条件，用户核对自然语言确认卡；系统提交准确的 `revision + contentDigest`。
 
-澄清入口复用 Issue 的 Harness/profile/model，在用户选中 Workspace 的**原目录**里进行独立只读阶段会话，据此追问必要歧义，而非念固定问卷。沙箱把 Workspace 路径授予只读、工作目录设为该路径，写入仍只限会话私有 home（`stageSandboxExecutable` 的 `readRoots`/`workdir`；Verify 阶段还会附加候选 Worktree 所需的 Git 目录只读根）；Claude 侧只开放 Read/Grep/Glob 与项目指令文件，不提供 Bash 等写/执行类工具。对话保存在原 Issue，输出要么是下一问，要么是严格 `ContractContent`。提议形成 `origin=agent_proposal` 的新草案，相同内容不重复修订；不创建实现候选、不继承实现会话、不自行确认。参考图片以实际字节传入；复杂参考材料（PDF/音视频等）解析仍不支持。七步表单、JSON 编辑和右侧第二聊天已退出主界面；技术结构仅按需展开。
+澄清是 Issue 自己的一条会话（`AgentSession`，`role=issue_clarification`，2026-10-01 起）：复用 Issue 的 Harness/profile/model，用户在主聊天发的每条消息都是这条会话的新输入，Agent 跨轮保留原生上下文；回复由会话完成时带回（`clarificationResult`），按消息所针对的草案 revision/digest 记录，Worker 重启后经 `recover_session` 补报或报告丢失，界面显示失败原因并可“重新提问”。会话在用户选中 Workspace 的**原目录**里只读运行：沙箱只把 Workspace 授予只读、写入只限私有 scratch（`issue-clarification.ts` 的 `clarificationExecution`），参考材料以只读文件提供；角色策略（`session-roles.ts`）让 Claude 只用 Read/Grep/Glob 与只读的 foundry 工具 `list_sessions`/`read_context`（`permissionMode: dontAsk`，只加载项目设置与指令，加载 Workspace 选定的 Skills，拒绝 Bash 与写/Task/Web 类工具），Codex 用只读沙箱、断网并只开放这两个 foundry 工具；会话令牌在 Server 端只有 Viewer 权限，不能开、发消息或停止其他会话。对话保存在原 Issue，输出要么是下一问，要么是严格 `ContractContent`。提议形成 `origin=agent_proposal` 的新草案，相同内容不重复修订；不创建实现候选、不继承实现会话、不自行确认。参考图片以实际字节传入；复杂参考材料（PDF/音视频等）解析仍不支持。七步表单、JSON 编辑和右侧第二聊天已退出主界面；技术结构仅按需展开。
 
 明确确认结束澄清阶段。执行交接只以准确已确认契约及确认后的执行反馈为准，澄清期“不要实施”和状态问句不作为新的执行指令。状态问答持久化但不确认、不派发。新建任务可自动开始只读澄清，访问历史草案不自动调用模型。
 
@@ -163,25 +163,26 @@ Worker outbox 在执行前保存 intent、结束后保存完整 receipt。Server
 
 业务端点均在 `/api/issues/{id}`：
 
-| 路径                                    | 方法     | 作用                           |
-| --------------------------------------- | -------- | ------------------------------ |
-| `/contracts`                            | GET/POST | 历史/新草案                    |
-| `/contracts/import-legacy`              | POST     | 显式导入旧文字为未确认草案     |
-| `/clarify`                              | POST     | 独立只读 Agent 下一问/契约提议 |
-| `/conversation/status`                  | POST     | 持久化只读状态问答，不派发执行 |
-| `/contracts/{revision}/confirm`         | POST     | 精确摘要确认                   |
-| `/contracts/{revision}/discard`         | POST     | 有理由撤回                     |
-| `/materials`                            | GET/POST | 材料元数据/流式上传            |
-| `/materials/{materialId}/content`       | GET      | 安全下载；非任意路径读取       |
-| `/candidate-snapshots`                  | GET/POST | 历史/封存候选与输入            |
-| `/verification-inputs`                  | GET      | 输入身份                       |
-| `/evidence`                             | GET/POST | 证据列表/人工登记              |
-| `/evidence/export`                      | POST     | 导出候选文件                   |
-| `/verify`                               | POST     | 当前契约/候选/条件请求         |
-| `/verifications`、`/verifications/{id}` | GET      | 判定与结构化 Result            |
-| `/human-assessments`                    | GET/POST | 人工判断历史/追加              |
-| `/review`                               | GET      | 当前不可变 ReviewSnapshot      |
-| `/accept`                               | POST     | 人明确接受审阅包               |
+| 路径                                    | 方法     | 作用                                         |
+| --------------------------------------- | -------- | -------------------------------------------- |
+| `/contracts`                            | GET/POST | 历史/新草案                                  |
+| `/contracts/import-legacy`              | POST     | 显式导入旧文字为未确认草案                   |
+| `/clarify`                              | POST     | 发给 Issue 的只读澄清会话；回复随 Issue 到达 |
+| `/clarify/retry`                        | POST     | 回复失败后重新提问                           |
+| `/conversation/status`                  | POST     | 持久化只读状态问答，不派发执行               |
+| `/contracts/{revision}/confirm`         | POST     | 精确摘要确认                                 |
+| `/contracts/{revision}/discard`         | POST     | 有理由撤回                                   |
+| `/materials`                            | GET/POST | 材料元数据/流式上传                          |
+| `/materials/{materialId}/content`       | GET      | 安全下载；非任意路径读取                     |
+| `/candidate-snapshots`                  | GET/POST | 历史/封存候选与输入                          |
+| `/verification-inputs`                  | GET      | 输入身份                                     |
+| `/evidence`                             | GET/POST | 证据列表/人工登记                            |
+| `/evidence/export`                      | POST     | 导出候选文件                                 |
+| `/verify`                               | POST     | 当前契约/候选/条件请求                       |
+| `/verifications`、`/verifications/{id}` | GET      | 判定与结构化 Result                          |
+| `/human-assessments`                    | GET/POST | 人工判断历史/追加                            |
+| `/review`                               | GET      | 当前不可变 ReviewSnapshot                    |
+| `/accept`                               | POST     | 人明确接受审阅包                             |
 
 Evidence 写操作及 `POST /api/issues` 要求 `Idempotency-Key`；同键异内容冲突。契约/澄清/判定绑定精确修订或输入，Accept 同时校验 review ID/digest、actor 和 rationale。不能声称仓库内所有历史 mutation 都已升级为统一预期版本语义。
 
@@ -240,7 +241,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 
 1. Codex 真实 provider 图文初判尚未完成验证（曾受账号用量限制阻止，未伪造通过）。Claude Agent 判定已有真实闭环记录，图片输入有真实 SDK smoke，但不声称完成所有媒体演示。
 2. 通用 HTTP/service/build identity、外部配置/数据/依赖/凭据版本注册与 Accept 前复核；目前支持受控本地 Node GET/HEAD 与纯文件/项目命令，`check_before_accept` 依赖未注册时拒绝接受。
-3. 自动恢复目前覆盖 collect/assess；上传/对齐/澄清有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
+3. 自动恢复目前覆盖 collect/assess 与澄清回复（`recover_session`）；上传/对齐有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
 4. 图像区域高亮/标注、PDF/视频/音频预览、主动删除材料的影响提示。rationale media 只能作解释性 context，不作为新 Evidence。
 5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。通用依赖安装与输入闭包尚未实现；ignored 文件存在时保守 unknown。
 6. 复杂参考材料解析（PDF/视频/音频等）尚未支持；澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。

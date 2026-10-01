@@ -4,6 +4,7 @@ import type {
   Evidence,
   EvidenceClaim,
   HumanAssessment,
+  Issue,
   IssueContract,
   Material,
   ReviewSnapshot,
@@ -69,6 +70,7 @@ export function saveContract(
 ) {
   return request<IssueContract>(`${path(id)}/contracts`, input, key);
 }
+/** Sends a message to the Issue's clarification session; the reply arrives with the Issue. */
 export function clarifyContract(
   id: string,
   draft: IssueContract,
@@ -76,7 +78,7 @@ export function clarifyContract(
   changeReason: string,
   key: string,
 ) {
-  return request(
+  return request<Issue>(
     `${path(id)}/clarify`,
     {
       expectedRevision: draft.revision,
@@ -86,6 +88,10 @@ export function clarifyContract(
     },
     key,
   );
+}
+/** Asks the clarification session again after it failed to answer. */
+export function retryClarification(id: string, key: string) {
+  return request<Issue>(`${path(id)}/clarify/retry`, {}, key);
 }
 export function confirmContract(id: string, c: IssueContract, key: string) {
   return request<IssueContract>(

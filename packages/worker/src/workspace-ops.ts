@@ -437,7 +437,7 @@ export async function syncNativeChats(
  * Protocol features this worker implements; the server sends only work a
  * worker declares it can run.
  */
-export const daemonCapabilities = ["issue_sessions"];
+export const daemonCapabilities = ["issue_sessions", "issue_clarification"];
 
 export function daemonRegistration(workspacePath: string): {
   capabilities: string[];

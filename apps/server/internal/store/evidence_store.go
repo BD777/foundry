@@ -9,8 +9,19 @@ import (
 type EvidenceStore interface {
 	RecordIssueStatusQuestion(ctx context.Context, issueID, message, requestID string) (Issue, error)
 	CreateIssueIdempotent(ctx context.Context, input CreateIssueInput, requestID string) (Issue, error)
-	RecordClarification(ctx context.Context, issueID string, revision int, digest, message, changeReason string, response ClarificationResponse, actor ActorRef, requestID string) (Issue, error)
-	ReplayClarification(ctx context.Context, issueID string, revision int, digest, message, changeReason string, actor ActorRef, requestID string) (Issue, bool, error)
+	// AskClarification records the person's message about a draft and queues
+	// it as the next input of the Issue's clarification session, creating the
+	// session on first use. The reply arrives later (AnswerClarification).
+	AskClarification(ctx context.Context, input AskClarificationInput, actor ActorRef, requestID string) (Issue, AgentSession, error)
+	// RetryClarification queues the person's latest message again after the
+	// Agent failed to answer it.
+	RetryClarification(ctx context.Context, issueID string, actor ActorRef, requestID string) (Issue, AgentSession, error)
+	// AnswerClarification settles the clarification input a session finished:
+	// its reply (with any proposed draft), or why there is none.
+	AnswerClarification(ctx context.Context, session AgentSession, response *ClarificationResponse) (Issue, error)
+	// ClarificationTurn is what the clarification session needs to answer
+	// its latest input.
+	ClarificationTurn(ctx context.Context, issueID string) (ClarificationTurn, error)
 	ListEvidenceRecords(ctx context.Context, issueID, kind string) ([]json.RawMessage, error)
 	GetEvidenceRecord(ctx context.Context, issueID, kind, id string) (json.RawMessage, error)
 	CreateContract(ctx context.Context, issueID string, input ContractDraftInput, actor ActorRef, requestID string) (IssueContract, error)
@@ -34,11 +45,13 @@ type EvidenceStore interface {
 	FinishAcceptance(ctx context.Context, issueID, decisionID, integrationID string, invalidReason string) (AcceptanceDecision, error)
 }
 
-type ClarificationResponse struct {
-	Message             string           `json:"message"`
-	ProposedContent     *ContractContent `json:"proposedContent,omitempty"`
-	SessionID           *string          `json:"sessionId,omitempty"`
-	RawOutputMaterialID string           `json:"rawOutputMaterialId"`
+type AskClarificationInput struct {
+	IssueID string
+	// Revision and ContentDigest bind the message to the draft the person saw.
+	Revision      int
+	ContentDigest string
+	Message       string
+	ChangeReason  string
 }
 
 // Only a journal-aware Worker may resolve a partially applied baseline.

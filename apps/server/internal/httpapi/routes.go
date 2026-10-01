@@ -318,6 +318,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/issues/{id}/contracts/import-legacy", s.handleLegacyContractImport, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/contracts/{revision}/{action}", s.handleContractAction, issueCreatorOr(maintainer)),
 		fn("POST /api/issues/{id}/clarify", s.handleEvidenceClarification, workspaceRole(member, issueWorkspace("id"))),
+		fn("POST /api/issues/{id}/clarify/retry", s.handleRetryClarification, workspaceRole(member, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/review", s.handleEvidenceReview, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/candidate-snapshots", s.handleEvidenceSnapshot, workspaceRole(member, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/verify", s.handleVerifyEvidence, issueCreatorOr(maintainer)),
