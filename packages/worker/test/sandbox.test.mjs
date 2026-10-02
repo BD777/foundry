@@ -23,6 +23,7 @@ import {
   sandboxLauncher,
 } from "../dist/sandbox/index.js";
 import { seatbeltBackend } from "../dist/sandbox/darwin.js";
+import { privateTmpAllowed } from "../dist/sandbox/linux.js";
 
 const runtimeRoot = realpathSync(
   fileURLToPath(new URL("../../../", import.meta.url)),
@@ -433,6 +434,75 @@ test(
       run(attempt(`ls '${runtimeRoot}/package.json'`), workspace).status,
       0,
     );
+  },
+);
+
+/** Foundry's own state outside /tmp, as in a real deployment (~/.foundry). */
+function stateOutsideTmp(t) {
+  const previous = process.env.FOUNDRY_STATE_ROOT;
+  process.env.FOUNDRY_STATE_ROOT = "/nonexistent-foundry-state";
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+    else process.env.FOUNDRY_STATE_ROOT = previous;
+  });
+}
+
+const outsideTmpTree = {
+  kind: "writable_tree",
+  policyFile: "/nonexistent-foundry-state/executor.sb",
+  workdir: runtimeRoot,
+  readRoots: [],
+  writeRoots: [],
+  protectedReadRoots: [],
+  readOnlyDirectories: [],
+  readOnlyPaths: [],
+  connectSockets: [],
+  executables: [],
+  userFiles: "hidden",
+};
+
+test("a private /tmp is given only when no Foundry path lives under /tmp", (t) => {
+  stateOutsideTmp(t);
+  assert.equal(privateTmpAllowed(outsideTmpTree), true);
+  // A socket directly in /tmp has no Foundry neighbours to expose.
+  assert.equal(
+    privateTmpAllowed({
+      ...outsideTmpTree,
+      connectSockets: ["/tmp/foundry-tools.sock"],
+    }),
+    true,
+  );
+  assert.equal(
+    privateTmpAllowed({
+      ...outsideTmpTree,
+      writeRoots: ["/tmp/state/environments/iss/workspace"],
+    }),
+    false,
+  );
+  process.env.FOUNDRY_STATE_ROOT = scratch(t);
+  assert.equal(
+    privateTmpAllowed(outsideTmpTree),
+    !realpathSync(process.env.FOUNDRY_STATE_ROOT).startsWith("/tmp/"),
+  );
+});
+
+test(
+  "Linux writable tree writes its own private /tmp, never the host's",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    stateOutsideTmp(t);
+    const marker = `foundry-private-tmp-${process.pid}-${Date.now()}`;
+    const launch = linuxBackend(t, () =>
+      sandboxLaunch(outsideTmpTree, "/bin/sh", [
+        "-c",
+        `echo x > /tmp/${marker} && cat /tmp/${marker}`,
+      ]),
+    );
+    if (!launch) return;
+    const result = run(launch, runtimeRoot);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "x\n");
+    assert.equal(existsSync(join("/tmp", marker)), false);
   },
 );
 

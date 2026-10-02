@@ -190,6 +190,30 @@ function resolvedCommand(command: string): string {
     : command;
 }
 
+/**
+ * A private, empty /tmp, so tools and test runners that write to /tmp itself
+ * (not $TMPDIR) work without reaching the host's. Only when no Foundry path
+ * for this sandbox sits inside a directory below /tmp: that directory's
+ * unmounted contents (an environment's own records) would otherwise become
+ * silently writable on the invisible tmpfs instead of failing. A path
+ * directly in /tmp, such as the tools socket, has no such neighbours.
+ */
+export function privateTmpAllowed(profile: WritableTreeProfile): boolean {
+  return ![
+    profile.workdir,
+    ...profile.readRoots,
+    ...profile.writeRoots,
+    ...profile.protectedReadRoots,
+    ...profile.readOnlyDirectories,
+    ...profile.readOnlyPaths,
+    ...profile.connectSockets,
+    ...governanceStatePaths(),
+  ].some((path) => {
+    const parent = dirname(canonical(path));
+    return parent !== "/tmp" && within("/tmp", parent);
+  });
+}
+
 function writableTree(
   profile: WritableTreeProfile,
   command: string,
@@ -206,7 +230,11 @@ function writableTree(
     runtime: true,
     home: profile.userFiles === "readable",
   });
-  const options = [...namespaces, ...host.mounts];
+  const options = [
+    ...namespaces,
+    ...(privateTmpAllowed(profile) ? ["--tmpfs", "/tmp"] : []),
+    ...host.mounts,
+  ];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
   // Mount only the named read-only trees from protected state.
   for (const path of profile.protectedReadRoots) {
