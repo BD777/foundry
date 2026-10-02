@@ -211,6 +211,7 @@ export function DeviceAccounts({
                   deviceId={device.id}
                   runtime={runtime}
                   online={device.status === "connected"}
+                  onChecked={onRefresh}
                 />
                 {local ? (
                   <DeviceAccountDefaults

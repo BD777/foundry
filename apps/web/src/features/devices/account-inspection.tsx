@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
@@ -14,13 +15,23 @@ export function AccountInspection({
   deviceId,
   runtime,
   online,
+  onChecked,
 }: {
   deviceId: string;
   runtime: "claude" | "codex";
   online: boolean;
+  /** A new read also refreshed the device's agents on the server. */
+  onChecked: () => Promise<void>;
 }) {
   const { t } = useTranslation("profiles");
   const snapshot = useDeviceAccountInspection(deviceId, runtime, online);
+  // Reads restored from an earlier mount are not new; only later ones are.
+  const seenChecks = useRef(snapshot.accepted);
+  useEffect(() => {
+    if (snapshot.accepted === seenChecks.current) return;
+    seenChecks.current = snapshot.accepted;
+    void onChecked();
+  }, [onChecked, snapshot.accepted]);
 
   // Identity for the configuration IN VIEW comes from that configuration's own
   // read (a response echoes the source set as it existed when checked), with
