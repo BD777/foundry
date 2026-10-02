@@ -89,6 +89,30 @@ async function sourceHead(
   return head;
 }
 
+/**
+ * Accepting merges into the person's own checkout, so it never runs over
+ * changes they have not committed; it names them and what to do instead.
+ */
+async function assertSourceCommitted(
+  repo: { sourcePath: string; relativePath: string },
+  status: string[],
+): Promise<void> {
+  const changed = (await git(repo.sourcePath, status))
+    .split("\n")
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean);
+  if (!changed.length) return;
+  const shown = changed.slice(0, 5).join(", ");
+  const more = changed.length > 5 ? ` and ${changed.length - 5} more` : "";
+  const where =
+    repo.relativePath === "."
+      ? "The workspace"
+      : `The repository ${repo.relativePath}`;
+  throw new Error(
+    `${where} has uncommitted changes (${shown}${more}). Commit them, add them to .gitignore or remove them, then accept again; accepting never overwrites them.`,
+  );
+}
+
 export async function prepareAcceptance(
   workspaceId: string,
   issueId: string,
@@ -116,16 +140,11 @@ export async function prepareAcceptance(
       for (const repo of [...environment.repositories].sort(
         (a, b) => b.relativePath.length - a.relativePath.length,
       )) {
-        if (
-          await git(repo.sourcePath, [
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-          ])
-        )
-          throw new Error(
-            `Source has uncommitted changes: ${repo.relativePath}`,
-          );
+        await assertSourceCommitted(repo, [
+          "status",
+          "--porcelain",
+          "--untracked-files=all",
+        ]);
         const expected = await sourceHead(repo.sourcePath, repo.baselineRef);
         const worktreePath = resolve(path, "..", repo.repoId);
         mkdirSync(resolve(path, ".."), { recursive: true });
@@ -173,7 +192,7 @@ export async function prepareAcceptance(
       return acceptance;
     } catch (error) {
       acceptance.status = "conflict";
-      acceptance.error = String(error);
+      acceptance.error = error instanceof Error ? error.message : String(error);
       writeJSON(path, acceptance);
       return acceptance;
     }
@@ -226,17 +245,12 @@ export async function applyAcceptance(
           throw new Error(
             `Baseline moved: ${repo.relativePath}; prepare a new acceptance`,
           );
-        if (
-          await git(repo.sourcePath, [
-            "status",
-            "--porcelain",
-            "--ignore-submodules=all",
-            "--untracked-files=all",
-          ])
-        )
-          throw new Error(
-            `Source has uncommitted changes: ${repo.relativePath}`,
-          );
+        await assertSourceCommitted(repo, [
+          "status",
+          "--porcelain",
+          "--ignore-submodules=all",
+          "--untracked-files=all",
+        ]);
       }
       acceptance.status = "applying";
       writeJSON(path, acceptance);
