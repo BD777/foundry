@@ -19,7 +19,7 @@
 | accepted    | Accepted    | 人工接受且已有集成路径成功完成                           |
 | abandoned   | Abandoned   | 人明确决定不再继续；候选与对话历史保留，不进入 Workspace |
 
-`blockedReason` 包含 `kind`（`needs_input` / `needs_permission` / `system_error`）及具体 `message`。执行失败写入 System error；用户停止后写入 Needs input，说明需要下一条继续指令。恢复或新执行会清除旧原因。权限原因的模型和显示已就绪，完整 Ask user / 权限应答协议后续接入，不假装已有授权能力。
+`blockedReason` 包含 `kind`（`needs_input` / `needs_permission` / `system_error`）及具体 `message`。执行失败写入 System error；用户停止后写入 Needs input，说明需要下一条继续指令。恢复或新执行会清除旧原因。执行者需要人决定或许可时（合同未定的选择，或候选之外的副作用），调用 Foundry 工具 `ask_person`（`kind` 为 `input` 或 `permission`，可附建议答案）后结束本轮；Issue 进入 Blocked（`needs_input` / `needs_permission`），问题出现在主对话并附快捷回答（许可为“同意 / 拒绝”）。Issue 创建者或 Maintainer 及以上回答（`POST /api/issues/{id}/answer`），回答作为反馈让 Issue 在同一候选中继续；重复提交同一回答不会再触发执行。只有 Issue 的执行会话能提问，协作会话需经派出它的执行者。
 
 旧 JSON 在读取时归一化：inbox/ready → pending，producing → in_progress，review → verifying，integrated → accepted，interrupted → blocked。调度器兼容旧 ready 索引记录，新写入使用新枚举；环境内部 ready/review/integrated 与 Run 状态独立保留。旧 inbox 保留原本未派发语义，不因读取迁移而自动执行。
 

@@ -98,7 +98,7 @@ Per [decision D1 in module architecture §6](architecture-modules.md#6-m4-计划
 ### M5 Issue workflow extensions
 
 - [ ] [Loop graph and exit rules](issue-workflow.md#issues): Issue state transitions converge into one explicit definition; exit rules carry ids and versions, are recorded in the review snapshot and can grow with practice.
-- [ ] [Human input (Blocked)](issue-conversation-design.md): a general question and permission-response protocol; answering resumes the same Issue.
+- [x] [Human input (Blocked)](issue-conversation-design.md): the executor asks the person a question or for permission through `ask_person` and the Issue blocks; the answer resumes it in the same candidate.
 - [ ] [External feedback and Issues in Feishu](platform-extensions.md#im-integration): feedback can come from sources other than people and agents (first a Feishu thread or CI) and returns to the Issue with its source recorded; raise Issues, follow progress and answer Blocked states from Feishu threads, with complex review on the web.
 - [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) (such as Codex image judgments and complex materials like PDF); collectors extend through one interface.
 - [ ] [Acceptance and integration](issue-workflow.md#accept-and-integration): polish Merge Queue conflict resolution and reverification.

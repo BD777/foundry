@@ -177,20 +177,26 @@ func (s *Store) RequestIssueChanges(ctx context.Context, id string, message stri
 			result = issue
 			return nil
 		}
-		if message != "" {
-			issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: fmt.Sprintf("msg_%s_%d", issue.ID, len(issue.Messages)+1), Role: "user", Text: message, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-		}
-		issue.Status = "pending"
-		issue.BlockedReason = nil
-		issue.Checks = appendUnique(issue.Checks, "Changes requested")
-		issue.UpdatedLabel = "just now"
-		if err = tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
-			return err
-		}
-		result = issue
-		return nil
+		result, err = tx.continueIssue(ctx, issue, message)
+		return err
 	})
 	return result, err
+}
+
+// continueIssue queues the Issue to continue in its candidate with the
+// person's message, which the next execution reads as feedback.
+func (s *Store) continueIssue(ctx context.Context, issue store.Issue, message string) (store.Issue, error) {
+	if message != "" {
+		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: fmt.Sprintf("msg_%s_%d", issue.ID, len(issue.Messages)+1), Role: "user", Text: message, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	}
+	issue.Status = "pending"
+	issue.BlockedReason = nil
+	issue.Checks = appendUnique(issue.Checks, "Changes requested")
+	issue.UpdatedLabel = "just now"
+	if err := s.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
+		return store.Issue{}, err
+	}
+	return issue, nil
 }
 
 func (s *Store) AbandonIssue(ctx context.Context, id string, expectedRunID string) (store.Issue, error) {

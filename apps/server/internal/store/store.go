@@ -15,6 +15,12 @@ type IssueExecutionStore interface {
 	ClaimIssueExecution(ctx context.Context, deviceID string, workspaceID string) (Issue, AgentSession, error)
 	// ExecutionIssue returns an Issue with the confirmed contract it executes under.
 	ExecutionIssue(ctx context.Context, issueID string) (Issue, error)
+	// AskIssueQuestion records what the Issue's running execution asks the
+	// person; the Issue blocks on it when the execution's turn ends.
+	AskIssueQuestion(ctx context.Context, sessionID string, question IssueQuestion) (Issue, error)
+	// AnswerIssueQuestion records the person's answer and queues the Issue to
+	// continue in its candidate. Answering an answered question changes nothing.
+	AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string) (Issue, error)
 }
 
 type Store interface {

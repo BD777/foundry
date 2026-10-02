@@ -54,6 +54,10 @@ export const issueDetail = {
       title: "Awaiting acceptance",
       next: "Review the actual material and judgments; you cannot accept while evidence is missing or a criterion has not passed.",
     },
+    question: {
+      title: "Waiting for your answer",
+      next: "The Agent asked you something in the main chat; answer there and it continues in the same candidate.",
+    },
     blocked: {
       title: "A blocker needs attention",
       next: "See the reason in the main conversation, deal with it, then continue.",
@@ -245,6 +249,16 @@ export const issueDetail = {
       counterexample: "Counterexample",
       context: "Background",
     },
+  },
+  question: {
+    inputTitle: "The Agent needs your decision",
+    permissionTitle: "The Agent asks for your permission",
+    approve: "Approve",
+    deny: "Deny",
+    answerHint:
+      "Choose an answer, or write your own in the chat below. The Agent continues in the same candidate.",
+    finishingTurn:
+      "The Agent is finishing its turn; you can answer in a moment.",
   },
   sessions: {
     title: "Sessions in this Issue",
@@ -439,6 +453,7 @@ export const issueDetail = {
     placeholderClarifying:
       "Describe the result you want, answer follow-up questions, or upload references…",
     placeholderWorking: "Guide the agent while it works…",
+    placeholderAnswer: "Answer the Agent's question…",
     placeholderContinue: "Continue this Issue in its candidate workspace…",
     readOnlyAccepted: "Accepted into Workspace.",
     readOnlyAbandoned:

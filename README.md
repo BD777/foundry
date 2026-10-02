@@ -98,7 +98,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 ### M5 Issue 流程扩展
 
 - [ ] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转收敛为一份显式定义；准出规则带编号与版本并写入审阅快照，可在实践中扩充。
-- [ ] [人工介入（Blocked）](docs/issue-conversation-design.md)：通用的提问与权限应答协议，回应后继续同一个 Issue。
+- [x] [人工介入（Blocked）](docs/issue-conversation-design.md)：执行者经 `ask_person` 向人提问或请求许可，Issue 进入 Blocked；人回答后在同一候选中继续。
 - [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。
 - [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（如 Codex 图像判定、PDF 等复杂材料）；采集方式通过统一接口扩展。
 - [ ] [接受与合入](docs/issue-workflow.md#accept-and-integration)：打磨 Merge Queue 的冲突解决与复验。

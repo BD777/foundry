@@ -22,6 +22,21 @@ test("stage guidance distinguishes an unconfirmed draft from execution and accep
     "evidence",
   );
   assert.match(issuePhase({ status: "accepted" }).title, /integrated/);
+  // A question from the execution points to the main chat, not to a blocker.
+  const asked = issuePhase({
+    status: "blocked",
+    contractState: "confirmed",
+    blockedReason: { kind: "needs_input", message: "Which version?" },
+    question: {
+      id: "q",
+      kind: "input",
+      text: "Which version?",
+      runId: "r",
+      askedAt: "",
+    },
+  });
+  assert.equal(asked.title, "Waiting for your answer");
+  assert.equal(asked.tab, "details");
   assert.equal(isStatusQuestion("这里是什么状态？"), true);
   assert.equal(isStatusQuestion("继续"), false);
   assert.equal(isStatusQuestion("What is the status?"), true);

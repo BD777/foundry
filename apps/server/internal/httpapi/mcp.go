@@ -425,6 +425,8 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			}
 		}
 		return encode(session)
+	case "ask_person":
+		return s.askPersonForMCP(r, actor, args)
 	case "cancel_session":
 		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpArgString(args, "sessionId"))
 		if err != nil {

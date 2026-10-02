@@ -302,5 +302,31 @@
       },
       "required": ["sessionId", "title"]
     }
+  },
+  {
+    "name": "ask_person",
+    "description": "Only for the execution of an Issue: ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). After calling it, end your turn with a short summary of where you are; the Issue waits for the person and Foundry resumes you in the same candidate with their answer. Ask one question at a time and never about anything you can decide yourself.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "What you need, in the person's language, with the context they need to answer."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["input", "permission"],
+          "description": "input: a decision or information; permission: approval for a specific action. Defaults to input."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Up to 6 suggested answers; the person may answer otherwise."
+        }
+      },
+      "required": ["question"]
+    }
   }
 ]

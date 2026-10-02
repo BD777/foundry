@@ -333,6 +333,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/issues/{id}/accept", s.handleAcceptIssue, workspaceRole(maintainer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/abandon", s.handleAbandonIssue, workspaceRole(maintainer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/request-changes", s.handleRequestChanges, workspaceRole(member, issueWorkspace("id"))),
+		fn("POST /api/issues/{id}/answer", s.handleAnswerIssueQuestion, issueCreatorOr(maintainer)),
 		fn("GET /api/issues/{id}/candidate-review", s.handleCandidateReview, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/environment", s.handleIssueEnvironment, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("POST /api/issues/{id}/environment/{action}", s.handleIssueEnvironment, workspaceRole(member, issueWorkspace("id"))),
