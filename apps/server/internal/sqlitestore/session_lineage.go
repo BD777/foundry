@@ -163,7 +163,10 @@ func autoGroupBaseName(title string) string {
 		return r == '*' || unicode.IsSymbol(r) || unicode.IsPunct(r)
 	}))
 	if base == "" || isPlaceholderChatTitle(base) {
-		return "新建分组"
+		if writtenInChinese(base) {
+			return "新建分组"
+		}
+		return "New group"
 	}
 	runes := []rune(base)
 	used := 0
