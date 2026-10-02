@@ -174,8 +174,10 @@ export async function runIssueExecutor(
       const feedback = executionFeedback(issue);
       if (feedback.length)
         session.prompt += `\n\nPost-confirmation execution feedback, in order (does not amend the contract):\n${feedback.join("\n\n")}`;
-      if (environment.error)
-        session.prompt += `\n\nPrevious execution or integration feedback:\n${environment.error}\nResolve conflicts in candidate files. Foundry will stage and commit the resolved files after this turn.`;
+      if (environment.conflicts?.length)
+        session.prompt += `\n\nBringing the Workspace's newer accepted changes into this candidate left merge conflicts in:\n${environment.conflicts.join("\n")}\nResolve them in the candidate files so the accepted changes and this Issue's confirmed contract both hold, and remove every conflict marker. Foundry stages and commits the resolved files after this turn, then the result is checked again.`;
+      else if (environment.error)
+        session.prompt += `\n\nThe previous execution of this Issue ended with:\n${environment.error}\nContinue from the current candidate files.`;
       environment.status = "running";
       store.saveEnvironment(environment);
       let responseText = "";

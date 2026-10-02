@@ -325,6 +325,7 @@ export async function snapshotEnvironment(
   environment.status = "review";
   delete environment.acceptanceId;
   delete environment.error;
+  delete environment.conflicts;
   store.saveEnvironment(environment);
   return environment;
 }

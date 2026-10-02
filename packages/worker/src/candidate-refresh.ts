@@ -2,7 +2,7 @@ import { ExecutionStore } from "./execution-storage.js";
 import { git, gitCommit, commitIdentity } from "./execution-git.js";
 import type { IssueEnvironment } from "./execution-types.js";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { posix, resolve } from "node:path";
 import { identifier } from "./execution-storage.js";
 import type { WorkspaceAcceptance } from "./execution-types.js";
 
@@ -39,7 +39,7 @@ export async function refreshCandidate(
       "--diff-filter=U",
     ]);
     if (unmerged) {
-      conflicts.push(`${repo.relativePath}: ${unmerged}`);
+      conflicts.push(...conflictedFiles(repo.relativePath, unmerged));
       continue;
     }
     await git(repo.worktreePath, ["add", "-A", "--", "."]);
@@ -57,22 +57,27 @@ export async function refreshCandidate(
         env: commitIdentity,
       });
     } catch (error) {
-      if (
-        !(await git(repo.worktreePath, [
-          "diff",
-          "--name-only",
-          "--diff-filter=U",
-        ]))
-      )
-        throw error;
-      conflicts.push(`${repo.relativePath}: ${String(error)}`);
+      const unmerged = await git(repo.worktreePath, [
+        "diff",
+        "--name-only",
+        "--diff-filter=U",
+      ]);
+      if (!unmerged) throw error;
+      conflicts.push(...conflictedFiles(repo.relativePath, unmerged));
     }
     repo.baseline = latest;
   }
   environment.revision++;
   delete environment.acceptanceId;
-  if (conflicts.length)
-    environment.error = `Resolve these merge conflicts in candidate files before finishing:\n${conflicts.join("\n")}`;
+  if (conflicts.length) environment.conflicts = conflicts;
   store.saveEnvironment(environment);
   return environment;
+}
+
+/** Unmerged files of one repository, as paths from the workspace root. */
+function conflictedFiles(repository: string, unmerged: string): string[] {
+  return unmerged
+    .split("\n")
+    .filter(Boolean)
+    .map((file) => posix.join(repository, file));
 }

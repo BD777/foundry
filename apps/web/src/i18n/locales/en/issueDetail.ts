@@ -260,6 +260,13 @@ export const issueDetail = {
     finishingTurn:
       "The Agent is finishing its turn; you can answer in a moment.",
   },
+  alignment: {
+    title: "Aligning hit a merge conflict",
+    body: "The Workspace's newer accepted changes and this candidate both changed the same lines in:",
+    resolve: "Ask the Agent to resolve it",
+    after:
+      "The Agent resolves the conflict in the candidate, keeping both the accepted changes and this Issue's goal; then you check and accept again.",
+  },
   exitRules: {
     label: "Exit rules",
     version: "Every rule must hold before you can accept ({{version}}).",
