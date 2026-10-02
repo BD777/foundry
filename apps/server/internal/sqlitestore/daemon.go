@@ -210,8 +210,9 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 		if err := tx.requireConfirmedContract(ctx, claimed); err != nil {
 			return err
 		}
-		claimed.Status = "in_progress"
-		claimed.BlockedReason = nil
+		if err := claimed.Apply(store.IssueEventExecutionStarted, nil); err != nil {
+			return err
+		}
 		claimed.UpdatedLabel = "just now"
 		claimed.Checks = appendUnique(claimed.Checks, "Dispatched to local worker "+deviceID)
 		if err := tx.saveIssue(ctx, claimed, time.Time{}, time.Now().UTC()); err != nil {
@@ -296,7 +297,12 @@ func (s *Store) startIssueRun(ctx context.Context, issueID string, run store.Run
 	if run.StartedAt == "" {
 		run.StartedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	issue.Status = "in_progress"
+	// The claim already started the Issue; a run started otherwise starts it here.
+	if issue.Status != "in_progress" {
+		if err := issue.Apply(store.IssueEventExecutionStarted, nil); err != nil {
+			return store.Issue{}, err
+		}
+	}
 	// Starting another implementation invalidates the current review projection,
 	// even before the first file write. Historical snapshots remain immutable.
 	issue.CurrentCandidateSnapshotID = nil
@@ -399,22 +405,20 @@ func (s *Store) completeIssue(ctx context.Context, issueID string, input store.C
 	}
 	run.Status = "completed"
 	run.CompletedAt = time.Now().UTC().Format(time.RFC3339)
-	issue.Status = "verifying"
-	issue.BlockedReason = nil
-	if input.Error != "" {
-		run.Status = "failed"
-		issue.Status = "blocked"
-		issue.BlockedReason = &store.IssueBlockedReason{Kind: "system_error", Message: input.Error}
-	}
-	if input.Canceled {
+	event, reason := store.IssueEventExecutionFinished, (*store.IssueBlockedReason)(nil)
+	switch question := issue.Question; {
+	case input.Canceled:
 		run.Status = "canceled"
-		issue.Status = "blocked"
-		issue.BlockedReason = &store.IssueBlockedReason{Kind: "needs_input", Message: "Execution stopped. Send a message to continue in the retained candidate workspace."}
+		event, reason = store.IssueEventExecutionStopped, &store.IssueBlockedReason{Kind: "needs_input", Message: "Execution stopped. Send a message to continue in the retained candidate workspace."}
+	case input.Error != "":
+		run.Status = "failed"
+		event, reason = store.IssueEventExecutionFailed, &store.IssueBlockedReason{Kind: "system_error", Message: input.Error}
+	case question != nil && question.RunID == run.ID:
+		// A turn that ended on a question waits for the person, not for review.
+		event, reason = store.IssueEventExecutionAsked, &store.IssueBlockedReason{Kind: "needs_" + question.Kind, Message: question.Text}
 	}
-	// A turn that ended on a question waits for the person, not for review.
-	if question := issue.Question; question != nil && question.RunID == run.ID && input.Error == "" && !input.Canceled {
-		issue.Status = "blocked"
-		issue.BlockedReason = &store.IssueBlockedReason{Kind: "needs_" + question.Kind, Message: question.Text}
+	if err := issue.Apply(event, reason); err != nil {
+		return store.Issue{}, err
 	}
 	issue.Artifact = &input.Artifact
 	issue.Run = &run

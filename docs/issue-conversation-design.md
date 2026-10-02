@@ -4,8 +4,6 @@
 
 用户以 Issue 作为持续工作单元。没有独立的 Runs 导航，旧 `/runs` 地址落到 Issues 视图；执行记录、原生会话 ID、事件和历史仍在内部保留，用来恢复候选与串联对话。
 
-> Issues 的 Web 入口在体验打磨完成前暂时隐藏：侧栏没有 Issues 项，`/issues` 与 Issue 详情路由显示 Workspace 概览。下文描述的是 Issue 页面与对话的设计及已有实现，引擎、API 与 Worker 路径仍在主干。
-
 ## 状态
 
 协议、服务端、Board、List 和详情统一为六个顶层状态。Needs input、Needs permission、System error 是 Blocked 的原因，不设 Interrupted / Needs input 独立列。
@@ -18,6 +16,39 @@
 | verifying   | Verifying   | 检查候选与完成条件，包括等待人工审阅；不等于验证通过     |
 | accepted    | Accepted    | 人工接受且已有集成路径成功完成                           |
 | abandoned   | Abandoned   | 人明确决定不再继续；候选与对话历史保留，不进入 Workspace |
+
+### 状态流转
+
+状态只经下表的事件改变，定义在 `apps/server/internal/store/issue_loop.go`（`IssueLoop`），不在表中的流转被拒绝；表与代码由测试保持一致。
+
+| 事件                    | 来源状态                    | 去向        | Blocked 原因                  |
+| ----------------------- | --------------------------- | ----------- | ----------------------------- |
+| `clarification_replied` | pending, blocked            | blocked     | needs_input                   |
+| `contract_confirmed`    | blocked, verifying          | pending     |                               |
+| `execution_started`     | pending                     | in_progress |                               |
+| `execution_finished`    | in_progress                 | verifying   |                               |
+| `execution_asked`       | in_progress                 | blocked     | needs_input, needs_permission |
+| `execution_stopped`     | in_progress                 | blocked     | needs_input                   |
+| `execution_failed`      | in_progress                 | blocked     | system_error                  |
+| `continued`             | pending, blocked, verifying | pending     |                               |
+| `integrated`            | verifying                   | accepted    |                               |
+| `abandoned`             | pending, blocked, verifying | abandoned   |                               |
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending
+  pending --> blocked: clarification_replied
+  blocked --> blocked: clarification_replied
+  pending --> in_progress: execution_started
+  in_progress --> verifying: execution_finished
+  in_progress --> blocked: execution_asked / stopped / failed
+  blocked --> pending: continued / contract_confirmed
+  verifying --> pending: continued / contract_confirmed
+  verifying --> accepted: integrated
+  pending --> abandoned: abandoned
+  blocked --> abandoned: abandoned
+  verifying --> abandoned: abandoned
+```
 
 `blockedReason` 包含 `kind`（`needs_input` / `needs_permission` / `system_error`）及具体 `message`。执行失败写入 System error；用户停止后写入 Needs input，说明需要下一条继续指令。恢复或新执行会清除旧原因。执行者需要人决定或许可时（合同未定的选择，或候选之外的副作用），调用 Foundry 工具 `ask_person`（`kind` 为 `input` 或 `permission`，可附建议答案）后结束本轮；Issue 进入 Blocked（`needs_input` / `needs_permission`），问题出现在主对话并附快捷回答（许可为“同意 / 拒绝”）。Issue 创建者或 Maintainer 及以上回答（`POST /api/issues/{id}/answer`），回答作为反馈让 Issue 在同一候选中继续；重复提交同一回答不会再触发执行。只有 Issue 的执行会话能提问，协作会话需经派出它的执行者。
 
