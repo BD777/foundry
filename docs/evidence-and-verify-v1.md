@@ -8,7 +8,7 @@ Evidence & Verify v1 的业务契约与支持范围。设计背景来自已归�
 
 已实现共享模型与 Go 生成、精确契约确认、claim/启动双重门槛（包括 mock）、封存候选、持久材料、命令/项目自带命令/受控本地 HTTP/候选文件导出/人工上传、独立 Agent SDK 初判、逐条件结果与覆判、不可变审阅包，以及绑定审阅包的人工批准和既有逐仓集成 journal。也已接入只读 Agent 澄清（在所选 Workspace 原目录只读探索）、候选 Worktree 内独立验证（含项目命令的程序判定与 JSON Schema 下发）、显式基线对齐与复验、断线结果恢复、媒体安全预览和状态 SSE。
 
-尚未完成的项目列在 [§9](#9-尚需收口的实施项)：通用服务/外部依赖绑定、Codex 真实图文判定、复杂媒体，以及 Linux 上的 Agent 阶段会话与集成都不能标为完成。功能准出以[对话式准出标准](foundry-conversation-release-gate.md)为准。
+尚未完成的项目列在 [§9](#9-尚需收口的实施项)：通用服务/外部依赖绑定、复杂媒体等不能标为完成。功能准出以[对话式准出标准](foundry-conversation-release-gate.md)为准。
 
 ## 1. 对象边界与字段来源
 
@@ -240,7 +240,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 
 以下都是明确缺口，不属于“已通过”：
 
-1. Codex 真实 provider 图文初判尚未完成验证（曾受账号用量限制阻止，未伪造通过）。Claude Agent 判定已有真实闭环记录，图片输入有真实 SDK smoke，但不声称完成所有媒体演示。
+1. ~~Codex 真实 provider 图文初判~~ 已于 2026-10-03 完成：参考图片随合同交给执行者（只读文件，执行每轮都带上）与判定者，真实 Codex 判定实际查看图片并引用参考材料（ISS-123）。不声称完成所有媒体演示。
 2. 通用 HTTP/service/build identity、外部配置/数据/依赖/凭据版本注册与 Accept 前复核；目前支持受控本地 Node GET/HEAD 与纯文件/项目命令，`check_before_accept` 依赖未注册时拒绝接受。
 3. 自动恢复目前覆盖 collect/assess 与澄清回复（`recover_session`）；上传/对齐有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
 4. 图像区域高亮/标注、PDF/视频/音频预览、主动删除材料的影响提示。rationale media 只能作解释性 context，不作为新 Evidence。
