@@ -23,6 +23,8 @@ export interface ConversationProps {
   activeExecutionId?: string;
   sending?: boolean;
   disabled?: boolean;
+  /** Why sending is unavailable, shown in the composer while it is. */
+  disabledReason?: string;
   readOnly?: ReactNode;
   draftStorageKey?: string;
   draftResetKey?: number;

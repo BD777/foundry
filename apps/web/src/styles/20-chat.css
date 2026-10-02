@@ -3002,6 +3002,21 @@
   background: var(--fdy-media-surface);
 }
 
+.fdy-chat-composer-blocked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 4px 6px;
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-chat-composer-blocked svg {
+  flex: none;
+}
+
 .fdy-chat-attachment-uploading {
   display: inline-flex;
   height: 32px;
