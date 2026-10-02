@@ -49,7 +49,7 @@ func (s *Server) handleAnswerIssueQuestion(w http.ResponseWriter, r *http.Reques
 	}
 	unlock := s.lockIssueMutation(r.PathValue("id"))
 	defer unlock()
-	issue, err := executions.AnswerIssueQuestion(r.Context(), r.PathValue("id"), input.QuestionID, input.Answer)
+	issue, err := executions.AnswerIssueQuestion(r.Context(), r.PathValue("id"), input.QuestionID, input.Answer, "")
 	if err != nil {
 		writeEvidenceMutation(w, nil, err)
 		return

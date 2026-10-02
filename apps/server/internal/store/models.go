@@ -598,6 +598,9 @@ type IssueConversationMessage struct {
 	Text      string `json:"text"`
 	RunID     string `json:"runId,omitempty"`
 	CreatedAt string `json:"createdAt"`
+	// Via names where a person's message came from when not the web, such
+	// as "feishu".
+	Via string `json:"via,omitempty"`
 }
 
 // IssueClarification is the Issue's clarification session and the state of

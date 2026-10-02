@@ -53,6 +53,15 @@ func (s *Store) setupFeishu(ctx context.Context) error {
 			return err
 		}
 	}
+	// A thread may follow an Issue instead of a chat session.
+	for column, statement := range map[string]string{
+		"issue_id": `ALTER TABLE feishu_chat_threads ADD COLUMN issue_id TEXT NOT NULL DEFAULT ''`,
+		"reported": `ALTER TABLE feishu_chat_threads ADD COLUMN reported TEXT NOT NULL DEFAULT ''`,
+	} {
+		if err := s.ensureColumn(ctx, "feishu_chat_threads", column, statement); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -212,10 +221,25 @@ func (s *Store) FindWorkspaceByChatID(ctx context.Context, chatID string) (store
 
 func (s *Store) GetFeishuChatThread(ctx context.Context, rootMessageID string) (store.FeishuChatThread, error) {
 	row := s.conn().QueryRowContext(ctx, `
-		SELECT root_message_id, workspace_id, chat_id, latest_session_id, card_message_id, created_at, updated_at
+		SELECT `+feishuThreadColumns+`
 		FROM feishu_chat_threads WHERE root_message_id = ?`, rootMessageID)
+	return scanFeishuThread(row)
+}
+
+// FeishuThreadForIssue is the thread following the Issue, the newest if a
+// thread was started for it again.
+func (s *Store) FeishuThreadForIssue(ctx context.Context, issueID string) (store.FeishuChatThread, error) {
+	row := s.conn().QueryRowContext(ctx, `
+		SELECT `+feishuThreadColumns+`
+		FROM feishu_chat_threads WHERE issue_id = ? ORDER BY created_at DESC LIMIT 1`, issueID)
+	return scanFeishuThread(row)
+}
+
+const feishuThreadColumns = `root_message_id, workspace_id, chat_id, latest_session_id, card_message_id, issue_id, reported, created_at, updated_at`
+
+func scanFeishuThread(row *sql.Row) (store.FeishuChatThread, error) {
 	var thread store.FeishuChatThread
-	err := row.Scan(&thread.RootMessageID, &thread.WorkspaceID, &thread.ChatID, &thread.LatestSessionID, &thread.CardMessageID, &thread.CreatedAt, &thread.UpdatedAt)
+	err := row.Scan(&thread.RootMessageID, &thread.WorkspaceID, &thread.ChatID, &thread.LatestSessionID, &thread.CardMessageID, &thread.IssueID, &thread.Reported, &thread.CreatedAt, &thread.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.FeishuChatThread{}, store.ErrNotFound
 	}
@@ -232,16 +256,16 @@ func (s *Store) SaveFeishuChatThread(ctx context.Context, thread store.FeishuCha
 	}
 	thread.UpdatedAt = now
 	_, err := s.conn().ExecContext(ctx, `
-		INSERT INTO feishu_chat_threads (
-			root_message_id, workspace_id, chat_id, latest_session_id, card_message_id, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO feishu_chat_threads (`+feishuThreadColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(root_message_id) DO UPDATE SET
 			workspace_id = excluded.workspace_id,
 			chat_id = excluded.chat_id,
 			latest_session_id = excluded.latest_session_id,
 			card_message_id = excluded.card_message_id,
+			issue_id = excluded.issue_id,
+			reported = excluded.reported,
 			updated_at = excluded.updated_at`,
-		thread.RootMessageID, thread.WorkspaceID, thread.ChatID, thread.LatestSessionID, thread.CardMessageID, thread.CreatedAt, thread.UpdatedAt)
+		thread.RootMessageID, thread.WorkspaceID, thread.ChatID, thread.LatestSessionID, thread.CardMessageID, thread.IssueID, thread.Reported, thread.CreatedAt, thread.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("save feishu chat thread %s: %w", thread.RootMessageID, err)
 	}

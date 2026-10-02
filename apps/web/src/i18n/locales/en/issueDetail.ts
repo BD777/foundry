@@ -485,6 +485,7 @@ export const issueDetail = {
     failure:
       "The candidate files are kept. Reply below to retry in the same candidate, or open “Environment” to check first.\n\nReason: {{reason}}",
     working: "Working in candidate workspace…",
+    viaFeishu: "via Feishu",
   },
   actions: {
     newIssue: "New issue",

@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -62,45 +64,56 @@ func (s *Server) handleRetryClarification(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) clarify(w http.ResponseWriter, r *http.Request, queue func(store.EvidenceStore) (store.Issue, store.AgentSession, error)) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
+	updated, status, err := s.queueClarification(r.Context(), r.PathValue("id"), queue)
+	if err != nil {
+		if status == 0 {
+			writeResult(w, nil, err)
+		} else {
+			writeError(w, status, err.Error())
+		}
 		return
 	}
-	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// queueClarification sends a message to the Issue's clarification session
+// once the workspace's device can run it. A non-zero status is the HTTP
+// status of a refusal.
+func (s *Server) queueClarification(ctx context.Context, issueID string, queue func(store.EvidenceStore) (store.Issue, store.AgentSession, error)) (store.Issue, int, error) {
+	st, ok := s.store.(store.EvidenceStore)
+	if !ok {
+		return store.Issue{}, http.StatusServiceUnavailable, errors.New("evidence store unavailable")
+	}
+	issue, err := s.store.GetIssue(ctx, issueID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.Issue{}, 0, err
 	}
 	// The workspace's device answers; an older worker would run the session
 	// as an ordinary chat with write access, so it is refused here.
-	workspace, err := s.store.GetWorkspace(r.Context(), issue.WorkspaceID)
+	workspace, err := s.store.GetWorkspace(ctx, issue.WorkspaceID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.Issue{}, 0, err
 	}
 	connection := s.hub.connectionFor(workspace.DeviceID)
 	if connection == nil {
-		writeError(w, http.StatusConflict, "worker_offline: the workspace's device is not connected")
-		return
+		return store.Issue{}, http.StatusConflict, errors.New("worker_offline: the workspace's device is not connected")
 	}
 	if !connection.hasCapability(store.DaemonCapabilityIssueClarification) {
-		writeError(w, http.StatusConflict, errIssueClarificationUnsupported.Error())
-		return
+		return store.Issue{}, http.StatusConflict, errIssueClarificationUnsupported
 	}
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
 	updated, session, err := queue(st)
 	if err != nil {
-		writeEvidenceMutation(w, nil, err)
-		return
+		return store.Issue{}, http.StatusConflict, err
 	}
 	s.events.Publish("issue_updated", updated)
 	// A replayed request may find its input already sent or answered.
-	current, err := s.store.GetAgentSessionSummary(r.Context(), session.ID)
+	current, err := s.store.GetAgentSessionSummary(ctx, session.ID)
 	if err == nil && current.Status == "queued" && current.Input.ID == session.Input.ID {
 		if err := s.hub.DispatchAgentSession(current); err != nil {
 			log.Printf("dispatch clarification session %s: %v", session.ID, err)
 		}
 	}
-	writeJSON(w, http.StatusOK, updated)
+	return updated, 0, nil
 }

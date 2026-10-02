@@ -1751,6 +1751,13 @@
   color: var(--fdy-ink-strong);
 }
 
+.fdy-chat-message-origin {
+  display: block;
+  margin-top: 4px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+}
+
 .fdy-chat-message-time {
   position: absolute;
   top: calc(100% + 2px);

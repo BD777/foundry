@@ -811,7 +811,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	item, err := s.store.RequestIssueChanges(r.Context(), r.PathValue("id"), input.Message, input.ExpectedRunID)
+	item, err := s.store.RequestIssueChanges(r.Context(), r.PathValue("id"), input.Message, input.ExpectedRunID, "")
 	if err == nil {
 		go s.hub.DispatchReady()
 	}

@@ -14,6 +14,14 @@ type Client struct {
 	lark      *lark.Client
 }
 
+// botClient is what Foundry asks of a bot: reply to a message with a card,
+// update a card, and read a group's name. Client implements it.
+type botClient interface {
+	ReplyCard(ctx context.Context, messageID string, cardJSON string) (string, error)
+	PatchCard(ctx context.Context, cardMessageID string, cardJSON string) error
+	GetChatInfo(ctx context.Context, chatID string) (string, error)
+}
+
 func NewClient(appID, appSecret string) *Client {
 	larkClient := lark.NewClient(appID, appSecret)
 	return &Client{

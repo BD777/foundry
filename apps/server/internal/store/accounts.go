@@ -28,16 +28,16 @@ var (
 )
 
 type User struct {
-	ID          string     `json:"id"`
-	Username    string     `json:"username"`
-	DisplayName string     `json:"displayName"`
-	Role        string     `json:"role"`
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
 	// Locale is the interface language the person chose ("en", "zh-CN");
 	// empty follows the browser.
-	Locale string `json:"locale"`
-	DisabledAt  *time.Time `json:"disabledAt,omitempty"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
+	Locale     string     `json:"locale"`
+	DisabledAt *time.Time `json:"disabledAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 func (u User) Active() bool { return u.DisabledAt == nil }

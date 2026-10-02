@@ -175,7 +175,7 @@ func TestEvidenceDispatchCancelsQueuedAmendmentAndInvalidatesNewExecution(t *tes
 		t.Fatal(err)
 	}
 	// A new implementation starts from the person continuing the Issue.
-	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Implement it again", ""); err != nil {
+	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Implement it again", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new-implementation", IssueID: issue.ID}); err != nil {

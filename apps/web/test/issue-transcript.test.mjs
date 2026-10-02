@@ -336,3 +336,36 @@ test("interruption retains partial output and represents execution failure as Bl
   assert.equal(issueDisplayStatus({ status: "review" }), "verifying");
   assert.equal(issueDisplayStatus({ status: "integrated" }), "accepted");
 });
+
+test("a message from a Feishu thread says so in the Issue conversation", () => {
+  const messages = issueTranscript({
+    id: "i",
+    runtime: "claude",
+    sourceInput: "Add usage",
+    messages: [
+      {
+        id: "clarify_1",
+        role: "user",
+        text: "For new users",
+        createdAt: "2026-10-03T01:00:00Z",
+        via: "feishu",
+      },
+      {
+        id: "clarify_2",
+        role: "assistant",
+        text: "Which file?",
+        createdAt: "2026-10-03T01:00:05Z",
+      },
+      {
+        id: "clarify_3",
+        role: "user",
+        text: "README.md",
+        createdAt: "2026-10-03T01:00:09Z",
+      },
+    ],
+  });
+  const origins = Object.fromEntries(messages.map((m) => [m.id, m.origin]));
+  assert.equal(origins.clarify_1, "via Feishu");
+  assert.equal(origins.clarify_2, undefined);
+  assert.equal(origins.clarify_3, undefined);
+});

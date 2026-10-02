@@ -65,7 +65,7 @@ func (s *Store) AskIssueQuestion(ctx context.Context, sessionID string, question
 	return result, err
 }
 
-func (s *Store) AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string) (store.Issue, error) {
+func (s *Store) AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string, via string) (store.Issue, error) {
 	var result store.Issue
 	answer = strings.TrimSpace(answer)
 	if answer == "" || len(answer) > 32000 {
@@ -93,8 +93,8 @@ func (s *Store) AnswerIssueQuestion(ctx context.Context, issueID string, questio
 			return err
 		}
 		issue.Question = nil
-		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: questionID + "_answer", Role: "user", Text: answer, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-		result, err = tx.continueIssue(ctx, issue, "")
+		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: questionID + "_answer", Role: "user", Text: answer, CreatedAt: time.Now().UTC().Format(time.RFC3339), Via: via})
+		result, err = tx.continueIssue(ctx, issue, "", "")
 		return err
 	})
 	return result, err

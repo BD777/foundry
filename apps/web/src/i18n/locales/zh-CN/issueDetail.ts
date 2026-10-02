@@ -443,6 +443,7 @@ export const issueDetail: Translation<typeof en> = {
     failure:
       "候选文件已保留。在下方回复即可在同一个候选里重试，也可以先打开“执行环境”检查。\n\n原因：{{reason}}",
     working: "正在候选工作区中工作…",
+    viaFeishu: "来自飞书",
   },
   actions: {
     newIssue: "新建 Issue",

@@ -24,7 +24,7 @@ func TestIssueRuntimeOptionsPersistThroughFeedback(t *testing.T) {
 		if _, err = db.UpdateIssueStatus(ctx, issue.ID, "verifying"); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = db.RequestIssueChanges(ctx, issue.ID, "continue with these settings", ""); err != nil {
+		if _, err = db.RequestIssueChanges(ctx, issue.ID, "continue with these settings", "", ""); err != nil {
 			t.Fatal(err)
 		}
 		loaded, err := db.GetIssue(ctx, issue.ID)

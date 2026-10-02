@@ -7,7 +7,7 @@ import (
 )
 
 type updatePayload struct {
-	client        *Client
+	client        botClient
 	cardMessageID string
 	title         string
 	content       string
@@ -37,7 +37,7 @@ func NewStreamBuffer(minInterval time.Duration) *StreamBuffer {
 	}
 }
 
-func (sb *StreamBuffer) Update(sessionID string, client *Client, cardMessageID, title, content, statusTip string) {
+func (sb *StreamBuffer) Update(sessionID string, client botClient, cardMessageID, title, content, statusTip string) {
 	sb.mu.Lock()
 	buf, ok := sb.pending[sessionID]
 	if !ok {
@@ -80,7 +80,7 @@ func (sb *StreamBuffer) Update(sessionID string, client *Client, cardMessageID, 
 	}
 }
 
-func (sb *StreamBuffer) Complete(sessionID string, client *Client, cardMessageID, title, content string, duration time.Duration) {
+func (sb *StreamBuffer) Complete(sessionID string, client botClient, cardMessageID, title, content string, duration time.Duration) {
 	sb.mu.Lock()
 	if buf, ok := sb.pending[sessionID]; ok {
 		buf.mu.Lock()
@@ -97,7 +97,7 @@ func (sb *StreamBuffer) Complete(sessionID string, client *Client, cardMessageID
 	_ = client.PatchCard(context.Background(), cardMessageID, cardJSON)
 }
 
-func (sb *StreamBuffer) Fail(sessionID string, client *Client, cardMessageID, title, content, errorMsg string) {
+func (sb *StreamBuffer) Fail(sessionID string, client botClient, cardMessageID, title, content, errorMsg string) {
 	sb.mu.Lock()
 	if buf, ok := sb.pending[sessionID]; ok {
 		buf.mu.Lock()

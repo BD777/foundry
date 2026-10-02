@@ -65,7 +65,7 @@ func TestExecutionQuestionBlocksTheIssueUntilAnswered(t *testing.T) {
 	if _, err := db.AskIssueQuestion(ctx, execution.ID, store.IssueQuestion{Kind: "input", Text: "Another thing?"}); err == nil {
 		t.Fatal("a second question was accepted while one waits")
 	}
-	if _, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes"); err == nil {
+	if _, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes", ""); err == nil {
 		t.Fatal("answered while the execution was still finishing its turn")
 	}
 	blocked, err := db.CompleteIssue(ctx, issue.ID, store.CompleteIssueInput{RunID: execution.ID, Response: "Waiting for approval to deploy.", Artifact: store.AcceptanceArtifact{ID: "art_1", IssueID: issue.ID, Kind: "text", Title: "Summary"}})
@@ -75,10 +75,10 @@ func TestExecutionQuestionBlocksTheIssueUntilAnswered(t *testing.T) {
 	if blocked.Status != "blocked" || blocked.BlockedReason == nil || blocked.BlockedReason.Kind != "needs_permission" || blocked.BlockedReason.Message != ask.Text {
 		t.Fatalf("the turn did not end blocked on the question: %s %+v", blocked.Status, blocked.BlockedReason)
 	}
-	if _, err := db.AnswerIssueQuestion(ctx, issue.ID, "question_other", "Yes"); err == nil {
+	if _, err := db.AnswerIssueQuestion(ctx, issue.ID, "question_other", "Yes", ""); err == nil {
 		t.Fatal("answered a question that does not exist")
 	}
-	resumed, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes, staging only.")
+	resumed, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes, staging only.", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestExecutionQuestionBlocksTheIssueUntilAnswered(t *testing.T) {
 	if resumed.Status != "pending" || resumed.Question != nil || last.ID != question.ID+"_answer" || last.Text != "Yes, staging only." {
 		t.Fatalf("the answer did not resume the Issue: %s %+v %+v", resumed.Status, resumed.Question, last)
 	}
-	if replay, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes, staging only."); err != nil || len(replay.Messages) != len(resumed.Messages) {
+	if replay, err := db.AnswerIssueQuestion(ctx, issue.ID, question.ID, "Yes, staging only.", ""); err != nil || len(replay.Messages) != len(resumed.Messages) {
 		t.Fatal("a resent answer was recorded twice", err)
 	}
 	next, _, err := db.ClaimIssueExecution(ctx, "dev_ask", "ws_ask")

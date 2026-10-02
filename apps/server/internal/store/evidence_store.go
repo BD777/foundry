@@ -52,6 +52,8 @@ type AskClarificationInput struct {
 	ContentDigest string
 	Message       string
 	ChangeReason  string
+	// Via is where the message came from when not the web, such as "feishu".
+	Via string
 }
 
 // Only a journal-aware Worker may resolve a partially applied baseline.

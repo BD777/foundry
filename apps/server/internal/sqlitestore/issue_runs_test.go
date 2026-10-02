@@ -83,11 +83,11 @@ func TestIssueFeedbackIsPersistentAndBoundToCurrentRun(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.RequestIssueChanges(ctx, issue.ID, "wrong run", "old"); err == nil {
+	if _, err := db.RequestIssueChanges(ctx, issue.ID, "wrong run", "old", ""); err == nil {
 		t.Fatal("stale feedback accepted")
 	}
 	for i := 0; i < 2; i++ {
-		if _, err := db.RequestIssueChanges(ctx, issue.ID, "Update the shared rules", "run_feedback"); err != nil {
+		if _, err := db.RequestIssueChanges(ctx, issue.ID, "Update the shared rules", "run_feedback", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,7 +129,7 @@ func TestIssueSteerPersistsOnceAndCanceledIssueCanContinue(t *testing.T) {
 	if saved.Status != "blocked" || saved.Run.EnvironmentID != "env_retained" {
 		t.Fatalf("cancellation lost candidate: %#v", saved)
 	}
-	saved, err = db.RequestIssueChanges(ctx, issue.ID, "Continue with mobile fixes", "run_steer")
+	saved, err = db.RequestIssueChanges(ctx, issue.ID, "Continue with mobile fixes", "run_steer", "")
 	if err != nil || saved.Status != "pending" || len(saved.Messages) != 2 {
 		t.Fatalf("resume failed: %v %#v", err, saved)
 	}
