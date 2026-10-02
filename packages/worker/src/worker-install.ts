@@ -254,14 +254,18 @@ export async function updateCommand(args: string[]): Promise<void> {
     self.name,
     packageSpecs(args, `${self.name}@${latest}`),
   );
-  await reinstallService({
+  const restarted = await reinstallService({
     cliPath: currentRuntimeCli(self.name),
     macApp: process.platform === "darwin",
   });
-  console.log(
+  const done =
     version === current
-      ? `Reinstalled ${self.name} ${version} and restarted the worker.`
-      : `Updated ${self.name} ${current} → ${version} and restarted the worker.`,
+      ? `Reinstalled ${self.name} ${version}`
+      : `Updated ${self.name} ${current} → ${version}`;
+  console.log(
+    restarted
+      ? `${done} and restarted the worker.`
+      : `${done}; start the worker as shown above.`,
   );
 }
 

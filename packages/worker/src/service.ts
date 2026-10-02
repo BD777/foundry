@@ -307,12 +307,7 @@ WantedBy=default.target
         "--now",
         systemdUnitName(),
       ]);
-      // Without a systemd user session (containers, some servers) the worker
-      // is not running; say so and how to run it.
-      if (!started)
-        console.error(
-          `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
-        );
+      if (!started) reportNotRunning(command);
     }
     console.log(`Installed systemd user service: ${unitPath}`);
     return;
@@ -364,7 +359,18 @@ export async function stopDaemonProcess(): Promise<void> {
  * can be rebuilt when its own content changed, without the old one reacting),
  * then the worker is stopped and the job installed again.
  */
-export async function reinstallService(host: ServiceHost): Promise<void> {
+/**
+ * Without a systemd user session (containers, some servers) the worker is
+ * not running; say so and how to run it.
+ */
+function reportNotRunning(command: string): void {
+  console.error(
+    `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+  );
+}
+
+/** Rewrites the service for a new runtime; says whether the worker restarted. */
+export async function reinstallService(host: ServiceHost): Promise<boolean> {
   if (process.platform === "darwin") {
     if (typeof process.getuid === "function")
       spawnSync("launchctl", [
@@ -374,11 +380,17 @@ export async function reinstallService(host: ServiceHost): Promise<void> {
       ]);
     await stopDaemonProcess();
     installService([], host);
-    return;
+    return true;
   }
   installService(["--no-start"], host);
   bestEffort("systemctl", ["--user", "daemon-reload"]);
-  bestEffort("systemctl", ["--user", "restart", systemdUnitName()]);
+  if (bestEffort("systemctl", ["--user", "restart", systemdUnitName()]))
+    return true;
+  const execStart = readFileSync(systemdUnitPath(), "utf8").match(
+    /^ExecStart=(.*)$/m,
+  )?.[1];
+  if (execStart) reportNotRunning(execStart);
+  return false;
 }
 
 export function uninstallService(): void {
