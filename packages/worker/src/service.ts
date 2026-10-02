@@ -158,7 +158,11 @@ export function bestEffort(command: string, args: string[]): boolean {
   return result.status === 0;
 }
 
-export function installService(args: string[], host: ServiceHost = {}): void {
+/** Installs the login service; says whether the worker is now running. */
+export function installService(
+  args: string[],
+  host: ServiceHost = {},
+): boolean {
   const config = readDaemonConfig();
   if (!config) {
     throw new Error(
@@ -269,7 +273,7 @@ ${environmentVariablesXML()}
       bestEffort("launchctl", ["enable", `${target}/${watchdogLabel()}`]);
     }
     console.log(`Installed watchdog: ${watchdogPath}`);
-    return;
+    return !noStart;
   }
 
   if (process.platform === "linux") {
@@ -308,9 +312,11 @@ WantedBy=default.target
         systemdUnitName(),
       ]);
       if (!started) reportNotRunning(command);
+      console.log(`Installed systemd user service: ${unitPath}`);
+      return started;
     }
     console.log(`Installed systemd user service: ${unitPath}`);
-    return;
+    return false;
   }
 
   throw new Error(

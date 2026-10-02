@@ -2150,16 +2150,22 @@ export async function setup(
   await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);
 
+  // Not running is only news when the person asked for it to start.
+  let started = true;
   if (noService) {
     console.log("Service installation skipped (--no-service).");
   } else {
-    installService(noStart ? ["--no-start"] : [], host);
+    started = installService(noStart ? ["--no-start"] : [], host) || noStart;
   }
 
   console.log("");
   status();
   console.log("");
-  console.log("Foundry daemon setup complete.");
+  console.log(
+    started
+      ? "Foundry daemon setup complete."
+      : "Foundry is set up, but the worker is not running yet; start it as shown above.",
+  );
 }
 
 export function logs(args: string[]): void {
