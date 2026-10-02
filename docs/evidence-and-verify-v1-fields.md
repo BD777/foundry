@@ -556,13 +556,47 @@ type VerifierIdentity =
 | `evidenceAvailability` | `"available" \| "unavailable"`                          | 是   |
 | `reasons`              | `string[]`                                              | 是   |
 
+## ReviewBlockerCode
+
+```typescript
+type ReviewBlockerCode =
+  | "contract_unconfirmed"
+  | "contract_amendment_pending"
+  | "checker_missing"
+  | "verification_pending"
+  | "verification_error"
+  | "required_failed"
+  | "required_inconclusive"
+  | "evidence_missing"
+  | "input_unbound"
+  | "stale"
+  | "material_unavailable"
+  | "candidate_changed"
+  | "baseline_changed";
+```
+
 ## ReviewBlocker
 
-| 字段          | 类型                                                                                                                                                                                                                                                                                                          | 必填 |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| `code`        | `\| "contract_unconfirmed" \| "contract_amendment_pending" \| "checker_missing" \| "verification_pending" \| "verification_error" \| "required_failed" \| "required_inconclusive" \| "evidence_missing" \| "input_unbound" \| "stale" \| "material_unavailable" \| "candidate_changed" \| "baseline_changed"` | 是   |
-| `criterionId` | `string`                                                                                                                                                                                                                                                                                                      | 否   |
-| `message`     | `string`                                                                                                                                                                                                                                                                                                      | 是   |
+| 字段          | 类型                | 必填 |
+| ------------- | ------------------- | ---- |
+| `code`        | `ReviewBlockerCode` | 是   |
+| `criterionId` | `string`            | 否   |
+| `message`     | `string`            | 是   |
+
+## ExitRuleResult
+
+| 字段           | 类型                                           | 必填 |
+| -------------- | ---------------------------------------------- | ---- |
+| `ruleId`       | `"R1" \| "R2" \| "R3" \| "R4" \| "R5" \| "R6"` | 是   |
+| `satisfied`    | `boolean`                                      | 是   |
+| `blockerCodes` | `ReviewBlockerCode[]`                          | 是   |
+
+## ExitRuleResults
+
+| 字段      | 类型               | 必填 |
+| --------- | ------------------ | ---- |
+| `version` | `string`           | 是   |
+| `results` | `ExitRuleResult[]` | 是   |
 
 ## ReviewSnapshot
 
@@ -578,6 +612,7 @@ type VerifierIdentity =
 | `candidateSnapshotId` | `string`                 | 是   |
 | `criterionResults`    | `CriterionReviewEntry[]` | 是   |
 | `blockingReasons`     | `ReviewBlocker[]`        | 是   |
+| `exitRules`           | `ExitRuleResults`        | 否   |
 | `eligible`            | `boolean`                | 是   |
 | `digest`              | `Digest`                 | 是   |
 

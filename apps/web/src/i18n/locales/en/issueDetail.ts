@@ -260,6 +260,19 @@ export const issueDetail = {
     finishingTurn:
       "The Agent is finishing its turn; you can answer in a moment.",
   },
+  exitRules: {
+    label: "Exit rules",
+    version: "Every rule must hold before you can accept ({{version}}).",
+    notYet: "not yet",
+    rules: {
+      R1: "The exact criteria are confirmed",
+      R2: "The reviewed candidate is the finished, current one",
+      R3: "Every required criterion has been checked",
+      R4: "Every required criterion passed",
+      R5: "All required evidence exists and can be read",
+      R6: "Every check is for these criteria and this candidate",
+    },
+  },
   sessions: {
     title: "Sessions in this Issue",
     intro:

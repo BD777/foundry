@@ -178,8 +178,10 @@ func (s *Store) CurrentReview(ctx context.Context, issueID string) (store.Review
 			}
 			break
 		}
+		exitRules := store.EvaluateExitRules(result.BlockingReasons)
+		result.ExitRules = &exitRules
 		result.Eligible = len(result.BlockingReasons) == 0
-		result.Digest = evidenceDigest(map[string]any{"contractRevision": result.ContractRevision, "candidateSnapshotId": result.CandidateSnapshotID, "criterionResults": result.CriterionResults, "blockingReasons": result.BlockingReasons, "eligible": result.Eligible})
+		result.Digest = evidenceDigest(map[string]any{"contractRevision": result.ContractRevision, "candidateSnapshotId": result.CandidateSnapshotID, "criterionResults": result.CriterionResults, "blockingReasons": result.BlockingReasons, "exitRules": result.ExitRules, "eligible": result.Eligible})
 		if issue.CurrentReviewSnapshotID != nil {
 			old, err := evidenceGet[store.ReviewSnapshot](ctx, tx, issue.ID, "review", *issue.CurrentReviewSnapshotID)
 			if err == nil && old.Digest == result.Digest {

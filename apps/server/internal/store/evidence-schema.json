@@ -2209,51 +2209,54 @@
     ],
     "additionalProperties": false
   },
+  "ReviewBlockerCode": {
+    "anyOf": [
+      {
+        "const": "contract_unconfirmed"
+      },
+      {
+        "const": "contract_amendment_pending"
+      },
+      {
+        "const": "checker_missing"
+      },
+      {
+        "const": "verification_pending"
+      },
+      {
+        "const": "verification_error"
+      },
+      {
+        "const": "required_failed"
+      },
+      {
+        "const": "required_inconclusive"
+      },
+      {
+        "const": "evidence_missing"
+      },
+      {
+        "const": "input_unbound"
+      },
+      {
+        "const": "stale"
+      },
+      {
+        "const": "material_unavailable"
+      },
+      {
+        "const": "candidate_changed"
+      },
+      {
+        "const": "baseline_changed"
+      }
+    ]
+  },
   "ReviewBlocker": {
     "type": "object",
     "properties": {
       "code": {
-        "anyOf": [
-          {
-            "const": "contract_unconfirmed"
-          },
-          {
-            "const": "contract_amendment_pending"
-          },
-          {
-            "const": "checker_missing"
-          },
-          {
-            "const": "verification_pending"
-          },
-          {
-            "const": "verification_error"
-          },
-          {
-            "const": "required_failed"
-          },
-          {
-            "const": "required_inconclusive"
-          },
-          {
-            "const": "evidence_missing"
-          },
-          {
-            "const": "input_unbound"
-          },
-          {
-            "const": "stale"
-          },
-          {
-            "const": "material_unavailable"
-          },
-          {
-            "const": "candidate_changed"
-          },
-          {
-            "const": "baseline_changed"
-          }
-        ]
+        "$ref": "ReviewBlockerCode"
       },
       "criterionId": {
         "type": "string",
@@ -2264,6 +2267,60 @@
       }
     },
     "required": ["code", "message"],
+    "additionalProperties": false
+  },
+  "ExitRuleResult": {
+    "type": "object",
+    "properties": {
+      "ruleId": {
+        "anyOf": [
+          {
+            "const": "R1"
+          },
+          {
+            "const": "R2"
+          },
+          {
+            "const": "R3"
+          },
+          {
+            "const": "R4"
+          },
+          {
+            "const": "R5"
+          },
+          {
+            "const": "R6"
+          }
+        ]
+      },
+      "satisfied": {
+        "type": "boolean"
+      },
+      "blockerCodes": {
+        "type": "array",
+        "items": {
+          "$ref": "ReviewBlockerCode"
+        }
+      }
+    },
+    "required": ["ruleId", "satisfied", "blockerCodes"],
+    "additionalProperties": false
+  },
+  "ExitRuleResults": {
+    "type": "object",
+    "properties": {
+      "version": {
+        "type": "string"
+      },
+      "results": {
+        "type": "array",
+        "items": {
+          "$ref": "ExitRuleResult"
+        }
+      }
+    },
+    "required": ["version", "results"],
     "additionalProperties": false
   },
   "ReviewSnapshot": {
@@ -2305,6 +2362,9 @@
         "items": {
           "$ref": "ReviewBlocker"
         }
+      },
+      "exitRules": {
+        "$ref": "ExitRuleResults"
       },
       "eligible": {
         "type": "boolean"

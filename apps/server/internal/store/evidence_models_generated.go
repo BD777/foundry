@@ -463,10 +463,23 @@ type CriterionReviewEntry struct {
 	Reasons              []string `json:"reasons"`
 }
 
+type ReviewBlockerCode = string
+
 type ReviewBlocker struct {
-	Code        string  `json:"code"`
-	CriterionID *string `json:"criterionId,omitempty"`
-	Message     string  `json:"message"`
+	Code        ReviewBlockerCode `json:"code"`
+	CriterionID *string           `json:"criterionId,omitempty"`
+	Message     string            `json:"message"`
+}
+
+type ExitRuleResult struct {
+	RuleID       string              `json:"ruleId"`
+	Satisfied    bool                `json:"satisfied"`
+	BlockerCodes []ReviewBlockerCode `json:"blockerCodes"`
+}
+
+type ExitRuleResults struct {
+	Version string           `json:"version"`
+	Results []ExitRuleResult `json:"results"`
 }
 
 type ReviewSnapshot struct {
@@ -480,6 +493,7 @@ type ReviewSnapshot struct {
 	CandidateSnapshotID string                 `json:"candidateSnapshotId"`
 	CriterionResults    []CriterionReviewEntry `json:"criterionResults"`
 	BlockingReasons     []ReviewBlocker        `json:"blockingReasons"`
+	ExitRules           *ExitRuleResults       `json:"exitRules,omitempty"`
 	Eligible            bool                   `json:"eligible"`
 	Digest              Digest                 `json:"digest"`
 }
