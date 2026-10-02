@@ -106,9 +106,10 @@ export function CriterionResultCard({
             <p>{result.reasoning}</p>
           </details>
         </>
-      ) : (
+      ) : !verification ? (
+        // A check that ran without a judgment explains itself below.
         <p>{t("criterion.noResult")}</p>
-      )}
+      ) : null}
       {verification?.error ? (
         <p role="alert">{verificationErrorText(verification.error.message)}</p>
       ) : null}

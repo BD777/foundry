@@ -103,6 +103,7 @@ test(
         harness: "codex",
         profileId: "codex_p",
         directory: join(root, "x"),
+        responseSchema: { type: "object", required: ["verdict"] },
       }),
     ).result;
     assert.equal(codex.text, "codex answer");
@@ -112,6 +113,18 @@ test(
     assert.equal(call.thread.sandboxMode, "read-only");
     assert.equal(call.thread.networkAccessEnabled, false);
     assert.deepEqual(call.options.config.mcp_servers, {});
+    // The sandboxed CLI cannot read a schema file the SDK writes outside its
+    // sandbox, so the schema is part of the prompt instead.
+    assert.equal(call.run.outputSchema, undefined);
+    // Codex will not create its sandbox helper under the temporary
+    // directory, so its home must not lie inside TMPDIR.
+    const { relative, isAbsolute } = await import("node:path");
+    const inside = relative(
+      call.options.env.TMPDIR,
+      call.options.env.CODEX_HOME,
+    );
+    assert.ok(inside.startsWith("..") || isAbsolute(inside), inside);
+    assert.match(call.input[0].text, /"required":\["verdict"\]/);
   },
 );
 

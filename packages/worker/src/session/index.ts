@@ -73,14 +73,19 @@ async function run(
   const policy = sessionPolicy(Boolean(spec.workspace));
   const home = resolve(spec.directory, "isolated-home");
   mkdirSync(home, { recursive: true, mode: 0o700 });
+  // Temporary files get their own directory beside the harness homes:
+  // Codex refuses to create its sandbox helper inside the temporary
+  // directory, so a CODEX_HOME under TMPDIR leaves its shell unable to start.
+  const temp = resolve(home, "tmp");
+  mkdirSync(temp, { recursive: true, mode: 0o700 });
   const activity: string[] = [];
   const env: Record<string, string> = {
     PATH: process.env.PATH ?? "/usr/bin:/bin",
     HOME: home,
-    TMPDIR: home,
-    TMP: home,
-    TEMP: home,
-    CLAUDE_CODE_TMPDIR: home,
+    TMPDIR: temp,
+    TMP: temp,
+    TEMP: temp,
+    CLAUDE_CODE_TMPDIR: temp,
     LANG: "C.UTF-8",
   };
   for (const [key, value] of Object.entries(profileRuntimeEnvironment(profile)))

@@ -285,6 +285,7 @@ export function stageJSONObject(text: string): unknown {
 export function normalizeVerificationShape(
   value: Record<string, unknown>,
   evidence: Evidence[],
+  criterion?: AcceptanceCriterion,
 ): Record<string, unknown> {
   const owner = new Map<string, string>();
   for (const record of evidence)
@@ -327,8 +328,31 @@ export function normalizeVerificationShape(
     ...value,
     findings,
     limitations: list(value.limitations),
-    unmetRequirementIds: list(value.unmetRequirementIds),
+    unmetRequirementIds: unmetRequirements(
+      list(value.unmetRequirementIds),
+      criterion,
+    ),
   };
+}
+
+/**
+ * Unmet requirements name the criterion's evidence requirements. A judge
+ * that names the criterion itself means all of them; an id the criterion
+ * does not have is dropped. The verdict is never touched.
+ */
+function unmetRequirements(
+  ids: unknown,
+  criterion: AcceptanceCriterion | undefined,
+): unknown {
+  if (!criterion || !Array.isArray(ids)) return ids;
+  const known = criterion.evidenceRequirements.map((r) => r.id);
+  return [
+    ...new Set(
+      ids.flatMap((id) =>
+        id === criterion.id ? known : known.includes(id) ? [id] : [],
+      ),
+    ),
+  ];
 }
 
 async function finalizeAgentJudgment(
@@ -356,7 +380,9 @@ async function finalizeAgentJudgment(
       ? (response.structured as Record<string, unknown>)
       : (stageJSONObject(text) as Record<string, unknown> | undefined);
   const parsed = (
-    stated ? normalizeVerificationShape(stated, options.evidence) : {}
+    stated
+      ? normalizeVerificationShape(stated, options.evidence, options.criterion)
+      : {}
   ) as Omit<
     VerificationResult,
     "rawOutputMaterialId" | "reportMaterialId" | "completedAt"

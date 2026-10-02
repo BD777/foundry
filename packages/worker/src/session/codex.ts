@@ -100,13 +100,15 @@ export const codexHarness: HarnessAdapter = {
       writeFileSync(path, image.bytes, { mode: 0o400 });
       return { type: "local_image", path };
     });
-    const result = await thread.run(
-      [{ type: "text", text: spec.prompt.text }, ...images],
-      {
-        signal,
-        ...(spec.responseSchema ? { outputSchema: spec.responseSchema } : {}),
-      },
-    );
+    // The SDK would write an output schema to this process's temporary
+    // directory, which the sandboxed CLI cannot read; the schema travels in
+    // the prompt instead and the caller parses the answer as text.
+    const text = spec.responseSchema
+      ? `${spec.prompt.text}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
+      : spec.prompt.text;
+    const result = await thread.run([{ type: "text", text }, ...images], {
+      signal,
+    });
     for (const item of result.items ?? [])
       if (item.type === "command_execution" && item.command)
         note(`shell: ${item.command}`);
