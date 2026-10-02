@@ -65,7 +65,7 @@ test("request changes resolves source conflicts in candidate and requires a fres
   );
   assert.equal(conflict.status, "conflict");
   environment = await refreshCandidate(environment, store);
-  assert.match(environment.error, /conflict/i);
+  assert.deepEqual(environment.conflicts, ["AGENTS.md"]);
   assert.match(
     readFileSync(resolve(environment.cwd, "AGENTS.md"), "utf8"),
     /<<<<<<< /,
@@ -79,6 +79,11 @@ test("request changes resolves source conflicts in candidate and requires a fres
     "accepted and candidate rules\n",
   );
   environment = await snapshotEnvironment(environment, store);
+  assert.equal(
+    environment.conflicts,
+    undefined,
+    "a resolved candidate has no conflicts",
+  );
   await assert.rejects(
     prepareAcceptance("ws_test", environment.issueId, oldRevision, store),
     /revision changed/,

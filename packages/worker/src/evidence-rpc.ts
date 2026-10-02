@@ -234,6 +234,12 @@ async function execute(
       >("candidate-snapshots", request.alignFromSnapshotId);
       await assertSnapshotCurrent(before, environment, store, false);
       environment = await refreshCandidate(environment, execution);
+      // A conflict is resolved by the Issue's execution in the candidate,
+      // then the candidate is prepared and checked again.
+      if (environment.conflicts?.length)
+        throw new Error(
+          `alignment_conflict: ${environment.conflicts.join("; ")}`,
+        );
       environment = await snapshotEnvironment(environment, execution);
     }
     const candidate = await sealCandidate(
