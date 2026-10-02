@@ -44,7 +44,7 @@ IssueContract（人确认 revision + digest）
 | Verification        | 一条条件的一次请求、固定输入、执行状态                  | Server 分配 sequence；Worker 完成；结果不覆盖               |
 | VerificationResult  | pass/fail/inconclusive、发现、引用、局限                | 程序/Agent；Server 检查引用和准出门槛                       |
 | HumanAssessment     | 针对准确 Agent 结果的用户判断与理由                     | 用户明确提交；不改写原 Result                               |
-| ReviewSnapshot      | 选定判断、有效结论、新鲜度、blockers                    | Server；实时观察变化生成新包和新摘要                        |
+| ReviewSnapshot      | 选定判断、有效结论、新鲜度、blockers、准出规则结果      | Server；实时观察变化生成新包和新摘要                        |
 | AcceptanceDecision  | 用户明确批准哪个审阅包                                  | Server 从登录会话确定 actor                                 |
 | AuditEvent          | 不可由 Agent 改写的关键历史                             | Server/可信 Worker                                          |
 
@@ -151,6 +151,7 @@ Accept 提交 `reviewSnapshotId + reviewDigest`。Server 重新核对人、状�
 - 部分应用：保留逐仓 expected/target/applied，重试只能对应同一 decision；未知外部修改不得覆盖。
 - 全部应用后才设置 Accepted。丢失响应后的已完成 Accept 重放返回原结果，不启动新集成。
 - 已批准记录保留；当前内容/判定改变使旧批准不再适用。
+- 准出规则带编号与版本（`store/exit_rules.go`，当前 `foundry-exit-rules/v1`）：R1 已确认准确标准、R2 审阅的是已完成的最新候选、R3 每条必须满足的标准都已检查、R4 都已通过、R5 所需证据齐全可读、R6 每次检查都针对这版标准与这个候选。每个 blocker 恰属一条规则（测试保证）；审阅包记录规则版本与逐条结果并纳入摘要，“最终接受”逐条显示。规则含义或覆盖的 blocker 改变时提升版本。
 - Accepted 页面读取当时集成的不可变审阅包，不因候选临时目录清理改写历史；不提供再次 Accept 的活动按钮。
 
 Server 在发送判定任务前事务性复核当前契约/候选。确定性采集的 Evidence ID 在请求时预留，不能混入历史 pass。新判定排队后契约改变会取消该请求；在途结果可保留历史，不覆盖新选择。

@@ -22,6 +22,7 @@ import { EvidenceMaterials } from "./evidence-materials";
 import { CriterionResultCard } from "./criterion-result-card";
 import { VerificationActions } from "./verification-actions";
 import { blockerText } from "./issue-language";
+import { ExitRulesList } from "./exit-rules-list";
 
 export function IssueEvidencePanel({
   issue,
@@ -161,6 +162,7 @@ export function IssueEvidencePanel({
         <section className="fdy-issue-card">
           <h3>{t("evidence.finalTitle")}</h3>
           <p>{t("evidence.finalBody")}</p>
+          {review.exitRules ? <ExitRulesList rules={review.exitRules} /> : null}
           <Button
             disabled={terminal || busy || !review.eligible || running}
             onClick={() =>

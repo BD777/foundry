@@ -257,3 +257,12 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.fdy-exit-rules {
+  display: grid;
+  gap: 6px;
+}
+
+.fdy-exit-rule-state {
+  color: var(--fdy-ink-muted);
+}

@@ -232,6 +232,19 @@ export const issueDetail: Translation<typeof en> = {
       "选一个答案，或在下方对话里写下你的回答。Agent 会在同一个候选里继续。",
     finishingTurn: "Agent 正在结束这一轮，稍后就可以回答。",
   },
+  exitRules: {
+    label: "准出规则",
+    version: "全部规则都满足后才能接受（{{version}}）。",
+    notYet: "尚未满足",
+    rules: {
+      R1: "已确认准确的完成标准",
+      R2: "审阅的是已完成的最新候选",
+      R3: "每条必须满足的标准都已检查",
+      R4: "每条必须满足的标准都已通过",
+      R5: "所需证据齐全且可读取",
+      R6: "每次检查都针对这版标准和这个候选",
+    },
+  },
   sessions: {
     title: "参与这个 Issue 的会话",
     intro:

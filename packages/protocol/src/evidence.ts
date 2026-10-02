@@ -391,29 +391,46 @@ export interface CriterionReviewEntry {
   evidenceAvailability: "available" | "unavailable";
   reasons: string[];
 }
+export type ReviewBlockerCode =
+  | "contract_unconfirmed"
+  | "contract_amendment_pending"
+  | "checker_missing"
+  | "verification_pending"
+  | "verification_error"
+  | "required_failed"
+  | "required_inconclusive"
+  | "evidence_missing"
+  | "input_unbound"
+  | "stale"
+  | "material_unavailable"
+  | "candidate_changed"
+  | "baseline_changed";
 export interface ReviewBlocker {
-  code:
-    | "contract_unconfirmed"
-    | "contract_amendment_pending"
-    | "checker_missing"
-    | "verification_pending"
-    | "verification_error"
-    | "required_failed"
-    | "required_inconclusive"
-    | "evidence_missing"
-    | "input_unbound"
-    | "stale"
-    | "material_unavailable"
-    | "candidate_changed"
-    | "baseline_changed";
+  code: ReviewBlockerCode;
   criterionId?: string;
   message: string;
+}
+/**
+ * One numbered exit rule of a review: every rule must hold before Accept.
+ * The rule set is versioned; a review records the version it was judged by.
+ */
+export interface ExitRuleResult {
+  ruleId: "R1" | "R2" | "R3" | "R4" | "R5" | "R6";
+  satisfied: boolean;
+  /** The blockers that keep the rule from holding. */
+  blockerCodes: ReviewBlockerCode[];
+}
+export interface ExitRuleResults {
+  version: string;
+  results: ExitRuleResult[];
 }
 export interface ReviewSnapshot extends EvidenceRecord {
   contractRevision: number;
   candidateSnapshotId: string;
   criterionResults: CriterionReviewEntry[];
   blockingReasons: ReviewBlocker[];
+  /** Absent on reviews made before exit rules were recorded. */
+  exitRules?: ExitRuleResults;
   eligible: boolean;
   digest: Digest;
 }
