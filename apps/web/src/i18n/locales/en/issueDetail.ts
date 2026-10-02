@@ -246,6 +246,17 @@ export const issueDetail = {
       context: "Background",
     },
   },
+  sessions: {
+    title: "Sessions in this Issue",
+    intro:
+      "Every Agent session that worked on this Issue, and who started it. Open one to read its full transcript.",
+    none: "No session has worked on this Issue yet.",
+    execution: "Execution",
+    clarification: "Clarification",
+    helper: "Helper session",
+    startedBy: "Started by the {{role}}",
+    open: "Open the {{role}} transcript",
+  },
   view: {
     notFoundTitle: "Issue not found",
     notFoundBody: "Return to Issues to select a task.",

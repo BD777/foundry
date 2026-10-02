@@ -13,6 +13,7 @@ import { IssueEvidencePanel } from "./issue-evidence-panel";
 import { CandidateReview } from "./candidate-review";
 import { IssueConversation } from "./issue-conversation";
 import { IssueEnvironment } from "./issue-environment";
+import { IssueSessions } from "./issue-sessions";
 import type { IssueActionCallbacks } from "./issue-actions";
 import { abandonIssue } from "../../api";
 import { useIssueContract } from "./use-issue-contract";
@@ -162,6 +163,7 @@ function IssueDetail({
                   <dd>{workspaceBaseline}</dd>
                 </dl>
               </section>
+              <IssueSessions issue={issue} />
               <IssueEnvironment issue={issue} onRefresh={callbacks.onRefresh} />
             </>
           ) : tab === "changes" ? (

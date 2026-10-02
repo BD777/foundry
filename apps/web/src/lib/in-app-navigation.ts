@@ -13,3 +13,8 @@ export function navigateToDeviceAgents(deviceId: string): void {
     view: "devices",
   });
 }
+
+/** Opens a session's transcript in Chats through the same contract. */
+export function navigateToChat(sessionId: string): void {
+  navigateAppRoute({ selectedChatId: sessionId, view: "chats" });
+}

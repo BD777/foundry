@@ -694,6 +694,15 @@ export function getAgentSession(
   );
 }
 
+/** The sessions that worked for one Issue, oldest first as the server lists them. */
+export function listIssueSessions(
+  workspaceId: string,
+  issueId: string,
+): Promise<AgentSession[]> {
+  const params = new URLSearchParams({ workspaceId, issueId });
+  return getJSON<AgentSession[]>(`/api/agent-sessions?${params.toString()}`);
+}
+
 export function getAgentSessionThread(
   threadId: string,
   workspaceId: string,

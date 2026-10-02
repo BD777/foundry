@@ -231,3 +231,23 @@
     min-height: 0;
   }
 }
+
+.fdy-issue-session-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.fdy-issue-session-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.fdy-issue-session-copy span {
+  color: var(--fdy-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

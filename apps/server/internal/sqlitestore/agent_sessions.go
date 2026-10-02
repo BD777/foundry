@@ -298,7 +298,9 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
 		return store.AgentSession{}, err
 	}
-	if parent.ID != "" && parent.WorkspaceID == session.WorkspaceID {
+	// A session working inside an Issue belongs to that Issue and is listed
+	// there; it gets no Chats group, which would only ever stay empty.
+	if parent.ID != "" && parent.WorkspaceID == session.WorkspaceID && session.IssueID == "" {
 		createdGroupID, created, err := s.PlaceChildWithParent(ctx, parent, session.ID)
 		if err != nil {
 			return store.AgentSession{}, err
