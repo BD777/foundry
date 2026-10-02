@@ -1256,7 +1256,12 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 	case wsWorkspaceInspectedType:
 		return deliverDaemonResponse[wsWorkspaceInspectionResult](c, envelope, nil)
 	case wsNativeAccountInspectedType:
-		return deliverDaemonResponse[wsNativeAccountInspectionResult](c, envelope, nil)
+		return deliverDaemonResponse(c, envelope, func(payload wsNativeAccountInspectionResult) error {
+			if payload.Registration.Device.ID != "" {
+				return c.syncRegistration(payload.Registration)
+			}
+			return nil
+		})
 	case wsSubagentTranscriptReadType:
 		return deliverDaemonResponse[wsSubagentTranscriptReadPayload](c, envelope, nil)
 	case wsSubagentsListedType:

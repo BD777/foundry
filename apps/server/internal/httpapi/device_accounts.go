@@ -13,7 +13,9 @@ import (
 
 type wsNativeAccountInspectionResult struct {
 	Result store.NativeAccountInspection `json:"result"`
-	Error  string                        `json:"error,omitempty"`
+	// Registration refreshes the device's agents with what the check found.
+	Registration store.DaemonRegistration `json:"registration"`
+	Error        string                   `json:"error,omitempty"`
 }
 
 func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Request) {

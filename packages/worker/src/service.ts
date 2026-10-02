@@ -147,7 +147,7 @@ export function systemdUnitPath(): string {
   return resolve(homedir(), ".config", "systemd", "user", systemdUnitName());
 }
 
-export function bestEffort(command: string, args: string[]): void {
+export function bestEffort(command: string, args: string[]): boolean {
   const result = spawnSync(command, args, { encoding: "utf8" });
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || "").trim();
@@ -155,6 +155,7 @@ export function bestEffort(command: string, args: string[]): void {
       `Warning: ${command} ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`,
     );
   }
+  return result.status === 0;
 }
 
 export function installService(args: string[], host: ServiceHost = {}): void {
@@ -300,7 +301,18 @@ WantedBy=default.target
     );
     if (!noStart) {
       bestEffort("systemctl", ["--user", "daemon-reload"]);
-      bestEffort("systemctl", ["--user", "enable", "--now", systemdUnitName()]);
+      const started = bestEffort("systemctl", [
+        "--user",
+        "enable",
+        "--now",
+        systemdUnitName(),
+      ]);
+      // Without a systemd user session (containers, some servers) the worker
+      // is not running; say so and how to run it.
+      if (!started)
+        console.error(
+          `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+        );
     }
     console.log(`Installed systemd user service: ${unitPath}`);
     return;

@@ -148,13 +148,21 @@ pnpm dev:web
 
 ### 连接本地 Worker
 
-服务端启动后，将下方路径替换为你的 Workspace 路径，执行初始化、配对与本地守护进程安装：
+在网页里打开“设备 → 添加设备”，生成配对命令，在要干活的机器上运行（macOS 或 Linux，Node.js 20 或更高）。命令从 npm 安装 Worker、用一次性配对码配对，并设为登录时启动（Linux 用 systemd 用户服务；没有 systemd 的环境会打印前台启动命令）：
 
 ```bash
-pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
+npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --token <配对码> --workspace /absolute/path/to/workspace
 ```
 
-随后在界面中配置本地 Claude 或 Codex Profile。更多安装选项、认证配置、预览与排查说明见[开发指南](docs/development.md)。
+Worker 使用这台机器上已登录的 Claude Code 或 Codex。还没有的话先安装并登录：`npm install -g @anthropic-ai/claude-code` 后运行 `claude` 登录，或 `npm install -g @openai/codex` 后运行 `codex login`；然后在“设备 → 模型与账户”里点“重新检查”。也可以在“服务器连接”里配置 API 连接。
+
+从源码运行 Worker（开发用）时，同样需要配对码：
+
+```bash
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace --token <配对码>
+```
+
+更多安装选项、认证配置、预览与排查说明见[开发指南](docs/development.md)。
 
 ## 项目结构
 

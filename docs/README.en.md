@@ -148,13 +148,21 @@ Open [http://127.0.0.1:31983](http://127.0.0.1:31983/).
 
 ### Connect a local worker
 
-With the server running, replace the path below with your workspace path to initialize it, pair the device and install the local daemon:
+In the web app open Devices → Add device, create a pairing command and run it on the machine that should do the work (macOS or Linux, Node.js 20 or later). It installs the worker from npm, pairs it with a one-time token and starts it at login (a systemd user service on Linux; without systemd it prints the command to run it in the foreground):
 
 ```bash
-pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace
+npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --token <pairing token> --workspace /absolute/path/to/workspace
 ```
 
-Then configure a local Claude or Codex profile in the interface. See the [development guide](development.md) for installation options, authentication, previews and troubleshooting.
+The worker uses the Claude Code or Codex that is signed in on that machine. If neither is, install one and sign in: `npm install -g @anthropic-ai/claude-code` then run `claude`, or `npm install -g @openai/codex` then `codex login`; then choose Re-check under Devices → Models & accounts. API connections can be configured under Server connections instead.
+
+A worker run from the source checkout (for development) needs the pairing token too:
+
+```bash
+pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /absolute/path/to/workspace --token <pairing token>
+```
+
+See the [development guide](development.md) for installation options, authentication, previews and troubleshooting.
 
 ## Project structure
 

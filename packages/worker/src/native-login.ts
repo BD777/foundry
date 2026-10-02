@@ -44,9 +44,17 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
     authMode: "missing",
     secretStored: "local",
   };
+  let command: string;
   try {
-    const command =
+    command =
       runtime === "claude" ? resolveClaudeCommand() : resolveCodexCommand();
+  } catch {
+    // Not installed at all: say what to install, not that a check failed.
+    health = { ...health, status: "unavailable", statusDetail: installHint(runtime) };
+    cache.set(runtime, { until: Date.now() + 60000, health });
+    return health;
+  }
+  try {
     const result = spawnSync(
       command,
       runtime === "claude" ? ["auth", "status", "--json"] : ["login", "status"],
@@ -63,7 +71,7 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
         status: "unavailable",
         statusDetail:
           (result.error as NodeJS.ErrnoException).code === "ENOENT"
-            ? "Install the native agent CLI on this device."
+            ? installHint(runtime)
             : "The native CLI status check did not complete. Retry after checking the device.",
       };
     } else {
@@ -88,4 +96,11 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
   }
   cache.set(runtime, { until: Date.now() + 60000, health });
   return health;
+}
+
+/** How to install a runtime's native CLI on a device that lacks it. */
+function installHint(runtime: "claude" | "codex"): string {
+  return runtime === "claude"
+    ? "Claude Code is not installed on this device. Install it (npm install -g @anthropic-ai/claude-code), sign in with `claude`, then check again."
+    : "Codex is not installed on this device. Install it (npm install -g @openai/codex), sign in with `codex login`, then check again.";
 }

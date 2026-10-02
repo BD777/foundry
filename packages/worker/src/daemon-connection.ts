@@ -103,6 +103,7 @@ import {
 } from "./issues.js";
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
+import { clearNativeLoginHealth } from "./native-login.js";
 import {
   completeProfileAuthorization,
   reapAbandonedAuthorizations,
@@ -1421,10 +1422,14 @@ function runWebSocketSession(options: {
         }
         void inspectNativeAccount(input.runtime, input.source)
           .then((result) => {
+            // The device's agent list shows the same login: refresh it with
+            // this check instead of a status cached before, say, the CLI
+            // was installed.
+            clearNativeLoginHealth();
             trySendWebSocket(
               socket,
               daemonMessageTypes.nativeAccountInspected,
-              { result },
+              { result, registration: daemonRegistration(options.workspacePath) },
               envelope.id,
             );
           })
