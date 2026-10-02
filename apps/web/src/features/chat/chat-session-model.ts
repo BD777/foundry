@@ -63,12 +63,20 @@ export function agentSessionTerminalError(
   if (session.error?.trim()) {
     return session.error.trim();
   }
-  const failureEvent = [...(session.events ?? [])].reverse().find(
-    (event) =>
-      event.level === "error" &&
-      // i18n-ignore: worker-provided event labels (protocol values)
-      (event.label === "执行失败" || event.label === "Session failed"),
+  // Only the latest turn's failure ends the session; an earlier turn's stays
+  // in that turn's transcript once the person has sent another message.
+  const newestFirst = [...(session.events ?? [])].reverse();
+  const nextInput = newestFirst.findIndex(
+    (event) => event.label === sessionInputEventLabel,
   );
+  const failureEvent = newestFirst
+    .slice(0, nextInput < 0 ? undefined : nextInput)
+    .find(
+      (event) =>
+        event.level === "error" &&
+        // i18n-ignore: worker-provided event labels (protocol values)
+        (event.label === "执行失败" || event.label === "Session failed"),
+    );
   return failureEvent?.detail.trim() || undefined;
 }
 

@@ -13,6 +13,8 @@ import { join } from "node:path";
 
 const root = mkdtempSync(join(tmpdir(), "worker-runtime-"));
 process.env.FOUNDRY_STATE_ROOT = join(root, "state");
+// The test sandbox keeps HOME read-only, so npm gets its cache here.
+process.env.npm_config_cache = join(root, "npm-cache");
 const { installRuntime, runtimeRoot } =
   await import("../dist/worker-install.js");
 

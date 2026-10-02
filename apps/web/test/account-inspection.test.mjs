@@ -75,21 +75,21 @@ async function mount(deviceId, runtime = "codex") {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      createElement(AccountInspection, { deviceId, runtime, online: true }),
-    ),
-  );
+  const checked = [];
+  const onChecked = async () => {
+    checked.push(deviceId);
+  };
+  const props = { deviceId, runtime, online: true, onChecked };
+  await act(async () => root.render(createElement(AccountInspection, props)));
   return {
     container,
+    checked,
     unmount: () => act(async () => root.unmount()),
     remount: async () => {
       await act(async () => root.unmount());
       const next = createRoot(container);
       await act(async () =>
-        next.render(
-          createElement(AccountInspection, { deviceId, runtime, online: true }),
-        ),
+        next.render(createElement(AccountInspection, props)),
       );
     },
   };
@@ -170,6 +170,11 @@ test("collapsing or switching tabs keeps the selected config without a new defau
     calls,
     [undefined, PERSONAL],
     "remount restores the stored read instead of re-checking the worker default",
+  );
+  assert.equal(
+    view.checked.length,
+    2,
+    "each new read refreshes the device page once; a restored one does not",
   );
   globalThis.fetch = originalFetch;
   await view.unmount();
