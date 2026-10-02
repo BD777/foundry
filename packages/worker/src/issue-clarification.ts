@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   AgentSession,
@@ -13,6 +13,7 @@ import {
   evidenceModelSchema,
 } from "@bd777/foundry-protocol";
 import { EvidenceStore } from "./evidence-store.js";
+import { readableReferenceType, referenceFiles } from "./reference-files.js";
 import { ExecutionStore, identifier } from "./execution-storage.js";
 import {
   isolatedAgentEnvironment,
@@ -117,7 +118,7 @@ export function readClarificationAnswer(text: string): {
   }
 }
 
-const instruction = `You are Foundry's clarification partner for one Issue, talking with the person who owns this project. You do not implement, confirm, verify or accept. Your working directory is their workspace (WORKSPACE): read it before you answer, so questions and suggestions cite real files. Never change anything there. Talk like a colleague, not a form: ask at most one or two valuable questions per turn, infer what you can from the project, and only ask about choices you cannot decide for them. If they ask what is worth improving, look and propose concrete options with the files behind them. If they ask about status, answer from the draft and messages. When they refer to an earlier conversation in this workspace, look it up with the Foundry tools list_sessions and read_context. Reference files are listed with their paths; read them. Do not turn vague input such as "hi" into generic criteria. Never confirm, implement, judge or accept; "continue" or "yes" is not confirmation. Keep supplied reference media in proposals. Reply in the person's language as plain text. Only when the goal and how to check it are clear, end your reply with one fenced json block: {"message": <what the person reads after your text>, "proposedContent": <ContractContent>} whose criteria carry stable IDs, proofKind, evaluationMode, rubric and evidenceRequirements, each check explained in plain language. The person sees your text before the block and then its message, so do not repeat yourself.`;
+const instruction = `You are Foundry's clarification partner for one Issue, talking with the person who owns this project. You do not implement, confirm, verify or accept. Your working directory is their workspace (WORKSPACE): read it before you answer, so questions and suggestions cite real files. Never change anything there. Talk like a colleague, not a form: ask at most one or two valuable questions per turn, infer what you can from the project, and only ask about choices you cannot decide for them. If they ask what is worth improving, look and propose concrete options with the files behind them. If they ask about status, answer from the draft and messages. When they refer to an earlier conversation in this workspace, look it up with the Foundry tools list_sessions and read_context. Reference files are listed with their paths; read them. A PDF reference comes as the PDF itself and as its extracted text (extractedTextPath); the text leaves out layout and images, so look at the PDF when those matter. Do not turn vague input such as "hi" into generic criteria. Never confirm, implement, judge or accept; "continue" or "yes" is not confirmation. Keep supplied reference media in proposals. Reply in the person's language as plain text. Only when the goal and how to check it are clear, end your reply with one fenced json block: {"message": <what the person reads after your text>, "proposedContent": <ContractContent>} whose criteria carry stable IDs, proofKind, evaluationMode, rubric and evidenceRequirements, each check explained in plain language. The person sees your text before the block and then its message, so do not repeat yourself.`;
 
 const verificationCapabilities =
   'Foundry verifies a criterion in one of two ways. Program: evaluationMode "deterministic" with checker {id, version:1, description, definitionDigest:"sha256:" followed by 64 zeros (Foundry recomputes it), timeoutMs, configuration:{kind:"project_command", executable, args, cwdRelativePath:".", environment:{}, expectedExitCodes:[0]}} makes Foundry itself run the project\'s own command on the sealed candidate, in a sandbox with a read-only candidate and no network, and keep stdout/stderr as the evidence; the exit code decides pass or fail. Use it for anything a command settles, such as the project test command, and give those criteria one evidence requirement with acceptedCarriers ["text_log"] and bindingPolicy "system_observed". Independent agent: evaluationMode "agent" for judgments no command can settle, such as wording or whether a change matches the intent; that session works inside the candidate worktree and its evidence is exported from candidate files, so use acceptedCarriers ["document"] or ["text_log"]. Write each criterion as the outcome the person cares about; the files to export are a collection detail, not part of the sentence, unless the person named the file. Never require a material a person would have to produce by hand.';
@@ -179,42 +180,44 @@ export function clarificationExecution(
 
 /**
  * The input a clarification turn sends: the person's message with the draft
- * it is about, and the references the draft carries as files to read. A
- * session without native context also gets its instructions and the
- * conversation so far.
+ * it is about, and the references the draft carries as files to read (a PDF
+ * also as its extracted text). A session without native context also gets
+ * its instructions and the conversation so far.
  */
-export function clarificationInput(
+export async function clarificationInput(
   session: AgentSession,
   turn: ClarificationTurn,
   workspacePath: string,
   store: EvidenceStore,
-): SessionInput {
+): Promise<SessionInput> {
   const references = resolve(
     clarificationDirectory(session.workspaceId, session.issueId ?? ""),
     "references",
   );
   mkdirSync(references, { recursive: true, mode: 0o700 });
   const attachments: ChatAttachment[] = [];
+  const referenceMaterials: {
+    materialId: string;
+    name: string;
+    path: string;
+    extractedTextPath?: string;
+  }[] = [];
   for (const id of referenceIds(turn.draft)) {
     const material = store.getMaterial(id);
-    const image = ["image/png", "image/jpeg", "image/gif"].includes(
-      material.mimeType,
-    );
-    if (
-      !image &&
-      !["text/plain", "application/json"].includes(material.mimeType)
-    )
+    if (!readableReferenceType(material.mimeType))
       throw new Error("unsupported_clarification_reference");
-    const bytes = store.readMaterial(id);
-    const path = resolve(references, identifier(id));
-    if (!existsSync(path)) writeFileSync(path, bytes, { mode: 0o400 });
-    attachments.push({
-      id,
+    const { original, text } = await referenceFiles(
+      references,
+      material,
+      material.name,
+      store.readMaterial(id),
+    );
+    attachments.push(original, ...(text ? [text] : []));
+    referenceMaterials.push({
+      materialId: id,
       name: material.name,
-      path,
-      mimeType: material.mimeType,
-      size: bytes.length,
-      kind: image ? "image" : "file",
+      path: original.path,
+      ...(text ? { extractedTextPath: text.path } : {}),
     });
   }
   const fresh = !session.nativeSessionId?.trim();
@@ -231,11 +234,7 @@ export function clarificationInput(
             "Same rules as before: read-only, plain-text reply in the person's language, and a fenced json block only for a full proposal. The person sees your text and then the block's message, so the message must not repeat your text.",
         }),
     draft: turn.draft,
-    referenceMaterials: attachments.map((a) => ({
-      materialId: a.id,
-      name: a.name,
-      path: a.path,
-    })),
+    referenceMaterials,
     message: turn.message,
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)
@@ -309,16 +308,16 @@ function replyPath(workspaceId: string, issueId: string, inputId: string) {
  * Everything a dispatched clarification input needs: where it runs, the
  * input it sends, and how its answer becomes the reply on the Issue.
  */
-export function prepareClarification(
+export async function prepareClarification(
   session: AgentSession,
   turn: ClarificationTurn | undefined,
   workspacePath: string,
   ambient: SessionAmbientEnv,
-): {
+): Promise<{
   execution: ReturnType<typeof clarificationExecution>;
   session: AgentSession;
   settle: (result: { response: string }) => Record<string, unknown>;
-} {
+}> {
   const issueId = session.issueId ?? "";
   const inputId = session.input?.id ?? "";
   if (!turn || !issueId || !inputId)
@@ -333,7 +332,7 @@ export function prepareClarification(
     execution: clarificationExecution(session, workspacePath, ambient),
     session: {
       ...session,
-      input: clarificationInput(session, turn, workspacePath, store),
+      input: await clarificationInput(session, turn, workspacePath, store),
     },
     settle: (result) => {
       const reply = clarificationReply(result.response, turn);

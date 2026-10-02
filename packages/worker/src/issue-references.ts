@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ChatAttachment, Issue } from "@bd777/foundry-protocol";
 import { EvidenceStore } from "./evidence-store.js";
-import { ExecutionStore, identifier } from "./execution-storage.js";
+import { ExecutionStore } from "./execution-storage.js";
+import { referenceFiles } from "./reference-files.js";
 import type { IssueEnvironment } from "./execution-types.js";
 
 /** Where an Issue's reference materials are readable by its processes. */
@@ -15,13 +16,14 @@ export function issueReferencesDirectory(
 /**
  * The reference materials the confirmed contract names (goal and rubric
  * media), as read-only files beside the candidate, for the execution to look
- * at. They are targets to work towards, never evidence of the result.
+ * at. They are targets to work towards, never evidence of the result. A PDF
+ * also comes as its extracted text, for runtimes that cannot read PDFs.
  */
-export function issueReferences(
+export async function issueReferences(
   environment: IssueEnvironment,
   issue: Issue,
   store = new ExecutionStore(),
-): ChatAttachment[] {
+): Promise<ChatAttachment[]> {
   const contract = issue.executionContract;
   if (!contract) return [];
   const media = [
@@ -37,21 +39,19 @@ export function issueReferences(
     { kind: "daemon", id: "worker", displayName: "Foundry Worker" },
     store,
   );
-  const attachments = new Map<string, ChatAttachment>();
+  const attachments: ChatAttachment[] = [];
+  const seen = new Set<string>();
   for (const { materialId, caption } of media) {
-    if (attachments.has(materialId)) continue;
+    if (seen.has(materialId)) continue;
+    seen.add(materialId);
     const material = materials.getMaterial(materialId);
-    const path = resolve(directory, identifier(materialId));
-    const bytes = materials.readMaterial(materialId);
-    if (!existsSync(path)) writeFileSync(path, bytes, { mode: 0o400 });
-    attachments.set(materialId, {
-      id: materialId,
-      name: caption || material.name,
-      path,
-      mimeType: material.mimeType,
-      size: bytes.length,
-      kind: material.mimeType.startsWith("image/") ? "image" : "file",
-    });
+    const { original, text } = await referenceFiles(
+      directory,
+      material,
+      caption || material.name,
+      materials.readMaterial(materialId),
+    );
+    attachments.push(original, ...(text ? [text] : []));
   }
-  return [...attachments.values()];
+  return attachments;
 }

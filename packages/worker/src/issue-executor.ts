@@ -129,7 +129,7 @@ export async function runIssueExecutor(
         managedSkills.skills.map((skill) => skill.name).join(", "),
       );
     }
-    const references = issueReferences(environment, issue, store);
+    const references = await issueReferences(environment, issue, store);
     if (references.length)
       await record(
         "Loaded references",

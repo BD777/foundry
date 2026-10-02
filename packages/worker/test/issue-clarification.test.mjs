@@ -237,7 +237,7 @@ test("a clarification turn reads its references as files, read-only in the works
     messages: [{ role: "user", text: "earlier" }],
     message: "Which file?",
   };
-  const fresh = clarificationInput(session, turn, workspacePath, store);
+  const fresh = await clarificationInput(session, turn, workspacePath, store);
   const body = JSON.parse(fresh.prompt);
   assert.match(body.instruction, /read-only|Never change anything/);
   assert.ok(body.instruction.includes(workspacePath));
@@ -256,11 +256,13 @@ test("a clarification turn reads its references as files, read-only in the works
   );
   // A session that kept its context gets only the new turn.
   const resumed = JSON.parse(
-    clarificationInput(
-      { ...session, nativeSessionId: "native" },
-      turn,
-      workspacePath,
-      store,
+    (
+      await clarificationInput(
+        { ...session, nativeSessionId: "native" },
+        turn,
+        workspacePath,
+        store,
+      )
     ).prompt,
   );
   assert.equal(resumed.instruction, undefined);
@@ -324,4 +326,66 @@ test("a clarification turn reads its references as files, read-only in the works
   assert.deepEqual(recovered.clarificationResult, { message: "greet.mjs" });
   assert.equal(recovered.error, undefined);
   assert.ok(existsSync(join(root, "state")));
+});
+
+test("a PDF reference reaches clarification as the PDF and its extracted text", async () => {
+  const { mkdtempSync, readFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { pdfWithPages } = await import("./pdf-fixture.mjs");
+  const root = mkdtempSync(join(tmpdir(), "clarification-pdf-"));
+  process.env.FOUNDRY_STATE_ROOT = join(root, "state");
+  const { clarificationInput } = await import("../dist/issue-clarification.js");
+  const workspacePath = join(root, "project");
+  mkdirSync(workspacePath);
+  const pdf = pdfWithPages(["Pricing table: 3 tiers"]);
+  const store = {
+    getMaterial: () => ({
+      id: "mat_pdf",
+      name: "pricing.pdf",
+      mimeType: "application/pdf",
+    }),
+    readMaterial: () => pdf,
+  };
+  const input = await clarificationInput(
+    {
+      id: "sess_p",
+      workspaceId: "ws_p",
+      issueId: "iss_p",
+      deviceId: "dev_p",
+      role: "issue_clarification",
+      input: { id: "input_p", prompt: "?" },
+    },
+    {
+      draft: {
+        revision: 1,
+        goal: {
+          text: "Match the pricing",
+          media: [{ materialId: "mat_pdf", role: "context" }],
+        },
+        criteria: [],
+      },
+      messages: [],
+      message: "Use the PDF",
+    },
+    workspacePath,
+    store,
+  );
+  const [document, text] = input.attachments;
+  assert.equal(input.attachments.length, 2);
+  assert.deepEqual(readFileSync(document.path), pdf);
+  assert.match(readFileSync(text.path, "utf8"), /Pricing table: 3 tiers/);
+  const body = JSON.parse(input.prompt);
+  assert.deepEqual(body.referenceMaterials, [
+    {
+      materialId: "mat_pdf",
+      name: "pricing.pdf",
+      path: document.path,
+      extractedTextPath: text.path,
+    },
+  ]);
+  assert.match(
+    body.instruction,
+    /PDF reference comes as the PDF itself and as its extracted text/,
+  );
 });
