@@ -34,7 +34,13 @@ async function request<T>(
   });
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(detail);
+    let message = detail;
+    try {
+      message = (JSON.parse(detail) as { error?: string }).error || detail;
+    } catch {
+      // Not JSON: the body is the message.
+    }
+    throw new Error(message.replace(/^Error: /, ""));
   }
   return response.json() as Promise<T>;
 }

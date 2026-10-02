@@ -232,6 +232,13 @@ export const issueDetail: Translation<typeof en> = {
       "选一个答案，或在下方对话里写下你的回答。Agent 会在同一个候选里继续。",
     finishingTurn: "Agent 正在结束这一轮，稍后就可以回答。",
   },
+  alignment: {
+    title: "对齐时出现合并冲突",
+    body: "Workspace 里新接受的改动和这个候选改了相同的内容：",
+    resolve: "让 Agent 解决冲突",
+    after:
+      "Agent 会在候选里解决冲突，同时保留已接受的改动和这个 Issue 的目标；之后再检查并接受。",
+  },
   exitRules: {
     label: "准出规则",
     version: "全部规则都满足后才能接受（{{version}}）。",

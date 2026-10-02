@@ -23,6 +23,8 @@ import { CriterionResultCard } from "./criterion-result-card";
 import { VerificationActions } from "./verification-actions";
 import { blockerText } from "./issue-language";
 import { ExitRulesList } from "./exit-rules-list";
+import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
+import { requestChanges } from "../../api";
 
 export function IssueEvidencePanel({
   issue,
@@ -59,6 +61,7 @@ export function IssueEvidencePanel({
     issue.currentContractRevision,
     issue.currentCandidateSnapshotId,
   ]);
+  const conflicts = alignmentConflicts(error);
   const run = async (action: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
@@ -115,6 +118,21 @@ export function IssueEvidencePanel({
           </ul>
         ) : null}
         {running ? <p role="status">{t("evidence.checking")}</p> : null}
+        {conflicts.length ? (
+          <AlignmentConflict
+            files={conflicts}
+            busy={busy}
+            onResolve={() =>
+              void run(() =>
+                requestChanges(
+                  issue.id,
+                  // i18n-ignore: feedback the execution Agent reads
+                  `Bringing the Workspace's newer accepted changes into this candidate left merge conflicts in: ${conflicts.join(", ")}. Resolve them so the accepted changes and this Issue's confirmed contract both hold.`,
+                ),
+              )
+            }
+          />
+        ) : null}
         <Button variant="ghost" disabled={busy} onClick={() => void run(load)}>
           {t("evidence.refresh")}
         </Button>
@@ -183,7 +201,7 @@ export function IssueEvidencePanel({
           </Button>
         </section>
       ) : null}
-      {error ? (
+      {error && !conflicts.length ? (
         <Alert tone="warning" title={t("shared.stepUnfinished")}>
           <p>{error}</p>
           <p>{t("evidence.errorBody")}</p>

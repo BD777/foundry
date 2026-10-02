@@ -76,6 +76,12 @@ export interface IssueEnvironment {
   nativeSessionId?: string;
   acceptanceId?: string;
   error?: string;
+  /**
+   * Files left in conflict by bringing the Workspace's newer accepted commits
+   * into the candidate, as paths from the workspace root. Cleared once the candidate is
+   * committed without conflict markers.
+   */
+  conflicts?: string[];
 }
 
 export interface AcceptanceRepository {
