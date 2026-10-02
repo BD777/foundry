@@ -18,7 +18,7 @@ function stringValue(value: unknown): string {
 
 function truncateToolResult(content: string): string {
   return content.length > maxToolResultCharacters
-    ? `${content.slice(0, maxToolResultCharacters)}\n\n… 工具输出已截断`
+    ? `${content.slice(0, maxToolResultCharacters)}\n\n… tool output truncated`
     : content;
 }
 
@@ -54,7 +54,7 @@ function pushWithinLimit(
     const remaining = maxTranscriptCharacters - total;
     const content =
       message.content.length > remaining
-        ? `${message.content.slice(0, Math.max(0, remaining))}\n\n… 对话已截断`
+        ? `${message.content.slice(0, Math.max(0, remaining))}\n\n… conversation truncated`
         : message.content;
     target.push({ ...message, content });
     total += content.length;

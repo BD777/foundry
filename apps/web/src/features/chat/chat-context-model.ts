@@ -12,32 +12,26 @@ import type {
   ChatTimerItem,
 } from "./chat-types";
 import { i18n } from "../../i18n";
+import { isProcessLabel } from "../../lib/process-labels";
 
 // Event labels emitted by workers (protocol values): matched, never shown.
-const subagentStartLabels = new Set([
-  // i18n-ignore: worker event label
-  "正在启动子任务",
-  "Starting subtask",
-  "Subtask started",
-]);
-// i18n-ignore: event labels emitted by workers (protocol values)
-const subagentProgressLabels = new Set(["子任务进行中", "Subtask running"]);
-const subagentCompletedLabels = new Set([
-  // i18n-ignore: worker event label
-  "子任务完成",
-  "Subtask completed",
-  "Subtask finished",
-]);
-// i18n-ignore: event labels emitted by workers (protocol values)
-const subagentFailedLabels = new Set(["子任务失败", "Subtask failed"]);
+// "Subtask started" / "Subtask finished" are older English spellings.
+const isSubagentStart = (label: string) =>
+  isProcessLabel(label, "startingSubtask") || label === "Subtask started";
+const isSubagentProgress = (label: string) =>
+  isProcessLabel(label, "subtaskRunning");
+const isSubagentCompleted = (label: string) =>
+  isProcessLabel(label, "subtaskCompleted") || label === "Subtask finished";
+const isSubagentFailed = (label: string) =>
+  isProcessLabel(label, "subtaskFailed");
 
 function isSubagentLifecycleEvent(event: AgentSessionEvent): boolean {
   return (
     event.metadata?.taskType === "local_agent" &&
-    (subagentStartLabels.has(event.label) ||
-      subagentProgressLabels.has(event.label) ||
-      subagentCompletedLabels.has(event.label) ||
-      subagentFailedLabels.has(event.label))
+    (isSubagentStart(event.label) ||
+      isSubagentProgress(event.label) ||
+      isSubagentCompleted(event.label) ||
+      isSubagentFailed(event.label))
   );
 }
 
@@ -125,7 +119,7 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
   for (const event of session.events ?? []) {
     const taskId = event.metadata?.taskId;
     if (
-      subagentStartLabels.has(event.label) &&
+      isSubagentStart(event.label) &&
       event.metadata?.taskType === "local_agent" &&
       taskId
     ) {
@@ -146,7 +140,7 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
       });
       continue;
     }
-    if (subagentProgressLabels.has(event.label)) {
+    if (isSubagentProgress(event.label)) {
       const index = matchingRunningSubagentIndex(subagents, taskId);
       const candidate = subagents[index];
       if (candidate) {
@@ -157,8 +151,8 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
       }
       continue;
     }
-    const completed = subagentCompletedLabels.has(event.label);
-    const failed = subagentFailedLabels.has(event.label);
+    const completed = isSubagentCompleted(event.label);
+    const failed = isSubagentFailed(event.label);
     if (!completed && !failed) {
       continue;
     }
@@ -245,8 +239,7 @@ function isOutputEvent(event: AgentSessionEvent): boolean {
 
 function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
   return (
-    /^(?:Loaded workspace|已加载工作区)$/i.test(event.label.trim()) &&
-    event.detail.trim() !== ""
+    isProcessLabel(event.label, "loadedWorkspace") && event.detail.trim() !== ""
   );
 }
 

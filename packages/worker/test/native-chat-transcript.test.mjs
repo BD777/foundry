@@ -142,7 +142,7 @@ test("Codex tools and commentary retain their types and chronology", () => {
     messages.map((m) => m.kind),
     ["commentary", "tool", "tool", "assistant"],
   );
-  assert.equal(messages[1].title, "正在使用工具");
+  assert.equal(messages[1].title, "Using tool");
   assert.match(messages[1].text, /^exec/);
   assert.equal(messages[1].callId, messages[2].callId);
   assert.equal(messages[2].text, "/workspace");

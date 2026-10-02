@@ -112,7 +112,7 @@ export function readClarificationAnswer(text: string): {
     if (!stated || typeof stated.message !== "string" || !stated.message.trim())
       throw error;
     return validateClarificationResponse({
-      message: `${withProse(text, stated.message)}\n\n（这一版标准草案没有通过结构校验，没有保存；下一轮我会修正后再提交。）`,
+      message: `${withProse(text, stated.message)}\n\n(This draft of the criteria did not pass validation and was not saved; I will fix it and submit it in the next round.)`,
     });
   }
 }
@@ -271,7 +271,7 @@ export function clarificationReply(
   ];
   if (cited.some((ref) => !supplied.has(ref.materialId)))
     return {
-      message: `${answer.message}\n\n（这一版标准草案引用了没有提供的参考，没有保存；下一轮我会修正后再提交。）`,
+      message: `${answer.message}\n\n(This draft of the criteria cited references that were not provided and was not saved; I will fix it and submit it in the next round.)`,
     };
   return answer;
 }

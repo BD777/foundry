@@ -142,7 +142,8 @@ test("keeps a Foundry turn open until background tasks settle and Claude respond
     assert.equal(readFileSync(resultPath, "utf8"), "Final synthesis.\n");
     assert.equal(watchdogClosed, true);
     assert.equal(
-      events.filter(({ label }) => label === "等待后台任务").length,
+      events.filter(({ label }) => label === "Waiting for background tasks")
+        .length,
       2,
     );
     assert.equal(

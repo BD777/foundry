@@ -18,6 +18,10 @@ import {
   runSortValue,
   runStatusLabel,
 } from "../../lib/run-meta";
+import {
+  displayProcessDetail,
+  displayProcessLabel,
+} from "../../lib/process-labels";
 
 type RunFilter = "all" | "running" | "completed" | "failed";
 
@@ -91,9 +95,9 @@ export function RunsFeature({
       duration: runDuration(run),
       events: run.events.map((event, index) => ({
         active: index === run.events.length - 1 && run.status === "running",
-        detail: event.detail,
+        detail: displayProcessDetail(event.detail),
         id: event.id,
-        label: event.label,
+        label: displayProcessLabel(event.label),
         when: event.at,
       })),
       expanded: selected,

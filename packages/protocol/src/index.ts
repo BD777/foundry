@@ -14,6 +14,7 @@ export { humanizeCron, nextCronFire, parseCron } from "./cron.js";
 export type { ParsedCron } from "./cron.js";
 
 export * from "./feishu.js";
+export * from "./process-labels.js";
 
 export type IssueStatus =
   | "pending"

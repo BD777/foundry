@@ -1,4 +1,14 @@
 import { i18n } from "../../i18n";
+import {
+  completedProcessLabelKey,
+  displayProcessDetail,
+  displayProcessLabel,
+  isInProgressProcessLabel,
+  isProcessLabel,
+  processLabelKey,
+  processLabelText,
+  type ProcessLabelKey,
+} from "../../lib/process-labels";
 
 export interface ProcessDisplayItem {
   id?: string;
@@ -11,6 +21,8 @@ export interface ProcessDisplayItem {
 
 export interface ProcessDisplayRow extends ProcessDisplayItem {
   snippet: string;
+  /** Set when the title is a worker-recorded label; the title is then translated. */
+  labelKey?: ProcessLabelKey;
 }
 
 export interface CompactProcessToolDetail {
@@ -42,15 +54,16 @@ export function plainProcessLine(value: unknown): string {
 }
 
 /**
- * Rewrites an agent-provided in-progress title into result language, in the
- * language the agent wrote it in. The titles are data, not interface copy.
+ * Rewrites an in-progress title into result language. A worker-recorded
+ * label becomes its completed label in the viewer's language; an
+ * agent-provided title stays in the language the agent wrote it in.
  */
 export function completedProcessTitle(title: string): string {
   const trimmed = title.trim();
+  const key = processLabelKey(trimmed);
+  if (key) return processLabelText(completedProcessLabelKey(key));
   // i18n-ignore: rewrites agent-provided titles, which are data
   const exactTitles: Record<string, string> = {
-    // i18n-ignore: agent-provided title
-    正在思考: "思考完成",
     // i18n-ignore: agent-provided title
     正在运行: "已运行",
     // i18n-ignore: agent-provided title
@@ -82,6 +95,8 @@ export function completedProcessTitle(title: string): string {
 }
 
 function isInProgressTitle(title: string): boolean {
+  const key = processLabelKey(title);
+  if (key) return isInProgressProcessLabel(key);
   return /^(?:正在|处理中|Working\b|Running\b|Using\b|Reading\b|Searching\b|Editing\b)/i.test(
     title.trim(),
   );
@@ -150,8 +165,16 @@ export function compactProcessToolDetail(
     return undefined;
   }
   const title = item.title.toLowerCase();
-  const isCommand = /命令|command|\bran\b/.test(title);
-  const isTool = /工具|tool/.test(title);
+  const key = item.labelKey ?? processLabelKey(item.title);
+  // Without a label key the title is agent-provided, in either language.
+  const isCommand = key
+    ? key === "runningCommand" || key === "ranCommand"
+    : // i18n-ignore: matches agent-provided titles
+      /命令|command|\bran\b/.test(title);
+  const isTool = key
+    ? key === "usingTool" || key === "usedTool" || key === "toolFailed"
+    : // i18n-ignore: matches agent-provided titles
+      /工具|tool/.test(title);
   if (!isCommand && !isTool) {
     return undefined;
   }
@@ -222,7 +245,7 @@ export function processDisplayRows(
   for (const item of items) {
     // Status heartbeats are notifications, not separate tool executions.
     const duplicateStatus =
-      /^(?:正在请求模型|正在压缩上下文)$/.test(item.title.trim()) &&
+      isProcessLabel(item.title, "requestingModel", "compactingContext") &&
       previous?.title.trim() === item.title.trim() &&
       previous.detail.trim() === item.detail.trim();
     previous = item;
@@ -273,34 +296,68 @@ export function processDisplayRows(
   }
 
   return compacted.map((item) => {
-    const snippet = plainProcessLine(item.detail);
-    const detail = stripEmptyDetailSections(item.detail);
+    const shown = displayProcessDetail(item.detail);
+    const snippet = plainProcessLine(shown);
+    const detail = stripEmptyDetailSections(shown);
+    const key = processLabelKey(item.title);
     return {
       ...item,
       detail: hasMeaningfulDetail(detail, snippet) ? detail : "",
       snippet,
-      title: streaming ? item.title.trim() : completedProcessTitle(item.title),
+      ...(key
+        ? { labelKey: streaming ? key : completedProcessLabelKey(key) }
+        : {}),
+      title: streaming
+        ? displayProcessLabel(item.title.trim())
+        : completedProcessTitle(item.title),
     };
   });
 }
 
-function summaryPhrase(title: string): ProcessSummaryPhrase | undefined {
-  const normalized = completedProcessTitle(title).toLowerCase();
+const summaryPhraseByLabel: Partial<
+  Record<ProcessLabelKey, ProcessSummaryPhrase>
+> = {
+  runningCommand: "ranCommands",
+  ranCommand: "ranCommands",
+  searching: "searched",
+  searched: "searched",
+  editingFile: "editedFiles",
+  editedFile: "editedFiles",
+  usingTool: "calledTools",
+  usedTool: "calledTools",
+  toolFailed: "calledTools",
+  thinking: "thought",
+  thought: "thought",
+};
+
+function summaryPhrase(
+  row: ProcessDisplayRow,
+): ProcessSummaryPhrase | undefined {
+  if (row.labelKey) return summaryPhraseByLabel[row.labelKey];
+  // Agent-provided titles, in either language.
+  // i18n-ignore: matches agent-provided titles
+  const normalized = completedProcessTitle(row.title).toLowerCase();
+  // i18n-ignore: matches agent-provided titles
   if (/读取.*文件|read.*file/.test(normalized)) {
     return "readFiles";
   }
+  // i18n-ignore: matches agent-provided titles
   if (/命令|command|\bran\b/.test(normalized)) {
     return "ranCommands";
   }
+  // i18n-ignore: matches agent-provided titles
   if (/搜索|search/.test(normalized)) {
     return "searched";
   }
+  // i18n-ignore: matches agent-provided titles
   if (/编辑.*文件|file change|edited.*file/.test(normalized)) {
     return "editedFiles";
   }
+  // i18n-ignore: matches agent-provided titles
   if (/工具|tool/.test(normalized)) {
     return "calledTools";
   }
+  // i18n-ignore: matches agent-provided titles
   if (/思考|reason/.test(normalized)) {
     return "thought";
   }
@@ -315,13 +372,13 @@ export function processDisplaySummaryTitle(
   if (streaming) {
     return (
       rows[rows.length - 1]?.title ||
-      fallbackTitle ||
+      displayProcessLabel(fallbackTitle) ||
       i18n.t("conversation:process.running")
     );
   }
   const phrases: ProcessSummaryPhrase[] = [];
   for (const row of rows) {
-    const phrase = summaryPhrase(row.title);
+    const phrase = summaryPhrase(row);
     if (phrase && !phrases.includes(phrase)) {
       phrases.push(phrase);
     }

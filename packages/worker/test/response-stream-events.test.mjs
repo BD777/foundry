@@ -17,11 +17,11 @@ test("typed answers keep distinct event IDs and updates reuse their identity", (
 test("sends identical status heartbeats once per consecutive run", () => {
   const shouldSend = createSessionStatusEventFilter();
   const compacting = {
-    label: "正在压缩上下文",
-    detail: "Claude 正在整理会话上下文。",
+    label: "Compacting context",
+    detail: "Claude is compacting the conversation context.",
     level: "info",
   };
-  const requesting = { ...compacting, label: "正在请求模型" };
+  const requesting = { ...compacting, label: "Requesting model" };
   assert.equal(shouldSend(compacting), true);
   assert.equal(shouldSend(compacting), false);
   assert.equal(shouldSend(requesting), true);
@@ -32,10 +32,10 @@ test("sends identical status heartbeats once per consecutive run", () => {
 });
 
 test("keeps tools, responses, errors, and task metadata and resets status deduplication", () => {
-  const status = { label: "正在压缩上下文", detail: "same", level: "info" };
+  const status = { label: "Compacting context", detail: "same", level: "info" };
   for (const event of [
-    { ...status, label: "正在使用工具" },
-    { ...status, label: "已使用工具" },
+    { ...status, label: "Using tool" },
+    { ...status, label: "Used tool" },
     { ...status, label: "Response stream" },
     { ...status, level: "error" },
     { ...status, metadata: { taskId: "task_1" } },
@@ -53,9 +53,9 @@ test("response stream event ids advance after process events following text", ()
   const nextID = createResponseStreamEventIDAllocator("sess_test");
 
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream");
-  assert.equal(nextID("正在请求模型"), undefined);
+  assert.equal(nextID("Requesting model"), undefined);
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream");
-  assert.equal(nextID("正在思考"), undefined);
+  assert.equal(nextID("Thinking"), undefined);
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream_2");
 });
 
@@ -63,8 +63,8 @@ test("response stream event ids advance after tools following text", () => {
   const nextID = createResponseStreamEventIDAllocator("sess_test");
 
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream");
-  assert.equal(nextID("正在使用工具"), undefined);
-  assert.equal(nextID("已使用工具"), undefined);
+  assert.equal(nextID("Using tool"), undefined);
+  assert.equal(nextID("Used tool"), undefined);
   assert.equal(nextID("Response stream"), "evt_sess_test_response_stream_2");
 });
 

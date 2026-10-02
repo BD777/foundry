@@ -1,3 +1,4 @@
+import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { sdkProcessEvent } from "../sdk-messages.js";
 import {
@@ -29,7 +30,7 @@ export function codexTranscriptRecord(
         kind: "reasoning",
         text:
           contentText(item.summary ?? item.summary_text) || string(item.text),
-        title: "思考完成",
+        title: processLabels.thought,
         status: "completed",
       },
     ];
@@ -64,7 +65,7 @@ export function codexTranscriptRecord(
         id,
         kind: "tool",
         text: `${string(item.name)}\n\n\`\`\`json\n${json(item.arguments ?? item.input)}\n\`\`\``,
-        title: "正在使用工具",
+        title: processLabels.usingTool,
         callId: string(item.call_id) || id,
         status: "running",
       },
@@ -79,7 +80,7 @@ export function codexTranscriptRecord(
         id: `output:${string(item.call_id) || id}`,
         kind: "tool",
         text: contentText(item.output) || json(item.output),
-        title: "已使用工具",
+        title: processLabels.usedTool,
         callId: string(item.call_id) || undefined,
         status: "completed",
       },
@@ -104,7 +105,11 @@ export function codexTranscriptRecord(
     ];
   if (envelope.type === "compacted")
     return [
-      { id: fallbackId, kind: "boundary", text: "原生会话已压缩上下文。" },
+      {
+        id: fallbackId,
+        kind: "boundary",
+        text: processLabels.contextCompacted,
+      },
     ];
   if (envelope.type === "event_msg") {
     if (payload.type === "user_message")
@@ -123,7 +128,7 @@ export function codexTranscriptRecord(
           id: fallbackId,
           kind: "reasoning",
           text: string(payload.text),
-          title: "思考完成",
+          title: processLabels.thought,
           status: "completed",
         },
       ];

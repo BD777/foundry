@@ -9,7 +9,7 @@ import (
 
 var ErrChatLayoutConflict = errors.New("chat layout changed in another client")
 var ErrInvalidChatLayout = errors.New("invalid chat layout")
-var ErrChatDeletionBusy = errors.New("目录内有正在运行或排队的 Session，请先停止后再删除。")
+var ErrChatDeletionBusy = errors.New("This folder has a running or queued session; stop it before deleting the folder.")
 
 func ValidateChatLayout(input SaveChatLayoutInput) error {
 	invalid := func(message string) error { return fmt.Errorf("%w: %s", ErrInvalidChatLayout, message) }

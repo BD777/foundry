@@ -1,3 +1,4 @@
+import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import {
   record,
@@ -31,7 +32,7 @@ export function claudeTranscriptRecord(
             id: blockId,
             kind: "reasoning",
             text: string(block.thinking),
-            title: "思考完成",
+            title: processLabels.thought,
             status: "completed",
           },
         ];
@@ -41,7 +42,7 @@ export function claudeTranscriptRecord(
             id: blockId,
             kind: "tool",
             text: `${string(block.name)}\n\n\`\`\`json\n${json(block.input)}\n\`\`\``,
-            title: "正在使用工具",
+            title: processLabels.usingTool,
             callId: string(block.id) || blockId,
             status: "running",
           },
@@ -52,7 +53,9 @@ export function claudeTranscriptRecord(
             id: blockId,
             kind: "tool",
             text: contentText(block.content) || json(block.content),
-            title: block.is_error ? "工具执行失败" : "已使用工具",
+            title: block.is_error
+              ? processLabels.toolFailed
+              : processLabels.usedTool,
             callId: string(block.tool_use_id) || undefined,
             status: block.is_error ? "failed" : "completed",
           },

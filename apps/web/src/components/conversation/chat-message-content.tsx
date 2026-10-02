@@ -15,6 +15,10 @@ import { Streamdown, type Components } from "streamdown";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
+import {
+  processLabelKey,
+  type ProcessLabelKey,
+} from "../../lib/process-labels";
 import { Button } from "../ui/button";
 import {
   compactProcessToolDetail,
@@ -44,6 +48,7 @@ type MarkdownSegment =
 interface ProcessDisplaySummary {
   detail: string;
   iconTitle: string;
+  iconLabelKey?: ProcessLabelKey;
   title: string;
 }
 
@@ -190,9 +195,33 @@ export function MarkdownContent({
   );
 }
 
-function ProcessItemIcon({ title }: { title: string }) {
+const processLabelIcons: Partial<Record<ProcessLabelKey, typeof Zap>> = {
+  searching: Search,
+  searched: Search,
+  loadedWorkspace: FileText,
+  compactingContext: FileText,
+  contextCompacted: FileText,
+  runningCommand: Terminal,
+  ranCommand: Terminal,
+  usingTool: Terminal,
+  usedTool: Terminal,
+  toolFailed: Terminal,
+  permissionDenied: ShieldAlert,
+};
+
+function ProcessItemIcon({
+  title,
+  labelKey,
+}: {
+  title: string;
+  labelKey?: ProcessLabelKey;
+}) {
+  if (labelKey) {
+    const Icon = processLabelIcons[labelKey] ?? Zap;
+    return <Icon size={15} />;
+  }
+  // Agent-provided titles, in either language.
   const normalized = title.toLowerCase();
-  // Recognizes agent-provided titles (data) in either language.
   // i18n-ignore: matches agent-provided titles
   if (normalized.includes("搜索") || normalized.includes("search")) {
     return <Search size={15} />;
@@ -243,12 +272,14 @@ function processDisplaySummary(
     return {
       detail: activeItem.snippet,
       iconTitle: activeItem.title,
+      iconLabelKey: activeItem.labelKey,
       title: processDisplaySummaryTitle(processItems, fallbackTitle, streaming),
     };
   }
   return {
     detail: "",
     iconTitle: fallbackTitle,
+    iconLabelKey: processLabelKey(fallbackTitle),
     title: processDisplaySummaryTitle([], fallbackTitle, streaming),
   };
 }
@@ -305,7 +336,7 @@ function ProcessDisclosureItem({
   const compactToolDetail = compactProcessToolDetail(item);
   const summary = (
     <>
-      <ProcessItemIcon title={item.title} />
+      <ProcessItemIcon title={item.title} labelKey={item.labelKey} />
       <span className="fdy-chat-process-item-copy">
         <strong>{item.title}</strong>
         {item.snippet ? <span>{item.snippet}</span> : null}
@@ -513,7 +544,10 @@ export function ProcessDisclosure({
         {streaming ? (
           <span className="fdy-chat-process-spinner" aria-hidden="true" />
         ) : (
-          <ProcessItemIcon title={summary.iconTitle} />
+          <ProcessItemIcon
+            title={summary.iconTitle}
+            labelKey={summary.iconLabelKey}
+          />
         )}
         <span className="fdy-chat-process-trigger-copy">
           <strong>{summary.title}</strong>

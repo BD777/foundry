@@ -42,7 +42,7 @@ test("synthetic pre-turn API errors are recognized with their provider text and 
   assert.match(parsed.text, /401/);
 
   const event = claudeProcessEvent(message);
-  assert.equal(event.label, "执行失败");
+  assert.equal(event.label, "Session failed");
   assert.equal(event.level, "error");
   assert.match(event.detail, /401/);
 

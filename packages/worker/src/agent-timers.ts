@@ -13,6 +13,7 @@
  * session-event channel.
  */
 
+import { processLabels } from "@bd777/foundry-protocol";
 import { readFileSync } from "node:fs";
 import {
   humanizeCron,
@@ -43,11 +44,11 @@ export const codexTimersCapability: AgentTimersCapability = {
   supported: false,
 };
 
-// --- Event labels (also referenced by the web transcript filter) ---------
+// --- Event labels (the web keys timers off metadata, not these) ---------
 
-export const timerSyncLabel = "定时任务更新";
-export const timerFireLabel = "定时任务触发";
-export const backgroundTurnLabel = "后台任务继续";
+export const timerSyncLabel = processLabels.timerSync;
+export const timerFireLabel = processLabels.timerFire;
+export const backgroundTurnLabel = processLabels.backgroundTurn;
 
 export interface TimerSinkEvent {
   detail: string;

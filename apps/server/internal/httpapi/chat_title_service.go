@@ -75,7 +75,7 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 			messages = append(messages, chattitle.Message{Role: message.Role, Text: message.Text})
 		}
 		if len(messages) == 0 {
-			return store.AgentSession{}, errors.New("原生会话尚未同步最近两轮内容，请等待本地 daemon 更新后重试")
+			return store.AgentSession{}, errors.New("the native session has not synced its latest two turns yet; wait for the local worker to update, then retry")
 		}
 	}
 	agents, err := s.store.ListAgents(ctx, workspaceID, deviceID)
@@ -98,7 +98,7 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 		break
 	}
 	if agent == nil || !s.connected(agent.DeviceID) {
-		return store.AgentSession{}, errors.New("此会话使用的 provider/profile 当前不可用，无法自动命名")
+		return store.AgentSession{}, errors.New("the provider or profile this chat uses is unavailable, so it cannot be named automatically")
 	}
 	input.AgentID = agent.ID
 	input.Prompt, err = chattitle.Prompt(messages)

@@ -4,6 +4,8 @@
  * without a React renderer.
  */
 
+import { isProcessLabel } from "../../lib/process-labels";
+
 export interface ChatDetailHydrationInput {
   /** Chat id whose full detail is already in feature state. */
   hydratedChatId?: string;
@@ -39,13 +41,22 @@ interface SubagentDiscoverySession {
   status?: string;
 }
 
+function isSubagentLifecycleLabel(label: string): boolean {
+  return (
+    isProcessLabel(
+      label,
+      "startingSubtask",
+      "subtaskRunning",
+      "subtaskCompleted",
+      "subtaskFailed",
+    ) || /^Subtask /i.test(label)
+  );
+}
+
 function hasSubagentLifecycle(session: SubagentDiscoverySession): boolean {
   return (session.events ?? []).some(
     (event) =>
-      Boolean(event.metadata?.taskId) ||
-      /^(?:正在启动子任务|子任务进行中|子任务完成|子任务失败|Starting subtask|Subtask )/i.test(
-        event.label,
-      ),
+      Boolean(event.metadata?.taskId) || isSubagentLifecycleLabel(event.label),
   );
 }
 
@@ -72,9 +83,7 @@ export function subagentDiscoveryRevision(
         .filter(
           (event) =>
             Boolean(event.metadata?.taskId) ||
-            /^(?:正在启动子任务|子任务进行中|子任务完成|子任务失败|Starting subtask|Subtask )/i.test(
-              event.label,
-            ),
+            isSubagentLifecycleLabel(event.label),
         )
         .map((event) => event.id)
         .join(",");

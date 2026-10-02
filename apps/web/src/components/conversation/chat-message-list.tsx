@@ -1,5 +1,5 @@
 import { ArrowRight, Pencil } from "lucide-react";
-import { memo, type RefObject } from "react";
+import { memo, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { Button } from "../ui/button";
@@ -15,6 +15,11 @@ import {
   type ParsedImageTag,
 } from "./chat-message-content";
 import type { ChatMessageItem } from "./conversation-types";
+import { displayProcessLabel } from "../../lib/process-labels";
+
+/** Worker-recorded labels in the viewer's language; other content as is. */
+const displayTitle = (title: ReactNode) =>
+  typeof title === "string" ? displayProcessLabel(title) : title;
 
 function attachmentsEqual(
   left: ChatAttachment[] | undefined,
@@ -97,7 +102,7 @@ export const ChatMessageRow = memo(
       return (
         <div className="fdy-chat-truncation-boundary">
           <span />
-          <strong>{message.text}</strong>
+          <strong>{displayTitle(message.text)}</strong>
           <span />
         </div>
       );
@@ -110,7 +115,7 @@ export const ChatMessageRow = memo(
       return (
         <Alert
           tone={message.recoverable ? "warning" : "error"}
-          title={message.title ?? t("message.failed")}
+          title={displayTitle(message.title) ?? t("message.failed")}
           details={diagnostic.details}
         >
           <p>{diagnostic.summary}</p>
@@ -133,7 +138,7 @@ export const ChatMessageRow = memo(
         <ToolCallItem
           streaming={message.streaming}
           text={message.text}
-          title={message.title ?? t("message.context")}
+          title={displayTitle(message.title) ?? t("message.context")}
         />
       );
     }

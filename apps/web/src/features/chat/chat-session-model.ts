@@ -6,6 +6,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
+import { isProcessLabel } from "../../lib/process-labels";
 import {
   agentSessionIsAwaitingDetails,
   responseStreamLabel,
@@ -73,9 +74,7 @@ export function agentSessionTerminalError(
     .slice(0, nextInput < 0 ? undefined : nextInput)
     .find(
       (event) =>
-        event.level === "error" &&
-        // i18n-ignore: worker-provided event labels (protocol values)
-        (event.label === "执行失败" || event.label === "Session failed"),
+        event.level === "error" && isProcessLabel(event.label, "sessionFailed"),
     );
   return failureEvent?.detail.trim() || undefined;
 }

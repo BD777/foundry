@@ -14,6 +14,10 @@ import {
 import { Panel, SectionLabel } from "../../components/ui/panel";
 import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
 import { TimelineItem } from "./timeline-item";
+import {
+  displayProcessDetail,
+  displayProcessLabel,
+} from "../../lib/process-labels";
 
 export interface IssueRunTimelineProps {
   events: RunEvent[];
@@ -60,10 +64,10 @@ export function IssueRunTimeline({
           events.map((event, index) => (
             <TimelineItem
               key={event.id}
-              label={event.label}
+              label={displayProcessLabel(event.label)}
               meta={
                 <>
-                  {event.detail} · {event.at}
+                  {displayProcessDetail(event.detail)} · {event.at}
                 </>
               }
               status={index === events.length - 1 ? "active" : "done"}

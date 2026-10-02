@@ -62,7 +62,7 @@ test("event envelopes retain semantic metadata and allocate missing item identit
     id: "",
     kind: "reasoning",
     text: "Summary",
-    title: "思考完成",
+    title: "Thought",
   };
   const event = sessionEvent(
     "s",

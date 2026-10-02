@@ -1,0 +1,39 @@
+package feishu
+
+// Worker process labels are English protocol values (see the protocol
+// package's process-labels.ts); Feishu cards are Chinese, so the labels a
+// card shows are translated here. Older workers already wrote Chinese.
+var chineseProcessLabels = map[string]string{
+	"Thinking":           "正在思考",
+	"Thought":            "思考完成",
+	"Using tool":         "正在使用工具",
+	"Used tool":          "已使用工具",
+	"Tool failed":        "工具执行失败",
+	"Searching":          "正在搜索",
+	"Searched":           "已搜索",
+	"Running command":    "正在执行命令",
+	"Ran command":        "已执行命令",
+	"Editing file":       "正在编辑文件",
+	"Edited file":        "已编辑文件",
+	"Processing step":    "正在处理步骤",
+	"Processed step":     "已处理步骤",
+	"Requesting model":   "正在请求模型",
+	"Compacting context": "正在压缩上下文",
+}
+
+// cardProcessLabel is a worker label as a Feishu card shows it.
+func cardProcessLabel(label string) string {
+	if chinese, ok := chineseProcessLabels[label]; ok {
+		return chinese
+	}
+	return label
+}
+
+// isThinkingLabel reports whether a worker label marks model reasoning.
+func isThinkingLabel(label string) bool {
+	switch cardProcessLabel(label) {
+	case "正在思考", "思考完成":
+		return true
+	}
+	return false
+}
