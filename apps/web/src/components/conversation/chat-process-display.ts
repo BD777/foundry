@@ -1,6 +1,7 @@
 import { i18n } from "../../i18n";
 import {
   completedProcessLabelKey,
+  displayProcessDetail,
   displayProcessLabel,
   isInProgressProcessLabel,
   isProcessLabel,
@@ -295,8 +296,9 @@ export function processDisplayRows(
   }
 
   return compacted.map((item) => {
-    const snippet = plainProcessLine(item.detail);
-    const detail = stripEmptyDetailSections(item.detail);
+    const shown = displayProcessDetail(item.detail);
+    const snippet = plainProcessLine(shown);
+    const detail = stripEmptyDetailSections(shown);
     const key = processLabelKey(item.title);
     return {
       ...item,

@@ -10,7 +10,7 @@ import type {
   AgentSessionEventMetadata,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
-import { processLabels } from "@bd777/foundry-protocol";
+import { processDetails, processLabels } from "@bd777/foundry-protocol";
 
 export class ClaudeAgentTurnError extends Error {
   readonly subtype: string;
@@ -395,13 +395,13 @@ export function claudeSystemProcessEvent(
       if (record.status === "requesting") {
         return {
           label: processLabels.requestingModel,
-          detail: "Claude is generating a response.",
+          detail: processDetails.claudeGenerating,
         };
       }
       if (record.status === "compacting") {
         return {
           label: processLabels.compactingContext,
-          detail: "Claude is compacting the conversation context.",
+          detail: processDetails.claudeCompacting,
         };
       }
       return undefined;
@@ -501,7 +501,7 @@ export function claudeStreamProcessEvent(
   if (eventType === "message_start") {
     return {
       label: processLabels.thinking,
-      detail: "Claude is processing the request.",
+      detail: processDetails.claudeProcessing,
     };
   }
   if (eventType === "content_block_start") {
@@ -544,7 +544,7 @@ export function claudeContentBlockProcessEvent(
       detail:
         sdkString(record.thinking) ||
         sdkString(record.text) ||
-        "Claude is thinking.",
+        processDetails.claudeThinking,
       message: {
         id: sdkString(record.id),
         kind: "reasoning",
@@ -552,7 +552,7 @@ export function claudeContentBlockProcessEvent(
         text:
           sdkString(record.thinking) ||
           sdkString(record.text) ||
-          "Claude is thinking.",
+          processDetails.claudeThinking,
       },
     };
   }
@@ -787,7 +787,7 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
   if (eventType === "turn.started") {
     return {
       label: processLabels.thinking,
-      detail: "The model is processing the request.",
+      detail: processDetails.modelProcessing,
     };
   }
   if (eventType === "turn.completed") {
@@ -815,7 +815,7 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
     case "reasoning":
       return {
         label: done ? processLabels.thought : processLabels.thinking,
-        detail: sdkString(itemRecord.text) || "The model is thinking.",
+        detail: sdkString(itemRecord.text) || processDetails.modelThinking,
       };
     case "web_search":
       return {

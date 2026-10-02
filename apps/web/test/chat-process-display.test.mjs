@@ -93,7 +93,10 @@ test("collapses consecutive identical status notifications in live and saved tur
     for (const streaming of [true, false]) {
       const rows = processDisplayRows(items, streaming);
       assert.equal(rows.length, 1);
-      assert.equal(rows[0].snippet, items[0].detail);
+      assert.equal(
+        rows[0].snippet,
+        "Claude is compacting the conversation context.",
+      );
     }
   }
 });

@@ -37,6 +37,15 @@ export const conversation = {
     transcriptTailUnloaded:
       "This local session is large; only its beginning is loaded so far.",
   },
+  /** Fixed detail sentences the worker records, by protocol key. */
+  processDetails: {
+    claudeGenerating: "Claude is generating a response.",
+    claudeCompacting: "Claude is compacting the conversation context.",
+    claudeProcessing: "Claude is processing the request.",
+    claudeThinking: "Claude is thinking.",
+    modelProcessing: "The model is processing the request.",
+    modelThinking: "The model is thinking.",
+  },
   process: {
     running: "Running",
     processed: "Processed",

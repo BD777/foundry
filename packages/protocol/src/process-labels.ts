@@ -120,3 +120,45 @@ export const completedProcessLabelKeys: Partial<
   editingFile: "editedFile",
   processingStep: "processedStep",
 };
+
+/**
+ * Fixed sentences a worker records as an event's detail. Like labels they
+ * are protocol values the web translates; workers before 0.5.2 wrote the
+ * Chinese values in `legacyProcessDetails`. Details with interpolated parts
+ * (retry attempts, open background tasks) are not in this set.
+ */
+export const processDetails = {
+  claudeGenerating: "Claude is generating a response.",
+  claudeCompacting: "Claude is compacting the conversation context.",
+  claudeProcessing: "Claude is processing the request.",
+  claudeThinking: "Claude is thinking.",
+  modelProcessing: "The model is processing the request.",
+  modelThinking: "The model is thinking.",
+} as const;
+
+export type ProcessDetailKey = keyof typeof processDetails;
+
+export const legacyProcessDetails: Record<ProcessDetailKey, readonly string[]> =
+  {
+    claudeGenerating: ["Claude 正在生成响应。"],
+    claudeCompacting: ["Claude 正在整理会话上下文。"],
+    claudeProcessing: ["Claude 正在处理请求。"],
+    claudeThinking: ["Claude 正在整理思路。"],
+    modelProcessing: ["模型正在处理请求。"],
+    modelThinking: ["模型正在整理思路。"],
+  };
+
+const keyByDetail = new Map<string, ProcessDetailKey>();
+for (const [key, detail] of Object.entries(processDetails) as Array<
+  [ProcessDetailKey, string]
+>) {
+  keyByDetail.set(detail, key);
+  for (const legacy of legacyProcessDetails[key]) keyByDetail.set(legacy, key);
+}
+
+/** The detail's key when it is exactly a known fixed sentence. */
+export function processDetailKey(
+  detail: string | undefined,
+): ProcessDetailKey | undefined {
+  return detail === undefined ? undefined : keyByDetail.get(detail.trim());
+}

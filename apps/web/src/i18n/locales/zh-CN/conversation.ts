@@ -39,6 +39,15 @@ export const conversation: Translation<typeof en> = {
     transcriptTailUnloaded:
       "本地会话较大，当前仅载入前段记录，后续内容尚未载入。",
   },
+  /** Fixed detail sentences the worker records, by protocol key. */
+  processDetails: {
+    claudeGenerating: "Claude 正在生成响应。",
+    claudeCompacting: "Claude 正在整理会话上下文。",
+    claudeProcessing: "Claude 正在处理请求。",
+    claudeThinking: "Claude 正在整理思路。",
+    modelProcessing: "模型正在处理请求。",
+    modelThinking: "模型正在整理思路。",
+  },
   process: {
     running: "正在运行",
     processed: "已处理",

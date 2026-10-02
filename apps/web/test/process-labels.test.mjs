@@ -6,8 +6,9 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 
-const { displayProcessLabel, processLabelKey } =
+const { displayProcessDetail, displayProcessLabel, processLabelKey } =
   await import("../src/lib/process-labels.ts");
+const { i18n } = await import("../src/i18n/index.ts");
 
 test("a current worker label shows in the viewer's language", () => {
   assert.equal(displayProcessLabel("Using tool"), "Using a tool");
@@ -28,6 +29,33 @@ test("a label an older worker wrote in Chinese shows in English too", () => {
     displayProcessLabel("原生会话已压缩上下文。"),
     "The native session compacted its context.",
   );
+});
+
+test("a fixed worker detail translates; any other detail stays as written", () => {
+  assert.equal(
+    displayProcessDetail("Claude 正在生成响应。"),
+    "Claude is generating a response.",
+  );
+  assert.equal(
+    displayProcessDetail("The model is thinking."),
+    "The model is thinking.",
+  );
+  assert.equal(displayProcessDetail("pnpm test"), "pnpm test");
+});
+
+test("current English labels and details show in Chinese for a Chinese viewer", async () => {
+  const previous = i18n.language;
+  await i18n.changeLanguage("zh-CN");
+  try {
+    assert.equal(displayProcessLabel("Requesting model"), "正在请求模型");
+    assert.equal(
+      displayProcessDetail("Claude is generating a response."),
+      "Claude 正在生成响应。",
+    );
+    assert.equal(displayProcessDetail("pnpm test"), "pnpm test");
+  } finally {
+    await i18n.changeLanguage(previous);
+  }
 });
 
 test("an agent-written title is data and stays as written", () => {
@@ -65,7 +93,7 @@ test("a legacy Chinese transcript renders in English", async () => {
       root.render(
         createElement(ProcessDisclosure, {
           items: [
-            { title: "正在思考", detail: "Reviewing src/app.ts" },
+            { title: "正在思考", detail: "Claude 正在整理思路。" },
             { title: "正在执行命令", detail: "pnpm test" },
             { title: "已执行命令", detail: "pnpm test\n\n```\nok\n```" },
           ],
@@ -81,6 +109,7 @@ test("a legacy Chinese transcript renders in English", async () => {
     const text = container.textContent;
     assert.match(text, /Finished thinking/);
     assert.match(text, /Ran a command/);
+    assert.match(text, /Claude is thinking\./);
     assert.doesNotMatch(text, /正在|已执行|思考完成/);
     await act(async () => root.unmount());
   } finally {
