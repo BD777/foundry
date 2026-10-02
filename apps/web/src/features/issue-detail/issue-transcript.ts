@@ -44,6 +44,10 @@ export function issueTranscript(
       at: message.createdAt,
       runtime,
       copyText: message.text,
+      origin:
+        message.via === "feishu"
+          ? i18n.t("issueDetail:transcript.viaFeishu")
+          : undefined,
     });
   };
   for (const run of ordered) {

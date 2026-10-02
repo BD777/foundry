@@ -10,7 +10,9 @@ IM 与账号权限不依赖云文件系统，可以和云端 Workspace 工作并
 
 ## IM Integration
 
-**现状：** 已有飞书专用实现（`apps/server/internal/feishu`），尚未抽出通用 Adapter。每个 Workspace 配置自己的 Bot，经长连接接收事件，不需要公网 IP；群通过一次性配对码绑定 Workspace，群内话题映射为 Chat 会话，回复以流式卡片更新，话题内跟帖无需再 @Bot。群以生成配对码的账号身份执行，每条消息都重新校验该账号在 Workspace 中的角色（见[安全边界](security.md#accounts)）。话题对应 Issue、按发送者本人授权仍未做。
+**现状：** 已有飞书专用实现（`apps/server/internal/feishu`），尚未抽出通用 Adapter。每个 Workspace 配置自己的 Bot，经长连接接收事件，不需要公网 IP；群通过一次性配对码绑定 Workspace，群内话题映射为 Chat 会话，回复以流式卡片更新，话题内跟帖无需再 @Bot。群以生成配对码的账号身份执行，每条消息都重新校验该账号在 Workspace 中的角色（见[安全边界](security.md#accounts)）。
+
+**话题对应 Issue**（2026-10-03，模拟事件测试；尚未在真实飞书群验收）：`@Bot /issue <目标>` 在话题里发起 Issue，Agent 立即开始澄清；话题内回复无需再 @，按 Issue 所处阶段转给澄清 Agent、作为执行者问题的回答，或作为反馈让 Issue 在同一候选里继续；`/confirm` 确认当前草案（与 Web 相同的规则：Issue 发起人或 Maintainer）。澄清回复、执行者的问题与许可请求、开始执行、等待验收、接受与失败都回到话题，验收与接受附 Web 链接。来自话题的消息在 Issue 对话里标注“来自飞书”。飞书侧只做协议转换，Issue 逻辑在 Server（`feishu/issues.go`、`httpapi/feishu_issues.go`）。按发送者本人授权、CI 等其他反馈来源仍未做。
 
 **交付目标：** 通过通用 Bot Adapter 接入 IM，使用户能够发起、跟进和回应同一 Issue，复用 Foundry 的任务状态、账号与权限。MVP 只接飞书（Lark），支持个人或团队使用。
 

@@ -240,7 +240,7 @@ func TestRemovedDeviceIssueCannotRequeue(t *testing.T) {
 	if _, err := db.UpdateIssueStatus(ctx, issue.ID, "pending"); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("recover-claim requeue must be refused, got %v", err)
 	}
-	if _, err := db.RequestIssueChanges(ctx, issue.ID, "please retry", ""); !errors.Is(err, store.ErrDeviceRemoved) {
+	if _, err := db.RequestIssueChanges(ctx, issue.ID, "please retry", "", ""); !errors.Is(err, store.ErrDeviceRemoved) {
 		t.Fatalf("request-changes requeue must be refused, got %v", err)
 	}
 }

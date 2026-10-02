@@ -1,5 +1,7 @@
 package store
 
+import "context"
+
 type FeishuBotStatus string
 
 const (
@@ -40,6 +42,16 @@ type FeishuChatThread struct {
 	ChatID          string `json:"chatId"`
 	LatestSessionID string `json:"latestSessionId"`
 	CardMessageID   string `json:"cardMessageId"`
-	CreatedAt       string `json:"createdAt"`
-	UpdatedAt       string `json:"updatedAt"`
+	// IssueID is the Issue the thread follows; empty for a chat thread.
+	IssueID string `json:"issueId,omitempty"`
+	// Reported marks what the thread was last told about its Issue, so a
+	// restart neither repeats nor skips an update.
+	Reported  string `json:"reported,omitempty"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+// FeishuIssueThreads finds the Feishu thread that follows an Issue.
+type FeishuIssueThreads interface {
+	FeishuThreadForIssue(ctx context.Context, issueID string) (FeishuChatThread, error)
 }

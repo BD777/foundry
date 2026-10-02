@@ -73,6 +73,8 @@ export interface ChatMessageItem {
   role: "user" | "bot";
   runtime?: Exclude<RuntimeKind, "mock">;
   statusLabel?: ReactNode;
+  /** Where the message came from, shown beside its time (e.g. "via Feishu"). */
+  origin?: ReactNode;
   streaming?: boolean;
   text: ReactNode;
   title?: ReactNode;

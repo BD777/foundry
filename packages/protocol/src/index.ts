@@ -669,6 +669,8 @@ export interface IssueConversationMessage {
   text: string;
   runId?: string;
   createdAt: string;
+  /** Where a person's message came from when not the web, such as "feishu". */
+  via?: string;
 }
 
 /** The Issue's clarification session and the person's latest message to it. */

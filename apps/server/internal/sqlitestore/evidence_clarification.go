@@ -66,7 +66,7 @@ func (s *Store) AskClarification(ctx context.Context, input store.AskClarificati
 		}
 		now := time.Now().UTC()
 		messageID := evidenceID("clarify")
-		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: messageID, Role: "user", Text: message, CreatedAt: evidenceNow()})
+		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: messageID, Role: "user", Text: message, CreatedAt: evidenceNow(), Via: input.Via})
 		session, err := tx.queueClarificationInput(ctx, issue, message, now)
 		if err != nil {
 			return nil, err

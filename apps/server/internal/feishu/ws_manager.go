@@ -32,7 +32,7 @@ type SecretProvider interface {
 type activeBot struct {
 	workspaceID string
 	appID       string
-	client      *Client
+	client      botClient
 	cancel      context.CancelFunc
 }
 
@@ -53,6 +53,8 @@ type WSManager struct {
 	streamBuffer *StreamBuffer
 	activeBots   map[string]*activeBot
 	sessions     map[string]*sessionMetadata
+	// reporting serializes Issue reports, so one update is posted once.
+	reporting sync.Mutex
 }
 
 func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher) *WSManager {
@@ -173,7 +175,7 @@ func (m *WSManager) StopAll() {
 	}
 }
 
-func (m *WSManager) handleMessage(ctx context.Context, workspaceID string, client *Client, event *larkim.P2MessageReceiveV1) error {
+func (m *WSManager) handleMessage(ctx context.Context, workspaceID string, client botClient, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
@@ -228,6 +230,9 @@ func (m *WSManager) handleMessage(ctx context.Context, workspaceID string, clien
 	// 4. Thread follow-up message: if rootID exists and matches an active Foundry thread, process without requiring @
 	if rootID != "" && rootID != messageID {
 		thread, threadErr := m.store.GetFeishuChatThread(ctx, rootID)
+		if threadErr == nil && thread.WorkspaceID == workspaceID && thread.IssueID != "" {
+			return m.handleIssueReply(ctx, workspaceID, client, messageID, thread, cleanText)
+		}
 		if threadErr == nil && thread.WorkspaceID == workspaceID {
 			log.Printf("[feishu] found active Foundry thread for root %s, processing follow-up", rootID)
 			return m.handleTopicFollowUp(ctx, workspaceID, client, messageID, chatID, thread, cleanText)
@@ -245,11 +250,14 @@ func (m *WSManager) handleMessage(ctx context.Context, workspaceID string, clien
 		log.Printf("[feishu] new message in chat %s did not mention bot, ignoring", chatID)
 		return nil
 	}
+	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); isIssue && m.issueDesk() != nil {
+		return m.handleNewIssue(ctx, workspaceID, client, messageID, chatID, strings.TrimSpace(goal))
+	}
 
 	return m.handleNewTopic(ctx, workspaceID, client, messageID, chatID, cleanText)
 }
 
-func (m *WSManager) handlePairCommand(ctx context.Context, workspaceID string, client *Client, messageID, chatID, text string) error {
+func (m *WSManager) handlePairCommand(ctx context.Context, workspaceID string, client botClient, messageID, chatID, text string) error {
 	log.Printf("[feishu] handling pair command in chat %s for workspace %s, text: %q", chatID, workspaceID, text)
 	fields := strings.Fields(text)
 	if len(fields) < 2 {
@@ -324,7 +332,7 @@ func (m *WSManager) handlePairCommand(ctx context.Context, workspaceID string, c
 	return nil
 }
 
-func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, client *Client, messageID, chatID, prompt string) error {
+func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, client botClient, messageID, chatID, prompt string) error {
 	title := prompt
 	if len([]rune(title)) > 28 {
 		title = string([]rune(title)[:28]) + "..."
@@ -377,7 +385,7 @@ func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, clie
 	return nil
 }
 
-func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string, client *Client, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
+func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string, client botClient, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
 	_, refusal := m.boundUser(ctx, workspaceID)
 	if refusal != "" {
 		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", refusal, "无权执行")); err != nil {
@@ -439,6 +447,16 @@ func (m *WSManager) HandleInternalEvent(eventType string, payload any) {
 	}
 
 	switch eventType {
+	case "issue_updated":
+		var issue store.Issue
+		if err := json.Unmarshal(dataBytes, &issue); err != nil {
+			return
+		}
+		go func() {
+			m.reporting.Lock()
+			defer m.reporting.Unlock()
+			m.reportIssue(context.Background(), issue.ID)
+		}()
 	case "agent_session_event":
 		var event store.AgentSessionEvent
 		if err := json.Unmarshal(dataBytes, &event); err != nil {

@@ -149,7 +149,7 @@ func (s *Store) UpdateIssueStatus(ctx context.Context, id string, status string)
 	return updated, nil
 }
 
-func (s *Store) RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string) (store.Issue, error) {
+func (s *Store) RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string, via string) (store.Issue, error) {
 	var result store.Issue
 	err := s.withTx(ctx, func(tx *Store) error {
 		issue, err := tx.GetIssue(ctx, id)
@@ -177,7 +177,7 @@ func (s *Store) RequestIssueChanges(ctx context.Context, id string, message stri
 			result = issue
 			return nil
 		}
-		result, err = tx.continueIssue(ctx, issue, message)
+		result, err = tx.continueIssue(ctx, issue, message, via)
 		return err
 	})
 	return result, err
@@ -185,9 +185,9 @@ func (s *Store) RequestIssueChanges(ctx context.Context, id string, message stri
 
 // continueIssue queues the Issue to continue in its candidate with the
 // person's message, which the next execution reads as feedback.
-func (s *Store) continueIssue(ctx context.Context, issue store.Issue, message string) (store.Issue, error) {
+func (s *Store) continueIssue(ctx context.Context, issue store.Issue, message, via string) (store.Issue, error) {
 	if message != "" {
-		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: fmt.Sprintf("msg_%s_%d", issue.ID, len(issue.Messages)+1), Role: "user", Text: message, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: fmt.Sprintf("msg_%s_%d", issue.ID, len(issue.Messages)+1), Role: "user", Text: message, CreatedAt: time.Now().UTC().Format(time.RFC3339), Via: via})
 	}
 	if err := issue.Apply(store.IssueEventContinued, nil); err != nil {
 		return store.Issue{}, err

@@ -20,7 +20,7 @@ type IssueExecutionStore interface {
 	AskIssueQuestion(ctx context.Context, sessionID string, question IssueQuestion) (Issue, error)
 	// AnswerIssueQuestion records the person's answer and queues the Issue to
 	// continue in its candidate. Answering an answered question changes nothing.
-	AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string) (Issue, error)
+	AnswerIssueQuestion(ctx context.Context, issueID string, questionID string, answer string, via string) (Issue, error)
 }
 
 type Store interface {
@@ -83,7 +83,7 @@ type Store interface {
 	GetIssue(ctx context.Context, id string) (Issue, error)
 	CreateIssue(ctx context.Context, input CreateIssueInput) (Issue, error)
 	UpdateIssueStatus(ctx context.Context, id string, status string) (Issue, error)
-	RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string) (Issue, error)
+	RequestIssueChanges(ctx context.Context, id string, message string, expectedRunID string, via string) (Issue, error)
 	AbandonIssue(ctx context.Context, id string, expectedRunID string) (Issue, error)
 
 	ListRuns(ctx context.Context, workspaceID string) ([]Run, error)

@@ -158,6 +158,9 @@ export const ChatMessageRow = memo(
               onPreview={onImagePreview}
             />
           ) : null}
+          {message.origin ? (
+            <span className="fdy-chat-message-origin">{message.origin}</span>
+          ) : null}
         </div>
         {message.copyText ? (
           <CopyButton always={message.copyAlways} text={message.copyText} />

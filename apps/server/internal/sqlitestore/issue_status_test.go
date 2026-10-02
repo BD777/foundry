@@ -59,7 +59,7 @@ func TestAbandonedIssueIsRetainedAndCannotBeClaimedOrContinued(t *testing.T) {
 			t.Fatalf("abandon lost candidate: %v %#v", err, issue)
 		}
 	}
-	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Continue", "r_abandon"); err == nil {
+	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Continue", "r_abandon", ""); err == nil {
 		t.Fatal("abandoned Issue continued")
 	}
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new_run", IssueID: issue.ID}); err == nil {
