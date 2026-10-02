@@ -156,6 +156,8 @@ npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --to
 
 Worker 使用这台机器上已登录的 Claude Code 或 Codex。还没有的话先安装并登录：`npm install -g @anthropic-ai/claude-code` 后运行 `claude` 登录，或 `npm install -g @openai/codex` 后运行 `codex login`；然后在“设备 → 模型与账户”里点“重新检查”。也可以在“服务器连接”里配置 API 连接。
 
+请用普通用户运行 Worker：Claude Code 不允许以 root 身份跳过权限确认，而 Issue 的执行需要这样做。
+
 从源码运行 Worker（开发用）时，同样需要配对码：
 
 ```bash
