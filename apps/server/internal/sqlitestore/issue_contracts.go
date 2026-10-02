@@ -249,8 +249,9 @@ func (s *Store) ConfirmContract(ctx context.Context, issueID string, revision in
 		// goes back to implementation instead of waiting on a review whose
 		// candidate was built for the previous revision.
 		if (issue.Status == "blocked" || issue.Status == "verifying") && (issue.Run == nil || issue.Run.Status != "running") {
-			issue.Status = "pending"
-			issue.BlockedReason = nil
+			if err := issue.Apply(store.IssueEventContractConfirmed, nil); err != nil {
+				return nil, err
+			}
 		}
 		if err = tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 			return nil, err

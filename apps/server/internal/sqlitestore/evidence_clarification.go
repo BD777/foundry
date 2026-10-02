@@ -255,9 +255,10 @@ func (s *Store) AnswerClarification(ctx context.Context, session store.AgentSess
 		}
 		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: evidenceID("clarify"), Role: "assistant", Text: reply, CreatedAt: evidenceNow()})
 		issue.Clarification.Status, issue.Clarification.Error = "answered", ""
-		if issue.Run == nil && issue.Status != "accepted" && issue.Status != "abandoned" {
-			issue.Status = "blocked"
-			issue.BlockedReason = &store.IssueBlockedReason{Kind: "needs_input", Message: "Answer the clarification or explicitly confirm the saved contract proposal."}
+		if issue.Run == nil && (issue.Status == "pending" || issue.Status == "blocked") {
+			if err := issue.Apply(store.IssueEventClarificationReplied, &store.IssueBlockedReason{Kind: "needs_input", Message: "Answer the clarification or explicitly confirm the saved contract proposal."}); err != nil {
+				return err
+			}
 		}
 		if err := tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 			return err

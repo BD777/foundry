@@ -189,8 +189,9 @@ func (s *Store) continueIssue(ctx context.Context, issue store.Issue, message st
 	if message != "" {
 		issue.Messages = append(issue.Messages, store.IssueConversationMessage{ID: fmt.Sprintf("msg_%s_%d", issue.ID, len(issue.Messages)+1), Role: "user", Text: message, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	}
-	issue.Status = "pending"
-	issue.BlockedReason = nil
+	if err := issue.Apply(store.IssueEventContinued, nil); err != nil {
+		return store.Issue{}, err
+	}
 	issue.Checks = appendUnique(issue.Checks, "Changes requested")
 	issue.UpdatedLabel = "just now"
 	if err := s.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
@@ -220,8 +221,9 @@ func (s *Store) AbandonIssue(ctx context.Context, id string, expectedRunID strin
 		if expectedRunID != currentRunID {
 			return fmt.Errorf("issue execution changed; refresh before abandoning")
 		}
-		issue.Status = "abandoned"
-		issue.BlockedReason = nil
+		if err := issue.Apply(store.IssueEventAbandoned, nil); err != nil {
+			return err
+		}
 		issue.UpdatedLabel = "just now"
 		issue.Checks = appendUnique(issue.Checks, "Abandoned by user; candidate and history retained")
 		if err := tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
