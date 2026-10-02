@@ -264,6 +264,21 @@ export function claudePermissionMode(
   );
 }
 
+/**
+ * Claude Code refuses bypassPermissions for root unless the environment says
+ * it is a deliberate sandbox. Say so before the SDK and then the CLI fallback
+ * each fail with the same bare refusal.
+ */
+export function claudeRootBypassRefusal(
+  permissionMode: string,
+  uid = process.getuid?.(),
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (permissionMode !== "bypassPermissions" || uid !== 0) return undefined;
+  if (env.IS_SANDBOX === "1" || env.CLAUDE_CODE_BUBBLEWRAP) return undefined;
+  return "Claude Code does not allow Bypass permissions while the worker runs as root. Run the worker as a regular user, or choose another permission mode for this chat or in the device's Claude Code defaults.";
+}
+
 export async function runProfileCommandSession(
   workspacePath: string,
   session: AgentSession,
@@ -931,6 +946,10 @@ export async function runClaudeWorkspaceSession(
   for (const warning of plan.warnings) {
     await emit("Connection credential missing", warning, "warning");
   }
+  const refusal = claudeRootBypassRefusal(
+    claudePermissionMode(session, profile),
+  );
+  if (refusal) throw new ClaudeAgentTurnError("root_bypass", refusal);
   try {
     return await runClaudeAgentSdkSession(
       workspacePath,

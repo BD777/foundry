@@ -9,6 +9,7 @@ import {
   foundryClaudeSettings,
   resolvedClaudeCredential,
 } from "../dist/session-policy.js";
+import { claudeRootBypassRefusal } from "../dist/runner.js";
 
 const session = { id: "sess_1", prompt: "hello", workspaceId: "ws_1" };
 
@@ -355,4 +356,26 @@ test("an Issue's clarification runs only the read tools its role allows", async 
   } finally {
     unregister();
   }
+});
+
+test("root with Bypass permissions is refused up front unless the device is a deliberate sandbox", () => {
+  assert.match(
+    claudeRootBypassRefusal("bypassPermissions", 0, {}),
+    /runs as root/,
+  );
+  assert.equal(
+    claudeRootBypassRefusal("bypassPermissions", 1000, {}),
+    undefined,
+  );
+  assert.equal(claudeRootBypassRefusal("acceptEdits", 0, {}), undefined);
+  assert.equal(
+    claudeRootBypassRefusal("bypassPermissions", 0, { IS_SANDBOX: "1" }),
+    undefined,
+  );
+  assert.equal(
+    claudeRootBypassRefusal("bypassPermissions", 0, {
+      CLAUDE_CODE_BUBBLEWRAP: "1",
+    }),
+    undefined,
+  );
 });
