@@ -145,7 +145,6 @@ export function installRuntime(name: string, specs: string[]): string {
       readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
     ) as PackageIdentity
   ).version;
-  const target = join(runtimeRoot(), version);
   const current = join(runtimeRoot(), "current");
   let inUse: string | undefined;
   try {
@@ -153,19 +152,30 @@ export function installRuntime(name: string, specs: string[]): string {
   } catch {
     inUse = undefined;
   }
-  if (inUse !== version) rmSync(target, { recursive: true, force: true });
-  if (existsSync(target)) rmSync(staging, { recursive: true, force: true });
-  else renameSync(staging, target);
+  // A running worker's files are never replaced in place: reinstalling the
+  // version in use (say, from a local build) goes into a directory of its own.
+  const directory =
+    inUse === undefined || runtimeVersion(inUse) !== version
+      ? version
+      : `${version}+${Date.now()}`;
+  const target = join(runtimeRoot(), directory);
+  rmSync(target, { recursive: true, force: true });
+  renameSync(staging, target);
   // Switch atomically: a service restarting now sees the old or new runtime.
   const next = join(runtimeRoot(), `.current-${process.pid}`);
   rmSync(next, { force: true });
-  symlinkSync(version, next);
+  symlinkSync(directory, next);
   renameSync(next, current);
-  pruneRuntimes(version, inUse);
+  pruneRuntimes(directory, inUse);
   return version;
 }
 
 /** Keep the runtime in use and the one before it; remove older ones. */
+/** The version a runtime directory holds; a reinstall adds "+<time>". */
+export function runtimeVersion(directory: string): string {
+  return directory.split("+")[0]!;
+}
+
 function pruneRuntimes(current: string, previous: string | undefined): void {
   for (const entry of readdirSync(runtimeRoot())) {
     if (entry === "current" || entry === current || entry === previous)

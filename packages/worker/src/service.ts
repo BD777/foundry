@@ -428,7 +428,9 @@ export function status(): void {
   console.log(`Config: ${config ? daemonConfigPath : "not paired"}`);
   // Set when installed with `install`; a source checkout has no runtime.
   try {
-    const version = readlinkSync(foundryStatePath("runtime", "current"));
+    const version = readlinkSync(foundryStatePath("runtime", "current")).split(
+      "+",
+    )[0];
     console.log(`Installed version: ${version}`);
   } catch {
     // Not installed from npm.
