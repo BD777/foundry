@@ -174,6 +174,10 @@ func TestEvidenceDispatchCancelsQueuedAmendmentAndInvalidatesNewExecution(t *tes
 	if _, err = db.DiscardContract(ctx, issue.ID, draft.Revision, "Retain original", owner, "discard"); err != nil {
 		t.Fatal(err)
 	}
+	// A new implementation starts from the person continuing the Issue.
+	if _, err = db.RequestIssueChanges(ctx, issue.ID, "Implement it again", ""); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.StartIssueRun(ctx, issue.ID, store.Run{ID: "new-implementation", IssueID: issue.ID}); err != nil {
 		t.Fatal(err)
 	}

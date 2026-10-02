@@ -189,7 +189,9 @@ func (s *Store) FinishAcceptance(ctx context.Context, issueID, decisionID, integ
 			}
 			d.Status = "integrated"
 			d.IntegrationID = &integrationID
-			issue.Status = "accepted"
+			if err = issue.Apply(store.IssueEventIntegrated, nil); err != nil {
+				return err
+			}
 			action = "integration_completed"
 			if err = tx.saveIssue(ctx, issue, time.Time{}, time.Now().UTC()); err != nil {
 				return err
