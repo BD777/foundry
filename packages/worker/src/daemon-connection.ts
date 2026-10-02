@@ -1429,7 +1429,10 @@ function runWebSocketSession(options: {
             trySendWebSocket(
               socket,
               daemonMessageTypes.nativeAccountInspected,
-              { result, registration: daemonRegistration(options.workspacePath) },
+              {
+                result,
+                registration: daemonRegistration(options.workspacePath),
+              },
               envelope.id,
             );
           })

@@ -50,7 +50,11 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
       runtime === "claude" ? resolveClaudeCommand() : resolveCodexCommand();
   } catch {
     // Not installed at all: say what to install, not that a check failed.
-    health = { ...health, status: "unavailable", statusDetail: installHint(runtime) };
+    health = {
+      ...health,
+      status: "unavailable",
+      statusDetail: installHint(runtime),
+    };
     cache.set(runtime, { until: Date.now() + 60000, health });
     return health;
   }
