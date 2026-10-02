@@ -62,7 +62,7 @@ The target shape is described in the [Workspace and Sandbox overview](workspace-
 - [x] [Feishu bot](platform-extensions.md#im-integration): each workspace configures its own bot and pairs groups; group threads map to sessions and replies stream into cards; a group acts with the identity and permissions of the account that generated its pairing code.
 - [x] [Accounts and workspace sharing](security.md#accounts): every API requires sign-in; device credentials and resource ownership; workspaces are shared as Viewer / Member / Maintainer / Owner.
 - [x] [Devices and deployment](development.md): daemons connect out to the server; multiple devices and workspaces; macOS / Linux process isolation; [Docker deployment](../deploy/README.md) and [parallel dev stacks](dev-stacks.md).
-- [x] Issue engine: completion criteria → candidate execution → evidence and verification → acceptance → integration is on main with historical end-to-end records. Execution, clarification, judgments and integration run on macOS and Linux (Linux does not support controlled HTTP targets yet); the web entry is hidden until the experience is polished.
+- [x] [Issues](issue-workflow.md): agree on completion criteria with a read-only clarification agent in the main chat and confirm them; the executor works in a candidate worktree (and may start helper sessions); the system collects evidence and runs program checks and independent agent judgments; a person accepts and the result integrates into the workspace. The loop has passed the [release gate](foundry-conversation-release-gate.md) in a real browser with both Claude and Codex, on macOS and Linux.
 
 ### M1 Execution core (done)
 
@@ -81,24 +81,27 @@ Kernel features are accepted through Chats and orchestrated sessions, not throug
 - [x] [Session model](session-model.md) (Chinese): a session is one native agent session and a follow-up is a new input; any agent in a workspace may act on any of its sessions, and lineage is only a record.
 - Deferred: OAuth 2.1 for the HTTP MCP, until an agent outside Foundry needs it.
 
-### M3 Resources and cross-device work
+### M3 Resources and cross-device work (done)
 
-- [ ] [Resource Pool and Tool Use](tool-use-and-resources.md#basic-tool-use): browsers, desktops (Computer Use), simulators and devices, ports and services, and internal infrastructure share one request → use → release → clean-up lifecycle, with evidence capture; browsers come first, accepted by an agent in a Chat requesting a browser and returning a screenshot.
-- [ ] [Cross-device sessions](architecture-modules.md#3-模块清单): start a session and use resources on another device, relayed through the server; credentials stay on their device and every call is authorized by policy.
+- [x] [Resource Pool](tool-use-and-resources.md#basic-tool-use): browsers on a device are discovered, listed (MCP `list_resources` and the device page), leased per session and reclaimed; accepted by an agent in a Chat requesting a browser and returning a screenshot. Desktops, simulators and devices join the same lifecycle later.
+- [x] [Cross-device sessions](architecture-modules.md#3-模块清单): start a session and use resources on another device, relayed through the server; credentials stay on their device.
 
-### M4 Issue loop
+### M4 Issue loop (done)
 
-Issues are an orchestration layer on top of the kernel and come after it; before starting, review what the kernel lacks for them (see [module architecture §6](architecture-modules.md#6-m4-issue-loop-的待决项)).
+Per [decision D1 in module architecture §6](architecture-modules.md#6-m4-计划2026-09-28-确认), M4 delivers the real-browser loop of the [conversational release gate](foundry-conversation-release-gate.md) G1–G5 and orchestration inside Issues; the remaining items moved to M5.
 
-- [ ] [Orchestration inside Issues and one session record](architecture-modules.md#54-迁移顺序): Issue execution becomes an AgentSession with the `foundry` MCP, so the execution agent can start child sessions and independent verifiers with traceable lineage and evidence ownership.
-- [ ] [Role policy for clarification and judgments](architecture-modules.md#6-m4-issue-loop-的待决项): decide whether a separate stage-session entry remains, and which skills and read-only MCP a verifier may use.
+- [x] [Orchestration inside Issues and one session record](architecture-modules.md#6-m4-计划2026-09-28-确认): execution and clarification are sessions of the Issue; the executor may start helper sessions only inside its Issue; the Issue lists every session that worked on it and who started it, each readable.
+- [x] [Role policy for clarification and judgments](architecture-modules.md#6-m4-计划2026-09-28-确认): clarification is a read-only session that keeps its context (project instructions, selected skills, read-only foundry tools); a judgment is a fresh read-only session with the selected skills, no MCP and no token.
+- [x] [Completion criteria](issue-workflow.md#issues): the agent drafts them from workspace context; a person confirms an exact version; any change needs a stated reason and a new confirmation.
+- [x] [Issue web experience](issue-workflow.md#issues): the Issues entry is open again; the board, detail view and Issue conversation passed the release gate with real Claude and Codex.
+
+### M5 Issue workflow extensions
+
 - [ ] [Loop graph and exit rules](issue-workflow.md#issues): Issue state transitions converge into one explicit definition; exit rules carry ids and versions, are recorded in the review snapshot and can grow with practice.
-- [ ] [Completion criteria](issue-workflow.md#issues): the agent drafts them from workspace context; a person edits and confirms an exact version; any later change needs a stated reason and a new confirmation.
 - [ ] [Human input (Blocked)](issue-conversation-design.md): a general question and permission-response protocol; answering resumes the same Issue.
 - [ ] [External feedback and Issues in Feishu](platform-extensions.md#im-integration): feedback can come from sources other than people and agents (first a Feishu thread or CI) and returns to the Issue with its source recorded; raise Issues, follow progress and answer Blocked states from Feishu threads, with complex review on the web.
-- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) (including controlled HTTP targets on Linux); collectors extend through one interface.
+- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) (such as Codex image judgments and complex materials like PDF); collectors extend through one interface.
 - [ ] [Acceptance and integration](issue-workflow.md#accept-and-integration): polish Merge Queue conflict resolution and reverification.
-- [ ] [Issue web experience](issue-workflow.md#issues): reopen the Issues entry and polish the board, detail view and Issue conversation; accept it with a real-browser loop per the [release gate](foundry-conversation-release-gate.md).
 - [ ] [First open-source release](issue-workflow.md#open-source-release): run the full loop on representative real tasks and reproduce installation in a clean environment.
 
 ### Parallel tracks
