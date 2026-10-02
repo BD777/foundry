@@ -78,6 +78,8 @@ export const chat = {
   thread: {
     cliSession: "CLI session",
     readOnly: "Read-only access",
+    workingForIssue:
+      "This session was started by an Issue or by another session. You can read it here; continue it from where it was started.",
   },
   notices: {
     attachNeedsWorkspace: "Connect a local workspace before attaching files.",

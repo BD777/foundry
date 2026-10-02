@@ -137,9 +137,25 @@ export function useChatFeature({
     () => chatThreadsFromSessions(chatSessions),
     [chatSessions],
   );
+  // A session Chats does not list (one working for an Issue, or started
+  // by an agent) still opens by id, read-only, so its transcript is
+  // reachable from wherever it is shown.
   const selectedThread = useMemo(
-    () => selectedChatThread(threads, selectedChatId),
-    [selectedChatId, threads],
+    () =>
+      selectedChatThread(threads, selectedChatId) ??
+      selectedChatThread(
+        chatThreadsFromSessions(
+          sessions.filter(
+            (session) =>
+              !isChatSession(session) && session.id === selectedChatId,
+          ),
+        ),
+        selectedChatId,
+      ),
+    [selectedChatId, sessions, threads],
+  );
+  const unlistedSelection = Boolean(
+    selectedThread && !threads.includes(selectedThread),
   );
   const sessionsNeedingDetails = useMemo(
     () => (selectedThread?.sessions ?? []).filter(agentSessionNeedsDetails),
@@ -885,7 +901,11 @@ export function useChatFeature({
 
   return (
     <ChatSurface
-      readOnlyReason={workspaceDenial(workspace, "member")}
+      readOnlyReason={
+        unlistedSelection
+          ? i18n.t("chat:thread.workingForIssue")
+          : workspaceDenial(workspace, "member")
+      }
       onChatsDeleted={async (ids) => {
         if (selectionRef.current.workspaceId !== workspaceId) return;
         if (ids.includes(selectionRef.current.selectedId)) {

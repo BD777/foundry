@@ -77,6 +77,8 @@ export const chat: Translation<typeof en> = {
   thread: {
     cliSession: "CLI 会话",
     readOnly: "只读权限",
+    workingForIssue:
+      "这个会话由 Issue 或其他会话派出。这里可以查看记录；要继续它，请回到派出它的地方。",
   },
   notices: {
     attachNeedsWorkspace: "请先连接本地工作区，再添加附件。",

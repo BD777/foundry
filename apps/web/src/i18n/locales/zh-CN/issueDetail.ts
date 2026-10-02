@@ -219,6 +219,17 @@ export const issueDetail: Translation<typeof en> = {
       context: "背景",
     },
   },
+  sessions: {
+    title: "参与这个 Issue 的会话",
+    intro:
+      "所有为这个 Issue 工作过的 Agent 会话，以及各自由谁派出。点开可查看完整记录。",
+    none: "还没有会话为这个 Issue 工作。",
+    execution: "执行",
+    clarification: "澄清",
+    helper: "协作会话",
+    startedBy: "由{{role}}会话派出",
+    open: "打开{{role}}会话的记录",
+  },
   view: {
     notFoundTitle: "找不到这个 Issue",
     notFoundBody: "回到 Issue 列表选择一个任务。",

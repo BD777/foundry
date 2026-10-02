@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -820,6 +821,10 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListAgentSessionSummaries(r.Context(), workspaceID)
+	// issueId narrows the list to the sessions that worked for one Issue.
+	if issueID := strings.TrimSpace(r.URL.Query().Get("issueId")); err == nil && issueID != "" {
+		items = slices.DeleteFunc(items, func(session store.AgentSession) bool { return session.IssueID != issueID })
+	}
 	if err == nil {
 		items = summarizeAgentSessionsForList(s.reconcileAgentSessions(r.Context(), items))
 	}

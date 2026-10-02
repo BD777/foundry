@@ -281,4 +281,26 @@ func TestAgentInAnIssueStaysInThatIssue(t *testing.T) {
 	if err := f.server.keepAgentInIssue(ctx, actor, &input); err != nil || input.IssueID != issue.ID || input.WorkspaceID != "ws_bob" {
 		t.Fatalf("a child of the Issue's agent = %q in %q (%v), want the Issue's candidate", input.IssueID, input.WorkspaceID, err)
 	}
+	// The child belongs to the Issue: it gets no Chats group, and the Issue
+	// lists it beside its execution.
+	input.CreatedByUserID, input.AgentID, input.Provider, input.ParentSessionID = f.bobID, "agent_bob", "claude", executor.ID
+	child, err := db.CreateAgentSession(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.CreatedGroupID != "" {
+		t.Fatalf("a session in an Issue got a Chats group %q", child.CreatedGroupID)
+	}
+	listed := doAuthCall(t, f.handler, f.as(f.bob, http.MethodGet, "/api/agent-sessions?workspaceId=ws_bob&issueId="+issue.ID, ""))
+	var sessions []store.AgentSession
+	if err := json.Unmarshal(listed.Body.Bytes(), &sessions); err != nil {
+		t.Fatal(err, listed.Body.String())
+	}
+	ids := map[string]bool{}
+	for _, session := range sessions {
+		ids[session.ID] = true
+	}
+	if len(sessions) != 2 || !ids[executor.ID] || !ids[child.ID] {
+		t.Fatalf("the Issue's sessions = %v, want its execution and the child", ids)
+	}
 }
