@@ -60,6 +60,15 @@ export const claudeHarness: HarnessAdapter = {
                 data: image.bytes.toString("base64"),
               },
             })),
+            ...(spec.prompt.documents ?? []).map((document) => ({
+              type: "document",
+              title: document.name,
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: document.bytes.toString("base64"),
+              },
+            })),
           ],
         },
       };

@@ -24,7 +24,12 @@ import type { ManagedSkillRuntime } from "./skill-materializer.js";
 export interface VerifierPacket {
   prompt: string;
   images: { materialId: string; mimeType: string; bytes: Buffer }[];
+  /** PDFs as themselves: Claude reads them; Codex gets their text. */
+  documents: { materialId: string; name: string; bytes: Buffer }[];
 }
+
+/** The largest PDF a model reads as a document (Claude's own limit). */
+export const PDF_DOCUMENT_LIMIT = 32 * 1024 * 1024;
 
 /**
  * The candidate worktree a verification session works in, read-only. Its
@@ -41,14 +46,14 @@ export interface StageWorkspace {
    */
   skills?: ManagedSkillRuntime;
 }
-export function verifierPacket(
+export async function verifierPacket(
   contract: IssueContract,
   criterion: AcceptanceCriterion,
   input: VerificationInput,
   evidence: Evidence[],
   store: EvidenceStore,
   workspace?: StageWorkspace,
-): VerifierPacket {
+): Promise<VerifierPacket> {
   const selected = new Set<string>(
     [...contract.goal.media, ...criterion.rubric.media].map(
       (m) => m.materialId,
@@ -69,7 +74,9 @@ export function verifierPacket(
       mimeType: string;
       text?: string;
       imageIndex?: number;
+      documentIndex?: number;
     }[] = [];
+  const documents: NonNullable<VerifierPacket["documents"]> = [];
   for (const id of selected) {
     const m = store.getMaterial(id),
       bytes = store.readMaterial(id);
@@ -92,6 +99,15 @@ export function verifierPacket(
         mimeType: m.mimeType,
         text: bytes.toString(),
       });
+    } else if (m.mimeType === "application/pdf") {
+      if (bytes.length > PDF_DOCUMENT_LIMIT)
+        throw new Error("pdf_exceeds_document_limit");
+      materials.push({
+        materialId: id,
+        mimeType: m.mimeType,
+        documentIndex: documents.length,
+      });
+      documents.push({ materialId: id, name: m.name, bytes });
     } else throw new Error(`unsupported_required_media: ${m.mimeType}`);
   }
   const prompt = JSON.stringify({
@@ -138,7 +154,7 @@ export function verifierPacket(
   });
   if (Buffer.byteLength(prompt) > 2 * 1024 * 1024)
     throw new Error("verifier_input_too_large");
-  return { prompt, images };
+  return { prompt, images, documents };
 }
 
 /** Independent session on the sealed candidate: fresh, never the implementation session. */
@@ -164,7 +180,7 @@ export async function judgeWithAgent(options: {
   if (verification.executor.kind !== "agent")
     throw new Error("agent_executor_required");
   const identity = verification.executor;
-  const packet = verifierPacket(
+  const packet = await verifierPacket(
     options.contract,
     options.criterion,
     options.input,
@@ -180,6 +196,7 @@ export async function judgeWithAgent(options: {
       errors: options.formatRepair.errors,
     });
     packet.images = [];
+    packet.documents = [];
   }
   const workspace = options.formatRepair ? undefined : options.workspace;
   const response = await startSession({
@@ -199,7 +216,11 @@ export async function judgeWithAgent(options: {
           : []),
       ],
     },
-    prompt: { text: packet.prompt, images: packet.images },
+    prompt: {
+      text: packet.prompt,
+      images: packet.images,
+      documents: packet.documents,
+    },
     title: `Foundry ${identity.promptTemplateVersion}`,
     // Ask the provider for exactly the shape this function parses.
     responseSchema: evidenceJSONSchema("VerificationResult", [

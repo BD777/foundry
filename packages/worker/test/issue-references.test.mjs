@@ -7,6 +7,7 @@ import { ExecutionStore } from "../dist/execution-storage.js";
 import { EvidenceStore } from "../dist/evidence-store.js";
 import { issueReferences } from "../dist/issue-references.js";
 import { crc32, deflateSync } from "node:zlib";
+import { pdfWithPages } from "./pdf-fixture.mjs";
 
 function solidPng(width, height, rgb) {
   const chunk = (type, data) => {
@@ -33,7 +34,7 @@ function solidPng(width, height, rgb) {
   ]);
 }
 
-test("the execution gets the contract's references as read-only files", () => {
+test("the execution gets the contract's references as read-only files", async () => {
   const root = mkdtempSync(join(tmpdir(), "issue-references-"));
   const execution = new ExecutionStore(join(root, "state"));
   const store = new EvidenceStore(
@@ -69,7 +70,7 @@ test("the execution gets the contract's references as read-only files", () => {
       ],
     },
   };
-  const references = issueReferences(environment, issue, execution);
+  const references = await issueReferences(environment, issue, execution);
   assert.equal(references.length, 2, "each material once");
   const [first, second] = references;
   assert.equal(first.kind, "image");
@@ -79,7 +80,61 @@ test("the execution gets the contract's references as read-only files", () => {
   assert.equal(second.kind, "file");
   assert.equal(readFileSync(second.path, "utf8"), "tone: friendly");
   assert.deepEqual(
-    issueReferences(environment, { executionContract: undefined }, execution),
+    await issueReferences(
+      environment,
+      { executionContract: undefined },
+      execution,
+    ),
     [],
   );
+});
+
+test("a PDF reference comes as the document and as its extracted text", async () => {
+  const root = mkdtempSync(join(tmpdir(), "issue-references-pdf-"));
+  const execution = new ExecutionStore(join(root, "state"));
+  const store = new EvidenceStore(
+    "ws_p",
+    "iss_p",
+    "dev",
+    { kind: "daemon", id: "dev", displayName: "Worker" },
+    execution,
+  );
+  const pdf = pdfWithPages(["Brand guide", "Use the teal accent"]);
+  const guide = store.sealMaterial("guide.pdf", "document", pdf);
+  assert.equal(guide.mimeType, "application/pdf");
+  const environment = {
+    workspaceId: "ws_p",
+    issueId: "iss_p",
+    directory: join(root, "env"),
+  };
+  const issue = {
+    executionContract: {
+      goal: {
+        text: "Follow the guide",
+        media: [{ materialId: guide.id, role: "context" }],
+      },
+      criteria: [],
+    },
+  };
+  const [document, text, ...rest] = await issueReferences(
+    environment,
+    issue,
+    execution,
+  );
+  assert.equal(rest.length, 0);
+  assert.equal(document.mimeType, "application/pdf");
+  assert.deepEqual(readFileSync(document.path), pdf);
+  assert.equal(text.kind, "file");
+  assert.equal(text.mimeType, "text/plain");
+  assert.equal(
+    text.name,
+    "Text extracted from guide.pdf (layout and images not included)",
+  );
+  const extracted = readFileSync(text.path, "utf8");
+  assert.match(extracted, /^Text extracted from guide\.pdf \(2 pages\)/);
+  assert.match(extracted, /--- Page 2 ---\nUse the teal accent/);
+  assert.equal(statSync(text.path).mode & 0o222, 0, "read-only");
+  // Running again reuses the files instead of extracting twice.
+  const again = await issueReferences(environment, issue, execution);
+  assert.equal(again[1].path, text.path);
 });

@@ -1919,7 +1919,7 @@ function runWebSocketSession(options: {
               // An Issue's clarification runs read-only in the workspace with
               // its turn's draft; its answer becomes the reply on the Issue.
               const clarification = clarifying
-                ? prepareClarification(
+                ? await prepareClarification(
                     payload.session,
                     payload.clarification,
                     workspacePath,

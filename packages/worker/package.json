@@ -38,6 +38,7 @@
     "@bd777/foundry-protocol": "workspace:*",
     "@openai/codex": "0.142.5",
     "@openai/codex-sdk": "^0.142.5",
+    "pdfjs-dist": "^6.3.289",
     "smol-toml": "^1.8.0",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"

@@ -152,9 +152,11 @@ export async function readPreviewMaterial(
     material.mimeType,
   );
   const isText = ["text/plain", "application/json"].includes(material.mimeType);
+  const isPdf = material.mimeType === "application/pdf";
   if (
-    (!isImage && !isText) ||
-    material.byteSize > (isImage ? 25 * 1024 * 1024 : 2 * 1024 * 1024)
+    (!isImage && !isText && !isPdf) ||
+    material.byteSize >
+      (isImage ? 25 * 1024 * 1024 : isPdf ? 32 * 1024 * 1024 : 2 * 1024 * 1024)
   )
     throw new Error(i18n.t("issueDetail:preview.unavailable"));
   const response = await apiFetch(

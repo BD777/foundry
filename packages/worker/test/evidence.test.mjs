@@ -1,4 +1,5 @@
 import test from "node:test";
+import { pdfWithPages } from "./pdf-fixture.mjs";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -202,7 +203,7 @@ test("HTTP 200 from an unbound instance is rejected before networking", async (t
   );
   assert.equal(authorized, false);
 });
-test("Agent packet carries actual image bytes separately from reference roles", (t) => {
+test("Agent packet carries actual image bytes separately from reference roles", async (t) => {
   const { store } = fixture(t);
   const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2]);
   const image = store.sealMaterial("target", "image", bytes);
@@ -229,7 +230,7 @@ test("Agent packet carries actual image bytes separately from reference roles", 
       materials: [{ materialId: document.id, role: "primary" }],
     },
   ];
-  const packet = verifierPacket(
+  const packet = await verifierPacket(
     contract,
     criterion,
     { id: "i" },
@@ -239,8 +240,8 @@ test("Agent packet carries actual image bytes separately from reference roles", 
   assert.deepEqual(packet.images[0].bytes, bytes);
   assert.match(packet.prompt, /actual candidate/);
   assert.match(packet.prompt, /References are targets, not observations/);
-  assert.throws(
-    () => verifierPacket(contract, criterion, { id: "wrong" }, evidence, store),
+  await assert.rejects(
+    verifierPacket(contract, criterion, { id: "wrong" }, evidence, store),
     /cross_input/,
   );
   // A judge in the candidate gets the workspace's selected skills as files
@@ -257,13 +258,53 @@ test("Agent packet carries actual image bytes separately from reference roles", 
     ],
   };
   const withSkills = JSON.parse(
-    verifierPacket(contract, criterion, { id: "i" }, evidence, store, {
-      path: "/candidate",
-      skills,
-    }).prompt,
+    (
+      await verifierPacket(contract, criterion, { id: "i" }, evidence, store, {
+        path: "/candidate",
+        skills,
+      })
+    ).prompt,
   );
   assert.match(withSkills.workspaceSkills, /ui-review/);
   assert.match(withSkills.workspaceSkills, /skills\/ui-review\/SKILL\.md/);
+});
+test("a PDF reaches the judge as the document itself", async (t) => {
+  const { store } = fixture(t);
+  const pdf = pdfWithPages(["Invoice total: 42 EUR"]);
+  const material = store.sealMaterial("invoice.pdf", "document", pdf);
+  assert.equal(material.mimeType, "application/pdf");
+  const contract = {
+    issueId: "iss_test",
+    workspaceId: "ws_test",
+    goal: { text: "Produce the invoice", media: [] },
+  };
+  const criterion = { rubric: { text: "Shows the total", media: [] } };
+  const evidence = [
+    {
+      id: "e",
+      issueId: "iss_test",
+      workspaceId: "ws_test",
+      verificationInputId: "i",
+      materials: [{ materialId: material.id, role: "primary" }],
+    },
+  ];
+  const packet = await verifierPacket(
+    contract,
+    criterion,
+    { id: "i" },
+    evidence,
+    store,
+  );
+  assert.equal(packet.images.length, 0);
+  assert.equal(packet.documents.length, 1);
+  assert.equal(packet.documents[0].name, "invoice.pdf");
+  assert.deepEqual(packet.documents[0].bytes, pdf);
+  const [entry] = JSON.parse(packet.prompt).materials;
+  assert.deepEqual(entry, {
+    materialId: material.id,
+    mimeType: "application/pdf",
+    documentIndex: 0,
+  });
 });
 test("worker rejects unconfirmed issue before touching its workspace", async () => {
   await assert.rejects(

@@ -239,6 +239,8 @@ export const issueDetail = {
     lines: "Lines {{start}}–{{end}}",
     sealedAlt: "Sealed evidence",
     download: "Download original material",
+    pdfTitle: "PDF preview: {{name}}",
+    openPdf: "Open PDF in a new tab",
     technical: "Material technical details",
     unavailable:
       "Preview unavailable for this format or size; download the original.",
@@ -397,9 +399,9 @@ export const issueDetail = {
     amendFirst:
       "Propose a criteria change first, then discuss the new completion criteria.",
     unsupportedReference:
-      "References can be text, JSON, PNG, JPEG or GIF this round; other formats cannot be given to the clarifying Agent yet.",
+      "References can be text, JSON, PDF, PNG, JPEG or GIF this round; other formats cannot be given to the clarifying Agent yet.",
     referenceTooLarge:
-      "Reference too large: images up to 25 MiB, text up to 512 KiB.",
+      "Reference too large: PDFs up to 32 MiB, images up to 25 MiB, text up to 512 KiB.",
     nothingToDiscard: "There is no draft to withdraw.",
   },
   environment: {
