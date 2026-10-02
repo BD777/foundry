@@ -100,7 +100,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转是一份显式定义（拒绝表外流转，文档与代码由测试保持一致）；准出规则 R1–R6 带版本写入审阅快照，在“最终接受”逐条显示。
 - [x] [人工介入（Blocked）](docs/issue-conversation-design.md)：执行者经 `ask_person` 向人提问或请求许可，Issue 进入 Blocked；人回答后在同一候选中继续。
 - [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。飞书话题部分已实现并以模拟事件测试，待真实群验收；CI 来源未做。
-- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（如 Codex 图像判定、PDF 等复杂材料）；采集方式通过统一接口扩展。
+- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（Codex 图像判定已完成；PDF 等复杂材料、外部依赖绑定未做）；采集方式通过统一接口扩展。
 - [x] [接受与合入](docs/issue-workflow.md#accept-and-integration)：基线前移后对齐若有冲突，在候选里由执行者解决，再重新检查并接受；旧判断与批准不复用。
 - [ ] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。
 
