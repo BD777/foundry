@@ -81,7 +81,7 @@ test("a malformed proposal still delivers the message instead of losing the turn
     '```json\n{"message":"我建议先补齐折扣边界。","proposedContent":{"goal":{"text":"x","media":[]},"inScope":[],"outOfScope":[],"constraints":[],"criteria":[]}}\n```',
   );
   assert.match(answer.message, /我建议先补齐折扣边界。/);
-  assert.match(answer.message, /没有保存/);
+  assert.match(answer.message, /was not saved/);
   assert.equal(answer.proposedContent, undefined);
   // Text that only looks like JSON is delivered as an ordinary message.
   assert.equal(

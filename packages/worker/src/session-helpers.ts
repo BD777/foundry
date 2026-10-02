@@ -2,6 +2,7 @@
  * Session helpers — file/subagent operations and session event management.
  */
 
+import { processLabels } from "@bd777/foundry-protocol";
 import {
   existsSync,
   readFileSync,
@@ -96,7 +97,8 @@ export function createSessionStatusEventFilter(): (
     const status =
       event.level === "info" &&
       !event.metadata &&
-      (event.label === "正在请求模型" || event.label === "正在压缩上下文")
+      (event.label === processLabels.requestingModel ||
+        event.label === processLabels.compactingContext)
         ? JSON.stringify([event.label, event.detail])
         : undefined;
     const duplicate = status !== undefined && status === previousStatus;
@@ -133,7 +135,7 @@ export function createResponseStreamEventIDAllocator(
       if (messageID) messageEvents.set(messageID, eventID);
       return eventID;
     }
-    if (responseStreamOpen && label !== "正在请求模型") {
+    if (responseStreamOpen && label !== processLabels.requestingModel) {
       responseStreamOrdinal += 1;
       responseStreamOpen = false;
     }

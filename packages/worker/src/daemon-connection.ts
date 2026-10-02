@@ -1,3 +1,4 @@
+import { processLabels } from "@bd777/foundry-protocol";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { ServiceHost } from "./service.js";
 import {
@@ -525,9 +526,9 @@ async function executeAgentSession(
   // waiting), not running. Any other progress — including the next response
   // stream after the retry — clears the marker.
   let markedBlocked = false;
-  const blockOnRateLimitLabels = new Set([
-    "模型限流，等待重试",
-    "模型请求重试",
+  const blockOnRateLimitLabels = new Set<string>([
+    processLabels.rateLimited,
+    processLabels.modelRetry,
   ]);
 
   const emit = async (

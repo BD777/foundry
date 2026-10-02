@@ -1,3 +1,4 @@
+import { processLabels } from "@bd777/foundry-protocol";
 import type { SessionEventEmitter } from "./session-state.js";
 import { SessionOutputFiles } from "./session-output-files.js";
 import { sessionInputDirectory } from "./session-artifacts.js";
@@ -678,7 +679,13 @@ export async function runCodexWorkspaceSession(
           if (text && text !== finalResult) {
             const message = sdkResponseMessage(event, text);
             if (message.kind === "commentary") {
-              await emit("过程", text, undefined, undefined, message);
+              await emit(
+                processLabels.commentary,
+                text,
+                undefined,
+                undefined,
+                message,
+              );
             } else {
               finalResult = text;
               await emit(
@@ -1181,8 +1188,8 @@ export async function handleActiveClaudeMessage(
       turn.finalResult || "Claude Agent SDK completed without a text response.";
     if (turn.openTaskIds.size > 0) {
       await turn.emit(
-        "等待后台任务",
-        `仍有 ${turn.openTaskIds.size} 个后台任务；当前结果是中间结果，Foundry 将等待主 agent 续跑。`,
+        processLabels.waitingBackgroundTasks,
+        `${turn.openTaskIds.size} background task(s) are still open; this result is intermediate, and Foundry waits for the main agent to continue.`,
       );
       // A result in streaming-input mode ends one model turn, not necessarily
       // the Foundry turn. Clear the text accumulator so the continuation's

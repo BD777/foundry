@@ -10,6 +10,7 @@ import type {
   AgentSessionEventMetadata,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
+import { processLabels } from "@bd777/foundry-protocol";
 
 export class ClaudeAgentTurnError extends Error {
   readonly subtype: string;
@@ -116,7 +117,7 @@ export function claudeAgentResultError(
     const turnLabel = numTurns ? ` (${numTurns})` : "";
     return new ClaudeAgentTurnError(
       subtype,
-      `Claude reached the configured maximum number of turns${turnLabel}. Send "继续" to resume this chat from the same native session.`,
+      `Claude reached the configured maximum number of turns${turnLabel}. Send "continue" to resume this chat from the same native session.`,
     );
   }
   // A failed turn carries no `errors` array for API-level rejections
@@ -303,7 +304,7 @@ export function claudeProcessEvent(
   const apiError = claudeApiErrorMessage(message);
   if (apiError) {
     return {
-      label: "执行失败",
+      label: processLabels.sessionFailed,
       detail: apiError.text || apiError.code,
       level: "error",
     };
@@ -317,11 +318,11 @@ export function claudeProcessEvent(
       typeof record.elapsed_time_seconds === "number"
         ? ` · ${Math.round(record.elapsed_time_seconds)}s`
         : "";
-    return { label: "正在使用工具", detail: `${name}${elapsed}` };
+    return { label: processLabels.usingTool, detail: `${name}${elapsed}` };
   }
   if (record.type === "tool_use_summary") {
     return {
-      label: "已使用工具",
+      label: processLabels.usedTool,
       detail: sdkString(record.summary) || "Tool completed.",
     };
   }
@@ -336,7 +337,7 @@ export function claudeProcessEvent(
           .join("\n")
       : "";
     return {
-      label: "执行失败",
+      label: processLabels.sessionFailed,
       detail:
         errors ||
         sdkString(record.result) ||
@@ -375,34 +376,38 @@ export function claudeSystemProcessEvent(
       const detail = [
         status && status >= 100 && status <= 599
           ? `HTTP ${status}`
-          : "模型请求暂未成功",
+          : "Model request did not succeed yet",
         attempt
-          ? `第 ${attempt}${maximum ? `/${maximum}` : ""} 次重试`
-          : "正在重试",
-        delay !== undefined ? `${delay} 秒后继续` : undefined,
+          ? `Retry ${attempt}${maximum ? `/${maximum}` : ""}`
+          : "Retrying",
+        delay !== undefined ? `continuing in ${delay}s` : undefined,
       ]
         .filter(Boolean)
-        .join("；");
+        .join(" · ");
       return {
-        label: status === 429 ? "模型限流，等待重试" : "模型请求重试",
+        label:
+          status === 429 ? processLabels.rateLimited : processLabels.modelRetry,
         detail,
         level: "warning",
       };
     }
     case "status":
       if (record.status === "requesting") {
-        return { label: "正在请求模型", detail: "Claude 正在生成响应。" };
+        return {
+          label: processLabels.requestingModel,
+          detail: "Claude is generating a response.",
+        };
       }
       if (record.status === "compacting") {
         return {
-          label: "正在压缩上下文",
-          detail: "Claude 正在整理会话上下文。",
+          label: processLabels.compactingContext,
+          detail: "Claude is compacting the conversation context.",
         };
       }
       return undefined;
     case "task_started":
       return {
-        label: "正在启动子任务",
+        label: processLabels.startingSubtask,
         detail: sdkString(record.description) || "Subtask started.",
         metadata: {
           prompt: sdkString(record.prompt) || undefined,
@@ -414,7 +419,7 @@ export function claudeSystemProcessEvent(
       };
     case "task_progress":
       return {
-        label: "子任务进行中",
+        label: processLabels.subtaskRunning,
         detail:
           sdkString(record.summary) ||
           sdkString(record.description) ||
@@ -429,7 +434,9 @@ export function claudeSystemProcessEvent(
     case "task_notification":
       const taskFailed = record.status !== "completed";
       return {
-        label: taskFailed ? "子任务失败" : "子任务完成",
+        label: taskFailed
+          ? processLabels.subtaskFailed
+          : processLabels.subtaskCompleted,
         detail: sdkString(record.summary) || "Subtask finished.",
         level: taskFailed ? "error" : "info",
         metadata: {
@@ -441,7 +448,7 @@ export function claudeSystemProcessEvent(
       };
     case "permission_denied":
       return {
-        label: "权限被拒绝",
+        label: processLabels.permissionDenied,
         detail:
           sdkString(record.message) ||
           sdkString(record.tool_name) ||
@@ -450,12 +457,12 @@ export function claudeSystemProcessEvent(
       };
     case "notification":
       return {
-        label: "过程提示",
+        label: processLabels.notice,
         detail: sdkString(record.text) || "Claude notification.",
       };
     case "informational":
       return {
-        label: "过程提示",
+        label: processLabels.notice,
         detail: sdkString(record.content) || "Claude notification.",
         level: record.level === "warning" ? "warning" : "info",
       };
@@ -492,7 +499,10 @@ export function claudeStreamProcessEvent(
   const record = event as Record<string, unknown>;
   const eventType = sdkString(record.type);
   if (eventType === "message_start") {
-    return { label: "正在思考", detail: "Claude 正在处理请求。" };
+    return {
+      label: processLabels.thinking,
+      detail: "Claude is processing the request.",
+    };
   }
   if (eventType === "content_block_start") {
     return claudeContentBlockProcessEvent(record.content_block, false);
@@ -500,7 +510,7 @@ export function claudeStreamProcessEvent(
   if (eventType === "compaction_delta") {
     const detail =
       sdkString(record.content) || sdkString(record.delta) || "compacting";
-    return { label: "正在压缩上下文", detail };
+    return { label: processLabels.compactingContext, detail };
   }
   return undefined;
 }
@@ -516,33 +526,33 @@ export function claudeContentBlockProcessEvent(
   const type = sdkString(record.type);
   if (type === "tool_use" || type === "server_tool_use") {
     return {
-      label: done ? "已使用工具" : "正在使用工具",
+      label: done ? processLabels.usedTool : processLabels.usingTool,
       detail: claudeToolUseDetail(record),
       message: {
         id: sdkString(record.id),
         kind: "tool",
         callId: sdkString(record.id) || undefined,
         status: done ? "completed" : "running",
-        title: done ? "已使用工具" : "正在使用工具",
+        title: done ? processLabels.usedTool : processLabels.usingTool,
         text: claudeToolUseDetail(record),
       },
     };
   }
   if (type.includes("thinking")) {
     return {
-      label: done ? "思考完成" : "正在思考",
+      label: done ? processLabels.thought : processLabels.thinking,
       detail:
         sdkString(record.thinking) ||
         sdkString(record.text) ||
-        "Claude 正在整理思路。",
+        "Claude is thinking.",
       message: {
         id: sdkString(record.id),
         kind: "reasoning",
-        title: done ? "思考完成" : "正在思考",
+        title: done ? processLabels.thought : processLabels.thinking,
         text:
           sdkString(record.thinking) ||
           sdkString(record.text) ||
-          "Claude 正在整理思路。",
+          "Claude is thinking.",
       },
     };
   }
@@ -775,7 +785,10 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
   const record = event as Record<string, unknown>;
   const eventType = typeof record.type === "string" ? record.type : "";
   if (eventType === "turn.started") {
-    return { label: "正在思考", detail: "模型正在处理请求。" };
+    return {
+      label: processLabels.thinking,
+      detail: "The model is processing the request.",
+    };
   }
   if (eventType === "turn.completed") {
     return undefined;
@@ -783,7 +796,7 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
   if (eventType === "turn.failed" || eventType === "error") {
     const detail =
       sdkString(record.error) || sdkString(record.message) || "Turn failed.";
-    return { label: "执行失败", detail, level: "error" };
+    return { label: processLabels.sessionFailed, detail, level: "error" };
   }
   if (!eventType.startsWith("item.")) {
     return undefined;
@@ -801,46 +814,48 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
   switch (itemType) {
     case "reasoning":
       return {
-        label: done ? "思考完成" : "正在思考",
-        detail: sdkString(itemRecord.text) || "模型正在整理思路。",
+        label: done ? processLabels.thought : processLabels.thinking,
+        detail: sdkString(itemRecord.text) || "The model is thinking.",
       };
     case "web_search":
       return {
-        label: done ? "已搜索" : "正在搜索",
+        label: done ? processLabels.searched : processLabels.searching,
         detail: sdkString(itemRecord.query) || "Web search",
       };
     case "command_execution":
       return {
-        label: done ? "已执行命令" : "正在执行命令",
+        label: done ? processLabels.ranCommand : processLabels.runningCommand,
         detail: sdkCommandDetail(itemRecord, done),
         level: itemRecord.status === "failed" ? "error" : "info",
       };
     case "mcp_tool_call":
       return {
-        label: done ? "已使用工具" : "正在使用工具",
+        label: done ? processLabels.usedTool : processLabels.usingTool,
         detail: sdkToolCallDetail(itemRecord, done),
         level: itemRecord.status === "failed" ? "error" : "info",
       };
     case "file_change":
       return {
-        label: done ? "已编辑文件" : "正在编辑文件",
+        label: done ? processLabels.editedFile : processLabels.editingFile,
         detail: sdkFileChangeDetail(itemRecord),
         level: itemRecord.status === "failed" ? "error" : "info",
       };
     case "todo_list":
       return {
-        label: "更新计划",
+        label: processLabels.updatedPlan,
         detail: sdkTodoListDetail(itemRecord),
       };
     case "error":
       return {
-        label: "过程提示",
+        label: processLabels.notice,
         detail: sdkString(itemRecord.message) || "Non-fatal SDK item.",
         level: "warning",
       };
     default:
       return {
-        label: done ? "已处理步骤" : "正在处理步骤",
+        label: done
+          ? processLabels.processedStep
+          : processLabels.processingStep,
         detail: truncateForEvent(safeJSONString(itemRecord)),
       };
   }

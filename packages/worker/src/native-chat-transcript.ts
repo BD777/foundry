@@ -1,3 +1,4 @@
+import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { codexTranscriptRecord } from "./transcript-adapters/codex.js";
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
@@ -65,7 +66,7 @@ export function nativeChatTranscript(
     messages.push({
       id: "unloaded-tail",
       kind: "boundary",
-      text: "本地会话较大，当前仅载入前段记录，后续内容尚未载入。",
+      text: processLabels.transcriptTailUnloaded,
     });
   return messages;
 }

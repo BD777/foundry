@@ -47,8 +47,8 @@ test("Claude API throttling is visible without finishing the active run or leaki
     });
     assert.deepEqual(events, [
       {
-        label: "模型限流，等待重试",
-        detail: "HTTP 429；第 3/10 次重试；30 秒后继续",
+        label: "Rate limited, waiting to retry",
+        detail: "HTTP 429 · Retry 3/10 · continuing in 30s",
         level: "warning",
       },
     ]);
@@ -81,8 +81,8 @@ test("Claude retry events tolerate absent or invalid SDK metadata", () => {
     error: "private",
   });
   assert.deepEqual(event, {
-    label: "模型请求重试",
-    detail: "模型请求暂未成功；正在重试",
+    label: "Model request retry",
+    detail: "Model request did not succeed yet · Retrying",
     level: "warning",
   });
   assert.equal(
@@ -93,6 +93,6 @@ test("Claude retry events tolerate absent or invalid SDK metadata", () => {
       error_status: 503,
       retry_delay_ms: 1501,
     }).detail,
-    "HTTP 503；第 1 次重试；2 秒后继续",
+    "HTTP 503 · Retry 1 · continuing in 2s",
   );
 });
