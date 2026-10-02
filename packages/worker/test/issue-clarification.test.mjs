@@ -149,6 +149,31 @@ test("judgment shape is aligned without changing what was judged", () => {
     { evidenceId: "ev_x", materialId: "mat_unknown" },
   ]);
   assert.equal(aligned.verdict, "pass");
+  // Unmet requirements name the criterion's requirements: the criterion's
+  // own id means all of them, and an unknown id is dropped.
+  const criterion = {
+    id: "shout-coverage",
+    evidenceRequirements: [{ id: "req_a" }, { id: "req_b" }],
+  };
+  assert.deepEqual(
+    normalizeVerificationShape(
+      {
+        verdict: "inconclusive",
+        unmetRequirementIds: ["shout-coverage", "nope"],
+      },
+      evidence,
+      criterion,
+    ).unmetRequirementIds,
+    ["req_a", "req_b"],
+  );
+  assert.deepEqual(
+    normalizeVerificationShape(
+      { verdict: "fail", unmetRequirementIds: ["req_b"] },
+      evidence,
+      criterion,
+    ).unmetRequirementIds,
+    ["req_b"],
+  );
 });
 
 test("a clarification turn reads its references as files, read-only in the workspace", async () => {

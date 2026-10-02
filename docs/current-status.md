@@ -64,8 +64,10 @@ that reopened it.
 
 End-to-end runs of this loop with real Claude sessions were recorded on
 2026-09-11/12 and at the 2026-09-18 merge; they are dated history, not a claim
-that every path passes today. A full real-Codex image judgment has not been
-completed.
+that every path passes today. On 2026-10-02 the whole loop ran with real Codex
+on Linux (clarification, execution, a program check and an independent Codex
+judgment that read the candidate and ran its tests, Accept, integration); a
+real-Codex image judgment has not been completed.
 
 ## Current Features
 
