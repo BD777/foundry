@@ -176,6 +176,11 @@ function buildProfile(scratchRoot, extraDenies = []) {
 
 function childEnvironment(scratchTmp, scratchState) {
   const env = { ...process.env };
+  // A run inside a Foundry session (an Issue's executor) must not hand that
+  // session's FOUNDRY_* settings to the tests: they set their own, and an
+  // inherited session root or binary points them at the session's files.
+  for (const key of Object.keys(env))
+    if (key.startsWith("FOUNDRY_")) delete env[key];
   // Fixed before Node starts: module-load-time path constants land in scratch.
   env.FOUNDRY_STATE_ROOT = scratchState;
   // Everything that honors TMPDIR (incl. spawned children) lands in scratch.

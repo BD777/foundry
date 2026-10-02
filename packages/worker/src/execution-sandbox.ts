@@ -151,5 +151,8 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
     TMP: temp,
     TEMP: temp,
     FOUNDRY_EXECUTION_SESSION_ROOT: resolve(scratch, "sessions"),
+    // The person's claude.ai connectors (mail, drive, calendar) are outside
+    // the Issue; an execution reaches only its candidate and Foundry's tools.
+    ENABLE_CLAUDEAI_MCP_SERVERS: "false",
   };
 }

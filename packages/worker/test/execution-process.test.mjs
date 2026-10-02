@@ -98,6 +98,8 @@ test(
       });
     }
     write(resolve(env.cwd, "good.txt"));
+    // The person's claude.ai connectors stay outside the Issue.
+    assert.equal(executorEnvironment(env).ENABLE_CLAUDEAI_MCP_SERVERS, "false");
     assert.throws(() => write(resolve(source, "AGENTS.md")));
     assert.throws(() => write(resolve(source, ".git/config")));
     assert.throws(() => write(resolve(env.cwd, ".git")));
