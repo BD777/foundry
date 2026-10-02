@@ -280,7 +280,10 @@ func (s *Store) recordClarificationProposal(ctx context.Context, issue *store.Is
 		return "", err
 	}
 	if issue.DraftContractRevision == nil || *issue.DraftContractRevision != pending.Revision || draft.Status != "draft" || draft.ContentDigest != pending.ContentDigest {
-		return reply + "\n\n（标准在我回复期间被修改过，这版草案没有保存；请看看最新的标准，需要的话再告诉我。）", nil
+		if writtenInChinese(reply) {
+			return reply + "\n\n（标准在我回复期间被修改过，这版草案没有保存；请看看最新的标准，需要的话再告诉我。）", nil
+		}
+		return reply + "\n\n(The criteria changed while I was replying, so this draft was not saved; please look at the latest criteria and tell me if anything should change.)", nil
 	}
 	if err := s.resolveCheckerDigests(ctx, *issue, &content); err != nil {
 		return "", err

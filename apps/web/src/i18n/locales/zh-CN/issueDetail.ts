@@ -347,6 +347,14 @@ export const issueDetail: Translation<typeof en> = {
     basis: "本次整理依据",
     confirm: "确认标准并开始",
   },
+  contractRecords: {
+    readUploads: "请阅读我上传的参考，帮助明确目标和完成标准。",
+    referencesAdded: "用户在主对话中提供参考材料；不是执行结果证据。",
+    clarifyStarted: "根据原始输入开始澄清，不授权执行。",
+    clarifyAddition: "主对话补充：{{message}}",
+    adjustStarted: "用户选择调整完成标准；保持旧版本待新草案确认。",
+    adjustWithdrawn: "用户撤回本次标准调整，保留上一版已确认标准。",
+  },
   contractErrors: {
     busy: "上一项操作还在处理中，请稍候。",
     savedNotRefreshed:

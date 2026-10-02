@@ -106,9 +106,7 @@ export function useIssueContract(
     if (!draft)
       throw new Error(i18n.t("issueDetail:contractErrors.amendFirst"));
     const message =
-      text.trim() ||
-      // i18n-ignore: the message the clarifying Agent receives for bare uploads
-      "请阅读我上传的参考，帮助明确目标和完成标准。";
+      text.trim() || i18n.t("issueDetail:contractRecords.readUploads");
     const signature = JSON.stringify([message, selected.map((a) => a.id)]);
     await perform(async () => {
       setPendingText(message);
@@ -127,9 +125,9 @@ export function useIssueContract(
             ? {
                 input: {
                   baseRevision: draft.revision,
-                  changeReason:
-                    // i18n-ignore: contract history recorded on the server
-                    "用户在主对话中提供参考材料；不是执行结果证据。",
+                  changeReason: i18n.t(
+                    "issueDetail:contractRecords.referencesAdded",
+                  ),
                   content: {
                     ...contractContent(draft),
                     goal: {
@@ -166,10 +164,10 @@ export function useIssueContract(
         attempt.draft,
         message,
         initial
-          ? // i18n-ignore: clarification reason recorded on the server
-            "根据原始输入开始澄清，不授权执行。"
-          : // i18n-ignore: clarification reason recorded on the server
-            `主对话补充：${message.slice(0, 1000)}`,
+          ? i18n.t("issueDetail:contractRecords.clarifyStarted")
+          : i18n.t("issueDetail:contractRecords.clarifyAddition", {
+              message: message.slice(0, 1000),
+            }),
         attempt.key,
       );
       pending.current = undefined;
@@ -290,8 +288,7 @@ export function useIssueContract(
           {
             baseRevision: latest.revision,
             content: contractContent(confirmed ?? latest),
-            // i18n-ignore: contract history recorded on the server
-            changeReason: "用户选择调整完成标准；保持旧版本待新草案确认。",
+            changeReason: i18n.t("issueDetail:contractRecords.adjustStarted"),
           },
           crypto.randomUUID(),
         );
@@ -305,8 +302,7 @@ export function useIssueContract(
         return discardContract(
           issue.id,
           draft,
-          // i18n-ignore: contract history recorded on the server
-          "用户撤回本次标准调整，保留上一版已确认标准。",
+          i18n.t("issueDetail:contractRecords.adjustWithdrawn"),
           `discard-${draft.id}`,
         );
       }),
