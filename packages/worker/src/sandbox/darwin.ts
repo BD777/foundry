@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { canonical } from "../paths.js";
+import { canonical, within } from "../paths.js";
 import {
   commandReadRoots,
   executableReadRoots,
@@ -94,6 +94,16 @@ function writableTree(
     ...deniedReads.map(
       (path) => `(deny file-read-data (subpath ${quote(path)}))`,
     ),
+    // An installed worker runs from inside its own state directory
+    // (~/.foundry/runtime): its code stays readable, and nothing else there.
+    ...(deniedReads.some((path) => within(path, runtime))
+      ? [
+          `(allow file-read-data (subpath ${quote(runtime)}))`,
+          ...deniedReads
+            .filter((path) => path !== runtime && within(runtime, path))
+            .map((path) => `(deny file-read-data (subpath ${quote(path)}))`),
+        ]
+      : []),
     // Re-allow only the named read-only trees under protected state.
     ...profile.protectedReadRoots.map(
       (path) => `(allow file-read-data (subpath ${quote(path)}))`,

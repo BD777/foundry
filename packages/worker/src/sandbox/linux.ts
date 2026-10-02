@@ -157,6 +157,14 @@ function hostMounts(
       mounts.push("--tmpfs", path);
       masks.push(path);
     }
+  // An installed worker runs from inside its own state directory
+  // (~/.foundry/runtime): show its code again over the empty state.
+  if (options.runtime && masks.some((mask) => within(mask, runtime))) {
+    mounts.push("--ro-bind", runtime, runtime);
+    for (const mask of masks)
+      if (mask !== runtime && within(runtime, mask))
+        mounts.push("--tmpfs", mask);
+  }
   // Merged-/usr distributions make /bin, /lib and /lib64 symlinks into
   // /usr. Only the targets are mounted above, so recreate the links: the
   // ELF interpreter is addressed as /lib64/ld-linux-*.so.

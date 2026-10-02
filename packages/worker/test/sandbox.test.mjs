@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -12,7 +13,7 @@ import {
 } from "node:fs";
 import { get as httpGet, createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -470,6 +471,101 @@ test(
     const result = run(launch, root);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), "0");
+  },
+);
+
+/**
+ * An installed worker runs from ~/.foundry/runtime, inside the state the
+ * sandbox hides. Its own code must stay readable; the rest of the state not.
+ * The checkout's parent stands in for that state directory here.
+ */
+function runtimeInsideState(t) {
+  const state = dirname(runtimeRoot);
+  const previous = {
+    HOME: process.env.HOME,
+    FOUNDRY_STATE_ROOT: process.env.FOUNDRY_STATE_ROOT,
+  };
+  // The executor reads the person's files, so the state is visible inside
+  // the mounted home unless the sandbox masks it.
+  process.env.HOME = dirname(state);
+  process.env.FOUNDRY_STATE_ROOT = state;
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+  });
+  const sibling = readdirSync(state).find(
+    (name) => join(state, name) !== runtimeRoot,
+  );
+  return { state, sibling: sibling && join(state, sibling) };
+}
+
+test(
+  "Linux writable tree keeps an installed runtime readable inside hidden state",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const root = scratch(t);
+    const { sibling } = runtimeInsideState(t);
+    const launch = linuxBackend(t, () =>
+      sandboxLaunch(
+        {
+          kind: "writable_tree",
+          policyFile: join(root, "executor.sb"),
+          workdir: root,
+          readRoots: [],
+          writeRoots: [root],
+          protectedReadRoots: [],
+          readOnlyDirectories: [],
+          readOnlyPaths: [],
+          connectSockets: [],
+          executables: [],
+          userFiles: "readable",
+        },
+        "/bin/sh",
+        [
+          "-c",
+          `test -f '${runtimeRoot}/packages/worker/dist/session/host-child.js' && ! test -e '${sibling ?? "/nonexistent"}'`,
+        ],
+      ),
+    );
+    if (!launch) return;
+    const result = run(launch, root);
+    assert.equal(result.status, 0, result.stderr);
+  },
+);
+
+test(
+  "macOS writable tree keeps an installed runtime readable inside hidden state",
+  { skip: process.platform !== "darwin" },
+  (t) => {
+    const root = scratch(t);
+    const { state } = runtimeInsideState(t);
+    const policyFile = join(root, "executor.sb");
+    seatbeltBackend.launch(
+      {
+        kind: "writable_tree",
+        policyFile,
+        workdir: root,
+        readRoots: [],
+        writeRoots: [root],
+        protectedReadRoots: [],
+        readOnlyDirectories: [],
+        readOnlyPaths: [],
+        connectSockets: [],
+        executables: [],
+        userFiles: "readable",
+      },
+      "/bin/echo",
+      ["hi"],
+    );
+    const rules = readFileSync(policyFile, "utf8").split("\n");
+    const denied = rules.indexOf(
+      `(deny file-read-data (subpath ${JSON.stringify(state)}))`,
+    );
+    const allowed = rules.lastIndexOf(
+      `(allow file-read-data (subpath ${JSON.stringify(runtimeRoot)}))`,
+    );
+    assert.ok(denied >= 0 && allowed > denied, "the runtime is allowed last");
   },
 );
 
