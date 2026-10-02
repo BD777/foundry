@@ -340,6 +340,69 @@ func TestRefreshDeviceResourcesRoundTrip(t *testing.T) {
 	}
 }
 
+// Re-checking a native login also refreshes the device's agents: a row that
+// said the CLI was missing turns healthy once it has been installed.
+func TestInspectNativeAccountRefreshesAgents(t *testing.T) {
+	db := newEmptyTestStore(t)
+	ctx := context.Background()
+	agent := func(status string) []store.AgentProjection {
+		return []store.AgentProjection{{
+			ID: "agent_cli", WorkspaceID: "ws_cli", DeviceID: "dev_cli", Provider: "claude", Status: status,
+			AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+		}}
+	}
+	registration := store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_cli", Label: "Linux", Status: "connected", LastSeenLabel: "online"},
+		Workspace: store.WorkspaceProjection{ID: "ws_cli", Name: "W", LocalPath: t.TempDir(), Baseline: "main"},
+		Agents:    agent("unavailable"),
+	}
+	server := NewServer(db)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(live.URL, "http")+"/api/daemon/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	writeWSForTest(t, conn, "hello", registration)
+	readWSTypeForTest(t, conn, "registered")
+
+	type outcome struct {
+		value store.NativeAccountInspection
+		err   error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		value, err := server.hub.InspectNativeAccount(ctx, "dev_cli", "claude", "")
+		done <- outcome{value, err}
+	}()
+	var request struct {
+		Runtime string `json:"runtime"`
+	}
+	id := readWSPayloadEnvelopeForTest(t, conn, "inspect_native_account", &request)
+	if request.Runtime != "claude" {
+		t.Fatalf("request = %+v", request)
+	}
+	registration.Agents = agent("healthy")
+	writeWSIDForTest(t, conn, id, "native_account_inspected", map[string]any{
+		"registration": registration, "result": map[string]any{"runtime": "claude", "status": "local_login"},
+	})
+	if result := <-done; result.err != nil || result.value.Runtime != "claude" {
+		t.Fatalf("inspect = %+v, %v", result.value, result.err)
+	}
+	agents, err := db.ListAgents(ctx, "ws_cli", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(agents) != 1 || agents[0].Status != "healthy" {
+		t.Fatalf("stored agents = %+v", agents)
+	}
+	if _, err := server.hub.InspectNativeAccount(ctx, "dev_missing", "claude", ""); err != store.ErrNotFound {
+		t.Fatalf("offline device: %v, want ErrNotFound", err)
+	}
+}
+
 // An Issue execution orphaned by a worker restart recovers like any session:
 // the device is asked, and its recorded Issue result completes the Issue.
 func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {

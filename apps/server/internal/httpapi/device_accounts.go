@@ -29,28 +29,44 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	s.hub.mu.Lock()
-	connection := s.hub.connections[deviceID]
-	s.hub.mu.Unlock()
-	if connection == nil {
+	result, err := s.hub.InspectNativeAccount(r.Context(), deviceID, runtime, input.Source)
+	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusConflict, "device disconnected")
 		return
+	}
+	writeResult(w, result, err)
+}
+
+// InspectNativeAccount asks a device which native login a runtime would use.
+// The device answers with a fresh registration too, so its agents stop
+// showing a status from before, say, the CLI was installed.
+func (h *DaemonHub) InspectNativeAccount(ctx context.Context, deviceID, runtime, source string) (store.NativeAccountInspection, error) {
+	connection := h.connectionFor(deviceID)
+	if connection == nil {
+		return store.NativeAccountInspection{}, store.ErrNotFound
 	}
 	payload, err := json.Marshal(struct {
 		Runtime string `json:"runtime"`
 		Source  string `json:"source,omitempty"`
-	}{runtime, input.Source})
+	}{runtime, source})
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return store.NativeAccountInspection{}, err
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
-	result, err := daemonRequest[wsNativeAccountInspectionResult](ctx, connection, wsInspectNativeAccountType, payload)
-	if err == nil && result.Error != "" {
-		err = errors.New(result.Error)
+	value, err := daemonRequest[wsNativeAccountInspectionResult](ctx, connection, wsInspectNativeAccountType, payload)
+	if err != nil {
+		return store.NativeAccountInspection{}, err
 	}
-	writeResult(w, result.Result, err)
+	if value.Error != "" {
+		return store.NativeAccountInspection{}, errors.New(value.Error)
+	}
+	if value.Registration.Device.ID != "" {
+		if err := connection.syncRegistration(value.Registration); err != nil {
+			return store.NativeAccountInspection{}, err
+		}
+	}
+	return value.Result, nil
 }
 
 // An account belongs to a native runtime on a specific device. Starting login
