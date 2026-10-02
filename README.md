@@ -62,7 +62,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：每个 Workspace 配置自己的 Bot 并配对群，群内话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
 - [x] [账号与 Workspace 共享](docs/security.md#accounts)：所有接口要求登录，设备凭证与资源归属，按 Viewer / Member / Maintainer / Owner 共享 Workspace。
 - [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
-- [x] Issue 引擎：准出条件 → 候选执行 → 证据与验证 → 接受 → 合入已在主干并有历史闭环记录；macOS 与 Linux 均可执行、澄清、判定与合入（Linux 暂不支持受控 HTTP 目标），Web 入口在体验打磨完成前暂时隐藏。
+- [x] [Issues](docs/issue-workflow.md)：在主聊天里与只读的澄清 Agent 定下完成标准并确认，执行者在候选 Worktree 中实现（可派出协作会话），系统采集证据、程序检查与独立 Agent 判定，人接受后合入 Workspace；Claude 与 Codex 均已按[准出标准](docs/foundry-conversation-release-gate.md)完成真实浏览器闭环；macOS 与 Linux 均可运行。
 
 ### M1 执行内核（已完成）
 
@@ -81,24 +81,27 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [会话模型](docs/session-model.md)：一个会话就是一个原生会话，续聊是追加输入；同一 Workspace 内的 Agent 可操作任意会话，血缘只作记录。
 - 推迟：HTTP MCP 的 OAuth 2.1，等出现 Foundry 之外的远程 Agent 时再做。
 
-### M3 资源与跨设备
+### M3 资源与跨设备（已完成）
 
-- [ ] [Resource Pool 与 Tool Use](docs/tool-use-and-resources.md#basic-tool-use)：浏览器、桌面（Computer Use）、模拟器与真机、端口与服务、内部 Infra 统一走“申请 → 使用 → 释放 → 清理”，同时采集证据；首个接入浏览器，以 Chat 中的 Agent 申请浏览器并截图作为验收。
-- [ ] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备，每次调用按 policy 授权。
+- [x] [Resource Pool](docs/tool-use-and-resources.md#basic-tool-use)：设备上的浏览器被发现、列出（MCP `list_resources` 与设备页）、按会话租用并回收；以 Chat 中的 Agent 申请浏览器并截图验收。桌面、模拟器、真机等其他资源以后接入同一生命周期。
+- [x] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备。
 
-### M4 Issue Loop
+### M4 Issue Loop（已完成）
 
-Issue 是建在内核之上的编排层，放在内核之后做；开始前先按 Issue 的需求重新审视内核缺什么（见[模块化架构 §6](docs/architecture-modules.md#6-m4-issue-loop-的待决项)）。
+按[模块化架构 §6 的决定 D1](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)，M4 交付[对话式准出标准](docs/foundry-conversation-release-gate.md) G1–G5 的真实浏览器闭环与 Issue 内编排；其余各项移到 M5。
 
-- [ ] [Issue 内编排与统一会话记录](docs/architecture-modules.md#54-迁移顺序)：Issue 执行改为 AgentSession 并接入 `foundry` MCP，执行 Agent 可派出子会话与独立 verifier，血缘与证据归属可追溯。
-- [ ] [澄清与判定的角色策略](docs/architecture-modules.md#6-m4-issue-loop-的待决项)：决定是否保留独立的阶段会话入口，以及判定者可用的 Skills 与只读 MCP。
+- [x] [Issue 内编排与统一会话记录](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)：执行与澄清都是 Issue 的会话；执行者只能在本 Issue 内派出协作会话；Issue 页列出参与的全部会话与派出关系，点开可查看记录。
+- [x] [澄清与判定的角色策略](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)：澄清是续接上下文的只读会话（项目指令、选定 Skills、只读 foundry 工具）；判定是全新只读会话，可用选定 Skills，无 MCP、无令牌。
+- [x] [准出条件](docs/issue-workflow.md#issues)：Agent 结合 Workspace 起草，人确认准确版本；修改须写明理由并重新确认。
+- [x] [Issue Web 体验](docs/issue-workflow.md#issues)：Issues 入口重新开放；Board、详情与 Issue 对话按准出标准用真实 Claude 与 Codex 完成闭环验收。
+
+### M5 Issue 流程扩展
+
 - [ ] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转收敛为一份显式定义；准出规则带编号与版本并写入审阅快照，可在实践中扩充。
-- [ ] [准出条件](docs/issue-workflow.md#issues)：Agent 结合 Workspace 上下文起草、人修改并确认具体版本；修改须写明理由并重新确认。
 - [ ] [人工介入（Blocked）](docs/issue-conversation-design.md)：通用的提问与权限应答协议，回应后继续同一个 Issue。
 - [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。
-- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（含 Linux 上的受控 HTTP 目标）；采集方式通过统一接口扩展。
+- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（如 Codex 图像判定、PDF 等复杂材料）；采集方式通过统一接口扩展。
 - [ ] [接受与合入](docs/issue-workflow.md#accept-and-integration)：打磨 Merge Queue 的冲突解决与复验。
-- [ ] [Issue Web 体验](docs/issue-workflow.md#issues)：重新开放 Issues 入口，打磨 Board、详情与 Issue 对话；按[准出标准](docs/foundry-conversation-release-gate.md)做真实浏览器闭环验收。
 - [ ] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。
 
 ### 并行轨道
