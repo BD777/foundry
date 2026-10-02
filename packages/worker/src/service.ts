@@ -336,14 +336,27 @@ export function serviceInstalled(): boolean {
  * is the app's child, so removing or restarting the launchd job alone would
  * leave it running; the daemon lock names its process.
  */
-export async function stopDaemonProcess(): Promise<void> {
+/** The pid of this stack's running daemon, from its lock, if it is alive. */
+function runningDaemonPid(): number | undefined {
   let pid: number;
   try {
     pid = Number(readFileSync(foundryStatePath("daemon.lock"), "utf8"));
   } catch {
-    return;
+    return undefined;
   }
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return;
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid)
+    return undefined;
+  try {
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function stopDaemonProcess(): Promise<void> {
+  const pid = runningDaemonPid();
+  if (pid === undefined) return;
   const alive = () => {
     try {
       process.kill(pid, 0);
@@ -352,7 +365,6 @@ export async function stopDaemonProcess(): Promise<void> {
       return false;
     }
   };
-  if (!alive()) return;
   process.kill(pid, "SIGTERM");
   for (let i = 0; i < 50 && alive(); i++)
     await new Promise((done) => setTimeout(done, 100));
@@ -395,7 +407,13 @@ export async function reinstallService(host: ServiceHost): Promise<boolean> {
   const execStart = readFileSync(systemdUnitPath(), "utf8").match(
     /^ExecStart=(.*)$/m,
   )?.[1];
-  if (execStart) reportNotRunning(execStart);
+  if (!execStart) return false;
+  const running = runningDaemonPid();
+  if (running === undefined) reportNotRunning(execStart);
+  else
+    console.error(
+      `\nThe worker running now (pid ${running}) still uses the previous version, and there is no systemd user session to restart it.\nStop it, then start it again with:\n  ${execStart}\n`,
+    );
   return false;
 }
 
