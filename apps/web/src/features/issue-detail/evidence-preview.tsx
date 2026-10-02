@@ -29,12 +29,14 @@ export function EvidencePreview({
   const [material, setMaterial] = useState<Material>();
   const [text, setText] = useState<string>();
   const [image, setImage] = useState<string>();
+  const [pdf, setPdf] = useState<string>();
   const [error, setError] = useState("");
   useEffect(() => {
     if (!opened) return;
     setError("");
     setText(undefined);
     setImage(undefined);
+    setPdf(undefined);
     let disposed = false;
     let url: string | undefined;
     void (async () => {
@@ -46,6 +48,11 @@ export function EvidencePreview({
       if (m.mimeType.startsWith("image/")) {
         url = URL.createObjectURL(blob);
         setImage(url);
+      } else if (m.mimeType === "application/pdf") {
+        // The browser's own PDF viewer, on bytes already checked against the
+        // sealed digest; the protected URL itself never reaches the frame.
+        url = URL.createObjectURL(blob);
+        setPdf(url);
       } else {
         const content = await blob.text();
         if (disposed) return;
@@ -81,6 +88,23 @@ export function EvidencePreview({
           alt={label ?? material?.name ?? t("preview.sealedAlt")}
           className="fdy-evidence-preview-image"
         />
+      ) : null}
+      {pdf ? (
+        <div className="fdy-evidence-preview-pdf">
+          <iframe
+            className="fdy-evidence-preview-pdf-frame"
+            src={pdf}
+            title={t("preview.pdfTitle", {
+              name: label ?? material?.name ?? materialId,
+            })}
+          />
+          <Button
+            variant="secondary"
+            onClick={() => window.open(pdf, "_blank", "noopener")}
+          >
+            {t("preview.openPdf")}
+          </Button>
+        </div>
       ) : null}
       {/* React text rendering deliberately never executes Markdown/HTML/SVG. */}
       {text !== undefined ? (

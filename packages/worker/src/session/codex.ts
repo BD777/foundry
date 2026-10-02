@@ -1,3 +1,4 @@
+import { extractPdfText, pdfTextDocument } from "../pdf-text.js";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -103,9 +104,10 @@ export const codexHarness: HarnessAdapter = {
     // The SDK would write an output schema to this process's temporary
     // directory, which the sandboxed CLI cannot read; the schema travels in
     // the prompt instead and the caller parses the answer as text.
+    const prompt = `${spec.prompt.text}${await documentTexts(spec.prompt.documents ?? [])}`;
     const text = spec.responseSchema
-      ? `${spec.prompt.text}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
-      : spec.prompt.text;
+      ? `${prompt}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
+      : prompt;
     const result = await thread.run([{ type: "text", text }, ...images], {
       signal,
     });
@@ -115,3 +117,28 @@ export const codexHarness: HarnessAdapter = {
     return { text: result.finalResponse, sessionId: thread.id ?? undefined };
   },
 };
+
+/**
+ * Codex cannot read PDFs, so it gets their text, saying that layout and
+ * images are missing and what that means for a judgment.
+ */
+export async function documentTexts(
+  documents: { name: string; bytes: Buffer }[],
+): Promise<string> {
+  const sections: string[] = [];
+  for (const document of documents) {
+    let text: string;
+    try {
+      text = pdfTextDocument(
+        document.name,
+        await extractPdfText(document.bytes),
+      );
+    } catch (error) {
+      text = `No text could be extracted from ${document.name} (${error instanceof Error ? error.message : String(error)}).`;
+    }
+    sections.push(
+      `\n\n# Document ${document.name} (PDF given to you as extracted text only)\nYou cannot see this PDF's layout or images. Anything that depends on them is inconclusive, and say so in limitations.\n\n${text}`,
+    );
+  }
+  return sections.join("");
+}

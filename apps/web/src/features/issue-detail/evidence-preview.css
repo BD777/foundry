@@ -6,3 +6,17 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.fdy-evidence-preview-pdf {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.fdy-evidence-preview-pdf-frame {
+  width: 100%;
+  height: min(70vh, 640px);
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-panel);
+}

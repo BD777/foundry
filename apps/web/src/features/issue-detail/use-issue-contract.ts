@@ -19,6 +19,14 @@ import {
 import { useEvidenceUpdates } from "./use-evidence-updates";
 import { i18n } from "../../i18n";
 
+/** Images up to 25 MiB, PDFs up to 32 MiB (what Claude reads), text 512 KiB. */
+export function referenceSizeLimit(file: { name: string; type: string }) {
+  if (file.type.startsWith("image/")) return 25 * 1024 * 1024;
+  if (file.type === "application/pdf" || /\.pdf$/i.test(file.name))
+    return 32 * 1024 * 1024;
+  return 512 * 1024;
+}
+
 export function contractContent(contract: IssueContract): ContractContent {
   const { goal, inScope, outOfScope, constraints, criteria } = contract;
   return { goal, inScope, outOfScope, constraints, criteria };
@@ -209,18 +217,16 @@ export function useIssueContract(
           "image/gif",
           "text/plain",
           "application/json",
+          "application/pdf",
         ];
         if (
           !supported.includes(file.type) &&
-          !/\.(txt|md|json)$/i.test(file.name)
+          !/\.(txt|md|json|pdf)$/i.test(file.name)
         )
           throw new Error(
             i18n.t("issueDetail:contractErrors.unsupportedReference"),
           );
-        if (
-          file.size >
-          (file.type.startsWith("image/") ? 25 * 1024 * 1024 : 512 * 1024)
-        )
+        if (file.size > referenceSizeLimit(file))
           throw new Error(
             i18n.t("issueDetail:contractErrors.referenceTooLarge"),
           );

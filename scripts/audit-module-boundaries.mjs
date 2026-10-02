@@ -45,6 +45,7 @@ export const workerModules = {
       "storage",
       "utils",
       "task-scheduler",
+      "pdf-text",
     ],
   },
   device: {
@@ -82,7 +83,7 @@ export const workerModules = {
   },
   "material-store": {
     dependsOn: ["candidate-store"],
-    files: ["evidence-store", "evidence-uploads"],
+    files: ["evidence-store", "evidence-uploads", "reference-files"],
   },
   "harness-profiles": {
     dependsOn: ["device"],

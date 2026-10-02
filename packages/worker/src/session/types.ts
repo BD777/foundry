@@ -23,6 +23,11 @@ export interface SessionSpec {
   prompt: {
     text: string;
     images: { mimeType: string; bytes: Buffer }[];
+    /**
+     * PDFs, given as documents to a harness that reads them (Claude); one
+     * that cannot (Codex) gets their extracted text instead, labelled so.
+     */
+    documents?: { name: string; bytes: Buffer }[];
   };
   /** Constrain the final answer to this JSON Schema where the provider can. */
   responseSchema?: Record<string, unknown>;

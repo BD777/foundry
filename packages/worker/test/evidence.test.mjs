@@ -268,7 +268,7 @@ test("Agent packet carries actual image bytes separately from reference roles", 
   assert.match(withSkills.workspaceSkills, /ui-review/);
   assert.match(withSkills.workspaceSkills, /skills\/ui-review\/SKILL\.md/);
 });
-test("a PDF is judged from its extracted text, with that limitation stated", async (t) => {
+test("a PDF reaches the judge as the document itself", async (t) => {
   const { store } = fixture(t);
   const pdf = pdfWithPages(["Invoice total: 42 EUR"]);
   const material = store.sealMaterial("invoice.pdf", "document", pdf);
@@ -296,18 +296,15 @@ test("a PDF is judged from its extracted text, with that limitation stated", asy
     store,
   );
   assert.equal(packet.images.length, 0);
-  const body = JSON.parse(packet.prompt);
-  const [entry] = body.materials;
-  assert.equal(entry.mimeType, "application/pdf");
-  assert.match(entry.text, /Invoice total: 42 EUR/);
-  assert.match(
-    entry.limitation,
-    /Only the text extracted from this PDF was inspected/,
-  );
-  assert.match(
-    body.instruction,
-    /A material with a limitation shows only what that limitation allows/,
-  );
+  assert.equal(packet.documents.length, 1);
+  assert.equal(packet.documents[0].name, "invoice.pdf");
+  assert.deepEqual(packet.documents[0].bytes, pdf);
+  const [entry] = JSON.parse(packet.prompt).materials;
+  assert.deepEqual(entry, {
+    materialId: material.id,
+    mimeType: "application/pdf",
+    documentIndex: 0,
+  });
 });
 test("worker rejects unconfirmed issue before touching its workspace", async () => {
   await assert.rejects(

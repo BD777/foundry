@@ -213,6 +213,8 @@ export const issueDetail: Translation<typeof en> = {
     lines: "第 {{start}}–{{end}} 行",
     sealedAlt: "已封存的证据",
     download: "下载原始材料",
+    pdfTitle: "PDF 预览：{{name}}",
+    openPdf: "在新标签页打开 PDF",
     technical: "材料技术信息",
     unavailable: "这种格式或大小无法预览，请下载原文件。",
     reference: "参考{{role}}：{{caption}}",
@@ -351,8 +353,9 @@ export const issueDetail: Translation<typeof en> = {
       "操作已保存，但页面暂时未能刷新。恢复连接后会自动更新，请勿重复提交。",
     amendFirst: "请先发起标准调整，再讨论新的完成标准。",
     unsupportedReference:
-      "本轮参考支持文本、JSON、PNG、JPEG 和 GIF；其他格式暂不能交给澄清 Agent。",
-    referenceTooLarge: "参考过大：图片最多 25 MiB，文本最多 512 KiB。",
+      "本轮参考支持文本、JSON、PDF、PNG、JPEG 和 GIF；其他格式暂不能交给澄清 Agent。",
+    referenceTooLarge:
+      "参考过大：PDF 最多 32 MiB，图片最多 25 MiB，文本最多 512 KiB。",
     nothingToDiscard: "没有可撤回的草案。",
   },
   environment: {

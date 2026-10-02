@@ -243,9 +243,9 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 1. ~~Codex 真实 provider 图文初判~~ 已于 2026-10-03 完成：参考图片随合同交给执行者（只读文件，执行每轮都带上）与判定者，真实 Codex 判定实际查看图片并引用参考材料（ISS-123）。不声称完成所有媒体演示。
 2. 通用 HTTP/service/build identity、外部配置/数据/依赖/凭据版本注册与 Accept 前复核；目前支持受控本地 Node GET/HEAD 与纯文件/项目命令，`check_before_accept` 依赖未注册时拒绝接受。
 3. 自动恢复目前覆盖 collect/assess 与澄清回复（`recover_session`）；上传/对齐有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
-4. 图像区域高亮/标注、PDF/视频/音频预览、主动删除材料的影响提示。rationale media 只能作解释性 context，不作为新 Evidence。
+4. PDF 预览已于 2026-10-03 完成：浏览器内置阅读器显示已按封存摘要校验过的字节（Blob URL，受保护的接口地址不进入预览框），并可在新标签页打开或下载原件。图像区域高亮/标注、视频/音频预览暂不计划。主动删除材料的影响提示尚未做。rationale media 只能作解释性 context，不作为新 Evidence。
 5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。通用依赖安装与输入闭包尚未实现；ignored 文件存在时保守 unknown。
-6. 复杂参考材料解析（PDF/视频/音频等）尚未支持；澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
+6. PDF 参考材料与证据已于 2026-10-03 支持（最大 32 MiB），原则是把材料本身交给 Agent：澄清、执行与判定都拿到 PDF 原件，Claude 直接阅读；Codex 读不了 PDF，另给一份 pdf.js 抽取的逐页文本，并注明不含版式与图片、依赖它们的要求只能判为无法确定。视频/音频等材料暂不计划。澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
 7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标自 2026-09-28 起在 Linux 开通（服务在无网络的命名空间中，经 Unix socket 转接）；未验证平台保持拒绝。
 
 只有这些缺口收口并完成首个 provider 的全链路演示后，才应把 README 的 Evidence / Verify 能力勾为完成。
