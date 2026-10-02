@@ -98,6 +98,7 @@ export interface ChatSurfaceProps {
   onSteer?: (value: string, sessionId?: string) => Promise<boolean>;
   selectedAgentId: string;
   sendDisabled?: boolean;
+  sendDisabledReason?: string;
   sending?: boolean;
   threadKey: string;
 }

@@ -147,7 +147,7 @@ export function systemdUnitPath(): string {
   return resolve(homedir(), ".config", "systemd", "user", systemdUnitName());
 }
 
-export function bestEffort(command: string, args: string[]): void {
+export function bestEffort(command: string, args: string[]): boolean {
   const result = spawnSync(command, args, { encoding: "utf8" });
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || "").trim();
@@ -155,9 +155,14 @@ export function bestEffort(command: string, args: string[]): void {
       `Warning: ${command} ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`,
     );
   }
+  return result.status === 0;
 }
 
-export function installService(args: string[], host: ServiceHost = {}): void {
+/** Installs the login service; says whether the worker is now running. */
+export function installService(
+  args: string[],
+  host: ServiceHost = {},
+): boolean {
   const config = readDaemonConfig();
   if (!config) {
     throw new Error(
@@ -268,7 +273,7 @@ ${environmentVariablesXML()}
       bestEffort("launchctl", ["enable", `${target}/${watchdogLabel()}`]);
     }
     console.log(`Installed watchdog: ${watchdogPath}`);
-    return;
+    return !noStart;
   }
 
   if (process.platform === "linux") {
@@ -300,10 +305,18 @@ WantedBy=default.target
     );
     if (!noStart) {
       bestEffort("systemctl", ["--user", "daemon-reload"]);
-      bestEffort("systemctl", ["--user", "enable", "--now", systemdUnitName()]);
+      const started = bestEffort("systemctl", [
+        "--user",
+        "enable",
+        "--now",
+        systemdUnitName(),
+      ]);
+      if (!started) reportNotRunning(command);
+      console.log(`Installed systemd user service: ${unitPath}`);
+      return started;
     }
     console.log(`Installed systemd user service: ${unitPath}`);
-    return;
+    return false;
   }
 
   throw new Error(
@@ -323,14 +336,27 @@ export function serviceInstalled(): boolean {
  * is the app's child, so removing or restarting the launchd job alone would
  * leave it running; the daemon lock names its process.
  */
-export async function stopDaemonProcess(): Promise<void> {
+/** The pid of this stack's running daemon, from its lock, if it is alive. */
+function runningDaemonPid(): number | undefined {
   let pid: number;
   try {
     pid = Number(readFileSync(foundryStatePath("daemon.lock"), "utf8"));
   } catch {
-    return;
+    return undefined;
   }
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return;
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid)
+    return undefined;
+  try {
+    process.kill(pid, 0);
+    return pid;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function stopDaemonProcess(): Promise<void> {
+  const pid = runningDaemonPid();
+  if (pid === undefined) return;
   const alive = () => {
     try {
       process.kill(pid, 0);
@@ -339,7 +365,6 @@ export async function stopDaemonProcess(): Promise<void> {
       return false;
     }
   };
-  if (!alive()) return;
   process.kill(pid, "SIGTERM");
   for (let i = 0; i < 50 && alive(); i++)
     await new Promise((done) => setTimeout(done, 100));
@@ -352,7 +377,18 @@ export async function stopDaemonProcess(): Promise<void> {
  * can be rebuilt when its own content changed, without the old one reacting),
  * then the worker is stopped and the job installed again.
  */
-export async function reinstallService(host: ServiceHost): Promise<void> {
+/**
+ * Without a systemd user session (containers, some servers) the worker is
+ * not running; say so and how to run it.
+ */
+function reportNotRunning(command: string): void {
+  console.error(
+    `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+  );
+}
+
+/** Rewrites the service for a new runtime; says whether the worker restarted. */
+export async function reinstallService(host: ServiceHost): Promise<boolean> {
   if (process.platform === "darwin") {
     if (typeof process.getuid === "function")
       spawnSync("launchctl", [
@@ -362,11 +398,23 @@ export async function reinstallService(host: ServiceHost): Promise<void> {
       ]);
     await stopDaemonProcess();
     installService([], host);
-    return;
+    return true;
   }
   installService(["--no-start"], host);
   bestEffort("systemctl", ["--user", "daemon-reload"]);
-  bestEffort("systemctl", ["--user", "restart", systemdUnitName()]);
+  if (bestEffort("systemctl", ["--user", "restart", systemdUnitName()]))
+    return true;
+  const execStart = readFileSync(systemdUnitPath(), "utf8").match(
+    /^ExecStart=(.*)$/m,
+  )?.[1];
+  if (!execStart) return false;
+  const running = runningDaemonPid();
+  if (running === undefined) reportNotRunning(execStart);
+  else
+    console.error(
+      `\nThe worker running now (pid ${running}) still uses the previous version, and there is no systemd user session to restart it.\nStop it, then start it again with:\n  ${execStart}\n`,
+    );
+  return false;
 }
 
 export function uninstallService(): void {
@@ -404,7 +452,9 @@ export function status(): void {
   console.log(`Config: ${config ? daemonConfigPath : "not paired"}`);
   // Set when installed with `install`; a source checkout has no runtime.
   try {
-    const version = readlinkSync(foundryStatePath("runtime", "current"));
+    const version = readlinkSync(foundryStatePath("runtime", "current")).split(
+      "+",
+    )[0];
     console.log(`Installed version: ${version}`);
   } catch {
     // Not installed from npm.

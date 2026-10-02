@@ -104,26 +104,27 @@
   white-space: nowrap;
 }
 
-/* The composer action bar stays one row at every width. Compression policy:
-   below 660px the controls shrink elastically (flex + min-width:0 on their
-   public wrapper/trigger classes). The text→icon collapse for the runtime
-   controls (permissions shield, model/effort chip around the persistent
-   settings icon, agent picker) is owned by those components in 20-chat.css —
-   consumer CSS never reaches into their internal label elements. */
+/* The composer action bar stays one row at every width, and Send never leaves
+   it: the runtime controls shrink (flex + min-width:0 on their public
+   wrapper/trigger classes) whenever the row runs out of room, truncating
+   their labels. The text→icon collapse for those controls (permissions
+   shield, model/effort chip around the persistent settings icon, agent
+   picker) is owned by the components in 20-chat.css — consumer CSS never
+   reaches into their internal label elements. */
+.fdy-message-composer .fdy-chat-agent-select,
+.fdy-message-composer .fdy-chat-access-menu,
+.fdy-message-composer .fdy-chat-settings-menu {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.fdy-message-composer .fdy-chat-access-trigger,
+.fdy-message-composer .fdy-chat-settings-trigger {
+  min-width: 0;
+}
+
 @container fdy-composer (max-width: 660px) {
   .fdy-chat-toolbar-spacer {
-    min-width: 0;
-  }
-
-  .fdy-message-composer .fdy-chat-agent-select,
-  .fdy-message-composer .fdy-chat-access-menu,
-  .fdy-message-composer .fdy-chat-settings-menu {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .fdy-message-composer .fdy-chat-access-trigger,
-  .fdy-message-composer .fdy-chat-settings-trigger {
     min-width: 0;
   }
 

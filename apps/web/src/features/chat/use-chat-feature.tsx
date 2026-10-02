@@ -30,6 +30,7 @@ import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import { agentSessionNeedsDetails } from "../../lib/agent-session-events";
+import { shortUnavailableReason } from "../../lib/agent-picker";
 import {
   activeThreadSession,
   activeThreadSessionForAgent,
@@ -972,6 +973,16 @@ export function useChatFeature({
       selectedAgentId={selectedAgent?.id ?? ""}
       sendDisabled={
         !deviceOnline || !selectedAgent || selectedAgent.status !== "healthy"
+      }
+      sendDisabledReason={
+        !deviceOnline
+          ? i18n.t("agents:picker.deviceOffline")
+          : selectedAgent && selectedAgent.status !== "healthy"
+            ? shortUnavailableReason(
+                selectedAgent.status,
+                selectedAgent.statusDetail,
+              )
+            : undefined
       }
       sending={submitting}
       threadKey={`${workspaceId}:${selectedThread?.id ?? selectedChat?.id ?? "new"}`}

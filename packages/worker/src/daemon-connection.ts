@@ -103,6 +103,7 @@ import {
 } from "./issues.js";
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
+import { clearNativeLoginHealth } from "./native-login.js";
 import {
   completeProfileAuthorization,
   reapAbandonedAuthorizations,
@@ -1421,10 +1422,17 @@ function runWebSocketSession(options: {
         }
         void inspectNativeAccount(input.runtime, input.source)
           .then((result) => {
+            // The device's agent list shows the same login: refresh it with
+            // this check instead of a status cached before, say, the CLI
+            // was installed.
+            clearNativeLoginHealth();
             trySendWebSocket(
               socket,
               daemonMessageTypes.nativeAccountInspected,
-              { result },
+              {
+                result,
+                registration: daemonRegistration(options.workspacePath),
+              },
               envelope.id,
             );
           })
@@ -2142,16 +2150,22 @@ export async function setup(
   await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);
 
+  // Not running is only news when the person asked for it to start.
+  let started = true;
   if (noService) {
     console.log("Service installation skipped (--no-service).");
   } else {
-    installService(noStart ? ["--no-start"] : [], host);
+    started = installService(noStart ? ["--no-start"] : [], host) || noStart;
   }
 
   console.log("");
   status();
   console.log("");
-  console.log("Foundry daemon setup complete.");
+  console.log(
+    started
+      ? "Foundry daemon setup complete."
+      : "Foundry is set up, but the worker is not running yet; start it as shown above.",
+  );
 }
 
 export function logs(args: string[]): void {

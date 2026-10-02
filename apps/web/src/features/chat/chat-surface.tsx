@@ -139,6 +139,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             activeExecutionId={props.agentActiveSessionId}
             sending={props.sending}
             disabled={props.sendDisabled}
+            disabledReason={props.sendDisabledReason}
             draftResetKey={draftResetKey}
             onSend={props.onSend}
             onSteer={props.onSteer}

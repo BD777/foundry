@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Paperclip } from "lucide-react";
+import { CircleAlert, Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../ui/agent-composer";
 import { Alert } from "../ui/alert";
@@ -156,6 +156,12 @@ export function Conversation(props: ConversationProps) {
           }}
         >
           <ConversationQueue input={input} focus={focus} />
+          {props.disabled && props.disabledReason ? (
+            <p className="fdy-chat-composer-blocked" role="status">
+              <CircleAlert size={14} aria-hidden="true" />
+              {props.disabledReason}
+            </p>
+          ) : null}
           {props.attachments?.length || props.attachmentUploading ? (
             <div className="fdy-chat-attachment-stage">
               <AttachmentList

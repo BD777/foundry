@@ -4393,21 +4393,18 @@ const contracts = [
     },
   },
   {
-    container: "fdy-composer (max-width: 660px)",
     selector: ".fdy-message-composer .fdy-chat-agent-select",
     declarations: {
       "min-width": "0",
     },
   },
   {
-    container: "fdy-composer (max-width: 660px)",
     selector: ".fdy-message-composer .fdy-chat-settings-menu",
     declarations: {
       "min-width": "0",
     },
   },
   {
-    container: "fdy-composer (max-width: 660px)",
     selector: ".fdy-message-composer .fdy-chat-settings-trigger",
     declarations: {
       "min-width": "0",

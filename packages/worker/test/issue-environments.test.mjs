@@ -471,7 +471,7 @@ test("Accept rejects changed review and dirty source without modifying source", 
       environment.revision,
       store,
     ),
-    /uncommitted/,
+    /The workspace has uncommitted changes \(AGENTS\.md\)\. Commit them/,
   );
   assert.equal(
     readFileSync(resolve(source, "AGENTS.md"), "utf8"),

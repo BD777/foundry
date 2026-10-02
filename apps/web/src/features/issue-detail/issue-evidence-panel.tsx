@@ -62,6 +62,10 @@ export function IssueEvidencePanel({
     issue.currentCandidateSnapshotId,
   ]);
   const conflicts = alignmentConflicts(error);
+  // The review's own blocking reason explains it and offers alignment.
+  const baselineMoved =
+    error.startsWith("baseline_changed") &&
+    Boolean(review?.blockingReasons.some((b) => b.code === "baseline_changed"));
   const run = async (action: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true);
@@ -72,6 +76,9 @@ export function IssueEvidencePanel({
       onRefresh(issue.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // A refused action can change what is possible next (a moved baseline
+      // offers alignment), so read the authoritative state again.
+      await load().catch(() => {});
     } finally {
       setBusy(false);
     }
@@ -201,7 +208,7 @@ export function IssueEvidencePanel({
           </Button>
         </section>
       ) : null}
-      {error && !conflicts.length ? (
+      {error && !conflicts.length && !baselineMoved ? (
         <Alert tone="warning" title={t("shared.stepUnfinished")}>
           <p>{error}</p>
           <p>{t("evidence.errorBody")}</p>
