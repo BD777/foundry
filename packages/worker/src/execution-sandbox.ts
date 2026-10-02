@@ -47,7 +47,11 @@ export function issueSandboxProfile(
     readRoots: [environment.sourcePath],
     writeRoots: [environment.cwd, environment.scratch].map(canonical),
     // Only the verified promoted-skill tree, just downloaded and checksum-checked.
-    protectedReadRoots: [skillSetsReadRoot()],
+    // The verified promoted-skill tree and the contract's reference files.
+    protectedReadRoots: [
+      skillSetsReadRoot(),
+      resolve(environment.directory, "references"),
+    ],
     readOnlyDirectories: denied,
     readOnlyPaths: environment.repositories.map((repo) =>
       resolve(repo.worktreePath, ".git"),

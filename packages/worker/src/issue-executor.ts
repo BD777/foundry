@@ -24,6 +24,7 @@ import {
 import type { IssueEnvironment } from "./execution-types.js";
 import { issueRuntimeOptions } from "./issue-runtime-options.js";
 import { materializeSessionSkills } from "./skill-materializer.js";
+import { issueReferences } from "./issue-references.js";
 import { registerIssueSteering } from "./issue-steering.js";
 import { steerActiveSession } from "./session-helpers.js";
 import { runWorkspaceSession } from "./session/index.js";
@@ -128,6 +129,12 @@ export async function runIssueExecutor(
         managedSkills.skills.map((skill) => skill.name).join(", "),
       );
     }
+    const references = issueReferences(environment, issue, store);
+    if (references.length)
+      await record(
+        "Loaded references",
+        references.map((reference) => reference.name).join(", "),
+      );
     do {
       requested.clear();
       const session: AgentSession = {
@@ -201,6 +208,13 @@ export async function runIssueExecutor(
         send: (message) => steerActiveSession(session.id, message),
       });
       try {
+        // The contract's reference materials travel with every turn, so the
+        // execution can look at what it is asked to match.
+        session.input = {
+          id: session.id,
+          prompt: session.prompt,
+          attachments: references,
+        };
         const result = await runWorkspaceSession({
           cwd: environment.cwd,
           session,

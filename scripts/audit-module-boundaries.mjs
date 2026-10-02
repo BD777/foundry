@@ -168,6 +168,7 @@ export const workerModules = {
       "issues",
       "issue-sessions",
       "issue-clarification",
+      "issue-references",
       "issue-environment-rpc",
       "issue-environments",
       "issue-execution",
