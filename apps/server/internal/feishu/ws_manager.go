@@ -490,12 +490,12 @@ func (m *WSManager) HandleInternalEvent(eventType string, payload any) {
 			} else if event.Message.Kind == "tool" {
 				tip := "执行工具"
 				if event.Message.Title != "" {
-					tip += ": " + event.Message.Title
+					tip += ": " + cardProcessLabel(event.Message.Title)
 				}
 				meta.lastTip = tip
 				m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
 			}
-		} else if strings.Contains(event.Label, "思考") {
+		} else if isThinkingLabel(event.Label) {
 			meta.lastTip = "正在思考..."
 			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, meta.lastTip)
 		}

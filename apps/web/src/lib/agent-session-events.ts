@@ -1,4 +1,5 @@
 import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
+import { isProcessLabel } from "./process-labels";
 
 // i18n-ignore: protocol event label the worker emits, never shown as copy
 export const responseStreamLabel = "Response stream";
@@ -12,9 +13,14 @@ export function shouldDisplayAgentSessionEvent(
     return false;
   }
   if (
-    /^(?:正在启动子任务|子任务进行中|子任务完成|子任务失败|Starting subtask|Subtask (?:started|running|completed|finished|failed))$/i.test(
-      event.label.trim(),
-    )
+    isProcessLabel(
+      event.label,
+      "startingSubtask",
+      "subtaskRunning",
+      "subtaskCompleted",
+      "subtaskFailed",
+    ) ||
+    /^Subtask (?:started|finished)$/i.test(event.label.trim())
   ) {
     return false;
   }
@@ -22,7 +28,7 @@ export function shouldDisplayAgentSessionEvent(
   if (event.metadata?.timerSnapshot) {
     return false;
   }
-  if (/^(?:Loaded workspace|已加载工作区)$/i.test(event.label.trim())) {
+  if (isProcessLabel(event.label, "loadedWorkspace")) {
     return false;
   }
   if (

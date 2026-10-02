@@ -6,6 +6,11 @@ import {
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../i18n";
 import {
+  displayProcessLabel,
+  isProcessLabel,
+  type ProcessLabelKey,
+} from "../../lib/process-labels";
+import {
   agentSessionHasStreamedResponse,
   agentSessionMessageText,
   agentSessionStatusLabel,
@@ -536,14 +541,38 @@ function chatMessageItemId(message: ChatViewMessage, index: number): string {
   )}:${index}`;
 }
 
+const activeProcessLabels: ProcessLabelKey[] = [
+  "thinking",
+  "usingTool",
+  "requestingModel",
+  "compactingContext",
+  "startingSubtask",
+  "searching",
+  "runningCommand",
+  "editingFile",
+  "processingStep",
+];
+const finishedProcessLabels: ProcessLabelKey[] = [
+  "usedTool",
+  "searched",
+  "ranCommand",
+  "editedFile",
+  "processedStep",
+  "loadedWorkspace",
+];
+
 function agentSessionActivityTitle(session: AgentSession): string {
-  const latestActivity = [...(session.events ?? [])].reverse().find(
-    // i18n-ignore: matches worker-provided event labels, not copy
-    (event) => event.label.startsWith("正在") || event.label.startsWith("已"),
-  );
-  // i18n-ignore: matches a worker-provided event label, not copy
-  if (latestActivity?.label.startsWith("正在")) {
-    return latestActivity.label;
+  const latestActivity = [...(session.events ?? [])]
+    .reverse()
+    .find((event) =>
+      isProcessLabel(
+        event.label,
+        ...activeProcessLabels,
+        ...finishedProcessLabels,
+      ),
+    );
+  if (isProcessLabel(latestActivity?.label, ...activeProcessLabels)) {
+    return displayProcessLabel(latestActivity!.label);
   }
   return i18n.t("chat:transcript.processing");
 }

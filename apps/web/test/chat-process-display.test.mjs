@@ -29,7 +29,7 @@ test("projects command output into a compact shell transcript", () => {
   );
 });
 
-test("coalesces tool lifecycle pairs and presents terminal result language", () => {
+test("coalesces legacy Chinese tool lifecycle pairs into result language for the viewer", () => {
   const items = [
     {
       title: "正在执行命令",
@@ -50,12 +50,14 @@ test("coalesces tool lifecycle pairs and presents terminal result language", () 
   assert.deepEqual(rows[0], {
     detail: "git diff -- src/app.ts\n\n```\ndiff output\n```",
     snippet: "git diff -- src/app.ts",
-    title: "已执行命令",
+    labelKey: "ranCommand",
+    title: "Ran a command",
   });
   assert.deepEqual(rows[1], {
     detail: "",
     snippet: "Bash",
-    title: "已使用工具",
+    labelKey: "usedTool",
+    title: "Used a tool",
   });
 });
 
@@ -149,9 +151,31 @@ test("keeps the active behavior in progress while streaming", () => {
     true,
   );
 
-  assert.equal(rows.at(-1)?.title, "正在执行命令");
+  assert.equal(rows.at(-1)?.title, "Running a command");
   assert.equal(
     processDisplaySummaryTitle(rows, "处理中", true),
-    "正在执行命令",
+    "Running a command",
+  );
+});
+
+test("worker labels show in the viewer's language; agent titles stay as written", () => {
+  const rows = processDisplayRows(
+    [
+      { title: "Running command", detail: "pnpm test" },
+      { title: "Ran command", detail: "pnpm test\n\n```\nok\n```" },
+      { title: "Inspect the parser", detail: "src/parser.ts" },
+    ],
+    false,
+  );
+  assert.deepEqual(
+    rows.map((row) => [row.title, row.labelKey]),
+    [
+      ["Ran a command", "ranCommand"],
+      ["Inspect the parser", undefined],
+    ],
+  );
+  assert.equal(
+    processDisplaySummaryTitle(rows, "Processed", false),
+    "Ran commands",
   );
 });

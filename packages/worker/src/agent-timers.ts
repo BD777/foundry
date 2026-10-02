@@ -44,7 +44,7 @@ export const codexTimersCapability: AgentTimersCapability = {
   supported: false,
 };
 
-// --- Event labels (also referenced by the web transcript filter) ---------
+// --- Event labels (the web keys timers off metadata, not these) ---------
 
 export const timerSyncLabel = processLabels.timerSync;
 export const timerFireLabel = processLabels.timerFire;
