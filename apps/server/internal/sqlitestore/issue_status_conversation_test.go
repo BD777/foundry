@@ -32,3 +32,19 @@ func TestStatusQuestionPersistsWithoutExecutionOrContractChange(t *testing.T) {
 		t.Fatal("same idempotency key accepted different message")
 	}
 }
+
+func TestStatusAnswerFollowsTheQuestionLanguage(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	issue, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "status_lang", SourceInput: "你好", Runtime: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.RecordIssueStatusQuestion(ctx, issue.ID, "What is the status?", "english-question")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer := got.Messages[len(got.Messages)-1].Text; !strings.Contains(answer, "no implementation starts") {
+		t.Fatalf("English question got %q", answer)
+	}
+}

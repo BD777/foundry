@@ -377,6 +377,19 @@ export const issueDetail = {
     basis: "What this draft is based on",
     confirm: "Confirm criteria and start",
   },
+  contractRecords: {
+    readUploads:
+      "Please read the references I uploaded and help define the goal and completion criteria.",
+    referencesAdded:
+      "The person added reference materials in the main conversation; they are not evidence of the result.",
+    clarifyStarted:
+      "Clarification started from the original input; execution is not authorized.",
+    clarifyAddition: "Added in the main conversation: {{message}}",
+    adjustStarted:
+      "The person chose to adjust the completion criteria; the previous version stays until a new draft is confirmed.",
+    adjustWithdrawn:
+      "The person withdrew this adjustment; the previously confirmed criteria remain.",
+  },
   contractErrors: {
     busy: "The previous action is still in progress; please wait.",
     savedNotRefreshed:
