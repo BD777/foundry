@@ -20,7 +20,7 @@ Issue 引擎（准出条件 → 候选执行 → 证据与验证 → 接受 → 
 
 **已有基础：** 多仓 worktree 候选环境、并发执行、会话恢复、diff、preview 与 Workspace Accept（见[多仓执行方案](issue-workspace-execution.md)）；六态状态机、主聊天只读澄清、人确认精确契约版本后才派发的执行链（见[Issue 对话与状态](issue-conversation-design.md)）。
 
-**接下来做：** 重新开放 Issues Web 入口并打磨 Board、详情与 Issue 对话；通用的人工介入协议（Ask user / 权限应答的完整形态）；多 Agent 拆分见[下文](#issue-multi-agent)。Blocked 专指需要人介入，系统可自行重试或恢复的问题由系统处理。
+**接下来做：** 多 Agent 拆分见[下文](#issue-multi-agent)；人工介入协议已落地（执行者经 `ask_person` 提问或请求许可，人回答后在同一候选中继续，见 [Issue 对话与状态](issue-conversation-design.md)）。Blocked 专指需要人介入，系统可自行重试或恢复的问题由系统处理。
 
 **完成标准：** 两个 Issue 可独立推进；每项任务有明确目标与候选环境，回答问题后继续原 Issue，中断恢复不要求用户管理新的 Run。端到端可信交付另按最小闭环验收。
 

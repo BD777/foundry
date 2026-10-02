@@ -685,6 +685,22 @@ export interface IssueClarification {
   changeReason: string;
 }
 
+/**
+ * What an Issue's execution asked the person: a decision (input) or an
+ * approval (permission). The Issue blocks on it once the execution's turn
+ * ends and resumes in its candidate with the answer.
+ */
+export interface IssueQuestion {
+  id: string;
+  kind: "input" | "permission";
+  text: string;
+  /** Suggested answers; the person may answer otherwise. */
+  options?: string[];
+  /** The execution session that asked. */
+  runId: string;
+  askedAt: string;
+}
+
 /** What a clarification input is about, sent with the session. */
 export interface ClarificationTurn {
   draft: import("./evidence.js").IssueContract;
@@ -719,6 +735,7 @@ export interface Issue {
   codexReasoningEffort?: CodexReasoningEffort;
   messages?: IssueConversationMessage[];
   clarification?: IssueClarification;
+  question?: IssueQuestion;
   id: string;
   workspaceId?: string;
   shortId: string;

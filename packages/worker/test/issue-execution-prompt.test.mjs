@@ -62,4 +62,27 @@ test("execution uses exact confirmed contract, not pre-confirmation holds or sta
     executionFeedback({ ...issue, executionContract: undefined }),
     [],
   );
+  // An answer to the execution's question carries the question with it.
+  const answered = {
+    ...issue,
+    messages: [
+      ...issue.messages,
+      {
+        id: "question_1",
+        role: "assistant",
+        text: "Deploy to staging now?",
+        createdAt: "2026-09-11T17:04:00Z",
+      },
+      {
+        id: "question_1_answer",
+        role: "user",
+        text: "Yes, staging only.",
+        createdAt: "2026-09-11T17:05:00Z",
+      },
+    ],
+  };
+  assert.deepEqual(executionFeedback(answered), [
+    "Fix the missing deliverable",
+    "Your question: Deploy to staging now?\nThe person's answer: Yes, staging only.",
+  ]);
 });

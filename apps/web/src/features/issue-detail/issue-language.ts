@@ -54,6 +54,12 @@ export function issuePhase(issue: Issue) {
     return { ...phase("inProgress"), tab: "details" as const };
   if (issue.status === "verifying")
     return { ...phase("verifying"), tab: "evidence" as const };
+  if (issue.status === "blocked" && issue.question)
+    return {
+      title: i18n.t("issueDetail:phase.question.title"),
+      next: i18n.t("issueDetail:phase.question.next"),
+      tab: "details" as const,
+    };
   if (issue.status === "blocked")
     return {
       title: i18n.t("issueDetail:phase.blocked.title"),

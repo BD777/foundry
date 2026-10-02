@@ -56,6 +56,10 @@ export const issueDetail: Translation<typeof en> = {
       title: "等待验收",
       next: "查看实际材料与判断；缺少证据或标准未通过时不能接受。",
     },
+    question: {
+      title: "等待你的回答",
+      next: "Agent 在主对话里问了你一个问题；在那里回答后，它会在同一个候选里继续。",
+    },
     blocked: {
       title: "需要处理阻碍",
       next: "查看主对话中的原因，处理后继续。",
@@ -218,6 +222,15 @@ export const issueDetail: Translation<typeof en> = {
       counterexample: "反例",
       context: "背景",
     },
+  },
+  question: {
+    inputTitle: "Agent 需要你来决定",
+    permissionTitle: "Agent 请求你的许可",
+    approve: "同意",
+    deny: "拒绝",
+    answerHint:
+      "选一个答案，或在下方对话里写下你的回答。Agent 会在同一个候选里继续。",
+    finishingTurn: "Agent 正在结束这一轮，稍后就可以回答。",
   },
   sessions: {
     title: "参与这个 Issue 的会话",
@@ -399,6 +412,7 @@ export const issueDetail: Translation<typeof en> = {
     sendLabel: "发送 Issue 消息",
     placeholderClarifying: "说说想达到的结果、回答追问，或上传参考…",
     placeholderWorking: "在 Agent 工作时引导它…",
+    placeholderAnswer: "回答 Agent 的问题…",
     placeholderContinue: "在候选工作区里继续这个 Issue…",
     readOnlyAccepted: "已接受并进入工作区。",
     readOnlyAbandoned: "已放弃。候选和对话历史仍保留。",

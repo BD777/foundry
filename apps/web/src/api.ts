@@ -601,6 +601,18 @@ export function abandonIssue(
   });
 }
 
+/** Answers the question an Issue's execution asked; the Issue continues in its candidate. */
+export function answerIssueQuestion(
+  issueId: string,
+  questionId: string,
+  answer: string,
+): Promise<Issue> {
+  return postJSON<Issue>(`/api/issues/${issueId}/answer`, {
+    questionId,
+    answer,
+  });
+}
+
 export function requestChanges(
   issueId: string,
   message?: string,

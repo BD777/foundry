@@ -1,9 +1,15 @@
 import type { Issue } from "@bd777/foundry-protocol";
 
-/** Confirmation ends clarification. Only post-confirmation execution feedback can guide a run. */
+/**
+ * Confirmation ends clarification. Only post-confirmation execution feedback
+ * can guide a run; an answer to the execution's question comes with it.
+ */
 export function executionFeedback(issue: Issue): string[] {
   const confirmedAt = Date.parse(
     issue.executionContract?.confirmation?.at ?? "",
+  );
+  const asked = new Map(
+    (issue.messages ?? []).map((message) => [message.id, message.text]),
   );
   return (issue.messages ?? [])
     .filter(
@@ -15,7 +21,14 @@ export function executionFeedback(issue: Issue): string[] {
         Date.parse(message.createdAt) >= confirmedAt,
     )
     .slice(-12)
-    .map((message) => message.text);
+    .map((message) => {
+      const question = message.id.endsWith("_answer")
+        ? asked.get(message.id.slice(0, -"_answer".length))
+        : undefined;
+      return question
+        ? `Your question: ${question}\nThe person's answer: ${message.text}`
+        : message.text;
+    });
 }
 
 export function confirmedExecutionPrompt(issue: Issue): string {

@@ -411,6 +411,11 @@ func (s *Store) completeIssue(ctx context.Context, issueID string, input store.C
 		issue.Status = "blocked"
 		issue.BlockedReason = &store.IssueBlockedReason{Kind: "needs_input", Message: "Execution stopped. Send a message to continue in the retained candidate workspace."}
 	}
+	// A turn that ended on a question waits for the person, not for review.
+	if question := issue.Question; question != nil && question.RunID == run.ID && input.Error == "" && !input.Canceled {
+		issue.Status = "blocked"
+		issue.BlockedReason = &store.IssueBlockedReason{Kind: "needs_" + question.Kind, Message: question.Text}
+	}
 	issue.Artifact = &input.Artifact
 	issue.Run = &run
 	issue.UpdatedLabel = "just now"

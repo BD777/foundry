@@ -1,7 +1,13 @@
 import { useCallback, useMemo, useRef, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { Issue, Run } from "@bd777/foundry-protocol";
-import { issueEnvironmentAction, requestChanges, steerIssue } from "../../api";
+import {
+  answerIssueQuestion,
+  issueEnvironmentAction,
+  requestChanges,
+  steerIssue,
+} from "../../api";
+import { IssueQuestionCard } from "./issue-question-card";
 import { Conversation } from "../../components/conversation/conversation";
 import { issueTranscript } from "./issue-transcript";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
@@ -55,6 +61,12 @@ export function IssueConversation({
         return "replied" as const;
       }
       if (clarifying && contract) return contract.send(text, attachments);
+      // Free text answers the execution's question when one is waiting.
+      if (issue.question && issue.status === "blocked") {
+        await answerIssueQuestion(issue.id, issue.question.id, text);
+        onRefresh(issue.id);
+        return true;
+      }
       if (contract && issue.contractState !== "confirmed")
         throw new Error(t("conversation.clarifyFirst"));
       await requestChanges(issue.id, text, runId);
@@ -129,6 +141,18 @@ export function IssueConversation({
         text: t("conversation.welcome"),
       });
   }
+  if (issue.question)
+    displayed.push({
+      id: `question-${issue.question.id}`,
+      role: "bot",
+      text: (
+        <IssueQuestionCard
+          issue={issue}
+          question={issue.question}
+          onAnswered={() => onRefresh(issue.id)}
+        />
+      ),
+    });
   if (contract?.error)
     displayed.push({
       id: "contract-error",
@@ -168,9 +192,11 @@ export function IssueConversation({
       placeholder={
         clarifying
           ? t("conversation.placeholderClarifying")
-          : issue.status === "in_progress"
-            ? t("conversation.placeholderWorking")
-            : t("conversation.placeholderContinue")
+          : issue.question && issue.status === "blocked"
+            ? t("conversation.placeholderAnswer")
+            : issue.status === "in_progress"
+              ? t("conversation.placeholderWorking")
+              : t("conversation.placeholderContinue")
       }
       onSend={send}
       canSendDuringExecution={isStatusQuestion}

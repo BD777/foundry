@@ -251,3 +251,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.fdy-issue-question-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -634,6 +634,22 @@ type ClarificationTurn struct {
 	Message  string             `json:"message"`
 }
 
+// IssueQuestion is what an Issue's execution asked the person: something only
+// they can decide (input) or allow (permission). The Issue is blocked on it
+// once the execution's turn ends, and resumes in the same candidate with the
+// answer.
+type IssueQuestion struct {
+	ID string `json:"id"`
+	// Kind is "input" or "permission".
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+	// Options are choices the Agent offers; the person may answer otherwise.
+	Options []string `json:"options,omitempty"`
+	// RunID is the execution session that asked.
+	RunID   string `json:"runId"`
+	AskedAt string `json:"askedAt"`
+}
+
 type IssueBlockedReason struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
@@ -658,6 +674,7 @@ type Issue struct {
 	CodexReasoningEffort       string                     `json:"codexReasoningEffort,omitempty"`
 	Messages                   []IssueConversationMessage `json:"messages,omitempty"`
 	Clarification              *IssueClarification        `json:"clarification,omitempty"`
+	Question                   *IssueQuestion             `json:"question,omitempty"`
 	ID                         string                     `json:"id"`
 	WorkspaceID                string                     `json:"workspaceId,omitempty"`
 	ShortID                    string                     `json:"shortId"`
