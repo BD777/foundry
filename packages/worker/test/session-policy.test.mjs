@@ -358,31 +358,22 @@ test("an Issue's clarification runs only the read tools its role allows", async 
   }
 });
 
-test("root with Bypass permissions is refused up front unless the device is a deliberate sandbox", () => {
+test("root with Bypass permissions is refused up front unless the process runs in a sandbox", () => {
   assert.match(
-    claudeRootBypassRefusal({}, "bypassPermissions", 0, {}),
+    claudeRootBypassRefusal("bypassPermissions", 0, {}),
     /runs as root/,
   );
   assert.equal(
-    claudeRootBypassRefusal({}, "bypassPermissions", 1000, {}),
+    claudeRootBypassRefusal("bypassPermissions", 1000, {}),
     undefined,
   );
-  assert.equal(claudeRootBypassRefusal({}, "acceptEdits", 0, {}), undefined);
-  assert.match(
-    claudeRootBypassRefusal(
-      { role: "issue_execution" },
-      "bypassPermissions",
-      0,
-      {},
-    ),
-    /does not run an Issue/,
-  );
+  assert.equal(claudeRootBypassRefusal("acceptEdits", 0, {}), undefined);
   assert.equal(
-    claudeRootBypassRefusal({}, "bypassPermissions", 0, { IS_SANDBOX: "1" }),
+    claudeRootBypassRefusal("bypassPermissions", 0, { IS_SANDBOX: "1" }),
     undefined,
   );
   assert.equal(
-    claudeRootBypassRefusal({}, "bypassPermissions", 0, {
+    claudeRootBypassRefusal("bypassPermissions", 0, {
       CLAUDE_CODE_BUBBLEWRAP: "1",
     }),
     undefined,
