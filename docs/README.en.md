@@ -156,7 +156,7 @@ npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --to
 
 The worker uses the Claude Code or Codex that is signed in on that machine. If neither is, install one and sign in: `npm install -g @anthropic-ai/claude-code` then run `claude`, or `npm install -g @openai/codex` then `codex login`; then choose Re-check under Devices → Models & accounts. API connections can be configured under Server connections instead.
 
-Run the worker as a regular user: Claude Code refuses to skip permission prompts as root, and Issue execution needs to.
+A worker running as root still runs Issues (they run inside Foundry's sandbox). In chats, Claude Code refuses to skip permission prompts as root: choose another permission mode for chats, or run the worker as a regular user.
 
 A worker run from the source checkout (for development) needs the pairing token too:
 

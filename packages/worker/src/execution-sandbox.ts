@@ -89,11 +89,15 @@ export function issueIsolationError(error: unknown): unknown {
 
 export function executorEnvironment(
   environment: IssueEnvironment,
+  uid = process.getuid?.(),
 ): NodeJS.ProcessEnv {
   return {
     ...isolatedAgentEnvironment(environment.scratch),
     FOUNDRY_WORKSPACE: environment.cwd,
     FOUNDRY_ROOT_WORKSPACE: environment.sourcePath,
+    // An execution always runs inside Foundry's sandbox, so a worker running
+    // as root says so truthfully; Claude Code then allows skipping prompts.
+    ...(uid === 0 ? { IS_SANDBOX: "1" } : {}),
   };
 }
 
