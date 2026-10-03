@@ -100,6 +100,9 @@ test(
     write(resolve(env.cwd, "good.txt"));
     // The person's claude.ai connectors stay outside the Issue.
     assert.equal(executorEnvironment(env).ENABLE_CLAUDEAI_MCP_SERVERS, "false");
+    // A root worker's execution says it runs in a sandbox; it does.
+    assert.equal(executorEnvironment(env, 0).IS_SANDBOX, "1");
+    assert.equal(executorEnvironment(env, 1000).IS_SANDBOX, undefined);
     assert.throws(() => write(resolve(source, "AGENTS.md")));
     assert.throws(() => write(resolve(source, ".git/config")));
     assert.throws(() => write(resolve(env.cwd, ".git")));
