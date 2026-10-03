@@ -143,6 +143,13 @@ and, at runtime:
 Rules:
 
 - `.foundry/workspace.json` identifies the workspace and baseline metadata.
+- In a repository that already has commits, registration commits the
+  scaffolding above (not `workspace.json` or `repositories.yaml`, which are
+  local and go into `.git/info/exclude`) in one "Foundry workspace files"
+  commit, so Foundry's own files never block Accept. Only untracked,
+  unignored files whose content is still exactly what Foundry wrote are
+  committed; anything the person staged or edited is left as it was. Nothing
+  is committed on a detached HEAD or during a merge, rebase or cherry-pick.
 - `.foundry/sessions/` stores Chat session records; `.foundry/attachments/`
   stores browser uploads. The server resolves symlinks and rejects reads
   outside registered attachment roots.

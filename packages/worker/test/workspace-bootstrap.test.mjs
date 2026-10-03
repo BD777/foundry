@@ -279,3 +279,93 @@ test("registering a committed workspace again changes none of its tracked files"
     "",
   );
 });
+
+/** An existing repository with one commit, then Foundry's init + registration. */
+async function existingRepository(t) {
+  const fx = fixture(t);
+  const { initWorkspace, readWorkspace } =
+    await import("../dist/workspaces.js");
+  const previous = process.env.FOUNDRY_STATE_ROOT;
+  process.env.FOUNDRY_STATE_ROOT = resolve(fx.root, "registry-state");
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+    else process.env.FOUNDRY_STATE_ROOT = previous;
+  });
+  const commit = (message) =>
+    git(fx.source, [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      message,
+    ]);
+  await git(fx.source, ["init", "-b", "main"]);
+  writeFileSync(resolve(fx.source, "README.md"), "# project\n");
+  await git(fx.source, ["add", "README.md"]);
+  await commit("project");
+  const register = async () => {
+    initWorkspace(fx.source);
+    return registerExecutionWorkspace(
+      fx.source,
+      readWorkspace(fx.source).id,
+      fx.store,
+    );
+  };
+  const log = async () =>
+    (await git(fx.source, ["log", "--format=%an|%s"])).split("\n");
+  return { ...fx, register, log, commit };
+}
+
+test("registering an existing repository commits Foundry's own scaffolding in one commit", async (t) => {
+  const { source, register, log } = await existingRepository(t);
+  await register();
+  assert.deepEqual(await log(), [
+    "Foundry|Foundry workspace files",
+    "Test|project",
+  ]);
+  const committed = (
+    await git(source, ["show", "--name-only", "--format=", "HEAD"])
+  )
+    .split("\n")
+    .sort();
+  assert.ok(committed.includes("AGENTS.md"));
+  assert.ok(committed.includes(".foundry/skills.yaml"));
+  assert.ok(!committed.includes(".foundry/workspace.json"));
+  assert.equal(await git(source, ["status", "--porcelain"]), "");
+  // Registering again commits nothing new.
+  await register();
+  assert.equal((await log()).length, 2);
+});
+
+test("scaffolding commits leave the person's staged and edited files alone", async (t) => {
+  const { source, register, log } = await existingRepository(t);
+  writeFileSync(resolve(source, "AGENTS.md"), "# my own instructions\n");
+  writeFileSync(resolve(source, "staged.txt"), "mine\n");
+  await git(source, ["add", "staged.txt"]);
+  await register();
+  assert.equal((await log())[0], "Foundry|Foundry workspace files");
+  const committed = await git(source, [
+    "show",
+    "--name-only",
+    "--format=",
+    "HEAD",
+  ]);
+  assert.ok(!committed.split("\n").includes("AGENTS.md"));
+  assert.ok(!committed.split("\n").includes("staged.txt"));
+  const status = await git(source, ["status", "--porcelain"]);
+  assert.match(status, /^A  staged\.txt$/m);
+  assert.match(status, /^\?\? AGENTS\.md$/m);
+  assert.equal(
+    readFileSync(resolve(source, "AGENTS.md"), "utf8"),
+    "# my own instructions\n",
+  );
+});
+
+test("no scaffolding commit on a detached HEAD", async (t) => {
+  const { source, register, log } = await existingRepository(t);
+  await git(source, ["checkout", "-q", "--detach"]);
+  await register();
+  assert.equal((await log())[0], "Test|project");
+});

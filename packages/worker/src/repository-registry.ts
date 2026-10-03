@@ -17,6 +17,7 @@ import { canonical, ExecutionStore, within } from "./execution-storage.js";
 import { git } from "./execution-git.js";
 import {
   bootstrapWorkspace,
+  commitFoundryScaffold,
   workspaceContentInventory,
 } from "./workspace-bootstrap.js";
 
@@ -251,7 +252,7 @@ export async function registerExecutionWorkspace(
       );
     }
     const bootstrapped = await bootstrapWorkspace(registration, store);
-    if (bootstrapped) {
+    if (bootstrapped || (await commitFoundryScaffold(source))) {
       registration = await scanRepositories(source, workspaceId, store);
     }
     registration.content = await workspaceContentInventory(source);
