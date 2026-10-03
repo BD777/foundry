@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { existsSync, mkdirSync, copyFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { canonical } from "./execution-storage.js";
@@ -133,7 +133,15 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
       resolve(claudeHome, ".credentials.json"),
     ],
   ]) {
-    if (source && target && existsSync(source) && !existsSync(target))
+    // Refreshed whenever the device's login is newer: providers rotate
+    // refresh tokens, so a copy kept from an earlier run stops working.
+    if (
+      source &&
+      target &&
+      existsSync(source) &&
+      (!existsSync(target) ||
+        statSync(source).mtimeMs > statSync(target).mtimeMs)
+    )
       copyFileSync(source, target);
   }
   const inherited = { ...process.env };
