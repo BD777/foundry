@@ -229,6 +229,64 @@ export async function materializeCandidate(
     }
   }
 }
+/**
+ * What the sealed candidate changed against its baseline, per repository, as
+ * files a judge can read: the copy it inspects has no Git history.
+ */
+export async function writeCandidateChanges(
+  snapshot: CandidateSnapshot,
+  environment: IssueEnvironment,
+  destination: string,
+): Promise<void> {
+  mkdirSync(destination, { recursive: true, mode: 0o700 });
+  const summary: string[] = [];
+  for (const identity of snapshot.repositories) {
+    const repo = environment.repositories.find(
+      (r) => r.repoId === identity.repoId,
+    );
+    if (!repo) throw new Error("repository_set_changed");
+    const range = [identity.baselineCommit, identity.candidateCommit];
+    const nameStatus = await git(repo.worktreePath, [
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--name-status",
+      ...range,
+    ]);
+    const stat = await git(repo.worktreePath, [
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--stat",
+      ...range,
+    ]);
+    const patch = `${identifier(identity.repoId)}.diff`;
+    writeFileSync(
+      resolve(destination, patch),
+      await git(repo.worktreePath, [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        ...range,
+      ]),
+      { mode: 0o400 },
+    );
+    summary.push(
+      `## ${identity.relativePath === "." ? "Workspace root" : identity.relativePath} (${identity.baselineCommit.slice(0, 12)} → ${identity.candidateCommit.slice(0, 12)})`,
+      "",
+      nameStatus || "(no changes)",
+      "",
+      stat,
+      "",
+      `Full diff: ${patch}`,
+      "",
+    );
+  }
+  writeFileSync(resolve(destination, "summary.md"), summary.join("\n"), {
+    mode: 0o400,
+  });
+}
+
 function lstatSafe(path: string): boolean {
   try {
     lstatSync(path);
