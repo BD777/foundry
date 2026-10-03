@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -112,10 +113,17 @@ function fakeBrowser(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const shell = join(dir, "chromium");
   const child = join(dir, "chromium-child");
-  copyFileSync("/bin/sh", shell);
-  copyFileSync("/bin/sleep", child);
-  chmodSync(shell, 0o755);
-  chmodSync(child, 0o755);
+  // macOS kills a copied system binary (its code signature no longer
+  // matches); a link keeps the browser-like name that ps reports.
+  if (process.platform === "darwin") {
+    symlinkSync("/bin/sh", shell);
+    symlinkSync("/bin/sleep", child);
+  } else {
+    copyFileSync("/bin/sh", shell);
+    copyFileSync("/bin/sleep", child);
+    chmodSync(shell, 0o755);
+    chmodSync(child, 0o755);
+  }
   return { dir, shell, child };
 }
 
