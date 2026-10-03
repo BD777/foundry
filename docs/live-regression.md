@@ -48,12 +48,13 @@
 | C24 | 资源回收                              | Agent 在后台启动浏览器并让它一直运行；下一条消息让设备上的 Agent 用 `ps` 检查，浏览器已不在（GONE）；证据里注明是 Worker 按租约关闭的，还是运行时自己已停止                                                                    | 会话租约（启动器）、按会话标记回收                          | 脚本 `resource-reclaim`                                                                                  | ✔     | ✔     | ✔          |
 | C25 | 按资源选设备（M3 验收）               | 同一账号两台设备，只有设备 B 有浏览器；设备 A 上的父会话只被告知"需要一张截图"，自己用 `list_resources` 找到 B，在 B 的工作区 `create_session wait=true`，等到子会话完成；子会话在 B 上用已装的浏览器截图并返回 `<image path>` | Resource Pool 目录、跨设备编排、等待不被客户端提前截断      | 手工（两台设备：`FOUNDRY_STACK=iso2` 配对第二台，第一台不给浏览器）                                      | ✔     |       | ✔          |
 
+2026-10-04 M-dev（0.5.2，Codex 用设备上已登录的 `~/.codex-personal`，经 Worker 服务环境的 `CODEX_HOME`）：C12 全部通过（worker 测试套件与 `pnpm verify`）；`--profile codex_local` 的 C1、C3、C4、C5、C23 通过；一个真实 Issue（ISS-106，Codex）在 Mac 上完成执行、封存、Foundry 自行运行检查与接受合入，Issue 沙箱在 macOS 实机端到端运行。
+
 最近一次全部通过：2026-09-29（L-iso：C1–C10、C13、C17–C20、C22–C25；L-dev：C1–C6、C11、C14–C16、C19、C21–C24；M-dev：C1–C5、C11、C12、C14–C16、C18、C19、C21–C25）。
 
 ## 3. 覆盖缺口（待补）
 
 - **飞书续聊**：改为给同一会话发消息，尚未实测。
-- **Issue 沙箱会话在 macOS 实机运行**：沙箱单元测试已在 Mac 通过，端到端 Issue 执行留待 M4。
 - **间歇性断线（2026-09-28 00:21 前后，未定位）**：一次全量回归中，dev 服务器上的 Worker
   （本机回环连接）与 Mac（公网）在同一时段各断开一次，正在运行的 `attachment` 输入因
   Claude SDK 空闲超时失败；重跑全部通过。当时 Server 断开设备连接不记原因，现已记录断开
