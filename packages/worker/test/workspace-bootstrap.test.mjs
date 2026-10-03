@@ -249,3 +249,33 @@ test("a workspace excluding every file still obtains a valid empty-content basel
   assert.equal(registration.repositories[0].status, "ready");
   assert.deepEqual(registration.content.tracked, [".gitignore"]);
 });
+
+test("registering a committed workspace again changes none of its tracked files", async (t) => {
+  const { source } = fixture(t);
+  const { initWorkspace } = await import("../dist/workspaces.js");
+  const previous = process.env.FOUNDRY_STATE_ROOT;
+  process.env.FOUNDRY_STATE_ROOT = resolve(source, "..", "registry-state");
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+    else process.env.FOUNDRY_STATE_ROOT = previous;
+  });
+  await git(source, ["init", "-b", "main"]);
+  initWorkspace(source);
+  // A repository that commits everything Foundry wrote, including .foundry/.
+  await git(source, ["add", "-A", "-f"]);
+  await git(source, [
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "-m",
+    "workspace",
+  ]);
+  await new Promise((done) => setTimeout(done, 10));
+  initWorkspace(source);
+  assert.equal(
+    await git(source, ["status", "--porcelain", "--untracked-files=no"]),
+    "",
+  );
+});
