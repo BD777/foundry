@@ -14,8 +14,6 @@ import {
 import { safeID } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
 
-const VERSION = "0.0.0";
-
 function defaultSkillsConfig(): string {
   return `skills:\n  issue-splitting:\n    version: 0.2.0\n    scope: workspace\n    source: .foundry/skills.yaml\n  visual-qa:\n    version: 0.9.0\n    scope: workspace\n    source: .foundry/skills.yaml\n`;
 }
@@ -277,11 +275,6 @@ export function initWorkspace(inputPath: string | undefined): void {
     )}\n`,
     0o700,
   );
-  writeJSON(resolve(foundryPath, "daemon.json"), {
-    version: VERSION,
-    updatedAt: now,
-  });
-
   upsertRegistry({
     id: workspace.id,
     name: workspace.name,

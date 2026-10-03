@@ -25,6 +25,7 @@ coverage/
 
 # Machine-local workspace identity (absolute path, per checkout)
 .foundry/workspace.json
+.foundry/daemon.json
 
 # Exported deployment images
 artifacts/
