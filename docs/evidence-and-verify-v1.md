@@ -82,7 +82,7 @@ Worker 在执行锁内封存候选。正式候选取自已封存的 Git 状态�
 
 验证从 Git blob 物化到独立目录，校验清单摘要。禁止指向 canonical 源代码的外部 symlink。Evidence/报告/预览放在候选外，不改变产品指纹。环境计数 revision 仅定位，不能代替 contentDigest。
 
-判定 Agent、项目命令与受控 HTTP 目标都只在封存候选的干净副本上工作（自 2026-10-03 起判定也是）：副本只含封存提交的 tracked 文件，没有 ignored 文件（node_modules、构建产物、.env）与 Git 历史；判定另得一份候选相对基线的改动摘要与完整 diff。因此执行者工作目录里的 ignored 文件不再是验证输入，不再使 `bindingStatus` 变为 unknown。项目命令运行前，Foundry 按候选里 tracked 的锁文件（仓库根目录的 `pnpm-lock.yaml` / `package-lock.json`）在这次检查的副本里离线安装依赖：`pnpm install --frozen-lockfile --offline` / `npm ci --offline`，不运行包脚本（`--ignore-scripts`，pnpm 另加 `--ignore-pnpmfile`、按复制而非硬链接导入），沙箱断网，只能写副本、本机包仓库/缓存与输出目录；锁文件摘要、安装命令与包管理器版本记入验证输入，安装日志作为证据材料保留。包必须已在这台设备的仓库/缓存里（在工作区装过一次即可），否则检查以“依赖不可离线获取”技术失败并说明怎么做。其他生态（Go、Python 等）尚未支持。检查命令可以在副本里新建文件（例如构建输出），但改不了 tracked 文件；判定 Agent 不安装依赖，测试结果应由项目命令检查产生。check_before_accept 依赖尚未支持实时复核时拒绝接受。
+判定 Agent、项目命令与受控 HTTP 目标都只在封存候选的干净副本上工作（自 2026-10-03 起判定也是）：副本只含封存提交的 tracked 文件，没有 ignored 文件（node_modules、构建产物、.env）与 Git 历史；判定另得一份候选相对基线的改动摘要与完整 diff。因此执行者工作目录里的 ignored 文件不再是验证输入，不再使 `bindingStatus` 变为 unknown。项目命令运行前，Foundry 按候选里 tracked 的锁文件（仓库根目录的 `pnpm-lock.yaml` / `package-lock.json`）在这次检查的副本里离线安装依赖：`pnpm install --frozen-lockfile --offline` / `npm ci --offline`，不运行包脚本（`--ignore-scripts`，pnpm 另加 `--ignore-pnpmfile`、按复制而非硬链接导入），沙箱断网，只能写副本、本机包仓库/缓存与输出目录；锁文件摘要、安装命令与包管理器版本记入验证输入，安装日志作为证据材料保留。包必须已在这台设备的仓库/缓存里（在工作区装过一次即可），否则检查以“依赖不可离线获取”技术失败并说明怎么做。Go 模块（任意层级的 tracked `go.sum`）不安装：本机模块缓存（`go env GOMODCACHE`，从中立目录询问）只读挂入沙箱，`GOPROXY=off`、`GOFLAGS=-mod=readonly`、`GOTOOLCHAIN=local`，构建缓存在输出目录；检查前在模块目录先跑 `go list -deps -test ./...`，缺模块即同样以“依赖不可离线获取”失败（在工作区构建并测试过一次即可）；`go.sum` 摘要与 Go 版本记入验证输入。其他生态（Python 等）尚未支持。检查命令可以在副本里新建文件（例如构建输出），但改不了 tracked 文件；判定 Agent 不安装依赖，测试结果应由项目命令检查产生。check_before_accept 依赖尚未支持实时复核时拒绝接受。
 
 HTTP 首个实际适配器是 macOS 受控本地 Node HTTP listener：
 
@@ -244,7 +244,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 2. 通用 HTTP/service/build identity、外部配置/数据/依赖/凭据版本注册与 Accept 前复核；目前支持受控本地 Node GET/HEAD 与纯文件/项目命令，`check_before_accept` 依赖未注册时拒绝接受。
 3. 自动恢复目前覆盖 collect/assess 与澄清回复（`recover_session`）；上传/对齐有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
 4. PDF 预览已于 2026-10-03 完成：浏览器内置阅读器显示已按封存摘要校验过的字节（Blob URL，受保护的接口地址不进入预览框），并可在新标签页打开或下载原件。图像区域高亮/标注、视频/音频预览暂不计划。主动删除材料的影响提示尚未做。rationale media 只能作解释性 context，不作为新 Evidence。
-5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。判定与检查只看封存候选的干净副本（不含 ignored 文件）；项目命令前按 tracked 锁文件离线准备依赖（pnpm/npm，锁文件摘要与安装命令记入验证输入）已实现；其他生态与需要联网获取的依赖尚未支持。
+5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。判定与检查只看封存候选的干净副本（不含 ignored 文件）；项目命令前按 tracked 锁文件离线准备依赖（pnpm/npm 安装；Go 读本机模块缓存，锁文件摘要与命令记入验证输入）已实现；其他生态与需要联网获取的依赖尚未支持。
 6. PDF 参考材料与证据已于 2026-10-03 支持（最大 32 MiB），原则是把材料本身交给 Agent：澄清、执行与判定都拿到 PDF 原件，Claude 直接阅读；Codex 读不了 PDF，另给一份 pdf.js 抽取的逐页文本，并注明不含版式与图片、依赖它们的要求只能判为无法确定。视频/音频等材料暂不计划。澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
 7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标自 2026-09-28 起在 Linux 开通（服务在无网络的命名空间中，经 Unix socket 转接）；未验证平台保持拒绝。
 
