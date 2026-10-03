@@ -1,7 +1,7 @@
 import { arch, platform } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   EvidenceWorkerRequest,
@@ -22,6 +22,7 @@ import { ExecutionStore, identifier } from "./execution-storage.js";
 import {
   assertSnapshotCurrent,
   materializeCandidate,
+  writeCandidateChanges,
   sealCandidate,
 } from "./evidence-snapshots.js";
 import {
@@ -37,7 +38,6 @@ import {
 import { runEvidenceCommand } from "./evidence-command-sandbox.js";
 import { judgeWithAgent } from "./evidence-agent.js";
 import { materializeSessionSkills } from "./skill-materializer.js";
-import { git } from "./execution-git.js";
 import { acceptEvidenceCandidate } from "./evidence-acceptance.js";
 import { redactEvidence } from "./evidence-redaction.js";
 import { candidateChangeManifest } from "./evidence-change-manifest.js";
@@ -248,20 +248,10 @@ async function execute(
       request.alignFromSnapshotId,
     );
     const record = store.record("input");
+    // Checks, targets and judges all work on copies of the sealed candidate,
+    // so the live worktree's ignored files (node_modules, dist, .env) are not
+    // an input of this verification.
     const bindingNotes: string[] = [];
-    for (const repo of environment.repositories) {
-      if (
-        await git(repo.worktreePath, [
-          "ls-files",
-          "--others",
-          "--ignored",
-          "--exclude-standard",
-        ])
-      )
-        bindingNotes.push(
-          `${repo.repoId}: ignored files exist; explicitly register any verification-affecting dependencies`,
-        );
-    }
     const targets: import("@bd777/foundry-protocol").TargetSnapshot[] = [];
     if (request.httpTargets?.length) {
       if (
@@ -490,32 +480,40 @@ async function execute(
         evidence.some((e) => !verification.evidenceIds.includes(e.id))
       )
         throw new Error("fixed_evidence_set_mismatch");
-      const judged = await judgeWithAgent({
-        contract: request.contract,
-        criterion,
-        input,
-        verification,
-        evidence,
-        store,
-        directory,
-        // Verification happens on the implementation worktree itself, at the
-        // sealed candidate version, with read-only access to it.
-        workspace: {
-          path: environment.cwd,
-          readRoots: [
-            environment.sourcePath,
-            ...environment.repositories.map((repo) => repo.worktreePath),
-          ],
-          skills:
-            request.action === "assess" && request.skillRefs?.length
-              ? await materializeSessionSkills(
-                  request.skillRefs,
-                  environment.controlServerURL ?? "",
-                  environment.cwd,
-                )
-              : undefined,
-        },
-      });
+      // The judge sees exactly what Accept would integrate: a clean copy of
+      // the sealed candidate (tracked files only), plus its change summary.
+      const copy = resolve(directory, "candidate"),
+        changes = resolve(directory, "changes");
+      let judged: Awaited<ReturnType<typeof judgeWithAgent>>;
+      try {
+        await materializeCandidate(candidate, environment, store, copy);
+        await writeCandidateChanges(candidate, environment, changes);
+        judged = await judgeWithAgent({
+          contract: request.contract,
+          criterion,
+          input,
+          verification,
+          evidence,
+          store,
+          directory,
+          workspace: {
+            path: copy,
+            changes,
+            readRoots: [changes],
+            skills:
+              request.action === "assess" && request.skillRefs?.length
+                ? await materializeSessionSkills(
+                    request.skillRefs,
+                    environment.controlServerURL ?? "",
+                    copy,
+                  )
+                : undefined,
+          },
+        });
+      } finally {
+        rmSync(copy, { recursive: true, force: true });
+        rmSync(changes, { recursive: true, force: true });
+      }
       // The candidate must be exactly what was sealed, before and after.
       await assertSnapshotCurrent(candidate, environment, store, false);
       verification.result = judged.result;

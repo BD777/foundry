@@ -1,12 +1,23 @@
 // Stand-ins for the Claude and Codex SDKs, loaded through
 // fake-agent-sdk-hooks.mjs. They record what the Session Runtime passes and
 // never contact a provider.
+import { readdirSync } from "node:fs";
+
 export const calls = [];
 
 export function query({ prompt, options }) {
   return (async function* () {
-    for await (const _ of prompt);
-    calls.push({ sdk: "claude", options });
+    const messages = [];
+    for await (const message of prompt) messages.push(message);
+    calls.push({
+      sdk: "claude",
+      options,
+      // What the session could see when it ran, and what it was told.
+      cwdFiles: options.cwd
+        ? readdirSync(options.cwd, { recursive: true }).map(String).sort()
+        : [],
+      promptText: JSON.stringify(messages),
+    });
     if (options.model === "wait-for-abort")
       await new Promise((_, reject) =>
         options.abortController.signal.addEventListener("abort", () =>
