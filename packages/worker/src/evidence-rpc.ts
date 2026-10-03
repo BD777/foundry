@@ -596,6 +596,8 @@ async function execute(
     // installed offline into this check's copy; the install log is evidence.
     const supportingMaterials: import("@bd777/foundry-protocol").Material[] =
       [];
+    let dependencySandbox:
+      import("./evidence-dependencies.js").DependencySandbox | undefined;
     if (configuration.kind !== "http") {
       const locks = dependencyLocks(candidate, store);
       const recorded = input.dependencies
@@ -623,6 +625,7 @@ async function execute(
           safe.redaction,
         );
         supportingMaterials.push(log);
+        dependencySandbox = prepared.sandbox;
         if (prepared.failure) {
           verification.status = "failed";
           verification.error = {
@@ -670,6 +673,7 @@ async function execute(
                   invocation,
                   candidateDirectory,
                   outputDirectory,
+                  dependencySandbox,
                 ),
             })
           : await collectCommand({
@@ -686,6 +690,7 @@ async function execute(
                   invocation,
                   candidateDirectory,
                   outputDirectory,
+                  dependencySandbox,
                 ),
             });
     if (capture.technicalError) {
