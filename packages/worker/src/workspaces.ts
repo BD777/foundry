@@ -170,6 +170,85 @@ export function readWorkspace(workspacePath: string): WorkspaceFile {
   return relocated;
 }
 
+/**
+ * The files Foundry scaffolds in a workspace, as it writes them. A file with
+ * exactly this content is still Foundry's; one with any other is the person's.
+ */
+export function foundryScaffold(
+  workspace: Pick<WorkspaceFile, "name" | "baseline">,
+): Array<{ path: string; contents: string; directoryMode?: number }> {
+  return [
+    {
+      path: "AGENTS.md",
+      contents: `# ${workspace.name}\n\nFoundry workers should treat this workspace context as authoritative.\n\n- Workspace evolves.\n- Skills accumulate.\n- Workers do not remember.\n`,
+    },
+    {
+      path: "CONTEXT.md",
+      contents: `# Context\n\n${workspace.name} is a Foundry workspace.\n\nCurrent baseline: \`${workspace.baseline}\`\n`,
+    },
+    {
+      path: ".foundry/assets.yaml",
+      contents: `assets:\n  worktree_pool:\n    kind: git_worktree\n    strategy: per_issue\n  artifact_archive:\n    kind: artifact_archive\n    path: accepted\n`,
+      directoryMode: 0o700,
+    },
+    {
+      path: ".foundry/skills.yaml",
+      contents: defaultSkillsConfig(),
+      directoryMode: 0o700,
+    },
+    {
+      path: ".foundry/providers.yaml",
+      contents: `providers:\n  claude:\n    auth: local\n    secret: local-only\n  codex:\n    auth: local\n    secret: local-only\n`,
+      directoryMode: 0o700,
+    },
+    {
+      path: ".foundry/agent-profiles.local.example.json",
+      contents: `${JSON.stringify(
+        {
+          profiles: [
+            {
+              id: "codex-third-party",
+              label: "Codex Third-party",
+              runtime: "codex",
+              connectionType: "openai_compatible",
+              baseUrl: "https://provider.example/v1",
+              model: "model-name",
+              apiKey: "local-only",
+            },
+            {
+              id: "claude-provider-a",
+              label: "Claude Provider A",
+              runtime: "claude",
+              connectionType: "anthropic_compatible",
+              baseUrl: "https://provider.example",
+              model: "model-name",
+              apiKey: "local-only",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      directoryMode: 0o700,
+    },
+    {
+      path: ".foundry/preview.example.json",
+      contents: `${JSON.stringify(
+        {
+          command: "pnpm dev --host 127.0.0.1 --port $FOUNDRY_PREVIEW_PORT",
+          portStart: 4300,
+          portEnd: 4399,
+          readyPath: "/",
+          readyTimeoutMs: 15000,
+        },
+        null,
+        2,
+      )}\n`,
+      directoryMode: 0o700,
+    },
+  ];
+}
+
 export function initWorkspace(inputPath: string | undefined): void {
   if (!inputPath) {
     throw new Error("Usage: foundry-worker init <path>");
@@ -206,75 +285,13 @@ export function initWorkspace(inputPath: string | undefined): void {
     recursive: true,
   });
 
-  writeIfMissing(
-    resolve(workspacePath, "AGENTS.md"),
-    `# ${workspace.name}\n\nFoundry workers should treat this workspace context as authoritative.\n\n- Workspace evolves.\n- Skills accumulate.\n- Workers do not remember.\n`,
-  );
-  writeIfMissing(
-    resolve(workspacePath, "CONTEXT.md"),
-    `# Context\n\n${workspace.name} is a Foundry workspace.\n\nCurrent baseline: \`${workspace.baseline}\`\n`,
-  );
   writeJSON(existingWorkspacePath, workspace);
-  writeIfMissing(
-    resolve(foundryPath, "assets.yaml"),
-    `assets:\n  worktree_pool:\n    kind: git_worktree\n    strategy: per_issue\n  artifact_archive:\n    kind: artifact_archive\n    path: accepted\n`,
-    0o700,
-  );
-  writeIfMissing(
-    resolve(foundryPath, "skills.yaml"),
-    defaultSkillsConfig(),
-    0o700,
-  );
-  writeIfMissing(
-    resolve(foundryPath, "providers.yaml"),
-    `providers:\n  claude:\n    auth: local\n    secret: local-only\n  codex:\n    auth: local\n    secret: local-only\n`,
-    0o700,
-  );
-  writeIfMissing(
-    resolve(foundryPath, "agent-profiles.local.example.json"),
-    `${JSON.stringify(
-      {
-        profiles: [
-          {
-            id: "codex-third-party",
-            label: "Codex Third-party",
-            runtime: "codex",
-            connectionType: "openai_compatible",
-            baseUrl: "https://provider.example/v1",
-            model: "model-name",
-            apiKey: "local-only",
-          },
-          {
-            id: "claude-provider-a",
-            label: "Claude Provider A",
-            runtime: "claude",
-            connectionType: "anthropic_compatible",
-            baseUrl: "https://provider.example",
-            model: "model-name",
-            apiKey: "local-only",
-          },
-        ],
-      },
-      null,
-      2,
-    )}\n`,
-    0o700,
-  );
-  writeIfMissing(
-    resolve(foundryPath, "preview.example.json"),
-    `${JSON.stringify(
-      {
-        command: "pnpm dev --host 127.0.0.1 --port $FOUNDRY_PREVIEW_PORT",
-        portStart: 4300,
-        portEnd: 4399,
-        readyPath: "/",
-        readyTimeoutMs: 15000,
-      },
-      null,
-      2,
-    )}\n`,
-    0o700,
-  );
+  for (const file of foundryScaffold(workspace))
+    writeIfMissing(
+      resolve(workspacePath, file.path),
+      file.contents,
+      file.directoryMode,
+    );
   upsertRegistry({
     id: workspace.id,
     name: workspace.name,

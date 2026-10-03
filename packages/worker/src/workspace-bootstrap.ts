@@ -7,7 +7,8 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { canonical, ExecutionStore, within } from "./execution-storage.js";
-import { git, gitCommit } from "./execution-git.js";
+import { commitIdentity, git, gitCommit } from "./execution-git.js";
+import { foundryScaffold } from "./workspaces.js";
 import { writeJSON } from "./storage.js";
 import type { WorkspaceRegistration } from "./execution-types.js";
 
@@ -219,4 +220,84 @@ export async function workspaceContentInventory(source: string): Promise<{
       (items) => items.length > 500,
     ),
   };
+}
+
+/** Local to this checkout: its identity and this machine's repository list. */
+const localScaffold = [
+  "/.foundry/workspace.json",
+  "/.foundry/repositories.yaml",
+];
+
+/**
+ * In a repository that already has commits, Foundry commits the scaffolding
+ * it wrote, so its own files never stand between the person and Accept. Only
+ * untracked, unignored files whose content is still exactly what Foundry
+ * wrote are committed, in a commit of their own; anything the person staged
+ * or edited stays as it was. Local files are excluded instead.
+ */
+export async function commitFoundryScaffold(source: string): Promise<boolean> {
+  if (
+    !(await git(source, ["rev-parse", "--verify", "HEAD"], { optional: true }))
+  )
+    return false;
+  // Detached, or in the middle of a merge, rebase or cherry-pick: not now.
+  if (!(await git(source, ["symbolic-ref", "-q", "HEAD"], { optional: true })))
+    return false;
+  for (const marker of [
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "rebase-merge",
+    "rebase-apply",
+  ]) {
+    const path = await git(source, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-path",
+      marker,
+    ]);
+    if (existsSync(path)) return false;
+  }
+  const exclude = await git(source, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-path",
+    "info/exclude",
+  ]);
+  const existing = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+  const added = localScaffold.filter(
+    (entry) => !existing.split("\n").includes(entry),
+  );
+  if (added.length) {
+    mkdirSync(dirname(exclude), { recursive: true });
+    writeFileSync(exclude, `${existing}\n${added.join("\n")}\n`);
+  }
+  const identity = resolve(source, ".foundry", "workspace.json");
+  if (!existsSync(identity)) return false;
+  const workspace = JSON.parse(readFileSync(identity, "utf8")) as {
+    name: string;
+    baseline: string;
+  };
+  const paths: string[] = [];
+  for (const file of foundryScaffold(workspace)) {
+    const path = resolve(source, file.path);
+    if (!existsSync(path) || readFileSync(path, "utf8") !== file.contents)
+      continue;
+    if (await git(source, ["ls-files", "--", file.path])) continue;
+    // check-ignore prints the path when it is ignored and fails otherwise.
+    if (
+      await git(source, ["check-ignore", "--", file.path], { optional: true })
+    )
+      continue;
+    paths.push(file.path);
+  }
+  if (!paths.length) return false;
+  await git(source, ["add", "--", ...paths]);
+  // A pathspec commit takes only these paths; other staged changes stay staged.
+  await git(
+    source,
+    ["commit", "--no-verify", "-m", "Foundry workspace files", "--", ...paths],
+    { env: commitIdentity },
+  );
+  return true;
 }
