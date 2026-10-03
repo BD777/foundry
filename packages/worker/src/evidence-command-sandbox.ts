@@ -6,6 +6,7 @@ import {
   type CommandOutput,
 } from "./evidence-collectors.js";
 import { isSandboxError, sandboxLaunch } from "./sandbox/index.js";
+import { corepackHome } from "./evidence-dependencies.js";
 
 /** Only the frozen candidate, checker and output are exposed. Network is denied. */
 export async function runEvidenceCommand(
@@ -13,6 +14,7 @@ export async function runEvidenceCommand(
   candidate: string,
   output: string,
 ): Promise<CommandOutput> {
+  const corepack = corepackHome();
   let launch;
   try {
     launch = sandboxLaunch(
@@ -20,8 +22,11 @@ export async function runEvidenceCommand(
         kind: "offline_command",
         policyFile: resolve(output, "..", "checker.sb"),
         workdir: invocation.cwd,
-        readRoots: [candidate],
+        // The check's own copy: commands may add files (a build's output),
+        // while its tracked files stay read-only by permission.
+        readRoots: corepack ? [corepack] : [],
         writeRoot: output,
+        writeRoots: [candidate],
         // Project commands run without a checker bundle.
         readOnlyPaths: [resolve(output, "checker")].filter(existsSync),
       },
@@ -43,6 +48,10 @@ export async function runEvidenceCommand(
       TMPDIR: output,
       TMP: output,
       TEMP: output,
+      ...(corepack ? { COREPACK_HOME: corepack } : {}),
+      // Foundry prepared the dependencies from the lockfile already; pnpm
+      // must not try to reinstall them (offline, without its store) first.
+      pnpm_config_verify_deps_before_run: "false",
     },
   });
 }
