@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isolatedAgentEnvironment } from "../dist/execution-sandbox.js";
 
-test("an executor's login copy follows the device's newer login", (t) => {
+test("an executor's login copy is the device's login, on every launch", (t) => {
   const root = mkdtempSync(join(tmpdir(), "executor-login-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const config = join(root, "claude-config");
@@ -40,9 +40,10 @@ test("an executor's login copy follows the device's newer login", (t) => {
   isolatedAgentEnvironment(scratch);
   assert.equal(readFileSync(copy, "utf8"), "refreshed");
 
-  // A copy newer than the device's login is left as it is.
-  writeFileSync(copy, "copy refreshed itself");
+  // A copy its CLI rewrote later (for example signed out after a failed
+  // refresh) is still replaced by the device's login.
+  writeFileSync(copy, "signed out");
   at(copy, 3_000);
   isolatedAgentEnvironment(scratch);
-  assert.equal(readFileSync(copy, "utf8"), "copy refreshed itself");
+  assert.equal(readFileSync(copy, "utf8"), "refreshed");
 });
