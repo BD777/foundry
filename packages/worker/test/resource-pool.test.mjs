@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -269,7 +269,19 @@ test(
       cwd: tmpdir(),
     });
     t.after(() => browser.kill("SIGKILL"));
-    await new Promise((done) => setTimeout(done, 300));
+    // The launcher records its pid, then execs the browser in its place; wait
+    // until that has happened rather than for a fixed time (a loaded machine
+    // can take longer than a few hundred milliseconds).
+    assert.ok(
+      await waitFor(() =>
+        spawnSync("/bin/ps", ["-o", "comm=", "-p", String(browser.pid)], {
+          encoding: "utf8",
+        })
+          .stdout?.trim()
+          .endsWith("chromium-child"),
+      ),
+      "the launcher became the browser",
+    );
     // exec keeps the pid: the leased process is the browser itself.
     assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-child"]);
     assert.ok(await waitFor(() => !alive(browser.pid)));
