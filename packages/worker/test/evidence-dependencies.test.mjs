@@ -236,14 +236,18 @@ async function fixture(t, script) {
   return { seal, collect, store };
 }
 
-/** Uses the package, adds a build file, cannot change a tracked file, writes /tmp. */
+/**
+ * Uses the package, adds a build file, cannot change a tracked file, and
+ * writes its temporary directory: /tmp itself on Linux, where the check has a
+ * private /tmp; $TMPDIR on macOS, where Seatbelt cannot give it one.
+ */
 const usesDependency = `
 const fs = require("node:fs");
 if (require("foundry-offline-dep") !== "offline dep") process.exit(2);
 fs.mkdirSync("dist", { recursive: true });
 fs.writeFileSync("dist/out.txt", "built");
 try { fs.appendFileSync("package.json", "x"); process.exit(3); } catch {}
-fs.writeFileSync("/tmp/foundry-check", "x");
+fs.writeFileSync(process.platform === "linux" ? "/tmp/foundry-check" : require("node:path").join(require("node:os").tmpdir(), "foundry-check"), "x");
 console.log("dependency ok");
 `;
 

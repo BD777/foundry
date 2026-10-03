@@ -157,7 +157,8 @@ async function fixture(t, cache) {
   const configuration = {
     kind: "project_command",
     executable: resolve(goRoot, "bin", "go"),
-    args: ["build", "-o", "/tmp/x", "."],
+    // Into the check's copy, which accepts new files on every platform.
+    args: ["build", "-o", "built-x", "."],
     cwdRelativePath: "apps/x",
     environment: {},
     expectedExitCodes: [0],

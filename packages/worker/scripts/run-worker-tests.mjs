@@ -483,15 +483,22 @@ function readText(p) {
 // per-run temporary FOUNDRY_STATE_ROOT/TMPDIR and stripped credentials/live
 // env; their executor writes remain protected by the product's inner sandbox
 // (which these very tests assert), and every other path they touch is under
-// mkdtemp(os.tmpdir()). Exact allowlist only — reviewed file by file. All
-// other worker tests keep the outer OS write-allowlist seatbelt.
+// mkdtemp(os.tmpdir()). resource-pool lists processes with /bin/ps, which is
+// setuid on macOS and cannot be executed inside any seatbelt (verified); the
+// worker itself runs it unsandboxed.
+// Exact allowlist only — reviewed file by file. All other worker tests keep
+// the outer OS write-allowlist seatbelt.
 const NATIVE_SANDBOX_TESTS = new Set([
   "evidence-agent-sandbox.test.mjs",
   "evidence-api-e2e.test.mjs",
+  "evidence-dependencies.test.mjs",
+  "evidence-go-dependencies.test.mjs",
   "evidence-integration.test.mjs",
+  "evidence-judge-copy.test.mjs",
   "execution-process.test.mjs",
   "issue-environments.test.mjs",
   "issue-preview.test.mjs",
+  "resource-pool.test.mjs",
   "sandbox.test.mjs",
   "session-runtime.test.mjs",
   "session-workspace.test.mjs",

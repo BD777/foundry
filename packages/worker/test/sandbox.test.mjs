@@ -461,30 +461,34 @@ const outsideTmpTree = {
   userFiles: "hidden",
 };
 
-test("a private /tmp is given only when no Foundry path lives under /tmp", (t) => {
-  stateOutsideTmp(t);
-  assert.equal(privateTmpAllowed(outsideTmpTree), true);
-  // A socket directly in /tmp has no Foundry neighbours to expose.
-  assert.equal(
-    privateTmpAllowed({
-      ...outsideTmpTree,
-      connectSockets: ["/tmp/foundry-tools.sock"],
-    }),
-    true,
-  );
-  assert.equal(
-    privateTmpAllowed({
-      ...outsideTmpTree,
-      writeRoots: ["/tmp/state/environments/iss/workspace"],
-    }),
-    false,
-  );
-  process.env.FOUNDRY_STATE_ROOT = scratch(t);
-  assert.equal(
-    privateTmpAllowed(outsideTmpTree),
-    !realpathSync(process.env.FOUNDRY_STATE_ROOT).startsWith("/tmp/"),
-  );
-});
+test(
+  "a private /tmp is given only when no Foundry path lives under /tmp",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    stateOutsideTmp(t);
+    assert.equal(privateTmpAllowed(outsideTmpTree), true);
+    // A socket directly in /tmp has no Foundry neighbours to expose.
+    assert.equal(
+      privateTmpAllowed({
+        ...outsideTmpTree,
+        connectSockets: ["/tmp/foundry-tools.sock"],
+      }),
+      true,
+    );
+    assert.equal(
+      privateTmpAllowed({
+        ...outsideTmpTree,
+        writeRoots: ["/tmp/state/environments/iss/workspace"],
+      }),
+      false,
+    );
+    process.env.FOUNDRY_STATE_ROOT = scratch(t);
+    assert.equal(
+      privateTmpAllowed(outsideTmpTree),
+      !realpathSync(process.env.FOUNDRY_STATE_ROOT).startsWith("/tmp/"),
+    );
+  },
+);
 
 test(
   "Linux writable tree writes its own private /tmp, never the host's",

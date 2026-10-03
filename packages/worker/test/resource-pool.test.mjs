@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -112,10 +113,17 @@ function fakeBrowser(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const shell = join(dir, "chromium");
   const child = join(dir, "chromium-child");
-  copyFileSync("/bin/sh", shell);
-  copyFileSync("/bin/sleep", child);
-  chmodSync(shell, 0o755);
-  chmodSync(child, 0o755);
+  // macOS kills a copied system binary (its code signature no longer
+  // matches); a link keeps the browser-like name that ps reports.
+  if (process.platform === "darwin") {
+    symlinkSync("/bin/sh", shell);
+    symlinkSync("/bin/sleep", child);
+  } else {
+    copyFileSync("/bin/sh", shell);
+    copyFileSync("/bin/sleep", child);
+    chmodSync(shell, 0o755);
+    chmodSync(child, 0o755);
+  }
   return { dir, shell, child };
 }
 
@@ -261,7 +269,19 @@ test(
       cwd: tmpdir(),
     });
     t.after(() => browser.kill("SIGKILL"));
-    await new Promise((done) => setTimeout(done, 300));
+    // The launcher records its pid, then execs the browser in its place; wait
+    // until that has happened rather than for a fixed time (a loaded machine
+    // can take longer than a few hundred milliseconds).
+    assert.ok(
+      await waitFor(() =>
+        spawnSync("/bin/ps", ["-o", "comm=", "-p", String(browser.pid)], {
+          encoding: "utf8",
+        })
+          .stdout?.trim()
+          .endsWith("chromium-child"),
+      ),
+      "the launcher became the browser",
+    );
     // exec keeps the pid: the leased process is the browser itself.
     assert.deepEqual(reclaimSessionResources("sess_lease"), ["chromium-child"]);
     assert.ok(await waitFor(() => !alive(browser.pid)));
