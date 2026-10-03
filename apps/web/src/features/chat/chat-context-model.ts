@@ -5,6 +5,7 @@ import type {
   AgentScheduledTask,
   AgentSubagentSummary,
 } from "@bd777/foundry-protocol";
+import { humanizeCron } from "@bd777/foundry-protocol";
 import type {
   ChatContextCardData,
   ChatContextResourceItem,
@@ -246,14 +247,29 @@ function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
 /** Latest snapshot wins: it describes the timers still live in the agent. */
 function latestTimerSnapshot(
   session: AgentSession,
-): AgentScheduledTask[] | undefined {
-  let snapshot: AgentScheduledTask[] | undefined;
+): { at: string; tasks: AgentScheduledTask[] } | undefined {
+  let snapshot: { at: string; tasks: AgentScheduledTask[] } | undefined;
   for (const event of session.events ?? []) {
     if (event.metadata?.timerSnapshot) {
-      snapshot = event.metadata.timerSnapshot;
+      snapshot = { at: event.at, tasks: event.metadata.timerSnapshot };
     }
   }
   return snapshot;
+}
+
+/**
+ * The schedule in the viewer's language, rebuilt from the cron expression
+ * rather than the worker's stored (Chinese) humanSchedule. One-off times are
+ * resolved from the snapshot's time, as the worker did when recording it.
+ */
+function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
+  const from = new Date(snapshotAt);
+  return humanizeCron(
+    task.schedule,
+    task.recurring,
+    Number.isNaN(from.getTime()) ? new Date() : from,
+    i18n.language === "zh-CN" ? "zh-CN" : "en",
+  );
 }
 
 /** Timer-triggered turns observed for the session, newest first. */
@@ -270,20 +286,23 @@ function timerFiresForSession(session: AgentSession): AgentSessionTimerFire[] {
 
 function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
   const snapshot = latestTimerSnapshot(session);
-  if (!snapshot || snapshot.length === 0) {
+  if (!snapshot || snapshot.tasks.length === 0) {
     return [];
   }
   const allFires = timerFiresForSession(session);
-  return snapshot.map((task) => ({
-    detail: task.prompt.split(/\r?\n/)[0]?.slice(0, 120) || task.humanSchedule,
-    fires: allFires.filter((fire) => fire.id === task.id),
-    id: `${session.id}:timer:${task.id}`,
-    kind: "timer" as const,
-    label: task.humanSchedule,
-    sessionId: session.id,
-    task,
-    workspaceId: session.workspaceId,
-  }));
+  return snapshot.tasks.map((task) => {
+    const label = timerScheduleLabel(task, snapshot.at);
+    return {
+      detail: task.prompt.split(/\r?\n/)[0]?.slice(0, 120) || label,
+      fires: allFires.filter((fire) => fire.id === task.id),
+      id: `${session.id}:timer:${task.id}`,
+      kind: "timer" as const,
+      label,
+      sessionId: session.id,
+      task,
+      workspaceId: session.workspaceId,
+    };
+  });
 }
 
 export interface ActiveWorkspaceContext {
@@ -311,7 +330,7 @@ export function chatContextCardForSessions(
             Boolean(event.metadata?.timerSnapshot),
         ) ||
         (discoveredSubagents[session.id]?.length ?? 0) > 0 ||
-        (latestTimerSnapshot(session)?.length ?? 0) > 0 ||
+        (latestTimerSnapshot(session)?.tasks.length ?? 0) > 0 ||
         extractWebURLs(session.response ?? "").length > 0,
     );
   const sourceSession = [...sessions]

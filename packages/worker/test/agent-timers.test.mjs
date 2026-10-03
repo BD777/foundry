@@ -52,6 +52,49 @@ test("humanizeCron renders common schedules in Chinese", () => {
   assert.match(humanizeCron("0 9 1 * *", true, from), /^每月 1 日 09:00$/);
 });
 
+test("humanizeCron keeps the rest of its Chinese wording, also when asked for zh-CN", () => {
+  const from = new Date("2026-09-20T12:00:00");
+  const zh = [
+    ["5 * * * *", true, "每小时 05 分"],
+    ["0 9,18 * * *", true, "每天 09:00、18:00"],
+    ["0 9 1,15 * *", true, "每月 1、15 日 09:00"],
+    ["0 9 1 1,7 *", true, "每年 1、7 月 1 日 09:00"],
+    ["0 9 1 * 1", false, "单次 · 2026/9/21 09:00:00"],
+    ["0 9 1 * 1", true, "定时 0 9 1 * 1"],
+    ["not a cron", false, "单次定时 not a cron"],
+  ];
+  for (const [expression, recurring, expected] of zh) {
+    assert.equal(humanizeCron(expression, recurring, from), expected);
+    assert.equal(humanizeCron(expression, recurring, from, "zh-CN"), expected);
+  }
+});
+
+test("humanizeCron renders every recognized shape in English", () => {
+  const from = new Date("2026-09-20T12:00:00");
+  const en = [
+    ["4,14,24,34,44,54 * * * *", true, "Every 10 minutes"],
+    ["*/15 * * * *", true, "Every 15 minutes"],
+    ["5 * * * *", true, "Hourly at :05"],
+    ["0 9 * * *", true, "Daily 09:00"],
+    ["0 9,18 * * *", true, "Daily 09:00, 18:00"],
+    ["30 18 * * 1-5", true, "Weekdays 18:30"],
+    ["0 10 * * 0,6", true, "Sun, Sat 10:00"],
+    ["0 9 1 * *", true, "Monthly on day 1, 09:00"],
+    ["0 9 1,15 * *", true, "Monthly on day 1, 15, 09:00"],
+    ["0 9 1 1,7 *", true, "Yearly in Jan, Jul on day 1, 09:00"],
+    ["0 9 1 * 1", false, "Once · 9/21/2026, 09:00:00"],
+    ["0 0 1 * 1", false, "Once · 9/21/2026, 00:00:00"],
+    ["0 9 1 * 1", true, "Scheduled 0 9 1 * 1"],
+    ["not a cron", true, "Scheduled not a cron"],
+    ["not a cron", false, "One-time not a cron"],
+  ];
+  for (const [expression, recurring, expected] of en) {
+    const text = humanizeCron(expression, recurring, from, "en");
+    assert.equal(text, expected);
+    assert.doesNotMatch(text, /[　-鿿]/);
+  }
+});
+
 test("PostToolUse CronCreate publishes a snapshot and CronDelete clears it", async () => {
   const { events, tracker: timerTracker } = makeTracker();
   await timerTracker.hooks().PostToolUse[0].hooks[0]({
