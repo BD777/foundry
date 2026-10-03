@@ -123,7 +123,6 @@ workspace/
   accepted/
   .foundry/
     workspace.json
-    daemon.json
     assets.yaml
     skills.yaml
     providers.yaml
