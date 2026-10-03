@@ -198,7 +198,7 @@ test(
     assert.notEqual(judge.options.cwd, environment.cwd);
     assert.ok(judge.cwdFiles.includes("greet.mjs"));
     assert.ok(!judge.cwdFiles.some((f) => /node_modules|\.env/.test(f)));
-    assert.match(judge.promptText, /clean copy of the sealed candidate/);
+    assert.match(judge.promptText, /exactly the files Accept would integrate/);
     assert.match(judge.promptText, /summary\.md/);
     // The copy is gone once the judgment is over.
     assert.equal(existsSync(judge.options.cwd), false);
