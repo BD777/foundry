@@ -6,6 +6,7 @@ import {
   useState,
   type ReactElement,
 } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   AgentProjection,
@@ -110,6 +111,7 @@ export function useChatFeature({
   workspaceId,
   workspace,
 }: UseChatFeatureInput): ReactElement {
+  const { i18n: activeI18n } = useTranslation();
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const emit = useCallback(
@@ -446,7 +448,8 @@ export function useChatFeature({
         subagentsBySession,
         workspace,
       ),
-    [selectedThread, subagentsBySession, workspace],
+    // The timer labels are written in the viewer's language.
+    [selectedThread, subagentsBySession, workspace, activeI18n.language],
   );
 
   const addAttachments = useCallback(

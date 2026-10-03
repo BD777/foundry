@@ -128,33 +128,109 @@ const pad2 = (value: number): string => String(value).padStart(2, "0");
 const formatHM = (hour: number, minute: number): string =>
   `${pad2(hour)}:${pad2(minute)}`;
 
-const weekdayNames = ["日", "一", "二", "三", "四", "五", "六"];
+export type CronLanguage = "en" | "zh-CN";
+
+interface CronWording {
+  daily: (slots: string) => string;
+  everyMinutes: (step: number) => string;
+  hourly: (minute: string) => string;
+  monthDay: (days: string, time: string) => string;
+  monthName: (month: number) => string;
+  once: (next: Date) => string;
+  oneTimeUnparsed: (expression: string) => string;
+  recurringUnparsed: (expression: string) => string;
+  separator: string;
+  weekday: (day: number) => string;
+  weekdays: (time: string) => string;
+  yearly: (months: string, days: string, time: string) => string;
+}
+
+const zhWeekdayNames = ["日", "一", "二", "三", "四", "五", "六"];
+const enWeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const enMonthNames = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const cronWording: Record<CronLanguage, CronWording> = {
+  en: {
+    daily: (slots) => `Daily ${slots}`,
+    everyMinutes: (step) => `Every ${step} minutes`,
+    hourly: (minute) => `Hourly at :${minute}`,
+    monthDay: (days, time) => `Monthly on day ${days}, ${time}`,
+    monthName: (month) => enMonthNames[month - 1] ?? String(month),
+    once: (next) =>
+      `Once · ${next.toLocaleString("en-US", { hourCycle: "h23" })}`,
+    oneTimeUnparsed: (expression) => `One-time ${expression}`,
+    recurringUnparsed: (expression) => `Scheduled ${expression}`,
+    separator: ", ",
+    weekday: (day) => enWeekdayNames[day] ?? "",
+    weekdays: (time) => `Weekdays ${time}`,
+    yearly: (months, days, time) =>
+      `Yearly in ${months} on day ${days}, ${time}`,
+  },
+  "zh-CN": {
+    daily: (slots) => `每天 ${slots}`,
+    everyMinutes: (step) => `每 ${step} 分钟`,
+    hourly: (minute) => `每小时 ${minute} 分`,
+    monthDay: (days, time) => `每月 ${days} 日 ${time}`,
+    monthName: (month) => String(month),
+    once: (next) => `单次 · ${next.toLocaleString("zh-CN", { hour12: false })}`,
+    oneTimeUnparsed: (expression) => `单次定时 ${expression}`,
+    recurringUnparsed: (expression) => `定时 ${expression}`,
+    separator: "、",
+    weekday: (day) => `周${zhWeekdayNames[day] ?? ""}`,
+    weekdays: (time) => `工作日 ${time}`,
+    yearly: (months, days, time) => `每年 ${months} 月 ${days} 日 ${time}`,
+  },
+};
 
 function fieldIsEvery(field: CronField, min: number, max: number): boolean {
   return field.size === max - min + 1;
 }
 
-/** Compact Chinese description of common 5-field cron expressions. */
+/**
+ * Compact description of common 5-field cron expressions, in Chinese unless
+ * another language is asked for.
+ */
 export function humanizeCron(
   expression: string,
   recurring: boolean,
   from: Date = new Date(),
+  language: CronLanguage = "zh-CN",
 ): string {
+  const wording = cronWording[language];
+  const unparsed = () =>
+    recurring
+      ? wording.recurringUnparsed(expression)
+      : wording.oneTimeUnparsed(expression);
   const parsed = parseCron(expression);
   if (!parsed) {
-    return recurring ? `定时 ${expression}` : `单次定时 ${expression}`;
+    return unparsed();
   }
   const minutes = [...parsed.minute].sort((a, b) => a - b);
   const hours = [...parsed.hour].sort((a, b) => a - b);
   const firstMinute = minutes[0];
   const firstHour = hours[0];
   if (firstMinute === undefined || firstHour === undefined) {
-    return recurring ? `定时 ${expression}` : `单次定时 ${expression}`;
+    return unparsed();
   }
   const timeLabel =
     hours.length === 1
       ? formatHM(firstHour, firstMinute)
-      : hours.map((hour) => formatHM(hour, firstMinute)).join("、");
+      : hours
+          .map((hour) => formatHM(hour, firstMinute))
+          .join(wording.separator);
 
   // Even minute arithmetic sequences (4,14,24,...) across every hour.
   if (
@@ -169,10 +245,10 @@ export function humanizeCron(
         value - (minutes[index - 1] ?? value) === minutes[1]! - firstMinute,
     )
   ) {
-    return `每 ${minutes[1] - firstMinute} 分钟`;
+    return wording.everyMinutes(minutes[1] - firstMinute);
   }
   if (fieldIsEvery(parsed.hour, 0, 23) && minutes.length === 1) {
-    return `每小时 ${pad2(firstMinute)} 分`;
+    return wording.hourly(pad2(firstMinute));
   }
 
   const dayRestricted = !parsed.dayOfMonthUnused || !parsed.dayOfWeekUnused;
@@ -180,10 +256,10 @@ export function humanizeCron(
     if (minutes.length > 1) {
       const slots = hours
         .flatMap((hour) => minutes.map((minute) => formatHM(hour, minute)))
-        .join("、");
-      return `每天 ${slots}`;
+        .join(wording.separator);
+      return wording.daily(slots);
     }
-    return `每天 ${timeLabel}`;
+    return wording.daily(timeLabel);
   }
 
   if (
@@ -193,11 +269,9 @@ export function humanizeCron(
   ) {
     const dows = [...parsed.dayOfWeek].sort((a, b) => a - b);
     if (dows.length === 5 && dows.every((day) => day >= 1 && day <= 5)) {
-      return `工作日 ${timeLabel}`;
+      return wording.weekdays(timeLabel);
     }
-    const dowLabel = dows
-      .map((day) => `周${weekdayNames[day] ?? ""}`)
-      .join("、");
+    const dowLabel = dows.map(wording.weekday).join(wording.separator);
     return `${dowLabel} ${timeLabel}`;
   }
 
@@ -207,20 +281,22 @@ export function humanizeCron(
     fieldIsEvery(parsed.month, 1, 12)
   ) {
     const doms = [...parsed.dayOfMonth].sort((a, b) => a - b);
-    return `每月 ${doms.join("、")} 日 ${timeLabel}`;
+    return wording.monthDay(doms.join(wording.separator), timeLabel);
   }
 
   if (!parsed.dayOfMonthUnused && parsed.dayOfWeekUnused) {
     const doms = [...parsed.dayOfMonth].sort((a, b) => a - b);
     const months = [...parsed.month].sort((a, b) => a - b);
-    return `每年 ${months.join("、")} 月 ${doms.join("、")} 日 ${timeLabel}`;
+    return wording.yearly(
+      months.map(wording.monthName).join(wording.separator),
+      doms.join(wording.separator),
+      timeLabel,
+    );
   }
 
   if (!recurring) {
     const next = nextCronFire(expression, from);
-    return next
-      ? `单次 · ${next.toLocaleString("zh-CN", { hour12: false })}`
-      : `单次定时 ${expression}`;
+    return next ? wording.once(next) : wording.oneTimeUnparsed(expression);
   }
-  return `定时 ${expression}`;
+  return wording.recurringUnparsed(expression);
 }

@@ -9,6 +9,7 @@ const { sessionTranscriptEntries } =
   await import("../src/features/chat/transcript-adapters.ts");
 const { shouldDisplayAgentSessionEvent } =
   await import("../src/lib/agent-session-events.ts");
+const { i18n } = await import("../src/i18n/index.ts");
 
 function event(id, label, detail, metadata) {
   return {
@@ -69,6 +70,78 @@ test("projects the latest timer snapshot into the sidecar", () => {
   assert.equal(timer?.task.id, "job_1");
   assert.equal(timer?.task.humanSchedule, "每 10 分钟");
   assert.equal(timer?.fires.length, 0);
+});
+
+test("the timer label follows the viewer's language, even for a Chinese-recorded snapshot", async () => {
+  const previous = i18n.language;
+  try {
+    await i18n.changeLanguage("en");
+    const english = chatContextCardForSessions([session([snapshotEvent])])
+      ?.timers[0];
+    assert.equal(english?.label, "Every 10 minutes");
+
+    const untitled = event("evt_untitled", "定时任务更新", "每天 09:00", {
+      timerSnapshot: [
+        {
+          humanSchedule: "每天 09:00",
+          id: "job_2",
+          kind: "cron",
+          prompt: "",
+          recurring: true,
+          schedule: "0 9 * * *",
+        },
+      ],
+    });
+    const fallback = chatContextCardForSessions([session([untitled])])
+      ?.timers[0];
+    assert.equal(fallback?.label, "Daily 09:00");
+    assert.equal(fallback?.detail, "Daily 09:00");
+
+    await i18n.changeLanguage("zh-CN");
+    const chinese = chatContextCardForSessions([session([snapshotEvent])])
+      ?.timers[0];
+    assert.equal(chinese?.label, "每 10 分钟");
+    assert.equal(
+      chatContextCardForSessions([session([untitled])])?.timers[0]?.detail,
+      "每天 09:00",
+    );
+  } finally {
+    await i18n.changeLanguage(previous);
+  }
+});
+
+test("a one-off timer is dated from its snapshot, in the viewer's language", async () => {
+  const previous = i18n.language;
+  const at = new Date(2026, 8, 20, 12, 0, 0).toISOString();
+  const oneOff = {
+    ...event("evt_once", "定时任务更新", "", {
+      timerSnapshot: [
+        {
+          humanSchedule: "单次 · 2026/9/21 09:00:00",
+          id: "job_3",
+          kind: "wakeup",
+          prompt: "提醒开会",
+          recurring: false,
+          schedule: "0 9 1 * 1",
+        },
+      ],
+    }),
+    at,
+  };
+  try {
+    await i18n.changeLanguage("en");
+    assert.equal(
+      chatContextCardForSessions([session([oneOff])])?.timers[0]?.label,
+      "Once · 9/21/2026, 09:00:00",
+    );
+    await i18n.changeLanguage("zh-CN");
+    assert.equal(
+      chatContextCardForSessions([session([oneOff])])?.timers[0]?.label,
+      "单次 · 2026/9/21 09:00:00",
+    );
+  } finally {
+    await i18n.changeLanguage(previous);
+  }
 });
 
 test("correlates timer fires with the snapshot task", () => {

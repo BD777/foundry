@@ -11,7 +11,7 @@ export { daemonMessageTypes, isDaemonMessageType } from "./daemon-messages.js";
 export type { DaemonMessageType } from "./daemon-messages.js";
 
 export { humanizeCron, nextCronFire, parseCron } from "./cron.js";
-export type { ParsedCron } from "./cron.js";
+export type { CronLanguage, ParsedCron } from "./cron.js";
 
 export * from "./feishu.js";
 export * from "./process-labels.js";
