@@ -27,6 +27,8 @@ interface ManagedService {
   /** Host side of a service reached over a Unix socket. */
   bridge?: Server;
   socketDirectory: string;
+  /** The candidate copy it serves; removed once no running service uses it. */
+  candidateDirectory: string;
   candidateSnapshotId: string;
   workspaceId: string;
   issueId: string;
@@ -160,6 +162,7 @@ export async function startEvidenceHTTPService(
     url: `http://127.0.0.1:${port}`,
     bridge,
     socketDirectory,
+    candidateDirectory,
     candidateSnapshotId: candidate.id,
     workspaceId: candidate.workspaceId,
     issueId: candidate.issueId,
@@ -262,4 +265,11 @@ async function bridgeToSocket(socketPath: string): Promise<Server> {
 function release(service: ManagedService): void {
   service.bridge?.close();
   rmSync(service.socketDirectory, { recursive: true, force: true });
+  // Services of one seal share its copy: only the last one stopped removes it.
+  if (
+    ![...services.values()].some(
+      (other) => other.candidateDirectory === service.candidateDirectory,
+    )
+  )
+    rmSync(service.candidateDirectory, { recursive: true, force: true });
 }

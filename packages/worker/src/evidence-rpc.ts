@@ -765,6 +765,10 @@ async function execute(
     verification.finishedAt = new Date().toISOString();
     store.sealRecord("verifier-output", verification, "Verification");
     return { taskId, verification };
+  } finally {
+    // The check's copy (with any installed dependencies) is not evidence;
+    // what it produced is already sealed into the store.
+    rmSync(resolve(directory, "candidate"), { recursive: true, force: true });
   }
 }
 

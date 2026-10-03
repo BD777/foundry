@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -213,7 +214,7 @@ async function fixture(t, script) {
       },
       status: "queued",
     };
-    return evidenceWorkerAction(
+    const result = await evidenceWorkerAction(
       {
         ...scope,
         action: "collect",
@@ -224,6 +225,13 @@ async function fixture(t, script) {
       },
       execution,
     );
+    result.copy = resolve(
+      store.root,
+      "verifier-output",
+      verification.id,
+      "candidate",
+    );
+    return result;
   };
   return { seal, collect, store };
 }
@@ -282,6 +290,11 @@ test(
       store.readMaterial(supporting.materialId).toString(),
       /npm ci --offline/,
     );
+    assert.equal(
+      existsSync(result.copy),
+      false,
+      "the check's copy and its node_modules are removed",
+    );
   },
 );
 
@@ -301,5 +314,6 @@ test(
       /not available offline on this device\. Run npm ci once/,
     );
     assert.equal(result.materials.length, 1, "the install log is kept");
+    assert.equal(existsSync(result.copy), false);
   },
 );
