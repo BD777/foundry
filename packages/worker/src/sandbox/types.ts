@@ -50,6 +50,12 @@ export interface OfflineCommandProfile {
   workdir: string;
   readRoots: string[];
   writeRoot: string;
+  /**
+   * Further writable roots: the check's own candidate copy (new files only;
+   * its tracked files stay read-only by permission), or a package store
+   * while dependencies are prepared.
+   */
+  writeRoots?: string[];
   /** Paths inside the output root kept read-only. */
   readOnlyPaths: string[];
 }

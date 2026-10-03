@@ -154,8 +154,11 @@ function offlineCommand(
       ...commandReadRoots(command),
       ...profile.readRoots,
       profile.writeRoot,
+      ...(profile.writeRoots ?? []),
     ].map((path) => `(allow file-read-data (subpath ${quote(path)}))`),
-    `(allow file-write* (subpath ${quote(profile.writeRoot)}))`,
+    ...[profile.writeRoot, ...(profile.writeRoots ?? [])].map(
+      (path) => `(allow file-write* (subpath ${quote(path)}))`,
+    ),
     ...profile.readOnlyPaths.map(
       (path) => `(deny file-write* (subpath ${quote(path)}))`,
     ),

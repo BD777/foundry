@@ -184,6 +184,7 @@ export const workerModules = {
       "evidence-change-manifest",
       "evidence-collectors",
       "evidence-command-sandbox",
+      "evidence-dependencies",
       "evidence-http-service",
       "evidence-redaction",
       "evidence-rpc",

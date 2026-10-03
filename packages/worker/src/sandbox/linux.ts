@@ -312,14 +312,17 @@ function offlineCommand(
       "backend_missing",
       "requires bubblewrap (bwrap); install it and enable user namespaces",
     );
-  const options = [...isolatedNamespaces];
+  // A private /tmp, as executors get: test runners write to /tmp itself.
+  // Mounted first, so roots that live under /tmp are bound on top of it.
+  const options = [...isolatedNamespaces, "--tmpfs", "/tmp"];
   for (const root of [
     ...offlineCommandSystemRoots(),
     ...commandReadRoots(command),
     ...profile.readRoots,
   ])
     options.push("--ro-bind", root, root);
-  options.push("--bind", profile.writeRoot, profile.writeRoot);
+  for (const path of [profile.writeRoot, ...(profile.writeRoots ?? [])])
+    options.push("--bind", path, path);
   for (const path of profile.readOnlyPaths)
     options.push("--ro-bind", path, path);
   return {

@@ -36,6 +36,12 @@ import {
   stopEvidenceHTTPServices,
 } from "./evidence-http-service.js";
 import { runEvidenceCommand } from "./evidence-command-sandbox.js";
+import {
+  dependencyLocks,
+  dependencyTooling,
+  inputDependency,
+  prepareDependencies,
+} from "./evidence-dependencies.js";
 import { judgeWithAgent } from "./evidence-agent.js";
 import { materializeSessionSkills } from "./skill-materializer.js";
 import { acceptEvidenceCandidate } from "./evidence-acceptance.js";
@@ -287,6 +293,30 @@ async function execute(
         targets.push(target);
       }
     }
+    // Lockfiles the checks install from, offline, before a project command.
+    const tools = [{ name: "node", version: process.version }];
+    const dependencies: import("@bd777/foundry-protocol").InputDependency[] =
+      [];
+    for (const lock of dependencyLocks(candidate, store)) {
+      const repo = environment.repositories.find(
+        (r) => r.relativePath === lock.repoRelativePath,
+      );
+      const tooling = repo
+        ? await dependencyTooling(
+            lock,
+            repo.worktreePath,
+            resolve(
+              store.root,
+              "verifier-output",
+              identifier(taskId),
+              "tooling",
+            ),
+          )
+        : undefined;
+      if (tooling && !tools.some((t) => t.name === lock.manager))
+        tools.push({ name: lock.manager, version: tooling.version });
+      dependencies.push(inputDependency(lock, tooling?.version));
+    }
     const core = {
       contractRevision: request.contract.revision,
       contractDigest: request.contract.contentDigest,
@@ -297,10 +327,10 @@ async function execute(
         executionEnvironmentId: environment.id,
         os: platform(),
         architecture: arch(),
-        tools: [{ name: "node", version: process.version }],
+        tools,
         configurationDigest: digestObject({}),
       },
-      dependencies: [],
+      dependencies,
       targets,
       bindingStatus: bindingNotes.length
         ? ("unknown" as const)
@@ -562,6 +592,50 @@ async function execute(
       configuration.kind === "http"
         ? input.targets.find((t) => t.name === configuration.targetName)
         : undefined;
+    // Command checks run with the dependencies of the recorded lockfiles,
+    // installed offline into this check's copy; the install log is evidence.
+    const supportingMaterials: import("@bd777/foundry-protocol").Material[] =
+      [];
+    if (configuration.kind !== "http") {
+      const locks = dependencyLocks(candidate, store);
+      const recorded = input.dependencies
+        .filter((d) => d.kind === "dependency_lock")
+        .map((d) => `${d.name}@${d.versionToken}`)
+        .sort();
+      if (
+        JSON.stringify(locks.map((l) => `${l.name}@${l.digest}`)) !==
+        JSON.stringify(recorded)
+      )
+        throw new Error(
+          "input_unbound: the candidate's lockfiles differ from its verification input",
+        );
+      if (locks.length) {
+        const prepared = await prepareDependencies(
+          locks,
+          candidateDirectory,
+          outputDirectory,
+        );
+        const safe = redactEvidence(prepared.log);
+        const log = store.sealMaterial(
+          "Dependency preparation log",
+          "text_log",
+          safe.bytes,
+          safe.redaction,
+        );
+        supportingMaterials.push(log);
+        if (prepared.failure) {
+          verification.status = "failed";
+          verification.error = {
+            code: "dependencies_unavailable",
+            message: prepared.failure,
+            retryable: true,
+          };
+          verification.finishedAt = new Date().toISOString();
+          store.sealRecord("verifier-output", verification, "Verification");
+          return { taskId, verification, materials: [log] };
+        }
+      }
+    }
     const capture =
       configuration.kind === "http"
         ? await collectHTTP({
@@ -590,6 +664,7 @@ async function execute(
               candidateDirectory,
               outputDirectory,
               store,
+              supportingMaterials,
               launch: (invocation) =>
                 runEvidenceCommand(
                   invocation,
@@ -605,6 +680,7 @@ async function execute(
               candidateDirectory,
               outputDirectory,
               store,
+              supportingMaterials,
               launch: (invocation) =>
                 runEvidenceCommand(
                   invocation,

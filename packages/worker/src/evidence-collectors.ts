@@ -117,6 +117,8 @@ export async function collectCommand(options: {
   outputDirectory: string;
   store: EvidenceStore;
   launch: IsolatedCommandLauncher;
+  /** Materials of the run's preparation, such as the dependency install log. */
+  supportingMaterials?: Material[];
 }): Promise<CollectionResult> {
   const { checker, input, claims, store } = options;
   if (checker.configuration.kind !== "command")
@@ -220,6 +222,10 @@ export async function collectCommand(options: {
     materials: [
       { materialId: stdout.id, role: "stdout" },
       { materialId: stderr.id, role: "stderr" },
+      ...(options.supportingMaterials ?? []).map((m) => ({
+        materialId: m.id,
+        role: "supporting" as const,
+      })),
     ],
     source: {
       kind: "tool_capture",
@@ -242,7 +248,12 @@ export async function collectCommand(options: {
   store.sealRecord("evidence", evidence, "Evidence");
   const result: CollectionResult = {
     evidence,
-    materials: [parameters, stdout, stderr],
+    materials: [
+      parameters,
+      stdout,
+      stderr,
+      ...(options.supportingMaterials ?? []),
+    ],
   };
   if (safeOut.redaction.status === "applied") {
     result.technicalError = {
@@ -312,6 +323,8 @@ export async function collectProjectCommand(options: {
   outputDirectory: string;
   store: EvidenceStore;
   launch: IsolatedCommandLauncher;
+  /** Materials of the run's preparation, such as the dependency install log. */
+  supportingMaterials?: Material[];
 }): Promise<CollectionResult> {
   const { checker, input, claims, store } = options;
   if (checker.configuration.kind !== "project_command")
@@ -387,6 +400,10 @@ export async function collectProjectCommand(options: {
     materials: [
       { materialId: stdout.id, role: "stdout" },
       { materialId: stderr.id, role: "stderr" },
+      ...(options.supportingMaterials ?? []).map((m) => ({
+        materialId: m.id,
+        role: "supporting" as const,
+      })),
     ],
     source: {
       kind: "tool_capture",
@@ -409,7 +426,12 @@ export async function collectProjectCommand(options: {
   store.sealRecord("evidence", evidence, "Evidence");
   const result: CollectionResult = {
     evidence,
-    materials: [parameters, stdout, stderr],
+    materials: [
+      parameters,
+      stdout,
+      stderr,
+      ...(options.supportingMaterials ?? []),
+    ],
   };
   if (output.outcome !== "completed") {
     result.technicalError = {
