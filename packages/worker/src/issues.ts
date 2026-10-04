@@ -501,7 +501,7 @@ export function workspaceProjectionForPath(
     name: workspace.name,
     localPath: workspace.path,
     baseline: workspace.baseline,
-    contextSummary: "Local Foundry workspace registered by foundry-worker.",
+    contextSummary: "",
     acceptedCount: 0,
     resolvedCount: 0,
     deviceId: device.id,

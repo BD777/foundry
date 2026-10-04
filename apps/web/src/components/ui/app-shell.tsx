@@ -126,6 +126,8 @@ export interface FoundrySidebarProps<T extends string> {
   activeItemId?: T;
   brandName?: string;
   collapsed?: boolean;
+  /** A control beside the theme button, such as the interface language. */
+  languageControl?: ReactNode;
   navSections: Array<SidebarNavSection<T>>;
   onNavSelect: (id: T) => void;
   onThemeToggle?: () => void;
@@ -138,6 +140,7 @@ export function FoundrySidebar<T extends string>({
   activeItemId,
   brandName = "Foundry",
   collapsed = false,
+  languageControl,
   navSections,
   onNavSelect,
   onThemeToggle,
@@ -155,6 +158,7 @@ export function FoundrySidebar<T extends string>({
         collapsed={collapsed}
         name={brandName}
         workspaceName={workspaceName}
+        languageControl={languageControl}
         onThemeToggle={onThemeToggle}
         onToggleCollapsed={onToggleCollapsed}
         theme={theme}
@@ -175,6 +179,7 @@ export interface SidebarBrandProps {
   collapsed?: boolean;
   name: ReactNode;
   workspaceName: ReactNode;
+  languageControl?: ReactNode;
   onThemeToggle?: () => void;
   onToggleCollapsed?: () => void;
   theme?: FoundryThemeMode;
@@ -184,6 +189,7 @@ export function SidebarBrand({
   collapsed = false,
   name,
   workspaceName,
+  languageControl,
   onThemeToggle,
   onToggleCollapsed,
   theme = "light",
@@ -205,6 +211,7 @@ export function SidebarBrand({
         <small>{workspaceName}</small>
       </span>
       <span className="fdy-sidebar-brand-actions">
+        {languageControl}
         <Button
           aria-label={themeLabel}
           aria-pressed={theme === "dark"}

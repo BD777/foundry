@@ -83,6 +83,7 @@ import { useRequestChannels } from "./app/use-request-channels";
 import { useFoundryLiveData } from "./app/use-foundry-live-data";
 import { useViewScrollReset } from "./app/use-view-scroll-reset";
 import { useAccountSession } from "./app/accounts-gate";
+import { SidebarLanguage } from "./app/sidebar-language";
 import { AccountView, withAccountNav } from "./app/account-views";
 import { useTranslation } from "react-i18next";
 import { Badge } from "./components/ui/badge";
@@ -291,6 +292,8 @@ export function App() {
     storedSidebarCollapsed,
   );
   const [themeMode, setThemeMode] = useState<FoundryThemeMode>(storedThemeMode);
+  // Each request from elsewhere opens adding a device on the Devices page.
+  const [addDeviceRequest, setAddDeviceRequest] = useState(0);
   const issueDraftRequestIdRef = useRef(0);
   const workspaceLoadSeqRef = useRef(0);
   const workspaceLoadingRef = useRef(false);
@@ -436,6 +439,12 @@ export function App() {
     }
     if (event.type === "workspace.return.requested") {
       setActiveView("workspace");
+      return;
+    }
+    if (event.type === "device.add.requested") {
+      setSelectedDeviceId(undefined);
+      setAddDeviceRequest((count) => count + 1);
+      setActiveView("devices");
       return;
     }
     if (event.type === "workspace.management.requested") {
@@ -990,6 +999,7 @@ export function App() {
   function renderDevicesView() {
     return (
       <DevicesFeature
+        addDeviceRequest={addDeviceRequest}
         devices={data.devices}
         selectedDeviceId={selectedDeviceId}
         section={deviceSection}
@@ -1102,6 +1112,7 @@ export function App() {
       <FoundrySidebar
         activeItemId={sidebarActiveView}
         collapsed={sidebarCollapsed}
+        languageControl={<SidebarLanguage onError={setNotice} />}
         navSections={sidebarNavSections}
         onNavSelect={handleSidebarNavSelect}
         onThemeToggle={() =>

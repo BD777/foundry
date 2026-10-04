@@ -68,7 +68,6 @@ export function WorkspaceOverview({
         <PanelHeader>
           <div>
             <h2>{t("overview.statusTitle")}</h2>
-            <p>{workspace.contextSummary}</p>
           </div>
           <Badge tone={deviceOnline ? "online" : "neutral"}>
             {deviceOnline

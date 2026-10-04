@@ -21,7 +21,8 @@ export type WorkspacesFeatureEvent =
        */
       stayOnLocation?: boolean;
     }
-  | { type: "workspace.management.requested"; deviceId?: string };
+  | { type: "workspace.management.requested"; deviceId?: string }
+  | { type: "device.add.requested" };
 
 export interface WorkspacesFeatureProps {
   compact?: boolean;
@@ -83,6 +84,7 @@ export function WorkspacesFeature(props: WorkspacesFeatureProps) {
       onBrowse={() =>
         void props.onEvent({ type: "workspace.browse.requested" })
       }
+      onAddDevice={() => void props.onEvent({ type: "device.add.requested" })}
       onReturn={() =>
         void props.onEvent({ type: "workspace.return.requested" })
       }
