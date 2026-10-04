@@ -1,9 +1,13 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
-import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
+import {
+  claudeCommandCandidates,
+  clearDeviceCommands,
+  codexCommandCandidates,
+  resolveDeviceCommand,
+} from "./utils.js";
 
 type Runtime = "claude" | "codex";
 
@@ -96,6 +100,7 @@ const cache = new Map<Runtime, { until: number; value: NativeCli }>();
 
 export function clearNativeCliCache(): void {
   cache.clear();
+  clearDeviceCommands();
 }
 
 /** The device's program for a runtime, with its version against the minimum. */
@@ -109,24 +114,11 @@ export function nativeCli(runtime: Runtime): NativeCli {
 
 function detectNativeCli(runtime: Runtime): NativeCli {
   const installCommand = nativeCliInstallCommands[runtime];
-  let command: string;
-  try {
-    command =
-      runtime === "claude" ? resolveClaudeCommand() : resolveCodexCommand();
-  } catch {
-    return { installed: false, installCommand };
-  }
-  const commands = {
-    installCommand,
-    updateCommand: nativeCliUpdateCommand(runtime, command),
-  };
-  const result = spawnSync(command, ["--version"], {
-    encoding: "utf8",
-    timeout: 10_000,
-  });
-  const version = parseCliVersion(
-    `${result.stdout ?? ""}${result.stderr ?? ""}`,
+  const found = resolveDeviceCommand(
+    runtime === "claude" ? claudeCommandCandidates() : codexCommandCandidates(),
   );
+  if (!found) return { installed: false, installCommand };
+  const version = parseCliVersion(found.versionOutput);
   const minimumVersion = minimumCliVersion(runtime);
   return {
     installed: true,
@@ -135,7 +127,8 @@ function detectNativeCli(runtime: Runtime): NativeCli {
     outdated: Boolean(
       version && minimumVersion && isOlderVersion(version, minimumVersion),
     ),
-    ...commands,
+    installCommand,
+    updateCommand: nativeCliUpdateCommand(runtime, found.command),
   };
 }
 

@@ -1,8 +1,5 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { claudeAccount, codexAccount } from "./native-account.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
-import { claudeCommandCandidates, codexCommandCandidates } from "./utils.js";
 import type { ProviderHealth, WorkerRuntimeId } from "@bd777/foundry-protocol";
 
 type LocalProviderId = Exclude<WorkerRuntimeId, "mock">;
@@ -99,7 +96,7 @@ function claudeLocalAuthHealth(): ProviderHealth {
 }
 
 function detectClaudeLocalAuthHealth(): ProviderHealth {
-  if (!executable("claude")) {
+  if (!nativeCli("claude").installed) {
     return {
       provider: "claude",
       status: "missing_auth",
@@ -118,22 +115,4 @@ function detectClaudeLocalAuthHealth(): ProviderHealth {
     authMode: "local_config",
     secretStored: "local",
   };
-}
-
-function executable(provider: LocalProviderId): string | undefined {
-  const candidates =
-    provider === "claude"
-      ? claudeCommandCandidates()
-      : codexCommandCandidates();
-  return candidates.find((candidate) =>
-    candidate === provider ? commandExists(candidate) : existsSync(candidate),
-  );
-}
-
-function commandExists(command: string): boolean {
-  return (
-    spawnSync("sh", ["-lc", `command -v '${command}' >/dev/null 2>&1`], {
-      stdio: "ignore",
-    }).status === 0
-  );
 }

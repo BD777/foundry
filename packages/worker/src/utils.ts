@@ -132,19 +132,12 @@ export function claudeCommandCandidates(
 }
 
 export function resolveClaudeCommand(): string {
-  for (const candidate of claudeCommandCandidates()) {
-    const result = spawnSync(candidate, ["--version"], {
-      encoding: "utf8",
-      stdio: "pipe",
-      timeout: 10_000,
-    });
-    if (result.status === 0) {
-      return candidate;
-    }
-  }
-  throw new Error(
-    "Claude Code CLI is not available on PATH or in common install locations",
-  );
+  const found = resolveDeviceCommand(claudeCommandCandidates());
+  if (!found)
+    throw new Error(
+      "Claude Code CLI is not available on PATH or in common install locations",
+    );
+  return found.command;
 }
 
 /**
@@ -168,8 +161,38 @@ export function codexCommandCandidates(
 }
 
 export function resolveCodexCommand(): string {
-  const candidates = codexCommandCandidates();
+  const found = resolveDeviceCommand(codexCommandCandidates());
+  if (!found)
+    throw new Error(
+      "Codex CLI is not available on PATH or in common install locations",
+    );
+  return found.command;
+}
 
+/** A device program that runs, and what its `--version` printed. */
+export interface DeviceCommand {
+  command: string;
+  versionOutput: string;
+}
+
+const deviceCommands = new Map<
+  string,
+  { until: number; found: DeviceCommand | undefined }
+>();
+
+/**
+ * The first candidate that runs `--version`. Every lookup of the device's
+ * Claude Code and Codex goes through here, so they all agree on which program
+ * Foundry runs; the answer is kept for a minute because each probe starts the
+ * program.
+ */
+export function resolveDeviceCommand(
+  candidates: string[],
+): DeviceCommand | undefined {
+  const key = JSON.stringify([candidates, process.env.PATH]);
+  const cached = deviceCommands.get(key);
+  if (cached && cached.until > Date.now()) return cached.found;
+  let found: DeviceCommand | undefined;
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ["--version"], {
       encoding: "utf8",
@@ -177,10 +200,18 @@ export function resolveCodexCommand(): string {
       timeout: 10_000,
     });
     if (result.status === 0) {
-      return candidate;
+      found = {
+        command: candidate,
+        versionOutput: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+      };
+      break;
     }
   }
-  throw new Error(
-    "Codex CLI is not available on PATH or in common install locations",
-  );
+  deviceCommands.set(key, { until: Date.now() + 60_000, found });
+  return found;
+}
+
+/** Forget found programs, after one is installed or updated. */
+export function clearDeviceCommands(): void {
+  deviceCommands.clear();
 }
