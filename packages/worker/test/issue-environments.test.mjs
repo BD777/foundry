@@ -651,19 +651,31 @@ test(
       script,
       `import { existsSync, writeFileSync } from 'node:fs';\nimport { execFileSync } from 'node:child_process';\nimport { resolve } from 'node:path';\nprocess.stdin.resume();\nprocess.stdin.on('end', () => {\nconst tool = ${JSON.stringify(toolPath)};\nconst repos = JSON.parse(execFileSync(process.execPath, [tool, 'list'], {encoding:'utf8'}));\nconst repo = repos.find(r => r.relativePath === 'repos/backend');\nif (!existsSync(resolve('repos/backend/.git'))) {\n console.log(execFileSync(process.execPath, [tool, 'prepare', repo.id], {encoding:'utf8'}));\n} else {\n writeFileSync(resolve('repos/backend/code.txt'), 'executor candidate\\n');\n let denied = false; try { writeFileSync(resolve(process.env.FOUNDRY_ROOT_WORKSPACE, 'AGENTS.md'), 'bad'); } catch { denied = true; }\n if (!denied) process.exit(3);\n console.log('Changed backend and verified original is read-only.');\n}\n});\n`,
     );
-    // Exercise the native CLI fallback boundary instead of an arbitrary
-    // profile command, which cannot guarantee workspace skill isolation.
+    // A fake Claude Code that speaks the Agent SDK's stream-json protocol,
+    // so the executor's real launch path and sandbox are exercised (an
+    // arbitrary profile command cannot guarantee workspace skill isolation).
     const native = resolve(source, ".foundry/fake-claude");
     writeFileSync(
       native,
       `#!${process.execPath}
 import { spawnSync } from 'node:child_process';
-const args = process.argv.slice(2);
-if (args.includes('--version')) { console.log('Claude Code test fixture'); process.exit(0); }
-if (args.includes('stream-json')) process.exit(1);
-if (!args.includes('--disable-slash-commands')) process.exit(4);
-const child = spawnSync(process.execPath, [${JSON.stringify(script)}], {stdio:'inherit'});
-process.exit(child.status ?? 1);
+import { createInterface } from 'node:readline';
+if (process.argv.includes('--version')) { console.log('2.1.300 (Claude Code)'); process.exit(0); }
+const out = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+const session_id = 'fixture-session';
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  if (message.type === 'control_request') {
+    out({ type: 'control_response', response: { subtype: 'success', request_id: message.request_id, response: {} } });
+    return;
+  }
+  if (message.type !== 'user') return;
+  const child = spawnSync(process.execPath, [${JSON.stringify(script)}], { encoding: 'utf8', input: '' });
+  const text = (child.stdout || child.stderr || '').trim();
+  out({ type: 'system', subtype: 'init', session_id, cwd: process.cwd(), tools: [], mcp_servers: [], model: 'fixture', permissionMode: 'default', slash_commands: [], apiKeySource: 'none', output_style: 'default', uuid: '00000000-0000-4000-8000-000000000001' });
+  out({ type: 'assistant', session_id, parent_tool_use_id: null, uuid: '00000000-0000-4000-8000-000000000002', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'fixture', content: [{ type: 'text', text }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } });
+  out({ type: 'result', subtype: child.status === 0 ? 'success' : 'error_during_execution', is_error: child.status !== 0, result: text, errors: child.status === 0 ? [] : [text || 'probe failed'], session_id, duration_ms: 1, duration_api_ms: 1, num_turns: 1, total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 }, modelUsage: {}, permission_denials: [], uuid: '00000000-0000-4000-8000-000000000003' });
+});
 `,
     );
     chmodSync(native, 0o755);

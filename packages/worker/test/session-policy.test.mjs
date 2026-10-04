@@ -100,20 +100,12 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
     managedSkills: managed,
   });
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
-  assert.equal(plan.cliPrompt, "/qa run checks");
   assert.equal(plan.sdk.settingSources, undefined);
   assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
   assert.deepEqual(plan.sdk.skills, ["foundry-workspace:qa"]);
   assert.deepEqual(plan.sdk.plugins, [
     { type: "local", path: "/managed/set-a" },
   ]);
-  const args = plan.cliArgs;
-  assert.ok(args.includes("--disable-slash-commands"));
-  assert.equal(args.includes("--setting-sources"), false);
-  assert.match(
-    args[args.indexOf("--append-system-prompt") + 1],
-    /\/qa\/SKILL.md/,
-  );
   assert.equal(plan.settings.disableBundledSkills, true);
   assert.equal(plan.settings.autoCompactEnabled, true);
 });
@@ -213,18 +205,12 @@ test("sessions with an orchestration identity get the Foundry tools with their o
       "kept out of the runtime identity",
     );
     assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry"]);
-    assert.ok(plan.cliArgs.includes("mcp__foundry"));
-    const flag = plan.cliArgs.indexOf("--mcp-config");
-    assert.deepEqual(JSON.parse(plan.cliArgs[flag + 1]), {
-      mcpServers: plan.mcpServers,
-    });
     const naming = buildClaudeLaunchPlan({
       workspacePath: "/tmp",
       session: { ...chat, source: "naming" },
       profile: compatibleProfile({ apiKey: "k" }),
     });
     assert.equal(naming.mcpServers, undefined, "utility sessions get no tools");
-    assert.equal(naming.cliArgs.includes("--mcp-config"), false);
     assert.equal(naming.sdk.allowedTools, undefined);
   } finally {
     unregister();
@@ -264,16 +250,6 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
       false,
       "the token stays in the environment, never in config or argv",
     );
-    assert.deepEqual(tools.cliArgs, [
-      "-c",
-      `mcp_servers.foundry.url="${server.url}"`,
-      "-c",
-      'mcp_servers.foundry.bearer_token_env_var="FOUNDRY_SESSION_TOKEN"',
-      "-c",
-      'mcp_servers.foundry.default_tools_approval_mode="approve"',
-      "-c",
-      "mcp_servers.foundry.tool_timeout_sec=660",
-    ]);
     assert.equal(
       codexFoundryTools({
         ...session,
@@ -335,9 +311,6 @@ test("an Issue's clarification runs only the read tools its role allows", async 
     assert.deepEqual(plan.sdk.settingSources, ["project"]);
     assert.equal(plan.sdk.strictMcpConfig, true);
     assert.ok(plan.mcpServers.foundry, "the Foundry tools are still there");
-    const cli = plan.cliArgs.join(" ");
-    assert.match(cli, /--permission-mode dontAsk/);
-    assert.equal(cli.includes("mcp__foundry "), false);
     assert.equal(claudePermissionMode(clarification, profile), "dontAsk");
     assert.equal(codexSandboxMode(clarification, profile), "read-only");
     assert.equal(codexApprovalPolicy(clarification, profile), "never");
@@ -346,11 +319,6 @@ test("an Issue's clarification runs only the read tools its role allows", async 
       "list_sessions",
       "read_context",
     ]);
-    assert.ok(
-      codex.cliArgs.includes(
-        'mcp_servers.foundry.enabled_tools=["list_sessions","read_context"]',
-      ),
-    );
     // A chat keeps the person's own choice.
     assert.equal(claudePermissionMode(session, profile), "bypassPermissions");
   } finally {

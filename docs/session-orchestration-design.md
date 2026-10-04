@@ -67,7 +67,7 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
   运行时在每轮开始前用 SDK 的 `setMcpServers` 换上本轮令牌；MCP 配置不进运行时
   复用的身份，所以不会因为令牌变化而丢掉长驻运行时。
 - **Codex 会话（2026-09-27 起）**：同一个 HTTP MCP 以 Codex 配置注入
-  （`mcp_servers.foundry.url`，SDK 走 `config`，CLI 回退走等价的 `-c`），令牌由 Codex
+  （`mcp_servers.foundry.url`，通过 SDK 的 `config`），令牌由 Codex
   从自己的环境变量 `FOUNDRY_SESSION_TOKEN` 读取（`bearer_token_env_var`），不进配置和
   命令行；`default_tools_approval_mode = "approve"` 对应 Claude 的预先放行。令牌跟会话走，
   复用的 Codex 线程拿着的旧令牌同样有效。Codex 不能 steer 进行中的一轮，消息排到下一轮。

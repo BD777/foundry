@@ -18,7 +18,7 @@ Go Foundry Server  (apps/server)
 Local Foundry Worker Daemon  (packages/worker)
   -> local filesystem workspace
   -> local credentials and native CLI logins
-  -> Claude Agent SDK / Codex SDK (CLI fallback)
+  -> Claude Agent SDK / Codex SDK (driving the device's own Claude Code / Codex)
 ```
 
 - The browser provides the product surface.
@@ -149,7 +149,8 @@ The daemon owns:
 - the local workspace registry and `.foundry/` initialization,
 - local filesystem access,
 - provider credentials, native logins and profile configuration,
-- Claude/Codex sessions (SDK first, CLI fallback when the SDK is unavailable),
+- Claude/Codex sessions through the official SDKs (no CLI fallback: an SDK
+  error is the session's error),
 - Issue environments, worktrees and the execution sandbox
   (macOS `sandbox-exec`, Linux bubblewrap),
 - evidence collection, verification and Accept integration,
