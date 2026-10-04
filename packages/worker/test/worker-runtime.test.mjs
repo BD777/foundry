@@ -6,10 +6,11 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const root = mkdtempSync(join(tmpdir(), "worker-runtime-"));
 process.env.FOUNDRY_STATE_ROOT = join(root, "state");
@@ -68,5 +69,38 @@ test(
       ),
       "first",
     );
+  },
+);
+
+test(
+  "install writes this machine's foundry-worker command, running the current runtime with its stack",
+  { skip: process.platform !== "darwin" && process.platform !== "linux" },
+  async () => {
+    const { writeWorkerShim, workerShimPath } =
+      await import("../dist/worker-install.js");
+    const cli = join(
+      runtimeRoot(),
+      "current",
+      "node_modules",
+      "fake-shim",
+      "dist",
+      "cli.js",
+    );
+    mkdirSync(dirname(cli), { recursive: true });
+    writeFileSync(
+      cli,
+      "console.log(JSON.stringify({ args: process.argv.slice(2), root: process.env.FOUNDRY_STATE_ROOT }));",
+    );
+    const path = writeWorkerShim("fake-shim");
+    assert.equal(path, workerShimPath());
+    assert.ok(statSync(path).mode & 0o111, "the command is executable");
+    const out = JSON.parse(
+      execFileSync(path, ["--help"], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+      }),
+    );
+    assert.deepEqual(out.args, ["--help"]);
+    assert.equal(out.root, process.env.FOUNDRY_STATE_ROOT);
   },
 );
