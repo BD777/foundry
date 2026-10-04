@@ -23,6 +23,7 @@ import {
   renameSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -63,6 +64,50 @@ export function runtimeRoot(): string {
 /** The worker CLI of the runtime in use; the service starts this path. */
 export function currentRuntimeCli(name: string): string {
   return join(runtimeRoot(), "current", "node_modules", name, "dist", "cli.js");
+}
+
+/** `<state root>/bin/foundry-worker`: this machine's worker command. */
+export function workerShimPath(): string {
+  return foundryStatePath("bin", "foundry-worker");
+}
+
+const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/**
+ * Writes this machine's `foundry-worker` command: it runs the installed
+ * runtime through `current`, so an update needs no rewrite, with the stack the
+ * service uses. Checking or updating a device then needs no npm download.
+ */
+export function writeWorkerShim(
+  name: string,
+  node: string = process.execPath,
+): string | undefined {
+  if (process.platform !== "darwin" && process.platform !== "linux")
+    return undefined;
+  const path = workerShimPath();
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const stack = ["FOUNDRY_STACK", "FOUNDRY_STATE_ROOT"]
+    .map((key) => [key, process.env[key]?.trim()] as const)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `export ${key}=${shellQuote(value!)}\n`)
+    .join("");
+  writeFileSync(
+    path,
+    `#!/bin/sh\n# Foundry worker on this machine; written by install and update.\n${stack}exec ${shellQuote(node)} ${shellQuote(currentRuntimeCli(name))} "$@"\n`,
+    { mode: 0o755 },
+  );
+  return path;
+}
+
+function reportWorkerShim(name: string): void {
+  const path = writeWorkerShim(name);
+  if (!path) return;
+  const shown = path.startsWith(homedir())
+    ? `~${path.slice(homedir().length)}`
+    : path;
+  console.log(
+    `Run \`${shown} doctor\` to check this device, \`${shown} update\` to update it.`,
+  );
 }
 
 /** Version of the installed runtime in use, if `install` installed one. */
@@ -245,6 +290,7 @@ export async function installCommand(args: string[]): Promise<void> {
     cliPath: currentRuntimeCli(self.name),
     macApp: process.platform === "darwin",
   });
+  reportWorkerShim(self.name);
 }
 
 export async function updateCommand(args: string[]): Promise<void> {
@@ -258,6 +304,7 @@ export async function updateCommand(args: string[]): Promise<void> {
   const latest = explicit ? undefined : latestPublishedVersion(self.name);
   if (latest === current) {
     console.log(`${self.name} ${current} is already the latest version.`);
+    reportWorkerShim(self.name);
     return;
   }
   const version = installRuntime(
@@ -277,6 +324,7 @@ export async function updateCommand(args: string[]): Promise<void> {
       ? `${done} and restarted the worker.`
       : `${done}; start the worker as shown above.`,
   );
+  reportWorkerShim(self.name);
 }
 
 export async function uninstallCommand(args: string[]): Promise<void> {

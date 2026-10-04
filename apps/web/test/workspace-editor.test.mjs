@@ -117,7 +117,12 @@ test("registration is device scoped, keeps the dialog on failure and never emits
     assert.equal(view.closed(), 0);
     fail = false;
     await submit();
-    assert.deepEqual(JSON.parse(calls[1].body), {
+    // Folder suggestions also fetch while typing; only registrations count.
+    const registrations = calls.filter(
+      (call) => call.method === "POST" && /\/api\/workspaces$/.test(call.url),
+    );
+    assert.equal(registrations.length, 2);
+    assert.deepEqual(JSON.parse(registrations[1].body), {
       deviceId: "device-test",
       path: "/preserved/folder",
     });

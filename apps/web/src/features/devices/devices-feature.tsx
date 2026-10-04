@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ArrowLeft, Monitor, MoreHorizontal, Plus, Trash2 } from "lucide-react";
@@ -23,14 +23,12 @@ import { DeviceResources } from "./device-resources";
 import { DeviceSettings } from "./device-settings";
 import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
-import { AddDevicePanel } from "./add-device-panel";
+import { AddDeviceDialog } from "./add-device-dialog";
 import { Alert } from "../../components/ui/alert";
 
 export type DeviceSection =
   "workspaces" | "resources" | "agents" | "skills" | "settings";
 export interface DevicesFeatureProps {
-  /** Changes each time another page asks to add a device. */
-  addDeviceRequest?: number;
   devices: DeviceProjection[];
   selectedDeviceId?: string;
   section: DeviceSection;
@@ -66,9 +64,6 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   );
   const [removalTarget, setRemovalTarget] = useState<DeviceProjection>();
   const [addingDevice, setAddingDevice] = useState(false);
-  useEffect(() => {
-    if (props.addDeviceRequest) setAddingDevice(true);
-  }, [props.addDeviceRequest]);
   const removalTriggers = useRef(new Map<string, HTMLButtonElement>());
   const { t } = useTranslation("devices");
 
@@ -97,15 +92,13 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               <h1>{t("list.title")}</h1>
               <p>{t("list.intro")}</p>
             </div>
-            {addingDevice ? null : (
-              <Button onClick={() => setAddingDevice(true)} variant="primary">
-                <Plus size={15} />
-                {t("list.add")}
-              </Button>
-            )}
+            <Button onClick={() => setAddingDevice(true)} variant="primary">
+              <Plus size={15} />
+              {t("list.add")}
+            </Button>
           </header>
           {addingDevice ? (
-            <AddDevicePanel onClose={() => setAddingDevice(false)} />
+            <AddDeviceDialog onClose={() => setAddingDevice(false)} />
           ) : null}
           <div className="fdy-device-list">
             {availableDevices.map((row) => (
