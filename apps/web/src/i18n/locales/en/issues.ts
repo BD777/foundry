@@ -97,7 +97,7 @@ export const issues = {
   },
   worker: {
     title: "This device's Worker needs an update",
-    body: "It can clarify and verify, but cannot execute confirmed Issues yet; confirmed Issues will keep waiting. Run <code>{{command}}</code> on this device to update it, then they can run.",
+    body: "It can clarify and verify, but cannot execute confirmed Issues yet; confirmed Issues will keep waiting. Run <code>{{command}}</code> on this device to update it, then they can run. A device set up before that command existed runs <code>{{legacy}}</code> once instead.",
   },
   models: {
     providerDefault: "Provider default",

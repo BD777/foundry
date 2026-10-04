@@ -32,14 +32,16 @@ export const assets: Translation<typeof en> = {
     notReported: "守护进程未上报",
   },
   capacity: {
-    missingConfig: "缺少 {{file}}",
     previewSetup:
       "未配置：把 .foundry/preview.example.json 复制为 .foundry/preview.json 即可启用预览",
-    perIssue: "每个 Issue 一个 worktree",
+    worktrees: "每个 Issue 一个 git worktree",
+    worktreesAt: "每个 Issue 一个 git worktree · {{path}}",
+    evidence: "每个 Issue 的检查结果与证据；接受后改动合并回仓库",
+    evidenceAt: "每个 Issue 的检查结果与证据；接受后改动合并回仓库 · {{path}}",
     title: "执行容量",
-    worktreePool: "Worktree 池",
+    worktreePool: "Issue worktree",
     previewPorts: "预览端口",
-    artifactArchive: "产物归档",
+    artifactArchive: "证据存储",
   },
   context: {
     title: "上下文",

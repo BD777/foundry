@@ -19,7 +19,6 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  acceptIssue,
   clearProfileCredential,
   createProfile,
   deleteProfile,
@@ -29,7 +28,6 @@ import {
   loadFoundryWorkspace,
   listAgentModels,
   readWorkspaceFile,
-  requestChanges,
   setDeviceProfiles,
   updateProfile,
 } from "./api";
@@ -720,59 +718,6 @@ export function App() {
     );
   }
 
-  async function handleAcceptIssue(): Promise<void> {
-    if (!selectedIssue) {
-      setNotice(t("notices.selectIssue"));
-      return;
-    }
-    if (selectedIssue.status !== "verifying") {
-      setNotice(
-        `${issueDisplayId(selectedIssue)} is ${selectedIssue.status}; only review issues can be accepted.`,
-      );
-      return;
-    }
-    try {
-      setApiState("saving");
-      const issue = await acceptIssue(
-        selectedIssue.id,
-        selectedIssue.run?.environmentRevision,
-      );
-      await refreshData(issue.id);
-      setNotice(`${issueDisplayId(issue)} accepted.`);
-    } catch (error) {
-      // A rejected Accept (for example, a merge conflict) is not an outage.
-      // Re-read the authoritative state, including any partial recovery state.
-      await refreshData(selectedIssue.id, { silent: true });
-      setNotice(
-        `Workspace Accept did not complete: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  async function handleRequestChanges(): Promise<void> {
-    if (!selectedIssue) {
-      setNotice(t("notices.selectIssue"));
-      return;
-    }
-    if (selectedIssue.status !== "verifying") {
-      setNotice(
-        `${issueDisplayId(selectedIssue)} is ${selectedIssue.status}; request changes when it is in review.`,
-      );
-      return;
-    }
-    try {
-      setApiState("saving");
-      const issue = await requestChanges(selectedIssue.id);
-      await refreshData(issue.id);
-      setNotice(`${issueDisplayId(issue)} returned to ready.`);
-    } catch (error) {
-      await refreshData(selectedIssue.id, { silent: true });
-      setNotice(
-        `Could not request changes: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
   async function handleReadWorkspacePath(path: string): Promise<void> {
     if (!data.workspace.id) {
       setNotice(t("notices.connectWorkspace"));
@@ -836,12 +781,6 @@ export function App() {
       setNotice(t("notices.saveFailed"));
       throw error;
     }
-  }
-
-  function workerCommandNotice(): void {
-    setNotice(
-      `Run npx @foundry/agent device connect for ${data.workspace.localPath.replace("/Users/you/", "~/")}.`,
-    );
   }
 
   function followUpFromIssue(issue: Issue): void {
@@ -1065,14 +1004,9 @@ export function App() {
         return (
           <IssueDetailView
             callbacks={{
-              onAcceptIssue: () => void handleAcceptIssue(),
               onDraftFromSource: draftFromSource,
-              onNavigate: (view) => setActiveView(view as never),
-              onNewIssue: focusComposer,
               onNotice: setNotice,
               onRefresh: (issueId) => void refreshData(issueId),
-              onRequestChanges: () => void handleRequestChanges(),
-              onStartProduction: workerCommandNotice,
             }}
             deviceLabel={device?.label ?? t("notices.noDevice")}
             issue={selectedIssue}

@@ -1,5 +1,4 @@
 import type { Issue } from "@bd777/foundry-protocol";
-import { workerPackageName } from "@bd777/foundry-protocol";
 import { Trans, useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -8,6 +7,10 @@ import {
   issueDisplayStatus,
   statusMeta,
 } from "../../lib/issue-meta";
+import {
+  localWorkerCommand,
+  npxWorkerCommand,
+} from "../../lib/worker-commands";
 
 /** An older worker clarifies and verifies but cannot execute Issues. */
 export function WorkerUpdateNotice() {
@@ -22,7 +25,10 @@ export function WorkerUpdateNotice() {
         <Trans
           ns="issues"
           i18nKey="worker.body"
-          values={{ command: `npx -y ${workerPackageName}@latest update` }}
+          values={{
+            command: `${localWorkerCommand} update`,
+            legacy: `${npxWorkerCommand} update`,
+          }}
           components={{ code: <code /> }}
         />
       </p>

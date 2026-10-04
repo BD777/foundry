@@ -17,7 +17,7 @@ import type {
   SecretPlacement,
 } from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
-import { readOptionalText, safeID, yamlScalar } from "./utils.js";
+import { readOptionalText, safeID } from "./utils.js";
 import { getDevice } from "./device.js";
 import { nativeAgentProfiles } from "./native-agent-config.js";
 import { nativeLoginHealth } from "./native-login.js";

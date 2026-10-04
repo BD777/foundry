@@ -169,7 +169,7 @@ on that device. Registration never deletes files; removing a workspace only
 unregisters it.
 
 `foundry-worker init` creates the workspace scaffold (`AGENTS.md`,
-`CONTEXT.md`, `artifacts/`, `accepted/`, `.foundry/`). The full local layout
+`CONTEXT.md`, `.foundry/`). The full local layout
 and the external execution store are described in
 [storage strategy](storage-strategy.md).
 

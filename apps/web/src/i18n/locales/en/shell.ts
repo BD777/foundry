@@ -43,7 +43,6 @@ export const shell = {
     switchFailed:
       "Could not switch workspace because the local API is not reachable.",
     draftLoaded: "Draft loaded into the issue composer.",
-    selectIssue: "Select an issue first.",
     connectWorkspace: "Connect a local workspace first.",
     saveFailed: "Could not save this change to the server.",
     openDaemonLogs: "Open the local daemon logs from the paired device.",

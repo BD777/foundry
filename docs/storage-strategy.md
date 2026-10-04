@@ -15,7 +15,7 @@ protocol types
 
 worker-owned local storage
   device state root (~/.foundry) + external execution store
-  workspace .foundry/ plus artifacts/ and accepted/
+  workspace .foundry/
   durable, filesystem-native, daemon-owned
 
 server storage
@@ -119,13 +119,9 @@ the environment, worktree cleanup cannot delete proof.
 workspace/
   AGENTS.md
   CONTEXT.md
-  artifacts/issues/
-  accepted/
   .foundry/
     workspace.json
-    assets.yaml
     skills.yaml
-    providers.yaml
     agent-profiles.local.example.json
     preview.example.json
     issues/  integrations/  runs/  reviews/  worktrees/
@@ -155,15 +151,16 @@ Rules:
   outside registered attachment roots.
 - `.foundry/preview.json` configures the workspace preview that the daemon
   starts inside an Issue's candidate write boundary.
-- `providers.yaml` stores provider configuration metadata, never secret values.
-  Device-scoped
-  profile secrets, environment variables, and commands belong in the state
-  root's `agent-profiles.local.json`.
-- `assets.yaml` stores configured assets and lease policies; `skills.yaml`
-  declares workspace skill packs projected to the server's `skills` table
-  (device skill roots and the promoted catalog are configured separately).
-- `artifacts/issues/<issue-id>/` stores reviewable artifacts; `accepted/`
-  stores accepted non-code artifacts when applicable.
+- Device-scoped profile secrets, environment variables, and commands belong
+  in the state root's `agent-profiles.local.json`, never in the workspace.
+- `skills.yaml` declares workspace skill packs projected to the server's
+  `skills` table (device skill roots and the promoted catalog are configured
+  separately).
+- Workspaces created before 0.5.4 also have `.foundry/assets.yaml`,
+  `.foundry/providers.yaml`, `artifacts/` and `accepted/`. Nothing read them,
+  so they are no longer created; existing copies are left alone. The
+  workspace's Resources page shows where Issue worktrees and evidence really
+  live (the execution store above).
 - `.foundry/issues/`, `integrations/`, `runs/`, `reviews/` and `worktrees/`
   are the legacy per-workspace Issue layout. New Issue candidates, runs and
   journals use the execution store above; legacy records remain readable and
@@ -219,7 +216,7 @@ Tables by file (from the `CREATE TABLE` statements in
 - The daemon decides what workspace metadata is safe to project.
 - The web app reads from the server, never directly from the filesystem.
 - Accepted code changes update the git baseline through the worker's
-  fast-forward integration; accepted non-code artifacts move into `accepted/`.
+  fast-forward integration; evidence stays in the execution store.
 - Browser uploads are the only server-managed workspace files and are confined
   to `.foundry/attachments/`.
 - A profile's `env` and `command` are always rejected at the control-plane

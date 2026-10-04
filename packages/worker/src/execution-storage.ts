@@ -95,6 +95,10 @@ export class ExecutionStore {
     );
   }
 
+  /** Where a workspace's Issue environments and evidence live on this device. */
+  workspaceRoot(workspaceId: string): string {
+    return resolve(this.executionRoot, identifier(workspaceId));
+  }
   metadata(workspaceId: string): string {
     return resolve(this.stateRoot, "workspaces", identifier(workspaceId));
   }

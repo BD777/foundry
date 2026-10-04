@@ -38,24 +38,24 @@ export function assetName(asset: AssetProjection): string {
     : asset.name;
 }
 
-const configFile = ".foundry/assets.yaml";
-
 /**
- * The worker describes each asset in fixed English; the known forms are shown
- * in the viewer's language and anything else as reported.
+ * The worker describes each asset in fixed English or as a device path; the
+ * known forms are shown in the viewer's language and anything else as
+ * reported. Workers before 0.5.4 named `.foundry/assets.yaml`, a file that
+ * configured nothing, so only the explanation is shown for them.
  */
 export function assetDetail(asset: AssetProjection): string {
   const detail = asset.detail.trim();
-  if (detail === `missing ${configFile}`)
-    return i18n.t("assets:capacity.missingConfig", { file: configFile });
   if (detail === "copy preview.example.json to preview.json")
     return i18n.t("assets:capacity.previewSetup");
-  const suffix = ` · ${configFile}`;
-  if (asset.kind === "worktree_pool" && detail.endsWith(suffix)) {
-    const strategy = detail.slice(0, -suffix.length);
-    return `${
-      strategy === "per_issue" ? i18n.t("assets:capacity.perIssue") : strategy
-    }${suffix}`;
+  if (asset.kind === "worktree_pool" || asset.kind === "artifact_archive") {
+    const key =
+      asset.kind === "worktree_pool"
+        ? "assets:capacity.worktrees"
+        : "assets:capacity.evidence";
+    if (detail.startsWith("/") || detail.startsWith("~"))
+      return i18n.t(`${key}At`, { path: detail });
+    if (detail.includes(".foundry/assets.yaml")) return i18n.t(key);
   }
   return detail;
 }

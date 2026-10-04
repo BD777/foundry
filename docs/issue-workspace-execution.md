@@ -57,7 +57,7 @@ Workspace 是持续演化的主体，包含代码、Rules、Docs、Know-how 与�
   .foundry/
     workspace.json                 现有 Workspace 身份与基线声明
     repositories.yaml              可版本化的相对仓库登记与策略
-    assets.yaml / skills.yaml      项目级声明
+    skills.yaml                    项目级 Skill 声明
     ...                            现有 sessions / attachments / 历史运行数据
 ```
 

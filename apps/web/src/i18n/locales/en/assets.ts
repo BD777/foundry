@@ -30,14 +30,18 @@ export const assets = {
     notReported: "not reported by daemon",
   },
   capacity: {
-    missingConfig: "Missing {{file}}",
     previewSetup:
       "Not set up: copy .foundry/preview.example.json to .foundry/preview.json to enable previews",
-    perIssue: "One worktree per Issue",
+    worktrees: "One git worktree per Issue",
+    worktreesAt: "One git worktree per Issue · {{path}}",
+    evidence:
+      "Check results and evidence for each Issue; accepted changes merge into the repository",
+    evidenceAt:
+      "Check results and evidence for each Issue; accepted changes merge into the repository · {{path}}",
     title: "Execution capacity",
-    worktreePool: "Worktree pool",
+    worktreePool: "Issue worktrees",
     previewPorts: "Preview ports",
-    artifactArchive: "Artifact archive",
+    artifactArchive: "Evidence store",
   },
   context: {
     title: "Context",

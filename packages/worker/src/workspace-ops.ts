@@ -48,7 +48,6 @@ import {
   readOptionalText,
   safeID,
   sizeLabel,
-  yamlScalar,
 } from "./utils.js";
 import {
   readRegistry,
@@ -58,6 +57,7 @@ import {
 } from "./workspaces.js";
 import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
+import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
 
 export function defaultSkillsConfig(): string {
@@ -112,34 +112,28 @@ export function assetsForWorkspace(
   workspace: WorkspaceProjection,
   workspacePath?: string,
 ): AssetProjection[] {
-  const assetsConfig = workspacePath
-    ? readOptionalText(resolve(workspacePath, ".foundry", "assets.yaml"))
-    : undefined;
   const previewConfigured =
     workspacePath !== undefined &&
     existsSync(resolve(workspacePath, ".foundry", "preview.json"));
-  const archivePath = yamlScalar(assetsConfig, "path") ?? "accepted";
-  const worktreeStrategy = yamlScalar(assetsConfig, "strategy") ?? "per_issue";
+  // Each Issue runs in its own git worktree environment, and its evidence is
+  // kept beside them; accepted changes merge back into the repository.
+  const root = new ExecutionStore().workspaceRoot(workspace.id);
   return [
     {
       id: "asset_local_worktree_pool",
       workspaceId: workspace.id,
-      name: "Local worktree pool",
+      name: "Issue worktrees",
       kind: "worktree_pool",
-      status: assetsConfig ? "available" : "missing",
-      detail: assetsConfig
-        ? `${worktreeStrategy} · .foundry/assets.yaml`
-        : "missing .foundry/assets.yaml",
+      status: "available",
+      detail: resolve(root, "environments").replace(homedir(), "~"),
     },
     {
       id: "asset_local_artifact_archive",
       workspaceId: workspace.id,
-      name: "Local artifact archive",
+      name: "Evidence store",
       kind: "artifact_archive",
-      status: assetsConfig ? "available" : "missing",
-      detail: assetsConfig
-        ? `${archivePath} · .foundry/assets.yaml`
-        : "missing .foundry/assets.yaml",
+      status: "available",
+      detail: resolve(root, "evidence-store").replace(homedir(), "~"),
     },
     {
       id: "asset_local_preview_ports",
@@ -293,8 +287,6 @@ export function workspaceFilesForWorkspace(
   for (const path of [
     "AGENTS.md",
     "CONTEXT.md",
-    ".foundry/assets.yaml",
-    ".foundry/providers.yaml",
     ".foundry/skills.yaml",
   ]) {
     if (entries.some((entry) => entry.path === path)) {
@@ -371,7 +363,6 @@ export function doctor(inputPath: string | undefined): void {
   for (const file of [
     "AGENTS.md",
     "CONTEXT.md",
-    ".foundry/assets.yaml",
     ".foundry/skills.yaml",
     ".foundry/runs",
   ]) {

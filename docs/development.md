@@ -250,10 +250,19 @@ Devices → Add device (macOS or Linux, Node.js 20+):
 
 ```bash
 npx -y @bd777/foundry-worker@latest install --server <server-url> --token <pairing-token> [--workspace <path>]
-npx -y @bd777/foundry-worker@latest update      # latest version, then restart
-npx -y @bd777/foundry-worker@latest status
-npx -y @bd777/foundry-worker@latest uninstall   # --purge also removes local state
 ```
+
+Once installed, the machine has a local command that needs no download:
+
+```bash
+~/.foundry/bin/foundry-worker doctor      # this device, its Claude Code and Codex, its workspace
+~/.foundry/bin/foundry-worker update      # latest version, then restart
+~/.foundry/bin/foundry-worker status
+~/.foundry/bin/foundry-worker uninstall   # --purge also removes local state
+```
+
+A device installed before 0.5.4 has no local command yet; it gets one after
+`npx -y @bd777/foundry-worker@latest update` once.
 
 - `install` puts the package in `<state root>/runtime/<version>` (`current`
   points at the one in use) and the login service runs the worker from there,

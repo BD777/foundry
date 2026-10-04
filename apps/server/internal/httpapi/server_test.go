@@ -1110,7 +1110,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 				"authMode":      "local_config",
 				"secretStored":  "local",
 				"configScope":   "workspace",
-				"configLabel":   ".foundry/providers.yaml",
+				"configLabel":   "device local login",
 				"lastSeenLabel": "online",
 			},
 		},
@@ -1471,7 +1471,7 @@ func TestAgentSessionDispatchesAfterWorkspaceReadyRegistration(t *testing.T) {
 					"authMode":      "local_config",
 					"secretStored":  "local",
 					"configScope":   "workspace",
-					"configLabel":   ".foundry/providers.yaml",
+					"configLabel":   "device local login",
 					"lastSeenLabel": "online",
 				},
 			},
@@ -1528,7 +1528,7 @@ func TestDaemonRegistrationRedeliversQueuedAgentSessions(t *testing.T) {
 		AuthMode:      "local_config",
 		SecretStored:  "local",
 		ConfigScope:   "workspace",
-		ConfigLabel:   ".foundry/providers.yaml",
+		ConfigLabel:   "device local login",
 		LastSeenLabel: "online",
 	}
 	if err := store.RegisterDaemon(context.Background(), storepkg.DaemonRegistration{
@@ -1592,7 +1592,7 @@ func TestDaemonRegistrationRedeliversQueuedAgentSessions(t *testing.T) {
 			"authMode":      "local_config",
 			"secretStored":  "local",
 			"configScope":   "workspace",
-			"configLabel":   ".foundry/providers.yaml",
+			"configLabel":   "device local login",
 			"lastSeenLabel": "online",
 		}},
 	})
@@ -1723,7 +1723,7 @@ func TestListAgentSessionsFailsStaleRunningSession(t *testing.T) {
 			AuthMode:      "local_config",
 			SecretStored:  "local",
 			ConfigScope:   "workspace",
-			ConfigLabel:   ".foundry/providers.yaml",
+			ConfigLabel:   "device local login",
 			LastSeenLabel: "online",
 		}},
 	}); err != nil {
@@ -1781,7 +1781,7 @@ func TestLateSessionStartedDoesNotReopenCompletedAgentSession(t *testing.T) {
 			AuthMode:      "local_config",
 			SecretStored:  "local",
 			ConfigScope:   "workspace",
-			ConfigLabel:   ".foundry/providers.yaml",
+			ConfigLabel:   "device local login",
 			LastSeenLabel: "online",
 		}},
 	}); err != nil {
@@ -1842,7 +1842,7 @@ func TestLateSessionStartedDoesNotReopenCompletedAgentSession(t *testing.T) {
 			"authMode":      "local_config",
 			"secretStored":  "local",
 			"configScope":   "workspace",
-			"configLabel":   ".foundry/providers.yaml",
+			"configLabel":   "device local login",
 			"lastSeenLabel": "online",
 		}},
 	})

@@ -66,7 +66,7 @@ test("existing state permissions are hardened without rewriting contents", () =>
 test("write-if-missing preserves existing public templates", () => {
   const root = mkdtempSync(join(tmpdir(), "foundry-storage-"));
   try {
-    const path = join(root, ".foundry", "providers.yaml");
+    const path = join(root, ".foundry", "skills.yaml");
     writePublicTextIfMissing(path, "first\n", 0o700);
     writePublicTextIfMissing(path, "second\n", 0o700);
 
