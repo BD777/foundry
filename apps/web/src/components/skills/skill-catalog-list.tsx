@@ -40,6 +40,8 @@ export interface SkillCatalogListProps<
   renderActions?: (skill: T) => ReactNode;
 
   // Slots
+  /** Actions in the heading row, right-aligned, visible above the list. */
+  headerActions?: ReactNode;
   headerExtras?: ReactNode;
   footerActions?: ReactNode;
   emptyState?: {
@@ -67,6 +69,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   activeSkillNames,
   renderBadges,
   renderActions,
+  headerActions,
   headerExtras,
   footerActions,
   emptyState,
@@ -93,12 +96,23 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
     <section
       className={isWorkspace ? "fdy-workspace-skills" : "fdy-local-skills"}
     >
-      {title || description ? (
+      {title || description || headerActions ? (
         <header
-          className={isWorkspace ? "fdy-workspace-skills-heading" : undefined}
+          className={
+            isWorkspace
+              ? "fdy-skill-catalog-heading fdy-workspace-skills-heading"
+              : "fdy-skill-catalog-heading"
+          }
         >
-          {title ? <h2>{title}</h2> : null}
-          {description ? <p>{description}</p> : null}
+          <div className="fdy-skill-catalog-heading-copy">
+            {title ? <h2>{title}</h2> : null}
+            {description ? <p>{description}</p> : null}
+          </div>
+          {headerActions ? (
+            <div className="fdy-skill-catalog-heading-actions">
+              {headerActions}
+            </div>
+          ) : null}
         </header>
       ) : null}
 

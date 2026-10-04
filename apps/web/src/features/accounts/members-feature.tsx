@@ -105,7 +105,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
   const createdLink = created ? inviteLink(created.token) : "";
 
   return (
-    <PageSurface variant="accounts">
+    <PageSurface variant="members">
       <div className="fdy-account-intro">
         <strong>{t("members.title")}</strong>
         <p>{t("members.intro")}</p>

@@ -209,6 +209,23 @@ test("shared composer protects IME input and portaled selection works outside cl
       container.querySelector('[aria-label^="Permissions"]'),
       "Chats restores only the permission entry through the flag",
     );
+    await act(() =>
+      root.render(
+        createElement(AgentComposer, {
+          ...composer,
+          agentOptions: [
+            { value: "profile", label: "My Codex", runtime: "codex" },
+          ],
+          runtimeControls: { ...controls, selectedRuntime: "codex" },
+          showPermissions: true,
+        }),
+      ),
+    );
+    const codexPermissions = container.querySelector(
+      '[aria-label^="Permissions"]',
+    );
+    assert.match(codexPermissions.textContent, /Full access \(dangerous\)/);
+    assert.doesNotMatch(codexPermissions.textContent, /danger-full-access/);
   } finally {
     await act(() => root.unmount());
     await window.happyDOM.abort();

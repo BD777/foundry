@@ -243,3 +243,44 @@ test("workspace skill selection auto-enables related dependencies and supports t
     globalThis.fetch = original;
   }
 });
+
+test("the save action sits in the heading, above the skill list", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const catalog = Array.from({ length: 12 }, (_, i) => ({
+    id: `s${i}`,
+    name: `skill-${i}`,
+    description: "",
+    originDeviceId: "d",
+    originRoot: "/root",
+    latestRevision: 1,
+  }));
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SkillsFeature, {
+          workspaceId: "w",
+          catalog,
+          bindings: [],
+          devices: [],
+        }),
+      ),
+    );
+    const save = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "Save selection",
+    );
+    const heading = container.querySelector(".fdy-skill-catalog-heading");
+    assert.ok(heading?.contains(save), "save is in the heading row");
+    const firstSkill = container.querySelector('input[type="checkbox"]');
+    assert.equal(
+      save.compareDocumentPosition(firstSkill) &
+        window.Node.DOCUMENT_POSITION_FOLLOWING,
+      window.Node.DOCUMENT_POSITION_FOLLOWING,
+      "the list comes after the action",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

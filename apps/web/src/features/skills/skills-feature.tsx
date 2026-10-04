@@ -189,7 +189,6 @@ export function SkillsFeature({
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}
-        description={t("workspace.description")}
         emptyState={{
           title: t("workspace.emptyTitle"),
           body: t("workspace.emptyBody"),
@@ -202,8 +201,32 @@ export function SkillsFeature({
             </Button>
           ),
         }}
-        footerActions={
+        headerActions={
           catalog.length > 0 ? (
+            <>
+              <span className="fdy-workspace-skills-count">
+                {t("workspace.selectedCount", {
+                  count: resolution.selectedIds.size,
+                })}
+              </span>
+              <Button
+                disabled={
+                  !dirty ||
+                  saving ||
+                  !!duplicateNames.length ||
+                  !!readOnlyReason
+                }
+                onClick={save}
+              >
+                {saving
+                  ? t("common:actions.saving")
+                  : t("workspace.saveSelection")}
+              </Button>
+            </>
+          ) : null
+        }
+        headerExtras={
+          catalog.length > 0 && (duplicateNames.length || readOnlyReason) ? (
             <>
               {duplicateNames.length ? (
                 <p className="fdy-skill-error" role="alert">
@@ -213,26 +236,6 @@ export function SkillsFeature({
                 </p>
               ) : null}
               {readOnlyReason ? <p role="note">{readOnlyReason}</p> : null}
-              <div className="fdy-workspace-skills-actions">
-                <span className="fdy-workspace-skills-count">
-                  {t("workspace.selectedCount", {
-                    count: resolution.selectedIds.size,
-                  })}
-                </span>
-                <Button
-                  disabled={
-                    !dirty ||
-                    saving ||
-                    !!duplicateNames.length ||
-                    !!readOnlyReason
-                  }
-                  onClick={save}
-                >
-                  {saving
-                    ? t("common:actions.saving")
-                    : t("workspace.saveSelection")}
-                </Button>
-              </div>
             </>
           ) : null
         }

@@ -55,8 +55,6 @@ export const skills: Translation<typeof en> = {
     autoEnabled: "已自动启用相关 Skill：{{names}}",
     dismissNotice: "关闭提示",
     dismiss: "关闭",
-    description:
-      "只有选中的 Skill 会提供给此工作区的对话和 Issue。Skill 需要先在设备的“设置 → Skills”页发布到服务器；任何机器上的个人 Skill，除非已发布并在这里选中，否则都不会被使用。",
     emptyTitle: "服务器上还没有 Skill",
     emptyBody: "先在设备的 Skills 页发布一个本地 Skill，再回到这里选择。",
     goToDevices: "前往设备",
@@ -76,6 +74,7 @@ export const skills: Translation<typeof en> = {
       unknown: "无法比较",
     },
     loadingComparison: "正在加载比较…",
+    rootsOpen: "扫描目录（{{count}}）",
     rootsTitle: "扫描目录",
     rootsBody:
       "此设备会在这些文件夹中扫描本地 Skill。默认目录已覆盖 Claude Code 和 Codex；如有其他位置，请添加文件夹。",

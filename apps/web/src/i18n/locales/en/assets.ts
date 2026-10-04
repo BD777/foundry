@@ -21,6 +21,8 @@ export const assets = {
     localDevice: "Local device",
   },
   status: {
+    blocked: "Blocked",
+    leased: "In use",
     missing: "Missing",
     available: "Available",
     synced: "Synced",
@@ -28,6 +30,10 @@ export const assets = {
     notReported: "not reported by daemon",
   },
   capacity: {
+    missingConfig: "Missing {{file}}",
+    previewSetup:
+      "Not set up: copy .foundry/preview.example.json to .foundry/preview.json to enable previews",
+    perIssue: "One worktree per Issue",
     title: "Execution capacity",
     worktreePool: "Worktree pool",
     previewPorts: "Preview ports",

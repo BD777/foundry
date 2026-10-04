@@ -388,6 +388,29 @@
   max-width: 880px;
 }
 
+.fdy-skill-catalog-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.fdy-skill-catalog-heading-copy {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.fdy-skill-catalog-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-left: auto;
+}
+
 .fdy-device-skills section header h2,
 .fdy-workspace-skills-heading h2 {
   margin: 0 0 4px;
@@ -450,6 +473,7 @@
 
 .fdy-skill-root-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -616,14 +640,6 @@
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.fdy-workspace-skills-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 14px;
 }
 
 .fdy-workspace-skills-count {

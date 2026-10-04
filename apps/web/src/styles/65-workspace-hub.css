@@ -295,3 +295,7 @@
 .fdy-feishu-generate-actions {
   padding-top: 4px;
 }
+
+.fdy-workspace-hub-content > .fdy-button {
+  justify-self: start;
+}

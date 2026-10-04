@@ -75,7 +75,6 @@ export const chat: Translation<typeof en> = {
     generating: "正在用此会话的 provider 生成标题…",
   },
   thread: {
-    cliSession: "CLI 会话",
     readOnly: "只读权限",
     workingForIssue:
       "这个会话由 Issue 或其他会话派出。这里可以查看记录；要继续它，请回到派出它的地方。",

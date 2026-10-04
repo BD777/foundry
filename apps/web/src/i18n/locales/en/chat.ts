@@ -76,7 +76,6 @@ export const chat = {
     generating: "Generating a title with this chat's provider…",
   },
   thread: {
-    cliSession: "CLI session",
     readOnly: "Read-only access",
     workingForIssue:
       "This session was started by an Issue or by another session. You can read it here; continue it from where it was started.",
