@@ -53,13 +53,20 @@ export const devices: Translation<typeof en> = {
       "从这台 Foundry 服务器注销 {{device}}。它的工作区会从可用列表中移除；对话、Issue 和运行历史都会保留。机器上的任何内容都不会被删除。",
   },
   add: {
-    title: "添加设备",
+    dialogTitle: "添加或修复设备",
+    dialogIntro: "用一条命令配对新机器，或检查、更新已设置好的设备。",
+    title: "添加新设备",
     intro:
       "在要执行工作的机器上打开终端，运行一条命令（macOS 或 Linux，需 Node.js 20 或更高版本）。它会安装 Worker、与你的账号配对，并在登录时自动启动。",
     tokenNote:
       "令牌只能使用一次，将于 {{time}} 过期。第一个工作区是 ~/Foundry；加上 <code>{{flag}}</code> 可以选择其他位置，之后也可以在设备的“工作区”中添加更多。",
-    updateNote:
-      "已在运行 Foundry Worker 的机器会保持原样。之后要更新 Worker，在那台机器上运行 <code>{{update}}</code>；运行 <code>{{uninstall}}</code> 可将其移除。",
+    mirrorNote:
+      "如果 npm 使用的私有镜像无法访问，在命令后加上 <code>{{flag}}</code>。",
+    repairTitle: "检查或修复已设置好的设备",
+    repairIntro:
+      "在那台机器上运行。第一条命令不下载任何东西，只做检查；第二条更新 Worker 并重启。",
+    repairLegacy:
+      "用更早版本设置的设备，先运行一次 <code>{{update}}</code> 就会有这条命令。",
     copyCommand: "复制命令",
     newToken: "重新生成令牌",
     creating: "正在创建…",
