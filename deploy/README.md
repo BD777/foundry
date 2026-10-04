@@ -142,14 +142,14 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 
 **容器 2：foundry-worker**
 
-| 项目     | 值                                                                                                                                                              |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 镜像     | `foundry-worker:local`                                                                                                                                          |
+| 项目     | 值                                                                                                                                                                                                                               |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 镜像     | `foundry-worker:local`                                                                                                                                                                                                           |
 | 环境变量 | `FOUNDRY_SERVER_URL=http://foundry-server:31982`、`FOUNDRY_WORKSPACE=/workspace/default`、`FOUNDRY_PAIRING_TOKEN=<一次性配对 token>`、`ANTHROPIC_API_KEY=<key>`、`OPENAI_API_KEY=<key>`；主机名设为设备名（如 `foundry-docker`） |
-| 存储 1   | docker 卷 → `/home/foundry`（设备凭证与本地状态）                                                                                                               |
-| 存储 2   | **与 server 相同的工作区根目录** → `/workspace`                                                                                                                 |
-| 网络     | 与 server 在同一用户自定义网络中以容器名互通；做不到时把 `FOUNDRY_SERVER_URL` 改成宿主机可达地址，如 `http://<server-host>:31982`                               |
-| 重启策略 | 总是重启                                                                                                                                                        |
+| 存储 1   | docker 卷 → `/home/foundry`（设备凭证与本地状态）                                                                                                                                                                                |
+| 存储 2   | **与 server 相同的工作区根目录** → `/workspace`                                                                                                                                                                                  |
+| 网络     | 与 server 在同一用户自定义网络中以容器名互通；做不到时把 `FOUNDRY_SERVER_URL` 改成宿主机可达地址，如 `http://<server-host>:31982`                                                                                                |
+| 重启策略 | 总是重启                                                                                                                                                                                                                         |
 
 ---
 
