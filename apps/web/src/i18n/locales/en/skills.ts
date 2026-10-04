@@ -55,8 +55,6 @@ export const skills = {
     autoEnabled: "Auto-enabled related skills: {{names}}",
     dismissNotice: "Dismiss notice",
     dismiss: "Dismiss",
-    description:
-      "Only selected skills are exposed to this workspace's Chats and Issues. Skills are promoted from a device's Settings → Skills tab; personal skills on any machine are never exposed unless promoted and selected here.",
     emptyTitle: "No skills on the server yet",
     emptyBody:
       "Promote a local skill from a device's Skills tab, then select it here.",
@@ -78,6 +76,7 @@ export const skills = {
       unknown: "Comparison unavailable",
     },
     loadingComparison: "Loading comparison…",
+    rootsOpen: "Scan folders ({{count}})",
     rootsTitle: "Scan directories",
     rootsBody:
       "Folders this device scans for local skills. Defaults cover Claude Code and Codex. Add a folder to expose other skill locations.",

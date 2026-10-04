@@ -62,40 +62,44 @@ export function DeviceSettings({
           />
         </label>
       </div>
-      <Button
-        disabled={
-          busy ||
-          device.status !== "connected" ||
-          !Number.isInteger(draft.maxConcurrentTasks) ||
-          draft.maxConcurrentTasks < 1 ||
-          draft.maxConcurrentTasks > 16 ||
-          !Number.isFinite(draft.activeRuntimeTtlMs) ||
-          draft.activeRuntimeTtlMs < 60000
-        }
-        size="sm"
-        variant="primary"
-        onClick={async () => {
-          setBusy(true);
-          setMessage("");
-          try {
-            await saveAgentRuntimeSettings({
-              deviceId: device.id,
-              settings: draft,
-            });
-            await onRefresh();
-            setMessage(t("settings.saved"));
-          } catch (cause) {
-            setMessage(
-              cause instanceof Error ? cause.message : t("settings.saveFailed"),
-            );
-          } finally {
-            setBusy(false);
+      <div className="fdy-device-settings-actions">
+        <Button
+          disabled={
+            busy ||
+            device.status !== "connected" ||
+            !Number.isInteger(draft.maxConcurrentTasks) ||
+            draft.maxConcurrentTasks < 1 ||
+            draft.maxConcurrentTasks > 16 ||
+            !Number.isFinite(draft.activeRuntimeTtlMs) ||
+            draft.activeRuntimeTtlMs < 60000
           }
-        }}
-      >
-        {t("settings.save")}
-      </Button>
-      {message ? <p role="status">{message}</p> : null}
+          size="sm"
+          variant="primary"
+          onClick={async () => {
+            setBusy(true);
+            setMessage("");
+            try {
+              await saveAgentRuntimeSettings({
+                deviceId: device.id,
+                settings: draft,
+              });
+              await onRefresh();
+              setMessage(t("settings.saved"));
+            } catch (cause) {
+              setMessage(
+                cause instanceof Error
+                  ? cause.message
+                  : t("settings.saveFailed"),
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t("settings.save")}
+        </Button>
+        {message ? <p role="status">{message}</p> : null}
+      </div>
 
       <section
         className="fdy-device-removal-zone"

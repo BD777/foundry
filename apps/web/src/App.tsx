@@ -957,6 +957,7 @@ export function App() {
           ) : (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => {
                 setSelectedDeviceId(device?.id);
                 setDeviceSection("agents");

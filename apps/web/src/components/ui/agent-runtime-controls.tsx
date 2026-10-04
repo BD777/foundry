@@ -204,7 +204,7 @@ export function AgentRuntimeControls({
   const permissionTriggerLabel =
     selectedRuntime === "claude"
       ? labelForClaudePermission(effectiveClaudePermission)
-      : codexSandboxMode;
+      : t(`codexSandbox.${codexSandboxMode}`);
   const permissionTriggerDescription = t("controls.permissionsTrigger", {
     label: permissionTriggerLabel,
   });
@@ -332,8 +332,8 @@ export function AgentRuntimeControls({
                         variant="ghost"
                       >
                         <ShieldAlert size={18} />
-                        <span>
-                          <strong>{mode}</strong>
+                        <span title={mode}>
+                          <strong>{t(`codexSandbox.${mode}`)}</strong>
                           <em>{t(`codexSandboxSummary.${mode}`)}</em>
                         </span>
                         {mode === codexSandboxMode ? <Check size={17} /> : null}
@@ -351,8 +351,8 @@ export function AgentRuntimeControls({
                         variant="ghost"
                       >
                         <Hand size={18} />
-                        <span>
-                          <strong>{policy}</strong>
+                        <span title={policy}>
+                          <strong>{t(`codexApproval.${policy}`)}</strong>
                           <em>{t(`codexApprovalSummary.${policy}`)}</em>
                         </span>
                         {policy === codexApprovalPolicy ? (

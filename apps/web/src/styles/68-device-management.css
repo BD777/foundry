@@ -458,8 +458,21 @@
 .fdy-device-removal-menu-trigger {
   flex: 0 0 auto;
 }
+.fdy-device-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 4px;
+}
+.fdy-device-settings-actions p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
 .fdy-device-removal-zone {
   display: grid;
+  justify-items: start;
   gap: 10px;
   margin-top: 28px;
   padding-top: 20px;
@@ -577,12 +590,6 @@
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
   font-size: 13px;
-}
-
-.fdy-device-resource-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .fdy-device-resource-access {

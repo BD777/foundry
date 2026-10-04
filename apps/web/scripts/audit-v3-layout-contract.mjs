@@ -3639,18 +3639,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-readonly-badge",
-    declarations: {
-      gap: "6px",
-      height: "24px",
-      padding: "0 10px",
-      "border-color": "var(--fdy-brass-line)",
-      background: "var(--fdy-brass-soft)",
-      color: "var(--fdy-brass-dark)",
-      "letter-spacing": "0",
-    },
-  },
-  {
     selector: ".fdy-chat-messages",
     declarations: {
       "min-height": "0",

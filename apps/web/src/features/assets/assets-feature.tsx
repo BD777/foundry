@@ -28,7 +28,12 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { SectionLabel } from "../../components/ui/panel";
 import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
 import { Tooltip } from "../../components/ui/tooltip";
-import { assetStatusLabel, assetTone } from "../../lib/asset-meta";
+import {
+  assetDetail,
+  assetName,
+  assetStatusLabel,
+  assetTone,
+} from "../../lib/asset-meta";
 
 export type AssetsFeatureEvent =
   { type: "device.logs.requested" } | { type: "data.refresh.requested" };
@@ -163,8 +168,10 @@ export function AssetsFeature({
             icon: Gauge,
             iconTone: "brass",
             id: "worktree-pool",
-            label: worktreeAsset?.name ?? t("capacity.worktreePool"),
-            meta: worktreeAsset?.detail ?? notReported,
+            label: worktreeAsset
+              ? assetName(worktreeAsset)
+              : t("capacity.worktreePool"),
+            meta: worktreeAsset ? assetDetail(worktreeAsset) : notReported,
           },
           {
             end: (
@@ -180,8 +187,10 @@ export function AssetsFeature({
             icon: Monitor,
             iconTone: "neutral",
             id: "preview-ports",
-            label: previewAsset?.name ?? t("capacity.previewPorts"),
-            meta: previewAsset?.detail ?? notReported,
+            label: previewAsset
+              ? assetName(previewAsset)
+              : t("capacity.previewPorts"),
+            meta: previewAsset ? assetDetail(previewAsset) : notReported,
           },
           {
             end: (
@@ -199,8 +208,10 @@ export function AssetsFeature({
             icon: FolderOpen,
             iconTone: "green",
             id: "artifact-archive",
-            label: artifactAsset?.name ?? t("capacity.artifactArchive"),
-            meta: artifactAsset?.detail ?? notReported,
+            label: artifactAsset
+              ? assetName(artifactAsset)
+              : t("capacity.artifactArchive"),
+            meta: artifactAsset ? assetDetail(artifactAsset) : notReported,
           },
         ]}
         title={t("capacity.title")}

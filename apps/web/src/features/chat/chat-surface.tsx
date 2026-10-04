@@ -1,8 +1,7 @@
-import { ChevronLeft, PanelRight, Terminal } from "lucide-react";
+import { ChevronLeft, PanelRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
   ImagePreviewOverlay,
@@ -110,10 +109,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
                 <PanelRight size={16} />
               </Button>
             ) : null}
-            <Badge className="fdy-readonly-badge" dot={false} tone="slate">
-              <Terminal size={12} />
-              {t("thread.cliSession")}
-            </Badge>
           </div>
         </div>
         <ChatDetailSplitPane
