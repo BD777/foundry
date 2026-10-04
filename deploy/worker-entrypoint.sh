@@ -12,7 +12,7 @@ set -eu
 : "${FOUNDRY_SERVER_URL:?FOUNDRY_SERVER_URL is required}"
 : "${FOUNDRY_WORKSPACE:?FOUNDRY_WORKSPACE is required}"
 
-WORKER_JS="/opt/worker/dist/cli.js"
+WORKER_JS="/opt/worker/node_modules/@bd777/foundry-worker/dist/cli.js"
 
 # `init` is idempotent: it preserves an existing .foundry/workspace.json and
 # only creates missing directories/files.

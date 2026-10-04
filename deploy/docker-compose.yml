@@ -18,6 +18,8 @@ services:
 
   foundry-worker:
     image: foundry-worker:${FOUNDRY_IMAGE_TAG:-local}
+    # The device's name in Foundry; a container's own hostname is a random id.
+    hostname: "${FOUNDRY_WORKER_NAME:-foundry-docker}"
     restart: always
     depends_on:
       - foundry-server
@@ -26,6 +28,7 @@ services:
       FOUNDRY_WORKSPACE: "/workspace/default"
       FOUNDRY_PAIRING_TOKEN: "${FOUNDRY_PAIRING_TOKEN:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     volumes:
       - foundry-worker-home:/home/foundry
       - "${FOUNDRY_WORKSPACE_DIR}:/workspace"

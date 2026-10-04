@@ -14,7 +14,7 @@ NAS；其他机器（macOS / Linux）可以作为额外 worker 接入。
 ```
 浏览器 ──HTTP──> <server-host>:31982
                 ├─ foundry-server 容器  (Go API + 网页静态文件 + SQLite)
-                └─ foundry-worker 容器  (Node + git + claude CLI)
+                └─ foundry-worker 容器  (Node + git + Claude Code + Codex)
                        └─ 处理宿主机工作区目录中的 git 仓库
 其他机器（可选）
   └─ foundry-worker (launchd / systemd) ──WS──> <server-host>:31982，处理本机仓库
@@ -49,7 +49,8 @@ chmod 600 deploy/.env
   **用哪个地址打开网页就必须填哪个**（协议、主机、端口完全一致），否则会被
   CORS 拦截；不要混用 IP 和主机名。
 - `FOUNDRY_WORKSPACE_DIR`：宿主机上的工作区根目录，两个容器共同挂载到 `/workspace`。
-- `ANTHROPIC_API_KEY`：容器内 worker 调用 Claude 使用的 key。
+- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`：容器内 worker 调用 Claude Code / Codex 使用的 key（只用其中一个时另一个留空）。
+- `FOUNDRY_WORKER_NAME`：可选，这台 worker 在 Foundry 里显示的设备名，默认 `foundry-docker`。
 - `FOUNDRY_PAIRING_TOKEN`：先留空，见第四节。
 
 ---
@@ -73,6 +74,11 @@ docker build -f deploy/Dockerfile --target foundry-server -t foundry-server:loca
   --build-arg GOPROXY=https://goproxy.cn,direct \
   --build-arg NPM_REGISTRY=https://registry.npmmirror.com .
 ```
+
+worker 镜像里的 Claude Code 和 Codex 版本是固定的（见 Dockerfile 的
+`CLAUDE_CODE_VERSION`、`CODEX_VERSION`），升级时用同名构建参数覆盖，例如
+`--build-arg CLAUDE_CODE_VERSION=2.1.300`。Foundry 需要 Claude Code 2.1.201、
+Codex 0.142 及以上。
 
 Compose 默认使用 `local` 标签；用其他标签时在 `deploy/.env` 中设置
 `FOUNDRY_IMAGE_TAG`。
@@ -139,7 +145,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d
 | 项目     | 值                                                                                                                                                              |
 | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 镜像     | `foundry-worker:local`                                                                                                                                          |
-| 环境变量 | `FOUNDRY_SERVER_URL=http://foundry-server:31982`、`FOUNDRY_WORKSPACE=/workspace/default`、`FOUNDRY_PAIRING_TOKEN=<一次性配对 token>`、`ANTHROPIC_API_KEY=<key>` |
+| 环境变量 | `FOUNDRY_SERVER_URL=http://foundry-server:31982`、`FOUNDRY_WORKSPACE=/workspace/default`、`FOUNDRY_PAIRING_TOKEN=<一次性配对 token>`、`ANTHROPIC_API_KEY=<key>`、`OPENAI_API_KEY=<key>`；主机名设为设备名（如 `foundry-docker`） |
 | 存储 1   | docker 卷 → `/home/foundry`（设备凭证与本地状态）                                                                                                               |
 | 存储 2   | **与 server 相同的工作区根目录** → `/workspace`                                                                                                                 |
 | 网络     | 与 server 在同一用户自定义网络中以容器名互通；做不到时把 `FOUNDRY_SERVER_URL` 改成宿主机可达地址，如 `http://<server-host>:31982`                               |
