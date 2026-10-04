@@ -209,8 +209,15 @@ export function systemdUnitPath(): string {
   return resolve(homedir(), ".config", "systemd", "user", systemdUnitName());
 }
 
-export function bestEffort(command: string, args: string[]): boolean {
-  const result = spawnSync(command, args, { encoding: "utf8" });
+export function bestEffort(
+  command: string,
+  args: string[],
+  options: { timeoutMs?: number } = {},
+): boolean {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    timeout: options.timeoutMs,
+  });
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || "").trim();
     console.error(
@@ -218,6 +225,19 @@ export function bestEffort(command: string, args: string[]): boolean {
     );
   }
   return result.status === 0;
+}
+
+/**
+ * One launchctl call. launchctl can wait on a job that will not stop, and an
+ * install or update must never hang on it, so each call has a time limit.
+ */
+function launchctl(args: string[], options: { quiet?: boolean } = {}): boolean {
+  if (options.quiet)
+    return (
+      spawnSync("launchctl", args, { stdio: "ignore", timeout: 30_000 })
+        .status === 0
+    );
+  return bestEffort("launchctl", args, { timeoutMs: 30_000 });
 }
 
 /** Installs the login service; says whether the worker is now running. */
@@ -280,14 +300,11 @@ ${environmentVariablesXML()}
     if (!noStart && typeof process.getuid === "function") {
       const target = `gui/${process.getuid()}`;
       // Nothing to boot out on a fresh install; not worth a warning.
-      spawnSync("launchctl", ["bootout", target, plistPath]);
-      bestEffort("launchctl", ["bootstrap", target, plistPath]);
-      bestEffort("launchctl", ["enable", `${target}/${serviceLabel()}`]);
-      bestEffort("launchctl", [
-        "kickstart",
-        "-k",
-        `${target}/${serviceLabel()}`,
-      ]);
+      // Loading the job starts it (RunAtLoad). A `kickstart -k` on top
+      // raced that first start and could wait forever on the app host.
+      launchctl(["bootout", target, plistPath], { quiet: true });
+      launchctl(["enable", `${target}/${serviceLabel()}`]);
+      launchctl(["bootstrap", target, plistPath]);
     }
     console.log(`Installed launchd service: ${plistPath}`);
 
@@ -330,9 +347,9 @@ ${environmentVariablesXML()}
     );
     if (!noStart && typeof process.getuid === "function") {
       const target = `gui/${process.getuid()}`;
-      spawnSync("launchctl", ["bootout", target, watchdogPath]);
-      bestEffort("launchctl", ["bootstrap", target, watchdogPath]);
-      bestEffort("launchctl", ["enable", `${target}/${watchdogLabel()}`]);
+      launchctl(["bootout", target, watchdogPath], { quiet: true });
+      launchctl(["enable", `${target}/${watchdogLabel()}`]);
+      launchctl(["bootstrap", target, watchdogPath]);
     }
     console.log(`Installed watchdog: ${watchdogPath}`);
     return !noStart;
@@ -433,11 +450,9 @@ function reportNotRunning(command: string): void {
 export async function reinstallService(host: ServiceHost): Promise<boolean> {
   if (process.platform === "darwin") {
     if (typeof process.getuid === "function")
-      spawnSync("launchctl", [
-        "bootout",
-        `gui/${process.getuid()}`,
-        launchdPlistPath(),
-      ]);
+      launchctl(["bootout", `gui/${process.getuid()}`, launchdPlistPath()], {
+        quiet: true,
+      });
     await stopDaemonProcess();
     installService([], host);
     return true;
@@ -468,7 +483,7 @@ export function uninstallService(): void {
     );
     for (const path of [watchdogPath, plistPath]) {
       if (typeof process.getuid === "function") {
-        bestEffort("launchctl", ["bootout", `gui/${process.getuid()}`, path]);
+        launchctl(["bootout", `gui/${process.getuid()}`, path]);
       }
       if (existsSync(path)) rmSync(path);
     }
