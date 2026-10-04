@@ -104,6 +104,7 @@ import {
 } from "./issues.js";
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
+import { installNativeCli } from "./native-cli-install.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import {
   completeProfileAuthorization,
@@ -1442,6 +1443,39 @@ function runWebSocketSession(options: {
               socket,
               daemonMessageTypes.nativeAccountInspected,
               { error: "Could not inspect this native account." },
+              envelope.id,
+            );
+          });
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.installNativeCli) {
+        const input = envelope.payload as { runtime?: string };
+        if (input?.runtime !== "claude" && input?.runtime !== "codex") {
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.nativeCliInstalled,
+            { error: "Unknown runtime." },
+            envelope.id,
+          );
+          return;
+        }
+        void installNativeCli(input.runtime)
+          .then((result) => {
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.nativeCliInstalled,
+              {
+                result,
+                registration: daemonRegistration(options.workspacePath),
+              },
+              envelope.id,
+            );
+          })
+          .catch((error) => {
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.nativeCliInstalled,
+              { error: error instanceof Error ? error.message : String(error) },
               envelope.id,
             );
           });

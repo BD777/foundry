@@ -150,6 +150,17 @@ export const profiles = {
     unavailable: "Unavailable",
     workerNoLogin: "Worker: no login",
     reauthorizeLabel: "Re-authorize {{name}} on {{device}}",
+    installCli: "Install {{name}}",
+    installCliConfirm: "Run the installer on {{device}}?",
+    installCliLabel: "Install {{name}} on {{device}}",
+    installCliHint:
+      "Foundry runs the official installer on {{device}}: {{command}}",
+    installingCli: "Installing {{name}} on {{device}}…",
+    installCliDone: "{{name}} is installed on {{device}}. Sign in to use it.",
+    installCliFailed: "{{name}} could not be installed on {{device}}.",
+    installCliLog: "Installer output",
+    cliOutdated:
+      "{{name}} {{version}} on {{device}} is older than the {{minimum}} Foundry needs. Update it there: {{command}}",
     signInLabel: "Sign in to {{name}} on {{device}}",
     reauthorize: "Re-authorize",
     signIn: "Sign in",

@@ -155,7 +155,7 @@ In the web app open Devices → Add device, create a pairing command and run it 
 npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --token <pairing token> --workspace /absolute/path/to/workspace
 ```
 
-The worker uses the Claude Code or Codex that is signed in on that machine. If neither is, install one and sign in: `npm install -g @anthropic-ai/claude-code` then run `claude`, or `npm install -g @openai/codex` then `codex login`; then choose Re-check under Devices → Models & accounts. API connections can be configured under Server connections instead.
+The worker uses that machine's own Claude Code or Codex; it does not bring a copy of either. If one is missing, choose Install under Devices → Models & accounts and the worker runs the official installer on that device (Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`; Codex: `npm install -g @openai/codex`), or run it yourself. Then sign in with `claude` or `codex login` and choose Re-check. A version older than Foundry needs (Claude Code 2.1.201, Codex 0.142) still works, and the page shows the update command (`claude update`, `npm install -g @openai/codex@latest`). API connections can be configured under Server connections instead.
 
 A worker running as root still runs Issues (they run inside Foundry's sandbox). In chats, Claude Code refuses to skip permission prompts as root: choose another permission mode for chats, or run the worker as a regular user.
 

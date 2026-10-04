@@ -1,13 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
 import { claudeAccount, codexAccount } from "./native-account.js";
+import { nativeCli, outdatedNote } from "./native-cli.js";
 import { claudeCommandCandidates, codexCommandCandidates } from "./utils.js";
 import type { ProviderHealth, WorkerRuntimeId } from "@bd777/foundry-protocol";
 
 type LocalProviderId = Exclude<WorkerRuntimeId, "mock">;
 
-const requireFromHere = createRequire(import.meta.url);
 const claudeHealthCacheMs = 60_000;
 
 let claudeLocalHealthCache:
@@ -15,12 +14,29 @@ let claudeLocalHealthCache:
 
 /** Local readiness of each native runtime: can it run, and is it signed in. */
 export function providerHealthData(): ProviderHealth[] {
-  return [providerHealthFor("claude"), providerHealthFor("codex")];
+  return (["claude", "codex"] as const).map((provider) => {
+    const cli = nativeCli(provider);
+    const health = providerHealthFor(provider, cli.installed);
+    const note = outdatedNote(provider, cli);
+    return {
+      ...health,
+      cli,
+      ...(note
+        ? {
+            statusDetail: health.statusDetail
+              ? `${health.statusDetail} ${note}`
+              : note,
+          }
+        : {}),
+    };
+  });
 }
 
-function providerHealthFor(provider: LocalProviderId): ProviderHealth {
-  // Sessions run through the SDK and fall back to the CLI, so either counts.
-  const runnable = sdkInstalled(provider) || Boolean(executable(provider));
+function providerHealthFor(
+  provider: LocalProviderId,
+  // Foundry runs the device's program, never a copy of its own.
+  runnable: boolean,
+): ProviderHealth {
   const apiKey =
     provider === "claude"
       ? process.env.ANTHROPIC_API_KEY
@@ -31,12 +47,12 @@ function providerHealthFor(provider: LocalProviderId): ProviderHealth {
     if (!runnable) {
       return {
         provider,
-        status:
-          localHealth.authMode === "missing" ? "missing_auth" : "unavailable",
+        status: "unavailable",
         authMode: localHealth.authMode,
         secretStored: "local",
         statusDetail:
-          localHealth.statusDetail ?? "Claude CLI or SDK is not available.",
+          localHealth.statusDetail ??
+          "Claude Code is not installed on this device.",
       };
     }
     return localHealth;
@@ -65,7 +81,7 @@ function providerHealthFor(provider: LocalProviderId): ProviderHealth {
     authMode: apiKey ? "env" : "missing",
     secretStored: "local",
     statusDetail: apiKey
-      ? `${provider} credentials are configured, but neither its SDK nor its CLI was found.`
+      ? `${provider} credentials are configured, but ${provider === "claude" ? "Claude Code" : "Codex"} is not installed on this device.`
       : provider === "codex"
         ? "Codex is not signed in on this device. Run the official login here."
         : `${provider} credentials are not configured.`,
@@ -89,7 +105,7 @@ function detectClaudeLocalAuthHealth(): ProviderHealth {
       status: "missing_auth",
       authMode: "missing",
       secretStored: "local",
-      statusDetail: "Claude CLI was not found.",
+      statusDetail: "Claude Code is not installed on this device.",
     };
   }
 
@@ -102,19 +118,6 @@ function detectClaudeLocalAuthHealth(): ProviderHealth {
     authMode: "local_config",
     secretStored: "local",
   };
-}
-
-function sdkInstalled(provider: LocalProviderId): boolean {
-  try {
-    requireFromHere.resolve(
-      provider === "claude"
-        ? "@anthropic-ai/claude-agent-sdk"
-        : "@openai/codex-sdk",
-    );
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function executable(provider: LocalProviderId): string | undefined {

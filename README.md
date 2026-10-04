@@ -155,7 +155,7 @@ pnpm dev:web
 npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --token <配对码> --workspace /absolute/path/to/workspace
 ```
 
-Worker 使用这台机器上已登录的 Claude Code 或 Codex。还没有的话先安装并登录：`npm install -g @anthropic-ai/claude-code` 后运行 `claude` 登录，或 `npm install -g @openai/codex` 后运行 `codex login`；然后在“设备 → 模型与账户”里点“重新检查”。也可以在“服务器连接”里配置 API 连接。
+Worker 使用这台机器自己的 Claude Code 或 Codex，不另带一份。没装的话，在“设备 → 模型与账户”里点“安装”，Worker 会在这台设备上运行官方安装命令（Claude Code：`curl -fsSL https://claude.ai/install.sh | bash`；Codex：`npm install -g @openai/codex`），也可以自己运行；装好后用 `claude` 或 `codex login` 登录，再点“重新检查”。版本低于 Foundry 所需（Claude Code 2.1.201、Codex 0.142）时仍可使用，但页面会提示升级命令（`claude update`、`npm install -g @openai/codex@latest`）。也可以在“服务器连接”里配置 API 连接。
 
 Worker 以 root 运行时，Issue 照常执行（它在 Foundry 的沙箱里）；对话里 Claude Code 不允许以 root 身份跳过权限确认，请为对话选择其他权限模式，或用普通用户运行 Worker。
 

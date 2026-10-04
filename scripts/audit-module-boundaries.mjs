@@ -93,6 +93,8 @@ export const workerModules = {
       "agent-profile-state",
       "native-account",
       "native-agent-config",
+      "native-cli",
+      "native-cli-install",
       "native-inspection",
       "native-login",
       "native-login-environment",

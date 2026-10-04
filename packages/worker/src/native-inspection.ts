@@ -4,7 +4,6 @@ import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AgentModelOption,
   NativeAccountInspection,
@@ -133,6 +132,9 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
   async function* noPrompt(): AsyncGenerator<never> {
     await closed;
   }
+  // Loaded on use: the SDK is installed beside the worker's runtime, not
+  // with the npx bootstrap that runs install/doctor.
+  const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const session = query({
     prompt: noPrompt(),
     options: {

@@ -161,6 +161,31 @@ export interface ProviderHealth {
    */
   accountLabel?: string;
   statusDetail?: string;
+  /** The device's own Claude Code / Codex program, which Foundry runs. */
+  cli?: NativeCli;
+}
+
+/**
+ * Foundry runs the device's Claude Code and Codex rather than shipping its own
+ * copies: whether the program is there, its version against the minimum the
+ * worker was built for, and the official commands to install or update it.
+ */
+export interface NativeCli {
+  installed: boolean;
+  version?: string;
+  minimumVersion?: string;
+  outdated?: boolean;
+  installCommand?: string;
+  updateCommand?: string;
+}
+
+/** What running the official installer for a device's program produced. */
+export interface NativeCliInstallResult {
+  runtime: "claude" | "codex";
+  ok: boolean;
+  command: string;
+  log: string;
+  cli?: NativeCli;
 }
 
 export interface NativeAccountInspection {
