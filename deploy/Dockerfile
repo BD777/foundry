@@ -65,16 +65,34 @@ WORKDIR /app
 COPY .npmrc pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/worker/package.json packages/worker/
-COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile \
+      --filter @bd777/foundry-protocol --filter @bd777/foundry-worker
 
 COPY packages packages
+# Pack the two packages exactly as npm publishes them, and list the packages
+# the worker installs beside itself (the agent SDKs, node-pty), so the image
+# gets the same runtime as `npx @bd777/foundry-worker install`.
 RUN pnpm --filter @bd777/foundry-protocol build \
- && pnpm --filter @bd777/foundry-worker build
-# Self-contained production tree (workspace deps + linux-x64 optional
-# native packages such as @openai/codex for the target platform are bundled). --legacy is
-# required by pnpm >=10 because this workspace does not inject deps.
-RUN pnpm deploy --legacy --filter @bd777/foundry-worker --prod /opt/worker
+ && pnpm --filter @bd777/foundry-worker build \
+ && mkdir /pkgs \
+ && pnpm --filter @bd777/foundry-protocol pack --pack-destination /pkgs \
+ && pnpm --filter @bd777/foundry-worker pack --pack-destination /pkgs \
+ && node --input-type=module -e "\
+      import { readFileSync, writeFileSync } from 'node:fs'; \
+      import { runtimeCompanions } from '/app/packages/worker/dist/worker-install.js'; \
+      const c = runtimeCompanions(JSON.parse(readFileSync('/app/packages/worker/package.json', 'utf8'))); \
+      writeFileSync('/pkgs/required', c.required.join(' ')); \
+      writeFileSync('/pkgs/best-effort', c.bestEffort.join(' '));"
+
+# The worker's runtime, as `install` builds it: optional packages are left
+# out (the SDKs' own copies of Claude Code and Codex), and the SDKs are added
+# at the versions the worker pins. node-pty has no Linux prebuild; this stage
+# has the compiler it needs, and the final image runs the same Node major.
+RUN mkdir -p /opt/worker && cd /opt/worker \
+ && npm init -y >/dev/null \
+ && npm install --no-audit --no-fund --omit=dev --omit=optional \
+      /pkgs/*.tgz $(cat /pkgs/required) \
+ && npm install --no-audit --no-fund --omit=dev --omit=optional $(cat /pkgs/best-effort)
 
 # ---------- final: server ----------
 FROM alpine:3.20 AS foundry-server
@@ -99,6 +117,13 @@ ENTRYPOINT ["/app/foundry-server"]
 FROM node:22-bookworm-slim AS foundry-worker
 ARG NPM_REGISTRY
 ARG NPM_NETWORK_CONCURRENCY
+# The agent programs the worker runs. Foundry never bundles them; the image
+# installs them like a person would (npm is an official install method for
+# both). Pinned so an image rebuild is reproducible; override to update.
+ARG CLAUDE_CODE_VERSION=2.1.289
+ARG CODEX_VERSION=0.160.0
+ENV npm_config_registry=$NPM_REGISTRY \
+    npm_config_maxsockets=$NPM_NETWORK_CONCURRENCY
 
 # git: per-issue worktrees and evidence capture. ca-certificates: HTTPS to
 # the provider APIs. openssh-client: cloning private git repositories.
@@ -106,8 +131,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       git openssh-client ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
- && npm install -g --registry="$NPM_REGISTRY" --maxsockets="$NPM_NETWORK_CONCURRENCY" \
-      @anthropic-ai/claude-code
+ && npm install -g --no-audit --no-fund \
+      "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" \
+      "@openai/codex@$CODEX_VERSION"
 
 COPY --from=worker-builder /opt/worker /opt/worker
 COPY deploy/worker-entrypoint.sh /usr/local/bin/worker-entrypoint.sh
