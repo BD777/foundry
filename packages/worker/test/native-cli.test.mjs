@@ -155,3 +155,27 @@ test("programs install per user with the official scripts, and update the way th
     "claude update",
   );
 });
+
+test("every lookup shares one probe of the device program", async (t) => {
+  const { resolveClaudeCommand } = await import("../dist/utils.js");
+  const dir = mkdtempSync(join(tmpdir(), "counted-claude-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, "claude");
+  const log = join(dir, "runs");
+  writeFileSync(
+    bin,
+    `#!/bin/sh\necho run >> "${log}"\necho "2.1.300 (Claude Code)"\n`,
+  );
+  chmodSync(bin, 0o755);
+  withEnv(t, { FOUNDRY_CLAUDE_BIN: bin });
+  clearNativeCliCache();
+
+  assert.equal(resolveClaudeCommand(), bin);
+  assert.equal(nativeCli("claude").version, "2.1.300");
+  assert.equal(resolveClaudeCommand(), bin);
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 1);
+
+  clearNativeCliCache();
+  resolveClaudeCommand();
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2);
+});
