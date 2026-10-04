@@ -116,15 +116,8 @@ export class EvidenceStore {
     readonly actor: ActorRef,
     store = new ExecutionStore(),
   ) {
-    this.root = resolve(
-      store.executionRoot,
-      identifier(workspaceId),
-      "evidence-store",
-    );
-    for (const path of [
-      resolve(store.executionRoot, identifier(workspaceId)),
-      this.root,
-    ]) {
+    this.root = resolve(store.workspaceRoot(workspaceId), "evidence-store");
+    for (const path of [store.workspaceRoot(workspaceId), this.root]) {
       if (existsSync(path) && lstatSync(path).isSymbolicLink())
         throw new Error("Evidence storage root must not be a symlink");
       mkdirSync(path, { recursive: true, mode: 0o700 });

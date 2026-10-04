@@ -44,7 +44,6 @@ export const shell: Translation<typeof en> = {
     dataRefreshed: "数据已刷新。",
     switchFailed: "无法切换工作区：连接不上本地 API。",
     draftLoaded: "草稿已放入 Issue 输入框。",
-    selectIssue: "请先选择一个 Issue。",
     connectWorkspace: "请先连接一个本地工作区。",
     saveFailed: "这项修改没能保存到服务器。",
     openDaemonLogs: "请在配对的设备上查看本地 daemon 日志。",

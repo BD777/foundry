@@ -17,18 +17,6 @@ export function readOptionalText(path: string): string | undefined {
   }
 }
 
-export function yamlScalar(
-  text: string | undefined,
-  key: string,
-): string | undefined {
-  if (!text) {
-    return undefined;
-  }
-  const pattern = new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`, "m");
-  const match = pattern.exec(text);
-  return match?.[1]?.replace(/^["']|["']$/g, "");
-}
-
 export function safeID(input: string): string {
   return input
     .toLowerCase()

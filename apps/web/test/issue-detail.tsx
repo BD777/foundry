@@ -354,15 +354,9 @@ function Fixture() {
           deviceLabel="Test device"
           onBack={() => setBoard(true)}
           callbacks={{
-            onAcceptIssue: () =>
-              setIssue((value) => ({ ...value, status: "accepted" })),
             onDraftFromSource: setNotice,
-            onNavigate: setNotice,
-            onNewIssue: () => {},
             onNotice: setNotice,
             onRefresh: () => {},
-            onRequestChanges: () => {},
-            onStartProduction: () => {},
           }}
         />
       )}

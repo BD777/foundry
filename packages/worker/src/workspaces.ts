@@ -187,18 +187,8 @@ export function foundryScaffold(
       contents: `# Context\n\n${workspace.name} is a Foundry workspace.\n\nCurrent baseline: \`${workspace.baseline}\`\n`,
     },
     {
-      path: ".foundry/assets.yaml",
-      contents: `assets:\n  worktree_pool:\n    kind: git_worktree\n    strategy: per_issue\n  artifact_archive:\n    kind: artifact_archive\n    path: accepted\n`,
-      directoryMode: 0o700,
-    },
-    {
       path: ".foundry/skills.yaml",
       contents: defaultSkillsConfig(),
-      directoryMode: 0o700,
-    },
-    {
-      path: ".foundry/providers.yaml",
-      contents: `providers:\n  claude:\n    auth: local\n    secret: local-only\n  codex:\n    auth: local\n    secret: local-only\n`,
       directoryMode: 0o700,
     },
     {
@@ -271,8 +261,6 @@ export function initWorkspace(inputPath: string | undefined): void {
   };
 
   mkdirSync(workspacePath, { recursive: true });
-  mkdirSync(resolve(workspacePath, "artifacts", "issues"), { recursive: true });
-  mkdirSync(resolve(workspacePath, "accepted"), { recursive: true });
   mkdirSync(resolve(foundryPath, "issues"), { mode: 0o700, recursive: true });
   mkdirSync(resolve(foundryPath, "integrations"), {
     mode: 0o700,

@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { workerPackageName } from "@bd777/foundry-protocol";
 import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TerminalBlock } from "../../components/ui/terminal-block";
 import { i18n } from "../../i18n";
+import {
+  localWorkerCommand,
+  npxWorkerCommand,
+} from "../../lib/worker-commands";
 import { WorkspaceDialog } from "./workspace-dialog";
 
 function expiryLabel(value: string): string {
@@ -17,9 +20,6 @@ function expiryLabel(value: string): string {
         minute: "2-digit",
       });
 }
-
-/** The command a device already set up runs to check or update itself. */
-const localWorker = "~/.foundry/bin/foundry-worker";
 
 /**
  * Adding a device (a one-time pairing token and the one command that installs
@@ -36,9 +36,8 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const npx = `npx -y ${workerPackageName}@latest`;
   const command = pairing
-    ? `${npx} install --server ${workerServerURL()} --token ${pairing.token}`
+    ? `${npxWorkerCommand} install --server ${workerServerURL()} --token ${pairing.token}`
     : "";
 
   async function issue(): Promise<void> {
@@ -136,15 +135,23 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
         <p>{t("add.repairIntro")}</p>
         <TerminalBlock
           lines={[
-            { id: "doctor", prompt: "$", value: `${localWorker} doctor` },
-            { id: "update", prompt: "$", value: `${localWorker} update` },
+            {
+              id: "doctor",
+              prompt: "$",
+              value: `${localWorkerCommand} doctor`,
+            },
+            {
+              id: "update",
+              prompt: "$",
+              value: `${localWorkerCommand} update`,
+            },
           ]}
         />
         <p className="fdy-add-device-note">
           <Trans
             ns="devices"
             i18nKey="add.repairLegacy"
-            values={{ update: `${npx} update` }}
+            values={{ update: `${npxWorkerCommand} update` }}
             components={{ code: <code /> }}
           />
         </p>

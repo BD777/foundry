@@ -238,8 +238,6 @@ async function prepareRepositoryUnlocked(
       "/.foundry/integrations/",
       "/.foundry/daemon.json",
       "/.foundry/repositories.yaml",
-      "/artifacts/",
-      "/accepted/",
       ...children.map(
         (item) => `/${relative(repo.sourcePath, item.sourcePath)}/`,
       ),

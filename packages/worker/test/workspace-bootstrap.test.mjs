@@ -369,3 +369,33 @@ test("no scaffolding commit on a detached HEAD", async (t) => {
   await register();
   assert.equal((await log())[0], "Test|project");
 });
+
+test("a new workspace gets no files that configure nothing, and its resources name the real Issue storage", async (t) => {
+  const { source } = fixture(t);
+  const { initWorkspace, readWorkspace } =
+    await import("../dist/workspaces.js");
+  const { assetsForWorkspace } = await import("../dist/workspace-ops.js");
+  const state = resolve(source, "..", "resources-state");
+  const previous = process.env.FOUNDRY_STATE_ROOT;
+  process.env.FOUNDRY_STATE_ROOT = state;
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+    else process.env.FOUNDRY_STATE_ROOT = previous;
+  });
+  initWorkspace(source);
+  for (const path of [
+    ".foundry/assets.yaml",
+    ".foundry/providers.yaml",
+    "accepted",
+    "artifacts",
+  ])
+    assert.equal(existsSync(resolve(source, path)), false, path);
+
+  const workspace = readWorkspace(source);
+  const root = new ExecutionStore().workspaceRoot(workspace.id);
+  const assets = assetsForWorkspace(workspace, source);
+  const detail = (kind) => assets.find((asset) => asset.kind === kind).detail;
+  assert.equal(detail("worktree_pool"), resolve(root, "environments"));
+  assert.equal(detail("artifact_archive"), resolve(root, "evidence-store"));
+  assert.ok(assets.every((asset) => !asset.detail.includes("assets.yaml")));
+});
