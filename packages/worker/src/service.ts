@@ -79,7 +79,9 @@ export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
   ];
 }
 
-export function serviceEnvironment(): Record<string, string> {
+export function serviceEnvironment(
+  installed: Record<string, string> = installedServiceEnvironment(),
+): Record<string, string> {
   const user = process.env.USER ?? basename(homedir());
   const env: Record<string, string> = {
     ...stackEnvironment(),
@@ -101,19 +103,78 @@ export function serviceEnvironment(): Record<string, string> {
     USER: user,
   };
 
-  for (const key of [
-    "CODEX_CLI_PATH",
-    "CODEX_HOME",
-    "FOUNDRY_CLAUDE_BIN",
-    "FOUNDRY_CLAUDE_MAX_TURNS",
-    "FOUNDRY_CODEX_BIN",
-  ]) {
-    const value = process.env[key];
+  for (const key of passthroughKeys) {
+    const value = process.env[key] || installed[key];
     if (value) {
       env[key] = value;
     }
   }
 
+  return env;
+}
+
+/**
+ * Settings a person gives the service (such as which Codex login to use).
+ * They are taken from the shell that installs the service, and kept from the
+ * installed service when a later reinstall (`update`) runs without them.
+ */
+const passthroughKeys = [
+  "CLAUDE_CONFIG_DIR",
+  "CODEX_CLI_PATH",
+  "CODEX_HOME",
+  "FOUNDRY_CLAUDE_BIN",
+  "FOUNDRY_CLAUDE_MAX_TURNS",
+  "FOUNDRY_CODEX_BIN",
+];
+
+/** The environment of this stack's installed service, if there is one. */
+export function installedServiceEnvironment(): Record<string, string> {
+  try {
+    if (process.platform === "darwin") {
+      const plutil = spawnSync(
+        "/usr/bin/plutil",
+        [
+          "-extract",
+          "EnvironmentVariables",
+          "json",
+          "-o",
+          "-",
+          launchdPlistPath(),
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+      return plutil.status === 0 ? JSON.parse(plutil.stdout) : {};
+    }
+    if (process.platform === "linux") {
+      return parseSystemdEnvironment(readFileSync(systemdUnitPath(), "utf8"));
+    }
+  } catch {
+    // Not installed yet.
+  }
+  return {};
+}
+
+/** `Environment="KEY=value"` lines; `%` is a unit specifier, so double it. */
+export function systemdEnvironmentLines(env: Record<string, string>): string {
+  return Object.entries(env)
+    .map(
+      ([key, value]) =>
+        `Environment="${`${key}=${value}`.replace(/[\\"]/g, "\\$&").replace(/%/g, "%%")}"\n`,
+    )
+    .join("");
+}
+
+export function parseSystemdEnvironment(unit: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [, quoted, bare] of unit.matchAll(
+    /^Environment=(?:"((?:[^"\\]|\\.)*)"|(\S+))\s*$/gm,
+  )) {
+    const assignment = (quoted ?? bare ?? "")
+      .replace(/\\(.)/g, "$1")
+      .replace(/%%/g, "%");
+    const at = assignment.indexOf("=");
+    if (at > 0) env[assignment.slice(0, at)] = assignment.slice(at + 1);
+  }
   return env;
 }
 
@@ -293,9 +354,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=${config.workspacePath}
 ExecStart=${command}
-${Object.entries(stackEnvironment())
-  .map(([key, value]) => `Environment=${key}=${value}\n`)
-  .join("")}Restart=always
+${systemdEnvironmentLines(serviceEnvironment())}Restart=always
 RestartSec=5
 StandardOutput=append:${logs.out}
 StandardError=append:${logs.err}
