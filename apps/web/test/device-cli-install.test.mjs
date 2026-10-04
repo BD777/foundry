@@ -56,7 +56,9 @@ const cli = (overrides) => ({
 });
 const health = (
   claude,
-  codex = cli({ installCommand: "curl -fsSL https://chatgpt.com/codex/install.sh | sh" }),
+  codex = cli({
+    installCommand: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+  }),
 ) => [
   {
     provider: "claude",
