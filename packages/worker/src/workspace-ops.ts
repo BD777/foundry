@@ -43,12 +43,7 @@ import {
   type UpsertAgentProfilePayload,
 } from "./profiles.js";
 import { getDevice } from "./device.js";
-import {
-  optionValue,
-  readOptionalText,
-  safeID,
-  sizeLabel,
-} from "./utils.js";
+import { optionValue, readOptionalText, safeID, sizeLabel } from "./utils.js";
 import {
   readRegistry,
   readWorkspace,
@@ -284,11 +279,7 @@ export function workspaceFilesForWorkspace(
     });
   }
 
-  for (const path of [
-    "AGENTS.md",
-    "CONTEXT.md",
-    ".foundry/skills.yaml",
-  ]) {
+  for (const path of ["AGENTS.md", "CONTEXT.md", ".foundry/skills.yaml"]) {
     if (entries.some((entry) => entry.path === path)) {
       continue;
     }
