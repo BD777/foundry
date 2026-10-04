@@ -99,10 +99,10 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 
 - [x] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转是一份显式定义（拒绝表外流转，文档与代码由测试保持一致）；准出规则 R1–R6 带版本写入审阅快照，在“最终接受”逐条显示。
 - [x] [人工介入（Blocked）](docs/issue-conversation-design.md)：执行者经 `ask_person` 向人提问或请求许可，Issue 进入 Blocked；人回答后在同一候选中继续。
-- [ ] [外部反馈与飞书中的 Issue](docs/platform-extensions.md#im-integration)：反馈可来自人、Agent 以外的来源（首个为飞书话题或 CI），带来源记录回到 Issue；在飞书话题里发起、跟进并回应 Blocked，复杂审阅回到 Web。飞书话题部分已实现并以模拟事件测试，待真实群验收；CI 来源未做。
-- [ ] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：补齐 [v1 §9](docs/evidence-and-verify-v1.md) 的剩余项（Codex 图像判定与 PDF 参考材料、证据和预览已完成；判定只看封存候选的干净副本，检查按已提交的锁文件离线准备依赖，已支持 pnpm/npm，Go 进行中）；采集方式通过统一接口扩展。
+- [ ] [飞书中的 Issue](docs/platform-extensions.md#im-integration)：在飞书话题里发起、跟进并回应 Blocked，消息带来源记录回到 Issue，复杂审阅回到 Web。已实现并以模拟事件测试，待真实群验收。
+- [x] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：Codex 图像判定、PDF 参考材料与证据及预览；判定只看封存候选的干净副本；检查按已提交的锁文件离线准备依赖（pnpm、npm、Go）。视频、音频与图像标注暂不计划，见 [v1 §9](docs/evidence-and-verify-v1.md)。
 - [x] [接受与合入](docs/issue-workflow.md#accept-and-integration)：基线前移后对齐若有冲突，在候选里由执行者解决，再重新检查并接受；旧判断与批准不复用。
-- [ ] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。干净环境安装已复现（0.5.1）；在本仓库上用 Foundry 完成并接受了第一个真实 Issue（#87）。
+- [x] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。干净环境安装已复现（0.5.1）；在本仓库上（Linux，#87）和 Mac 真机上各用 Foundry 完成并接受了真实 Issue。
 
 ### 并行轨道
 
@@ -111,6 +111,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 
 ### 探索（未排期）
 
+- [ ] [CI 作为 Issue 反馈来源](docs/platform-extensions.md#im-integration)：候选在 CI 上的结果带来源记录回到 Issue。待 Issue 在真实使用中的反馈再定。
 - [ ] [Workflow 插件化](docs/platform-extensions.md#workflow-plugins)：Issue 作为内置 Workflow，开放侧边栏 Tab、Workflow 定义等扩展接口，让用户按自己的方式组织工作。
 - [ ] [Issue 多 Agent 协作](docs/issue-workflow.md#issue-multi-agent)：同一 Issue 的不同步骤交给不同 Agent 或 Harness，对用户仍是一段对话。
 - [ ] [跨 Host 资源调度](docs/tool-use-and-resources.md#shared-resource-scheduling)：多台机器共享执行与验证资源，支持异地验证。

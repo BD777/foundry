@@ -99,10 +99,10 @@ Per [decision D1 in module architecture §6](architecture-modules.md#6-m4-计划
 
 - [x] [Loop graph and exit rules](issue-workflow.md#issues): Issue state transitions are one explicit definition (anything else is refused; a test keeps the docs and the code identical); exit rules R1–R6 are versioned, recorded in each review snapshot and listed under Final acceptance.
 - [x] [Human input (Blocked)](issue-conversation-design.md): the executor asks the person a question or for permission through `ask_person` and the Issue blocks; the answer resumes it in the same candidate.
-- [ ] [External feedback and Issues in Feishu](platform-extensions.md#im-integration): feedback can come from sources other than people and agents (first a Feishu thread or CI) and returns to the Issue with its source recorded; raise Issues, follow progress and answer Blocked states from Feishu threads, with complex review on the web. The Feishu part is built and tested with simulated events, awaiting acceptance in a real group; CI as a source is not done.
-- [ ] [Evidence and verification](issue-workflow.md#evidence-and-verify): close the remaining items in [v1 §9](evidence-and-verify-v1.md) (Codex image judgments and PDF references, evidence and previews are done; judges see only a clean copy of the sealed candidate, and checks prepare dependencies offline from the committed lockfile for pnpm/npm, with Go in progress); collectors extend through one interface.
+- [ ] [Issues in Feishu](platform-extensions.md#im-integration): raise Issues, follow progress and answer Blocked states from Feishu threads; messages return to the Issue with their source recorded, and complex review stays on the web. Built and tested with simulated events, awaiting acceptance in a real group.
+- [x] [Evidence and verification](issue-workflow.md#evidence-and-verify): Codex image judgments; PDF references, evidence and previews; judges see only a clean copy of the sealed candidate; checks prepare dependencies offline from the committed lockfile (pnpm, npm, Go). Video, audio and image annotation are not planned for now; see [v1 §9](evidence-and-verify-v1.md).
 - [x] [Acceptance and integration](issue-workflow.md#accept-and-integration): when aligning with a moved baseline conflicts, the executor resolves it in the candidate, then the result is checked and accepted again; earlier judgments and approvals are never reused.
-- [ ] [First open-source release](issue-workflow.md#open-source-release): run the full loop on representative real tasks and reproduce installation in a clean environment. A clean-environment install is reproduced (0.5.1), and the first real Issue on this repository was done and accepted with Foundry (#87).
+- [x] [First open-source release](issue-workflow.md#open-source-release): run the full loop on representative real tasks and reproduce installation in a clean environment. A clean-environment install is reproduced (0.5.1), and real Issues were done and accepted with Foundry on this repository (Linux, #87) and on a real Mac.
 
 ### Parallel tracks
 
@@ -111,6 +111,7 @@ Per [decision D1 in module architecture §6](architecture-modules.md#6-m4-计划
 
 ### Exploring (unscheduled)
 
+- [ ] [CI as an Issue feedback source](platform-extensions.md#im-integration): a candidate's CI results return to the Issue with their source recorded. To be decided after feedback from real Issue use.
 - [ ] [Workflow plugins](platform-extensions.md#workflow-plugins): ship Issues as the built-in workflow and expose extension points such as sidebar tabs and workflow definitions, so people can organize work their own way.
 - [ ] [Multiple agents within an Issue](issue-workflow.md#issue-multi-agent): assign steps of one Issue to different agents or harnesses while keeping one conversation.
 - [ ] [Cross-host resource scheduling](tool-use-and-resources.md#shared-resource-scheduling): share execution and verification resources across machines, including remote verification.
