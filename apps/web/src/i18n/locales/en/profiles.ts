@@ -147,6 +147,8 @@ export const profiles = {
     accountAndDefaults: "Account & defaults",
     deviceOffline: "Device offline",
     localLogin: "Local login",
+    cliMissing: "{{name}} is not installed on this device yet.",
+    notInstalled: "Not installed",
     unavailable: "Unavailable",
     workerNoLogin: "Worker: no login",
     reauthorizeLabel: "Re-authorize {{name}} on {{device}}",

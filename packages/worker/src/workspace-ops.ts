@@ -58,6 +58,7 @@ import {
 } from "./workspaces.js";
 import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
+import { nativeCli, outdatedNote } from "./native-cli.js";
 
 export function defaultSkillsConfig(): string {
   return `skills:\n  issue-splitting:\n    version: 0.2.0\n    scope: workspace\n    source: .foundry/skills.yaml\n  visual-qa:\n    version: 0.9.0\n    scope: workspace\n    source: .foundry/skills.yaml\n`;
@@ -324,31 +325,59 @@ export function workspaceFilesForWorkspace(
 }
 
 export function doctor(inputPath: string | undefined): void {
-  const workspacePath = resolve(inputPath ?? process.cwd());
-  const workspace = readWorkspace(workspacePath);
-  const checks = [
-    ["AGENTS.md", existsSync(resolve(workspacePath, "AGENTS.md"))],
-    ["CONTEXT.md", existsSync(resolve(workspacePath, "CONTEXT.md"))],
-    [
-      ".foundry/assets.yaml",
-      existsSync(resolve(workspacePath, ".foundry", "assets.yaml")),
-    ],
-    [
-      ".foundry/providers.yaml",
-      existsSync(resolve(workspacePath, ".foundry", "providers.yaml")),
-    ],
-    [
-      ".foundry/skills.yaml",
-      existsSync(resolve(workspacePath, ".foundry", "skills.yaml")),
-    ],
-    [".foundry/runs", existsSync(resolve(workspacePath, ".foundry", "runs"))],
-  ] as const;
-
-  console.log(`Workspace: ${workspace.name}`);
-  console.log(`Path: ${workspace.path}`);
-  for (const [label, ok] of checks) {
+  let failed = false;
+  const report = (ok: boolean, label: string) => {
     console.log(`${ok ? "OK " : "ERR"} ${label}`);
+    if (!ok) failed = true;
+  };
+
+  const config = readDaemonConfig();
+  console.log("Device");
+  report(
+    Boolean(config),
+    config
+      ? `paired with ${config.serverURL}`
+      : "not paired; add this device from Foundry → Devices → Add device",
+  );
+  for (const runtime of ["claude", "codex"] as const) {
+    const name = runtime === "claude" ? "Claude Code" : "Codex";
+    const cli = nativeCli(runtime);
+    if (!cli.installed) {
+      console.log(`--  ${name} not installed. Install: ${cli.installCommand}`);
+    } else if (cli.outdated) {
+      console.log(`WARN ${outdatedNote(runtime, cli)}`);
+    } else {
+      console.log(`OK  ${name} ${cli.version ?? "(version unknown)"}`);
+    }
   }
+
+  const workspacePath = inputPath
+    ? resolve(inputPath)
+    : existsSync(workspaceFilePath(process.cwd()))
+      ? process.cwd()
+      : config?.workspacePath;
+  if (!workspacePath) {
+    process.exitCode = failed ? 1 : 0;
+    return;
+  }
+  if (!existsSync(workspaceFilePath(workspacePath))) {
+    report(false, `no Foundry workspace at ${workspacePath}`);
+    process.exitCode = 1;
+    return;
+  }
+  const workspace = readWorkspace(workspacePath);
+  console.log(`\nWorkspace ${workspace.name}`);
+  console.log(`Path: ${workspace.path}`);
+  for (const file of [
+    "AGENTS.md",
+    "CONTEXT.md",
+    ".foundry/assets.yaml",
+    ".foundry/skills.yaml",
+    ".foundry/runs",
+  ]) {
+    report(existsSync(resolve(workspacePath, file)), file);
+  }
+  process.exitCode = failed ? 1 : 0;
 }
 
 export function providerHealth(args: string[]): void {

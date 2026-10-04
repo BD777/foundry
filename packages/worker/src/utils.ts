@@ -136,6 +136,7 @@ export function resolveClaudeCommand(): string {
     const result = spawnSync(candidate, ["--version"], {
       encoding: "utf8",
       stdio: "pipe",
+      timeout: 10_000,
     });
     if (result.status === 0) {
       return candidate;
@@ -153,11 +154,13 @@ export function resolveClaudeCommand(): string {
  */
 export function codexCommandCandidates(
   env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
 ): string[] {
   return [
     env.FOUNDRY_CODEX_BIN,
     env.CODEX_CLI_PATH,
     "codex",
+    resolve(home, ".local/bin/codex"),
     "/opt/homebrew/bin/codex",
     "/Applications/Codex.app/Contents/Resources/codex",
     "/Applications/ChatGPT.app/Contents/Resources/codex",
@@ -171,12 +174,13 @@ export function resolveCodexCommand(): string {
     const result = spawnSync(candidate, ["--version"], {
       encoding: "utf8",
       stdio: "pipe",
+      timeout: 10_000,
     });
     if (result.status === 0) {
       return candidate;
     }
   }
   throw new Error(
-    "Codex CLI is not available on PATH or in /Applications/Codex.app",
+    "Codex CLI is not available on PATH or in common install locations",
   );
 }

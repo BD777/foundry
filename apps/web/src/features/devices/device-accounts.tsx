@@ -148,11 +148,13 @@ export function DeviceAccounts({
                   <small>
                     {signedIn
                       ? t("accounts.localLoginDetected")
-                      : unavailable
-                        ? (local?.statusDetail ??
-                          nativeHealth?.statusDetail ??
-                          t("accounts.installNative"))
-                        : t("accounts.noLogin")}
+                      : missing
+                        ? t("accounts.cliMissing", { name })
+                        : unavailable
+                          ? (local?.statusDetail ??
+                            nativeHealth?.statusDetail ??
+                            t("accounts.installNative"))
+                          : t("accounts.noLogin")}
                   </small>
                 </span>
                 <span className="fdy-account-open-label">
@@ -171,9 +173,11 @@ export function DeviceAccounts({
                   ? t("accounts.deviceOffline")
                   : signedIn
                     ? t("accounts.localLogin")
-                    : unavailable
-                      ? t("accounts.unavailable")
-                      : t("accounts.workerNoLogin")}
+                    : missing
+                      ? t("accounts.notInstalled")
+                      : unavailable
+                        ? t("accounts.unavailable")
+                        : t("accounts.workerNoLogin")}
               </Badge>
               {missing ? (
                 <ConfirmButton

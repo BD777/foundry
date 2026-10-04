@@ -558,18 +558,19 @@ export const cliCommands: CliCommandContract[] = [
   {
     arguments: [
       {
-        description: "Workspace path; defaults to current directory",
+        description:
+          "Workspace path; defaults to the current directory when it is a workspace, otherwise the paired one",
         name: "path",
         required: false,
       },
     ],
-    brief: "Check local workspace and runtime readiness.",
+    brief: "Check this device, its Claude Code and Codex, and a workspace.",
     description:
-      "Checks required workspace files and prints local readiness results. This command does not create or repair files.",
+      "Checks that this device is paired, finds the installed Claude Code and Codex with their versions (and how to install or update them), then checks the workspace's files. It does not change anything.",
     examples: [
       {
-        command: "foundry-worker doctor .",
-        description: "Check the current workspace.",
+        command: "foundry-worker doctor",
+        description: "Check this device and its paired workspace.",
         label: "RECOMMENDED",
       },
       {
@@ -695,8 +696,8 @@ const rootExamples: CliExample[] = [
     description: "Run the local daemon.",
   },
   {
-    command: "foundry-worker doctor .",
-    description: "Check workspace readiness.",
+    command: "foundry-worker doctor",
+    description: "Check this device and its workspace.",
   },
   {
     command: "foundry-worker workspace list | awk '{print $NF}'",

@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,6 +15,8 @@ import {
   isOlderVersion,
   minimumCliVersion,
   nativeCli,
+  nativeCliInstallCommands,
+  nativeCliUpdateCommand,
   parseCliVersion,
 } from "../dist/native-cli.js";
 import { installNativeCli } from "../dist/native-cli-install.js";
@@ -106,4 +109,49 @@ test("installing runs the official command on request and reads the program agai
   const failed = await installNativeCli("claude");
   assert.equal(failed.ok, false);
   assert.match(failed.log, /no network/);
+});
+
+test("programs install per user with the official scripts, and update the way they were installed", (t) => {
+  assert.equal(
+    nativeCliInstallCommands.claude,
+    "curl -fsSL https://claude.ai/install.sh | bash",
+  );
+  assert.equal(
+    nativeCliInstallCommands.codex,
+    "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+  );
+
+  const root = mkdtempSync(join(tmpdir(), "foundry-codex-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const place = (relative) => {
+    const target = join(root, relative);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, "#!/bin/sh\n");
+    const link = join(root, "bin", relative.replaceAll("/", "_"));
+    mkdirSync(join(root, "bin"), { recursive: true });
+    symlinkSync(target, link);
+    return link;
+  };
+  assert.equal(
+    nativeCliUpdateCommand(
+      "codex",
+      place("lib/node_modules/@openai/codex/bin/codex.js"),
+    ),
+    "npm install -g @openai/codex@latest",
+  );
+  assert.equal(
+    nativeCliUpdateCommand("codex", place("Caskroom/codex/0.150.0/codex")),
+    "brew upgrade --cask codex",
+  );
+  assert.equal(
+    nativeCliUpdateCommand(
+      "codex",
+      place(".codex/packages/standalone/current/codex"),
+    ),
+    nativeCliInstallCommands.codex,
+  );
+  assert.equal(
+    nativeCliUpdateCommand("claude", "/anywhere/claude"),
+    "claude update",
+  );
 });

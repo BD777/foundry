@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
@@ -9,17 +9,47 @@ type Runtime = "claude" | "codex";
 
 const requireFromHere = createRequire(import.meta.url);
 
-/** The official ways to install each program (macOS and Linux). */
+/**
+ * The official standalone installers (macOS and Linux), from each project's
+ * README: they install for the current user into ~/.local/bin, so they need
+ * neither root nor a writable npm prefix.
+ */
 export const nativeCliInstallCommands: Record<Runtime, string> = {
   claude: "curl -fsSL https://claude.ai/install.sh | bash",
-  codex: "npm install -g @openai/codex",
+  codex: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 };
 
-/** The official ways to update each program. */
-export const nativeCliUpdateCommands: Record<Runtime, string> = {
-  claude: "claude update",
-  codex: "npm install -g @openai/codex@latest",
-};
+/**
+ * How to update the program found at `command`. Claude Code updates itself
+ * however it was installed; Codex updates through whatever installed it.
+ */
+export function nativeCliUpdateCommand(
+  runtime: Runtime,
+  command: string,
+): string {
+  if (runtime === "claude") return "claude update";
+  let path = command;
+  try {
+    path = realpathSync(commandPath(command));
+  } catch {
+    // Not resolvable on disk; fall back to the standalone installer.
+  }
+  if (path.includes("/node_modules/"))
+    return "npm install -g @openai/codex@latest";
+  if (path.includes("/Caskroom/")) return "brew upgrade --cask codex";
+  if (path.includes(".app/Contents/")) return "Update the Codex or ChatGPT app";
+  return nativeCliInstallCommands.codex;
+}
+
+/** A bare command name's location on PATH. */
+function commandPath(command: string): string {
+  if (command.includes("/")) return command;
+  for (const dir of (process.env.PATH ?? "").split(":")) {
+    const candidate = join(dir, command);
+    if (dir && existsSync(candidate)) return candidate;
+  }
+  return command;
+}
 
 /**
  * The oldest program version the bundled SDK speaks to: the Claude Code
@@ -78,17 +108,18 @@ export function nativeCli(runtime: Runtime): NativeCli {
 }
 
 function detectNativeCli(runtime: Runtime): NativeCli {
-  const commands = {
-    installCommand: nativeCliInstallCommands[runtime],
-    updateCommand: nativeCliUpdateCommands[runtime],
-  };
+  const installCommand = nativeCliInstallCommands[runtime];
   let command: string;
   try {
     command =
       runtime === "claude" ? resolveClaudeCommand() : resolveCodexCommand();
   } catch {
-    return { installed: false, ...commands };
+    return { installed: false, installCommand };
   }
+  const commands = {
+    installCommand,
+    updateCommand: nativeCliUpdateCommand(runtime, command),
+  };
   const result = spawnSync(command, ["--version"], {
     encoding: "utf8",
     timeout: 10_000,

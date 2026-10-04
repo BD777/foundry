@@ -128,3 +128,16 @@ test("parser accepts long option assignment syntax", () => {
   assert.equal(invocation.command.id, "connect");
   assert.deepEqual(invocation.positionals, []);
 });
+
+test("doctor outside a workspace checks the device instead of failing", () => {
+  withCliSandbox(({ cwd, home }) => {
+    const result = runCli(["doctor"], { cwd, home });
+
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stdout, /^Device$/m);
+    assert.match(result.stdout, /^ERR not paired/m);
+    assert.match(result.stdout, /Claude Code/);
+    assert.match(result.stdout, /Codex/);
+    assert.doesNotMatch(result.stderr, /No Foundry workspace/);
+  });
+});

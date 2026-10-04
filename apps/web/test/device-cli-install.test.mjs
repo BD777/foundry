@@ -56,7 +56,7 @@ const cli = (overrides) => ({
 });
 const health = (
   claude,
-  codex = cli({ installCommand: "npm install -g @openai/codex" }),
+  codex = cli({ installCommand: "curl -fsSL https://chatgpt.com/codex/install.sh | sh" }),
 ) => [
   {
     provider: "claude",

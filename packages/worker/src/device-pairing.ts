@@ -4,7 +4,7 @@
  * this device's credential, and a lock so a machine runs one daemon.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
@@ -116,13 +116,36 @@ export async function pairDevice(
 
 const daemonLockPath = foundryStatePath("daemon.lock");
 
-function processAlive(pid: number): boolean {
+/**
+ * Whether `pid` is a running Foundry daemon. The lock outlives a daemon that
+ * crashed or a machine that rebooted, and its pid can by then belong to any
+ * other process (or a zombie), so check what the process is, not only that
+ * one exists.
+ */
+function isFoundryDaemon(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    if ((error as NodeJS.ErrnoException).code !== "EPERM") return false;
   }
+  const ps = spawnSync("ps", ["-o", "command=", "-p", String(pid)], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  // Cannot tell (no ps): keep the lock rather than start a second daemon.
+  if (ps.error || ps.status === null) return true;
+  const command = ps.stdout.trim();
+  return /(?:cli\.js|foundry-worker)\s+(?:daemon|connect)(?:\s|$)/.test(
+    command,
+  );
+}
+
+/** The running daemon that holds this state root's lock, if any. */
+export function daemonLockHolder(): number | undefined {
+  const holder = readLockPid();
+  return holder && holder !== process.pid && isFoundryDaemon(holder)
+    ? holder
+    : undefined;
 }
 
 /**
@@ -144,13 +167,13 @@ export function acquireDaemonLock(): void {
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const holder = readLockPid();
-      if (holder && holder !== process.pid && processAlive(holder)) {
+      const holder = daemonLockHolder();
+      if (holder) {
         throw new Error(
           `another Foundry daemon is already running on this machine (pid ${holder})`,
         );
       }
-      // Stale lock from a dead process.
+      // Stale lock: its process is gone or is no longer a Foundry daemon.
       rmSync(daemonLockPath, { force: true });
     }
   }

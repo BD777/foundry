@@ -141,6 +141,8 @@ export const profiles: Translation<typeof en> = {
     accountAndDefaults: "账号与默认设置",
     deviceOffline: "设备离线",
     localLogin: "本地登录",
+    cliMissing: "这台设备还没有安装 {{name}}。",
+    notInstalled: "未安装",
     unavailable: "不可用",
     workerNoLogin: "Worker：未登录",
     reauthorizeLabel: "在 {{device}} 上重新授权 {{name}}",
