@@ -8,7 +8,7 @@ import { sessionInputDirectory } from "./session-artifacts.js";
  */
 
 import { spawn } from "node:child_process";
-import { createHash, randomUUID, type UUID } from "node:crypto";
+import { createHash, type UUID } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -64,11 +64,6 @@ import { currentInput, sessionPrompt } from "./session-prompt.js";
 // these definitions.
 export { claudeSessionOptions, sessionPrompt };
 
-/** Discovery must be disabled: the SDK name allowlist does not restrict /name. */
-export function tomlBasicString(value: string): string {
-  return JSON.stringify(value);
-}
-
 /**
  * Codex launch config for what a session is told and which skills it sees:
  * the device notes for every workspace session, plus the managed catalog with
@@ -116,32 +111,6 @@ function codexDeviceNotes(
       );
 }
 
-export function codexSessionArgs(
-  managed: ManagedSkillRuntime | undefined,
-  deviceNotes = "",
-): string[] {
-  const config = codexSessionConfig(managed, deviceNotes);
-  const args: string[] = [];
-  if (managed) {
-    const rows = managed.hostSkillPaths!.map(
-      (path) => `{enabled=false,path=${tomlBasicString(path)}}`,
-    );
-    args.push(
-      "-c",
-      "skills.include_instructions=false",
-      "-c",
-      "skills.bundled.enabled=false",
-      "-c",
-      `skills.config=[${rows.join(",")}]`,
-    );
-  }
-  if (config.developer_instructions)
-    args.push(
-      "-c",
-      `developer_instructions=${tomlBasicString(config.developer_instructions as string)}`,
-    );
-  return args;
-}
 import {
   ClaudeAgentTurnError,
   claudeAgentResultError,
@@ -159,7 +128,6 @@ import {
   claudeTaskLifecycleChange,
   claudeToolUseDetail,
   codexExtractTouchedFiles,
-  friendlyClaudeCliError,
   isForwardedClaudeSubagentMessage,
   safeJSONString,
   sdkCommandDetail,
@@ -267,8 +235,8 @@ export function claudePermissionMode(
 
 /**
  * Claude Code refuses bypassPermissions for root unless the environment says
- * it is a deliberate sandbox. Say so before the SDK and then the CLI fallback
- * each fail with the same bare refusal.
+ * it is a deliberate sandbox. Say so before the SDK fails with a bare
+ * refusal.
  */
 export function claudeRootBypassRefusal(
   permissionMode: string,
@@ -744,164 +712,12 @@ export async function runCodexWorkspaceSession(
     if (isAgentSessionCanceledError(error)) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
     writeFileSync(
       stderrPath,
       `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
     );
-    await emit("Codex SDK unavailable", message, "warning");
-    await emitSetup();
-    return runCodexCliSession(
-      workspacePath,
-      session,
-      sessionDir,
-      profile,
-      emit,
-      reportNativeSessionId,
-      managedSkills,
-    );
+    throw error;
   }
-}
-
-export async function runCodexCliSession(
-  workspacePath: string,
-  session: AgentSession,
-  sessionDir: string,
-  profile: AgentProfileLocalConfig,
-  emit: SessionEventEmitter,
-  reportNativeSessionId: (nativeSessionId: string) => void = () => {},
-  managedSkills?: ManagedSkillRuntime,
-): Promise<AgentSessionRunResult> {
-  const outputs = await SessionOutputFiles.start(workspacePath, emit);
-  const command = resolveCodexCommand();
-  const stdoutPath = resolve(sessionDir, "codex-cli.stdout.log");
-  const stderrPath = resolve(sessionDir, "codex-cli.stderr.log");
-  const resultPath = resolve(sessionDir, "result.md");
-  const prompt = sessionPrompt(session, profile);
-  let nativeSessionId = session.nativeSessionId?.trim();
-  const args = nativeSessionId
-    ? [
-        "exec",
-        "resume",
-        "--skip-git-repo-check",
-        "--output-last-message",
-        resultPath,
-        nativeSessionId,
-        "-",
-      ]
-    : [
-        "exec",
-        "--skip-git-repo-check",
-        "--sandbox",
-        codexSandboxMode(session, profile),
-        "-C",
-        workspacePath,
-        "--output-last-message",
-        resultPath,
-        "-",
-      ];
-  args.push("--json");
-  args.push(
-    ...codexSessionArgs(
-      managedSkills,
-      codexDeviceNotes(workspacePath, session),
-    ),
-  );
-  args.push(...(codexFoundryTools(session)?.cliArgs ?? []));
-  const model = session.model?.trim() || profile.model?.trim();
-  if (model) {
-    args.splice(1, 0, "--model", model);
-  }
-  const effort = codexReasoningEffort(session, profile);
-  if (effort) {
-    args.splice(1, 0, "-c", `model_reasoning_effort="${effort}"`);
-  }
-  const approval = codexApprovalPolicy(session, profile);
-  if (approval) {
-    args.splice(1, 0, "-c", `approval_policy="${approval}"`);
-  }
-  const speed = codexSpeed(session, profile);
-  if (speed) {
-    args.splice(1, 0, "-c", `model_speed="${speed}"`);
-  }
-  const imageAttachments = (currentInput(session).attachments ?? []).filter(
-    (attachment) => attachment.kind === "image",
-  );
-  for (const attachment of imageAttachments) {
-    if (attachment.path.trim()) {
-      args.splice(1, 0, "--image", attachment.path.trim());
-    }
-  }
-
-  await emit("Started Codex CLI", command);
-  for (const [key, value] of Object.entries(codexProfileConfig(profile))) {
-    args.splice(1, 0, "-c", `${key}=${tomlBasicString(value as string)}`);
-  }
-  const result = await new Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-  }>((resolveRun, rejectRun) => {
-    const child = spawn(command, args, {
-      cwd: workspacePath,
-      env: codexSessionEnvironment(workspacePath, profile, session),
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const timeout = setTimeout(() => {
-      killChildProcess(child);
-    }, 180000);
-
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let pendingLines = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout.push(chunk);
-      pendingLines += chunk.toString("utf8");
-      const lines = pendingLines.split("\n");
-      pendingLines = lines.pop() ?? "";
-      for (const line of lines) {
-        try {
-          const id = nativeSessionIdFromEvent(JSON.parse(line));
-          if (id) {
-            nativeSessionId = id;
-            reportNativeSessionId(id);
-          }
-        } catch {
-          /* Non-JSON CLI diagnostics. */
-        }
-      }
-    });
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      rejectRun(error);
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      writeFileSync(stdoutPath, Buffer.concat(stdout).toString("utf8"));
-      writeFileSync(stderrPath, Buffer.concat(stderr).toString("utf8"));
-      resolveRun({ code, signal });
-    });
-    sendPrompt(child, prompt);
-  });
-
-  if (result.code !== 0) {
-    const stderr = existsSync(stderrPath)
-      ? readFileSync(stderrPath, "utf8").trim()
-      : "";
-    throw new Error(
-      `Codex CLI exited with ${result.signal ?? result.code}: ${stderr}`,
-    );
-  }
-
-  const response = existsSync(resultPath)
-    ? readFileSync(resultPath, "utf8").trim()
-    : "Codex CLI completed without a text response.";
-  await outputs.reportChangedOnDisk();
-  await emit("Codex CLI finished", resultPath);
-  return {
-    nativeSessionId,
-    response: response || "Codex CLI completed without a text response.",
-  };
 }
 
 export async function runClaudeWorkspaceSession(
@@ -957,41 +773,17 @@ export async function runClaudeWorkspaceSession(
     claudePermissionMode(session, profile),
   );
   if (refusal) throw new ClaudeAgentTurnError("root_bypass", refusal);
-  try {
-    return await runClaudeAgentSdkSession(
-      workspacePath,
-      session,
-      sessionDir,
-      profile,
-      emit,
-      emitSetup,
-      reportNativeSessionId,
-      managedSkills,
-      plan,
-    );
-  } catch (error) {
-    // A turn error or a cancellation is the outcome, not an unavailable SDK:
-    // falling back would run canceled work again in the CLI.
-    if (
-      error instanceof ClaudeAgentTurnError ||
-      isAgentSessionCanceledError(error)
-    ) {
-      throw error;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    await emit("Claude Agent SDK unavailable", message, "warning");
-    await emitSetup();
-    return runClaudeCliSession(
-      workspacePath,
-      session,
-      sessionDir,
-      profile,
-      emit,
-      reportNativeSessionId,
-      managedSkills,
-      plan,
-    );
-  }
+  return runClaudeAgentSdkSession(
+    workspacePath,
+    session,
+    sessionDir,
+    profile,
+    emit,
+    emitSetup,
+    reportNativeSessionId,
+    managedSkills,
+    plan,
+  );
 }
 
 export function claudeActiveTurnTimeouts(session: AgentSession): {
@@ -1651,187 +1443,4 @@ export function nativeSessionIdFromEvent(event: unknown): string {
     return record.thread_id.trim();
   }
   return "";
-}
-export async function runClaudeCliSession(
-  workspacePath: string,
-  session: AgentSession,
-  sessionDir: string,
-  profile: AgentProfileLocalConfig,
-  emit: SessionEventEmitter,
-  reportNativeSessionId: (nativeSessionId: string) => void,
-  managedSkills?: ManagedSkillRuntime,
-  plan?: ClaudeLaunchPlan,
-): Promise<AgentSessionRunResult> {
-  const outputs = await SessionOutputFiles.start(workspacePath, emit);
-  const command = resolveClaudeCommand();
-  const stdoutPath = resolve(sessionDir, "claude-cli.stdout.log");
-  const stderrPath = resolve(sessionDir, "claude-cli.stderr.log");
-  const resultPath = resolve(sessionDir, "result.md");
-  const basePrompt = plan?.cliPrompt ?? sessionPrompt(session, profile);
-  const prompt = managedSkills
-    ? `Use only the workspace skill catalog supplied in the system instructions.\n\n${basePrompt}`
-    : basePrompt;
-  const baseArgs = [
-    "-p",
-    "--add-dir",
-    workspacePath,
-    "--output-format",
-    "text",
-  ];
-  const model = session.model?.trim() || profile.model?.trim();
-  if (model) {
-    baseArgs.push("--model", model);
-  }
-  const effort = claudeEffort(session, profile);
-  if (effort) {
-    baseArgs.push("--effort", effort);
-  }
-
-  const env = plan?.env ?? sessionEnvironment(workspacePath, profile, session);
-  // Same precedence fix as the SDK path: the CLI also layers the user's
-  // settings.json `env` over the spawned environment, so pin profile routing
-  // and Foundry-owned guarantees (auto-compaction) through the
-  // highest-priority flag-settings tier.
-  const cliSettings = plan?.settings ?? {
-    env: profileRuntimeEnvironment(profile, session),
-    autoCompactEnabled: true,
-    ...(managedSkills ? { disableBundledSkills: true } : {}),
-  };
-  baseArgs.push("--settings", JSON.stringify(cliSettings));
-  if (plan) {
-    baseArgs.push(...plan.cliArgs);
-  } else if (managedSkills) {
-    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
-    baseArgs.push(
-      "--disable-slash-commands",
-      "--append-system-prompt",
-      workspaceSkillInstructions(managedSkills),
-    );
-  }
-  if (isUtilitySession(session)) {
-    baseArgs.push(
-      "--permission-mode",
-      "plan",
-      "--disallowedTools",
-      "Write,Edit,Bash",
-    );
-  } else {
-    baseArgs.push("--permission-mode", claudePermissionMode(session, profile));
-  }
-
-  async function runClaude(args: string[]): Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-    stderr: string;
-  }> {
-    await emit("Started Claude Code CLI", command);
-    const result = await new Promise<{
-      code: number | null;
-      signal: NodeJS.Signals | null;
-      stderr: string;
-    }>((resolveRun, rejectRun) => {
-      const child = spawn(command, args, {
-        cwd: workspacePath,
-        env,
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      const timeoutMs = Number(
-        process.env.FOUNDRY_SESSION_TIMEOUT_MS ??
-          (isUtilitySession(session) ? 180000 : 900000),
-      );
-      const timeout = setTimeout(() => {
-        killChildProcess(child);
-      }, timeoutMs);
-
-      // No-output watchdog: if the CLI produces no stdout/stderr for this
-      // long, it is stuck (e.g. hanging on context compaction). Kill it so
-      // the failure surfaces immediately instead of waiting for the full
-      // session timeout.
-      const noOutputTimeoutMs = Number(
-        process.env.FOUNDRY_SESSION_NO_OUTPUT_TIMEOUT_MS ?? 300000,
-      );
-      let lastActivityAt = Date.now();
-      const noOutputTimeout = setTimeout(() => {
-        killChildProcess(child);
-      }, noOutputTimeoutMs);
-      const resetNoOutputTimeout = (): void => {
-        lastActivityAt = Date.now();
-        noOutputTimeout.refresh();
-      };
-
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      child.stdout.on("data", (chunk: Buffer) => {
-        stdout.push(chunk);
-        resetNoOutputTimeout();
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr.push(chunk);
-        resetNoOutputTimeout();
-      });
-      child.on("error", (error) => {
-        clearTimeout(timeout);
-        clearTimeout(noOutputTimeout);
-        rejectRun(error);
-      });
-      child.on("close", (code, signal) => {
-        clearTimeout(timeout);
-        clearTimeout(noOutputTimeout);
-        const stdoutText = Buffer.concat(stdout).toString("utf8");
-        const stderrText = Buffer.concat(stderr).toString("utf8");
-        writeFileSync(stdoutPath, stdoutText);
-        writeFileSync(stderrPath, stderrText);
-        writeFileSync(
-          resultPath,
-          `${stdoutText.trim() || "Claude Code CLI completed without a text response."}\n`,
-        );
-        resolveRun({ code, signal, stderr: stderrText.trim() });
-      });
-      sendPrompt(child, prompt);
-    });
-    return result;
-  }
-
-  let nativeSessionId =
-    session.nativeSessionId?.trim() ||
-    (isUtilitySession(session) ? "" : randomUUID());
-  reportNativeSessionId(nativeSessionId);
-  const sessionArgs = [...baseArgs];
-  if (nativeSessionId) {
-    sessionArgs.push(
-      session.nativeSessionId?.trim() ? "--resume" : "--session-id",
-      nativeSessionId,
-    );
-  }
-  let result = await runClaude(sessionArgs);
-  if (
-    result.code !== 0 &&
-    session.nativeSessionId?.trim() &&
-    /No conversation found with session ID/i.test(result.stderr)
-  ) {
-    nativeSessionId = randomUUID();
-    reportNativeSessionId(nativeSessionId);
-    await emit(
-      "Native Claude session was unavailable; starting a fresh leg",
-      nativeSessionId,
-      "warning",
-    );
-    result = await runClaude([...baseArgs, "--session-id", nativeSessionId]);
-  }
-
-  if (result.code !== 0) {
-    throw new Error(
-      `Claude Code CLI exited with ${result.signal ?? result.code}: ${friendlyClaudeCliError(result.stderr)}`,
-    );
-  }
-
-  const response = existsSync(resultPath)
-    ? readFileSync(resultPath, "utf8").trim()
-    : "Claude Code CLI completed without a text response.";
-  await outputs.reportChangedOnDisk();
-  await emit("Claude Code CLI finished", resultPath);
-  return {
-    nativeSessionId,
-    response: response || "Claude Code CLI completed without a text response.",
-  };
 }

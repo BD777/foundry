@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  claudeSessionOptions,
-  codexSessionArgs,
-  codexSessionConfig,
-  tomlBasicString,
-} from "../dist/runner.js";
+import { claudeSessionOptions, codexSessionConfig } from "../dist/runner.js";
 
 const managed = (skills, hostSkillPaths = []) => ({
   pluginDir: "/state/skill-sets/abc",
@@ -52,25 +47,18 @@ test("Codex empty selections still disable automatic catalog and bundled skills"
     codexSessionConfig(managed([])).skills.include_instructions,
     false,
   );
-  assert.ok(
-    codexSessionArgs(managed([])).includes("skills.bundled.enabled=false"),
-  );
+  assert.equal(codexSessionConfig(managed([])).skills.bundled.enabled, false);
   assert.throws(
     () => codexSessionConfig({ skills: [], pluginDir: "/empty" }),
     /not verified/,
   );
 });
 
-test("Codex CLI config uses valid path-only selectors, not a nonexistent mount API", () => {
-  const args = codexSessionArgs(managed([], ["/host/qa/SKILL.md"]));
-  assert.ok(
-    args.includes('skills.config=[{enabled=false,path="/host/qa/SKILL.md"}]'),
+test("Codex config disables host skills by path, not by a nonexistent mount API", () => {
+  assert.deepEqual(
+    codexSessionConfig(managed([], ["/host/qa/SKILL.md"])).skills.config,
+    [{ enabled: false, path: "/host/qa/SKILL.md" }],
   );
-});
-
-test("toml basic strings escape quotes and backslashes", () => {
-  assert.equal(tomlBasicString('a"b'), '"a\\"b"');
-  assert.equal(tomlBasicString("c\\d"), '"c\\\\d"');
 });
 
 test("unsafe invocation names are rejected before any package fetch", async () => {
@@ -146,9 +134,4 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     notes,
   );
   assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
-  assert.deepEqual(codexSessionArgs(undefined), []);
-  assert.deepEqual(codexSessionArgs(undefined, notes), [
-    "-c",
-    `developer_instructions=${tomlBasicString(notes)}`,
-  ]);
 });

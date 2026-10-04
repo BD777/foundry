@@ -1,7 +1,6 @@
 // Session launch policy — the single place that defines how Foundry launches
 // a native agent runtime. Everything a launch depends on is assembled here
-// once and consumed identically by every execution path (Claude SDK, Claude
-// CLI fallback), so the two paths can no longer drift:
+// once and consumed by the Claude Agent SDK launch:
 //
 //   - effective session (workspace-skill isolation can force a fresh native
 //     context) and the effective prompt (managed slash-command rewrite)
@@ -83,27 +82,6 @@ export function claudeSessionOptions(
 }
 
 /**
- * The CLI fallback's equivalent. The CLI cannot take the SDK's structured
- * skill list, so under a managed catalog native slash skills are disabled and
- * the catalog arrives through the system prompt.
- */
-export function claudeSessionCliArgs(
-  managed: ManagedSkillRuntime | undefined,
-  deviceNotes = "",
-): string[] {
-  const append = [
-    deviceNotes,
-    managed ? workspaceSkillInstructions(managed) : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-  return [
-    ...(managed ? ["--disable-slash-commands"] : []),
-    ...(append ? ["--append-system-prompt", append] : []),
-  ];
-}
-
-/**
  * Foundry-authoritative Claude settings, injected at the flag-settings tier
  * (the highest-priority user-controlled layer). Values here override the
  * device user's ~/.claude/settings.json.
@@ -175,11 +153,6 @@ export interface ClaudeLaunchPlan {
   session: AgentSession;
   /** Managed-slash-rewritten prompt for the SDK path. */
   prompt: string;
-  /**
-   * Unrewritten prompt for the CLI fallback: under managed skills the CLI has
-   * slash dispatch disabled and reads the catalog from system instructions.
-   */
-  cliPrompt: string;
   env: NodeJS.ProcessEnv;
   settings: Record<string, unknown>;
   sdk: Record<string, unknown>;
@@ -189,7 +162,6 @@ export interface ClaudeLaunchPlan {
    * identity does not change with every dispatch.
    */
   mcpServers?: Record<string, unknown>;
-  cliArgs: string[];
   managedSkills?: ManagedSkillRuntime;
   /** True when legacy native context was dropped for a new policy. */
   reset: boolean;
@@ -201,11 +173,11 @@ export interface ClaudeLaunchPlan {
 /**
  * The Foundry tools for a Codex session: the server's HTTP MCP, authorized by
  * the session token Codex reads from its own environment. Codex takes it as
- * config (SDK) or as the equivalent `-c` overrides (CLI).
+ * SDK config.
  */
 export function codexFoundryTools(
   session: AgentSession,
-): { config: Record<string, unknown>; cliArgs: string[] } | undefined {
+): { config: Record<string, unknown> } | undefined {
   const tools = foundryToolsEndpoint(session);
   if (!tools) return undefined;
   // Pre-approved like Claude's allowedTools: Foundry grants these tools and
@@ -224,22 +196,6 @@ export function codexFoundryTools(
   };
   return {
     config: { mcp_servers: { foundry: server } },
-    cliArgs: [
-      "-c",
-      `mcp_servers.foundry.url=${JSON.stringify(server.url)}`,
-      "-c",
-      `mcp_servers.foundry.bearer_token_env_var=${JSON.stringify(server.bearer_token_env_var)}`,
-      "-c",
-      `mcp_servers.foundry.default_tools_approval_mode=${JSON.stringify(server.default_tools_approval_mode)}`,
-      "-c",
-      `mcp_servers.foundry.tool_timeout_sec=${server.tool_timeout_sec}`,
-      ...(enabledTools
-        ? [
-            "-c",
-            `mcp_servers.foundry.enabled_tools=${JSON.stringify(enabledTools)}`,
-          ]
-        : []),
-    ],
   };
 }
 
@@ -301,7 +257,6 @@ export function buildClaudeLaunchPlan(input: {
   return {
     session,
     prompt: claudeManagedPrompt(sessionPrompt(session, profile), managedSkills),
-    cliPrompt: sessionPrompt(session, profile),
     env,
     settings,
     sdk: {
@@ -313,15 +268,6 @@ export function buildClaudeLaunchPlan(input: {
       ...role?.sdk,
     },
     mcpServers,
-    cliArgs: [
-      ...claudeSessionCliArgs(managedSkills, deviceNotes),
-      ...(mcpServers ? ["--mcp-config", JSON.stringify({ mcpServers })] : []),
-      ...(role
-        ? role.cliArgs
-        : mcpServers
-          ? ["--allowedTools", foundryToolsPermission]
-          : []),
-    ],
     managedSkills,
     reset,
     warnings: credentialWarnings(profile, env),

@@ -41,7 +41,7 @@ export function isClarificationSession(session: AgentSession): boolean {
  */
 export function claudeRoleOptions(
   session: AgentSession,
-): { sdk: Record<string, unknown>; cliArgs: string[] } | undefined {
+): { sdk: Record<string, unknown> } | undefined {
   if (!isClarificationSession(session)) return undefined;
   return {
     sdk: {
@@ -51,17 +51,6 @@ export function claudeRoleOptions(
       settingSources: ["project"],
       strictMcpConfig: true,
     },
-    cliArgs: [
-      "--permission-mode",
-      "dontAsk",
-      "--allowedTools",
-      clarificationClaudeTools.join(","),
-      "--disallowedTools",
-      clarificationDeniedClaudeTools.join(","),
-      "--setting-sources",
-      "project",
-      "--strict-mcp-config",
-    ],
   };
 }
 

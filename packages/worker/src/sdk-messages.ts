@@ -135,48 +135,6 @@ export function claudeAgentResultError(
   return new ClaudeAgentTurnError(subtype, detail);
 }
 
-export function friendlyClaudeCliError(stderr: string): string {
-  const text = stderr.trim();
-  if (!text) {
-    return "Claude Code CLI exited with no error output.";
-  }
-
-  // Extract the unrecognized_model error — the CLI prints a JSON blob with
-  // the model name and query source (e.g. "compact").
-  const modelMatch = text.match(
-    /\[claude-code:unrecognized_model\]\s*(\{[^}]+\})/i,
-  );
-  if (modelMatch?.[1]) {
-    try {
-      const detail = JSON.parse(modelMatch[1]) as {
-        model?: string;
-        query_source?: string;
-      };
-      const source =
-        detail.query_source === "compact"
-          ? "context compaction"
-          : (detail.query_source ?? "the CLI");
-      return `Model "${detail.model ?? "unknown"}" is not recognized during ${source}. This usually means the endpoint does not support this model for that operation. Try a different model or start a fresh session.`;
-    } catch {
-      // Fall through to raw text if the JSON is malformed.
-    }
-  }
-
-  // Strip the connectors warning — it is expected when ANTHROPIC_API_KEY is
-  // set and adds noise without actionable information.
-  const cleaned = text
-    .split("\n")
-    .filter(
-      (line) =>
-        !/claude\.ai connectors are disabled/i.test(line) &&
-        !/Unset it to load your organization's connectors/i.test(line),
-    )
-    .join("\n")
-    .trim();
-
-  return cleaned || text;
-}
-
 export function claudeNativeSessionId(message: unknown): string {
   if (!message || typeof message !== "object") {
     return "";
