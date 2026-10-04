@@ -168,28 +168,29 @@ export function installRuntime(name: string, specs: string[]): string {
   mkdirSync(staging, { recursive: true });
   // A package.json keeps npm from walking up to an unrelated project.
   spawnSync("npm", ["init", "-y"], { cwd: staging, stdio: "ignore" });
-  const installed = spawnSync(
-    "npm",
-    [
-      "install",
-      "--no-audit",
-      "--no-fund",
-      "--omit=dev",
-      "--prefix",
-      staging,
-      ...specs,
-    ],
-    { encoding: "utf8", stdio: ["ignore", "inherit", "inherit"] },
-  );
-  if (installed.status !== 0) {
+  const install = (packages: string[]) =>
+    spawnSync("npm", [...runtimeInstallArgs(staging), ...packages], {
+      encoding: "utf8",
+      stdio: ["ignore", "inherit", "inherit"],
+    }).status === 0;
+  if (!install(specs)) {
     rmSync(staging, { recursive: true, force: true });
     throw new Error(`npm could not install ${specs.join(" ")}`);
   }
-  const version = (
-    JSON.parse(
-      readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
-    ) as PackageIdentity
-  ).version;
+  const manifest = JSON.parse(
+    readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
+  ) as RuntimeManifest;
+  const { required, bestEffort } = runtimeCompanions(manifest);
+  if (required.length && !install(required)) {
+    rmSync(staging, { recursive: true, force: true });
+    throw new Error(`npm could not install ${required.join(" ")}`);
+  }
+  for (const spec of bestEffort)
+    if (!install([spec]))
+      console.warn(
+        `Could not install ${spec}; the features that need it (signing in from Foundry) stay unavailable on this machine.`,
+      );
+  const version = manifest.version;
   const current = join(runtimeRoot(), "current");
   let inUse: string | undefined;
   try {
@@ -213,6 +214,49 @@ export function installRuntime(name: string, specs: string[]): string {
   renameSync(next, current);
   pruneRuntimes(directory, inUse);
   return version;
+}
+
+interface RuntimeManifest extends PackageIdentity {
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  optionalDependencies?: Record<string, string>;
+}
+
+/**
+ * npm arguments for the runtime. Optional packages are left out: the agent
+ * SDKs list their own copies of the Claude Code and Codex programs (hundreds
+ * of megabytes) as optional, and Foundry runs the device's programs instead.
+ */
+export function runtimeInstallArgs(prefix: string): string[] {
+  return [
+    "install",
+    "--no-audit",
+    "--no-fund",
+    "--omit=dev",
+    "--omit=optional",
+    "--prefix",
+    prefix,
+  ];
+}
+
+/**
+ * What the runtime installs beside the worker: its optional peers (the agent
+ * SDKs, at the versions it was built with) are required, and its optional
+ * dependencies (node-pty, which compiles on Linux) are installed when they can be.
+ */
+export function runtimeCompanions(manifest: RuntimeManifest): {
+  required: string[];
+  bestEffort: string[];
+} {
+  const optionalPeers = Object.entries(manifest.peerDependencies ?? {}).filter(
+    ([peer]) => manifest.peerDependenciesMeta?.[peer]?.optional,
+  );
+  return {
+    required: optionalPeers.map(([peer, range]) => `${peer}@${range}`),
+    bestEffort: Object.entries(manifest.optionalDependencies ?? {}).map(
+      ([dependency, range]) => `${dependency}@${range}`,
+    ),
+  };
 }
 
 /** Keep the runtime in use and the one before it; remove older ones. */

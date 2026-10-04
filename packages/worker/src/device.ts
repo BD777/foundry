@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname } from "node:path";
 import type {
   AgentRuntimeSettings,
@@ -18,22 +19,32 @@ export const runtimeSettingsPath = foundryStatePath(
   "runtime-settings.local.json",
 );
 
+/** The name people know the machine by; `.local` is mDNS noise on macOS. */
+export function defaultDeviceLabel(): string {
+  return (
+    hostname().replace(/\.local$/, "") || `${process.platform}-${process.arch}`
+  );
+}
+
 export function getDevice(): DeviceProjection {
   if (existsSync(devicePath)) {
     hardenPrivateFile(devicePath);
   }
-  const device: DeviceProjection = existsSync(devicePath)
+  const stored = existsSync(devicePath)
     ? (JSON.parse(readFileSync(devicePath, "utf8")) as DeviceProjection)
-    : {
-        id: `dev_${randomUUID()}`,
-        label: `${process.platform}-${process.arch}`,
-        status: "connected",
-        lastSeenLabel: "online",
-      };
+    : undefined;
+  const device: DeviceProjection = stored ?? {
+    id: `dev_${randomUUID()}`,
+    label: defaultDeviceLabel(),
+    status: "connected",
+    lastSeenLabel: "online",
+  };
+  // Devices paired before 0.5.4 were all named after their platform
+  // ("linux-x64"), which cannot tell two machines apart.
+  const legacyLabel = stored?.label === `${process.platform}-${process.arch}`;
+  if (legacyLabel) device.label = defaultDeviceLabel();
   device.runtimeSettings = readAgentRuntimeSettings();
-  if (!existsSync(devicePath)) {
-    writeJSON(devicePath, device);
-  }
+  if (!stored || legacyLabel) writeJSON(devicePath, device);
   return device;
 }
 

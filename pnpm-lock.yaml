@@ -113,18 +113,9 @@ importers:
 
   packages/worker:
     dependencies:
-      '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.3.201
-        version: 0.3.201(@anthropic-ai/sdk@0.110.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
       '@bd777/foundry-protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@openai/codex':
-        specifier: 0.142.5
-        version: 0.142.5
-      '@openai/codex-sdk':
-        specifier: ^0.142.5
-        version: 0.142.5
       pdfjs-dist:
         specifier: ^6.3.289
         version: 6.3.289
@@ -138,6 +129,12 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
     devDependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: 0.3.201
+        version: 0.3.201(@anthropic-ai/sdk@0.110.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
+      '@openai/codex-sdk':
+        specifier: 0.142.5
+        version: 0.142.5
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1

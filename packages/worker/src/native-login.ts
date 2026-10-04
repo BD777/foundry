@@ -2,6 +2,12 @@ import { spawnSync } from "node:child_process";
 import type { ProviderHealth } from "@bd777/foundry-protocol";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
+import {
+  clearNativeCliCache,
+  nativeCli,
+  nativeCliInstallCommands,
+  outdatedNote,
+} from "./native-cli.js";
 
 // `claude auth status` reports an account login as "claude.ai" (current CLIs)
 // or "oauth_token"; API keys, key helpers and third-party gateways are not
@@ -32,12 +38,32 @@ export function isNativeAccountStatus(
 const cache = new Map<string, { until: number; health: ProviderHealth }>();
 export function clearNativeLoginHealth(): void {
   cache.clear();
+  clearNativeCliCache();
 }
 
 /** Native CLI status only: no inference and no provider HTTP health probes. */
 export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
   const cached = cache.get(runtime);
   if (cached && cached.until > Date.now()) return cached.health;
+  const health = loginHealth(runtime);
+  const cli = nativeCli(runtime);
+  const note = outdatedNote(runtime, cli);
+  const value: ProviderHealth = {
+    ...health,
+    cli,
+    ...(note
+      ? {
+          statusDetail: health.statusDetail
+            ? `${health.statusDetail} ${note}`
+            : note,
+        }
+      : {}),
+  };
+  cache.set(runtime, { until: Date.now() + 60000, health: value });
+  return value;
+}
+
+function loginHealth(runtime: "claude" | "codex"): ProviderHealth {
   let health: ProviderHealth = {
     provider: runtime,
     status: "missing_auth",
@@ -55,7 +81,6 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
       status: "unavailable",
       statusDetail: installHint(runtime),
     };
-    cache.set(runtime, { until: Date.now() + 60000, health });
     return health;
   }
   try {
@@ -98,13 +123,12 @@ export function nativeLoginHealth(runtime: "claude" | "codex"): ProviderHealth {
         "The native CLI could not report login status. Check its installation on this device.",
     };
   }
-  cache.set(runtime, { until: Date.now() + 60000, health });
   return health;
 }
 
 /** How to install a runtime's native CLI on a device that lacks it. */
 function installHint(runtime: "claude" | "codex"): string {
   return runtime === "claude"
-    ? "Claude Code is not installed on this device. Install it (npm install -g @anthropic-ai/claude-code), sign in with `claude`, then check again."
-    : "Codex is not installed on this device. Install it (npm install -g @openai/codex), sign in with `codex login`, then check again.";
+    ? `Claude Code is not installed on this device. Install it from this device's page in Foundry, or run ${nativeCliInstallCommands.claude}; then sign in with \`claude\` and check again.`
+    : `Codex is not installed on this device. Install it from this device's page in Foundry, or run ${nativeCliInstallCommands.codex}; then sign in with \`codex login\` and check again.`;
 }

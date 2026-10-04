@@ -10,8 +10,12 @@ import type {
 } from "@bd777/foundry-protocol";
 import {
   completeDeviceAuthorization,
+  installDeviceCli,
   startDeviceAuthorization,
 } from "../../api";
+import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
+import { Alert } from "../../components/ui/alert";
+import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { AuthorizationFlow } from "../../components/ui/authorization-flow";
@@ -40,6 +44,23 @@ export function DeviceAccounts({
   const [authorization, setAuthorization] = useState<ProfileAuthorization>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [installing, setInstalling] = useState<"claude" | "codex">();
+  const [installed, setInstalled] = useState<NativeCliInstallResult>();
+  async function installCli(runtime: "claude" | "codex"): Promise<void> {
+    setInstalling(runtime);
+    setInstalled(undefined);
+    setError("");
+    try {
+      setInstalled(await installDeviceCli(device.id, runtime));
+      await onRefresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : t("accounts.startFailed"),
+      );
+    } finally {
+      setInstalling(undefined);
+    }
+  }
   const [pollAttempt, setPollAttempt] = useState(0);
   const [expanded, setExpanded] = useState<string>();
   async function complete(value?: string) {
@@ -107,6 +128,9 @@ export function DeviceAccounts({
         // i18n-ignore: runtime product names
         const name = runtime === "claude" ? "Claude Code" : "Codex";
         const active = authorization?.runtime === runtime;
+        const cli = nativeHealth?.cli;
+        const missing = cli?.installed === false;
+        const online = device.status === "connected";
         return (
           <div className="fdy-device-account" key={runtime}>
             <div className="fdy-account-row">
@@ -124,11 +148,13 @@ export function DeviceAccounts({
                   <small>
                     {signedIn
                       ? t("accounts.localLoginDetected")
-                      : unavailable
-                        ? (local?.statusDetail ??
-                          nativeHealth?.statusDetail ??
-                          t("accounts.installNative"))
-                        : t("accounts.noLogin")}
+                      : missing
+                        ? t("accounts.cliMissing", { name })
+                        : unavailable
+                          ? (local?.statusDetail ??
+                            nativeHealth?.statusDetail ??
+                            t("accounts.installNative"))
+                          : t("accounts.noLogin")}
                   </small>
                 </span>
                 <span className="fdy-account-open-label">
@@ -147,44 +173,111 @@ export function DeviceAccounts({
                   ? t("accounts.deviceOffline")
                   : signedIn
                     ? t("accounts.localLogin")
-                    : unavailable
-                      ? t("accounts.unavailable")
-                      : t("accounts.workerNoLogin")}
+                    : missing
+                      ? t("accounts.notInstalled")
+                      : unavailable
+                        ? t("accounts.unavailable")
+                        : t("accounts.workerNoLogin")}
               </Badge>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={busy || device.status !== "connected" || unavailable}
-                aria-label={t(
-                  signedIn
-                    ? "accounts.reauthorizeLabel"
-                    : "accounts.signInLabel",
+              {missing ? (
+                <ConfirmButton
+                  size="sm"
+                  variant="secondary"
+                  disabled={!online || installing !== undefined}
+                  aria-label={t("accounts.installCliLabel", {
+                    name,
+                    device: device.label,
+                  })}
+                  confirmLabel={t("accounts.installCliConfirm", {
+                    device: device.label,
+                  })}
+                  onConfirm={() => void installCli(runtime)}
+                >
+                  {installing === runtime
+                    ? t("accounts.installingCli", {
+                        name,
+                        device: device.label,
+                      })
+                    : t("accounts.installCli", { name })}
+                </ConfirmButton>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={
+                    busy || device.status !== "connected" || unavailable
+                  }
+                  aria-label={t(
+                    signedIn
+                      ? "accounts.reauthorizeLabel"
+                      : "accounts.signInLabel",
+                    { name, device: device.label },
+                  )}
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const result = await startDeviceAuthorization(
+                        device.id,
+                        runtime,
+                      );
+                      setAuthorization(result);
+                      if (result.status === "completed") await onRefresh();
+                    } catch (cause) {
+                      setError(
+                        cause instanceof Error
+                          ? cause.message
+                          : t("accounts.startFailed"),
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  {signedIn ? t("accounts.reauthorize") : t("accounts.signIn")}
+                </Button>
+              )}
+            </div>
+            {missing && online ? (
+              <p className="fdy-device-account-hint">
+                {t("accounts.installCliHint", {
+                  device: device.label,
+                  command: cli?.installCommand,
+                })}
+              </p>
+            ) : null}
+            {installed?.runtime === runtime ? (
+              <Alert
+                tone={installed.ok ? "success" : "error"}
+                title={t(
+                  installed.ok
+                    ? "accounts.installCliDone"
+                    : "accounts.installCliFailed",
                   { name, device: device.label },
                 )}
-                onClick={async () => {
-                  setBusy(true);
-                  setError("");
-                  try {
-                    const result = await startDeviceAuthorization(
-                      device.id,
-                      runtime,
-                    );
-                    setAuthorization(result);
-                    if (result.status === "completed") await onRefresh();
-                  } catch (cause) {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : t("accounts.startFailed"),
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
+                details={
+                  installed.log.trim() ? (
+                    <pre className="fdy-device-account-log">
+                      {installed.log}
+                    </pre>
+                  ) : undefined
+                }
               >
-                {signedIn ? t("accounts.reauthorize") : t("accounts.signIn")}
-              </Button>
-            </div>
+                {installed.command}
+              </Alert>
+            ) : null}
+            {cli?.outdated ? (
+              <Alert
+                tone="warning"
+                title={t("accounts.cliOutdated", {
+                  name,
+                  device: device.label,
+                  version: cli.version,
+                  minimum: cli.minimumVersion,
+                  command: cli.updateCommand,
+                })}
+              />
+            ) : null}
             {active && authorization ? (
               <AuthorizationFlow
                 className="fdy-device-authorization-card"

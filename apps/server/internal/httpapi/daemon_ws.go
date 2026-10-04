@@ -36,6 +36,8 @@ const (
 	wsInspectWorkspaceType              = "inspect_workspace"
 	wsInspectNativeAccountType          = "inspect_native_account"
 	wsNativeAccountInspectedType        = "native_account_inspected"
+	wsInstallNativeCliType              = "install_native_cli"
+	wsNativeCliInstalledType            = "native_cli_installed"
 	wsWorkspaceInspectedType            = "workspace_inspected"
 	wsSetupWorkspaceType                = "setup_workspace"
 	wsWorkspaceReadyType                = "workspace_ready"
@@ -1255,6 +1257,8 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsEvidenceResult](c, envelope, nil)
 	case wsWorkspaceInspectedType:
 		return deliverDaemonResponse[wsWorkspaceInspectionResult](c, envelope, nil)
+	case wsNativeCliInstalledType:
+		return deliverDaemonResponse[wsNativeCliInstallResult](c, envelope, nil)
 	case wsNativeAccountInspectedType:
 		return deliverDaemonResponse[wsNativeAccountInspectionResult](c, envelope, nil)
 	case wsSubagentTranscriptReadType:

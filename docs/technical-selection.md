@@ -125,7 +125,11 @@ The server does not own:
 Stack:
 
 - TypeScript on Node.js (`engines: >=20`; CI runs Node 22)
-- `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk`
+- `@anthropic-ai/claude-agent-sdk` and `@openai/codex-sdk` as optional peers,
+  driving the device's own Claude Code / Codex CLI. The SDKs' bundled
+  platform binaries are never installed: the service runtime installs with
+  `--omit=optional`, and `pnpm audit:footprint` fails CI when the npx
+  download carries them or grows past its budget
 - binaries `foundry-worker` (daemon and workspace CLI) and `foundry`
   (agent-facing session orchestration CLI / stdio MCP)
 

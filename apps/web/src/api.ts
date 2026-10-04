@@ -781,6 +781,17 @@ export function startDeviceAuthorization(
   );
 }
 
+/** Run the official installer for Claude Code or Codex on a device. */
+export function installDeviceCli(
+  deviceId: string,
+  runtime: "claude" | "codex",
+): Promise<import("@bd777/foundry-protocol").NativeCliInstallResult> {
+  return postJSON(
+    `/api/devices/${encodeURIComponent(deviceId)}/accounts/${runtime}/install`,
+    {},
+  );
+}
+
 export function inspectDeviceAccount(
   deviceId: string,
   runtime: "claude" | "codex",

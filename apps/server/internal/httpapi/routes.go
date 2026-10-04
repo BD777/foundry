@@ -265,6 +265,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/{id}/resources/refresh", s.handleRefreshDeviceResources, inHandler()),
 		fn("GET /api/provider-health", s.handleProviderHealth, filtered()),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/inspect", s.handleInspectNativeAccount, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/accounts/{runtime}/install", s.handleInstallNativeCli, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/profiles", s.handleSetDeviceProfiles, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/authorization", s.handleStartDeviceAuthorization, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/authorization/{flowId}", s.handleCompleteDeviceAuthorization, deviceOwner("deviceId")),

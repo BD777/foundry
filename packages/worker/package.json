@@ -31,17 +31,28 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.201",
+    "@openai/codex-sdk": "0.142.5",
     "@types/ws": "^8.18.1"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.201",
     "@bd777/foundry-protocol": "workspace:*",
-    "@openai/codex": "0.142.5",
-    "@openai/codex-sdk": "^0.142.5",
     "pdfjs-dist": "^6.3.289",
     "smol-toml": "^1.8.0",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.201",
+    "@openai/codex-sdk": "0.142.5"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/claude-agent-sdk": {
+      "optional": true
+    },
+    "@openai/codex-sdk": {
+      "optional": true
+    }
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"

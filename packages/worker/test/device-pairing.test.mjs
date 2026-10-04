@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -99,11 +100,22 @@ test("a rejected pairing token surfaces the server's reason", async () => {
   }
 });
 
-test("only one daemon holds the state root; stale locks are reclaimed", () => {
+test("only one daemon holds the state root; stale locks are reclaimed", async (t) => {
   const lock = join(stateRoot, "daemon.lock");
-  // A live foreign holder (the test runner's parent process) blocks us.
-  writeFileSync(lock, String(process.ppid));
+  // A live Foundry daemon blocks us.
+  const daemon = spawn(
+    process.execPath,
+    ["-e", "setTimeout(() => {}, 60000)", "foundry-worker", "daemon"],
+    { stdio: "ignore" },
+  );
+  t.after(() => daemon.kill("SIGKILL"));
+  await new Promise((ready) => daemon.once("spawn", ready));
+  writeFileSync(lock, String(daemon.pid));
   assert.throws(() => acquireDaemonLock(), /already running/);
+  // After a crash or reboot the pid can belong to an unrelated process.
+  writeFileSync(lock, String(process.ppid));
+  acquireDaemonLock();
+  assert.equal(readFileSync(lock, "utf8"), String(process.pid));
   // A dead holder's lock is stale.
   writeFileSync(lock, "999999999");
   acquireDaemonLock();

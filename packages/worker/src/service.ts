@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
 import { daemonConfigPath, readDaemonConfig } from "./config.js";
 import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
+import { daemonLockHolder } from "./device-pairing.js";
 import { optionEnabled } from "./utils.js";
 import {
   foundryStackSuffix,
@@ -336,26 +337,8 @@ export function serviceInstalled(): boolean {
  * is the app's child, so removing or restarting the launchd job alone would
  * leave it running; the daemon lock names its process.
  */
-/** The pid of this stack's running daemon, from its lock, if it is alive. */
-function runningDaemonPid(): number | undefined {
-  let pid: number;
-  try {
-    pid = Number(readFileSync(foundryStatePath("daemon.lock"), "utf8"));
-  } catch {
-    return undefined;
-  }
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid)
-    return undefined;
-  try {
-    process.kill(pid, 0);
-    return pid;
-  } catch {
-    return undefined;
-  }
-}
-
 export async function stopDaemonProcess(): Promise<void> {
-  const pid = runningDaemonPid();
+  const pid = daemonLockHolder();
   if (pid === undefined) return;
   const alive = () => {
     try {
@@ -408,7 +391,7 @@ export async function reinstallService(host: ServiceHost): Promise<boolean> {
     /^ExecStart=(.*)$/m,
   )?.[1];
   if (!execStart) return false;
-  const running = runningDaemonPid();
+  const running = daemonLockHolder();
   if (running === undefined) reportNotRunning(execStart);
   else
     console.error(

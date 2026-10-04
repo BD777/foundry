@@ -85,6 +85,22 @@
 .fdy-device-defaults-save {
   margin-top: 14px;
 }
+.fdy-device-account-hint {
+  margin: 8px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.fdy-device-account-log {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
 .fdy-device-authorization-card {
   padding: 16px;
   background: var(--fdy-paper);

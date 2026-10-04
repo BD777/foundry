@@ -46,13 +46,35 @@ type AgentRuntimeSettings struct {
 }
 
 type ProviderHealth struct {
-	DeviceID     string `json:"deviceId,omitempty"`
-	Provider     string `json:"provider"`
-	Status       string `json:"status"`
-	AuthMode     string `json:"authMode"`
-	SecretStored string `json:"secretStored"`
-	AccountLabel string `json:"accountLabel,omitempty"`
-	StatusDetail string `json:"statusDetail,omitempty"`
+	DeviceID     string     `json:"deviceId,omitempty"`
+	Provider     string     `json:"provider"`
+	Status       string     `json:"status"`
+	AuthMode     string     `json:"authMode"`
+	SecretStored string     `json:"secretStored"`
+	AccountLabel string     `json:"accountLabel,omitempty"`
+	StatusDetail string     `json:"statusDetail,omitempty"`
+	Cli          *NativeCli `json:"cli,omitempty"`
+}
+
+// NativeCli is the device's own Claude Code / Codex program, which Foundry
+// runs instead of shipping a copy.
+type NativeCli struct {
+	Installed      bool   `json:"installed"`
+	Version        string `json:"version,omitempty"`
+	MinimumVersion string `json:"minimumVersion,omitempty"`
+	Outdated       bool   `json:"outdated,omitempty"`
+	InstallCommand string `json:"installCommand,omitempty"`
+	UpdateCommand  string `json:"updateCommand,omitempty"`
+}
+
+// NativeCliInstallResult is what running the official installer for a
+// device's program produced.
+type NativeCliInstallResult struct {
+	Runtime string     `json:"runtime"`
+	OK      bool       `json:"ok"`
+	Command string     `json:"command"`
+	Log     string     `json:"log"`
+	Cli     *NativeCli `json:"cli,omitempty"`
 }
 
 type NativeAccountInspection struct {
