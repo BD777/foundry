@@ -5,6 +5,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
+  FolderCog,
   FolderPlus,
   RefreshCw,
   UploadCloud,
@@ -21,6 +22,7 @@ import { scanDeviceSkills, setDeviceSkillRoots } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { TextInput } from "../../components/ui/field";
+import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
 import {
   toNormalizedDeviceSkill,
@@ -58,11 +60,13 @@ export function DeviceSkills({
   skills,
   onChanged,
 }: DeviceSkillsProps) {
-  const { t } = useTranslation("skills");
+  const { t } = useTranslation(["skills", "common"]);
   const [draftPaths, setDraftPaths] = useState<string[]>([]);
   const [draftDirty, setDraftDirty] = useState(false);
   const [newPath, setNewPath] = useState("");
   const [rootsBusy, setRootsBusy] = useState(false);
+  const [rootsOpen, setRootsOpen] = useState(false);
+  const [rootsError, setRootsError] = useState<string>();
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string>();
   const [serverFilter, setServerFilter] = useState<SkillServerFilter>("all");
@@ -85,13 +89,25 @@ export function DeviceSkills({
     return skills.map(toNormalizedDeviceSkill);
   }, [skills]);
 
+  function openRoots(): void {
+    setDraftPaths(roots.map((root) => root.path));
+    setDraftDirty(false);
+    setNewPath("");
+    setRootsError(undefined);
+    setRootsOpen(true);
+  }
+
   async function saveRoots(): Promise<void> {
     setRootsBusy(true);
+    setRootsError(undefined);
     try {
       await setDeviceSkillRoots(device.id, draftPaths);
       setDraftDirty(false);
       await onChanged();
+      setRootsOpen(false);
       if (online) await runScan();
+    } catch (error) {
+      setRootsError(error instanceof Error ? error.message : String(error));
     } finally {
       setRootsBusy(false);
     }
@@ -134,89 +150,126 @@ export function DeviceSkills({
           skills={skills}
         />
       ) : null}
-      <section className="fdy-skill-roots">
-        <header>
-          <h2>{t("device.rootsTitle")}</h2>
-          <p>{t("device.rootsBody")}</p>
-        </header>
-        <ul>
-          {draftPaths.map((path, index) => (
-            <li className="fdy-skill-root-row" key={`${path}-${index}`}>
-              <span className="fdy-skill-root-path" title={path}>
-                {path}
-              </span>
-              {roots[index]?.isDefault ? (
-                <Badge tone="neutral">{t("device.defaultRoot")}</Badge>
-              ) : null}
+      {rootsOpen ? (
+        <WorkspaceDialog
+          busy={rootsBusy}
+          description={t("device.rootsBody")}
+          onClose={() => setRootsOpen(false)}
+          title={t("device.rootsTitle")}
+        >
+          <div className="fdy-skill-roots">
+            <ul>
+              {draftPaths.map((path, index) => (
+                <li className="fdy-skill-root-row" key={`${path}-${index}`}>
+                  <span className="fdy-skill-root-path" title={path}>
+                    {path}
+                  </span>
+                  {roots.find((root) => root.path === path)?.isDefault ? (
+                    <Badge tone="neutral">{t("device.defaultRoot")}</Badge>
+                  ) : null}
+                  <Button
+                    aria-label={t("device.removeRoot", { path })}
+                    disabled={rootsBusy}
+                    onClick={() => {
+                      setDraftPaths((rows) =>
+                        rows.filter((_, i) => i !== index),
+                      );
+                      setDraftDirty(true);
+                    }}
+                    size="icon"
+                    variant="ghost"
+                  >
+                    <X size={14} />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+            <div className="fdy-skill-root-add">
+              <TextInput
+                aria-label={t("device.addRootLabel")}
+                onChange={(event) => setNewPath(event.target.value)}
+                placeholder={t("device.addRootPlaceholder")}
+                tone="boxed"
+                value={newPath}
+              />
               <Button
-                aria-label={t("device.removeRoot", { path })}
-                disabled={rootsBusy}
+                disabled={!newPath.trim() || rootsBusy}
                 onClick={() => {
-                  setDraftPaths((rows) => rows.filter((_, i) => i !== index));
-                  setDraftDirty(true);
+                  const path = newPath.trim();
+                  if (path && !draftPaths.includes(path)) {
+                    setDraftPaths((rows) => [...rows, path]);
+                    setDraftDirty(true);
+                  }
+                  setNewPath("");
                 }}
-                size="icon"
+                variant="secondary"
+              >
+                <FolderPlus size={14} />
+                {t("device.add")}
+              </Button>
+            </div>
+            {rootsError ? (
+              <p className="fdy-skill-error" role="alert">
+                <AlertTriangle size={13} /> {rootsError}
+              </p>
+            ) : null}
+            <div className="fdy-skill-root-actions">
+              <Button
+                disabled={rootsBusy}
+                onClick={() => setRootsOpen(false)}
                 variant="ghost"
               >
-                <X size={14} />
+                {t("common:actions.cancel")}
               </Button>
-            </li>
-          ))}
-        </ul>
-        <div className="fdy-skill-root-add">
-          <TextInput
-            aria-label={t("device.addRootLabel")}
-            onChange={(event) => setNewPath(event.target.value)}
-            placeholder={t("device.addRootPlaceholder")}
-            tone="boxed"
-            value={newPath}
-          />
-          <Button
-            disabled={!newPath.trim()}
-            onClick={() => {
-              const path = newPath.trim();
-              if (path && !draftPaths.includes(path)) {
-                setDraftPaths((rows) => [...rows, path]);
-                setDraftDirty(true);
-              }
-              setNewPath("");
-            }}
-            variant="secondary"
-          >
-            <FolderPlus size={14} />
-            {t("device.add")}
-          </Button>
-        </div>
-        <div className="fdy-skill-root-actions">
-          <Button disabled={!draftDirty || rootsBusy} onClick={saveRoots}>
-            {t("device.saveRoots")}
-          </Button>
-          <Button
-            disabled={!online || scanning}
-            onClick={runScan}
-            variant="ghost"
-          >
-            <RefreshCw
-              className={scanning ? "fdy-spin" : undefined}
-              size={14}
-            />
-            {scanning ? t("device.scanning") : t("device.scanNow")}
-          </Button>
-        </div>
-        {!online ? (
-          <p className="fdy-skill-offline" role="status">
-            {t("device.offline")}
-          </p>
-        ) : null}
-        {scanError ? (
-          <p className="fdy-skill-error" role="alert">
-            <AlertTriangle size={13} /> {scanError}
-          </p>
-        ) : null}
-      </section>
+              <Button
+                disabled={!draftDirty || rootsBusy}
+                onClick={() => void saveRoots()}
+                variant="primary"
+              >
+                {rootsBusy ? t("common:actions.saving") : t("device.saveRoots")}
+              </Button>
+            </div>
+          </div>
+        </WorkspaceDialog>
+      ) : null}
 
       <SkillCatalogList<NormalizedSkill>
         description={t("device.description")}
+        headerActions={
+          <>
+            <Button onClick={openRoots} variant="secondary">
+              <FolderCog size={14} />
+              {t("device.rootsOpen", { count: roots.length })}
+            </Button>
+            <Button
+              disabled={!online || scanning}
+              onClick={() => void runScan()}
+              variant="secondary"
+            >
+              <RefreshCw
+                className={scanning ? "fdy-spin" : undefined}
+                size={14}
+              />
+              {scanning ? t("device.scanning") : t("device.scanNow")}
+            </Button>
+          </>
+        }
+        headerExtras={
+          !online || scanError ? (
+            <>
+              {!online ? (
+                <p className="fdy-skill-offline" role="status">
+                  {t("device.offline")}
+                </p>
+              ) : null}
+              {scanError ? (
+                <p className="fdy-skill-error" role="alert">
+                  <AlertTriangle size={13} /> {scanError}
+                </p>
+              ) : null}
+            </>
+          ) : null
+        }
         emptyState={{
           title: t("device.emptyTitle"),
           body: t("device.emptyBody"),

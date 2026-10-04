@@ -26,7 +26,7 @@ export const agents = {
   codexSandbox: {
     "read-only": "Read only",
     "workspace-write": "Workspace write",
-    "danger-full-access": "Danger full access",
+    "danger-full-access": "Full access (dangerous)",
   },
   codexSandboxSummary: {
     "read-only": "Read-only access",

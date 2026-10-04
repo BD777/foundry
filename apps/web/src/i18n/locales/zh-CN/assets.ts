@@ -23,6 +23,8 @@ export const assets: Translation<typeof en> = {
     localDevice: "本地设备",
   },
   status: {
+    blocked: "受阻",
+    leased: "使用中",
     missing: "缺失",
     available: "可用",
     synced: "已同步",
@@ -30,6 +32,10 @@ export const assets: Translation<typeof en> = {
     notReported: "守护进程未上报",
   },
   capacity: {
+    missingConfig: "缺少 {{file}}",
+    previewSetup:
+      "未配置：把 .foundry/preview.example.json 复制为 .foundry/preview.json 即可启用预览",
+    perIssue: "每个 Issue 一个 worktree",
     title: "执行容量",
     worktreePool: "Worktree 池",
     previewPorts: "预览端口",

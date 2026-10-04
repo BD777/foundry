@@ -69,6 +69,12 @@
   gap: 18px;
 }
 
+/* Members lists people; it shares the management pages' width. */
+.fdy-page-surface-members {
+  max-width: 1120px;
+  gap: 18px;
+}
+
 .fdy-account-intro {
   display: grid;
   min-width: 0;

@@ -55,13 +55,21 @@ export const devices = {
       "Unregister {{device}} from this Foundry server. Its workspaces leave the available lists; chats, issues and run history are kept. Nothing on the machine is deleted.",
   },
   add: {
-    title: "Add a device",
+    dialogTitle: "Add or repair a device",
+    dialogIntro:
+      "Pair a new machine with one command, or check and update a device that is already set up.",
+    title: "Add a new device",
     intro:
       "Run one command in a terminal on the machine that should do the work (macOS or Linux with Node.js 20 or later). It installs the worker, pairs it with your account and starts it at login.",
     tokenNote:
       "The token works once and expires at {{time}}. The first workspace is ~/Foundry; add <code>{{flag}}</code> to choose another, and add more later under the device's Workspaces.",
-    updateNote:
-      "A machine that already runs a Foundry worker is left as it is. To update a worker later, run <code>{{update}}</code> on it; <code>{{uninstall}}</code> removes it.",
+    mirrorNote:
+      "If npm uses a private mirror that cannot be reached, add <code>{{flag}}</code> to the command.",
+    repairTitle: "Check or repair a device already set up",
+    repairIntro:
+      "Run on that machine. The first command checks it without downloading anything; the second updates the worker and restarts it.",
+    repairLegacy:
+      "A device set up with an earlier version gets this command after running <code>{{update}}</code> once.",
     copyCommand: "Copy command",
     newToken: "New token",
     creating: "Creating…",

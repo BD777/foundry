@@ -353,3 +353,18 @@ test("a device shared through a workspace is browse-only and shows the caller's 
   assert.doesNotMatch(text, /Add workspace/);
   await view.cleanup();
 });
+
+test("adding a device opens one dialog that also shows how to check or repair a device", async () => {
+  const view = await setup();
+  await view.click("Add device");
+  const dialog = window.document.querySelector('[role="dialog"]');
+  assert.ok(dialog, "the dialog opens");
+  assert.match(dialog.textContent, /Add or repair a device/);
+  assert.match(dialog.textContent, /Create pairing command/);
+  assert.match(dialog.textContent, /~\/\.foundry\/bin\/foundry-worker doctor/);
+  assert.match(
+    dialog.textContent,
+    /--registry https:\/\/registry\.npmjs\.org\//,
+  );
+  await view.cleanup();
+});

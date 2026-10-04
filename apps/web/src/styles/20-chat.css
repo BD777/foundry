@@ -1180,16 +1180,6 @@
   }
 }
 
-.fdy-readonly-badge {
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  border-color: var(--fdy-brass-line);
-  background: var(--fdy-brass-soft);
-  color: var(--fdy-brass-dark);
-  letter-spacing: 0;
-}
-
 .fdy-chat-message-stage {
   --fdy-chat-turn-gutter: 0px;
   --fdy-chat-turn-marker-width: 32px;

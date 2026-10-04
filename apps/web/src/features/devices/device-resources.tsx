@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import { RefreshCw } from "lucide-react";
 import type { DeviceProjection, DeviceResource } from "@bd777/foundry-protocol";
 import { refreshDeviceResources } from "../../api";
 import { Badge } from "../../components/ui/badge";
@@ -74,22 +75,28 @@ export function DeviceResources({
       className="fdy-device-section"
       aria-labelledby="fdy-device-resources-heading"
     >
-      <h2 id="fdy-device-resources-heading">{t("resources.title")}</h2>
-      <p>{t("resources.intro", { device: device.label })}</p>
-      {manageable ? (
-        <div className="fdy-device-resource-actions">
+      <header className="fdy-management-heading">
+        <div>
+          <h2 id="fdy-device-resources-heading">{t("resources.title")}</h2>
+          <p>{t("resources.intro", { device: device.label })}</p>
+        </div>
+        {manageable ? (
           <Button
             size="sm"
             variant="secondary"
             disabled={busy !== null}
             onClick={() => void refresh()}
           >
+            <RefreshCw
+              className={busy === "detect" ? "fdy-spin" : undefined}
+              size={14}
+            />
             {busy === "detect"
               ? t("resources.detecting")
               : t("resources.detectAgain")}
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </header>
       {resources.length === 0 ? (
         <EmptyState
           title={t("resources.emptyTitle")}

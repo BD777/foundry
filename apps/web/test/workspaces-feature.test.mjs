@@ -238,3 +238,19 @@ test("current context on a removed device stays visible read-only and cannot swi
   );
   await view.cleanup();
 });
+
+test("adding or repairing a device is a heading action that asks the shell, not a block under the lists", async () => {
+  const view = await setup();
+  const heading = view.container.querySelector(
+    ".fdy-location-device-list .fdy-location-column-heading",
+  );
+  assert.ok(heading, "the device column has a heading row");
+  const button = [...heading.querySelectorAll("button")].find((b) =>
+    b.textContent.includes("Add or repair device"),
+  );
+  assert.ok(button, "the action sits in the heading");
+  await view.click(button);
+  assert.deepEqual(view.events.at(-1), { type: "device.add.requested" });
+  assert.equal(view.container.querySelector(".fdy-location-device-help"), null);
+  await view.cleanup();
+});

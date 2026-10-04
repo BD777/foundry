@@ -282,24 +282,6 @@
   font-size: 12px;
   line-height: 1.7;
 }
-.fdy-location-device-help {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--fdy-line);
-  min-width: 0;
-  max-width: 720px;
-}
-.fdy-location-device-help > .fdy-button {
-  justify-self: start;
-}
-.fdy-location-device-help > p {
-  margin: 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
 .fdy-location-footer {
   display: flex;
   align-items: center;
@@ -426,10 +408,10 @@
   font-size: 13px;
   font-weight: 600;
 }
-.fdy-location-device-list h2 {
+.fdy-location-device-list .fdy-location-column-heading {
   margin-bottom: 15px;
 }
-.fdy-location-workspace-heading {
+.fdy-location-column-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;

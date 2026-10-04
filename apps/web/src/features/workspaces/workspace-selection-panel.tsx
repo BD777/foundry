@@ -10,14 +10,12 @@ import {
   Search,
   Plus,
 } from "lucide-react";
-import { workerPackageName } from "@bd777/foundry-protocol";
 import type {
   DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { TerminalBlock } from "../../components/ui/terminal-block";
 import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { WorkspaceDetails } from "../../components/workspace/workspace-details";
@@ -170,7 +168,12 @@ export function WorkspaceSelectionPanel(props: Props) {
           className="fdy-location-device-list"
           aria-label={t("location.devicesLabel")}
         >
-          <h2>{t("location.deviceStep")}</h2>
+          <div className="fdy-location-column-heading">
+            <h2>{t("location.deviceStep")}</h2>
+            <Button size="sm" variant="ghost" onClick={props.onAddDevice}>
+              <Plus size={13} /> {t("location.addDevice")}
+            </Button>
+          </div>
           {pickerDevices.map((device) => {
             const removed = isRemovedDevice(device);
             return (
@@ -224,7 +227,7 @@ export function WorkspaceSelectionPanel(props: Props) {
           className="fdy-location-workspace-list"
           aria-label={t("location.workspacesLabel")}
         >
-          <div className="fdy-location-workspace-heading">
+          <div className="fdy-location-column-heading">
             <h2>{t("location.workspaceStep")}</h2>
             <Button
               size="sm"
@@ -347,20 +350,6 @@ export function WorkspaceSelectionPanel(props: Props) {
             />
           ) : null}
         </section>
-      </div>
-      <div className="fdy-location-device-help">
-        <Button variant="secondary" size="sm" onClick={props.onAddDevice}>
-          <Plus size={15} />
-          {t("location.addDevice")}
-        </Button>
-        <p>{t("location.repairHint")}</p>
-        <TerminalBlock
-          lines={["doctor", "update"].map((command) => ({
-            id: command,
-            prompt: "$",
-            value: `npx -y ${workerPackageName}@latest ${command}`,
-          }))}
-        />
       </div>
     </PageSurface>
   );

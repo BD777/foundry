@@ -109,7 +109,11 @@ import {
   useChatFeature,
   type ChatFeatureEvent,
 } from "./features/chat";
-import { DevicesFeature, type DeviceSection } from "./features/devices";
+import {
+  AddDeviceDialog,
+  DevicesFeature,
+  type DeviceSection,
+} from "./features/devices";
 import {
   IssuesFeature,
   type IssueDraftRequest,
@@ -292,8 +296,7 @@ export function App() {
     storedSidebarCollapsed,
   );
   const [themeMode, setThemeMode] = useState<FoundryThemeMode>(storedThemeMode);
-  // Each request from elsewhere opens adding a device on the Devices page.
-  const [addDeviceRequest, setAddDeviceRequest] = useState(0);
+  const [addingDevice, setAddingDevice] = useState(false);
   const issueDraftRequestIdRef = useRef(0);
   const workspaceLoadSeqRef = useRef(0);
   const workspaceLoadingRef = useRef(false);
@@ -442,9 +445,8 @@ export function App() {
       return;
     }
     if (event.type === "device.add.requested") {
-      setSelectedDeviceId(undefined);
-      setAddDeviceRequest((count) => count + 1);
-      setActiveView("devices");
+      // Opens over the current page; the person stays where they were.
+      setAddingDevice(true);
       return;
     }
     if (event.type === "workspace.management.requested") {
@@ -955,6 +957,7 @@ export function App() {
           ) : (
             <Button
               variant="secondary"
+              size="sm"
               onClick={() => {
                 setSelectedDeviceId(device?.id);
                 setDeviceSection("agents");
@@ -999,7 +1002,6 @@ export function App() {
   function renderDevicesView() {
     return (
       <DevicesFeature
-        addDeviceRequest={addDeviceRequest}
         devices={data.devices}
         selectedDeviceId={selectedDeviceId}
         section={deviceSection}
@@ -1132,6 +1134,9 @@ export function App() {
         }
       />
 
+      {addingDevice ? (
+        <AddDeviceDialog onClose={() => setAddingDevice(false)} />
+      ) : null}
       <FoundryMain>
         <NoticeStack>
           {apiState === "fallback" ? (
