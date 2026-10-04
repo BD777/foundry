@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { ArrowLeft, Monitor, MoreHorizontal, Plus, Trash2 } from "lucide-react";
@@ -29,6 +29,8 @@ import { Alert } from "../../components/ui/alert";
 export type DeviceSection =
   "workspaces" | "resources" | "agents" | "skills" | "settings";
 export interface DevicesFeatureProps {
+  /** Changes each time another page asks to add a device. */
+  addDeviceRequest?: number;
   devices: DeviceProjection[];
   selectedDeviceId?: string;
   section: DeviceSection;
@@ -64,6 +66,9 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   );
   const [removalTarget, setRemovalTarget] = useState<DeviceProjection>();
   const [addingDevice, setAddingDevice] = useState(false);
+  useEffect(() => {
+    if (props.addDeviceRequest) setAddingDevice(true);
+  }, [props.addDeviceRequest]);
   const removalTriggers = useRef(new Map<string, HTMLButtonElement>());
   const { t } = useTranslation("devices");
 

@@ -53,6 +53,8 @@ export const workspaces = {
     currentLocation: "Current: <strong>{{location}}</strong>",
     noWorkspaceSelected: "No workspace selected",
     devicesLabel: "Choose device",
+    addDevice: "Add a device",
+    repairHint: "To check or repair a device, run on that machine:",
     deviceStep: "1. Device",
     deviceRemovedTitle: "Device removed from Foundry",
     removedHistory: "Removed · history kept read-only",

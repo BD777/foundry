@@ -8,13 +8,16 @@ import {
   FolderOpen,
   Monitor,
   Search,
+  Plus,
 } from "lucide-react";
+import { workerPackageName } from "@bd777/foundry-protocol";
 import type {
   DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { TerminalBlock } from "../../components/ui/terminal-block";
 import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { WorkspaceDetails } from "../../components/workspace/workspace-details";
@@ -34,6 +37,8 @@ interface Props {
   ) => Promise<boolean>;
   onPrepare: (workspace: WorkspaceProjection) => void;
   onManage: (deviceId?: string) => void;
+  /** Opens adding a device: a one-time token and the install command. */
+  onAddDevice: () => void;
   onBrowse: () => void;
   onReturn: () => void;
 }
@@ -342,6 +347,20 @@ export function WorkspaceSelectionPanel(props: Props) {
             />
           ) : null}
         </section>
+      </div>
+      <div className="fdy-location-device-help">
+        <Button variant="secondary" size="sm" onClick={props.onAddDevice}>
+          <Plus size={15} />
+          {t("location.addDevice")}
+        </Button>
+        <p>{t("location.repairHint")}</p>
+        <TerminalBlock
+          lines={["doctor", "update"].map((command) => ({
+            id: command,
+            prompt: "$",
+            value: `npx -y ${workerPackageName}@latest ${command}`,
+          }))}
+        />
       </div>
     </PageSurface>
   );

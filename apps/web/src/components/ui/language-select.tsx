@@ -6,11 +6,14 @@ import { SelectMenu } from "./select-menu";
 /** Choose the interface language, or follow the browser. */
 export function LanguageSelect({
   className,
+  compact = false,
   disabled,
   onChange,
   value,
 }: {
   className?: string;
+  /** Icon-only trigger for a toolbar; the open menu shows full names. */
+  compact?: boolean;
   disabled?: boolean;
   onChange: (value: LocalePreference) => void;
   value: LocalePreference;
@@ -20,6 +23,7 @@ export function LanguageSelect({
     <SelectMenu
       ariaLabel={t("language.label")}
       className={className}
+      tone={compact ? "icon" : "field"}
       disabled={disabled}
       onChange={(next) => onChange(next as LocalePreference)}
       renderTriggerPrefix={() => <Languages aria-hidden size={14} />}

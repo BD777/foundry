@@ -3113,6 +3113,22 @@
   background: var(--fdy-control-ghost-hover);
 }
 
+.fdy-select-trigger[data-tone="icon"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-select-trigger[data-tone="icon"]:hover,
+.fdy-select-trigger[data-tone="icon"][aria-expanded="true"] {
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink);
+}
+
 .fdy-select-trigger-copy {
   display: grid;
   min-width: 0;

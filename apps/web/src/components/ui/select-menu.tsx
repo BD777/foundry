@@ -53,7 +53,8 @@ export interface SelectMenuProps {
   renderOptionPrefix?: (option: SelectMenuOption) => ReactNode;
   renderTriggerPrefix?: (option: SelectMenuOption | undefined) => ReactNode;
   side?: "top" | "bottom";
-  tone?: "field" | "pill";
+  /** "icon": a borderless square holding only the trigger prefix, for toolbars. */
+  tone?: "field" | "pill" | "icon";
   value: string;
 }
 
@@ -117,10 +118,14 @@ export function SelectMenu({
             variant="ghost"
           >
             {renderTriggerPrefix?.(visibleOption)}
-            <span className="fdy-select-trigger-copy">
-              <strong>{visibleOption?.label ?? placeholder}</strong>
-            </span>
-            <ChevronDown size={16} />
+            {tone === "icon" ? null : (
+              <>
+                <span className="fdy-select-trigger-copy">
+                  <strong>{visibleOption?.label ?? placeholder}</strong>
+                </span>
+                <ChevronDown size={16} />
+              </>
+            )}
           </Button>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
