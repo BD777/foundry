@@ -267,8 +267,9 @@ A device installed before 0.5.4 has no local command yet; it gets one after
 - `install` puts the package in `<state root>/runtime/<version>` (`current`
   points at the one in use) and the login service runs the worker from there,
   never from the npx cache. A machine already running a worker for that server
-  is left unchanged; one paired with another server is refused. The first
-  workspace defaults to `~/Foundry`.
+  is left unchanged; one paired with another server is refused. A new device
+  starts without a workspace (`--workspace` registers one at install); people
+  add folders from the Workspaces page once it is online.
 - On macOS the service is hosted by `<state root>/Foundry Worker.app`, built at
   install time with system tools only (`osacompile`, `PlistBuddy`, `codesign`;
   no Xcode). macOS privacy grants such as Screen Recording then name

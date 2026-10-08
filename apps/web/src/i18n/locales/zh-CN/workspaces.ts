@@ -170,6 +170,7 @@ export const workspaces: Translation<typeof en> = {
     noMatches: "没有匹配的工作区。试试其他名称或路径。",
     empty: "还没有注册工作区。在这台设备上添加一个文件夹即可开始。",
     added: "已注册 {{name}}。当前位置保持不变。",
+    addedFirst: "已注册 {{name}}，现在是你当前的工作区。",
     renamed: "显示名称已保存为 {{name}}。",
     removed: "已移除 {{name}} 及其在 Foundry 中的历史记录。本地文件已保留。",
     refreshFailed: "已保存，但列表未能刷新。请重新加载本页，不要重复操作。",

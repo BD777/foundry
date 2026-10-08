@@ -837,9 +837,6 @@ func (h *DaemonHub) syncRegistration(registration store.DaemonRegistration) erro
 	if registration.Device.ID == "" {
 		return errors.New("daemon registration requires device.id")
 	}
-	if registration.Workspace.ID == "" {
-		return errors.New("daemon registration requires workspace.id")
-	}
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
@@ -853,9 +850,8 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	if !c.actor.ActsAsDevice(registration.Device.ID) {
 		return errors.New("daemon registration device does not match its credential")
 	}
-	if registration.Workspace.ID == "" {
-		return errors.New("daemon registration requires workspace.id")
-	}
+	// A device with no workspace yet registers itself alone; its workspaces
+	// arrive later as the person adds them.
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
@@ -871,8 +867,17 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		c.replaceActiveSessions(registration.ActiveSessionIDs)
 	}
 	c.registrationMu.Lock()
-	c.registrations[registration.Workspace.ID] = registration
-	c.registration = registration
+	if registration.Workspace.ID != "" {
+		c.registrations[registration.Workspace.ID] = registration
+		c.registration = registration
+	} else {
+		// Device-only news must not cost the connection the workspace it
+		// claims Issues for.
+		c.registration.Device = registration.Device
+		c.registration.Capabilities = registration.Capabilities
+		c.registration.ProviderHealth = registration.ProviderHealth
+		c.registration.AgentProfiles = registration.AgentProfiles
+	}
 	c.deviceID = registration.Device.ID
 	c.registrationMu.Unlock()
 
@@ -904,7 +909,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		c.closePermanent(wsDeviceRemovedCloseCode, wsDeviceRemovedReason)
 		return store.ErrDeviceRemoved
 	}
-	if c.hub.onEvidenceConnected != nil {
+	if c.hub.onEvidenceConnected != nil && registration.Workspace.ID != "" {
 		go func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()

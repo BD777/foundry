@@ -419,7 +419,10 @@ export function WorkspaceSelectionPanel(props: Props) {
             setMessage(
               t(
                 kind === "add"
-                  ? "deviceList.added"
+                  ? // With no workspace before, the first one becomes current.
+                    props.activeWorkspaceId
+                    ? "deviceList.added"
+                    : "deviceList.addedFirst"
                   : kind === "rename"
                     ? "deviceList.renamed"
                     : "deviceList.removed",

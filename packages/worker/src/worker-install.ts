@@ -363,9 +363,10 @@ export async function installCommand(args: string[]): Promise<void> {
       `This machine is not paired with ${serverURL} yet; pairing needs a one-time token. Copy the command from Devices → Add device on ${serverURL} and run it here.`,
     );
   const self = ownPackage();
-  const workspace =
-    optionValue(args, "--workspace") ?? join(homedir(), "Foundry");
-  mkdirSync(workspace, { recursive: true });
+  // No default workspace: a new device starts with none, and the person adds
+  // the folders they want from the Workspaces page.
+  const workspace = optionValue(args, "--workspace");
+  if (workspace) mkdirSync(workspace, { recursive: true });
   console.log(`Installing ${self.name} into ${runtimeRoot()}…`);
   let specs = packageSpecs(args);
   if (!specs.length) {
@@ -381,10 +382,16 @@ export async function installCommand(args: string[]): Promise<void> {
     ? installed!
     : installRuntime(self.name, specs);
   console.log(`Installed ${self.name} ${version}.`);
-  await setup([...withoutOption(args, "--from"), "--workspace", workspace], {
-    cliPath: currentRuntimeCli(self.name),
-    macApp: process.platform === "darwin",
-  });
+  await setup(
+    [
+      ...withoutOption(args, "--from"),
+      ...(workspace ? ["--workspace", workspace] : []),
+    ],
+    {
+      cliPath: currentRuntimeCli(self.name),
+      macApp: process.platform === "darwin",
+    },
+  );
   reportWorkerShim(self.name);
 }
 

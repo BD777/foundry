@@ -222,7 +222,7 @@ export const cliCommands: CliCommandContract[] = [
         command:
           "foundry-worker install --server <url> --token <pairing-token> --workspace ~/work/project",
         description:
-          "Install with an explicit first workspace (default ~/Foundry).",
+          "Install and register a first workspace now (by default a device starts with none).",
       },
       {
         command:
@@ -237,8 +237,8 @@ export const cliCommands: CliCommandContract[] = [
       serverOption,
       pairingTokenOption,
       {
-        defaultValue: "~/Foundry",
-        description: "First workspace to register",
+        description:
+          "A first workspace to register now; without it the device starts with none",
         name: "--workspace",
         type: "string",
       },

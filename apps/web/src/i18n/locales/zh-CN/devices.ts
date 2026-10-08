@@ -115,7 +115,7 @@ export const devices: Translation<typeof en> = {
     intro:
       "在要执行工作的机器上打开终端，运行一条命令（macOS 或 Linux，需 Node.js 20 或更高版本）。它会安装 Worker、与你的账号配对，并在登录时自动启动。",
     tokenNote:
-      "令牌只能使用一次，将于 {{time}} 过期。第一个工作区是 ~/Foundry；加上 <code>{{flag}}</code> 可以选择其他位置，之后也可以在设备的“工作区”中添加更多。",
+      "令牌只能使用一次，将于 {{time}} 过期。设备连上后默认没有工作区：在“工作区”页面添加你想用的文件夹即可；也可以加上 <code>{{flag}}</code> 现在就注册一个。",
     mirrorNote:
       "如果 npm 使用的私有镜像无法访问，在命令后加上 <code>{{flag}}</code>。",
     repairTitle: "检查或修复已设置好的设备",

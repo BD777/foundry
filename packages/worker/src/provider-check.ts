@@ -27,6 +27,7 @@ import {
 } from "./provider-check-state.js";
 import { codexProfileConfig, codexSessionEnvironment } from "./runner.js";
 import { sessionEnvironment } from "./session-ambient.js";
+import { claudeSettingsFile } from "./session-policy.js";
 
 const checkTimeoutMs = 120_000;
 const prompt = "Reply with the single word OK.";
@@ -127,7 +128,9 @@ async function runClaudeTurn(
       maxTurns: 1,
       pathToClaudeCodeExecutable: resolveClaudeCommand(),
       permissionMode: "default",
-      settings: { env: profileRuntimeEnvironment(profile) },
+      settings: claudeSettingsFile(`provider-check:${profileID(profile)}`, {
+        env: profileRuntimeEnvironment(profile),
+      }),
       tools: [],
       ...(model ? { model } : {}),
     },

@@ -50,6 +50,16 @@ func (s *Store) RegisterDaemon(ctx context.Context, input store.DaemonRegistrati
 		if err := tx.assertDeviceNotRemoved(ctx, input.Device.ID); err != nil {
 			return err
 		}
+		// A device that has no workspace yet reports only itself.
+		if input.Workspace.ID == "" {
+			if err := tx.saveDevice(ctx, input.Device, now); err != nil {
+				return err
+			}
+			if err := tx.replaceDeviceProviderHealth(ctx, input.Device.ID, input.ProviderHealth, now); err != nil {
+				return err
+			}
+			return tx.replaceDeviceAgentProfiles(ctx, input.Device.ID, input.AgentProfiles, now)
+		}
 		if err := tx.assertWorkspaceClaimable(ctx, input.Workspace.ID, input.Device.ID); err != nil {
 			return err
 		}
