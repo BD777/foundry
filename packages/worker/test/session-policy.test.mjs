@@ -40,15 +40,15 @@ test("Foundry flag settings pin auto-compaction on regardless of local user conf
   assert.equal(settings.env.ANTHROPIC_MODEL, "model_hub/example");
 });
 
-test("managed settings disable bundled skills; ordinary sessions leave them alone", () => {
+test("Claude Code keeps its own skills, managed or not", () => {
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
   };
   assert.equal(
-    foundryClaudeSettings(compatibleProfile(), session, managed)
-      .disableBundledSkills,
-    true,
+    "disableBundledSkills" in
+      foundryClaudeSettings(compatibleProfile(), session, managed),
+    false,
   );
   assert.equal(
     "disableBundledSkills" in
@@ -92,6 +92,7 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
   const managed = {
     pluginDir: "/managed/set-a",
     skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
+    officialSkills: [{ name: "simplify" }],
   };
   const plan = buildClaudeLaunchPlan({
     workspacePath,
@@ -102,12 +103,19 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
   assert.equal(plan.sdk.settingSources, undefined);
   assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
-  assert.deepEqual(plan.sdk.skills, ["foundry-workspace:qa"]);
+  // Claude Code's own skills stay enabled beside the workspace's.
+  assert.deepEqual(plan.sdk.skills, ["simplify", "foundry-workspace:qa"]);
   assert.deepEqual(plan.sdk.plugins, [
     { type: "local", path: "/managed/set-a" },
   ]);
-  assert.equal(plan.settings.disableBundledSkills, true);
+  assert.equal(plan.settings.disableBundledSkills, undefined);
   assert.equal(plan.settings.autoCompactEnabled, true);
+  // An official skill may be invoked directly; a device-installed one may not.
+  plan.validatePrompt("/simplify the diff");
+  assert.throws(
+    () => plan.validatePrompt("/my-local-skill go"),
+    /not configured/,
+  );
 });
 
 test("unconfigured skill invocations and custom commands fail closed from the plan", () => {

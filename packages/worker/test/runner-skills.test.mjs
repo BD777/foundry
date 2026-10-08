@@ -37,17 +37,33 @@ test("Codex disables native document paths, even a same-name local copy", () => 
     { enabled: false, path: "/home/.agents/skills/qa/SKILL.md" },
   ]);
   assert.equal(config.skills.include_instructions, false);
-  assert.equal(config.skills.bundled.enabled, false);
+  // Codex's own skills are not disabled; only device-installed ones are.
+  assert.equal(config.skills.bundled, undefined);
   assert.match(config.developer_instructions, /\/sets\/qa\/SKILL.md/);
   assert.doesNotMatch(config.developer_instructions, /\/home\//);
 });
 
-test("Codex empty selections still disable automatic catalog and bundled skills", () => {
+test("Codex empty selections still hide the automatic catalog but keep its own skills", () => {
   assert.equal(
     codexSessionConfig(managed([])).skills.include_instructions,
     false,
   );
-  assert.equal(codexSessionConfig(managed([])).skills.bundled.enabled, false);
+  assert.equal(codexSessionConfig(managed([])).skills.bundled, undefined);
+  // Its own skills are offered in the catalog, marked built-in.
+  const official = codexSessionConfig({
+    ...managed([]),
+    officialSkills: [
+      {
+        name: "skill-creator",
+        path: "/codex/skills/.system/skill-creator/SKILL.md",
+      },
+    ],
+  });
+  assert.match(official.developer_instructions, /"builtIn":true/);
+  assert.match(
+    official.developer_instructions,
+    /\.system\/skill-creator\/SKILL\.md/,
+  );
   assert.throws(
     () => codexSessionConfig({ skills: [], pluginDir: "/empty" }),
     /not verified/,

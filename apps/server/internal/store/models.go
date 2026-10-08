@@ -88,6 +88,15 @@ type ProviderHealth struct {
 	AccountLabel string     `json:"accountLabel,omitempty"`
 	StatusDetail string     `json:"statusDetail,omitempty"`
 	Cli          *NativeCli `json:"cli,omitempty"`
+	// OfficialSkills are the skills this agent ships itself; sessions on it
+	// always have them, besides their workspace's selection.
+	OfficialSkills []OfficialSkill `json:"officialSkills,omitempty"`
+}
+
+// OfficialSkill is a skill Claude Code or Codex ships itself.
+type OfficialSkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 // NativeCli is the device's own Claude Code / Codex program, which Foundry

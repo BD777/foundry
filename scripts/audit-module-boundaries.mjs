@@ -97,6 +97,7 @@ export const workerModules = {
       "native-login",
       "native-login-environment",
       "models",
+      "official-skills",
       "provider-check-state",
       "provider-health",
     ],

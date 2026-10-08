@@ -793,3 +793,107 @@
   display: grid;
   gap: 6px;
 }
+
+/* The agents' own skills: one disclosure row per agent above the selection. */
+.fdy-official-skills {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 28px;
+}
+
+.fdy-official-skills-agent {
+  min-width: 0;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+}
+
+.fdy-official-skills-agent > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 0.14s;
+}
+
+.fdy-official-skills-agent > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fdy-official-skills-agent > summary:hover {
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-official-skills-agent > summary:focus-visible {
+  outline: 1px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-official-skills-chevron {
+  flex-shrink: 0;
+  color: var(--fdy-ink-faint);
+  transition: transform 0.14s;
+}
+
+.fdy-official-skills-agent[open] .fdy-official-skills-chevron {
+  transform: rotate(90deg);
+}
+
+.fdy-official-skills-agent > summary strong {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-official-skills-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-official-skills-preview {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fdy-ink-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-official-skills-agent ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 12px 12px 34px;
+  list-style: none;
+}
+
+.fdy-official-skills-agent li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 0;
+}
+
+.fdy-official-skills-agent li strong {
+  font-size: 12.5px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-official-skills-agent li span {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .fdy-official-skills-preview {
+    display: none;
+  }
+}

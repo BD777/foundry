@@ -69,6 +69,11 @@ export const skills: Translation<typeof en> = {
       "{{device}} 扫描目录里的 Skill。点「添加到工作区」会发布到服务器并在这个工作区启用；如果服务器上有同名但内容不同的，会先让你对比确认。",
     localSearchPlaceholder: "筛选本地 Skill",
     addLocal: "添加到工作区",
+    officialTitle: "Agent 自带的 Skill",
+    officialDescription:
+      "Claude Code 和 Codex 自带的 Skill。会话始终可以使用所选 Agent 自带的 Skill，此外还有下方为这个工作区选择的 Skill。",
+    officialCount_one: "自带 {{count}} 个 Skill · 始终可用",
+    officialCount_other: "自带 {{count}} 个 Skill · 始终可用",
   },
   device: {
     serverFilter: {

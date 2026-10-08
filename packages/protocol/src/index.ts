@@ -181,6 +181,17 @@ export interface ProviderHealth {
   statusDetail?: string;
   /** The device's own Claude Code / Codex program, which Foundry runs. */
   cli?: NativeCli;
+  /**
+   * Skills this agent ships itself. Sessions on this agent always have them,
+   * besides the skills their workspace selected.
+   */
+  officialSkills?: OfficialSkill[];
+}
+
+/** A skill Claude Code or Codex ships itself. */
+export interface OfficialSkill {
+  name: string;
+  description?: string;
 }
 
 /**

@@ -100,6 +100,7 @@ import {
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
 import { checkDueProviders } from "./provider-check.js";
+import { refreshOfficialSkills } from "./official-skills.js";
 import { scanDeviceSkills } from "./skill-scan-thread.js";
 import { providerHealthData } from "./provider-health.js";
 import { installNativeCli } from "./native-cli-install.js";
@@ -1018,6 +1019,10 @@ function runWebSocketSession(options: {
         nativeChatSyncIntervalMs,
       );
       checkProvidersAndReport();
+      // The agents' own skills, read once per installed version.
+      void refreshOfficialSkills().then((changed) => {
+        if (changed) reportRegistrations();
+      });
       providerCheckTimer = setInterval(
         checkProvidersAndReport,
         providerCheckIntervalMs,
@@ -1027,26 +1032,30 @@ function runWebSocketSession(options: {
     // Providers found in the device's configuration are offered once a turn
     // through their SDK answered; a changed result re-reports every
     // workspace's registration, which carries the device's profiles.
+    // Re-sends every workspace's registration, which carries the device's
+    // profiles and runtimes, after something about them changed.
+    function reportRegistrations(): void {
+      if (finished || socket.readyState !== WebSocket.OPEN) return;
+      for (const workspacePath of knownWorkspacePaths()) {
+        const registration = daemonRegistrationWithActiveSessions(
+          workspacePath,
+          options.sessionExecutions,
+        );
+        registerWorkspacePath(registration);
+        sendWebSocket(
+          socket,
+          daemonMessageTypes.workspaceReady,
+          { registration },
+          `registration_${safeID(registration.workspace.id)}_${Date.now()}`,
+        );
+      }
+    }
+
     function checkProvidersAndReport(): void {
       void checkDueProviders(
         configuredAgentProfiles(""),
         providerHealthData(),
-        () => {
-          if (finished || socket.readyState !== WebSocket.OPEN) return;
-          for (const workspacePath of knownWorkspacePaths()) {
-            const registration = daemonRegistrationWithActiveSessions(
-              workspacePath,
-              options.sessionExecutions,
-            );
-            registerWorkspacePath(registration);
-            sendWebSocket(
-              socket,
-              daemonMessageTypes.workspaceReady,
-              { registration },
-              `provider_check_${safeID(registration.workspace.id)}_${Date.now()}`,
-            );
-          }
-        },
+        reportRegistrations,
       ).catch((error: unknown) =>
         console.error(
           `Checking providers failed: ${error instanceof Error ? error.message : String(error)}`,

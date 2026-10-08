@@ -9,6 +9,7 @@ import { sessionInputDirectory } from "./session-artifacts.js";
 
 import { spawn } from "node:child_process";
 import { createHash, type UUID } from "node:crypto";
+import { officialSkills, refreshOfficialSkills } from "./official-skills.js";
 import {
   appendFileSync,
   existsSync,
@@ -86,7 +87,6 @@ export function codexSessionConfig(
       ? {
           skills: {
             include_instructions: false,
-            bundled: { enabled: false },
             config: managed.hostSkillPaths!.map((path) => ({
               enabled: false,
               path,
@@ -735,6 +735,15 @@ export async function runClaudeWorkspaceSession(
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
 ): Promise<AgentSessionRunResult> {
+  // Claude Code's own skills stay available under workspace isolation; they
+  // are read once per installed version.
+  if (managedSkills && !managedSkills.officialSkills) {
+    if (!officialSkills("claude")) await refreshOfficialSkills(["claude"]);
+    managedSkills = {
+      ...managedSkills,
+      officialSkills: officialSkills("claude") ?? [],
+    };
+  }
   // Assemble the full launch plan first: it performs fail-closed validation
   // (managed skills reject custom commands and unconfigured invocations)
   // before any directory or process work happens.
@@ -1092,7 +1101,6 @@ export async function runClaudeAgentSdkSession(
   const flagSettings = plan?.settings ?? {
     env: runtimeEnv,
     autoCompactEnabled: true,
-    ...(managedSkills ? { disableBundledSkills: true } : {}),
   };
   const baseOptions: Record<string, unknown> = {
     additionalDirectories: [workspacePath],
