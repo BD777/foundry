@@ -120,7 +120,7 @@ export const devices = {
     intro:
       "Run one command in a terminal on the machine that should do the work (macOS or Linux with Node.js 20 or later). It installs the worker, pairs it with your account and starts it at login.",
     tokenNote:
-      "The token works once and expires at {{time}}. The first workspace is ~/Foundry; add <code>{{flag}}</code> to choose another, and add more later under the device's Workspaces.",
+      "The token works once and expires at {{time}}. The device starts without a workspace: once it is online, add the folders you want from the Workspaces page, or add <code>{{flag}}</code> to register one now.",
     mirrorNote:
       "If npm uses a private mirror that cannot be reached, add <code>{{flag}}</code> to the command.",
     repairTitle: "Check or repair a device already set up",

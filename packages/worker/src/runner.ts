@@ -56,7 +56,9 @@ import {
 import {
   codexFoundryTools,
   buildClaudeLaunchPlan,
+  claudeLaunchMcpServers,
   claudeSessionOptions,
+  claudeSettingsFile,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
@@ -1113,7 +1115,7 @@ export async function runClaudeAgentSdkSession(
     includePartialMessages: true,
     pathToClaudeCodeExecutable: command,
     permissionMode,
-    settings: flagSettings,
+    settings: claudeSettingsFile(session.id || workspacePath, flagSettings),
     tools: { type: "preset", preset: "claude_code" },
     ...(plan?.sdk ?? claudeSessionOptions(managedSkills)),
   };
@@ -1163,7 +1165,8 @@ export async function runClaudeAgentSdkSession(
       if (requestedNativeSessionId) {
         options.resume = requestedNativeSessionId;
       }
-      if (plan?.mcpServers) options.mcpServers = plan.mcpServers;
+      if (plan?.mcpServers)
+        options.mcpServers = claudeLaunchMcpServers(plan.mcpServers);
       runtime = {
         closed: false,
         foundrySessionId: session.id,

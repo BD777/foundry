@@ -100,6 +100,7 @@ import {
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
 import { checkDueProviders } from "./provider-check.js";
+import { clearClaudeSettingsFiles } from "./session-policy.js";
 import { refreshOfficialSkills } from "./official-skills.js";
 import { scanDeviceSkills } from "./skill-scan-thread.js";
 import { providerHealthData } from "./provider-health.js";
@@ -107,7 +108,9 @@ import { installNativeCli } from "./native-cli-install.js";
 import { startSelfUpdate } from "./worker-self-update.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import {
+  daemonDeviceRegistration,
   daemonRegistration,
+  daemonWorkspacePath,
   recheckRunningNativeChats,
   registerDaemon,
   serverURLFromArgs,
@@ -289,7 +292,7 @@ export async function connect(args: string[]): Promise<void> {
   writeDaemonConfig({
     ...existingConfig,
     serverURL: serverURLFromArgs(args),
-    workspacePath: workspacePathFromArgs(args),
+    workspacePath: daemonWorkspacePath(args),
   });
   await connectWebSocket(args);
 }
@@ -320,7 +323,8 @@ async function registerAtStartup(
 
 async function connectWebSocket(args: string[]): Promise<void> {
   const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
+  // "" until the device has a workspace: it connects without one.
+  const workspacePath = daemonWorkspacePath(args);
   const once = optionEnabled(args, "--once");
   const idleTimeoutMs = Number(
     optionValue(args, "--idle-timeout-ms", once ? "2500" : "0"),
@@ -339,9 +343,11 @@ async function connectWebSocket(args: string[]): Promise<void> {
   };
   writeHeartbeat();
   const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
+  // No Claude process from an earlier worker is left to read these.
+  clearClaudeSettingsFiles();
   heartbeatTimer.unref();
   if (!(await registerAtStartup(serverURL, workspacePath))) return;
-  await syncReviews(serverURL, workspacePath);
+  if (workspacePath) await syncReviews(serverURL, workspacePath);
   const sessionTransport = new ReliableSessionTransport();
   const sessionExecutions = new SessionExecutionRegistry();
   const taskScheduler = new ConcurrentTaskScheduler(
@@ -781,6 +787,33 @@ function runWebSocketSession(options: {
       }
     }
 
+    function hasWorkspace(
+      registration: object,
+    ): registration is ReturnType<typeof daemonRegistration> {
+      return "workspace" in registration && Boolean(registration.workspace);
+    }
+
+    function deviceRegistrationWithActiveSessions() {
+      return {
+        ...daemonDeviceRegistration(),
+        activeSessionIds: options.sessionExecutions.activeSessionIds(),
+      };
+    }
+
+    /**
+     * The registration a reply carries: the daemon's first workspace, or the
+     * device alone while it has none.
+     */
+    function currentRegistration() {
+      const workspacePath = options.workspacePath || knownWorkspacePaths()[0];
+      return workspacePath
+        ? daemonRegistrationWithActiveSessions(
+            workspacePath,
+            options.sessionExecutions,
+          )
+        : deviceRegistrationWithActiveSessions();
+    }
+
     function workspacePathFor(workspaceId: string): string {
       const workspacePath = workspacePaths.get(workspaceId);
       if (!workspacePath) {
@@ -794,7 +827,7 @@ function runWebSocketSession(options: {
     function knownWorkspacePaths(): string[] {
       const forgotten = readForgottenWorkspaces();
       const paths = [
-        resolve(options.workspacePath),
+        ...(options.workspacePath ? [resolve(options.workspacePath)] : []),
         ...readRegistry().map((entry) => resolve(entry.path)),
       ];
       return [...new Set(paths)].filter(
@@ -986,12 +1019,22 @@ function runWebSocketSession(options: {
         );
       const registration =
         registrations.find(
-          (item) => item.workspace.localPath === resolve(options.workspacePath),
+          (item) =>
+            options.workspacePath &&
+            item.workspace.localPath === resolve(options.workspacePath),
         ) ?? registrations[0];
       if (!registration) {
-        socket.close();
-        rejectSession(
-          new Error("No local Foundry workspace can be registered."),
+        // A device with no workspace yet connects as itself; the person adds
+        // workspaces from the Workspaces page.
+        const device = deviceRegistrationWithActiveSessions();
+        console.log(
+          `${logTime()} Connected daemon ${device.device.label} to ${options.serverURL} (no workspace yet)`,
+        );
+        sendWebSocket(socket, daemonMessageTypes.hello, device);
+        checkProvidersAndReport();
+        providerCheckTimer = setInterval(
+          checkProvidersAndReport,
+          providerCheckIntervalMs,
         );
         return;
       }
@@ -1442,7 +1485,7 @@ function runWebSocketSession(options: {
               daemonMessageTypes.nativeAccountInspected,
               {
                 result,
-                registration: daemonRegistration(options.workspacePath),
+                registration: currentRegistration(),
               },
               envelope.id,
             );
@@ -1499,7 +1542,7 @@ function runWebSocketSession(options: {
               daemonMessageTypes.nativeCliInstalled,
               {
                 result,
-                registration: daemonRegistration(options.workspacePath),
+                registration: currentRegistration(),
               },
               envelope.id,
             );
@@ -1681,16 +1724,18 @@ function runWebSocketSession(options: {
         try {
           const targetWorkspacePath = payload.profile.workspaceId
             ? workspacePathFor(payload.profile.workspaceId)
-            : options.workspacePath;
+            : options.workspacePath || knownWorkspacePaths()[0] || "";
           const profile = upsertAgentProfileConfig(
             payload.profile,
             targetWorkspacePath,
           );
-          const registration = daemonRegistrationWithActiveSessions(
-            targetWorkspacePath,
-            options.sessionExecutions,
-          );
-          registerWorkspacePath(registration);
+          const registration = targetWorkspacePath
+            ? daemonRegistrationWithActiveSessions(
+                targetWorkspacePath,
+                options.sessionExecutions,
+              )
+            : deviceRegistrationWithActiveSessions();
+          if (hasWorkspace(registration)) registerWorkspacePath(registration);
           sendWebSocket(
             socket,
             daemonMessageTypes.agentProfileUpserted,
@@ -1716,10 +1761,7 @@ function runWebSocketSession(options: {
           const opened = payload?.requestAccess
             ? requestResourceAccess(payload.requestAccess)
             : [];
-          const registration = daemonRegistrationWithActiveSessions(
-            options.workspacePath,
-            options.sessionExecutions,
-          );
+          const registration = currentRegistration();
           sendWebSocket(
             socket,
             daemonMessageTypes.resourcesRefreshed,
@@ -1756,11 +1798,8 @@ function runWebSocketSession(options: {
           const settings = writeAgentRuntimeSettings(payload.settings);
           taskScheduler.setMaxConcurrentTasks(settings.maxConcurrentTasks);
           announceAdditionalIssueCapacity();
-          const registration = daemonRegistrationWithActiveSessions(
-            options.workspacePath,
-            options.sessionExecutions,
-          );
-          registerWorkspacePath(registration);
+          const registration = currentRegistration();
+          if (hasWorkspace(registration)) registerWorkspacePath(registration);
           sendWebSocket(
             socket,
             daemonMessageTypes.agentRuntimeSettingsUpserted,
@@ -2190,11 +2229,15 @@ async function pairWithServer(
 
 export async function pair(args: string[]): Promise<void> {
   const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
+  const workspacePath = daemonWorkspacePath(args);
   prepareExplicitPair();
   await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);
-  console.log(`Paired ${workspacePath} with ${serverURL}`);
+  console.log(
+    workspacePath
+      ? `Paired ${workspacePath} with ${serverURL}`
+      : `Paired this device with ${serverURL}; add workspaces from the Workspaces page.`,
+  );
   console.log(
     "Run foundry-worker install-service to start this daemon at login.",
   );
@@ -2205,17 +2248,21 @@ export async function setup(
   host: ServiceHost = {},
 ): Promise<void> {
   const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
+  // A device can be set up without a workspace; one is added later from the
+  // Workspaces page.
+  const workspacePath = daemonWorkspacePath(args);
   const noService = optionEnabled(args, "--no-service");
   const noStart = optionEnabled(args, "--no-start");
 
   console.log("Setting up Foundry local daemon...");
   await ensureServerReachable(serverURL);
-  initWorkspace(workspacePath);
-  await registerExecutionWorkspace(
-    workspacePath,
-    readWorkspace(workspacePath).id,
-  );
+  if (workspacePath) {
+    initWorkspace(workspacePath);
+    await registerExecutionWorkspace(
+      workspacePath,
+      readWorkspace(workspacePath).id,
+    );
+  }
   prepareExplicitPair();
   await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);

@@ -74,8 +74,8 @@ export function serviceArgs(config: DaemonConfig, cliPath?: string): string[] {
     "daemon",
     "--server",
     config.serverURL,
-    "--workspace",
-    config.workspacePath,
+    // A device may have no workspace yet; it starts without one.
+    ...(config.workspacePath ? ["--workspace", config.workspacePath] : []),
   ];
 }
 
@@ -288,7 +288,7 @@ ${argsXML}
   <key>StandardErrorPath</key>
   <string>${xmlEscape(logs.err)}</string>
   <key>WorkingDirectory</key>
-  <string>${xmlEscape(config.workspacePath)}</string>
+  <string>${xmlEscape(config.workspacePath || homedir())}</string>
   <key>EnvironmentVariables</key>
   <dict>
 ${environmentVariablesXML()}
@@ -369,7 +369,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=${config.workspacePath}
+WorkingDirectory=${config.workspacePath || homedir()}
 ExecStart=${command}
 ${systemdEnvironmentLines(serviceEnvironment())}Restart=always
 RestartSec=5
@@ -520,7 +520,9 @@ export function status(): void {
     console.log(`Hosted by: ${foundryStatePath("Foundry Worker.app")}`);
   if (config) {
     console.log(`Server: ${config.serverURL}`);
-    console.log(`Workspace: ${config.workspacePath}`);
+    console.log(
+      `Workspace: ${config.workspacePath || "none yet (add one from the Workspaces page)"}`,
+    );
   }
 
   if (process.platform === "darwin") {

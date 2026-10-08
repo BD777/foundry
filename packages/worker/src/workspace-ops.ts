@@ -403,6 +403,14 @@ export async function registerDaemon(
   serverURL: string,
   workspacePath: string,
 ): Promise<DeviceProjection> {
+  if (!workspacePath) {
+    const registration = daemonDeviceRegistration();
+    await postJSON(serverURL, "/api/daemon/register", registration);
+    console.log(
+      `Registered daemon ${registration.device.label} (no workspace yet)`,
+    );
+    return registration.device;
+  }
   const registration = daemonRegistration(workspacePath);
 
   await postJSON(serverURL, "/api/daemon/register", registration);
@@ -547,6 +555,33 @@ export function daemonRegistration(workspacePath: string): {
   };
 }
 
+/**
+ * What a worker with no workspace yet reports: the device itself, its agents'
+ * runtimes and profiles. Its workspaces come later, as the person adds them.
+ */
+export function daemonDeviceRegistration(): Omit<
+  ReturnType<typeof daemonRegistration>,
+  "workspace"
+> {
+  const device = getDevice();
+  return {
+    capabilities: daemonCapabilities,
+    assets: [],
+    agentProfiles: agentProfilesForWorkspace(device, ""),
+    agents: [],
+    chats: [],
+    device: {
+      ...device,
+      resources: discoverResources(),
+      worker: runningWorker(),
+      system: deviceSystem(),
+    },
+    providerHealth: providerHealthData(),
+    skills: [],
+    workspaceFiles: [],
+  };
+}
+
 export function serverURLFromArgs(args: string[]): string {
   return optionValue(
     args,
@@ -555,6 +590,18 @@ export function serverURLFromArgs(args: string[]): string {
       readDaemonConfig()?.serverURL ??
       "http://127.0.0.1:31982",
   )!;
+}
+
+/**
+ * The workspace a daemon starts with, or "" for a device that has none yet:
+ * it connects anyway and gets its workspaces as the person adds them.
+ */
+export function daemonWorkspacePath(args: string[]): string {
+  try {
+    return workspacePathFromArgs(args);
+  } catch {
+    return "";
+  }
 }
 
 export function workspacePathFromArgs(args: string[]): string {

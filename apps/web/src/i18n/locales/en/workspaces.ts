@@ -177,6 +177,7 @@ export const workspaces = {
     empty:
       "No workspaces registered yet. Add a folder on this device to get started.",
     added: "{{name}} registered. Your current location is unchanged.",
+    addedFirst: "{{name}} registered and is now your workspace.",
     renamed: "Display name saved as {{name}}.",
     removed: "{{name}} and its Foundry history removed. Local files preserved.",
     refreshFailed:

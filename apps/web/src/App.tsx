@@ -132,6 +132,7 @@ import {
   type WorkspaceSection,
   type WorkspacesFeatureEvent,
 } from "./features/workspaces";
+import { liveDevices } from "./lib/devices";
 import { mergeLoadedAgentSession } from "./lib/agent-session-events";
 import { workspaceDenial } from "./lib/workspace-access";
 import {
@@ -204,6 +205,18 @@ function applyLoadedData(
   persistWorkspaceId(loaded.workspace.id);
   setApiState("connected");
 }
+
+const workspaceScopedViews = new Set<NavView>([
+  "workspace",
+  "chats",
+  "issues",
+  "issue",
+  "assets",
+  "skills",
+  "settings",
+  "feishu",
+  "sharing",
+]);
 
 export function App() {
   const account = useAccountSession();
@@ -429,6 +442,18 @@ export function App() {
       }
     }
   }
+
+  // A device starts without a workspace. Until one is added, a workspace's
+  // views have nothing to show; the Workspaces page is where to add one.
+  const needsFirstWorkspace =
+    apiState === "connected" &&
+    !data.workspace.id &&
+    data.workspaces.length === 0 &&
+    liveDevices(data.devices).length > 0;
+  useEffect(() => {
+    if (needsFirstWorkspace && workspaceScopedViews.has(activeView))
+      setActiveView("locations");
+  }, [needsFirstWorkspace, activeView]);
 
   async function handleWorkspaceFeatureEvent(
     event: WorkspacesFeatureEvent,

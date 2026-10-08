@@ -15,7 +15,12 @@
 // The model never infers credentials: a missing credential is announced before
 // the first request rather than surfacing as an opaque provider 401.
 
+import { createHash } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
+import { foundryStatePath } from "./state-root.js";
+import { writeJSON } from "./storage.js";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { profileRuntimeEnvironment } from "./profiles.js";
 import {
@@ -280,4 +285,65 @@ export function buildClaudeLaunchPlan(input: {
       }
     },
   };
+}
+
+/**
+ * Claude Code reads its flag settings from a file here rather than inline:
+ * inline they become a `--settings` argument, and a process's arguments are
+ * readable by anyone on the machine, while these settings carry the
+ * connection's key. The file is owner-only; a session's process reads it at
+ * start, and no process outlives the worker that cleared these at start.
+ */
+// A sandboxed (Issue) session writes beside its own files: the worker's
+// state directory may not exist or be writable there.
+const claudeSettingsDir = () =>
+  process.env.FOUNDRY_EXECUTION_SESSION_ROOT
+    ? join(process.env.FOUNDRY_EXECUTION_SESSION_ROOT, "claude-settings")
+    : foundryStatePath("claude-settings");
+
+export function claudeSettingsFile(
+  key: string,
+  settings: Record<string, unknown>,
+): string {
+  const path = join(
+    claudeSettingsDir(),
+    `${createHash("sha256").update(key).digest("hex").slice(0, 32)}.json`,
+  );
+  mkdirSync(claudeSettingsDir(), { recursive: true, mode: 0o700 });
+  writeJSON(path, settings);
+  return path;
+}
+
+/** Removes settings files left by sessions of an earlier worker process. */
+export function clearClaudeSettingsFiles(): void {
+  rmSync(claudeSettingsDir(), { recursive: true, force: true });
+}
+
+/**
+ * The Foundry tools server for a new Claude process, with its token read
+ * from the process environment (Claude Code expands `${VAR}` in headers)
+ * instead of written into the `--mcp-config` argument. A process already
+ * running gets the literal token over its input stream instead, which no
+ * other process can read.
+ */
+export function claudeLaunchMcpServers(
+  servers: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => {
+      const config = server as { headers?: Record<string, string> };
+      return [
+        name,
+        config.headers?.Authorization
+          ? {
+              ...config,
+              headers: {
+                ...config.headers,
+                Authorization: `Bearer \${${foundryTokenEnvName}}`,
+              },
+            }
+          : config,
+      ];
+    }),
+  );
 }
