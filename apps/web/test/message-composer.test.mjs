@@ -224,7 +224,12 @@ test("shared composer protects IME input and portaled selection works outside cl
     const codexPermissions = container.querySelector(
       '[aria-label^="Permissions"]',
     );
-    assert.match(codexPermissions.textContent, /Full access \(dangerous\)/);
+    // The toolbar shows the short name; the full one is its accessible name.
+    assert.equal(codexPermissions.textContent, "Full access");
+    assert.match(
+      codexPermissions.getAttribute("aria-label"),
+      /Full access \(dangerous\)/,
+    );
     assert.doesNotMatch(codexPermissions.textContent, /danger-full-access/);
   } finally {
     await act(() => root.unmount());

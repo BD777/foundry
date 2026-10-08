@@ -22,6 +22,7 @@ const (
 	profileAuthModeConfig    = "local_config"
 	profileAuthModeMissing   = "missing"
 	deviceStatusConnected    = "connected"
+	deviceStatusRemoved      = "removed"
 )
 
 func profileConnectionType(runtime string, authMode string) string {
@@ -222,81 +223,6 @@ func (s *Server) handleClearProfileCredential(w http.ResponseWriter, r *http.Req
 	profile.HasCredential = false
 	s.invalidateProjections()
 	writeResult(w, profile, nil)
-}
-
-func (s *Server) handleStartProfileAuthorization(w http.ResponseWriter, r *http.Request) {
-	profileID := strings.TrimSpace(r.PathValue("id"))
-	profile, err := s.store.GetProfile(r.Context(), profileID)
-	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
-	}
-	if profile.AuthMode != "official" {
-		writeError(w, http.StatusBadRequest, "only official profiles use agent CLI authorization")
-		return
-	}
-	var input struct {
-		DeviceID string `json:"deviceId"`
-	}
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	deviceID := strings.TrimSpace(input.DeviceID)
-	if deviceID == "" {
-		writeError(w, http.StatusBadRequest, "deviceId is required")
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-	authorization, err := s.hub.StartProfileAuthorization(ctx, deviceID, profile.ID, profile.Runtime)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
-	}
-	writeResult(w, authorization, err)
-}
-
-func (s *Server) handleCompleteProfileAuthorization(w http.ResponseWriter, r *http.Request) {
-	profileID := strings.TrimSpace(r.PathValue("id"))
-	flowID := strings.TrimSpace(r.PathValue("flowId"))
-	profile, err := s.store.GetProfile(r.Context(), profileID)
-	if err != nil {
-		writeProfileResult(w, store.ProfileDefinition{}, err)
-		return
-	}
-	if profile.AuthMode != "official" {
-		writeError(w, http.StatusBadRequest, "only official profiles use agent CLI authorization")
-		return
-	}
-	var input struct {
-		DeviceID            string `json:"deviceId"`
-		AuthorizationResult string `json:"authorizationResult,omitempty"`
-	}
-	if !decodeJSONRequest(w, r, &input) {
-		return
-	}
-	deviceID := strings.TrimSpace(input.DeviceID)
-	if deviceID == "" {
-		writeError(w, http.StatusBadRequest, "deviceId is required")
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	authorization, err := s.hub.CompleteProfileAuthorization(
-		ctx,
-		deviceID,
-		flowID,
-		input.AuthorizationResult,
-	)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
-	}
-	if authorization.ProfileID != "" && authorization.ProfileID != profile.ID {
-		writeError(w, http.StatusConflict, "authorization session belongs to another profile")
-		return
-	}
-	writeResult(w, authorization, err)
 }
 
 // handlePromoteProfile lifts a daemon-discovered profile into a server profile.

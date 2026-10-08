@@ -72,9 +72,9 @@ const unavailableCodexFeatures = [
 const codexShellFeatures = ["shell_tool", "unified_exec", "shell_snapshot"];
 
 /**
- * Codex feature switches. A session inside a real directory reads it through
- * Codex's own read-only sandboxed shell; a detached session keeps the shell
- * off because it has nothing to inspect.
+ * Codex feature switches. A session with files to read (a real directory, or
+ * PDFs it is given) reads them through Codex's own read-only sandboxed shell;
+ * a session with nothing to inspect keeps the shell off.
  */
 export function codexDisabledFeatures(shell: boolean): Record<string, boolean> {
   return Object.fromEntries(

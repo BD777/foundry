@@ -430,32 +430,6 @@
   background: var(--fdy-panel-soft);
 }
 
-.fdy-authorization-flow {
-  display: grid;
-  align-items: center;
-  gap: 10px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.fdy-authorization-flow > p,
-.fdy-authorization-flow > input {
-  grid-column: 1 / -1;
-}
-
-.fdy-authorization-flow code {
-  color: var(--fdy-ink-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 600;
-}
-
-.fdy-authorization-flow p[data-status="completed"] {
-  color: var(--fdy-success-text);
-}
-
-.fdy-authorization-flow p[data-status="failed"] {
-  color: var(--fdy-error-text);
-}
-
 .fdy-profile-defaults {
   border-top: 1px solid var(--fdy-line-soft);
   border-bottom: 1px solid var(--fdy-line-soft);
@@ -492,8 +466,7 @@
     padding: 16px;
   }
 
-  .fdy-profile-editor-grid,
-  .fdy-authorization-flow {
+  .fdy-profile-editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

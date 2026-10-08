@@ -23,8 +23,12 @@ Foundry workers should treat this workspace context as authoritative.
 - Distinguish browsing, selection and management. Browsing a device never
   changes the active location. Commit device + workspace together only after
   an explicit workspace choice succeeds; cancel/failure preserves context.
-- Keep location switchers selection-only. Workspace CRUD belongs under
-  Devices → device → Workspaces, with explicit destructive-action copy.
+- One page per object. The Workspaces page (the sidebar location entry)
+  lists every workspace grouped by its device: Switch is the only action that
+  changes the active location; adding a folder sits on its device group,
+  rename/remove in the row menu with explicit destructive-action copy.
+  Devices pages manage machines (system, worker, accounts, skills,
+  resources, settings), not workspaces; they link to the device's group.
 - Customize shared/third-party UI through public props, variants, slots,
   `className` or `style`. Style classes attached to your own elements.
   Never reach through a component's private DOM/class structure, inject

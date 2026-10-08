@@ -184,15 +184,15 @@ func TestDeliverDaemonResponseRejectsMalformedCorrelatedPayload(t *testing.T) {
 	err := deliverDaemonResponse[wsFileReadPayload](connection, wsEnvelope{
 		ID:      "id-1",
 		Type:    wsFileReadType,
-		Payload: json.RawMessage(`{"unexpected":true}`),
+		Payload: json.RawMessage(`"not an object"`),
 	}, nil)
 	if err == nil {
-		t.Fatal("deliverDaemonResponse() error = nil, want strict payload error")
+		t.Fatal("deliverDaemonResponse() error = nil, want payload error")
 	}
 	select {
 	case result := <-waiter:
 		if result.err == nil {
-			t.Fatal("correlated waiter error = nil, want strict payload error")
+			t.Fatal("correlated waiter error = nil, want payload error")
 		}
 	default:
 		t.Fatal("malformed correlated response did not release its waiter")

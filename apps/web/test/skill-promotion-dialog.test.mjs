@@ -52,7 +52,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 
 const { createRoot } = await import("react-dom/client");
 const { SkillPromotionDialog } =
-  await import("../src/features/devices/skill-promotion-dialog.tsx");
+  await import("../src/components/skills/skill-promotion-dialog.tsx");
 
 const dep = (name, strength = "required") => ({
   skillName: name,

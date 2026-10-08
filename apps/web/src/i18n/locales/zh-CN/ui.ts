@@ -5,14 +5,6 @@ export const ui: Translation<typeof en> = {
   alert: {
     diagnosticDetails: "诊断详情",
   },
-  authorization: {
-    openPage: "打开授权页面",
-    enterCode: "在授权页面输入代码 <code>{{code}}</code>。",
-    resultLabel: "授权码或回调 URL",
-    resultPlaceholder: "粘贴授权码或回调 URL",
-    complete: "完成授权",
-    check: "检查授权",
-  },
   errorBoundary: {
     title: "{{label}} 暂时无法显示",
     stillAvailable: "Foundry 的其他区域仍可正常使用。",

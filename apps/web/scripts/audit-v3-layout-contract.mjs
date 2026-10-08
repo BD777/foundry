@@ -3788,7 +3788,7 @@ const contracts = [
     declarations: {
       display: "flex",
       "align-items": "center",
-      gap: "10px",
+      gap: "4px",
       "min-width": "0",
     },
   },

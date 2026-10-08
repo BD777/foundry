@@ -21,13 +21,16 @@ export type WorkspacesFeatureEvent =
        */
       stayOnLocation?: boolean;
     }
-  | { type: "workspace.management.requested"; deviceId?: string }
-  | { type: "device.add.requested" };
+  | { type: "device.open.requested"; deviceId: string }
+  /** A folder was added, renamed or removed; resolves once data reloaded. */
+  | { type: "workspaces.changed" };
 
 export interface WorkspacesFeatureProps {
   compact?: boolean;
   activeWorkspaceId: string;
   devices: DeviceProjection[];
+  /** The device whose group the page brings into view. */
+  focusDeviceId?: string;
   onEvent: (event: WorkspacesFeatureEvent) => Promise<boolean | void> | void;
   workspaces: WorkspaceProjection[];
 }
@@ -78,13 +81,15 @@ export function WorkspacesFeature(props: WorkspacesFeatureProps) {
         if (workspace.id !== props.activeWorkspaceId && !selecting.current)
           prefetchFoundryWorkspace(workspace.id);
       }}
-      onManage={(deviceId) =>
-        void props.onEvent({ type: "workspace.management.requested", deviceId })
+      onOpenDevice={(deviceId) =>
+        void props.onEvent({ type: "device.open.requested", deviceId })
       }
+      onChanged={async () => {
+        await props.onEvent({ type: "workspaces.changed" });
+      }}
       onBrowse={() =>
         void props.onEvent({ type: "workspace.browse.requested" })
       }
-      onAddDevice={() => void props.onEvent({ type: "device.add.requested" })}
       onReturn={() =>
         void props.onEvent({ type: "workspace.return.requested" })
       }

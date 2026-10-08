@@ -201,12 +201,17 @@ export function AgentRuntimeControls({
   const currentEffortLabel = effortLabel(effortValue);
   const effectiveClaudePermission: Exclude<ClaudePermissionMode, "default"> =
     claudePermissionMode === "default" ? "acceptEdits" : claudePermissionMode;
+  // The toolbar shows a short name; the full one stays in its tooltip,
+  // accessible name and the open menu.
   const permissionTriggerLabel =
     selectedRuntime === "claude"
-      ? labelForClaudePermission(effectiveClaudePermission)
-      : t(`codexSandbox.${codexSandboxMode}`);
+      ? t(`permissionShort.claude.${effectiveClaudePermission}`)
+      : t(`permissionShort.codex.${codexSandboxMode}`);
   const permissionTriggerDescription = t("controls.permissionsTrigger", {
-    label: permissionTriggerLabel,
+    label:
+      selectedRuntime === "claude"
+        ? labelForClaudePermission(effectiveClaudePermission)
+        : t(`codexSandbox.${codexSandboxMode}`),
   });
   const permissionDanger =
     selectedRuntime === "claude"

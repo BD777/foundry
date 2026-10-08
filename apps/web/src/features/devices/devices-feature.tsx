@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ArrowLeft, Monitor, MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pencil, Plus } from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProfileBinding,
@@ -17,17 +16,26 @@ import { Badge } from "../../components/ui/badge";
 import { EmptyState } from "../../components/ui/empty-state";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { DeviceWorkspaces } from "./device-workspaces";
 import { DeviceAccess } from "./device-access";
 import { DeviceResources } from "./device-resources";
+import {
+  DeviceWorker,
+  UpdateAllWorkersButton,
+  UpdateAllWorkersStatus,
+  useUpdateAllWorkers,
+} from "./device-worker";
+import { useWorkerRelease } from "../../lib/worker-commands";
 import { DeviceSettings } from "./device-settings";
 import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
+import { DeviceRenameDialog } from "./device-rename-dialog";
+import { DeviceDetails } from "./device-details";
+import { DeviceList } from "./device-list";
 import { AddDeviceDialog } from "./add-device-dialog";
 import { Alert } from "../../components/ui/alert";
+import { liveDevices } from "../../lib/devices";
 
-export type DeviceSection =
-  "workspaces" | "resources" | "agents" | "skills" | "settings";
+export type DeviceSection = "agents" | "resources" | "skills" | "settings";
 export interface DevicesFeatureProps {
   devices: DeviceProjection[];
   selectedDeviceId?: string;
@@ -42,6 +50,8 @@ export interface DevicesFeatureProps {
   providerHealth: ProviderHealth[];
   onSelect: (deviceId?: string, section?: DeviceSection) => void;
   onOpenWorkspace: (workspaceId: string) => Promise<boolean>;
+  /** Shows this device's workspaces on the Workspaces page. */
+  onOpenWorkspaces: (deviceId: string) => void;
   onRefresh: () => Promise<void>;
   onManageConnections: () => void;
 }
@@ -57,15 +67,19 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   } = props;
   // Soft-removed devices stay in the data (history views still resolve their
   // label) but never appear as available, selectable devices.
-  const availableDevices = devices.filter((row) => row.status !== "removed");
+  const availableDevices = liveDevices(devices);
   const device = availableDevices.find((row) => row.id === selectedDeviceId);
   const ownProfiles = props.agentProfiles.filter(
     (row) => row.deviceId === selectedDeviceId,
   );
   const [removalTarget, setRemovalTarget] = useState<DeviceProjection>();
+  const [renameTarget, setRenameTarget] = useState<DeviceProjection>();
+  const renameReturn = useRef<HTMLElement | null>(null);
   const [addingDevice, setAddingDevice] = useState(false);
   const removalTriggers = useRef(new Map<string, HTMLButtonElement>());
   const { t } = useTranslation("devices");
+  const { release } = useWorkerRelease();
+  const updateAll = useUpdateAllWorkers(availableDevices, release, onRefresh);
 
   function deviceWorkspaces(deviceId: string): WorkspaceProjection[] {
     return workspaces.filter((workspace) => workspace.deviceId === deviceId);
@@ -92,84 +106,31 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               <h1>{t("list.title")}</h1>
               <p>{t("list.intro")}</p>
             </div>
-            <Button onClick={() => setAddingDevice(true)} variant="primary">
-              <Plus size={15} />
-              {t("list.add")}
-            </Button>
+            <div className="fdy-device-heading-actions">
+              <UpdateAllWorkersButton state={updateAll} />
+              <Button onClick={() => setAddingDevice(true)} variant="primary">
+                <Plus size={15} />
+                {t("list.add")}
+              </Button>
+            </div>
           </header>
+          <UpdateAllWorkersStatus state={updateAll} />
           {addingDevice ? (
             <AddDeviceDialog onClose={() => setAddingDevice(false)} />
           ) : null}
-          <div className="fdy-device-list">
-            {availableDevices.map((row) => (
-              <div
-                className="fdy-device-list-row fdy-device-removal-row"
-                key={row.id}
-              >
-                <Button
-                  className="fdy-device-removal-row-main"
-                  variant="ghost"
-                  onClick={() => onSelect(row.id, "workspaces")}
-                >
-                  <Monitor size={25} />
-                  <span>
-                    <strong>{row.label}</strong>
-                    <small>
-                      {t("list.workspaceCount", {
-                        count: deviceWorkspaces(row.id).length,
-                      })}
-                    </small>
-                  </span>
-                  <Badge
-                    tone={row.status === "connected" ? "online" : "neutral"}
-                  >
-                    {t(
-                      row.status === "connected"
-                        ? "status.online"
-                        : "status.offline",
-                    )}
-                  </Badge>
-                  <span>{t("list.view")}</span>
-                </Button>
-                {!row.owned ? (
-                  <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
-                ) : (
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                      <Button
-                        className="fdy-device-removal-menu-trigger"
-                        size="sm"
-                        variant="ghost"
-                        aria-label={t("list.actionsFor", { device: row.label })}
-                        ref={(element) => {
-                          if (element)
-                            removalTriggers.current.set(row.id, element);
-                          else removalTriggers.current.delete(row.id);
-                        }}
-                      >
-                        <MoreHorizontal size={17} />
-                      </Button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content
-                        className="fdy-workspace-actions-menu"
-                        align="end"
-                        sideOffset={6}
-                      >
-                        <DropdownMenu.Item
-                          className="fdy-workspace-menu-item"
-                          onSelect={() => setRemovalTarget(row)}
-                        >
-                          <Trash2 size={15} />
-                          {t("list.removeFromFoundry")}
-                        </DropdownMenu.Item>
-                      </DropdownMenu.Content>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Root>
-                )}
-              </div>
-            ))}
-          </div>
+          <DeviceList
+            devices={availableDevices}
+            release={release}
+            workspaceCount={(id) => deviceWorkspaces(id).length}
+            triggers={removalTriggers.current}
+            onOpen={(id) => onSelect(id)}
+            onRename={(row) => {
+              renameReturn.current =
+                removalTriggers.current.get(row.id) ?? null;
+              setRenameTarget(row);
+            }}
+            onRemove={setRemovalTarget}
+          />
           {!availableDevices.length ? (
             <EmptyState
               title={t("list.emptyTitle")}
@@ -205,18 +166,49 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                 {t(device.owned ? "detail.ownedNote" : "detail.sharedNote")}
               </p>
             </div>
-            <Badge tone={device.status === "connected" ? "online" : "neutral"}>
-              {t(
-                device.status === "connected"
-                  ? "status.online"
-                  : "status.offline",
-              )}
-            </Badge>
+            <div className="fdy-device-heading-actions">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => props.onOpenWorkspaces(device.id)}
+              >
+                {t("detail.workspacesLink", {
+                  count: deviceWorkspaces(device.id).length,
+                })}
+                <ArrowRight size={14} />
+              </Button>
+              {device.owned ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(event) => {
+                    renameReturn.current = event.currentTarget;
+                    setRenameTarget(device);
+                  }}
+                >
+                  <Pencil size={14} />
+                  {t("rename.action")}
+                </Button>
+              ) : null}
+              <Badge
+                tone={device.status === "connected" ? "online" : "neutral"}
+              >
+                {t(
+                  device.status === "connected"
+                    ? "status.online"
+                    : "status.offline",
+                )}
+              </Badge>
+            </div>
           </header>
           {device.status !== "connected" ? (
             <p className="fdy-device-offline" role="status">
               {t("detail.offline")}
             </p>
+          ) : null}
+          <DeviceDetails device={device} />
+          {device.owned ? (
+            <DeviceWorker device={device} prominent onRefresh={onRefresh} />
           ) : null}
           {device.owned ? (
             <SegmentedControl
@@ -225,9 +217,8 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               value={section}
               onValueChange={(next) => onSelect(device.id, next)}
               options={[
-                { value: "workspaces", label: t("detail.sectionWorkspaces") },
-                { value: "resources", label: t("detail.sectionResources") },
                 { value: "agents", label: t("detail.sectionAgents") },
+                { value: "resources", label: t("detail.sectionResources") },
                 { value: "skills", label: t("detail.sectionSkills") },
                 { value: "settings", label: t("detail.sectionSettings") },
               ]}
@@ -238,17 +229,6 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             </Alert>
           )}
           <div key={device.id} className="fdy-device-content">
-            {section === "workspaces" || !device.owned ? (
-              <DeviceWorkspaces
-                device={device}
-                workspaces={workspaces.filter(
-                  (row) => row.deviceId === device.id,
-                )}
-                activeWorkspaceId={props.activeWorkspaceId}
-                onOpen={props.onOpenWorkspace}
-                onRefresh={onRefresh}
-              />
-            ) : null}
             {section === "resources" || !device.owned ? (
               <DeviceResources device={device} onRefresh={onRefresh} />
             ) : null}
@@ -272,6 +252,9 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               />
             ) : null}
             {section === "settings" && device.owned ? (
+              <DeviceWorker device={device} onRefresh={onRefresh} />
+            ) : null}
+            {section === "settings" && device.owned ? (
               <DeviceSettings
                 device={device}
                 onRefresh={onRefresh}
@@ -281,6 +264,14 @@ export function DevicesFeature(props: DevicesFeatureProps) {
           </div>
         </>
       )}
+      {renameTarget ? (
+        <DeviceRenameDialog
+          device={renameTarget}
+          returnFocusTo={renameReturn.current}
+          onClose={() => setRenameTarget(undefined)}
+          onSaved={onRefresh}
+        />
+      ) : null}
       {removalTarget ? (
         <DeviceRemovalDialog
           device={removalTarget}

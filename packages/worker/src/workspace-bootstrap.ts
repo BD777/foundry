@@ -1,10 +1,5 @@
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { canonical, ExecutionStore, within } from "./execution-storage.js";
 import { commitIdentity, git, gitCommit } from "./execution-git.js";
@@ -66,7 +61,9 @@ export async function bootstrapWorkspace(
     : undefined;
   if (await git(source, ["rev-parse", "--verify", "HEAD"], { optional: true }))
     return false;
-  const staged = (await git(source, ["ls-files", "--cached", "-z"]))
+  const staged = (
+    await git(source, ["ls-files", "--cached", "-z"], { bulk: true })
+  )
     .split("\0")
     .filter(Boolean);
   // A fresh empty repo is supported; user-staged content is not ours to commit.
@@ -107,15 +104,18 @@ export async function bootstrapWorkspace(
     `${start}\n${[...defaults, ...childPaths].join("\n")}\n${end}\n${base}`,
   );
   const files = (
-    await git(source, ["ls-files", "--others", "--exclude-standard", "-z"])
+    await git(source, ["ls-files", "--others", "--exclude-standard", "-z"], {
+      bulk: true,
+    })
   )
     .split("\0")
     .filter(Boolean);
   const excluded: Array<{ path: string; reason: string }> = [];
   const included = [...staged];
+  // Asynchronous, so a large folder never stalls the worker's connection.
   for (const path of files) {
     const file = resolve(source, path);
-    const stat = lstatSync(file);
+    const stat = await lstat(file);
     if (
       stat.isSymbolicLink() &&
       (!existsSync(file) || !within(source, canonical(file)))
@@ -172,15 +172,13 @@ export async function bootstrapWorkspace(
     });
     await git(source, ["add", "-f", "--", ".gitignore"]);
   }
-  for (let offset = 0; offset < included.length; offset += 100)
-    await git(source, [
-      "--literal-pathspecs",
-      "add",
-      "--",
-      ...included.slice(offset, offset + 100),
-    ]);
+  // The rules above leave exactly `included` unignored in this unborn
+  // repository, so one `add -A` stages them all, however many there are.
+  await git(source, ["add", "-A"], { bulk: true });
   const commit = included.length
-    ? await gitCommit(source, "Initialize Foundry workspace assets")
+    ? await gitCommit(source, "Initialize Foundry workspace assets", {
+        bulk: true,
+      })
     : await git(source, ["rev-parse", "HEAD"]);
   writeJSON(journalPath, {
     version: 1,
@@ -201,6 +199,7 @@ export async function workspaceContentInventory(source: string): Promise<{
   const collect = async (args: string[]): Promise<string[]> => {
     const output = await git(source, ["ls-files", ...args, "-z"], {
       optional: true,
+      bulk: true,
     });
     return output ? output.split("\0").filter(Boolean) : [];
   };

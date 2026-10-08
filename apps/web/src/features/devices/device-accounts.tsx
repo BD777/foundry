@@ -1,24 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AgentProfileProjection,
   DeviceProjection,
-  ProfileAuthorization,
   ProfileDefinition,
   DeviceProfileBinding,
   ProviderHealth,
 } from "@bd777/foundry-protocol";
-import {
-  completeDeviceAuthorization,
-  installDeviceCli,
-  startDeviceAuthorization,
-} from "../../api";
+import { inspectDeviceAccount, installDeviceCli } from "../../api";
 import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { AuthorizationFlow } from "../../components/ui/authorization-flow";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { isModelConnection } from "../../lib/model-connections";
 import { DeviceAccountDefaults } from "./device-account-defaults";
@@ -41,8 +35,7 @@ export function DeviceAccounts({
   onRefresh: () => Promise<void>;
 }) {
   const { t } = useTranslation("profiles");
-  const [authorization, setAuthorization] = useState<ProfileAuthorization>();
-  const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState<"claude" | "codex">();
   const [error, setError] = useState("");
   const [installing, setInstalling] = useState<"claude" | "codex">();
   const [installed, setInstalled] = useState<NativeCliInstallResult>();
@@ -61,54 +54,23 @@ export function DeviceAccounts({
       setInstalling(undefined);
     }
   }
-  const [pollAttempt, setPollAttempt] = useState(0);
   const [expanded, setExpanded] = useState<string>();
-  async function complete(value?: string) {
-    if (!authorization) return;
-    const result = await completeDeviceAuthorization(
-      device.id,
-      authorization.runtime,
-      authorization.id,
-      value,
-    );
-    setAuthorization(result);
-    if (result.status === "completed") await onRefresh();
+  // Signing in happens on the device, in the agent's own CLI; Foundry then
+  // reads the login it finds there.
+  async function checkLogin(runtime: "claude" | "codex"): Promise<void> {
+    setChecking(runtime);
+    setError("");
+    try {
+      await inspectDeviceAccount(device.id, runtime);
+      await onRefresh();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : t("accounts.checkFailed"),
+      );
+    } finally {
+      setChecking(undefined);
+    }
   }
-  useEffect(() => {
-    if (
-      busy ||
-      authorization?.status !== "waiting_for_user" ||
-      device.status !== "connected"
-    )
-      return;
-    let canceled = false;
-    const timer = window.setTimeout(() => {
-      void completeDeviceAuthorization(
-        device.id,
-        authorization.runtime,
-        authorization.id,
-      )
-        .then(async (result) => {
-          if (canceled) return;
-          setAuthorization(result);
-          if (result.status === "completed") await onRefresh();
-        })
-        .catch((cause) => {
-          if (!canceled) {
-            setError(
-              cause instanceof Error
-                ? cause.message
-                : t("accounts.checkFailed"),
-            );
-            setPollAttempt((attempt) => attempt + 1);
-          }
-        });
-    }, 2000);
-    return () => {
-      canceled = true;
-      window.clearTimeout(timer);
-    };
-  }, [authorization, busy, device.id, device.status, onRefresh, pollAttempt]);
   const legacy = legacyProfiles.filter(
     (profile) => !isModelConnection(profile),
   );
@@ -127,7 +89,6 @@ export function DeviceAccounts({
         const unavailable = status === "unavailable";
         // i18n-ignore: runtime product names
         const name = runtime === "claude" ? "Claude Code" : "Codex";
-        const active = authorization?.runtime === runtime;
         const cli = nativeHealth?.cli;
         const missing = cli?.installed === false;
         const online = device.status === "connected";
@@ -204,40 +165,30 @@ export function DeviceAccounts({
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={
-                    busy || device.status !== "connected" || unavailable
-                  }
-                  aria-label={t(
-                    signedIn
-                      ? "accounts.reauthorizeLabel"
-                      : "accounts.signInLabel",
-                    { name, device: device.label },
-                  )}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError("");
-                    try {
-                      const result = await startDeviceAuthorization(
-                        device.id,
-                        runtime,
-                      );
-                      setAuthorization(result);
-                      if (result.status === "completed") await onRefresh();
-                    } catch (cause) {
-                      setError(
-                        cause instanceof Error
-                          ? cause.message
-                          : t("accounts.startFailed"),
-                      );
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
+                  disabled={!online || checking !== undefined}
+                  aria-busy={checking === runtime}
+                  aria-label={t("accounts.checkAgainLabel", {
+                    name,
+                    device: device.label,
+                  })}
+                  onClick={() => void checkLogin(runtime)}
                 >
-                  {signedIn ? t("accounts.reauthorize") : t("accounts.signIn")}
+                  {checking === runtime
+                    ? t("accounts.checking")
+                    : t("accounts.checkAgain")}
                 </Button>
               )}
             </div>
+            {!signedIn && !missing && online ? (
+              <p className="fdy-device-account-hint">
+                {t(
+                  runtime === "claude"
+                    ? "accounts.signInHintClaude"
+                    : "accounts.signInHintCodex",
+                  { device: device.label },
+                )}
+              </p>
+            ) : null}
             {missing && online ? (
               <p className="fdy-device-account-hint">
                 {t("accounts.installCliHint", {
@@ -278,26 +229,6 @@ export function DeviceAccounts({
                 })}
               />
             ) : null}
-            {active && authorization ? (
-              <AuthorizationFlow
-                className="fdy-device-authorization-card"
-                authorization={authorization}
-                busy={busy}
-                onComplete={(value) => {
-                  setBusy(true);
-                  setError("");
-                  void complete(value)
-                    .catch((cause) =>
-                      setError(
-                        cause instanceof Error
-                          ? cause.message
-                          : t("accounts.loginFailed"),
-                      ),
-                    )
-                    .finally(() => setBusy(false));
-                }}
-              />
-            ) : null}
             {expanded === runtime ? (
               <div className="fdy-account-expanded">
                 <AccountInspection
@@ -326,25 +257,27 @@ export function DeviceAccounts({
             {t("accounts.legacyTitle", { count: legacy.length })}
           </summary>
           <p>{t("accounts.legacyIntro")}</p>
-          {legacy.map((profile) => (
-            <div key={profile.id} className="fdy-management-row">
-              <span>
-                <strong>{profile.label}</strong>
-                <small>
-                  {profile.runtime} ·{" "}
-                  {profile.model || t("accounts.runtimeDefault")} ·{" "}
-                  {bindings.some(
-                    (row) =>
-                      row.deviceId === device.id &&
-                      row.profileId === profile.id &&
-                      row.enabled,
-                  )
-                    ? t("accounts.previouslyAssigned")
-                    : t("accounts.notAssigned")}
-                </small>
-              </span>
-            </div>
-          ))}
+          <div className="fdy-management-list">
+            {legacy.map((profile) => (
+              <div key={profile.id} className="fdy-management-row">
+                <span>
+                  <strong>{profile.label}</strong>
+                  <small>
+                    {profile.runtime} ·{" "}
+                    {profile.model || t("accounts.runtimeDefault")} ·{" "}
+                    {bindings.some(
+                      (row) =>
+                        row.deviceId === device.id &&
+                        row.profileId === profile.id &&
+                        row.enabled,
+                    )
+                      ? t("accounts.previouslyAssigned")
+                      : t("accounts.notAssigned")}
+                  </small>
+                </span>
+              </div>
+            ))}
+          </div>
         </details>
       ) : null}
     </section>

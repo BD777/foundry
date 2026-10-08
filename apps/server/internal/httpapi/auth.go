@@ -34,6 +34,8 @@ func isPublicAuthRoute(r *http.Request) bool {
 		return true
 	case strings.HasPrefix(path, "/api/auth/invites/"):
 		return true
+	case r.Method == http.MethodGet && (path == "/api/worker/release" || strings.HasPrefix(path, workerPackagesPath)):
+		return true
 	}
 	return false
 }

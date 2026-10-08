@@ -52,7 +52,8 @@ async function setup(overrides = {}) {
   window.document.body.append(container);
   const root = createRoot(container);
   const selection = [],
-    openings = [];
+    openings = [],
+    workspaceLinks = [];
   let props = {
     devices,
     workspaces,
@@ -61,8 +62,9 @@ async function setup(overrides = {}) {
     agentProfiles: [],
     providerHealth: [],
     deviceProfiles: [],
-    section: "workspaces",
+    section: "agents",
     onSelect: (...args) => selection.push(args),
+    onOpenWorkspaces: (deviceId) => workspaceLinks.push(deviceId),
     onOpenWorkspace: async (id) => {
       openings.push(id);
       return true;
@@ -80,6 +82,7 @@ async function setup(overrides = {}) {
     container,
     selection,
     openings,
+    workspaceLinks,
     render,
     click: async (text) => {
       const button = [...container.querySelectorAll("button")].find((row) =>
@@ -95,40 +98,19 @@ async function setup(overrides = {}) {
   };
 }
 
-test("device list navigation never activates a workspace; open is an explicit separate action", async () => {
+test("a device page manages the machine and links to its workspaces instead of listing them", async () => {
   const view = await setup();
   await view.click("Laptop");
-  assert.deepEqual(view.selection, [["b", "workspaces"]]);
-  assert.deepEqual(view.openings, []);
+  assert.deepEqual(view.selection, [["b"]]);
   await view.render({ selectedDeviceId: "b" });
-  assert.match(view.container.textContent, /Project B/);
-  assert.doesNotMatch(view.container.textContent, /Project A/);
-  await view.click("Switch here");
-  assert.deepEqual(view.openings, ["wb"]);
+  assert.doesNotMatch(view.container.textContent, /Project B|Switch here/);
+  await view.click("1 workspace");
+  assert.deepEqual(view.workspaceLinks, ["b"]);
+  assert.deepEqual(view.openings, [], "nothing is activated");
   await view.cleanup();
 });
 
-test("current workspace has a status instead of redundant switch; details do not activate it", async () => {
-  const view = await setup({ selectedDeviceId: "a" });
-  assert.match(view.container.textContent, /Current workspace/);
-  assert.equal(
-    [...view.container.querySelectorAll("button")].some((button) =>
-      button.textContent.includes("Switch here"),
-    ),
-    false,
-  );
-  assert.ok(view.container.querySelector('[data-current="true"]'));
-  assert.ok(
-    view.container.querySelector('[aria-label="View details for Project A"]'),
-  );
-  assert.ok(
-    view.container.querySelector('[aria-label="Actions for Project A"]'),
-  );
-  assert.deepEqual(view.openings, []);
-  await view.cleanup();
-});
-
-test("offline device accounts cannot start login and do not borrow the active device's status", async () => {
+test("offline device accounts cannot be checked and do not borrow the active device's status", async () => {
   const view = await setup({
     selectedDeviceId: "b",
     section: "agents",
@@ -146,7 +128,7 @@ test("offline device accounts cannot start login and do not borrow the active de
   });
   assert.doesNotMatch(view.container.textContent, /studio@example/);
   const logins = view.container.querySelectorAll(
-    'button[aria-label^="Sign in to"]',
+    'button[aria-label^="Check the"]',
   );
   assert.equal(logins.length, 2);
   for (const button of logins) assert.equal(button.disabled, true);
@@ -154,35 +136,28 @@ test("offline device accounts cannot start login and do not borrow the active de
   await view.cleanup();
 });
 
-test("official sign-in names the target device and never creates a global profile", async () => {
+test("a device without a login says where to sign in and only re-reads the login", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), body: JSON.parse(options.body) });
-    return new Response(
-      JSON.stringify({
-        id: "flow",
-        runtime: "codex",
-        profileId: "device-account:codex",
-        status: "failed",
-        message: "Synthetic authorization failure",
-      }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ runtime: "codex" }), { status: 200 });
   };
   const view = await setup({ selectedDeviceId: "a", section: "agents" });
   try {
+    // Signing in happens on the device, in the agent's own CLI.
+    assert.match(view.container.textContent, /On Studio, run codex login/);
+    assert.equal(
+      view.container.querySelector('button[aria-label^="Sign in"]'),
+      null,
+    );
     const button = view.container.querySelector(
-      'button[aria-label="Sign in to Codex on Studio"]',
+      'button[aria-label="Check the Codex login on Studio again"]',
     );
     assert.ok(button);
     await act(async () => button.click());
     assert.equal(calls.length, 1);
-    assert.match(
-      calls[0].url,
-      /\/api\/devices\/a\/accounts\/codex\/authorization$/,
-    );
-    assert.match(view.container.textContent, /Synthetic authorization failure/);
+    assert.match(calls[0].url, /\/api\/devices\/a\/accounts\/codex\/inspect$/);
     assert.deepEqual(view.openings, []);
   } finally {
     globalThis.fetch = originalFetch;
@@ -345,12 +320,7 @@ test("a device shared through a workspace is browse-only and shows the caller's 
     view.container.querySelector('[aria-label="Device sections"]'),
     null,
   );
-  assert.match(text, /Member access/);
-  assert.equal(
-    view.container.querySelector('[aria-label="Actions for Shared"]'),
-    null,
-  );
-  assert.doesNotMatch(text, /Add workspace/);
+  assert.doesNotMatch(text, /Rename|Add workspace/);
   await view.cleanup();
 });
 
@@ -366,5 +336,30 @@ test("adding a device opens one dialog that also shows how to check or repair a 
     dialog.textContent,
     /--registry https:\/\/registry\.npmjs\.org\//,
   );
+  await view.cleanup();
+});
+
+test("an update the server records as running keeps the button busy on every visit", async () => {
+  const view = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [
+      {
+        id: "a",
+        label: "Studio",
+        status: "connected",
+        owned: true,
+        capabilities: ["worker_update"],
+        worker: { version: "0.5.6", command: "~/.foundry/bin/foundry-worker" },
+        workerUpdate: { startedAt: "2026-10-08T12:00:00Z", version: "0.5.7" },
+      },
+    ],
+  });
+  const busy = [...view.container.querySelectorAll("button")].filter((b) =>
+    b.textContent.includes("Updating"),
+  );
+  assert.ok(busy.length > 0, "the update shows as running");
+  assert.ok(busy.every((button) => button.disabled));
+  assert.match(view.container.textContent, /Updating since/);
   await view.cleanup();
 });

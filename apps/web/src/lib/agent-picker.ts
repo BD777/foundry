@@ -206,14 +206,26 @@ export interface PickerAgentOption {
  * picker passes the current selection so a promoted pair keeps presenting its
  * legacy identity for an existing chat; the issue picker passes nothing and
  * always gets the server representative.
+ *
+ * Only usable agents are offered. An unavailable one stays only when it is
+ * the current selection (an existing chat names what it ran on), or when
+ * nothing is usable, so the menu says why and links to the device accounts.
  */
 export function buildPickerAgentOptions(
   agents: AgentProjection[],
   profiles: AgentProfileProjection[],
   selectedAgentId?: string,
 ): PickerAgentOption[] {
-  return canonicalPickerAgents(agents, profiles, selectedAgentId).map(
-    (agent) => {
+  const canonical = canonicalPickerAgents(agents, profiles, selectedAgentId);
+  const anyUsable = canonical.some((agent) => agent.status === "healthy");
+  return canonical
+    .filter(
+      (agent) =>
+        !anyUsable ||
+        agent.status === "healthy" ||
+        agent.id === selectedAgentId,
+    )
+    .map((agent) => {
       const meta = pickerAgentMeta(agent);
       return {
         detail: meta.detail,
@@ -224,8 +236,7 @@ export function buildPickerAgentOptions(
         title: meta.title,
         value: agent.id,
       };
-    },
-  );
+    });
 }
 
 /** Device owning the first unavailable row, for the picker's manage entry. */

@@ -416,6 +416,8 @@ export function codexProfileConfig(
 ): Record<string, unknown> {
   if (profile.connectionType === "local_login")
     return { model_provider: "openai" };
+  if (profile.codexModelProvider)
+    return { model_provider: profile.codexModelProvider };
   if (profile.baseUrl?.trim())
     return {
       model_provider: "openai",
@@ -432,7 +434,11 @@ export function codexSessionEnvironment(
   const env = sessionEnvironment(workspacePath, profile, session);
   // The native CLI reads CODEX_API_KEY; the generic OpenAI alias alone is
   // insufficient for a server-dispatched compatible connection.
-  if (profile.connectionType !== "local_login" && env.OPENAI_API_KEY)
+  if (
+    profile.connectionType !== "local_login" &&
+    !profile.codexModelProvider &&
+    env.OPENAI_API_KEY
+  )
     env.CODEX_API_KEY = env.OPENAI_API_KEY;
   return env;
 }
@@ -555,11 +561,11 @@ export async function runCodexWorkspaceSession(
       const codex = new sdk.Codex({
         codexPathOverride,
         baseUrl:
-          profile.connectionType === "local_login"
+          profile.connectionType === "local_login" || profile.codexModelProvider
             ? undefined
             : profile.baseUrl,
         apiKey:
-          profile.connectionType === "local_login"
+          profile.connectionType === "local_login" || profile.codexModelProvider
             ? undefined
             : codexSessionEnvironment(workspacePath, profile, session)
                 .CODEX_API_KEY,

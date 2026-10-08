@@ -4,9 +4,9 @@ import type {
   PromotedSkill,
 } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
-import { SelectMenu } from "../../components/ui/select-menu";
-import { TextInput } from "../../components/ui/field";
-import { Button } from "../../components/ui/button";
+import { SelectMenu } from "../ui/select-menu";
+import { TextInput } from "../ui/field";
+import { Button } from "../ui/button";
 import {
   skillResolutionProblem,
   skillServerLabel,

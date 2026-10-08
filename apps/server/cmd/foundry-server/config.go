@@ -67,9 +67,10 @@ func loadConfig(getenv func(string) string) config {
 		SecretKeyPath: envOrDefault(getenv, "FOUNDRY_SECRET_KEY_PATH",
 			defaultSecretKeyPath(dbPath)),
 		Options: httpapi.ServerOptions{
-			AllowedOrigin:  envOrDefault(getenv, "FOUNDRY_WEB_ORIGIN", "http://127.0.0.1:31983"),
-			EnableDevReset: getenv("FOUNDRY_ENABLE_DEV_RESET") == "1",
-			WebDistDir:     getenv("FOUNDRY_WEB_DIST"),
+			AllowedOrigin:     envOrDefault(getenv, "FOUNDRY_WEB_ORIGIN", "http://127.0.0.1:31983"),
+			EnableDevReset:    getenv("FOUNDRY_ENABLE_DEV_RESET") == "1",
+			WebDistDir:        getenv("FOUNDRY_WEB_DIST"),
+			WorkerPackagesDir: strings.TrimSpace(getenv("FOUNDRY_WORKER_PACKAGES")),
 		},
 		SeedDemo:        getenv("FOUNDRY_DEMO_SEED") == "1",
 		ShutdownTimeout: shutdownTimeout,

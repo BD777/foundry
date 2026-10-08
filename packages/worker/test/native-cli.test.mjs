@@ -41,14 +41,14 @@ test("the worker does not ship the agents' own Claude Code and Codex programs", 
     assert.equal(manifest.peerDependenciesMeta[sdk].optional, true);
   }
   assert.ok(runtimeInstallArgs("/x").includes("--omit=optional"));
-  const { required, bestEffort } = runtimeCompanions(manifest);
+  assert.ok(runtimeInstallArgs("/x").includes("--prefer-offline"));
+  const { required } = runtimeCompanions(manifest);
   assert.deepEqual(required.sort(), [
     `@anthropic-ai/claude-agent-sdk@${manifest.peerDependencies["@anthropic-ai/claude-agent-sdk"]}`,
     `@openai/codex-sdk@${manifest.peerDependencies["@openai/codex-sdk"]}`,
   ]);
-  assert.deepEqual(bestEffort, [
-    `node-pty@${manifest.optionalDependencies["node-pty"]}`,
-  ]);
+  // Nothing native: no optional dependencies to build or download.
+  assert.equal(manifest.optionalDependencies, undefined);
 });
 
 test("program versions are read and compared with what Foundry needs", () => {

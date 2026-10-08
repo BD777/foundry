@@ -5,7 +5,7 @@ import { Window } from "happy-dom";
 import { act, createElement } from "react";
 register("./bundler-resolve.mjs", import.meta.url);
 
-test("location page separates browsing, activation, retry and workspace management", async () => {
+test("workspaces page groups folders by device; only Switch activates", async () => {
   const window = new Window();
   const previous = new Map();
   for (const [key, value] of Object.entries({
@@ -66,20 +66,28 @@ test("location page separates browsing, activation, retry and workspace manageme
       ),
     );
     await act(() =>
-      container.querySelector('[aria-label="Open working location"]').click(),
+      container.querySelector('[aria-label="Open workspaces"]').click(),
     );
     assert.deepEqual(events.pop(), { type: "workspace.browse.requested" });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     await act(() => root.render(createElement(WorkspacesFeature, props)));
-    assert.match(container.textContent, /Working location/);
-    assert.doesNotMatch(
-      container.textContent,
-      /Add workspace|Rename|Remove workspace/,
+    assert.match(container.textContent, /Workspaces/);
+    // Every device is its own group; the current device comes first.
+    assert.deepEqual(
+      [...container.querySelectorAll(".fdy-location-group")].map((group) =>
+        group.getAttribute("aria-label"),
+      ),
+      ["Studio", "Empty device", "Laptop"],
     );
-    await act(() => button("Empty device").click());
-    assert.match(container.textContent, /No workspaces on this device/);
-    await act(() => button("Laptop").click());
-    assert.equal(events.length, 0, "preview does not activate a device");
+    assert.match(
+      container.querySelector('[aria-label="Empty device"]').textContent,
+      /No workspaces on this device yet/,
+    );
+    assert.match(
+      container.querySelector('[aria-label="Laptop"]').textContent,
+      /Offline/,
+    );
+    assert.equal(events.length, 0, "browsing does not activate anything");
     assert.match(
       container.querySelector(".fdy-location-current").textContent,
       /Current project/,
@@ -112,11 +120,6 @@ test("location page separates browsing, activation, retry and workspace manageme
     await act(() => switchFor("Next project").click());
     await act(async () => finish(true));
     assert.equal(events.length, 2);
-    await act(() => button("Manage workspaces").click());
-    assert.deepEqual(events.at(-1), {
-      type: "workspace.management.requested",
-      deviceId: "b",
-    });
     await act(() => button("Back to workspace").click());
     assert.deepEqual(events.at(-1), { type: "workspace.return.requested" });
     const search = container.querySelector('[aria-label="Find workspace"]');

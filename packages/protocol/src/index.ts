@@ -56,8 +56,6 @@ export type SecretPlacement = "local" | "server";
  */
 export type ProfileOrigin = "device" | "server";
 export type ProfileAuthMode = "official" | "custom";
-export type ProfileAuthorizationStatus =
-  "waiting_for_user" | "completed" | "failed";
 export type ClaudeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type ClaudePermissionMode =
   "acceptEdits" | "auto" | "bypassPermissions" | "default" | "dontAsk" | "plan";
@@ -72,24 +70,6 @@ export type CodexSpeed = "standard" | "fast";
 export interface AgentModelOption {
   id: string;
   label?: string;
-}
-
-export interface ProfileAuthorization {
-  id: string;
-  profileId: string;
-  runtime: Exclude<WorkerRuntimeId, "mock">;
-  status: ProfileAuthorizationStatus;
-  url?: string;
-  code?: string;
-  message?: string;
-}
-
-export interface StartProfileAuthorizationInput {
-  deviceId: string;
-}
-
-export interface CompleteProfileAuthorizationInput {
-  authorizationResult?: string;
 }
 
 export interface WorkspaceProjection {
@@ -125,6 +105,44 @@ export interface DeviceProjection {
   resources?: DeviceResource[];
   /** Protocol features its worker declared; an older worker declares none. */
   capabilities?: string[];
+  /** The worker build it runs, reported at registration (0.5.7 and later). */
+  worker?: DeviceWorker;
+  /** The machine, reported at registration (0.5.7 and later). */
+  system?: DeviceSystem;
+  /** An update requested from Foundry that has not finished yet. */
+  workerUpdate?: DeviceWorkerUpdate;
+}
+
+export interface DeviceWorkerUpdate {
+  startedAt: string;
+  /** The version it brings. */
+  version?: string;
+}
+
+/** The machine a device is, as its worker reports it at registration. */
+export interface DeviceSystem {
+  hostname: string;
+  /** "macOS", "Debian GNU/Linux", … */
+  os: string;
+  osVersion?: string;
+  kernel?: string;
+  arch: string;
+  cpuModel?: string;
+  cpuCount?: number;
+  memoryBytes?: number;
+  /** The account the worker runs as. */
+  user?: string;
+  nodeVersion?: string;
+}
+
+export interface DeviceWorker {
+  version: string;
+  /**
+   * The command that checks and updates the worker on that machine, as typed
+   * there (`~/.foundry/bin/foundry-worker`); absent for a worker run from a
+   * source checkout, which updates with git.
+   */
+  command?: string;
 }
 
 /**
@@ -207,6 +225,13 @@ export interface NativeAccountUsage {
   resetsAt?: number;
 }
 
+export interface AgentProfileCheck {
+  status: "pending" | "passed" | "failed";
+  checkedAt?: string;
+  /** Why the check failed, in the agent's words. */
+  message?: string;
+}
+
 export interface AgentProfileProjection {
   /** The account a local login is signed in as, when the CLI recorded one. */
   accountLabel?: string;
@@ -220,6 +245,18 @@ export interface AgentProfileProjection {
   secretStored: SecretPlacement;
   configScope: AgentConfigScope;
   configLabel: string;
+  /** Where in that file it is defined, e.g. `model_providers.aiden`. */
+  configSection?: string;
+  /**
+   * For a provider found in the device's agent configuration: whether a turn
+   * through its agent's SDK answered. It is offered only once that passed.
+   */
+  check?: AgentProfileCheck;
+  /**
+   * It carries its own key and calls an endpoint other machines can reach,
+   * so copying it to the server makes it usable elsewhere.
+   */
+  shareable?: boolean;
   connectionType: AgentConnectionType;
   model?: string;
   /** Models offered for this profile wherever a run is configured. */
@@ -1341,3 +1378,20 @@ export interface SkillFileComparison {
  * The web shows its commands; the worker installs and updates itself from it.
  */
 export const workerPackageName = "@bd777/foundry-worker";
+
+/**
+ * Where a server's worker comes from (`GET /api/worker/release`): package
+ * tarballs the server serves itself, at server-relative URLs, or the npm
+ * registry. Workers install and update from it; the web shows commands for it.
+ */
+export type WorkerRelease =
+  | { source: "npm" }
+  | {
+      source: "server";
+      version: string;
+      /**
+       * `url` names this exact build (workers install from it); `latestUrl`
+       * always serves the current one, so commands naming it stay valid.
+       */
+      packages: { name: string; url: string; latestUrl: string }[];
+    };

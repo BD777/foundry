@@ -84,18 +84,11 @@
   overflow-wrap: anywhere;
   white-space: normal;
 }
-.fdy-location-dot {
-  width: 5px;
-  height: 5px;
+/* Only an exception is shown: online is the normal state. */
+.fdy-location-entry-status {
   flex: none;
-  border-radius: 50%;
-  background: var(--fdy-ink-muted);
-}
-.fdy-location-dot[data-online="true"] {
-  background: var(--fdy-green);
-}
-.fdy-location-dot[data-removed="true"] {
-  background: var(--fdy-ink-faint);
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
 }
 .fdy-location-overlay {
   position: fixed;
@@ -260,6 +253,10 @@
   outline: none;
   box-shadow: inset 0 0 0 1px var(--fdy-brass);
 }
+.fdy-device-list-row {
+  /* The row alone shows hover; its open target is a bare button. */
+  transition: background 0.14s ease;
+}
 .fdy-workspace-details-trigger:hover:not(:disabled),
 .fdy-device-list-row:hover:not(:disabled) {
   border-color: transparent;
@@ -385,55 +382,38 @@
 .fdy-location-current strong {
   color: var(--fdy-ink-strong);
 }
-.fdy-location-browser {
+/* Workspaces page: one group per device, no nested surfaces. */
+.fdy-location-group {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 28px;
-  border-top: 1px solid var(--fdy-line);
-  padding-top: 24px;
-}
-.fdy-location-device-list,
-.fdy-location-workspace-list {
-  display: grid;
-  align-content: start;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--fdy-line);
+  scroll-margin-top: 16px;
 }
-.fdy-location-device-list {
-  border-right: 1px solid var(--fdy-line);
-  padding-right: 22px;
-}
-.fdy-location-browser h2 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.fdy-location-device-list .fdy-location-column-heading {
-  margin-bottom: 15px;
-}
-.fdy-location-column-heading {
+.fdy-location-group-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 0 8px 4px;
 }
-.fdy-location-page-option {
-  width: 100%;
-  height: auto;
-  min-height: 64px;
-  padding: 12px;
-  gap: 12px;
-  border: 0;
-  text-align: left;
-}
-.fdy-location-page-option[aria-pressed="true"],
-.fdy-location-page-option[aria-current="location"] {
-  background: var(--fdy-selection);
+.fdy-location-group-heading h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--fdy-ink-strong);
 }
-.fdy-location-page-option:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--fdy-control-focus);
+.fdy-location-group-heading small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-location-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 /* Workspace row on the chooser: read-only details on the left, explicit Open on
    the right. One surface boundary; hover and selected stay distinguishable. */
@@ -444,6 +424,8 @@
   min-width: 0;
   padding: 4px 8px;
   border-radius: 8px;
+  /* The row alone shows hover; its details target is a bare button. */
+  transition: background 0.14s ease;
 }
 .fdy-location-workspace-row[data-current="true"] {
   background: var(--fdy-selection);
@@ -496,18 +478,6 @@
   padding: 0 10px;
   border: 1px solid var(--fdy-line);
   border-radius: 7px;
-}
-@media (max-width: 700px) {
-  .fdy-location-browser {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
-  }
-  .fdy-location-device-list {
-    border-right: 0;
-    padding-right: 0;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--fdy-line);
-  }
 }
 .fdy-workspace-details-label,
 .fdy-workspace-row-actions,

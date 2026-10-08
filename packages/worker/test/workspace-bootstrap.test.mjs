@@ -399,3 +399,43 @@ test("a new workspace gets no files that configure nothing, and its resources na
   assert.equal(detail("artifact_archive"), resolve(root, "evidence-store"));
   assert.ok(assets.every((asset) => !asset.detail.includes("assets.yaml")));
 });
+
+test("registering a large folder without Git commits every file and never stalls the worker", async (t) => {
+  const { source, store } = fixture(t);
+  // 400 directories of 10 files: 4000 files, over the old 100-file batches.
+  for (let d = 0; d < 400; d++) {
+    const directory = resolve(source, `area-${d % 20}`, `part-${d}`);
+    mkdirSync(directory, { recursive: true });
+    for (let f = 0; f < 10; f++)
+      writeFileSync(resolve(directory, `note ${f}.md`), `${d}-${f}`);
+  }
+  // The event loop keeps turning while the folder is walked and staged.
+  let longestStall = 0;
+  let last = performance.now();
+  const ticker = setInterval(() => {
+    const now = performance.now();
+    longestStall = Math.max(longestStall, now - last);
+    last = now;
+  }, 10);
+  try {
+    const registration = await registerExecutionWorkspace(
+      source,
+      "ws_large",
+      store,
+    );
+    assert.deepEqual(registration.errors, []);
+  } finally {
+    clearInterval(ticker);
+  }
+  const tracked = (await git(source, ["ls-files"])).split("\n");
+  assert.ok(tracked.includes("area-3/part-23/note 7.md"));
+  assert.equal(
+    tracked.filter((path) => path.endsWith(".md") && path.startsWith("area-"))
+      .length,
+    4000,
+  );
+  assert.ok(
+    longestStall < 1000,
+    `the worker stalled for ${Math.round(longestStall)} ms`,
+  );
+});

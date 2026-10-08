@@ -22,7 +22,6 @@ import {
   type Issue,
   type SessionSkillRef,
   type ProfileDefinition,
-  type ProfileAuthorization,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 import { readDaemonConfig, writeDaemonConfig } from "./config.js";
@@ -56,6 +55,7 @@ import {
   type OutOfBandSessionEvent,
 } from "./session-state.js";
 import {
+  configuredAgentProfiles,
   localProfileCredential,
   profileConfigForSession,
   withDispatchCredential,
@@ -83,12 +83,7 @@ import {
   prepareClarification,
   recoveredClarificationCompletion,
 } from "./issue-clarification.js";
-import {
-  packageSkillDirectory,
-  readSkillTextFile,
-  scanSkillRoots,
-  toDeviceSkill,
-} from "./skill-scanner.js";
+import { packageSkillDirectory, readSkillTextFile } from "./skill-scanner.js";
 import { materializeSessionSkills } from "./skill-materializer.js";
 import { installService, serviceLogPaths, status } from "./service.js";
 import {
@@ -104,16 +99,15 @@ import {
 } from "./issues.js";
 import { listAgentModelsConfig } from "./models.js";
 import { inspectNativeAccount } from "./native-inspection.js";
+import { checkDueProviders } from "./provider-check.js";
+import { scanDeviceSkills } from "./skill-scan-thread.js";
+import { providerHealthData } from "./provider-health.js";
 import { installNativeCli } from "./native-cli-install.js";
+import { startSelfUpdate } from "./worker-self-update.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import {
-  completeProfileAuthorization,
-  reapAbandonedAuthorizations,
-  startProfileAuthorization,
-  stopProfileAuthorizations,
-} from "./profile-authorization.js";
-import {
   daemonRegistration,
+  recheckRunningNativeChats,
   registerDaemon,
   serverURLFromArgs,
   sessionSchedulingKey,
@@ -212,16 +206,6 @@ interface ListAgentModelsPayload {
   profile: UpsertAgentProfilePayload["profile"];
 }
 
-interface StartProfileAuthorizationPayload {
-  profileId?: string;
-  runtime?: string;
-}
-
-interface CompleteProfileAuthorizationPayload {
-  authorizationResult?: string;
-  flowId?: string;
-}
-
 interface ReadProfileCredentialPayload {
   profileId?: string;
 }
@@ -265,6 +249,7 @@ interface RecoverSessionPayload {
 }
 
 const nativeChatSyncIntervalMs = 10000;
+const providerCheckIntervalMs = 10 * 60 * 1000;
 
 /**
  * Record the server's removal decision locally and park the daemon. Called
@@ -305,12 +290,6 @@ export async function connect(args: string[]): Promise<void> {
     serverURL: serverURLFromArgs(args),
     workspacePath: workspacePathFromArgs(args),
   });
-  // A killed daemon can leave an agent CLI login running, and that login owns
-  // the CLI's fixed callback port, so end the leftovers before anyone tries to
-  // authorize again on this device.
-  for (const runtime of ["claude", "codex"]) {
-    reapAbandonedAuthorizations(runtime);
-  }
   await connectWebSocket(args);
 }
 
@@ -389,7 +368,8 @@ async function connectWebSocket(args: string[]): Promise<void> {
       if (outcome === "exit" || once) {
         return;
       }
-      backoffMs = 1000;
+      // A refused registration keeps backing off; a session that ran resets it.
+      if (outcome !== "refused") backoffMs = 1000;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`${logTime()} Daemon connection failed: ${message}`);
@@ -702,7 +682,10 @@ function daemonRegistrationWithActiveSessions(
   };
 }
 
-type sessionOutcome = "exit" | "reconnect" | "removed";
+type sessionOutcome = "exit" | "reconnect" | "removed" | "refused";
+
+/** Longest the server may stay silent; it pings every 30s. */
+const serverSilenceMs = Number(process.env.FOUNDRY_SERVER_SILENCE_MS || 75_000);
 
 function runWebSocketSession(options: {
   taskScheduler: ConcurrentTaskScheduler;
@@ -717,14 +700,38 @@ function runWebSocketSession(options: {
     const socket = new WebSocket(webSocketURL(options.serverURL), {
       headers: daemonRequestHeaders(false),
       maxPayload: 2 * 1024 * 1024,
+      handshakeTimeout: 30_000,
     });
+    // The server pings every 30s. A connection dropped on the way (a proxy,
+    // NAT, or the machine sleeping) never closes on this side, so without
+    // any message or ping for this long the socket is ended and the loop
+    // reconnects; otherwise the device stays offline while it thinks it is
+    // connected.
+    let silenceTimer: NodeJS.Timeout | undefined;
+    const expectServer = (): void => {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(() => {
+        console.error(
+          `${logTime()} Nothing from the server for ${serverSilenceMs / 1000}s; reconnecting.`,
+        );
+        socket.terminate();
+      }, serverSilenceMs);
+    };
+    socket.on("open", expectServer);
+    socket.on("ping", expectServer);
+    socket.on("message", expectServer);
     const taskScheduler = options.taskScheduler;
     let announcedIssueSlots = 1;
     let acceptedRun = false;
     let finished = false;
+    let registered = false;
+    let refused = false;
     let idleTimer: NodeJS.Timeout | undefined;
     let nativeChatSyncPromise: Promise<void> | undefined;
     let nativeChatSyncTimer: NodeJS.Timeout | undefined;
+    let providerCheckTimer: NodeJS.Timeout | undefined;
+    // Once per connection and workspace (see recheckRunningNativeChats).
+    const runningChatsRechecked = new Set<string>();
     const workspacePaths = new Map<string, string>();
 
     // Timer-driven background turns arrive while no Foundry turn is active.
@@ -804,12 +811,14 @@ function runWebSocketSession(options: {
         return;
       }
       finished = true;
+      if (silenceTimer) clearTimeout(silenceTimer);
       if (idleTimer) {
         clearTimeout(idleTimer);
       }
       if (nativeChatSyncTimer) {
         clearInterval(nativeChatSyncTimer);
       }
+      if (providerCheckTimer) clearInterval(providerCheckTimer);
       clearOutOfBandSessionEventSink(outOfBandSink);
       socket.close();
       resolveSession(outcome);
@@ -926,6 +935,17 @@ function runWebSocketSession(options: {
         knownWorkspacePaths().map(async (workspacePath) => {
           try {
             await syncNativeChats(options.serverURL, workspacePath);
+            if (!runningChatsRechecked.has(workspacePath)) {
+              runningChatsRechecked.add(workspacePath);
+              await recheckRunningNativeChats(
+                options.serverURL,
+                workspacePath,
+              ).catch((error: unknown) =>
+                console.error(
+                  `Rechecking running native chats failed for ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
+                ),
+              );
+            }
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
@@ -997,7 +1017,42 @@ function runWebSocketSession(options: {
         syncKnownNativeChats,
         nativeChatSyncIntervalMs,
       );
+      checkProvidersAndReport();
+      providerCheckTimer = setInterval(
+        checkProvidersAndReport,
+        providerCheckIntervalMs,
+      );
     });
+
+    // Providers found in the device's configuration are offered once a turn
+    // through their SDK answered; a changed result re-reports every
+    // workspace's registration, which carries the device's profiles.
+    function checkProvidersAndReport(): void {
+      void checkDueProviders(
+        configuredAgentProfiles(""),
+        providerHealthData(),
+        () => {
+          if (finished || socket.readyState !== WebSocket.OPEN) return;
+          for (const workspacePath of knownWorkspacePaths()) {
+            const registration = daemonRegistrationWithActiveSessions(
+              workspacePath,
+              options.sessionExecutions,
+            );
+            registerWorkspacePath(registration);
+            sendWebSocket(
+              socket,
+              daemonMessageTypes.workspaceReady,
+              { registration },
+              `provider_check_${safeID(registration.workspace.id)}_${Date.now()}`,
+            );
+          }
+        },
+      ).catch((error: unknown) =>
+        console.error(
+          `Checking providers failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
 
     socket.on("message", async (data: RawData) => {
       let envelope: ProtocolEnvelope;
@@ -1013,6 +1068,12 @@ function runWebSocketSession(options: {
         console.error(
           `Server error: ${envelope.error ?? "unknown websocket error"}`,
         );
+        // A refused registration leaves this socket unable to do anything:
+        // reconnect with backoff rather than sit connected and offline.
+        if (!registered) {
+          refused = true;
+          socket.close(1008, "registration refused");
+        }
         return;
       }
       if (envelope.type === daemonMessageTypes.ack) {
@@ -1020,6 +1081,7 @@ function runWebSocketSession(options: {
         return;
       }
       if (envelope.type === daemonMessageTypes.registered) {
+        registered = true;
         options.sessionTransport.bind(socket);
         // Timer-driven background turns arrive while no Foundry turn is
         // active; route their events over this socket as ordinary
@@ -1273,9 +1335,20 @@ function runWebSocketSession(options: {
         try {
           const workspacePath = existingWorkspaceFolder(payload.path);
           initWorkspace(workspacePath);
-          await registerExecutionWorkspace(
-            workspacePath,
-            readWorkspace(workspacePath).id,
+          // Chats work in the folder as soon as it is registered. Finding its
+          // repositories and, for a folder without Git, committing a first
+          // baseline grow with the folder's size, so they run after the
+          // reply; Issue preparation waits for them on the same lock.
+          const workspaceId = readWorkspace(workspacePath).id;
+          void registerExecutionWorkspace(workspacePath, workspaceId).then(
+            (prepared) =>
+              console.log(
+                `Prepared workspace ${workspacePath}: ${prepared.repositories.length} repositories${prepared.errors.length ? `, ${prepared.errors.length} problems (first: ${prepared.errors[0]})` : ""}.`,
+              ),
+            (error: unknown) =>
+              console.error(
+                `Preparing workspace ${workspacePath} for Issues failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
           );
           const registration = daemonRegistrationWithActiveSessions(
             workspacePath,
@@ -1337,80 +1410,6 @@ function runWebSocketSession(options: {
         }
         return;
       }
-      if (envelope.type === daemonMessageTypes.startProfileAuthorization) {
-        const payload = envelope.payload as
-          StartProfileAuthorizationPayload | undefined;
-        if (
-          !payload?.profileId ||
-          (payload.runtime !== "claude" && payload.runtime !== "codex")
-        ) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.profileAuthorizationStarted,
-            {
-              error:
-                "start_profile_authorization requires profileId and runtime",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        void startProfileAuthorization(payload.profileId, payload.runtime)
-          .then((authorization: ProfileAuthorization) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.profileAuthorizationStarted,
-              { authorization },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.profileAuthorizationStarted,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.completeProfileAuthorization) {
-        const payload = envelope.payload as
-          CompleteProfileAuthorizationPayload | undefined;
-        if (!payload?.flowId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.profileAuthorizationCompleted,
-            { error: "complete_profile_authorization requires flowId" },
-            envelope.id,
-          );
-          return;
-        }
-        void completeProfileAuthorization(
-          payload.flowId,
-          payload.authorizationResult,
-        )
-          .then((authorization) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.profileAuthorizationCompleted,
-              {
-                authorization,
-                registration: daemonRegistration(options.workspacePath),
-              },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.profileAuthorizationCompleted,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            );
-          });
-        return;
-      }
       if (envelope.type === daemonMessageTypes.inspectNativeAccount) {
         const input = envelope.payload as { runtime?: string; source?: string };
         if (input?.runtime !== "claude" && input?.runtime !== "codex") {
@@ -1446,6 +1445,25 @@ function runWebSocketSession(options: {
               envelope.id,
             );
           });
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.updateWorker) {
+        try {
+          const started = startSelfUpdate(options.serverURL);
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.workerUpdateStarted,
+            started,
+            envelope.id,
+          );
+        } catch (error) {
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.workerUpdateStarted,
+            { error: error instanceof Error ? error.message : String(error) },
+            envelope.id,
+          );
+        }
         return;
       }
       if (envelope.type === daemonMessageTypes.installNativeCli) {
@@ -1549,29 +1567,28 @@ function runWebSocketSession(options: {
       }
       if (envelope.type === daemonMessageTypes.scanSkills) {
         const payload = envelope.payload as { roots?: string[] } | undefined;
-        try {
-          const roots = Array.isArray(payload?.roots)
-            ? payload.roots.filter(
-                (root): root is string => typeof root === "string",
-              )
-            : [];
-          const skills = scanSkillRoots(roots).map(toDeviceSkill);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillsScanned,
-            { skills },
-            envelope.id,
+        const roots = Array.isArray(payload?.roots)
+          ? payload.roots.filter(
+              (root): root is string => typeof root === "string",
+            )
+          : [];
+        void scanDeviceSkills(roots)
+          .then((skills) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.skillsScanned,
+              { skills },
+              envelope.id,
+            ),
+          )
+          .catch((error: unknown) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.skillsScanned,
+              { error: error instanceof Error ? error.message : String(error) },
+              envelope.id,
+            ),
           );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillsScanned,
-            { error: message },
-            envelope.id,
-          );
-        }
         return;
       }
       if (envelope.type === daemonMessageTypes.readSkillFile) {
@@ -2072,6 +2089,10 @@ function runWebSocketSession(options: {
         finish("removed");
         return;
       }
+      if (refused && !options.once) {
+        finish("refused");
+        return;
+      }
       if (!options.once) {
         // Agent sessions use the reconnectable outbox and keep running while
         // the control socket is replaced. Their task closure owns the old
@@ -2081,7 +2102,6 @@ function runWebSocketSession(options: {
       }
       closeAllActiveRuntimes();
       stopAllEvidenceHTTPServices();
-      stopProfileAuthorizations();
       // Wait for in-flight tasks, but don't hang forever — a stuck task
       // should not wedge the entire reconnection lifecycle.
       const shutdownTimeout = new Promise<void>((resolve) =>

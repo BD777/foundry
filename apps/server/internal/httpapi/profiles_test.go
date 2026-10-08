@@ -444,23 +444,6 @@ func TestSetDeviceProfilesReturnsBindings(t *testing.T) {
 	}
 }
 
-func TestProfileAuthorizationRequiresOfficialProfileAndConnectedDevice(t *testing.T) {
-	backing := newSecretTestStore(t)
-	server := NewServer(backing)
-	custom := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles", relayProfileBody, http.StatusCreated))
-	requestForTest(t, server, http.MethodPost, "/api/profiles/"+custom.ID+"/authorization", `{"deviceId":"dev_missing"}`, http.StatusBadRequest)
-
-	official := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles", `{
-		"runtime":"codex",
-		"label":"ChatGPT",
-		"authMode":"official"
-	}`, http.StatusCreated))
-	response := requestForTest(t, server, http.MethodPost, "/api/profiles/"+official.ID+"/authorization", `{"deviceId":"dev_missing"}`, http.StatusConflict)
-	if !strings.Contains(response.Body.String(), "daemon") {
-		t.Fatalf("missing daemon error = %s", response.Body.String())
-	}
-}
-
 func foundryProfileSnapshot(t *testing.T, server *Server, workspaceID string) store.FoundryDataProjection {
 	t.Helper()
 	response := requestForTest(t, server, http.MethodGet, "/api/foundry-data?workspaceId="+workspaceID, "", http.StatusOK)

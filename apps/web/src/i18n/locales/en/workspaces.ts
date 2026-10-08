@@ -29,7 +29,7 @@ export const workspaces = {
       assets:
         "Assets available to this workspace. Device status and capacity are shared across workspaces.",
       skills:
-        "Choose which server-published skills this workspace exposes to its Chats and Issues. Personal skills on a device stay unavailable unless promoted from the device's Skills tab.",
+        "Choose which server-published skills this workspace exposes to its Chats and Issues. A skill on this workspace's device can be added below; skills elsewhere stay unavailable until published to the server.",
       feishu:
         "Connect a Feishu Bot and associate a group thread as an interactive agent channel for this workspace.",
       sharing:
@@ -43,37 +43,29 @@ export const workspaces = {
   },
   location: {
     regionLabel: "Current working location",
-    open: "Open working location",
-    title: "Working location",
+    open: "Open workspaces",
+    title: "Workspaces",
     selectDevice: "Select device",
     selectWorkspace: "Select workspace",
     back: "Back to workspace",
     intro:
-      "Choose a device, then switch to one of its workspaces. Your current work stays unchanged until you switch; switching keeps you on this page.",
+      "All your workspaces, grouped by the device they are on. Switch changes where you work; add, rename or remove workspaces right here.",
     currentLocation: "Current: <strong>{{location}}</strong>",
     noWorkspaceSelected: "No workspace selected",
-    devicesLabel: "Choose device",
-    addDevice: "Add or repair device",
-    deviceStep: "1. Device",
-    deviceRemovedTitle: "Device removed from Foundry",
     removedHistory: "Removed · history kept read-only",
-    deviceSummary: "{{status}} · {{workspaces}}",
-    noDevices: "No devices registered.",
-    workspacesLabel: "Choose workspace",
-    workspaceStep: "2. Workspace",
-    manage: "Manage workspaces",
+    offlineSummary: "Offline · {{workspaces}}",
+    noDevices: "No devices yet. Add one under Devices.",
+    addWorkspace: "Add workspace",
+    openDevice: "Device",
+    openDeviceFor: "Open device {{device}}",
     findLabel: "Find workspace",
-    searchPlaceholder: "Search by name or folder…",
-    removedHint:
-      "Removed device · Its workspaces stay as read-only history and cannot be switched to.",
-    offlineHint:
-      "Offline · You can browse history; execution needs reconnection.",
+    searchPlaceholder: "Search workspaces by name or path…",
     sharedRole: "Shared · {{role}}",
     currentBadge: "Current",
     switchTo: "Switch to {{name}}",
     switch: "Switch",
     noMatches: "No matching workspaces.",
-    noWorkspaces: "No workspaces on this device. Add one in Manage workspaces.",
+    noWorkspaces: "No workspaces on this device yet.",
   },
   overview: {
     gitStates: {
@@ -170,7 +162,7 @@ export const workspaces = {
       "Workspaces on {{device}} shared with you. Only the account that paired this device can add folders.",
     add: "Add workspace",
     reconnect:
-      "Reconnect this device to add or remove folders. Saved names and history remain available.",
+      "Reconnect this device to add or remove workspaces. Saved names and history remain available.",
     searchLabel: "Search device workspaces",
     searchPlaceholder: "Search workspace name or path…",
     switchToThis: "Switch to this workspace",
@@ -197,7 +189,7 @@ export const workspaces = {
       rename: "Rename workspace",
     },
     descriptions: {
-      add: "Register an existing folder on {{device}}. Foundry adds its setup files and working folders; existing project files are preserved. Your current workspace does not change.",
+      add: "Add an existing folder on {{device}} as a workspace. Foundry adds its setup files; existing project files are preserved. Your current workspace does not change.",
       remove:
         "Remove this registration and its Foundry history. This cannot be undone.",
       rename:
@@ -215,10 +207,10 @@ export const workspaces = {
     displayNameLabel: "Workspace display name",
     namePlaceholder: "Workspace name",
     reconnectRemove: "Reconnect this device to remove its registration.",
-    reconnectAdd: "Reconnect this device to register a folder.",
+    reconnectAdd: "Reconnect this device to add a workspace.",
     submit: {
       remove: "Remove workspace and history",
-      add: "Register folder",
+      add: "Add workspace",
       rename: "Save display name",
     },
   },

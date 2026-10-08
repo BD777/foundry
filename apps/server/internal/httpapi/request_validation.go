@@ -19,11 +19,15 @@ func decodeJSONRequest(w http.ResponseWriter, r *http.Request, target any) bool 
 	return true
 }
 
+// decodeWebSocketPayload reads a worker's message. Workers run older or
+// newer builds than the server while they update, so a field this server
+// does not know is ignored rather than refused: refusing it took every
+// worker that still reported a removed field offline.
 func decodeWebSocketPayload(payload json.RawMessage, target any) error {
 	if len(payload) == 0 {
 		return errors.New("websocket message payload is required")
 	}
-	return decodeStrictJSON(bytes.NewReader(payload), target)
+	return decodeJSON(bytes.NewReader(payload), target, false)
 }
 
 func decodeWebSocketEnvelope(message []byte, target any) error {
@@ -47,8 +51,14 @@ func validateWebSocketEnvelope(envelope wsEnvelope) error {
 }
 
 func decodeStrictJSON(reader io.Reader, target any) error {
+	return decodeJSON(reader, target, true)
+}
+
+func decodeJSON(reader io.Reader, target any, strict bool) error {
 	decoder := json.NewDecoder(reader)
-	decoder.DisallowUnknownFields()
+	if strict {
+		decoder.DisallowUnknownFields()
+	}
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}

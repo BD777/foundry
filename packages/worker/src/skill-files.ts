@@ -19,8 +19,27 @@ export interface SkillInventory {
   manifest: SkillFileInfo[];
 }
 
-export function readSkillInventory(dir: string): SkillInventory {
-  const entries: ZipEntry[] = [];
+export interface SkillTreeFile {
+  path: string;
+  full: string;
+  size: number;
+  mtimeMs: number;
+}
+
+export interface SkillTree {
+  files: SkillTreeFile[];
+  sizeBytes: number;
+  mtimeMs: number;
+  /** Changes whenever a file is added, removed, resized or rewritten. */
+  signature: string;
+}
+
+/**
+ * A skill's files by path, size and time, without reading them: enough to
+ * enforce the package bounds and to tell whether anything changed.
+ */
+export function statSkillTree(dir: string): SkillTree {
+  const files: SkillTreeFile[] = [];
   let sizeBytes = 0;
   let mtimeMs = 0;
   function walk(at: string, prefix: string, depth: number) {
@@ -35,20 +54,38 @@ export function readSkillInventory(dir: string): SkillInventory {
         const stat = lstatSync(full);
         if (!stat.isFile())
           throw new Error(`Skill file changed while reading: ${path}`);
-        if (entries.length >= SKILL_PACKAGE_MAX_FILES)
+        if (files.length >= SKILL_PACKAGE_MAX_FILES)
           throw new Error("Skill exceeds 50,000 files");
-        if (sizeBytes + stat.size > SKILL_PACKAGE_MAX_BYTES)
-          throw new Error("Skill exceeds 256 MiB of expanded content");
-        const data = readFileSync(full);
-        sizeBytes += data.length;
+        sizeBytes += stat.size;
         if (sizeBytes > SKILL_PACKAGE_MAX_BYTES)
           throw new Error("Skill exceeds 256 MiB of expanded content");
         mtimeMs = Math.max(mtimeMs, stat.mtimeMs);
-        entries.push({ path, data });
+        files.push({ path, full, size: stat.size, mtimeMs: stat.mtimeMs });
       }
     }
   }
   walk(dir, "", 0);
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const signature = createHash("sha256");
+  for (const file of files)
+    signature.update(`${file.path}\0${file.size}\0${file.mtimeMs}\0`);
+  return { files, sizeBytes, mtimeMs, signature: signature.digest("hex") };
+}
+
+export function readSkillInventory(
+  dir: string,
+  tree: SkillTree = statSkillTree(dir),
+): SkillInventory {
+  const entries: ZipEntry[] = [];
+  let sizeBytes = 0;
+  for (const file of tree.files) {
+    const data = readFileSync(file.full);
+    sizeBytes += data.length;
+    if (sizeBytes > SKILL_PACKAGE_MAX_BYTES)
+      throw new Error("Skill exceeds 256 MiB of expanded content");
+    entries.push({ path: file.path, data });
+  }
+  const mtimeMs = tree.mtimeMs;
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const hash = createHash("sha256");
   for (const { path, data } of entries)

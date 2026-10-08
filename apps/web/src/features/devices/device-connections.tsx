@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
-  AgentProfileProjection,
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
 } from "@bd777/foundry-protocol";
-import { promoteProfile, setDeviceProfiles } from "../../api";
+import { setDeviceProfiles } from "../../api";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Badge } from "../../components/ui/badge";
@@ -22,14 +21,12 @@ export function DeviceConnections({
   device,
   profiles,
   bindings,
-  detected,
   onRefresh,
   onManage,
 }: {
   device: DeviceProjection;
   profiles: ProfileDefinition[];
   bindings: DeviceProfileBinding[];
-  detected: AgentProfileProjection[];
   onRefresh: () => Promise<void>;
   onManage: () => void;
 }) {
@@ -222,50 +219,6 @@ export function DeviceConnections({
         }}
         open={pickerOpen}
       />
-      {detected.some(
-        (row) => row.connectionType !== "local_login" && !row.promotedProfileId,
-      ) ? (
-        <details>
-          <summary>{t("deviceConnections.localConfiguration")}</summary>
-          <p>{t("deviceConnections.localIntro")}</p>
-          {detected
-            .filter(
-              (row) =>
-                row.connectionType !== "local_login" && !row.promotedProfileId,
-            )
-            .map((row) => (
-              <div className="fdy-management-row" key={row.id}>
-                <span>
-                  <strong>{row.label}</strong>
-                  <small>{row.configLabel}</small>
-                </span>
-                {row.connectionType === "anthropic_compatible" ||
-                row.connectionType === "openai_compatible" ? (
-                  <ConfirmButton
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy || device.status !== "connected"}
-                    confirmLabel={t("deviceConnections.copyConfirm")}
-                    onConfirm={() =>
-                      void commitWrite(() =>
-                        promoteProfile({
-                          deviceId: device.id,
-                          profileId: row.id,
-                        }),
-                      )
-                    }
-                  >
-                    {t("deviceConnections.copyToServer")}
-                  </ConfirmButton>
-                ) : (
-                  <Badge tone="neutral">
-                    {t("deviceConnections.deviceOnly")}
-                  </Badge>
-                )}
-              </div>
-            ))}
-        </details>
-      ) : null}
     </section>
   );
 }

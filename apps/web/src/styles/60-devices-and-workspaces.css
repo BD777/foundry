@@ -539,10 +539,6 @@
   grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
 
-.fdy-device-authorization .fdy-authorization-flow {
-  grid-column: 1 / -1;
-}
-
 .fdy-device-authorization-copy {
   display: grid;
   min-width: 0;

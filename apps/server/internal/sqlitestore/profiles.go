@@ -225,6 +225,10 @@ func (s *Store) SetDeviceProfiles(ctx context.Context, input store.SetDeviceProf
 	}
 	now := formatTime(time.Now())
 	return s.withTx(ctx, func(tx *Store) error {
+		// A removed device gets no connections; its assignments were purged.
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_profiles WHERE device_id = ?`, deviceID); err != nil {
 			return fmt.Errorf("replace device %s profiles: %w", deviceID, err)
 		}

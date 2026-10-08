@@ -28,7 +28,43 @@ import {
   type KnownSkill,
 } from "./skill-dependencies.js";
 
-import { readSkillInventory, SKILL_ARCHIVE_MAX_BYTES } from "./skill-files.js";
+import {
+  readSkillInventory,
+  SKILL_ARCHIVE_MAX_BYTES,
+  statSkillTree,
+} from "./skill-files.js";
+import { foundryStatePath } from "./state-root.js";
+import { writeJSON } from "./storage.js";
+
+interface ScanCacheEntry {
+  signature: string;
+  peers: string;
+  sizeBytes: number;
+  mtimeMs: number;
+  sourceDigest: string;
+  manifest: SkillFileInfo[];
+  /** By `root\ndirName`: one physical tree can be installed in several roots. */
+  dependencies: Record<string, SkillDependency[]>;
+}
+type ScanCache = Record<string, ScanCacheEntry>;
+const scanCachePath = () => foundryStatePath("skill-scan-cache.json");
+
+function readScanCache(): ScanCache {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(scanCachePath(), "utf8"));
+    return parsed && typeof parsed === "object" ? (parsed as ScanCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeScanCache(cache: ScanCache): void {
+  try {
+    writeJSON(scanCachePath(), cache);
+  } catch {
+    // A cache that cannot be written only costs the next scan its speed.
+  }
+}
 export {
   SKILL_PACKAGE_MAX_BYTES,
   SKILL_PACKAGE_MAX_FILES,
@@ -146,6 +182,7 @@ export function scanSkillRoots(
   roots: string[],
   deviceId = "",
   analyzeDependencies = true,
+  options: { cache?: boolean } = {},
 ): ScannedSkill[] {
   const discovered: DiscoveredSkill[] = [];
 
@@ -210,17 +247,55 @@ export function scanSkillRoots(
     const dir = known[i]!.dir;
     physical.set(dir, [...(physical.get(dir) ?? []), i]);
   }
+  // A skill whose files and peers are as they were last scan reuses that
+  // scan's digest, manifest and dependencies: a re-scan only reads metadata.
+  const cache = options.cache ? readScanCache() : {};
+  const nextCache: ScanCache = {};
+  const peers = createHash("sha256")
+    .update(
+      JSON.stringify(
+        known.map((k) => [k.name, k.dir, k.root, k.dirName, k.logicalDir]),
+      ),
+    )
+    .digest("hex");
   for (const [dir, indices] of physical) {
     try {
-      const inventory = readSkillInventory(dir);
-      for (const i of indices) {
-        const skill = discovered[i]!;
-        skill.sizeBytes = inventory.sizeBytes;
-        skill.mtimeLabel = formatMtime(inventory.mtimeMs);
-        skill.sourceDigest = inventory.sourceDigest;
-        skill.manifest = inventory.manifest;
-        skill.dependencies = analyze(known[i]!, inventory.entries);
+      const tree = statSkillTree(dir);
+      const keys = indices.map(
+        (i) => `${known[i]!.root}\n${known[i]!.dirName}`,
+      );
+      let entry = cache[dir];
+      if (
+        !entry ||
+        entry.signature !== tree.signature ||
+        entry.peers !== peers ||
+        keys.some((key) => !entry!.dependencies[key])
+      ) {
+        const inventory = readSkillInventory(dir, tree);
+        entry = {
+          signature: tree.signature,
+          peers,
+          sizeBytes: inventory.sizeBytes,
+          mtimeMs: inventory.mtimeMs,
+          sourceDigest: inventory.sourceDigest,
+          manifest: inventory.manifest,
+          dependencies: Object.fromEntries(
+            indices.map((i, n) => [
+              keys[n]!,
+              analyze(known[i]!, inventory.entries),
+            ]),
+          ),
+        };
       }
+      nextCache[dir] = entry;
+      indices.forEach((i, n) => {
+        const skill = discovered[i]!;
+        skill.sizeBytes = entry!.sizeBytes;
+        skill.mtimeLabel = formatMtime(entry!.mtimeMs);
+        skill.sourceDigest = entry!.sourceDigest;
+        skill.manifest = entry!.manifest;
+        skill.dependencies = entry!.dependencies[keys[n]!]!;
+      });
     } catch (error) {
       for (const i of indices) {
         discovered[i]!.sizeBytes = -1;
@@ -229,6 +304,7 @@ export function scanSkillRoots(
       }
     }
   }
+  if (options.cache) writeScanCache(nextCache);
 
   return discovered;
 }

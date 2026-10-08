@@ -12,8 +12,8 @@ import type {
   PromotedSkill,
   SkillPromotionResolution,
 } from "@bd777/foundry-protocol";
-import { Button } from "../../components/ui/button";
-import { Checkbox } from "../../components/ui/field";
+import { Button } from "../ui/button";
+import { Checkbox } from "../ui/field";
 import {
   buildSkillPromotionSelection,
   defaultSkillPromotionReferences,
@@ -29,12 +29,15 @@ export function SkillPromotionDialog({
   online,
   onClose,
   onChanged,
+  onPromoted,
 }: {
   skill: DeviceSkill;
   skills: DeviceSkill[];
   online: boolean;
   onClose: () => void;
   onChanged: () => Promise<void>;
+  /** The server entry the skill became, e.g. to select it in a workspace. */
+  onPromoted?: (promoted: PromotedSkill) => Promise<void>;
 }) {
   const { t } = useTranslation(["skills", "common"]);
   const returnFocus = useRef(
@@ -93,13 +96,14 @@ export function SkillPromotionDialog({
       if (!sameSkillPromotionSources(plan.skills, reviewed.skills)) {
         throw new Error(t("promotion.graphChanged"));
       }
-      await promoteSkill({
+      const promoted = await promoteSkill({
         ...input,
         planDigest: reviewed.digest,
         includeRelated: related,
         resolutions,
       });
       await onChanged();
+      await onPromoted?.(promoted);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

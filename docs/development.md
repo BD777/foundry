@@ -193,7 +193,7 @@ pnpm --filter @bd777/foundry-worker foundry-worker -- uninstall-service
 A `mock` runtime remains as the deterministic test baseline; `claude` and `codex` run through agent profiles. A profile is a concrete account, endpoint, command, and env bundle on one device; the runtime is only `claude` or `codex`. Provider credentials and unrestricted session metadata stay on the machine running `foundry-worker`.
 The daemon reports redacted device profiles, workspace-specific agents, root file metadata, and read-only file content over the WebSocket control channel so the server never reads the user's filesystem directly.
 
-Sessions run through the native SDK (Claude Agent SDK, Codex SDK) and fall back to the local CLI automatically when the SDK cannot be loaded or fails to start. `foundry-worker providers` reports a runtime as runnable when either its SDK or its CLI is present; `FOUNDRY_CLAUDE_BIN` and `FOUNDRY_CODEX_BIN` point at a CLI outside the usual locations.
+Sessions run through the native SDK (Claude Agent SDK, Codex SDK), which drives the device's own `claude` or `codex` program. There is no CLI fallback: an SDK error is the session's error. `foundry-worker providers` reports a runtime as runnable when that program is installed; `FOUNDRY_CLAUDE_BIN` and `FOUNDRY_CODEX_BIN` point at a CLI outside the usual locations.
 
 Settings diagnostics stay read-only. Chat sessions are intentionally a thin GUI over the selected local agent profile: they are the person's own agent on the paired machine and behave as it does in their terminal. They load the device's own Claude / Codex settings, project instructions and MCP servers, use the software installed there, and leave any edits in the local workspace. Nobody is there to answer a permission prompt, so unless the profile chooses otherwise Claude runs with `bypassPermissions` and Codex with `danger-full-access` (approval `never`); a stricter profile setting is honoured. Only Issue stages run in an OS sandbox, and a sandbox limits writes and hides Foundry's own state, never the device's installed software.
 
@@ -256,7 +256,7 @@ Once installed, the machine has a local command that needs no download:
 
 ```bash
 ~/.foundry/bin/foundry-worker doctor      # this device, its Claude Code and Codex, its workspace
-~/.foundry/bin/foundry-worker update      # latest version, then restart
+~/.foundry/bin/foundry-worker update      # the server's version, then restart
 ~/.foundry/bin/foundry-worker status
 ~/.foundry/bin/foundry-worker uninstall   # --purge also removes local state
 ```
@@ -277,12 +277,42 @@ A device installed before 0.5.4 has no local command yet; it gets one after
   signature and grants survive them.
 - `update` installs the new version next to the current one, keeps the previous
   one for a manual rollback and restarts the service.
-- `node-pty` is optional: without a C/C++ toolchain on Linux the worker still
-  installs, and only signing in to Claude or Codex from the web needs it.
-- Until the packages are published, install from tarballs: `pnpm --filter
-@bd777/foundry-protocol pack` and `pnpm --filter @bd777/foundry-worker pack`, then
-  `npm exec --package=<protocol.tgz> --package=<worker.tgz> -- foundry-worker
-install … --from <protocol.tgz> --from <worker.tgz>`.
+- Nothing native is installed: the runtime is the worker and the Claude and
+  Codex SDKs. Signing in to Claude Code or Codex happens on the device, in their
+  own CLI; Foundry reads the login it finds.
+- `--from <spec>` (repeatable) installs or updates from given npm specs or
+  tarballs instead.
+
+### A server that serves its own worker build
+
+To try a worker build on real devices before an npm release, let the server
+serve it. Pack the checkout into a directory outside it, and start the server
+with that directory:
+
+```bash
+pnpm pack:worker-release --out ~/.foundry/server/worker-packages
+FOUNDRY_WORKER_PACKAGES=~/.foundry/server/worker-packages pnpm dev:server
+```
+
+The packages get a build version (`0.5.7-dev.2.gc258bdd`: next patch, commits
+since the last release tag, commit; plus a timestamp with uncommitted
+changes). The server reads `release.json` on every request, so repacking takes
+effect without a restart. `GET /api/worker/release` names the packages, and
+without `FOUNDRY_WORKER_PACKAGES` it answers `{"source":"npm"}`.
+
+Workers follow their server: `install` and `update` take its packages when it
+serves them, the npm release otherwise. Devices → Add device then shows
+commands that run the server's build through npx, with nothing installed
+beforehand:
+
+```bash
+npx -y --package=<server>/api/worker/packages/<protocol>.tgz \
+  --package=<server>/api/worker/packages/<worker>.tgz foundry-worker install --server <server> --token <pairing-token>
+```
+
+A device on the npm release (or any worker older than this behaviour) switches
+once with the same npx prefix and `update`; afterwards its local `update`
+follows the server.
 
 ## Verify
 

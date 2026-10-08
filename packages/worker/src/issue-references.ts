@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { ChatAttachment, Issue } from "@bd777/foundry-protocol";
 import { EvidenceStore } from "./evidence-store.js";
 import { ExecutionStore } from "./execution-storage.js";
-import { referenceFiles } from "./reference-files.js";
+import { referenceFile } from "./reference-files.js";
 import type { IssueEnvironment } from "./execution-types.js";
 
 /** Where an Issue's reference materials are readable by its processes. */
@@ -16,8 +16,7 @@ export function issueReferencesDirectory(
 /**
  * The reference materials the confirmed contract names (goal and rubric
  * media), as read-only files beside the candidate, for the execution to look
- * at. They are targets to work towards, never evidence of the result. A PDF
- * also comes as its extracted text, for runtimes that cannot read PDFs.
+ * at. They are targets to work towards, never evidence of the result.
  */
 export async function issueReferences(
   environment: IssueEnvironment,
@@ -45,13 +44,14 @@ export async function issueReferences(
     if (seen.has(materialId)) continue;
     seen.add(materialId);
     const material = materials.getMaterial(materialId);
-    const { original, text } = await referenceFiles(
-      directory,
-      material,
-      caption || material.name,
-      materials.readMaterial(materialId),
+    attachments.push(
+      referenceFile(
+        directory,
+        material,
+        caption || material.name,
+        materials.readMaterial(materialId),
+      ),
     );
-    attachments.push(original, ...(text ? [text] : []));
   }
   return attachments;
 }

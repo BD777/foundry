@@ -56,13 +56,19 @@ export const skills: Translation<typeof en> = {
     dismissNotice: "关闭提示",
     dismiss: "关闭",
     emptyTitle: "服务器上还没有 Skill",
-    emptyBody: "先在设备的 Skills 页发布一个本地 Skill，再回到这里选择。",
+    emptyBody:
+      "可以从下方这个工作区所在设备上添加，或在其他设备的 Skills 页发布。",
     goToDevices: "前往设备",
     duplicateNames: "每个调用名只能选一个服务器条目：{{names}}。",
     selectedCount: "已选 {{count}} 个",
     saveSelection: "保存选择",
     searchPlaceholder: "按名称或描述筛选 Skill",
     title: "此工作区可用的 Skill",
+    localTitle: "{{device}} 上有、服务器上还没有的",
+    localDescription:
+      "{{device}} 扫描目录里的 Skill。点「添加到工作区」会发布到服务器并在这个工作区启用；如果服务器上有同名但内容不同的，会先让你对比确认。",
+    localSearchPlaceholder: "筛选本地 Skill",
+    addLocal: "添加到工作区",
   },
   device: {
     serverFilter: {
@@ -88,9 +94,10 @@ export const skills: Translation<typeof en> = {
     scanNow: "立即扫描",
     offline: "设备离线。连接后才能扫描或发布本地 Skill。",
     description:
-      "发布到服务器目录后，工作区才能使用它。服务器状态以设备最近一次扫描为准。",
-    emptyTitle: "还没有扫描到本地 Skill",
-    emptyBody: "连接设备并运行一次扫描，即可列出它的 Skill。",
+      "这台设备扫描目录里的 Skill，以及它们和服务器版本的对比。要使用某个 Skill，可以在工作区的 Skills 里添加，或在这里发布。",
+    emptyTitle: "这台设备上还没有找到 Skill",
+    emptyBody:
+      "设备连接时以及之后每 30 分钟会自动扫描 Skill 目录；点「立即扫描」可马上检查。",
     compare: "比较",
     reviewPromote: "检查并发布",
     searchPlaceholder: "按名称或描述筛选本地 Skill",

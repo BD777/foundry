@@ -35,6 +35,12 @@ func (s *Store) assertWorkspaceClaimable(ctx context.Context, workspaceID, devic
 
 func (s *Store) RegisterDaemon(ctx context.Context, input store.DaemonRegistration) error {
 	now := time.Now().UTC()
+	// A name given on the server outlives the hostname the worker reports.
+	if name, err := s.deviceDisplayName(ctx, input.Device.ID); err != nil {
+		return err
+	} else if name != "" {
+		input.Device.Label = name
+	}
 	input.Workspace.DeviceID = input.Device.ID
 	input.Workspace.DeviceLabel = input.Device.Label
 	return s.withTx(ctx, func(tx *Store) error {

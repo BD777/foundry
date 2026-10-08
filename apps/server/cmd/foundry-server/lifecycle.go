@@ -50,6 +50,23 @@ func run(ctx context.Context, deps dependencies) error {
 	if _, ok := backing.(store.AccountStore); !ok {
 		return errors.New("the configured store does not support accounts")
 	}
+	// A starting server holds no connections: presence recorded before a
+	// crash or restart is stale until each worker reconnects.
+	if presence, ok := backing.(interface {
+		MarkAllDevicesOffline(context.Context) error
+	}); ok {
+		if err := presence.MarkAllDevicesOffline(ctx); err != nil {
+			return err
+		}
+	}
+	// Devices removed before removal cascaded still hold live state.
+	if purger, ok := backing.(interface {
+		PurgeRemovedDevicesState(context.Context) error
+	}); ok {
+		if err := purger.PurgeRemovedDevicesState(ctx); err != nil {
+			return err
+		}
+	}
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)
 	httpServer := newHTTPServer(cfg, api.Routes())
 	if code := api.SetupCode(); code != "" {

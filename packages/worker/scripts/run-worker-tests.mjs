@@ -504,51 +504,12 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "session-workspace.test.mjs",
 ]);
 
-/**
- * node-pty ships its spawn-helper without the executable bit surviving the
- * package extraction, and the product code self-heals with a chmod on first
- * use. Inside the sandbox that chmod targets node_modules, which the write
- * allowlist denies, so a freshly cloned checkout fails a test that passes on
- * any machine where an earlier unsandboxed run already fixed the bit -- the
- * failure follows the checkout's age, not the code. Normalising it here, in
- * the launcher, which always runs unsandboxed, keeps the sandbox strict and
- * makes the first run on a new clone behave like every later one.
- */
-function normalizePtySpawnHelper() {
-  if (platform() === "win32") return;
-  const helper = join(
-    workerRoot,
-    "node_modules",
-    "node-pty",
-    "prebuilds",
-    `${platform()}-${process.arch}`,
-    "spawn-helper",
-  );
-  if (!existsSync(helper)) return;
-  try {
-    accessSync(helper, constants.X_OK);
-  } catch {
-    try {
-      chmodSync(helper, statSync(helper).mode | 0o111);
-      console.warn(
-        "[worker-test-launcher] restored the executable bit on node-pty's " +
-          "spawn-helper (lost during package extraction).",
-      );
-    } catch (error) {
-      console.warn(
-        `[worker-test-launcher] could not chmod node-pty spawn-helper: ${error.message}`,
-      );
-    }
-  }
-}
-
 function runTests() {
   if (!existsSync(distEntry)) {
     fail(
       "dist/ is missing; build first (pnpm build) so tests load compiled modules.",
     );
   }
-  normalizePtySpawnHelper();
   const scratch = makeScratch();
   const scratchTmp = join(scratch, "tmp");
   const scratchState = join(scratch, "state");

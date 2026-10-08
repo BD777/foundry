@@ -6,7 +6,15 @@ const exec = promisify(execFile);
 export async function git(
   cwd: string,
   args: string[],
-  input?: { optional?: boolean; env?: NodeJS.ProcessEnv },
+  input?: {
+    optional?: boolean;
+    env?: NodeJS.ProcessEnv;
+    /**
+     * Work that grows with the size of the workspace (listing, staging or
+     * committing every file): no time limit and room for long output.
+     */
+    bulk?: boolean;
+  },
 ): Promise<string> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -36,7 +44,9 @@ export async function git(
         cwd,
         ...args,
       ],
-      { env, maxBuffer: 32 * 1024 * 1024, timeout: 60_000 },
+      input?.bulk
+        ? { env, maxBuffer: 1024 * 1024 * 1024, timeout: 0 }
+        : { env, maxBuffer: 32 * 1024 * 1024, timeout: 60_000 },
     );
     return result.stdout.trimEnd();
   } catch (error) {
@@ -55,14 +65,21 @@ export const commitIdentity = {
   GIT_COMMITTER_EMAIL: "foundry@localhost",
 };
 
-export async function gitCommit(cwd: string, message: string): Promise<string> {
+export async function gitCommit(
+  cwd: string,
+  message: string,
+  options: { bulk?: boolean } = {},
+): Promise<string> {
   if (
-    (await git(cwd, ["diff", "--cached", "--name-only"])) ||
+    (await git(cwd, ["diff", "--cached", "--name-only"], options)) ||
     (await git(cwd, ["rev-parse", "--quiet", "--verify", "MERGE_HEAD"], {
       optional: true,
     }))
   ) {
-    await git(cwd, ["commit", "-m", message], { env: commitIdentity });
+    await git(cwd, ["commit", "-m", message], {
+      env: commitIdentity,
+      bulk: options.bulk,
+    });
   }
   return git(cwd, ["rev-parse", "HEAD"]);
 }

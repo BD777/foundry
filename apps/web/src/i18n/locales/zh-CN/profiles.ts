@@ -115,12 +115,22 @@ export const profiles: Translation<typeof en> = {
     retrying: "正在重试…",
     retryRefresh: "重新刷新",
     saveFailed: "无法保存这项改动。",
-    localConfiguration: "本地配置",
-    localIntro:
-      "在这台设备上检测到。除非你明确把连接和密钥复制到服务器，否则只保留在本地。",
-    copyConfirm: "复制连接和密钥？",
+  },
+  providers: {
+    title: "这台设备上配置的",
+    intro:
+      "{{device}} 自己的 Claude Code 或 Codex 配置里设置的 API Provider。每个都通过它的 Agent 实际跑过一轮简短对话来验证；可用的在聊天里直接选择即可，不需要额外设置。",
+    ready: "可直接使用",
+    from: "来自 {{source}}",
+    answered: "{{time}} 验证",
+    onServer: "已复制到服务器",
     copyToServer: "复制到服务器",
-    deviceOnly: "仅限设备",
+    copyConfirm: "复制连接和密钥？",
+    copying: "复制中…",
+    copyFailed: "无法把这个 Provider 复制到服务器。",
+    checking: "正在验证 {{names}} 能否正常回复…",
+    notAnswering:
+      "未提供：{{name}} 无法回复（{{reason}}）。如果不再使用，可以从 {{source}} 中删除。",
   },
   assignment: {
     title: "选择服务器连接",
@@ -145,7 +155,6 @@ export const profiles: Translation<typeof en> = {
     notInstalled: "未安装",
     unavailable: "不可用",
     workerNoLogin: "Worker：未登录",
-    reauthorizeLabel: "在 {{device}} 上重新授权 {{name}}",
     installCli: "安装 {{name}}",
     installCliConfirm: "在 {{device}} 上运行安装程序？",
     installCliLabel: "在 {{device}} 上安装 {{name}}",
@@ -156,12 +165,15 @@ export const profiles: Translation<typeof en> = {
     installCliLog: "安装输出",
     cliOutdated:
       "{{device}} 上的 {{name}} {{version}} 低于 Foundry 需要的 {{minimum}}，请在那台设备上更新：{{command}}",
-    signInLabel: "在 {{device}} 上登录 {{name}}",
-    reauthorize: "重新授权",
-    signIn: "登录",
+    startFailed: "无法在设备上执行这个操作。",
+    signInHintClaude:
+      "未登录。请在 {{device}} 的终端里运行 claude，用 /login 登录，然后点“重新检测”。",
+    signInHintCodex:
+      "未登录。请在 {{device}} 的终端里运行 codex login，然后点“重新检测”。",
+    checkAgain: "重新检测",
+    checkAgainLabel: "重新检测 {{device}} 上的 {{name}} 登录",
+    checking: "正在检测…",
     checkFailed: "无法检查登录状态。",
-    startFailed: "无法在这台设备上开始登录。",
-    loginFailed: "登录失败。",
     legacyTitle: "早期的官方连接设置（{{count}}）",
     legacyIntro:
       "为已有会话保留；它们是运行时预设，不是独立账号。新的登录使用上面的设备账号。历史记录没有任何改动。",

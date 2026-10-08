@@ -20,6 +20,7 @@ import { ProfileList } from "./profile-list";
 import { ConnectionDevices } from "./connection-devices";
 import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
+import { liveDevices } from "../../lib/devices";
 
 export type ProfilesFeatureEvent =
   | { type: "save-profile"; input: SaveProfileInput }
@@ -216,7 +217,7 @@ export function ProfilesFeature({
               </section>
               {state.selectedProfile ? (
                 <ConnectionDevices
-                  devices={devices}
+                  devices={liveDevices(devices)}
                   bindings={deviceProfiles}
                   profile={state.selectedProfile}
                   onSave={(deviceId, profileIds) =>

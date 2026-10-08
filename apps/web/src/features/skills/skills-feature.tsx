@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type {
@@ -15,6 +15,7 @@ import {
   toNormalizedPromotedSkill,
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
+import { LocalSkillsSection, localOnlySkills } from "./local-skills-section";
 import {
   resolveSkillSelection,
   toggleSkillSelection,
@@ -31,6 +32,8 @@ export interface SkillsFeatureProps {
   devices: DeviceProjection[];
   deviceSkills?: DeviceSkill[];
   workspaceId: string;
+  /** The device this workspace runs on; its local skills can be added here. */
+  workspaceDeviceId?: string;
   /** Why the caller cannot change this workspace's skill selection. */
   readOnlyReason?: string;
   onEvent?: (event: SkillsFeatureEvent) => void;
@@ -50,6 +53,7 @@ export function SkillsFeature({
   devices,
   deviceSkills,
   workspaceId,
+  workspaceDeviceId,
   readOnlyReason,
   embedded,
   onChanged,
@@ -121,12 +125,52 @@ export function SkillsFeature({
     return [...duplicates];
   }, [catalog, resolution.selectedIds]);
 
+  // A skill added from the workspace's device is selected once it is in the
+  // catalog (see LocalSkillsSection).
+  const workspaceDevice = devices.find((d) => d.id === workspaceDeviceId);
+  const [pendingSelect, setPendingSelect] = useState<string>();
+  useEffect(() => {
+    if (!pendingSelect || !normalizedSkills.some((s) => s.id === pendingSelect))
+      return;
+    setPendingSelect(undefined);
+    if (resolution.selectedIds.has(pendingSelect)) return;
+    const result = toggleSkillSelection(
+      pendingSelect,
+      normalizedSkills,
+      explicitlySelected,
+      deselectedRelated,
+    );
+    if (!result.allowed) {
+      setError(result.blockedReason);
+      return;
+    }
+    setExplicitlySelected(result.nextExplicit);
+    setDeselectedRelated(result.nextDeselectedRelated);
+    void persist(
+      resolveSkillSelection(
+        normalizedSkills,
+        result.nextExplicit,
+        result.nextDeselectedRelated,
+      ).selectedIds,
+    );
+  }, [
+    pendingSelect,
+    normalizedSkills,
+    resolution.selectedIds,
+    explicitlySelected,
+    deselectedRelated,
+  ]);
+
   async function save(): Promise<void> {
     if (duplicateNames.length) return;
+    await persist(resolution.selectedIds);
+  }
+
+  async function persist(selectedIds: Set<string>): Promise<void> {
     setSaving(true);
     setError(undefined);
     try {
-      await setWorkspaceSkills(workspaceId, [...resolution.selectedIds]);
+      await setWorkspaceSkills(workspaceId, [...selectedIds]);
       await onChanged?.();
     } catch (saveError) {
       setError(
@@ -192,14 +236,19 @@ export function SkillsFeature({
         emptyState={{
           title: t("workspace.emptyTitle"),
           body: t("workspace.emptyBody"),
-          action: (
-            <Button
-              onClick={() => onEvent?.({ type: "manage-devices.requested" })}
-            >
-              {t("workspace.goToDevices")}
-              <ArrowRight size={14} />
-            </Button>
-          ),
+          // With skills to add from this workspace's device right below,
+          // sending people to Devices would be a detour.
+          action:
+            workspaceDeviceId &&
+            localOnlySkills(deviceSkills ?? [], workspaceDeviceId)
+              .length ? undefined : (
+              <Button
+                onClick={() => onEvent?.({ type: "manage-devices.requested" })}
+              >
+                {t("workspace.goToDevices")}
+                <ArrowRight size={14} />
+              </Button>
+            ),
         }}
         headerActions={
           catalog.length > 0 ? (
@@ -259,6 +308,18 @@ export function SkillsFeature({
         statusFilterValue={statusFilter}
         title={t("workspace.title")}
       />
+
+      {workspaceDevice ? (
+        <LocalSkillsSection
+          device={workspaceDevice}
+          deviceSkills={deviceSkills ?? []}
+          readOnly={!!readOnlyReason}
+          onChanged={async () => {
+            await onChanged?.();
+          }}
+          onPromoted={(id) => setPendingSelect(id)}
+        />
+      ) : null}
     </PageSurface>
   );
 }

@@ -28,6 +28,20 @@ export const agents = {
     "workspace-write": "Workspace write",
     "danger-full-access": "Full access (dangerous)",
   },
+  permissionShort: {
+    claude: {
+      acceptEdits: "Accept edits",
+      auto: "Auto",
+      bypassPermissions: "Full access",
+      dontAsk: "Don't ask",
+      plan: "Plan",
+    },
+    codex: {
+      "read-only": "Read only",
+      "workspace-write": "Workspace",
+      "danger-full-access": "Full access",
+    },
+  },
   codexSandboxSummary: {
     "read-only": "Read-only access",
     "workspace-write": "Can write in the current workspace",

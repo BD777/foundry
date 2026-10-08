@@ -34,7 +34,7 @@ export type DevicePairingMode = "auto" | "offline" | "online";
 
 export interface AppRoute {
   selectedDeviceId?: string;
-  deviceSection?: "workspaces" | "resources" | "agents" | "skills" | "settings";
+  deviceSection?: "resources" | "agents" | "skills" | "settings";
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -69,7 +69,10 @@ export function parseAppRoute(pathname: string): AppRoute {
   const [section, id] = segments;
   switch (section) {
     case "locations":
-      return { view: "locations" };
+      // /locations/<device> brings that device's workspaces into view.
+      return id
+        ? { view: "locations", selectedDeviceId: decodePathSegment(id) }
+        : { view: "locations" };
     case "account":
       return { view: "account" };
     case "members":
@@ -79,17 +82,19 @@ export function parseAppRoute(pathname: string): AppRoute {
     case "chats":
       return { view: "chats", selectedChatId: decodePathSegment(id) };
     case "devices":
+      // A device's workspaces moved to /locations; old links still land there.
+      if (id && segments[2] === "workspaces")
+        return { view: "locations", selectedDeviceId: decodePathSegment(id) };
       return id
         ? {
             view: "devices",
             selectedDeviceId: decodePathSegment(id),
             deviceSection:
               segments[2] === "resources" ||
-              segments[2] === "agents" ||
               segments[2] === "skills" ||
               segments[2] === "settings"
                 ? segments[2]
-                : "workspaces",
+                : "agents",
           }
         : { view: "devices" };
     case "issues":
@@ -125,7 +130,9 @@ export function parseAppRoute(pathname: string): AppRoute {
 export function pathForAppRoute(route: AppRoute): string {
   switch (route.view) {
     case "locations":
-      return "/locations";
+      return route.selectedDeviceId
+        ? `/locations/${encodePathSegment(route.selectedDeviceId)}`
+        : "/locations";
     case "account":
       return "/account";
     case "members":
@@ -138,7 +145,7 @@ export function pathForAppRoute(route: AppRoute): string {
         : "/chats";
     case "devices":
       return route.selectedDeviceId
-        ? `/devices/${encodePathSegment(route.selectedDeviceId)}/${route.deviceSection ?? "workspaces"}`
+        ? `/devices/${encodePathSegment(route.selectedDeviceId)}/${route.deviceSection ?? "agents"}`
         : "/devices";
     case "issue":
       return route.selectedIssueId

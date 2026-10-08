@@ -27,6 +27,40 @@ type DeviceProjection struct {
 	// Capabilities are the protocol features its worker declared at its
 	// last registration; an older worker declares none.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// Worker is the build the device's worker runs and the command that
+	// updates it there, reported at registration (0.5.7 and later).
+	Worker *DeviceWorker `json:"worker,omitempty"`
+	// System describes the machine, reported at registration (0.5.7 and later).
+	System *DeviceSystem `json:"system,omitempty"`
+	// WorkerUpdate is set while an update requested from Foundry runs; the
+	// server adds it to projections, the worker never reports it.
+	WorkerUpdate *DeviceWorkerUpdate `json:"workerUpdate,omitempty"`
+}
+
+// DeviceWorkerUpdate is an update in progress: when it was asked for and the
+// version it brings.
+type DeviceWorkerUpdate struct {
+	StartedAt string `json:"startedAt"`
+	Version   string `json:"version,omitempty"`
+}
+
+// DeviceSystem describes the machine, as its worker reports it.
+type DeviceSystem struct {
+	Hostname    string `json:"hostname"`
+	OS          string `json:"os"`
+	OSVersion   string `json:"osVersion,omitempty"`
+	Kernel      string `json:"kernel,omitempty"`
+	Arch        string `json:"arch"`
+	CPUModel    string `json:"cpuModel,omitempty"`
+	CPUCount    int    `json:"cpuCount,omitempty"`
+	MemoryBytes int64  `json:"memoryBytes,omitempty"`
+	User        string `json:"user,omitempty"`
+	NodeVersion string `json:"nodeVersion,omitempty"`
+}
+
+type DeviceWorker struct {
+	Version string `json:"version"`
+	Command string `json:"command,omitempty"`
 }
 
 // DeviceResource is a capability already present on a device that sessions
@@ -96,35 +130,44 @@ type NativeAccountUsage struct {
 	ResetsAt      *float64 `json:"resetsAt,omitempty"`
 }
 
+type AgentProfileCheck struct {
+	Status    string `json:"status"`
+	CheckedAt string `json:"checkedAt,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
 type AgentProfileProjection struct {
-	AccountLabel         string   `json:"accountLabel,omitempty"`
-	ID                   string   `json:"id"`
-	DeviceID             string   `json:"deviceId"`
-	Runtime              string   `json:"runtime"`
-	Label                string   `json:"label"`
-	Fingerprint          string   `json:"fingerprint,omitempty"`
-	Status               string   `json:"status"`
-	AuthMode             string   `json:"authMode"`
-	SecretStored         string   `json:"secretStored"`
-	ServerCredential     bool     `json:"serverCredential,omitempty"`
-	ConfigScope          string   `json:"configScope"`
-	ConfigLabel          string   `json:"configLabel"`
-	ConnectionType       string   `json:"connectionType"`
-	Model                string   `json:"model,omitempty"`
-	Models               []string `json:"models,omitempty"`
-	PromptPrefix         string   `json:"promptPrefix,omitempty"`
-	ClaudeEffort         string   `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string   `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string   `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string   `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string   `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string   `json:"codexSpeed,omitempty"`
-	BaseURL              string   `json:"baseUrl,omitempty"`
-	CommandLabel         string   `json:"commandLabel,omitempty"`
-	Origin               string   `json:"origin"`
-	PromotedProfileID    string   `json:"promotedProfileId,omitempty"`
-	LastSeenLabel        string   `json:"lastSeenLabel"`
-	StatusDetail         string   `json:"statusDetail,omitempty"`
+	AccountLabel         string             `json:"accountLabel,omitempty"`
+	ID                   string             `json:"id"`
+	DeviceID             string             `json:"deviceId"`
+	Runtime              string             `json:"runtime"`
+	Label                string             `json:"label"`
+	Fingerprint          string             `json:"fingerprint,omitempty"`
+	Status               string             `json:"status"`
+	AuthMode             string             `json:"authMode"`
+	SecretStored         string             `json:"secretStored"`
+	ServerCredential     bool               `json:"serverCredential,omitempty"`
+	ConfigScope          string             `json:"configScope"`
+	ConfigLabel          string             `json:"configLabel"`
+	ConfigSection        string             `json:"configSection,omitempty"`
+	Check                *AgentProfileCheck `json:"check,omitempty"`
+	Shareable            bool               `json:"shareable,omitempty"`
+	ConnectionType       string             `json:"connectionType"`
+	Model                string             `json:"model,omitempty"`
+	Models               []string           `json:"models,omitempty"`
+	PromptPrefix         string             `json:"promptPrefix,omitempty"`
+	ClaudeEffort         string             `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string             `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string             `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string             `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string             `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string             `json:"codexSpeed,omitempty"`
+	BaseURL              string             `json:"baseUrl,omitempty"`
+	CommandLabel         string             `json:"commandLabel,omitempty"`
+	Origin               string             `json:"origin"`
+	PromotedProfileID    string             `json:"promotedProfileId,omitempty"`
+	LastSeenLabel        string             `json:"lastSeenLabel"`
+	StatusDetail         string             `json:"statusDetail,omitempty"`
 }
 
 // ProfileDefinition is a control-plane owned profile. It carries no DeviceID
@@ -195,24 +238,6 @@ type SetDeviceProfilesInput struct {
 type PromoteProfileInput struct {
 	DeviceID  string `json:"deviceId"`
 	ProfileID string `json:"profileId"`
-}
-
-type ProfileAuthorization struct {
-	ID        string `json:"id"`
-	ProfileID string `json:"profileId"`
-	Runtime   string `json:"runtime"`
-	Status    string `json:"status"`
-	URL       string `json:"url,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Message   string `json:"message,omitempty"`
-}
-
-type StartProfileAuthorizationInput struct {
-	DeviceID string `json:"deviceId"`
-}
-
-type CompleteProfileAuthorizationInput struct {
-	AuthorizationResult string `json:"authorizationResult,omitempty"`
 }
 
 type AgentProjection struct {

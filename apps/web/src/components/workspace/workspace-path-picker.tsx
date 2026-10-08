@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDirectoryEntry } from "@bd777/foundry-protocol";
 import { listWorkspaceSubdirectories } from "../../api";
-import { fieldVariants } from "../../components/ui/field";
+import { fieldVariants } from "../ui/field";
 import {
   matchesFolderQuery,
   workspacePathLookup,
@@ -67,12 +67,15 @@ export function WorkspacePathPicker({
     };
   }, [deviceId, lookupPath, offline]);
 
+  // Closes after a click outside completes, not on pointerdown: the list sits
+  // in the dialog's flow, so closing it moves the footer, and a button that
+  // moves between press and release never receives the click.
   useEffect(() => {
-    const close = (event: PointerEvent) => {
+    const close = (event: MouseEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
   }, []);
 
   const suggestions = useMemo(() => {

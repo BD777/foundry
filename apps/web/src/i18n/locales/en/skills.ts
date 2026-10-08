@@ -57,7 +57,7 @@ export const skills = {
     dismiss: "Dismiss",
     emptyTitle: "No skills on the server yet",
     emptyBody:
-      "Promote a local skill from a device's Skills tab, then select it here.",
+      "Add one from this workspace's device below, or publish one from another device's Skills tab.",
     goToDevices: "Go to Devices",
     duplicateNames:
       "Choose only one server entry for each invocation name: {{names}}.",
@@ -65,6 +65,11 @@ export const skills = {
     saveSelection: "Save selection",
     searchPlaceholder: "Filter skills by name or description",
     title: "Skills available to this workspace",
+    localTitle: "On {{device}}, not on the server yet",
+    localDescription:
+      "Skills in {{device}}'s scan folders. Add one to publish it to the server and use it in this workspace; a different same-named server entry is shown for review first.",
+    localSearchPlaceholder: "Filter local skills",
+    addLocal: "Add to workspace",
   },
   device: {
     serverFilter: {
@@ -90,9 +95,10 @@ export const skills = {
     scanNow: "Scan now",
     offline: "Device offline. Connect it to scan or promote local skills.",
     description:
-      "Promote one to publish it to the server catalog so a workspace can use it. Server status reflects the last device scan.",
-    emptyTitle: "No local skills scanned yet",
-    emptyBody: "Connect the device and run a scan to list its skills.",
+      "Skills in this device's scan folders and how they compare with the server. To use one, add it from a workspace's Skills, or publish it here.",
+    emptyTitle: "No skills found on this device yet",
+    emptyBody:
+      "The device scans its skill folders when it connects and every 30 minutes; Scan now checks right away.",
     compare: "Compare",
     reviewPromote: "Review & promote",
     searchPlaceholder: "Filter local skills by name or description",

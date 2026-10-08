@@ -171,16 +171,13 @@ test("removed devices are excluded from new selection; their workspaces stay rea
       { id: "ws-ghost", name: "ghost-ws", deviceId: "ghost", localPath: "/g" },
     ],
   });
-  // A removed device that is not the current context is not offered at all.
-  const deviceButtons = () => [
-    ...view.container.querySelectorAll(".fdy-location-device-list button"),
-  ];
-  assert.equal(
-    deviceButtons().some((b) => b.textContent.includes("ghost-machine")),
-    false,
-    "non-current removed device hidden from selection",
+  // A removed device that is not the current context is not listed at all,
+  // and neither are its workspaces.
+  const groups = [...view.container.querySelectorAll(".fdy-location-group")];
+  assert.deepEqual(
+    groups.map((group) => group.getAttribute("aria-label")),
+    ["live"],
   );
-  // Its workspaces cannot appear while previewing the live device.
   assert.equal(view.container.textContent.includes("ghost-ws"), false);
   await view.cleanup();
 });
@@ -202,12 +199,18 @@ test("current context on a removed device stays visible read-only and cannot swi
       { id: "ws-ghost", name: "ghost-ws", deviceId: "ghost", localPath: "/g" },
     ],
   });
-  const deviceRow = [
-    ...view.container.querySelectorAll(".fdy-location-device-list button"),
-  ].find((b) => b.textContent.includes("ghost-machine"));
-  assert.ok(deviceRow, "current removed device is still shown");
-  assert.equal(deviceRow.disabled, true, "removed device row not selectable");
-  assert.match(deviceRow.textContent, /Removed/);
+  const ghostGroup = view.container.querySelector(
+    '.fdy-location-group[aria-label="ghost-machine"]',
+  );
+  assert.ok(ghostGroup, "current removed device is still shown, first");
+  assert.equal(view.container.querySelector(".fdy-location-group"), ghostGroup);
+  assert.match(ghostGroup.textContent, /Removed/);
+  assert.equal(
+    [...ghostGroup.querySelectorAll(".fdy-location-group-heading button")]
+      .length,
+    0,
+    "a removed device offers no folder or device actions",
+  );
 
   const ghostRow = view.container.querySelector(
     '.fdy-location-workspace-row[data-current="true"]',
@@ -239,18 +242,29 @@ test("current context on a removed device stays visible read-only and cannot swi
   await view.cleanup();
 });
 
-test("adding or repairing a device is a heading action that asks the shell, not a block under the lists", async () => {
-  const view = await setup();
-  const heading = view.container.querySelector(
-    ".fdy-location-device-list .fdy-location-column-heading",
+test("each device group adds folders on that device and opens the device itself", async () => {
+  const view = await setup({
+    devices: [
+      { id: "dev", label: "mac", status: "connected", owned: true },
+      { id: "dev2", label: "linux", status: "connected", owned: true },
+    ],
+  });
+  const linux = view.container.querySelector(
+    '.fdy-location-group[aria-label="linux"]',
   );
-  assert.ok(heading, "the device column has a heading row");
-  const button = [...heading.querySelectorAll("button")].find((b) =>
-    b.textContent.includes("Add or repair device"),
+  const buttons = [
+    ...linux.querySelectorAll(".fdy-location-group-heading button"),
+  ];
+  await view.click(buttons.find((b) => b.textContent.includes("Device")));
+  assert.deepEqual(view.events.at(-1), {
+    type: "device.open.requested",
+    deviceId: "dev2",
+  });
+  await view.click(
+    buttons.find((b) => b.textContent.includes("Add workspace")),
   );
-  assert.ok(button, "the action sits in the heading");
-  await view.click(button);
-  assert.deepEqual(view.events.at(-1), { type: "device.add.requested" });
-  assert.equal(view.container.querySelector(".fdy-location-device-help"), null);
+  const dialog = window.document.querySelector('[role="dialog"]');
+  assert.ok(dialog, "the add-folder dialog opens in place");
+  assert.match(dialog.textContent, /linux/, "it adds the folder to linux");
   await view.cleanup();
 });

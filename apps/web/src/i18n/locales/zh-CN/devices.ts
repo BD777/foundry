@@ -30,7 +30,8 @@ export const devices: Translation<typeof en> = {
     offline:
       "这台设备已离线。已保存的工作区和历史仍可查看；登录和执行需要设备重新连接。",
     sections: "设备分区",
-    sectionWorkspaces: "工作区",
+    workspacesLink_one: "{{count}} 个工作区",
+    workspacesLink_other: "{{count}} 个工作区",
     sectionResources: "资源",
     sectionAgents: "模型与账号",
     sectionSkills: "Skills",
@@ -38,6 +39,61 @@ export const devices: Translation<typeof en> = {
     sharedTitle: "与你共享",
     sharedBody:
       "你通过工作区访问这台设备。模型、账号、Skills 和设置由配对它的账号管理。",
+  },
+  rename: {
+    action: "重命名",
+    title: "重命名设备",
+    description:
+      "所有能看到这台设备的人都会看到这个名字。主机名 {{hostname}} 仍会显示在设备详情中。",
+    label: "设备名称",
+    submit: "保存名称",
+    failed: "无法重命名设备。",
+  },
+  details: {
+    missing: "这台设备的 Worker 早于 0.5.7，不会上报系统信息；更新后即可看到。",
+    hostname: "主机名",
+    system: "系统",
+    kernel: "内核",
+    cpu: "处理器",
+    cpuValue: "{{model}} · {{count}} 核 · {{arch}}",
+    memory: "内存",
+    user: "用户",
+    worker: "Worker",
+    node: "Node.js",
+  },
+  worker: {
+    title: "Worker",
+    behindTitle: "这台设备的 Worker 落后于服务器",
+    running: "运行的 Worker 版本：{{version}}。",
+    unknownVersion: "早于 0.5.7",
+    serverBuild: "服务器提供的版本：{{version}}。",
+    serverNpm: "服务器使用 npm 发布版。",
+    runLocal: "在 {{device}} 上运行，更新并重启 Worker：",
+    runOnce:
+      "在 {{device}} 上运行一次；它会找到与这台服务器配对的 Worker 并更新。之后设备就有自己的更新命令。",
+    updateNow: "立即更新",
+    updating: "正在更新…",
+    updateStarted:
+      "设备正在更新 Worker，完成后会自动重启；重新连上后这里会显示新版本。",
+    updateRunningSince:
+      "{{time}} 起正在更新；Worker 会以新版本重启，重新连上后这里会显示新版本。",
+    updateSlow:
+      "设备还没有以新版本重新连上。可在“设置 → Worker”或设备上的日志中查看。",
+    updateFailed: "无法开始更新。",
+    updateAll_one: "更新 {{count}} 台设备的 Worker",
+    updateAll_other: "更新 {{count}} 台设备的 Worker",
+    updateAllStarted_one:
+      "正在更新 {{count}} 台设备；Worker 重启并重新连接后会显示新版本。",
+    updateAllStarted_other:
+      "正在更新 {{count}} 台设备；Worker 重启并重新连接后会显示新版本。",
+    updateAllRunning: "Worker 正在更新；列表会持续刷新直到它们重新连接。",
+    updateAllManual:
+      "以下设备无法在这里更新（离线或 Worker 版本过旧）：{{devices}}。打开设备查看更新命令。",
+    updateAllFailure: "{{device}}：{{error}}",
+    stateUpdatable: "有可用更新",
+    stateManual: "Worker 版本落后",
+    stateUpdating: "正在更新 Worker…",
+    sourceCheckout: "它从源码目录运行，用 git 更新。",
   },
   settings: {
     title: "执行设置",
@@ -67,6 +123,8 @@ export const devices: Translation<typeof en> = {
       "在那台机器上运行。第一条命令不下载任何东西，只做检查；第二条更新 Worker 并重启。",
     repairLegacy:
       "用更早版本设置的设备，先运行一次 <code>{{update}}</code> 就会有这条命令。",
+    repairServerBuild:
+      "这台服务器提供自己构建的 Worker（{{version}}），上面的更新命令会跟随它。使用 npm 发布版、或用更早版本设置的设备，先运行一次下面的命令切换过来：",
     copyCommand: "复制命令",
     newToken: "重新生成令牌",
     creating: "正在创建…",
@@ -103,8 +161,8 @@ export const devices: Translation<typeof en> = {
     sources: "AI 访问来源",
     accountsTitle: "官方账号",
     accountsHint: "需在这台设备上单独登录",
-    connectionsTitle: "服务器 API 连接 <em>{{total}}</em>",
-    connectionsHint: "共享配置 · 按设备显式授权",
+    connectionsTitle: "API 连接 <em>{{total}}</em>",
+    connectionsHint: "来自服务器，或这台设备自己的配置",
     accountsExplanation:
       "使用你的 ChatGPT 或 Claude 订阅。凭据保存在这台设备上，不需要服务器连接。",
   },
