@@ -13,7 +13,7 @@ export function workspaceSkillInstructions(
 ): string {
   return [
     "Foundry workspace skill policy: the following is the complete allowed skill catalog for this workspace session.",
-    "Use only these managed copies, including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, say it must be promoted and selected for this workspace first. Ordinary project source files remain available.",
+    "Use only these managed copies and this agent's own built-in skills (marked builtIn), including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, say it must be promoted and selected for this workspace first. Ordinary project source files remain available.",
     ...managed.skills.map((skill) =>
       JSON.stringify({
         name: skill.name,
@@ -24,6 +24,14 @@ export function workspaceSkillInstructions(
     ...(managed.skills.length
       ? []
       : ["No skills are configured for this workspace session."]),
+    ...(managed.officialSkills ?? []).map((skill) =>
+      JSON.stringify({
+        name: skill.name,
+        description: skill.description ?? "",
+        builtIn: true,
+        ...(skill.path ? { file: skill.path } : {}),
+      }),
+    ),
   ].join("\n");
 }
 
@@ -55,7 +63,10 @@ export function validateWorkspaceSkillPrompt(
   const name = prompt.trimStart().match(/^[/\$]([\w:-]+)(?=\s|$)/)?.[1];
   if (!name || nativeCommands.has(name)) return;
   const unqualified = name.replace(/^foundry-workspace:/, "");
-  if (!managed.skills.some((skill) => skill.name === unqualified)) {
+  if (
+    !managed.skills.some((skill) => skill.name === unqualified) &&
+    !managed.officialSkills?.some((skill) => skill.name === name)
+  ) {
     throw new Error(
       `Skill "${name}" is not configured for this workspace. Promote it and select it in Workspace Skills first.`,
     );
@@ -65,7 +76,8 @@ export function validateWorkspaceSkillPrompt(
 /** Use the native inventory, including custom CODEX_HOME, .agents, ancestors,
  * admin and plugin roots. No package content scans or model requests are needed.
  * Config rules select existing skills; they do NOT mount additional paths.
- * Disable native skills by document path and supply only our verified catalog.
+ * Disable native skills by document path and supply only our verified catalog,
+ * except Codex's own (scope "system"), which stay.
  */
 export async function prepareCodexSkillIsolation(
   managed: ManagedSkillRuntime,
@@ -90,16 +102,33 @@ export async function prepareCodexSkillIsolation(
           "Native Codex skill discovery failed; refusing unisolated execution.",
         );
       }
-      return entry.skills.map((skill: { path: string }) => {
-        if (typeof skill.path !== "string" || !skill.path.startsWith("/")) {
+      const skills = entry.skills as Array<{
+        name: string;
+        description?: string;
+        path: string;
+        scope?: string;
+      }>;
+      for (const skill of skills)
+        if (typeof skill.path !== "string" || !skill.path.startsWith("/"))
           throw new Error("Native Codex returned an invalid skill path.");
-        }
-        return skill.path;
-      });
+      return {
+        host: skills.filter((skill) => skill.scope !== "system"),
+        official: skills.filter((skill) => skill.scope === "system"),
+      };
     },
-    { cwd, env, args: ["-c", "skills.bundled.enabled=false"] },
+    { cwd, env, args: [] },
   );
-  return { ...managed, hostSkillPaths: [...new Set<string>(paths)].sort() };
+  return {
+    ...managed,
+    hostSkillPaths: [
+      ...new Set<string>(paths.host.map((skill) => skill.path)),
+    ].sort(),
+    officialSkills: paths.official.map(({ name, description, path }) => ({
+      name,
+      description,
+      path,
+    })),
+  };
 }
 
 const policyVersion = "workspace-skills-v2";

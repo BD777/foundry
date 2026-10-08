@@ -5,6 +5,7 @@ import type {
   DeviceProjection,
   DeviceSkill,
   PromotedSkill,
+  ProviderHealth,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
 import { setWorkspaceSkills } from "../../api";
@@ -16,6 +17,7 @@ import {
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
 import { LocalSkillsSection, localOnlySkills } from "./local-skills-section";
+import { OfficialSkillsSection } from "./official-skills-section";
 import {
   resolveSkillSelection,
   toggleSkillSelection,
@@ -31,6 +33,8 @@ export interface SkillsFeatureProps {
   bindings: WorkspaceSkillBinding[];
   devices: DeviceProjection[];
   deviceSkills?: DeviceSkill[];
+  /** The workspace device's Claude Code / Codex, with their own skills. */
+  providerHealth?: ProviderHealth[];
   workspaceId: string;
   /** The device this workspace runs on; its local skills can be added here. */
   workspaceDeviceId?: string;
@@ -52,6 +56,7 @@ export function SkillsFeature({
   bindings,
   devices,
   deviceSkills,
+  providerHealth,
   workspaceId,
   workspaceDeviceId,
   readOnlyReason,
@@ -230,6 +235,8 @@ export function SkillsFeature({
           </Button>
         </p>
       ) : null}
+
+      <OfficialSkillsSection providerHealth={providerHealth ?? []} />
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}

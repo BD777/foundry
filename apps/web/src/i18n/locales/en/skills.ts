@@ -70,6 +70,11 @@ export const skills = {
       "Skills in {{device}}'s scan folders. Add one to publish it to the server and use it in this workspace; a different same-named server entry is shown for review first.",
     localSearchPlaceholder: "Filter local skills",
     addLocal: "Add to workspace",
+    officialTitle: "Built into the agents",
+    officialDescription:
+      "Skills Claude Code and Codex ship themselves. A session always has its own agent's skills, besides the ones selected below.",
+    officialCount_one: "{{count}} built-in skill · always on",
+    officialCount_other: "{{count}} built-in skills · always on",
   },
   device: {
     serverFilter: {

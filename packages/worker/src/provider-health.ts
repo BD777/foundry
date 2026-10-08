@@ -1,5 +1,6 @@
 import { claudeAccount, codexAccount } from "./native-account.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
+import { officialSkills } from "./official-skills.js";
 import type { ProviderHealth, WorkerRuntimeId } from "@bd777/foundry-protocol";
 
 type LocalProviderId = Exclude<WorkerRuntimeId, "mock">;
@@ -15,9 +16,18 @@ export function providerHealthData(): ProviderHealth[] {
     const cli = nativeCli(provider);
     const health = providerHealthFor(provider, cli.installed);
     const note = outdatedNote(provider, cli);
+    const official = officialSkills(provider);
     return {
       ...health,
       cli,
+      ...(official
+        ? {
+            officialSkills: official.map(({ name, description }) => ({
+              name,
+              description,
+            })),
+          }
+        : {}),
       ...(note
         ? {
             statusDetail: health.statusDetail

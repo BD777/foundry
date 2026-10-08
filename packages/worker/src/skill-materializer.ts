@@ -37,6 +37,11 @@ export interface ManagedSkillRuntime {
   skills: { name: string; dir: string; description?: string }[];
   /** Native runtime inventory, populated before Codex execution. */
   hostSkillPaths?: string[];
+  /**
+   * The session's agent's own skills, which isolation keeps: named for
+   * Claude Code, with their SKILL.md for Codex.
+   */
+  officialSkills?: { name: string; description?: string; path?: string }[];
 }
 
 function skillDescription(dir: string): string {

@@ -864,6 +864,9 @@ export function App() {
         }}
         workspaceId={data.workspace.id}
         workspaceDeviceId={data.workspace.deviceId}
+        providerHealth={data.providerHealth.filter(
+          (row) => row.deviceId === data.workspace.deviceId,
+        )}
         readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
       />
     );

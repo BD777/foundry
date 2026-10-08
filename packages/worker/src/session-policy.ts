@@ -67,9 +67,11 @@ export function claudeSessionOptions(
   return {
     ...(managed
       ? {
-          skills: managed.skills.map(
-            (skill) => `foundry-workspace:${skill.name}`,
-          ),
+          // Claude Code's own skills stay; device-installed ones do not.
+          skills: [
+            ...(managed.officialSkills ?? []).map((skill) => skill.name),
+            ...managed.skills.map((skill) => `foundry-workspace:${skill.name}`),
+          ],
           plugins: managed.skills.length
             ? [{ type: "local", path: managed.pluginDir }]
             : [],
@@ -91,7 +93,6 @@ export function claudeSessionOptions(
  * - `autoCompactEnabled: true` guarantees long resumed sessions compact
  *   before they overflow the model window. A user-level `false` previously
  *   caused hard "Prompt is too long" failures on resume.
- * - `disableBundledSkills` only applies under a managed workspace catalog.
  */
 export function foundryClaudeSettings(
   profile: AgentProfileLocalConfig,
@@ -101,7 +102,6 @@ export function foundryClaudeSettings(
   return {
     env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
-    ...(managed ? { disableBundledSkills: true } : {}),
   };
 }
 
