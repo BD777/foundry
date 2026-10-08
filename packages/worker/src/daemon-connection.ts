@@ -1019,10 +1019,6 @@ function runWebSocketSession(options: {
         nativeChatSyncIntervalMs,
       );
       checkProvidersAndReport();
-      // The agents' own skills, read once per installed version.
-      void refreshOfficialSkills().then((changed) => {
-        if (changed) reportRegistrations();
-      });
       providerCheckTimer = setInterval(
         checkProvidersAndReport,
         providerCheckIntervalMs,
@@ -1052,6 +1048,11 @@ function runWebSocketSession(options: {
     }
 
     function checkProvidersAndReport(): void {
+      // The agents' own skills, read once per installed version: this also
+      // catches a program installed or updated outside Foundry.
+      void refreshOfficialSkills().then((changed) => {
+        if (changed) reportRegistrations();
+      });
       void checkDueProviders(
         configuredAgentProfiles(""),
         providerHealthData(),
@@ -1486,8 +1487,13 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        void installNativeCli(input.runtime)
-          .then((result) => {
+        const runtime = input.runtime;
+        void installNativeCli(runtime)
+          .then(async (result) => {
+            // A newly installed program brings its own skills; read them
+            // before reporting the device again.
+            if (result.ok)
+              await refreshOfficialSkills([runtime]).catch(() => false);
             trySendWebSocket(
               socket,
               daemonMessageTypes.nativeCliInstalled,
