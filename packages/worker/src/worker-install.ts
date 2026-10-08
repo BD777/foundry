@@ -9,6 +9,13 @@
  * worker from there. `update` installs a newer version next to it, switches
  * `current` and restarts the service; `uninstall` removes the service.
  *
+ * A server that serves its own worker packages (`/api/worker/release`, e.g. a
+ * development build) is followed instead of npm: `install` and `update` take
+ * that server's packages, and its bootstrap command runs them through npx:
+ *
+ *   npx -y --package=<server>/api/worker/packages/<protocol>.tgz \
+ *     --package=<server>/api/worker/packages/<worker>.tgz foundry-worker install …
+ *
  * A machine (per stack) holds one worker: `install` on a machine whose worker
  * is already paired and installed changes nothing.
  */
@@ -28,6 +35,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { WorkerRelease } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "./config.js";
 import { setup } from "./daemon-connection.js";
 import { removeWorkerApp } from "./mac-worker-app.js";
@@ -38,37 +46,28 @@ import {
   stopDaemonProcess,
   uninstallService,
 } from "./service.js";
-import { foundryStatePath, foundryStateRoot } from "./state-root.js";
+import {
+  defaultStateRoot,
+  foundryStatePath,
+  foundryStateRoot,
+  stackStateParent,
+} from "./state-root.js";
+import { releaseSelfUpdateLock } from "./self-update-lock.js";
 import { optionEnabled, optionValue } from "./utils.js";
+import {
+  homeRelative,
+  ownPackage,
+  type PackageIdentity,
+  runtimeRoot,
+  workerShimPath,
+} from "./worker-identity.js";
 
-export interface PackageIdentity {
-  name: string;
-  version: string;
-}
-
-/** The package this CLI was run from. */
-export function ownPackage(): PackageIdentity {
-  const manifest = JSON.parse(
-    readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "..", "package.json"),
-      "utf8",
-    ),
-  ) as PackageIdentity;
-  return { name: manifest.name, version: manifest.version };
-}
-
-export function runtimeRoot(): string {
-  return foundryStatePath("runtime");
-}
+export { ownPackage, runtimeRoot, workerShimPath };
+export type { PackageIdentity };
 
 /** The worker CLI of the runtime in use; the service starts this path. */
 export function currentRuntimeCli(name: string): string {
   return join(runtimeRoot(), "current", "node_modules", name, "dist", "cli.js");
-}
-
-/** `<state root>/bin/foundry-worker`: this machine's worker command. */
-export function workerShimPath(): string {
-  return foundryStatePath("bin", "foundry-worker");
 }
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
@@ -102,9 +101,7 @@ export function writeWorkerShim(
 function reportWorkerShim(name: string): void {
   const path = writeWorkerShim(name);
   if (!path) return;
-  const shown = path.startsWith(homedir())
-    ? `~${path.slice(homedir().length)}`
-    : path;
+  const shown = homeRelative(path);
   console.log(
     `Run \`${shown} doctor\` to check this device, \`${shown} update\` to update it.`,
   );
@@ -180,16 +177,11 @@ export function installRuntime(name: string, specs: string[]): string {
   const manifest = JSON.parse(
     readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
   ) as RuntimeManifest;
-  const { required, bestEffort } = runtimeCompanions(manifest);
+  const { required } = runtimeCompanions(manifest);
   if (required.length && !install(required)) {
     rmSync(staging, { recursive: true, force: true });
     throw new Error(`npm could not install ${required.join(" ")}`);
   }
-  for (const spec of bestEffort)
-    if (!install([spec]))
-      console.warn(
-        `Could not install ${spec}; the features that need it (signing in from Foundry) stay unavailable on this machine.`,
-      );
   const version = manifest.version;
   const current = join(runtimeRoot(), "current");
   let inUse: string | undefined;
@@ -234,28 +226,26 @@ export function runtimeInstallArgs(prefix: string): string[] {
     "--no-fund",
     "--omit=dev",
     "--omit=optional",
+    // Packages already in npm's cache are used as they are: a slow registry
+    // is then asked only for what this machine has never downloaded.
+    "--prefer-offline",
     "--prefix",
     prefix,
   ];
 }
 
 /**
- * What the runtime installs beside the worker: its optional peers (the agent
- * SDKs, at the versions it was built with) are required, and its optional
- * dependencies (node-pty, which compiles on Linux) are installed when they can be.
+ * What the runtime installs beside the worker: its optional peers, the agent
+ * SDKs at the versions it was built with.
  */
 export function runtimeCompanions(manifest: RuntimeManifest): {
   required: string[];
-  bestEffort: string[];
 } {
   const optionalPeers = Object.entries(manifest.peerDependencies ?? {}).filter(
     ([peer]) => manifest.peerDependenciesMeta?.[peer]?.optional,
   );
   return {
     required: optionalPeers.map(([peer, range]) => `${peer}@${range}`),
-    bestEffort: Object.entries(manifest.optionalDependencies ?? {}).map(
-      ([dependency, range]) => `${dependency}@${range}`,
-    ),
   };
 }
 
@@ -287,11 +277,66 @@ export function latestPublishedVersion(name: string): string {
 }
 
 /** `--from <spec>` (repeatable) overrides where the package comes from. */
-function packageSpecs(args: string[], fallback: string): string[] {
+function packageSpecs(args: string[]): string[] {
   const specs: string[] = [];
   for (let i = 0; i < args.length; i++)
     if (args[i] === "--from" && args[i + 1]) specs.push(args[++i]!);
-  return specs.length ? specs : [fallback];
+  return specs;
+}
+
+/**
+ * Where the server's worker comes from. A server that predates
+ * `/api/worker/release` (404) serves no packages, so its workers use npm.
+ */
+export async function serverWorkerRelease(
+  serverURL: string,
+  retryDelaysMs = [2000, 5000],
+): Promise<WorkerRelease> {
+  // A server restarting (502/503) or a dropped connection is retried.
+  for (let attempt = 0; ; attempt++) {
+    let response: Response | undefined;
+    let failure: string;
+    try {
+      response = await fetch(`${serverURL}/api/worker/release`);
+      if (response.status === 404) return { source: "npm" };
+      if (response.ok) return (await response.json()) as WorkerRelease;
+      failure = `HTTP ${response.status}: ${(await response.text()).trim()}`;
+    } catch (error) {
+      failure = networkFailure(error);
+    }
+    const retryable = !response || response.status >= 500;
+    if (!retryable || attempt >= retryDelaysMs.length)
+      throw new Error(
+        `could not ask ${serverURL} which worker it serves (${failure})`,
+      );
+    await new Promise((done) => setTimeout(done, retryDelaysMs[attempt]));
+  }
+}
+
+/**
+ * Why a request never got an answer. fetch reports only "fetch failed"; the
+ * reason (DNS, refused, reset, certificate, proxy) is in its cause.
+ */
+export function networkFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause =
+    error instanceof Error
+      ? (error.cause as Error & { code?: string })
+      : undefined;
+  if (!cause) return message;
+  const detail = [cause.code, cause.message].filter(Boolean).join(" ");
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  return `${message}: ${detail}${proxy ? `; HTTPS_PROXY is set, which Node's fetch does not use unless NODE_USE_ENV_PROXY=1` : ""}`;
+}
+
+/** npm specs for a server's packages; their URLs are relative to the server. */
+export function serverPackageSpecs(
+  release: Extract<WorkerRelease, { source: "server" }>,
+  serverURL: string,
+): string[] {
+  return release.packages.map((pkg) =>
+    pkg.url.startsWith("/") ? `${serverURL}${pkg.url}` : pkg.url,
+  );
 }
 
 export async function installCommand(args: string[]): Promise<void> {
@@ -300,16 +345,13 @@ export async function installCommand(args: string[]): Promise<void> {
     throw new Error(
       "install needs --server <url>: copy the command from Devices → Add device.",
     );
+  // One command for any machine: the worker paired with this server, in
+  // whichever stack, is brought to the server's version.
+  if (rerunUnderPairedStack(serverURL)) return;
   const existing = existingWorker();
   const decision = installDecision(existing, serverURL);
   if (decision === "already-installed") {
-    console.log(
-      `A Foundry worker is already installed on this machine for ${serverURL}; nothing was changed.`,
-    );
-    console.log(
-      "Run `update` to upgrade it, or `status` to inspect it. To add a workspace, use Devices → the device → Workspaces.",
-    );
-    status();
+    await updateCommand(args.filter((arg) => arg !== "--token"));
     return;
   }
   if (decision === "other-server")
@@ -318,17 +360,26 @@ export async function installCommand(args: string[]): Promise<void> {
     );
   if (!existing.paired && !optionValue(args, "--token"))
     throw new Error(
-      "install needs --token <pairing-token>: create one in Devices → Add device.",
+      `This machine is not paired with ${serverURL} yet; pairing needs a one-time token. Copy the command from Devices → Add device on ${serverURL} and run it here.`,
     );
   const self = ownPackage();
   const workspace =
     optionValue(args, "--workspace") ?? join(homedir(), "Foundry");
   mkdirSync(workspace, { recursive: true });
   console.log(`Installing ${self.name} into ${runtimeRoot()}…`);
-  const version = installRuntime(
-    self.name,
-    packageSpecs(args, `${self.name}@${self.version}`),
-  );
+  let specs = packageSpecs(args);
+  if (!specs.length) {
+    const release = await serverWorkerRelease(serverURL);
+    if (handOffToServedBuild(release, serverURL)) return;
+    specs =
+      release.source === "server"
+        ? serverPackageSpecs(release, serverURL)
+        : [`${self.name}@${self.version}`];
+  }
+  const installed = currentRuntimeVersion(self.name);
+  const version = handedOff(installed)
+    ? installed!
+    : installRuntime(self.name, specs);
   console.log(`Installed ${self.name} ${version}.`);
   await setup([...withoutOption(args, "--from"), "--workspace", workspace], {
     cliPath: currentRuntimeCli(self.name),
@@ -337,32 +388,186 @@ export async function installCommand(args: string[]): Promise<void> {
   reportWorkerShim(self.name);
 }
 
+const withoutTrailingSlash = (url: string) => url.replace(/\/+$/, "");
+
+/**
+ * Re-runs this command with the build the server serves when this CLI is a
+ * different build (a cached npx copy of a stable URL, or the installed
+ * runtime updating itself), so the newest installer does the work. Returns
+ * true when that run did it.
+ */
+function handOffToServedBuild(
+  release: WorkerRelease,
+  serverURL: string,
+): boolean {
+  if (release.source !== "server") return false;
+  const self = ownPackage();
+  if (self.version === release.version) return false;
+  // The handed-off run never hands off again.
+  if (process.env.FOUNDRY_WORKER_HANDOFF === release.version) return false;
+  console.log(
+    `Installing the worker ${release.version} that ${serverURL} serves…`,
+  );
+  // Straight into the runtime directory (no npx copy), then that build does
+  // the rest of this command.
+  const previous = currentRuntimeVersion(self.name);
+  if (previous !== release.version)
+    installRuntime(self.name, serverPackageSpecs(release, serverURL));
+  const run = spawnSync(
+    process.execPath,
+    [currentRuntimeCli(self.name), ...process.argv.slice(2)],
+    {
+      env: {
+        ...process.env,
+        FOUNDRY_WORKER_HANDOFF: release.version,
+        FOUNDRY_WORKER_PREVIOUS: previous ?? "",
+      },
+      stdio: "inherit",
+    },
+  );
+  process.exitCode = run.status ?? 1;
+  return true;
+}
+
+/** This run was handed the build already installed as the current runtime. */
+const handedOff = (version: string | undefined) =>
+  version !== undefined && process.env.FOUNDRY_WORKER_HANDOFF === version;
+
+type StateRoots = { default: string; stacks: string };
+const machineRoots: StateRoots = {
+  default: defaultStateRoot,
+  stacks: stackStateParent,
+};
+
+/**
+ * The workers paired on this machine: their stack ("" for the default one,
+ * `~/.foundry`; else a name under `~/.foundry-stacks`) and server.
+ */
+export function pairedStacks(
+  roots: StateRoots = machineRoots,
+): { stack: string; serverURL: string }[] {
+  const stacks = existsSync(roots.stacks)
+    ? readdirSync(roots.stacks, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => [entry.name, join(roots.stacks, entry.name)])
+    : [];
+  const paired: { stack: string; serverURL: string }[] = [];
+  for (const [stack, root] of [["", roots.default], ...stacks]) {
+    const path = join(root!, "daemon-config.json");
+    if (!existsSync(path)) continue;
+    const { serverURL } = JSON.parse(readFileSync(path, "utf8")) as {
+      serverURL?: string;
+    };
+    if (serverURL) paired.push({ stack: stack!, serverURL });
+  }
+  return paired;
+}
+
+/** The stack whose worker is paired with `serverURL`, if any. */
+export function stackPairedWith(
+  serverURL: string,
+  roots: StateRoots = machineRoots,
+): string | undefined {
+  const target = withoutTrailingSlash(serverURL);
+  return pairedStacks(roots).find(
+    (paired) => withoutTrailingSlash(paired.serverURL) === target,
+  )?.stack;
+}
+
+/**
+ * Re-runs this command under the stack whose worker is paired with
+ * `serverURL`, when that is not the current one, so a command a server shows
+ * works whichever stack holds its worker. Returns true when the re-run did it.
+ */
+function rerunUnderPairedStack(serverURL: string): boolean {
+  if (process.env.FOUNDRY_STATE_ROOT?.trim()) return false;
+  const paired = readDaemonConfig()?.serverURL;
+  if (
+    paired &&
+    withoutTrailingSlash(paired) === withoutTrailingSlash(serverURL)
+  )
+    return false;
+  const stack = stackPairedWith(serverURL);
+  if (stack === undefined) return false;
+  const env = { ...process.env };
+  if (stack) env.FOUNDRY_STACK = stack;
+  else delete env.FOUNDRY_STACK;
+  const rerun = spawnSync(process.execPath, process.argv.slice(1), {
+    env,
+    stdio: "inherit",
+  });
+  process.exitCode = rerun.status ?? 1;
+  return true;
+}
+
 export async function updateCommand(args: string[]): Promise<void> {
+  // An update started from the web holds the device's update lock until here.
+  try {
+    await runUpdate(args);
+  } finally {
+    releaseSelfUpdateLock();
+  }
+}
+
+async function runUpdate(args: string[]): Promise<void> {
+  const server = optionValue(args, "--server")?.replace(/\/+$/, "");
+  if (server) {
+    if (rerunUnderPairedStack(server)) return;
+    // Not paired with that server here: `install` says what pairing needs.
+    const paired = readDaemonConfig()?.serverURL;
+    if (!paired || withoutTrailingSlash(paired) !== server)
+      return installCommand(args);
+  }
   const self = ownPackage();
   const current = currentRuntimeVersion(self.name);
   if (!current || !serviceInstalled())
     throw new Error(
       "This machine has no worker installed with `install`; nothing to update. A worker run from a source checkout updates with git.",
     );
-  const explicit = args.includes("--from");
-  const latest = explicit ? undefined : latestPublishedVersion(self.name);
-  if (latest === current) {
-    console.log(`${self.name} ${current} is already the latest version.`);
-    reportWorkerShim(self.name);
-    return;
+  let specs = packageSpecs(args);
+  if (!specs.length) {
+    // The worker follows its server: the packages it serves, else npm.
+    const serverURL = readDaemonConfig()?.serverURL;
+    const release = serverURL
+      ? await serverWorkerRelease(serverURL)
+      : ({ source: "npm" } as const);
+    const target =
+      release.source === "server"
+        ? release.version
+        : latestPublishedVersion(self.name);
+    if (
+      release.source === "server" &&
+      handOffToServedBuild(release, serverURL!)
+    )
+      return;
+    if (target === current && !handedOff(current)) {
+      console.log(
+        release.source === "server"
+          ? `${self.name} ${current} is already the version ${serverURL} serves.`
+          : `${self.name} ${current} is already the latest version.`,
+      );
+      reportWorkerShim(self.name);
+      return;
+    }
+    specs =
+      release.source === "server"
+        ? serverPackageSpecs(release, serverURL!)
+        : [`${self.name}@${target}`];
   }
-  const version = installRuntime(
-    self.name,
-    packageSpecs(args, `${self.name}@${latest}`),
-  );
+  const version = handedOff(current)
+    ? current
+    : installRuntime(self.name, specs);
   const restarted = await reinstallService({
     cliPath: currentRuntimeCli(self.name),
     macApp: process.platform === "darwin",
   });
+  // A handed-off run's runtime was switched by the build that handed off.
+  const before =
+    (handedOff(current) && process.env.FOUNDRY_WORKER_PREVIOUS) || current;
   const done =
-    version === current
+    version === before
       ? `Reinstalled ${self.name} ${version}`
-      : `Updated ${self.name} ${current} → ${version}`;
+      : `Updated ${self.name} ${before} → ${version}`;
   console.log(
     restarted
       ? `${done} and restarted the worker.`

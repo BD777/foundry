@@ -23,9 +23,6 @@ import type {
   PromotedSkill,
   WorkspaceSkillBinding,
   ProfileDefinition,
-  ProfileAuthorization,
-  CompleteProfileAuthorizationInput,
-  StartProfileAuthorizationInput,
   PromoteProfileInput,
   SaveProfileInput,
   SetDeviceProfilesInput,
@@ -37,6 +34,7 @@ import type {
   WorkspaceAccessRole,
   WorkspaceProjection,
   WorkspaceTreeEntry,
+  WorkerRelease,
 } from "@bd777/foundry-protocol";
 import { parseProtocolEnvelopeJSON } from "@bd777/foundry-protocol";
 import { issueDisplayStatus } from "./lib/issue-meta";
@@ -487,6 +485,27 @@ export async function removeDevice(
   return device;
 }
 
+/** Asks a device's worker to update itself to this server's version. */
+export function updateDeviceWorker(
+  deviceId: string,
+): Promise<{ log?: string }> {
+  return postJSON(
+    `/api/devices/${encodeURIComponent(deviceId)}/worker/update`,
+    {},
+  );
+}
+
+/** Gives a device the name people see; its hostname stays in `system`. */
+export function renameDevice(
+  deviceId: string,
+  name: string,
+): Promise<DeviceProjection> {
+  return patchJSON<DeviceProjection>(
+    `/api/devices/${encodeURIComponent(deviceId)}`,
+    { name },
+  );
+}
+
 export async function renameWorkspace(
   workspaceId: string,
   name: string,
@@ -771,16 +790,6 @@ export function listProfiles(): Promise<ProfileDefinition[]> {
   return getJSON<ProfileDefinition[]>("/api/profiles");
 }
 
-export function startDeviceAuthorization(
-  deviceId: string,
-  runtime: "claude" | "codex",
-): Promise<ProfileAuthorization> {
-  return postJSON(
-    `/api/devices/${encodeURIComponent(deviceId)}/accounts/${runtime}/authorization`,
-    {},
-  );
-}
-
 /** Run the official installer for Claude Code or Codex on a device. */
 export function installDeviceCli(
   deviceId: string,
@@ -800,18 +809,6 @@ export function inspectDeviceAccount(
   return postJSON(
     `/api/devices/${encodeURIComponent(deviceId)}/accounts/${runtime}/inspect`,
     { source },
-  );
-}
-
-export function completeDeviceAuthorization(
-  deviceId: string,
-  runtime: "claude" | "codex",
-  flowId: string,
-  authorizationResult?: string,
-): Promise<ProfileAuthorization> {
-  return postJSON(
-    `/api/devices/${encodeURIComponent(deviceId)}/accounts/${runtime}/authorization/${encodeURIComponent(flowId)}`,
-    { authorizationResult },
   );
 }
 
@@ -840,27 +837,6 @@ export function deleteProfile(id: string): Promise<ProfileDefinition> {
 export function clearProfileCredential(id: string): Promise<ProfileDefinition> {
   return postJSON<ProfileDefinition>(
     `/api/profiles/${encodeURIComponent(id)}/credential/clear`,
-  );
-}
-
-export function startProfileAuthorization(
-  profileId: string,
-  input: StartProfileAuthorizationInput,
-): Promise<ProfileAuthorization> {
-  return postJSON<ProfileAuthorization>(
-    `/api/profiles/${encodeURIComponent(profileId)}/authorization`,
-    input,
-  );
-}
-
-export function completeProfileAuthorization(
-  profileId: string,
-  authorizationId: string,
-  input: CompleteProfileAuthorizationInput & { deviceId: string },
-): Promise<ProfileAuthorization> {
-  return postJSON<ProfileAuthorization>(
-    `/api/profiles/${encodeURIComponent(profileId)}/authorization/${encodeURIComponent(authorizationId)}`,
-    input,
   );
 }
 
@@ -1220,6 +1196,11 @@ export function revokeInvite(id: string): Promise<void> {
 /** The server URL a worker on another machine should use. */
 export function workerServerURL(): string {
   return API_BASE_URL || window.location.origin;
+}
+
+/** Where this server's worker comes from: its own packages, or npm. */
+export function getWorkerRelease(): Promise<WorkerRelease> {
+  return accountRequest("GET", "/api/worker/release");
 }
 
 export function createDevicePairingToken(): Promise<{

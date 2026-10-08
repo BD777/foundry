@@ -210,7 +210,7 @@ export const cliCommands: CliCommandContract[] = [
   {
     brief: "Install the worker on this machine from its npm package.",
     description:
-      "The one-command install (`npx -y <package>@latest install …`). Installs the package into a stable runtime directory, pairs this machine with the server, registers the workspace and starts a login service that runs the worker from that directory (on macOS hosted by Foundry Worker.app, so privacy grants name Foundry). A machine already running a worker for that server is left unchanged.",
+      "The one-command install (`npx -y <package>@latest install …`). Installs the package into a stable runtime directory, pairs this machine with the server, registers the workspace and starts a login service that runs the worker from that directory (on macOS hosted by Foundry Worker.app, so privacy grants name Foundry). A machine already running a worker for that server is left unchanged. When the server serves its own worker packages (a development build), those are installed instead of the npm release.",
     examples: [
       {
         command:
@@ -243,7 +243,7 @@ export const cliCommands: CliCommandContract[] = [
         type: "string",
       },
       {
-        defaultValue: "this package's name and version",
+        defaultValue: "the server's packages, else this package's version",
         description: "npm spec or tarball to install instead (repeatable)",
         name: "--from",
         type: "string",
@@ -258,13 +258,13 @@ export const cliCommands: CliCommandContract[] = [
     path: ["install"],
   },
   {
-    brief: "Update the installed worker to the latest version.",
+    brief: "Update the installed worker to its server's version.",
     description:
-      "Installs the latest published version next to the current one, switches to it and restarts the worker. Does nothing when already up to date; keeps the previous version for a manual rollback.",
+      "Installs the version the paired server serves (its own packages, else the latest published on npm) next to the current one, switches to it and restarts the worker. Does nothing when already on that version; keeps the previous version for a manual rollback.",
     examples: [
       {
         command: "npx -y <package>@latest update",
-        description: "Update to the latest published version.",
+        description: "Update to the server's version.",
         label: "RECOMMENDED",
       },
       {
@@ -277,7 +277,13 @@ export const cliCommands: CliCommandContract[] = [
     id: "update",
     options: [
       {
-        defaultValue: "the latest published version",
+        description:
+          "Update the worker paired with this server, whichever stack holds it",
+        name: "--server",
+        type: "url",
+      },
+      {
+        defaultValue: "the server's packages, else the latest on npm",
         description: "npm spec or tarball to install instead (repeatable)",
         name: "--from",
         type: "string",

@@ -107,8 +107,8 @@ async function setup({ refreshImpl, putImpl } = {}) {
     workspaces: [{ id: "w1", name: "W", deviceId: "d1", localPath: "/w" }],
   };
   await act(async () => root.render(createElement(DevicesFeature, props)));
-  // Switch to the Server API connections tab.
-  await act(async () => buttonWith("Server API connections").click());
+  // Switch to the API connections tab.
+  await act(async () => buttonWith("API connections").click());
   return {
     container,
     props,

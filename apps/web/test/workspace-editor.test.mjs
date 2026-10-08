@@ -38,7 +38,7 @@ Object.assign(globalThis, {
 const { createRoot } = await import("react-dom/client");
 await import("../src/i18n/index.ts");
 const { WorkspaceEditor } =
-  await import("../src/features/devices/workspace-editor.tsx");
+  await import("../src/components/workspace/workspace-editor.tsx");
 const workspace = {
   id: "ws-test",
   name: "Original",
@@ -296,7 +296,7 @@ test("Enter registers the typed path unless the arrow keys chose a suggestion", 
 
 test("a bare folder name is looked up in the home folder", async () => {
   const { workspacePathLookup, matchesFolderQuery } =
-    await import("../src/features/devices/workspace-path-lookup.ts");
+    await import("../src/components/workspace/workspace-path-lookup.ts");
   assert.deepEqual(workspacePathLookup("proj"), {
     lookupPath: "~",
     query: "proj",

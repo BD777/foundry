@@ -4,7 +4,7 @@ import {
   defaultSkillResolution,
   skillResolutionProblem,
   skillServerLabel,
-} from "../src/features/devices/skill-version-state.ts";
+} from "../src/components/skills/skill-version-state.ts";
 import { createFileDiff } from "../src/components/ui/file-diff-engine.ts";
 import { parseDiff } from "react-diff-view";
 const source = {

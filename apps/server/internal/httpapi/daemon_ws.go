@@ -19,81 +19,83 @@ import (
 )
 
 const (
-	wsAckType                           = "ack"
-	wsErrorType                         = "error"
-	wsHelloType                         = "hello"
-	wsHeartbeatType                     = "heartbeat"
-	wsReadFileType                      = "read_file"
-	wsFileReadType                      = "file_read"
-	wsReadSubagentTranscriptType        = "read_subagent_transcript"
-	wsSubagentTranscriptReadType        = "subagent_transcript_read"
-	wsListSubagentsType                 = "list_subagents"
-	wsSubagentsListedType               = "subagents_listed"
-	wsListDirectoriesType               = "list_directories"
-	wsDirectoriesListedType             = "directories_listed"
-	wsListWorkspaceTreeType             = "list_workspace_tree"
-	wsWorkspaceTreeListedType           = "workspace_tree_listed"
-	wsInspectWorkspaceType              = "inspect_workspace"
-	wsInspectNativeAccountType          = "inspect_native_account"
-	wsNativeAccountInspectedType        = "native_account_inspected"
-	wsInstallNativeCliType              = "install_native_cli"
-	wsNativeCliInstalledType            = "native_cli_installed"
-	wsWorkspaceInspectedType            = "workspace_inspected"
-	wsSetupWorkspaceType                = "setup_workspace"
-	wsWorkspaceReadyType                = "workspace_ready"
-	wsForgetWorkspaceType               = "forget_workspace"
-	wsWorkspaceForgottenType            = "workspace_forgotten"
-	wsUpsertAgentProfileType            = "upsert_agent_profile"
-	wsAgentProfileUpsertedType          = "agent_profile_upserted"
-	wsUpsertRuntimeSettingsType         = "upsert_agent_runtime_settings"
-	wsRuntimeSettingsUpsertedType       = "agent_runtime_settings_upserted"
-	wsRefreshResourcesType              = "refresh_resources"
-	wsResourcesRefreshedType            = "resources_refreshed"
-	wsListAgentModelsType               = "list_agent_models"
-	wsAttachmentWriteType               = "attachment_write"
-	wsAttachmentWrittenType             = "attachment_written"
-	wsAttachmentReadType                = "attachment_read"
-	wsAttachmentChunkReadType           = "attachment_chunk_read"
-	wsAgentModelsListedType             = "agent_models_listed"
-	wsReadProfileCredentialType         = "read_profile_credential"
-	wsProfileCredentialReadType         = "profile_credential_read"
-	wsScanSkillsType                    = "scan_skills"
-	wsSkillsScannedType                 = "skills_scanned"
-	wsReadSkillContentType              = "read_skill_content"
-	wsReadSkillFileType                 = "read_skill_file"
-	wsSkillFileReadType                 = "skill_file_read"
-	wsSkillContentReadType              = "skill_content_read"
-	wsStartProfileAuthorizationType     = "start_profile_authorization"
-	wsProfileAuthorizationStartedType   = "profile_authorization_started"
-	wsCompleteProfileAuthorizationType  = "complete_profile_authorization"
-	wsProfileAuthorizationCompletedType = "profile_authorization_completed"
-	wsRegisteredType                    = "registered"
-	wsIssueEnvironmentType              = "issue_environment"
-	wsIssueEnvironmentResultType        = "issue_environment_result"
-	wsEvidenceRequestType               = "evidence_request"
-	wsEvidenceResultType                = "evidence_result"
-	wsReadyForIssueType                 = "ready_for_issue"
-	wsRunSessionType                    = "run_session"
-	wsSteerSessionType                  = "steer_session"
-	wsSessionSteeredType                = "session_steered"
-	wsCancelSessionType                 = "cancel_session"
-	wsSessionCanceledType               = "session_canceled"
-	wsSessionStartedType                = "session_started"
-	wsSessionEventType                  = "session_event"
-	wsSessionBlockedType                = "session_blocked"
-	wsSessionResumedType                = "session_resumed"
-	wsSessionNativeSessionIDType        = "session_native_session_id"
-	wsSessionCompleteType               = "session_completed"
-	wsRecoverSessionType                = "recover_session"
+	wsAckType                     = "ack"
+	wsErrorType                   = "error"
+	wsHelloType                   = "hello"
+	wsHeartbeatType               = "heartbeat"
+	wsReadFileType                = "read_file"
+	wsFileReadType                = "file_read"
+	wsReadSubagentTranscriptType  = "read_subagent_transcript"
+	wsSubagentTranscriptReadType  = "subagent_transcript_read"
+	wsListSubagentsType           = "list_subagents"
+	wsSubagentsListedType         = "subagents_listed"
+	wsListDirectoriesType         = "list_directories"
+	wsDirectoriesListedType       = "directories_listed"
+	wsListWorkspaceTreeType       = "list_workspace_tree"
+	wsWorkspaceTreeListedType     = "workspace_tree_listed"
+	wsInspectWorkspaceType        = "inspect_workspace"
+	wsInspectNativeAccountType    = "inspect_native_account"
+	wsNativeAccountInspectedType  = "native_account_inspected"
+	wsInstallNativeCliType        = "install_native_cli"
+	wsNativeCliInstalledType      = "native_cli_installed"
+	wsUpdateWorkerType            = "update_worker"
+	wsWorkerUpdateStartedType     = "worker_update_started"
+	wsWorkspaceInspectedType      = "workspace_inspected"
+	wsSetupWorkspaceType          = "setup_workspace"
+	wsWorkspaceReadyType          = "workspace_ready"
+	wsForgetWorkspaceType         = "forget_workspace"
+	wsWorkspaceForgottenType      = "workspace_forgotten"
+	wsUpsertAgentProfileType      = "upsert_agent_profile"
+	wsAgentProfileUpsertedType    = "agent_profile_upserted"
+	wsUpsertRuntimeSettingsType   = "upsert_agent_runtime_settings"
+	wsRuntimeSettingsUpsertedType = "agent_runtime_settings_upserted"
+	wsRefreshResourcesType        = "refresh_resources"
+	wsResourcesRefreshedType      = "resources_refreshed"
+	wsListAgentModelsType         = "list_agent_models"
+	wsAttachmentWriteType         = "attachment_write"
+	wsAttachmentWrittenType       = "attachment_written"
+	wsAttachmentReadType          = "attachment_read"
+	wsAttachmentChunkReadType     = "attachment_chunk_read"
+	wsAgentModelsListedType       = "agent_models_listed"
+	wsReadProfileCredentialType   = "read_profile_credential"
+	wsProfileCredentialReadType   = "profile_credential_read"
+	wsScanSkillsType              = "scan_skills"
+	wsSkillsScannedType           = "skills_scanned"
+	wsReadSkillContentType        = "read_skill_content"
+	wsReadSkillFileType           = "read_skill_file"
+	wsSkillFileReadType           = "skill_file_read"
+	wsSkillContentReadType        = "skill_content_read"
+	wsRegisteredType              = "registered"
+	wsIssueEnvironmentType        = "issue_environment"
+	wsIssueEnvironmentResultType  = "issue_environment_result"
+	wsEvidenceRequestType         = "evidence_request"
+	wsEvidenceResultType          = "evidence_result"
+	wsReadyForIssueType           = "ready_for_issue"
+	wsRunSessionType              = "run_session"
+	wsSteerSessionType            = "steer_session"
+	wsSessionSteeredType          = "session_steered"
+	wsCancelSessionType           = "cancel_session"
+	wsSessionCanceledType         = "session_canceled"
+	wsSessionStartedType          = "session_started"
+	wsSessionEventType            = "session_event"
+	wsSessionBlockedType          = "session_blocked"
+	wsSessionResumedType          = "session_resumed"
+	wsSessionNativeSessionIDType  = "session_native_session_id"
+	wsSessionCompleteType         = "session_completed"
+	wsRecoverSessionType          = "recover_session"
 )
 
 type DaemonHub struct {
 	onSessionCompleted  func(context.Context, store.AgentSession)
 	onEvidenceConnected func(context.Context, string)
-	connections         map[string]*daemonConnection
-	events              *browserEventHub
-	store               store.Store
-	secrets             secretKeeper
+	skillScans          map[string]*skillScan
+	skillScansMu        sync.Mutex
+	// onDeviceConnected runs once per daemon hello, until that socket closes.
+	onDeviceConnected func(ctx context.Context, deviceID string, capabilities []string)
+	connections       map[string]*daemonConnection
+	events            *browserEventHub
+	store             store.Store
+	secrets           secretKeeper
 	// live tracks every upgraded socket, including ones that never sent
 	// hello and so never landed in connections. Shutdown needs all of them.
 	live         map[*daemonConnection]struct{}
@@ -272,27 +274,6 @@ type wsListAgentModelsPayload struct {
 type wsAgentModelsListedPayload struct {
 	Models []store.AgentModelOption `json:"models"`
 	Error  string                   `json:"error,omitempty"`
-}
-
-type wsStartProfileAuthorizationPayload struct {
-	ProfileID string `json:"profileId"`
-	Runtime   string `json:"runtime"`
-}
-
-type wsProfileAuthorizationStartedPayload struct {
-	Authorization store.ProfileAuthorization `json:"authorization"`
-	Error         string                     `json:"error,omitempty"`
-}
-
-type wsCompleteProfileAuthorizationPayload struct {
-	FlowID              string `json:"flowId"`
-	AuthorizationResult string `json:"authorizationResult,omitempty"`
-}
-
-type wsProfileAuthorizationCompletedPayload struct {
-	Authorization store.ProfileAuthorization `json:"authorization"`
-	Registration  store.DaemonRegistration   `json:"registration"`
-	Error         string                     `json:"error,omitempty"`
 }
 
 // wsReadProfileCredentialPayload asks the daemon for a credential that has so
@@ -801,22 +782,6 @@ func (h *DaemonHub) ListAgentModels(ctx context.Context, input store.CreateAgent
 	return connection.listAgentModels(ctx, input)
 }
 
-func (h *DaemonHub) StartProfileAuthorization(ctx context.Context, deviceID string, profileID string, runtime string) (store.ProfileAuthorization, error) {
-	connection := h.connectionFor(deviceID)
-	if connection == nil {
-		return store.ProfileAuthorization{}, store.ErrNotFound
-	}
-	return connection.startProfileAuthorization(ctx, profileID, runtime)
-}
-
-func (h *DaemonHub) CompleteProfileAuthorization(ctx context.Context, deviceID string, flowID string, authorizationResult string) (store.ProfileAuthorization, error) {
-	connection := h.connectionFor(deviceID)
-	if connection == nil {
-		return store.ProfileAuthorization{}, store.ErrNotFound
-	}
-	return connection.completeProfileAuthorization(ctx, flowID, authorizationResult)
-}
-
 // ReadProfileCredential asks the device that owns a local profile for its
 // credential, so promotion can seal it server-side. It targets one device
 // explicitly: a credential is machine-local state and no other daemon can
@@ -1237,6 +1202,20 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			return err
 		}
 		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+		if c.hub.onDeviceConnected != nil {
+			go func() {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go func() {
+					select {
+					case <-c.done:
+						cancel()
+					case <-ctx.Done():
+					}
+				}()
+				c.hub.onDeviceConnected(ctx, registration.Device.ID, registration.Capabilities)
+			}()
+		}
 		go c.claimAndSend()
 		// A daemon serves several workspaces; hello names only one of them.
 		go c.dispatchQueuedAgentSessions("")
@@ -1259,6 +1238,8 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsWorkspaceInspectionResult](c, envelope, nil)
 	case wsNativeCliInstalledType:
 		return deliverDaemonResponse[wsNativeCliInstallResult](c, envelope, nil)
+	case wsWorkerUpdateStartedType:
+		return deliverDaemonResponse[wsWorkerUpdateStarted](c, envelope, nil)
 	case wsNativeAccountInspectedType:
 		return deliverDaemonResponse[wsNativeAccountInspectionResult](c, envelope, nil)
 	case wsSubagentTranscriptReadType:
@@ -1320,20 +1301,6 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		})
 	case wsSkillContentReadType:
 		return deliverDaemonResponse(c, envelope, func(payload wsSkillContentReadPayload) error {
-			if payload.Error != "" {
-				return errors.New(payload.Error)
-			}
-			return nil
-		})
-	case wsProfileAuthorizationStartedType:
-		return deliverDaemonResponse(c, envelope, func(payload wsProfileAuthorizationStartedPayload) error {
-			if payload.Error != "" {
-				return errors.New(payload.Error)
-			}
-			return nil
-		})
-	case wsProfileAuthorizationCompletedType:
-		return deliverDaemonResponse(c, envelope, func(payload wsProfileAuthorizationCompletedPayload) error {
 			if payload.Error != "" {
 				return errors.New(payload.Error)
 			}
@@ -1706,41 +1673,6 @@ func (c *daemonConnection) listAgentModels(ctx context.Context, input store.Crea
 		return nil, errors.New(value.Error)
 	}
 	return value.Models, nil
-}
-
-func (c *daemonConnection) startProfileAuthorization(ctx context.Context, profileID string, runtime string) (store.ProfileAuthorization, error) {
-	payload, err := json.Marshal(wsStartProfileAuthorizationPayload{ProfileID: profileID, Runtime: runtime})
-	if err != nil {
-		return store.ProfileAuthorization{}, err
-	}
-	value, err := daemonRequest[wsProfileAuthorizationStartedPayload](ctx, c, wsStartProfileAuthorizationType, payload)
-	if err != nil {
-		return store.ProfileAuthorization{}, err
-	}
-	if value.Error != "" {
-		return store.ProfileAuthorization{}, errors.New(value.Error)
-	}
-	return value.Authorization, nil
-}
-
-func (c *daemonConnection) completeProfileAuthorization(ctx context.Context, flowID string, authorizationResult string) (store.ProfileAuthorization, error) {
-	payload, err := json.Marshal(wsCompleteProfileAuthorizationPayload{FlowID: flowID, AuthorizationResult: authorizationResult})
-	if err != nil {
-		return store.ProfileAuthorization{}, err
-	}
-	value, err := daemonRequest[wsProfileAuthorizationCompletedPayload](ctx, c, wsCompleteProfileAuthorizationType, payload)
-	if err != nil {
-		return store.ProfileAuthorization{}, err
-	}
-	if value.Error != "" {
-		return store.ProfileAuthorization{}, errors.New(value.Error)
-	}
-	if value.Registration.Device.ID != "" {
-		if err := c.syncRegistration(value.Registration); err != nil {
-			return store.ProfileAuthorization{}, err
-		}
-	}
-	return value.Authorization, nil
 }
 
 // readProfileCredential round-trips one credential the daemon holds locally.

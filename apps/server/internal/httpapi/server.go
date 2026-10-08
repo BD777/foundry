@@ -39,6 +39,7 @@ type Server struct {
 	accounts           store.AccountStore
 	loginLimiter       *loginLimiter
 	setupMu            sync.Mutex
+	workerUpdates      workerUpdates
 	setupCode          string
 	// testActor authenticates every browser request in package tests, and
 	// testFullAccess lets it reach every workspace and device so handler
@@ -72,6 +73,7 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish}
 	server.hub.onSessionCompleted = server.titles.SessionCompleted
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
+	server.hub.onDeviceConnected = server.keepDeviceSkillsScanned
 	server.feishu = feishu.NewWSManager(store, server.secrets, server)
 	server.events.SubscribeInternal(server.feishu.HandleInternalEvent)
 	go server.feishu.StartAllConfiguredBots(context.Background())
@@ -179,7 +181,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
-	devices := view.filterDevices(allDevices)
+	devices := s.withWorkerUpdates(view.filterDevices(allDevices))
 	allProfiles, err := s.store.ListProfiles(ctx)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
@@ -321,6 +323,10 @@ func (s *Server) allEffectiveSkillRoots(ctx context.Context, devices []store.Dev
 	}
 	result := []store.DeviceSkillRoot{}
 	for _, device := range devices {
+		// A removed device scans nothing; its roots were purged with it.
+		if device.Status == deviceStatusRemoved {
+			continue
+		}
 		rows := byDevice[device.ID]
 		if len(rows) == 0 {
 			for _, path := range defaultSkillRoots {
@@ -393,6 +399,16 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "local daemon is not connected")
 		return
 	}
+	if errors.Is(err, store.ErrWorkspaceOwnedByAnotherDevice) {
+		writeError(w, http.StatusConflict, "This folder is already a workspace of another device. Open it there, or remove it from that device first.")
+		return
+	}
+	// The device keeps working after the wait ends, and a late answer still
+	// registers the folder.
+	if errors.Is(err, context.DeadlineExceeded) {
+		writeError(w, http.StatusGatewayTimeout, "The device did not finish setting up this folder within 60 seconds. It may still be working on it (a large folder takes longer the first time): check the device's Workspaces in a minute before trying again.")
+		return
+	}
 	writeResultWithStatus(w, http.StatusCreated, item, err)
 }
 
@@ -409,6 +425,34 @@ func (s *Server) handleRenameWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.RenameWorkspace(r.Context(), r.PathValue("id"), name)
+	writeResult(w, item, err)
+}
+
+// deviceNamer is the store capability behind device renaming.
+type deviceNamer interface {
+	RenameDevice(ctx context.Context, id string, name string) (store.DeviceProjection, error)
+}
+
+// handleRenameDevice sets the name people see for a device; the worker's
+// hostname stays in its system details.
+func (s *Server) handleRenameDevice(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" || len([]rune(name)) > 120 || strings.ContainsAny(name, "\r\n\t") {
+		writeError(w, http.StatusBadRequest, "display name must be 1–120 characters on one line")
+		return
+	}
+	namer, ok := s.store.(deviceNamer)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "this store cannot rename devices")
+		return
+	}
+	item, err := namer.RenameDevice(r.Context(), r.PathValue("deviceId"), name)
 	writeResult(w, item, err)
 }
 
@@ -1085,6 +1129,8 @@ func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAg
 		resolved, resolveErr := s.store.ResolveSessionAgent(ctx, *input)
 		if resolveErr == nil {
 			deviceID = resolved.DeviceID
+		} else if errors.Is(resolveErr, store.ErrDeviceRemoved) {
+			return http.StatusGone, errors.New("device_removed")
 		} else if !errors.Is(resolveErr, store.ErrNotFound) &&
 			!errors.Is(resolveErr, store.ErrProfileNotFound) &&
 			!errors.Is(resolveErr, store.ErrDeviceRemoved) {
@@ -1370,6 +1416,29 @@ func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "synced", "count": len(input.Chats)})
 }
 
+// handleDaemonRunningChats names the device-native chats this server shows as
+// running in a workspace. A worker syncs only its most recent native sessions,
+// so it asks for these to re-check one that ended long ago and would
+// otherwise stay "running" here forever.
+func (s *Server) handleDaemonRunningChats(w http.ResponseWriter, r *http.Request) {
+	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
+	if !s.requireDeviceWorkspace(w, r, workspaceID) {
+		return
+	}
+	chats, err := s.store.ListChats(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ids := []string{}
+	for _, chat := range chats {
+		if chat.NativeSessionID != "" && chat.Status == "running" {
+			ids = append(ids, chat.ID)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chatIds": ids})
+}
+
 func (s *Server) handleDaemonWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.hub.ServeHTTP(w, r)
 }
@@ -1413,6 +1482,10 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 		}
 		if errors.Is(err, store.ErrAgentSessionActive) {
 			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		if errors.Is(err, store.ErrDeviceRemoved) {
+			writeError(w, http.StatusGone, "device_removed")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

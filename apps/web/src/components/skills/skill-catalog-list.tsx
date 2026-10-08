@@ -169,7 +169,11 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
         emptyState ? (
           <div className="fdy-workspace-skills-empty">
             <EmptyState body={emptyState.body} title={emptyState.title} />
-            {emptyState.action}
+            {emptyState.action ? (
+              <div className="fdy-workspace-skills-empty-action">
+                {emptyState.action}
+              </div>
+            ) : null}
           </div>
         ) : (
           <EmptyState

@@ -78,11 +78,24 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 			return store.AgentSession{}, errors.New("the native session has not synced its latest two turns yet; wait for the local worker to update, then retry")
 		}
 	}
+	var agent *store.AgentProjection
+	if input.AgentID != "" {
+		// A Foundry chat is named by the agent it ran on, resolved the way a
+		// new session resolves it: a device-reported agent or the server's
+		// projection of a bound server connection (never in ListAgents).
+		resolved, err := s.store.ResolveSessionAgent(ctx, input)
+		if err == nil && (resolved.Status == "" || resolved.Status == "healthy") {
+			agent = &resolved
+		}
+		if agent == nil || !s.connected(agent.DeviceID) {
+			return store.AgentSession{}, errors.New("the provider or profile this chat uses is unavailable, so it cannot be named automatically")
+		}
+		return s.createTitleJob(ctx, chatID, input, agent, messages, automatic)
+	}
 	agents, err := s.store.ListAgents(ctx, workspaceID, deviceID)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	var agent *store.AgentProjection
 	for i := range agents {
 		candidate := &agents[i]
 		if candidate.Provider != input.Provider || candidate.Status != "healthy" {
@@ -100,6 +113,11 @@ func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string
 	if agent == nil || !s.connected(agent.DeviceID) {
 		return store.AgentSession{}, errors.New("the provider or profile this chat uses is unavailable, so it cannot be named automatically")
 	}
+	return s.createTitleJob(ctx, chatID, input, agent, messages, automatic)
+}
+
+func (s *chatTitleService) createTitleJob(ctx context.Context, chatID string, input store.CreateAgentSessionInput, agent *store.AgentProjection, messages []chattitle.Message, automatic bool) (store.AgentSession, error) {
+	var err error
 	input.AgentID = agent.ID
 	input.Prompt, err = chattitle.Prompt(messages)
 	if err != nil {

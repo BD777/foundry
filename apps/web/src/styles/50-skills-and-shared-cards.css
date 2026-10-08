@@ -411,16 +411,14 @@
   margin-left: auto;
 }
 
-.fdy-device-skills section header h2,
-.fdy-workspace-skills-heading h2 {
+.fdy-skill-catalog-heading h2 {
   margin: 0 0 4px;
   color: var(--fdy-ink-strong);
   font-size: 14px;
   font-weight: 650;
 }
 
-.fdy-device-skills section header p,
-.fdy-workspace-skills-heading p {
+.fdy-skill-catalog-heading p {
   margin: 0 0 12px;
   color: var(--fdy-ink-faint);
   font-size: 12.5px;
@@ -568,6 +566,11 @@
   margin-bottom: 16px;
 }
 
+/* A workspace's own device skills follow its selection list. */
+.fdy-workspace-skills + .fdy-local-skills {
+  margin-top: 32px;
+}
+
 .fdy-skill-select-list {
   display: grid;
   gap: 6px;
@@ -650,8 +653,12 @@
 .fdy-workspace-skills-empty {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
+}
+
+.fdy-workspace-skills-empty-action {
+  align-self: flex-start;
 }
 
 .fdy-skill-row-title-bar {

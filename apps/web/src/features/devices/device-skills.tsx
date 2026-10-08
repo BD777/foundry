@@ -1,6 +1,6 @@
-import { skillServerLabel } from "./skill-version-state";
+import { skillServerLabel } from "../../components/skills/skill-version-state";
 import { type SkillServerFilter } from "./skill-search";
-import { SkillPromotionDialog } from "./skill-promotion-dialog";
+import { SkillPromotionDialog } from "../../components/skills/skill-promotion-dialog";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -29,7 +29,9 @@ import {
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
 
-const SkillCompareDialog = lazy(() => import("./skill-compare-dialog"));
+const SkillCompareDialog = lazy(
+  () => import("../../components/skills/skill-compare-dialog"),
+);
 
 interface DeviceSkillsProps {
   device: DeviceProjection;

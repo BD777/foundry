@@ -2,13 +2,15 @@
  * Device identity and runtime settings.
  */
 
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { hostname } from "node:os";
+import os, { hostname } from "node:os";
 import { dirname } from "node:path";
 import type {
   AgentRuntimeSettings,
   DeviceProjection,
+  DeviceSystem,
 } from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { normalizeMaxConcurrentTasks } from "./task-scheduler.js";
@@ -24,6 +26,59 @@ export function defaultDeviceLabel(): string {
   return (
     hostname().replace(/\.local$/, "") || `${process.platform}-${process.arch}`
   );
+}
+
+let cachedSystem: DeviceSystem | undefined;
+
+function linuxRelease(): { os: string; osVersion?: string } {
+  try {
+    const fields = Object.fromEntries(
+      readFileSync("/etc/os-release", "utf8")
+        .split("\n")
+        .map((line) => /^([A-Z_]+)=("?)(.*)\2$/.exec(line))
+        .filter((match) => match !== null)
+        .map((match) => [match[1], match[3]]),
+    );
+    return { os: fields.NAME || "Linux", osVersion: fields.VERSION };
+  } catch {
+    return { os: "Linux" };
+  }
+}
+
+function macRelease(): { os: string; osVersion?: string } {
+  const version = spawnSync("sw_vers", ["-productVersion"], {
+    encoding: "utf8",
+    timeout: 5000,
+  }).stdout?.trim();
+  return { os: "macOS", osVersion: version || undefined };
+}
+
+/** What machine this is, for people telling devices apart. */
+export function deviceSystem(): DeviceSystem {
+  if (cachedSystem) return cachedSystem;
+  const cpus = os.cpus();
+  let user: string | undefined;
+  try {
+    user = os.userInfo().username;
+  } catch {
+    user = undefined;
+  }
+  cachedSystem = {
+    hostname: hostname(),
+    ...(process.platform === "darwin"
+      ? macRelease()
+      : process.platform === "linux"
+        ? linuxRelease()
+        : { os: process.platform }),
+    kernel: `${os.type()} ${os.release()}`,
+    arch: process.arch,
+    cpuModel: cpus[0]?.model.trim() || undefined,
+    cpuCount: cpus.length || undefined,
+    memoryBytes: os.totalmem(),
+    user,
+    nodeVersion: process.version,
+  };
+  return cachedSystem;
 }
 
 export function getDevice(): DeviceProjection {

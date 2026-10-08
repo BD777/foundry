@@ -32,7 +32,8 @@ export const devices = {
     offline:
       "This device is offline. Saved workspaces and history remain available; sign-in and execution require reconnection.",
     sections: "Device sections",
-    sectionWorkspaces: "Workspaces",
+    workspacesLink_one: "{{count}} workspace",
+    workspacesLink_other: "{{count}} workspaces",
     sectionResources: "Resources",
     sectionAgents: "Models & accounts",
     sectionSkills: "Skills",
@@ -40,6 +41,63 @@ export const devices = {
     sharedTitle: "Shared with you",
     sharedBody:
       "You reach this device through its workspaces. Models, accounts, skills and settings are managed by the account that paired it.",
+  },
+  rename: {
+    action: "Rename",
+    title: "Rename device",
+    description:
+      "The name everyone sharing this device sees. Its hostname, {{hostname}}, stays in its details.",
+    label: "Device name",
+    submit: "Save name",
+    failed: "Could not rename the device.",
+  },
+  details: {
+    missing:
+      "This device's worker is older than 0.5.7 and reports no system details; update it to see them.",
+    hostname: "Hostname",
+    system: "System",
+    kernel: "Kernel",
+    cpu: "Processor",
+    cpuValue: "{{model}} · {{count}} cores · {{arch}}",
+    memory: "Memory",
+    user: "User",
+    worker: "Worker",
+    node: "Node.js",
+  },
+  worker: {
+    title: "Worker",
+    behindTitle: "This device's worker is behind this server",
+    running: "Runs worker {{version}}.",
+    unknownVersion: "older than 0.5.7",
+    serverBuild: "This server serves {{version}}.",
+    serverNpm: "This server uses the npm release.",
+    runLocal: "Run on {{device}} to update it and restart the worker:",
+    runOnce:
+      "Run once on {{device}}; it finds the worker paired with this server and updates it. Afterwards the device has its own update command.",
+    updateNow: "Update now",
+    updating: "Updating…",
+    updateStarted:
+      "The device is updating its worker and will restart it; this page shows the new version when it reconnects.",
+    updateRunningSince:
+      "Updating since {{time}}; the worker restarts with the new version and this page shows it when it reconnects.",
+    updateSlow:
+      "The device has not come back with the new version yet. Check it under Settings → Worker, or its log.",
+    updateFailed: "Could not start the update.",
+    updateAll_one: "Update {{count}} worker",
+    updateAll_other: "Update {{count}} workers",
+    updateAllStarted_one:
+      "Updating {{count}} device; each restarts its worker and shows the new version when it reconnects.",
+    updateAllStarted_other:
+      "Updating {{count}} devices; each restarts its worker and shows the new version when it reconnects.",
+    updateAllRunning:
+      "Workers are updating; this list refreshes until they reconnect.",
+    updateAllManual:
+      "Not updatable from here (offline or an older worker): {{devices}}. Open the device for its update command.",
+    updateAllFailure: "{{device}}: {{error}}",
+    stateUpdatable: "Update available",
+    stateManual: "Worker behind",
+    stateUpdating: "Updating worker…",
+    sourceCheckout: "It runs from a source checkout, which updates with git.",
   },
   settings: {
     title: "Execution settings",
@@ -70,6 +128,8 @@ export const devices = {
       "Run on that machine. The first command checks it without downloading anything; the second updates the worker and restarts it.",
     repairLegacy:
       "A device set up with an earlier version gets this command after running <code>{{update}}</code> once.",
+    repairServerBuild:
+      "This server serves its own worker build ({{version}}), and the update above follows it. A device on the npm release, or set up with an earlier version, switches to it by running this once:",
     copyCommand: "Copy command",
     newToken: "New token",
     creating: "Creating…",
@@ -106,8 +166,8 @@ export const devices = {
     sources: "AI access sources",
     accountsTitle: "Official accounts",
     accountsHint: "Sign in separately on this device",
-    connectionsTitle: "Server API connections <em>{{total}}</em>",
-    connectionsHint: "Shared configuration · Explicit device access",
+    connectionsTitle: "API connections <em>{{total}}</em>",
+    connectionsHint: "From the server or this device's own configuration",
     accountsExplanation:
       "Use your ChatGPT or Claude subscription. Credentials stay on this device; no server connection is needed.",
   },

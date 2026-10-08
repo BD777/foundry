@@ -123,7 +123,10 @@ test("a missing program offers an install that runs only after a confirming clic
     view.container.textContent,
     /curl -fsSL https:\/\/claude\.ai\/install\.sh \| bash/,
   );
-  assert.equal(view.button("Sign in to Codex on Studio Mac") !== null, true);
+  assert.equal(
+    view.button("Check the Codex login on Studio Mac again") !== null,
+    true,
+  );
   const install = view.button("Install Claude Code on Studio Mac");
   assert.ok(install, "the missing program shows an install button");
 

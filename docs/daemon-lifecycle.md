@@ -20,7 +20,7 @@ symbol name to find the current code.
 | Server side of the socket                             | `apps/server/internal/httpapi/daemon_ws.go`                               |
 | Server request/response correlation                   | `apps/server/internal/httpapi/daemon_rpc.go`                              |
 | Evidence / verification worker RPC                    | `packages/worker/src/evidence-rpc.ts`                                     |
-| Native account inspection and login flows             | `packages/worker/src/native-inspection.ts`, `profile-authorization.ts`    |
+| Native account inspection                             | `packages/worker/src/native-inspection.ts`                                |
 | Workspace inspection and Issue environment RPC        | `packages/worker/src/workspace-inspection.ts`, `issue-environment-rpc.ts` |
 | Browser SSE lifecycle                                 | `apps/server/internal/httpapi/browser_events.go`                          |
 | Server process configuration and lifecycle            | `apps/server/cmd/foundry-server/main.go`, `config.go`, `lifecycle.go`     |
@@ -70,32 +70,31 @@ tests for the parsers live in
 
 Inbound handlers in `runWebSocketSession`, keyed by `daemonMessageTypes`:
 
-| Inbound                                                      | Handling                                                                | Reply                                                           |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `error`                                                      | log server error                                                        | —                                                               |
-| `ack`                                                        | `sessionTransport.acknowledge()` [transport]                            | —                                                               |
-| `registered`                                                 | bind session transport, `announceAdditionalIssueCapacity()`             | `readyForIssue` × free slots                                    |
-| `readFile`                                                   | `sendFileRead()` [session-helpers]                                      | `fileRead`                                                      |
-| `readSubagentTranscript`                                     | `sendSubagentTranscript()`                                              | `subagentTranscriptRead`                                        |
-| `listSubagents`                                              | `sendSubagentList()`                                                    | `subagentsListed`                                               |
-| `listDirectories`                                            | `sendDirectoryListing()`                                                | `directoriesListed`                                             |
-| `inspectWorkspace`                                           | workspace inspection handler [workspace-inspection]                     | `workspaceInspected`                                            |
-| `inspectNativeAccount`                                       | `inspectNativeAccount()` [native-inspection]                            | `nativeAccountInspected`                                        |
-| `setupWorkspace`                                             | `initWorkspace()` [workspaces]                                          | `workspaceReady`                                                |
-| `forgetWorkspace`                                            | `forgetWorkspaceRegistration()`                                         | `workspaceForgotten`                                            |
-| `listAgentModels`                                            | `listAgentModelsConfig()` [models]                                      | `agentModelsListed`                                             |
-| `upsertAgentProfile`                                         | `upsertAgentProfileConfig()` [profiles]                                 | `agentProfileUpserted`                                          |
-| `upsertAgentRuntimeSettings`                                 | `writeAgentRuntimeSettings()` + `taskScheduler.setMaxConcurrentTasks()` | `agentRuntimeSettingsUpserted`                                  |
-| `startProfileAuthorization` / `completeProfileAuthorization` | native OAuth flow via node-pty [profile-authorization]                  | `profileAuthorizationStarted` / `profileAuthorizationCompleted` |
-| `readProfileCredential`                                      | read sealed credential for one dispatch [profiles]                      | `profileCredentialRead`                                         |
-| `scanSkills`                                                 | `scanSkillRoots()` over the requested roots                             | `skillsScanned`                                                 |
-| `readSkillFile` / `readSkillContent`                         | read one skill file / `packageSkillDirectory()` for promotion           | `skillFileRead` / `skillContentRead`                            |
-| `issueEnvironment`                                           | prepare/inspect/cleanup Issue environments [issue-environments]         | `issueEnvironmentResult`                                        |
-| `evidenceRequest`                                            | seal/collect/assess/accept/recover RPC [evidence-rpc]                   | `evidenceResult`                                                |
-| `steerSession`                                               | active steer target [session-state]                                     | `sessionSteered`                                                |
-| `cancelSession`                                              | `cancelActiveSession()`                                                 | `sessionCanceled`                                               |
-| `runSession`                                                 | claim, `taskScheduler.schedule()` → `executeAgentSession()`             | `sessionStarted` … `sessionCompleted`                           |
-| `runIssue`                                                   | `taskScheduler.schedule()` → `executeIssue()` [issue-execution]         | `runStarted`, `runEvent`, `issueCompleted`                      |
+| Inbound                              | Handling                                                                | Reply                                      |
+| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------ |
+| `error`                              | log server error                                                        | —                                          |
+| `ack`                                | `sessionTransport.acknowledge()` [transport]                            | —                                          |
+| `registered`                         | bind session transport, `announceAdditionalIssueCapacity()`             | `readyForIssue` × free slots               |
+| `readFile`                           | `sendFileRead()` [session-helpers]                                      | `fileRead`                                 |
+| `readSubagentTranscript`             | `sendSubagentTranscript()`                                              | `subagentTranscriptRead`                   |
+| `listSubagents`                      | `sendSubagentList()`                                                    | `subagentsListed`                          |
+| `listDirectories`                    | `sendDirectoryListing()`                                                | `directoriesListed`                        |
+| `inspectWorkspace`                   | workspace inspection handler [workspace-inspection]                     | `workspaceInspected`                       |
+| `inspectNativeAccount`               | `inspectNativeAccount()` [native-inspection]                            | `nativeAccountInspected`                   |
+| `setupWorkspace`                     | `initWorkspace()` [workspaces]                                          | `workspaceReady`                           |
+| `forgetWorkspace`                    | `forgetWorkspaceRegistration()`                                         | `workspaceForgotten`                       |
+| `listAgentModels`                    | `listAgentModelsConfig()` [models]                                      | `agentModelsListed`                        |
+| `upsertAgentProfile`                 | `upsertAgentProfileConfig()` [profiles]                                 | `agentProfileUpserted`                     |
+| `upsertAgentRuntimeSettings`         | `writeAgentRuntimeSettings()` + `taskScheduler.setMaxConcurrentTasks()` | `agentRuntimeSettingsUpserted`             |
+| `readProfileCredential`              | read sealed credential for one dispatch [profiles]                      | `profileCredentialRead`                    |
+| `scanSkills`                         | `scanSkillRoots()` over the requested roots                             | `skillsScanned`                            |
+| `readSkillFile` / `readSkillContent` | read one skill file / `packageSkillDirectory()` for promotion           | `skillFileRead` / `skillContentRead`       |
+| `issueEnvironment`                   | prepare/inspect/cleanup Issue environments [issue-environments]         | `issueEnvironmentResult`                   |
+| `evidenceRequest`                    | seal/collect/assess/accept/recover RPC [evidence-rpc]                   | `evidenceResult`                           |
+| `steerSession`                       | active steer target [session-state]                                     | `sessionSteered`                           |
+| `cancelSession`                      | `cancelActiveSession()`                                                 | `sessionCanceled`                          |
+| `runSession`                         | claim, `taskScheduler.schedule()` → `executeAgentSession()`             | `sessionStarted` … `sessionCompleted`      |
+| `runIssue`                           | `taskScheduler.schedule()` → `executeIssue()` [issue-execution]         | `runStarted`, `runEvent`, `issueCompleted` |
 
 ### Server-side RPC correlation
 

@@ -107,6 +107,9 @@ func (s *Store) SoftRemoveDevice(ctx context.Context, id string) (store.DevicePr
 		if err := tx.RevokeDeviceCredential(ctx, id); err != nil {
 			return err
 		}
+		if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
+			return err
+		}
 		device = markDeviceRemoved(d)
 		return nil
 	})
@@ -181,4 +184,54 @@ func (s *Store) assertWorkspaceDeviceNotRemoved(ctx context.Context, workspaceID
 		return err
 	}
 	return s.assertDeviceNotRemoved(ctx, deviceID)
+}
+
+// purgeRemovedDeviceState deletes what a removed device reported or was
+// given, as opposed to its history: agents, agent profiles, provider
+// health, server connection assignments, skill roots and skills, and the
+// per-device credential copies (httpapi.agentProfileSecretID:
+// "agent-profile:<device>:<profile>"). Workspaces, chats, sessions, runs and
+// issues stay readable. Nothing live is left to list, pick or project.
+func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
+	for _, statement := range []struct{ label, query string }{
+		{"agents", `DELETE FROM agents WHERE device_id = ?`},
+		{"agent profiles", `DELETE FROM agent_profiles WHERE device_id = ?`},
+		{"provider health", `DELETE FROM provider_health WHERE json_extract(payload_json, '$.deviceId') = ?`},
+		{"connection assignments", `DELETE FROM device_profiles WHERE device_id = ?`},
+		{"skills", `DELETE FROM device_skills WHERE device_id = ?`},
+		{"skill roots", `DELETE FROM device_skill_roots WHERE device_id = ?`},
+		{"credentials", `DELETE FROM secret_records WHERE substr(id, 1, length('agent-profile:' || ?1 || ':')) = 'agent-profile:' || ?1 || ':'`},
+	} {
+		if _, err := s.conn().ExecContext(ctx, statement.query, id); err != nil {
+			return fmt.Errorf("remove device %s: %w", statement.label, err)
+		}
+	}
+	return nil
+}
+
+// PurgeRemovedDevicesState applies purgeRemovedDeviceState to every device
+// already removed, for devices removed before removal cascaded. Idempotent.
+func (s *Store) PurgeRemovedDevicesState(ctx context.Context) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		rows, err := tx.conn().QueryContext(ctx, `SELECT device_id FROM removed_devices`)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		for _, id := range ids {
+			if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

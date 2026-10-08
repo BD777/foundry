@@ -110,3 +110,26 @@ test("many Claude assistant records do not evict the latest user question", () =
   assert.ok(recap.recentMessages.at(-1).text.includes("progress 39"));
   assert.equal(recap.recentMessages.length, 2);
 });
+
+test("a native turn that went silent long ago was cut off, not running", () => {
+  const lines = [
+    JSON.stringify({ type: "event_msg", payload: { type: "task_started" } }),
+    JSON.stringify({
+      type: "event_msg",
+      payload: { type: "user_message", message: "keep digging" },
+    }),
+  ];
+  assert.equal(nativeChatRecap(lines, "codex", new Date()).status, "running");
+  assert.equal(
+    nativeChatRecap(lines, "codex", new Date("2026-06-17T13:52:24Z")).status,
+    "canceled",
+  );
+  const finished = [
+    ...lines,
+    JSON.stringify({ type: "event_msg", payload: { type: "task_complete" } }),
+  ];
+  assert.equal(
+    nativeChatRecap(finished, "codex", new Date("2026-06-17T13:52:24Z")).status,
+    "completed",
+  );
+});

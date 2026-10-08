@@ -45,7 +45,6 @@ export const workerModules = {
       "storage",
       "utils",
       "task-scheduler",
-      "pdf-text",
     ],
   },
   device: {
@@ -89,7 +88,6 @@ export const workerModules = {
     dependsOn: ["device"],
     files: [
       "profiles",
-      "profile-authorization",
       "agent-profile-state",
       "native-account",
       "native-agent-config",
@@ -99,6 +97,7 @@ export const workerModules = {
       "native-login",
       "native-login-environment",
       "models",
+      "provider-check-state",
       "provider-health",
     ],
   },
@@ -109,6 +108,7 @@ export const workerModules = {
       "skill-files",
       "skill-isolation",
       "skill-materializer",
+      "skill-scan-thread",
       "skill-scanner",
       "skill-zip",
     ],
@@ -127,6 +127,7 @@ export const workerModules = {
       "transport",
     ],
     files: [
+      "provider-check",
       "runner",
       "sdk-messages",
       "session-ambient",
@@ -209,6 +210,9 @@ export const workerModules = {
       "service",
       "mac-worker-app",
       "worker-install",
+      "worker-identity",
+      "worker-self-update",
+      "self-update-lock",
     ],
   },
 };

@@ -24,8 +24,7 @@ export interface SessionSpec {
     text: string;
     images: { mimeType: string; bytes: Buffer }[];
     /**
-     * PDFs, given as documents to a harness that reads them (Claude); one
-     * that cannot (Codex) gets their extracted text instead, labelled so.
+     * PDFs: Claude takes them as documents, Codex as files it reads itself.
      */
     documents?: { name: string; bytes: Buffer }[];
   };

@@ -13,11 +13,11 @@ import {
   compareSkillFile,
   downloadSkillComparisonPackage,
 } from "../../api";
-import { Button } from "../../components/ui/button";
-import { SelectMenu } from "../../components/ui/select-menu";
-import { TextInput } from "../../components/ui/field";
+import { Button } from "../ui/button";
+import { SelectMenu } from "../ui/select-menu";
+import { TextInput } from "../ui/field";
 const FileDiff = lazy(() =>
-  import("../../components/ui/file-diff").then((m) => ({
+  import("../ui/file-diff").then((m) => ({
     default: m.FileDiff,
   })),
 );

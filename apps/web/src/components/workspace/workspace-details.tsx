@@ -8,6 +8,7 @@ import { inspectWorkspace } from "../../api";
 import type { WorkspaceInspection } from "../../api-types";
 import { Button } from "../ui/button";
 import { WorkspaceDialog } from "./workspace-dialog";
+import { isRemovedDevice } from "../../lib/devices";
 
 /** Read-only workspace inspection; opening it never switches the location. */
 export function WorkspaceDetails({
@@ -24,9 +25,7 @@ export function WorkspaceDetails({
   const [err, setErr] = useState("");
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  // The server projects tombstoned devices with status "removed"; accept it
-  // structurally until the shared protocol union is regenerated.
-  const removed = (device.status as string) === "removed";
+  const removed = isRemovedDevice(device);
   const connected = device.status === "connected";
   useEffect(() => {
     if (!connected) return;

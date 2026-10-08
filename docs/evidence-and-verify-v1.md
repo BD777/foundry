@@ -245,7 +245,7 @@ FOUNDRY_VERIFY_E2E_LIVE=1 node --test packages/worker/test/evidence-api-e2e.test
 3. 自动恢复目前覆盖 collect/assess 与澄清回复（`recover_session`）；上传/对齐有持久幂等结果，但不具备所有中途副作用的通用恢复协议。未知执行状态继续拒绝盲目重放。
 4. PDF 预览已于 2026-10-03 完成：浏览器内置阅读器显示已按封存摘要校验过的字节（Blob URL，受保护的接口地址不进入预览框），并可在新标签页打开或下载原件。图像区域高亮/标注、视频/音频预览暂不计划。主动删除材料的影响提示尚未做。rationale media 只能作解释性 context，不作为新 Evidence。
 5. 所有历史 mutation 的统一预期版本检查，以及原始输入/配置关联的更完整交互。判定与检查只看封存候选的干净副本（不含 ignored 文件）；项目命令前按 tracked 锁文件离线准备依赖（pnpm/npm 安装；Go 读本机模块缓存，锁文件摘要与命令记入验证输入）已实现；其他生态与需要联网获取的依赖尚未支持。
-6. PDF 参考材料与证据已于 2026-10-03 支持（最大 32 MiB），原则是把材料本身交给 Agent：澄清、执行与判定都拿到 PDF 原件，Claude 直接阅读；Codex 读不了 PDF，另给一份 pdf.js 抽取的逐页文本，并注明不含版式与图片、依赖它们的要求只能判为无法确定。视频/音频等材料暂不计划。澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
+6. PDF 参考材料与证据已于 2026-10-03 支持（最大 32 MiB），原则是把材料本身交给 Agent：澄清、执行与判定都拿到 PDF 原件，Claude 直接阅读，Codex 用自己的只读 Shell 读取（2026-10-08 起不再由 Worker 抽取文字，Agent 自己读材料）。视频/音频等材料暂不计划。澄清阶段的受控仓库只读探索已实现（所选 Workspace 原目录、只读工具与项目指令，不写入、不执行命令）。
 7. Linux 平台：执行期隔离使用 bubblewrap（见[多仓执行方案 §12](issue-workspace-execution.md#12-第一版实现与操作边界)），需要可用的 user namespace；Agent 阶段沙箱（澄清与判定）与 Accept/集成自 2026-09-25 起在 Linux 开通；受控本地 HTTP 目标自 2026-09-28 起在 Linux 开通（服务在无网络的命名空间中，经 Unix socket 转接）；未验证平台保持拒绝。
 
 只有这些缺口收口并完成首个 provider 的全链路演示后，才应把 README 的 Evidence / Verify 能力勾为完成。

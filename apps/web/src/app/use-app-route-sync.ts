@@ -51,7 +51,9 @@ export function useAppRouteSync({
           ? { view: "issue", selectedIssueId: selectedIssueId || undefined }
           : activeView === "devices"
             ? { view: "devices", selectedDeviceId, deviceSection }
-            : { view: activeView };
+            : activeView === "locations"
+              ? { view: "locations", selectedDeviceId }
+              : { view: activeView };
     const nextPath = pathForAppRoute(nextRoute);
     const nextUrl = `${nextPath}${searchWithWorkspace(activeWorkspaceId)}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;

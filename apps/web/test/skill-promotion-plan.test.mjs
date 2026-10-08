@@ -4,7 +4,7 @@ import {
   buildSkillPromotionSelection,
   defaultSkillPromotionReferences,
   sameSkillPromotionSources,
-} from "../src/features/devices/skill-promotion-plan.ts";
+} from "../src/components/skills/skill-promotion-plan.ts";
 const skill = (name, dependencies = []) => ({
   deviceId: "device",
   root: "/skills",

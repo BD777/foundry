@@ -274,3 +274,39 @@ test("unavailable rows keep a short reason; healthy official accounts have none"
     "Device is offline.",
   );
 });
+
+test("the picker offers usable agents; unavailable ones only when chosen or when nothing works", () => {
+  const agent = (id, status, connectionType = "local_login") => ({
+    id,
+    workspaceId: "ws",
+    deviceId: "dev",
+    provider: "codex",
+    status,
+    connectionType,
+    profileId: id,
+    profileLabel: id,
+  });
+  const relay = agent("relay", "healthy", "openai_compatible");
+  const signedOut = agent("codex_local", "missing_auth");
+  assert.deepEqual(
+    buildPickerAgentOptions([relay, signedOut], []).map((o) => o.value),
+    ["relay"],
+  );
+  // An existing chat on an agent that stopped working still shows it.
+  assert.deepEqual(
+    buildPickerAgentOptions([relay, signedOut], [], "codex_local").map((o) => [
+      o.value,
+      Boolean(o.disabled),
+    ]),
+    [
+      ["relay", false],
+      ["codex_local", true],
+    ],
+  );
+  // Nothing usable: the rows say why, and the menu links to the accounts.
+  const none = buildPickerAgentOptions([signedOut], []);
+  assert.deepEqual(
+    none.map((o) => [o.value, o.disabled]),
+    [["codex_local", true]],
+  );
+});

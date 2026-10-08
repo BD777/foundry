@@ -92,7 +92,16 @@ func (s *Store) resolveSessionAgent(
 	if !errors.Is(err, store.ErrNotFound) || input.AgentID == "" || input.WorkspaceID == "" {
 		return store.AgentProjection{}, err
 	}
-	return s.resolveProjectedServerAgent(ctx, input.AgentID, input.WorkspaceID)
+	agent, err = s.resolveProjectedServerAgent(ctx, input.AgentID, input.WorkspaceID)
+	if errors.Is(err, store.ErrNotFound) {
+		// A removed device's agents were purged with it; say why.
+		if workspace, lookup := s.GetWorkspace(ctx, input.WorkspaceID); lookup == nil && workspace.DeviceID != "" {
+			if removed := s.assertDeviceNotRemoved(ctx, workspace.DeviceID); removed != nil {
+				return store.AgentProjection{}, removed
+			}
+		}
+	}
+	return agent, err
 }
 
 // ResolveSessionAgent is the read-only, transaction-free counterpart of the

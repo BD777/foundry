@@ -4,78 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sync"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func TestDeviceAccountAuthorizationNeedsNoGlobalProfile(t *testing.T) {
-	backing := newEmptyTestStore(t)
-	registerPromotionDaemon(t, backing, store.AgentProfileProjection{ID: "codex_local", Runtime: "codex", ConnectionType: "local_login"})
-	server := NewServer(backing)
-	connection := newDaemonConnection(server.hub, nil)
-	server.hub.connections["dev_1"] = connection
-	defer close(connection.done)
-	var mu sync.Mutex
-	var calls []wsEnvelope
-	go func() {
-		for {
-			select {
-			case <-connection.done:
-				return
-			case envelope := <-connection.send:
-				mu.Lock()
-				calls = append(calls, envelope)
-				mu.Unlock()
-				authorization := store.ProfileAuthorization{ID: "flow1", ProfileID: "device-account:codex", Runtime: "codex", Status: "waiting_for_user"}
-				switch envelope.Type {
-				case wsStartProfileAuthorizationType:
-					payload, _ := json.Marshal(wsProfileAuthorizationStartedPayload{Authorization: authorization})
-					_ = deliverDaemonResponse[wsProfileAuthorizationStartedPayload](connection, wsEnvelope{ID: envelope.ID, Type: envelope.Type, Payload: payload}, nil)
-				case wsCompleteProfileAuthorizationType:
-					payload, _ := json.Marshal(wsProfileAuthorizationCompletedPayload{Authorization: authorization})
-					_ = deliverDaemonResponse[wsProfileAuthorizationCompletedPayload](connection, wsEnvelope{ID: envelope.ID, Type: envelope.Type, Payload: payload}, nil)
-				}
-			}
-		}
-	}()
-	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/codex/authorization", `{}`, http.StatusOK)
-	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/codex/authorization/flow1", `{}`, http.StatusOK)
-	// A code must never reach a flow for another runtime.
-	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/claude/authorization/flow1", `{"authorizationResult":"private-code"}`, http.StatusConflict)
-	mu.Lock()
-	defer mu.Unlock()
-	for _, call := range calls {
-		if call.Type == wsStartProfileAuthorizationType {
-			var payload wsStartProfileAuthorizationPayload
-			_ = json.Unmarshal(call.Payload, &payload)
-			if payload.ProfileID != "device-account:codex" || payload.Runtime != "codex" {
-				t.Fatalf("wrong login target: %+v", payload)
-			}
-		}
-		if call.Type == wsCompleteProfileAuthorizationType {
-			var payload wsCompleteProfileAuthorizationPayload
-			_ = json.Unmarshal(call.Payload, &payload)
-			if payload.AuthorizationResult != "" {
-				t.Fatal("authorization code was forwarded before checking flow identity")
-			}
-		}
-	}
-	profiles, _ := backing.ListProfiles(context.Background())
-	bindings, _ := backing.ListDeviceProfiles(context.Background(), "")
-	if len(profiles) != 0 || len(bindings) != 0 {
-		t.Fatal("device login created a global profile or binding")
-	}
-}
-
-func TestDeviceAccountAuthorizationRejectsUnknownOfflineAndInvalidTargets(t *testing.T) {
+func TestDeviceAccountRequestsRejectUnknownOfflineAndInvalidTargets(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	registerPromotionDaemon(t, backing, store.AgentProfileProjection{ID: "codex_local", Runtime: "codex"})
 	server := NewServer(backing)
-	requestForTest(t, server, http.MethodPost, "/api/devices/unknown/accounts/codex/authorization", `{}`, http.StatusNotFound)
-	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/codex/authorization", `{}`, http.StatusConflict)
-	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/other/authorization", `{}`, http.StatusBadRequest)
+	requestForTest(t, server, http.MethodPost, "/api/devices/unknown/accounts/codex/inspect", `{}`, http.StatusNotFound)
+	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/codex/inspect", `{}`, http.StatusConflict)
+	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/other/inspect", `{}`, http.StatusBadRequest)
 	requestForTest(t, server, http.MethodPost, "/api/devices/unknown/accounts/codex/inspect", `{}`, http.StatusNotFound)
 	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/codex/inspect", `{}`, http.StatusConflict)
 	requestForTest(t, server, http.MethodPost, "/api/devices/dev_1/accounts/other/inspect", `{}`, http.StatusBadRequest)

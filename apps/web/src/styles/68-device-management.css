@@ -100,12 +100,6 @@
   font-size: 11px;
   white-space: pre-wrap;
 }
-
-.fdy-device-authorization-card {
-  padding: 16px;
-  background: var(--fdy-paper);
-  border-radius: 8px;
-}
 .fdy-device-settings-fields {
   display: flex;
   flex-wrap: wrap;
@@ -128,6 +122,47 @@
   background: var(--fdy-warning-surface);
   border-radius: 8px;
   font-size: 13px;
+}
+.fdy-device-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}
+/* Device details: label/value pairs in a wrapping grid, no inner boxes. */
+.fdy-device-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 10px 24px;
+  margin: 0 0 18px;
+}
+.fdy-device-details div {
+  min-width: 0;
+}
+.fdy-device-details dt {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-device-details dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.fdy-device-details-missing {
+  margin: 0 0 18px;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+.fdy-device-worker p {
+  margin: 0 0 8px;
+}
+.fdy-device-worker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
 }
 .fdy-device-add-workspace {
   display: grid;
@@ -451,7 +486,6 @@
   height: auto;
   padding: 0;
   border: 0;
-  background: transparent;
   text-align: left;
 }
 .fdy-device-removal-row-main > span:first-of-type {
@@ -463,12 +497,25 @@
   white-space: normal;
 }
 @media (max-width: 700px) {
-  /* The row stays one line: name and meta wrap, status and actions stay right. */
+  /* The menu stays at the right; inside the row, the name keeps the line and
+     status badges wrap beneath it, aligned with the name. */
   .fdy-device-list-row.fdy-device-removal-row {
     flex-wrap: nowrap;
   }
   .fdy-device-removal-row-main {
-    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px 10px;
+    padding-left: 35px;
+    position: relative;
+  }
+  .fdy-device-removal-row-main > svg:first-child {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .fdy-device-removal-row-main > span:first-of-type {
+    flex-basis: 100%;
   }
 }
 .fdy-device-removal-menu-trigger {
@@ -626,4 +673,18 @@
   margin: 0;
   color: var(--fdy-error-text);
   font-size: 13px;
+}
+.fdy-management-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.fdy-device-update-all {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-device-update-all > p {
+  margin: 0;
 }

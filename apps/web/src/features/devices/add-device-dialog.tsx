@@ -7,7 +7,7 @@ import { TerminalBlock } from "../../components/ui/terminal-block";
 import { i18n } from "../../i18n";
 import {
   localWorkerCommand,
-  npxWorkerCommand,
+  useWorkerRelease,
 } from "../../lib/worker-commands";
 import { WorkspaceDialog } from "./workspace-dialog";
 
@@ -23,8 +23,9 @@ function expiryLabel(value: string): string {
 
 /**
  * Adding a device (a one-time pairing token and the one command that installs
- * a worker from npm; only the token's hash is stored) and checking or
- * repairing one already set up, with the command installed on that machine.
+ * the worker this server names, from its own packages or npm; only the
+ * token's hash is stored) and checking or repairing one already set up, with
+ * the command installed on that machine.
  */
 export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
   const [pairing, setPairing] = useState<{
@@ -34,16 +35,19 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation(["devices", "common"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"install" | "switch">();
+  const worker = useWorkerRelease();
+  const switchCommand = worker.update;
 
-  const command = pairing
-    ? `${npxWorkerCommand} install --server ${workerServerURL()} --token ${pairing.token}`
-    : "";
+  const command =
+    pairing && worker.bootstrap
+      ? `${worker.bootstrap} install --server ${workerServerURL()} --token ${pairing.token}`
+      : "";
 
   async function issue(): Promise<void> {
     setBusy(true);
     setError("");
-    setCopied(false);
+    setCopied(undefined);
     try {
       setPairing(await createDevicePairingToken());
     } catch (reason) {
@@ -57,12 +61,15 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function copy(): Promise<void> {
+  async function copy(
+    which: "install" | "switch",
+    text: string,
+  ): Promise<void> {
     try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
     } catch {
-      setCopied(false);
+      setCopied(undefined);
     }
   }
 
@@ -76,7 +83,7 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
       <section className="fdy-add-device-section">
         <h3>{t("add.title")}</h3>
         <p>{t("add.intro")}</p>
-        {pairing ? (
+        {pairing && command ? (
           <>
             <TerminalBlock
               lines={[{ id: "setup", prompt: "$", value: command }]}
@@ -93,8 +100,10 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
               />
             </p>
             <div className="fdy-add-device-actions">
-              <Button onClick={() => void copy()}>
-                {copied ? t("common:actions.copied") : t("add.copyCommand")}
+              <Button onClick={() => void copy("install", command)}>
+                {copied === "install"
+                  ? t("common:actions.copied")
+                  : t("add.copyCommand")}
               </Button>
               <Button
                 disabled={busy}
@@ -116,9 +125,9 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
             </Button>
           </div>
         )}
-        {error ? (
+        {error || worker.error ? (
           <Alert tone="error" title={t("add.failedTitle")}>
-            {error}
+            {error || worker.error}
           </Alert>
         ) : null}
         <p className="fdy-add-device-note">
@@ -147,14 +156,40 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
             },
           ]}
         />
-        <p className="fdy-add-device-note">
-          <Trans
-            ns="devices"
-            i18nKey="add.repairLegacy"
-            values={{ update: `${npxWorkerCommand} update` }}
-            components={{ code: <code /> }}
-          />
-        </p>
+        {worker.release?.source === "server" && switchCommand ? (
+          <>
+            <p className="fdy-add-device-note">
+              {t("add.repairServerBuild", {
+                version: worker.release.version,
+              })}
+            </p>
+            <TerminalBlock
+              lines={[
+                {
+                  id: "switch",
+                  prompt: "$",
+                  value: switchCommand,
+                },
+              ]}
+            />
+            <div className="fdy-add-device-actions">
+              <Button onClick={() => void copy("switch", switchCommand)}>
+                {copied === "switch"
+                  ? t("common:actions.copied")
+                  : t("add.copyCommand")}
+              </Button>
+            </div>
+          </>
+        ) : switchCommand ? (
+          <p className="fdy-add-device-note">
+            <Trans
+              ns="devices"
+              i18nKey="add.repairLegacy"
+              values={{ update: switchCommand }}
+              components={{ code: <code /> }}
+            />
+          </p>
+        ) : null}
       </section>
     </WorkspaceDialog>
   );

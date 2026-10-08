@@ -1,12 +1,6 @@
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import type {
@@ -158,7 +152,8 @@ export async function scanRepositories(
     }
     let entries;
     try {
-      entries = readdirSync(directory, { withFileTypes: true });
+      // Asynchronous: walking a large tree must not stall the worker.
+      entries = await readdir(directory, { withFileTypes: true });
     } catch (error) {
       errors.push(`${directory}: ${String(error)}`);
       return;
@@ -174,7 +169,10 @@ export async function scanRepositories(
     }
     if (owner?.sourcePath === directory) {
       const links = (
-        await git(directory, ["ls-files", "--stage", "-z"], { optional: true })
+        await git(directory, ["ls-files", "--stage", "-z"], {
+          optional: true,
+          bulk: true,
+        })
       )
         .split("\0")
         .filter((line) => line.startsWith("160000 "));

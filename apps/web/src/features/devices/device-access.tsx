@@ -9,6 +9,7 @@ import type {
 import { Button } from "../../components/ui/button";
 import { DeviceAccounts } from "./device-accounts";
 import { DeviceConnections } from "./device-connections";
+import { DeviceProviders, deviceProviders } from "./device-providers";
 import { isModelConnection } from "../../lib/model-connections";
 
 export function DeviceAccess({
@@ -31,6 +32,11 @@ export function DeviceAccess({
         (profile) =>
           profile.id === binding.profileId && isModelConnection(profile),
       ),
+  ).length;
+  // API providers in the device's own configuration are API connections too;
+  // only the usable ones count.
+  const deviceCount = deviceProviders(ownProfiles).filter(
+    (row) => row.status === "healthy",
   ).length;
   return (
     <section className="fdy-device-access">
@@ -99,7 +105,7 @@ export function DeviceAccess({
               <Trans
                 ns="devices"
                 i18nKey="access.connectionsTitle"
-                values={{ total: count }}
+                values={{ total: count + deviceCount }}
                 components={{ em: <em /> }}
               />
             </strong>
@@ -137,14 +143,20 @@ export function DeviceAccess({
             />
           </>
         ) : (
-          <DeviceConnections
-            device={device}
-            profiles={props.profiles}
-            bindings={props.deviceProfiles}
-            detected={ownProfiles.filter((row) => row.origin === "device")}
-            onRefresh={props.onRefresh}
-            onManage={props.onManageConnections}
-          />
+          <>
+            <DeviceConnections
+              device={device}
+              profiles={props.profiles}
+              bindings={props.deviceProfiles}
+              onRefresh={props.onRefresh}
+              onManage={props.onManageConnections}
+            />
+            <DeviceProviders
+              device={device}
+              profiles={ownProfiles}
+              onRefresh={props.onRefresh}
+            />
+          </>
         )}
       </div>
     </section>

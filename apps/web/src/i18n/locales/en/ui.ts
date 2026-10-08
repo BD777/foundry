@@ -3,14 +3,6 @@ export const ui = {
   alert: {
     diagnosticDetails: "Diagnostic details",
   },
-  authorization: {
-    openPage: "Open authorization page",
-    enterCode: "Enter code <code>{{code}}</code> on the authorization page.",
-    resultLabel: "Authorization code or callback URL",
-    resultPlaceholder: "Paste the authorization code or callback URL",
-    complete: "Complete authorization",
-    check: "Check authorization",
-  },
   errorBoundary: {
     title: "{{label}} could not be displayed",
     stillAvailable: "Other areas of Foundry are still available.",

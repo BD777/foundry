@@ -364,9 +364,17 @@ function clipNativeRecapText(text: string): string {
   return `${characters.slice(0, 160).join("")}\n…\n${characters.slice(-80).join("")}`;
 }
 
+/**
+ * A native turn only runs while its agent writes its session file. A turn
+ * that started and then went silent this long was cut off (the process was
+ * killed or the machine restarted) and never wrote its end.
+ */
+const nativeTurnSilenceMs = 30 * 60 * 1000;
+
 export function nativeChatRecap(
   lines: string[],
   provider: "codex" | "claude",
+  lastWrite?: Date,
 ): Pick<ChatThread, "answerRevision" | "recentMessages" | "status"> {
   const messages: NonNullable<ChatThread["recentMessages"]> = [];
   let answerRevision: string | undefined;
@@ -410,6 +418,12 @@ export function nativeChatRecap(
     while (messages.filter((message) => message.role === "user").length > 2)
       messages.shift();
   }
+  if (
+    status === "running" &&
+    lastWrite &&
+    Date.now() - lastWrite.getTime() > nativeTurnSilenceMs
+  )
+    status = "canceled";
   let start = messages.length;
   let users = 0;
   for (let index = messages.length - 1; index >= 0; index--) {
@@ -485,6 +499,7 @@ async function parseCodexSessionCandidate(
         ? lines
         : await readSessionTailLines(sessionPath, stat.size),
       "codex",
+      stat.mtime,
     ),
     id,
     preview,
@@ -566,6 +581,7 @@ async function parseClaudeSessionCandidate(
         ? lines
         : await readSessionTailLines(sessionPath, stat.size),
       "claude",
+      stat.mtime,
     ),
     id,
     preview,

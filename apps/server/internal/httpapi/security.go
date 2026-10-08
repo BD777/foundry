@@ -21,6 +21,10 @@ type ServerOptions struct {
 	// directory and enables SPA fallback. Empty keeps the API-only
 	// behaviour used by the Vite development server.
 	WebDistDir string
+	// WorkerPackagesDir, when non-empty, holds worker package tarballs and
+	// their release.json; workers then install and update from this server
+	// instead of npm.
+	WorkerPackagesDir string
 }
 
 func DefaultServerOptions() ServerOptions {

@@ -119,12 +119,22 @@ export const profiles = {
     retrying: "Retrying…",
     retryRefresh: "Retry refresh",
     saveFailed: "Could not save this change.",
-    localConfiguration: "Local configuration",
-    localIntro:
-      "Detected on this device. Kept local unless you explicitly copy a connection and its key to the server.",
-    copyConfirm: "Copy connection and key?",
+  },
+  providers: {
+    title: "Configured on this device",
+    intro:
+      "API providers set up in {{device}}'s own Claude Code or Codex configuration. Each was checked by running one short conversation through its agent; the ready ones can be chosen in a chat as they are.",
+    ready: "Ready to use",
+    from: "from {{source}}",
+    answered: "checked {{time}}",
+    onServer: "Copied to server",
     copyToServer: "Copy to server",
-    deviceOnly: "Device only",
+    copyConfirm: "Copy connection and key?",
+    copying: "Copying…",
+    copyFailed: "Could not copy this provider to the server.",
+    checking: "Checking that {{names}} answers…",
+    notAnswering:
+      "Not offered: {{name}} does not answer ({{reason}}). If you no longer use it, remove it from {{source}}.",
   },
   assignment: {
     title: "Choose server connections",
@@ -151,7 +161,6 @@ export const profiles = {
     notInstalled: "Not installed",
     unavailable: "Unavailable",
     workerNoLogin: "Worker: no login",
-    reauthorizeLabel: "Re-authorize {{name}} on {{device}}",
     installCli: "Install {{name}}",
     installCliConfirm: "Run the installer on {{device}}?",
     installCliLabel: "Install {{name}} on {{device}}",
@@ -163,12 +172,15 @@ export const profiles = {
     installCliLog: "Installer output",
     cliOutdated:
       "{{name}} {{version}} on {{device}} is older than the {{minimum}} Foundry needs. Update it there: {{command}}",
-    signInLabel: "Sign in to {{name}} on {{device}}",
-    reauthorize: "Re-authorize",
-    signIn: "Sign in",
     checkFailed: "Could not check login.",
-    startFailed: "Could not start login on this device.",
-    loginFailed: "Login failed.",
+    startFailed: "Could not start this on the device.",
+    signInHintClaude:
+      "Not signed in. On {{device}}, run claude in a terminal and sign in with /login; then check again.",
+    signInHintCodex:
+      "Not signed in. On {{device}}, run codex login in a terminal; then check again.",
+    checkAgain: "Check again",
+    checkAgainLabel: "Check the {{name}} login on {{device}} again",
+    checking: "Checking…",
     legacyTitle: "Earlier official profile settings ({{count}})",
     legacyIntro:
       "Preserved for existing sessions; these are runtime presets, not separate accounts. New logins use the device accounts above. No historical records have been changed.",

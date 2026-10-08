@@ -151,7 +151,6 @@ import {
   type DeviceProjection,
   type Issue,
   type IssueReadiness,
-  type ProfileAuthorization,
   type ProviderHealth,
   type SkillPackRef,
   type WorkerRuntimeId,
@@ -262,7 +261,7 @@ export function App() {
     initialRouteRef.current.selectedDeviceId,
   );
   const [deviceSection, setDeviceSection] = useState<DeviceSection>(
-    initialRouteRef.current.deviceSection ?? "workspaces",
+    initialRouteRef.current.deviceSection ?? "agents",
   );
   const [apiState, setApiState] = useState<
     "connected" | "fallback" | "loading" | "saving"
@@ -435,6 +434,7 @@ export function App() {
     event: WorkspacesFeatureEvent,
   ): Promise<boolean | void> {
     if (event.type === "workspace.browse.requested") {
+      setSelectedDeviceId(undefined);
       setActiveView("locations");
       return;
     }
@@ -442,15 +442,14 @@ export function App() {
       setActiveView("workspace");
       return;
     }
-    if (event.type === "device.add.requested") {
-      // Opens over the current page; the person stays where they were.
-      setAddingDevice(true);
+    if (event.type === "device.open.requested") {
+      setSelectedDeviceId(event.deviceId);
+      setDeviceSection("agents");
+      setActiveView("devices");
       return;
     }
-    if (event.type === "workspace.management.requested") {
-      setSelectedDeviceId(event.deviceId);
-      setDeviceSection("workspaces");
-      setActiveView("devices");
+    if (event.type === "workspaces.changed") {
+      await refreshData(undefined, { silent: true, throwOnError: true });
       return;
     }
     if (event.type === "workspace.activation.requested") {
@@ -493,7 +492,7 @@ export function App() {
     onPopState: (route, routeWorkspaceId) => {
       setActiveView(route.view);
       setSelectedDeviceId(route.selectedDeviceId);
-      setDeviceSection(route.deviceSection ?? "workspaces");
+      setDeviceSection(route.deviceSection ?? "agents");
       if (route.selectedChatId !== undefined) {
         setSelectedChatId(route.selectedChatId);
       } else if (route.view === "chats") {
@@ -864,6 +863,7 @@ export function App() {
           setActiveView("devices");
         }}
         workspaceId={data.workspace.id}
+        workspaceDeviceId={data.workspace.deviceId}
         readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
       />
     );
@@ -950,9 +950,13 @@ export function App() {
         deviceProfiles={data.deviceProfiles}
         deviceSkillRoots={data.deviceSkillRoots}
         deviceSkills={data.deviceSkills}
-        onSelect={(id, section = "workspaces") => {
+        onSelect={(id, section = "agents") => {
           setSelectedDeviceId(id);
           setDeviceSection(section);
+        }}
+        onOpenWorkspaces={(deviceId) => {
+          setSelectedDeviceId(deviceId);
+          setActiveView("locations");
         }}
         onOpenWorkspace={async (id) => {
           const loaded = await loadWorkspace(id);
@@ -1032,6 +1036,7 @@ export function App() {
           <WorkspacesFeature
             activeWorkspaceId={activeWorkspaceId}
             devices={data.devices}
+            focusDeviceId={selectedDeviceId}
             workspaces={data.workspaces}
             onEvent={handleWorkspaceFeatureEvent}
           />

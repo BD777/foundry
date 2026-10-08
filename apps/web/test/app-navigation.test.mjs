@@ -47,7 +47,7 @@ const routes = [
     selectedDeviceId: "dev/other machine",
     deviceSection: "agents",
   },
-  { view: "devices", selectedDeviceId: "dev2", deviceSection: "workspaces" },
+  { view: "locations", selectedDeviceId: "dev2" },
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
   { view: "profiles" },
 ];
@@ -68,7 +68,12 @@ test("global management routes and error boundaries do not inherit a workspace",
   assert.deepEqual(parseAppRoute("/devices/dev2"), {
     view: "devices",
     selectedDeviceId: "dev2",
-    deviceSection: "workspaces",
+    deviceSection: "agents",
+  });
+  // A device's workspaces moved to the Workspaces page; old links land there.
+  assert.deepEqual(parseAppRoute("/devices/dev2/workspaces"), {
+    view: "locations",
+    selectedDeviceId: "dev2",
   });
   const route = {
     view: "devices",

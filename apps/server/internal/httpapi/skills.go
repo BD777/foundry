@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -48,7 +51,46 @@ var defaultSkillRoots = []string{"~/.claude/skills", "~/.codex/skills"}
 
 // ScanDeviceSkills asks an online daemon to scan the given roots, then stores
 // the snapshot. An empty root list means the daemon-side defaults.
+//
+// A scan already running for the same device and folders is joined rather
+// than started again: a click on Scan during the automatic scan on connect
+// waits for that one instead of making the device scan twice.
 func (h *DaemonHub) ScanDeviceSkills(ctx context.Context, deviceID string, roots []string) ([]store.DeviceSkill, error) {
+	key := deviceID + "\x00" + strings.Join(roots, "\x00")
+	h.skillScansMu.Lock()
+	if scan, running := h.skillScans[key]; running {
+		h.skillScansMu.Unlock()
+		select {
+		case <-scan.done:
+			return scan.skills, scan.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	scan := &skillScan{done: make(chan struct{})}
+	if h.skillScans == nil {
+		h.skillScans = map[string]*skillScan{}
+	}
+	h.skillScans[key] = scan
+	h.skillScansMu.Unlock()
+	// Shared by everyone who joined, so one caller leaving does not cancel it
+	// for the rest; it still ends when the device disconnects.
+	scan.skills, scan.err = h.scanDeviceSkills(context.WithoutCancel(ctx), deviceID, roots)
+	h.skillScansMu.Lock()
+	delete(h.skillScans, key)
+	h.skillScansMu.Unlock()
+	close(scan.done)
+	return scan.skills, scan.err
+}
+
+// skillScan is one scan in flight; done closes when its result is set.
+type skillScan struct {
+	done   chan struct{}
+	skills []store.DeviceSkill
+	err    error
+}
+
+func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots []string) ([]store.DeviceSkill, error) {
 	connection := h.connectionFor(deviceID)
 	if connection == nil {
 		return nil, store.ErrNotFound
@@ -160,6 +202,43 @@ func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeResult(w, map[string]any{"roots": roots, "skills": skills}, nil)
+}
+
+// deviceSkillRescanInterval is how often a connected device's skill folders
+// are scanned again; a scan of unchanged skills only reads file metadata.
+const deviceSkillRescanInterval = 30 * time.Minute
+
+// backgroundSkillScanCapability marks a worker that scans off its main
+// thread. An older worker cannot answer heartbeats while it scans, so a scan
+// it did not ask for could drop its connection, and scanning again on every
+// reconnect would keep it offline.
+const backgroundSkillScanCapability = "background_skill_scan"
+
+// keepDeviceSkillsScanned scans a device's skill folders when it connects and
+// again every half hour while it stays connected, so its skills are listed
+// without anyone pressing Scan.
+func (s *Server) keepDeviceSkillsScanned(ctx context.Context, deviceID string, capabilities []string) {
+	if !slices.Contains(capabilities, backgroundSkillScanCapability) {
+		return
+	}
+	ticker := time.NewTicker(deviceSkillRescanInterval)
+	defer ticker.Stop()
+	for {
+		if paths, err := s.scanPaths(ctx, deviceID); err != nil {
+			log.Printf("skill scan of %s: %v", deviceID, err)
+		} else if _, err := s.hub.ScanDeviceSkills(ctx, deviceID, paths); err != nil {
+			if ctx.Err() == nil {
+				log.Printf("skill scan of %s: %v", deviceID, err)
+			}
+		} else {
+			s.invalidateProjections()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Server) handleScanDeviceSkills(w http.ResponseWriter, r *http.Request) {

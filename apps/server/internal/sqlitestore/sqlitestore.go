@@ -149,6 +149,10 @@ func (s *Store) migrate(ctx context.Context) error {
 			workspace_id TEXT PRIMARY KEY,
 			name TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS device_display_names (
+			device_id TEXT PRIMARY KEY,
+			name TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS provider_health (
 			provider TEXT PRIMARY KEY,
 			status TEXT NOT NULL,
@@ -614,6 +618,54 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 		return store.WorkspaceProjection{}, fmt.Errorf("delete workspace: %w", err)
 	}
 	return workspace, nil
+}
+
+// RenameDevice gives a device a server-owned display name. The worker keeps
+// reporting its hostname (in system), and later registrations keep this name.
+func (s *Store) RenameDevice(ctx context.Context, id string, name string) (store.DeviceProjection, error) {
+	err := s.withTx(ctx, func(tx *Store) error {
+		result, err := tx.conn().ExecContext(ctx, `UPDATE devices SET label = ?,
+			payload_json = json_set(payload_json, '$.label', ?) WHERE id = ?`, name, name, id)
+		if err != nil {
+			return err
+		}
+		if changed, _ := result.RowsAffected(); changed == 0 {
+			return store.ErrNotFound
+		}
+		if _, err := tx.conn().ExecContext(ctx, `INSERT INTO device_display_names (device_id, name)
+			VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET name = excluded.name`, id, name); err != nil {
+			return err
+		}
+		_, err = tx.conn().ExecContext(ctx, `UPDATE workspaces
+			SET payload_json = json_set(payload_json, '$.deviceLabel', ?)
+			WHERE json_extract(payload_json, '$.deviceId') = ?`, name, id)
+		return err
+	})
+	if err != nil {
+		return store.DeviceProjection{}, err
+	}
+	return getJSON[store.DeviceProjection](ctx, s.conn(), `SELECT payload_json FROM devices WHERE id = ?`, id)
+}
+
+// MarkAllDevicesOffline records every device as offline. A server starting up
+// holds no connections, so "connected" rows left by a crash or restart are
+// stale; each worker marks itself online again when it reconnects.
+func (s *Store) MarkAllDevicesOffline(ctx context.Context) error {
+	_, err := s.conn().ExecContext(ctx, `UPDATE devices SET status = 'disconnected',
+		last_seen_label = 'offline',
+		payload_json = json_set(json_set(payload_json, '$.status', 'disconnected'), '$.lastSeenLabel', 'offline')
+		WHERE status = 'connected'`)
+	return err
+}
+
+// deviceDisplayName is the name a person gave the device, if any.
+func (s *Store) deviceDisplayName(ctx context.Context, id string) (string, error) {
+	var name string
+	err := s.conn().QueryRowContext(ctx, `SELECT name FROM device_display_names WHERE device_id = ?`, id).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }
 
 func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, error) {

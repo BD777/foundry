@@ -89,7 +89,7 @@ test("the execution gets the contract's references as read-only files", async ()
   );
 });
 
-test("a PDF reference comes as the document and as its extracted text", async () => {
+test("a PDF reference comes as the document itself", async () => {
   const root = mkdtempSync(join(tmpdir(), "issue-references-pdf-"));
   const execution = new ExecutionStore(join(root, "state"));
   const store = new EvidenceStore(
@@ -116,25 +116,14 @@ test("a PDF reference comes as the document and as its extracted text", async ()
       criteria: [],
     },
   };
-  const [document, text, ...rest] = await issueReferences(
+  const [document, ...rest] = await issueReferences(
     environment,
     issue,
     execution,
   );
+  // The PDF goes to the agent as it is; agents read PDFs themselves.
   assert.equal(rest.length, 0);
   assert.equal(document.mimeType, "application/pdf");
   assert.deepEqual(readFileSync(document.path), pdf);
-  assert.equal(text.kind, "file");
-  assert.equal(text.mimeType, "text/plain");
-  assert.equal(
-    text.name,
-    "Text extracted from guide.pdf (layout and images not included)",
-  );
-  const extracted = readFileSync(text.path, "utf8");
-  assert.match(extracted, /^Text extracted from guide\.pdf \(2 pages\)/);
-  assert.match(extracted, /--- Page 2 ---\nUse the teal accent/);
-  assert.equal(statSync(text.path).mode & 0o222, 0, "read-only");
-  // Running again reuses the files instead of extracting twice.
-  const again = await issueReferences(environment, issue, execution);
-  assert.equal(again[1].path, text.path);
+  assert.equal(statSync(document.path).mode & 0o222, 0, "read-only");
 });

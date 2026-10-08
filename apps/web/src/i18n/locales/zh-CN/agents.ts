@@ -29,6 +29,20 @@ export const agents: Translation<typeof en> = {
     "workspace-write": "可写工作区",
     "danger-full-access": "完整访问（危险）",
   },
+  permissionShort: {
+    claude: {
+      acceptEdits: "接受编辑",
+      auto: "自动",
+      bypassPermissions: "完全访问",
+      dontAsk: "不再询问",
+      plan: "规划",
+    },
+    codex: {
+      "read-only": "只读",
+      "workspace-write": "可写工作区",
+      "danger-full-access": "完全访问",
+    },
+  },
   codexSandboxSummary: {
     "read-only": "只读访问",
     "workspace-write": "可写当前工作区",

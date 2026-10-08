@@ -37,7 +37,6 @@
   },
   "dependencies": {
     "@bd777/foundry-protocol": "workspace:*",
-    "pdfjs-dist": "^6.3.289",
     "smol-toml": "^1.8.0",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
@@ -53,8 +52,5 @@
     "@openai/codex-sdk": {
       "optional": true
     }
-  },
-  "optionalDependencies": {
-    "node-pty": "^1.1.0"
   }
 }

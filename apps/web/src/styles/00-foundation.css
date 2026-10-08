@@ -1012,6 +1012,12 @@ a {
   background: var(--fdy-control-ghost-hover);
 }
 
+.fdy-button-bare,
+.fdy-button-bare:hover {
+  background: transparent;
+  color: inherit;
+}
+
 .fdy-button-primary:disabled:hover,
 .fdy-button-primary[aria-disabled="true"]:hover {
   border-color: var(--fdy-brass-dark);

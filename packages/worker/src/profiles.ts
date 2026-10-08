@@ -24,6 +24,10 @@ import { nativeLoginHealth } from "./native-login.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { providerHealthData } from "./provider-health.js";
 import {
+  currentProviderCheck,
+  needsProviderCheck,
+} from "./provider-check-state.js";
+import {
   projectedProfileAuthMode,
   projectedProfileStatusDetail,
 } from "./agent-profile-state.js";
@@ -32,6 +36,19 @@ import {
 
 export interface AgentProfileLocalConfig {
   apiKey?: string;
+  /** Where in its config file a discovered profile is defined. */
+  configSection?: string;
+  /** Where its key comes from, by name only (an env var or settings key). */
+  keySource?: string;
+  /** False when the credential is a login or command, not a key to check. */
+  keyCheckable?: boolean;
+  /**
+   * A provider from Codex's own config.toml, run by this name so Codex
+   * applies its own definition rather than Foundry's approximation of it.
+   */
+  codexModelProvider?: string;
+  /** Found in the device's agent configuration rather than written for Foundry. */
+  discovered?: boolean;
   baseUrl?: string;
   command?: string;
   claudeEffort?: AgentProfileProjection["claudeEffort"];
@@ -154,6 +171,7 @@ export function configuredAgentProfiles(
   // be visible even if Foundry was never told about it.
   const native = (sources?.native ?? nativeAgentProfiles()).map((profile) => ({
     ...profile,
+    discovered: true,
     configScope: "device" as AgentConfigScope,
   }));
   const defaults = [
@@ -422,6 +440,7 @@ export function agentProfilesForWorkspace(
       commandLabel: maskCommand(profile.command),
       configLabel: profile.configLabel,
       configScope: profile.configScope,
+      configSection: profile.configSection,
       connectionType: profile.connectionType ?? "custom_command",
       deviceId: device.id,
       fingerprint: profileFingerprint(profile),
@@ -443,10 +462,67 @@ export function agentProfilesForWorkspace(
       origin: profile.origin ?? "device",
       runtime: profile.runtime,
       secretStored: profileSecretPlacement(profile),
+      ...discoveredProviderStatus(id, profile, health),
+      shareable: shareableProfile(profile) || undefined,
+    };
+  });
+}
+
+function shareableProfile(profile: AgentProfileLocalConfig): boolean {
+  if (
+    profile.origin === "server" ||
+    (profile.connectionType !== "openai_compatible" &&
+      profile.connectionType !== "anthropic_compatible") ||
+    !profile.apiKey?.trim() ||
+    !profile.baseUrl?.trim()
+  )
+    return false;
+  try {
+    const host = new URL(profile.baseUrl).hostname;
+    return !["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].includes(
+      host,
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A provider found in the device's configuration is usable only once a turn
+ * through its agent's SDK has passed (./provider-check.ts): an endpoint in a
+ * file is not proof that it answers.
+ */
+function discoveredProviderStatus(
+  id: string,
+  profile: AgentProfileLocalConfig,
+  health: ProviderHealth[],
+): Pick<AgentProfileProjection, "status" | "statusDetail" | "check"> {
+  if (!needsProviderCheck(profile))
+    return {
       status: profileStatus(profile, health),
       statusDetail: profileStatusDetail(profile, health),
     };
-  });
+  const check = currentProviderCheck(id, profile, health);
+  if (!check)
+    return {
+      status: "unavailable",
+      statusDetail: "Checking that this provider answers.",
+      check: { status: "pending" },
+    };
+  return check.status === "passed"
+    ? {
+        status: "healthy",
+        check: { status: "passed", checkedAt: check.checkedAt },
+      }
+    : {
+        status: "unavailable",
+        statusDetail: check.message,
+        check: {
+          status: "failed",
+          checkedAt: check.checkedAt,
+          message: check.message,
+        },
+      };
 }
 
 /**
@@ -579,14 +655,17 @@ export function profileRuntimeEnvironment(
   if (profile.connectionType === "local_login") {
     Object.assign(env, nativeLoginEnvironment(profile.runtime));
   }
-  if (profile.connectionType !== "local_login" && profile.apiKey?.trim()) {
+  // A Codex provider run by name carries its own endpoint and credential.
+  const ownEndpoint =
+    profile.connectionType !== "local_login" && !profile.codexModelProvider;
+  if (ownEndpoint && profile.apiKey?.trim()) {
     if (profile.runtime === "claude") {
       env.ANTHROPIC_AUTH_TOKEN = profile.apiKey.trim();
     } else {
       env.OPENAI_API_KEY = profile.apiKey.trim();
     }
   }
-  if (profile.connectionType !== "local_login" && profile.baseUrl?.trim()) {
+  if (ownEndpoint && profile.baseUrl?.trim()) {
     if (profile.runtime === "claude") {
       env.ANTHROPIC_BASE_URL = profile.baseUrl.trim();
       env.ANTHROPIC_API_BASE_URL = profile.baseUrl.trim();

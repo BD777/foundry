@@ -328,7 +328,7 @@ test("a clarification turn reads its references as files, read-only in the works
   assert.ok(existsSync(join(root, "state")));
 });
 
-test("a PDF reference reaches clarification as the PDF and its extracted text", async () => {
+test("a PDF reference reaches clarification as the PDF itself", async () => {
   const { mkdtempSync, readFileSync, mkdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -371,21 +371,11 @@ test("a PDF reference reaches clarification as the PDF and its extracted text", 
     workspacePath,
     store,
   );
-  const [document, text] = input.attachments;
-  assert.equal(input.attachments.length, 2);
+  const [document] = input.attachments;
+  assert.equal(input.attachments.length, 1);
   assert.deepEqual(readFileSync(document.path), pdf);
-  assert.match(readFileSync(text.path, "utf8"), /Pricing table: 3 tiers/);
   const body = JSON.parse(input.prompt);
   assert.deepEqual(body.referenceMaterials, [
-    {
-      materialId: "mat_pdf",
-      name: "pricing.pdf",
-      path: document.path,
-      extractedTextPath: text.path,
-    },
+    { materialId: "mat_pdf", name: "pricing.pdf", path: document.path },
   ]);
-  assert.match(
-    body.instruction,
-    /PDF reference comes as the PDF itself and as its extracted text/,
-  );
 });

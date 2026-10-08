@@ -11,6 +11,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
@@ -35,14 +36,15 @@ import {
   writeDaemonConfig,
   type DaemonConfig,
 } from "./config.js";
-import { postJSON } from "./transport.js";
+import { getJSON, postJSON } from "./transport.js";
 import { providerHealthData } from "./provider-health.js";
 import {
   agentProfilesForWorkspace,
   profileFingerprint,
   type UpsertAgentProfilePayload,
 } from "./profiles.js";
-import { getDevice } from "./device.js";
+import { deviceSystem, getDevice } from "./device.js";
+import { runningWorker } from "./worker-identity.js";
 import { optionValue, readOptionalText, safeID, sizeLabel } from "./utils.js";
 import {
   readRegistry,
@@ -411,6 +413,15 @@ export async function registerDaemon(
   return registration.device;
 }
 
+/**
+ * What this worker last uploaded for each native chat, per server and
+ * workspace: a sync only sends chats that changed since. In memory, so a
+ * restarted worker uploads each chat once more.
+ */
+const uploadedChats = new Map<string, Map<string, string>>();
+
+const summaryBatchSize = 20;
+
 export async function syncNativeChats(
   serverURL: string,
   workspacePath: string,
@@ -430,25 +441,66 @@ export async function syncNativeChats(
     profiles,
     historyIds ? Number.POSITIVE_INFINITY : 60,
   );
+  const key = `${serverURL}\n${workspace.id}`;
+  const uploaded = uploadedChats.get(key) ?? new Map<string, string>();
+  uploadedChats.set(key, uploaded);
+  const fingerprint = (chat: ChatThread) =>
+    createHash("sha256").update(JSON.stringify(chat)).digest("hex");
   const chats = historyIds
     ? candidates.filter((chat) => historyIds.has(chat.id))
-    : candidates;
-  // Detail now includes typed transcripts. Sync each chat independently so a
-  // workspace's combined history cannot exceed the HTTP request size limit.
+    : candidates.filter((chat) => uploaded.get(chat.id) !== fingerprint(chat));
+  // Chats this worker has not sent yet go up first as summaries, a batch per
+  // request, so the whole list appears at once; the server keeps any
+  // transcript it already holds for an unchanged answer.
+  const unseen = chats.filter((chat) => !uploaded.has(chat.id));
+  for (let offset = 0; offset < unseen.length; offset += summaryBatchSize)
+    await postJSON(serverURL, "/api/daemon/chats/sync", {
+      workspaceId: workspace.id,
+      chats: unseen
+        .slice(offset, offset + summaryBatchSize)
+        .map((chat) => ({ ...chat, transcript: undefined })),
+    });
+  // Full detail includes typed transcripts: one chat per request so a long
+  // history cannot exceed the HTTP request size limit.
   for (const chat of chats) {
     await postJSON(serverURL, "/api/daemon/chats/sync", {
       workspaceId: workspace.id,
       chats: [chat],
     });
+    uploaded.set(chat.id, fingerprint(chat));
   }
   return chats.length;
+}
+
+/**
+ * Native chats the server still shows as running get checked again, even when
+ * they are older than the recent sessions a sync covers: a turn that was cut
+ * off long ago would otherwise stay "running" there for good.
+ */
+export async function recheckRunningNativeChats(
+  serverURL: string,
+  workspacePath: string,
+): Promise<number> {
+  const workspace = workspaceProjectionForPath(workspacePath, getDevice());
+  const { chatIds } = await getJSON<{ chatIds?: string[] }>(
+    serverURL,
+    `/api/daemon/chats/running?workspaceId=${encodeURIComponent(workspace.id)}`,
+  );
+  return chatIds?.length
+    ? syncNativeChats(serverURL, workspacePath, chatIds)
+    : 0;
 }
 
 /**
  * Protocol features this worker implements; the server sends only work a
  * worker declares it can run.
  */
-export const daemonCapabilities = ["issue_sessions", "issue_clarification"];
+export const daemonCapabilities = [
+  "issue_sessions",
+  "issue_clarification",
+  "worker_update",
+  "background_skill_scan",
+];
 
 export function daemonRegistration(workspacePath: string): {
   capabilities: string[];
@@ -479,7 +531,12 @@ export function daemonRegistration(workspacePath: string): {
       agentProfiles,
     ),
     chats: [],
-    device: { ...device, resources: discoverResources() },
+    device: {
+      ...device,
+      resources: discoverResources(),
+      worker: runningWorker(),
+      system: deviceSystem(),
+    },
     providerHealth,
     skills: skillsForWorkspace(workspaceProjection, workspacePath),
     workspace: workspaceProjection,

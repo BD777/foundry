@@ -9,6 +9,11 @@ export const buttonVariants = cva("fdy-button", {
       primary: "fdy-button-primary",
       secondary: "fdy-button-secondary",
       ghost: "fdy-button-ghost",
+      /**
+       * No background of its own, hovered or not: a click target filling a
+       * row or card whose surface owns hover, so one layer changes color.
+       */
+      bare: "fdy-button-bare",
       nav: "fdy-button-nav",
       icon: "fdy-button-icon",
     },

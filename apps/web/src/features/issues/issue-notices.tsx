@@ -9,29 +9,32 @@ import {
 } from "../../lib/issue-meta";
 import {
   localWorkerCommand,
-  npxWorkerCommand,
+  useWorkerRelease,
 } from "../../lib/worker-commands";
 
 /** An older worker clarifies and verifies but cannot execute Issues. */
 export function WorkerUpdateNotice() {
   const { t } = useTranslation("issues");
+  const { update } = useWorkerRelease();
   return (
     <Alert
       className="fdy-issue-worker-notice"
       tone="warning"
       title={t("worker.title")}
     >
-      <p>
-        <Trans
-          ns="issues"
-          i18nKey="worker.body"
-          values={{
-            command: `${localWorkerCommand} update`,
-            legacy: `${npxWorkerCommand} update`,
-          }}
-          components={{ code: <code /> }}
-        />
-      </p>
+      {update ? (
+        <p>
+          <Trans
+            ns="issues"
+            i18nKey="worker.body"
+            values={{
+              command: `${localWorkerCommand} update`,
+              legacy: update,
+            }}
+            components={{ code: <code /> }}
+          />
+        </p>
+      ) : null}
     </Alert>
   );
 }

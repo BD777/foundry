@@ -1,4 +1,3 @@
-import { extractPdfText, pdfTextDocument } from "../pdf-text.js";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -60,9 +59,11 @@ export const codexHarness: HarnessAdapter = {
     );
     if (existsSync(auth)) copyFileSync(auth, resolve(config, "auth.json"));
     env.CODEX_HOME = config;
+    // The read-only shell is how Codex looks at files: a directory, or the
+    // PDFs it is given to read.
     const stage = codexStageConfig(
       policy.projectInstructions,
-      Boolean(workspace),
+      Boolean(workspace) || Boolean(spec.prompt.documents?.length),
     );
     writeFileSync(resolve(config, "config.toml"), stage.toml, { mode: 0o600 });
     const sdkName = "@openai/codex-sdk";
@@ -104,7 +105,15 @@ export const codexHarness: HarnessAdapter = {
     // The SDK would write an output schema to this process's temporary
     // directory, which the sandboxed CLI cannot read; the schema travels in
     // the prompt instead and the caller parses the answer as text.
-    const prompt = `${spec.prompt.text}${await documentTexts(spec.prompt.documents ?? [])}`;
+    // PDFs go as files Codex reads with its own tools, like any agent.
+    const documents = (spec.prompt.documents ?? []).map((document, index) => {
+      const path = resolve(home, `document-${index}.pdf`);
+      writeFileSync(path, document.bytes, { mode: 0o400 });
+      return `- ${document.name}: ${path}`;
+    });
+    const prompt = documents.length
+      ? `${spec.prompt.text}\n\nPDF documents for this task (read them yourself):\n${documents.join("\n")}`
+      : spec.prompt.text;
     const text = spec.responseSchema
       ? `${prompt}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
       : prompt;
@@ -117,28 +126,3 @@ export const codexHarness: HarnessAdapter = {
     return { text: result.finalResponse, sessionId: thread.id ?? undefined };
   },
 };
-
-/**
- * Codex cannot read PDFs, so it gets their text, saying that layout and
- * images are missing and what that means for a judgment.
- */
-export async function documentTexts(
-  documents: { name: string; bytes: Buffer }[],
-): Promise<string> {
-  const sections: string[] = [];
-  for (const document of documents) {
-    let text: string;
-    try {
-      text = pdfTextDocument(
-        document.name,
-        await extractPdfText(document.bytes),
-      );
-    } catch (error) {
-      text = `No text could be extracted from ${document.name} (${error instanceof Error ? error.message : String(error)}).`;
-    }
-    sections.push(
-      `\n\n# Document ${document.name} (PDF given to you as extracted text only)\nYou cannot see this PDF's layout or images. Anything that depends on them is inconclusive, and say so in limitations.\n\n${text}`,
-    );
-  }
-  return sections.join("");
-}

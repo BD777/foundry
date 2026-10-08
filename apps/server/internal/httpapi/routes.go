@@ -142,6 +142,19 @@ func sessionWorkspace(name string) workspaceResolver {
 	}
 }
 
+// chatOrSessionWorkspace resolves a chat-list id: a native chat, or a
+// Foundry session (sess_…), whose title the chat list also renames.
+func chatOrSessionWorkspace(name string) workspaceResolver {
+	return func(s *Server, r *http.Request) (string, error) {
+		chat, err := s.store.GetChat(r.Context(), r.PathValue(name))
+		if !errors.Is(err, store.ErrNotFound) {
+			return chat.WorkspaceID, err
+		}
+		session, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue(name))
+		return session.WorkspaceID, err
+	}
+}
+
 func chatWorkspace(name string) workspaceResolver {
 	return func(s *Server, r *http.Request) (string, error) {
 		chat, err := s.store.GetChat(r.Context(), r.PathValue(name))
@@ -261,14 +274,14 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/devices", s.handleListDevices, filtered()),
 		fn("POST /api/devices/pairing-tokens", s.handleCreateDevicePairingToken, signedIn()),
 		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceOwner("deviceId")),
+		fn("PATCH /api/devices/{deviceId}", s.handleRenameDevice, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/worker/update", s.handleUpdateWorker, deviceOwner("deviceId")),
 		fn("POST /api/devices/runtime-settings", s.handleUpsertAgentRuntimeSettings, inHandler()),
 		fn("POST /api/devices/{id}/resources/refresh", s.handleRefreshDeviceResources, inHandler()),
 		fn("GET /api/provider-health", s.handleProviderHealth, filtered()),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/inspect", s.handleInspectNativeAccount, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/accounts/{runtime}/install", s.handleInstallNativeCli, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/profiles", s.handleSetDeviceProfiles, deviceOwner("deviceId")),
-		fn("POST /api/devices/{deviceId}/accounts/{runtime}/authorization", s.handleStartDeviceAuthorization, deviceOwner("deviceId")),
-		fn("POST /api/devices/{deviceId}/accounts/{runtime}/authorization/{flowId}", s.handleCompleteDeviceAuthorization, deviceOwner("deviceId")),
 		fn("PUT /api/devices/{deviceId}/skill-roots", s.handleSetDeviceSkillRoots, deviceOwner("deviceId")),
 		fn("GET /api/device-skills", s.handleListDeviceSkills, filtered()),
 		fn("POST /api/device-skills/scan", s.handleScanDeviceSkills, inHandler()),
@@ -282,8 +295,6 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/profiles/{id}", s.handleUpdateProfile, connectionOwner("id")),
 		fn("DELETE /api/profiles/{id}", s.handleDeleteProfile, connectionOwner("id")),
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
-		fn("POST /api/profiles/{id}/authorization", s.handleStartProfileAuthorization, connectionOwner("id")),
-		fn("POST /api/profiles/{id}/authorization/{flowId}", s.handleCompleteProfileAuthorization, connectionOwner("id")),
 
 		fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files", s.handleListWorkspaceFiles, workspaceRole(viewer, queryWorkspace())),
@@ -307,8 +318,8 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/chat-layout", s.handleGetChatLayout, workspaceRole(viewer, queryWorkspace())),
 		fn("POST /api/chat-layout", s.handleSaveChatLayout, inHandler()),
 		fn("POST /api/chat-layout/delete-group", s.handleDeleteChatGroup, inHandler()),
-		fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatWorkspace("id"))),
-		fn("POST /api/chats/{id}/recap-title", s.handleRecapChatTitle, workspaceRole(member, chatWorkspace("id"))),
+		fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("POST /api/chats/{id}/recap-title", s.handleRecapChatTitle, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("GET /api/chats/{id}", s.handleGetChat, workspaceRole(viewer, chatWorkspace("id"))),
 
 		fn("GET /api/issues", s.handleListIssues, workspaceRole(viewer, queryWorkspace())),
@@ -349,9 +360,14 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id"))),
 
+		// Installing a worker reads these before it has any credential.
+		fn("GET /api/worker/release", s.handleWorkerRelease, publicRoute()),
+		fn("GET /api/worker/packages/{file}", s.handleWorkerPackage, publicRoute()),
+		fn("GET /api/worker/packages/latest/{file}", s.handleLatestWorkerPackage, publicRoute()),
 		fn("POST /api/daemon/pair", s.handleDaemonPair, publicRoute()),
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
+		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}
 	if s.options.EnableDevReset {

@@ -5,8 +5,8 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { createWorkspace, deleteWorkspace, renameWorkspace } from "../../api";
-import { Button } from "../../components/ui/button";
-import { TextInput } from "../../components/ui/field";
+import { Button } from "../ui/button";
+import { TextInput } from "../ui/field";
 import { WorkspaceDialog } from "./workspace-dialog";
 import { WorkspacePathPicker } from "./workspace-path-picker";
 
