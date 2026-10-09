@@ -376,6 +376,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
 		// Files outside the workspace that only the answer names need Member (in handler).
 		fn("GET /api/agent-sessions/{id}/files/read", s.handleReadSessionFile, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/files/diff", s.handleReadSessionFileDiff, workspaceRole(viewer, sessionWorkspace("id"))),
 		// A background task's output and command line: members (redacted on the device).
 		fn("GET /api/agent-sessions/{id}/background-tasks/{taskId}/output", s.handleReadBackgroundTaskOutput, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler()),

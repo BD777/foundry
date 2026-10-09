@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  statSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -18,9 +21,11 @@ import {
   codexFileWrites,
   mergeClaudeHooks,
   readSessionFile,
+  readSessionFileDiff,
   readSessionFileLedger,
   SessionTurnFiles,
 } from "../dist/session-files.js";
+import { lineChangeCounts } from "../dist/session-file-diffs.js";
 import {
   answerBlocks,
   candidatePath,
@@ -423,4 +428,262 @@ test("workspace reads stop at their limit", (t) => {
   assert.equal(read.truncated, true);
   assert.equal(read.content.length, 128 * 1024);
   assert.equal(resolve(f.workspace, read.path), join(f.workspace, "large.txt"));
+});
+
+/** A Claude write: PreToolUse keeps the before, the tool writes, PostToolUse. */
+async function claudeWrite(files, path, content, agent = "main") {
+  const hooks = claudeFileWriteHooks(
+    (write) => files.recordToolWrite(write),
+    (write) => files.captureBeforeWrite(write),
+  );
+  const input = {
+    tool_name: "Write",
+    tool_input: { file_path: path },
+    ...(agent === "main" ? {} : { agent_id: agent }),
+  };
+  await hooks.PreToolUse[0].hooks[0](input);
+  writeFileSync(path, content);
+  await hooks.PostToolUse[0].hooks[0]({ ...input, tool_response: {} });
+  // The PostToolUse hook records in the background; wait for it.
+  await files.recordToolWrite({ path, op: "modified", agent });
+}
+
+const diffOf = (f, path, inputId) =>
+  readSessionFileDiff({
+    workspacePath: f.workspace,
+    sessionsRoot: f.sessionsRoot,
+    sessionId,
+    path,
+    inputId,
+    home: f.home,
+  });
+
+test("a turn's diff runs from before its first write to after its last", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const readme = join(f.workspace, "README.md");
+  const other = join(f.workspace, "unrelated.go");
+  const files = f.turn("in_1");
+  await claudeWrite(files, readme, "hi\nthere\n");
+  // Another agent edits a different file meanwhile.
+  writeFileSync(other, "package main // someone else\n");
+  await claudeWrite(files, readme, "hello\nthere\nfriend\n", "agent_3");
+  await files.finish("Edited the readme.");
+
+  const diff = await diffOf(f, readme, "in_1");
+  assert.equal(diff.source, "hook");
+  assert.equal(
+    diff.before,
+    "hi\n",
+    "the before is kept once, at the first write",
+  );
+  assert.equal(diff.after, "hello\nthere\nfriend\n");
+  assert.equal(diff.beforeLabel, "beforeEdits");
+  assert.equal(diff.afterLabel, "afterEdits");
+  assert.equal(diff.mayIncludeOtherEdits, false);
+  assert.deepEqual([diff.added, diff.removed], [3, 1]);
+  // The other agent's file is not this session's: it has no diff at all.
+  await assert.rejects(diffOf(f, other), /not one this chat's tools wrote/);
+  const counted = f.events
+    .map((event) => event.metadata.sessionFile)
+    .filter((record) => record.added !== undefined);
+  assert.deepEqual(
+    counted.map((record) => [
+      record.added,
+      record.removed,
+      record.totalAdded,
+      record.totalRemoved,
+    ]),
+    [[3, 1, 3, 1]],
+  );
+  // Copies of intermediate writes are dropped when the turn ends.
+  const baselines = join(
+    f.sessionsRoot,
+    sessionId,
+    "inputs",
+    "in_1",
+    "baselines",
+  );
+  assert.equal(readdirSync(baselines).length, 2);
+
+  // A later turn: its own diff, and the session's from the first before.
+  writeFileSync(readme, "hello\nthere\nfriend\n");
+  const second = f.turn("in_2");
+  await claudeWrite(second, readme, "hello\nfriend\n");
+  await second.finish("");
+  assert.deepEqual(
+    [
+      (await diffOf(f, readme, "in_2")).before,
+      (await diffOf(f, readme, "in_2")).after,
+    ],
+    ["hello\nthere\nfriend\n", "hello\nfriend\n"],
+  );
+  const whole = await diffOf(f, readme);
+  assert.deepEqual(
+    [whole.before, whole.after, whole.inputId],
+    ["hi\n", "hello\nfriend\n", undefined],
+  );
+  assert.equal(whole.mayIncludeOtherEdits, false);
+  await assert.rejects(
+    diffOf(f, other, "in_2"),
+    /not one this chat's tools wrote/,
+  );
+});
+
+test("another process editing the same file between writes is labelled", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const readme = join(f.workspace, "README.md");
+  const files = f.turn("in_1");
+  await claudeWrite(files, readme, "hi\nsession\n");
+  writeFileSync(readme, "hi\nsession\nsomeone else\n");
+  await claudeWrite(
+    files,
+    readme,
+    "hi\nsession\nsomeone else\nsession again\n",
+  );
+  await files.finish("");
+  const diff = await diffOf(f, readme, "in_1");
+  // Included, not hidden: the diff says so.
+  assert.equal(diff.mayIncludeOtherEdits, true);
+  assert.equal(diff.after, "hi\nsession\nsomeone else\nsession again\n");
+  // After the session's last write: shown as the session left it.
+  writeFileSync(readme, "rewritten by an editor\n");
+  const later = await diffOf(f, readme, "in_1");
+  assert.equal(later.changedSince, true);
+  assert.equal(later.after, "hi\nsession\nsomeone else\nsession again\n");
+});
+
+test("new, large and binary files", async (t) => {
+  const f = fixture(t);
+  const files = f.turn("in_1");
+  const created = join(f.outside, "new.md");
+  await claudeWrite(files, created, "# New\n");
+  const large = join(f.outside, "large.txt");
+  writeFileSync(large, "x".repeat(1024 * 1024 + 1));
+  await claudeWrite(files, large, "y".repeat(1024 * 1024 + 1));
+  const binary = join(f.outside, "data.bin");
+  writeFileSync(binary, Buffer.from([1, 0, 2]));
+  await claudeWrite(files, binary, Buffer.from([1, 0, 3]));
+  await files.finish("");
+
+  const fresh = await diffOf(f, created, "in_1");
+  assert.deepEqual(
+    [fresh.beforeLabel, fresh.before, fresh.after],
+    ["empty", "", "# New\n"],
+  );
+  assert.deepEqual([fresh.added, fresh.removed], [1, 0]);
+  const big = await diffOf(f, large);
+  assert.equal(big.tooLarge, true);
+  assert.equal(big.before, undefined);
+  const bin = await diffOf(f, binary);
+  assert.equal(bin.binary, true);
+  assert.equal(bin.after, undefined);
+  // Neither keeps a copy: only the new file's text was stored.
+  const baselines = join(
+    f.sessionsRoot,
+    sessionId,
+    "inputs",
+    "in_1",
+    "baselines",
+  );
+  assert.equal(readdirSync(baselines).length, 1);
+  // A turn without a kept before (an older worker) is unavailable, plainly.
+  const older = join(f.outside, "older.md");
+  writeFileSync(older, "x\n");
+  const turn2 = f.turn("in_2");
+  await turn2.recordToolWrite({ path: older, op: "modified", agent: "main" });
+  await turn2.finish("");
+  assert.equal((await diffOf(f, older)).unavailable, "noBaseline");
+});
+
+test("Codex diffs come from a turn-start snapshot; the user's index is untouched", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  writeFileSync(join(f.workspace, "README.md"), "hi\nstaged\n");
+  await git(f.workspace, ["add", "README.md"]);
+  writeFileSync(join(f.workspace, "README.md"), "hi\nstaged\nunstaged\n");
+  writeFileSync(join(f.workspace, "untracked.txt"), "loose\n");
+  // `git status` may refresh the index itself: read it first.
+  writeFileSync(join(f.workspace, ".gitignore"), "*.log\n");
+  writeFileSync(join(f.workspace, "build.log"), "built\n");
+  const statusBefore = await git(f.workspace, ["status", "--porcelain"]);
+  const index = join(f.workspace, ".git", "index");
+  const indexBefore = readFileSync(index);
+  const indexMtime = statSync(index).mtimeMs;
+
+  const files = f.turn("in_1");
+  await files.snapshotWorkTree();
+  assert.deepEqual(readFileSync(index), indexBefore);
+  assert.equal(statSync(index).mtimeMs, indexMtime);
+  // Only Foundry's own session folder appears (the manifest).
+  assert.equal(
+    (await git(f.workspace, ["status", "--porcelain"]))
+      .split("\n")
+      .filter((line) => line !== "?? .foundry/")
+      .join("\n"),
+    statusBefore,
+    "nothing staged or unstaged changed",
+  );
+  assert.equal(
+    readdirSync(join(f.sessionsRoot, sessionId, "inputs", "in_1")).some(
+      (name) => name.endsWith(".index"),
+    ),
+    false,
+    "the temporary index is removed",
+  );
+
+  writeFileSync(join(f.workspace, "README.md"), "hi\nby codex\n");
+  writeFileSync(join(f.workspace, "added.txt"), "new\n");
+  writeFileSync(join(f.workspace, "build.log"), "rebuilt\n");
+  for (const write of codexFileWrites({
+    type: "item.completed",
+    item: {
+      type: "file_change",
+      status: "completed",
+      changes: [
+        { path: join(f.workspace, "README.md"), kind: "update" },
+        { path: join(f.workspace, "added.txt"), kind: "add" },
+        { path: join(f.workspace, "build.log"), kind: "update" },
+      ],
+    },
+  }))
+    await files.recordToolWrite(write);
+  await files.finish("");
+
+  const readme = await diffOf(f, join(f.workspace, "README.md"), "in_1");
+  assert.equal(readme.source, "git-snapshot");
+  assert.equal(readme.beforeLabel, "turnStart");
+  assert.equal(readme.mayIncludeOtherEdits, true);
+  // The work tree as the turn started, unstaged edits included.
+  assert.equal(readme.before, "hi\nstaged\nunstaged\n");
+  assert.equal(readme.after, "hi\nby codex\n");
+  // A file Git ignores was not in the snapshot: no "before", not "new".
+  assert.equal(
+    (await diffOf(f, join(f.workspace, "build.log"))).unavailable,
+    "noBaseline",
+  );
+  const added = await diffOf(f, join(f.workspace, "added.txt"));
+  assert.deepEqual(
+    [added.beforeLabel, added.before, added.after],
+    ["empty", "", "new\n"],
+  );
+  assert.deepEqual(readFileSync(index), indexBefore);
+  assert.equal(existsSync(join(f.workspace, ".git", "index.lock")), false);
+});
+
+test("line counts match a minimal diff", () => {
+  assert.deepEqual(lineChangeCounts("a\nb\nc\n", "a\nB\nc\nd\n"), {
+    added: 2,
+    removed: 1,
+  });
+  assert.deepEqual(lineChangeCounts("", "x\n"), { added: 1, removed: 0 });
+  assert.deepEqual(lineChangeCounts("same\n", "same\n"), {
+    added: 0,
+    removed: 0,
+  });
+  assert.equal(
+    lineChangeCounts("a\n".repeat(50), "b\n".repeat(50), 10),
+    undefined,
+  );
 });

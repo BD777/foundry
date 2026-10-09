@@ -80,15 +80,35 @@ function ResourceRow({
   );
 }
 
-/** Workspace files by their workspace path; others by absolute path. */
-function fileTreeRoots(items: ChatSessionFileItem[]): FileTreeRoot[] {
-  const asItem = (file: ChatSessionFileItem, path: string): FileTreeItem => ({
-    id: file.id,
-    path,
-    status: i18n.t(`chat:contextCard.fileStatus.${file.op}`),
-    tone: file.op,
-    title: file.path,
-  });
+/**
+ * Workspace files by their workspace path; others by absolute path. Changes
+ * show Git-style A/M/D and their line counts: one turn's, or all turns'.
+ */
+function fileTreeRoots(
+  items: ChatSessionFileItem[],
+  changes: { turnId?: string } | undefined,
+): FileTreeRoot[] {
+  const asItem = (file: ChatSessionFileItem, path: string): FileTreeItem => {
+    const status = i18n.t(`chat:contextCard.fileStatus.${file.op}`);
+    const lineChanges = changes
+      ? changes.turnId
+        ? file.turnLineChanges?.[changes.turnId]
+        : file.lineChanges
+      : undefined;
+    return {
+      id: file.id,
+      path,
+      ...(changes && file.op !== "referenced"
+        ? {
+            status: i18n.t(`chat:contextCard.fileStatusShort.${file.op}`),
+            statusLabel: status,
+          }
+        : { status }),
+      ...(lineChanges ? { lineChanges } : {}),
+      tone: file.op,
+      title: file.path,
+    };
+  };
   const inside = items.filter((file) => file.workspacePath);
   const outside = items.filter((file) => !file.workspacePath);
   return [
@@ -106,6 +126,7 @@ function fileTreeRoots(items: ChatSessionFileItem[]): FileTreeRoot[] {
 }
 
 function FileSection({
+  changes,
   emptyLabel,
   files,
   label,
@@ -113,6 +134,8 @@ function FileSection({
   reveal,
   title,
 }: {
+  /** The section lists changes, from one turn (`turnId`) or all of them. */
+  changes?: { turnId?: string };
   emptyLabel?: string;
   files: ChatSessionFileItem[];
   label: string;
@@ -120,7 +143,12 @@ function FileSection({
   reveal?: { ids: string[] };
   title: string;
 }) {
-  const roots = useMemo(() => fileTreeRoots(files), [files]);
+  const turnId = changes?.turnId;
+  const listsChanges = changes !== undefined;
+  const roots = useMemo(
+    () => fileTreeRoots(files, listsChanges ? { turnId } : undefined),
+    [files, listsChanges, turnId],
+  );
   const byId = useMemo(
     () => new Map(files.map((file) => [file.id, file])),
     [files],
@@ -146,7 +174,8 @@ function FileSection({
           heading={heading(true)}
           onSelect={(item) => {
             const file = byId.get(item.id);
-            if (file) onSelect?.(file);
+            if (file)
+              onSelect?.(turnId ? { ...file, diffTurnId: turnId } : file);
           }}
           reveal={reveal}
           roots={roots}
@@ -195,6 +224,7 @@ function SessionFileSections({
       ) : (
         <>
           <FileSection
+            changes={{ turnId: turnFilter }}
             emptyLabel={t("contextCard.changesEmpty")}
             files={changes}
             label={t("contextCard.changesLabel")}

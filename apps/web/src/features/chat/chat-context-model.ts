@@ -265,6 +265,16 @@ export function chatSessionFiles(
       const record = event.metadata?.sessionFile;
       if (!record?.path) continue;
       const turnId = record.inputId ?? session.id;
+      const turnCounts =
+        record.added !== undefined && record.removed !== undefined
+          ? { added: record.added, removed: record.removed }
+          : undefined;
+      const totalCounts =
+        record.totalAdded !== undefined && record.totalRemoved !== undefined
+          ? { added: record.totalAdded, removed: record.totalRemoved }
+          : turnCounts && !record.inputId
+            ? turnCounts
+            : undefined;
       const known = files.get(record.path);
       if (!known) {
         files.set(record.path, {
@@ -284,9 +294,17 @@ export function chatSessionFiles(
               ? activeWorkspace.deviceLabel
               : undefined,
           bytes: record.bytes,
+          ...(totalCounts ? { lineChanges: totalCounts } : {}),
+          ...(turnCounts ? { turnLineChanges: { [turnId]: turnCounts } } : {}),
         });
         continue;
       }
+      if (totalCounts) known.lineChanges = totalCounts;
+      if (turnCounts)
+        known.turnLineChanges = {
+          ...known.turnLineChanges,
+          [turnId]: turnCounts,
+        };
       known.op = mergedFileOp(known.op, record.op);
       if (record.origin === "tool") known.origin = "tool";
       known.inGitRepo = record.inGitRepo;

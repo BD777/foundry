@@ -533,6 +533,12 @@ export interface SessionFileRecord {
   /** "main", or the id of the subagent whose tool wrote it. */
   agent?: string;
   bytes?: number;
+  /** Lines this turn's writes added and removed, once the turn ended. */
+  added?: number;
+  removed?: number;
+  /** Lines added and removed since the session first wrote it. */
+  totalAdded?: number;
+  totalRemoved?: number;
 }
 
 /** A path an answer names that its device verified; linked in the text. */
@@ -561,6 +567,43 @@ export interface SessionFileRead {
   mtime?: string;
   /** Modified on the device after the turn that recorded it. */
   changedSinceRecorded: boolean;
+}
+
+/**
+ * What a session's own writes changed in one file, read from its device.
+ * "hook": the file as it was before the session's first write and after its
+ * last (Claude), so concurrent edits to other files never show.
+ * "git-snapshot": against a Git snapshot taken when the turn started (Codex),
+ * which may include other edits to the same file.
+ */
+export interface SessionFileDiff {
+  sessionId: string;
+  path: string;
+  workspacePath?: string;
+  origin: "tool" | "reference";
+  insideWorkspace: boolean;
+  /** One turn's diff; absent: the whole session's. */
+  inputId?: string;
+  source: "hook" | "git-snapshot";
+  /** Absent when the diff is unavailable, binary or too large. */
+  before?: string;
+  after?: string;
+  /** empty: the session created it; beforeEdits / turnStart: see `source`. */
+  beforeLabel: "empty" | "beforeEdits" | "turnStart";
+  /** afterEdits: after the session's last write; deleted: it removed it. */
+  afterLabel: "afterEdits" | "current" | "deleted";
+  /** Something else also wrote the file while the session edited it. */
+  mayIncludeOtherEdits: boolean;
+  /** The file changed on the device after the session's last write. */
+  changedSince: boolean;
+  truncated: boolean;
+  binary: boolean;
+  tooLarge: boolean;
+  /** noBaseline: no copy from before the session's edits was kept. */
+  unavailable?: "noBaseline";
+  /** Lines added and removed, when both sides are text. */
+  added?: number;
+  removed?: number;
 }
 
 export interface WorkspaceDirectoryEntry {

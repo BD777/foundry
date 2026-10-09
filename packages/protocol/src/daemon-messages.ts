@@ -47,6 +47,8 @@ export const daemonMessageTypes = {
   readSessionUsage: "read_session_usage",
   readSessionFile: "read_session_file",
   sessionFileRead: "session_file_read",
+  readSessionFileDiff: "read_session_file_diff",
+  sessionFileDiffRead: "session_file_diff_read",
   readBackgroundTaskOutput: "read_background_task_output",
   backgroundTaskOutputRead: "background_task_output_read",
   stopBackgroundTask: "stop_background_task",

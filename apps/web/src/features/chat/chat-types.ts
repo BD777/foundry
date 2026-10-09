@@ -130,6 +130,17 @@ export interface ChatSessionFileItem {
   workspaceId: string;
   deviceLabel?: string;
   bytes?: number;
+  /** Lines the chat's writes added and removed, across its turns. */
+  lineChanges?: ChatLineChanges;
+  /** The same counts for each turn that wrote it. */
+  turnLineChanges?: Record<string, ChatLineChanges>;
+  /** Opened from one answer's files: shows that turn's diff. */
+  diffTurnId?: string;
+}
+
+export interface ChatLineChanges {
+  added: number;
+  removed: number;
 }
 
 export type ChatContextSelection =

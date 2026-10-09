@@ -32,6 +32,19 @@ export const ui = {
       tooManyLines:
         "This diff has more than 5,000 lines. Download the archives to inspect all changes.",
     },
+    /** The same failures for a file that can be opened instead. */
+    fileErrors: {
+      timedOut: "The diff took too long. View the file instead.",
+      display: "Could not display this diff. View the file instead.",
+      worker: "Could not load the diff worker. View the file instead.",
+      failed: "Could not calculate this diff. View the file instead.",
+      longLines:
+        "This file has very long lines, so no diff is shown. View the file instead.",
+      tooLarge: "This file is too large to diff here. View the file instead.",
+      timeLimit: "The diff took too long. View the file instead.",
+      tooManyLines:
+        "This diff has more than 5,000 lines, too many to show here. View the file instead.",
+    },
   },
   fileTree: {
     filter: "Filter files",
@@ -41,6 +54,7 @@ export const ui = {
     tree: "Tree",
     list: "List",
     noMatches: "No files match “{{query}}”.",
+    lineChanges: "{{added}} lines added, {{removed}} removed",
   },
   selectMenu: {
     placeholder: "Select",

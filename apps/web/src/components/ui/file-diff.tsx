@@ -12,11 +12,14 @@ export function FileDiff({
   after,
   viewType,
   onViewTypeChange,
+  errorCopy = "archives",
 }: {
   before: string;
   after: string;
   viewType?: "unified" | "split";
   onViewTypeChange?: (view: "unified" | "split") => void;
+  /** What failures point to: the downloadable archives, or the file itself. */
+  errorCopy?: "archives" | "file";
 }) {
   const { t } = useTranslation("ui");
   const [files, setFiles] = useState<FileData[]>();
@@ -79,7 +82,13 @@ export function FileDiff({
         ]}
       />
       {error ? (
-        <p role="alert">{t(`fileDiff.errors.${error}`)}</p>
+        <p role="alert">
+          {t(
+            errorCopy === "file"
+              ? `fileDiff.fileErrors.${error}`
+              : `fileDiff.errors.${error}`,
+          )}
+        </p>
       ) : !files ? (
         <p role="status">{t("fileDiff.calculating")}</p>
       ) : files.every((f) => !f.hunks.length) ? (

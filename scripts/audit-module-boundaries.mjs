@@ -140,6 +140,7 @@ export const workerModules = {
       "session-artifacts",
       "session-helpers",
       "session-files",
+      "session-file-diffs",
       "session-file-references",
       "session-policy",
       "session-prompt",

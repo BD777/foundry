@@ -312,6 +312,10 @@ type SessionFileRecord struct {
 	InputID       string `json:"inputId,omitempty"`
 	Agent         string `json:"agent,omitempty"`
 	Bytes         *int64 `json:"bytes,omitempty"`
+	Added         *int   `json:"added,omitempty"`
+	Removed       *int   `json:"removed,omitempty"`
+	TotalAdded    *int   `json:"totalAdded,omitempty"`
+	TotalRemoved  *int   `json:"totalRemoved,omitempty"`
 }
 
 // SessionFileReference is a path an answer names that its device verified.
@@ -336,6 +340,30 @@ type SessionFileRead struct {
 	Bytes                *int64 `json:"bytes,omitempty"`
 	Mtime                string `json:"mtime,omitempty"`
 	ChangedSinceRecorded bool   `json:"changedSinceRecorded"`
+}
+
+// SessionFileDiff is what a session's own writes changed in one of its
+// recorded files, read from its device: one turn's or the whole session's.
+type SessionFileDiff struct {
+	SessionID            string  `json:"sessionId"`
+	Path                 string  `json:"path"`
+	WorkspacePath        string  `json:"workspacePath,omitempty"`
+	Origin               string  `json:"origin"`
+	InsideWorkspace      bool    `json:"insideWorkspace"`
+	InputID              string  `json:"inputId,omitempty"`
+	Source               string  `json:"source"`
+	Before               *string `json:"before,omitempty"`
+	After                *string `json:"after,omitempty"`
+	BeforeLabel          string  `json:"beforeLabel"`
+	AfterLabel           string  `json:"afterLabel"`
+	MayIncludeOtherEdits bool    `json:"mayIncludeOtherEdits"`
+	ChangedSince         bool    `json:"changedSince"`
+	Truncated            bool    `json:"truncated"`
+	Binary               bool    `json:"binary"`
+	TooLarge             bool    `json:"tooLarge"`
+	Unavailable          string  `json:"unavailable,omitempty"`
+	Added                *int    `json:"added,omitempty"`
+	Removed              *int    `json:"removed,omitempty"`
 }
 
 type WorkspaceDirectoryEntry struct {

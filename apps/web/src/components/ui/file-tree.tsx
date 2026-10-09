@@ -36,6 +36,10 @@ export interface FileTreeItem {
   status?: string;
   /** Colors the status: created, modified, deleted or referenced. */
   tone?: string;
+  /** The status in words, when `status` is an abbreviation such as "M". */
+  statusLabel?: string;
+  /** Lines added and removed, shown as "+12 −3". */
+  lineChanges?: { added: number; removed: number };
   /** Full path or other detail, shown as the row's tooltip. */
   title?: string;
 }
@@ -531,8 +535,24 @@ export function FileTree({
           {row.node.name}
           {row.folder ? <em>{row.folder}</em> : null}
         </span>
+        {item.lineChanges ? (
+          <span
+            aria-label={t("fileTree.lineChanges", item.lineChanges)}
+            className="fdy-file-tree-lines"
+            role="img"
+          >
+            <span data-tone="added">+{item.lineChanges.added}</span>
+            <span data-tone="removed">−{item.lineChanges.removed}</span>
+          </span>
+        ) : null}
         {item.status ? (
-          <span className="fdy-file-tree-status" data-tone={item.tone}>
+          <span
+            aria-label={item.statusLabel}
+            className="fdy-file-tree-status"
+            data-tone={item.tone}
+            role={item.statusLabel ? "img" : undefined}
+            title={item.statusLabel}
+          >
             {item.status}
           </span>
         ) : null}

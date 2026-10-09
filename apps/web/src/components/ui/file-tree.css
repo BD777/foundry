@@ -166,6 +166,23 @@
   font-weight: 600;
 }
 
+.fdy-file-tree-lines {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.fdy-file-tree-lines [data-tone="added"] {
+  color: var(--fdy-green);
+}
+
+.fdy-file-tree-lines [data-tone="removed"] {
+  color: var(--fdy-red);
+}
+
 .fdy-file-tree-status[data-tone="created"] {
   color: var(--fdy-green);
 }

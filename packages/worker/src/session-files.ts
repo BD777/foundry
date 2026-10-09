@@ -28,11 +28,22 @@ import {
 import {
   processLabels,
   type AgentSession,
+  type SessionFileDiff,
   type SessionFileRead,
   type SessionFileRecord,
   type SessionFileReference,
 } from "@bd777/foundry-protocol";
 import type { SessionEventEmitter } from "./session-state.js";
+import {
+  currentFile,
+  lineChangeCounts,
+  maxBaselineBytes,
+  sameSnapshot,
+  sessionFileChange,
+  TurnFileChanges,
+  turnDirectory,
+  type SessionFileChange,
+} from "./session-file-diffs.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import {
   pathWithin,
@@ -171,6 +182,8 @@ function mergedOp(
 export class SessionTurnFiles {
   private readonly reported = new Map<string, SessionFileRecord>();
   private readonly workspaceRealpath: string;
+  /** Copies of the files before and after the session's writes. */
+  private readonly changes: TurnFileChanges;
   /** Writes are recorded in order, off the tool call's path. */
   private queue: Promise<void> = Promise.resolve();
 
@@ -187,6 +200,9 @@ export class SessionTurnFiles {
     },
   ) {
     this.workspaceRealpath = realpathOrSelf(options.workspacePath);
+    this.changes = new TurnFileChanges(
+      turnDirectory(options.sessionsRoot, options.sessionId, options.inputId),
+    );
   }
 
   static forSession(
@@ -272,6 +288,10 @@ export class SessionTurnFiles {
   private async report(
     entry: SessionFileEntry,
     op: SessionFileRecord["op"],
+    counts?: Pick<
+      SessionFileRecord,
+      "added" | "removed" | "totalAdded" | "totalRemoved"
+    >,
   ): Promise<void> {
     const reported = this.reported.get(entry.path);
     const record: SessionFileRecord = {
@@ -283,11 +303,16 @@ export class SessionTurnFiles {
       ...(this.options.inputId ? { inputId: this.options.inputId } : {}),
       agent: entry.agent,
       ...(entry.bytes !== undefined ? { bytes: entry.bytes } : {}),
+      ...counts,
     };
     if (
       reported &&
       reported.op === record.op &&
-      reported.origin === record.origin
+      reported.origin === record.origin &&
+      reported.added === record.added &&
+      reported.removed === record.removed &&
+      reported.totalAdded === record.totalAdded &&
+      reported.totalRemoved === record.totalRemoved
     )
       return;
     this.reported.set(entry.path, record);
@@ -296,6 +321,47 @@ export class SessionTurnFiles {
       entry.workspacePath ?? entry.path,
       "info",
       { sessionFile: record },
+    );
+  }
+
+  /**
+   * A write tool is about to run: keep the file as the session found it, the
+   * first time in the turn. The tool waits for this.
+   */
+  captureBeforeWrite(write: Pick<ToolFileWrite, "path">): Promise<void> {
+    this.queue = this.queue
+      .then(() => {
+        const path = this.absolute(write.path);
+        if (this.privatePath(path, realpathOrSelf(path))) return;
+        this.changes.captureBefore(path);
+      })
+      .catch((error: unknown) =>
+        console.error(
+          `Could not keep a copy of ${write.path}: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    return this.queue;
+  }
+
+  /**
+   * Codex: snapshots the Git work tree before the turn runs, so its diffs
+   * have a "before". Outside a Git work tree there is none.
+   */
+  async snapshotWorkTree(): Promise<void> {
+    await this.changes.snapshotGitWorkTree(this.options.workspacePath);
+  }
+
+  private absolute(path: string): string {
+    return isAbsolute(path)
+      ? resolve(path)
+      : resolve(this.options.workspacePath, path);
+  }
+
+  private privatePath(path: string, realpath: string): boolean {
+    const home = this.options.home ?? homedir();
+    return (
+      privateDevicePath(path, home, this.options.workspacePath) ||
+      privateDevicePath(realpath, home, this.workspaceRealpath)
     );
   }
 
@@ -312,17 +378,11 @@ export class SessionTurnFiles {
   }
 
   private async recordWrite(write: ToolFileWrite): Promise<void> {
-    const path = isAbsolute(write.path)
-      ? resolve(write.path)
-      : resolve(this.options.workspacePath, write.path);
-    const home = this.options.home ?? homedir();
+    const path = this.absolute(write.path);
     const found = write.op === "deleted" ? undefined : stats(path);
     const realpath = found?.realpath ?? realpathOrSelf(path);
-    if (
-      privateDevicePath(path, home, this.options.workspacePath) ||
-      privateDevicePath(realpath, home, this.workspaceRealpath)
-    )
-      return;
+    if (this.privatePath(path, realpath)) return;
+    this.changes.captureAfter(path);
     const files = this.ledger();
     const entry = this.upsert(files, {
       path,
@@ -336,6 +396,51 @@ export class SessionTurnFiles {
     });
     this.save(files);
     await this.report(entry, write.op);
+  }
+
+  /** The turn's and the session's line counts for each file it wrote. */
+  private async reportLineCounts(files: SessionFileEntry[]): Promise<void> {
+    try {
+      this.changes.pruneCopies();
+    } catch {
+      // Copies left behind only cost space.
+    }
+    for (const [path, record] of this.reported) {
+      if (record.origin !== "tool") continue;
+      const entry = files.find((file) => file.path === path);
+      if (!entry) continue;
+      try {
+        const turn = changeCounts(
+          await sessionFileChange(
+            this.options.sessionsRoot,
+            this.options.sessionId,
+            path,
+            this.options.inputId,
+          ),
+        );
+        if (!turn) continue;
+        const total = this.options.inputId
+          ? changeCounts(
+              await sessionFileChange(
+                this.options.sessionsRoot,
+                this.options.sessionId,
+                path,
+              ),
+            )
+          : turn;
+        await this.report(entry, record.op, {
+          added: turn.added,
+          removed: turn.removed,
+          ...(total
+            ? { totalAdded: total.added, totalRemoved: total.removed }
+            : {}),
+        });
+      } catch (error) {
+        console.error(
+          `Could not count the changes to ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   /**
@@ -383,6 +488,7 @@ export class SessionTurnFiles {
     }
     if (named.length > 0 || this.reported.size > 0) this.save(files);
     for (const entry of named) await this.report(entry, "referenced");
+    await this.reportLineCounts(files);
 
     const pathsByText = new Map<string, Set<string>>();
     for (const reference of resolved) {
@@ -407,6 +513,19 @@ export class SessionTurnFiles {
     }
     return references;
   }
+}
+
+/** Lines added and removed between a change's two sides, when both are text. */
+function changeCounts(
+  change: SessionFileChange | undefined,
+): { added: number; removed: number } | undefined {
+  if (
+    !change?.after ||
+    change.before.text === undefined ||
+    change.after.text === undefined
+  )
+    return undefined;
+  return lineChangeCounts(change.before.text, change.after.text);
 }
 
 /** The file a Claude PostToolUse hook reports a write tool changed. */
@@ -450,8 +569,26 @@ const claudeWriteTools = new Set([
  */
 export function claudeFileWriteHooks(
   record: (write: ToolFileWrite) => Promise<void> | void,
+  captureBefore?: (write: ToolFileWrite) => Promise<void> | void,
 ): Record<string, unknown[]> {
   return {
+    ...(captureBefore
+      ? {
+          // The tool waits until the file's "before" copy is kept.
+          PreToolUse: [
+            {
+              matcher: [...claudeWriteTools].join("|"),
+              hooks: [
+                async (input: unknown) => {
+                  const write = claudeToolFileWrite(input);
+                  if (write) await captureBefore(write);
+                  return {};
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
     PostToolUse: [
       {
         matcher: [...claudeWriteTools].join("|"),
@@ -702,5 +839,106 @@ export function readSessionFile(input: {
       truncated ? read.data.subarray(0, maxTextBytes) : read.data,
     ),
     truncated,
+  };
+}
+
+/**
+ * What the session's own writes changed in one of its recorded files: one
+ * turn's (`inputId`) or the whole session's, from the copy kept before its
+ * first write to the one kept after its last. Only files the session's tools
+ * wrote have one, and only while they resolve where they did when recorded.
+ */
+export async function readSessionFileDiff(input: {
+  workspacePath: string;
+  sessionsRoot?: string;
+  sessionId: string;
+  path: string;
+  inputId?: string;
+  home?: string;
+}): Promise<SessionFileDiff> {
+  const sessionsRoot =
+    input.sessionsRoot ?? resolve(input.workspacePath, ".foundry", "sessions");
+  const entry = readSessionFileLedger(sessionsRoot, input.sessionId).find(
+    (file) => file.path === input.path,
+  );
+  if (!entry || entry.origin !== "tool")
+    throw new Error("This file is not one this chat's tools wrote.");
+  if (input.inputId && !entry.inputIds.includes(input.inputId))
+    throw new Error("This turn did not write this file.");
+  const home = input.home ?? homedir();
+  const workspaceRealpath = realpathOrSelf(input.workspacePath);
+  let realpath: string | undefined;
+  try {
+    realpath = realpathSync(entry.path);
+  } catch {
+    realpath = undefined;
+  }
+  if (
+    (realpath !== undefined && realpath !== entry.realpath) ||
+    privateDevicePath(entry.path, home, input.workspacePath) ||
+    privateDevicePath(realpath ?? entry.realpath, home, workspaceRealpath)
+  )
+    throw new Error("This file now resolves somewhere else and is not shown.");
+
+  const change = await sessionFileChange(
+    sessionsRoot,
+    input.sessionId,
+    entry.path,
+    input.inputId,
+  );
+  const current = currentFile(entry.path);
+  const base: SessionFileDiff = {
+    sessionId: input.sessionId,
+    path: entry.path,
+    ...(entry.workspacePath ? { workspacePath: entry.workspacePath } : {}),
+    origin: entry.origin,
+    insideWorkspace: pathWithin(workspaceRealpath, realpath ?? entry.realpath),
+    ...(input.inputId ? { inputId: input.inputId } : {}),
+    source: change?.source ?? "hook",
+    beforeLabel: "beforeEdits",
+    afterLabel: "afterEdits",
+    mayIncludeOtherEdits: change?.otherEdits ?? false,
+    changedSince: false,
+    truncated: false,
+    binary: false,
+    tooLarge: false,
+  };
+  if (!change) return { ...base, unavailable: "noBaseline" };
+  const after = change.after ?? current;
+  const diff: SessionFileDiff = {
+    ...base,
+    beforeLabel:
+      change.before.snapshot.kind === "absent"
+        ? "empty"
+        : change.source === "git-snapshot"
+          ? "turnStart"
+          : "beforeEdits",
+    afterLabel:
+      after.snapshot.kind === "absent"
+        ? "deleted"
+        : change.after
+          ? "afterEdits"
+          : "current",
+    changedSince:
+      change.after !== undefined &&
+      !sameSnapshot(change.after.snapshot, current.snapshot),
+    binary:
+      change.before.snapshot.kind === "binary" ||
+      after.snapshot.kind === "binary",
+    tooLarge:
+      change.before.snapshot.kind === "tooLarge" ||
+      after.snapshot.kind === "tooLarge",
+  };
+  if (diff.binary || diff.tooLarge) return diff;
+  if (change.before.text === undefined || after.text === undefined)
+    return { ...diff, unavailable: "noBaseline" };
+  if (change.before.text.length + after.text.length > maxBaselineBytes)
+    return { ...diff, tooLarge: true };
+  const counts = lineChangeCounts(change.before.text, after.text);
+  return {
+    ...diff,
+    before: change.before.text,
+    after: after.text,
+    ...(counts ?? {}),
   };
 }

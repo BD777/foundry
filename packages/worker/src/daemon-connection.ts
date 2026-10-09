@@ -22,7 +22,7 @@ import {
   type ToolSpec,
 } from "./managed-tools.js";
 import { readSessionUsage } from "./session-usage.js";
-import { readSessionFile } from "./session-files.js";
+import { readSessionFile, readSessionFileDiff } from "./session-files.js";
 import {
   fetchSkillRepository,
   readRepositoryRefs,
@@ -1398,6 +1398,48 @@ function runWebSocketSession(options: {
         trySendWebSocket(
           socket,
           daemonMessageTypes.sessionFileRead,
+          reply,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.readSessionFileDiff) {
+        const payload = (envelope.payload ?? {}) as Partial<{
+          workspaceId: string;
+          sessionId: string;
+          path: string;
+          inputId: string;
+        }>;
+        let reply: Record<string, unknown>;
+        try {
+          reply = {
+            ...(await readSessionFileDiff({
+              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+              sessionId: payload.sessionId ?? "",
+              path: payload.path ?? "",
+              inputId: payload.inputId || undefined,
+            })),
+          };
+        } catch (error) {
+          reply = {
+            sessionId: payload.sessionId ?? "",
+            path: payload.path ?? "",
+            origin: "tool",
+            insideWorkspace: false,
+            source: "hook",
+            beforeLabel: "beforeEdits",
+            afterLabel: "afterEdits",
+            mayIncludeOtherEdits: false,
+            changedSince: false,
+            truncated: false,
+            binary: false,
+            tooLarge: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.sessionFileDiffRead,
           reply,
           envelope.id,
         );
