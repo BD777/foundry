@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   AgentSubagentTranscript,
-  WorkspaceFileRead,
+  SessionFileRead,
 } from "@bd777/foundry-protocol";
 import {
   isAbortError,
   readAgentSubagentTranscript,
-  readWorkspaceFile,
+  readSessionFile,
 } from "../../api";
 import type { ChatContextSelection } from "./chat-types";
-import { i18n } from "../../i18n";
 
 export function useChatContextDetail(threadKey: string) {
   const [selection, setSelection] = useState<ChatContextSelection>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [file, setFile] = useState<WorkspaceFileRead>();
+  const [file, setFile] = useState<SessionFileRead>();
   const [transcript, setTranscript] = useState<AgentSubagentTranscript>();
 
   useEffect(() => setSelection(undefined), [threadKey]);
@@ -25,9 +24,7 @@ export function useChatContextDetail(threadKey: string) {
     setTranscript(undefined);
     if (
       !selection ||
-      selection.kind === "web" ||
-      selection.kind === "source" ||
-      selection.kind === "timer"
+      (selection.kind !== "subagent" && selection.kind !== "session-file")
     ) {
       setLoading(false);
       return undefined;
@@ -44,19 +41,13 @@ export function useChatContextDetail(threadKey: string) {
               setTranscript(value);
             }
           })
-        : selection.workspaceId
-          ? readWorkspaceFile(
-              {
-                path: selection.target,
-                workspaceId: selection.workspaceId,
-              },
-              { signal },
-            ).then((value) => {
-              if (!signal.aborted) {
-                setFile(value);
-              }
-            })
-          : Promise.reject(new Error(i18n.t("chat:detail.noWorkspace")));
+        : readSessionFile(selection.sessionId, selection.path, {
+            signal,
+          }).then((value) => {
+            if (!signal.aborted) {
+              setFile(value);
+            }
+          });
     void request
       .catch((reason: unknown) => {
         if (signal.aborted || isAbortError(reason)) {
@@ -74,8 +65,9 @@ export function useChatContextDetail(threadKey: string) {
     };
   }, [selection]);
 
+  const close = useCallback(() => setSelection(undefined), []);
   return {
-    close: () => setSelection(undefined),
+    close,
     error,
     file,
     loading,

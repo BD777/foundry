@@ -407,3 +407,27 @@ test("synthesizes a terminal response event when only process events were loaded
     ],
   );
 });
+
+test("recorded files and older workers' output guesses are not chat rows", () => {
+  assert.equal(
+    shouldDisplayAgentSessionEvent({
+      ...event("legacy", "Produced output file", "unrelated.go"),
+      metadata: { outputFile: "unrelated.go" },
+    }),
+    false,
+  );
+  assert.equal(
+    shouldDisplayAgentSessionEvent({
+      ...event("file", "Recorded file", "docs/plan.md"),
+      metadata: {
+        sessionFile: {
+          path: "/w/docs/plan.md",
+          origin: "tool",
+          op: "created",
+          inGitRepo: true,
+        },
+      },
+    }),
+    false,
+  );
+});

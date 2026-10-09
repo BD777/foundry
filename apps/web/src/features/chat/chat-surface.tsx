@@ -1,5 +1,5 @@
-import { ChevronLeft, PanelRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, LoaderCircle, PanelRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -16,8 +16,13 @@ import { conversationStoragePrefixes } from "../../components/conversation/conve
 import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
 import { navigateToDeviceAgents } from "../../lib/in-app-navigation";
 import { setDocumentChat } from "../../lib/document-title";
+import type {
+  ConversationFileActions,
+  ConversationFileReference,
+} from "../../components/conversation/conversation-types";
 import { ChatSidebar } from "./chat-thread-view";
 import { useChatContextDetail } from "./use-chat-context-detail";
+import type { ChatSessionFileItem } from "./chat-types";
 
 export type {
   ChatAgentOption,
@@ -55,6 +60,61 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
   const contextDetail = useChatContextDetail(threadKey);
+  // An answer's "N files" chip shows only its turn's files.
+  const [turnFilter, setTurnFilter] = useState<string>();
+  const [reveal, setReveal] = useState<{ ids: string[] }>();
+  useEffect(() => {
+    setTurnFilter(undefined);
+    setReveal(undefined);
+  }, [threadKey]);
+  const { close: closeDetail, setSelection } = contextDetail;
+  // A background task's row changes as it runs; its panel follows it.
+  const selection = contextDetail.selection;
+  const liveSelection =
+    selection?.kind === "background-task"
+      ? (contextCard?.background.find((item) => item.id === selection.id) ??
+        selection)
+      : selection;
+  // Read at click time: the links stay stable while files stream in.
+  const sessionFiles = useRef<ChatSessionFileItem[]>([]);
+  sessionFiles.current = [
+    ...(contextCard?.changes ?? []),
+    ...(contextCard?.files ?? []),
+  ];
+  const showPanel = useCallback(() => {
+    closeDetail();
+    setContextCardOpen(true);
+  }, [closeDetail]);
+  const openFileReference = useCallback(
+    (reference: ConversationFileReference) => {
+      if (reference.kind === "file") {
+        const file = sessionFiles.current.find(
+          (item) => item.path === reference.path,
+        );
+        if (file) setSelection(file);
+        return;
+      }
+      const folder = `${reference.path.replace(/\/+$/, "")}/`;
+      setTurnFilter(undefined);
+      setReveal({
+        ids: sessionFiles.current
+          .filter((item) => item.path.startsWith(folder))
+          .map((item) => item.id),
+      });
+      showPanel();
+    },
+    [setSelection, showPanel],
+  );
+  const fileActions = useMemo<ConversationFileActions>(
+    () => ({
+      open: openFileReference,
+      showTurn: (turnId) => {
+        setTurnFilter(turnId);
+        showPanel();
+      },
+    }),
+    [openFileReference, showPanel],
+  );
   // The tab title names the open chat and marks it while it runs.
   const chatName =
     !threadKey.endsWith(":new") && typeof chatTitle === "string"
@@ -127,14 +187,15 @@ export function ChatSurface(props: ChatSurfaceProps) {
         </div>
         <ChatDetailSplitPane
           detail={
-            contextDetail.selection ? (
+            liveSelection ? (
               <ChatDetailPanel
+                canControl={!props.readOnlyReason}
                 error={contextDetail.error}
                 file={contextDetail.file}
                 loading={contextDetail.loading}
                 onClose={contextDetail.close}
                 onImagePreview={setPreviewImage}
-                selection={contextDetail.selection}
+                selection={liveSelection}
                 transcript={contextDetail.transcript}
               />
             ) : undefined
@@ -142,6 +203,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           detailLabel={contextDetail.selection?.label ?? t("detail.label")}
         >
           <Conversation
+            fileActions={contextCard ? fileActions : undefined}
             threadKey={props.threadKey}
             messages={props.messages}
             active={props.agentActive}
@@ -160,6 +222,21 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onAttachmentRemove={props.onAttachmentRemove}
             onAttachmentsRestore={props.onAttachmentsRestore}
             onImagePreview={setPreviewImage}
+            notice={
+              !props.agentActive && props.backgroundRunning ? (
+                <Button
+                  className="fdy-chat-background-note"
+                  onClick={showPanel}
+                  size="sm"
+                  variant="ghost"
+                >
+                  <LoaderCircle aria-hidden="true" size={14} />
+                  {t("contextCard.backgroundRunningNote", {
+                    count: props.backgroundRunning,
+                  })}
+                </Button>
+              ) : undefined
+            }
             readOnly={
               props.readOnlyReason ? (
                 <Alert title={t("thread.readOnly")}>
@@ -213,8 +290,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
             >
               <ChatContextCard
                 data={contextCard}
+                onClearTurnFilter={() => setTurnFilter(undefined)}
                 onClose={() => setContextCardOpen(false)}
                 onSelect={contextDetail.setSelection}
+                reveal={reveal}
+                turnFilter={turnFilter}
               />
             </div>
           ) : null}

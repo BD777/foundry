@@ -1066,6 +1066,28 @@ a {
   padding: 0;
 }
 
+.fdy-button-link {
+  background: transparent;
+  color: var(--fdy-info-text);
+}
+
+.fdy-button-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fdy-button-inline {
+  height: auto;
+  gap: 3px;
+  padding: 0 1px;
+  border-width: 0;
+  border-radius: 5px;
+  font: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+  white-space: normal;
+}
+
 .fdy-action-row {
   position: relative;
   min-width: 0;

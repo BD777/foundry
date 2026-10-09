@@ -1,4 +1,4 @@
-import { ArrowRight, Pencil } from "lucide-react";
+import { ArrowRight, Files, Pencil } from "lucide-react";
 import { memo, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
@@ -14,7 +14,11 @@ import {
   ToolCallItem,
   type ParsedImageTag,
 } from "./chat-message-content";
-import type { ChatMessageItem, StepUsage } from "./conversation-types";
+import type {
+  ChatMessageItem,
+  ConversationFileActions,
+  StepUsage,
+} from "./conversation-types";
 import { displayProcessLabel } from "../../lib/process-labels";
 import { TurnUsage } from "./turn-usage";
 
@@ -76,6 +80,20 @@ function stepUsageEqual(left?: StepUsage, right?: StepUsage): boolean {
   );
 }
 
+function fileReferencesEqual(
+  left: ChatMessageItem["fileReferences"],
+  right: ChatMessageItem["fileReferences"],
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every(
+    (reference, index) =>
+      reference.text === right[index]!.text &&
+      reference.path === right[index]!.path &&
+      reference.kind === right[index]!.kind,
+  );
+}
+
 function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
   return (
     left === right ||
@@ -85,6 +103,9 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.role === right.role &&
       left.text === right.text &&
       left.usage === right.usage &&
+      fileReferencesEqual(left.fileReferences, right.fileReferences) &&
+      left.turnFiles?.turnId === right.turnFiles?.turnId &&
+      left.turnFiles?.count === right.turnFiles?.count &&
       left.durationMs === right.durationMs &&
       left.startedAt === right.startedAt &&
       stepUsageEqual(left.stepUsage, right.stepUsage) &&
@@ -103,10 +124,12 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
 
 export const ChatMessageRow = memo(
   function ChatMessageRow({
+    fileActions,
     message,
     onEditMessage,
     onImagePreview,
   }: {
+    fileActions?: ConversationFileActions;
     message: ChatMessageItem;
     onEditMessage?: (text: string) => void;
     onImagePreview?: (image: ParsedImageTag) => void;
@@ -115,6 +138,11 @@ export const ChatMessageRow = memo(
     const messageTime = message.at ? new Date(message.at) : undefined;
     const validMessageTime =
       messageTime && !Number.isNaN(messageTime.getTime());
+    // The chip appears once the turn has settled and the host can show it.
+    const turnFiles =
+      fileActions && !message.streaming && message.turnFiles?.count
+        ? message.turnFiles
+        : undefined;
     if (message.kind === "boundary") {
       return (
         <div className="fdy-chat-truncation-boundary">
@@ -171,7 +199,9 @@ export const ChatMessageRow = memo(
       >
         <div className="fdy-chat-message-copy fdy-markdown">
           <MarkdownContent
+            fileReferences={message.fileReferences}
             onImagePreview={onImagePreview}
+            onOpenFileReference={fileActions?.open}
             typedText={message.role === "user"}
             streaming={message.streaming}
           >
@@ -185,6 +215,18 @@ export const ChatMessageRow = memo(
           ) : null}
           {message.origin ? (
             <span className="fdy-chat-message-origin">{message.origin}</span>
+          ) : null}
+          {turnFiles ? (
+            <Button
+              className="fdy-chat-turn-files"
+              onClick={() => fileActions?.showTurn(turnFiles.turnId)}
+              size="sm"
+              title={t("message.showTurnFiles")}
+              variant="secondary"
+            >
+              <Files aria-hidden="true" size={13} />
+              {t("message.turnFiles", { count: turnFiles.count })}
+            </Button>
           ) : null}
         </div>
         {message.copyText ? (
@@ -242,6 +284,7 @@ export const ChatMessageRow = memo(
   },
   (left, right) =>
     messagesEqual(left.message, right.message) &&
+    left.fileActions === right.fileActions &&
     left.onEditMessage === right.onEditMessage &&
     left.onImagePreview === right.onImagePreview,
 );

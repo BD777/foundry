@@ -24,8 +24,18 @@ export function shouldDisplayAgentSessionEvent(
   ) {
     return false;
   }
-  // Timer snapshot syncs drive the sidecar card only; they are not chat.
-  if (event.metadata?.timerSnapshot) {
+  // Timer and background-work snapshots drive the side panel only; they are
+  // not chat.
+  if (event.metadata?.timerSnapshot || event.metadata?.backgroundTaskSnapshot) {
+    return false;
+  }
+  // Recorded files fill the side panel. Older workers' "Produced output
+  // file" rows credited any file that changed meanwhile; they stay hidden.
+  if (
+    event.metadata?.sessionFile ||
+    // i18n-ignore: protocol event label older workers emitted
+    event.label === "Produced output file"
+  ) {
     return false;
   }
   // A model request's final tokens belong to its steps, not a step of its own.

@@ -77,6 +77,7 @@ Inbound handlers in `runWebSocketSession`, keyed by `daemonMessageTypes`:
 | `registered`                         | bind session transport, `announceAdditionalIssueCapacity()`             | `readyForIssue` × free slots               |
 | `readFile`                           | `sendFileRead()` [session-helpers]                                      | `fileRead`                                 |
 | `readSubagentTranscript`             | `sendSubagentTranscript()`                                              | `subagentTranscriptRead`                   |
+| `readSessionFile`                    | `readSessionFile()`: a ledger-listed file, bounded [session-files]      | `sessionFileRead`                          |
 | `listSubagents`                      | `sendSubagentList()`                                                    | `subagentsListed`                          |
 | `listDirectories`                    | `sendDirectoryListing()`                                                | `directoriesListed`                        |
 | `inspectWorkspace`                   | workspace inspection handler [workspace-inspection]                     | `workspaceInspected`                       |

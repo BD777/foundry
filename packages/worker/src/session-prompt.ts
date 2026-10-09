@@ -2,7 +2,11 @@
 // and profile/utility helpers, so both the runner and the launch-policy layer
 // can import it without a cycle.
 
-import type { AgentSession, SessionInput } from "@bd777/foundry-protocol";
+import type {
+  AgentSession,
+  ChatAttachment,
+  SessionInput,
+} from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { isUtilitySession } from "./utils.js";
 
@@ -23,15 +27,13 @@ export function sessionPrompt(
   const importedContext = !isUtilitySession(session)
     ? input.importedContext?.trim()
     : "";
-  const attachmentContext = !isUtilitySession(session)
-    ? sessionAttachmentContext(session)
-    : "";
   const prompt = [
     importedContext
       ? `Context imported from the same Foundry chat before this turn:\n\n${importedContext}`
       : "",
-    attachmentContext,
-    input.prompt.trim(),
+    isUtilitySession(session)
+      ? input.prompt.trim()
+      : userMessageText(input.prompt, input.attachments),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -43,8 +45,21 @@ You are running through Foundry's local daemon. Treat the workspace as read-only
   return prompt;
 }
 
-export function sessionAttachmentContext(session: AgentSession): string {
-  const attachments = currentInput(session).attachments ?? [];
+/**
+ * A person's message as the agent reads it: the files that came with it, then
+ * its text. Every way a message reaches an agent (a turn's input, a steer into
+ * a running turn) goes through here, so attachments arrive the same way.
+ */
+export function userMessageText(
+  text: string,
+  attachments: ChatAttachment[] = [],
+): string {
+  return [attachmentContext(attachments), text.trim()]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function attachmentContext(attachments: ChatAttachment[]): string {
   if (attachments.length === 0) {
     return "";
   }

@@ -21,82 +21,88 @@ import (
 )
 
 const (
-	wsAckType                     = "ack"
-	wsErrorType                   = "error"
-	wsHelloType                   = "hello"
-	wsHeartbeatType               = "heartbeat"
-	wsReadFileType                = "read_file"
-	wsFileReadType                = "file_read"
-	wsReadSubagentTranscriptType  = "read_subagent_transcript"
-	wsSubagentTranscriptReadType  = "subagent_transcript_read"
-	wsReadSessionUsageType        = "read_session_usage"
-	wsSessionUsageReadType        = "session_usage_read"
-	wsListSubagentsType           = "list_subagents"
-	wsSubagentsListedType         = "subagents_listed"
-	wsListDirectoriesType         = "list_directories"
-	wsDirectoriesListedType       = "directories_listed"
-	wsListWorkspaceTreeType       = "list_workspace_tree"
-	wsWorkspaceTreeListedType     = "workspace_tree_listed"
-	wsInspectWorkspaceType        = "inspect_workspace"
-	wsInspectNativeAccountType    = "inspect_native_account"
-	wsNativeAccountInspectedType  = "native_account_inspected"
-	wsInstallNativeCliType        = "install_native_cli"
-	wsNativeCliInstalledType      = "native_cli_installed"
-	wsUpdateWorkerType            = "update_worker"
-	wsWorkerUpdateStartedType     = "worker_update_started"
-	wsInstallToolType             = "install_tool"
-	wsRunDiagnosticsType          = "run_diagnostics"
-	wsDiagnosticsReadyType        = "diagnostics_ready"
-	wsRunRepairType               = "run_repair"
-	wsRepairDoneType              = "repair_done"
-	wsToolInstalledType           = "tool_installed"
-	wsReadRepositoryRefsType      = "read_repository_refs"
-	wsRepositoryRefsReadType      = "repository_refs_read"
-	wsFetchSkillRepositoryType    = "fetch_skill_repository"
-	wsSkillRepositoryFetchedType  = "skill_repository_fetched"
-	wsWorkspaceInspectedType      = "workspace_inspected"
-	wsSetupWorkspaceType          = "setup_workspace"
-	wsWorkspaceReadyType          = "workspace_ready"
-	wsForgetWorkspaceType         = "forget_workspace"
-	wsWorkspaceForgottenType      = "workspace_forgotten"
-	wsUpsertAgentProfileType      = "upsert_agent_profile"
-	wsAgentProfileUpsertedType    = "agent_profile_upserted"
-	wsUpsertRuntimeSettingsType   = "upsert_agent_runtime_settings"
-	wsRuntimeSettingsUpsertedType = "agent_runtime_settings_upserted"
-	wsRefreshResourcesType        = "refresh_resources"
-	wsResourcesRefreshedType      = "resources_refreshed"
-	wsListAgentModelsType         = "list_agent_models"
-	wsAttachmentWriteType         = "attachment_write"
-	wsAttachmentWrittenType       = "attachment_written"
-	wsAttachmentReadType          = "attachment_read"
-	wsAttachmentChunkReadType     = "attachment_chunk_read"
-	wsAgentModelsListedType       = "agent_models_listed"
-	wsReadProfileCredentialType   = "read_profile_credential"
-	wsProfileCredentialReadType   = "profile_credential_read"
-	wsScanSkillsType              = "scan_skills"
-	wsSkillsScannedType           = "skills_scanned"
-	wsReadSkillContentType        = "read_skill_content"
-	wsReadSkillFileType           = "read_skill_file"
-	wsSkillFileReadType           = "skill_file_read"
-	wsSkillContentReadType        = "skill_content_read"
-	wsRegisteredType              = "registered"
-	wsIssueEnvironmentType        = "issue_environment"
-	wsIssueEnvironmentResultType  = "issue_environment_result"
-	wsEvidenceRequestType         = "evidence_request"
-	wsEvidenceResultType          = "evidence_result"
-	wsReadyForIssueType           = "ready_for_issue"
-	wsRunSessionType              = "run_session"
-	wsSteerSessionType            = "steer_session"
-	wsSessionSteeredType          = "session_steered"
-	wsCancelSessionType           = "cancel_session"
-	wsSessionCanceledType         = "session_canceled"
-	wsSessionStartedType          = "session_started"
-	wsSessionEventType            = "session_event"
-	wsSessionBlockedType          = "session_blocked"
-	wsSessionResumedType          = "session_resumed"
-	wsSessionNativeSessionIDType  = "session_native_session_id"
-	wsSessionCompleteType         = "session_completed"
-	wsRecoverSessionType          = "recover_session"
+	wsAckType                      = "ack"
+	wsErrorType                    = "error"
+	wsHelloType                    = "hello"
+	wsHeartbeatType                = "heartbeat"
+	wsReadFileType                 = "read_file"
+	wsFileReadType                 = "file_read"
+	wsReadSubagentTranscriptType   = "read_subagent_transcript"
+	wsSubagentTranscriptReadType   = "subagent_transcript_read"
+	wsReadSessionUsageType         = "read_session_usage"
+	wsSessionUsageReadType         = "session_usage_read"
+	wsReadSessionFileType          = "read_session_file"
+	wsSessionFileReadType          = "session_file_read"
+	wsReadBackgroundTaskOutputType = "read_background_task_output"
+	wsBackgroundTaskOutputReadType = "background_task_output_read"
+	wsStopBackgroundTaskType       = "stop_background_task"
+	wsBackgroundTaskStoppedType    = "background_task_stopped"
+	wsListSubagentsType            = "list_subagents"
+	wsSubagentsListedType          = "subagents_listed"
+	wsListDirectoriesType          = "list_directories"
+	wsDirectoriesListedType        = "directories_listed"
+	wsListWorkspaceTreeType        = "list_workspace_tree"
+	wsWorkspaceTreeListedType      = "workspace_tree_listed"
+	wsInspectWorkspaceType         = "inspect_workspace"
+	wsInspectNativeAccountType     = "inspect_native_account"
+	wsNativeAccountInspectedType   = "native_account_inspected"
+	wsInstallNativeCliType         = "install_native_cli"
+	wsNativeCliInstalledType       = "native_cli_installed"
+	wsUpdateWorkerType             = "update_worker"
+	wsWorkerUpdateStartedType      = "worker_update_started"
+	wsInstallToolType              = "install_tool"
+	wsRunDiagnosticsType           = "run_diagnostics"
+	wsDiagnosticsReadyType         = "diagnostics_ready"
+	wsRunRepairType                = "run_repair"
+	wsRepairDoneType               = "repair_done"
+	wsToolInstalledType            = "tool_installed"
+	wsReadRepositoryRefsType       = "read_repository_refs"
+	wsRepositoryRefsReadType       = "repository_refs_read"
+	wsFetchSkillRepositoryType     = "fetch_skill_repository"
+	wsSkillRepositoryFetchedType   = "skill_repository_fetched"
+	wsWorkspaceInspectedType       = "workspace_inspected"
+	wsSetupWorkspaceType           = "setup_workspace"
+	wsWorkspaceReadyType           = "workspace_ready"
+	wsForgetWorkspaceType          = "forget_workspace"
+	wsWorkspaceForgottenType       = "workspace_forgotten"
+	wsUpsertAgentProfileType       = "upsert_agent_profile"
+	wsAgentProfileUpsertedType     = "agent_profile_upserted"
+	wsUpsertRuntimeSettingsType    = "upsert_agent_runtime_settings"
+	wsRuntimeSettingsUpsertedType  = "agent_runtime_settings_upserted"
+	wsRefreshResourcesType         = "refresh_resources"
+	wsResourcesRefreshedType       = "resources_refreshed"
+	wsListAgentModelsType          = "list_agent_models"
+	wsAttachmentWriteType          = "attachment_write"
+	wsAttachmentWrittenType        = "attachment_written"
+	wsAttachmentReadType           = "attachment_read"
+	wsAttachmentChunkReadType      = "attachment_chunk_read"
+	wsAgentModelsListedType        = "agent_models_listed"
+	wsReadProfileCredentialType    = "read_profile_credential"
+	wsProfileCredentialReadType    = "profile_credential_read"
+	wsScanSkillsType               = "scan_skills"
+	wsSkillsScannedType            = "skills_scanned"
+	wsReadSkillContentType         = "read_skill_content"
+	wsReadSkillFileType            = "read_skill_file"
+	wsSkillFileReadType            = "skill_file_read"
+	wsSkillContentReadType         = "skill_content_read"
+	wsRegisteredType               = "registered"
+	wsIssueEnvironmentType         = "issue_environment"
+	wsIssueEnvironmentResultType   = "issue_environment_result"
+	wsEvidenceRequestType          = "evidence_request"
+	wsEvidenceResultType           = "evidence_result"
+	wsReadyForIssueType            = "ready_for_issue"
+	wsRunSessionType               = "run_session"
+	wsSteerSessionType             = "steer_session"
+	wsSessionSteeredType           = "session_steered"
+	wsCancelSessionType            = "cancel_session"
+	wsSessionCanceledType          = "session_canceled"
+	wsSessionStartedType           = "session_started"
+	wsSessionEventType             = "session_event"
+	wsSessionBlockedType           = "session_blocked"
+	wsSessionResumedType           = "session_resumed"
+	wsSessionNativeSessionIDType   = "session_native_session_id"
+	wsSessionCompleteType          = "session_completed"
+	wsRecoverSessionType           = "recover_session"
 )
 
 type DaemonHub struct {
@@ -257,6 +263,17 @@ type wsSubagentTranscriptReadPayload struct {
 	Error string `json:"error,omitempty"`
 }
 
+type wsReadSessionFilePayload struct {
+	WorkspaceID string `json:"workspaceId"`
+	SessionID   string `json:"sessionId"`
+	Path        string `json:"path"`
+}
+
+type wsSessionFileReadPayload struct {
+	store.SessionFileRead
+	Error string `json:"error,omitempty"`
+}
+
 type wsListSubagentsPayload struct {
 	WorkspaceID string `json:"workspaceId"`
 	SessionID   string `json:"sessionId"`
@@ -389,8 +406,9 @@ type wsRunSessionPayload struct {
 }
 
 type wsSteerSessionPayload struct {
-	Message   string `json:"message"`
-	SessionID string `json:"sessionId"`
+	Message     string                 `json:"message"`
+	Attachments []store.ChatAttachment `json:"attachments,omitempty"`
+	SessionID   string                 `json:"sessionId"`
 }
 
 type wsSessionSteeredPayload struct {
@@ -647,12 +665,12 @@ func (h *DaemonHub) DispatchAgentSession(session store.AgentSession) error {
 	return connection.dispatchAgentSession(session)
 }
 
-func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, message string) error {
+func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, message string, attachments []store.ChatAttachment) error {
 	connection := h.connectionFor(session.DeviceID)
 	if connection == nil {
 		return store.ErrNotFound
 	}
-	return connection.steerAgentSession(ctx, session.ID, message)
+	return connection.steerAgentSession(ctx, session.ID, message, attachments)
 }
 
 func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentSession) error {
@@ -677,6 +695,17 @@ func (h *DaemonHub) ReadAgentSubagentTranscript(ctx context.Context, session sto
 		return store.AgentSubagentTranscript{}, store.ErrNotFound
 	}
 	return connection.readAgentSubagentTranscript(ctx, session.WorkspaceID, session.ID, taskID)
+}
+
+// ReadSessionFile reads a file the session recorded from the session's
+// device. The device checks the path against the session's file ledger and
+// answers with the entry's origin; the caller decides who may see it.
+func (h *DaemonHub) ReadSessionFile(ctx context.Context, session store.AgentSession, path string) (store.SessionFileRead, error) {
+	connection := h.connectionFor(session.DeviceID)
+	if connection == nil {
+		return store.SessionFileRead{}, store.ErrNotFound
+	}
+	return connection.readSessionFile(ctx, session.WorkspaceID, session.ID, path)
 }
 
 func (h *DaemonHub) ListAgentSubagents(ctx context.Context, session store.AgentSession) ([]store.AgentSubagentSummary, error) {
@@ -1385,6 +1414,12 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsNativeAccountInspectionResult](c, envelope, nil)
 	case wsSubagentTranscriptReadType:
 		return deliverDaemonResponse[wsSubagentTranscriptReadPayload](c, envelope, nil)
+	case wsSessionFileReadType:
+		return deliverDaemonResponse[wsSessionFileReadPayload](c, envelope, nil)
+	case wsBackgroundTaskOutputReadType:
+		return deliverDaemonResponse[wsBackgroundTaskOutputReadPayload](c, envelope, nil)
+	case wsBackgroundTaskStoppedType:
+		return deliverDaemonResponse[wsBackgroundTaskStoppedPayload](c, envelope, nil)
 	case wsSessionUsageReadType:
 		return deliverDaemonResponse[wsSessionUsageRead](c, envelope, nil)
 	case wsSubagentsListedType:
@@ -1664,6 +1699,31 @@ func (c *daemonConnection) readAgentSubagentTranscript(ctx context.Context, work
 	return value.AgentSubagentTranscript, nil
 }
 
+func (c *daemonConnection) readSessionFile(ctx context.Context, workspaceID string, sessionID string, path string) (store.SessionFileRead, error) {
+	payload, err := json.Marshal(wsReadSessionFilePayload{
+		WorkspaceID: workspaceID,
+		SessionID:   sessionID,
+		Path:        path,
+	})
+	if err != nil {
+		return store.SessionFileRead{}, err
+	}
+	value, err := daemonRequest[wsSessionFileReadPayload](ctx, c, wsReadSessionFileType, payload)
+	if err != nil {
+		return store.SessionFileRead{}, err
+	}
+	if value.Error != "" {
+		return store.SessionFileRead{}, sessionFileRefusal{value.Error}
+	}
+	return value.SessionFileRead, nil
+}
+
+// sessionFileRefusal is a device's answer that the path is not one of the
+// session's readable files (not recorded, moved, or private).
+type sessionFileRefusal struct{ reason string }
+
+func (r sessionFileRefusal) Error() string { return r.reason }
+
 func (c *daemonConnection) listAgentSubagents(ctx context.Context, workspaceID string, sessionID string) ([]store.AgentSubagentSummary, error) {
 	payload, err := json.Marshal(wsListSubagentsPayload{
 		WorkspaceID: workspaceID,
@@ -1682,8 +1742,8 @@ func (c *daemonConnection) listAgentSubagents(ctx context.Context, workspaceID s
 	return value.Subagents, nil
 }
 
-func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID string, message string) error {
-	payload, err := json.Marshal(wsSteerSessionPayload{SessionID: sessionID, Message: message})
+func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID string, message string, attachments []store.ChatAttachment) error {
+	payload, err := json.Marshal(wsSteerSessionPayload{SessionID: sessionID, Message: message, Attachments: attachments})
 	if err != nil {
 		return err
 	}

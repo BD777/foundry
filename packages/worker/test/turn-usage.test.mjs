@@ -74,7 +74,7 @@ test("usage adds up across results without inventing absent fields", () => {
   assert.equal("modelRequests" in sum, false);
 });
 
-test("a Claude turn reports the usage of every result it waited through", async () => {
+test("a turn that waits for background work reports the usage of every result it waited through", async () => {
   const directory = mkdtempSync(join(tmpdir(), "foundry-turn-usage-"));
   const messagesPath = join(directory, "messages.jsonl");
   writeFileSync(messagesPath, "");
@@ -86,6 +86,8 @@ test("a Claude turn reports the usage of every result it waited through", async 
     messagesPath,
     nativeSessionId: "native_test",
     openTaskIds: new Set(),
+    // Issue runs and agent-created sessions are judged on their final answer.
+    waitForBackgroundTasks: true,
     partialResult: "",
     reject: (error) => {
       throw error;
@@ -93,7 +95,11 @@ test("a Claude turn reports the usage of every result it waited through", async 
     resolve: () => undefined,
     resultPath: join(directory, "result.md"),
     startedAt: Date.now() - 5000,
-    watchdog: { close: () => undefined, touch: () => undefined },
+    watchdog: {
+      close: () => undefined,
+      pause: () => undefined,
+      touch: () => undefined,
+    },
   };
   const runtime = {
     closed: false,
@@ -129,6 +135,57 @@ test("a Claude turn reports the usage of every result it waited through", async 
     assert.equal(usage.modelRequests, 8);
     assert.equal(usage.cacheReadTokens, 2 * 53574);
     assert.ok(usage.durationMs >= 5000 && usage.durationMs < 60000);
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+test("a chat turn ends with its answer and reports that answer's usage", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-turn-usage-"));
+  const messagesPath = join(directory, "messages.jsonl");
+  writeFileSync(messagesPath, "");
+  const events = [];
+  const turn = {
+    emit: async (label, detail, level, metadata) =>
+      events.push({ label, metadata }),
+    finalResult: "",
+    messagesPath,
+    nativeSessionId: "native_test",
+    openTaskIds: new Set(),
+    partialResult: "",
+    reject: (error) => {
+      throw error;
+    },
+    resolve: () => undefined,
+    resultPath: join(directory, "result.md"),
+    startedAt: Date.now() - 5000,
+    watchdog: {
+      close: () => undefined,
+      pause: () => undefined,
+      touch: () => undefined,
+    },
+  };
+  const runtime = {
+    closed: false,
+    input: { close: () => undefined },
+    key: "runtime_test",
+    lastUsed: 0,
+    nativeSessionId: "native_test",
+    pending: turn,
+  };
+  try {
+    await handleActiveClaudeMessage(runtime, {
+      type: "system",
+      subtype: "task_started",
+      task_id: "task_a",
+    });
+    await handleActiveClaudeMessage(runtime, claudeResult("waiting"));
+    const finished = events.find(
+      ({ label }) => label === "Claude Agent SDK finished",
+    );
+    const usage = finished?.metadata?.turnUsage;
+    assert.ok(usage, "the answer ends the turn while its task runs on");
+    assert.equal(usage.outputTokens, 1886);
   } finally {
     rmSync(directory, { force: true, recursive: true });
   }

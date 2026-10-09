@@ -1,6 +1,9 @@
 import type {
+  AgentBackgroundTask,
   AgentSession,
   AgentSessionTimerFire,
+  SessionFileRecord,
+  SessionFileReference,
   AgentScheduledTask,
   AgentTurnUsage,
   ChatAttachment,
@@ -53,14 +56,16 @@ export interface ChatViewMessage {
   title?: string;
   /** The turn's provider usage, on the answer that ends the turn. */
   usage?: AgentTurnUsage;
+  /** Paths the answer names that its device verified, linked in its text. */
+  fileReferences?: SessionFileReference[];
+  /** The files the answer's turn wrote or named, on the answer ending it. */
+  turnFiles?: { turnId: string; count: number };
 }
 
 export interface ChatContextResourceItem {
-  /** An output the latest reply names. */
-  mentioned?: boolean;
   detail?: string;
   id: string;
-  kind: "file" | "source" | "web";
+  kind: "source" | "web";
   label: string;
   target: string;
   workspaceId?: string;
@@ -94,15 +99,59 @@ export interface ChatTimerItem {
   workspaceId: string;
 }
 
+/** Work the agent left running in the background, as one panel row. */
+export interface ChatBackgroundTaskItem {
+  /** `<session>:background:<task>`: stable while the task changes. */
+  id: string;
+  kind: "background-task";
+  label: string;
+  task: AgentBackgroundTask;
+  /** The background subagent that started it, by its description. */
+  ownerLabel?: string;
+  sessionId: string;
+  workspaceId: string;
+}
+
+/** A file the chat's tools wrote or its answers named, as one panel row. */
+export interface ChatSessionFileItem {
+  /** The absolute path: one row per file across the chat's sessions. */
+  id: string;
+  kind: "session-file";
+  label: string;
+  path: string;
+  workspacePath?: string;
+  origin: SessionFileRecord["origin"];
+  op: SessionFileRecord["op"];
+  inGitRepo: boolean;
+  /** Turns (inputs) that wrote or named it, oldest first. */
+  turnIds: string[];
+  /** The latest session that recorded it; reads go through its ledger. */
+  sessionId: string;
+  workspaceId: string;
+  deviceLabel?: string;
+  bytes?: number;
+}
+
 export type ChatContextSelection =
-  ChatContextResourceItem | ChatSubagentItem | ChatTimerItem;
+  | ChatBackgroundTaskItem
+  | ChatContextResourceItem
+  | ChatSessionFileItem
+  | ChatSubagentItem
+  | ChatTimerItem;
 
 /** Compact, UI-neutral projection for the Codex-style thread sidecar. */
 export interface ChatContextCardData {
-  outputs: ChatContextResourceItem[];
+  /** Files inside a Git work tree (diffs come in a later phase). */
+  changes: ChatSessionFileItem[];
+  /** Every other file, such as deliverables written to /tmp. */
+  files: ChatSessionFileItem[];
+  /** Local previews (dev servers) the chat started or named. */
+  previews: ChatContextResourceItem[];
   sources: ChatContextResourceItem[];
   subagents: ChatSubagentItem[];
   timers: ChatTimerItem[];
+  /** Commands, monitors and workflows (not subagents), running first. */
+  background: ChatBackgroundTaskItem[];
 }
 
 /** A durable Chat thread assembled from one or more agent sessions. */

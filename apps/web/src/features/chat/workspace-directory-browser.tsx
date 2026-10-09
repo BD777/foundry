@@ -4,11 +4,6 @@ import type { WorkspaceTreeEntry } from "@bd777/foundry-protocol";
 import {
   ChevronDown,
   ChevronRight,
-  File,
-  FileCode,
-  FileImage,
-  FileSpreadsheet,
-  FileText,
   Folder,
   FolderOpen,
   LoaderCircle,
@@ -19,59 +14,13 @@ import {
 import { listWorkspaceTree } from "../../api";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
+import { fileIconForName } from "../../components/ui/file-tree";
 
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
   rootPath?: string;
   onSelectFile: (file: { name: string; path: string }) => void;
   selectedPath?: string;
-}
-
-function fileIconForExtension(extension?: string) {
-  const ext = (extension ?? "").toLowerCase().replace(/^\./, "");
-  switch (ext) {
-    case "md":
-    case "txt":
-    case "log":
-    case "rtf":
-      return <FileText aria-hidden="true" size={15} />;
-    case "ts":
-    case "tsx":
-    case "js":
-    case "jsx":
-    case "mjs":
-    case "cjs":
-    case "py":
-    case "go":
-    case "rs":
-    case "java":
-    case "c":
-    case "cpp":
-    case "h":
-    case "html":
-    case "css":
-    case "scss":
-    case "sh":
-    case "bash":
-    case "zsh":
-      return <FileCode aria-hidden="true" size={15} />;
-    case "json":
-    case "yaml":
-    case "yml":
-    case "toml":
-    case "xml":
-    case "csv":
-      return <FileSpreadsheet aria-hidden="true" size={15} />;
-    case "png":
-    case "jpg":
-    case "jpeg":
-    case "gif":
-    case "svg":
-    case "webp":
-      return <FileImage aria-hidden="true" size={15} />;
-    default:
-      return <File aria-hidden="true" size={15} />;
-  }
 }
 
 function formatSize(bytes?: number): string {
@@ -214,7 +163,7 @@ function TreeNode({
             aria-hidden="true"
           />
           <span className="fdy-workspace-tree-icon" aria-hidden="true">
-            {fileIconForExtension(entry.extension)}
+            {fileIconForName(entry.name)}
           </span>
           <span className="fdy-workspace-tree-name">
             <HighlightMatch query={filterQuery} text={entry.name} />

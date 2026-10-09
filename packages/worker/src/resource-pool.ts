@@ -338,6 +338,7 @@ export function sessionResourceNotes(
         ]
       : []),
     `- To show an image to the person, save it under ${attachments}/ and put <image path="<its absolute path>"> in your reply.`,
+    "- When your reply mentions files you created or changed, cite each by its absolute or workspace-relative path in inline code (for example `docs/summary.md`), so the person can open it from the reply.",
   ].join("\n");
 }
 
@@ -361,6 +362,13 @@ export function sessionScratchDirectory(sessionId: string): string {
     scratchDirectories.set(sessionId, directory);
   }
   return directory;
+}
+
+/** The session's scratch directory if this process made one; never makes one. */
+export function knownSessionScratchDirectory(
+  sessionId: string,
+): string | undefined {
+  return scratchDirectories.get(sessionId);
 }
 
 /** TMPDIR and friends pointing at the session's scratch directory. */

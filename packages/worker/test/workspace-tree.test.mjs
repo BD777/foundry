@@ -13,8 +13,7 @@ import {
   safeWorkspaceFileRead,
   safeWorkspaceTreeListing,
 } from "../dist/session-helpers.js";
-import { SessionOutputFiles } from "../dist/session-output-files.js";
-import { git, commitIdentity } from "../dist/execution-git.js";
+import { git } from "../dist/execution-git.js";
 
 test("safeWorkspaceTreeListing lists directories and files correctly", (t) => {
   const temp = mkdtempSync(resolve(tmpdir(), "foundry-tree-"));
@@ -99,44 +98,4 @@ test("Git internals are neither listed nor readable", async (t) => {
       safeWorkspaceFileRead(temp, { workspaceId: "ws", path: ".git/config" }),
     /Git internals/,
   );
-});
-
-test("a run reports files it wrote, not files already modified before it", async (t) => {
-  const temp = mkdtempSync(resolve(tmpdir(), "foundry-outputs-"));
-  t.after(() => rmSync(temp, { recursive: true, force: true }));
-  await git(temp, ["init", "-b", "main"]);
-  writeFileSync(resolve(temp, "tracked.md"), "v1");
-  writeFileSync(resolve(temp, "before.md"), "v1");
-  await git(temp, ["add", "."]);
-  await git(temp, ["commit", "-m", "init"], { env: commitIdentity });
-  // Dirty before the run started: not this run's output.
-  writeFileSync(resolve(temp, "before.md"), "edited earlier");
-
-  const reported = [];
-  const outputs = await SessionOutputFiles.start(
-    temp,
-    async (_label, detail, _level, metadata) => {
-      reported.push([detail, metadata?.outputFile]);
-    },
-  );
-  await outputs.reportToolWrites([
-    resolve(temp, "notes/plan.md"),
-    "../escape.md",
-    ".git/config",
-    ".foundry/state.json",
-  ]);
-  writeFileSync(resolve(temp, "tracked.md"), "v2");
-  mkdirSync(resolve(temp, "summary-parts"));
-  writeFileSync(resolve(temp, "summary-parts/01.md"), "new");
-  writeFileSync(resolve(temp, "notes.md"), "shell output");
-  await outputs.reportChangedOnDisk();
-  await outputs.reportToolWrites(["notes/plan.md"]);
-
-  assert.deepEqual(reported.map(([file]) => file).sort(), [
-    "notes.md",
-    "notes/plan.md",
-    "summary-parts/01.md",
-    "tracked.md",
-  ]);
-  assert.ok(reported.every(([detail, file]) => detail === file));
 });

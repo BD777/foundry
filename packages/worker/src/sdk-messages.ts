@@ -40,6 +40,32 @@ export function claudeTaskNotificationBookkeeping(message: unknown): boolean {
 }
 
 /**
+ * Where Claude Code's command queue has one of the inputs it was sent
+ * (`command_lifecycle`, not in the SDK typings): queued behind other work,
+ * started (from then on the stream answers it, even when it joined a turn
+ * Claude was already running), or completed. Absent from older CLIs.
+ */
+export function claudeCommandLifecycle(
+  message: unknown,
+): { commandId: string; state: string } | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const record = message as Record<string, unknown>;
+  if (record.type !== "command_lifecycle") return undefined;
+  const commandId = sdkString(record.command_uuid);
+  const state = sdkString(record.state);
+  return commandId && state ? { commandId, state } : undefined;
+}
+
+/** Who a result answered: "task-notification" for Claude's own follow-up. */
+export function claudeResultOrigin(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const record = message as Record<string, unknown>;
+  if (record.type !== "result") return undefined;
+  const origin = record.origin as Record<string, unknown> | undefined;
+  return sdkString(origin?.kind) || undefined;
+}
+
+/**
  * A synthetic assistant message the CLI emits when the API rejects the turn
  * before any real response (e.g. 401 or an overlong prompt). It carries
  * `model: "<synthetic>"`, zero usage, an `error` code, and a `stop_reason`
@@ -150,8 +176,10 @@ export function claudeNativeSessionId(message: unknown): string {
  *
  * In streaming-input mode Claude may emit a successful `result` while
  * background tasks continue. Their later task notifications can wake Claude
- * for another model turn, so the runner must retain ownership until every
- * started task settles and a subsequent result arrives.
+ * for another model turn. Sessions judged on their answer (Issue work,
+ * sessions other agents wait for) keep the turn until every started task
+ * settles and a subsequent result arrives; a chat's turn ends with its
+ * answer.
  */
 export function claudeTaskLifecycleChange(
   message: unknown,
@@ -404,7 +432,7 @@ export function claudeSystemProcessEvent(
         detail: sdkString(record.summary) || "Subtask finished.",
         level: taskFailed ? "error" : "info",
         metadata: {
-          outputFile: sdkString(record.output_file) || undefined,
+          taskOutputFile: sdkString(record.output_file) || undefined,
           subagentUsage: claudeSubagentUsage(record),
           taskId: sdkString(record.task_id) || undefined,
           taskType: sdkString(record.task_type) || undefined,
@@ -534,99 +562,6 @@ export function claudeToolUseDetail(record: Record<string, unknown>): string {
     return name;
   }
   return `${name}\n\n\`\`\`json\n${truncateForEvent(safeJSONString(record.input), 1600)}\n\`\`\``;
-}
-
-const FILE_WRITE_TOOLS = new Set([
-  "Write",
-  "Edit",
-  "write_file",
-  "edit_file",
-  "create_file",
-  "patch",
-  "apply_diff",
-  "NotebookEdit",
-  "NotebookEditCell",
-]);
-
-function extractPathFromToolRecord(
-  record: Record<string, unknown>,
-): string | undefined {
-  const name =
-    sdkString(record.name) ||
-    sdkString(record.tool_name) ||
-    sdkString(record.id);
-  if (
-    !FILE_WRITE_TOOLS.has(name) ||
-    !record.input ||
-    typeof record.input !== "object"
-  ) {
-    return undefined;
-  }
-  const input = record.input as Record<string, unknown>;
-  const rawPath =
-    input.file_path || input.path || input.notebook_path || input.target_file;
-  return typeof rawPath === "string" && rawPath.trim()
-    ? rawPath.trim()
-    : undefined;
-}
-
-export function claudeExtractTouchedFiles(message: unknown): string[] {
-  if (!message || typeof message !== "object") {
-    return [];
-  }
-  const record = message as Record<string, unknown>;
-  const files: string[] = [];
-
-  const direct = extractPathFromToolRecord(record);
-  if (direct) files.push(direct);
-
-  const content = record.content;
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      if (item && typeof item === "object") {
-        const p = extractPathFromToolRecord(item as Record<string, unknown>);
-        if (p) files.push(p);
-      }
-    }
-  }
-
-  const nestedMessage = record.message;
-  if (nestedMessage && typeof nestedMessage === "object") {
-    const nestedContent = (nestedMessage as Record<string, unknown>).content;
-    if (Array.isArray(nestedContent)) {
-      for (const item of nestedContent) {
-        if (item && typeof item === "object") {
-          const p = extractPathFromToolRecord(item as Record<string, unknown>);
-          if (p) files.push(p);
-        }
-      }
-    }
-  }
-
-  return files;
-}
-
-export function codexExtractTouchedFiles(event: unknown): string[] {
-  if (!event || typeof event !== "object") return [];
-  const record = event as Record<string, unknown>;
-  const files: string[] = [];
-  if (record.type === "file_change" && typeof record.path === "string") {
-    files.push(record.path);
-  }
-  if (record.item && typeof record.item === "object") {
-    const item = record.item as Record<string, unknown>;
-    if (item.type === "file_change" && typeof item.path === "string") {
-      files.push(item.path);
-    }
-    if (Array.isArray(item.changes)) {
-      for (const change of item.changes) {
-        if (change && typeof change.path === "string") {
-          files.push(change.path);
-        }
-      }
-    }
-  }
-  return files;
 }
 
 export function claudeStreamEventText(event: unknown): string {

@@ -33,7 +33,9 @@ export const conversation = {
     timerSync: "Scheduled tasks updated",
     timerFire: "Scheduled task fired",
     backgroundTurn: "Background task continued",
+    backgroundTasksSync: "Background tasks updated",
     loadedWorkspace: "Loaded workspace",
+    recordedFile: "Recorded file",
     contextCompacted: "The native session compacted its context.",
     transcriptTailUnloaded:
       "This local session is large; only its beginning is loaded so far.",
@@ -67,6 +69,11 @@ export const conversation = {
     },
   },
   message: {
+    openFile: "Open {{path}}",
+    showFolder: "Show the files in {{path}}",
+    turnFiles_one: "{{count}} file",
+    turnFiles_other: "{{count}} files",
+    showTurnFiles: "Show the files this answer wrote or named",
     attachedImage: "Attached image",
     context: "Context",
     failed: "Run failed",

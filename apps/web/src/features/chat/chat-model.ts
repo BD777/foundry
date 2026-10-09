@@ -449,6 +449,8 @@ function chatMessagesForSession(
         streaming: turnLive && !hasLiveResponse && isLastSegment,
         text: segment.text,
         usage: segment.usage,
+        fileReferences: segment.fileReferences,
+        turnFiles: segment.turnFiles,
       });
     }
   });

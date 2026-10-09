@@ -14,6 +14,8 @@ export type TranscriptEntry = TranscriptMessage &
     | "statusLabel"
     | "recoverable"
     | "usage"
+    | "fileReferences"
+    | "turnFiles"
   >;
 
 const processKinds = new Set<TranscriptMessage["kind"]>([

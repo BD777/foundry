@@ -5,6 +5,13 @@ import (
 	"encoding/json"
 )
 
+// RequestLedger dedupes requests by Idempotency-Key for handlers whose side
+// effects cannot run inside one store transaction.
+type RequestLedger interface {
+	ReplayRequest(ctx context.Context, scope, requestID string, input, result any) (bool, error)
+	RecordRequest(ctx context.Context, scope, requestID string, input, response any) error
+}
+
 // Methods are kept separate from the legacy Store interface for migration.
 type EvidenceStore interface {
 	RecordIssueStatusQuestion(ctx context.Context, issueID, message, requestID string) (Issue, error)

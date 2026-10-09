@@ -431,6 +431,8 @@ export const issueDetail: Translation<typeof en> = {
   conversation: {
     clarifyFirst: "请先在“目标与约定”发起澄清，确认标准后再执行。",
     noExecution: "这个 Issue 当前没有正在进行的执行",
+    steerTextOnly:
+      "正在进行的执行只接受文字。请在执行结束后连同文件一起发送这条消息。",
     organizing: "正在整理目标与完成标准…",
     welcome: "我会先和你明确目标与完成标准，确认后再开始修改。",
     retryClarify: "重试目标澄清",

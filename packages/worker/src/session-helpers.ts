@@ -29,6 +29,7 @@ import {
   type AgentSessionEventMetadata,
   type AgentSubagentSummary,
   type AgentSubagentTranscript,
+  type ChatAttachment,
   type WorkspaceDirectoryEntry,
   type WorkspaceFileEntry,
   type WorkspaceFileRead,
@@ -51,6 +52,7 @@ import {
 import { safeID } from "./utils.js";
 import { sessionInputDirectory } from "./session-artifacts.js";
 import { writePrivateJSONAtomic } from "./storage.js";
+import { readFilePrefix, utf8Prefix } from "./session-files.js";
 
 // --- Payload types ---
 
@@ -200,13 +202,13 @@ export function safeWorkspaceFileRead(
     throw new Error("requested workspace path is not a file");
   }
   const maxBytes = 128 * 1024;
-  const raw = readFileSync(target);
-  const truncated = raw.byteLength > maxBytes;
+  // Only the shown part is read: a workspace can hold multi-GB files.
+  const read = readFilePrefix(real.target, maxBytes);
   return {
     workspaceId: payload.workspaceId,
     path: payload.path,
-    content: raw.subarray(0, maxBytes).toString("utf8"),
-    truncated,
+    content: utf8Prefix(read.data),
+    truncated: read.size > maxBytes,
   };
 }
 
@@ -511,12 +513,13 @@ export function registerActiveSessionCancelTarget(
 export async function steerActiveSession(
   sessionID: string,
   message: string,
+  attachments?: ChatAttachment[],
 ): Promise<void> {
   const target = activeSessionSteerTargets.get(sessionID);
   if (!target) {
     throw new Error("This session is not accepting active steer input.");
   }
-  await target.steer(message);
+  await target.steer(message, attachments);
 }
 
 class AgentSessionCanceledError extends Error {

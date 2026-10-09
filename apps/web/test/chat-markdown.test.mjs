@@ -6,7 +6,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 
-async function renderMarkdown(props, text) {
+async function renderMarkdown(props, text, inspect) {
   const window = new Window();
   const previous = new Map();
   const globals = {
@@ -35,6 +35,7 @@ async function renderMarkdown(props, text) {
       root.render(createElement(MarkdownContent, props, text)),
     );
     const html = container.innerHTML;
+    await inspect?.(container);
     await act(async () => root.unmount());
     return html;
   } finally {
@@ -63,4 +64,38 @@ test("an agent answer keeps Markdown soft breaks and GFM task lists", async () =
   assert.doesNotMatch(html, /<br>/);
   assert.match(html, /<ul class="contains-task-list">/);
   assert.equal(html.match(/<li class="task-list-item">/g)?.length, 2);
+});
+
+test("relative links open verified files or stay text; unsafe links stay blocked", async () => {
+  const opened = [];
+  const reference = {
+    text: "docs/plan.md",
+    path: "docs/plan.md",
+    kind: "file",
+  };
+  const html = await renderMarkdown(
+    { fileReferences: [reference], onOpenFileReference: (r) => opened.push(r) },
+    "See [plan](docs/plan.md), [notes](./notes/todo.md), [site](https://example.com/a), [route](/chats/x) and [bad](javascript:alert(1)).",
+    async (container) => {
+      const button = container.querySelector(".fdy-chat-file-reference");
+      assert.equal(button?.textContent, "plan");
+      await act(async () => button.click());
+    },
+  );
+  assert.deepEqual(opened, [reference]);
+  assert.match(html, /<span title="\.\/notes\/todo\.md">notes<\/span>/);
+  assert.doesNotMatch(html, /href="[^"]*(docs\/plan|notes\/todo)/);
+  assert.match(
+    html,
+    /<a target="_blank"[^>]*href="https:\/\/example\.com\/a">site/,
+  );
+  assert.match(html, /<a target="_blank"[^>]*href="\/chats\/x">route/);
+  assert.doesNotMatch(html, /javascript:/);
+  assert.equal(html.match(/\[blocked\]/g)?.length, 1);
+});
+
+test("while an answer streams, a relative link is text titled with its target", async () => {
+  const html = await renderMarkdown({}, "Read [the plan](docs/plan.md).");
+  assert.match(html, /<span title="docs\/plan\.md">the plan<\/span>/);
+  assert.doesNotMatch(html, /\[blocked\]/);
 });

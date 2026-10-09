@@ -193,3 +193,93 @@ test("Stop during an active turn only syncs the snapshot, no fire", async () => 
   const fires = events.filter((event) => event.metadata.timerFire);
   assert.equal(fires.length, 0);
 });
+
+test("a wake-up shows as soon as Claude schedules it, then takes its real id", async () => {
+  const { events, tracker: timerTracker } = makeTracker();
+  const scheduledFor = Date.parse("2026-10-09T23:40:00");
+  await timerTracker.hooks().PostToolUse[0].hooks[0]({
+    tool_name: "ScheduleWakeup",
+    tool_input: {
+      delaySeconds: 600,
+      prompt: "check the build",
+      reason: "build takes ~10m",
+    },
+    tool_response: {
+      scheduledFor,
+      clampedDelaySeconds: 600,
+      wasClamped: false,
+    },
+  });
+  const [task] = events.at(-1).metadata.timerSnapshot;
+  assert.equal(task.kind, "wakeup");
+  assert.equal(task.recurring, false);
+  assert.equal(task.schedule, "40 23 9 10 *");
+  assert.equal(task.prompt, "check the build");
+  assert.match(
+    task.humanSchedule,
+    /^单次 · /,
+    "a wake-up reads as one time, not yearly",
+  );
+
+  await timerTracker.hooks().Stop[0].hooks[0]({
+    session_crons: [
+      {
+        id: "cron_7",
+        prompt: "check the build",
+        recurring: false,
+        schedule: "40 23 9 10 *",
+      },
+    ],
+  });
+  assert.deepEqual(
+    events.at(-1).metadata.timerSnapshot.map((entry) => entry.id),
+    ["cron_7"],
+  );
+});
+
+test("no timer list is published before any timer exists", async () => {
+  const { events, tracker: timerTracker } = makeTracker({
+    isActiveTurn: () => true,
+  });
+  await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
+  assert.equal(events.length, 0);
+});
+
+test("Claude's follow-up to a background task is not mistaken for an older timer firing", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-timers-"));
+  const transcriptPath = join(directory, "native.jsonl");
+  const row = (value) => JSON.stringify(value);
+  writeFileSync(
+    transcriptPath,
+    [
+      row({
+        type: "user",
+        turnOrigin: "scheduled",
+        message: { content: [{ type: "text", text: "old timer prompt" }] },
+      }),
+      row({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "old answer" }] },
+      }),
+      row({
+        type: "user",
+        message: {
+          content:
+            "<task-notification>\n<status>completed</status>\n</task-notification>",
+        },
+      }),
+      row({
+        type: "assistant",
+        message: { content: [{ type: "text", text: "the build passed" }] },
+      }),
+    ].join("\n") + "\n",
+  );
+  const { events, tracker: timerTracker } = makeTracker({
+    isActiveTurn: () => false,
+  });
+  await timerTracker
+    .hooks()
+    .Stop[0].hooks[0]({ session_crons: [], transcript_path: transcriptPath });
+  assert.equal(events.filter((event) => event.metadata.timerFire).length, 0);
+  rmSync(directory, { recursive: true, force: true });
+});

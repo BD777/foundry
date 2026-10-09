@@ -36,6 +36,7 @@ export function Conversation(props: ConversationProps) {
   return (
     <div className="fdy-chat-conversation">
       <ChatTranscriptStage
+        fileActions={props.fileActions}
         messages={props.messages}
         threadKey={props.threadKey}
         scrollController={scroll}
@@ -155,7 +156,12 @@ export function Conversation(props: ConversationProps) {
             }
           }}
         >
-          <ConversationQueue input={input} focus={focus} />
+          {props.notice}
+          <ConversationQueue
+            input={input}
+            focus={focus}
+            onPreview={onPreview}
+          />
           {props.disabled && props.disabledReason ? (
             <p className="fdy-chat-composer-blocked" role="status">
               <CircleAlert size={14} aria-hidden="true" />

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -158,7 +157,7 @@ func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentS
 
 func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
 	prompt := strings.TrimSpace(input.Prompt)
-	attachments := normalizeChatAttachments(input.Attachments)
+	attachments := store.NormalizeChatAttachments(input.Attachments)
 	if prompt == "" && len(attachments) == 0 {
 		return store.AgentSession{}, errors.New("agent session prompt is required")
 	}
@@ -315,42 +314,6 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	return session, nil
 }
 
-func normalizeChatAttachments(attachments []store.ChatAttachment) []store.ChatAttachment {
-	if len(attachments) == 0 {
-		return nil
-	}
-	result := make([]store.ChatAttachment, 0, len(attachments))
-	seen := map[string]bool{}
-	for _, attachment := range attachments {
-		id := strings.TrimSpace(attachment.ID)
-		path := strings.TrimSpace(attachment.Path)
-		if id == "" || path == "" || seen[id] {
-			continue
-		}
-		seen[id] = true
-		name := strings.TrimSpace(attachment.Name)
-		if name == "" {
-			name = filepath.Base(path)
-		}
-		kind := strings.TrimSpace(attachment.Kind)
-		if kind != "image" {
-			kind = "file"
-		}
-		result = append(result, store.ChatAttachment{
-			ID:       id,
-			Name:     name,
-			Path:     path,
-			MIMEType: strings.TrimSpace(attachment.MIMEType),
-			Size:     attachment.Size,
-			Kind:     kind,
-		})
-	}
-	if len(result) == 0 {
-		return nil
-	}
-	return result
-}
-
 // newSessionInputID is a UUIDv7: Claude accepts it as the native user
 // message uuid, and ids sort by time, which keeps artifact order.
 func newSessionInputID(now time.Time) string {
@@ -431,7 +394,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			return store.ErrSessionControlledByIssue
 		}
 		prompt := strings.TrimSpace(input.Prompt)
-		attachments := normalizeChatAttachments(input.Attachments)
+		attachments := store.NormalizeChatAttachments(input.Attachments)
 		if prompt == "" && len(attachments) == 0 {
 			return errors.New("agent session prompt is required")
 		}

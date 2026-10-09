@@ -1,14 +1,22 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import type { SessionEventEmitter } from "./session-state.js";
-import { SessionOutputFiles } from "./session-output-files.js";
-import { sessionInputDirectory } from "./session-artifacts.js";
+import {
+  claudeFileWriteHooks,
+  codexFileWrites,
+  mergeClaudeHooks,
+  SessionTurnFiles,
+} from "./session-files.js";
+import {
+  executionSessionsRoot,
+  sessionInputDirectory,
+} from "./session-artifacts.js";
 /**
  * Claude and Codex session runners — active runtime management,
  * SDK/CLI execution, and session option helpers.
  */
 
 import { spawn } from "node:child_process";
-import { createHash, type UUID } from "node:crypto";
+import { createHash, randomUUID, type UUID } from "node:crypto";
 import { officialSkills, refreshOfficialSkills } from "./official-skills.js";
 import {
   appendFileSync,
@@ -19,11 +27,13 @@ import {
 } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type {
+  AgentBackgroundTaskOutput,
   AgentProfileProjection,
   AgentProjection,
   AgentSession,
   AgentSessionEvent,
   AgentSessionEventMetadata,
+  ChatAttachment,
   Issue,
 } from "@bd777/foundry-protocol";
 import {
@@ -33,6 +43,7 @@ import {
   activeSessionSteerTargets,
   emitOutOfBandSessionEvent,
   queuedSessionCancelRequests,
+  type ActiveClaudeContinuation,
   type ActiveClaudeRuntime,
   type ActiveClaudeTurn,
   type ActiveCodexThread,
@@ -44,6 +55,11 @@ import {
   AsyncInputQueue,
 } from "./session-state.js";
 import { ClaudeTimerTracker } from "./agent-timers.js";
+import {
+  ClaudeBackgroundTaskTracker,
+  readBackgroundTaskOutput,
+} from "./agent-background-tasks.js";
+import { redactSecrets } from "./secret-redaction.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
 import {
@@ -61,7 +77,11 @@ import {
   claudeSettingsFile,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
-import { currentInput, sessionPrompt } from "./session-prompt.js";
+import {
+  currentInput,
+  sessionPrompt,
+  userMessageText,
+} from "./session-prompt.js";
 import {
   runOnNativeSession,
   type NativeSessionStart,
@@ -121,19 +141,19 @@ import {
   ClaudeAgentTurnError,
   claudeAgentResultError,
   claudeApiErrorMessage,
+  claudeCommandLifecycle,
   claudeContentBlockProcessEvent,
   claudeContentText,
-  claudeExtractTouchedFiles,
   claudeMessageText,
   claudeNativeSessionId,
   claudePartialText,
   claudeProcessEvent,
+  claudeResultOrigin,
   claudeStreamEventText,
   claudeSystemProcessEvent,
   claudeTaskNotificationBookkeeping,
   claudeTaskLifecycleChange,
   claudeToolUseDetail,
-  codexExtractTouchedFiles,
   isForwardedClaudeSubagentMessage,
   safeJSONString,
   sdkCommandDetail,
@@ -176,7 +196,10 @@ import {
 import { sessionEnvironment, usesSessionScratch } from "./session-ambient.js";
 import { codexRoleOptions, isClarificationSession } from "./session-roles.js";
 import { readAgentRuntimeSettings } from "./device.js";
-import { sessionResourceNotes } from "./resource-pool.js";
+import {
+  knownSessionScratchDirectory,
+  sessionResourceNotes,
+} from "./resource-pool.js";
 
 export function codexSandboxMode(
   session: AgentSession,
@@ -269,7 +292,12 @@ export async function runProfileCommandSession(
   profile: AgentProfileLocalConfig,
   emit: SessionEventEmitter,
 ): Promise<AgentSessionRunResult> {
-  const outputs = await SessionOutputFiles.start(workspacePath, emit);
+  const files = SessionTurnFiles.forSession(
+    workspacePath,
+    executionSessionsRoot(workspacePath),
+    session,
+    emit,
+  );
   const command = profile.command?.trim();
   if (!command) {
     throw new Error(
@@ -335,8 +363,13 @@ export async function runProfileCommandSession(
     resultPath,
     `${response || "Profile command completed without a text response."}\n`,
   );
-  await outputs.reportChangedOnDisk();
-  await emit("Custom profile command finished", resultPath);
+  const fileReferences = await files.finish(response);
+  await emit(
+    "Custom profile command finished",
+    resultPath,
+    undefined,
+    fileReferences.length > 0 ? { fileReferences } : undefined,
+  );
   return {
     response: response || "Profile command completed without a text response.",
   };
@@ -507,7 +540,6 @@ async function runCodexTurn(
   managedSkills?: ManagedSkillRuntime,
 ): Promise<AgentSessionRunResult> {
   const startedAt = Date.now();
-  const outputs = await SessionOutputFiles.start(workspacePath, emit);
   if (managedSkills) {
     managedSkills = await prepareCodexSkillIsolation(
       managedSkills,
@@ -516,8 +548,7 @@ async function runCodexTurn(
     );
   }
   const sessionDir = sessionInputDirectory(
-    process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
-      resolve(workspacePath, ".foundry", "sessions"),
+    executionSessionsRoot(workspacePath),
     session,
   );
   mkdirSync(sessionDir, { recursive: true });
@@ -531,6 +562,13 @@ async function runCodexTurn(
       emit,
     );
   }
+  const files = SessionTurnFiles.forSession(
+    workspacePath,
+    executionSessionsRoot(workspacePath),
+    session,
+    emit,
+    startedAt,
+  );
   const eventsPath = resolve(sessionDir, "codex-sdk.events.jsonl");
   const stderrPath = resolve(sessionDir, "codex-sdk.stderr.log");
   const resultPath = resolve(sessionDir, "result.md");
@@ -679,7 +717,8 @@ async function runCodexTurn(
               processEvent.message,
             );
           }
-          await outputs.reportToolWrites(codexExtractTouchedFiles(event));
+          for (const write of codexFileWrites(event))
+            await files.recordToolWrite(write);
           const text = sdkMessageText(event);
           if (text && text !== finalResult) {
             const message = sdkResponseMessage(event, text);
@@ -748,13 +787,11 @@ async function runCodexTurn(
     const response =
       finalResult || "Codex SDK completed without a text response.";
     writeFileSync(resultPath, `${response}\n`);
-    await outputs.reportChangedOnDisk();
-    await emit(
-      "Codex SDK finished",
-      resultPath,
-      undefined,
-      turnUsageMetadata(usage, startedAt),
-    );
+    const fileReferences = await files.finish(finalResult);
+    await emit("Codex SDK finished", resultPath, undefined, {
+      ...turnUsageMetadata(usage, startedAt),
+      ...(fileReferences.length > 0 ? { fileReferences } : {}),
+    });
     return { nativeSessionId, response };
   } catch (error) {
     if (isAgentSessionCanceledError(error)) {
@@ -790,8 +827,7 @@ export async function runClaudeWorkspaceSession(
   // unconfigured invocations) before any directory or process work happens.
   validateClaudeLaunch({ session, profile, managedSkills });
   const sessionDir = sessionInputDirectory(
-    process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
-      resolve(workspacePath, ".foundry", "sessions"),
+    executionSessionsRoot(workspacePath),
     session,
   );
   mkdirSync(sessionDir, { recursive: true });
@@ -903,13 +939,30 @@ export function updateActiveClaudeTurnTasks(
   turn.openTaskIds.delete(change.taskId);
 }
 
+/**
+ * Whether the agent process still has work of its own: background tasks
+ * that are running, or timers that will wake it. Closing it would end them.
+ */
+export function claudeRuntimeHasLiveWork(
+  runtime: ActiveClaudeRuntime,
+): boolean {
+  return (
+    !runtime.closed &&
+    (Boolean(runtime.background?.hasRunning()) ||
+      (runtime.timers?.snapshot().length ?? 0) > 0)
+  );
+}
+
 export function cleanupActiveClaudeRuntimes(): void {
   const now = Date.now();
   const settings = readAgentRuntimeSettings();
   for (const [key, runtime] of activeClaudeRuntimes) {
+    // Silence is expected while only background work or timers remain:
+    // Claude Code's keep-alives never reach the SDK stream.
     if (
       runtime.closed ||
-      now - runtime.lastUsed > settings.activeRuntimeTtlMs
+      (now - runtime.lastUsed > settings.activeRuntimeTtlMs &&
+        !claudeRuntimeHasLiveWork(runtime))
     ) {
       closeActiveClaudeRuntime(
         runtime,
@@ -951,9 +1004,11 @@ export function closeActiveClaudeRuntime(
   runtime.closed = true;
   const turn = runtime.pending;
   runtime.pending = undefined;
-  // Session-scoped timers live in agent process memory and die with it;
-  // publish the empty snapshot before tearing down event plumbing.
+  // Session-scoped timers and background work live in the agent process and
+  // die with it; publish that before tearing down event plumbing.
   runtime.timers?.close();
+  runtime.background?.close();
+  runtime.continuation = undefined;
   turn?.watchdog.close();
   turn?.reject(reason);
   runtime.input.close();
@@ -961,6 +1016,239 @@ export function closeActiveClaudeRuntime(
     runtime.query?.close?.();
   } catch {
     // Best-effort cleanup only.
+  }
+}
+
+/** The live Claude process serving a Foundry session, if any. */
+function claudeRuntimeForSession(
+  sessionId: string,
+): ActiveClaudeRuntime | undefined {
+  for (const runtime of activeClaudeRuntimes.values())
+    if (runtime.foundrySessionId === sessionId && !runtime.closed)
+      return runtime;
+  return undefined;
+}
+
+/** Whether a session's agent process still runs background work. */
+export function sessionHasRunningBackgroundTasks(sessionId: string): boolean {
+  return Boolean(claudeRuntimeForSession(sessionId)?.background?.hasRunning());
+}
+
+/**
+ * Stops one of a session's running background tasks through Claude Code
+ * itself (never by process id); Claude reads that it was stopped.
+ */
+export async function stopClaudeBackgroundTask(
+  sessionId: string,
+  taskId: string,
+): Promise<void> {
+  const runtime = claudeRuntimeForSession(sessionId);
+  const task = runtime?.background?.record(taskId);
+  if (!runtime?.query || task?.status !== "running")
+    throw new Error("This background task is not running.");
+  if (typeof runtime.query.stopTask !== "function")
+    throw new Error(
+      "This Claude Code version cannot stop background tasks; update Claude Code on the device.",
+    );
+  runtime.background?.requestStop(taskId);
+  await runtime.query.stopTask(taskId);
+}
+
+/**
+ * The end of a background task's output. The task's log is the one the
+ * device recorded for it, from the live process or the session's records.
+ */
+export function claudeBackgroundTaskOutput(input: {
+  workspacePath: string;
+  sessionId: string;
+  taskId: string;
+}): AgentBackgroundTaskOutput {
+  const runtime = claudeRuntimeForSession(input.sessionId);
+  const record = runtime?.background?.record(input.taskId);
+  return readBackgroundTaskOutput({
+    sessionId: input.sessionId,
+    taskId: input.taskId,
+    record,
+    scratchDirectory: record
+      ? knownSessionScratchDirectory(input.sessionId)
+      : undefined,
+    sessionsRoot: executionSessionsRoot(input.workspacePath),
+  });
+}
+
+/**
+ * Sessions judged on their answer keep their turn until background work
+ * settles: an Issue's execution is verified on it (and a sandboxed run's
+ * process ends with the turn), and an agent that created a session waits for
+ * its answer. A person's chat ends its turn with Claude's answer.
+ */
+export function waitsForBackgroundWork(session: AgentSession): boolean {
+  return (
+    Boolean(session.issueId?.trim()) ||
+    Boolean(session.role) ||
+    (session.source !== undefined && session.source !== "chat")
+  );
+}
+
+/** A runtime's event: to the turn it serves, else the out-of-band channel. */
+export function emitForClaudeRuntime(
+  runtime: ActiveClaudeRuntime,
+  event: {
+    detail: string;
+    label: string;
+    level?: AgentSessionEvent["level"];
+    message?: AgentSessionEvent["message"];
+    metadata?: AgentSessionEventMetadata;
+  },
+): void {
+  const turn = runtime.pending;
+  if (turn && !runtime.closed) {
+    void turn.emit(
+      event.label,
+      event.detail,
+      event.level ?? "info",
+      event.metadata,
+      event.message,
+    );
+    return;
+  }
+  emitOutOfBandSessionEvent(runtime.foundrySessionId, {
+    detail: event.detail,
+    label: event.label,
+    level: event.level,
+    message: event.message,
+    metadata: event.metadata,
+  });
+}
+
+/**
+ * Whether the pending Foundry turn answers this message. Claude Code
+ * reports when it starts an input (command lifecycle), so a turn owns the
+ * stream from then on, even when its input joined a follow-up Claude was
+ * running. Before that, or on a CLI without these reports, a follow-up in
+ * progress keeps its own messages.
+ */
+export function claudeTurnOwnsMessage(
+  runtime: ActiveClaudeRuntime,
+  turn: ActiveClaudeTurn,
+): boolean {
+  if (turn.commandState === "started") return true;
+  if (turn.commandState === "queued") return false;
+  return !runtime.continuation && !turn.behindContinuation;
+}
+
+function claudeContinuation(
+  runtime: ActiveClaudeRuntime,
+): ActiveClaudeContinuation {
+  runtime.continuation ??= {
+    finalResult: "",
+    partialResult: "",
+    startedAt: Date.now(),
+  };
+  return runtime.continuation;
+}
+
+const taskLifecycleSubtypes = new Set([
+  "task_started",
+  "task_progress",
+  "task_notification",
+]);
+
+/**
+ * Claude's answer to its own follow-up (after a background task ended),
+ * published once it is complete: a divider and the answer, like a timer's.
+ * Turns a timer started are published by the timer tracker instead.
+ */
+async function finishClaudeContinuation(
+  runtime: ActiveClaudeRuntime,
+  result?: unknown,
+): Promise<void> {
+  const continuation = runtime.continuation;
+  const notifications = runtime.notifications ?? [];
+  runtime.continuation = undefined;
+  runtime.notifications = [];
+  if (runtime.pending) runtime.pending.behindContinuation = false;
+  const origin = claudeResultOrigin(result);
+  if (result && origin !== "task-notification" && notifications.length === 0)
+    return;
+  const error = result ? claudeAgentResultError(result) : undefined;
+  const response = (
+    continuation?.finalResult || (result ? claudeMessageText(result) : "")
+  ).trim();
+  if (!response && !error) return;
+  const startedAt = continuation?.startedAt ?? Date.now();
+  const usage = result ? claudeResultUsage(result) : undefined;
+  const completedAt = new Date().toISOString();
+  emitForClaudeRuntime(runtime, {
+    label: processLabels.backgroundTurn,
+    detail:
+      notifications[0] ??
+      (error ? error.message : "Claude continued after background work."),
+    level: error ? "error" : "info",
+    metadata: {
+      timerFire: {
+        origin: "background",
+        prompt: notifications.join("\n"),
+        response: error ? error.message : response,
+        startedAt: new Date(startedAt).toISOString(),
+        completedAt,
+      },
+      ...turnUsageMetadata(usage, startedAt),
+    },
+  });
+}
+
+/** A message no Foundry turn answers: Claude working on its own. */
+async function handleClaudeContinuationMessage(
+  runtime: ActiveClaudeRuntime,
+  message: unknown,
+): Promise<void> {
+  if (!message || typeof message !== "object") return;
+  if (isForwardedClaudeSubagentMessage(message)) return;
+  const record = message as Record<string, unknown>;
+  if (record.type === "system") {
+    const subtype = sdkString(record.subtype);
+    if (!taskLifecycleSubtypes.has(subtype)) return;
+    // Subagent lifecycle drives the side panel; it is not transcript text.
+    const processEvent = claudeProcessEvent(message);
+    if (processEvent) emitForClaudeRuntime(runtime, processEvent);
+    const summary = sdkString(record.summary);
+    if (subtype === "task_notification" && summary) {
+      runtime.notifications = [
+        ...(runtime.notifications ?? []),
+        redactSecrets(summary),
+      ].slice(-10);
+    }
+    return;
+  }
+  if (record.type === "result") {
+    if (claudeTaskNotificationBookkeeping(message)) {
+      runtime.continuation = undefined;
+      runtime.notifications = [];
+      return;
+    }
+    await finishClaudeContinuation(runtime, message);
+    return;
+  }
+  if (claudeApiErrorMessage(message)) return;
+  const delta = claudePartialText(message);
+  if (delta) {
+    const continuation = claudeContinuation(runtime);
+    continuation.partialResult += delta;
+    continuation.finalResult = continuation.partialResult.trim();
+    return;
+  }
+  if (record.type === "stream_event") {
+    claudeContinuation(runtime);
+    return;
+  }
+  if (record.type === "assistant") {
+    const continuation = claudeContinuation(runtime);
+    const text = claudeMessageText(message);
+    if (text) {
+      continuation.finalResult = text;
+      continuation.partialResult = text;
+    }
   }
 }
 
@@ -978,11 +1266,32 @@ export async function handleActiveClaudeMessage(
       turn.reportNativeSessionId?.(messageNativeSessionId);
     }
   }
-  if (!turn) {
+  const messagesPath = turn?.messagesPath ?? runtime.messagesPath;
+  if (messagesPath)
+    appendFileSync(messagesPath, `${JSON.stringify(message ?? null)}\n`);
+  // Background work outlives turns: every message is observed.
+  runtime.background?.observe(message);
+  const lifecycle = claudeCommandLifecycle(message);
+  if (lifecycle) {
+    runtime.commandLifecycle = true;
+    if (turn && turn.commandId && lifecycle.commandId === turn.commandId) {
+      if (lifecycle.state === "started" && turn.commandState !== "started") {
+        // The input may join a follow-up Claude was running: what Claude
+        // said before it is its own; from here the stream answers the input.
+        if (runtime.continuation) await finishClaudeContinuation(runtime);
+        turn.commandState = "started";
+      } else if (lifecycle.state === "queued" && !turn.commandState) {
+        turn.commandState = "queued";
+      }
+    }
+  }
+  if (!turn || !claudeTurnOwnsMessage(runtime, turn)) {
+    // The process is alive; a waiting turn must not time out meanwhile.
+    turn?.watchdog.touch();
+    await handleClaudeContinuationMessage(runtime, message);
     return;
   }
   turn.watchdog.touch();
-  appendFileSync(turn.messagesPath, `${JSON.stringify(message ?? null)}\n`);
   updateActiveClaudeTurnTasks(turn, message);
   const processEvent = claudeProcessEvent(message);
   if (processEvent) {
@@ -1003,7 +1312,6 @@ export async function handleActiveClaudeMessage(
       { requestUsage },
     );
   }
-  await turn.outputs?.reportToolWrites(claudeExtractTouchedFiles(message));
   const resultError = claudeAgentResultError(message);
   if (resultError) {
     closeActiveClaudeRuntime(runtime, resultError);
@@ -1043,7 +1351,7 @@ export async function handleActiveClaudeMessage(
   ) {
     const response =
       turn.finalResult || "Claude Agent SDK completed without a text response.";
-    if (turn.openTaskIds.size > 0) {
+    if (turn.waitForBackgroundTasks && turn.openTaskIds.size > 0) {
       await turn.emit(
         processLabels.waitingBackgroundTasks,
         `${turn.openTaskIds.size} background task(s) are still open; this result is intermediate, and Foundry waits for the main agent to continue.`,
@@ -1054,24 +1362,26 @@ export async function handleActiveClaudeMessage(
       // concatenated with it.
       turn.finalResult = "";
       turn.partialResult = "";
+      // Nothing arrives until the background work ends; silence is not a
+      // stall here. The next message re-arms the idle timeout.
+      turn.watchdog.pause();
       return;
     }
     writeFileSync(turn.resultPath, `${response}\n`);
-    await turn.outputs?.reportChangedOnDisk();
-    await turn.emit(
-      "Claude Agent SDK finished",
-      turn.resultPath,
-      undefined,
-      turnUsageMetadata(turn.usage, turn.startedAt),
-    );
+    const fileReferences = (await turn.files?.finish(turn.finalResult)) ?? [];
+    await turn.emit("Claude Agent SDK finished", turn.resultPath, undefined, {
+      ...turnUsageMetadata(turn.usage, turn.startedAt),
+      ...(fileReferences.length > 0 ? { fileReferences } : {}),
+    });
     resolveActiveClaudeTurn(runtime, turn, {
       nativeSessionId: turn.nativeSessionId || runtime.nativeSessionId,
       response,
     });
     // If the SDK returned no text, the runtime is likely in a bad state
     // (e.g. orphaned background agents from a killed session). Close it so
-    // the next session starts fresh instead of reusing the broken runtime.
-    if (!turn.finalResult) {
+    // the next session starts fresh instead of reusing the broken runtime —
+    // unless background work or timers of its own are still alive.
+    if (!turn.finalResult && !claudeRuntimeHasLiveWork(runtime)) {
       closeActiveClaudeRuntime(
         runtime,
         new Error(
@@ -1249,35 +1559,32 @@ export async function runClaudeAgentSdkSession(
         lastUsed: Date.now(),
         nativeSessionId: requestedNativeSessionId,
       };
-      // Timer observation hooks must live for the whole process lifetime;
-      // they are installed once, when the SDK query stream is created.
+      const owner = runtime;
+      // Timer and background-work observation hooks must live for the whole
+      // process lifetime; they are installed once, when the SDK query stream
+      // is created. Their events go to the turn the runtime serves, or out of
+      // band between turns.
       runtime.timers = new ClaudeTimerTracker({
-        emit: (event) => {
-          const turn = runtime?.pending;
-          if (turn && runtime && !runtime.closed) {
-            void turn.emit(
-              event.label,
-              event.detail,
-              event.level ?? "info",
-              event.metadata,
-              event.message,
-            );
-            return;
-          }
-          if (runtime) {
-            emitOutOfBandSessionEvent(runtime.foundrySessionId, {
-              detail: event.detail,
-              level: event.level,
-              message: event.message,
-              metadata: event.metadata,
-              label: event.label,
-            });
-          }
-        },
-        isActiveTurn: () => runtime?.pending !== undefined,
-        sessionId: () => runtime?.foundrySessionId ?? session.id,
+        emit: (event) => emitForClaudeRuntime(owner, event),
+        isActiveTurn: () => owner.pending !== undefined,
+        sessionId: () => owner.foundrySessionId,
       });
-      options.hooks = runtime.timers.hooks();
+      runtime.background = new ClaudeBackgroundTaskTracker({
+        emit: (event) => emitForClaudeRuntime(owner, event),
+        sessionId: () => owner.foundrySessionId,
+        sessionsRoot: () => executionSessionsRoot(workspacePath),
+        scratchDirectory: () =>
+          knownSessionScratchDirectory(owner.foundrySessionId),
+      });
+      runtime.background.attach();
+      options.hooks = mergeClaudeHooks(
+        runtime.timers.hooks(),
+        runtime.background.hooks(),
+        // A write belongs to the turn the runtime is serving.
+        claudeFileWriteHooks((write) =>
+          owner.pending?.files?.recordToolWrite(write),
+        ),
+      );
       activeClaudeRuntimes.set(runtimeKey, runtime);
       await emitSetup();
       await emit("Started Claude Agent SDK", `${packageName} · ${command}`);
@@ -1291,6 +1598,7 @@ export async function runClaudeAgentSdkSession(
       // The long-lived thread may serve continued Foundry sessions; timer
       // events between turns belong to the session currently attached.
       reusableRuntime.foundrySessionId = session.id;
+      reusableRuntime.background?.attach();
       // Each dispatch mints a new session token and revokes the previous
       // one, so the Foundry tools are re-pointed at this turn's identity.
       await reusableRuntime.query?.setMcpServers?.(plan?.mcpServers ?? {});
@@ -1309,12 +1617,22 @@ export async function runClaudeAgentSdkSession(
     }
     writeFileSync(messagesPath, "");
     writeFileSync(stderrPath, "");
-    const outputs = await SessionOutputFiles.start(workspacePath, emit);
+    activeRuntime.messagesPath = messagesPath;
+    const files = SessionTurnFiles.forSession(
+      workspacePath,
+      executionSessionsRoot(workspacePath),
+      session,
+      emit,
+      startedAt,
+    );
     return await new Promise<AgentSessionRunResult>(
       (resolveTurn, rejectTurn) => {
         const unregisterSteer = registerActiveSessionSteerTarget(session.id, {
           provider: "claude",
-          steer: async (message: string) => {
+          steer: async (
+            message: string,
+            attachments: ChatAttachment[] = [],
+          ) => {
             if (activeRuntime.pending?.resultPath !== resultPath) {
               throw new Error(
                 "Claude is not accepting steer input for this active turn.",
@@ -1324,16 +1642,32 @@ export async function runClaudeAgentSdkSession(
             if (plan) plan.validatePrompt(text);
             else if (managedSkills)
               validateWorkspaceSkillPrompt(text, managedSkills);
-            if (!text) {
+            if (!text && attachments.length === 0) {
               throw new Error("Steer message is required.");
             }
             activeRuntime.input.push({
-              message: { role: "user", content: text },
+              message: {
+                role: "user",
+                content: userMessageText(text, attachments),
+              },
               parent_tool_use_id: null,
               priority: "next",
               type: "user",
             });
-            await emit("Steered into active turn", text);
+            await emit(
+              "Steered into active turn",
+              text,
+              "info",
+              undefined,
+              attachments.length > 0
+                ? {
+                    id: `steer_${randomUUID()}`,
+                    kind: "user",
+                    text,
+                    attachments,
+                  }
+                : undefined,
+            );
           },
         });
         const unregisterCancel = registerActiveSessionCancelTarget(session.id, {
@@ -1367,6 +1701,9 @@ export async function runClaudeAgentSdkSession(
             activeRuntime.nativeSessionId || requestedNativeSessionId,
           partialResult: "",
           openTaskIds: new Set<string>(),
+          waitForBackgroundTasks: waitsForBackgroundWork(session),
+          ...(session.input?.id ? { commandId: session.input.id } : {}),
+          behindContinuation: Boolean(activeRuntime.continuation),
           requestUsage: new ClaudeRequestUsageTracker(),
           reject: (error: unknown) => {
             unregisterSteer();
@@ -1381,7 +1718,7 @@ export async function runClaudeAgentSdkSession(
           },
           resultPath,
           startedAt,
-          outputs,
+          files,
           watchdog: new ClaudeTurnWatchdog(timeouts.idleTimeoutMs, () => {
             if (activeRuntime.pending !== turn) {
               return;
