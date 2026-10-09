@@ -1,4 +1,9 @@
-import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  DeviceWorkerUpdate,
+  WorkerRelease,
+} from "@bd777/foundry-protocol";
+import type { TFunction } from "i18next";
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -42,7 +47,8 @@ export function canSelfUpdate(device: DeviceProjection): boolean {
 export function workerState(
   device: DeviceProjection,
   release: WorkerRelease | undefined,
-): "current" | "updating" | "stalled" | "updatable" | "manual" {
+): "current" | "updating" | "failed" | "stalled" | "updatable" | "manual" {
+  if (device.workerUpdate?.failure) return "failed";
   if (device.workerUpdate?.stalled)
     return device.owned && canSelfUpdate(device) ? "stalled" : "manual";
   if (device.workerUpdate) return "updating";
@@ -66,16 +72,21 @@ export function useUpdateAllWorkers(
     started: number;
     failures: string[];
   }>();
-  // A stalled update is started again with the rest.
-  const targets = devices.filter((device) =>
-    ["updatable", "stalled"].includes(workerState(device, release)),
-  );
+  // A stalled or failed update is started again with the rest.
+  const targets = devices.filter((device) => {
+    const state = workerState(device, release);
+    return (
+      state === "updatable" ||
+      state === "stalled" ||
+      (state === "failed" && device.owned && canSelfUpdate(device))
+    );
+  });
   // Only the owner can update a device's worker; shared devices are theirs.
   const manual = devices.filter(
     (device) => device.owned && workerState(device, release) === "manual",
   );
   const running = devices.some(
-    (device) => device.workerUpdate && !device.workerUpdate.stalled,
+    (device) => workerState(device, release) === "updating",
   );
   // Updating devices restart and reconnect; reload until each reports back.
   useEffect(() => {
@@ -114,6 +125,41 @@ export function useUpdateAllWorkers(
 }
 
 export type UpdateAllWorkersState = ReturnType<typeof useUpdateAllWorkers>;
+
+/** An update's step, e.g. "Downloading 0.5.8"; the caller says whether it runs. */
+export function workerUpdateStepLabel(
+  t: TFunction<"devices">,
+  update: DeviceWorkerUpdate,
+): string | undefined {
+  switch (update.step) {
+    case "starting":
+      return t("worker.steps.starting");
+    case "checking":
+      return t("worker.steps.checking");
+    case "downloading":
+      return update.version
+        ? t("worker.steps.downloadingVersion", { version: update.version })
+        : t("worker.steps.downloading");
+    case "installing":
+      return update.version
+        ? t("worker.steps.installingVersion", { version: update.version })
+        : t("worker.steps.installing");
+    case "restarting":
+      return t("worker.steps.restarting");
+    default:
+      return undefined;
+  }
+}
+
+/** Why an update failed, in the reader's language where Foundry knows it. */
+function workerUpdateFailure(
+  t: TFunction<"devices">,
+  update: DeviceWorkerUpdate,
+): string {
+  if (update.failureCode === "vanished") return t("worker.failedVanished");
+  if (update.failureCode === "not_back") return t("worker.failedNotBack");
+  return update.failure ?? "";
+}
 
 /** The header action; absent when no device can be updated from here. */
 export function UpdateAllWorkersButton({
@@ -185,25 +231,24 @@ export function DeviceWorker({
   onRefresh?: () => Promise<void>;
 }) {
   const { t } = useTranslation(["devices", "common"]);
+  const { t: tDevices } = useTranslation("devices");
   const { release, update } = useWorkerRelease();
   const [copied, setCopied] = useState(false);
   const [updating, setUpdating] = useState<"starting" | "started">();
   const [updateError, setUpdateError] = useState("");
   const behind = workerBehind(device, release);
   // The server records an update until the device comes back with it, so
-  // every page and every visit sees it running.
-  const running = device.workerUpdate?.stalled
-    ? undefined
-    : device.workerUpdate;
-  const stalled = device.workerUpdate?.stalled
-    ? device.workerUpdate
-    : undefined;
+  // every page and every visit sees it running, failed or stalled.
+  const failed = device.workerUpdate?.failure ? device.workerUpdate : undefined;
+  const stalled =
+    !failed && device.workerUpdate?.stalled ? device.workerUpdate : undefined;
+  const running = failed || stalled ? undefined : device.workerUpdate;
   // A worker that declares it can update itself does so on request; it
   // restarts and reconnects, so poll until the new version reports in.
   const selfUpdating = canSelfUpdate(device);
   useEffect(() => {
     if ((updating !== "started" && !running) || !onRefresh) return;
-    if (!behind) {
+    if (!behind || failed) {
       setUpdating(undefined);
       return;
     }
@@ -219,8 +264,15 @@ export function DeviceWorker({
       window.clearInterval(timer);
       window.clearTimeout(stop);
     };
-  }, [updating, running, behind, onRefresh, t]);
+  }, [updating, running, failed, behind, onRefresh, t]);
   if (prominent && !behind && !updating && !running) return null;
+  const shortTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString(i18n.language, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  const runningStep = running && workerUpdateStepLabel(tDevices, running);
+  const failedStep = failed && workerUpdateStepLabel(tDevices, failed);
   // A worker set up with `install` has its own command; any other one is
   // switched once through npx.
   const command = device.worker?.command
@@ -243,6 +295,9 @@ export function DeviceWorker({
     setUpdateError("");
     try {
       await updateDeviceWorker(device.id);
+      // The server has replaced a failed update with this one; reload so the
+      // old failure does not end it here.
+      await onRefresh?.().catch(() => {});
       setUpdating("started");
     } catch (cause) {
       setUpdating(undefined);
@@ -266,23 +321,72 @@ export function DeviceWorker({
           >
             {updating || running
               ? t("worker.updating")
-              : stalled
+              : stalled || failed
                 ? t("worker.updateAgain")
                 : t("worker.updateNow")}
           </Button>
           {updating === "started" || running ? (
             <span role="status">
               {running
-                ? t("worker.updateRunningSince", {
-                    time: new Date(running.startedAt).toLocaleTimeString(
-                      i18n.language,
-                      { hour: "2-digit", minute: "2-digit" },
-                    ),
-                  })
+                ? runningStep
+                  ? t("worker.updateStepSince", {
+                      step: runningStep,
+                      time: shortTime(running.startedAt),
+                    })
+                  : t("worker.updateRunningSince", {
+                      time: shortTime(running.startedAt),
+                    })
                 : t("worker.updateStarted")}
             </span>
           ) : null}
         </div>
+      ) : null}
+      {running?.stepDetail ? (
+        <p>{t("worker.updateWaiting", { detail: running.stepDetail })}</p>
+      ) : null}
+      {failed && !updating ? (
+        <>
+          <p className="fdy-location-error" role="alert">
+            {t("worker.updateFailedReason", {
+              reason: workerUpdateFailure(tDevices, failed),
+            })}
+          </p>
+          {failedStep || failed.exitCode !== undefined ? (
+            <p>
+              {[
+                failedStep
+                  ? t("worker.updateLastStep", { step: failedStep })
+                  : undefined,
+                failed.exitCode !== undefined
+                  ? t("worker.updateExitCode", { code: failed.exitCode })
+                  : undefined,
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            </p>
+          ) : null}
+          {failed.logTail?.length ? (
+            <details className="fdy-device-worker-log">
+              <summary>
+                {t(
+                  failed.log
+                    ? "worker.updateLogTailAt"
+                    : "worker.updateLogTail",
+                  {
+                    log: failed.log,
+                  },
+                )}
+              </summary>
+              <TerminalBlock
+                className="fdy-device-worker-log-lines"
+                lines={failed.logTail.map((line, index) => ({
+                  id: String(index),
+                  value: line,
+                }))}
+              />
+            </details>
+          ) : null}
+        </>
       ) : null}
       {stalled && !updating ? (
         <p className="fdy-location-error" role="alert">

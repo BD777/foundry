@@ -12,6 +12,7 @@ import {
   responseStreamLabel,
 } from "../../lib/agent-session-events";
 import type { ChatSessionThread } from "./chat-types";
+import type { CreateAgentSessionInput } from "../../api-types";
 
 export function agentSessionMessageText(
   session: AgentSession,
@@ -303,4 +304,48 @@ export function chatSortValue(chat: ChatThread): number {
 
 export function preferredChatId(chats: ChatThread[]): string {
   return chats[0]?.id ?? "";
+}
+
+/** The composer's runtime controls a message is sent with. */
+export type ChatComposerControls = Pick<
+  CreateAgentSessionInput,
+  | "claudePermissionMode"
+  | "codexApprovalPolicy"
+  | "codexSandboxMode"
+  | "codexSpeed"
+  | "model"
+> & {
+  /** Empty: the model's default. */
+  claudeEffort?: CreateAgentSessionInput["claudeEffort"] | "";
+  codexReasoningEffort?: CreateAgentSessionInput["codexReasoningEffort"] | "";
+};
+
+/**
+ * What a message is sent with: the agent and the controls of its runtime.
+ * A message queued now keeps them until the server sends it.
+ */
+export function chatComposerChoices(
+  agent: AgentProjection,
+  controls: ChatComposerControls,
+  conversation: { selectedChat?: ChatThread; thread?: ChatSessionThread },
+) {
+  const claude = agent.provider === "claude";
+  const codex = agent.provider === "codex";
+  return {
+    agentId: agent.id,
+    claudeEffort: (claude && controls.claudeEffort) || undefined,
+    claudePermissionMode: claude ? controls.claudePermissionMode : undefined,
+    codexApprovalPolicy: codex ? controls.codexApprovalPolicy : undefined,
+    codexReasoningEffort: (codex && controls.codexReasoningEffort) || undefined,
+    codexSandboxMode: codex ? controls.codexSandboxMode : undefined,
+    codexSpeed: codex ? controls.codexSpeed : undefined,
+    model: controls.model || undefined,
+    profileId: agent.profileId,
+    profileTransitionNote: profileTransitionNoteForSend({
+      agent,
+      selectedChat: conversation.thread ? undefined : conversation.selectedChat,
+      thread: conversation.thread,
+    }),
+    provider: agent.provider,
+  };
 }

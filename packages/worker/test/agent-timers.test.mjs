@@ -153,8 +153,18 @@ test("Stop outside an active turn reports a scheduled firing from the transcript
     ].join("\n") + "\n",
   );
 
+  const answered = [];
+  const reference = {
+    text: "notes.txt",
+    path: "/work/notes.txt",
+    kind: "file",
+  };
   const { events, tracker: timerTracker } = makeTracker({
     isActiveTurn: () => false,
+    answerFiles: async (response) => {
+      answered.push(response);
+      return [reference];
+    },
   });
   await timerTracker.hooks().Stop[0].hooks[0]({
     session_crons: [
@@ -179,6 +189,9 @@ test("Stop outside an active turn reports a scheduled firing from the transcript
   assert.equal(fireEvent.metadata.timerFire.prompt, promptText);
   assert.equal(fireEvent.metadata.timerFire.response, answerText);
   assert.equal(fireEvent.metadata.timerFire.id, "job_9");
+  // The timer's turn records its files; its answer links the ones it names.
+  assert.deepEqual(answered, [answerText]);
+  assert.deepEqual(fireEvent.metadata.fileReferences, [reference]);
   rmSync(directory, { recursive: true, force: true });
 });
 

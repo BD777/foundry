@@ -509,6 +509,7 @@ export const daemonCapabilities = [
   "issue_sessions",
   "issue_clarification",
   "worker_update",
+  "worker_update_status",
   "background_skill_scan",
   "tool_install",
   "tool_sources",
@@ -516,7 +517,23 @@ export const daemonCapabilities = [
   "session_usage",
   "diagnostics",
   "skill_repository_fetch",
+  "workspace_inventory",
 ];
+
+/**
+ * A hello that names every workspace the daemon serves (the
+ * workspace_inventory capability): the server marks the device's other
+ * workspaces unavailable on it.
+ */
+export function withServedWorkspaces<T extends object>(
+  registration: T,
+  served: ReadonlyArray<{ workspace: { id: string } }>,
+): T & { servedWorkspaceIds: string[] } {
+  return {
+    ...registration,
+    servedWorkspaceIds: served.map((item) => item.workspace.id),
+  };
+}
 
 export function daemonRegistration(workspacePath: string): {
   capabilities: string[];

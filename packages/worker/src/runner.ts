@@ -10,6 +10,8 @@ import {
   executionSessionsRoot,
   sessionInputDirectory,
 } from "./session-artifacts.js";
+import { excludeFoundryRuntimeFromGit } from "./execution-git.js";
+import { pathWithin } from "./session-file-references.js";
 /**
  * Claude and Codex session runners — active runtime management,
  * SDK/CLI execution, and session option helpers.
@@ -35,6 +37,7 @@ import type {
   AgentSessionEventMetadata,
   ChatAttachment,
   Issue,
+  SessionFileReference,
 } from "@bd777/foundry-protocol";
 import {
   activeClaudeRuntimes,
@@ -283,6 +286,22 @@ export function claudeRootBypassRefusal(
   if (permissionMode !== "bypassPermissions" || uid !== 0) return undefined;
   if (env.IS_SANDBOX === "1" || env.CLAUDE_CODE_BUBBLEWRAP) return undefined;
   return "Claude Code does not allow Bypass permissions while the worker runs as root. Run the worker as a regular user, or choose another permission mode for this chat or in the device's Claude Code defaults.";
+}
+
+/**
+ * The workspace's `.foundry/sessions` (and Foundry's other runtime data) is
+ * excluded from its repository locally once Foundry writes there.
+ */
+async function keepSessionsOutOfGit(workspacePath: string): Promise<void> {
+  // Sandboxed runs keep their sessions in scratch, outside the workspace.
+  if (!pathWithin(workspacePath, executionSessionsRoot(workspacePath))) return;
+  try {
+    await excludeFoundryRuntimeFromGit(workspacePath);
+  } catch (error) {
+    console.error(
+      `Could not exclude Foundry's session files from Git in ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 export async function runProfileCommandSession(
@@ -552,6 +571,7 @@ async function runCodexTurn(
     session,
   );
   mkdirSync(sessionDir, { recursive: true });
+  await keepSessionsOutOfGit(workspacePath);
   if (profile.command?.trim()) {
     await emitSetup();
     return runProfileCommandSession(
@@ -666,8 +686,8 @@ async function runCodexTurn(
     const prompt = sessionPrompt(session, profile);
     const input = codexSessionInput(session, prompt);
     // Codex reports no diffs: its changes are diffed against the work tree
-    // as the turn started.
-    await files.snapshotWorkTree();
+    // as the turn started. Naming and other utility sessions write nothing.
+    if (!isUtilitySession(session)) await files.snapshotWorkTree();
 
     if (typeof thread.runStreamed === "function") {
       const abortController = new AbortController();
@@ -834,6 +854,7 @@ export async function runClaudeWorkspaceSession(
     session,
   );
   mkdirSync(sessionDir, { recursive: true });
+  await keepSessionsOutOfGit(workspacePath);
   if (profile.command?.trim()) {
     await emitSetup();
     return runProfileCommandSession(
@@ -916,6 +937,7 @@ export function resolveActiveClaudeTurn(
     return;
   }
   runtime.pending = undefined;
+  if (turn.commandId) runtime.lastInputId = turn.commandId;
   turn.watchdog.close();
   turn.resolve(result);
 }
@@ -1151,6 +1173,53 @@ function claudeContinuation(
   return runtime.continuation;
 }
 
+/**
+ * Files Claude's tools write and its answers name while no Foundry turn owns
+ * the stream (after background work, or on a timer). They are the session's,
+ * credited to the input whose turn ended last.
+ */
+function claudeBetweenTurnFiles(
+  runtime: ActiveClaudeRuntime,
+): SessionTurnFiles | undefined {
+  if (runtime.betweenTurnFiles) return runtime.betweenTurnFiles;
+  if (!runtime.workspacePath) return undefined;
+  runtime.betweenTurnFiles = new SessionTurnFiles({
+    workspacePath: runtime.workspacePath,
+    sessionsRoot: executionSessionsRoot(runtime.workspacePath),
+    sessionId: runtime.foundrySessionId,
+    inputId: runtime.lastInputId,
+    emit: async (label, detail, level, metadata, message) =>
+      emitForClaudeRuntime(runtime, {
+        label,
+        detail,
+        level,
+        metadata,
+        message,
+      }),
+    startedAt: runtime.continuation?.startedAt ?? Date.now(),
+  });
+  return runtime.betweenTurnFiles;
+}
+
+/** Where a write tool's call is recorded: the turn the stream answers. */
+export function claudeWriteFiles(
+  runtime: ActiveClaudeRuntime,
+): SessionTurnFiles | undefined {
+  const turn = runtime.pending;
+  if (turn && claudeTurnOwnsMessage(runtime, turn)) return turn.files;
+  return claudeBetweenTurnFiles(runtime);
+}
+
+/** Ends work between turns: records its files and links its answer's. */
+export async function finishClaudeBetweenTurnFiles(
+  runtime: ActiveClaudeRuntime,
+  answer: string,
+): Promise<SessionFileReference[]> {
+  const files = claudeBetweenTurnFiles(runtime);
+  runtime.betweenTurnFiles = undefined;
+  return (await files?.finish(answer)) ?? [];
+}
+
 const taskLifecycleSubtypes = new Set([
   "task_started",
   "task_progress",
@@ -1172,12 +1241,20 @@ async function finishClaudeContinuation(
   runtime.notifications = [];
   if (runtime.pending) runtime.pending.behindContinuation = false;
   const origin = claudeResultOrigin(result);
-  if (result && origin !== "task-notification" && notifications.length === 0)
+  if (result && origin !== "task-notification" && notifications.length === 0) {
+    // A timer's turn: its Stop hook published the answer and its files.
+    if (runtime.betweenTurnFiles)
+      await finishClaudeBetweenTurnFiles(runtime, "");
     return;
+  }
   const error = result ? claudeAgentResultError(result) : undefined;
   const response = (
     continuation?.finalResult || (result ? claudeMessageText(result) : "")
   ).trim();
+  const fileReferences = await finishClaudeBetweenTurnFiles(
+    runtime,
+    error ? "" : response,
+  );
   if (!response && !error) return;
   const startedAt = continuation?.startedAt ?? Date.now();
   const usage = result ? claudeResultUsage(result) : undefined;
@@ -1197,6 +1274,7 @@ async function finishClaudeContinuation(
         completedAt,
       },
       ...turnUsageMetadata(usage, startedAt),
+      ...(fileReferences.length > 0 ? { fileReferences } : {}),
     },
   });
 }
@@ -1561,6 +1639,7 @@ export async function runClaudeAgentSdkSession(
         key: runtimeKey,
         lastUsed: Date.now(),
         nativeSessionId: requestedNativeSessionId,
+        workspacePath,
       };
       const owner = runtime;
       // Timer and background-work observation hooks must live for the whole
@@ -1571,6 +1650,8 @@ export async function runClaudeAgentSdkSession(
         emit: (event) => emitForClaudeRuntime(owner, event),
         isActiveTurn: () => owner.pending !== undefined,
         sessionId: () => owner.foundrySessionId,
+        answerFiles: (response) =>
+          finishClaudeBetweenTurnFiles(owner, response),
       });
       runtime.background = new ClaudeBackgroundTaskTracker({
         emit: (event) => emitForClaudeRuntime(owner, event),
@@ -1583,10 +1664,11 @@ export async function runClaudeAgentSdkSession(
       options.hooks = mergeClaudeHooks(
         runtime.timers.hooks(),
         runtime.background.hooks(),
-        // A write belongs to the turn the runtime is serving.
+        // A write belongs to the turn the stream answers, else to the work
+        // Claude does between turns.
         claudeFileWriteHooks(
-          (write) => owner.pending?.files?.recordToolWrite(write),
-          (write) => owner.pending?.files?.captureBeforeWrite(write),
+          (write) => claudeWriteFiles(owner)?.recordToolWrite(write),
+          (write) => claudeWriteFiles(owner)?.captureBeforeWrite(write),
         ),
       );
       activeClaudeRuntimes.set(runtimeKey, runtime);

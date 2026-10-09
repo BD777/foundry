@@ -5,7 +5,7 @@ import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { deviceSummary } from "./device-details";
-import { workerState } from "./device-worker";
+import { workerState, workerUpdateStepLabel } from "./device-worker";
 
 /** The device list: one row per device, opening it or acting on it. */
 export function DeviceList({
@@ -123,17 +123,26 @@ function WorkerStateBadge({
   const { t } = useTranslation("devices");
   const state = workerState(device, release);
   if (state === "current" || !device.owned) return null;
+  // A running update shows what it is doing, from the server's probes.
+  const step =
+    state === "updating" && device.workerUpdate
+      ? workerUpdateStepLabel(t, device.workerUpdate)
+      : undefined;
+  const label = step ? t("worker.stepRunning", { step }) : undefined;
   return (
     <Badge tone={state === "updating" ? "brass" : "warn"}>
-      {t(
-        state === "updating"
-          ? "worker.stateUpdating"
-          : state === "stalled"
-            ? "worker.stateStalled"
-            : state === "updatable"
-              ? "worker.stateUpdatable"
-              : "worker.stateManual",
-      )}
+      {label ??
+        t(
+          state === "updating"
+            ? "worker.stateUpdating"
+            : state === "failed"
+              ? "worker.stateFailed"
+              : state === "stalled"
+                ? "worker.stateStalled"
+                : state === "updatable"
+                  ? "worker.stateUpdatable"
+                  : "worker.stateManual",
+        )}
     </Badge>
   );
 }

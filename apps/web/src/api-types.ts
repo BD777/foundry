@@ -8,6 +8,7 @@ import type {
   AgentSessionEvent,
   AssetProjection,
   ChatAttachment,
+  ChatQueue,
   ChatThread,
   ClaudeEffort,
   ClaudePermissionMode,
@@ -74,7 +75,8 @@ export type FoundryStreamEvent =
   | {
       type: "workspace_members_updated";
       payload: { workspaceId: string };
-    };
+    }
+  | { type: "chat_queue_changed"; payload: ChatQueue };
 
 export interface CreateIssueInput {
   codexSpeed?: CodexSpeed;
@@ -171,7 +173,10 @@ export type SendAgentSessionMessageInput = Omit<
   | "source"
   | "workspaceId"
 > &
-  Partial<Pick<CreateAgentSessionInput, "agentId" | "provider">>;
+  Partial<Pick<CreateAgentSessionInput, "agentId" | "provider">> & {
+    /** Refuse (409) rather than steer when the session is already running. */
+    requireIdle?: boolean;
+  };
 
 export interface CreateAgentProfileInput {
   apiKey?: string;

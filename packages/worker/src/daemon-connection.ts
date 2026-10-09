@@ -125,6 +125,7 @@ import {
   initWorkspace,
   readForgottenWorkspaces,
   readRegistry,
+  recordExplicitWorkspace,
   writeRegistry,
 } from "./workspaces.js";
 import {
@@ -140,7 +141,11 @@ import { refreshOfficialSkills } from "./official-skills.js";
 import { scanDeviceSkills } from "./skill-scan-thread.js";
 import { providerHealthData } from "./provider-health.js";
 import { installNativeCli } from "./native-cli-install.js";
-import { startSelfUpdate } from "./worker-self-update.js";
+import { readWorkerUpdateStatus } from "./self-update-status.js";
+import {
+  startSelfUpdate,
+  watchSelfUpdateFailure,
+} from "./worker-self-update.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import {
   daemonDeviceRegistration,
@@ -152,6 +157,7 @@ import {
   serverURLFromArgs,
   sessionSchedulingKey,
   syncNativeChats,
+  withServedWorkspaces,
   workspacePathFromArgs,
 } from "./workspace-ops.js";
 import {
@@ -329,6 +335,14 @@ export async function connect(args: string[]): Promise<void> {
     );
   }
   acquireDaemonLock();
+  // A folder named with --workspace stays served after a restart without it.
+  try {
+    recordExplicitWorkspace(explicitWorkspacePath(args));
+  } catch (error) {
+    console.error(
+      `Recording the --workspace folder failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   writeDaemonConfig({
     ...existingConfig,
     serverURL: serverURLFromArgs(args),
@@ -756,6 +770,12 @@ function socketRoundTrip(socket: WebSocket): Promise<number> {
 /** The open control socket, for diagnostics that measure it. */
 let currentSocket: WebSocket | undefined;
 
+/**
+ * The server asks for update status: it understands a failure reported
+ * unasked too. An older server would answer one with an error.
+ */
+let serverReadsWorkerUpdateStatus = false;
+
 type sessionOutcome = "exit" | "reconnect" | "removed" | "refused";
 
 /** How often the worker tells the server it is there (see the heartbeat). */
@@ -1143,7 +1163,10 @@ function runWebSocketSession(options: {
         sendWebSocket(
           socket,
           daemonMessageTypes.hello,
-          withStalls(withConnectionReports(device)),
+          withServedWorkspaces(
+            withStalls(withConnectionReports(device)),
+            registrations,
+          ),
         );
         checkProvidersAndReport();
         providerCheckTimer = setInterval(
@@ -1158,10 +1181,16 @@ function runWebSocketSession(options: {
       console.log(
         `${logTime()} Connected daemon ${registration.device.label} to ${options.serverURL} for ${registration.workspace.name}`,
       );
+      // The hello lists every workspace this daemon serves; the rest follow
+      // as workspace_ready, and the server marks the device's others
+      // unavailable.
       sendWebSocket(
         socket,
         daemonMessageTypes.hello,
-        withStalls(withConnectionReports(registration)),
+        withServedWorkspaces(
+          withStalls(withConnectionReports(registration)),
+          registrations,
+        ),
       );
       for (const item of registrations) {
         if (item.workspace.id === registration.workspace.id) {
@@ -1807,6 +1836,16 @@ function runWebSocketSession(options: {
           });
         return;
       }
+      if (envelope.type === daemonMessageTypes.readWorkerUpdateStatus) {
+        serverReadsWorkerUpdateStatus = true;
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.workerUpdateStatus,
+          readWorkerUpdateStatus(),
+          envelope.id,
+        );
+        return;
+      }
       if (envelope.type === daemonMessageTypes.updateWorker) {
         try {
           const started = startSelfUpdate(options.serverURL);
@@ -1816,6 +1855,16 @@ function runWebSocketSession(options: {
             started,
             envelope.id,
           );
+          // A failure goes to the server as soon as it is written, on
+          // whichever connection is open then.
+          watchSelfUpdateFailure((status) => {
+            if (serverReadsWorkerUpdateStatus && currentSocket)
+              trySendWebSocket(
+                currentSocket,
+                daemonMessageTypes.workerUpdateStatus,
+                status,
+              );
+          });
         } catch (error) {
           trySendWebSocket(
             socket,

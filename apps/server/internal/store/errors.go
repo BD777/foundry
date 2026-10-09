@@ -63,3 +63,27 @@ var ErrSessionControlledByIssue = errors.New("this session works for an Issue; c
 // ErrAgentSessionActive means a session is still handling an input, so a new
 // input must steer it instead.
 var ErrAgentSessionActive = errors.New("agent session is still active")
+
+// ErrSessionInputExists refuses an input whose id a session already
+// recorded: a queued message is sent once.
+var ErrSessionInputExists = errors.New("this message was already sent")
+
+// ErrChatQueueConflict means the queue or the message changed since the
+// caller read it; the caller shows the current queue.
+var ErrChatQueueConflict = errors.New("the queue changed in another tab")
+
+// ErrChatQueueItemSending refuses changing a queued message that is being sent.
+var ErrChatQueueItemSending = errors.New("this message is being sent")
+
+// ErrChatQueueItemSent refuses changing a queued message that was sent.
+var ErrChatQueueItemSent = errors.New("this message was already sent")
+
+// ErrChatQueueBusy means another message of the chat is being sent.
+var ErrChatQueueBusy = errors.New("another queued message is being sent")
+
+// ErrChatQueuePaused means the chat's next message failed to send; the queue
+// waits until the person retries, edits or deletes it.
+var ErrChatQueuePaused = errors.New("the queue waits for a failed message")
+
+// ErrInvalidChatQueueMessage refuses a queued message with neither text nor files.
+var ErrInvalidChatQueueMessage = errors.New("a queued message needs text or files")

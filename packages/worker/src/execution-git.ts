@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
@@ -82,4 +84,64 @@ export async function gitCommit(
     });
   }
   return git(cwd, ["rev-parse", "HEAD"]);
+}
+
+/**
+ * Foundry's runtime data under a workspace's `.foundry/`: never the person's
+ * to commit. Shared configuration there (`skills.yaml`, `preview.json`, …)
+ * stays visible to Git.
+ */
+export const foundryRuntimeGitExcludes = [
+  ".foundry/sessions/",
+  ".foundry/attachments/",
+  ".foundry/runs/",
+  ".foundry/worktrees/",
+  ".foundry/issues/",
+  ".foundry/reviews/",
+  ".foundry/integrations/",
+  ".foundry/daemon.json",
+];
+
+const excludedWorkspaces = new Set<string>();
+const excludesInProgress = new Map<string, Promise<boolean>>();
+
+/**
+ * Keeps a workspace's Foundry runtime data out of its repository through the
+ * repository's local excludes (`info/exclude`, worktree-aware), never a
+ * committed `.gitignore`. Idempotent, and checked once per process; outside
+ * a Git work tree it does nothing and reports false, so a later `git init`
+ * is still handled.
+ */
+export function excludeFoundryRuntimeFromGit(
+  workspacePath: string,
+): Promise<boolean> {
+  if (excludedWorkspaces.has(workspacePath)) return Promise.resolve(true);
+  const running = excludesInProgress.get(workspacePath);
+  if (running) return running;
+  const work = (async () => {
+    const prefix = await git(workspacePath, ["rev-parse", "--show-prefix"], {
+      optional: true,
+    });
+    const exclude = await git(
+      workspacePath,
+      ["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"],
+      { optional: true },
+    );
+    if (!exclude) return false;
+    const anchor = `/${prefix.replace(/[\\*?[\]#! ]/g, "\\$&")}`;
+    const existing = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+    const lines = existing.split("\n");
+    const added = foundryRuntimeGitExcludes
+      .map((entry) => `${anchor}${entry}`)
+      .filter((entry) => !lines.includes(entry));
+    if (added.length) {
+      mkdirSync(dirname(exclude), { recursive: true });
+      const separator = existing && !existing.endsWith("\n") ? "\n" : "";
+      writeFileSync(exclude, `${existing}${separator}${added.join("\n")}\n`);
+    }
+    excludedWorkspaces.add(workspacePath);
+    return true;
+  })().finally(() => excludesInProgress.delete(workspacePath));
+  excludesInProgress.set(workspacePath, work);
+  return work;
 }

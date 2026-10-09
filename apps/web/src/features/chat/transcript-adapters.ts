@@ -191,6 +191,9 @@ export function sessionTranscriptEntries(
           ...(event.metadata?.turnUsage
             ? { usage: event.metadata.turnUsage }
             : {}),
+          ...(event.level !== "error" && event.metadata?.fileReferences?.length
+            ? { fileReferences: event.metadata.fileReferences }
+            : {}),
         });
       }
       continue;

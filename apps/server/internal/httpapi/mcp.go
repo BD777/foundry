@@ -207,10 +207,16 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			DeviceID    string `json:"deviceId,omitempty"`
 			DeviceLabel string `json:"deviceLabel,omitempty"`
 			AccessRole  string `json:"accessRole"`
+			// Unavailable explains why sessions cannot run in it now.
+			Unavailable string `json:"unavailable,omitempty"`
 		}
 		workspaces := []reachable{}
 		for _, workspace := range view.scope.filterWorkspaces(all) {
-			workspaces = append(workspaces, reachable{workspace.ID, workspace.Name, workspace.DeviceID, workspace.DeviceLabel, workspace.AccessRole})
+			item := reachable{workspace.ID, workspace.Name, workspace.DeviceID, workspace.DeviceLabel, workspace.AccessRole, ""}
+			if workspace.UnavailableOnDevice != nil {
+				item.Unavailable = workspaceNotServedMessage(workspace)
+			}
+			workspaces = append(workspaces, item)
 		}
 		return encode(workspaces)
 	case "list_resources":

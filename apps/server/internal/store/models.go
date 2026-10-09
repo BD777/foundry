@@ -12,7 +12,22 @@ type WorkspaceProjection struct {
 	DeviceLabel    string `json:"deviceLabel,omitempty"`
 	// AccessRole is the caller's role in the workspace, set per request.
 	AccessRole string `json:"accessRole,omitempty"`
+	// UnavailableOnDevice is set while its device, connected, does not serve
+	// the folder. Its sessions and history stay; adding the folder on the
+	// device again clears it.
+	UnavailableOnDevice *WorkspaceUnavailability `json:"unavailableOnDevice,omitempty"`
 }
+
+// WorkspaceUnavailability says why a workspace cannot run on its device.
+type WorkspaceUnavailability struct {
+	// Reason is WorkspaceNotServed: the device's worker, at its last
+	// registration, did not list the folder among those it serves.
+	Reason string `json:"reason"`
+	Since  string `json:"since"`
+}
+
+// WorkspaceNotServed: the device no longer serves the folder.
+const WorkspaceNotServed = "not_served"
 
 type DeviceProjection struct {
 	ID              string                `json:"id"`
@@ -58,6 +73,22 @@ type DeviceWorkerUpdate struct {
 	// Stalled: the device still runs FromVersion well after the update
 	// started; it did not finish and may be started again.
 	Stalled bool `json:"stalled,omitempty"`
+	// Step is what the update is doing, from the server's status probes:
+	// starting, checking, downloading, installing or restarting. After a
+	// failure it is the last step seen.
+	Step string `json:"step,omitempty"`
+	// StepDetail is what the step waits on, such as a retry.
+	StepDetail string `json:"stepDetail,omitempty"`
+	// Failure says why the update failed; it may be started again.
+	Failure string `json:"failure,omitempty"`
+	// FailureCode: "exited" (the update command failed), "vanished" (it
+	// ended without reporting) or "not_back" (the worker did not reconnect
+	// after restarting).
+	FailureCode string `json:"failureCode,omitempty"`
+	// ExitCode is the failed update command's exit status.
+	ExitCode *int `json:"exitCode,omitempty"`
+	// LogTail is the end of the update's log on the device, redacted.
+	LogTail []string `json:"logTail,omitempty"`
 }
 
 // DeviceSystem describes the machine, as its worker reports it.
@@ -724,6 +755,10 @@ const AgentSessionRoleIssueExecution = "issue_execution"
 // message from the person is a new input.
 const AgentSessionRoleIssueClarification = "issue_clarification"
 
+// DaemonCapabilityWorkspaceInventory: the worker's hello lists every
+// workspace it serves (DaemonRegistration.ServedWorkspaceIDs).
+const DaemonCapabilityWorkspaceInventory = "workspace_inventory"
+
 // DaemonCapabilityIssueSessions: the worker runs Issue executions dispatched
 // as run_session with the issue_execution role.
 const DaemonCapabilityIssueSessions = "issue_sessions"
@@ -999,6 +1034,82 @@ type ChatLayout struct {
 	Positions []ChatPlacement   `json:"positions"`
 }
 
+// Chat queue states: a message waits (queued), is being handed to the
+// chat's session (dispatching), went out (sent) or could not (failed; the
+// queue waits for the person).
+const (
+	ChatQueueStateQueued      = "queued"
+	ChatQueueStateDispatching = "dispatching"
+	ChatQueueStateSent        = "sent"
+	ChatQueueStateFailed      = "failed"
+)
+
+// ChatQueueRunSettings are the composer's choices when a message was queued;
+// the message is sent with them.
+type ChatQueueRunSettings struct {
+	AgentID               string `json:"agentId,omitempty"`
+	Provider              string `json:"provider,omitempty"`
+	ProfileID             string `json:"profileId,omitempty"`
+	Model                 string `json:"model,omitempty"`
+	ClaudeEffort          string `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode  string `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort  string `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode      string `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy   string `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed            string `json:"codexSpeed,omitempty"`
+	ProfileTransitionNote string `json:"profileTransitionNote,omitempty"`
+}
+
+// ChatQueueItem is a message a person queued in a chat. The server sends it
+// as the chat's next input once the chat's session is idle; its id becomes
+// that input's id.
+type ChatQueueItem struct {
+	ID            string               `json:"id"`
+	ChatID        string               `json:"chatId"`
+	Position      int64                `json:"position"`
+	Text          string               `json:"text"`
+	Attachments   []ChatAttachment     `json:"attachments,omitempty"`
+	RunSettings   ChatQueueRunSettings `json:"runSettings"`
+	CreatedBy     string               `json:"createdBy,omitempty"`
+	CreatedAt     string               `json:"createdAt"`
+	UpdatedAt     string               `json:"updatedAt"`
+	Revision      int64                `json:"revision"`
+	State         string               `json:"state"`
+	Error         string               `json:"error,omitempty"`
+	SentSessionID string               `json:"sentSessionId,omitempty"`
+}
+
+// ChatQueue lists a chat's unsent messages in sending order. Revision grows
+// with every change to the queue, including sends.
+type ChatQueue struct {
+	WorkspaceID string          `json:"workspaceId"`
+	ChatID      string          `json:"chatId"`
+	Revision    int64           `json:"revision"`
+	Items       []ChatQueueItem `json:"items"`
+}
+
+type EnqueueChatMessageInput struct {
+	Text        string               `json:"text"`
+	Attachments []ChatAttachment     `json:"attachments,omitempty"`
+	RunSettings ChatQueueRunSettings `json:"runSettings"`
+}
+
+// EditChatQueueItemInput changes the fields it carries; ExpectedRevision is
+// the message's revision the edit was made on.
+type EditChatQueueItemInput struct {
+	Text             *string               `json:"text,omitempty"`
+	Attachments      *[]ChatAttachment     `json:"attachments,omitempty"`
+	RunSettings      *ChatQueueRunSettings `json:"runSettings,omitempty"`
+	ExpectedRevision *int64                `json:"expectedRevision"`
+}
+
+// ReorderChatQueueInput names every queued or failed message in the new
+// order; ExpectedRevision is the queue's revision the order was made on.
+type ReorderChatQueueInput struct {
+	ItemIDs          []string `json:"itemIds"`
+	ExpectedRevision *int64   `json:"expectedRevision"`
+}
+
 type SaveChatLayoutInput struct {
 	WorkspaceID      string     `json:"workspaceId"`
 	ExpectedRevision *int64     `json:"expectedRevision"`
@@ -1095,6 +1206,11 @@ type SendAgentSessionInput struct {
 	// ImportedContext is ignored: the server tells each native session the
 	// turns it missed. Accepted so older clients that send it still work.
 	ImportedContext string `json:"importedContext,omitempty"`
+	// RequireIdle refuses (ErrAgentSessionActive) a message to a running
+	// session instead of steering it: the sender meant the next turn.
+	RequireIdle bool `json:"requireIdle,omitempty"`
+	// InputID names the input (a queued message's id); empty generates one.
+	InputID string `json:"-"`
 }
 
 type CreateAgentSessionInput struct {
@@ -1125,6 +1241,8 @@ type CreateAgentSessionInput struct {
 	// Verification requests a read-only utility verifier session.
 	Verification bool   `json:"verification,omitempty"`
 	Source       string `json:"source"`
+	// InputID names the first input (a queued message's id); empty generates one.
+	InputID string `json:"-"`
 }
 
 type AgentModelOption struct {
@@ -1148,16 +1266,20 @@ type DaemonRegistration struct {
 	// ActiveSessionIDs are execution claims owned by this daemon process. An
 	// empty, present list means the process owns no sessions; a missing list is
 	// retained for compatibility with workers predating session-level claims.
-	ActiveSessionIDs []string                 `json:"activeSessionIds"`
-	Device           DeviceProjection         `json:"device"`
-	Workspace        WorkspaceProjection      `json:"workspace"`
-	ProviderHealth   []ProviderHealth         `json:"providerHealth"`
-	AgentProfiles    []AgentProfileProjection `json:"agentProfiles,omitempty"`
-	Chats            []ChatThread             `json:"chats,omitempty"`
-	Assets           []AssetProjection        `json:"assets"`
-	Agents           []AgentProjection        `json:"agents"`
-	Skills           []SkillPackRef           `json:"skills"`
-	WorkspaceFiles   []WorkspaceFileEntry     `json:"workspaceFiles"`
+	ActiveSessionIDs []string `json:"activeSessionIds"`
+	// ServedWorkspaceIDs, sent with hello by a worker declaring
+	// DaemonCapabilityWorkspaceInventory, is every workspace it serves; its
+	// other workspaces on the server are marked unavailable on the device.
+	ServedWorkspaceIDs []string                 `json:"servedWorkspaceIds,omitempty"`
+	Device             DeviceProjection         `json:"device"`
+	Workspace          WorkspaceProjection      `json:"workspace"`
+	ProviderHealth     []ProviderHealth         `json:"providerHealth"`
+	AgentProfiles      []AgentProfileProjection `json:"agentProfiles,omitempty"`
+	Chats              []ChatThread             `json:"chats,omitempty"`
+	Assets             []AssetProjection        `json:"assets"`
+	Agents             []AgentProjection        `json:"agents"`
+	Skills             []SkillPackRef           `json:"skills"`
+	WorkspaceFiles     []WorkspaceFileEntry     `json:"workspaceFiles"`
 	// Stalls are stretches the worker's event loop was blocked since its
 	// previous registration; the server logs them.
 	Stalls []WorkerStall `json:"stalls,omitempty"`

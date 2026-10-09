@@ -106,6 +106,8 @@ export interface ChatSurfaceProps {
   onRetryModels?: () => void;
   onSend: ConversationProps["onSend"];
   onSteer?: ConversationProps["onSteer"];
+  /** The selected chat's queued messages, kept and sent by the server. */
+  queue: NonNullable<ConversationProps["serverQueue"]>;
   selectedAgentId: string;
   sendDisabled?: boolean;
   sendDisabledReason?: string;

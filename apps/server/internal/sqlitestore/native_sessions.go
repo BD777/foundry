@@ -310,11 +310,14 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 	return nil
 }
 
-// moveChatIdentity hands a chat's custom title and list position to the
-// session that continues it.
+// moveChatIdentity hands a chat's custom title, queued messages and list
+// position to the session that continues it.
 func (s *Store) moveChatIdentity(ctx context.Context, workspaceID, fromID, toID string) error {
 	if _, err := s.conn().ExecContext(ctx, `UPDATE OR IGNORE chat_titles SET chat_id = ? WHERE workspace_id = ? AND chat_id = ?`, toID, workspaceID, fromID); err != nil {
 		return fmt.Errorf("move chat title: %w", err)
+	}
+	if err := s.moveChatQueue(ctx, workspaceID, fromID, toID); err != nil {
+		return err
 	}
 	var payload string
 	var revision int64

@@ -84,6 +84,18 @@ export interface WorkspaceProjection {
   deviceLabel?: string;
   /** The caller's role in this workspace. */
   accessRole?: WorkspaceAccessRole;
+  /**
+   * Set while its device, connected, does not serve the folder. Sessions and
+   * history stay; adding the folder on the device again clears it.
+   */
+  unavailableOnDevice?: WorkspaceUnavailability;
+}
+
+/** Why a workspace cannot run on its device. */
+export interface WorkspaceUnavailability {
+  /** "not_served": the device's worker no longer lists the folder. */
+  reason: "not_served";
+  since: string;
 }
 
 export type WorkspaceAccessRole = "viewer" | "member" | "maintainer" | "owner";
@@ -131,7 +143,27 @@ export interface DeviceWorkerUpdate {
   log?: string;
   /** The update did not finish in time; it may be started again. */
   stalled?: boolean;
+  /** What it is doing, from the server's probes; after a failure, the last step seen. */
+  step?: WorkerUpdateStep;
+  /** What the step waits on, such as a retry. */
+  stepDetail?: string;
+  /** Why the update failed; it may be started again. */
+  failure?: string;
+  failureCode?: WorkerUpdateFailureCode;
+  /** The failed update command's exit status. */
+  exitCode?: number;
+  /** The end of the update's log on the device, redacted. */
+  logTail?: string[];
 }
+
+export type WorkerUpdateStep =
+  "starting" | "checking" | "downloading" | "installing" | "restarting";
+
+/**
+ * `exited`: the update command failed. `vanished`: it ended without
+ * reporting. `not_back`: the worker did not reconnect after restarting.
+ */
+export type WorkerUpdateFailureCode = "exited" | "vanished" | "not_back";
 
 /**
  * A stretch when the worker's event loop was blocked; a registration carries
@@ -1389,6 +1421,69 @@ export interface ChatLayout {
   revision: number;
   groups: ChatLayoutGroup[];
   positions: ChatPlacement[];
+}
+
+/** The composer's choices when a message was queued; it is sent with them. */
+export interface ChatQueueRunSettings {
+  agentId?: string;
+  provider?: string;
+  profileId?: string;
+  model?: string;
+  claudeEffort?: string;
+  claudePermissionMode?: string;
+  codexReasoningEffort?: string;
+  codexSandboxMode?: string;
+  codexApprovalPolicy?: string;
+  codexSpeed?: string;
+  profileTransitionNote?: string;
+}
+
+export type ChatQueueItemState = "queued" | "dispatching" | "sent" | "failed";
+
+/**
+ * A message queued in a chat. The server sends it as the chat's next input
+ * once the chat's session is idle; a failed one holds the queue.
+ */
+export interface ChatQueueItem {
+  id: string;
+  chatId: string;
+  position: number;
+  text: string;
+  attachments?: ChatAttachment[];
+  runSettings: ChatQueueRunSettings;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  revision: number;
+  state: ChatQueueItemState;
+  error?: string;
+  sentSessionId?: string;
+}
+
+/** A chat's unsent messages in sending order; revision grows with each change. */
+export interface ChatQueue {
+  workspaceId: string;
+  chatId: string;
+  revision: number;
+  items: ChatQueueItem[];
+}
+
+export interface EnqueueChatMessageInput {
+  text: string;
+  attachments?: ChatAttachment[];
+  runSettings: ChatQueueRunSettings;
+}
+
+export interface EditChatQueueItemInput {
+  text?: string;
+  attachments?: ChatAttachment[];
+  runSettings?: ChatQueueRunSettings;
+  expectedRevision: number;
+}
+
+export interface ReorderChatQueueInput {
+  itemIds: string[];
+  expectedRevision: number;
 }
 
 export interface ChatThread {

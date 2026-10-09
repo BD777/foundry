@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import {
   claudeCommandCandidates,
+  codexCommandCandidates,
   resolveClaudeCommand,
 } from "../dist/utils.js";
 
@@ -98,4 +99,29 @@ test("FOUNDRY_CLAUDE_BIN wins over discovered install locations", (t) => {
       delete process.env.FOUNDRY_CLAUDE_BIN;
     else process.env.FOUNDRY_CLAUDE_BIN = original.FOUNDRY_CLAUDE_BIN;
   }
+});
+
+test("Codex is found inside the ChatGPT desktop app when it is not on PATH", () => {
+  const home = "/Users/someone";
+  const candidates = codexCommandCandidates({}, home);
+  // Where ChatGPT.app ships its CLI (codex-cli 0.160.1 on macOS).
+  assert.ok(
+    candidates.includes(
+      "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+    ),
+  );
+  assert.ok(
+    candidates.includes(
+      resolve(
+        home,
+        "Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
+      ),
+    ),
+  );
+  // PATH and explicit overrides still come first.
+  assert.equal(candidates[0], "codex");
+  assert.equal(
+    codexCommandCandidates({ FOUNDRY_CODEX_BIN: "/custom/codex" }, home)[0],
+    "/custom/codex",
+  );
 });

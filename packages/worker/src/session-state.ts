@@ -171,6 +171,12 @@ export interface ActiveClaudeRuntime {
   commandLifecycle?: boolean;
   /** The latest turn's raw message log; messages between turns go there too. */
   messagesPath?: string;
+  /** The workspace the process works in; work between turns is recorded there. */
+  workspacePath?: string;
+  /** The input whose turn ended last: work between turns follows from it. */
+  lastInputId?: string;
+  /** Files Claude writes between turns, until its answer there is published. */
+  betweenTurnFiles?: SessionTurnFiles;
 }
 
 export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();

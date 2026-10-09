@@ -66,6 +66,13 @@ export const workspaces = {
     switch: "Switch",
     noMatches: "No matching workspaces.",
     noWorkspaces: "No workspaces on this device yet.",
+    notServed: "Not served by device",
+    notServedNote:
+      "{{device}} no longer serves this folder, so nothing can run here. Its history is kept. Add it again, or remove it from the row menu.",
+    addAgain: "Add again",
+    addAgainTo: "Add {{name}} again on {{device}}",
+    addingAgain: "Adding…",
+    addedAgain: "{{name}} is served by {{device}} again.",
   },
   overview: {
     gitStates: {

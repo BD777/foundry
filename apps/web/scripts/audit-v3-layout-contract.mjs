@@ -3793,7 +3793,7 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-message-composer .fdy-field-chat",
+    selector: ".fdy-composer-input-shell > .fdy-field-chat",
     declarations: {
       "min-width": "0",
       padding: "4px 2px 12px",

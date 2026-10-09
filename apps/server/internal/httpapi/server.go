@@ -55,6 +55,10 @@ type Server struct {
 	// pypiAPI is the PyPI base used to find the versions of the Python
 	// tools bundles declare; tests point it at a local server.
 	pypiAPI string
+	// chatQueueLocks runs one chat queue dispatch per workspace at a time;
+	// chatQueueKicks counts the dispatches in flight.
+	chatQueueLocks sync.Map
+	chatQueueKicks sync.WaitGroup
 	// testActor authenticates every browser request in package tests, and
 	// testFullAccess lets it reach every workspace and device so handler
 	// tests exercise behaviour, not membership. Authorization tests use real
@@ -90,12 +94,16 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish}
 	server.hub.onSessionCompleted = server.titles.SessionCompleted
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
+	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
+		// Messages queued while the device was away go out now.
+		server.kickPendingChatQueues(ctx)
 		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
 	}
 	server.feishu = feishu.NewWSManager(store, server.secrets, server)
 	server.events.SubscribeInternal(server.feishu.HandleInternalEvent)
+	server.events.SubscribeInternal(server.onChatQueueEvent)
 	go server.feishu.StartAllConfiguredBots(context.Background())
 	return server
 }
@@ -1131,45 +1139,61 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	if status, err := s.resolveSessionDevice(r.Context(), &input); err != nil {
-		switch status {
-		case 0:
+	session, status, err := s.startAgentSession(r.Context(), input)
+	if err != nil {
+		switch {
+		case session.ID != "":
+			// Created, but its device could not take it: the failed session.
+			writeJSON(w, status, session)
+		case status == 0:
 			writeResult(w, nil, err)
-		case http.StatusForbidden:
+		case status == http.StatusForbidden:
 			writeForbidden(w, err.Error())
 		default:
 			writeError(w, status, err.Error())
 		}
 		return
 	}
+	idempotent.record(r.Context(), session)
+	writeJSON(w, http.StatusCreated, session)
+}
+
+// startAgentSession creates a session on the agent its input names and hands it
+// to that agent's device. A non-zero status classifies a refusal; a session
+// its device could not take comes back failed, with StatusConflict.
+func (s *Server) startAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, int, error) {
+	if status, err := s.resolveSessionDevice(ctx, &input); err != nil {
+		return store.AgentSession{}, status, err
+	}
 	if input.WorkspaceID != "" {
-		if sessions, err := s.store.ListAgentSessionSummaries(r.Context(), input.WorkspaceID); err == nil {
-			s.reconcileAgentSessions(r.Context(), sessions)
+		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
+			s.reconcileAgentSessions(ctx, sessions)
 		}
 	}
-	session, err := s.store.CreateAgentSession(r.Context(), input)
+	session, err := s.store.CreateAgentSession(ctx, input)
 	if err != nil {
 		if errors.Is(err, store.ErrDeviceRemoved) {
-			writeError(w, http.StatusGone, "device_removed")
-			return
+			return store.AgentSession{}, http.StatusGone, errors.New("device_removed")
 		}
-		writeResult(w, nil, err)
-		return
+		return store.AgentSession{}, 0, err
 	}
 	s.events.Publish("agent_session_created", session)
+	if chatID := strings.TrimSpace(input.ChatID); chatID != "" {
+		// The adopted native chat's queued messages are the session's now.
+		s.publishChatQueue(ctx, session.WorkspaceID, chatID)
+		s.publishChatQueue(ctx, session.WorkspaceID, session.ID)
+	}
 	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
 		// Best-effort asynchronous AI naming; failures keep the deterministic
 		// placeholder name and never block session dispatch.
 		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
 	}
 	if err := s.hub.DispatchAgentSession(session); err != nil {
-		session, _ = s.store.FailAgentSession(r.Context(), session.ID, "local daemon is not connected")
+		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
 		s.events.Publish("agent_session_completed", session)
-		writeJSON(w, http.StatusConflict, session)
-		return
+		return session, http.StatusConflict, ErrLocalDaemonNotConnected
 	}
-	idempotent.record(r.Context(), session)
-	writeJSON(w, http.StatusCreated, session)
+	return session, 0, nil
 }
 
 var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
@@ -1206,6 +1230,9 @@ func pickSessionAgent(agents []store.AgentProjection, input store.CreateAgentSes
 // to it, so a session token reaches exactly the devices of workspaces its
 // scope grants.
 func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAgentSessionInput) (int, error) {
+	if refusal := unservedWorkspace(ctx, s.store, input.WorkspaceID); refusal != nil {
+		return http.StatusConflict, refusal
+	}
 	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
 	if err != nil {
 		return 0, err
@@ -1237,12 +1264,15 @@ func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAg
 		return http.StatusBadRequest, errors.New("no agent is available for the selected runtime and profile")
 	}
 	if !s.hub.HasConnection(deviceID) {
-		return http.StatusConflict, errors.New("local daemon is not connected")
+		return http.StatusConflict, ErrLocalDaemonNotConnected
 	}
 	return 0, nil
 }
 
 func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
+	if refusal := unservedWorkspace(ctx, s.store, input.WorkspaceID); refusal != nil {
+		return store.AgentSession{}, refusal
+	}
 	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
 	if err != nil {
 		return store.AgentSession{}, err
@@ -1330,6 +1360,9 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 	}
 	message := strings.TrimSpace(input.Prompt)
 	if activeOrBlocked(session.Status) {
+		if input.RequireIdle {
+			return store.AgentSession{}, http.StatusConflict, store.ErrAgentSessionActive
+		}
 		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" {
 			return store.AgentSession{}, http.StatusConflict, errors.New("a running session keeps its runtime; switch it once it settles")
 		}
@@ -1348,6 +1381,9 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 		}
 		session, err = s.store.GetAgentSession(ctx, session.ID)
 		return session, 0, err
+	}
+	if refusal := unservedWorkspace(ctx, s.store, session.WorkspaceID); refusal != nil {
+		return store.AgentSession{}, http.StatusConflict, refusal
 	}
 	session, err = s.store.SendAgentSessionInput(ctx, session.ID, input)
 	if err != nil {
@@ -1589,7 +1625,7 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
-		if errors.Is(err, store.ErrAgentSessionActive) {
+		if errors.Is(err, store.ErrAgentSessionActive) || errors.Is(err, store.ErrSessionInputExists) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

@@ -52,6 +52,8 @@ const (
 	wsNativeCliInstalledType       = "native_cli_installed"
 	wsUpdateWorkerType             = "update_worker"
 	wsWorkerUpdateStartedType      = "worker_update_started"
+	wsReadWorkerUpdateStatusType   = "read_worker_update_status"
+	wsWorkerUpdateStatusType       = "worker_update_status"
 	wsInstallToolType              = "install_tool"
 	wsRunDiagnosticsType           = "run_diagnostics"
 	wsDiagnosticsReadyType         = "diagnostics_ready"
@@ -114,10 +116,13 @@ type DaemonHub struct {
 	skillScansMu        sync.Mutex
 	// onDeviceConnected runs once per daemon hello, until that socket closes.
 	onDeviceConnected func(ctx context.Context, deviceID string, capabilities []string)
-	connections       map[string]*daemonConnection
-	events            *browserEventHub
-	store             store.Store
-	secrets           secretKeeper
+	// onWorkerUpdateStatus receives an update failure a worker reports
+	// without being asked.
+	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
+	connections          map[string]*daemonConnection
+	events               *browserEventHub
+	store                store.Store
+	secrets              secretKeeper
 	// live tracks every upgraded socket, including ones that never sent
 	// hello and so never landed in connections. Shutdown needs all of them.
 	live         map[*daemonConnection]struct{}
@@ -1159,6 +1164,13 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		if c.sessionDispatched(session.ID, session.Input.ID) {
 			continue
 		}
+		// The device would refuse it; fail it with the reason instead.
+		if refusal := unservedWorkspace(context.Background(), c.hub.store, session.WorkspaceID); refusal != nil {
+			if failed, err := c.hub.store.FailAgentSession(context.Background(), session.ID, refusal.Error()); err == nil && c.hub.events != nil {
+				c.hub.events.Publish("agent_session_completed", failed)
+			}
+			continue
+		}
 		if err := c.dispatchAgentSession(session); err != nil {
 			c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 			return
@@ -1401,6 +1413,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err := c.hub.register(c, registration); err != nil {
 			return err
 		}
+		c.applyServedWorkspaces(registration)
 		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 		if c.hub.onDeviceConnected != nil {
 			go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
@@ -1429,6 +1442,13 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsNativeCliInstallResult](c, envelope, nil)
 	case wsWorkerUpdateStartedType:
 		return deliverDaemonResponse[wsWorkerUpdateStarted](c, envelope, nil)
+	case wsWorkerUpdateStatusType:
+		return deliverDaemonResponse(c, envelope, func(status wsWorkerUpdateStatus) error {
+			if deviceID, _ := c.registrationSnapshot(); deviceID != "" && c.hub.onWorkerUpdateStatus != nil {
+				c.hub.onWorkerUpdateStatus(deviceID, status)
+			}
+			return nil
+		})
 	case wsToolInstalledType:
 		return deliverDaemonResponse[wsToolInstalled](c, envelope, nil)
 	case wsRepositoryRefsReadType:

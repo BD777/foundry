@@ -99,3 +99,15 @@ export function toChatSendError(reason: unknown): Error {
   error.name = "ChatSendError";
   return error;
 }
+
+/**
+ * The session was already answering when a next-turn message arrived (a
+ * queued message went first): the message belongs in the queue.
+ */
+export function sessionStillActive(reason: unknown): boolean {
+  return (
+    hasStatus(reason) &&
+    reason.status === 409 &&
+    bodyIncludes(reason, /still active/i)
+  );
+}

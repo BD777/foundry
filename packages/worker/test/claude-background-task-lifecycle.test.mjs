@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -10,11 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  claudeWriteFiles,
   cleanupActiveClaudeRuntimes,
   emitForClaudeRuntime,
   handleActiveClaudeMessage,
   waitsForBackgroundWork,
 } from "../dist/runner.js";
+import { executionSessionsRoot } from "../dist/session-artifacts.js";
+import { readSessionFileLedger } from "../dist/session-files.js";
 import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
 import {
   activeClaudeRuntimes,
@@ -493,6 +497,81 @@ test("a message Claude takes into its own follow-up is answered by that follow-u
       "a follow-up without text before the input publishes nothing",
     );
   } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+test("Claude's follow-up after background work records its writes and links the files it names", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-chat-bg-"));
+  const workspace = join(directory, "workspace");
+  mkdirSync(join(workspace, "docs"), { recursive: true });
+  const outOfBand = [];
+  const sink = (sessionId, event) => outOfBand.push({ sessionId, ...event });
+  setOutOfBandSessionEventSink(sink);
+  try {
+    const { runtime } = chatFixture(directory);
+    runtime.workspacePath = workspace;
+    const turn = chatTurn(runtime, directory, "in_1");
+    await feed(
+      runtime,
+      ...backgroundStart,
+      assistant("Started it."),
+      result("Started it."),
+    );
+    assert.equal(turn.resolved.response, "Started it.");
+    assert.equal(runtime.pending, undefined);
+
+    // Between turns Claude writes one file with its tools; a background
+    // command wrote the other.
+    await feed(runtime, ...backgroundEnd, assistant("Writing the notes"));
+    const files = claudeWriteFiles(runtime);
+    assert.ok(files, "writes between turns are recorded");
+    await files.captureBeforeWrite({ path: join(workspace, "notes.txt") });
+    writeFileSync(join(workspace, "notes.txt"), "notes\n");
+    await files.recordToolWrite({
+      path: join(workspace, "notes.txt"),
+      op: "created",
+      agent: "main",
+    });
+    writeFileSync(join(workspace, "docs", "plan.md"), "# Plan\n");
+    const answer = "`notes.txt` and `docs/plan.md` are both done.";
+    await feed(runtime, assistant(answer), continuationResult(answer));
+
+    const continued = outOfBand.find(
+      (event) => event.label === "Background task continued",
+    );
+    assert.equal(continued.metadata.timerFire.response, answer);
+    assert.deepEqual(
+      continued.metadata.fileReferences.map(({ text, path }) => [text, path]),
+      [
+        ["notes.txt", join(workspace, "notes.txt")],
+        ["docs/plan.md", join(workspace, "docs", "plan.md")],
+      ],
+    );
+    const written = outOfBand.find(
+      (event) =>
+        event.metadata?.sessionFile?.path === join(workspace, "notes.txt") &&
+        event.metadata.sessionFile.origin === "tool",
+    );
+    assert.equal(written.sessionId, "sess_chat");
+    assert.equal(written.metadata.sessionFile.inputId, "in_1");
+    const ledger = readSessionFileLedger(
+      executionSessionsRoot(workspace),
+      "sess_chat",
+    );
+    const notes = ledger.find(
+      (entry) => entry.path === join(workspace, "notes.txt"),
+    );
+    assert.equal(notes.origin, "tool");
+    assert.deepEqual(notes.inputIds, ["in_1"]);
+    assert.equal(
+      ledger.find((entry) => entry.path === join(workspace, "docs", "plan.md"))
+        ?.origin,
+      "reference",
+    );
+    assert.equal(runtime.betweenTurnFiles, undefined);
+  } finally {
+    clearOutOfBandSessionEventSink(sink);
     rmSync(directory, { force: true, recursive: true });
   }
 });

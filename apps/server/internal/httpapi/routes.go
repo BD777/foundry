@@ -339,6 +339,15 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("POST /api/chats/{id}/recap-title", s.handleRecapChatTitle, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("GET /api/chats/{id}", s.handleGetChat, workspaceRole(viewer, chatWorkspace("id"))),
+		// A chat's queued messages. Changing them takes control of the chat:
+		// its starter or a maintainer (in handler).
+		fn("GET /api/chats/{id}/queue", s.handleGetChatQueue, workspaceRole(viewer, chatOrSessionWorkspace("id"))),
+		fn("POST /api/chats/{id}/queue", s.handleEnqueueChatMessage, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("PUT /api/chats/{id}/queue/order", s.handleReorderChatQueue, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("PATCH /api/chats/{id}/queue/{itemId}", s.handleEditChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("DELETE /api/chats/{id}/queue/{itemId}", s.handleDeleteChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("POST /api/chats/{id}/queue/{itemId}/steer", s.handleSteerChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
+		fn("POST /api/chats/{id}/queue/{itemId}/retry", s.handleRetryChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
 
 		fn("GET /api/issues", s.handleListIssues, workspaceRole(viewer, queryWorkspace())),
 		fn("POST /api/issues", s.handleCreateIssue, inHandler()),

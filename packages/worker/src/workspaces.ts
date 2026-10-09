@@ -133,6 +133,40 @@ export function upsertRegistry(entry: WorkspaceRegistryEntry): void {
   rememberWorkspace(entry);
 }
 
+/**
+ * Records a workspace a daemon was started with (`--workspace`) so a restart
+ * without the flag still serves it. Only an explicitly named folder is passed
+ * here, never the current one; a folder the person removed stays removed, and
+ * a folder that is not a Foundry workspace is left alone.
+ */
+export function recordExplicitWorkspace(workspacePath: string): boolean {
+  if (!workspacePath) return false;
+  const path = resolve(workspacePath);
+  if (readRegistry().some((entry) => resolve(entry.path) === path))
+    return false;
+  if (!existsSync(workspaceFilePath(path))) return false;
+  const workspace = readWorkspace(path);
+  if (
+    readForgottenWorkspaces().some(
+      (entry) =>
+        entry.id === workspace.id ||
+        (entry.path !== "" && resolve(entry.path) === path),
+    )
+  )
+    return false;
+  writeRegistry([
+    ...readRegistry().filter((entry) => entry.id !== workspace.id),
+    {
+      id: workspace.id,
+      name: workspace.name,
+      path: workspace.path,
+      baseline: workspace.baseline,
+      registeredAt: new Date().toISOString(),
+    },
+  ]);
+  return true;
+}
+
 export function writeIfMissing(
   path: string,
   contents: string,

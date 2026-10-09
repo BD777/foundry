@@ -4,7 +4,7 @@ import type {
   DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { prefetchFoundryWorkspace } from "../../api";
+import { createWorkspace, prefetchFoundryWorkspace } from "../../api";
 import { WorkspaceSelectionPanel } from "./workspace-selection-panel";
 
 export type WorkspacesFeatureEvent =
@@ -86,6 +86,14 @@ export function WorkspacesFeature(props: WorkspacesFeatureProps) {
       }
       onChanged={async () => {
         await props.onEvent({ type: "workspaces.changed" });
+      }}
+      onAddAgain={async (workspace, device) => {
+        // The add-folder flow, for the same path on the same device: the
+        // folder keeps its identity, so the workspace and its history return.
+        await createWorkspace({
+          deviceId: device.id,
+          path: workspace.localPath,
+        });
       }}
       onBrowse={() =>
         void props.onEvent({ type: "workspace.browse.requested" })

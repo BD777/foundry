@@ -79,6 +79,8 @@ export const daemonMessageTypes = {
   upsertAgentRuntimeSettings: "upsert_agent_runtime_settings",
   updateWorker: "update_worker",
   workerUpdateStarted: "worker_update_started",
+  readWorkerUpdateStatus: "read_worker_update_status",
+  workerUpdateStatus: "worker_update_status",
   installTool: "install_tool",
   toolInstalled: "tool_installed",
   readRepositoryRefs: "read_repository_refs",

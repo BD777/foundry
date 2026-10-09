@@ -215,6 +215,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             storageKeyPrefix={conversationStoragePrefixes.chat}
             onSend={props.onSend}
             onSteer={props.onSteer}
+            serverQueue={props.queue}
             onStop={props.onCancelActive}
             attachments={props.attachments}
             attachmentUploading={props.attachmentUploading}

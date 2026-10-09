@@ -12,6 +12,7 @@ import {
   updateConversation,
   whileSending,
 } from "./conversation-storage";
+import { useServerQueue } from "./use-server-queue";
 
 const draftWriteDelayMs = 400;
 let storagePruned = false;
@@ -30,6 +31,8 @@ export function useConversationInput(
 ) {
   const { threadKey, storageKeyPrefix, draftResetKey } = props;
   const storageKey = conversationStorageKey(storageKeyPrefix, threadKey);
+  // A server-kept queue (chats) replaces the browser's queue and dispatcher.
+  const serverMode = Boolean(props.serverQueue);
   const [tab] = useState(() => crypto.randomUUID());
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draftRef = useRef(drafts);
@@ -56,8 +59,19 @@ export function useConversationInput(
   const current = useRef(props);
   current.current = props;
   const previousReset = useRef(draftResetKey);
-  const queue = queues[threadKey] ?? [];
   const draft = drafts[threadKey] ?? storedDraft(threadKey);
+  const server = useServerQueue({
+    server: props.serverQueue,
+    threadKey,
+    storageKey,
+    holding: pending || Boolean(props.sending),
+    paused: Boolean(pausedQueues[threadKey]),
+    onFailure: (message, key) => report(new Error(message), key),
+    onKeepText: (text) => {
+      if (!(draftRef.current[threadKey] ?? "").trim()) updateDraft(text);
+    },
+  });
+  const queue = serverMode ? server.items : (queues[threadKey] ?? []);
   const runtime =
     props.composer.mode === "fixed"
       ? props.composer.runtime
@@ -81,7 +95,7 @@ export function useConversationInput(
   }
   function storedQueue(key: string): QueuedDraft[] | undefined {
     const stored = keyFor(key);
-    if (!stored || unsaved.current.has(key)) return undefined;
+    if (!stored || serverMode || unsaved.current.has(key)) return undefined;
     return readConversation(stored)?.queue;
   }
   function setQueue(key: string, list: QueuedDraft[]) {
@@ -131,7 +145,10 @@ export function useConversationInput(
   /** An accepted message moved the conversation to a new key; its input follows. */
   function moveThread(from: string, to: string) {
     flushDrafts();
-    const moving = storedQueue(from) ?? queuesRef.current[from] ?? [];
+    server.moveThread(from, to);
+    const moving = serverMode
+      ? []
+      : (storedQueue(from) ?? queuesRef.current[from] ?? []);
     if (moving.length) {
       mutateQueue(from, () => []);
       mutateQueue(to, (list) => [
@@ -168,7 +185,7 @@ export function useConversationInput(
   }, []);
   // Another tab changed a stored queue (enqueued, sent or removed a message).
   useEffect(() => {
-    if (!storageKeyPrefix) return;
+    if (!storageKeyPrefix || serverMode) return;
     const prefix = `${storageKeyPrefix}:`;
     const onStorage = (event: StorageEvent) => {
       if (event.key === null) {
@@ -180,7 +197,7 @@ export function useConversationInput(
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [storageKeyPrefix]);
+  }, [storageKeyPrefix, serverMode]);
   useEffect(() => {
     if (!(threadKey in queuesRef.current)) syncQueue(threadKey);
     if (!(threadKey in draftRef.current)) {
@@ -193,13 +210,13 @@ export function useConversationInput(
   }, [threadKey, storageKeyPrefix]);
   // One tab drains a stored queue; the others show it and take over on leaving.
   useEffect(() => {
-    if (!storageKey) {
-      setDispatcher(true);
+    if (!storageKey || serverMode) {
+      setDispatcher(!serverMode);
       return;
     }
     setDispatcher(false);
     return holdDispatchLock(storageKey, () => setDispatcher(true));
-  }, [storageKey]);
+  }, [storageKey, serverMode]);
   useEffect(() => {
     if (previousReset.current !== draftResetKey) updateDraft("");
     previousReset.current = draftResetKey;
@@ -227,7 +244,8 @@ export function useConversationInput(
   ]);
 
   function remove(id: string, key = threadKey) {
-    mutateQueue(key, (list) => list.filter((item) => item.id !== id));
+    if (serverMode) server.removeLocal(id, key);
+    else mutateQueue(key, (list) => list.filter((item) => item.id !== id));
   }
   function move(id: string, direction: "before" | "after", targetId: string) {
     mutateQueue(threadKey, (list) => {
@@ -303,7 +321,7 @@ export function useConversationInput(
     busy.current = true;
     setPending(true);
     try {
-      if (item && !(await claim(item, key, force))) return;
+      if (item && !serverMode && !(await claim(item, key, force))) return;
       setErrors((value) => ({ ...value, [key]: "" }));
       if (!item) updateDraft("", key);
       followLatest();
@@ -316,6 +334,23 @@ export function useConversationInput(
             )
           : await host.onSend(text);
         if (!outcome) throw new Error(i18n.t("conversation:errors.notSent"));
+        if (outcome === "queue") {
+          // A turn started meanwhile; the message waits for it to end.
+          if (!item) {
+            const queued: QueuedDraft = {
+              id: crypto.randomUUID(),
+              text: text.trim(),
+              attachments: [...(host.attachments ?? [])],
+            };
+            if (serverMode) server.add(queued, key);
+            else mutateQueue(key, (list) => [...list, queued]);
+            queued.attachments?.forEach((attachment) =>
+              host.onAttachmentRemove?.(attachment.id),
+            );
+          }
+          setPausedQueues((value) => ({ ...value, [key]: false }));
+          return;
+        }
         if (item) remove(item.id, key);
         const movedTo =
           typeof outcome === "object" && outcome.threadKey !== key
@@ -336,13 +371,16 @@ export function useConversationInput(
           }));
         setPausedQueues((value) => ({ ...value, [key]: false }));
       } catch (reason) {
-        if (item)
-          mutateQueue(key, (list) =>
-            list.map((entry) =>
-              entry.id === item.id ? withoutClaim(entry) : entry,
-            ),
-          );
-        else if (!draftRef.current[key]) updateDraft(text, key);
+        if (item) {
+          if (!serverMode)
+            mutateQueue(key, (list) =>
+              list.map((entry) =>
+                entry.id === item.id ? withoutClaim(entry) : entry,
+              ),
+            );
+        } else if (!draftRef.current[key]) updateDraft(text, key);
+        else if (serverMode)
+          server.add({ id: crypto.randomUUID(), text }, key, { first: true });
         else
           mutateQueue(key, (list) => [
             { id: crypto.randomUUID(), text },
@@ -383,7 +421,8 @@ export function useConversationInput(
         attachments: [...(host.attachments ?? [])],
         targetExecutionId: host.activeExecutionId,
       };
-      mutateQueue(host.threadKey, (list) => [...list, item]);
+      if (serverMode) server.add(item, host.threadKey);
+      else mutateQueue(host.threadKey, (list) => [...list, item]);
       updateDraft("", host.threadKey);
       item.attachments?.forEach((attachment) =>
         host.onAttachmentRemove?.(attachment.id),
@@ -393,6 +432,19 @@ export function useConversationInput(
   async function steer(item: QueuedDraft) {
     const host = current.current;
     if (!canSteer || busy.current || unavailable || !host.onSteer) return;
+    if (serverMode && !server.isLocal(item)) {
+      busy.current = true;
+      setPending(true);
+      setSteeringId(item.id);
+      try {
+        await server.steer(item);
+      } finally {
+        busy.current = false;
+        setPending(false);
+        setSteeringId(undefined);
+      }
+      return;
+    }
     if (
       item.targetExecutionId &&
       item.targetExecutionId !== host.activeExecutionId
@@ -442,6 +494,7 @@ export function useConversationInput(
   }
   useEffect(() => {
     if (
+      serverMode ||
       active ||
       unavailable ||
       !dispatcher ||
@@ -459,6 +512,7 @@ export function useConversationInput(
     pausedQueues,
     threadKey,
     props.onSend,
+    serverMode,
   ]);
 
   return {
@@ -476,13 +530,39 @@ export function useConversationInput(
     sendQueued: (item: QueuedDraft) => send(item, { force: true }),
     steer,
     stop,
-    remove: (id: string) => remove(id),
-    move,
+    remove(item: QueuedDraft) {
+      if (serverMode) void server.remove(item);
+      else remove(item.id);
+    },
+    move(id: string, direction: "before" | "after", targetId: string) {
+      if (serverMode) server.move(id, direction, targetId);
+      else move(id, direction, targetId);
+    },
+    /** A drag ended. */
+    commitOrder: () => void server.commitOrder(),
+    /** Moves a message one place up (-1) or down (1), e.g. from the keyboard. */
+    shift(item: QueuedDraft, offset: -1 | 1) {
+      if (serverMode) return void server.shift(item, offset);
+      const index = queue.findIndex((entry) => entry.id === item.id);
+      const target = queue[index + offset];
+      if (index < 0 || !target || target.state === "dispatching") return;
+      move(item.id, offset < 0 ? "before" : "after", target.id);
+    },
+    /** Server-kept messages are edited where they wait. */
+    inlineEdit: serverMode,
+    /** Text changes made where the message waits; false when refused. */
+    saveEdit: (item: QueuedDraft, text: string) => server.edit(item, text),
+    /** Moves a queued message back into the composer. */
     edit(item: QueuedDraft) {
       updateDraft(item.text);
       if (item.attachments?.length)
         props.onAttachmentsRestore?.(item.attachments);
       remove(item.id);
     },
+    retry: (item: QueuedDraft) => void server.retry(item),
+    isLocal: server.isLocal,
+    serverMode,
+    /** How the last change to a server-kept queue went, when it was refused. */
+    queueNotice: server.notice,
   };
 }
