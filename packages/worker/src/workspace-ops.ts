@@ -594,14 +594,27 @@ export function serverURLFromArgs(args: string[]): string {
 
 /**
  * The workspace a daemon starts with, or "" for a device that has none yet:
- * it connects anyway and gets its workspaces as the person adds them.
+ * it connects anyway and gets its workspaces as the person adds them. Only a
+ * workspace named on the command line or recorded for this daemon counts;
+ * the folder it happens to be started from never does.
  */
 export function daemonWorkspacePath(args: string[]): string {
-  try {
-    return workspacePathFromArgs(args);
-  } catch {
-    return "";
-  }
+  const path = optionValue(
+    args,
+    "--workspace",
+    readDaemonConfig()?.workspacePath,
+  );
+  return path ? resolve(path) : "";
+}
+
+/**
+ * The workspace setup or pairing registers: only one passed with
+ * `--workspace`. Installing from inside a folder that is a Foundry workspace
+ * (a Foundry checkout, say) must not make it the device's workspace.
+ */
+export function explicitWorkspacePath(args: string[]): string {
+  const path = optionValue(args, "--workspace");
+  return path ? resolve(path) : "";
 }
 
 export function workspacePathFromArgs(args: string[]): string {
