@@ -23,6 +23,48 @@ const wait = (ms) =>
 const stored = (threadKey) =>
   JSON.parse(localStorage.getItem(`${prefix}:${threadKey}`) ?? "null");
 
+/**
+ * Exclusive Web Locks as browsers provide them (request with an abort
+ * signal, query of held locks). Node gained `navigator.locks` only in v24;
+ * the tests must not depend on the Node version running them.
+ */
+function lockManager() {
+  const held = new Set();
+  const waiting = new Map();
+  const next = (name) => {
+    const queue = waiting.get(name);
+    const grant = queue?.shift();
+    if (grant) grant();
+  };
+  return {
+    async request(name, options, callback) {
+      if (typeof options === "function") [callback, options] = [options, {}];
+      if (held.has(name)) {
+        await new Promise((resolve, reject) => {
+          const grant = () => resolve();
+          const queue = waiting.get(name) ?? [];
+          queue.push(grant);
+          waiting.set(name, queue);
+          options?.signal?.addEventListener("abort", () => {
+            queue.splice(queue.indexOf(grant), 1);
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        });
+      }
+      held.add(name);
+      try {
+        return await callback({ name, mode: "exclusive" });
+      } finally {
+        held.delete(name);
+        next(name);
+      }
+    },
+    async query() {
+      return { held: [...held].map((name) => ({ name, mode: "exclusive" })) };
+    },
+  };
+}
+
 /** One browser: every mounted input ("tab") shares its storage and locks. */
 function browser(t) {
   const window = new Window();
@@ -32,6 +74,7 @@ function browser(t) {
     document: window.document,
     localStorage: window.localStorage,
     StorageEvent: window.StorageEvent,
+    navigator: { ...globalThis.navigator, locks: lockManager() },
     IS_REACT_ACT_ENVIRONMENT: true,
   })) {
     previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
