@@ -452,6 +452,8 @@ export async function syncNativeChats(
   const key = `${serverURL}\n${workspace.id}`;
   const uploaded = uploadedChats.get(key) ?? new Map<string, string>();
   uploadedChats.set(key, uploaded);
+  // A chat carries content only (its time is its last activity, never a
+  // label), so a chat nobody touched is never uploaded again.
   const fingerprint = (chat: ChatThread) =>
     createHash("sha256").update(JSON.stringify(chat)).digest("hex");
   const chats = historyIds
@@ -508,6 +510,12 @@ export const daemonCapabilities = [
   "issue_clarification",
   "worker_update",
   "background_skill_scan",
+  "tool_install",
+  "tool_sources",
+  "tool_registry",
+  "session_usage",
+  "diagnostics",
+  "skill_repository_fetch",
 ];
 
 export function daemonRegistration(workspacePath: string): {

@@ -37,6 +37,48 @@ func (s *Server) visibilityFor(ctx context.Context, actor Actor) (visibility, er
 	return visibility{scope: scope, workspaces: visible, devices: devices}, nil
 }
 
+// skillUsage names, for each catalog skill, the workspaces using it that the
+// caller can see; the catalog is shared, other accounts' workspaces are not.
+func (v visibility) skillUsage(skills []store.PromotedSkill) []store.PromotedSkill {
+	names := make(map[string]string, len(v.workspaces))
+	for _, workspace := range v.workspaces {
+		names[workspace.ID] = workspace.Name
+	}
+	result := make([]store.PromotedSkill, 0, len(skills))
+	for _, skill := range skills {
+		visible := []string{}
+		for _, id := range skill.UsedByWorkspaces {
+			if name, ok := names[id]; ok {
+				visible = append(visible, name)
+			}
+		}
+		skill.UsedByWorkspaces = visible
+		result = append(result, skill)
+	}
+	return result
+}
+
+// deviceSkillUsage applies skillUsage to the catalog entries a device skill
+// is compared with.
+//
+// It also drops each skill's file manifest: the server compares versions
+// itself, and sending every file's digest for every device made the
+// workspace projection ~700KB.
+func (v visibility) deviceSkillUsage(skills []store.DeviceSkill) []store.DeviceSkill {
+	for i := range skills {
+		skills[i].Manifest = nil
+		if len(skills[i].ServerCandidates) > 0 {
+			skills[i].ServerCandidates = v.skillUsage(skills[i].ServerCandidates)
+		}
+	}
+	return skills
+}
+
+// callerVisibility is visibilityFor the request's caller.
+func (s *Server) callerVisibility(r *http.Request) (visibility, error) {
+	return s.visibilityFor(r.Context(), actorFromContext(r.Context()))
+}
+
 func (v visibility) seesDevice(deviceID string) bool {
 	return v.scope.all || v.devices[deviceID]
 }

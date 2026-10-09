@@ -128,9 +128,11 @@ function WorkerStateBadge({
       {t(
         state === "updating"
           ? "worker.stateUpdating"
-          : state === "updatable"
-            ? "worker.stateUpdatable"
-            : "worker.stateManual",
+          : state === "stalled"
+            ? "worker.stateStalled"
+            : state === "updatable"
+              ? "worker.stateUpdatable"
+              : "worker.stateManual",
       )}
     </Badge>
   );

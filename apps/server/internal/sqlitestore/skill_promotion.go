@@ -27,7 +27,7 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 		pkg.Resolution = r
 		p := prepared{pkg: pkg, name: pkg.Source.Name}
 		switch r.Action {
-		case "update", "reuse":
+		case "update", "reuse", "keep":
 			target, err := s.GetPromotedSkill(ctx, r.TargetSkillID)
 			if err != nil {
 				return nil, err
@@ -39,6 +39,12 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 			}
 			if !strings.EqualFold(target.Name, pkg.Source.Name) && pkg.Source.PromotedSkillID != target.ID {
 				return nil, skillConflict("selected server skill has a different invocation name")
+			}
+			// Keep leaves the library entry as it is, whatever this device
+			// holds; nothing is published and the device folder stays unlinked.
+			if r.Action == "keep" {
+				ready = append(ready, p)
+				continue
 			}
 			if r.Action == "reuse" {
 				if target.SourceDigest == "" {
@@ -90,7 +96,7 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 			continue
 		}
 		digest := p.idx.SourceDigest
-		if r.Action == "reuse" {
+		if r.Action == "reuse" || r.Action == "keep" {
 			digest = p.target.SourceDigest
 		}
 		if previous, ok := intents[r.TargetSkillID]; ok && previous != digest {
@@ -118,7 +124,7 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 			source := p.pkg.Source
 			r := p.pkg.Resolution
 			var item store.PromotedSkill
-			if r.Action == "reuse" {
+			if r.Action == "reuse" || r.Action == "keep" {
 				var err error
 				item, err = tx.GetPromotedSkill(ctx, r.TargetSkillID)
 				if err != nil {
@@ -145,6 +151,10 @@ func (s *Store) PromoteSkillPackages(ctx context.Context, packages []store.Skill
 				return skillConflict("promotion contains conflicting invocation name %s", item.Name)
 			}
 			runtimeNames[strings.ToLower(item.Name)] = item.ID
+			if r.Action == "keep" {
+				result = append(result, item)
+				continue
+			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO skill_sources(device_id,root,dir_name,skill_id,source_digest,content_digest) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id,root,dir_name) DO UPDATE SET skill_id=excluded.skill_id,source_digest=excluded.source_digest,content_digest=excluded.content_digest`, source.DeviceID, source.Root, source.DirName, item.ID, source.SourceDigest, item.SourceDigest); err != nil {
 				return err
 			}

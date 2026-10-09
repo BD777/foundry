@@ -148,6 +148,7 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
         subagents[index] = {
           ...candidate,
           detail: event.detail.trim() || candidate.detail,
+          usage: event.metadata?.subagentUsage ?? candidate.usage,
         };
       }
       continue;
@@ -164,6 +165,7 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
         ...candidate,
         detail: event.detail.trim() || candidate.detail,
         status: failed ? "failed" : "completed",
+        usage: event.metadata?.subagentUsage ?? candidate.usage,
       };
     }
   }
@@ -194,6 +196,7 @@ function projectDiscoveredSubagents(
     status: summary.status,
     taskId: summary.taskId,
     toolUseId: summary.toolUseId,
+    usage: summary.usage,
     workspaceId: session.workspaceId,
   }));
 }
@@ -224,18 +227,51 @@ function mergeSubagents(
       detail: projected.detail ?? raw.detail,
       id: projected.id,
       status,
+      usage: raw.usage ?? projected.usage,
     });
   }
   return [...merged.values()];
 }
 
-function isOutputEvent(event: AgentSessionEvent): boolean {
+function isAbsolutePath(path: string): boolean {
   return (
-    event.level === "info" &&
-    (/\b(?:SDK|CLI|command) finished$/i.test(event.label.trim()) ||
-      Boolean(event.metadata?.outputFile)) &&
-    event.detail.trim() !== ""
+    path.startsWith("/") ||
+    path.startsWith("\\") ||
+    /^[A-Za-z]:[\\/]/.test(path)
   );
+}
+
+/**
+ * A file in the workspace the run created or changed, as the worker reports
+ * it (relative to the workspace). Files outside the workspace, such as Claude
+ * background-task logs, cannot be opened from here; their subagent shows
+ * them.
+ */
+function workspaceOutputFile(event: AgentSessionEvent): string | undefined {
+  const file = event.metadata?.outputFile?.trim();
+  return event.level === "info" &&
+    file &&
+    !isAbsolutePath(file) &&
+    extractWebURLs(file).length === 0
+    ? file
+    : undefined;
+}
+
+/** A preview a run reported, such as a dev server on localhost. */
+function previewOutputURL(event: AgentSessionEvent): string | undefined {
+  if (event.level !== "info") return undefined;
+  if (!/\b(?:SDK|CLI|command) finished$/i.test(event.label.trim()))
+    return undefined;
+  return extractWebURLs(event.detail).find(isWorkspacePreviewURL);
+}
+
+function isOutputEvent(event: AgentSessionEvent): boolean {
+  return Boolean(workspaceOutputFile(event) || previewOutputURL(event));
+}
+
+function folderOf(path: string): string | undefined {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
 }
 
 function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
@@ -348,23 +384,39 @@ export function chatContextCardForSessions(
 
   if (focusSession) {
     timers.push(...projectSessionTimers(focusSession));
-    for (const event of focusSession.events ?? []) {
-      if (isOutputEvent(event)) {
-        const target = (event.metadata?.outputFile || event.detail).trim();
-        const webURL = extractWebURLs(target)[0];
+    // Newest first; a file the reply names comes before the rest.
+    const reply = focusSession.response ?? "";
+    const files: ChatContextResourceItem[] = [];
+    for (const event of [...(focusSession.events ?? [])].reverse()) {
+      const file = workspaceOutputFile(event);
+      const preview = file ? undefined : previewOutputURL(event);
+      if (preview) {
         outputs.push({
-          detail: target,
+          detail: preview,
           id: event.id,
-          kind: webURL ? "web" : "file",
-          label: webURL
-            ? webResourceLabel(webURL)
-            : resourceLabel(target) ||
-              i18n.t("chat:contextCard.outputFallback"),
-          target: webURL ?? target,
+          kind: "web",
+          label: webResourceLabel(preview),
+          target: preview,
+          workspaceId: focusSession.workspaceId,
+        });
+      } else if (file && !files.some((item) => item.target === file)) {
+        files.push({
+          detail: folderOf(file),
+          id: event.id,
+          kind: "file",
+          label:
+            resourceLabel(file) || i18n.t("chat:contextCard.outputFallback"),
+          ...(reply.includes(file) ? { mentioned: true } : {}),
+          target: file,
           workspaceId: focusSession.workspaceId,
         });
       }
     }
+    outputs.push(
+      ...files
+        .filter((item) => item.mentioned)
+        .concat(files.filter((item) => !item.mentioned)),
+    );
     for (const [index, url] of extractWebURLs(focusSession.response ?? "")
       .filter(isWorkspacePreviewURL)
       .entries()) {
@@ -404,20 +456,13 @@ export function chatContextCardForSessions(
     });
   }
 
-  const dedupedOutputs = dedupeResources(outputs);
-  dedupedOutputs.sort((a, b) => {
-    const isResultA =
-      a.label === "result.md" || a.target.endsWith("/result.md");
-    const isResultB =
-      b.label === "result.md" || b.target.endsWith("/result.md");
-    if (isResultA !== isResultB) {
-      return isResultA ? 1 : -1;
-    }
-    return a.label.localeCompare(b.label);
-  });
-
+  const seenOutputs = new Set<string>();
   const data = {
-    outputs: dedupedOutputs,
+    outputs: outputs.filter((item) => {
+      if (seenOutputs.has(item.target)) return false;
+      seenOutputs.add(item.target);
+      return true;
+    }),
     sources: dedupeResources(sources),
     subagents,
     timers,

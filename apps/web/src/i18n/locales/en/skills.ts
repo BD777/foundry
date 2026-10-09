@@ -21,6 +21,7 @@ export const skills = {
     relatedToTitle: "Referenced by: {{names}}",
     relatedTo: "Related to {{name}}",
     more: " +{{count}}",
+    requires: "Runs {{tools}}",
   },
   dependencies: {
     summary: "{{required}} required · {{related}} possible references",
@@ -42,6 +43,7 @@ export const skills = {
     anotherDevice: "another device",
     promotedSkill: "promoted skill",
     promotedSubtitle: "From {{device}} · rev {{revision}} · {{root}}",
+    repositorySubtitle: "From {{repository}} · rev {{revision}} · {{dir}}",
   },
   selection: {
     thisSkill: "This skill",
@@ -72,9 +74,240 @@ export const skills = {
     addLocal: "Add to workspace",
     officialTitle: "Built into the agents",
     officialDescription:
-      "Skills Claude Code and Codex ship themselves. A session always has its own agent's skills, besides the ones selected below.",
+      "Skills each agent always has: the ones Claude Code and Codex ship, and the ones Foundry adds. A session has its own agent's, besides the ones selected below.",
+    officialFromFoundry: "Foundry built-in · from {{source}}",
+    shadowedByBuiltin:
+      "{{agent}} sessions use Foundry's built-in {{name}} instead",
+    versionFor: "Version of {{name}} this workspace runs",
+    followLatest: "Latest (rev {{revision}})",
+    pinnedAt: "Pinned to rev {{revision}}",
     officialCount_one: "{{count}} built-in skill · always on",
     officialCount_other: "{{count}} built-in skills · always on",
+    replacesOfficial: "Replaces {{agents}}'s own {{name}}",
+    fromDefaults: "On by default",
+    fromDefaultsOff: "Default, off here",
+    defaultSkillsHint:
+      'Skills marked "On by default" are the owner\'s defaults from the Skill library; uncheck one to turn it off in this workspace only.',
+    bundlesDescriptionWithDefaults:
+      'A bundle gives this workspace all of its skills, including ones later releases add. Bundles marked "On by default" are the owner\'s defaults; unchecking one turns it off in this workspace only.',
+    bundlesTitle: "Bundles",
+    bundlesDescription:
+      "A bundle gives this workspace all of its skills, including ones later releases add.",
+    useBundle: "Use {{name}} in this workspace",
+    viaBundle: "From {{name}}",
+    viaBundleTitle:
+      "This workspace gets the skill from the {{name}} bundle it uses",
+    missingTools: "{{device}} lacks {{tools}}",
+    missingToolsTitle:
+      "This skill runs {{tools}}, which the workspace's device did not find on its PATH at its last skill scan. Install it there; sessions are told it is missing.",
+    fromDefaultsTitle:
+      "Every workspace of the device's owner gets this from their defaults in the Skill library; unchecking it turns it off in this workspace only",
+  },
+  library: {
+    title: "Skill library",
+    description:
+      "Skills published to this server. Checked skills are your defaults: every workspace on your devices gets them, unless it selected another skill of the same name.",
+    emptyTitle: "No skills on the server yet",
+    emptyBody:
+      "Publish one from a device's Skills tab or add one from a workspace's Skills page.",
+    defaultCount_one: "{{count}} default",
+    defaultCount_other: "{{count}} defaults",
+    saveDefaults: "Save defaults",
+    filterDefault: "My defaults",
+    filterOther: "Not a default",
+    usedBy_one: "Used in {{count}} workspace",
+    usedBy_other: "Used in {{count}} workspaces",
+    missing: "Gone from its repository",
+    missingTitle:
+      "No longer in {{label}}. The library keeps its last version, and workspaces that use it keep it.",
+    bundle: {
+      badge: "Bundle",
+      branchVersion: "branch {{version}}",
+      defaultBranchVersion: "default branch @ {{version}}",
+      paused: "Updates paused",
+      from: "from {{label}}",
+      updatedTo: "Updated to {{tag}}",
+      rolledBackTo: "Rolled back to {{tag}}; automatic updates paused",
+      changed_one: "{{count}} changed",
+      changed_other: "{{count}} changed",
+      added_one: "{{count}} added",
+      added_other: "{{count}} added",
+      removed_one: "{{count}} removed",
+      removed_other: "{{count}} removed",
+      missing_one: "{{count}} gone from the repository",
+      missing_other: "{{count}} gone from the repository",
+      default: "Default for my workspaces (all its skills)",
+      defaultFor: "Default for my workspaces (all its skills): {{name}}",
+      commit: "commit {{commit}}",
+      working: "Working on the bundle…",
+      resume: "Resume updates",
+      rollback: "Roll back",
+      rollbackLabel: "Roll {{name}} back to an earlier version",
+      rollbackTo: "Roll back to {{tag}}",
+      toolState: {
+        current: "Installed",
+        older: "{{version}} installed — update to the bundle's version",
+        foreign: "Has its own {{name}}, not installed by Foundry",
+        missing: "Not installed",
+        offline: "Offline — install once it reconnects",
+        unsupported:
+          "Its worker is too old to install programs — update the worker first",
+      },
+      install: "Install",
+      update: "Update",
+      installing: "Installing…",
+      toolSummary_one:
+        "{{name}} {{version}} · installed on {{installed}} of {{count}} device",
+      toolSummary_other:
+        "{{name}} {{version}} · installed on {{installed}} of {{count}} devices",
+      toolOlder: "some have an older version",
+      manageInstalls: "Manage installs",
+      installsTitle: "{{name}} {{version}} on your devices",
+      installsDescription:
+        "Foundry installs this bundle's program from its GitHub release into its own folder on the device. Nothing installs unless you ask.",
+      installsDescriptionNpm:
+        "Foundry installs {{package}}@{{version}} from npm into its own folder on the device, without running the package's install scripts. Nothing installs unless you ask.",
+      installsDescriptionNpmRegistry:
+        "Foundry installs {{package}}@{{version}} from {{registry}} into its own folder on the device, without running the package's install scripts. Nothing installs unless you ask.",
+      installsDescriptionNpmDevice:
+        "Foundry installs {{package}}@{{version}} with each device's own npm settings (its registry and sign-in) into its own folder, without running the package's install scripts. Nothing installs unless you ask.",
+      signInHint:
+        "After installing, sign in once on each device: run {{command}} in a terminal there.",
+      installsDescriptionUv:
+        "Foundry installs {{package}} {{version}} from PyPI with the device's uv into its own folder; a device without uv is asked to install uv first. Nothing installs unless you ask.",
+      setupHint:
+        "Once installed, run its setup ({{command}}) on each device that uses it; it downloads what the program needs, such as a browser.",
+      runSetup: "Run setup",
+      settingUp: "Setting up…",
+      setupRunningNote: "Setting up — downloads can take a few minutes.",
+      setupDone: "Setup finished",
+      setupFinished: "Setup finished: {{output}}",
+      showSkills_one: "Show its {{count}} skill",
+      showSkills_other: "Show its {{count}} skills",
+    },
+    recommended: {
+      title: "Recommended",
+      description:
+        "Browser automation bundles: each brings its official agent skill and the CLI the skill runs, at matching versions. Install the CLI on each device from the bundle's card.",
+      by: "by {{author}}",
+      source: "npm package {{package}}",
+      sourceRepository: "skill from GitHub {{repository}}",
+      sourceUv: "CLI {{package}} from PyPI, installed with uv",
+      add: "Add",
+      addLabel: "Add {{name}} as a bundle",
+      adding: "Adding…",
+      addingNote: "Reading the package from npm…",
+      items: {
+        agentBrowser:
+          "Browser automation CLI for AI agents: open pages, click, fill forms and read snapshots from the command line.",
+        playwrightCli:
+          "Playwright's command-line browser automation for coding agents.",
+        browserUse:
+          "Browser control for AI agents: automate, scrape, test and screenshot sites through a Chrome it connects to.",
+      },
+    },
+    repo: {
+      title: "Repositories",
+      description:
+        "Follow a repository as a bundle to take all its skills, or pick only some. Either way its skills move to new releases by themselves, and you can roll back. Repositories are checked once a day.",
+      add: "Add repository",
+      empty:
+        "No repositories yet. Add one, such as anthropics/skills, to take skills from it.",
+      emptyMember: "No repositories yet. An admin can add one.",
+      defaultBranch: "the default branch",
+      skillCount_one: "{{count}} skill in the library",
+      skillCount_other: "{{count}} skills in the library",
+      checkedAt: "checked {{time}}",
+      addSkills: "Add skills",
+      check: "Check now",
+      checking: "Checking…",
+      remove: "Stop following",
+      addTitle: "Add a repository",
+      addDescription:
+        "A git repository (https, or ssh when a device reads it) or an npm package (npm:name). Foundry reads it and lists the folders that hold a SKILL.md; you choose which to add.",
+      url: "Repository",
+      urlPlaceholder: "anthropics/skills",
+      ref: "Branch or tag",
+      refPlaceholder: "Default branch",
+      subpath: "Folder",
+      subpathPlaceholder: "Whole repository",
+      find: "Find skills",
+      reading: "Reading the repository…",
+      chooseTitle: "Add skills from {{label}}",
+      chooseDescription:
+        "Check the license before adding. Added skills move to the repository's new releases by themselves; you can roll back.",
+      license: "license: {{license}}",
+      noLicense: "no license found",
+      inLibrary: "in the library",
+      addChosen_one: "Add {{count}} skill",
+      addChosen_other: "Add {{count}} skills",
+      latestRelease: "{{tag}} (latest release)",
+      modeLabel: "How to follow this repository",
+      modeBundle: "Whole repository as a bundle",
+      modePick: "Pick skills",
+      pickedBadge: "Picked skills",
+      pickedOf: "{{count}} of {{total}} added",
+      pickedCount_one: "{{count}} added",
+      pickedCount_other: "{{count}} added",
+      followWhole: "Follow the whole repository",
+      actionsFor: "Actions for {{label}}",
+      removeMenu: "Stop following…",
+      removeTitle: "Stop following {{label}}?",
+      removePickedNote:
+        "Its skills stay in the library at the revisions they have, and in the workspaces that use them. They no longer move to new releases, and they can no longer be rolled back.",
+      removeBundleNote:
+        "Its skills stay in the library at their current version, and in the workspaces that use them. They no longer move to new releases, and the bundle can no longer be rolled back.",
+      loading: "Loading repositories…",
+      pickInstead: "Pick skills instead",
+      workingNote: "Working on the repository; this can take a minute.",
+      updatesItself: "updates automatically",
+      missing_one:
+        "{{names}} is no longer in the repository; the library keeps its last version.",
+      missing_other:
+        "{{names}} are no longer in the repository; the library keeps their last versions.",
+      showPicked_one: "Show its {{count}} picked skill",
+      showPicked_other: "Show its {{count}} picked skills",
+      followAsBundle: "Follow as a bundle",
+      converting: "Following as a bundle…",
+      selectAll: "Select all",
+      clearAll: "Clear",
+      selectedOf: "{{count}} of {{total}} selected",
+      bundleNote_one:
+        "Adds its {{count}} skill as one bundle at {{version}}. New releases are applied automatically, all skills together; you can roll back.",
+      bundleNote_other:
+        "Adds all {{count}} skills as one bundle at {{version}}. New releases are applied automatically, all skills together; you can roll back.",
+      pickNote:
+        "Adds only the skills you check, at {{version}}. Each moves to new releases by itself when its content changes; you can roll back.",
+      bundleSuggested:
+        "These skills look like one set; a bundle keeps them in step.",
+      addBundle_one: "Add bundle ({{count}} skill)",
+      addBundle_other: "Add bundle ({{count}} skills)",
+      readWith: "Read with",
+      readWithServer: "Foundry server",
+      readWithServerDetail:
+        "For public repositories and packages the server can reach.",
+      readWithDeviceDetail:
+        "Reads it with this device's own git and npm settings and sign-ins; they never leave the device.",
+      readWithOffline: "Offline — connect it to read with it",
+      readWithOutdated:
+        "Its worker is too old to read repositories — update the worker first",
+      readWithOthers: "Another person's device",
+      readingOnDevice: "{{device}} is reading the repository…",
+      registry: "npm registry",
+      registryPlaceholderServer: "registry.npmjs.org",
+      registryPlaceholderDevice: "The device's own npm settings",
+      serverUnreachableHint:
+        "If it is on a private network, choose one of your devices under “Read with”: the device reads it with its own settings and sign-ins.",
+      readBy: "read by {{device}}",
+      readByOffline: "read by {{device}} (offline)",
+      waitingForDevice:
+        "Waiting for {{device}} to come online to check for updates",
+      changeSource: "Change how it's read…",
+      sourceTitle: "How {{label}} is read",
+      sourceDescription:
+        "The Foundry server reads public sources. A repository or npm registry only your device can reach is read by that device, with its own settings and sign-ins. Foundry checks it there right away.",
+      saveSource: "Save and check",
+    },
   },
   device: {
     serverFilter: {
@@ -121,26 +354,44 @@ export const skills = {
   },
   resolution: {
     refreshFirst: "Refresh server status before publishing.",
-    chooseSameName: "Choose how to resolve {{name}}'s same-name server entry.",
+    chooseSameName:
+      "The library already has a different {{name}}: choose which version to keep.",
     invalidName:
       "Enter a distinct invocation name (lowercase letters, numbers and hyphens).",
     forkSameName: "A fork must use a distinct invocation name.",
   },
   versionChoice: {
     anotherDevice: "Another device",
-    reuse: "Reuse {{name}} · rev {{revision}}",
-    update: "Update {{name}} · rev {{revision}}",
-    create: "Create server entry",
-    fork: "Publish with a new invocation name",
-    forkMeta: "Existing workspace selections stay unchanged",
-    publishedAs: " · Published as {{name}}",
-    actionLabel: "Publication action for {{name}}",
-    placeholder: "Choose a server entry or a new name",
-    newNameLabel: "New invocation name for {{name}}",
-    compareRevision: "Compare with rev {{revision}}",
-    compareCandidates: "Compare server candidates",
-    updatesSessions:
-      "Updates future sessions in: {{workspaces}}. Active sessions retain their original revision.",
+    newSkill: "New to the library: it is added as a new skill.",
+    existing:
+      "Already in the library as {{name}} · rev {{revision}}; nothing new to publish.",
+    conflict:
+      "The library already has a different {{name}}. Choose which version to keep.",
+    entryLabel: "Library entry to compare {{name}} with",
+    entry: "{{name}} · rev {{revision}}",
+    inLibrary: "In the library",
+    onDevice: "On this device",
+    version: "Version",
+    revision: "rev {{revision}}",
+    updated: "Updated",
+    from: "From",
+    usedBy: "Used by",
+    notUsed: "No workspace yet",
+    folder: "Folder",
+    modified: "Modified",
+    compareFiles: "Compare files",
+    actionLabel: "Which version of {{name}} the library keeps",
+    useDevice: "Use this device's version",
+    keepLibrary: "Keep the library version",
+    useDeviceResult:
+      "Publishes it as rev {{revision}}. Workspaces following the latest get it; pinned ones keep theirs.",
+    keepLibraryResult:
+      "Nothing is published; the library keeps rev {{revision}}.",
+    chooseVersion: "Choose a version to publish.",
+    anotherName: "Add under another name instead",
+    useOriginalName: "Use the name {{name}}",
+    backToVersions: "Choose between the two versions instead",
+    newNameLabel: "New name for {{name}}",
   },
   compare: {
     title: "Compare {{name}}",
@@ -169,8 +420,8 @@ export const skills = {
     downloadLocal: "Download local ZIP",
   },
   promotion: {
-    title: "Promote {{name}}",
-    body: "Required dependencies from the last device scan are included, including dependencies of dependencies. Workspace selection remains separate.",
+    title: "Publish {{name}} to the skill library",
+    body: "Skills it depends on (found at the device's last scan) are published with it. Publishing does not add it to any workspace.",
     graphChanged:
       "The saved graph has changed. Close this preview and reopen it to review the updated skills.",
     toPublish_one: "{{count}} skill to publish",
@@ -184,8 +435,8 @@ export const skills = {
     alreadyInSync: "Already in sync",
     publish_one: "Publish {{count}} skill",
     publish_other: "Publish {{count}} skills",
-    reuse_one: "Reuse {{count}} skill",
-    reuse_other: "Reuse {{count}} skills",
+    reuse_one: "Use the library version",
+    reuse_other: "Use the {{count}} library versions",
   },
   plan: {
     sourceMissing: "Skill source is missing. Run Scan now to update the graph.",

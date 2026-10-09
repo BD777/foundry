@@ -404,6 +404,16 @@
   gap: 10px;
 }
 
+.fdy-chat-context-count {
+  margin-left: 6px;
+  color: var(--fdy-ink-faint);
+  font-weight: 500;
+}
+
+.fdy-chat-context-more {
+  margin-top: 8px;
+}
+
 .fdy-chat-context-row {
   display: flex;
   width: 100%;
@@ -633,7 +643,7 @@
   margin-bottom: 8px;
 }
 
-.fdy-chat-timer-fire .fdy-chat-markdown,
+.fdy-chat-timer-fire-response,
 .fdy-chat-timer-fire p {
   font-size: 12.5px;
   line-height: 1.6;
@@ -1748,10 +1758,14 @@
   font-size: 11px;
 }
 
-.fdy-chat-message-time {
+.fdy-chat-message-stamp {
   position: absolute;
   top: calc(100% + 2px);
   left: 25px;
+  display: inline-flex;
+  max-width: calc(100% - 25px);
+  align-items: center;
+  gap: 0 2px;
   color: var(--fdy-ink-faint);
   font-size: 11px;
   line-height: 28px;
@@ -1760,23 +1774,82 @@
   transition: opacity 0.14s ease;
 }
 
-.fdy-chat-message-card:hover .fdy-chat-message-time,
-.fdy-chat-message-card:focus-within .fdy-chat-message-time,
-.fdy-chat-message-card[data-copy-always="true"] .fdy-chat-message-time {
+.fdy-chat-message-card:hover .fdy-chat-message-stamp,
+.fdy-chat-message-card:focus-within .fdy-chat-message-stamp,
+.fdy-chat-message-card[data-copy-always="true"] .fdy-chat-message-stamp {
   opacity: 1;
 }
 
-.fdy-chat-message-card[data-role="user"] .fdy-chat-message-time {
+.fdy-chat-message-card[data-role="user"] .fdy-chat-message-stamp {
   right: 56px;
   left: auto;
 }
 
-.fdy-chat-message-card[data-copy-always="true"] .fdy-chat-message-time {
+/* In flow, the stamp may take a second line; hovering, it would overlap. */
+.fdy-chat-message-card[data-copy-always="true"] .fdy-chat-message-stamp {
   position: static;
-  display: inline-block;
+  display: inline-flex;
+  flex-wrap: wrap;
   margin-top: 6px;
   margin-left: 4px;
   vertical-align: top;
+}
+
+/* The usage summary reads as part of the time line until it is pointed at. */
+.fdy-turn-usage-trigger {
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-turn-usage-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fdy-turn-usage-trigger:hover,
+.fdy-turn-usage-trigger[data-state="open"] {
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-turn-usage-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+
+.fdy-turn-usage-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.fdy-turn-usage-list > div[data-part="true"] {
+  padding-left: 12px;
+  color: var(--fdy-dark-muted);
+  font-weight: 500;
+}
+
+.fdy-turn-usage-list dt,
+.fdy-turn-usage-list dd {
+  margin: 0;
+}
+
+.fdy-turn-usage-list dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.fdy-turn-usage-note {
+  max-width: 240px;
+  margin: 8px 0 0;
+  font-weight: 500;
+  white-space: normal;
 }
 
 .fdy-chat-edit-button {
@@ -1904,6 +1977,14 @@
   color: var(--fdy-ink-muted);
   font-style: normal;
   font-weight: 650;
+}
+
+.fdy-chat-process-trigger-meta {
+  flex: 0 0 auto;
+  color: var(--fdy-ink-faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .fdy-chat-process-trigger-detail {
@@ -2184,7 +2265,19 @@
   color: var(--fdy-success-text);
 }
 
+/*
+ * Vertical rhythm follows GitHub's markdown CSS (tight `li + li`, nested lists
+ * flush) on a four-step scale, with Gestalt proximity: a lead-in paragraph
+ * sits close to the list it introduces, unrelated blocks keep the full gap.
+ * Every gap is a margin-top on the later block ("flow"). Top-level blocks get
+ * theirs from Streamdown's stack, which reads --fdy-markdown-flow-space.
+ */
 .fdy-markdown {
+  --fdy-markdown-space-item: 0.25em;
+  --fdy-markdown-space-related: 0.5em;
+  --fdy-markdown-space-block: 1em;
+  --fdy-markdown-space-section: 1.5em;
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-block);
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -2201,30 +2294,80 @@
 .fdy-markdown p,
 .fdy-markdown ul,
 .fdy-markdown ol,
+.fdy-markdown li,
 .fdy-markdown blockquote,
 .fdy-markdown pre,
 .fdy-markdown table {
-  margin: 0 0 10px;
+  margin: 0;
+}
+
+.fdy-markdown p + :is(ul, ol) {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown :is(h1, h2, h3, h4, hr) {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-section);
+}
+
+.fdy-markdown :is(h1, h2, h3, h4) + * {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown hr + * {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-section);
 }
 
 .fdy-markdown ul,
 .fdy-markdown ol {
-  padding-left: 20px;
+  padding-left: 2em;
 }
 
-.fdy-markdown li {
-  margin: 3px 0;
+.fdy-markdown ul {
+  list-style-type: disc;
 }
 
-.fdy-markdown li > p {
-  margin: 3px 0;
+.fdy-markdown ol {
+  list-style-type: decimal;
+}
+
+.fdy-markdown :is(ul, ol) ul {
+  list-style-type: circle;
+}
+
+.fdy-markdown :is(ul, ol) ol {
+  list-style-type: lower-roman;
+}
+
+/* GFM task items (GitHub's CSS): the checkbox takes the bullet's place. */
+.fdy-markdown .task-list-item {
+  list-style-type: none;
+}
+
+.fdy-markdown .task-list-item input[type="checkbox"] {
+  margin: 0 0.2em 0.25em -1.4em;
+  vertical-align: middle;
+}
+
+.fdy-markdown li + li,
+.fdy-markdown li > :is(ul, ol) {
+  margin-top: var(--fdy-markdown-space-item);
+}
+
+/* Loose lists (items wrapped in paragraphs) breathe a step more, no further. */
+.fdy-markdown :is(ul, ol):has(> li > p) > li + li,
+.fdy-markdown li > :is(p, pre, blockquote, table, div):not(:first-child) {
+  margin-top: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown blockquote > :not(:first-child) {
+  margin-top: var(--fdy-markdown-space-block);
 }
 
 .fdy-markdown h1,
 .fdy-markdown h2,
 .fdy-markdown h3,
 .fdy-markdown h4 {
-  margin: 16px 0 8px;
+  margin: 0;
   color: var(--fdy-ink-strong);
   font-weight: 750;
   letter-spacing: 0;
@@ -2457,7 +2600,7 @@
   position: relative;
   display: block;
   width: 100%;
-  margin: 10px 0 12px;
+  margin: 0;
   padding: 0;
   gap: 0;
   border: 0;

@@ -268,6 +268,9 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/workspaces/{id}/members/{userId}", s.handleRemoveWorkspaceMember, inHandler()),
 		fn("GET /api/workspaces/{id}/skills", s.handleListWorkspaceSkills, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/skills", s.handleSetWorkspaceSkills, workspaceRole(maintainer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/skills/{skillId}/pin", s.handleSetWorkspaceSkillPin, workspaceRole(maintainer, pathWorkspace("id"))),
+		fn("GET /api/me/default-skills", s.handleListMyDefaultSkills, signedIn()),
+		fn("PUT /api/me/default-skills", s.handleSetMyDefaultSkills, signedIn()),
 		fn("GET /api/workspaces/{id}/inspection", s.handleWorkspaceInspection, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/inspection/rescan", s.handleWorkspaceInspection, workspaceRole(member, pathWorkspace("id"))),
 
@@ -311,6 +314,21 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/skills/compare-file", s.handleSkillCompareFile, inHandler()),
 		fn("POST /api/skills/compare-package", s.handleSkillComparePackage, inHandler()),
 		fn("DELETE /api/skills/catalog/{id}", s.handleDeletePromotedSkill, adminOnly()),
+		fn("GET /api/skill-repositories", s.handleListSkillRepositories, signedIn()),
+		fn("GET /api/skill-repositories/preview", s.handlePreviewSkillRepository, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/rollback", s.handleRollbackSkillBundle, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/resume", s.handleResumeSkillBundle, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/mode", s.handleSetSkillRepositoryMode, adminOnly()),
+		fn("PUT /api/workspaces/{id}/skill-bundles", s.handleSetWorkspaceSkillBundles, workspaceRole(maintainer, pathWorkspace("id"))),
+		fn("POST /api/devices/{deviceId}/tools/install", s.handleInstallDeviceTool, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/diagnostics", s.handleRunDeviceDiagnostics, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/repairs", s.handleRunDeviceRepair, deviceOwner("deviceId")),
+		fn("POST /api/skill-repositories", s.handleAddSkillRepository, adminOnly()),
+		fn("GET /api/skill-repositories/{id}/skills", s.handleListRepositorySkills, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/import", s.handleImportRepositorySkills, adminOnly()),
+		fn("POST /api/skill-repositories/{id}/check", s.handleCheckSkillRepository, adminOnly()),
+		fn("DELETE /api/skill-repositories/{id}", s.handleDeleteSkillRepository, adminOnly()),
+		fn("PUT /api/skill-repositories/{id}/source", s.handleSetSkillRepositorySource, adminOnly()),
 		fn("GET /api/skills/catalog/{id}/revisions/{revision}/package", s.handleSkillPackage, signedIn()),
 
 		fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace())),
@@ -354,6 +372,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-session-threads/{id}", s.handleGetAgentSessionThread, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}", s.handleGetAgentSession, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/subagents", s.handleListAgentSubagents, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/conversation", s.handleGetAgentSessionConversation, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions", s.handleCreateAgentSession, inHandler()),
 		// Members control their own sessions; maintainers anyone's (in handler).
@@ -368,6 +387,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
+		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}
 	if s.options.EnableDevReset {

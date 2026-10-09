@@ -6,18 +6,66 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"path"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/builtinskills"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// builtinSkillProjections lists Foundry's built-in skills for the web app.
+func builtinSkillProjections() []store.BuiltinSkill {
+	all := builtinskills.All()
+	out := make([]store.BuiltinSkill, 0, len(all))
+	for _, skill := range all {
+		out = append(out, store.BuiltinSkill{
+			Runtime:     skill.Runtime,
+			Name:        skill.Name,
+			Description: skill.Description,
+			Source:      skill.Source,
+		})
+	}
+	return out
+}
+
+// withBuiltinSkills adds the built-in skills of a session's agent to its
+// workspace selection. A selected skill of the same name gives way: one
+// invocation name must mean one skill.
+func withBuiltinSkills(refs []store.SessionSkillRef, runtime string) []store.SessionSkillRef {
+	builtins := builtinskills.ForRuntime(runtime)
+	if len(builtins) == 0 {
+		return refs
+	}
+	names := map[string]bool{}
+	out := make([]store.SessionSkillRef, 0, len(refs)+len(builtins))
+	for _, skill := range builtins {
+		names[strings.ToLower(skill.Name)] = true
+		out = append(out, store.SessionSkillRef{
+			SkillID:  skill.ID,
+			Revision: skill.Revision,
+			Name:     skill.Name,
+			Checksum: skill.Checksum,
+			ByteSize: int64(len(skill.Package)),
+		})
+	}
+	for _, ref := range refs {
+		if !names[strings.ToLower(ref.Name)] {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
 
 // wsScanSkillsPayload is the server -> daemon scan request. The explicit
 // root list is authoritative; the daemon never persists scan configuration.
 type wsScanSkillsPayload struct {
 	Roots []string `json:"roots"`
+	// Tools are programs library skills need; the daemon says which it has.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // wsSkillsScannedPayload is the daemon's scan result. Device id is stamped by
@@ -25,6 +73,52 @@ type wsScanSkillsPayload struct {
 type wsSkillsScannedPayload struct {
 	Skills []store.DeviceSkill `json:"skills"`
 	Error  string              `json:"error,omitempty"`
+	// Tools answers the request's tools; older daemons leave it out.
+	Tools map[string]bool `json:"tools,omitempty"`
+	// ToolVersions are the tool versions Foundry installed on the device.
+	ToolVersions map[string]string `json:"toolVersions,omitempty"`
+}
+
+// deviceToolStore records which programs skills need a device has.
+type deviceToolStore interface {
+	ReplaceDeviceTools(ctx context.Context, deviceID string, tools map[string]bool, versions map[string]string) error
+	SetDeviceToolVersion(ctx context.Context, deviceID, tool, version string) error
+	ListDeviceTools(ctx context.Context, deviceID string) ([]store.DeviceTool, error)
+}
+
+// maxCheckedTools bounds how many program names one scan asks about.
+const maxCheckedTools = 200
+
+// libraryTools is every program some library skill or bundle needs.
+func libraryTools(ctx context.Context, db store.Store) []string {
+	skills, err := db.ListPromotedSkills(ctx)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var tools []string
+	for _, skill := range skills {
+		for _, tool := range skill.Requires {
+			if !seen[tool] && len(tools) < maxCheckedTools {
+				seen[tool] = true
+				tools = append(tools, tool)
+			}
+		}
+	}
+	if repos, ok := db.(skillRepositoryStore); ok {
+		if items, err := repos.ListSkillRepositories(ctx); err == nil {
+			for _, repo := range items {
+				for _, tool := range repo.Tools {
+					if !seen[tool.Name] && len(tools) < maxCheckedTools {
+						seen[tool.Name] = true
+						tools = append(tools, tool.Name)
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(tools)
+	return tools
 }
 
 // wsReadSkillContentPayload requests one skill directory as a zip.
@@ -95,7 +189,7 @@ func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots
 	if connection == nil {
 		return nil, store.ErrNotFound
 	}
-	request, err := json.Marshal(wsScanSkillsPayload{Roots: roots})
+	request, err := json.Marshal(wsScanSkillsPayload{Roots: roots, Tools: libraryTools(ctx, h.store)})
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +209,11 @@ func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots
 		Skills:   skills,
 	}); err != nil {
 		return nil, err
+	}
+	if tools, ok := h.store.(deviceToolStore); ok && value.Tools != nil {
+		if err := tools.ReplaceDeviceTools(ctx, deviceID, value.Tools, value.ToolVersions); err != nil {
+			return nil, err
+		}
 	}
 	return h.store.ListDeviceSkills(ctx, deviceID)
 }
@@ -172,15 +271,33 @@ func (s *Server) scanPaths(ctx context.Context, deviceID string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	if len(custom) == 0 {
-		return append([]string(nil), defaultSkillRoots...), nil
+	paths := append([]string(nil), defaultSkillRoots...)
+	if len(custom) > 0 {
+		paths = paths[:0]
+		for _, root := range custom {
+			paths = append(paths, root.Path)
+		}
 	}
-	paths := make([]string, 0, len(custom))
-	for _, root := range custom {
-		paths = append(paths, root.Path)
+	// A workspace's own skill folders are a source too: a skill created or
+	// changed there (say by an agent using skill-creator) is a draft that can
+	// be published to the library. Sessions never see these folders directly.
+	workspaces, err := s.store.ListWorkspaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, workspace := range workspaces {
+		if workspace.DeviceID != deviceID || workspace.LocalPath == "" {
+			continue
+		}
+		for _, dir := range workspaceSkillDirs {
+			paths = append(paths, path.Join(workspace.LocalPath, dir))
+		}
 	}
 	return paths, nil
 }
+
+// workspaceSkillDirs are the skill folders agents read inside a project.
+var workspaceSkillDirs = []string{".agents/skills", ".claude/skills", ".codex/skills"}
 
 func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) {
 	deviceID := strings.TrimSpace(r.URL.Query().Get("deviceId"))
@@ -201,7 +318,8 @@ func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	writeResult(w, map[string]any{"roots": roots, "skills": skills}, nil)
+	view, err := s.callerVisibility(r)
+	writeResult(w, map[string]any{"roots": roots, "skills": view.deviceSkillUsage(skills)}, err)
 }
 
 // deviceSkillRescanInterval is how often a connected device's skill folders
@@ -265,7 +383,8 @@ func (s *Server) handleScanDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.invalidateProjections()
-	writeResult(w, skills, nil)
+	view, err := s.callerVisibility(r)
+	writeResult(w, view.deviceSkillUsage(skills), err)
 }
 
 func (s *Server) handleSetDeviceSkillRoots(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +429,12 @@ func (s *Server) handlePromoteSkill(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListPromotedSkills(w http.ResponseWriter, r *http.Request) {
 	items, err := s.store.ListPromotedSkills(r.Context())
-	writeResult(w, items, err)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	view, err := s.callerVisibility(r)
+	writeResult(w, view.skillUsage(items), err)
 }
 
 func (s *Server) handleDeletePromotedSkill(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +464,19 @@ func (s *Server) handleSkillPackage(w http.ResponseWriter, r *http.Request) {
 		}
 		revision = parsed
 	}
+	// Foundry's own built-in skills are served from the server binary.
+	if builtin, ok := builtinskills.Lookup(skillID); ok {
+		if revision != 0 && revision != builtin.Revision {
+			writeError(w, http.StatusNotFound, "skill package not found")
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("X-Foundry-Skill-Checksum", builtin.Checksum)
+		w.Header().Set("X-Foundry-Skill-Revision", strconv.Itoa(builtin.Revision))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(builtin.Package)
+		return
+	}
 	pkg, err := s.store.GetSkillPackage(r.Context(), skillID, revision)
 	if err != nil {
 		if errors.Is(err, store.ErrSkillPackageNotFound) || errors.Is(err, store.ErrSkillNotFound) {
@@ -361,10 +498,10 @@ func (s *Server) handleSetWorkspaceSkills(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.WorkspaceID) == "" {
-		input.WorkspaceID = strings.TrimSpace(r.PathValue("id"))
-	}
-	if strings.TrimSpace(input.WorkspaceID) == "" {
+	// The workspace is the one the route authorized, never one named in the
+	// body: the access check covers only the path's workspace.
+	input.WorkspaceID = strings.TrimSpace(r.PathValue("id"))
+	if input.WorkspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspaceId is required")
 		return
 	}
@@ -379,6 +516,40 @@ func (s *Server) handleSetWorkspaceSkills(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeResult(w, bindings, nil)
+}
+
+// skillPinner is the store capability behind pinning a workspace's skill.
+type skillPinner interface {
+	SetWorkspaceSkillPin(ctx context.Context, workspaceID string, skillID string, revision int) error
+}
+
+// handleSetWorkspaceSkillPin holds a selected skill at one revision for the
+// workspace, or with revision 0 lets it follow the latest again.
+func (s *Server) handleSetWorkspaceSkillPin(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Revision int `json:"revision"`
+	}
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	pinner, ok := s.store.(skillPinner)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "pinning skills is not supported by this store")
+		return
+	}
+	workspaceID := strings.TrimSpace(r.PathValue("id"))
+	err := pinner.SetWorkspaceSkillPin(r.Context(), workspaceID, strings.TrimSpace(r.PathValue("skillId")), input.Revision)
+	if errors.Is(err, store.ErrSkillNotFound) || errors.Is(err, store.ErrSkillPackageNotFound) {
+		writeError(w, http.StatusNotFound, "the workspace has no such skill or revision")
+		return
+	}
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	s.invalidateProjections()
+	bindings, err := s.store.ListWorkspaceSkillBindings(r.Context(), workspaceID)
+	writeResult(w, bindings, err)
 }
 
 func (s *Server) handleListWorkspaceSkills(w http.ResponseWriter, r *http.Request) {

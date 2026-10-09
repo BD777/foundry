@@ -41,8 +41,8 @@ test("a keyless server codex profile never inherits the daemon's credentials", (
     // The endpoint and its non-credential configuration still go through.
     assert.equal(env.OPENAI_BASE_URL, "http://gateway.internal/v1");
     assert.equal(env.CODEX_BASE_URL, "http://gateway.internal/v1");
-    // Unrelated inherited environment (PATH) is untouched.
-    assert.equal(env.PATH, process.env.PATH);
+    // Inherited PATH is kept; only Foundry's tools folder goes in front.
+    assert.ok(env.PATH.endsWith(`:${process.env.PATH}`));
   });
 });
 

@@ -2,18 +2,54 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentSession } from "@bd777/foundry-protocol";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
 import { writePrivateTextAtomic } from "./storage.js";
 import { withCodexControl } from "./native-inspection.js";
+import { hasProgram, skillToolRequirements } from "./skill-requirements.js";
+import { withManagedTools } from "./managed-tools.js";
+
+/**
+ * Names the programs the session's skills run that this device lacks, so the
+ * agent tells the person rather than working around a missing tool.
+ */
+function missingProgramsNote(managed: ManagedSkillRuntime): string[] {
+  const missing = managed.skills.flatMap((skill) => {
+    let tools: string[];
+    try {
+      tools = skillToolRequirements(skill.dir);
+    } catch {
+      return [];
+    }
+    const env = { ...process.env, PATH: withManagedTools(process.env.PATH) };
+    const absent = tools.filter((tool) => !hasProgram(tool, env));
+    return absent.length ? [`${skill.name} needs ${absent.join(", ")}`] : [];
+  });
+  return missing.length
+    ? [
+        `Programs these skills run are missing on this device: ${missing.join("; ")}. When a task needs one, tell the person it must be installed on this device instead of working around it.`,
+      ]
+    : [];
+}
+
+/** A workspace skill replaces the agent's own skill of the same name. */
+function replacedByWorkspace(
+  managed: ManagedSkillRuntime,
+): (name: string) => boolean {
+  const names = new Set(
+    managed.skills.map((skill) => skill.name.toLowerCase()),
+  );
+  return (name) => names.has(name.toLowerCase());
+}
 
 export function workspaceSkillInstructions(
   managed: ManagedSkillRuntime,
 ): string {
+  const replaced = replacedByWorkspace(managed);
   return [
     "Foundry workspace skill policy: the following is the complete allowed skill catalog for this workspace session.",
     "Use only these managed copies and this agent's own built-in skills (marked builtIn), including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, say it must be promoted and selected for this workspace first. Ordinary project source files remain available.",
+    "To create a skill or change one of these, work on a copy in this workspace's .agents/skills/<name>/ folder (copy the listed folder there first when changing an existing skill); never edit the listed copies. The person then publishes it from Foundry as a new skill or as a new version of the existing one.",
     ...managed.skills.map((skill) =>
       JSON.stringify({
         name: skill.name,
@@ -24,14 +60,18 @@ export function workspaceSkillInstructions(
     ...(managed.skills.length
       ? []
       : ["No skills are configured for this workspace session."]),
-    ...(managed.officialSkills ?? []).map((skill) =>
-      JSON.stringify({
-        name: skill.name,
-        description: skill.description ?? "",
-        builtIn: true,
-        ...(skill.path ? { file: skill.path } : {}),
-      }),
-    ),
+    ...missingProgramsNote(managed),
+    "When a built-in skill shares its name with one of the workspace skills above, the workspace skill replaces it: use the workspace skill.",
+    ...(managed.officialSkills ?? [])
+      .filter((skill) => !replaced(skill.name))
+      .map((skill) =>
+        JSON.stringify({
+          name: skill.name,
+          description: skill.description ?? "",
+          builtIn: true,
+          ...(skill.path ? { file: skill.path } : {}),
+        }),
+      ),
   ].join("\n");
 }
 
@@ -111,9 +151,13 @@ export async function prepareCodexSkillIsolation(
       for (const skill of skills)
         if (typeof skill.path !== "string" || !skill.path.startsWith("/"))
           throw new Error("Native Codex returned an invalid skill path.");
+      // A workspace skill replaces Codex's own skill of the same name.
+      const replaced = replacedByWorkspace(managed);
+      const official = (skill: { name: string; scope?: string }) =>
+        skill.scope === "system" && !replaced(skill.name);
       return {
-        host: skills.filter((skill) => skill.scope !== "system"),
-        official: skills.filter((skill) => skill.scope === "system"),
+        host: skills.filter((skill) => !official(skill)),
+        official: skills.filter(official),
       };
     },
     { cwd, env, args: [] },
@@ -131,6 +175,13 @@ export async function prepareCodexSkillIsolation(
   };
 }
 
+/**
+ * A receipt records that a native session ran under Foundry's workspace
+ * skill policy, and in which workspace folder. The skill catalog is not part
+ * of it: a session told a different catalog next turn keeps its native
+ * conversation, and the policy above tells it to ignore skills mentioned
+ * earlier in that conversation.
+ */
 const policyVersion = "workspace-skills-v2";
 function receiptPath(nativeID: string): string {
   const key = createHash("sha256").update(nativeID).digest("hex");
@@ -142,62 +193,45 @@ function receiptPath(nativeID: string): string {
       )
     : foundryStatePath("skill-isolation", `${key}.json`);
 }
-function readReceipt(path: string): string | undefined {
+function readReceipt(
+  nativeID: string,
+): { version?: unknown; workspace?: unknown } | undefined {
   try {
-    return readFileSync(path, "utf8");
+    return JSON.parse(readFileSync(receiptPath(nativeID), "utf8"));
   } catch {
     return undefined;
   }
 }
 
-function policyIdentity(
-  workspace: string,
-  managed: ManagedSkillRuntime,
-): string {
-  return JSON.stringify({
-    version: policyVersion,
-    workspace,
-    plugin: managed.pluginDir,
-  });
-}
-/** Legacy native histories can contain host skill bodies. Never resume them
- * under the new policy. Keep the Foundry transcript; start clean native context.
+/**
+ * Whether a native session's receipt says it belongs elsewhere: another
+ * workspace folder, or a policy that must not carry over. A missing receipt
+ * (a session started outside Foundry, or before receipts) conflicts with
+ * nothing.
  */
-export function isolateSkillSession(
-  session: AgentSession,
+export function skillReceiptConflicts(
+  nativeID: string,
   workspace: string,
-  managed: ManagedSkillRuntime,
-): {
-  session: AgentSession;
-  reset: boolean;
-  record: (nativeID: string) => void;
-} {
-  const identity = policyIdentity(workspace, managed);
-  // A missing receipt means legacy native context.
-  const trusted =
-    !!session.nativeSessionId &&
-    readReceipt(receiptPath(session.nativeSessionId)) === identity;
-  const reset = Boolean(session.nativeSessionId && !trusted);
-  return {
-    session: reset
-      ? {
-          ...session,
-          nativeSessionId: undefined,
-          input: session.input && {
-            ...session.input,
-            importedContext: undefined,
-          },
-        }
-      : session,
-    reset,
-    // Called for every message of a run: write once, and atomically, so a
-    // worker killed mid-run never leaves an empty receipt that would cost the
-    // session its native context.
-    record(nativeID) {
-      if (!nativeID) return;
-      const path = receiptPath(nativeID);
-      if (readReceipt(path) === identity) return;
-      writePrivateTextAtomic(path, identity);
-    },
-  };
+): boolean {
+  const receipt = readReceipt(nativeID);
+  return Boolean(
+    receipt &&
+    (receipt.version !== policyVersion || receipt.workspace !== workspace),
+  );
+}
+
+/**
+ * Records that the native session runs under the policy in this workspace.
+ * Called for every message of a run: it writes once, and atomically, so a
+ * worker killed mid-run never leaves an empty receipt.
+ */
+export function recordSkillReceipt(nativeID: string, workspace: string): void {
+  if (!nativeID) return;
+  const receipt = readReceipt(nativeID);
+  if (receipt?.version === policyVersion && receipt.workspace === workspace)
+    return;
+  writePrivateTextAtomic(
+    receiptPath(nativeID),
+    JSON.stringify({ version: policyVersion, workspace }),
+  );
 }

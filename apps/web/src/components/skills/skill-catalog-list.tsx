@@ -30,6 +30,8 @@ export interface SkillCatalogListProps<
   // Workspace selection props
   selectedIds?: Set<string>;
   onToggleSelect?: (skill: T) => void;
+  /** Shows the selection but does not let it change. */
+  selectionDisabled?: boolean;
   requiredByMap?: Map<string, string[]>;
   relatedToMap?: Map<string, string[]>;
   missingRequiredMap?: Map<string, MissingSkillDependency[]>;
@@ -63,6 +65,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   statusFilterPredicate,
   selectedIds,
   onToggleSelect,
+  selectionDisabled,
   requiredByMap,
   relatedToMap,
   missingRequiredMap,
@@ -196,6 +199,7 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
             <SkillCatalogRow
               activeSkillNames={activeSkillNames}
               checked={selectedIds ? selectedIds.has(skill.id) : false}
+              disabled={selectionDisabled}
               key={skill.id}
               missingDependencies={missingRequiredMap?.get(skill.id)}
               mode={mode}

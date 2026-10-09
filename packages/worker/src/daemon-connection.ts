@@ -1,6 +1,33 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { ServiceHost } from "./service.js";
+import { checkPrograms } from "./skill-requirements.js";
+import { recordActivity, runDiagnostics, runRepair } from "./diagnostics.js";
+import {
+  ConnectionRecorder,
+  describeConnectionReport,
+  watchServerSilence,
+  withConnectionReports,
+} from "./connection-reports.js";
+import {
+  beginActivity,
+  duringActivity,
+  startStallMonitor,
+  withStalls,
+} from "./stall-monitor.js";
+import {
+  installTool,
+  runToolSetup,
+  managedToolVersions,
+  type ToolSpec,
+} from "./managed-tools.js";
+import { readSessionUsage } from "./session-usage.js";
+import {
+  fetchSkillRepository,
+  readRepositoryRefs,
+  type FetchRepositoryRequest,
+  type RepositoryRefsRequest,
+} from "./skill-repository-fetch.js";
 import {
   reclaimSessionResources,
   requestResourceAccess,
@@ -147,7 +174,10 @@ import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
 import { issueEnvironmentAction } from "./issue-environment-rpc.js";
 import { evidenceWorkerAction } from "./evidence-rpc.js";
 import { stopAllEvidenceHTTPServices } from "./evidence-http-service.js";
-import type { EvidenceWorkerRequest } from "@bd777/foundry-protocol";
+import type {
+  DeviceRepairAction,
+  EvidenceWorkerRequest,
+} from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
 import { readWorkspace } from "./workspaces.js";
@@ -345,6 +375,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
   };
   writeHeartbeat();
   const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
+  startStallMonitor();
   // No Claude process from an earlier worker is left to read these.
   clearClaudeSettingsFiles();
   heartbeatTimer.unref();
@@ -691,7 +722,36 @@ function daemonRegistrationWithActiveSessions(
   };
 }
 
+/** Round trip of one ping over a control socket, in milliseconds. */
+function socketRoundTrip(socket: WebSocket): Promise<number> {
+  return new Promise((resolvePing, rejectPing) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      rejectPing(new Error("the control socket is not open"));
+      return;
+    }
+    const started = Date.now();
+    const onPong = () => {
+      clearTimeout(timer);
+      resolvePing(Date.now() - started);
+    };
+    const timer = setTimeout(() => {
+      socket.off("pong", onPong);
+      rejectPing(new Error("no pong from the server in 10s"));
+    }, 10_000);
+    socket.once("pong", onPong);
+    socket.ping();
+  });
+}
+
+/** The open control socket, for diagnostics that measure it. */
+let currentSocket: WebSocket | undefined;
+
 type sessionOutcome = "exit" | "reconnect" | "removed" | "refused";
+
+/** How often the worker tells the server it is there (see the heartbeat). */
+const heartbeatIntervalMs = Number(
+  process.env.FOUNDRY_HEARTBEAT_INTERVAL_MS || 25_000,
+);
 
 /** Longest the server may stay silent; it pings every 30s. */
 const serverSilenceMs = Number(process.env.FOUNDRY_SERVER_SILENCE_MS || 75_000);
@@ -711,24 +771,33 @@ function runWebSocketSession(options: {
       maxPayload: 2 * 1024 * 1024,
       handshakeTimeout: 30_000,
     });
-    // The server pings every 30s. A connection dropped on the way (a proxy,
-    // NAT, or the machine sleeping) never closes on this side, so without
-    // any message or ping for this long the socket is ended and the loop
-    // reconnects; otherwise the device stays offline while it thinks it is
-    // connected.
-    let silenceTimer: NodeJS.Timeout | undefined;
-    const expectServer = (): void => {
-      if (silenceTimer) clearTimeout(silenceTimer);
-      silenceTimer = setTimeout(() => {
-        console.error(
-          `${logTime()} Nothing from the server for ${serverSilenceMs / 1000}s; reconnecting.`,
-        );
-        socket.terminate();
-      }, serverSilenceMs);
-    };
-    socket.on("open", expectServer);
-    socket.on("ping", expectServer);
-    socket.on("message", expectServer);
+    const connection = new ConnectionRecorder();
+    currentSocket = socket;
+    socket.on("upgrade", (response) => connection.countBytes(response.socket));
+    // Without a single byte from the server for this long the socket is
+    // ended and the loop reconnects; otherwise a connection dropped on the
+    // way leaves the device offline while it thinks it is connected.
+    const stopSilenceWatch = watchServerSilence(socket, serverSilenceMs, () => {
+      console.error(
+        `${logTime()} Nothing from the server for ${serverSilenceMs / 1000}s; reconnecting.`,
+      );
+      connection.workerGaveUp();
+      socket.terminate();
+    });
+    // A heartbeat message every 25s, so the server hears from an idle worker
+    // in an ordinary message as well as in pongs. (byte-dev's drops every
+    // ~71s were not lost pongs: the server's read deadline moved only per
+    // whole message, and a large upload on a slow link outlasted it while
+    // the pongs queued behind it. The server now counts any bytes.)
+    let heartbeatTimer: NodeJS.Timeout | undefined;
+    socket.on("open", () => {
+      heartbeatTimer = setInterval(
+        () => trySendWebSocket(socket, daemonMessageTypes.heartbeat, {}),
+        heartbeatIntervalMs,
+      );
+    });
+    socket.on("ping", () => connection.serverPing());
+    socket.on("message", () => connection.serverData());
     const taskScheduler = options.taskScheduler;
     let announcedIssueSlots = 1;
     let acceptedRun = false;
@@ -807,7 +876,11 @@ function runWebSocketSession(options: {
      * device alone while it has none.
      */
     function currentRegistration() {
-      const workspacePath = options.workspacePath || knownWorkspacePaths()[0];
+      // A registered folder can vanish (e.g. a test's temp folder); describe
+      // the device with one that still exists rather than fail.
+      const workspacePath =
+        options.workspacePath ||
+        knownWorkspacePaths().find((path) => existsSync(path));
       return workspacePath
         ? daemonRegistrationWithActiveSessions(
             workspacePath,
@@ -847,7 +920,7 @@ function runWebSocketSession(options: {
         return;
       }
       finished = true;
-      if (silenceTimer) clearTimeout(silenceTimer);
+      stopSilenceWatch();
       if (idleTimer) {
         clearTimeout(idleTimer);
       }
@@ -963,41 +1036,65 @@ function runWebSocketSession(options: {
         });
     }
 
+    const missingWorkspacePaths = new Set<string>();
     function syncKnownNativeChats(): void {
       if (nativeChatSyncPromise) {
         return;
       }
+      const syncStarted = Date.now();
+      let syncedWorkspaces = 0;
       nativeChatSyncPromise = Promise.all(
-        knownWorkspacePaths().map(async (workspacePath) => {
-          try {
-            await syncNativeChats(options.serverURL, workspacePath);
-            if (!runningChatsRechecked.has(workspacePath)) {
-              runningChatsRechecked.add(workspacePath);
-              await recheckRunningNativeChats(
-                options.serverURL,
-                workspacePath,
-              ).catch((error: unknown) =>
-                console.error(
-                  `Rechecking running native chats failed for ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
-                ),
+        knownWorkspacePaths()
+          .filter((workspacePath) => {
+            if (existsSync(workspacePath)) return true;
+            // A registered folder that is gone (e.g. a test's temp folder)
+            // has nothing to sync; say so once, not every round.
+            if (!missingWorkspacePaths.has(workspacePath)) {
+              missingWorkspacePaths.add(workspacePath);
+              console.error(
+                `Skipping native chat sync for ${workspacePath}: the folder no longer exists.`,
               );
             }
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            console.error(
-              `Native chat sync failed for ${workspacePath}: ${message}`,
-            );
-          }
-        }),
+            return false;
+          })
+          .map(async (workspacePath) => {
+            syncedWorkspaces += 1;
+            try {
+              await duringActivity("native chat sync", () =>
+                syncNativeChats(options.serverURL, workspacePath),
+              );
+              if (!runningChatsRechecked.has(workspacePath)) {
+                runningChatsRechecked.add(workspacePath);
+                await recheckRunningNativeChats(
+                  options.serverURL,
+                  workspacePath,
+                ).catch((error: unknown) =>
+                  console.error(
+                    `Rechecking running native chats failed for ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
+                  ),
+                );
+              }
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              console.error(
+                `Native chat sync failed for ${workspacePath}: ${message}`,
+              );
+            }
+          }),
       )
-        .then(() => undefined)
+        .then(() => {
+          recordActivity("nativeChatSync", syncStarted, {
+            count: syncedWorkspaces,
+          });
+        })
         .finally(() => {
           nativeChatSyncPromise = undefined;
         });
     }
 
     socket.on("open", () => {
+      const endRegistration = beginActivity("registration");
       const registrations = knownWorkspacePaths()
         .map((workspacePath) => {
           try {
@@ -1025,6 +1122,7 @@ function runWebSocketSession(options: {
             options.workspacePath &&
             item.workspace.localPath === resolve(options.workspacePath),
         ) ?? registrations[0];
+      endRegistration();
       if (!registration) {
         // A device with no workspace yet connects as itself; the person adds
         // workspaces from the Workspaces page.
@@ -1032,7 +1130,11 @@ function runWebSocketSession(options: {
         console.log(
           `${logTime()} Connected daemon ${device.device.label} to ${options.serverURL} (no workspace yet)`,
         );
-        sendWebSocket(socket, daemonMessageTypes.hello, device);
+        sendWebSocket(
+          socket,
+          daemonMessageTypes.hello,
+          withStalls(withConnectionReports(device)),
+        );
         checkProvidersAndReport();
         providerCheckTimer = setInterval(
           checkProvidersAndReport,
@@ -1046,7 +1148,11 @@ function runWebSocketSession(options: {
       console.log(
         `${logTime()} Connected daemon ${registration.device.label} to ${options.serverURL} for ${registration.workspace.name}`,
       );
-      sendWebSocket(socket, daemonMessageTypes.hello, registration);
+      sendWebSocket(
+        socket,
+        daemonMessageTypes.hello,
+        withStalls(withConnectionReports(registration)),
+      );
       for (const item of registrations) {
         if (item.workspace.id === registration.workspace.id) {
           continue;
@@ -1077,6 +1183,15 @@ function runWebSocketSession(options: {
     // profiles and runtimes, after something about them changed.
     function reportRegistrations(): void {
       if (finished || socket.readyState !== WebSocket.OPEN) return;
+      const end = beginActivity("registration");
+      try {
+        reportEachRegistration();
+      } finally {
+        end();
+      }
+    }
+
+    function reportEachRegistration(): void {
       for (const workspacePath of knownWorkspacePaths()) {
         const registration = daemonRegistrationWithActiveSessions(
           workspacePath,
@@ -1095,13 +1210,17 @@ function runWebSocketSession(options: {
     function checkProvidersAndReport(): void {
       // The agents' own skills, read once per installed version: this also
       // catches a program installed or updated outside Foundry.
-      void refreshOfficialSkills().then((changed) => {
+      void duringActivity("official skills", () =>
+        refreshOfficialSkills(),
+      ).then((changed) => {
         if (changed) reportRegistrations();
       });
-      void checkDueProviders(
-        configuredAgentProfiles(""),
-        providerHealthData(),
-        reportRegistrations,
+      void duringActivity("provider check", () =>
+        checkDueProviders(
+          configuredAgentProfiles(""),
+          providerHealthData(),
+          reportRegistrations,
+        ),
       ).catch((error: unknown) =>
         console.error(
           `Checking providers failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1237,6 +1356,19 @@ function runWebSocketSession(options: {
             envelope.id,
           );
         }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.readSessionUsage) {
+        void duringActivity("session usage", () =>
+          readSessionUsage(envelope.payload),
+        ).then((value) =>
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.sessionUsageRead,
+            value,
+            envelope.id,
+          ),
+        );
         return;
       }
       if (envelope.type === daemonMessageTypes.readSubagentTranscript) {
@@ -1477,7 +1609,22 @@ function runWebSocketSession(options: {
           return;
         }
         void inspectNativeAccount(input.runtime, input.source)
+          .catch((error: unknown) => {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.error(
+              `Inspecting the ${input.runtime} account failed: ${reason}`,
+            );
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.nativeAccountInspected,
+              { error: `Could not inspect this native account: ${reason}` },
+              envelope.id,
+            );
+            return undefined;
+          })
           .then((result) => {
+            if (!result) return;
             // The device's agent list shows the same login: refresh it with
             // this check instead of a status cached before, say, the CLI
             // was installed.
@@ -1492,11 +1639,16 @@ function runWebSocketSession(options: {
               envelope.id,
             );
           })
-          .catch(() => {
+          .catch((error: unknown) => {
+            const reason =
+              error instanceof Error ? error.message : String(error);
+            console.error(`Reporting the account check failed: ${reason}`);
             trySendWebSocket(
               socket,
               daemonMessageTypes.nativeAccountInspected,
-              { error: "Could not inspect this native account." },
+              {
+                error: `The account check finished but could not be reported: ${reason}`,
+              },
               envelope.id,
             );
           });
@@ -1625,30 +1777,171 @@ function runWebSocketSession(options: {
         }
         return;
       }
-      if (envelope.type === daemonMessageTypes.scanSkills) {
-        const payload = envelope.payload as { roots?: string[] } | undefined;
-        const roots = Array.isArray(payload?.roots)
-          ? payload.roots.filter(
-              (root): root is string => typeof root === "string",
-            )
-          : [];
-        void scanDeviceSkills(roots)
-          .then((skills) =>
+      if (envelope.type === daemonMessageTypes.runDiagnostics) {
+        void runDiagnostics({
+          serverURL: options.serverURL,
+          socketRoundTrip: () => socketRoundTrip(socket),
+        })
+          .then((report) =>
             trySendWebSocket(
               socket,
-              daemonMessageTypes.skillsScanned,
-              { skills },
+              daemonMessageTypes.diagnosticsReady,
+              { report },
               envelope.id,
             ),
           )
           .catch((error: unknown) =>
             trySendWebSocket(
               socket,
-              daemonMessageTypes.skillsScanned,
+              daemonMessageTypes.diagnosticsReady,
               { error: error instanceof Error ? error.message : String(error) },
               envelope.id,
             ),
           );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.runRepair) {
+        const payload = envelope.payload as
+          { action?: DeviceRepairAction } | undefined;
+        try {
+          const result = runRepair(
+            payload?.action as DeviceRepairAction,
+            checkProvidersAndReport,
+          );
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.repairDone,
+            { result },
+            envelope.id,
+          );
+        } catch (error) {
+          trySendWebSocket(
+            socket,
+            daemonMessageTypes.repairDone,
+            { error: error instanceof Error ? error.message : String(error) },
+            envelope.id,
+          );
+        }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.readRepositoryRefs) {
+        void readRepositoryRefs(envelope.payload as RepositoryRefsRequest)
+          .then((refs) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.repositoryRefsRead,
+              refs,
+              envelope.id,
+            ),
+          )
+          .catch((error: unknown) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.repositoryRefsRead,
+              { error: error instanceof Error ? error.message : String(error) },
+              envelope.id,
+            ),
+          );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.fetchSkillRepository) {
+        const request = envelope.payload as FetchRepositoryRequest;
+        void fetchSkillRepository(request, (body, contentType) =>
+          uploadRepositoryFiles(
+            options.serverURL,
+            request.uploadPath,
+            body,
+            contentType,
+          ),
+        )
+          .then((fetched) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.skillRepositoryFetched,
+              fetched,
+              envelope.id,
+            ),
+          )
+          .catch((error: unknown) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.skillRepositoryFetched,
+              { error: error instanceof Error ? error.message : String(error) },
+              envelope.id,
+            ),
+          );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.installTool) {
+        const payload = envelope.payload as
+          { tool?: ToolSpec; step?: string } | undefined;
+        const tool = payload?.tool;
+        void (
+          !tool
+            ? Promise.reject(new Error("no tool to install"))
+            : payload?.step === "setup"
+              ? runToolSetup(tool)
+              : installTool(tool)
+        )
+          .then((done) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.toolInstalled,
+              {
+                name: done.name,
+                version: done.version,
+                ...("output" in done ? { output: done.output } : {}),
+              },
+              envelope.id,
+            ),
+          )
+          .catch((error: unknown) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.toolInstalled,
+              { error: error instanceof Error ? error.message : String(error) },
+              envelope.id,
+            ),
+          );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.scanSkills) {
+        const payload = envelope.payload as
+          { roots?: string[]; tools?: unknown } | undefined;
+        const roots = Array.isArray(payload?.roots)
+          ? payload.roots.filter(
+              (root): root is string => typeof root === "string",
+            )
+          : [];
+        const scanStarted = Date.now();
+        void duringActivity("skill scan", () => scanDeviceSkills(roots))
+          .then((skills) => {
+            recordActivity("skillScan", scanStarted, { count: skills.length });
+            const end = beginActivity("skill scan reply");
+            try {
+              trySendWebSocket(
+                socket,
+                daemonMessageTypes.skillsScanned,
+                {
+                  skills,
+                  tools: checkPrograms(payload?.tools),
+                  toolVersions: managedToolVersions(),
+                },
+                envelope.id,
+              );
+            } finally {
+              end();
+            }
+          })
+          .catch((error: unknown) => {
+            recordActivity("skillScan", scanStarted, { error });
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.skillsScanned,
+              { error: error instanceof Error ? error.message : String(error) },
+              envelope.id,
+            );
+          });
         return;
       }
       if (envelope.type === daemonMessageTypes.readSkillFile) {
@@ -2135,9 +2428,12 @@ function runWebSocketSession(options: {
     });
 
     socket.on("close", (code?: number, reason?: Buffer) => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       options.sessionTransport.unbind(socket);
+      if (currentSocket === socket) currentSocket = undefined;
+      const report = connection.closed(code, reason?.toString());
       console.log(
-        `${logTime()} Daemon connection closed (code ${code ?? "none"}${reason?.length ? `: ${reason.toString()}` : ""}).`,
+        `${logTime()} Daemon connection closed: ${describeConnectionReport(report)}.`,
       );
       if (isDeviceRemovedSignal({ code, reason: reason?.toString() })) {
         // Permanent server decision: park instead of backing off and
@@ -2169,6 +2465,7 @@ function runWebSocketSession(options: {
     });
 
     socket.on("error", (error: Error) => {
+      connection.socketError(error);
       if (!finished) {
         rejectSession(error);
       }
@@ -2315,4 +2612,29 @@ export async function sync(args: string[]): Promise<void> {
   const serverURL = serverURLFromArgs(args);
   const workspacePath = workspacePathFromArgs(args);
   await syncReviews(serverURL, workspacePath);
+}
+
+/**
+ * Posts a repository's files for a fetch the server asked for; the server
+ * takes them only from this device, for that fetch.
+ */
+async function uploadRepositoryFiles(
+  serverURL: string,
+  uploadPath: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  if (
+    !/^\/api\/daemon\/skill-repository-fetches\/[A-Za-z0-9-]+$/.test(uploadPath)
+  )
+    throw new Error("the server named an unexpected upload address");
+  const response = await fetch(`${serverURL}${uploadPath}`, {
+    method: "POST",
+    headers: { ...daemonRequestHeaders(false), "Content-Type": contentType },
+    body: new Uint8Array(body),
+  });
+  if (!response.ok)
+    throw new Error(
+      `uploading the files returned ${response.status}: ${await response.text()}`,
+    );
 }

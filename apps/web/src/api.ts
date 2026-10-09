@@ -16,11 +16,18 @@ import type {
   ChatThread,
   ChatLayout,
   DeviceProfileBinding,
+  DeviceDiagnostics,
   DeviceProjection,
+  DeviceRepairAction,
+  DeviceRepairResult,
   DeviceResource,
   DeviceSkill,
   DeviceSkillRoot,
   PromotedSkill,
+  RepositorySkillFolder,
+  SkillRepository,
+  SkillRepositoryView,
+  SkillToolDeclaration,
   WorkspaceSkillBinding,
   ProfileDefinition,
   PromoteProfileInput,
@@ -170,6 +177,7 @@ export function localImageUrl(path: string): string {
 }
 
 const foundryStreamEventTypes = new Set<FoundryStreamEvent["type"]>([
+  "device_status_changed",
   "evidence_updated",
   "issue_updated",
   "issue_run_event",
@@ -428,7 +436,6 @@ async function getFoundryData(
   // Older servers omit the skill-isolation collections; default to empty so
   // the new UI treats them as "nothing configured" rather than undefined.
   data.deviceSkillRoots ??= [];
-  data.deviceSkills ??= [];
   data.promotedSkills ??= [];
   data.workspaceSkillBindings ??= [];
   const etag = response.headers.get("ETag") ?? "";
@@ -486,6 +493,27 @@ export async function removeDevice(
 }
 
 /** Asks a device's worker to update itself to this server's version. */
+/** Asks a device's worker for a report on itself (no model requests). */
+export function runDeviceDiagnostics(
+  deviceId: string,
+): Promise<DeviceDiagnostics> {
+  return postJSON<DeviceDiagnostics>(
+    `/api/devices/${encodeURIComponent(deviceId)}/diagnostics`,
+    {},
+  );
+}
+
+/** Runs one repair the person chose on a device's worker. */
+export function runDeviceRepair(
+  deviceId: string,
+  action: DeviceRepairAction,
+): Promise<DeviceRepairResult> {
+  return postJSON<DeviceRepairResult>(
+    `/api/devices/${encodeURIComponent(deviceId)}/repairs`,
+    { action },
+  );
+}
+
 export function updateDeviceWorker(
   deviceId: string,
 ): Promise<{ log?: string }> {
@@ -711,8 +739,9 @@ export async function uploadChatAttachments(
 
 export function createAgentSession(
   input: CreateAgentSessionInput,
+  idempotencyKey?: string,
 ): Promise<AgentSession> {
-  return postJSON<AgentSession>("/api/agent-sessions", input);
+  return postJSON<AgentSession>("/api/agent-sessions", input, idempotencyKey);
 }
 
 export function getAgentSession(
@@ -759,10 +788,12 @@ export function getChat(
 export function sendAgentSessionMessage(
   sessionId: string,
   input: SendAgentSessionMessageInput,
+  idempotencyKey?: string,
 ): Promise<AgentSession> {
   return postJSON<AgentSession>(
     `/api/agent-sessions/${encodeURIComponent(sessionId)}/messages`,
     input,
+    idempotencyKey,
   );
 }
 
@@ -944,13 +975,192 @@ export function listWorkspaceSkills(
   );
 }
 
+/** Holds a workspace's skill at one revision; 0 follows the latest again. */
+export function setWorkspaceSkillPin(
+  workspaceId: string,
+  skillId: string,
+  revision: number,
+): Promise<WorkspaceSkillBinding[]> {
+  return putJSON<WorkspaceSkillBinding[]>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skills/${encodeURIComponent(skillId)}/pin`,
+    { revision },
+  );
+}
+
+/** The library skills the signed-in person gives every workspace they own. */
+export interface MyDefaultSkills {
+  skillIds: string[];
+  bundleIds?: string[];
+}
+
+export function listMyDefaultSkills(): Promise<MyDefaultSkills> {
+  return getJSON<MyDefaultSkills>("/api/me/default-skills");
+}
+
+/** Replaces the default skills, and the default bundles when given. */
+export function setMyDefaultSkills(
+  skillIds: string[],
+  bundleIds?: string[],
+): Promise<MyDefaultSkills> {
+  return putJSON<MyDefaultSkills>("/api/me/default-skills", {
+    skillIds,
+    ...(bundleIds ? { bundleIds } : {}),
+  });
+}
+
+// --- Skill repositories ---
+
+export function listSkillRepositories(): Promise<SkillRepository[]> {
+  return getJSON<SkillRepository[]>("/api/skill-repositories");
+}
+
+export interface SkillRepositoryPreview {
+  label: string;
+  name: string;
+  available: RepositorySkillFolder[];
+  /** The skills look like one set (shared name prefix or a manifest). */
+  suggestBundle: boolean;
+  /** The newest release tag, when the repository has one. */
+  release?: string;
+}
+
+/** Where a repository is read: a device ("" is the server) and its npm registry. */
+export interface SkillRepositorySource {
+  deviceId?: string;
+  registry?: string;
+}
+
+/** Reads a repository without following it. */
+export function previewSkillRepository(
+  input: {
+    url: string;
+    ref: string;
+    subpath: string;
+  } & SkillRepositorySource,
+): Promise<SkillRepositoryPreview> {
+  const query = new URLSearchParams(
+    Object.entries(input).filter((entry): entry is [string, string] =>
+      Boolean(entry[1]),
+    ),
+  ).toString();
+  return getJSON<SkillRepositoryPreview>(
+    `/api/skill-repositories/preview?${query}`,
+  );
+}
+
+/** Follows a repository: chosen skills (pick) or all of it (bundle). */
+export function addSkillRepository(
+  input: {
+    url: string;
+    ref: string;
+    subpath: string;
+    mode?: "pick" | "bundle";
+    dirs?: string[];
+    /** The bundle's name; the server derives one when empty. */
+    name?: string;
+    /** Programs a bundle needs that its source does not publish. */
+    tools?: SkillToolDeclaration[];
+  } & SkillRepositorySource,
+): Promise<SkillRepositoryView> {
+  return postJSON<SkillRepositoryView>("/api/skill-repositories", input);
+}
+
+/** Changes where a followed repository is read, and checks it there. */
+export function setSkillRepositorySource(
+  id: string,
+  source: SkillRepositorySource,
+): Promise<SkillRepository> {
+  return putJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/source`,
+    { deviceId: source.deviceId ?? "", registry: source.registry ?? "" },
+  );
+}
+
+export function rollbackSkillBundle(
+  id: string,
+  seq: number,
+): Promise<SkillRepository> {
+  return postJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/rollback`,
+    { seq },
+  );
+}
+
+/** Turns a repository followed by picking skills into a bundle. */
+export function followRepositoryAsBundle(id: string): Promise<SkillRepository> {
+  return postJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/mode`,
+    { mode: "bundle" },
+  );
+}
+
+export function resumeSkillBundle(id: string): Promise<SkillRepository> {
+  return postJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/resume`,
+    {},
+  );
+}
+
+export function setWorkspaceSkillBundles(
+  workspaceId: string,
+  bundleIds: string[],
+): Promise<{ bundleIds: string[] }> {
+  return putJSON<{ bundleIds: string[] }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/skill-bundles`,
+    { bundleIds },
+  );
+}
+
+/** Installs a bundle's tool on a device; only on the person's request. */
+/** Installs a bundle's tool on a device, or with step "setup" runs the
+ * tool's setup step there and returns its output. */
+export function installDeviceTool(
+  deviceId: string,
+  repositoryId: string,
+  tool: string,
+  step: "install" | "setup" = "install",
+): Promise<{ name: string; version: string; output?: string }> {
+  return postJSON<{ name: string; version: string; output?: string }>(
+    `/api/devices/${encodeURIComponent(deviceId)}/tools/install`,
+    { repositoryId, tool, step },
+  );
+}
+
+export function listRepositorySkills(id: string): Promise<SkillRepositoryView> {
+  return getJSON<SkillRepositoryView>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/skills`,
+  );
+}
+
+export function importRepositorySkills(
+  id: string,
+  dirs: string[],
+): Promise<SkillRepository> {
+  return postJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/import`,
+    { dirs },
+  );
+}
+
+export function checkSkillRepository(id: string): Promise<SkillRepository> {
+  return postJSON<SkillRepository>(
+    `/api/skill-repositories/${encodeURIComponent(id)}/check`,
+    {},
+  );
+}
+
+export function removeSkillRepository(id: string): Promise<void> {
+  return deleteJSON<void>(`/api/skill-repositories/${encodeURIComponent(id)}`);
+}
+
 export function setWorkspaceSkills(
   workspaceId: string,
   skillIds: string[],
+  offSkillIds?: string[],
 ): Promise<WorkspaceSkillBinding[]> {
   return putJSON<WorkspaceSkillBinding[]>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/skills`,
-    { workspaceId, skillIds },
+    { workspaceId, skillIds, offSkillIds },
   );
 }
 

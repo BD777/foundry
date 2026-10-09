@@ -59,6 +59,7 @@ export function SkillCatalogRow({
     onToggle();
   };
 
+  const hasActions = Boolean(renderBadges || renderActions);
   const isRequired = Boolean(requiredBy && requiredBy.length > 0);
   const isRelated = Boolean(relatedTo && relatedTo.length > 0 && !isRequired);
 
@@ -66,7 +67,7 @@ export function SkillCatalogRow({
     <li
       className={
         isWorkspace
-          ? `fdy-skill-select-row ${checked ? "is-selected" : ""}`
+          ? `fdy-skill-select-row${checked ? " is-selected" : ""}${hasActions ? " has-actions" : ""}`
           : "fdy-local-skill-row"
       }
       onClick={handleRowClick}
@@ -126,6 +127,11 @@ export function SkillCatalogRow({
         <small>
           <SkillSearchHighlight query={query} text={skill.subtitle} />
         </small>
+        {skill.requires?.length ? (
+          <small>
+            {t("row.requires", { tools: skill.requires.join(", ") })}
+          </small>
+        ) : null}
 
         <SkillDependenciesView
           activeSkillNames={activeSkillNames}
@@ -135,7 +141,7 @@ export function SkillCatalogRow({
         />
       </div>
 
-      {!isWorkspace ? (
+      {hasActions ? (
         <div className="fdy-skill-row-actions">
           {renderBadges?.(skill)}
           {renderActions?.(skill)}

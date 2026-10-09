@@ -29,6 +29,7 @@ export type ChatScrollFollowEvent =
   | { type: "history-navigation.requested" }
   | { type: "thread.changed" }
   | { type: "user.scroll-intent" }
+  | { type: "user.scrolled"; viewport: ChatViewportMetrics }
   | { type: "viewport.scrolled"; viewport: ChatViewportMetrics };
 
 export function chatViewportIsAtLatest(viewport: ChatViewportMetrics): boolean {
@@ -50,8 +51,10 @@ function chatViewportIsPinnedToLatest(viewport: ChatViewportMetrics): boolean {
  *
  * Polling, streaming, image loads, and disclosure changes can all resize the
  * transcript. None of them may resume following after the user starts reading
- * history. Following resumes only through an explicit request or after the
- * viewport actually reaches the latest content again.
+ * history. Following resumes only through an explicit request, or when the
+ * person's own scrolling (wheel, touch, keys, scrollbar) brings the viewport
+ * to the latest content. A scroll that merely happens while content resizes
+ * is "viewport.scrolled" and never resumes following.
  */
 export function nextChatScrollFollowMode(
   current: ChatScrollFollowMode,
@@ -65,6 +68,12 @@ export function nextChatScrollFollowMode(
       return "navigating";
     case "user.scroll-intent":
       return "reading";
+    case "user.scrolled":
+      // Only the very bottom: a small scroll up stays within the visual
+      // tolerance and must keep the person reading.
+      return chatViewportIsPinnedToLatest(event.viewport)
+        ? "following"
+        : current;
     case "viewport.scrolled":
       if (current === "navigating") {
         return chatViewportIsPinnedToLatest(event.viewport)

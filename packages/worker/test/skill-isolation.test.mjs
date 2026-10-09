@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
 import {
-  isolateSkillSession,
+  recordSkillReceipt,
+  skillReceiptConflicts,
   validateWorkspaceSkillPrompt,
   workspaceSkillInstructions,
 } from "../dist/skill-isolation.js";
@@ -37,37 +38,28 @@ test("catalog points exclusively at managed copies and covers dependency referen
     /No skills/,
   );
 });
-test("legacy resume resets native history; trusted identical policy resumes; workspace and selection changes reset", () => {
-  const session = {
-    nativeSessionId: randomUUID(),
-    prompt: "continue",
-    input: {
-      id: randomUUID(),
-      prompt: "continue",
-      importedContext: "old skill body",
-    },
-  };
-  const first = isolateSkillSession(session, "/workspace-a", managed);
-  assert.equal(first.reset, true);
-  assert.equal(first.session.nativeSessionId, undefined);
-  assert.equal(first.session.input.importedContext, undefined);
-  first.record(session.nativeSessionId);
-  assert.equal(
-    isolateSkillSession(session, "/workspace-a", managed).reset,
-    false,
-  );
-  assert.equal(
-    isolateSkillSession(session, "/workspace-b", managed).reset,
-    true,
-  );
-  assert.equal(
-    isolateSkillSession(session, "/workspace-a", {
-      ...managed,
-      pluginDir: "/managed/set-b",
-    }).reset,
-    true,
-  );
-  assert.equal(session.input.importedContext, "old skill body");
+test("a workspace skill replaces the agent's own skill of the same name", () => {
+  const policy = workspaceSkillInstructions({
+    ...managed,
+    officialSkills: [
+      { name: "Selected", description: "the agent's own" },
+      { name: "debug", description: "kept" },
+    ],
+  });
+  const builtIn = policy
+    .split("\n")
+    .filter((line) => line.includes('"builtIn":true'))
+    .map((line) => JSON.parse(line).name);
+  assert.deepEqual(builtIn, ["debug"]);
+  assert.match(policy, /workspace skill replaces it/);
+});
+test("a receipt names the workspace, never the skill set; none means no conflict", () => {
+  const nativeId = randomUUID();
+  // Started outside Foundry (or before receipts): nothing conflicts.
+  assert.equal(skillReceiptConflicts(nativeId, "/workspace-a"), false);
+  recordSkillReceipt(nativeId, "/workspace-a");
+  assert.equal(skillReceiptConflicts(nativeId, "/workspace-a"), false);
+  assert.equal(skillReceiptConflicts(nativeId, "/workspace-b"), true);
 });
 
 test("selected Claude slash commands resolve to the managed plugin namespace", async () => {
@@ -100,8 +92,15 @@ test("arbitrary custom commands fail closed for managed workspace runs", async (
 
 test("a receipt is written once and never left empty by a rewrite", async (t) => {
   const { createHash } = await import("node:crypto");
-  const { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } =
-    await import("node:fs");
+  const {
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+  } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const root = mkdtempSync(join(tmpdir(), "foundry-receipts-"));
@@ -114,36 +113,35 @@ test("a receipt is written once and never left empty by a rewrite", async (t) =>
     rmSync(root, { recursive: true, force: true });
   });
   const nativeId = randomUUID();
-  const run = isolateSkillSession(
-    { id: "sess", nativeSessionId: "", input: { id: "in", prompt: "x" } },
-    "/workspace-a",
-    managed,
-  );
   const receipt = join(
     root,
     "skill-isolation",
     `${createHash("sha256").update(nativeId).digest("hex")}.json`,
   );
-  run.record(nativeId);
+  recordSkillReceipt(nativeId, "/workspace-a");
   const written = statSync(receipt);
   // Every message of a run reports the same id.
-  for (let i = 0; i < 5; i++) run.record(nativeId);
+  for (let i = 0; i < 5; i++) recordSkillReceipt(nativeId, "/workspace-a");
   assert.equal(statSync(receipt).ino, written.ino);
   assert.equal(statSync(receipt).mtimeMs, written.mtimeMs);
   assert.notEqual(readFileSync(receipt, "utf8"), "");
   assert.deepEqual(readdirSync(join(root, "skill-isolation")), [
     receipt.split("/").pop(),
   ]);
-  assert.equal(
-    isolateSkillSession(
-      {
-        id: "sess",
-        nativeSessionId: nativeId,
-        input: { id: "in2", prompt: "y" },
-      },
-      "/workspace-a",
-      managed,
-    ).reset,
-    false,
+  // A receipt written when it also named the skill set still holds.
+  const legacyId = randomUUID();
+  mkdirSync(join(root, "skill-isolation"), { recursive: true });
+  writeFileSync(
+    join(
+      root,
+      "skill-isolation",
+      `${createHash("sha256").update(legacyId).digest("hex")}.json`,
+    ),
+    JSON.stringify({
+      version: "workspace-skills-v2",
+      workspace: "/workspace-a",
+      plugin: "/managed/set-a",
+    }),
   );
+  assert.equal(skillReceiptConflicts(legacyId, "/workspace-a"), false);
 });

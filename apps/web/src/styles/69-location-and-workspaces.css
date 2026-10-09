@@ -518,6 +518,10 @@
   background: var(--fdy-brass-soft);
   color: var(--fdy-brass-dark);
 }
+.fdy-workspace-menu-item[data-disabled] {
+  color: var(--fdy-ink-faint);
+  cursor: default;
+}
 .fdy-workspace-dialog {
   width: min(570px, calc(100vw - 32px));
 }

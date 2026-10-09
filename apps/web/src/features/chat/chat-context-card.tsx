@@ -11,9 +11,11 @@ import {
   X,
 } from "lucide-react";
 import { nextCronFire } from "@bd777/foundry-protocol";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
+import { subagentUsageSummary } from "../../components/conversation/turn-usage";
 import type {
   ChatContextCardData,
   ChatContextSelection,
@@ -33,6 +35,7 @@ function ResourceRow({
   onSelect?: (item: ChatContextSelection) => void;
   selected: boolean;
 }) {
+  const { t } = useTranslation("chat");
   return (
     <Button
       aria-pressed={selected}
@@ -53,11 +56,71 @@ function ResourceRow({
       </span>
       <span className="fdy-chat-context-row-copy">
         <strong>{item.label}</strong>
-        {item.detail && item.detail !== item.label ? (
-          <em>{item.detail}</em>
+        {(item.detail && item.detail !== item.label) || item.mentioned ? (
+          <em>
+            {[
+              item.detail !== item.label ? item.detail : undefined,
+              item.mentioned ? t("contextCard.mentioned") : undefined,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </em>
         ) : null}
       </span>
     </Button>
+  );
+}
+
+/** Outputs shown before "Show all". */
+const collapsedOutputs = 8;
+
+function OutputsSection({
+  outputs,
+  onSelect,
+  selectedId,
+}: {
+  outputs: ChatContextResourceItem[];
+  onSelect?: (item: ChatContextSelection) => void;
+  selectedId?: string;
+}) {
+  const { t } = useTranslation("chat");
+  const [expanded, setExpanded] = useState(false);
+  const selectedIndex = outputs.findIndex((item) => item.id === selectedId);
+  const shown =
+    expanded || selectedIndex >= collapsedOutputs
+      ? outputs
+      : outputs.slice(0, collapsedOutputs);
+  return (
+    <section className="fdy-chat-context-section">
+      <h3>
+        {t("contextCard.outputs")}
+        <span className="fdy-chat-context-count">{outputs.length}</span>
+      </h3>
+      <div className="fdy-chat-context-list">
+        {shown.map((item) => (
+          <ResourceRow
+            item={item}
+            key={item.id}
+            kind="output"
+            onSelect={onSelect}
+            selected={selectedId === item.id}
+          />
+        ))}
+      </div>
+      {outputs.length > collapsedOutputs ? (
+        <Button
+          aria-expanded={shown.length === outputs.length}
+          className="fdy-chat-context-more"
+          onClick={() => setExpanded((value) => !value)}
+          size="sm"
+          variant="ghost"
+        >
+          {shown.length === outputs.length
+            ? t("contextCard.showFewer")
+            : t("contextCard.showAll", { count: outputs.length })}
+        </Button>
+      ) : null}
+    </section>
   );
 }
 
@@ -185,20 +248,11 @@ export function ChatContextCard({
       ) : null}
 
       {data.outputs.length > 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.outputs")}</h3>
-          <div className="fdy-chat-context-list">
-            {data.outputs.map((item) => (
-              <ResourceRow
-                item={item}
-                key={item.id}
-                kind="output"
-                onSelect={onSelect}
-                selected={selectedId === item.id}
-              />
-            ))}
-          </div>
-        </section>
+        <OutputsSection
+          onSelect={onSelect}
+          outputs={data.outputs}
+          selectedId={selectedId}
+        />
       ) : null}
 
       {data.timers.length > 0 ? (
@@ -240,6 +294,9 @@ export function ChatContextCard({
                 </span>
                 <span className="fdy-chat-context-row-copy">
                   <strong>{subagent.label}</strong>
+                  {subagent.usage ? (
+                    <em>{subagentUsageSummary(subagent.usage)}</em>
+                  ) : null}
                 </span>
                 <span className="fdy-chat-subagent-status">
                   <SubagentStatusIcon status={subagent.status} />

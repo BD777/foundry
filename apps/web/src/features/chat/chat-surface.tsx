@@ -12,8 +12,10 @@ import { ChatContextCard } from "./chat-context-card";
 import { ChatDetailPanel } from "./chat-detail-panel";
 import { ChatDetailSplitPane } from "./chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
+import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
 import { navigateToDeviceAgents } from "../../lib/in-app-navigation";
+import { setDocumentChat } from "../../lib/document-title";
 import { ChatSidebar } from "./chat-thread-view";
 import { useChatContextDetail } from "./use-chat-context-detail";
 
@@ -53,6 +55,18 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
   const contextDetail = useChatContextDetail(threadKey);
+  // The tab title names the open chat and marks it while it runs.
+  const chatName =
+    !threadKey.endsWith(":new") && typeof chatTitle === "string"
+      ? chatTitle
+      : "";
+  const chatRunning = Boolean(props.agentActive);
+  useEffect(() => {
+    setDocumentChat(
+      chatName ? { title: chatName, running: chatRunning } : undefined,
+    );
+  }, [chatName, chatRunning]);
+  useEffect(() => () => setDocumentChat(undefined), []);
   const selectedRuntime =
     props.agentOptions.find((agent) => agent.value === props.selectedAgentId)
       ?.runtime ??
@@ -136,6 +150,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
             disabled={props.sendDisabled}
             disabledReason={props.sendDisabledReason}
             draftResetKey={draftResetKey}
+            storageKeyPrefix={conversationStoragePrefixes.chat}
             onSend={props.onSend}
             onSteer={props.onSteer}
             onStop={props.onCancelActive}

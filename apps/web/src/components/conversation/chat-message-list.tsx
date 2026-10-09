@@ -14,8 +14,9 @@ import {
   ToolCallItem,
   type ParsedImageTag,
 } from "./chat-message-content";
-import type { ChatMessageItem } from "./conversation-types";
+import type { ChatMessageItem, StepUsage } from "./conversation-types";
 import { displayProcessLabel } from "../../lib/process-labels";
+import { TurnUsage } from "./turn-usage";
 
 /** Worker-recorded labels in the viewer's language; other content as is. */
 const displayTitle = (title: ReactNode) =>
@@ -63,6 +64,18 @@ function processItemsEqual(
   });
 }
 
+function stepUsageEqual(left?: StepUsage, right?: StepUsage): boolean {
+  return (
+    left === right ||
+    (!!left &&
+      !!right &&
+      left.requests === right.requests &&
+      left.inputTokens === right.inputTokens &&
+      left.cacheReadTokens === right.cacheReadTokens &&
+      left.outputTokens === right.outputTokens)
+  );
+}
+
 function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
   return (
     left === right ||
@@ -71,6 +84,10 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.kind === right.kind &&
       left.role === right.role &&
       left.text === right.text &&
+      left.usage === right.usage &&
+      left.durationMs === right.durationMs &&
+      left.startedAt === right.startedAt &&
+      stepUsageEqual(left.stepUsage, right.stepUsage) &&
       processItemsEqual(left.processItems, right.processItems) &&
       left.title === right.title &&
       left.copyText === right.copyText &&
@@ -125,7 +142,10 @@ export const ChatMessageRow = memo(
     if (message.kind === "process") {
       return (
         <ProcessDisclosure
+          durationMs={message.durationMs}
           items={message.processItems}
+          startedAt={message.startedAt}
+          stepUsage={message.stepUsage}
           onImagePreview={onImagePreview}
           streaming={message.streaming}
           text={message.text}
@@ -152,7 +172,7 @@ export const ChatMessageRow = memo(
         <div className="fdy-chat-message-copy fdy-markdown">
           <MarkdownContent
             onImagePreview={onImagePreview}
-            preserveLists={message.role === "user"}
+            typedText={message.role === "user"}
             streaming={message.streaming}
           >
             {message.text}
@@ -170,21 +190,28 @@ export const ChatMessageRow = memo(
         {message.copyText ? (
           <CopyButton always={message.copyAlways} text={message.copyText} />
         ) : null}
-        {validMessageTime ? (
-          <time
-            className="fdy-chat-message-time"
-            dateTime={message.at}
-            title={messageTime.toLocaleString(i18n.language)}
-          >
-            {messageTime.toLocaleString(i18n.language, {
-              month: "2-digit",
-              day: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-              hour12: false,
-            })}
-          </time>
+        {validMessageTime || message.usage ? (
+          <span className="fdy-chat-message-stamp">
+            {validMessageTime ? (
+              <time
+                className="fdy-chat-message-time"
+                dateTime={message.at}
+                title={messageTime.toLocaleString(i18n.language)}
+              >
+                {messageTime.toLocaleString(i18n.language, {
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                  hour12: false,
+                })}
+              </time>
+            ) : null}
+            {message.usage && !message.streaming ? (
+              <TurnUsage usage={message.usage} />
+            ) : null}
+          </span>
         ) : null}
         {onEditMessage && message.editable && message.editText ? (
           <Button

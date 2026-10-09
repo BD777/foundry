@@ -4,7 +4,28 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"runtime"
+	"time"
 )
+
+// slowTransactionThreshold is when a transaction is worth a log line: the
+// pool has one connection, so every other request waits for it meanwhile.
+const slowTransactionThreshold = time.Second
+
+func logSlowTransaction(started time.Time) {
+	elapsed := time.Since(started)
+	if elapsed < slowTransactionThreshold {
+		return
+	}
+	caller := "unknown"
+	if pc, _, _, ok := runtime.Caller(2); ok {
+		if fn := runtime.FuncForPC(pc); fn != nil {
+			caller = fn.Name()
+		}
+	}
+	log.Printf("slow database transaction: %s held the connection for %s", caller, elapsed.Round(time.Millisecond))
+}
 
 // dbExecutor is the shared subset of *sql.DB and *sql.Tx used by Store
 // helpers, so one helper can run standalone or inside a scoped transaction.
@@ -35,6 +56,7 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *Store) error) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
+	defer logSlowTransaction(time.Now())
 	defer tx.Rollback()
 
 	if err := fn(&Store{db: s.db, exec: tx, kek: s.kek}); err != nil {

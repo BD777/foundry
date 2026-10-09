@@ -145,41 +145,27 @@ test("unconfigured skill invocations and custom commands fail closed from the pl
   );
 });
 
-test("legacy native context resets and the receipt closure certifies the fresh session", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "session-policy-receipt-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const previousRoot = process.env.FOUNDRY_EXECUTION_SESSION_ROOT;
-  process.env.FOUNDRY_EXECUTION_SESSION_ROOT = root;
-  t.after(() => {
-    if (previousRoot === undefined)
-      delete process.env.FOUNDRY_EXECUTION_SESSION_ROOT;
-    else process.env.FOUNDRY_EXECUTION_SESSION_ROOT = previousRoot;
-  });
-  const managed = {
-    pluginDir: "/managed/set-a",
-    skills: [{ name: "qa", dir: "/managed/set-a/skills/qa" }],
-  };
-  const old = {
-    ...session,
-    nativeSessionId: "native-legacy",
-    prompt: "continue",
-  };
-  const first = buildClaudeLaunchPlan({
+test("the launch plan keeps the native session and its imported turns", () => {
+  const plan = buildClaudeLaunchPlan({
     workspacePath,
-    session: old,
+    session: {
+      ...session,
+      nativeSessionId: "native-kept",
+      input: {
+        id: "in",
+        prompt: "continue",
+        importedContext: "User: missed turn",
+      },
+    },
     profile: compatibleProfile({ apiKey: "k" }),
-    managedSkills: managed,
+    managedSkills: {
+      pluginDir: "/managed/set-b",
+      skills: [{ name: "qa", dir: "/managed/set-b/skills/qa" }],
+    },
   });
-  assert.equal(first.reset, true);
-  assert.equal(first.session.nativeSessionId, undefined);
-  first.recordNativeSession("native-fresh");
-  const second = buildClaudeLaunchPlan({
-    workspacePath,
-    session: { ...session, nativeSessionId: "native-fresh", prompt: "again" },
-    profile: compatibleProfile({ apiKey: "k" }),
-    managedSkills: managed,
-  });
-  assert.equal(second.reset, false);
+  assert.equal("session" in plan, false);
+  assert.match(plan.prompt, /User: missed turn/);
+  assert.match(plan.prompt, /continue$/);
 });
 
 test("sessions with an orchestration identity get the Foundry tools with their own token", async () => {

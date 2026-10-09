@@ -2,8 +2,8 @@
 // a native agent runtime. Everything a launch depends on is assembled here
 // once and consumed by the Claude Agent SDK launch:
 //
-//   - effective session (workspace-skill isolation can force a fresh native
-//     context) and the effective prompt (managed slash-command rewrite)
+//   - the effective prompt (managed slash-command rewrite); which native
+//     session the turn runs in is decided before, by native-session.ts
 //   - the spawn environment: endpoint, model and credential routing
 //   - flag-tier `settings`, which take precedence over the user's local
 //     ~/.claude/settings.json. Foundry-owned guarantees live here, e.g.
@@ -32,7 +32,6 @@ import {
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import {
   claudeManagedPrompt,
-  isolateSkillSession,
   validateWorkspaceSkillPrompt,
   workspaceSkillInstructions,
 } from "./skill-isolation.js";
@@ -155,7 +154,6 @@ export const foundryToolTimeoutMs = 11 * 60 * 1000;
 const foundryToolsPermission = "mcp__foundry";
 
 export interface ClaudeLaunchPlan {
-  session: AgentSession;
   /** Managed-slash-rewritten prompt for the SDK path. */
   prompt: string;
   env: NodeJS.ProcessEnv;
@@ -168,10 +166,7 @@ export interface ClaudeLaunchPlan {
    */
   mcpServers?: Record<string, unknown>;
   managedSkills?: ManagedSkillRuntime;
-  /** True when legacy native context was dropped for a new policy. */
-  reset: boolean;
   warnings: string[];
-  recordNativeSession: (nativeSessionId: string) => void;
   validatePrompt: (text: string) => void;
 }
 
@@ -205,9 +200,30 @@ export function codexFoundryTools(
 }
 
 /**
+ * Fail-closed checks before any directory or process work: a managed
+ * catalog rejects custom profile commands, which cannot enforce the
+ * native-runtime contract, and prompts invoking skills it does not hold.
+ */
+export function validateClaudeLaunch(input: {
+  session: AgentSession;
+  profile: AgentProfileLocalConfig;
+  managedSkills?: ManagedSkillRuntime;
+}): void {
+  if (!input.managedSkills) return;
+  validateWorkspaceSkillPrompt(
+    currentInput(input.session).prompt,
+    input.managedSkills,
+  );
+  if (input.profile.command?.trim()) {
+    throw new ClaudePolicyError(
+      "Custom runtime commands cannot enforce workspace skill isolation.",
+    );
+  }
+}
+
+/**
  * Assemble the complete launch configuration for one Claude workspace
- * session. Custom profile commands are rejected here when a managed catalog is
- * present, because they cannot enforce the native-runtime contract.
+ * session turn, on the native session it was prepared with.
  */
 export function buildClaudeLaunchPlan(input: {
   workspacePath: string;
@@ -215,29 +231,9 @@ export function buildClaudeLaunchPlan(input: {
   profile: AgentProfileLocalConfig;
   managedSkills?: ManagedSkillRuntime;
 }): ClaudeLaunchPlan {
-  const { workspacePath, profile } = input;
-  const originalSession = input.session;
-  let session = originalSession;
+  const { workspacePath, profile, session } = input;
   const managedSkills = input.managedSkills;
-
-  let receipt: ((nativeSessionId: string) => void) | undefined;
-  let reset = false;
-  if (managedSkills) {
-    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
-    if (profile.command?.trim()) {
-      throw new ClaudePolicyError(
-        "Custom runtime commands cannot enforce workspace skill isolation.",
-      );
-    }
-    const isolation = isolateSkillSession(
-      session,
-      workspacePath,
-      managedSkills,
-    );
-    session = isolation.session;
-    reset = isolation.reset;
-    receipt = isolation.record;
-  }
+  validateClaudeLaunch(input);
 
   const env = sessionEnvironment(workspacePath, profile, session);
   const deviceNotes = isUtilitySession(session)
@@ -260,7 +256,6 @@ export function buildClaudeLaunchPlan(input: {
   };
 
   return {
-    session,
     prompt: claudeManagedPrompt(sessionPrompt(session, profile), managedSkills),
     env,
     settings,
@@ -274,11 +269,7 @@ export function buildClaudeLaunchPlan(input: {
     },
     mcpServers,
     managedSkills,
-    reset,
     warnings: credentialWarnings(profile, env),
-    recordNativeSession: (nativeSessionId: string) => {
-      if (nativeSessionId) receipt?.(nativeSessionId);
-    },
     validatePrompt: (text: string) => {
       if (managedSkills) {
         validateWorkspaceSkillPrompt(text, managedSkills);

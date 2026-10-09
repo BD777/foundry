@@ -1,3 +1,4 @@
+import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { sessionScratchEnvironment } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
@@ -84,8 +85,11 @@ export function sessionEnvironment(
   profile: AgentProfileLocalConfig,
   session?: AgentSession,
 ): NodeJS.ProcessEnv {
+  const base = baseProcessEnvironment(profile);
   return {
-    ...baseProcessEnvironment(profile),
+    ...base,
+    // Tools Foundry installed for skills come first.
+    PATH: withManagedTools(base.PATH),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
     FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(

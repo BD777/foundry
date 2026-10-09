@@ -201,6 +201,9 @@ export const chat = {
     show: "Show chat details",
     hide: "Hide chat details",
     outputs: "Outputs",
+    mentioned: "in the reply",
+    showAll: "Show all {{count}}",
+    showFewer: "Show fewer",
     timers: "Scheduled tasks",
     subagents: "Subagents",
     sources: "Sources",
@@ -233,6 +236,8 @@ export const chat = {
     },
     fileTruncated: "This file is large; only the first 128 KB is shown.",
     subagentEmpty: "No subagent messages to show yet.",
+    subagentUsage:
+      "The subagent used {{usage}}. Steps below show their own model requests.",
     openInNewWindow: "Open in new window",
     webPreviewTitle: "Preview {{url}}",
     timer: {

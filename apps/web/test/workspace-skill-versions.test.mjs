@@ -60,8 +60,8 @@ test("workspace blocks duplicate invocation names before issuing a save", async 
   const root = createRoot(container);
   const original = globalThis.fetch;
   let writes = 0;
-  globalThis.fetch = async () => {
-    writes++;
+  globalThis.fetch = async (_url, init) => {
+    if ((init?.method ?? "GET") !== "GET") writes++;
     return new Response("[]", {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -108,6 +108,61 @@ test("workspace blocks duplicate invocation names before issuing a save", async 
     assert.equal(save.disabled, false);
     await act(async () => save.click());
     assert.equal(writes, 1);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    globalThis.fetch = original;
+  }
+});
+
+test("a skill from the owner's defaults shows on, and unchecking turns it off for the workspace", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const original = globalThis.fetch;
+  let saved;
+  globalThis.fetch = async (_url, init) => {
+    if (init?.body) saved = JSON.parse(init.body);
+    return new Response("[]", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SkillsFeature, {
+          workspaceId: "w",
+          catalog: [
+            {
+              id: "browser",
+              name: "agent-browser",
+              description: "",
+              originDeviceId: "d",
+              originRoot: "/one",
+              latestRevision: 1,
+            },
+          ],
+          bindings: [],
+          devices: [],
+          defaultSkillIds: ["browser"],
+          inheritedSkillIds: ["browser"],
+          offSkillIds: [],
+        }),
+      ),
+    );
+    const check = document.querySelector('input[type="checkbox"]');
+    assert.equal(check.checked, true);
+    assert.equal(check.disabled, false);
+    assert.match(document.body.textContent, /1 selected/);
+    await act(async () => check.click());
+    assert.equal(check.checked, false);
+    const save = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Save selection",
+    );
+    await act(async () => save.click());
+    assert.deepEqual(saved.skillIds, []);
+    assert.deepEqual(saved.offSkillIds, ["browser"]);
   } finally {
     await act(async () => root.unmount());
     container.remove();

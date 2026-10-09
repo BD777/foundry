@@ -14,6 +14,7 @@ export const processLabels = {
   requestingModel: "Requesting model",
   compactingContext: "Compacting context",
   modelRetry: "Model request retry",
+  modelRequestUsage: "Model request usage",
   rateLimited: "Rate limited, waiting to retry",
   startingSubtask: "Starting subtask",
   subtaskRunning: "Subtask running",

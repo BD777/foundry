@@ -17,6 +17,7 @@ import type {
   DeviceProjection,
   DeviceSkill,
   DeviceSkillRoot,
+  WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { scanDeviceSkills, setDeviceSkillRoots } from "../../api";
 import { Button } from "../../components/ui/button";
@@ -25,9 +26,11 @@ import { TextInput } from "../../components/ui/field";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
 import {
+  skillWorkspace,
   toNormalizedDeviceSkill,
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
+import { useDeviceSkills } from "../../components/skills/use-device-skills";
 
 const SkillCompareDialog = lazy(
   () => import("../../components/skills/skill-compare-dialog"),
@@ -36,7 +39,8 @@ const SkillCompareDialog = lazy(
 interface DeviceSkillsProps {
   device: DeviceProjection;
   roots: DeviceSkillRoot[];
-  skills: DeviceSkill[];
+  /** This device's workspaces, whose own skill folders are scanned too. */
+  workspaces: WorkspaceProjection[];
   onChanged: () => Promise<void>;
 }
 
@@ -59,10 +63,12 @@ function serverStatusOptions(t: TFunction<"skills">) {
 export function DeviceSkills({
   device,
   roots,
-  skills,
+  workspaces,
   onChanged,
 }: DeviceSkillsProps) {
   const { t } = useTranslation(["skills", "common"]);
+  const deviceSkills = useDeviceSkills(device);
+  const skills = deviceSkills.skills;
   const [draftPaths, setDraftPaths] = useState<string[]>([]);
   const [draftDirty, setDraftDirty] = useState(false);
   const [newPath, setNewPath] = useState("");
@@ -88,8 +94,10 @@ export function DeviceSkills({
   const online = device.status === "connected";
 
   const normalizedSkills = useMemo(() => {
-    return skills.map(toNormalizedDeviceSkill);
-  }, [skills]);
+    return skills.map((skill) =>
+      toNormalizedDeviceSkill(skill, skillWorkspace(skill, workspaces)),
+    );
+  }, [skills, workspaces]);
 
   function openRoots(): void {
     setDraftPaths(roots.map((root) => root.path));
@@ -128,7 +136,8 @@ export function DeviceSkills({
     }
   }
 
-  if (!loaded) return null;
+  if (!loaded || !deviceSkills.loaded) return null;
+  const listError = scanError ?? deviceSkills.error;
 
   return (
     <div className="fdy-device-skills">
@@ -145,7 +154,10 @@ export function DeviceSkills({
       ) : null}
       {promotion ? (
         <SkillPromotionDialog
-          onChanged={onChanged}
+          onChanged={async () => {
+            await onChanged();
+            await deviceSkills.reload();
+          }}
           onClose={() => setPromotion(undefined)}
           online={online}
           skill={promotion}
@@ -257,16 +269,16 @@ export function DeviceSkills({
           </>
         }
         headerExtras={
-          !online || scanError ? (
+          !online || listError ? (
             <>
               {!online ? (
                 <p className="fdy-skill-offline" role="status">
                   {t("device.offline")}
                 </p>
               ) : null}
-              {scanError ? (
+              {listError ? (
                 <p className="fdy-skill-error" role="alert">
-                  <AlertTriangle size={13} /> {scanError}
+                  <AlertTriangle size={13} /> {listError}
                 </p>
               ) : null}
             </>
@@ -296,7 +308,7 @@ export function DeviceSkills({
                     })
                   }
                   size="sm"
-                  variant="ghost"
+                  variant="secondary"
                 >
                   {t("device.compare")}
                 </Button>

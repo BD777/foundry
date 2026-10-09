@@ -590,6 +590,36 @@
   transition: background-color 120ms ease;
 }
 
+/* The skill library lines up with the other Manage pages. */
+.fdy-page-surface-library {
+  max-width: 1120px;
+  gap: 0;
+}
+
+/* Badges and actions take a third column beside the copy, below it when narrow. */
+.fdy-skill-select-row.has-actions {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.fdy-skill-select-row > .fdy-skill-row-actions {
+  justify-content: flex-end;
+}
+
+.fdy-skill-select-row > .fdy-skill-row-actions:empty {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .fdy-skill-select-row.has-actions {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .fdy-skill-select-row > .fdy-skill-row-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
 .fdy-skill-select-row:hover {
   background: var(--fdy-control-ghost-hover);
 }
@@ -773,6 +803,54 @@
   gap: 8px;
   min-width: 0;
 }
+/* A same-named skill: the library's version beside this device's. */
+.fdy-skill-version-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.fdy-skill-version-compare section {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+}
+
+.fdy-skill-version-compare h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.fdy-skill-version-compare dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.fdy-skill-version-compare dt {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-version-compare dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A secondary action sits at the start of its row, not stretched across it. */
+.fdy-skill-version-secondary {
+  justify-self: start;
+}
+
+.fdy-skill-version-fork {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .fdy-skill-version-choice p {
   margin: 0;
   overflow-wrap: anywhere;
@@ -895,5 +973,316 @@
 @media (max-width: 700px) {
   .fdy-official-skills-preview {
     display: none;
+  }
+}
+
+.fdy-official-skills-source {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fdy-ink-faint);
+}
+
+/* Skill library repositories. */
+.fdy-skill-repos {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.fdy-skill-repos-empty {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-skill-repo-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-skill-repo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-skill-repo-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.fdy-skill-repo-copy a {
+  color: var(--fdy-ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-repo-copy small {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-repo-copy .fdy-skill-error {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .fdy-skill-repo-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fdy-skill-recommended {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fdy-skill-recommended-heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fdy-ink);
+}
+
+.fdy-skill-recommended-heading p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-repo-form {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.fdy-skill-repo-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.fdy-skill-repo-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.fdy-skill-repo-choices {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-skill-repo-choices label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  cursor: pointer;
+}
+
+.fdy-skill-repo-choices label:has(input:disabled) {
+  cursor: default;
+}
+
+.fdy-skill-repo-choices label > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.fdy-skill-repo-choices small {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-repo-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* Repository bundles and their tools. */
+.fdy-skill-repo-choice-static {
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  font-size: 13px;
+}
+
+.fdy-skill-repo-choice-static > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-skill-repo-mode-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-skill-bundle-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-skill-bundle-members {
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-skill-bundle-members summary {
+  cursor: pointer;
+}
+
+.fdy-skill-bundle-members p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* A bundle's program: one summary line and its "Manage installs" button. */
+.fdy-skill-bundle-tool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+
+/* A repository card's warning line: an older program, skills gone. */
+.fdy-skill-repo-copy small[data-tone="warning"] {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-skill-bundle-installs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-skill-bundle-installs li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+}
+
+.fdy-skill-bundle-install-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.fdy-skill-bundle-install-copy small {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* An install or setup failure reads as an error, not as a muted note. */
+.fdy-skill-bundle-install-copy .fdy-skill-error {
+  color: var(--fdy-error-text);
+}
+
+/* Skill dialogs end with their actions on the right, like other dialogs. */
+.fdy-skill-dialog-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.fdy-skill-bundle-default {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.fdy-workspace-bundles {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+/* Select all above a repository's skill choices. */
+.fdy-skill-repo-select-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 11px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fdy-skill-repo-select-all small {
+  color: var(--fdy-ink-muted);
+}
+
+/* What a repository row follows: its version or how many skills it took. */
+.fdy-skill-repo-version {
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+/* The repository's own description, from its host. */
+.fdy-skill-repo-description {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-skill-repo-status {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+/* One suggested action and the "…" menu; the text keeps the rest. */
+.fdy-skill-repo-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.fdy-skill-repo-menu-trigger {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .fdy-skill-repo-actions {
+    justify-content: flex-start;
   }
 }

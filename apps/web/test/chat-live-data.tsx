@@ -63,7 +63,6 @@ const initialData: FoundryDataProjection = {
   devices: [{ ...fixtureDevice, status: "connected" }],
   deviceProfiles: [],
   deviceSkillRoots: [],
-  deviceSkills: [],
   promotedSkills: [],
   workspaceSkillBindings: [],
   profiles: [],

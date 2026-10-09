@@ -91,6 +91,23 @@ export function applyFoundryStreamEvent(
   streamEvent: FoundryStreamEvent,
 ): FoundryData {
   if (streamEvent.type === "evidence_updated") return current;
+  if (streamEvent.type === "device_status_changed") {
+    const { deviceId, status } = streamEvent.payload;
+    if (!current.devices.some((device) => device.id === deviceId))
+      return current;
+    return {
+      ...current,
+      devices: current.devices.map((device) =>
+        device.id === deviceId
+          ? {
+              ...device,
+              status,
+              lastSeenLabel: status === "connected" ? "online" : "offline",
+            }
+          : device,
+      ),
+    };
+  }
   if (
     streamEvent.type === "issue_updated" ||
     streamEvent.type === "issue_run_event"

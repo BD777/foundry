@@ -97,3 +97,36 @@ test("history navigation cannot be canceled by the initial bottom read-back", ()
   });
   assert.equal(mode, "reading");
 });
+
+test("the person's own scroll to the very bottom resumes following", () => {
+  assert.equal(
+    nextChatScrollFollowMode("reading", {
+      type: "user.scrolled",
+      viewport: viewport(0),
+    }),
+    "following",
+  );
+  assert.equal(
+    nextChatScrollFollowMode("navigating", {
+      type: "user.scrolled",
+      viewport: viewport(0),
+    }),
+    "following",
+  );
+  // A small scroll up stays within the visual tolerance but is reading.
+  assert.equal(
+    nextChatScrollFollowMode("reading", {
+      type: "user.scrolled",
+      viewport: viewport(12),
+    }),
+    "reading",
+  );
+  // Content resizing that clamps the viewport to the bottom is not the person.
+  assert.equal(
+    nextChatScrollFollowMode("reading", {
+      type: "viewport.scrolled",
+      viewport: viewport(0),
+    }),
+    "reading",
+  );
+});

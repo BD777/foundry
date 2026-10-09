@@ -186,6 +186,9 @@ export const chat: Translation<typeof en> = {
     show: "显示对话详情",
     hide: "隐藏对话详情",
     outputs: "输出",
+    mentioned: "回复中提到",
+    showAll: "显示全部 {{count}} 个",
+    showFewer: "收起",
     timers: "定时任务",
     subagents: "子智能体",
     sources: "来源",
@@ -218,6 +221,8 @@ export const chat: Translation<typeof en> = {
     },
     fileTruncated: "文件较大，仅展示前 128 KB。",
     subagentEmpty: "暂时还没有可展示的子智能体消息。",
+    subagentUsage:
+      "子智能体共用了 {{usage}}。下方各步骤显示各自模型请求的用量。",
     openInNewWindow: "新窗口打开",
     webPreviewTitle: "预览 {{url}}",
     timer: {

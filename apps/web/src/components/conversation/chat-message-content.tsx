@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Streamdown, type Components } from "streamdown";
+import remarkBreaks from "remark-breaks";
+import { defaultRemarkPlugins, Streamdown, type Components } from "streamdown";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
@@ -27,6 +28,9 @@ import {
   type ProcessDisplayRow,
   type ProcessDisplayItem,
 } from "./chat-process-display";
+import { formatDuration, stepUsageSummary, stepUsageTitle } from "./turn-usage";
+import { ProcessElapsed } from "./process-elapsed";
+import type { StepUsage } from "./conversation-types";
 
 const streamingTextAnimation = {
   animation: "fadeIn" as const,
@@ -125,22 +129,41 @@ const markdownComponents: Components = {
       {children}
     </a>
   ),
+  // Plain lists: `.fdy-markdown` owns their markers and vertical rhythm.
+  ol: "ol",
+  ul: "ul",
+  li: "li",
 };
+
+// Streamdown stacks its top-level blocks with `space-y`; route that gap to the
+// stylesheet's per-block flow space instead of a fixed 1rem.
+const markdownFlowClassName = "space-y-[var(--fdy-markdown-flow-space)]";
+
+// Text a person typed keeps its line breaks, as chat products do; agent
+// answers stay standard Markdown, where a single newline is a soft break.
+const typedTextRemarkPlugins = [
+  ...Object.values(defaultRemarkPlugins),
+  remarkBreaks,
+];
 
 function MarkdownText({
   children,
   streaming,
+  typedText,
 }: {
   children: string;
   streaming: boolean;
+  typedText: boolean;
 }) {
   return (
     <Streamdown
       animated={streamingTextAnimation}
+      className={markdownFlowClassName}
       components={markdownComponents}
       isAnimating={streaming}
       mode="streaming"
       parseIncompleteMarkdown={streaming}
+      remarkPlugins={typedText ? typedTextRemarkPlugins : undefined}
       skipHtml
     >
       {children}
@@ -162,20 +185,19 @@ function preserveLiteralListMarkers(text: string): string {
 export function MarkdownContent({
   children,
   onImagePreview,
-  preserveLists = false,
   streaming = false,
+  typedText = false,
 }: {
   children: ReactNode;
   onImagePreview?: (image: ParsedImageTag) => void;
-  preserveLists?: boolean;
   streaming?: boolean;
+  /** A person's own message: literal list markers and line breaks. */
+  typedText?: boolean;
 }) {
   if (typeof children !== "string") {
     return <>{children}</>;
   }
-  const content = preserveLists
-    ? preserveLiteralListMarkers(children)
-    : children;
+  const content = typedText ? preserveLiteralListMarkers(children) : children;
   return (
     <>
       {splitMarkdownImageTags(content).map((segment, index) =>
@@ -186,7 +208,11 @@ export function MarkdownContent({
             onPreview={onImagePreview}
           />
         ) : segment.text.trim() ? (
-          <MarkdownText key={`text-${index}`} streaming={streaming}>
+          <MarkdownText
+            key={`text-${index}`}
+            streaming={streaming}
+            typedText={typedText}
+          >
             {segment.text}
           </MarkdownText>
         ) : null,
@@ -513,12 +539,19 @@ export function CopyButton({
 }
 
 export function ProcessDisclosure({
+  durationMs,
   items,
   onImagePreview,
+  startedAt,
+  stepUsage,
   streaming = false,
   text,
   title,
 }: {
+  durationMs?: number;
+  /** The first step's time; a running group counts up from it. */
+  startedAt?: string;
+  stepUsage?: StepUsage;
   items?: ProcessDisplayItem[];
   onImagePreview?: (image: ParsedImageTag) => void;
   streaming?: boolean;
@@ -554,6 +587,21 @@ export function ProcessDisclosure({
           {streaming && summary.detail ? (
             <span className="fdy-chat-process-trigger-detail">
               {summary.detail}
+            </span>
+          ) : null}
+          {streaming && startedAt ? (
+            <ProcessElapsed startedAt={startedAt} />
+          ) : !streaming && (durationMs || stepUsage) ? (
+            <span
+              className="fdy-chat-process-trigger-detail"
+              title={stepUsage ? stepUsageTitle(stepUsage) : undefined}
+            >
+              {[
+                durationMs ? formatDuration(durationMs) : "",
+                stepUsage ? stepUsageSummary(stepUsage) : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           ) : null}
         </span>

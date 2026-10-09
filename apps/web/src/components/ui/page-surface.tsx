@@ -5,6 +5,7 @@ type PageSurfaceVariant =
   | "accounts"
   | "assets"
   | "devices"
+  | "library"
   | "members"
   | "profiles"
   | "runs"

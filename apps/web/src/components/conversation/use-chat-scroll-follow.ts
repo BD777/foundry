@@ -128,12 +128,22 @@ export function useChatScrollFollow(
       scrollHeight: viewport.scrollHeight,
       scrollTop: viewport.scrollTop,
     });
+    // Scrolls within this window of the person's own input, or while they
+    // hold the scrollbar, are theirs; any other scroll comes from content
+    // resizing and must not resume following.
+    let lastUserInputAt = -Infinity;
+    let scrollbarHeld = false;
+    const userInput = (): void => {
+      lastUserInputAt = performance.now();
+    };
     const markHistoryReading = (): void => {
+      userInput();
       transition({ type: "user.scroll-intent" });
     };
     const syncFollowFromPosition = (): void => {
+      const byUser = scrollbarHeld || performance.now() - lastUserInputAt < 300;
       transition({
-        type: "viewport.scrolled",
+        type: byUser ? "user.scrolled" : "viewport.scrolled",
         viewport: viewportMetrics(),
       });
     };
@@ -143,6 +153,11 @@ export function useChatScrollFollow(
         (event.deltaY !== 0 && !chatViewportIsAtLatest(viewportMetrics()))
       ) {
         markHistoryReading();
+      } else if (event.deltaY > 0) {
+        // Scrolling down while already at the bottom moves nothing, so no
+        // scroll event follows; the intent alone resumes following.
+        userInput();
+        transition({ type: "user.scrolled", viewport: viewportMetrics() });
       }
     };
     const handlePointerDown = (event: PointerEvent): void => {
@@ -153,6 +168,17 @@ export function useChatScrollFollow(
       ) {
         markHistoryReading();
       }
+      // A press on the viewport itself, not its content, is its scrollbar.
+      if (
+        target === viewport ||
+        (target instanceof Node && !viewport.contains(target))
+      ) {
+        scrollbarHeld = true;
+      }
+    };
+    const handlePointerUp = (): void => {
+      if (scrollbarHeld) userInput();
+      scrollbarHeld = false;
     };
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (
@@ -204,6 +230,7 @@ export function useChatScrollFollow(
       passive: true,
     });
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("pointerup", handlePointerUp, { passive: true });
     syncFollowFromPosition();
     return () => {
       viewport.removeEventListener("scroll", syncFollowFromPosition);
@@ -211,6 +238,7 @@ export function useChatScrollFollow(
       viewport.removeEventListener("touchmove", markHistoryReading);
       scrollRoot?.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pointerup", handlePointerUp);
     };
   }, [threadKey, transition]);
 

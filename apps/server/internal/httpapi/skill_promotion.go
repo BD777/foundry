@@ -93,7 +93,7 @@ func (s *Server) storedSkillPromotionPlan(ctx context.Context, input store.Promo
 	for _, source := range plan.Skills {
 		r := store.ResolveSkillPromotion(source, input.Resolutions)
 		choices = append(choices, r)
-		if r.Action == "update" || r.Action == "reuse" {
+		if r.Action == "update" || r.Action == "reuse" || r.Action == "keep" {
 			found := false
 			for _, candidate := range source.ServerCandidates {
 				if candidate.ID == r.TargetSkillID && candidate.LatestRevision == r.ExpectedRevision {
@@ -145,6 +145,12 @@ func (s *Server) handleSkillPromotionPlan(w http.ResponseWriter, r *http.Request
 		return
 	}
 	plan, err := s.storedSkillPromotionPlan(r.Context(), input)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	view, err := s.callerVisibility(r)
+	plan.Skills = view.deviceSkillUsage(plan.Skills)
 	writeResult(w, plan, err)
 }
 
@@ -174,7 +180,8 @@ func (s *Server) promoteSkillClosure(w http.ResponseWriter, r *http.Request, inp
 	packages := []store.SkillPromotionPackage{}
 	for _, source := range plan.Skills {
 		resolution := store.ResolveSkillPromotion(source, input.Resolutions)
-		if resolution.Action == "reuse" {
+		// Reused and kept entries publish nothing from the device.
+		if resolution.Action == "reuse" || resolution.Action == "keep" {
 			packages = append(packages, store.SkillPromotionPackage{Source: source, Resolution: resolution})
 			continue
 		}
@@ -217,7 +224,8 @@ func (s *Server) promoteSkillClosure(w http.ResponseWriter, r *http.Request, inp
 	s.invalidateProjections()
 	for i, item := range published {
 		if packages[i].Source.Root == input.Root && packages[i].Source.DirName == input.DirName {
-			writeResultWithStatus(w, http.StatusCreated, item, nil)
+			view, err := s.callerVisibility(r)
+			writeResultWithStatus(w, http.StatusCreated, view.skillUsage([]store.PromotedSkill{item})[0], err)
 			return
 		}
 	}

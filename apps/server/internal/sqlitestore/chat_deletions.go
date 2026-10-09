@@ -103,6 +103,17 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 		}
 		add(chat.ID, chat.Provider, chat.NativeSessionID)
 	}
+	sessionIDs := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		sessionIDs = append(sessionIDs, session.ID)
+	}
+	owned, err := s.nativeDeletionKeys(ctx, sessionIDs)
+	if err != nil {
+		return err
+	}
+	for _, key := range owned {
+		keys[key] = true
+	}
 	for key := range keys {
 		if _, err := s.conn().ExecContext(ctx, `INSERT OR IGNORE INTO chat_deletions(workspace_id, deletion_key) VALUES (?, ?)`, workspaceID, key); err != nil {
 			return err

@@ -1,11 +1,10 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, Pencil, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pencil, Plus, RefreshCw } from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProfileBinding,
   DeviceProjection,
-  DeviceSkill,
   DeviceSkillRoot,
   ProfileDefinition,
   ProviderHealth,
@@ -17,6 +16,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { DeviceAccess } from "./device-access";
+import { DeviceDiagnostics } from "./device-diagnostics";
 import { DeviceResources } from "./device-resources";
 import {
   DeviceWorker,
@@ -35,7 +35,8 @@ import { AddDeviceDialog } from "./add-device-dialog";
 import { Alert } from "../../components/ui/alert";
 import { liveDevices } from "../../lib/devices";
 
-export type DeviceSection = "agents" | "resources" | "skills" | "settings";
+export type DeviceSection =
+  "agents" | "resources" | "skills" | "settings" | "diagnostics";
 export interface DevicesFeatureProps {
   devices: DeviceProjection[];
   selectedDeviceId?: string;
@@ -46,7 +47,6 @@ export interface DevicesFeatureProps {
   agentProfiles: AgentProfileProjection[];
   deviceProfiles: DeviceProfileBinding[];
   deviceSkillRoots: DeviceSkillRoot[];
-  deviceSkills: DeviceSkill[];
   providerHealth: ProviderHealth[];
   onSelect: (deviceId?: string, section?: DeviceSection) => void;
   onOpenWorkspace: (workspaceId: string) => Promise<boolean>;
@@ -79,6 +79,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
   const removalTriggers = useRef(new Map<string, HTMLButtonElement>());
   const { t } = useTranslation("devices");
   const { release } = useWorkerRelease();
+  const [refreshing, setRefreshing] = useState(false);
   const updateAll = useUpdateAllWorkers(availableDevices, release, onRefresh);
 
   function deviceWorkspaces(deviceId: string): WorkspaceProjection[] {
@@ -107,6 +108,20 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               <p>{t("list.intro")}</p>
             </div>
             <div className="fdy-device-heading-actions">
+              <Button
+                aria-busy={refreshing}
+                disabled={refreshing}
+                onClick={() => {
+                  setRefreshing(true);
+                  void onRefresh()
+                    .catch(() => {})
+                    .finally(() => setRefreshing(false));
+                }}
+                variant="ghost"
+              >
+                <RefreshCw size={15} />
+                {refreshing ? t("list.refreshing") : t("list.refresh")}
+              </Button>
               <UpdateAllWorkersButton state={updateAll} />
               <Button onClick={() => setAddingDevice(true)} variant="primary">
                 <Plus size={15} />
@@ -221,6 +236,10 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                 { value: "resources", label: t("detail.sectionResources") },
                 { value: "skills", label: t("detail.sectionSkills") },
                 { value: "settings", label: t("detail.sectionSettings") },
+                {
+                  value: "diagnostics",
+                  label: t("detail.sectionDiagnostics"),
+                },
               ]}
             />
           ) : (
@@ -246,13 +265,14 @@ export function DevicesFeature(props: DevicesFeatureProps) {
                 roots={props.deviceSkillRoots.filter(
                   (root) => root.deviceId === device.id,
                 )}
-                skills={props.deviceSkills.filter(
-                  (skill) => skill.deviceId === device.id,
-                )}
+                workspaces={deviceWorkspaces(device.id)}
               />
             ) : null}
             {section === "settings" && device.owned ? (
               <DeviceWorker device={device} onRefresh={onRefresh} />
+            ) : null}
+            {section === "diagnostics" && device.owned ? (
+              <DeviceDiagnostics device={device} onRefresh={onRefresh} />
             ) : null}
             {section === "settings" && device.owned ? (
               <DeviceSettings

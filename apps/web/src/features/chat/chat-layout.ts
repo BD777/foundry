@@ -12,17 +12,26 @@ export function emptyChatLayout(): ChatLayout {
   return { revision: 0, groups: [], positions: [] };
 }
 
-export function orderedChats<T extends { id: string }>(
+export function orderedChats<T extends { id: string; activityAt?: string }>(
   chats: readonly T[],
   layout: ChatLayout,
 ): T[] {
   const rank = new Map(
     layout.positions.map((item, index) => [item.chatId, index]),
   );
-  // Newly discovered sessions stay at the top until their position is saved.
-  // Existing manual positions are independent of activity and title changes.
+  const activity = (chat: T) => {
+    const value = Date.parse(chat.activityAt ?? "");
+    return Number.isFinite(value) ? value : 0;
+  };
+  // Chats without a saved position come first, Foundry and native alike, by
+  // their last conversation activity. Saved manual positions are independent
+  // of activity and title changes. Ties break on id, so a refetch never
+  // reorders the list.
   return [...chats].sort(
-    (a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1),
+    (a, b) =>
+      (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1) ||
+      activity(b) - activity(a) ||
+      a.id.localeCompare(b.id),
   );
 }
 

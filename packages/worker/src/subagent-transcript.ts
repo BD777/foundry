@@ -1,5 +1,6 @@
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
 import { readSubagentRecords } from "./subagent-records.js";
+import { claudeRequestUsage, claudeSubagentUsage } from "./turn-usage.js";
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { sessionArtifactDirectories } from "./session-artifacts.js";
@@ -25,7 +26,10 @@ function truncateToolResult(content: string): string {
 function messageContentBlocks(
   record: Record<string, unknown>,
 ): AgentSubagentTranscriptMessage[] {
+  const requestUsage =
+    record.type === "assistant" ? claudeRequestUsage(record) : undefined;
   return claudeTranscriptRecord(record, "message").map((item) => ({
+    ...(requestUsage && item.kind !== "user" ? { requestUsage } : {}),
     id: item.id,
     kind: item.kind,
     role:
@@ -180,6 +184,9 @@ export async function listAgentSubagents(
           stringValue(notification?.summary) ||
           "Subagent",
         toolUseId,
+        ...(notification && claudeSubagentUsage(notification)
+          ? { usage: claudeSubagentUsage(notification) }
+          : {}),
       };
     });
 }
@@ -251,5 +258,8 @@ export async function readAgentSubagentTranscript(
       stringValue(notification?.summary) ||
       "Subagent",
     toolUseId,
+    ...(notification && claudeSubagentUsage(notification)
+      ? { usage: claudeSubagentUsage(notification) }
+      : {}),
   };
 }

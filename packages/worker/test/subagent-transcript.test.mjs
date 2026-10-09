@@ -38,8 +38,10 @@ test("reads only the selected local agent conversation", async () => {
       uuid: "assistant_1",
       parent_tool_use_id: "tool_agent",
       message: {
+        id: "msg_sub",
         role: "assistant",
         content: [{ type: "text", text: "The bug is in app.ts." }],
+        usage: { input_tokens: 300, output_tokens: 20 },
       },
     },
     {
@@ -57,6 +59,7 @@ test("reads only the selected local agent conversation", async () => {
       task_id: "task_agent",
       status: "completed",
       summary: "Inspect the workspace",
+      usage: { total_tokens: 4321, tool_uses: 3, duration_ms: 9000 },
     },
   ];
   writeFileSync(
@@ -79,6 +82,10 @@ test("reads only the selected local agent conversation", async () => {
         ["assistant", "The bug is in app.ts."],
       ],
     );
+    // The subagent's own totals, and each step's model request tokens.
+    const usage = { totalTokens: 4321, toolUses: 3, durationMs: 9000 };
+    assert.deepEqual(transcript.usage, usage);
+    assert.equal(transcript.messages[1].requestUsage?.outputTokens, 20);
     assert.deepEqual(await listAgentSubagents(workspace, sessionId), [
       {
         prompt: "Find the bug",
@@ -89,6 +96,7 @@ test("reads only the selected local agent conversation", async () => {
         taskId: "task_agent",
         title: "Inspect the workspace",
         toolUseId: "tool_agent",
+        usage,
       },
     ]);
   } finally {

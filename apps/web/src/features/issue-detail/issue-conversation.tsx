@@ -9,6 +9,7 @@ import {
 } from "../../api";
 import { IssueQuestionCard } from "./issue-question-card";
 import { Conversation } from "../../components/conversation/conversation";
+import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import { issueTranscript } from "./issue-transcript";
 import type { ChatMessageItem } from "../../components/conversation/conversation-types";
 import type { IssueContractController } from "./use-issue-contract";
@@ -186,7 +187,7 @@ export function IssueConversation({
         (issue.status === "pending" && issue.contractState === "confirmed")
       }
       activeExecutionId={runId}
-      draftStorageKey={`foundry.issue-draft:${issue.id}`}
+      storageKeyPrefix={conversationStoragePrefixes.issue}
       inputLabel={t("conversation.inputLabel")}
       sendLabel={t("conversation.sendLabel")}
       placeholder={
