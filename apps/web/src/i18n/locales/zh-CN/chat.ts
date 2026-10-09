@@ -205,6 +205,11 @@ export const chat: Translation<typeof en> = {
       deleted: "已删除",
       referenced: "提到",
     },
+    fileStatusShort: {
+      created: "A",
+      modified: "M",
+      deleted: "D",
+    },
     timers: "定时任务",
     background: "后台",
     backgroundFallback: "后台任务",
@@ -270,6 +275,36 @@ export const chat: Translation<typeof en> = {
     fileMissing: "该文件已不在{{device}}上。",
     fileChanged: "本轮之后，{{device}}上的这个文件又被修改过。",
     fileBinary: "{{size}}，无法预览。",
+    diff: {
+      modeLabel: "查看改动或文件",
+      diff: "差异",
+      file: "文件",
+      scopeTurn: "这次回答的改动",
+      scopeChat: "这个对话的全部改动",
+      loading: "正在加载差异…",
+      failed: "无法加载差异",
+      sides: "{{before}} → {{after}}",
+      before: {
+        empty: "新文件",
+        beforeEdits: "对话改动前",
+        turnStart: "本轮开始时",
+      },
+      after: {
+        afterEdits: "最后一次改动后",
+        current: "当前",
+        deleted: "已删除",
+      },
+      lineCounts: "新增 {{added}} 行，删除 {{removed}} 行",
+      snapshotNote: "与本轮开始时的文件比较，可能包含对这个文件的其他改动。",
+      otherEdits:
+        "对话改动这个文件期间，还有别的程序写过它；差异中可能包含那些改动。",
+      changedSince:
+        "这个对话最后一次改动后，{{device}}上的文件又被修改过。差异显示的是对话留下的版本。",
+      unavailable: "无法显示差异：没有保留对话改动前的副本。请改为查看文件。",
+      binary: "无法显示差异：这是二进制文件。请改为查看文件。",
+      tooLarge: "无法显示差异：文件超过 1 MB。请改为查看文件。",
+      viewFile: "查看文件",
+    },
     subagentEmpty: "暂时还没有可展示的子智能体消息。",
     subagentUsage:
       "子智能体共用了 {{usage}}。下方各步骤显示各自模型请求的用量。",

@@ -96,6 +96,9 @@ Workspace 派生：
 会话自己的写工具（主线程与子智能体）成功写入的文件，以及回答里提到且经设备核实的
 路径（Workspace 外的还须在临时目录且本轮修改过）。台账在设备上，设备回答文件的来源，
 角色仍由服务端判断：回答只是提到的 Workspace 外文件，近于浏览设备目录，要求 Member。
+会话文件差异（`GET /api/agent-sessions/{id}/files/diff`，可选 `inputId`）规则相同，
+且只对写工具写过的文件提供；内容来自设备上该会话保存的改动前后副本（Codex 为本轮
+开始时用临时索引写出的 Git 快照），响应 `no-store`。
 
 理由：Device 是一台真实机器；"整机共享"会让协作者在任意路径建 Workspace，
 等价于任意文件读写。跟随 Workspace 后，共享的边界就是那个 Workspace 目录

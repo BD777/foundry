@@ -665,6 +665,9 @@ async function runCodexTurn(
     reportNativeSessionId(nativeSessionId);
     const prompt = sessionPrompt(session, profile);
     const input = codexSessionInput(session, prompt);
+    // Codex reports no diffs: its changes are diffed against the work tree
+    // as the turn started.
+    await files.snapshotWorkTree();
 
     if (typeof thread.runStreamed === "function") {
       const abortController = new AbortController();
@@ -1581,8 +1584,9 @@ export async function runClaudeAgentSdkSession(
         runtime.timers.hooks(),
         runtime.background.hooks(),
         // A write belongs to the turn the runtime is serving.
-        claudeFileWriteHooks((write) =>
-          owner.pending?.files?.recordToolWrite(write),
+        claudeFileWriteHooks(
+          (write) => owner.pending?.files?.recordToolWrite(write),
+          (write) => owner.pending?.files?.captureBeforeWrite(write),
         ),
       );
       activeClaudeRuntimes.set(runtimeKey, runtime);

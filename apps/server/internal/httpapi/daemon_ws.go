@@ -33,6 +33,8 @@ const (
 	wsSessionUsageReadType         = "session_usage_read"
 	wsReadSessionFileType          = "read_session_file"
 	wsSessionFileReadType          = "session_file_read"
+	wsReadSessionFileDiffType      = "read_session_file_diff"
+	wsSessionFileDiffReadType      = "session_file_diff_read"
 	wsReadBackgroundTaskOutputType = "read_background_task_output"
 	wsBackgroundTaskOutputReadType = "background_task_output_read"
 	wsStopBackgroundTaskType       = "stop_background_task"
@@ -271,6 +273,18 @@ type wsReadSessionFilePayload struct {
 
 type wsSessionFileReadPayload struct {
 	store.SessionFileRead
+	Error string `json:"error,omitempty"`
+}
+
+type wsReadSessionFileDiffPayload struct {
+	WorkspaceID string `json:"workspaceId"`
+	SessionID   string `json:"sessionId"`
+	Path        string `json:"path"`
+	InputID     string `json:"inputId,omitempty"`
+}
+
+type wsSessionFileDiffReadPayload struct {
+	store.SessionFileDiff
 	Error string `json:"error,omitempty"`
 }
 
@@ -706,6 +720,21 @@ func (h *DaemonHub) ReadSessionFile(ctx context.Context, session store.AgentSess
 		return store.SessionFileRead{}, store.ErrNotFound
 	}
 	return connection.readSessionFile(ctx, session.WorkspaceID, session.ID, path)
+}
+
+// ReadSessionFileDiff reads what the session's writes changed in a file it
+// recorded, from the session's device: one turn's (inputID) or all of them.
+func (h *DaemonHub) ReadSessionFileDiff(ctx context.Context, session store.AgentSession, path string, inputID string) (store.SessionFileDiff, error) {
+	connection := h.connectionFor(session.DeviceID)
+	if connection == nil {
+		return store.SessionFileDiff{}, store.ErrNotFound
+	}
+	return connection.readSessionFileDiff(ctx, wsReadSessionFileDiffPayload{
+		WorkspaceID: session.WorkspaceID,
+		SessionID:   session.ID,
+		Path:        path,
+		InputID:     inputID,
+	})
 }
 
 func (h *DaemonHub) ListAgentSubagents(ctx context.Context, session store.AgentSession) ([]store.AgentSubagentSummary, error) {
@@ -1416,6 +1445,8 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsSubagentTranscriptReadPayload](c, envelope, nil)
 	case wsSessionFileReadType:
 		return deliverDaemonResponse[wsSessionFileReadPayload](c, envelope, nil)
+	case wsSessionFileDiffReadType:
+		return deliverDaemonResponse[wsSessionFileDiffReadPayload](c, envelope, nil)
 	case wsBackgroundTaskOutputReadType:
 		return deliverDaemonResponse[wsBackgroundTaskOutputReadPayload](c, envelope, nil)
 	case wsBackgroundTaskStoppedType:
@@ -1716,6 +1747,21 @@ func (c *daemonConnection) readSessionFile(ctx context.Context, workspaceID stri
 		return store.SessionFileRead{}, sessionFileRefusal{value.Error}
 	}
 	return value.SessionFileRead, nil
+}
+
+func (c *daemonConnection) readSessionFileDiff(ctx context.Context, request wsReadSessionFileDiffPayload) (store.SessionFileDiff, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return store.SessionFileDiff{}, err
+	}
+	value, err := daemonRequest[wsSessionFileDiffReadPayload](ctx, c, wsReadSessionFileDiffType, payload)
+	if err != nil {
+		return store.SessionFileDiff{}, err
+	}
+	if value.Error != "" {
+		return store.SessionFileDiff{}, sessionFileRefusal{value.Error}
+	}
+	return value.SessionFileDiff, nil
 }
 
 // sessionFileRefusal is a device's answer that the path is not one of the

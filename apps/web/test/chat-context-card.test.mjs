@@ -432,6 +432,45 @@ test("lists the chat's recorded files in Changes and Files, never legacy guesses
   );
 });
 
+test("a change carries each turn's line counts and the session's total", () => {
+  const change = (id, inputId, counts) =>
+    recorded(id, {
+      path: "/home/me/repo/src/app.ts",
+      workspacePath: "src/app.ts",
+      origin: "tool",
+      op: "modified",
+      inGitRepo: true,
+      inputId,
+      agent: "main",
+      ...counts,
+    });
+  const data = chatContextCardForSessions([
+    session([
+      // As written, before the turn ended: no counts yet.
+      change("evt_1", "in_1"),
+      change("evt_1_end", "in_1", {
+        added: 10,
+        removed: 0,
+        totalAdded: 10,
+        totalRemoved: 0,
+      }),
+      change("evt_2", "in_2"),
+      change("evt_2_end", "in_2", {
+        added: 2,
+        removed: 3,
+        totalAdded: 12,
+        totalRemoved: 3,
+      }),
+    ]),
+  ]);
+  const [file] = data.changes;
+  assert.deepEqual(file.lineChanges, { added: 12, removed: 3 });
+  assert.deepEqual(file.turnLineChanges, {
+    in_1: { added: 10, removed: 0 },
+    in_2: { added: 2, removed: 3 },
+  });
+});
+
 test("each answer carries its turn's file count and verified references", async () => {
   const { chatMessagesForThread } =
     await import("../src/features/chat/chat-model.ts");

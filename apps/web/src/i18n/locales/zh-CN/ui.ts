@@ -29,6 +29,16 @@ export const ui: Translation<typeof en> = {
       timeLimit: "差异计算达到时间上限。请下载归档后在外部比较。",
       tooManyLines: "此差异超过 5,000 行。请下载归档查看全部改动。",
     },
+    fileErrors: {
+      timedOut: "差异计算太久。请改为查看文件。",
+      display: "无法显示此差异。请改为查看文件。",
+      worker: "无法加载差异计算程序。请改为查看文件。",
+      failed: "无法计算此差异。请改为查看文件。",
+      longLines: "此文件包含超长的行，不显示差异。请改为查看文件。",
+      tooLarge: "此文件太大，无法在这里显示差异。请改为查看文件。",
+      timeLimit: "差异计算太久。请改为查看文件。",
+      tooManyLines: "此差异超过 5,000 行，无法在这里显示。请改为查看文件。",
+    },
   },
   fileTree: {
     filter: "筛选文件",
@@ -38,6 +48,7 @@ export const ui: Translation<typeof en> = {
     tree: "树状",
     list: "列表",
     noMatches: "没有与“{{query}}”匹配的文件。",
+    lineChanges: "新增 {{added}} 行，删除 {{removed}} 行",
   },
   selectMenu: {
     placeholder: "请选择",

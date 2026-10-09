@@ -220,6 +220,11 @@ export const chat = {
       deleted: "Deleted",
       referenced: "Named",
     },
+    fileStatusShort: {
+      created: "A",
+      modified: "M",
+      deleted: "D",
+    },
     timers: "Scheduled tasks",
     background: "Background",
     backgroundFallback: "Background task",
@@ -285,6 +290,39 @@ export const chat = {
     fileMissing: "No longer exists on {{device}}.",
     fileChanged: "Changed on {{device}} since this turn.",
     fileBinary: "{{size}}, not previewable.",
+    diff: {
+      modeLabel: "Show the change or the file",
+      diff: "Diff",
+      file: "File",
+      scopeTurn: "This answer's edits",
+      scopeChat: "All of this chat's edits",
+      loading: "Loading the diff…",
+      failed: "Could not load the diff",
+      sides: "{{before}} → {{after}}",
+      before: {
+        empty: "New file",
+        beforeEdits: "Before this chat's edits",
+        turnStart: "As the turn started",
+      },
+      after: {
+        afterEdits: "after its last edit",
+        current: "now",
+        deleted: "deleted",
+      },
+      lineCounts: "{{added}} lines added, {{removed}} removed",
+      snapshotNote:
+        "Compared with the file as the turn started, so it may include other edits to this file.",
+      otherEdits:
+        "Something else also wrote this file while the chat edited it; those edits may be included.",
+      changedSince:
+        "Changed on {{device}} after this chat's last edit. The diff shows the chat's version.",
+      unavailable:
+        "Diff unavailable: no copy from before this chat's edits was kept. View the file instead.",
+      binary: "Diff unavailable: this is a binary file. View the file instead.",
+      tooLarge:
+        "Diff unavailable: the file is over 1 MB. View the file instead.",
+      viewFile: "View file",
+    },
     subagentEmpty: "No subagent messages to show yet.",
     subagentUsage:
       "The subagent used {{usage}}. Steps below show their own model requests.",

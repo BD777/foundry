@@ -35,6 +35,7 @@ import type {
   SaveProfileInput,
   SetDeviceProfilesInput,
   Issue,
+  SessionFileDiff,
   SessionFileRead,
   WorkspaceDirectoryEntry,
   WorkspaceFileRead,
@@ -696,6 +697,21 @@ export function readSessionFile(
   const params = new URLSearchParams({ path });
   return getJSON<SessionFileRead>(
     `/api/agent-sessions/${encodeURIComponent(sessionId)}/files/read?${params.toString()}`,
+    options,
+  );
+}
+
+/** What the session's writes changed in one of its files; one turn's with `inputId`. */
+export function readSessionFileDiff(
+  sessionId: string,
+  path: string,
+  inputId?: string,
+  options: RequestOptions = {},
+): Promise<SessionFileDiff> {
+  const params = new URLSearchParams({ path });
+  if (inputId) params.set("inputId", inputId);
+  return getJSON<SessionFileDiff>(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/files/diff?${params.toString()}`,
     options,
   );
 }
