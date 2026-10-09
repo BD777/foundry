@@ -1,4 +1,5 @@
 import type {
+  AgentBackgroundTask,
   AgentSession,
   AgentSessionEvent,
   AgentSessionTimerFire,
@@ -7,8 +8,10 @@ import type {
 } from "@bd777/foundry-protocol";
 import { humanizeCron } from "@bd777/foundry-protocol";
 import type {
+  ChatBackgroundTaskItem,
   ChatContextCardData,
   ChatContextResourceItem,
+  ChatSessionFileItem,
   ChatSubagentItem,
   ChatTimerItem,
 } from "./chat-types";
@@ -43,11 +46,6 @@ function firstDetailLine(detail: string, fallback: string): string {
       .map((line) => line.trim())
       .find(Boolean) ?? fallback
   );
-}
-
-function resourceLabel(detail: string): string {
-  const trimmed = detail.trim().replace(/[\\/]+$/, "");
-  return trimmed.split(/[\\/]/).filter(Boolean).pop() ?? trimmed;
 }
 
 function webResourceLabel(url: string): string {
@@ -233,28 +231,74 @@ function mergeSubagents(
   return [...merged.values()];
 }
 
-function isAbsolutePath(path: string): boolean {
-  return (
-    path.startsWith("/") ||
-    path.startsWith("\\") ||
-    /^[A-Za-z]:[\\/]/.test(path)
-  );
+/** The op a later turn leaves: a file the chat created stays created. */
+function mergedFileOp(
+  earlier: ChatSessionFileItem["op"],
+  later: ChatSessionFileItem["op"],
+): ChatSessionFileItem["op"] {
+  if (later === "referenced") return earlier;
+  if (later === "deleted" || earlier === "referenced") return later;
+  return earlier === "created" ? "created" : later;
+}
+
+function fileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function isSessionChange(file: ChatSessionFileItem): boolean {
+  return file.inGitRepo && file.origin === "tool";
 }
 
 /**
- * A file in the workspace the run created or changed, as the worker reports
- * it (relative to the workspace). Files outside the workspace, such as Claude
- * background-task logs, cannot be opened from here; their subagent shows
- * them.
+ * The files the chat's own tools wrote and its answers named, one row per
+ * path across its sessions, each with the turns that recorded it. Older
+ * workers' `outputFile` events credited every file that changed on disk
+ * while they ran; those are not shown.
  */
-function workspaceOutputFile(event: AgentSessionEvent): string | undefined {
-  const file = event.metadata?.outputFile?.trim();
-  return event.level === "info" &&
-    file &&
-    !isAbsolutePath(file) &&
-    extractWebURLs(file).length === 0
-    ? file
-    : undefined;
+export function chatSessionFiles(
+  sessions: AgentSession[],
+  activeWorkspace?: ActiveWorkspaceContext,
+): ChatSessionFileItem[] {
+  const files = new Map<string, ChatSessionFileItem>();
+  for (const session of sessions) {
+    for (const event of session.events ?? []) {
+      const record = event.metadata?.sessionFile;
+      if (!record?.path) continue;
+      const turnId = record.inputId ?? session.id;
+      const known = files.get(record.path);
+      if (!known) {
+        files.set(record.path, {
+          id: record.path,
+          kind: "session-file",
+          label: fileName(record.path),
+          path: record.path,
+          workspacePath: record.workspacePath,
+          origin: record.origin,
+          op: record.op,
+          inGitRepo: record.inGitRepo,
+          turnIds: [turnId],
+          sessionId: session.id,
+          workspaceId: session.workspaceId,
+          deviceLabel:
+            activeWorkspace?.id === session.workspaceId
+              ? activeWorkspace.deviceLabel
+              : undefined,
+          bytes: record.bytes,
+        });
+        continue;
+      }
+      known.op = mergedFileOp(known.op, record.op);
+      if (record.origin === "tool") known.origin = "tool";
+      known.inGitRepo = record.inGitRepo;
+      known.workspacePath = record.workspacePath ?? known.workspacePath;
+      known.bytes = record.bytes ?? known.bytes;
+      known.sessionId = session.id;
+      if (!known.turnIds.includes(turnId)) known.turnIds.push(turnId);
+    }
+  }
+  return [...files.values()].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
 }
 
 /** A preview a run reported, such as a dev server on localhost. */
@@ -266,12 +310,7 @@ function previewOutputURL(event: AgentSessionEvent): string | undefined {
 }
 
 function isOutputEvent(event: AgentSessionEvent): boolean {
-  return Boolean(workspaceOutputFile(event) || previewOutputURL(event));
-}
-
-function folderOf(path: string): string | undefined {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.length > 1 ? parts.slice(0, -1).join("/") : undefined;
+  return Boolean(event.metadata?.sessionFile || previewOutputURL(event));
 }
 
 function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
@@ -341,10 +380,83 @@ function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
   });
 }
 
+/** Latest snapshot wins: it describes the session's background work. */
+function latestBackgroundSnapshot(
+  session: AgentSession,
+): AgentBackgroundTask[] | undefined {
+  let snapshot: AgentBackgroundTask[] | undefined;
+  for (const event of session.events ?? []) {
+    if (event.metadata?.backgroundTaskSnapshot) {
+      snapshot = event.metadata.backgroundTaskSnapshot;
+    }
+  }
+  return snapshot;
+}
+
+function backgroundRecency(task: AgentBackgroundTask): string {
+  return task.endedAt ?? task.startedAt;
+}
+
+/**
+ * The session's commands, monitors and workflows: running ones first, then
+ * the most recently finished. Background subagents are listed under
+ * Subagents. Only Claude reports background work.
+ */
+export function projectBackgroundTasks(
+  session: AgentSession,
+): ChatBackgroundTaskItem[] {
+  if (session.provider !== "claude") return [];
+  const snapshot = latestBackgroundSnapshot(session) ?? [];
+  const subagents = new Map(
+    snapshot
+      .filter((task) => task.kind === "subagent")
+      .map((task) => [task.id, task.description] as const),
+  );
+  return snapshot
+    .filter((task) => task.kind !== "subagent")
+    .sort((left, right) => {
+      const leftRunning = left.status === "running" ? 0 : 1;
+      const rightRunning = right.status === "running" ? 0 : 1;
+      if (leftRunning !== rightRunning) return leftRunning - rightRunning;
+      return leftRunning === 0
+        ? left.startedAt.localeCompare(right.startedAt)
+        : backgroundRecency(right).localeCompare(backgroundRecency(left));
+    })
+    .map((task) => ({
+      id: `${session.id}:background:${task.id}`,
+      kind: "background-task" as const,
+      label:
+        task.description.trim() ||
+        i18n.t("chat:contextCard.backgroundFallback"),
+      task,
+      ownerLabel: task.ownerSubagentTaskId
+        ? (subagents.get(task.ownerSubagentTaskId) ??
+          i18n.t("chat:contextCard.backgroundOwnerFallback"))
+        : undefined,
+      sessionId: session.id,
+      workspaceId: session.workspaceId,
+    }));
+}
+
+/**
+ * Background work still running for a chat whose turn has ended (subagents
+ * included): the chat is idle, yet the agent keeps working.
+ */
+export function runningBackgroundWork(sessions: AgentSession[]): number {
+  const latest = [...sessions]
+    .reverse()
+    .find((session) => latestBackgroundSnapshot(session));
+  if (!latest || latest.provider !== "claude") return 0;
+  return (latestBackgroundSnapshot(latest) ?? []).filter(
+    (task) => task.status === "running",
+  ).length;
+}
+
 export interface ActiveWorkspaceContext {
   id: string;
   localPath?: string;
   name?: string;
+  deviceLabel?: string;
 }
 
 export function chatContextCardForSessions(
@@ -352,7 +464,7 @@ export function chatContextCardForSessions(
   discoveredSubagents: Readonly<Record<string, AgentSubagentSummary[]>> = {},
   activeWorkspace?: ActiveWorkspaceContext,
 ): ChatContextCardData | undefined {
-  const outputs: ChatContextResourceItem[] = [];
+  const previews: ChatContextResourceItem[] = [];
   const sources: ChatContextResourceItem[] = [];
   const timers: ChatTimerItem[] = [];
   const focusSession = [...sessions]
@@ -363,7 +475,8 @@ export function chatContextCardForSessions(
           (event) =>
             isSubagentLifecycleEvent(event) ||
             isOutputEvent(event) ||
-            Boolean(event.metadata?.timerSnapshot),
+            (event.metadata?.timerSnapshot?.length ?? 0) > 0 ||
+            (event.metadata?.backgroundTaskSnapshot?.length ?? 0) > 0,
         ) ||
         (discoveredSubagents[session.id]?.length ?? 0) > 0 ||
         (latestTimerSnapshot(session)?.tasks.length ?? 0) > 0 ||
@@ -372,6 +485,7 @@ export function chatContextCardForSessions(
   const sourceSession = [...sessions]
     .reverse()
     .find((session) => (session.events ?? []).some(isWorkspaceSourceEvent));
+  const background = focusSession ? projectBackgroundTasks(focusSession) : [];
   const subagents = focusSession
     ? mergeSubagents(
         projectSessionSubagents(focusSession),
@@ -384,14 +498,10 @@ export function chatContextCardForSessions(
 
   if (focusSession) {
     timers.push(...projectSessionTimers(focusSession));
-    // Newest first; a file the reply names comes before the rest.
-    const reply = focusSession.response ?? "";
-    const files: ChatContextResourceItem[] = [];
     for (const event of [...(focusSession.events ?? [])].reverse()) {
-      const file = workspaceOutputFile(event);
-      const preview = file ? undefined : previewOutputURL(event);
+      const preview = previewOutputURL(event);
       if (preview) {
-        outputs.push({
+        previews.push({
           detail: preview,
           id: event.id,
           kind: "web",
@@ -399,28 +509,12 @@ export function chatContextCardForSessions(
           target: preview,
           workspaceId: focusSession.workspaceId,
         });
-      } else if (file && !files.some((item) => item.target === file)) {
-        files.push({
-          detail: folderOf(file),
-          id: event.id,
-          kind: "file",
-          label:
-            resourceLabel(file) || i18n.t("chat:contextCard.outputFallback"),
-          ...(reply.includes(file) ? { mentioned: true } : {}),
-          target: file,
-          workspaceId: focusSession.workspaceId,
-        });
       }
     }
-    outputs.push(
-      ...files
-        .filter((item) => item.mentioned)
-        .concat(files.filter((item) => !item.mentioned)),
-    );
     for (const [index, url] of extractWebURLs(focusSession.response ?? "")
       .filter(isWorkspacePreviewURL)
       .entries()) {
-      outputs.push({
+      previews.push({
         detail: url,
         id: `${focusSession.id}_web_${index}`,
         kind: "web",
@@ -456,18 +550,27 @@ export function chatContextCardForSessions(
     });
   }
 
-  const seenOutputs = new Set<string>();
+  const seenPreviews = new Set<string>();
+  const sessionFiles = chatSessionFiles(sessions, activeWorkspace);
   const data = {
-    outputs: outputs.filter((item) => {
-      if (seenOutputs.has(item.target)) return false;
-      seenOutputs.add(item.target);
+    // Changes are what this chat's own tools edited in a repository; a file
+    // the answer only names is a file to open, not a change.
+    changes: sessionFiles.filter(isSessionChange),
+    files: sessionFiles.filter((file) => !isSessionChange(file)),
+    previews: previews.filter((item) => {
+      if (seenPreviews.has(item.target)) return false;
+      seenPreviews.add(item.target);
       return true;
     }),
     sources: dedupeResources(sources),
     subagents,
     timers,
+    background,
   };
-  return data.outputs.length > 0 ||
+  return data.changes.length > 0 ||
+    data.background.length > 0 ||
+    data.files.length > 0 ||
+    data.previews.length > 0 ||
     data.sources.length > 0 ||
     data.subagents.length > 0 ||
     data.timers.length > 0

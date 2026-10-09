@@ -29,6 +29,7 @@ type DemoResetter interface {
 type Server struct {
 	projections        projectionCache
 	issueMutationLocks sync.Map
+	idempotencyLocks   sync.Map
 	titles             *chatTitleService
 	events             *browserEventHub
 	hub                *DaemonHub
@@ -1116,6 +1117,11 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return
 	}
+	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/create", input, http.StatusCreated)
+	if handled {
+		return
+	}
+	defer idempotent.release()
 	if input.Verification {
 		input.Source = "verification"
 	}
@@ -1162,6 +1168,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusConflict, session)
 		return
 	}
+	idempotent.record(r.Context(), session)
 	writeJSON(w, http.StatusCreated, session)
 }
 
@@ -1323,10 +1330,12 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 	}
 	message := strings.TrimSpace(input.Prompt)
 	if activeOrBlocked(session.Status) {
-		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" || len(input.Attachments) > 0 {
-			return store.AgentSession{}, http.StatusConflict, errors.New("a running session only takes text; switch runtime or attach files once it settles")
+		if input.AgentID != "" || input.Provider != "" || input.ProfileID != "" {
+			return store.AgentSession{}, http.StatusConflict, errors.New("a running session keeps its runtime; switch it once it settles")
 		}
-		if message == "" {
+		// Files steer in with the message, as they arrive with any message.
+		attachments := store.NormalizeChatAttachments(input.Attachments)
+		if message == "" && len(attachments) == 0 {
 			return store.AgentSession{}, http.StatusBadRequest, errors.New("message is required")
 		}
 		if !s.hub.HasConnection(session.DeviceID) {
@@ -1334,7 +1343,7 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 		}
 		steerCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
-		if err := s.hub.SteerAgentSession(steerCtx, session, message); err != nil {
+		if err := s.hub.SteerAgentSession(steerCtx, session, message, attachments); err != nil {
 			return store.AgentSession{}, http.StatusConflict, err
 		}
 		session, err = s.store.GetAgentSession(ctx, session.ID)
@@ -1381,6 +1390,11 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
+	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/messages:"+anchor.ID, input, http.StatusOK)
+	if handled {
+		return
+	}
+	defer idempotent.release()
 	wasActive := activeOrBlocked(anchor.Status)
 	session, status, err := s.sendSessionMessage(r.Context(), anchor.ID, input)
 	if err != nil {
@@ -1394,6 +1408,7 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if wasActive {
 		s.appendSessionControlAudit(r.Context(), session.ID, "Steered by orchestrator", actor)
 	}
+	idempotent.record(r.Context(), session)
 	writeResult(w, session, nil)
 }
 

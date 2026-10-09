@@ -35,7 +35,9 @@ var chineseProcessLabels = map[string]string{
 	"Scheduled tasks updated":        "定时任务更新",
 	"Scheduled task fired":           "定时任务触发",
 	"Background task continued":      "后台任务继续",
+	"Background tasks updated":       "后台任务更新",
 	"Loaded workspace":               "已加载工作区",
+	"Recorded file":                  "已记录文件",
 	"The native session compacted its context.":                         "原生会话已压缩上下文。",
 	"This local session is large; only its beginning is loaded so far.": "本地会话较大，当前仅载入前段记录，后续内容尚未载入。",
 }

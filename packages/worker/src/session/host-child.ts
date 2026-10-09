@@ -54,7 +54,11 @@ lines.once("line", async (line) => {
           id = command.id;
           if (command.type !== "steer")
             throw new Error("Unsupported session host command");
-          await steerActiveSession(input.session.id, command.message);
+          await steerActiveSession(
+            input.session.id,
+            command.message,
+            command.attachments,
+          );
           output({ type: "steer_result", id });
         } catch (error) {
           output({ type: "steer_result", id, error: errorText(error) });

@@ -472,6 +472,8 @@ export const issueDetail = {
     clarifyFirst:
       "Start clarifying under “Goal and agreement” first; execution begins after the criteria are confirmed.",
     noExecution: "No active Issue execution",
+    steerTextOnly:
+      "A running execution takes text only. Send this message with its files once the execution finishes.",
     organizing: "Organizing the goal and completion criteria…",
     welcome:
       "First we'll agree on the goal and completion criteria; I'll start changing things only after you confirm.",

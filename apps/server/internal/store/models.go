@@ -301,6 +301,43 @@ type WorkspaceFileRead struct {
 	Truncated   bool   `json:"truncated"`
 }
 
+// SessionFileRecord is a file a session's own write tools changed, or its
+// answer named, recorded once per turn by the worker.
+type SessionFileRecord struct {
+	Path          string `json:"path"`
+	WorkspacePath string `json:"workspacePath,omitempty"`
+	Origin        string `json:"origin"`
+	Op            string `json:"op"`
+	InGitRepo     bool   `json:"inGitRepo"`
+	InputID       string `json:"inputId,omitempty"`
+	Agent         string `json:"agent,omitempty"`
+	Bytes         *int64 `json:"bytes,omitempty"`
+}
+
+// SessionFileReference is a path an answer names that its device verified.
+type SessionFileReference struct {
+	Text string `json:"text"`
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+// SessionFileRead is one of a session's recorded files, read from its device.
+type SessionFileRead struct {
+	SessionID            string `json:"sessionId"`
+	Path                 string `json:"path"`
+	WorkspacePath        string `json:"workspacePath,omitempty"`
+	Origin               string `json:"origin"`
+	InsideWorkspace      bool   `json:"insideWorkspace"`
+	Kind                 string `json:"kind"`
+	Content              string `json:"content,omitempty"`
+	DataBase64           string `json:"dataBase64,omitempty"`
+	MIMEType             string `json:"mimeType,omitempty"`
+	Truncated            bool   `json:"truncated"`
+	Bytes                *int64 `json:"bytes,omitempty"`
+	Mtime                string `json:"mtime,omitempty"`
+	ChangedSinceRecorded bool   `json:"changedSinceRecorded"`
+}
+
 type WorkspaceDirectoryEntry struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -525,16 +562,57 @@ type AgentSessionTimerFire struct {
 	CompletedAt string `json:"completedAt"`
 }
 
+// AgentBackgroundTask is work a session's agent left running in the
+// background (Claude only). Session events never carry its command line;
+// members read it, redacted, with the task's output.
+type AgentBackgroundTask struct {
+	ID                  string `json:"id"`
+	Provider            string `json:"provider"`
+	Kind                string `json:"kind"`
+	Description         string `json:"description"`
+	Command             string `json:"command,omitempty"`
+	Status              string `json:"status"`
+	ExitCode            *int64 `json:"exitCode,omitempty"`
+	StopReason          string `json:"stopReason,omitempty"`
+	StartedAt           string `json:"startedAt"`
+	EndedAt             string `json:"endedAt,omitempty"`
+	TimeLimitMs         *int64 `json:"timeLimitMs,omitempty"`
+	OwnerSubagentTaskID string `json:"ownerSubagentTaskId,omitempty"`
+	ToolUseID           string `json:"toolUseId,omitempty"`
+	Summary             string `json:"summary,omitempty"`
+	HasOutput           bool   `json:"hasOutput"`
+}
+
+// AgentBackgroundTaskOutput is the end of a background task's output as
+// its device read it: plain text, secrets redacted.
+type AgentBackgroundTaskOutput struct {
+	SessionID string `json:"sessionId"`
+	TaskID    string `json:"taskId"`
+	Command   string `json:"command,omitempty"`
+	Content   string `json:"content"`
+	Truncated bool   `json:"truncated"`
+	Bytes     int64  `json:"bytes"`
+	Kind      string `json:"kind"`
+}
+
 type AgentSessionEventMetadata struct {
-	OutputFile    string                 `json:"outputFile,omitempty"`
-	Prompt        string                 `json:"prompt,omitempty"`
-	SubagentType  string                 `json:"subagentType,omitempty"`
-	TaskID        string                 `json:"taskId,omitempty"`
-	TaskType      string                 `json:"taskType,omitempty"`
-	ToolUseID     string                 `json:"toolUseId,omitempty"`
-	TimerSnapshot []AgentScheduledTask   `json:"timerSnapshot,omitempty"`
-	TimerFire     *AgentSessionTimerFire `json:"timerFire,omitempty"`
-	TurnUsage     *AgentTurnUsage        `json:"turnUsage,omitempty"`
+	// TaskOutputFile is a Claude background task's own output log. Workers
+	// before it sent that path, and every changed workspace file, as
+	// outputFile; that key is no longer read, so those guesses stay hidden.
+	TaskOutputFile string                 `json:"taskOutputFile,omitempty"`
+	SessionFile    *SessionFileRecord     `json:"sessionFile,omitempty"`
+	FileReferences []SessionFileReference `json:"fileReferences,omitempty"`
+	Prompt         string                 `json:"prompt,omitempty"`
+	SubagentType   string                 `json:"subagentType,omitempty"`
+	TaskID         string                 `json:"taskId,omitempty"`
+	TaskType       string                 `json:"taskType,omitempty"`
+	ToolUseID      string                 `json:"toolUseId,omitempty"`
+	// Snapshots replace earlier ones, so an empty one is kept: it says the
+	// last timer or task is gone.
+	TimerSnapshot          *[]AgentScheduledTask  `json:"timerSnapshot,omitempty"`
+	BackgroundTaskSnapshot *[]AgentBackgroundTask `json:"backgroundTaskSnapshot,omitempty"`
+	TimerFire              *AgentSessionTimerFire `json:"timerFire,omitempty"`
+	TurnUsage              *AgentTurnUsage        `json:"turnUsage,omitempty"`
 	// SubagentUsage is what a Claude subagent has used so far, on its
 	// progress and completion events.
 	SubagentUsage *SubagentUsage `json:"subagentUsage,omitempty"`

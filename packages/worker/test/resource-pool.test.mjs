@@ -87,6 +87,10 @@ test("session notes name what the device offers and where images go", () => {
   assert.match(notes, /--user-data-dir/);
   assert.match(notes, /Screen control is not available.*Accessibility/);
   assert.match(notes, /\/work\/space\/\.foundry\/attachments\//);
+  assert.match(
+    notes,
+    /cite each by its absolute or workspace-relative path in inline code/,
+  );
   assert.match(sessionResourceNotes("/w", []), /No browser was found/);
   assert.doesNotMatch(sessionResourceNotes("/w", []), /Screen control/);
 });

@@ -410,8 +410,78 @@
   font-weight: 500;
 }
 
-.fdy-chat-context-more {
-  margin-top: 8px;
+/* A section title sharing its row with the file view switch. */
+.fdy-chat-context-section .fdy-chat-context-heading {
+  margin: 0;
+}
+
+.fdy-chat-context-empty {
+  margin: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The turn filter's header row: what is shown, and the way back. */
+.fdy-chat-context-filter {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 10px 20px;
+  border-bottom: 1px solid var(--fdy-line);
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* A file an answer names: link color, its code look, a file icon. */
+.fdy-chat-file-reference code {
+  color: inherit;
+}
+
+.fdy-chat-file-reference svg {
+  align-self: center;
+}
+
+.fdy-chat-turn-files {
+  display: flex;
+  width: fit-content;
+  margin-top: 10px;
+  color: var(--fdy-ink-muted);
+  font-weight: 600;
+}
+
+.fdy-chat-file-path {
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-faint);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11.5px;
+}
+
+.fdy-chat-file-banner {
+  margin-bottom: 16px;
+}
+
+.fdy-chat-file-code {
+  font-size: 12px;
+}
+
+.fdy-chat-file-image {
+  margin: 0;
+}
+
+.fdy-chat-file-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
 }
 
 .fdy-chat-context-row {
@@ -453,7 +523,7 @@
   color: var(--fdy-ink-muted);
 }
 
-.fdy-chat-context-row-icon[data-kind="output"] {
+.fdy-chat-context-row-icon[data-kind="preview"] {
   background: var(--fdy-brass-soft);
   color: var(--fdy-brass-dark);
 }
@@ -508,7 +578,8 @@
   stroke-width: 1.9;
 }
 
-.fdy-chat-subagent-status {
+/* A row's status: icon and word, never color alone. */
+.fdy-chat-context-status {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -520,15 +591,15 @@
   white-space: nowrap;
 }
 
-.fdy-chat-subagent-row[data-status="running"] .fdy-chat-subagent-status {
+.fdy-chat-context-row[data-status="running"] .fdy-chat-context-status {
   color: var(--fdy-ink-muted);
 }
 
-.fdy-chat-subagent-row[data-status="running"] .fdy-chat-subagent-status svg {
+.fdy-chat-context-row[data-status="running"] .fdy-chat-context-status svg {
   animation: fdy-context-spin 1.15s linear infinite;
 }
 
-.fdy-chat-subagent-row[data-status="failed"] .fdy-chat-subagent-status {
+.fdy-chat-context-row[data-status="failed"] .fdy-chat-context-status {
   color: var(--fdy-red);
 }
 
@@ -539,7 +610,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fdy-chat-subagent-row[data-status="running"] .fdy-chat-subagent-status svg {
+  .fdy-chat-context-row[data-status="running"] .fdy-chat-context-status svg {
     animation: none;
   }
 }
@@ -549,41 +620,69 @@
   color: var(--fdy-blue);
 }
 
+.fdy-chat-context-row-icon[data-kind="background"] {
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+}
+
+/* Finished background work beyond the first few, one click away. */
+.fdy-chat-context-more {
+  justify-self: start;
+  margin-top: 2px;
+}
+
 .fdy-chat-timer-row .fdy-chat-context-row-copy em {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.fdy-chat-timer-detail {
+/* Timer and background task details: label/value rows, then text. */
+.fdy-chat-meta-detail {
   display: grid;
   gap: 12px;
+  padding: 24px 28px 48px;
 }
 
-.fdy-chat-timer-meta {
+.fdy-chat-meta-detail h4 small {
+  margin-left: 6px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* A quiet line in a detail: empty states and what a view leaves out. */
+.fdy-chat-meta-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-chat-meta-list {
   display: grid;
   gap: 8px;
   margin: 0;
 }
 
-.fdy-chat-timer-meta div {
+.fdy-chat-meta-list div {
   display: grid;
   grid-template-columns: 84px 1fr;
   gap: 10px;
   align-items: baseline;
 }
 
-.fdy-chat-timer-meta dt {
+.fdy-chat-meta-list dt {
   color: var(--fdy-ink-faint);
   font-size: 11.5px;
 }
 
-.fdy-chat-timer-meta dd {
+.fdy-chat-meta-list dd {
   margin: 0;
   color: var(--fdy-ink-strong);
   font-size: 12.5px;
 }
 
-.fdy-chat-timer-meta code {
+.fdy-chat-meta-list code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
   background: var(--fdy-control-ghost-hover);
@@ -591,14 +690,14 @@
   border-radius: 5px;
 }
 
-.fdy-chat-timer-detail h4 {
+.fdy-chat-meta-detail h4 {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);
   font-size: 11.5px;
   font-weight: 600;
 }
 
-.fdy-chat-timer-prompt {
+.fdy-chat-meta-pre {
   margin: 0;
   max-height: 180px;
   overflow: auto;
@@ -611,6 +710,26 @@
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* A background task's output: the end of its log, scrolled within. */
+.fdy-chat-background-output {
+  max-height: min(60vh, 520px);
+}
+
+.fdy-chat-background-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-chat-background-actions p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .fdy-chat-timer-fires {
@@ -831,7 +950,8 @@
   }
 
   .fdy-chat-detail-conversation,
-  .fdy-chat-detail-document {
+  .fdy-chat-detail-document,
+  .fdy-chat-meta-detail {
     padding-right: 16px;
     padding-left: 16px;
   }
@@ -2907,13 +3027,13 @@
   overflow: hidden;
 }
 
+/* Grip, message, actions on one row; the message's files sit under its text. */
 .fdy-chat-queue-item {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 7px;
   min-width: 0;
-  min-height: 34px;
   padding: 6px 7px 6px 5px;
   border: 1px solid var(--fdy-line);
   border-radius: 13px;
@@ -2930,7 +3050,7 @@
 .fdy-chat-queue-grip {
   display: inline-flex;
   width: 20px;
-  height: 24px;
+  height: 30px;
   align-items: center;
   justify-content: center;
   color: var(--fdy-ink-faint);
@@ -2941,90 +3061,35 @@
   cursor: grabbing;
 }
 
+.fdy-chat-queue-body {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
 .fdy-chat-queue-text {
   min-width: 0;
   overflow: hidden;
   color: var(--fdy-ink);
   font-size: 13px;
   font-weight: 650;
-  line-height: 1.35;
+  line-height: 30px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fdy-chat-queue-attachments {
-  grid-column: 2 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.fdy-chat-queue-attachment {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  overflow: hidden;
-  background: var(--fdy-control-surface-hover);
-  color: var(--fdy-ink-muted);
-}
-
-.fdy-chat-queue-attachment img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .fdy-chat-queue-actions {
   display: inline-flex;
-  flex: none;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 
-.fdy-chat-queue-actions button,
-.fdy-chat-queue-actions .fdy-button {
-  display: inline-flex;
-  height: 26px;
-  min-height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 999px;
-  appearance: none;
-  background: transparent;
-  box-shadow: none;
+.fdy-chat-queue-action {
   color: var(--fdy-ink-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 700;
-  transition:
-    background 0.14s ease,
-    color 0.14s ease;
 }
 
-.fdy-chat-queue-actions button:hover,
-.fdy-chat-queue-actions .fdy-button:hover {
-  background: var(--fdy-control-ghost-hover);
+.fdy-chat-queue-action:hover:not(:disabled) {
   color: var(--fdy-ink);
-}
-
-.fdy-chat-queue-actions button:disabled,
-.fdy-chat-queue-actions .fdy-button:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
-
-.fdy-chat-queue-actions button:disabled:hover,
-.fdy-chat-queue-actions .fdy-button:disabled:hover {
-  background: transparent;
-  color: var(--fdy-ink-muted);
 }
 
 .fdy-chat-attachments {
@@ -3148,6 +3213,25 @@
 
 .fdy-chat-composer-blocked svg {
   flex: none;
+}
+
+/* The chat is idle, yet its agent keeps working: one click shows what. */
+.fdy-chat-background-note {
+  width: fit-content;
+  margin: 0 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-background-note svg {
+  flex: none;
+  animation: fdy-context-spin 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-chat-background-note svg {
+    animation: none;
+  }
 }
 
 .fdy-chat-attachment-uploading {

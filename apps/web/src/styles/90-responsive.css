@@ -70,7 +70,8 @@
     color: var(--fdy-ink-muted);
   }
 
-  .fdy-chat-context-section:first-of-type {
+  .fdy-chat-context-section:first-of-type,
+  .fdy-chat-context-filter {
     padding-right: 54px;
   }
 }

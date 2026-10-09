@@ -1,0 +1,186 @@
+/* FileTree: one surface, flat rows, a selected fill distinct from hover. */
+
+.fdy-file-tree {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.fdy-file-tree-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fdy-file-tree-heading {
+  min-width: 0;
+}
+
+.fdy-file-tree-filter {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-file-tree-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.fdy-file-tree-view {
+  flex: none;
+}
+
+.fdy-file-tree-rows {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.fdy-file-tree-root {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.fdy-file-tree-root:first-child {
+  padding-top: 0;
+}
+
+.fdy-file-tree-root strong {
+  flex: none;
+  font-weight: 650;
+}
+
+.fdy-file-tree-root span {
+  overflow: hidden;
+  min-width: 0;
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-file-tree-row {
+  display: flex;
+  width: 100%;
+  height: 28px;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 8px 0 6px;
+  border-radius: 7px;
+  color: var(--fdy-ink);
+  font-size: 12.5px;
+  font-weight: 450;
+  text-align: left;
+}
+
+.fdy-file-tree-row:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-file-tree-row[data-selected="true"],
+.fdy-file-tree-row[data-selected="true"]:hover {
+  background: var(--fdy-brass-soft);
+  color: var(--fdy-ink-strong);
+  font-weight: 650;
+}
+
+.fdy-file-tree-row[data-kind="folder"] svg:nth-of-type(2) {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-file-tree-row[data-kind="file"] > svg {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-file-tree-row[data-depth="1"] {
+  padding-left: 22px;
+}
+.fdy-file-tree-row[data-depth="2"] {
+  padding-left: 38px;
+}
+.fdy-file-tree-row[data-depth="3"] {
+  padding-left: 54px;
+}
+.fdy-file-tree-row[data-depth="4"] {
+  padding-left: 70px;
+}
+.fdy-file-tree-row[data-depth="5"] {
+  padding-left: 86px;
+}
+.fdy-file-tree-row[data-depth="6"] {
+  padding-left: 102px;
+}
+.fdy-file-tree-row[data-depth="7"] {
+  padding-left: 118px;
+}
+.fdy-file-tree-row[data-depth="8"] {
+  padding-left: 134px;
+}
+
+/* Files line up with folder names: the chevron's width. */
+.fdy-file-tree-indent {
+  width: 14px;
+  flex: none;
+}
+
+.fdy-file-tree-name {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-file-tree-name em {
+  margin-left: 6px;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 450;
+}
+
+.fdy-file-tree-count {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.fdy-file-tree-status {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fdy-file-tree-status[data-tone="created"] {
+  color: var(--fdy-green);
+}
+
+.fdy-file-tree-status[data-tone="modified"] {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-file-tree-status[data-tone="deleted"] {
+  color: var(--fdy-red);
+}
+
+.fdy-file-tree-empty {
+  margin: 0;
+  padding: 10px 6px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}

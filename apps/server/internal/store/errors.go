@@ -6,6 +6,10 @@ var ErrNotFound = errors.New("not found")
 var ErrWorkspaceBusy = errors.New("workspace has active work; wait for running or queued tasks to finish before removing it")
 var ErrTitleConflict = errors.New("chat title changed while generating a new title")
 
+// ErrIdempotencyConflict refuses a request that reuses an Idempotency-Key
+// with a different body.
+var ErrIdempotencyConflict = errors.New("idempotency_conflict")
+
 // ErrDeviceRemoved marks a device that was soft-removed from the server. Its
 // history rows are retained, but daemon (re)registration must be refused so a
 // reconnecting worker cannot make the device reappear.

@@ -29,6 +29,18 @@ export class ClaudeTurnWatchdog {
     );
   }
 
+  /**
+   * Stops the idle timer until the next event: a turn that only waits for
+   * background work hears nothing until that work ends, and Claude Code's
+   * keep-alives never reach the SDK stream.
+   */
+  pause(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = undefined;
+    }
+  }
+
   close(): void {
     if (this.closed) {
       return;

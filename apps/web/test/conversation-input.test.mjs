@@ -131,7 +131,7 @@ for (const [name, composer] of Object.entries(modes)) {
     await h.settle();
     assert.equal(h.input.queue.length, 1);
   });
-  test(`${name}: Claude queue and steer preserve attachments and target the original execution`, async (t) => {
+  test(`${name}: Claude steer sends a queued message's attachments with it and targets the original execution`, async (t) => {
     const attachment = {
       id: "image",
       kind: "image",
@@ -157,15 +157,23 @@ for (const [name, composer] of Object.entries(modes)) {
     assert.equal(h.input.queue.length, 1);
     assert.deepEqual(removed, ["image"]);
     await act(() => h.input.steer(h.input.queue[0]));
-    assert.deepEqual(steered, [["guide", "run1"]]);
-    assert.deepEqual(restored, [attachment]);
+    assert.deepEqual(steered, [["guide", "run1", [attachment]]]);
+    // The files went with the message; none come back to the composer.
+    assert.deepEqual(restored, []);
+    assert.equal(h.input.queue.length, 0);
+    // A message of files alone steers too.
+    await h.render({ attachments: [attachment] });
+    await h.submit();
+    assert.equal(h.input.queue[0].text, "");
+    await act(() => h.input.steer(h.input.queue[0]));
+    assert.deepEqual(steered[1], ["", "run1", [attachment]]);
     assert.equal(h.input.queue.length, 0);
     await h.render({ attachments: [] });
     await h.type("stale guide");
     await h.submit();
     await h.render({ activeExecutionId: "run2" });
     await act(() => h.input.steer(h.input.queue[0]));
-    assert.equal(steered.length, 1);
+    assert.equal(steered.length, 2);
     assert.equal(h.input.queue.length, 1);
     assert.match(h.input.error, /active response changed/);
   });

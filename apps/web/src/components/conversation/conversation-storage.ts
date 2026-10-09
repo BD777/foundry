@@ -50,10 +50,18 @@ export function conversationStorageKey(
   return prefix ? `${prefix}:${threadKey}` : undefined;
 }
 
+/**
+ * A composer's runtime choice (agent, model, effort) per conversation, kept
+ * beside its draft so queued messages restored after a reload go out as they
+ * were chosen. Pruned and cleared with the drafts.
+ */
+const runtimeChoicePrefix = "foundry.composer-runtime";
+
 function isConversationKey(key: string): boolean {
-  return Object.values(conversationStoragePrefixes).some((prefix) =>
-    key.startsWith(`${prefix}:`),
-  );
+  return [
+    ...Object.values(conversationStoragePrefixes),
+    runtimeChoicePrefix,
+  ].some((prefix) => key.startsWith(`${prefix}:`));
 }
 
 function parseEntry(raw: string): StoredConversation {
@@ -187,6 +195,54 @@ export function pruneConversationStorage(now = Date.now()): void {
       Math.max(0, kept.length - conversationStorageLimits.maxEntries),
     );
     [...expired, ...excess].forEach((entry) => store.removeItem(entry.key));
+  } catch {
+    /* Storage may be unavailable. */
+  }
+}
+
+export interface StoredRuntimeChoice {
+  value: unknown;
+  updatedAt: number;
+}
+
+/** The stored runtime choice of a conversation; its shape is the caller's to check. */
+export function readRuntimeChoice(
+  threadKey: string,
+): StoredRuntimeChoice | undefined {
+  try {
+    const raw = storage()?.getItem(`${runtimeChoicePrefix}:${threadKey}`);
+    if (!raw) return undefined;
+    const entry = JSON.parse(raw) as Partial<StoredRuntimeChoice> & {
+      v?: number;
+    };
+    return entry?.v === entryVersion && typeof entry.updatedAt === "number"
+      ? { value: entry.value, updatedAt: entry.updatedAt }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeRuntimeChoice(threadKey: string, value: unknown): void {
+  try {
+    storage()?.setItem(
+      `${runtimeChoicePrefix}:${threadKey}`,
+      JSON.stringify({ v: entryVersion, updatedAt: Date.now(), value }),
+    );
+  } catch {
+    /* Storage may be unavailable or full; the choice stays in memory. */
+  }
+}
+
+/** A new conversation's choice follows it to the id its first message gave it. */
+export function moveRuntimeChoice(from: string, to: string): void {
+  const store = storage();
+  if (!store || from === to) return;
+  try {
+    const raw = store.getItem(`${runtimeChoicePrefix}:${from}`);
+    if (raw === null) return;
+    store.setItem(`${runtimeChoicePrefix}:${to}`, raw);
+    store.removeItem(`${runtimeChoicePrefix}:${from}`);
   } catch {
     /* Storage may be unavailable. */
   }

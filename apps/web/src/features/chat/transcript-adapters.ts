@@ -1,7 +1,8 @@
-import type {
-  ModelRequestUsage,
-  AgentSession,
-  AgentSubagentTranscript,
+import {
+  sessionInputEventLabel,
+  type ModelRequestUsage,
+  type AgentSession,
+  type AgentSubagentTranscript,
 } from "@bd777/foundry-protocol";
 import {
   responseStreamLabel,
@@ -88,6 +89,8 @@ export function sessionTranscriptEntries(
       event.message ||
       event.metadata?.turnUsage ||
       event.metadata?.requestUsage ||
+      event.metadata?.sessionFile ||
+      event.metadata?.fileReferences ||
       shouldDisplayAgentSessionEvent(event),
   );
   const terminalId = [...events]
@@ -99,11 +102,30 @@ export function sessionTranscriptEntries(
     )?.id;
   const entries: TranscriptEntry[] = [];
   let response: TranscriptEntry | undefined;
+  // Files are counted per turn (input) and shown on the turn's last answer.
+  let turnId = session.id;
+  const turnFiles = new Map<string, Set<string>>();
+  const lastAnswer = new Map<string, TranscriptEntry>();
   const flushResponse = () => {
-    if (response) entries.push(response);
+    if (response) {
+      entries.push(response);
+      lastAnswer.set(turnId, response);
+    }
     response = undefined;
   };
   for (const event of events) {
+    const sessionFile = event.metadata?.sessionFile;
+    if (sessionFile) {
+      const id = sessionFile.inputId ?? session.id;
+      const paths = turnFiles.get(id) ?? new Set<string>();
+      paths.add(sessionFile.path);
+      turnFiles.set(id, paths);
+      continue;
+    }
+    if (event.label === sessionInputEventLabel && event.message?.id) {
+      flushResponse();
+      turnId = event.message.id;
+    }
     const isResponse = event.message
       ? event.message.kind === "assistant"
       : event.label === responseStreamLabel;
@@ -124,23 +146,11 @@ export function sessionTranscriptEntries(
       }
       continue;
     }
-    const requestUsage = event.metadata?.requestUsage;
-    if (requestUsage) {
-      applyRequestUsage(entries, response, requestUsage);
-      continue;
-    }
-    flushResponse();
-    const turnUsage = event.metadata?.turnUsage;
-    if (turnUsage) {
-      // The usage belongs to the answer this turn ended with, if it gave one.
-      const answer = [...entries]
-        .reverse()
-        .find((entry) => entry.kind === "assistant" || entry.kind === "user");
-      if (answer?.kind === "assistant") answer.usage = turnUsage;
-      continue;
-    }
+    // A timer's firing, or Claude continuing on its own after background
+    // work: a divider, then the answer it gave (with its usage).
     const timerFire = event.metadata?.timerFire;
     if (timerFire) {
+      flushResponse();
       const firedAt = timerFire.completedAt
         ? new Date(timerFire.completedAt)
         : undefined;
@@ -154,21 +164,53 @@ export function sessionTranscriptEntries(
               minute: "2-digit",
             })
           : "";
+      const background = timerFire.origin === "background";
       entries.push({
         id: `${id}:timer-fire-boundary`,
         at: event.at,
         kind: "boundary",
         text: when
-          ? i18n.t("chat:transcript.timerFiredAt", { when })
-          : i18n.t("chat:transcript.timerFired"),
+          ? i18n.t(
+              background
+                ? "chat:transcript.backgroundContinuedAt"
+                : "chat:transcript.timerFiredAt",
+              { when },
+            )
+          : i18n.t(
+              background
+                ? "chat:transcript.backgroundContinued"
+                : "chat:transcript.timerFired",
+            ),
       });
       if (timerFire.response) {
         entries.push({
           id: `${id}:timer-fire-response`,
           at: timerFire.completedAt || event.at,
-          kind: "assistant",
+          kind: event.level === "error" ? "failure" : "assistant",
           text: timerFire.response,
+          ...(event.metadata?.turnUsage
+            ? { usage: event.metadata.turnUsage }
+            : {}),
         });
+      }
+      continue;
+    }
+    const requestUsage = event.metadata?.requestUsage;
+    if (requestUsage) {
+      applyRequestUsage(entries, response, requestUsage);
+      continue;
+    }
+    flushResponse();
+    const turnUsage = event.metadata?.turnUsage;
+    const fileReferences = event.metadata?.fileReferences;
+    if (turnUsage || fileReferences) {
+      // Both belong to the answer this turn ended with, if it gave one.
+      const answer = [...entries]
+        .reverse()
+        .find((entry) => entry.kind === "assistant" || entry.kind === "user");
+      if (answer?.kind === "assistant") {
+        if (turnUsage) answer.usage = turnUsage;
+        if (fileReferences?.length) answer.fileReferences = fileReferences;
       }
       continue;
     }
@@ -185,6 +227,10 @@ export function sessionTranscriptEntries(
     }
   }
   flushResponse();
+  for (const [id, paths] of turnFiles) {
+    const answer = lastAnswer.get(id);
+    if (answer) answer.turnFiles = { turnId: id, count: paths.size };
+  }
   const last = entries.at(-1);
   if (last && (session.status === "running" || session.status === "queued"))
     last.streaming = true;

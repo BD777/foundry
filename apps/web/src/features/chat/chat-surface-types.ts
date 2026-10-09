@@ -71,6 +71,11 @@ export interface ChatSurfaceProps {
   chats: ChatListItem[];
   chatTitle: ReactNode;
   contextCard?: ChatContextCardData;
+  /**
+   * Background work still running while no turn is (subagents included):
+   * the chat is idle, yet its agent keeps working.
+   */
+  backgroundRunning?: number;
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;
@@ -100,7 +105,7 @@ export interface ChatSurfaceProps {
   onResetControls: () => void;
   onRetryModels?: () => void;
   onSend: ConversationProps["onSend"];
-  onSteer?: (value: string, sessionId?: string) => Promise<boolean>;
+  onSteer?: ConversationProps["onSteer"];
   selectedAgentId: string;
   sendDisabled?: boolean;
   sendDisabledReason?: string;

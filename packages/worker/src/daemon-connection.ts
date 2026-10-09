@@ -22,6 +22,7 @@ import {
   type ToolSpec,
 } from "./managed-tools.js";
 import { readSessionUsage } from "./session-usage.js";
+import { readSessionFile } from "./session-files.js";
 import {
   fetchSkillRepository,
   readRepositoryRefs,
@@ -44,6 +45,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type AgentSessionEventMetadata,
+  type ChatAttachment,
   type ClarificationTurn,
   type DeviceProjection,
   type Issue,
@@ -103,7 +105,12 @@ import {
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
-import { closeAllActiveRuntimes } from "./runner.js";
+import {
+  claudeBackgroundTaskOutput,
+  closeAllActiveRuntimes,
+  sessionHasRunningBackgroundTasks,
+  stopClaudeBackgroundTask,
+} from "./runner.js";
 import { runWorkspaceSession, type WorkspaceSandbox } from "./session/index.js";
 import { issueSessionExecution } from "./issue-sessions.js";
 import {
@@ -268,6 +275,7 @@ interface RunSessionPayload {
 
 interface SteerSessionPayload {
   message?: string;
+  attachments?: ChatAttachment[];
   sessionId?: string;
 }
 
@@ -596,8 +604,10 @@ async function executeAgentSession(
     sendEvent(label, detail, level, metadata, message);
   };
   // Resource Pool lease: browser processes this session started and left
-  // running are closed when its input ends.
+  // running are closed when its input ends — unless background work the
+  // turn left running may still use them; a later input's end reclaims them.
   const reclaimResources = async (): Promise<void> => {
+    if (sessionHasRunningBackgroundTasks(session.id)) return;
     const reclaimed = reclaimSessionResources(session.id);
     if (reclaimed.length)
       await emit("Closed leftover browser processes", reclaimed.join(", "));
@@ -1358,6 +1368,107 @@ function runWebSocketSession(options: {
         }
         return;
       }
+      if (envelope.type === daemonMessageTypes.readSessionFile) {
+        const payload = (envelope.payload ?? {}) as Partial<{
+          workspaceId: string;
+          sessionId: string;
+          path: string;
+        }>;
+        let reply: Record<string, unknown>;
+        try {
+          reply = {
+            ...readSessionFile({
+              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+              sessionId: payload.sessionId ?? "",
+              path: payload.path ?? "",
+            }),
+          };
+        } catch (error) {
+          reply = {
+            sessionId: payload.sessionId ?? "",
+            path: payload.path ?? "",
+            origin: "tool",
+            insideWorkspace: false,
+            kind: "missing",
+            truncated: false,
+            changedSinceRecorded: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.sessionFileRead,
+          reply,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.readBackgroundTaskOutput) {
+        // The request names a task, never a path: the device reads the log
+        // it recorded for that task of that session.
+        const payload = (envelope.payload ?? {}) as Partial<{
+          workspaceId: string;
+          sessionId: string;
+          taskId: string;
+        }>;
+        let reply: Record<string, unknown>;
+        try {
+          reply = {
+            ...claudeBackgroundTaskOutput({
+              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+              sessionId: payload.sessionId ?? "",
+              taskId: payload.taskId ?? "",
+            }),
+          };
+        } catch (error) {
+          reply = {
+            sessionId: payload.sessionId ?? "",
+            taskId: payload.taskId ?? "",
+            content: "",
+            truncated: false,
+            bytes: 0,
+            kind: "missing",
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.backgroundTaskOutputRead,
+          reply,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.stopBackgroundTask) {
+        const payload = (envelope.payload ?? {}) as Partial<{
+          sessionId: string;
+          taskId: string;
+        }>;
+        const sessionId = payload.sessionId?.trim() ?? "";
+        const taskId = payload.taskId?.trim() ?? "";
+        void stopClaudeBackgroundTask(sessionId, taskId)
+          .then(() =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.backgroundTaskStopped,
+              { sessionId, taskId },
+              envelope.id,
+            ),
+          )
+          .catch((error: unknown) =>
+            trySendWebSocket(
+              socket,
+              daemonMessageTypes.backgroundTaskStopped,
+              {
+                sessionId,
+                taskId,
+                error: error instanceof Error ? error.message : String(error),
+              },
+              envelope.id,
+            ),
+          );
+        return;
+      }
       if (envelope.type === daemonMessageTypes.readSessionUsage) {
         void duringActivity("session usage", () =>
           readSessionUsage(envelope.payload),
@@ -2116,17 +2227,20 @@ function runWebSocketSession(options: {
       if (envelope.type === daemonMessageTypes.steerSession) {
         const payload = envelope.payload as SteerSessionPayload | undefined;
         const sessionId = payload?.sessionId?.trim();
-        const message = payload?.message?.trim();
-        if (!sessionId || !message) {
+        const message = payload?.message?.trim() ?? "";
+        const attachments = payload?.attachments ?? [];
+        if (!sessionId || (!message && attachments.length === 0)) {
           sendWebSocket(
             socket,
             daemonMessageTypes.sessionSteered,
-            { error: "steer_session requires sessionId and message" },
+            {
+              error: "steer_session requires sessionId and a message or files",
+            },
             envelope.id,
           );
           return;
         }
-        void steerActiveSession(sessionId, message)
+        void steerActiveSession(sessionId, message, attachments)
           .then(() => {
             trySendWebSocket(
               socket,

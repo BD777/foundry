@@ -5,7 +5,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import type { ParsedImageTag } from "./chat-message-content";
 import { ChatMessageRow } from "./chat-message-list";
-import type { ChatMessageItem } from "./conversation-types";
+import type {
+  ChatMessageItem,
+  ConversationFileActions,
+} from "./conversation-types";
 import { buildChatTurnAnchors } from "./chat-turn-navigation";
 import { ChatTurnNavigator } from "./chat-turn-navigator";
 import { ChatTurnMenu } from "./chat-turn-menu";
@@ -51,6 +54,7 @@ function chatMessageKey(_index: number, message: ChatMessageItem): string {
 }
 
 export const ChatTranscriptStage = memo(function ChatTranscriptStage({
+  fileActions,
   messages,
   onEditMessage,
   onImagePreview,
@@ -58,6 +62,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   showScrollToLatest,
   threadKey,
 }: {
+  fileActions?: ConversationFileActions;
   messages: ChatMessageItem[];
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -105,13 +110,14 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     (_index: number, message: ChatMessageItem) => (
       <div className="fdy-chat-virtuoso-row">
         <ChatMessageRow
+          fileActions={fileActions}
           message={message}
           onEditMessage={onEditMessage}
           onImagePreview={onImagePreview}
         />
       </div>
     ),
-    [onEditMessage, onImagePreview],
+    [fileActions, onEditMessage, onImagePreview],
   );
 
   return (

@@ -411,11 +411,10 @@ export function useConversationInput(
         !(await host.onSteer(
           item.text,
           item.targetExecutionId ?? host.activeExecutionId,
+          item.attachments,
         ))
       )
         throw new Error(i18n.t("conversation:errors.notSteered"));
-      if (item.attachments?.length)
-        host.onAttachmentsRestore?.(item.attachments);
       remove(item.id, host.threadKey);
       setErrors((value) => ({ ...value, [host.threadKey]: "" }));
       setPausedQueues((value) => ({ ...value, [host.threadKey]: false }));

@@ -6,6 +6,17 @@ import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
 
 /**
+ * Where a run keeps its sessions' artifacts: the workspace's own
+ * `.foundry/sessions`, unless a sandboxed execution moved them to scratch.
+ */
+export function executionSessionsRoot(workspacePath: string): string {
+  return (
+    process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
+    resolve(workspacePath, ".foundry", "sessions")
+  );
+}
+
+/**
  * One input's artifacts: `<root>/<sessionId>/inputs/<inputId>`. They are kept
  * per input, so an earlier input's completion marker can never settle a later
  * one. Worker-built sessions without an input keep the session directory.

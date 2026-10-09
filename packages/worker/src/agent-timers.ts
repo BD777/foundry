@@ -166,21 +166,24 @@ function readTranscriptTailTurn(
           typeof row.timestamp === "string" ? row.timestamp : undefined;
       }
     }
-    if (row?.type === "user") {
+    if (row?.type === "user" && row.isMeta !== true) {
       const message = row.message as Record<string, unknown> | undefined;
       const prompt = recordText(message?.content);
       // Only timer-driven wakes carry the scheduled origin marker. A normal
       // Foundry turn whose Stop hook races result-resolution must never be
-      // mistaken for a background turn.
-      if (prompt && row.turnOrigin === "scheduled") {
-        return {
-          completedAt,
-          origin: "scheduled",
-          prompt,
-          response,
-          startedAt:
-            typeof row.timestamp === "string" ? row.timestamp : undefined,
-        };
+      // mistaken for a background turn, and neither may Claude's follow-up
+      // to a background task: only the latest prompt counts.
+      if (prompt) {
+        return row.turnOrigin === "scheduled"
+          ? {
+              completedAt,
+              origin: "scheduled",
+              prompt,
+              response,
+              startedAt:
+                typeof row.timestamp === "string" ? row.timestamp : undefined,
+            }
+          : undefined;
       }
     }
   }
@@ -281,6 +284,26 @@ export class ClaudeTimerTracker {
         this.tasks.delete(id);
         this.emitSnapshot();
       }
+    } else if (toolName === "ScheduleWakeup") {
+      // The wake-up gets its id only in the Stop hook's session_crons; show
+      // it now as a one-time cron at the time Claude scheduled, which the
+      // Stop hook's list then replaces.
+      const response = (toolResponse ?? {}) as Record<string, unknown>;
+      const delaySeconds = Number(toolInput.delaySeconds);
+      const scheduledFor =
+        Number(response.scheduledFor) ||
+        (Number.isFinite(delaySeconds) && delaySeconds > 0
+          ? Date.now() + Math.min(3600, Math.max(60, delaySeconds)) * 1000
+          : 0);
+      if (scheduledFor > 0) {
+        const at = new Date(scheduledFor);
+        this.upsert({
+          id: `wakeup-${scheduledFor}`,
+          prompt: String(toolInput.prompt ?? ""),
+          recurring: false,
+          schedule: `${at.getMinutes()} ${at.getHours()} ${at.getDate()} ${at.getMonth() + 1} *`,
+        });
+      }
     } else if (toolName === "CronList") {
       const response = toolResponse as
         { jobs?: Array<Record<string, unknown>> } | undefined;
@@ -374,7 +397,12 @@ export class ClaudeTimerTracker {
       return;
     }
     const signature = this.signature();
-    if (!force && signature === this.lastSignature) {
+    // An empty list before any timer existed says nothing.
+    if (
+      !force &&
+      (signature === this.lastSignature ||
+        (this.lastSignature === "" && this.tasks.size === 0))
+    ) {
       return;
     }
     this.lastSignature = signature;

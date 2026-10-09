@@ -85,6 +85,7 @@ The control plane may store or relay:
 - provider label, runtime, model, base URL, status, and auth-mode metadata;
 - normalized issue, run, chat, and session events;
 - explicitly requested read-only workspace file content;
+- explicitly requested content of a session's recorded files (see Local Files);
 - attachment metadata and review artifacts.
 
 Custom endpoint profiles may hold an `apiKey` only through the sealed secret
@@ -188,6 +189,26 @@ Uploaded attachments are stored under a registered workspace's `.foundry/attachm
 - disable browser caching.
 
 Multipart attachment uploads are capped at 100 MiB per request.
+
+A session's files are read only through its ledger,
+`<workspace>/.foundry/sessions/<id>/files.json` (owner-only, like other
+session artifacts). It lists the files the session's own write tools changed
+(main agent and subagents, inside or outside the workspace) and the paths its
+answers name that the device verified; nothing is credited from files merely
+changing on disk. A named path outside the workspace must be a regular file in
+a temporary folder (`os.tmpdir()`, `/tmp`, `$TMPDIR`) or the workspace,
+modified after the turn started. Reads:
+
+- serve only ledger paths whose resolved path still matches the one recorded;
+- refuse `~/.ssh`, `~/.foundry`, `~/.claude*`, `~/.codex`, the workspace's
+  `.foundry`, `.git`, `*.pem`, `id_*` and `.env*`, whatever the ledger says;
+- read at most 256 KiB of text (2 MiB for an inline image) without loading
+  the rest; binaries return only their size;
+- answer `Cache-Control: no-store`. Viewers may read tool-written files and
+  files inside the workspace; a named file outside it needs Member.
+
+Workspace file reads (`/api/workspace-files/read`) likewise read only their
+first 128 KiB.
 
 ## Protocol Validation
 

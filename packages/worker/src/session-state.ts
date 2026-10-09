@@ -10,11 +10,13 @@ import type {
   AgentSession,
   AgentSessionEvent,
   AgentSessionEventMetadata,
+  ChatAttachment,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
 import { ClaudeTurnWatchdog } from "./watchdog.js";
-import type { SessionOutputFiles } from "./session-output-files.js";
+import type { SessionTurnFiles } from "./session-files.js";
 import type { ClaudeTimerTracker } from "./agent-timers.js";
+import type { ClaudeBackgroundTaskTracker } from "./agent-background-tasks.js";
 import type {
   ClaudeRequestUsageTracker,
   TurnTokenUsage,
@@ -84,6 +86,8 @@ export class AsyncInputQueue<T> implements AsyncIterable<T> {
 export interface ClaudeSDKQuery {
   close?: () => void;
   setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown>;
+  /** Stops a background task; Claude reads a "stopped" notification. */
+  stopTask?: (taskId: string) => Promise<void>;
   [Symbol.asyncIterator](): AsyncIterator<unknown>;
 }
 
@@ -95,11 +99,26 @@ export interface AgentSessionRunResult {
 export interface ActiveClaudeTurn {
   /**
    * SDK tasks that were started during this Foundry turn and have not emitted
-   * a terminal task_notification yet. A Claude SDK result is only a model-turn
-   * boundary while this set is non-empty; it is not the end of the Foundry
-   * session.
+   * a terminal task_notification yet. For a turn that waits for background
+   * work, a Claude SDK result is only a model-turn boundary while this set is
+   * non-empty; it is not the end of the Foundry session.
    */
   openTaskIds: Set<string>;
+  /**
+   * Issue-bound and agent-created sessions are judged on their answer, so
+   * their turn waits for background work. A chat's turn ends with Claude's
+   * answer; its background work continues and is tracked on the runtime.
+   */
+  waitForBackgroundTasks?: boolean;
+  /** The input's id, which Claude's command lifecycle reports it under. */
+  commandId?: string;
+  /** "started": the stream answers this input from now on. */
+  commandState?: "queued" | "started";
+  /**
+   * Sent while Claude was continuing on its own; without command lifecycle
+   * reports the turn begins once that continuation's result arrives.
+   */
+  behindContinuation?: boolean;
   emit: SessionEventEmitter;
   finalResult: string;
   messagesPath: string;
@@ -115,9 +134,21 @@ export interface ActiveClaudeTurn {
   usage?: TurnTokenUsage;
   /** Follows each model request's stream for its final tokens. */
   requestUsage?: ClaudeRequestUsageTracker;
-  /** Files this turn produced, reported once each. */
-  outputs?: SessionOutputFiles;
+  /** Files this turn's tools wrote and its answer named. */
+  files?: SessionTurnFiles;
   watchdog: ClaudeTurnWatchdog;
+}
+
+/**
+ * A model turn Claude runs on its own between Foundry turns, typically after
+ * a background task finished. Its answer is published once its result
+ * arrives.
+ */
+export interface ActiveClaudeContinuation {
+  /** Epoch ms of its first message. */
+  startedAt: number;
+  finalResult: string;
+  partialResult: string;
 }
 
 export interface ActiveClaudeRuntime {
@@ -131,6 +162,15 @@ export interface ActiveClaudeRuntime {
   pending?: ActiveClaudeTurn;
   query?: ClaudeSDKQuery;
   timers?: ClaudeTimerTracker;
+  /** Background work of the agent process; it outlives Foundry turns. */
+  background?: ClaudeBackgroundTaskTracker;
+  continuation?: ActiveClaudeContinuation;
+  /** Summaries of background tasks that ended since the last answer. */
+  notifications?: string[];
+  /** The CLI reports command lifecycle, so turns own exactly their stream. */
+  commandLifecycle?: boolean;
+  /** The latest turn's raw message log; messages between turns go there too. */
+  messagesPath?: string;
 }
 
 export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
@@ -159,7 +199,8 @@ export const activeCodexThreads = new Map<string, ActiveCodexThread>();
 
 export interface ActiveSessionSteerTarget {
   provider: AgentSession["provider"];
-  steer: (message: string) => Promise<void>;
+  /** Injects a message, and the files that came with it, into the turn. */
+  steer: (message: string, attachments?: ChatAttachment[]) => Promise<void>;
 }
 
 export interface ActiveSessionCancelTarget {
@@ -189,8 +230,8 @@ export type OutOfBandSessionEvent = {
 
 /**
  * Sink for session events that arrive while no Foundry turn owns the runtime
- * — today this means timer-driven (cron) background turns in a long-lived
- * Claude process. The daemon connection registers a sink over its current
+ * — timer-driven (cron) turns, Claude's own follow-ups after background work
+ * finished, and background task snapshots of a long-lived Claude process. The daemon connection registers a sink over its current
  * WebSocket; runtimes stay alive across socket reconnects and simply drop
  * events while no socket is bound.
  */

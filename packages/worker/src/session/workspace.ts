@@ -131,7 +131,7 @@ async function runSandboxed(
   >();
   const steerTarget: ActiveSessionSteerTarget = {
     provider: session.provider,
-    steer: (message) =>
+    steer: (message, attachments) =>
       new Promise<void>((resolve, reject) => {
         const id = randomUUID();
         const timer = setTimeout(() => {
@@ -153,7 +153,7 @@ async function runSandboxed(
           },
         });
         child.stdin.write(
-          `${JSON.stringify({ type: "steer", id, message })}\n`,
+          `${JSON.stringify({ type: "steer", id, message, attachments })}\n`,
         );
       }),
   };

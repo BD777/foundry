@@ -16,12 +16,16 @@ export const buttonVariants = cva("fdy-button", {
       bare: "fdy-button-bare",
       nav: "fdy-button-nav",
       icon: "fdy-button-icon",
+      /** Reads as a link inside text; acts as a button (opens in-app). */
+      link: "fdy-button-link",
     },
     size: {
       sm: "fdy-button-sm",
       md: "fdy-button-md",
       lg: "fdy-button-lg",
       icon: "fdy-button-icon-size",
+      /** Flows with the surrounding text: its font, line height, wrapping. */
+      inline: "fdy-button-inline",
     },
   },
   defaultVariants: {

@@ -1,25 +1,44 @@
 import {
+  Activity,
   Bot,
   Check,
+  CircleDashed,
+  CircleStop,
   CircleX,
   Clock,
+  Cog,
   ExternalLink,
-  FileText,
   FolderClosed,
   LoaderCircle,
   Repeat,
+  Terminal,
+  Workflow,
   X,
 } from "lucide-react";
-import { nextCronFire } from "@bd777/foundry-protocol";
-import { useState } from "react";
+import {
+  nextCronFire,
+  type AgentBackgroundTask,
+} from "@bd777/foundry-protocol";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
-import { subagentUsageSummary } from "../../components/conversation/turn-usage";
+import {
+  FileTree,
+  type FileTreeItem,
+  type FileTreeRoot,
+} from "../../components/ui/file-tree";
+import {
+  formatDuration,
+  subagentUsageSummary,
+} from "../../components/conversation/turn-usage";
+import { useSharedNow } from "./use-shared-now";
 import type {
+  ChatBackgroundTaskItem,
   ChatContextCardData,
   ChatContextSelection,
   ChatContextResourceItem,
+  ChatSessionFileItem,
   ChatSubagentItem,
   ChatTimerItem,
 } from "./chat-types";
@@ -31,11 +50,10 @@ function ResourceRow({
   selected,
 }: {
   item: ChatContextResourceItem;
-  kind: "output" | "source";
+  kind: "preview" | "source";
   onSelect?: (item: ChatContextSelection) => void;
   selected: boolean;
 }) {
-  const { t } = useTranslation("chat");
   return (
     <Button
       aria-pressed={selected}
@@ -48,79 +66,154 @@ function ResourceRow({
       <span className="fdy-chat-context-row-icon" data-kind={kind}>
         {item.kind === "web" ? (
           <ExternalLink size={16} />
-        ) : kind === "output" ? (
-          <FileText size={16} />
         ) : (
           <FolderClosed size={16} />
         )}
       </span>
       <span className="fdy-chat-context-row-copy">
         <strong>{item.label}</strong>
-        {(item.detail && item.detail !== item.label) || item.mentioned ? (
-          <em>
-            {[
-              item.detail !== item.label ? item.detail : undefined,
-              item.mentioned ? t("contextCard.mentioned") : undefined,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </em>
+        {item.detail && item.detail !== item.label ? (
+          <em>{item.detail}</em>
         ) : null}
       </span>
     </Button>
   );
 }
 
-/** Outputs shown before "Show all". */
-const collapsedOutputs = 8;
+/** Workspace files by their workspace path; others by absolute path. */
+function fileTreeRoots(items: ChatSessionFileItem[]): FileTreeRoot[] {
+  const asItem = (file: ChatSessionFileItem, path: string): FileTreeItem => ({
+    id: file.id,
+    path,
+    status: i18n.t(`chat:contextCard.fileStatus.${file.op}`),
+    tone: file.op,
+    title: file.path,
+  });
+  const inside = items.filter((file) => file.workspacePath);
+  const outside = items.filter((file) => !file.workspacePath);
+  return [
+    {
+      id: "workspace",
+      label: i18n.t("chat:contextCard.workspaceRoot"),
+      items: inside.map((file) => asItem(file, file.workspacePath!)),
+    },
+    {
+      id: "outside",
+      label: i18n.t("chat:contextCard.outsideRoot"),
+      items: outside.map((file) => asItem(file, file.path)),
+    },
+  ].filter((root) => root.items.length > 0);
+}
 
-function OutputsSection({
-  outputs,
+function FileSection({
+  emptyLabel,
+  files,
+  label,
   onSelect,
-  selectedId,
+  reveal,
+  title,
 }: {
-  outputs: ChatContextResourceItem[];
+  emptyLabel?: string;
+  files: ChatSessionFileItem[];
+  label: string;
   onSelect?: (item: ChatContextSelection) => void;
-  selectedId?: string;
+  reveal?: { ids: string[] };
+  title: string;
 }) {
-  const { t } = useTranslation("chat");
-  const [expanded, setExpanded] = useState(false);
-  const selectedIndex = outputs.findIndex((item) => item.id === selectedId);
-  const shown =
-    expanded || selectedIndex >= collapsedOutputs
-      ? outputs
-      : outputs.slice(0, collapsedOutputs);
+  const roots = useMemo(() => fileTreeRoots(files), [files]);
+  const byId = useMemo(
+    () => new Map(files.map((file) => [file.id, file])),
+    [files],
+  );
+  const heading = (inRow: boolean) => (
+    <h3 className={inRow ? "fdy-chat-context-heading" : undefined}>
+      {title}
+      {files.length > 0 ? (
+        <span className="fdy-chat-context-count">{files.length}</span>
+      ) : null}
+    </h3>
+  );
   return (
     <section className="fdy-chat-context-section">
-      <h3>
-        {t("contextCard.outputs")}
-        <span className="fdy-chat-context-count">{outputs.length}</span>
-      </h3>
-      <div className="fdy-chat-context-list">
-        {shown.map((item) => (
-          <ResourceRow
-            item={item}
-            key={item.id}
-            kind="output"
-            onSelect={onSelect}
-            selected={selectedId === item.id}
-          />
-        ))}
-      </div>
-      {outputs.length > collapsedOutputs ? (
-        <Button
-          aria-expanded={shown.length === outputs.length}
-          className="fdy-chat-context-more"
-          onClick={() => setExpanded((value) => !value)}
-          size="sm"
-          variant="ghost"
-        >
-          {shown.length === outputs.length
-            ? t("contextCard.showFewer")
-            : t("contextCard.showAll", { count: outputs.length })}
-        </Button>
-      ) : null}
+      {files.length === 0 ? (
+        <>
+          {heading(false)}
+          <p className="fdy-chat-context-empty">{emptyLabel}</p>
+        </>
+      ) : (
+        <FileTree
+          aria-label={label}
+          heading={heading(true)}
+          onSelect={(item) => {
+            const file = byId.get(item.id);
+            if (file) onSelect?.(file);
+          }}
+          reveal={reveal}
+          roots={roots}
+        />
+      )}
     </section>
+  );
+}
+
+/** Changes and Files: what the chat's tools wrote and its answers named. */
+function SessionFileSections({
+  data,
+  onClearTurnFilter,
+  onSelect,
+  reveal,
+  turnFilter,
+}: {
+  data: ChatContextCardData;
+  onClearTurnFilter?: () => void;
+  onSelect?: (item: ChatContextSelection) => void;
+  reveal?: { ids: string[] };
+  turnFilter?: string;
+}) {
+  const { t } = useTranslation("chat");
+  const inTurn = (file: ChatSessionFileItem) =>
+    !turnFilter || file.turnIds.includes(turnFilter);
+  const changes = data.changes.filter(inTurn);
+  const files = data.files.filter(inTurn);
+  return (
+    <>
+      {turnFilter ? (
+        <div className="fdy-chat-context-filter">
+          <span>{t("contextCard.turnFilter")}</span>
+          <Button onClick={onClearTurnFilter} size="sm" variant="ghost">
+            {t("contextCard.showAllFiles")}
+          </Button>
+        </div>
+      ) : null}
+      {changes.length + files.length === 0 ? (
+        <section className="fdy-chat-context-section">
+          <h3>{t("contextCard.files")}</h3>
+          <p className="fdy-chat-context-empty">
+            {t("contextCard.filesEmpty")}
+          </p>
+        </section>
+      ) : (
+        <>
+          <FileSection
+            emptyLabel={t("contextCard.changesEmpty")}
+            files={changes}
+            label={t("contextCard.changesLabel")}
+            onSelect={onSelect}
+            reveal={reveal}
+            title={t("contextCard.changes")}
+          />
+          {files.length > 0 ? (
+            <FileSection
+              files={files}
+              label={t("contextCard.filesLabel")}
+              onSelect={onSelect}
+              reveal={reveal}
+              title={t("contextCard.files")}
+            />
+          ) : null}
+        </>
+      )}
+    </>
   );
 }
 
@@ -218,16 +311,178 @@ function TimerRow({
   );
 }
 
-export function ChatContextCard({
-  data,
-  onClose,
+export function BackgroundKindIcon({
+  kind,
+  size = 16,
+}: {
+  kind: AgentBackgroundTask["kind"];
+  size?: number;
+}) {
+  if (kind === "command") return <Terminal aria-hidden="true" size={size} />;
+  if (kind === "monitor") return <Activity aria-hidden="true" size={size} />;
+  if (kind === "workflow") return <Workflow aria-hidden="true" size={size} />;
+  if (kind === "subagent") return <Bot aria-hidden="true" size={size} />;
+  return <Cog aria-hidden="true" size={size} />;
+}
+
+export function BackgroundStatusIcon({
+  status,
+}: {
+  status: AgentBackgroundTask["status"];
+}) {
+  if (status === "running")
+    return <LoaderCircle aria-hidden="true" size={13} />;
+  if (status === "completed") return <Check aria-hidden="true" size={13} />;
+  if (status === "failed") return <CircleX aria-hidden="true" size={13} />;
+  if (status === "stopped") return <CircleStop aria-hidden="true" size={13} />;
+  return <CircleDashed aria-hidden="true" size={13} />;
+}
+
+function backgroundElapsed(task: AgentBackgroundTask, now: number): number {
+  const started = Date.parse(task.startedAt);
+  const ended = task.endedAt ? Date.parse(task.endedAt) : now;
+  return Number.isNaN(started) || Number.isNaN(ended)
+    ? 0
+    : Math.max(0, ended - started);
+}
+
+/** How long it ran and how it ended: "running 23m", "failed · exit 144". */
+export function backgroundOutcome(
+  task: AgentBackgroundTask,
+  now: number,
+): string {
+  const duration = formatDuration(backgroundElapsed(task, now));
+  const exit =
+    task.exitCode !== undefined
+      ? i18n.t("chat:contextCard.backgroundExit", { code: task.exitCode })
+      : undefined;
+  switch (task.status) {
+    case "running":
+      return i18n.t("chat:contextCard.backgroundRunningFor", { duration });
+    case "completed":
+      return [i18n.t("chat:contextCard.backgroundDoneIn", { duration }), exit]
+        .filter(Boolean)
+        .join(" · ");
+    case "failed":
+      return [i18n.t("chat:contextCard.backgroundFailed"), exit]
+        .filter(Boolean)
+        .join(" · ");
+    case "stopped":
+      return task.stopReason === "agent_exit"
+        ? i18n.t("chat:contextCard.backgroundAgentExit")
+        : i18n.t("chat:contextCard.backgroundStopped");
+    default:
+      return i18n.t("chat:contextCard.backgroundEnded");
+  }
+}
+
+/** The row's second line: its kind in words, who started it, its outcome. */
+export function backgroundRowDetail(
+  item: ChatBackgroundTaskItem,
+  now: number,
+): string {
+  return [
+    i18n.t(`chat:contextCard.backgroundKind.${item.task.kind}`),
+    item.ownerLabel
+      ? i18n.t("chat:contextCard.backgroundFrom", { name: item.ownerLabel })
+      : undefined,
+    backgroundOutcome(item.task, now),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Finished rows shown before the rest fold away. */
+const finishedBackgroundShown = 5;
+
+function BackgroundSection({
+  items,
   onSelect,
   selectedId,
 }: {
-  data: ChatContextCardData;
-  onClose?: () => void;
+  items: ChatBackgroundTaskItem[];
   onSelect?: (item: ChatContextSelection) => void;
   selectedId?: string;
+}) {
+  const { t } = useTranslation("chat");
+  const [expanded, setExpanded] = useState(false);
+  const running = items.filter((item) => item.task.status === "running");
+  const finished = items.filter((item) => item.task.status !== "running");
+  const hidden = Math.max(0, finished.length - finishedBackgroundShown);
+  const visible = [
+    ...running,
+    ...(expanded ? finished : finished.slice(0, finishedBackgroundShown)),
+  ];
+  const now = useSharedNow(running.length > 0);
+  return (
+    <section className="fdy-chat-context-section">
+      <h3>
+        {t("contextCard.background")}
+        {running.length > 0 ? (
+          <span className="fdy-chat-context-count">{running.length}</span>
+        ) : null}
+      </h3>
+      <div className="fdy-chat-context-list">
+        {visible.map((item) => (
+          <Button
+            aria-pressed={selectedId === item.id}
+            className="fdy-chat-context-row"
+            data-selected={selectedId === item.id ? "true" : "false"}
+            data-status={item.task.status}
+            key={item.id}
+            onClick={() => onSelect?.(item)}
+            title={item.label}
+            variant="ghost"
+          >
+            <span className="fdy-chat-context-row-icon" data-kind="background">
+              <BackgroundKindIcon kind={item.task.kind} />
+            </span>
+            <span className="fdy-chat-context-row-copy">
+              <strong>{item.label}</strong>
+              <em>{backgroundRowDetail(item, now)}</em>
+            </span>
+            <span className="fdy-chat-context-status">
+              <BackgroundStatusIcon status={item.task.status} />
+              {t(`contextCard.backgroundStatus.${item.task.status}`)}
+            </span>
+          </Button>
+        ))}
+      </div>
+      {hidden > 0 ? (
+        <Button
+          aria-expanded={expanded}
+          className="fdy-chat-context-more"
+          onClick={() => setExpanded((value) => !value)}
+          size="sm"
+          variant="ghost"
+        >
+          {expanded
+            ? t("contextCard.backgroundShowFewer")
+            : t("contextCard.backgroundShowMore", { count: hidden })}
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+export function ChatContextCard({
+  data,
+  onClearTurnFilter,
+  onClose,
+  onSelect,
+  reveal,
+  selectedId,
+  turnFilter,
+}: {
+  data: ChatContextCardData;
+  onClearTurnFilter?: () => void;
+  onClose?: () => void;
+  onSelect?: (item: ChatContextSelection) => void;
+  /** Files to open and focus, e.g. those in a folder an answer names. */
+  reveal?: { ids: string[] };
+  selectedId?: string;
+  /** Shows only the files one turn (input) wrote or named. */
+  turnFilter?: string;
 }) {
   const { t } = useTranslation("chat");
   return (
@@ -247,10 +502,35 @@ export function ChatContextCard({
         </Button>
       ) : null}
 
-      {data.outputs.length > 0 ? (
-        <OutputsSection
+      <SessionFileSections
+        data={data}
+        onClearTurnFilter={onClearTurnFilter}
+        onSelect={onSelect}
+        reveal={reveal}
+        turnFilter={turnFilter}
+      />
+
+      {data.previews.length > 0 ? (
+        <section className="fdy-chat-context-section">
+          <h3>{t("contextCard.previews")}</h3>
+          <div className="fdy-chat-context-list">
+            {data.previews.map((item) => (
+              <ResourceRow
+                item={item}
+                key={item.id}
+                kind="preview"
+                onSelect={onSelect}
+                selected={selectedId === item.id}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {data.background.length > 0 ? (
+        <BackgroundSection
+          items={data.background}
           onSelect={onSelect}
-          outputs={data.outputs}
           selectedId={selectedId}
         />
       ) : null}
@@ -298,7 +578,7 @@ export function ChatContextCard({
                     <em>{subagentUsageSummary(subagent.usage)}</em>
                   ) : null}
                 </span>
-                <span className="fdy-chat-subagent-status">
+                <span className="fdy-chat-context-status">
                   <SubagentStatusIcon status={subagent.status} />
                   {t(`contextCard.subagentStatus.${subagent.status}`)}
                 </span>

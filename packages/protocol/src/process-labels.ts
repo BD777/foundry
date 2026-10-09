@@ -36,7 +36,9 @@ export const processLabels = {
   timerSync: "Scheduled tasks updated",
   timerFire: "Scheduled task fired",
   backgroundTurn: "Background task continued",
+  backgroundTasksSync: "Background tasks updated",
   loadedWorkspace: "Loaded workspace",
+  recordedFile: "Recorded file",
   contextCompacted: "The native session compacted its context.",
   transcriptTailUnloaded:
     "This local session is large; only its beginning is loaded so far.",

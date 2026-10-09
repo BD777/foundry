@@ -513,6 +513,56 @@ export interface WorkspaceFileRead {
   truncated: boolean;
 }
 
+/**
+ * A file a session's own write tools changed, or its answer named, recorded
+ * once per turn. Attribution comes from the agent's tool calls, never from
+ * files that merely changed on disk while it ran.
+ */
+export interface SessionFileRecord {
+  /** Absolute path on the device. */
+  path: string;
+  /** Relative to the workspace, when the file is inside it. */
+  workspacePath?: string;
+  /** "tool": a write tool changed it; "reference": only the answer names it. */
+  origin: "tool" | "reference";
+  op: "created" | "modified" | "deleted" | "referenced";
+  /** Inside a Git work tree: listed under Changes, otherwise under Files. */
+  inGitRepo: boolean;
+  /** The input whose turn recorded it. */
+  inputId?: string;
+  /** "main", or the id of the subagent whose tool wrote it. */
+  agent?: string;
+  bytes?: number;
+}
+
+/** A path an answer names that its device verified; linked in the text. */
+export interface SessionFileReference {
+  /** As it appears in the answer: a code span's content or a link target. */
+  text: string;
+  path: string;
+  kind: "file" | "dir";
+}
+
+/** One of a session's recorded files, read from its device. */
+export interface SessionFileRead {
+  sessionId: string;
+  path: string;
+  workspacePath?: string;
+  origin: "tool" | "reference";
+  /** The file resolves inside the session's workspace. */
+  insideWorkspace: boolean;
+  /** text: `content`; image: `dataBase64` and `mimeType`; binary: size only. */
+  kind: "text" | "image" | "binary" | "missing";
+  content?: string;
+  dataBase64?: string;
+  mimeType?: string;
+  truncated: boolean;
+  bytes?: number;
+  mtime?: string;
+  /** Modified on the device after the turn that recorded it. */
+  changedSinceRecorded: boolean;
+}
+
 export interface WorkspaceDirectoryEntry {
   id: string;
   name: string;
@@ -894,8 +944,65 @@ export interface AgentSessionTimerFire {
   completedAt: string;
 }
 
+/**
+ * Work the session's agent left running in the background: a command, a
+ * monitor, a workflow, or a background subagent (shown under Subagents).
+ * Only Claude reports background work; Codex's SDK ends everything with the
+ * turn. Session events carry no command line: members read it, redacted,
+ * with the task's output.
+ */
+export interface AgentBackgroundTask {
+  id: string;
+  provider: "claude" | "codex";
+  kind: "command" | "monitor" | "workflow" | "subagent" | "other";
+  description: string;
+  /** Redacted command line, only in members' output reads. */
+  command?: string;
+  /** "ended": it is gone, and the agent did not say how it ended. */
+  status: "running" | "completed" | "failed" | "stopped" | "ended";
+  exitCode?: number;
+  /** "user": stopped from Foundry; "agent_exit": its agent process ended. */
+  stopReason?: "user" | "agent_exit";
+  startedAt: string;
+  endedAt?: string;
+  /** The deadline the agent gave it (monitors), when it has one. */
+  timeLimitMs?: number;
+  /** The background subagent that started it. */
+  ownerSubagentTaskId?: string;
+  toolUseId?: string;
+  /** The agent's redacted one-line summary of how it ended. */
+  summary?: string;
+  /** Whether the task writes an output log the device can show. */
+  hasOutput: boolean;
+}
+
+/** The last 64 KB of a background task's output, for members. */
+export interface AgentBackgroundTaskOutput {
+  sessionId: string;
+  taskId: string;
+  /** Redacted command line, when the task ran one. */
+  command?: string;
+  /** Plain text: ANSI escapes stripped, secrets redacted. */
+  content: string;
+  /** True when earlier output was left out. */
+  truncated: boolean;
+  bytes: number;
+  /** "missing": no output was written, or it was cleaned up. */
+  kind: "text" | "binary" | "missing";
+}
+
 export interface AgentSessionEventMetadata {
-  outputFile?: string;
+  /** A Claude background task's own output log, on its end event. */
+  taskOutputFile?: string;
+  /**
+   * The session's background work at the time of the event (latest wins):
+   * running tasks and the most recent finished ones.
+   */
+  backgroundTaskSnapshot?: AgentBackgroundTask[];
+  /** A file the session's tools wrote or its answer named, once per turn. */
+  sessionFile?: SessionFileRecord;
+  /** Paths the turn's answer names that the device verified (turn end). */
+  fileReferences?: SessionFileReference[];
   prompt?: string;
   subagentType?: string;
   taskId?: string;

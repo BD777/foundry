@@ -30,6 +30,15 @@ export const ui: Translation<typeof en> = {
       tooManyLines: "此差异超过 5,000 行。请下载归档查看全部改动。",
     },
   },
+  fileTree: {
+    filter: "筛选文件",
+    filterPlaceholder: "筛选文件…",
+    clearFilter: "清除筛选",
+    view: "文件视图",
+    tree: "树状",
+    list: "列表",
+    noMatches: "没有与“{{query}}”匹配的文件。",
+  },
   selectMenu: {
     placeholder: "请选择",
   },

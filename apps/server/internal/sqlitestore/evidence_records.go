@@ -133,29 +133,56 @@ func (s *Store) evidenceRequest(ctx context.Context, scope, requestID string, in
 	}
 	digest := evidenceDigest(input)
 	return s.withTx(ctx, func(tx *Store) error {
-		var previousDigest, response string
-		err := tx.conn().QueryRowContext(ctx, `SELECT request_digest,response_json FROM evidence_requests WHERE scope=? AND request_id=?`, scope, requestID).Scan(&previousDigest, &response)
-		if err == nil {
-			if previousDigest != digest {
-				return fmt.Errorf("idempotency_conflict: same key with different content")
-			}
-			return json.Unmarshal([]byte(response), result)
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
+		replayed, err := tx.replayRequest(ctx, scope, requestID, digest, result)
+		if err != nil || replayed {
 			return err
 		}
 		value, err := action(tx)
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		_, err = tx.conn().ExecContext(ctx, `INSERT INTO evidence_requests VALUES(?,?,?,?)`, scope, requestID, digest, string(raw))
+		raw, err := tx.insertRequest(ctx, scope, requestID, digest, value)
 		if err != nil {
 			return err
 		}
 		return json.Unmarshal(raw, result)
 	})
+}
+
+func (s *Store) replayRequest(ctx context.Context, scope, requestID, digest string, result any) (bool, error) {
+	var previousDigest, response string
+	err := s.conn().QueryRowContext(ctx, `SELECT request_digest,response_json FROM evidence_requests WHERE scope=? AND request_id=?`, scope, requestID).Scan(&previousDigest, &response)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if previousDigest != digest {
+		return false, fmt.Errorf("%w: same key with different content", store.ErrIdempotencyConflict)
+	}
+	return true, json.Unmarshal([]byte(response), result)
+}
+
+func (s *Store) insertRequest(ctx context.Context, scope, requestID, digest string, value any) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.conn().ExecContext(ctx, `INSERT INTO evidence_requests VALUES(?,?,?,?)`, scope, requestID, digest, string(raw))
+	return raw, err
+}
+
+// ReplayRequest decodes the recorded response of an earlier request with
+// this key in scope into result. The same key with a different input is
+// store.ErrIdempotencyConflict.
+func (s *Store) ReplayRequest(ctx context.Context, scope, requestID string, input, result any) (bool, error) {
+	return s.replayRequest(ctx, scope, requestID, evidenceDigest(input), result)
+}
+
+// RecordRequest keeps the response of a request whose side effects ran
+// outside one transaction, so a replay of its key returns it.
+func (s *Store) RecordRequest(ctx context.Context, scope, requestID string, input, response any) error {
+	_, err := s.insertRequest(ctx, scope, requestID, evidenceDigest(input), response)
+	return err
 }

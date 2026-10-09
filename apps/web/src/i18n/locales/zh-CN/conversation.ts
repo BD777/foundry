@@ -35,7 +35,9 @@ export const conversation: Translation<typeof en> = {
     timerSync: "定时任务更新",
     timerFire: "定时任务触发",
     backgroundTurn: "后台任务继续",
+    backgroundTasksSync: "后台任务更新",
     loadedWorkspace: "已加载工作区",
+    recordedFile: "已记录文件",
     contextCompacted: "原生会话已压缩上下文。",
     transcriptTailUnloaded:
       "本地会话较大，当前仅载入前段记录，后续内容尚未载入。",
@@ -66,6 +68,11 @@ export const conversation: Translation<typeof en> = {
     },
   },
   message: {
+    openFile: "打开 {{path}}",
+    showFolder: "查看 {{path}} 中的文件",
+    turnFiles_one: "{{count}} 个文件",
+    turnFiles_other: "{{count}} 个文件",
+    showTurnFiles: "查看这次回答写入或提到的文件",
     attachedImage: "附带的图片",
     context: "上下文",
     failed: "执行失败",

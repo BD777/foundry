@@ -65,7 +65,8 @@ test("projects output, subagents, and workspace source into the sidecar", () => 
   ]);
 
   // A turn's result.md is Foundry's copy of the reply already in the chat.
-  assert.deepEqual(data?.outputs, []);
+  assert.deepEqual(data?.previews, []);
+  assert.deepEqual([...data.changes, ...data.files], []);
   assert.deepEqual(
     data?.subagents.map((item) => [item.label, item.status]),
     [
@@ -96,7 +97,9 @@ test("projects initial active workspace source in a fresh session without events
     },
   );
 
-  assert.deepEqual(data?.outputs, []);
+  assert.deepEqual(data?.previews, []);
+  assert.deepEqual(data?.changes, []);
+  assert.deepEqual(data?.files, []);
   assert.deepEqual(data?.subagents, []);
   assert.deepEqual(data?.timers, []);
   assert.deepEqual(data?.sources, [
@@ -224,10 +227,8 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
     data?.subagents.map((item) => item.label),
     ["Current task"],
   );
-  assert.deepEqual(
-    data?.outputs.map((item) => item.target),
-    ["new.md"],
-  );
+  // Older workers credited any changed file as outputFile: never shown.
+  assert.deepEqual([...data.changes, ...data.files], []);
 });
 
 test("does not present background bash work as a subagent", () => {
@@ -309,7 +310,7 @@ test("projects preview urls as web resources", () => {
   const data = chatContextCardForSessions([item]);
 
   assert.deepEqual(
-    data?.outputs.map(({ kind, target }) => [kind, target]),
+    data?.previews.map(({ kind, target }) => [kind, target]),
     [["web", "http://127.0.0.1:4173/dashboard"]],
   );
 });
@@ -322,89 +323,178 @@ test("does not turn arbitrary response links into workspace previews", () => {
 
   const data = chatContextCardForSessions([item]);
 
-  assert.deepEqual(data?.outputs, []);
+  assert.deepEqual(data?.previews, []);
 });
 
-test("projects the files a run reported, never file names merely mentioned in its reply", () => {
-  const item = session([
-    event("evt_workspace", "Loaded workspace", "/tmp/project"),
-    event(
-      "evt_file_1",
-      "Produced output file",
-      "地狱焚决群增量总结-20260916-0922.md",
-      "info",
-      { outputFile: "地狱焚决群增量总结-20260916-0922.md" },
-    ),
-    event(
-      "evt_file_2",
-      "Produced output file",
-      "summary-parts/01-06.md",
-      "info",
-      {
-        outputFile: "summary-parts/01-06.md",
-      },
-    ),
-    event("evt_output", "Claude Agent SDK finished", "/tmp/project/result.md"),
-  ]);
-  item.response = `现在目录下共三档粒度可选:
-- 极简版: 地狱焚决群增量总结-20260916-0922.md
-- 详版: summary-parts/01-06.md
-另见 package.json`;
+function recorded(id, file) {
+  return event(id, "Recorded file", file.workspacePath ?? file.path, "info", {
+    sessionFile: file,
+  });
+}
 
-  const data = chatContextCardForSessions([item]);
+test("lists the chat's recorded files in Changes and Files, never legacy guesses", () => {
+  const first = session([
+    event("evt_workspace", "Loaded workspace", "/home/me/repo"),
+    // An older worker credited every file that changed while it ran.
+    event("evt_legacy", "Produced output file", "unrelated.go", "info", {
+      outputFile: "unrelated.go",
+    }),
+    recorded("evt_plan", {
+      path: "/home/me/repo/docs/plan.md",
+      workspacePath: "docs/plan.md",
+      origin: "tool",
+      op: "created",
+      inGitRepo: true,
+      inputId: "in_1",
+      agent: "main",
+    }),
+    recorded("evt_report", {
+      path: "/tmp/fdy-groupscan/products/omh.md",
+      origin: "tool",
+      op: "created",
+      inGitRepo: false,
+      inputId: "in_1",
+      agent: "agent_7",
+    }),
+  ]);
+  const second = session([
+    recorded("evt_plan_again", {
+      path: "/home/me/repo/docs/plan.md",
+      workspacePath: "docs/plan.md",
+      origin: "tool",
+      op: "modified",
+      inGitRepo: true,
+      inputId: "in_2",
+      agent: "main",
+    }),
+    recorded("evt_named", {
+      path: "/tmp/fdy-groupscan/products/rev.md",
+      origin: "reference",
+      op: "referenced",
+      inGitRepo: false,
+      inputId: "in_2",
+      agent: "main",
+    }),
+    // Named by the answer inside the repository, never edited: a file to
+    // open, not a change.
+    recorded("evt_named_in_repo", {
+      path: "/home/me/repo/README.md",
+      workspacePath: "README.md",
+      origin: "reference",
+      op: "referenced",
+      inGitRepo: true,
+      inputId: "in_2",
+      agent: "main",
+    }),
+  ]);
+  second.id = "sess_second";
+
+  const data = chatContextCardForSessions(
+    [first, second],
+    {},
+    {
+      id: "ws_test",
+      localPath: "/home/me/repo",
+      deviceLabel: "Laptop",
+    },
+  );
 
   assert.deepEqual(
-    data?.outputs.map(({ label, detail, target }) => [label, detail, target]),
+    data.changes.map(({ path, op, origin, turnIds, sessionId }) => [
+      path,
+      op,
+      origin,
+      turnIds,
+      sessionId,
+    ]),
     [
-      ["01-06.md", "summary-parts", "summary-parts/01-06.md"],
       [
-        "地狱焚决群增量总结-20260916-0922.md",
-        undefined,
-        "地狱焚决群增量总结-20260916-0922.md",
+        "/home/me/repo/docs/plan.md",
+        "created",
+        "tool",
+        ["in_1", "in_2"],
+        "sess_second",
       ],
     ],
   );
-});
-
-test("lists the workspace files a run produced, the ones its reply names first, without task logs or turn results", () => {
-  const taskLog = (id, file) =>
-    event(id, "Subtask completed", "done", "info", {
-      outputFile: file,
-      taskId: id,
-      taskType: "local_agent",
-    });
-  const produced = (id, file) =>
-    event(id, "Produced output file", file, "info", { outputFile: file });
-  const item = session([
-    event("evt_workspace", "Loaded workspace", "/home/me/my-feishu"),
-    produced("evt_gitignore", ".gitignore"),
-    produced("evt_meta", "sessions/group-a/meta.json"),
-    taskLog(
-      "evt_task",
-      "/data00/home/me/tmp/claude-1001/x/tasks/a0d257ad330864a29.output",
-    ),
-    produced("evt_digest", "logs/2026-10-09-digest.md"),
-    produced("evt_meta_again", "sessions/group-a/meta.json"),
-    produced("evt_open", "tasks/2026-10-09-open-loops.md"),
-    event(
-      "evt_result",
-      "Claude Agent SDK finished",
-      "/home/me/my-feishu/.foundry/sessions/s/inputs/i/result.md",
-    ),
-  ]);
-  item.response =
-    "Open loops are in tasks/2026-10-09-open-loops.md and the run log is logs/2026-10-09-digest.md.";
-
-  const outputs = chatContextCardForSessions([item])?.outputs ?? [];
-
   assert.deepEqual(
-    outputs.map(({ target, mentioned }) => [target, Boolean(mentioned)]),
+    data.files.map(({ label, origin, turnIds, deviceLabel }) => [
+      label,
+      origin,
+      turnIds,
+      deviceLabel,
+    ]),
     [
-      ["tasks/2026-10-09-open-loops.md", true],
-      ["logs/2026-10-09-digest.md", true],
-      ["sessions/group-a/meta.json", false],
-      [".gitignore", false],
+      ["README.md", "reference", ["in_2"], "Laptop"],
+      ["omh.md", "tool", ["in_1"], "Laptop"],
+      ["rev.md", "reference", ["in_2"], "Laptop"],
     ],
   );
-  assert.equal(outputs[0].detail, "tasks");
+});
+
+test("each answer carries its turn's file count and verified references", async () => {
+  const { chatMessagesForThread } =
+    await import("../src/features/chat/chat-model.ts");
+  const at = (second) =>
+    `2026-10-09T01:00:${String(second).padStart(2, "0")}.000Z`;
+  const turn = (inputId, second, files, references) => [
+    {
+      ...event(`evt_${inputId}`, "User message", ""),
+      at: at(second),
+      message: { id: inputId, kind: "user", text: "write" },
+    },
+    ...files.map((path, index) =>
+      recordedAt(`evt_${inputId}_${index}`, at(second + 1), {
+        path,
+        origin: "tool",
+        op: "created",
+        inGitRepo: false,
+        inputId,
+        agent: "main",
+      }),
+    ),
+    {
+      ...event(`evt_${inputId}_answer`, "Response stream", ""),
+      at: at(second + 2),
+      message: { id: `a_${inputId}`, kind: "assistant", text: "done" },
+    },
+    {
+      ...event(
+        `evt_${inputId}_done`,
+        "Claude Agent SDK finished",
+        "/tmp/result.md",
+        "info",
+        references ? { fileReferences: references } : undefined,
+      ),
+      at: at(second + 3),
+    },
+  ];
+  function recordedAt(id, when, file) {
+    return { ...recorded(id, file), at: when };
+  }
+  const reference = { text: "a.md", path: "/tmp/out/a.md", kind: "file" };
+  const item = session(
+    [
+      ...turn(
+        "in_1",
+        0,
+        ["/tmp/out/a.md", "/tmp/out/b.md", "/tmp/out/a.md"],
+        [reference],
+      ),
+      ...turn("in_2", 10, []),
+    ],
+    "completed",
+  );
+  const answers = chatMessagesForThread({
+    id: "t",
+    sessions: [item],
+    title: "t",
+  }).filter((message) => message.role === "bot" && !message.kind);
+  assert.deepEqual(
+    answers.map((answer) => [answer.turnFiles, answer.fileReferences]),
+    [
+      [{ turnId: "in_1", count: 2 }, [reference]],
+      [undefined, undefined],
+    ],
+  );
 });

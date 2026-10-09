@@ -20,6 +20,11 @@ import {
   type ChatSessionThread,
 } from "./chat-model";
 import type { ChatAgentOption } from "./chat-surface-types";
+import {
+  readChatRuntimeChoice,
+  rememberChatRuntimeChoice,
+  restoredChatRuntime,
+} from "./chat-runtime-choice";
 import { i18n } from "../../i18n";
 
 export interface UseChatRuntimeInput {
@@ -30,6 +35,8 @@ export interface UseChatRuntimeInput {
   selectedChat?: ChatThread;
   selectedChatId: string;
   selectedThread?: ChatSessionThread;
+  /** The composer's conversation key; the runtime choice is stored per key. */
+  threadKey: string;
   workspaceId: string;
 }
 
@@ -42,6 +49,7 @@ export function useChatRuntime({
   selectedChat,
   selectedChatId,
   selectedThread,
+  threadKey,
   workspaceId,
 }: UseChatRuntimeInput) {
   const [modelLoadFailed, setModelLoadFailed] = useState<
@@ -145,15 +153,14 @@ export function useChatRuntime({
       if (!selectedAgent?.id) {
         return;
       }
-      setOverrides((current) => ({
-        ...current,
-        [selectedAgent.id]: {
-          ...(current[selectedAgent.id] ?? {}),
-          ...patch,
-        },
-      }));
+      const override = { ...(overrides[selectedAgent.id] ?? {}), ...patch };
+      setOverrides((current) => ({ ...current, [selectedAgent.id]: override }));
+      rememberChatRuntimeChoice(threadKey, {
+        agentId: selectedAgent.id,
+        override,
+      });
     },
-    [selectedAgent?.id],
+    [overrides, selectedAgent?.id, threadKey],
   );
   const resetOverride = useCallback((): void => {
     if (!selectedAgent?.id) {
@@ -167,7 +174,21 @@ export function useChatRuntime({
       delete next[selectedAgent.id];
       return next;
     });
-  }, [selectedAgent?.id]);
+    rememberChatRuntimeChoice(threadKey, {
+      agentId: selectedAgent.id,
+      override: {},
+    });
+  }, [selectedAgent?.id, threadKey]);
+  const selectAgent = useCallback(
+    (agentId: string): void => {
+      setSelectedAgentId(agentId);
+      rememberChatRuntimeChoice(threadKey, {
+        agentId,
+        override: overrides[agentId] ?? {},
+      });
+    },
+    [overrides, threadKey],
+  );
 
   const loadModels = useCallback(
     async (input: CreateAgentProfileInput, quiet = false) => {
@@ -224,37 +245,41 @@ export function useChatRuntime({
     }
   }, [selectedAgent?.id, selectedAgentId]);
 
+  // Opening a chat restores its runtime: the stored choice or what its
+  // latest session recorded (see restoredChatRuntime). A new chat without a
+  // stored choice keeps the current one.
   useEffect(() => {
-    if (!active || autoSelectedAgentRef.current === selectedChatId) {
+    if (!active || autoSelectedAgentRef.current === threadKey) {
       return;
     }
     const latest = selectedThread
       ? latestThreadSession(selectedThread)
       : undefined;
-    const targetAgentId = latest
-      ? latest.agentId
-      : selectedChat
+    if (selectedChatId && !latest && !selectedChat) {
+      return;
+    }
+    autoSelectedAgentRef.current = threadKey;
+    const restored = restoredChatRuntime({
+      fallbackAgentId: selectedChat
         ? (agents.find((agent) =>
             selectedChat.profileId
               ? agent.profileId === selectedChat.profileId &&
                 agent.provider === selectedChat.provider
               : chatMatchesAgentProfile(selectedChat, agent),
           )?.id ?? `unavailable:${selectedChat.id}`)
-        : undefined;
-    if (targetAgentId && targetAgentId !== selectedAgentId) {
-      setSelectedAgentId(targetAgentId);
+        : undefined,
+      latest,
+      stored: readChatRuntimeChoice(threadKey),
+    });
+    if (!restored) {
+      return;
     }
-    if (targetAgentId) {
-      autoSelectedAgentRef.current = selectedChatId;
-    }
-  }, [
-    active,
-    agents,
-    selectedAgentId,
-    selectedChat,
-    selectedChatId,
-    selectedThread,
-  ]);
+    setSelectedAgentId(restored.agentId);
+    setOverrides((current) => ({
+      ...current,
+      [restored.agentId]: restored.override,
+    }));
+  }, [active, agents, selectedChat, selectedChatId, selectedThread, threadKey]);
 
   const selectedProfileModelInput =
     selectedProfile && selectedProfile.id && selectedProfile.deviceId
@@ -323,7 +348,7 @@ export function useChatRuntime({
     resetOverride,
     retryModels,
     selectedAgent,
-    selectAgent: setSelectedAgentId,
+    selectAgent,
     updateOverride,
   };
 }

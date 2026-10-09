@@ -77,8 +77,14 @@ export function IssueConversation({
     [issue, runId, onRefresh, clarifying, contract, t],
   );
   const steer = useCallback(
-    async (text: string, executionId?: string) => {
+    async (
+      text: string,
+      executionId?: string,
+      attachments?: import("@bd777/foundry-protocol").ChatAttachment[],
+    ) => {
       if (!executionId) throw new Error(t("conversation.noExecution"));
+      // An execution takes text only; files wait for the next turn.
+      if (attachments?.length) throw new Error(t("conversation.steerTextOnly"));
       await steerIssue(issue.id, text, executionId);
       onRefresh(issue.id);
       return true;

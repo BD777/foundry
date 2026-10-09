@@ -218,6 +218,12 @@ export function humanizeCron(
   if (!parsed) {
     return unparsed();
   }
+  // A one-time timer (a wake-up) names its fire time; its cron fields only
+  // encode that time and would otherwise read as "Daily" or "Yearly".
+  if (!recurring) {
+    const next = nextCronFire(expression, from);
+    return next ? wording.once(next) : unparsed();
+  }
   const minutes = [...parsed.minute].sort((a, b) => a - b);
   const hours = [...parsed.hour].sort((a, b) => a - b);
   const firstMinute = minutes[0];
@@ -294,9 +300,5 @@ export function humanizeCron(
     );
   }
 
-  if (!recurring) {
-    const next = nextCronFire(expression, from);
-    return next ? wording.once(next) : wording.oneTimeUnparsed(expression);
-  }
   return wording.recurringUnparsed(expression);
 }

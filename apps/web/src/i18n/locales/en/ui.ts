@@ -33,6 +33,15 @@ export const ui = {
         "This diff has more than 5,000 lines. Download the archives to inspect all changes.",
     },
   },
+  fileTree: {
+    filter: "Filter files",
+    filterPlaceholder: "Filter files…",
+    clearFilter: "Clear filter",
+    view: "File view",
+    tree: "Tree",
+    list: "List",
+    noMatches: "No files match “{{query}}”.",
+  },
   selectMenu: {
     placeholder: "Select",
   },

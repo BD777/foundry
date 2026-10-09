@@ -6,6 +6,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import type {
   SkillPromotionPlan,
+  AgentBackgroundTaskOutput,
   AgentModelOption,
   AgentProfileProjection,
   AgentRuntimeSettings,
@@ -34,6 +35,7 @@ import type {
   SaveProfileInput,
   SetDeviceProfilesInput,
   Issue,
+  SessionFileRead,
   WorkspaceDirectoryEntry,
   WorkspaceFileRead,
   WorkspaceFeishuConfig,
@@ -682,6 +684,41 @@ export function readWorkspaceFile(
   return getJSON<WorkspaceFileRead>(
     `/api/workspace-files/read?${params.toString()}`,
     options,
+  );
+}
+
+/** One of a session's recorded files, read from its device. */
+export function readSessionFile(
+  sessionId: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<SessionFileRead> {
+  const params = new URLSearchParams({ path });
+  return getJSON<SessionFileRead>(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/files/read?${params.toString()}`,
+    options,
+  );
+}
+
+/** The end of a background task's output and its command (members). */
+export function readBackgroundTaskOutput(
+  sessionId: string,
+  taskId: string,
+  options: RequestOptions = {},
+): Promise<AgentBackgroundTaskOutput> {
+  return getJSON<AgentBackgroundTaskOutput>(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/background-tasks/${encodeURIComponent(taskId)}/output`,
+    options,
+  );
+}
+
+/** Asks the session's agent to stop one of its background tasks. */
+export function stopBackgroundTask(
+  sessionId: string,
+  taskId: string,
+): Promise<{ sessionId: string; taskId: string; stopping: boolean }> {
+  return postJSON(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/background-tasks/${encodeURIComponent(taskId)}/stop`,
   );
 }
 

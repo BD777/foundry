@@ -51,7 +51,10 @@ import {
   selectedChatThread,
 } from "./chat-model";
 import { ChatSurface, type ChatMessageItem } from "./chat-surface";
-import { chatContextCardForSessions } from "./chat-context-model";
+import {
+  chatContextCardForSessions,
+  runningBackgroundWork,
+} from "./chat-context-model";
 import {
   chatDetailHydrationId,
   sessionThreadHydrationId,
@@ -68,6 +71,7 @@ import {
   conversationStorageKey,
   conversationStoragePrefixes,
   forgetConversation,
+  moveRuntimeChoice,
 } from "../../components/conversation/conversation-storage";
 import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
 
@@ -208,6 +212,7 @@ export function useChatFeature({
     }
     return selectedChatSummary;
   }, [chatDetail, selectedChatSummary]);
+  const conversationThreadKey = `${workspaceId}:${selectedThread?.id ?? selectedChat?.id ?? "new"}`;
   const activeSession = useMemo(() => {
     const liveSession = activeThreadSession(selectedThread);
     if (liveSession) {
@@ -254,6 +259,7 @@ export function useChatFeature({
     selectedChat,
     selectedChatId,
     selectedThread,
+    threadKey: conversationThreadKey,
     workspaceId,
   });
   useEffect(() => {
@@ -455,6 +461,10 @@ export function useChatFeature({
     // The timer labels are written in the viewer's language.
     [selectedThread, subagentsBySession, workspace, activeI18n.language],
   );
+  const backgroundRunning = useMemo(
+    () => runningBackgroundWork(selectedThread?.sessions ?? []),
+    [selectedThread],
+  );
 
   const addAttachments = useCallback(
     async (files: File[]): Promise<void> => {
@@ -653,6 +663,10 @@ export function useChatFeature({
       // that was already created.
       setActiveSessionOverride(session);
       setRespondingSessionId(session.id);
+      // A new chat or an adopted native chat is now this session's thread;
+      // its unsent draft, queued messages and runtime choice move with it.
+      const sessionThreadKey = `${workspaceId}:${session.threadId || session.nativeSessionId || session.id}`;
+      moveRuntimeChoice(conversationThreadKey, sessionThreadKey);
       if (!queuedAttachments) {
         setAttachments((current) =>
           current.filter(
@@ -677,17 +691,17 @@ export function useChatFeature({
       } catch {
         // Already persisted; a later snapshot/refresh projects the session.
       }
-      // A new chat or an adopted native chat is now this session's thread;
-      // its unsent draft and queued messages move with it.
-      return {
-        threadKey: `${workspaceId}:${session.threadId || session.nativeSessionId || session.id}`,
-      };
+      return { threadKey: sessionThreadKey };
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function steer(draft: string, sessionId?: string): Promise<boolean> {
+  async function steer(
+    draft: string,
+    sessionId?: string,
+    steeredAttachments: ChatAttachment[] = [],
+  ): Promise<boolean> {
     if (!deviceOnline) {
       await emit({
         message: i18n.t("chat:notices.offlineSteer"),
@@ -696,7 +710,7 @@ export function useChatFeature({
       return false;
     }
     const message = draft.trim();
-    if (!message) {
+    if (!message && steeredAttachments.length === 0) {
       await emit({
         message: i18n.t("chat:notices.emptySteer"),
         type: "notice.requested",
@@ -719,7 +733,10 @@ export function useChatFeature({
       return false;
     }
     try {
-      await sendAgentSessionMessage(targetSession.id, { prompt: message });
+      await sendAgentSessionMessage(targetSession.id, {
+        prompt: message,
+        attachments: steeredAttachments.length ? steeredAttachments : undefined,
+      });
       await emit({ type: "data.refresh.requested" });
       await emit({
         message: i18n.t("chat:notices.steered"),
@@ -918,6 +935,7 @@ export function useChatFeature({
         i18n.t("chat:list.newChat")
       }
       contextCard={contextCard}
+      backgroundRunning={backgroundRunning}
       claudeEffort={claudeEffort}
       claudePermissionMode={claudePermissionMode}
       codexApprovalPolicy={codexApprovalPolicy}
@@ -973,7 +991,7 @@ export function useChatFeature({
             : undefined
       }
       sending={submitting}
-      threadKey={`${workspaceId}:${selectedThread?.id ?? selectedChat?.id ?? "new"}`}
+      threadKey={conversationThreadKey}
     />
   );
 }

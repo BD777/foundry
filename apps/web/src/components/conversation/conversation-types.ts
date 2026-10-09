@@ -27,6 +27,8 @@ export interface ConversationProps {
   /** Why sending is unavailable, shown in the composer while it is. */
   disabledReason?: string;
   readOnly?: ReactNode;
+  /** A line above the input about work that goes on between turns. */
+  notice?: ReactNode;
   /** Keeps the draft and queued messages in this browser, per thread. */
   storageKeyPrefix?: ConversationStoragePrefix;
   draftResetKey?: number;
@@ -50,11 +52,32 @@ export interface ConversationProps {
     attachments?: ChatAttachment[],
     options?: { idempotencyKey?: string },
   ) => Promise<ConversationSendOutcome>;
-  onSteer?: (text: string, executionId?: string) => Promise<boolean>;
+  /** Injects a queued message, with its files, into the running execution. */
+  onSteer?: (
+    text: string,
+    executionId?: string,
+    attachments?: ChatAttachment[],
+  ) => Promise<boolean>;
   onStop?: (executionId?: string) => Promise<void> | void;
   onImagePreview?: (
     image: import("./chat-message-content").ParsedImageTag,
   ) => void;
+  /** Files an answer names and the host can show; see ConversationFileActions. */
+  fileActions?: ConversationFileActions;
+}
+
+/** A path an answer names that its device verified; linked in the text. */
+export interface ConversationFileReference {
+  /** As it appears in the answer: a code span's content or a link target. */
+  text: string;
+  path: string;
+  kind: "file" | "dir";
+}
+
+/** What an answer's file links and its "N files" chip do in the host. */
+export interface ConversationFileActions {
+  open: (reference: ConversationFileReference) => void;
+  showTurn: (turnId: string) => void;
 }
 
 /**
@@ -105,6 +128,10 @@ export interface ChatMessageItem {
   title?: ReactNode;
   /** The turn's provider usage, on the answer that ends the turn. */
   usage?: AgentTurnUsage;
+  /** Verified paths the answer names; linked once it stops streaming. */
+  fileReferences?: ConversationFileReference[];
+  /** The files the answer's turn wrote or named, on the answer ending it. */
+  turnFiles?: { turnId: string; count: number };
 }
 
 /**
