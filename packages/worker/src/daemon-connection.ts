@@ -91,6 +91,7 @@ import {
   initWorkspace,
   readForgottenWorkspaces,
   readRegistry,
+  writeRegistry,
 } from "./workspaces.js";
 import {
   executeIssue,
@@ -111,6 +112,7 @@ import {
   daemonDeviceRegistration,
   daemonRegistration,
   daemonWorkspacePath,
+  explicitWorkspacePath,
   recheckRunningNativeChats,
   registerDaemon,
   serverURLFromArgs,
@@ -2217,7 +2219,12 @@ async function pairWithServer(
       "A pairing token is required. In the Foundry web app open Devices → Add device and pass it with --token.",
     );
   }
+  const previousDeviceId = getDevice().id;
   const { deviceId, credential } = await pairDevice(serverURL, token);
+  // A new device starts with no workspaces: registrations this machine kept
+  // for the device it was before belong to that device, not to this one. The
+  // folders themselves are left as they are.
+  if (deviceId !== previousDeviceId) writeRegistry([]);
   writeDaemonConfig({
     pairedAt: new Date().toISOString(),
     deviceCredential: credential,
@@ -2229,7 +2236,7 @@ async function pairWithServer(
 
 export async function pair(args: string[]): Promise<void> {
   const serverURL = serverURLFromArgs(args);
-  const workspacePath = daemonWorkspacePath(args);
+  const workspacePath = explicitWorkspacePath(args);
   prepareExplicitPair();
   await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);
@@ -2248,14 +2255,18 @@ export async function setup(
   host: ServiceHost = {},
 ): Promise<void> {
   const serverURL = serverURLFromArgs(args);
-  // A device can be set up without a workspace; one is added later from the
-  // Workspaces page.
-  const workspacePath = daemonWorkspacePath(args);
+  // A device is set up without a workspace unless one is passed; people add
+  // them later from the Workspaces page.
+  const workspacePath = explicitWorkspacePath(args);
   const noService = optionEnabled(args, "--no-service");
   const noStart = optionEnabled(args, "--no-start");
 
   console.log("Setting up Foundry local daemon...");
   await ensureServerReachable(serverURL);
+  prepareExplicitPair();
+  // Paired first: pairing as a new device clears the workspaces registered
+  // for an earlier one, and must not clear the one passed here.
+  await pairWithServer(args, serverURL, workspacePath);
   if (workspacePath) {
     initWorkspace(workspacePath);
     await registerExecutionWorkspace(
@@ -2263,8 +2274,6 @@ export async function setup(
       readWorkspace(workspacePath).id,
     );
   }
-  prepareExplicitPair();
-  await pairWithServer(args, serverURL, workspacePath);
   await registerDaemon(serverURL, workspacePath);
 
   // Not running is only news when the person asked for it to start.
