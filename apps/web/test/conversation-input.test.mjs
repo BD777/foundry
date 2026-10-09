@@ -207,18 +207,22 @@ for (const [name, composer] of Object.entries(modes)) {
   test(`${name}: drafts stay with their conversation and terminal conversations do not send`, async (t) => {
     const sent = [];
     const h = await harness(t, composer, {
-      draftStorageKey: "draft:first",
+      storageKeyPrefix: "foundry.issue-draft",
       onSend: async (text) => {
         sent.push(text);
         return true;
       },
     });
     await h.type("first draft");
-    assert.equal(localStorage.getItem("draft:first"), "first draft");
-    await h.render({ threadKey: "second", draftStorageKey: "draft:second" });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 450)));
+    assert.equal(
+      JSON.parse(localStorage.getItem("foundry.issue-draft:thread")).draft,
+      "first draft",
+    );
+    await h.render({ threadKey: "second" });
     assert.equal(h.input.draft, "");
     await h.type("second draft");
-    await h.render({ threadKey: "thread", draftStorageKey: "draft:first" });
+    await h.render({ threadKey: "thread" });
     assert.equal(h.input.draft, "first draft");
     await h.render({ readOnly: "Accepted" });
     await h.submit();
@@ -227,19 +231,33 @@ for (const [name, composer] of Object.entries(modes)) {
 }
 test("Codex keeps messages queued and a new chat migrates its queue to its assigned thread", async (t) => {
   const composer = { mode: "fixed", runtime: "codex" };
+  let accept;
   const h = await harness(t, composer, {
     threadKey: "workspace:new",
-    active: true,
-    activeExecutionId: "r1",
     onSteer: async () => true,
+    onSend: () =>
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
   });
+  await h.type("first");
+  await h.submit();
   await h.type("next");
   await h.submit();
   await h.type("draft");
-  await h.render({ threadKey: "workspace:assigned" });
+  await h.render({
+    threadKey: "workspace:assigned",
+    active: true,
+    activeExecutionId: "r1",
+  });
+  await act(async () => accept({ threadKey: "workspace:assigned" }));
   assert.equal(h.input.draft, "draft");
   assert.equal(h.input.queue[0].text, "next");
   assert.equal(h.input.canSteer, false);
+  await h.render({ threadKey: "workspace:new" });
+  assert.equal(h.input.queue.length, 0);
+  assert.equal(h.input.draft, "");
+  await h.render({ threadKey: "workspace:assigned" });
   await h.render({ threadKey: "other" });
   assert.equal(h.input.queue.length, 0);
   assert.equal(h.input.draft, "");

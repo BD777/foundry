@@ -48,7 +48,6 @@ import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
 import {
   claudeManagedPrompt,
-  isolateSkillSession,
   prepareCodexSkillIsolation,
   validateWorkspaceSkillPrompt,
   workspaceSkillInstructions,
@@ -56,12 +55,17 @@ import {
 import {
   codexFoundryTools,
   buildClaudeLaunchPlan,
+  validateClaudeLaunch,
   claudeLaunchMcpServers,
   claudeSessionOptions,
   claudeSettingsFile,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
+import {
+  runOnNativeSession,
+  type NativeSessionStart,
+} from "./native-session.js";
 
 // Re-exported for existing callers/tests; the launch-policy module now owns
 // these definitions.
@@ -144,6 +148,14 @@ import {
   type ClaudeProcessEvent,
 } from "./sdk-messages.js";
 import { ClaudeTurnWatchdog } from "./watchdog.js";
+import {
+  addTurnUsage,
+  ClaudeRequestUsageTracker,
+  claudeResultUsage,
+  codexTurnUsage,
+  turnUsageMetadata,
+  type TurnTokenUsage,
+} from "./turn-usage.js";
 import {
   isUtilitySession,
   killChildProcess,
@@ -454,29 +466,49 @@ export async function runCodexWorkspaceSession(
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
 ): Promise<AgentSessionRunResult> {
-  const outputs = await SessionOutputFiles.start(workspacePath, emit);
   if (managedSkills) {
     validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     if (profile.command?.trim())
       throw new Error(
         "Custom runtime commands cannot enforce workspace skill isolation.",
       );
-    const isolation = isolateSkillSession(
+  }
+  return runOnNativeSession(
+    {
+      provider: "codex",
       session,
       workspacePath,
-      managedSkills,
-    );
-    session = isolation.session;
-    const report = reportNativeSessionId;
-    reportNativeSessionId = (id) => {
-      isolation.record(id);
-      report(id);
-    };
-    if (isolation.reset)
-      await emit(
-        "Restarted runtime for workspace skill isolation",
-        "Previous native context predates this workspace skill policy; the Foundry transcript is preserved.",
-      );
+      env: codexSessionEnvironment(workspacePath, profile, session),
+      isolated: Boolean(managedSkills),
+      emit: (label, detail, level) => emit(label, detail, level),
+      reportNativeSessionId,
+    },
+    (prepared, _start, report) =>
+      runCodexTurn(
+        workspacePath,
+        prepared,
+        profile,
+        emit,
+        emitSetup,
+        report,
+        managedSkills,
+      ),
+  );
+}
+
+/** One Codex turn on the native thread the session was prepared with. */
+async function runCodexTurn(
+  workspacePath: string,
+  session: AgentSession,
+  profile: AgentProfileLocalConfig,
+  emit: SessionEventEmitter,
+  emitSetup: () => Promise<void>,
+  reportNativeSessionId: (nativeSessionId: string) => void,
+  managedSkills?: ManagedSkillRuntime,
+): Promise<AgentSessionRunResult> {
+  const startedAt = Date.now();
+  const outputs = await SessionOutputFiles.start(workspacePath, emit);
+  if (managedSkills) {
     managedSkills = await prepareCodexSkillIsolation(
       managedSkills,
       workspacePath,
@@ -504,6 +536,7 @@ export async function runCodexWorkspaceSession(
   const resultPath = resolve(sessionDir, "result.md");
   const packageName = "@openai/codex-sdk";
   let finalResult = "";
+  let usage: TurnTokenUsage | undefined;
 
   try {
     const sdk = (await import(packageName)) as {
@@ -546,11 +579,11 @@ export async function runCodexWorkspaceSession(
     );
     const activeThread = activeCodexThreads.get(runtimeKey);
     let thread: CodexSDKThread;
+    // A thread in memory continues only the native session it holds.
     if (
       activeThread &&
-      (!requestedNativeSessionId ||
-        !activeThread.nativeSessionId ||
-        activeThread.nativeSessionId === requestedNativeSessionId)
+      (!activeThread.nativeSessionId ||
+        activeThread.nativeSessionId === (requestedNativeSessionId ?? ""))
     ) {
       thread = activeThread.thread;
       activeThread.lastUsed = Date.now();
@@ -682,6 +715,7 @@ export async function runCodexWorkspaceSession(
               );
             }
             if (eventType === "turn.completed") {
+              usage = codexTurnUsage(event);
               turnCompleted = true;
               abortController.abort();
               break;
@@ -703,6 +737,7 @@ export async function runCodexWorkspaceSession(
       nativeSessionId = thread.id || nativeSessionId;
       reportNativeSessionId(nativeSessionId);
       finalResult = sdkMessageText(turn);
+      usage = codexTurnUsage(turn);
     }
 
     const runtime = activeCodexThreads.get(runtimeKey);
@@ -714,7 +749,12 @@ export async function runCodexWorkspaceSession(
       finalResult || "Codex SDK completed without a text response.";
     writeFileSync(resultPath, `${response}\n`);
     await outputs.reportChangedOnDisk();
-    await emit("Codex SDK finished", resultPath);
+    await emit(
+      "Codex SDK finished",
+      resultPath,
+      undefined,
+      turnUsageMetadata(usage, startedAt),
+    );
     return { nativeSessionId, response };
   } catch (error) {
     if (isAgentSessionCanceledError(error)) {
@@ -746,16 +786,9 @@ export async function runClaudeWorkspaceSession(
       officialSkills: officialSkills("claude") ?? [],
     };
   }
-  // Assemble the full launch plan first: it performs fail-closed validation
-  // (managed skills reject custom commands and unconfigured invocations)
-  // before any directory or process work happens.
-  const plan = buildClaudeLaunchPlan({
-    workspacePath,
-    session,
-    profile,
-    managedSkills,
-  });
-  session = plan.session;
+  // Fail-closed validation (managed skills reject custom commands and
+  // unconfigured invocations) before any directory or process work happens.
+  validateClaudeLaunch({ session, profile, managedSkills });
   const sessionDir = sessionInputDirectory(
     process.env.FOUNDRY_EXECUTION_SESSION_ROOT ??
       resolve(workspacePath, ".foundry", "sessions"),
@@ -772,34 +805,43 @@ export async function runClaudeWorkspaceSession(
       emit,
     );
   }
-  const outerReport = reportNativeSessionId;
-  reportNativeSessionId = (id) => {
-    plan.recordNativeSession(id);
-    outerReport(id);
-  };
-  if (plan.reset) {
-    await emit(
-      "Restarted runtime for workspace skill isolation",
-      "Previous native context predates this workspace skill policy; the Foundry transcript is preserved.",
-    );
-  }
-  for (const warning of plan.warnings) {
-    await emit("Connection credential missing", warning, "warning");
-  }
   const refusal = claudeRootBypassRefusal(
     claudePermissionMode(session, profile),
   );
   if (refusal) throw new ClaudeAgentTurnError("root_bypass", refusal);
-  return runClaudeAgentSdkSession(
-    workspacePath,
-    session,
-    sessionDir,
-    profile,
-    emit,
-    emitSetup,
-    reportNativeSessionId,
-    managedSkills,
-    plan,
+  return runOnNativeSession(
+    {
+      provider: "claude",
+      session,
+      workspacePath,
+      env: sessionEnvironment(workspacePath, profile, session),
+      isolated: Boolean(managedSkills),
+      emit: (label, detail, level) => emit(label, detail, level),
+      reportNativeSessionId,
+    },
+    async (prepared, start, report) => {
+      const plan = buildClaudeLaunchPlan({
+        workspacePath,
+        session: prepared,
+        profile,
+        managedSkills,
+      });
+      for (const warning of plan.warnings) {
+        await emit("Connection credential missing", warning, "warning");
+      }
+      return runClaudeAgentSdkSession(
+        workspacePath,
+        prepared,
+        sessionDir,
+        profile,
+        emit,
+        emitSetup,
+        report,
+        managedSkills,
+        plan,
+        start,
+      );
+    },
   );
 }
 
@@ -952,6 +994,15 @@ export async function handleActiveClaudeMessage(
       processEvent.message,
     );
   }
+  const requestUsage = turn.requestUsage?.observe(message);
+  if (requestUsage) {
+    await turn.emit(
+      processLabels.modelRequestUsage,
+      requestUsage.requestId,
+      undefined,
+      { requestUsage },
+    );
+  }
   await turn.outputs?.reportToolWrites(claudeExtractTouchedFiles(message));
   const resultError = claudeAgentResultError(message);
   if (resultError) {
@@ -983,6 +1034,8 @@ export async function handleActiveClaudeMessage(
   if (claudeTaskNotificationBookkeeping(message)) {
     return;
   }
+  const resultUsage = claudeResultUsage(message);
+  if (resultUsage) turn.usage = addTurnUsage(turn.usage, resultUsage);
   if (
     message &&
     typeof message === "object" &&
@@ -1005,7 +1058,12 @@ export async function handleActiveClaudeMessage(
     }
     writeFileSync(turn.resultPath, `${response}\n`);
     await turn.outputs?.reportChangedOnDisk();
-    await turn.emit("Claude Agent SDK finished", turn.resultPath);
+    await turn.emit(
+      "Claude Agent SDK finished",
+      turn.resultPath,
+      undefined,
+      turnUsageMetadata(turn.usage, turn.startedAt),
+    );
     resolveActiveClaudeTurn(runtime, turn, {
       nativeSessionId: turn.nativeSessionId || runtime.nativeSessionId,
       response,
@@ -1066,7 +1124,9 @@ export async function runClaudeAgentSdkSession(
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
   plan?: ClaudeLaunchPlan,
+  start?: NativeSessionStart,
 ): Promise<AgentSessionRunResult> {
+  const startedAt = Date.now();
   const packageName = "@anthropic-ai/claude-agent-sdk";
   const command = resolveClaudeCommand();
   const messagesPath = resolve(sessionDir, "claude-sdk.messages.jsonl");
@@ -1144,25 +1204,39 @@ export async function runClaudeAgentSdkSession(
     baseOptions,
   );
   const requestedNativeSessionId = session.nativeSessionId?.trim() ?? "";
-  reportNativeSessionId(requestedNativeSessionId);
+  // A fork's native session exists once Claude reports it.
+  if (start?.kind !== "fork") reportNativeSessionId(requestedNativeSessionId);
 
   try {
     cleanupActiveClaudeRuntimes();
     let runtime = activeClaudeRuntimes.get(runtimeKey);
     let runtimeStartOptions: Record<string, unknown> | undefined;
+    // A runtime in memory continues only the native session it holds.
     const canReuseRuntime =
       runtime &&
       !runtime.closed &&
-      (!requestedNativeSessionId ||
-        !runtime.nativeSessionId ||
+      (!runtime.nativeSessionId ||
         runtime.nativeSessionId === requestedNativeSessionId);
     if (!canReuseRuntime) {
       if (runtime) {
         closeActiveClaudeRuntime(runtime);
         activeClaudeRuntimes.delete(runtimeKey);
       }
+      // A session's earlier runtime (another skill catalog, profile or
+      // model) holds the same native session: one process writes it.
+      for (const [key, other] of activeClaudeRuntimes) {
+        if (other.foundrySessionId === session.id && !other.pending) {
+          closeActiveClaudeRuntime(other);
+          activeClaudeRuntimes.delete(key);
+        }
+      }
       const options = { ...baseOptions };
-      if (requestedNativeSessionId) {
+      if (start?.kind === "fork") {
+        // The SDK copies the source into the id the server already claimed.
+        options.resume = start.from;
+        options.forkSession = true;
+        options.sessionId = start.nativeSessionId;
+      } else if (requestedNativeSessionId) {
         options.resume = requestedNativeSessionId;
       }
       if (plan?.mcpServers)
@@ -1293,6 +1367,7 @@ export async function runClaudeAgentSdkSession(
             activeRuntime.nativeSessionId || requestedNativeSessionId,
           partialResult: "",
           openTaskIds: new Set<string>(),
+          requestUsage: new ClaudeRequestUsageTracker(),
           reject: (error: unknown) => {
             unregisterSteer();
             unregisterCancel();
@@ -1305,6 +1380,7 @@ export async function runClaudeAgentSdkSession(
             resolveTurn(result);
           },
           resultPath,
+          startedAt,
           outputs,
           watchdog: new ClaudeTurnWatchdog(timeouts.idleTimeoutMs, () => {
             if (activeRuntime.pending !== turn) {
@@ -1345,46 +1421,6 @@ export async function runClaudeAgentSdkSession(
     const message =
       error instanceof Error ? (error.stack ?? error.message) : String(error);
     writeFileSync(stderrPath, `${message}\n`);
-    if (
-      requestedNativeSessionId &&
-      /No conversation found with session ID/i.test(message)
-    ) {
-      // The native session ID is stale (e.g. daemon restarted and the CLI
-      // session store was cleared). Close the broken runtime and retry
-      // with a fresh session (no resume).
-      await emit(
-        "Native Claude session was unavailable; starting a fresh leg",
-        "",
-        "warning",
-      );
-      const staleRuntime = activeClaudeRuntimes.get(runtimeKey);
-      if (staleRuntime) {
-        closeActiveClaudeRuntime(staleRuntime);
-        activeClaudeRuntimes.delete(runtimeKey);
-      }
-      // Retry with empty native session ID to start a fresh conversation.
-      const freshSession = { ...session, nativeSessionId: "" };
-      const retryManaged = plan ? plan.managedSkills : managedSkills;
-      const freshPlan = plan
-        ? buildClaudeLaunchPlan({
-            workspacePath,
-            session: freshSession,
-            profile,
-            managedSkills: retryManaged,
-          })
-        : undefined;
-      return runClaudeAgentSdkSession(
-        workspacePath,
-        freshSession,
-        sessionDir,
-        profile,
-        emit,
-        emitSetup,
-        reportNativeSessionId,
-        retryManaged,
-        freshPlan,
-      );
-    }
     throw error;
   }
 }

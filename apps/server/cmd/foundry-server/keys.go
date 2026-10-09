@@ -19,6 +19,10 @@ func runKeys(args []string, getenv func(string) string) error {
 		printKeysUsage()
 		return errors.New("keys: missing subcommand")
 	}
+	if isHelpArg(args[0]) {
+		printKeysUsage()
+		return flag.ErrHelp
+	}
 	cfg := loadConfig(getenv)
 	if err := checkDataLocation(cfg, fileExists); err != nil {
 		return err

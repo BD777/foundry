@@ -265,3 +265,43 @@ test("slow refresh cannot replace an optimistic move or an acknowledged newer re
   assert.equal(shown.groups[0].id, "g");
   sync.dispose();
 });
+
+test("chats without a saved place merge by last activity, stable across refetches", () => {
+  const foundry = [
+    { id: "sess_2", activityAt: "2026-10-09T02:00:00.000000000Z" },
+    { id: "sess_1", activityAt: "2026-10-09T00:00:00.000000000Z" },
+  ];
+  const native = [
+    { id: "native_claude_b", activityAt: "2026-10-09T01:00:00.000Z" },
+    { id: "native_claude_a", activityAt: "2026-10-09T01:00:00.000Z" },
+  ];
+  const first = orderedChats([...foundry, ...native], emptyChatLayout()).map(
+    (chat) => chat.id,
+  );
+  assert.deepEqual(first, [
+    "sess_2",
+    "native_claude_a",
+    "native_claude_b",
+    "sess_1",
+  ]);
+  // A refetch answers in another order; the list does not move.
+  assert.deepEqual(
+    orderedChats(
+      [...native].reverse().concat([...foundry].reverse()),
+      emptyChatLayout(),
+    ).map((chat) => chat.id),
+    first,
+  );
+  // Saved positions stay manual; unsaved chats lead, by activity.
+  const layout = {
+    ...emptyChatLayout(),
+    positions: [
+      { chatId: "sess_1", groupId: "" },
+      { chatId: "sess_2", groupId: "" },
+    ],
+  };
+  assert.deepEqual(
+    orderedChats([...foundry, ...native], layout).map((chat) => chat.id),
+    ["native_claude_a", "native_claude_b", "sess_1", "sess_2"],
+  );
+});

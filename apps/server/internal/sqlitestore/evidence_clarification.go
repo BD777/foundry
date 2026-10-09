@@ -169,12 +169,8 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 			if isActiveAgentSession(existing.Status) {
 				return store.AgentSession{}, errClarificationBusy
 			}
-			nativeSessionID := existing.NativeSessionID
-			if !compatibleAgentSessionProfile(existing, next) || existing.DeviceID != next.DeviceID {
-				nativeSessionID = ""
-			}
 			createdBy, created := existing.CreatedByUserID, existing.CreatedLabel
-			next.ID, next.ThreadID, next.NativeSessionID = existing.ID, existing.ThreadID, nativeSessionID
+			next.ID, next.ThreadID = existing.ID, existing.ThreadID
 			next.CreatedByUserID, next.CreatedLabel, next.StartedAt = createdBy, created, ""
 		}
 	}
@@ -185,7 +181,12 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 		createdAt = now
 	}
 	next.Model, next.ClaudeEffort, next.CodexReasoningEffort, next.CodexSpeed = issue.Model, issue.ClaudeEffort, issue.CodexReasoningEffort, issue.CodexSpeed
-	next.Input = store.SessionInput{ID: newSessionInputID(now), Prompt: message}
+	next.Input = store.SessionInput{ID: newSessionInputID(now), Prompt: message, At: formatTime(now)}
+	// The turn carries the conversation itself (ClarificationTurn), so what
+	// the native session missed is not passed again.
+	if _, _, err := s.pointAtNativeSession(ctx, &next); err != nil {
+		return store.AgentSession{}, err
+	}
 	next.Status, next.UpdatedLabel = "queued", "queued"
 	if err := s.saveAgentSession(ctx, next, createdAt, now); err != nil {
 		return store.AgentSession{}, err

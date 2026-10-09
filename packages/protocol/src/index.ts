@@ -111,12 +111,113 @@ export interface DeviceProjection {
   system?: DeviceSystem;
   /** An update requested from Foundry that has not finished yet. */
   workerUpdate?: DeviceWorkerUpdate;
+  /** The last time the device dropped; the server adds it to projections. */
+  lastDisconnect?: DeviceDisconnect;
+  /**
+   * Changes when the device's scanned skills or the catalog change. Workspace
+   * data leaves skill lists out; load them with `/api/device-skills` and
+   * reload when this changes.
+   */
+  skillsVersion?: string;
 }
 
 export interface DeviceWorkerUpdate {
   startedAt: string;
   /** The version it brings. */
   version?: string;
+  /** The version the device ran when the update started. */
+  fromVersion?: string;
+  /** The file on the device the update writes to. */
+  log?: string;
+  /** The update did not finish in time; it may be started again. */
+  stalled?: boolean;
+}
+
+/**
+ * A stretch when the worker's event loop was blocked; a registration carries
+ * the ones recorded since the previous one so the server can log them.
+ */
+export interface WorkerStall {
+  /** When the loop came back. */
+  at: string;
+  /** How long the loop was blocked, in milliseconds. */
+  lagMs: number;
+  /** The worker's long-running activities active during the stall. */
+  activities?: string[];
+}
+
+/**
+ * One connection to the server as the worker saw it, reported at the next
+ * registration so a dropped device can be explained.
+ */
+export interface WorkerConnectionReport {
+  openedAt: string;
+  closedAt: string;
+  /** How long the connection lasted, in milliseconds. */
+  durationMs: number;
+  /**
+   * Who ended it: "worker" when the worker gave up (nothing from the server
+   * for too long), "server" when a close frame arrived, "network" when the
+   * socket ended without one.
+   */
+  closedBy: "worker" | "server" | "network";
+  closeCode?: number;
+  closeReason?: string;
+  /** The socket error, e.g. "ECONNRESET: read ECONNRESET". */
+  error?: string;
+  /** Milliseconds between the last frame from the server and the close. */
+  sinceServerDataMs?: number;
+  /** Milliseconds between the server's last ping and the close. */
+  sinceServerPingMs?: number;
+  bytesReceived?: number;
+  bytesSent?: number;
+  /** Proxy host from the environment, if one is set (not used by the socket). */
+  proxy?: string;
+  /** Worst event-loop delay during the connection, in milliseconds. */
+  maxLagMs?: number;
+}
+
+/** How a diagnostic check came out; "info" only reports a fact. */
+export type DiagnosticStatus = "ok" | "info" | "warn" | "error";
+
+/**
+ * One check a worker ran on itself. The id names the check (the web words
+ * its title and advice); values carry what it found.
+ */
+export interface DiagnosticCheck {
+  id: string;
+  status: DiagnosticStatus;
+  values?: Record<string, string | number | boolean>;
+}
+
+/** A worker's report on itself, run on request from the device page. */
+export interface DeviceDiagnostics {
+  generatedAt: string;
+  workerVersion: string;
+  checks: DiagnosticCheck[];
+  /** The worker's last connections to the server, oldest first. */
+  connections: WorkerConnectionReport[];
+  /** The end of the worker's own logs, secrets removed. */
+  logTail: string[];
+}
+
+/** A repair a person can ask a worker to make on itself. */
+export type DeviceRepairAction =
+  "forget-missing-workspaces" | "clear-skill-scan-cache" | "recheck-agents";
+
+export interface DeviceRepairResult {
+  action: DeviceRepairAction;
+  /** What changed, e.g. the forgotten folders. */
+  values?: Record<string, string | number | boolean>;
+}
+
+/** The last time a device dropped, from both ends. */
+export interface DeviceDisconnect {
+  at: string;
+  /** Why the server ended or lost the connection. */
+  serverReason?: string;
+  /** The worker's own account, once it reconnected and reported it. */
+  worker?: WorkerConnectionReport;
 }
 
 /** The machine a device is, as its worker reports it at registration. */
@@ -507,6 +608,195 @@ export interface PromotedSkill {
   updatedLabel: string;
   dependencies?: SkillDependency[];
   dependencyAnalysisError?: string;
+  /** Programs the latest revision runs. */
+  requires?: string[];
+}
+
+/** Whether a device has a program some library skill needs. */
+export interface DeviceTool {
+  deviceId: string;
+  tool: string;
+  available: boolean;
+  checkedAt: string;
+  /** The version Foundry installed on the device, if it did. */
+  version?: string;
+}
+
+/** A git repository the skill library takes skills from. */
+export interface SkillRepository {
+  id: string;
+  /** The https remote. */
+  url: string;
+  /** Short form, e.g. "github.com/anthropics/skills". */
+  label: string;
+  /** Branch or tag followed; absent follows the default branch. */
+  ref?: string;
+  /** Folder within the repository holding the skills. */
+  subpath?: string;
+  /** Commit last seen at ref. */
+  commit?: string;
+  checkedAt?: string;
+  error?: string;
+  createdAt: string;
+  skills: SkillRepositorySkill[];
+  /** "pick": chosen skills; "bundle": the whole repository as one unit.
+   * Either way the skills move to new versions by themselves. */
+  mode: "pick" | "bundle";
+  /** A bundle's name, e.g. "feishu-cli". */
+  name?: string;
+  /** The release tag (or branch and short commit) its skills are on. */
+  version?: string;
+  /** A rolled-back repository stays on its version until resumed. */
+  paused?: boolean;
+  /** Applied versions, newest first. */
+  versions?: SkillBundleVersion[];
+  /** Programs a bundle's skills run, with where to get them. */
+  tools?: SkillBundleTool[];
+  /** Programs named when the bundle was followed, which its source does
+   * not publish itself (e.g. a Python CLI on PyPI). */
+  declaredTools?: SkillToolDeclaration[];
+  /** Skill folders the repository held when last read; absent if unknown. */
+  foundCount?: number;
+  /** The repository's own description from its host. */
+  description?: string;
+  /**
+   * The device that reads the repository with its own git and npm settings
+   * and credentials, for a source the server cannot reach; absent means the
+   * server reads it.
+   */
+  fetchDeviceId?: string;
+  fetchDeviceName?: string;
+  /** Whether that device is connected now. */
+  fetchDeviceOnline?: boolean;
+  /**
+   * The npm registry (https) its npm package and npm tools come from;
+   * absent is the public registry when the server reads it, and the
+   * device's own npm settings when a device does.
+   */
+  registry?: string;
+  /** A check waits for the fetch device to come back online. */
+  checkWaiting?: boolean;
+}
+
+/** One version a bundle was updated or rolled back to. */
+export interface SkillBundleVersion {
+  seq: number;
+  tag: string;
+  commit: string;
+  appliedAt: string;
+  rolledBack?: boolean;
+  added?: string[];
+  changed?: string[];
+  removed?: string[];
+  /** Picked skills whose folder left the repository with this version;
+   * the library keeps them at their last revision. */
+  missing?: string[];
+  members?: SkillBundleMember[];
+  /** The programs this version needs; rolling back restores them. */
+  tools?: SkillBundleTool[];
+}
+
+/** One skill of a bundle version. */
+export interface SkillBundleMember {
+  dir: string;
+  skillId: string;
+  name: string;
+  revision: number;
+}
+
+/** A program a bundle needs, installable from its GitHub release. */
+export interface SkillBundleTool {
+  name: string;
+  version: string;
+  assets?: SkillToolAsset[];
+  checksumsUrl?: string;
+  /**
+   * Where it installs from: absent (a GitHub release download), "npm" (the
+   * npm package `package`) or "uv" (the Python package `package`, via uv).
+   */
+  source?: "npm" | "uv";
+  package?: string;
+  /**
+   * Where an npm tool installs from: absent is the public registry, an
+   * https URL that registry, "device" each device's own npm settings.
+   */
+  registry?: string;
+  /** A step it needs after installing, run only when the person asks. */
+  setup?: SkillToolSetup;
+  /**
+   * Arguments of the command a person runs once in a terminal on each
+   * device after installing (e.g. ["auth", "login"]); Foundry only shows it.
+   */
+  signIn?: string[];
+}
+
+/**
+ * A program a bundle declares that its source does not publish: "uv"
+ * installs the PyPI package `package`, "npm" the npm package `package`
+ * (from the repository's registry), which provides `command`. Its version
+ * follows the bundle's when the package has it, else its latest.
+ */
+export interface SkillToolDeclaration {
+  source: "uv" | "npm";
+  package: string;
+  command: string;
+}
+
+/** Runs one of the installed package's commands with fixed arguments. */
+export interface SkillToolSetup {
+  /** A command the package installs; absent is the tool itself. */
+  command?: string;
+  args: string[];
+  /** What it does, e.g. "Downloads Chrome for Testing". */
+  description: string;
+}
+
+/** One platform's download of a tool. */
+export interface SkillToolAsset {
+  os: string;
+  arch: string;
+  name: string;
+  url: string;
+}
+
+/** A bundle as workspaces choose it. */
+export interface SkillBundleSummary {
+  id: string;
+  name: string;
+  label: string;
+  version?: string;
+  /** The library skills it delivers now. */
+  skillIds: string[];
+}
+
+/** A library skill taken from a repository folder. */
+export interface SkillRepositorySkill {
+  skillId: string;
+  dir: string;
+  /** Repository commit the skill's latest revision came from. */
+  commit: string;
+  /** The skill's name in the library. */
+  name?: string;
+  /** The skill left its bundle; sessions no longer get it. */
+  retired?: boolean;
+  /** A picked skill's folder is gone from the repository; the library
+   * keeps its last revision. */
+  missing?: boolean;
+}
+
+/** A skill folder found in a repository. */
+export interface RepositorySkillFolder {
+  dir: string;
+  name: string;
+  description: string;
+  license?: string;
+  /** Set when the folder is already in the library. */
+  skillId?: string;
+}
+
+export interface SkillRepositoryView {
+  repository: SkillRepository;
+  available: RepositorySkillFolder[];
 }
 
 /** A resolved (skill, revision) pair attached to a dispatched session. */
@@ -522,6 +812,8 @@ export interface SessionSkillRef {
 export interface WorkspaceSkillBinding {
   workspaceId: string;
   skillId: string;
+  /** Holds the workspace at one revision; absent or 0 follows the latest. */
+  pinnedRevision?: number;
 }
 
 export interface RunEvent {
@@ -613,6 +905,43 @@ export interface AgentSessionEventMetadata {
   timerSnapshot?: AgentScheduledTask[];
   /** Present on events marking an automatic timer-triggered background turn. */
   timerFire?: AgentSessionTimerFire;
+  /** Present on the event that ends a turn the provider reported usage for. */
+  turnUsage?: AgentTurnUsage;
+  /** What a Claude subagent has used so far, on its progress and end events. */
+  subagentUsage?: SubagentUsage;
+  /**
+   * A model request's final tokens (Claude), reported when its stream ends.
+   * Steps of that request share the id; the event itself is not shown.
+   */
+  requestUsage?: ModelRequestUsage;
+}
+
+/**
+ * A subagent's own work as Claude reports it: one token total, without an
+ * input/output split. Not part of its parent's per-step token counts.
+ */
+export interface SubagentUsage {
+  totalTokens: number;
+  toolUses: number;
+  durationMs: number;
+}
+
+/**
+ * What one turn cost, as the agent's SDK reported it. Token counts share one
+ * meaning across providers: `inputTokens` is every prompt token the model
+ * read, and cache reads/writes are parts of it, not additions to it.
+ */
+export interface AgentTurnUsage {
+  /** Wall time from the runtime taking the turn to its final result. */
+  durationMs: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Includes `reasoningTokens` when the provider reports them. */
+  outputTokens: number;
+  reasoningTokens?: number;
+  /** Model requests in the turn (Claude reports them; Codex does not). */
+  modelRequests?: number;
 }
 
 export interface AgentSubagentTranscriptMessage {
@@ -623,6 +952,8 @@ export interface AgentSubagentTranscriptMessage {
   kind?: TranscriptMessage["kind"];
   callId?: string;
   status?: TranscriptMessage["status"];
+  /** Tokens of the subagent's model request behind this step. */
+  requestUsage?: ModelRequestUsage;
 }
 
 export interface AgentSubagentTranscript {
@@ -634,6 +965,7 @@ export interface AgentSubagentTranscript {
   taskId: string;
   title: string;
   toolUseId: string;
+  usage?: SubagentUsage;
 }
 
 export interface AgentSubagentSummary {
@@ -645,6 +977,7 @@ export interface AgentSubagentSummary {
   taskId: string;
   title: string;
   toolUseId: string;
+  usage?: SubagentUsage;
 }
 
 export interface ChatAttachment {
@@ -666,6 +999,8 @@ export interface SessionInput {
   attachments?: ChatAttachment[];
   profileTransitionNote?: string;
   importedContext?: string;
+  /** When the server received it; its transcript events carry the same time. */
+  at?: string;
 }
 
 /** Label of the transcript event each session input writes. */
@@ -681,7 +1016,16 @@ export interface AgentSession {
   id: string;
   /** Equals `id`; kept so readers of legacy per-turn rows still group them. */
   threadId?: string;
+  /**
+   * The native session it resumes on the runtime it runs on; absent starts
+   * one there. The server owns which native sessions a session has.
+   */
   nativeSessionId?: string;
+  /**
+   * Set until a fork first answers: `nativeSessionId` starts as a copy of
+   * this native session (Claude's forkSession).
+   */
+  forkNativeSessionId?: string;
   workspaceId: string;
   agentId: string;
   deviceId: string;
@@ -730,6 +1074,11 @@ export interface AgentSession {
   error?: string;
   startedAt?: string;
   lastActivityAt?: string;
+  /**
+   * Last conversation activity: the latest input, or the answer that
+   * completed it. Chat lists order by it.
+   */
+  activityAt?: string;
   completedAt?: string;
   createdLabel: string;
   answerRevision?: string;
@@ -855,6 +1204,23 @@ export interface TranscriptMessage {
   status?: "running" | "completed" | "failed";
   /** Files that travelled with a user message. */
   attachments?: ChatAttachment[];
+  /** Tokens of the model request that produced this step (Claude). */
+  requestUsage?: ModelRequestUsage;
+  /** On the answer that ended a turn: the turn's usage, read from the agent's own log. */
+  turnUsage?: AgentTurnUsage;
+}
+
+/**
+ * One model request's tokens. A request can produce several steps; each
+ * carries the same id, and its last report counts.
+ */
+export interface ModelRequestUsage {
+  requestId: string;
+  /** Prompt tokens, cache reads and writes included. */
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
 }
 
 export interface ChatLayoutGroup {
@@ -892,7 +1258,8 @@ export interface ChatThread {
   recentMessages?: ChatRecapMessage[];
   status?: RunStatus;
   readonly: boolean;
-  updatedLabel: string;
+  /** Legacy; lists label `updatedAt` themselves, workers no longer send it. */
+  updatedLabel?: string;
 }
 
 export interface AssetProjection {
@@ -905,6 +1272,18 @@ export interface AssetProjection {
   detail: string;
 }
 
+/**
+ * A skill Foundry itself gives an agent runtime, beside the skills the agent
+ * ships and the ones a workspace selects.
+ */
+export interface BuiltinSkill {
+  runtime: Exclude<WorkerRuntimeId, "mock">;
+  name: string;
+  description?: string;
+  /** Where it comes from, e.g. "Anthropic skills". */
+  source: string;
+}
+
 export interface FoundryDataProjection {
   runs?: Run[];
   agentProfiles: AgentProfileProjection[];
@@ -914,16 +1293,30 @@ export interface FoundryDataProjection {
   chats: ChatThread[];
   deviceProfiles: DeviceProfileBinding[];
   deviceSkillRoots: DeviceSkillRoot[];
-  deviceSkills: DeviceSkill[];
   devices: DeviceProjection[];
   issues: Issue[];
   profiles: ProfileDefinition[];
   promotedSkills: PromotedSkill[];
+  /** Skills Foundry itself gives an agent; sessions on it always have them. */
+  builtinSkills?: BuiltinSkill[];
   providerHealth: ProviderHealth[];
   skills: SkillPackRef[];
   workspace: WorkspaceProjection;
   workspaceFiles: WorkspaceFileEntry[];
   workspaceSkillBindings: WorkspaceSkillBinding[];
+  /** Library skills the workspace gets from its owner's defaults. */
+  defaultSkillIds?: string[];
+  /** Skills it gets from defaults or bundles, including ones turned off. */
+  inheritedSkillIds?: string[];
+  /** Inherited skills this workspace turned off. */
+  offSkillIds?: string[];
+  /** Which programs library skills need the visible devices have. */
+  deviceTools?: DeviceTool[];
+  /** The library's bundles, and the ones this workspace uses. */
+  skillBundles?: SkillBundleSummary[];
+  workspaceBundleIds?: string[];
+  /** Its owner's default bundles; workspaceBundleIds holds those still on. */
+  defaultBundleIds?: string[];
   workspaces: WorkspaceProjection[];
 }
 
@@ -1352,7 +1745,13 @@ export interface SkillFileInfo {
 export interface SkillPromotionResolution {
   root: string;
   dirName: string;
-  action: "create" | "reuse" | "update" | "fork";
+  /**
+   * create: a new library skill; reuse: the identical library entry; update:
+   * this device's version becomes the entry's next revision; keep: the
+   * library entry stays as it is and nothing is published; fork: a new
+   * library skill under another name.
+   */
+  action: "create" | "reuse" | "update" | "keep" | "fork";
   targetSkillId?: string;
   expectedRevision?: number;
   name?: string;

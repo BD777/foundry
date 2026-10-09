@@ -18,6 +18,8 @@ import type { ChatUpdateTime } from "./chat-time";
 
 export interface ChatListItem {
   id: string;
+  /** Last conversation activity, from the server; the list orders by it. */
+  activityAt?: string;
   updateTime?: ChatUpdateTime;
   onSelect: () => void;
   runtime?: Exclude<RuntimeKind, "mock">;
@@ -38,7 +40,10 @@ export interface ChatListItem {
 }
 
 export type { ChatMessageItem } from "../../components/conversation/conversation-types";
-import type { ChatMessageItem } from "../../components/conversation/conversation-types";
+import type {
+  ChatMessageItem,
+  ConversationProps,
+} from "../../components/conversation/conversation-types";
 
 export interface ChatAgentOption {
   disabled?: boolean;
@@ -94,7 +99,7 @@ export interface ChatSurfaceProps {
   onNewChat: () => void;
   onResetControls: () => void;
   onRetryModels?: () => void;
-  onSend: (value: string, attachments?: ChatAttachment[]) => Promise<boolean>;
+  onSend: ConversationProps["onSend"];
   onSteer?: (value: string, sessionId?: string) => Promise<boolean>;
   selectedAgentId: string;
   sendDisabled?: boolean;

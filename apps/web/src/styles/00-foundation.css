@@ -1675,3 +1675,16 @@ a {
 .fdy-tooltip-arrow {
   fill: var(--fdy-dark-surface);
 }
+
+.fdy-popover {
+  z-index: 50;
+  padding: 10px 12px;
+  border: 1px solid var(--fdy-dark-border);
+  border-radius: 8px;
+  background: var(--fdy-dark-surface);
+  color: var(--fdy-dark-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: var(--fdy-shadow-floating);
+}

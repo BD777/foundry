@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -27,6 +29,8 @@ const (
 	wsFileReadType                = "file_read"
 	wsReadSubagentTranscriptType  = "read_subagent_transcript"
 	wsSubagentTranscriptReadType  = "subagent_transcript_read"
+	wsReadSessionUsageType        = "read_session_usage"
+	wsSessionUsageReadType        = "session_usage_read"
 	wsListSubagentsType           = "list_subagents"
 	wsSubagentsListedType         = "subagents_listed"
 	wsListDirectoriesType         = "list_directories"
@@ -40,6 +44,16 @@ const (
 	wsNativeCliInstalledType      = "native_cli_installed"
 	wsUpdateWorkerType            = "update_worker"
 	wsWorkerUpdateStartedType     = "worker_update_started"
+	wsInstallToolType             = "install_tool"
+	wsRunDiagnosticsType          = "run_diagnostics"
+	wsDiagnosticsReadyType        = "diagnostics_ready"
+	wsRunRepairType               = "run_repair"
+	wsRepairDoneType              = "repair_done"
+	wsToolInstalledType           = "tool_installed"
+	wsReadRepositoryRefsType      = "read_repository_refs"
+	wsRepositoryRefsReadType      = "repository_refs_read"
+	wsFetchSkillRepositoryType    = "fetch_skill_repository"
+	wsSkillRepositoryFetchedType  = "skill_repository_fetched"
 	wsWorkspaceInspectedType      = "workspace_inspected"
 	wsSetupWorkspaceType          = "setup_workspace"
 	wsWorkspaceReadyType          = "workspace_ready"
@@ -102,6 +116,59 @@ type DaemonHub struct {
 	mu           sync.Mutex
 	shuttingDown bool
 	upgrader     websocket.Upgrader
+	// disconnects keeps each device's last drop for the device page.
+	disconnects deviceDisconnects
+	// readTimeout is how long a connection may receive nothing at all from
+	// its device (no pong, no part of a message) before it is dropped.
+	readTimeout time.Duration
+}
+
+// daemonReadTimeout is the default readTimeout: two missed 30s pings.
+const daemonReadTimeout = 70 * time.Second
+
+// daemonCloseCause is why the server ends a daemon connection. It goes out
+// in the close frame, and the worker reports it back with its next hello, so
+// it must say what really happened. The text has to fit a close frame (123
+// bytes), and only a removed device may be told "device_removed": the
+// worker stops reconnecting on that text.
+type daemonCloseCause struct {
+	code int
+	text string
+}
+
+var (
+	closeServerShutdown        = daemonCloseCause{websocket.CloseGoingAway, "server shutting down"}
+	closeReplaced              = daemonCloseCause{websocket.CloseGoingAway, "replaced by a newer connection from this device"}
+	closeDevicePairedAgain     = daemonCloseCause{websocket.CloseGoingAway, "device was paired again"}
+	closeRegistrationUnchecked = daemonCloseCause{websocket.CloseInternalServerErr, "server could not check the device registration"}
+	closeByDevice              = daemonCloseCause{websocket.CloseNormalClosure, "device closed the connection"}
+	closeConnectionLost        = daemonCloseCause{websocket.CloseGoingAway, "connection lost"}
+	closeMessageTooBig         = daemonCloseCause{websocket.CloseMessageTooBig, "message too big"}
+	closeBinaryMessage         = daemonCloseCause{websocket.CloseUnsupportedData, "binary messages are not supported"}
+	closeUndecodableMessage    = daemonCloseCause{websocket.CloseInvalidFramePayloadData, "undecodable message"}
+	closeInvalidEnvelope       = daemonCloseCause{websocket.CloseProtocolError, "invalid message envelope"}
+	closeByServer              = daemonCloseCause{websocket.CloseGoingAway, "closed by server"}
+)
+
+// closeReadTimeout is the cause for a device that sent nothing for timeout.
+func closeReadTimeout(timeout time.Duration) daemonCloseCause {
+	return daemonCloseCause{websocket.CloseGoingAway, fmt.Sprintf("no data from device for %gs", timeout.Seconds())}
+}
+
+// closeCauseOfReadError names why reading from the device failed.
+func closeCauseOfReadError(err error, timeout time.Duration) daemonCloseCause {
+	var closeError *websocket.CloseError
+	var netError net.Error
+	switch {
+	case errors.As(err, &closeError):
+		return closeByDevice
+	case errors.Is(err, websocket.ErrReadLimit):
+		return closeMessageTooBig
+	case errors.As(err, &netError) && netError.Timeout():
+		return closeReadTimeout(timeout)
+	default:
+		return closeConnectionLost
+	}
 }
 
 // daemonDisconnectedReason is the deterministic error surfaced to callers
@@ -148,6 +215,15 @@ type daemonConnection struct {
 	closeOnce          sync.Once
 	writeStarted       atomic.Bool
 	writeFinished      chan struct{}
+	// closeCause is the first reason given for ending the connection; it is
+	// what the close frame tells the device.
+	closeCause   daemonCloseCause
+	closeCauseMu sync.Mutex
+	// lifetime ends as soon as the connection starts closing, before any
+	// pending request fails, so work tied to the connection sees it ended
+	// by the time a request reports the disconnect.
+	lifetime    context.Context
+	endLifetime context.CancelFunc
 }
 
 type wsEnvelope struct {
@@ -387,6 +463,7 @@ func NewDaemonHub(store store.Store, events *browserEventHub, allowedOrigin stri
 		events:      events,
 		live:        make(map[*daemonConnection]struct{}),
 		store:       store,
+		readTimeout: daemonReadTimeout,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return webSocketOriginAllowed(allowedOrigin, r)
@@ -426,12 +503,15 @@ func (h *DaemonHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func newDaemonConnection(hub *DaemonHub, socket *websocket.Conn) *daemonConnection {
+	lifetime, endLifetime := context.WithCancel(context.Background())
 	return &daemonConnection{
 		activeSessions:     make(map[string]bool),
 		done:               make(chan struct{}),
 		dispatchedSessions: make(map[string]string),
+		endLifetime:        endLifetime,
 		finished:           make(chan struct{}),
 		hub:                hub,
+		lifetime:           lifetime,
 		registrations:      make(map[string]store.DaemonRegistration),
 		rpc:                newDaemonRPC(),
 		send:               make(chan wsEnvelope, 128),
@@ -457,7 +537,7 @@ func (h *DaemonHub) Shutdown(ctx context.Context) error {
 	// frame. Start every close concurrently so shutdown latency is bounded by
 	// one grace window rather than connection-count × grace window.
 	for _, connection := range live {
-		go connection.close()
+		go connection.closeWith(closeServerShutdown)
 	}
 	for _, connection := range live {
 		select {
@@ -746,7 +826,7 @@ func (h *DaemonHub) closeDevice(deviceID string) {
 	connection := h.connections[deviceID]
 	h.mu.Unlock()
 	if connection != nil {
-		connection.close()
+		connection.closeWith(closeDevicePairedAgain)
 	}
 }
 
@@ -850,12 +930,16 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	if !c.actor.ActsAsDevice(registration.Device.ID) {
 		return errors.New("daemon registration device does not match its credential")
 	}
+	logWorkerStalls(registration)
+	c.hub.logWorkerConnections(registration)
 	// A device with no workspace yet registers itself alone; its workspaces
 	// arrive later as the person adds them.
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
-	if err := c.hub.store.RegisterDaemon(context.Background(), registration); err != nil {
+	if err := c.hub.store.RegisterDaemon(context.Background(), registration); err == nil {
+		c.hub.publishDeviceStatus(registration)
+	} else {
 		if errors.Is(err, store.ErrDeviceRemoved) {
 			// Permanent refusal: emit the application close frame so the worker
 			// stops reconnecting and waits for an explicit re-pair.
@@ -899,10 +983,10 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	// close() can wait for the WebSocket writer's grace window. Do not hold the
 	// hub-wide connection lock while replacing an old socket for this device.
 	if previous != nil && previous != c {
-		previous.close()
+		previous.closeWith(closeReplaced)
 	}
 	if removedErr != nil {
-		c.close()
+		c.closeWith(closeRegistrationUnchecked)
 		return removedErr
 	}
 	if removed {
@@ -1090,7 +1174,9 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	for _, registration := range registrations {
 		registration.Device.Status = "disconnected"
 		registration.Device.LastSeenLabel = "offline"
-		if err := h.store.RegisterDaemon(context.Background(), registration); err != nil {
+		if err := h.store.RegisterDaemon(context.Background(), registration); err == nil {
+			h.publishDeviceStatus(registration)
+		} else {
 			// A soft-removed device is expected to fail the offline upsert;
 			// its connection was dropped on purpose, so this is not worth a
 			// log line on every teardown.
@@ -1104,42 +1190,55 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 func (c *daemonConnection) readLoop(ctx context.Context) {
 	// Why the connection ended, so a dropped device can be explained later.
 	var reason error
+	var cause daemonCloseCause
 	defer func() {
+		// Shutdown, a newer connection or a removal may have closed the
+		// socket under this read; that first cause is what really happened.
+		cause = c.setCloseCause(cause)
 		if reason != nil && !websocket.IsCloseError(reason, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 			deviceID, _ := c.registrationSnapshot()
-			log.Printf("daemon connection %s closed: %v", deviceID, reason)
+			log.Printf("daemon connection %s closed (%s): %v", deviceID, cause.text, reason)
+			// A replaced connection's drop was already reported by the
+			// worker on the connection that replaced it.
+			if !c.hub.isShuttingDown() && cause != closeReplaced {
+				c.hub.disconnects.serverSide(deviceID, fmt.Errorf("%s (%w)", cause.text, reason), time.Now())
+			}
 		}
 		c.hub.unregister(c)
 		c.hub.untrack(c)
-		c.close()
+		c.closeWith(cause)
 		close(c.finished)
 	}()
 
 	// A compressed skill package can be 64 MiB; base64 + JSON needs up to
 	// 86 MiB. Keep this bounded while allowing the documented package size.
 	c.socket.SetReadLimit(96 << 20)
-	_ = c.socket.SetReadDeadline(time.Now().Add(70 * time.Second))
+	_ = c.extendReadDeadline()
 	c.socket.SetPongHandler(func(string) error {
-		return c.socket.SetReadDeadline(time.Now().Add(70 * time.Second))
+		return c.extendReadDeadline()
 	})
 
 	for {
-		messageType, message, err := c.socket.ReadMessage()
+		messageType, message, err := c.readMessage()
 		if err != nil {
 			reason = err
+			cause = closeCauseOfReadError(err, c.hub.readTimeout)
 			return
 		}
 		if messageType != websocket.TextMessage {
 			reason = fmt.Errorf("unexpected websocket message type %d", messageType)
+			cause = closeBinaryMessage
 			return
 		}
 		var envelope wsEnvelope
 		if err := decodeWebSocketEnvelope(message, &envelope); err != nil {
 			reason = fmt.Errorf("undecodable envelope: %w", err)
+			cause = closeUndecodableMessage
 			return
 		}
 		if err := validateWebSocketEnvelope(envelope); err != nil {
 			reason = fmt.Errorf("invalid envelope %q: %w", envelope.Type, err)
+			cause = closeInvalidEnvelope
 			return
 		}
 		// Handling is inline with reading: a slow handler delays pongs and can
@@ -1152,6 +1251,43 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 			log.Printf("daemon message %s took %s", envelope.Type, elapsed.Round(time.Millisecond))
 		}
 	}
+}
+
+// readMessage reads one whole message, as websocket.Conn.ReadMessage does,
+// but every part of it that arrives moves the read deadline on. A large
+// message over a slow uplink (byte-dev's ~620 KB skill scan answer at
+// 5-20 KB/s) takes longer than the deadline to arrive, and the device's
+// pongs and heartbeats queue behind it in the same stream. A deadline
+// refreshed only by pongs and whole messages expired mid-message and dropped
+// a device that was busy sending. A device that sends nothing still times out.
+func (c *daemonConnection) readMessage() (int, []byte, error) {
+	messageType, reader, err := c.socket.NextReader()
+	if err != nil {
+		return messageType, nil, err
+	}
+	_ = c.extendReadDeadline()
+	message, err := io.ReadAll(progressReader{reader: reader, progress: c.extendReadDeadline})
+	return messageType, message, err
+}
+
+func (c *daemonConnection) extendReadDeadline() error {
+	return c.socket.SetReadDeadline(time.Now().Add(c.hub.readTimeout))
+}
+
+// progressReader calls progress after every read that returned data. A read
+// returns as soon as any bytes arrive, so progress follows the network
+// however large the reader's buffer.
+type progressReader struct {
+	reader   io.Reader
+	progress func() error
+}
+
+func (r progressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		_ = r.progress()
+	}
+	return n, err
 }
 
 func (c *daemonConnection) writeLoop() {
@@ -1167,10 +1303,11 @@ func (c *daemonConnection) writeLoop() {
 		case <-c.done:
 			// Best effort normal close: close() force-drops the socket once
 			// closeFrameGrace expires, so a stalled peer cannot hold teardown.
+			cause := c.setCloseCause(closeByServer)
 			_ = c.socket.SetWriteDeadline(time.Now().Add(closeFrameGrace))
 			_ = c.socket.WriteMessage(
 				websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+				websocket.FormatCloseMessage(cause.code, cause.text),
 			)
 			return
 		case envelope := <-c.send:
@@ -1208,18 +1345,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 		if c.hub.onDeviceConnected != nil {
-			go func() {
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
-				go func() {
-					select {
-					case <-c.done:
-						cancel()
-					case <-ctx.Done():
-					}
-				}()
-				c.hub.onDeviceConnected(ctx, registration.Device.ID, registration.Capabilities)
-			}()
+			go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
 		}
 		go c.claimAndSend()
 		// A daemon serves several workspaces; hello names only one of them.
@@ -1245,10 +1371,22 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsNativeCliInstallResult](c, envelope, nil)
 	case wsWorkerUpdateStartedType:
 		return deliverDaemonResponse[wsWorkerUpdateStarted](c, envelope, nil)
+	case wsToolInstalledType:
+		return deliverDaemonResponse[wsToolInstalled](c, envelope, nil)
+	case wsRepositoryRefsReadType:
+		return deliverDaemonResponse[wsRepositoryRefs](c, envelope, nil)
+	case wsSkillRepositoryFetchedType:
+		return deliverDaemonResponse[wsSkillRepositoryFetched](c, envelope, nil)
+	case wsDiagnosticsReadyType:
+		return deliverDaemonResponse[wsDiagnosticsReady](c, envelope, nil)
+	case wsRepairDoneType:
+		return deliverDaemonResponse[wsRepairDone](c, envelope, nil)
 	case wsNativeAccountInspectedType:
 		return deliverDaemonResponse[wsNativeAccountInspectionResult](c, envelope, nil)
 	case wsSubagentTranscriptReadType:
 		return deliverDaemonResponse[wsSubagentTranscriptReadPayload](c, envelope, nil)
+	case wsSessionUsageReadType:
+		return deliverDaemonResponse[wsSessionUsageRead](c, envelope, nil)
 	case wsSubagentsListedType:
 		return deliverDaemonResponse[wsSubagentsListedPayload](c, envelope, nil)
 	case wsDirectoriesListedType:
@@ -1753,7 +1891,7 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 	}
 	// Resolve the workspace's skill selection to current latest revisions. An
 	// empty slice is authoritative: the runtime exposes no skills at all.
-	if refs, err := c.hub.store.ResolveSessionSkills(ctx, session.WorkspaceID); err != nil {
+	if refs, err := sessionSkillRefs(ctx, c.hub.store, session.WorkspaceID, session.Provider); err != nil {
 		return fmt.Errorf("resolve workspace skills: %w", err)
 	} else {
 		session.SkillRefs = refs
@@ -1909,8 +2047,30 @@ func (c *daemonConnection) queue(envelope wsEnvelope) bool {
 	}
 }
 
+// close ends the connection for no more specific reason than closeByServer.
 func (c *daemonConnection) close() {
+	c.closeWith(closeByServer)
+}
+
+// setCloseCause keeps the first reason given for ending the connection and
+// returns the one that stands.
+func (c *daemonConnection) setCloseCause(cause daemonCloseCause) daemonCloseCause {
+	c.closeCauseMu.Lock()
+	defer c.closeCauseMu.Unlock()
+	if c.closeCause == (daemonCloseCause{}) {
+		c.closeCause = cause
+	}
+	return c.closeCause
+}
+
+// closeWith ends the connection, telling the device cause unless an earlier
+// cause already stands.
+func (c *daemonConnection) closeWith(cause daemonCloseCause) {
+	c.setCloseCause(cause)
 	c.closeOnce.Do(func() {
+		if c.endLifetime != nil {
+			c.endLifetime()
+		}
 		c.failAllPending()
 		close(c.done)
 		if c.writeStarted.Load() {
@@ -1930,18 +2090,20 @@ func (c *daemonConnection) close() {
 
 // closePermanent sends an application-defined close frame (used for the
 // device_removed refusal) and then runs the ordinary teardown. The control
-// message is written directly: the shutdown frame baked into writeLoop always
-// carries "server shutting down", which the worker would treat as transient.
+// message is written directly, whatever cause stands, rather than left to
+// writeLoop: it can go out between the frames of a message being written, and
+// a worker that misses it keeps reconnecting.
 func (c *daemonConnection) closePermanent(code int, text string) {
+	cause := daemonCloseCause{code, text}
 	if c.socket != nil {
 		deadline := time.Now().Add(closeFrameGrace)
 		_ = c.socket.WriteControl(
 			websocket.CloseMessage,
-			websocket.FormatCloseMessage(code, text),
+			websocket.FormatCloseMessage(cause.code, cause.text),
 			deadline,
 		)
 	}
-	c.close()
+	c.closeWith(cause)
 }
 
 // closeRemoved detaches the connection from the device lookup and sends the
@@ -1971,4 +2133,42 @@ func issueUserFiles(issue store.Issue, device Actor) string {
 		return "readable"
 	}
 	return "hidden"
+}
+
+// deviceStatusEvent tells browsers a device went online or offline, so
+// device lists change at once instead of at their next poll.
+type deviceStatusEvent struct {
+	WorkspaceID string `json:"workspaceId"`
+	DeviceID    string `json:"deviceId"`
+	Status      string `json:"status"`
+}
+
+// publishDeviceStatus reaches whoever can see the registration's workspace;
+// a device registered without one reaches admins only.
+func (h *DaemonHub) publishDeviceStatus(registration store.DaemonRegistration) {
+	if h.events == nil {
+		return
+	}
+	h.events.Publish("device_status_changed", deviceStatusEvent{
+		WorkspaceID: registration.Workspace.ID,
+		DeviceID:    registration.Device.ID,
+		Status:      registration.Device.Status,
+	})
+}
+
+// logWorkerStalls writes the event-loop stalls a worker reported: a stall
+// long enough misses the heartbeat and costs the device its connection, and
+// the log names what the worker was doing.
+func logWorkerStalls(registration store.DaemonRegistration) {
+	label := registration.Device.Label
+	if label == "" {
+		label = registration.Device.ID
+	}
+	for _, stall := range registration.Stalls {
+		activity := strings.Join(stall.Activities, ", ")
+		if activity == "" {
+			activity = "no marked activity"
+		}
+		log.Printf("device %s worker stalled %.1fs during %s at %s", label, float64(stall.LagMs)/1000, activity, stall.At)
+	}
 }

@@ -58,19 +58,23 @@ test("device skills list comes first; scan folders are edited in a dialog", asyn
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const device = { id: "dev", label: "Mac", status: "connected" };
+  const device = { id: "dev", label: "Mac", status: "connected", owned: true };
   const roots = [{ path: "~/.claude/skills", isDefault: true }];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ roots, skills: [] }), { status: 200 });
   try {
     await act(async () =>
       root.render(
         createElement(DeviceSkills, {
           device,
           roots,
-          skills: [],
+          workspaces: [],
           onChanged: async () => {},
         }),
       ),
     );
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
     // No folder editor on the page itself.
     assert.equal(
       container.querySelector('input[aria-label="Add skill directory"]'),
@@ -93,6 +97,7 @@ test("device skills list comes first; scan folders are edited in a dialog", asyn
     assert.match(dialog.textContent, /~\/\.claude\/skills/);
     assert.ok(dialog.querySelector('input[aria-label="Add skill directory"]'));
   } finally {
+    globalThis.fetch = originalFetch;
     await act(async () => root.unmount());
     container.remove();
   }

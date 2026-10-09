@@ -13,6 +13,7 @@ export const conversation: Translation<typeof en> = {
     requestingModel: "正在请求模型",
     compactingContext: "正在压缩上下文",
     modelRetry: "模型请求重试",
+    modelRequestUsage: "模型请求用量",
     rateLimited: "模型限流，等待重试",
     startingSubtask: "正在启动子任务",
     subtaskRunning: "子任务进行中",
@@ -77,6 +78,32 @@ export const conversation: Translation<typeof en> = {
     imagePreview: "图片预览",
     closeImagePreview: "关闭图片预览",
   },
+  usage: {
+    seconds: "{{seconds}} 秒",
+    minutes: "{{minutes}} 分 {{seconds}} 秒",
+    hours: "{{hours}} 小时 {{minutes}} 分",
+    inputShort: "输入 {{count}}",
+    inputCached: "输入 {{count}}（缓存命中 {{share}}）",
+    outputShort: "输出 {{count}}",
+    totalShort: "共 {{count}} Token",
+    toolUses_one: "{{count}} 次工具调用",
+    toolUses_other: "{{count}} 次工具调用",
+    stepsTitle_one:
+      "这些步骤背后 {{count}} 次模型请求的 token。子智能体的用量记在子智能体上。",
+    stepsTitle_other:
+      "这些步骤背后 {{count}} 次模型请求的 token。子智能体的用量记在子智能体上。",
+    turnScope:
+      "整轮的用量，以 Agent 自己的报告为准。各步骤显示自己那几次模型请求的 token；Codex 只按整轮报告 token。",
+    details: "本轮用量",
+    duration: "耗时",
+    modelRequests: "模型请求次数",
+    input: "输入 Token",
+    cacheRead: "缓存命中",
+    cacheWrite: "缓存写入",
+    uncached: "未命中缓存",
+    output: "输出 Token",
+    reasoning: "推理",
+  },
   turns: {
     outline: "会话目录",
     outlineHeading_one: "会话目录 · {{count}} 个轮次",
@@ -112,5 +139,7 @@ export const conversation: Translation<typeof en> = {
     notSent: "消息没有发出，草稿已保留。",
     responseChanged: "当前回复已经变了，这条消息仍排在下一轮。",
     notSteered: "这条消息没能引导进去，仍留在队列里。",
+    maybeSent:
+      "第一条排队消息发送时页面关闭了，它可能已经在对话里。请先确认，再发送或删除它。",
   },
 };

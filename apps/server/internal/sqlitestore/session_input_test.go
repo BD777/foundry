@@ -53,7 +53,7 @@ func TestSessionInputSwitchingRuntimeStartsANewNativeSession(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_switch", AgentID: "agent_codex", Provider: "codex", Prompt: "first"})
+	session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_switch", AgentID: "agent_codex", Provider: "codex", Prompt: "first", Model: "gpt-6-astra", CodexReasoningEffort: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +69,26 @@ func TestSessionInputSwitchingRuntimeStartsANewNativeSession(t *testing.T) {
 	}
 	if switched.ID != session.ID || switched.Provider != "claude" || switched.AgentID != "agent_claude" || switched.NativeSessionID != "" {
 		t.Fatalf("switched = %+v; want the same session on claude with a fresh native session", switched)
+	}
+	// Codex's model and settings must not reach Claude.
+	if switched.Model != "" || switched.CodexReasoningEffort != "" {
+		t.Fatalf("switched session kept Codex's model %q / effort %q", switched.Model, switched.CodexReasoningEffort)
+	}
+	// Claude has not seen the conversation: the server tells it, not the client.
+	if switched.Input.ImportedContext != "User: first\n\nAssistant: answer" {
+		t.Fatalf("imported context = %q", switched.Input.ImportedContext)
+	}
+	// The device's record of the Codex conversation is still this chat.
+	if owned, err := db.AgentSessionNativeSessions(ctx, session.ID); err != nil || len(owned) != 1 || owned[0].NativeSessionID != "native_codex" {
+		t.Fatalf("owned native sessions = %+v, %v", owned, err)
+	}
+	if err := db.SyncChats(ctx, store.SyncChatsInput{WorkspaceID: "ws_switch", Chats: []store.ChatThread{
+		{ID: "codex_record", WorkspaceID: "ws_switch", Provider: "codex", NativeSessionID: "native_codex"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if chats, err := db.ListChats(ctx, "ws_switch"); err != nil || len(chats) != 0 {
+		t.Fatalf("the Codex record is listed as another chat: %+v %v", chats, err)
 	}
 	detail, err := db.GetAgentSession(ctx, session.ID)
 	if err != nil {

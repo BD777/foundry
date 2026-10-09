@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
+	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -41,6 +42,18 @@ type Server struct {
 	setupMu            sync.Mutex
 	workerUpdates      workerUpdates
 	setupCode          string
+	// skillRepos reads git repositories for the skill library; repoMu runs
+	// one repository operation at a time.
+	skillRepos skillrepo.Source
+	repoMu     sync.Mutex
+	// repoUploads holds the files devices upload for repositories they read.
+	repoUploads deviceUploads
+	// releaseAPI is the GitHub API base used to find a bundle's tool
+	// downloads; tests point it at a local server.
+	releaseAPI string
+	// pypiAPI is the PyPI base used to find the versions of the Python
+	// tools bundles declare; tests point it at a local server.
+	pypiAPI string
 	// testActor authenticates every browser request in package tests, and
 	// testFullAccess lets it reach every workspace and device so handler
 	// tests exercise behaviour, not membership. Authorization tests use real
@@ -64,6 +77,9 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		startedAt:    time.Now().UTC(),
 		store:        store,
 		loginLimiter: newLoginLimiter(),
+		skillRepos:   skillrepo.DefaultSources(),
+		releaseAPI:   "https://api.github.com",
+		pypiAPI:      "https://pypi.org",
 	}
 	server.initAccounts()
 	if keeper, ok := store.(secretKeeper); ok {
@@ -73,7 +89,10 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish}
 	server.hub.onSessionCompleted = server.titles.SessionCompleted
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
-	server.hub.onDeviceConnected = server.keepDeviceSkillsScanned
+	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
+		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
+		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
+	}
 	server.feishu = feishu.NewWSManager(store, server.secrets, server)
 	server.events.SubscribeInternal(server.feishu.HandleInternalEvent)
 	go server.feishu.StartAllConfiguredBots(context.Background())
@@ -107,7 +126,7 @@ func (s *Server) Routes() http.Handler {
 	if s.options.WebDistDir != "" {
 		mux.Handle("GET /{path...}", s.serveWeb(s.options.WebDistDir))
 	}
-	return withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux)))
+	return withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux))))
 }
 
 func (s *Server) handleOptions(w http.ResponseWriter, _ *http.Request) {
@@ -146,6 +165,9 @@ func (s *Server) handleFoundryData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		encoded, err := json.Marshal(data)
+		if err == nil && len(encoded) > largeProjectionBytes {
+			logProjectionSize(workspaceID, encoded)
+		}
 		return encoded, cacheable, err
 	})
 	w.Header().Set("Server-Timing", fmt.Sprintf("projection;dur=%.3f", float64(time.Since(started).Microseconds())/1000))
@@ -159,8 +181,11 @@ func (s *Server) handleFoundryData(w http.ResponseWriter, r *http.Request) {
 // foundryData projects what one caller may see: visible workspaces, the
 // devices it owns or reaches through them, and its own connections.
 func (s *Server) foundryData(ctx context.Context, workspaceID string, view visibility) (store.FoundryDataProjection, error) {
+	timer := newPhaseTimer("foundry-data")
+	defer timer.logIfSlow(time.Second)
 	workspaces := view.workspaces
 	if view.scope.all {
+		timer.mark("ListWorkspaces")
 		all, err := s.store.ListWorkspaces(ctx)
 		if err != nil {
 			return store.FoundryDataProjection{}, err
@@ -177,26 +202,31 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 	if workspace.ID != "" {
 		workspace.AccessRole = view.scope.role(workspace.ID)
 	}
+	timer.mark("ListDevices")
 	allDevices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
-	devices := s.withWorkerUpdates(view.filterDevices(allDevices))
+	devices := s.hub.withDisconnects(s.withWorkerUpdates(view.filterDevices(allDevices)))
+	timer.mark("ListProfiles")
 	allProfiles, err := s.store.ListProfiles(ctx)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
 	profiles := s.overlayProfileCredentials(ctx, view.filterConnections(allProfiles))
+	timer.mark("ListDeviceProfiles")
 	deviceProfiles, err := s.store.ListDeviceProfiles(ctx, "")
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
 	deviceProfiles = filterOwnedDevice(view, deviceProfiles, func(item store.DeviceProfileBinding) string { return item.DeviceID })
+	timer.mark("ListProviderHealth")
 	providerHealth, err := s.store.ListProviderHealth(ctx, "")
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
 	providerHealth = filterByDevice(view, providerHealth, func(item store.ProviderHealth) string { return item.DeviceID })
+	timer.mark("ListAgentProfiles")
 	agentProfiles, err := s.store.ListAgentProfiles(ctx, "")
 	if err != nil {
 		return store.FoundryDataProjection{}, err
@@ -206,6 +236,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 	if workspace.ID == "" {
 		// Server profiles exist before any workspace does, so the settings and
 		// devices views stay accurate on a fresh install.
+		timer.mark("serverProfileProjections")
 		serverProfiles, _, err := s.serverProfileProjections(ctx, workspace, devices, profiles, deviceProfiles, agentProfiles, []store.AgentProjection{})
 		if err != nil {
 			return store.FoundryDataProjection{}, err
@@ -228,60 +259,84 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		}, nil
 	}
 	deviceID := strings.TrimSpace(workspace.DeviceID)
+	timer.mark("ListAgents")
 	agents, err := s.store.ListAgents(ctx, workspace.ID, deviceID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("serverProfileProjections")
 	agentProfiles, agents, err = s.serverProfileProjections(ctx, workspace, devices, profiles, deviceProfiles, agentProfiles, agents)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListWorkspaceFiles")
 	workspaceFiles, err := s.store.ListWorkspaceFiles(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListAgentSessionSummaries")
 	agentSessions, err := s.store.ListAgentSessionSummaries(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
 	agentSessions = summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, agentSessions))
+	timer.mark("ListAssets")
 	assets, err := s.store.ListAssets(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListSkills")
 	skills, err := s.store.ListSkills(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListIssues")
 	issues, err := s.store.ListIssues(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListChats")
 	chats, err := s.store.ListChats(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListRuns")
 	runs, err := s.store.ListRuns(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
+	timer.mark("ListPromotedSkills")
 	promotedSkills, err := s.store.ListPromotedSkills(ctx)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
-	deviceSkills, err := s.store.ListDeviceSkills(ctx, "")
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	deviceSkills = filterOwnedDevice(view, deviceSkills, func(item store.DeviceSkill) string { return item.DeviceID })
+	timer.mark("allEffectiveSkillRoots")
 	deviceSkillRoots, err := s.allEffectiveSkillRoots(ctx, devices)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
 	}
 	deviceSkillRoots = filterOwnedDevice(view, deviceSkillRoots, func(item store.DeviceSkillRoot) string { return item.DeviceID })
+	timer.mark("ListWorkspaceSkillBindings")
 	workspaceSkillBindings, err := s.store.ListWorkspaceSkillBindings(ctx, workspace.ID)
 	if err != nil {
 		return store.FoundryDataProjection{}, err
+	}
+	skillSources, err := resolveWorkspaceSkills(ctx, s.store, workspace.ID)
+	if err != nil {
+		return store.FoundryDataProjection{}, err
+	}
+	timer.mark("bundleProjection")
+	skillBundles, workspaceBundleIDs, defaultBundleIDs, err := s.bundleProjection(ctx, workspace.ID)
+	if err != nil {
+		return store.FoundryDataProjection{}, err
+	}
+	var deviceTools []store.DeviceTool
+	if tools, ok := s.store.(deviceToolStore); ok {
+		all, err := tools.ListDeviceTools(ctx, "")
+		if err != nil {
+			return store.FoundryDataProjection{}, err
+		}
+		deviceTools = filterByDevice(view, all, func(item store.DeviceTool) string { return item.DeviceID })
 	}
 	return store.FoundryDataProjection{
 		Runs:                   runs,
@@ -293,9 +348,16 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		Profiles:               profiles,
 		DeviceProfiles:         deviceProfiles,
 		DeviceSkillRoots:       deviceSkillRoots,
-		DeviceSkills:           deviceSkills,
-		PromotedSkills:         promotedSkills,
+		PromotedSkills:         view.skillUsage(promotedSkills),
+		BuiltinSkills:          builtinSkillProjections(),
 		WorkspaceSkillBindings: workspaceSkillBindings,
+		DefaultSkillIDs:        skillSources.DefaultIDs,
+		InheritedSkillIDs:      skillSources.InheritedIDs,
+		OffSkillIDs:            skillSources.OffIDs,
+		DeviceTools:            deviceTools,
+		SkillBundles:           skillBundles,
+		WorkspaceBundleIDs:     workspaceBundleIDs,
+		DefaultBundleIDs:       defaultBundleIDs,
 		Agents:                 agents,
 		WorkspaceFiles:         workspaceFiles,
 		AgentSessions:          agentSessions,
@@ -721,10 +783,37 @@ func (s *Server) handleReadWorkspaceFile(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), deviceFileRequestTimeout)
 	defer cancel()
 	result, err := s.hub.ReadWorkspaceFile(ctx, workspace, path)
+	if writeDeviceRequestError(w, workspace, err) {
+		return
+	}
 	writeResult(w, result, err)
+}
+
+// deviceFileRequestTimeout bounds a file read or folder listing on a device.
+const deviceFileRequestTimeout = 15 * time.Second
+
+// writeDeviceRequestError answers a request the workspace's device could not
+// serve: offline, or connected without answering in time. It names the
+// device instead of passing on "context deadline exceeded".
+func writeDeviceRequestError(w http.ResponseWriter, workspace store.WorkspaceProjection, err error) bool {
+	device := strings.TrimSpace(workspace.DeviceLabel)
+	if device == "" {
+		device = "The device"
+	}
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusConflict, device+" is offline; its files open once it reconnects.")
+	case errors.Is(err, context.DeadlineExceeded):
+		writeError(w, http.StatusGatewayTimeout, fmt.Sprintf(
+			"%s did not answer within %d seconds. Its worker may be busy or reconnecting; try again, and check the device page if it keeps happening.",
+			device, int(deviceFileRequestTimeout/time.Second)))
+	default:
+		return false
+	}
+	return true
 }
 
 // handleListWorkspaceTree lists one folder of the workspace for the file
@@ -735,11 +824,10 @@ func (s *Server) handleListWorkspaceTree(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), deviceFileRequestTimeout)
 	defer cancel()
 	entries, err := s.hub.ListWorkspaceTree(ctx, workspace, strings.TrimSpace(r.URL.Query().Get("path")))
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
+	if writeDeviceRequestError(w, workspace, err) {
 		return
 	}
 	writeResult(w, entries, err)
@@ -933,6 +1021,7 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	items = s.reconcileAgentSessions(r.Context(), items)
+	items = s.backfillSessionUsage(r.Context(), items)
 	writeResult(w, items, nil)
 }
 
@@ -979,8 +1068,9 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 	writeResult(w, subagents, err)
 }
 
-// applySessionFork resolves forkSessionId: the forked session's native
-// transcript, provider and profile are inherited by a new Foundry session. Forking needs ordinary read visibility into the source.
+// applySessionFork resolves forkSessionId: a new Foundry session starts from
+// a copy of the source's native history, on its agent and profile. Forking
+// needs ordinary read visibility into the source.
 func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessionInput, actor Actor) (int, error) {
 	target, err := s.store.GetAgentSessionSummary(r.Context(), strings.TrimSpace(input.ForkSessionID))
 	if err != nil {
@@ -989,11 +1079,10 @@ func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessi
 	if !s.canReadSession(r.Context(), actor, target) {
 		return http.StatusForbidden, fmt.Errorf("session token cannot fork this session")
 	}
-	if strings.TrimSpace(target.NativeSessionID) == "" {
-		return http.StatusConflict, fmt.Errorf("source session has no resumable native transcript")
-	}
-	input.ForkSessionID = ""
-	input.NativeSessionID = target.NativeSessionID
+	// The store gives the fork its own native session, copied from the
+	// source's; it runs on the source's agent so that copy is on its device.
+	input.ForkSessionID = target.ID
+	input.NativeSessionID = ""
 	input.Provider = target.Provider
 	input.AgentID = target.AgentID
 	if input.ProfileID == "" {
@@ -1257,6 +1346,11 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 			return store.AgentSession{}, http.StatusConflict, err
 		}
 		return store.AgentSession{}, 0, err
+	}
+	// A summary carries no events, so the input's own transcript events are
+	// streamed too; otherwise viewers keep the previous turn as the latest.
+	for _, event := range store.SessionInputEvents(session.ID, session.Input) {
+		s.events.PublishIn(session.WorkspaceID, "agent_session_event", event)
 	}
 	s.events.Publish("agent_session_created", session)
 	if !s.hub.HasConnection(session.DeviceID) {

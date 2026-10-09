@@ -2,6 +2,7 @@ import type {
   AgentSession,
   AgentSessionTimerFire,
   AgentScheduledTask,
+  AgentTurnUsage,
   ChatAttachment,
   ClaudeEffort,
   ClaudePermissionMode,
@@ -9,9 +10,11 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
+  SubagentUsage,
   WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
 import type { ProcessDisplayItem } from "./chat-process-display";
+import type { StepUsage } from "../../components/conversation/conversation-types";
 
 /** User-editable runtime settings for one selected Chat agent. */
 export interface ChatOverrideDraft {
@@ -31,6 +34,12 @@ export interface ChatViewMessage {
   attachments?: ChatAttachment[];
   copyAlways?: boolean;
   copyText?: string;
+  /** How long a process group ran, from its first to its last step. */
+  durationMs?: number;
+  /** When a process group's first step happened, for its live timer. */
+  startedAt?: string;
+  /** Tokens of the model requests behind a process group's steps. */
+  stepUsage?: StepUsage;
   idea?: string;
   id?: string;
   kind?: "boundary" | "failure" | "message" | "process" | "tool";
@@ -42,9 +51,13 @@ export interface ChatViewMessage {
   streaming?: boolean;
   text: string;
   title?: string;
+  /** The turn's provider usage, on the answer that ends the turn. */
+  usage?: AgentTurnUsage;
 }
 
 export interface ChatContextResourceItem {
+  /** An output the latest reply names. */
+  mentioned?: boolean;
   detail?: string;
   id: string;
   kind: "file" | "source" | "web";
@@ -63,6 +76,8 @@ export interface ChatSubagentItem {
   status: "running" | "completed" | "failed" | "canceled";
   taskId: string;
   toolUseId?: string;
+  /** The subagent's own tokens, tool calls and time, as Claude reports them. */
+  usage?: SubagentUsage;
   workspaceId: string;
 }
 

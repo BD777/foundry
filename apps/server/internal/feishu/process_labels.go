@@ -13,6 +13,7 @@ var chineseProcessLabels = map[string]string{
 	"Requesting model":               "正在请求模型",
 	"Compacting context":             "正在压缩上下文",
 	"Model request retry":            "模型请求重试",
+	"Model request usage":            "模型请求用量",
 	"Rate limited, waiting to retry": "模型限流，等待重试",
 	"Starting subtask":               "正在启动子任务",
 	"Subtask running":                "子任务进行中",

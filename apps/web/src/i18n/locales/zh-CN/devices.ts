@@ -6,6 +6,8 @@ export const devices: Translation<typeof en> = {
     title: "设备",
     intro: "选择一台设备，浏览它的工作区、管理 Agent 登录，或配置执行。",
     add: "添加设备",
+    refresh: "刷新状态",
+    refreshing: "正在刷新…",
     workspaceCount_one: "{{count}} 个工作区",
     workspaceCount_other: "{{count}} 个工作区",
     view: "查看 →",
@@ -36,6 +38,7 @@ export const devices: Translation<typeof en> = {
     sectionAgents: "模型与账号",
     sectionSkills: "Skills",
     sectionSettings: "设置",
+    sectionDiagnostics: "诊断",
     sharedTitle: "与你共享",
     sharedBody:
       "你通过工作区访问这台设备。模型、账号、Skills 和设置由配对它的账号管理。",
@@ -72,6 +75,10 @@ export const devices: Translation<typeof en> = {
     runOnce:
       "在 {{device}} 上运行一次；它会找到与这台服务器配对的 Worker 并更新。之后设备就有自己的更新命令。",
     updateNow: "立即更新",
+    updateAgain: "重新更新",
+    updateStalled: "{{time}} 开始的更新没有完成：设备仍在运行旧的 Worker。",
+    updateStalledLog:
+      "{{time}} 开始的更新没有完成：设备仍在运行旧的 Worker。设备上的日志：{{log}}",
     updating: "正在更新…",
     updateStarted:
       "设备正在更新 Worker，完成后会自动重启；重新连上后这里会显示新版本。",
@@ -93,6 +100,7 @@ export const devices: Translation<typeof en> = {
     stateUpdatable: "有可用更新",
     stateManual: "Worker 版本落后",
     stateUpdating: "正在更新 Worker…",
+    stateStalled: "更新未完成",
     sourceCheckout: "它从源码目录运行，用 git 更新。",
   },
   settings: {
@@ -195,5 +203,156 @@ export const devices: Translation<typeof en> = {
       "要让会话截取和控制这台 Mac，请在“录屏与系统录音”和“辅助功能”中允许运行 Foundry Worker 的程序（<code>{{grantTo}}</code>）。权限请求和系统设置会在 {{device}} 上打开。",
     asking: "正在请求设备…",
     openSettings: "打开系统设置…",
+  },
+  diagnostics: {
+    report: {
+      heading: "{{device}} 的诊断 · Worker {{version}} · {{at}}",
+      connections: "最近的连接：",
+      log: "Worker 日志：",
+    },
+    title: "诊断",
+    intro:
+      "让这台设备的 worker 自检并给出报告：与服务器的连接、运行状况、Agent，以及日志末尾（已去除敏感信息）。不会发起任何模型请求。",
+    run: "运行诊断",
+    running: "运行中…",
+    runningNote: "worker 正在自检，最多需要一分钟。",
+    copy: "复制报告",
+    offline: "设备离线，等它重新连上后才能诊断。",
+    lastDisconnect: "上次断开：{{line}}",
+    noDisconnect: "服务器启动以来没有记录到断开。",
+    generated: "Worker {{version}} · {{at}}",
+    log_one: "Worker 日志（{{count}} 行，已去除敏感信息）",
+    log_other: "Worker 日志（{{count}} 行，已去除敏感信息）",
+    status: { ok: "正常", info: "信息", warn: "注意", error: "问题" },
+    group: {
+      connection: "连接",
+      runtime: "Worker",
+      agents: "Agent",
+      workspaces: "工作区",
+      skills: "Skill",
+      chats: "本地对话",
+    },
+    check: {
+      server: "能否访问服务器",
+      socket: "长连接往返延迟",
+      drops: "最近 30 分钟的断开",
+      proxy: "代理",
+      eventLoop: "Worker 响应情况",
+      memory: "内存",
+      disk: "磁盘空间",
+      workspaces: "已登记的文件夹",
+      skills: "Skill 扫描",
+      chats: "本地对话同步",
+    },
+    ms: "{{ms}} 毫秒",
+    server: {
+      answered: "{{url}} 在 {{ms}} 毫秒内响应（HTTP {{status}}）",
+      failed: "{{url}} 没有响应：{{error}}",
+      adviceFailed: "这台设备访问不到服务器，请检查它的网络、VPN 或代理。",
+      adviceSlow: "从这台设备访问服务器很慢，请检查两者之间的网络。",
+    },
+    socket: {
+      advice:
+        "长连接没有及时响应。如果一直掉线，可能是网络或代理在切断空闲连接。",
+    },
+    drops: {
+      none: "没有",
+      some_one: "{{count}} 次 · 最近一次：{{last}}",
+      some_other: "{{count}} 次 · 最近一次：{{last}}",
+      adviceSilent:
+        "其中 {{silentServer}} 次是服务器的数据不再到达，worker 才重连。很可能是设备和服务器之间的网络设备或代理切断了连接；可以换个网络试试，或联系网络管理员。",
+      advice: "连接反复断开。下次断开后再运行一次诊断，并复制报告。",
+    },
+    proxy: {
+      none: "没有设置代理",
+      set: "环境变量设置了代理 {{proxy}}",
+      advice:
+        "worker 的长连接不走这个代理。如果这个网络只能通过它访问服务器，连接会一直失败。",
+    },
+    eventLoop: {
+      uptime: "已运行 {{uptimeMinutes}} 分钟",
+      delay: "延迟 p99 {{p99Ms}} 毫秒，最大 {{maxMs}} 毫秒",
+      stalls_one: "{{count}} 次卡顿",
+      stalls_other: "{{count}} 次卡顿",
+      lastStall: "最近一次卡顿 {{lastStall}}",
+      advice:
+        "worker 曾经一次卡住好几秒，期间服务器可能会断开它。请复制这份报告分享出来。",
+    },
+    memory: {
+      used: "占用 {{rssMb}} MB",
+      advice: "worker 占用内存较多，更新或重启后会释放。",
+    },
+    disk: {
+      free: "{{path}} 剩余 {{freeGb}} GB",
+      advice: "请清理这台设备的磁盘空间。",
+    },
+    agent: {
+      notInstalled: "未安装",
+      version: "版本 {{version}}",
+      outdated: "有可用更新",
+      advice: "到这台设备的「模型与账号」页登录或更新。",
+    },
+    login: {
+      verified: "账号已验证",
+      local_login: "已在本机登录",
+      not_signed_in: "未登录",
+      unavailable: "无法获取登录状态",
+      error: "读取登录状态失败：{{loginError}}",
+    },
+    workspaces: {
+      allThere: "已登记的文件夹都在",
+      missing_one: "{{count}} 个文件夹已不存在：{{paths}}",
+      missing_other: "{{count}} 个文件夹已不存在：{{paths}}",
+      advice: "可以在下方忘掉它们，这只是 worker 自己的记录。",
+    },
+    activity: {
+      notRun: "worker 启动后还没运行过",
+      last: "最近 {{at}}",
+      seconds: "{{seconds}} 秒",
+      error: "失败：{{error}}",
+      skills_one: "{{count}} 个 Skill",
+      skills_other: "{{count}} 个 Skill",
+      workspaces_one: "{{count}} 个工作区",
+      workspaces_other: "{{count}} 个工作区",
+    },
+    connection: {
+      lasted: "持续 {{seconds}} 秒",
+      closedBy: {
+        worker: "worker 主动重连（收不到服务器数据）",
+        server: "服务器关闭了连接",
+        network: "被网络切断",
+      },
+      error: "错误 {{error}}",
+      silence: "断开前 {{seconds}} 秒最后一次收到服务器数据",
+      blocked: "worker 自身卡住了 {{seconds}} 秒",
+    },
+    disconnect: {
+      server: "服务器：{{reason}}",
+      worker: "worker：{{line}}",
+    },
+    repair: {
+      title: "修复",
+      intro: "每项都要你确认后才会在这台设备上执行。",
+      running: "正在修复…",
+      forgetCount_one: "忘掉 {{count}} 个不存在的文件夹",
+      forgetCount_other: "忘掉 {{count}} 个不存在的文件夹",
+      action: {
+        "forget-missing-workspaces": "忘掉不存在的文件夹",
+        "clear-skill-scan-cache": "清空 Skill 扫描缓存",
+        "recheck-agents": "重新检查 Agent",
+      },
+      confirm: {
+        "forget-missing-workspaces": "确定忘掉已不存在的文件夹？再点一次",
+        "clear-skill-scan-cache": "下次从头重新扫描所有 Skill？再点一次",
+        "recheck-agents": "重新查找 Claude Code 和 Codex？再点一次",
+      },
+      done: {
+        "forget-missing-workspaces_one": "已忘掉 {{count}} 个不存在的文件夹。",
+        "forget-missing-workspaces_other":
+          "已忘掉 {{count}} 个不存在的文件夹。",
+        "clear-skill-scan-cache": "已清空，下次扫描会重新读取所有 Skill。",
+        "recheck-agents": "正在重新查找 Claude Code 和 Codex。",
+      },
+    },
   },
 };

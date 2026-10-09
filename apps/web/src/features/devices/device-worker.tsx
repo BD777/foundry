@@ -42,7 +42,9 @@ export function canSelfUpdate(device: DeviceProjection): boolean {
 export function workerState(
   device: DeviceProjection,
   release: WorkerRelease | undefined,
-): "current" | "updating" | "updatable" | "manual" {
+): "current" | "updating" | "stalled" | "updatable" | "manual" {
+  if (device.workerUpdate?.stalled)
+    return device.owned && canSelfUpdate(device) ? "stalled" : "manual";
   if (device.workerUpdate) return "updating";
   if (!workerBehind(device, release)) return "current";
   return device.owned && canSelfUpdate(device) ? "updatable" : "manual";
@@ -64,14 +66,17 @@ export function useUpdateAllWorkers(
     started: number;
     failures: string[];
   }>();
-  const targets = devices.filter(
-    (device) => workerState(device, release) === "updatable",
+  // A stalled update is started again with the rest.
+  const targets = devices.filter((device) =>
+    ["updatable", "stalled"].includes(workerState(device, release)),
   );
   // Only the owner can update a device's worker; shared devices are theirs.
   const manual = devices.filter(
     (device) => device.owned && workerState(device, release) === "manual",
   );
-  const running = devices.some((device) => device.workerUpdate);
+  const running = devices.some(
+    (device) => device.workerUpdate && !device.workerUpdate.stalled,
+  );
   // Updating devices restart and reconnect; reload until each reports back.
   useEffect(() => {
     if (!running) return;
@@ -187,7 +192,12 @@ export function DeviceWorker({
   const behind = workerBehind(device, release);
   // The server records an update until the device comes back with it, so
   // every page and every visit sees it running.
-  const running = device.workerUpdate;
+  const running = device.workerUpdate?.stalled
+    ? undefined
+    : device.workerUpdate;
+  const stalled = device.workerUpdate?.stalled
+    ? device.workerUpdate
+    : undefined;
   // A worker that declares it can update itself does so on request; it
   // restarts and reconnects, so poll until the new version reports in.
   const selfUpdating = canSelfUpdate(device);
@@ -254,7 +264,11 @@ export function DeviceWorker({
             aria-busy={!!updating || !!running}
             onClick={() => void startUpdate()}
           >
-            {updating || running ? t("worker.updating") : t("worker.updateNow")}
+            {updating || running
+              ? t("worker.updating")
+              : stalled
+                ? t("worker.updateAgain")
+                : t("worker.updateNow")}
           </Button>
           {updating === "started" || running ? (
             <span role="status">
@@ -269,6 +283,17 @@ export function DeviceWorker({
             </span>
           ) : null}
         </div>
+      ) : null}
+      {stalled && !updating ? (
+        <p className="fdy-location-error" role="alert">
+          {t(stalled.log ? "worker.updateStalledLog" : "worker.updateStalled", {
+            time: new Date(stalled.startedAt).toLocaleTimeString(
+              i18n.language,
+              { hour: "2-digit", minute: "2-digit" },
+            ),
+            log: stalled.log,
+          })}
+        </p>
       ) : null}
       {updateError ? (
         <p className="fdy-location-error" role="alert">

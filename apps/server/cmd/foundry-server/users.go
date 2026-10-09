@@ -19,10 +19,31 @@ import (
 
 // runUsers implements `foundry-server users <subcommand>`, the operator path
 // for accounts that does not go through the web app (bootstrap, recovery).
+// Arguments are parsed before the store opens, so help and typos never create
+// or migrate a database.
 func runUsers(args []string, getenv func(string) string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
 		printUsersUsage()
 		return errors.New("users: missing subcommand")
+	}
+	var command usersCommand
+	var err error
+	switch args[0] {
+	case "list":
+		command = func(ctx context.Context, st store.AccountStore) error { return runUsersList(ctx, st, stdout) }
+	case "create":
+		command, err = parseUsersCreate(args[1:], stdin, stdout)
+	case "reset-password":
+		command, err = parseUsersResetPassword(args[1:], stdin, stdout)
+	default:
+		printUsersUsage()
+		if isHelpArg(args[0]) {
+			return flag.ErrHelp
+		}
+		return fmt.Errorf("users: unknown subcommand %q", args[0])
+	}
+	if err != nil {
+		return err
 	}
 	cfg := loadConfig(getenv)
 	if err := checkDataLocation(cfg, fileExists); err != nil {
@@ -33,19 +54,11 @@ func runUsers(args []string, getenv func(string) string, stdin io.Reader, stdout
 		return err
 	}
 	defer st.Close()
-	ctx := context.Background()
-	switch args[0] {
-	case "list":
-		return runUsersList(ctx, st, stdout)
-	case "create":
-		return runUsersCreate(ctx, st, args[1:], stdin, stdout)
-	case "reset-password":
-		return runUsersResetPassword(ctx, st, args[1:], stdin, stdout)
-	default:
-		printUsersUsage()
-		return fmt.Errorf("users: unknown subcommand %q", args[0])
-	}
+	return command(context.Background(), st)
 }
+
+// usersCommand runs one parsed `users` subcommand against the opened store.
+type usersCommand func(ctx context.Context, st store.AccountStore) error
 
 func runUsersList(ctx context.Context, st store.AccountStore, stdout io.Writer) error {
 	users, err := st.ListUsers(ctx)
@@ -64,55 +77,63 @@ func runUsersList(ctx context.Context, st store.AccountStore, stdout io.Writer) 
 	return table.Flush()
 }
 
-func runUsersCreate(ctx context.Context, st store.AccountStore, args []string, stdin io.Reader, stdout io.Writer) error {
+func parseUsersCreate(args []string, stdin io.Reader, stdout io.Writer) (usersCommand, error) {
 	flags := flag.NewFlagSet("users create", flag.ContinueOnError)
 	username := flags.String("username", "", "login name (required)")
 	displayName := flags.String("display-name", "", "name shown in the app (defaults to the username)")
 	role := flags.String("role", store.RoleMember, "admin or member")
 	passwordStdin := flags.Bool("password-stdin", false, "read the password from the first line of stdin instead of generating one")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return nil, err
 	}
 	if err := accounts.ValidateUsername(*username); err != nil {
-		return err
+		return nil, err
 	}
 	if !store.ValidRole(*role) {
-		return fmt.Errorf("users create: role must be %s or %s", store.RoleAdmin, store.RoleMember)
+		return nil, fmt.Errorf("users create: role must be %s or %s", store.RoleAdmin, store.RoleMember)
 	}
 	if err := accounts.ValidateDisplayName(*displayName); err != nil {
-		return err
+		return nil, err
 	}
-	password, generated, err := resolvePassword(*passwordStdin, stdin)
-	if err != nil {
-		return err
-	}
-	hash, err := accounts.HashPassword(password)
-	if err != nil {
-		return err
-	}
-	user, err := st.CreateUser(ctx, store.NewUser{Username: *username, DisplayName: *displayName, Role: *role, PasswordHash: hash})
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "created %s %s (%s)\n", user.Role, user.Username, user.ID)
-	if generated {
-		fmt.Fprintf(stdout, "  password: %s\n", password)
-	}
-	return nil
+	return func(ctx context.Context, st store.AccountStore) error {
+		password, generated, err := resolvePassword(*passwordStdin, stdin)
+		if err != nil {
+			return err
+		}
+		hash, err := accounts.HashPassword(password)
+		if err != nil {
+			return err
+		}
+		user, err := st.CreateUser(ctx, store.NewUser{Username: *username, DisplayName: *displayName, Role: *role, PasswordHash: hash})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "created %s %s (%s)\n", user.Role, user.Username, user.ID)
+		if generated {
+			fmt.Fprintf(stdout, "  password: %s\n", password)
+		}
+		return nil
+	}, nil
 }
 
-func runUsersResetPassword(ctx context.Context, st store.AccountStore, args []string, stdin io.Reader, stdout io.Writer) error {
+func parseUsersResetPassword(args []string, stdin io.Reader, stdout io.Writer) (usersCommand, error) {
 	flags := flag.NewFlagSet("users reset-password", flag.ContinueOnError)
 	username := flags.String("username", "", "login name (required)")
 	passwordStdin := flags.Bool("password-stdin", false, "read the password from the first line of stdin instead of generating one")
 	if err := flags.Parse(args); err != nil {
-		return err
+		return nil, err
 	}
-	user, _, err := st.GetUserCredentials(ctx, *username)
+	return func(ctx context.Context, st store.AccountStore) error {
+		return resetUserPassword(ctx, st, *username, *passwordStdin, stdin, stdout)
+	}, nil
+}
+
+func resetUserPassword(ctx context.Context, st store.AccountStore, username string, passwordStdin bool, stdin io.Reader, stdout io.Writer) error {
+	user, _, err := st.GetUserCredentials(ctx, username)
 	if err != nil {
 		return err
 	}
-	password, generated, err := resolvePassword(*passwordStdin, stdin)
+	password, generated, err := resolvePassword(passwordStdin, stdin)
 	if err != nil {
 		return err
 	}

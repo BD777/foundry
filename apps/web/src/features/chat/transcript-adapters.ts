@@ -1,4 +1,5 @@
 import type {
+  ModelRequestUsage,
   AgentSession,
   AgentSubagentTranscript,
 } from "@bd777/foundry-protocol";
@@ -32,13 +33,62 @@ export function legacyTranscriptEntries(
   }));
 }
 
+/**
+ * A model request's final tokens arrive after its steps. Steps that already
+ * name the request take the larger counts; otherwise the request's steps are
+ * the latest ones, unless it ended with an answer (then the turn's footer
+ * covers it).
+ */
+function applyRequestUsage(
+  entries: TranscriptEntry[],
+  pendingAnswer: TranscriptEntry | undefined,
+  usage: ModelRequestUsage,
+): void {
+  const named = entries.filter(
+    (entry) => entry.requestUsage?.requestId === usage.requestId,
+  );
+  for (const entry of named)
+    entry.requestUsage = {
+      requestId: usage.requestId,
+      inputTokens: Math.max(entry.requestUsage!.inputTokens, usage.inputTokens),
+      cacheReadTokens: Math.max(
+        entry.requestUsage!.cacheReadTokens,
+        usage.cacheReadTokens,
+      ),
+      cacheWriteTokens: Math.max(
+        entry.requestUsage!.cacheWriteTokens,
+        usage.cacheWriteTokens,
+      ),
+      outputTokens: Math.max(
+        entry.requestUsage!.outputTokens,
+        usage.outputTokens,
+      ),
+    };
+  if (named.length > 0 || pendingAnswer) return;
+  const last = entries[entries.length - 1];
+  if (last && processEntryKinds.has(last.kind) && !last.requestUsage)
+    last.requestUsage = usage;
+}
+
+const processEntryKinds = new Set<TranscriptEntry["kind"]>([
+  "reasoning",
+  "commentary",
+  "tool",
+  "context",
+  "status",
+]);
+
 /** Translate the managed event envelope; new events can supply typed messages. */
 export function sessionTranscriptEntries(
   session: AgentSession,
   suppressed: ReadonlySet<string> = new Set(),
 ): TranscriptEntry[] {
   const events = (session.events ?? []).filter(
-    (event) => event.message || shouldDisplayAgentSessionEvent(event),
+    (event) =>
+      event.message ||
+      event.metadata?.turnUsage ||
+      event.metadata?.requestUsage ||
+      shouldDisplayAgentSessionEvent(event),
   );
   const terminalId = [...events]
     .reverse()
@@ -74,7 +124,21 @@ export function sessionTranscriptEntries(
       }
       continue;
     }
+    const requestUsage = event.metadata?.requestUsage;
+    if (requestUsage) {
+      applyRequestUsage(entries, response, requestUsage);
+      continue;
+    }
     flushResponse();
+    const turnUsage = event.metadata?.turnUsage;
+    if (turnUsage) {
+      // The usage belongs to the answer this turn ended with, if it gave one.
+      const answer = [...entries]
+        .reverse()
+        .find((entry) => entry.kind === "assistant" || entry.kind === "user");
+      if (answer?.kind === "assistant") answer.usage = turnUsage;
+      continue;
+    }
     const timerFire = event.metadata?.timerFire;
     if (timerFire) {
       const firedAt = timerFire.completedAt
@@ -145,6 +209,7 @@ export function subagentTranscriptEntries(
     title: message.title,
     callId: message.callId,
     status: message.status,
+    requestUsage: message.requestUsage,
     streaming:
       transcript.status === "running" &&
       index === transcript.messages.length - 1,

@@ -163,7 +163,7 @@ func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Iss
 		Status:               "queued",
 		Title:                titleFromInput(issue.Title),
 		Prompt:               prompt,
-		Input:                store.SessionInput{ID: newSessionInputID(now), Prompt: prompt},
+		Input:                store.SessionInput{ID: newSessionInputID(now), Prompt: prompt, At: formatTime(now)},
 		CreatedLabel:         "just now",
 		UpdatedLabel:         "queued",
 		Events:               []store.AgentSessionEvent{},
@@ -249,6 +249,9 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 	return issue, nil
 }
 
+// SyncChats stores a device's native chats. Each one is checked against the
+// native sessions Foundry sessions own in the same transaction it is
+// written in, so a chat being continued at that moment cannot reappear.
 func (s *Store) SyncChats(ctx context.Context, input store.SyncChatsInput) error {
 	now := time.Now().UTC()
 	for _, chat := range input.Chats {
@@ -258,7 +261,9 @@ func (s *Store) SyncChats(ctx context.Context, input store.SyncChatsInput) error
 		if chat.WorkspaceID == "" {
 			chat.WorkspaceID = input.WorkspaceID
 		}
-		if err := s.saveChatIfChanged(ctx, chat, now); err != nil {
+		if err := s.withTx(ctx, func(tx *Store) error {
+			return tx.saveChatIfChanged(ctx, chat, now)
+		}); err != nil {
 			return err
 		}
 	}

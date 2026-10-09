@@ -15,19 +15,21 @@ import (
 // request; older ones are updated by running a command on the device.
 const workerUpdateCapability = "worker_update"
 
-// workerUpdateWindow bounds how long an update counts as in progress; a
-// worker that has not come back with the new version by then failed.
+// workerUpdateWindow is how long an update may take; one still on its old
+// version after that is shown as not finished.
 const workerUpdateWindow = 15 * time.Minute
 
 // workerUpdates remembers updates requested from Foundry until the device
-// reports the version they bring, so every page shows them and a second
-// request is refused.
+// comes back on another version, so every page shows them, a second request
+// is refused while one runs, and one that never finished stays visible.
 type workerUpdates struct {
 	mu      sync.Mutex
 	pending map[string]store.DeviceWorkerUpdate
 }
 
-// active is the update in progress on a device running workerVersion.
+// active is the update recorded for a device now running workerVersion. It
+// ends when the device runs another version than it did at the start; past
+// the window it is reported as stalled instead of dropped.
 func (u *workerUpdates) active(deviceID string, workerVersion string, now time.Time) (store.DeviceWorkerUpdate, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -35,12 +37,22 @@ func (u *workerUpdates) active(deviceID string, workerVersion string, now time.T
 	if !ok {
 		return store.DeviceWorkerUpdate{}, false
 	}
-	started, _ := time.Parse(time.RFC3339, update.StartedAt)
-	if now.Sub(started) >= workerUpdateWindow || (update.Version != "" && workerVersion == update.Version) {
+	if workerVersion != "" && (workerVersion == update.Version || (update.FromVersion != "" && workerVersion != update.FromVersion)) {
 		delete(u.pending, deviceID)
 		return store.DeviceWorkerUpdate{}, false
 	}
+	started, _ := time.Parse(time.RFC3339, update.StartedAt)
+	update.Stalled = now.Sub(started) >= workerUpdateWindow
 	return update, true
+}
+
+func (u *workerUpdates) setLog(deviceID, log string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if update, ok := u.pending[deviceID]; ok {
+		update.Log = log
+		u.pending[deviceID] = update
+	}
 }
 
 func (u *workerUpdates) start(deviceID string, update store.DeviceWorkerUpdate) {
@@ -99,7 +111,7 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	if _, registration := connection.registrationSnapshot(); registration.Device.Worker != nil {
 		worker = registration.Device.Worker.Version
 	}
-	if update, ok := s.workerUpdates.active(deviceID, worker, time.Now().UTC()); ok {
+	if update, ok := s.workerUpdates.active(deviceID, worker, time.Now().UTC()); ok && !update.Stalled {
 		return wsWorkerUpdateStarted{}, errWorkerUpdateRefused{"An update is already running on this device (started " + update.StartedAt + ")."}
 	}
 	if !connection.hasCapability(workerUpdateCapability) {
@@ -111,7 +123,7 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	}
 	// Recorded before asking, so a second request while this one is on its
 	// way is refused too.
-	s.workerUpdates.start(deviceID, store.DeviceWorkerUpdate{StartedAt: time.Now().UTC().Format(time.RFC3339), Version: target})
+	s.workerUpdates.start(deviceID, store.DeviceWorkerUpdate{StartedAt: time.Now().UTC().Format(time.RFC3339), Version: target, FromVersion: worker})
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	value, err := daemonRequest[wsWorkerUpdateStarted](ctx, connection, wsUpdateWorkerType, []byte("{}"))
@@ -127,8 +139,9 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 	if err != nil {
 		return wsWorkerUpdateStarted{}, err
 	}
+	s.workerUpdates.setLog(deviceID, value.Log)
 	s.invalidateProjections()
-	// Once the window passes, projections stop showing the update.
+	// Once the window passes, projections show the update as not finished.
 	time.AfterFunc(workerUpdateWindow, s.invalidateProjections)
 	return value, nil
 }

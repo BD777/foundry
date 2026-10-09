@@ -5,6 +5,7 @@
  * and extract text/metadata. No side effects, no cli.ts dependencies.
  */
 
+import { claudeRequestUsage, claudeSubagentUsage } from "./turn-usage.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
@@ -268,7 +269,11 @@ export function claudeProcessEvent(
     };
   }
   if (record.type === "assistant") {
-    return claudeAssistantProcessEvent(record.message);
+    const event = claudeAssistantProcessEvent(record.message);
+    const requestUsage = claudeRequestUsage(message);
+    if (event?.message && requestUsage)
+      event.message.requestUsage = requestUsage;
+    return event;
   }
   if (record.type === "tool_progress") {
     const name = sdkString(record.tool_name) || "tool";
@@ -384,6 +389,7 @@ export function claudeSystemProcessEvent(
           "Subtask running.",
         metadata: {
           subagentType: sdkString(record.subagent_type) || undefined,
+          subagentUsage: claudeSubagentUsage(record),
           taskId: sdkString(record.task_id) || undefined,
           taskType: sdkString(record.task_type) || undefined,
           toolUseId: sdkString(record.tool_use_id) || undefined,
@@ -399,6 +405,7 @@ export function claudeSystemProcessEvent(
         level: taskFailed ? "error" : "info",
         metadata: {
           outputFile: sdkString(record.output_file) || undefined,
+          subagentUsage: claudeSubagentUsage(record),
           taskId: sdkString(record.task_id) || undefined,
           taskType: sdkString(record.task_type) || undefined,
           toolUseId: sdkString(record.tool_use_id) || undefined,

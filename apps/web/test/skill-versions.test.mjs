@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  defaultSkillResolution,
+  automaticSkillResolution,
   skillResolutionProblem,
   skillServerLabel,
 } from "../src/components/skills/skill-version-state.ts";
@@ -20,36 +20,42 @@ const target = {
   sourceDigest: "same",
   latestRevision: 2,
 };
-test("default publication reuses identical content and makes name conflicts explicit", () => {
-  assert.equal(defaultSkillResolution(source).action, "create");
+test("publication decides by itself only when there is nothing to choose", () => {
+  // Not in the library: added as a new skill.
+  assert.equal(automaticSkillResolution(source).action, "create");
+  // The library holds the same content: reused.
   const reusable = {
     ...source,
     serverState: "reusable",
     serverCandidates: [target],
   };
-  assert.equal(defaultSkillResolution(reusable).action, "reuse");
+  assert.equal(automaticSkillResolution(reusable).action, "reuse");
+  // A same-named entry with other content: the person chooses.
   const conflict = {
     ...reusable,
     serverState: "name_conflict",
     sourceDigest: "different",
   };
-  assert.match(
-    skillResolutionProblem(conflict, defaultSkillResolution(conflict)),
-    /Choose/,
-  );
+  assert.equal(automaticSkillResolution(conflict), undefined);
+  assert.match(skillResolutionProblem(conflict, undefined), /choose/i);
+  // Even this device's own earlier entry is never overwritten silently.
   const linked = {
     ...conflict,
     promotedSkillId: "id",
     serverState: "different",
     serverRevision: 2,
   };
-  assert.deepEqual(defaultSkillResolution(linked), {
-    root: "/skills",
-    dirName: "alpha",
-    action: "update",
-    targetSkillId: "id",
-    expectedRevision: 2,
-  });
+  assert.equal(automaticSkillResolution(linked), undefined);
+  assert.equal(
+    skillResolutionProblem(linked, {
+      root: "/skills",
+      dirName: "alpha",
+      action: "keep",
+      targetSkillId: "id",
+      expectedRevision: 2,
+    }),
+    undefined,
+  );
   assert.equal(skillServerLabel(linked), "Local differs · rev 2");
   assert.ok(skillResolutionProblem(source, { action: "fork", name: "alpha" }));
 });

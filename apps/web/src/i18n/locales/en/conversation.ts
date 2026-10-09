@@ -11,6 +11,7 @@ export const conversation = {
     requestingModel: "Requesting the model",
     compactingContext: "Compacting context",
     modelRetry: "Retrying the model request",
+    modelRequestUsage: "Model request usage",
     rateLimited: "Rate limited, waiting to retry",
     startingSubtask: "Starting a subtask",
     subtaskRunning: "Subtask running",
@@ -78,6 +79,33 @@ export const conversation = {
     imagePreview: "Image preview",
     closeImagePreview: "Close image preview",
   },
+  /** Duration and tokens of one turn, as the agent's SDK reported them. */
+  usage: {
+    seconds: "{{seconds}}s",
+    minutes: "{{minutes}}m {{seconds}}s",
+    hours: "{{hours}}h {{minutes}}m",
+    inputShort: "{{count}} in",
+    inputCached: "{{count}} in ({{share}} cached)",
+    outputShort: "{{count}} out",
+    totalShort: "{{count}} tokens",
+    toolUses_one: "{{count}} tool call",
+    toolUses_other: "{{count}} tool calls",
+    stepsTitle_one:
+      "Tokens of the {{count}} model request behind these steps. A subagent's work counts on the subagent.",
+    stepsTitle_other:
+      "Tokens of the {{count}} model requests behind these steps. A subagent's work counts on the subagent.",
+    turnScope:
+      "The whole turn, as the agent reported it. Steps show the tokens of their own model requests; Codex reports tokens only per turn.",
+    details: "Turn usage",
+    duration: "Duration",
+    modelRequests: "Model requests",
+    input: "Input tokens",
+    cacheRead: "Cache hits",
+    cacheWrite: "Cache writes",
+    uncached: "Uncached",
+    output: "Output tokens",
+    reasoning: "Reasoning",
+  },
   turns: {
     outline: "Conversation outline",
     outlineHeading_one: "Conversation outline · {{count}} turn",
@@ -114,5 +142,7 @@ export const conversation = {
     responseChanged:
       "The active response changed. This message remains queued for the next turn.",
     notSteered: "The message could not be steered. It remains in the queue.",
+    maybeSent:
+      "The page closed while the first queued message was being sent, so it may already be in the conversation. Check, then send it or delete it.",
   },
 };

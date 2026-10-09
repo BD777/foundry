@@ -1400,6 +1400,32 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 	if !ok || event["at"] == "just now" || event["at"] == "" {
 		t.Fatalf("expected server timestamp on agent session event, got %#v", events[1])
 	}
+
+	// A follow-up's session update carries no events, so viewers learn of the
+	// new user message from its own streamed transcript event, sent first.
+	postJSONForTest(t, server, "/api/agent-sessions/"+sessionID+"/messages", `{"prompt":"Follow up"}`, http.StatusOK)
+	var userEvent map[string]any
+	for userEvent == nil {
+		select {
+		case streamed := <-streamedEvents:
+			payload, _ := streamed.Payload.(map[string]any)
+			if streamed.Type == "agent_session_created" && payload["id"] == sessionID {
+				t.Fatal("the follow-up's session update arrived before its user message event")
+			}
+			message, _ := payload["message"].(map[string]any)
+			if streamed.Type == "agent_session_event" && payload["sessionId"] == sessionID && message["kind"] == "user" {
+				userEvent = payload
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for the follow-up's user message event")
+		}
+	}
+	followUp := getJSONObjectForTest(t, server, "/api/agent-sessions/"+sessionID, http.StatusOK)
+	stored, _ := followUp["events"].([]any)
+	last, _ := stored[len(stored)-1].(map[string]any)
+	if last["id"] != userEvent["id"] || last["at"] != userEvent["at"] || userEvent["message"].(map[string]any)["text"] != "Follow up" {
+		t.Fatalf("streamed %#v, stored %#v; want the same event", userEvent, last)
+	}
 }
 
 func TestAgentSessionDispatchesAfterWorkspaceReadyRegistration(t *testing.T) {

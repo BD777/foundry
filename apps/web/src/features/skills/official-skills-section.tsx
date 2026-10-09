@@ -1,23 +1,42 @@
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
-import type { ProviderHealth } from "@bd777/foundry-protocol";
+import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 
 // i18n-ignore: runtime product names
 const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
 
 /**
- * The skills Claude Code and Codex ship themselves, as read on the
- * workspace's device: one collapsed row per agent, since they are not chosen
- * here. A session always has its own agent's official skills.
+ * The skills each agent always has: the ones Claude Code and Codex ship, as
+ * read on the workspace's device, and the ones Foundry adds for that agent.
+ * One collapsed row per agent, since they are not chosen here.
  */
 export function OfficialSkillsSection({
   providerHealth,
+  builtinSkills,
 }: {
   providerHealth: ProviderHealth[];
+  builtinSkills: BuiltinSkill[];
 }) {
   const { t } = useTranslation("skills");
-  const agents = providerHealth.filter((row) => row.officialSkills?.length);
+  const agents = providerHealth
+    .map((row) => ({
+      provider: row.provider,
+      skills: [
+        ...(row.officialSkills ?? []).map((skill) => ({
+          ...skill,
+          source: undefined as string | undefined,
+        })),
+        ...builtinSkills
+          .filter((skill) => skill.runtime === row.provider)
+          .map((skill) => ({
+            name: skill.name,
+            description: skill.description,
+            source: skill.source,
+          })),
+      ],
+    }))
+    .filter((row) => row.skills.length);
   if (!agents.length) return null;
   return (
     <section className="fdy-official-skills">
@@ -28,7 +47,7 @@ export function OfficialSkillsSection({
         </div>
       </header>
       {agents.map((row) => {
-        const skills = [...(row.officialSkills ?? [])].sort((a, b) =>
+        const skills = [...row.skills].sort((a, b) =>
           a.name.localeCompare(b.name),
         );
         return (
@@ -51,7 +70,16 @@ export function OfficialSkillsSection({
             <ul>
               {skills.map((skill) => (
                 <li key={skill.name}>
-                  <strong>{skill.name}</strong>
+                  <strong>
+                    {skill.name}
+                    {skill.source ? (
+                      <span className="fdy-official-skills-source">
+                        {t("workspace.officialFromFoundry", {
+                          source: skill.source,
+                        })}
+                      </span>
+                    ) : null}
+                  </strong>
                   {skill.description ? <span>{skill.description}</span> : null}
                 </li>
               ))}

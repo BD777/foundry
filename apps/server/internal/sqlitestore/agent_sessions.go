@@ -105,9 +105,9 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY updated_at DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY updated_at DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
@@ -206,7 +206,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		}
 	}
 	now := time.Now().UTC()
-	if source == "naming" && (input.NativeSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
+	if source == "naming" && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
 		return store.AgentSession{}, errors.New("naming must start an independent session without inherited context")
 	}
 	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
@@ -250,7 +250,6 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		CreatedByUserID:      createdBy,
 		ID:                   id,
 		ThreadID:             id,
-		NativeSessionID:      strings.TrimSpace(input.NativeSessionID),
 		WorkspaceID:          agent.WorkspaceID,
 		AgentID:              agent.ID,
 		DeviceID:             agent.DeviceID,
@@ -273,6 +272,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		Prompt:               prompt,
 		Input: store.SessionInput{
 			ID:                    newSessionInputID(now),
+			At:                    formatTime(now),
 			Prompt:                prompt,
 			Attachments:           attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
@@ -289,7 +289,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		session.CodexSandboxMode = "read-only"
 		session.CodexApprovalPolicy = "never"
 	}
-	if err := s.assertNativeSessionIdle(ctx, session.WorkspaceID, session.NativeSessionID); err != nil {
+	if err := s.bindNativeSession(ctx, &session, input, now); err != nil {
 		return store.AgentSession{}, err
 	}
 	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
@@ -351,25 +351,6 @@ func normalizeChatAttachments(attachments []store.ChatAttachment) []store.ChatAt
 	return result
 }
 
-// assertNativeSessionIdle refuses to start a second session on a native
-// session another session is still running.
-func (s *Store) assertNativeSessionIdle(ctx context.Context, workspaceID string, nativeSessionID string) error {
-	if nativeSessionID == "" {
-		return nil
-	}
-	var active bool
-	err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_sessions
-		WHERE workspace_id = ? AND status IN ('queued','running','blocked')
-		AND json_extract(payload_json, '$.nativeSessionId') = ?)`, workspaceID, nativeSessionID).Scan(&active)
-	if err != nil {
-		return err
-	}
-	if active {
-		return errors.New("agent session is already active for this native session")
-	}
-	return nil
-}
-
 // newSessionInputID is a UUIDv7: Claude accepts it as the native user
 // message uuid, and ids sort by time, which keeps artifact order.
 func newSessionInputID(now time.Time) string {
@@ -384,22 +365,18 @@ func newSessionInputID(now time.Time) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
 }
 
-// recordSessionInput writes the input into the session's transcript: a
-// boundary when the runtime changed, then the user's message.
+// recordSessionInput writes the input into the session's transcript.
 func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input store.SessionInput, now time.Time) error {
-	at := formatTime(now)
-	if note := strings.TrimSpace(input.ProfileTransitionNote); note != "" {
-		if err := s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
-			ID: "evt_" + input.ID + "_transition", SessionID: sessionID, At: at, Label: "Profile transition", Level: "info",
-			Message: &store.TranscriptMessage{ID: input.ID + ":transition", At: at, Kind: "boundary", Text: note},
-		}, now); err != nil {
+	if input.At == "" {
+		input.At = formatTime(now)
+	}
+	for index, event := range store.SessionInputEvents(sessionID, input) {
+		// Distinct creation times keep the boundary ahead of the message.
+		if err := s.saveAgentSessionEvent(ctx, event, now.Add(time.Duration(index)*time.Microsecond)); err != nil {
 			return err
 		}
 	}
-	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
-		ID: "evt_" + input.ID, SessionID: sessionID, At: at, Label: store.SessionInputEventLabel, Level: "info",
-		Message: &store.TranscriptMessage{ID: input.ID, At: at, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
-	}, now.Add(time.Microsecond))
+	return nil
 }
 
 // recordInputAnswer keeps the answer to the current input in the transcript.
@@ -434,8 +411,9 @@ func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSessio
 }
 
 // SendAgentSessionInput gives an idle session its next input. The session
-// returns to queued on the same native session unless the input switches to
-// an incompatible runtime, which starts a new native session.
+// returns to queued on its native session for the runtime it now runs on,
+// told the turns that ran elsewhere; a runtime it has not run on starts a
+// native session told the whole conversation.
 func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, error) {
 	var result store.AgentSession
 	err := s.withTx(ctx, func(tx *Store) error {
@@ -474,7 +452,13 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			next.AgentID, next.DeviceID, next.Provider = agent.ID, agent.DeviceID, agent.Provider
 			next.ProfileID, next.ProfileFingerprint, next.ProfileLabel = agent.ProfileID, agent.ProfileFingerprint, agent.ProfileLabel
 			if !compatibleAgentSessionProfile(session, next) {
-				next.NativeSessionID = ""
+				// A model or setting chosen for the previous agent or account
+				// may not exist for the new one; it starts from its defaults.
+				next.Model = ""
+				if next.Provider != session.Provider {
+					next.ClaudeEffort, next.ClaudePermissionMode = "", ""
+					next.CodexReasoningEffort, next.CodexSandboxMode, next.CodexApprovalPolicy, next.CodexSpeed = "", "", "", ""
+				}
 			}
 			session = next
 		}
@@ -491,13 +475,21 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			}
 		}
 		now := time.Now().UTC()
+		previousInputID := session.Input.ID
 		session.Input = store.SessionInput{
 			ID:                    newSessionInputID(now),
+			At:                    formatTime(now),
 			Prompt:                prompt,
 			Attachments:           attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
-			ImportedContext:       strings.TrimSpace(input.ImportedContext),
 		}
+		// What the native session missed is the server's to tell, never the
+		// client's: it alone knows which turns each native session ran.
+		missed, err := tx.resumeNativeSession(ctx, &session, previousInputID, session.Input.ID)
+		if err != nil {
+			return err
+		}
+		session.Input.ImportedContext = missed
 		session.Status = "queued"
 		session.Response, session.Error, session.BlockedReason = "", "", ""
 		session.StartedAt, session.CompletedAt = "", ""
@@ -602,24 +594,33 @@ func (s *Store) AppendAgentSessionEvent(ctx context.Context, event store.AgentSe
 	})
 }
 
+// SetAgentSessionNativeSessionID records the native session the worker runs
+// the session's current input on.
 func (s *Store) SetAgentSessionNativeSessionID(ctx context.Context, sessionID string, nativeSessionID string) (store.AgentSession, error) {
-	session, err := s.GetAgentSession(ctx, sessionID)
-	if err != nil {
-		return store.AgentSession{}, err
-	}
-	nativeSessionID = strings.TrimSpace(nativeSessionID)
-	if nativeSessionID == "" {
-		return session, nil
-	}
-	if session.NativeSessionID == nativeSessionID {
-		return session, nil
-	}
-	session.NativeSessionID = nativeSessionID
-	now := time.Now().UTC()
-	if err := s.saveAgentSession(ctx, session, time.Time{}, now); err != nil {
-		return store.AgentSession{}, err
-	}
-	return session, nil
+	var result store.AgentSession
+	err := s.withTx(ctx, func(tx *Store) error {
+		session, err := tx.GetAgentSession(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		result = session
+		nativeSessionID = strings.TrimSpace(nativeSessionID)
+		if nativeSessionID == "" {
+			return nil
+		}
+		if err := tx.attachNativeSession(ctx, &session, nativeSessionID, session.Input.ID); err != nil {
+			return err
+		}
+		if session.NativeSessionID == result.NativeSessionID {
+			return nil
+		}
+		if err := tx.saveAgentSession(ctx, session, time.Time{}, time.Now().UTC()); err != nil {
+			return err
+		}
+		result = session
+		return nil
+	})
+	return result, err
 }
 
 func (s *Store) CompleteAgentSession(ctx context.Context, id string, response string, nativeSessionID string) (store.AgentSession, error) {
@@ -643,9 +644,10 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 	session.Status = "completed"
 	session.Response = strings.TrimSpace(response)
 	session.Error = ""
-	if nativeSessionID = strings.TrimSpace(nativeSessionID); nativeSessionID != "" {
-		session.NativeSessionID = nativeSessionID
+	if err := s.attachNativeSession(ctx, &session, nativeSessionID, session.Input.ID); err != nil {
+		return store.AgentSession{}, err
 	}
+	settleNativeFork(&session)
 	now := time.Now().UTC()
 	if session.StartedAt == "" {
 		session.StartedAt = formatTime(now)
@@ -666,9 +668,6 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 		return store.AgentSession{}, err
 	}
 	if err := s.recordInputAnswer(ctx, session, now); err != nil {
-		return store.AgentSession{}, err
-	}
-	if err := s.deleteClaimedNativeChat(ctx, session); err != nil {
 		return store.AgentSession{}, err
 	}
 	return session, nil

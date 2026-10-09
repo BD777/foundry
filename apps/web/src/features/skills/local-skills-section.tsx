@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
-import type { DeviceProjection, DeviceSkill } from "@bd777/foundry-protocol";
+import type {
+  DeviceProjection,
+  DeviceSkill,
+  WorkspaceProjection,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
 import {
+  skillWorkspace,
   toNormalizedDeviceSkill,
   type NormalizedSkill,
 } from "../../components/skills/skill-models";
@@ -16,13 +21,20 @@ import { skillServerLabel } from "../../components/skills/skill-version-state";
 export function localOnlySkills(
   deviceSkills: DeviceSkill[],
   deviceId: string,
+  workspaces: WorkspaceProjection[] = [],
+  workspaceId?: string,
 ): DeviceSkill[] {
-  return deviceSkills.filter(
-    (skill) =>
-      skill.deviceId === deviceId &&
-      skill.serverState !== "in_sync" &&
-      skill.serverState !== "reusable",
-  );
+  return deviceSkills.filter((skill) => {
+    if (
+      skill.deviceId !== deviceId ||
+      skill.serverState === "in_sync" ||
+      skill.serverState === "reusable"
+    )
+      return false;
+    // Another workspace's drafts belong on its own page.
+    const owner = skillWorkspace(skill, workspaces);
+    return !owner || owner.id === workspaceId;
+  });
 }
 
 /**
@@ -33,12 +45,16 @@ export function localOnlySkills(
 export function LocalSkillsSection({
   device,
   deviceSkills,
+  workspaces,
+  workspaceId,
   readOnly,
   onChanged,
   onPromoted,
 }: {
   device: DeviceProjection;
   deviceSkills: DeviceSkill[];
+  workspaces: WorkspaceProjection[];
+  workspaceId: string;
   readOnly: boolean;
   onChanged: () => Promise<void>;
   onPromoted: (skillId: string) => void;
@@ -50,8 +66,12 @@ export function LocalSkillsSection({
     [deviceSkills, device.id],
   );
   const localOnly = useMemo(
-    () => localOnlySkills(onDevice, device.id).map(toNormalizedDeviceSkill),
-    [onDevice, device.id],
+    () =>
+      localOnlySkills(onDevice, device.id, workspaces, workspaceId).map(
+        (skill) =>
+          toNormalizedDeviceSkill(skill, skillWorkspace(skill, workspaces)),
+      ),
+    [onDevice, device.id, workspaces, workspaceId],
   );
   const online = device.status === "connected";
   if (!localOnly.length) return null;

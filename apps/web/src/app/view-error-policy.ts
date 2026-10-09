@@ -26,7 +26,10 @@ export function viewErrorResetKey({
           ? (selectedDeviceId ?? "")
           : "";
   return [
-    view === "devices" || view === "profiles" || view === "locations"
+    view === "devices" ||
+    view === "profiles" ||
+    view === "library" ||
+    view === "locations"
       ? "global"
       : workspaceId,
     view,

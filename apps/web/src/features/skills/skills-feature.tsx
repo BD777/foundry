@@ -1,27 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type {
   DeviceProjection,
-  DeviceSkill,
+  BuiltinSkill,
+  DeviceTool,
   PromotedSkill,
+  SkillBundleSummary,
   ProviderHealth,
+  WorkspaceProjection,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
-import { setWorkspaceSkills } from "../../api";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SkillCatalogList } from "../../components/skills/skill-catalog-list";
-import {
-  toNormalizedPromotedSkill,
-  type NormalizedSkill,
-} from "../../components/skills/skill-models";
+import { useDeviceSkills } from "../../components/skills/use-device-skills";
 import { LocalSkillsSection, localOnlySkills } from "./local-skills-section";
-import { OfficialSkillsSection } from "./official-skills-section";
 import {
-  resolveSkillSelection,
-  toggleSkillSelection,
-} from "../../components/skills/skill-selection-engine";
+  BuiltinShadowBadge,
+  ReplacesOfficialBadge,
+} from "./builtin-shadow-badge";
+import { DefaultSkillBadge, ViaBundleBadge } from "./default-skill-badge";
+import { WorkspaceBundles } from "./workspace-bundles";
+import { MissingToolsBadge } from "./missing-tools-badge";
+import { OfficialSkillsSection } from "./official-skills-section";
+import { SkillVersionPin } from "./skill-version-pin";
+import { useWorkspaceSkillSelection } from "./use-workspace-skill-selection";
 
 export type SkillsFeatureEvent =
   | { type: "manage-devices.requested" }
@@ -32,9 +36,24 @@ export interface SkillsFeatureProps {
   catalog: PromotedSkill[];
   bindings: WorkspaceSkillBinding[];
   devices: DeviceProjection[];
-  deviceSkills?: DeviceSkill[];
   /** The workspace device's Claude Code / Codex, with their own skills. */
   providerHealth?: ProviderHealth[];
+  /** Skills Foundry itself gives each agent. */
+  builtinSkills?: BuiltinSkill[];
+  /** Which programs skills need the devices have. */
+  deviceTools?: DeviceTool[];
+  /** Owner's default skills this workspace gets besides its selection. */
+  defaultSkillIds?: string[];
+  /** The library's bundles, and the ones this workspace uses. */
+  skillBundles?: SkillBundleSummary[];
+  workspaceBundleIds?: string[];
+  /** Its owner's default bundles; workspaceBundleIds holds those still on. */
+  defaultBundleIds?: string[];
+  /** Skills it gets from defaults or bundles, and those it turned off. */
+  inheritedSkillIds?: string[];
+  offSkillIds?: string[];
+  /** Workspaces, to tell a workspace's own skill drafts apart. */
+  workspaces?: WorkspaceProjection[];
   workspaceId: string;
   /** The device this workspace runs on; its local skills can be added here. */
   workspaceDeviceId?: string;
@@ -55,8 +74,16 @@ export function SkillsFeature({
   catalog,
   bindings,
   devices,
-  deviceSkills,
   providerHealth,
+  builtinSkills,
+  defaultSkillIds,
+  deviceTools,
+  skillBundles,
+  workspaceBundleIds,
+  defaultBundleIds,
+  inheritedSkillIds,
+  offSkillIds,
+  workspaces,
   workspaceId,
   workspaceDeviceId,
   readOnlyReason,
@@ -69,149 +96,41 @@ export function SkillsFeature({
     { value: "selected", label: t("workspace.filterSelected") },
     { value: "unselected", label: t("workspace.filterUnselected") },
   ];
-  const initial = useMemo(
-    () => new Set(bindings.map((binding) => binding.skillId)),
-    [bindings],
-  );
-
-  const [explicitlySelected, setExplicitlySelected] =
-    useState<Set<string>>(initial);
-  const [deselectedRelated, setDeselectedRelated] = useState<Set<string>>(
-    new Set(),
-  );
   const [statusFilter, setStatusFilter] = useState("all");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const [notice, setNotice] = useState<string>();
-
-  const deviceLabels = useMemo(() => {
-    const labels = new Map<string, string>();
-    for (const device of devices) labels.set(device.id, device.label);
-    return labels;
-  }, [devices]);
-
-  const normalizedSkills = useMemo(() => {
-    return catalog.map((s) =>
-      toNormalizedPromotedSkill(s, deviceLabels, deviceSkills),
-    );
-  }, [catalog, deviceLabels, deviceSkills]);
-
-  const resolution = useMemo(() => {
-    return resolveSkillSelection(
-      normalizedSkills,
-      explicitlySelected,
-      deselectedRelated,
-    );
-  }, [normalizedSkills, explicitlySelected, deselectedRelated]);
-
-  const activeSkillNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const id of resolution.selectedIds) {
-      const s = normalizedSkills.find((item) => item.id === id);
-      if (s) names.add(s.name.toLowerCase());
-    }
-    return names;
-  }, [normalizedSkills, resolution.selectedIds]);
-
-  const dirty =
-    resolution.selectedIds.size !== initial.size ||
-    [...resolution.selectedIds].some((id) => !initial.has(id));
-
-  const duplicateNames = useMemo(() => {
-    const seen = new Set<string>();
-    const duplicates = new Set<string>();
-    for (const skill of catalog) {
-      if (resolution.selectedIds.has(skill.id)) {
-        const lower = skill.name.toLowerCase();
-        if (seen.has(lower)) duplicates.add(skill.name);
-        seen.add(lower);
-      }
-    }
-    return [...duplicates];
-  }, [catalog, resolution.selectedIds]);
-
-  // A skill added from the workspace's device is selected once it is in the
-  // catalog (see LocalSkillsSection).
   const workspaceDevice = devices.find((d) => d.id === workspaceDeviceId);
-  const [pendingSelect, setPendingSelect] = useState<string>();
-  useEffect(() => {
-    if (!pendingSelect || !normalizedSkills.some((s) => s.id === pendingSelect))
-      return;
-    setPendingSelect(undefined);
-    if (resolution.selectedIds.has(pendingSelect)) return;
-    const result = toggleSkillSelection(
-      pendingSelect,
-      normalizedSkills,
-      explicitlySelected,
-      deselectedRelated,
-    );
-    if (!result.allowed) {
-      setError(result.blockedReason);
-      return;
-    }
-    setExplicitlySelected(result.nextExplicit);
-    setDeselectedRelated(result.nextDeselectedRelated);
-    void persist(
-      resolveSkillSelection(
-        normalizedSkills,
-        result.nextExplicit,
-        result.nextDeselectedRelated,
-      ).selectedIds,
-    );
-  }, [
-    pendingSelect,
+  const { skills: deviceSkills, reload: reloadDeviceSkills } =
+    useDeviceSkills(workspaceDevice);
+  const viaBundle = new Map(
+    (skillBundles ?? [])
+      .filter((bundle) => workspaceBundleIds?.includes(bundle.id))
+      .flatMap((bundle) => bundle.skillIds.map((id) => [id, bundle.name])),
+  );
+  const {
     normalizedSkills,
-    resolution.selectedIds,
-    explicitlySelected,
-    deselectedRelated,
-  ]);
-
-  async function save(): Promise<void> {
-    if (duplicateNames.length) return;
-    await persist(resolution.selectedIds);
-  }
-
-  async function persist(selectedIds: Set<string>): Promise<void> {
-    setSaving(true);
-    setError(undefined);
-    try {
-      await setWorkspaceSkills(workspaceId, [...selectedIds]);
-      await onChanged?.();
-    } catch (saveError) {
-      setError(
-        saveError instanceof Error ? saveError.message : String(saveError),
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleToggle(skill: NormalizedSkill): void {
-    if (readOnlyReason) return;
-    setError(undefined);
-    const result = toggleSkillSelection(
-      skill.id,
-      normalizedSkills,
-      explicitlySelected,
-      deselectedRelated,
-    );
-
-    if (!result.allowed) {
-      setError(result.blockedReason);
-      return;
-    }
-
-    setExplicitlySelected(result.nextExplicit);
-    setDeselectedRelated(result.nextDeselectedRelated);
-
-    if (result.newlyActivatedNames.length > 0) {
-      setNotice(
-        t("workspace.autoEnabled", {
-          names: result.newlyActivatedNames.join(", "),
-        }),
-      );
-    }
-  }
+    resolution,
+    onIds,
+    activeSkillNames,
+    dirty,
+    duplicateNames,
+    saving,
+    error,
+    notice,
+    setNotice,
+    save,
+    handleToggle,
+    selectAfterPublish,
+  } = useWorkspaceSkillSelection({
+    catalog,
+    bindings,
+    devices,
+    deviceSkills,
+    inheritedSkillIds,
+    offSkillIds,
+    workspaceId,
+    readOnlyReason,
+    onChanged,
+    t,
+  });
 
   return (
     <PageSurface embedded={embedded} variant="skills">
@@ -236,10 +155,29 @@ export function SkillsFeature({
         </p>
       ) : null}
 
-      <OfficialSkillsSection providerHealth={providerHealth ?? []} />
+      <OfficialSkillsSection
+        builtinSkills={builtinSkills ?? []}
+        providerHealth={providerHealth ?? []}
+      />
+
+      <WorkspaceBundles
+        bundles={skillBundles ?? []}
+        onChanged={onChanged}
+        readOnly={!!readOnlyReason}
+        defaultIds={defaultBundleIds ?? []}
+        selectedIds={workspaceBundleIds ?? []}
+        workspaceId={workspaceId}
+      />
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}
+        description={
+          defaultSkillIds?.some((id) =>
+            normalizedSkills.some((skill) => skill.id === id),
+          )
+            ? t("workspace.defaultSkillsHint")
+            : undefined
+        }
         emptyState={{
           title: t("workspace.emptyTitle"),
           body: t("workspace.emptyBody"),
@@ -247,8 +185,12 @@ export function SkillsFeature({
           // sending people to Devices would be a detour.
           action:
             workspaceDeviceId &&
-            localOnlySkills(deviceSkills ?? [], workspaceDeviceId)
-              .length ? undefined : (
+            localOnlySkills(
+              deviceSkills,
+              workspaceDeviceId,
+              workspaces,
+              workspaceId,
+            ).length ? undefined : (
               <Button
                 onClick={() => onEvent?.({ type: "manage-devices.requested" })}
               >
@@ -262,7 +204,7 @@ export function SkillsFeature({
             <>
               <span className="fdy-workspace-skills-count">
                 {t("workspace.selectedCount", {
-                  count: resolution.selectedIds.size,
+                  count: onIds.size,
                 })}
               </span>
               <Button
@@ -295,6 +237,41 @@ export function SkillsFeature({
             </>
           ) : null
         }
+        renderBadges={(skill) => (
+          <>
+            <DefaultSkillBadge
+              off={!onIds.has(skill.id)}
+              show={Boolean(defaultSkillIds?.includes(skill.id))}
+            />
+            <BuiltinShadowBadge
+              builtinSkills={builtinSkills}
+              name={skill.name}
+            />
+            <ReplacesOfficialBadge
+              name={skill.name}
+              providerHealth={providerHealth}
+            />
+            <ViaBundleBadge name={viaBundle.get(skill.id)} />
+            <MissingToolsBadge
+              deviceLabel={workspaceDevice?.label}
+              deviceTools={deviceTools?.filter(
+                (row) => row.deviceId === workspaceDeviceId,
+              )}
+              requires={skill.requires}
+            />
+          </>
+        )}
+        renderActions={(skill) =>
+          skill.promotedSkill && resolution.selectedIds.has(skill.id) ? (
+            <SkillVersionPin
+              binding={bindings.find((row) => row.skillId === skill.id)}
+              onChanged={onChanged}
+              readOnly={!!readOnlyReason}
+              skill={skill.promotedSkill}
+              workspaceId={workspaceId}
+            />
+          ) : null
+        }
         missingRequiredMap={resolution.missingRequired}
         mode="workspace"
         onStatusFilterChange={setStatusFilter}
@@ -302,14 +279,12 @@ export function SkillsFeature({
         relatedToMap={resolution.relatedTo}
         requiredByMap={resolution.requiredBy}
         searchPlaceholder={t("workspace.searchPlaceholder")}
-        selectedIds={resolution.selectedIds}
+        selectedIds={onIds}
         skills={normalizedSkills}
         statusFilterOptions={statusFilterOptions}
         statusFilterPredicate={(skill, filterVal) => {
-          if (filterVal === "selected")
-            return resolution.selectedIds.has(skill.id);
-          if (filterVal === "unselected")
-            return !resolution.selectedIds.has(skill.id);
+          if (filterVal === "selected") return onIds.has(skill.id);
+          if (filterVal === "unselected") return !onIds.has(skill.id);
           return true;
         }}
         statusFilterValue={statusFilter}
@@ -319,12 +294,15 @@ export function SkillsFeature({
       {workspaceDevice ? (
         <LocalSkillsSection
           device={workspaceDevice}
-          deviceSkills={deviceSkills ?? []}
+          deviceSkills={deviceSkills}
+          workspaceId={workspaceId}
+          workspaces={workspaces ?? []}
           readOnly={!!readOnlyReason}
           onChanged={async () => {
             await onChanged?.();
+            await reloadDeviceSkills();
           }}
-          onPromoted={(id) => setPendingSelect(id)}
+          onPromoted={(id) => selectAfterPublish(id)}
         />
       ) : null}
     </PageSurface>

@@ -80,11 +80,26 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_workspace_skill_bindings_skill
 			ON workspace_skill_bindings (skill_id)`,
+		`CREATE TABLE IF NOT EXISTS workspace_skill_exclusions (
+			workspace_id TEXT NOT NULL,
+			skill_id TEXT NOT NULL,
+			PRIMARY KEY (workspace_id, skill_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_default_skills (
+			user_id TEXT NOT NULL,
+			skill_id TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, skill_id)
+		)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate sqlite skill catalog: %w", err)
 		}
+	}
+	if err := s.ensureColumn(ctx, "workspace_skill_bindings", "pinned_revision",
+		`ALTER TABLE workspace_skill_bindings ADD COLUMN pinned_revision INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
 	}
 	if err := s.ensureColumn(ctx, "device_skills", "dependencies",
 		`ALTER TABLE device_skills ADD COLUMN dependencies TEXT NOT NULL DEFAULT '[]'`); err != nil {
@@ -97,6 +112,19 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureColumn(ctx, "device_skills", "source_digest", `ALTER TABLE device_skills ADD COLUMN source_digest TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := s.migrateSkillRepositories(ctx); err != nil {
+		return err
+	}
+	if err := s.migrateDeviceTools(ctx); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "promoted_skill_revisions", "requires_json",
+		`ALTER TABLE promoted_skill_revisions ADD COLUMN requires_json TEXT`); err != nil {
+		return err
+	}
+	if err := s.backfillSkillRequirements(ctx); err != nil {
 		return err
 	}
 	return s.setupSkillVersions(ctx)
@@ -252,9 +280,10 @@ func (s *Store) ListPromotedSkills(ctx context.Context) ([]store.PromotedSkill, 
 			COALESCE(d.label, ''), ps.origin_root, ps.origin_dir_name,
 			ps.latest_revision, ps.created_at, ps.updated_at,
    COALESCE((SELECT source_digest FROM skill_revision_index WHERE skill_id=ps.id AND revision=ps.latest_revision),''),
-   (SELECT json_group_array(w.name) FROM workspace_skill_bindings b JOIN workspaces w ON w.id=b.workspace_id WHERE b.skill_id=ps.id),
+   (SELECT json_group_array(b.workspace_id) FROM workspace_skill_bindings b WHERE b.skill_id=ps.id),
    COALESCE((SELECT ds.dependencies FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), '[]'),
-   COALESCE((SELECT ds.dependency_analysis_error FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), '')
+   COALESCE((SELECT ds.dependency_analysis_error FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), ''),
+   COALESCE((SELECT r.requires_json FROM promoted_skill_revisions r WHERE r.skill_id=ps.id AND r.revision=ps.latest_revision), '[]')
 		FROM promoted_skills ps
 		LEFT JOIN devices d ON d.id = ps.origin_device_id
 		ORDER BY ps.name, ps.id`)
@@ -280,9 +309,10 @@ func (s *Store) GetPromotedSkill(ctx context.Context, id string) (store.Promoted
 			COALESCE(d.label, ''), ps.origin_root, ps.origin_dir_name,
 			ps.latest_revision, ps.created_at, ps.updated_at,
    COALESCE((SELECT source_digest FROM skill_revision_index WHERE skill_id=ps.id AND revision=ps.latest_revision),''),
-   (SELECT json_group_array(w.name) FROM workspace_skill_bindings b JOIN workspaces w ON w.id=b.workspace_id WHERE b.skill_id=ps.id),
+   (SELECT json_group_array(b.workspace_id) FROM workspace_skill_bindings b WHERE b.skill_id=ps.id),
    COALESCE((SELECT ds.dependencies FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), '[]'),
-   COALESCE((SELECT ds.dependency_analysis_error FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), '')
+   COALESCE((SELECT ds.dependency_analysis_error FROM device_skills ds WHERE ds.device_id=ps.origin_device_id AND ds.root=ps.origin_root AND ds.dir_name=ps.origin_dir_name LIMIT 1), ''),
+   COALESCE((SELECT r.requires_json FROM promoted_skill_revisions r WHERE r.skill_id=ps.id AND r.revision=ps.latest_revision), '[]')
 		FROM promoted_skills ps
 		LEFT JOIN devices d ON d.id = ps.origin_device_id
 		WHERE ps.id = ?`, id)
@@ -369,9 +399,9 @@ func (s *Store) addPromotedSkillRevision(ctx context.Context, input store.Promot
 		revision := latestRevision + 1
 		if _, err := tx.conn().ExecContext(ctx, `
 			INSERT INTO promoted_skill_revisions
-				(skill_id, revision, content, checksum, byte_size, file_count, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			existingID, revision, content, checksum, int64(len(content)), fileCount, now); err != nil {
+				(skill_id, revision, content, checksum, byte_size, file_count, created_at, requires_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			existingID, revision, content, checksum, int64(len(content)), fileCount, now, requiresJSON(content)); err != nil {
 			return fmt.Errorf("store skill revision: %w", err)
 		}
 		if latestRevision == 0 {
@@ -482,16 +512,25 @@ func (s *Store) DeletePromotedSkill(ctx context.Context, id string) error {
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM workspace_skill_bindings WHERE skill_id = ?`, id); err != nil {
 			return fmt.Errorf("delete skill bindings %s: %w", id, err)
 		}
+		for _, statement := range []string{
+			`DELETE FROM user_default_skills WHERE skill_id = ?`,
+			`DELETE FROM workspace_skill_exclusions WHERE skill_id = ?`,
+			`DELETE FROM skill_repository_skills WHERE skill_id = ?`,
+		} {
+			if _, err := tx.conn().ExecContext(ctx, statement, id); err != nil {
+				return fmt.Errorf("delete skill links %s: %w", id, err)
+			}
+		}
 		return nil
 	})
 }
 
 // ListWorkspaceSkillBindings lists bindings for one workspace, or all.
 func (s *Store) ListWorkspaceSkillBindings(ctx context.Context, workspaceID string) ([]store.WorkspaceSkillBinding, error) {
-	query := `SELECT workspace_id, skill_id FROM workspace_skill_bindings ORDER BY workspace_id, skill_id`
+	query := `SELECT workspace_id, skill_id, pinned_revision FROM workspace_skill_bindings ORDER BY workspace_id, skill_id`
 	args := []any{}
 	if workspaceID = strings.TrimSpace(workspaceID); workspaceID != "" {
-		query = `SELECT workspace_id, skill_id FROM workspace_skill_bindings WHERE workspace_id = ? ORDER BY skill_id`
+		query = `SELECT workspace_id, skill_id, pinned_revision FROM workspace_skill_bindings WHERE workspace_id = ? ORDER BY skill_id`
 		args = append(args, workspaceID)
 	}
 	rows, err := s.conn().QueryContext(ctx, query, args...)
@@ -502,7 +541,7 @@ func (s *Store) ListWorkspaceSkillBindings(ctx context.Context, workspaceID stri
 	result := []store.WorkspaceSkillBinding{}
 	for rows.Next() {
 		var binding store.WorkspaceSkillBinding
-		if err := rows.Scan(&binding.WorkspaceID, &binding.SkillID); err != nil {
+		if err := rows.Scan(&binding.WorkspaceID, &binding.SkillID, &binding.PinnedRevision); err != nil {
 			return nil, fmt.Errorf("scan workspace skill binding: %w", err)
 		}
 		result = append(result, binding)
@@ -534,29 +573,72 @@ func (s *Store) SetWorkspaceSkills(ctx context.Context, input store.SetWorkspace
 			}
 			names[strings.ToLower(item.Name)] = true
 		}
+		// A skill kept in the selection keeps its pin.
+		pins := map[string]int{}
+		existing, err := tx.ListWorkspaceSkillBindings(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		for _, binding := range existing {
+			pins[binding.SkillID] = binding.PinnedRevision
+		}
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM workspace_skill_bindings WHERE workspace_id = ?`, workspaceID); err != nil {
 			return fmt.Errorf("replace workspace %s skills: %w", workspaceID, err)
 		}
 		for _, skillID := range skillIDs {
 			if _, err := tx.conn().ExecContext(ctx, `
-				INSERT INTO workspace_skill_bindings (workspace_id, skill_id, updated_at)
-				SELECT ?, id, ? FROM promoted_skills WHERE id = ?`,
-				workspaceID, now, skillID); err != nil {
+				INSERT INTO workspace_skill_bindings (workspace_id, skill_id, pinned_revision, updated_at)
+				SELECT ?, id, ?, ? FROM promoted_skills WHERE id = ?`,
+				workspaceID, pins[skillID], now, skillID); err != nil {
 				return fmt.Errorf("bind skill %s to workspace %s: %w", skillID, workspaceID, err)
+			}
+		}
+		if input.OffSkillIDs == nil {
+			return nil
+		}
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM workspace_skill_exclusions WHERE workspace_id = ?`, workspaceID); err != nil {
+			return fmt.Errorf("replace workspace %s skills turned off: %w", workspaceID, err)
+		}
+		for _, skillID := range dedupeTrimmed(*input.OffSkillIDs) {
+			if _, err := tx.conn().ExecContext(ctx, `
+				INSERT INTO workspace_skill_exclusions (workspace_id, skill_id)
+				SELECT ?, id FROM promoted_skills WHERE id = ?`, workspaceID, skillID); err != nil {
+				return fmt.Errorf("turn off skill %s in workspace %s: %w", skillID, workspaceID, err)
 			}
 		}
 		return nil
 	})
 }
 
+// ListWorkspaceSkillExclusions is the skills a workspace turned off although
+// its owner's defaults or its bundles give them.
+func (s *Store) ListWorkspaceSkillExclusions(ctx context.Context, workspaceID string) ([]string, error) {
+	rows, err := s.conn().QueryContext(ctx,
+		`SELECT skill_id FROM workspace_skill_exclusions WHERE workspace_id = ? ORDER BY skill_id`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace skills turned off: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ResolveSessionSkills expands a workspace's selection to the current latest
 // revisions. An empty slice means the runtime must expose no skills.
 func (s *Store) ResolveSessionSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
 	rows, err := s.conn().QueryContext(ctx, `
-		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
+		SELECT ps.id, r.revision, ps.name, r.checksum, r.byte_size
 		FROM workspace_skill_bindings b
 		JOIN promoted_skills ps ON ps.id = b.skill_id
-		JOIN promoted_skill_revisions r ON r.skill_id = ps.id AND r.revision = ps.latest_revision
+		JOIN promoted_skill_revisions r ON r.skill_id = ps.id
+			AND r.revision = CASE WHEN b.pinned_revision > 0 THEN b.pinned_revision ELSE ps.latest_revision END
 		WHERE b.workspace_id = ?
 		ORDER BY ps.name`, workspaceID)
 	if err != nil {
@@ -588,12 +670,12 @@ func (s *Store) AttachSessionSkills(ctx context.Context, sessionID string, refs 
 func scanPromotedSkill(row interface{ Scan(dest ...any) error }) (store.PromotedSkill, error) {
 	var skill store.PromotedSkill
 	var workspaces string
-	var dependenciesJSON string
+	var dependenciesJSON, requiresJSON string
 	err := row.Scan(
 		&skill.ID, &skill.Name, &skill.Description, &skill.OriginDeviceID,
 		&skill.OriginDeviceLabel, &skill.OriginRoot, &skill.OriginDirName,
 		&skill.LatestRevision, &skill.CreatedLabel, &skill.UpdatedLabel, &skill.SourceDigest, &workspaces,
-		&dependenciesJSON, &skill.DependencyAnalysisError,
+		&dependenciesJSON, &skill.DependencyAnalysisError, &requiresJSON,
 	)
 	if err != nil {
 		return store.PromotedSkill{}, err
@@ -604,6 +686,7 @@ func scanPromotedSkill(row interface{ Scan(dest ...any) error }) (store.Promoted
 	if strings.TrimSpace(dependenciesJSON) != "" && dependenciesJSON != "null" {
 		_ = json.Unmarshal([]byte(dependenciesJSON), &skill.Dependencies)
 	}
+	_ = json.Unmarshal([]byte(requiresJSON), &skill.Requires)
 	return skill, nil
 }
 
@@ -619,4 +702,161 @@ func dedupeTrimmed(values []string) []string {
 		result = append(result, trimmed)
 	}
 	return result
+}
+
+// SetWorkspaceSkillPin holds a selected skill at one revision, or with 0
+// lets it follow the latest again.
+func (s *Store) SetWorkspaceSkillPin(ctx context.Context, workspaceID string, skillID string, revision int) error {
+	if revision < 0 {
+		return errors.New("revision must not be negative")
+	}
+	if revision > 0 {
+		var exists int
+		if err := s.conn().QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM promoted_skill_revisions WHERE skill_id = ? AND revision = ?`,
+			skillID, revision).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return store.ErrSkillPackageNotFound
+		}
+	}
+	result, err := s.conn().ExecContext(ctx,
+		`UPDATE workspace_skill_bindings SET pinned_revision = ?, updated_at = ? WHERE workspace_id = ? AND skill_id = ?`,
+		revision, formatTime(time.Now()), workspaceID, skillID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
+		return store.ErrSkillNotFound
+	}
+	return nil
+}
+
+// ListUserDefaultSkills is the library skills a user gives every workspace
+// they own.
+func (s *Store) ListUserDefaultSkills(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.conn().QueryContext(ctx,
+		`SELECT d.skill_id FROM user_default_skills d JOIN promoted_skills ps ON ps.id = d.skill_id
+		WHERE d.user_id = ? ORDER BY ps.name`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list default skills: %w", err)
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SetUserDefaultSkills replaces a user's default skills; ids that are not in
+// the library are skipped. Two defaults may not share an invocation name.
+func (s *Store) SetUserDefaultSkills(ctx context.Context, userID string, skillIDs []string) error {
+	ids := dedupeTrimmed(skillIDs)
+	now := formatTime(time.Now())
+	return s.withTx(ctx, func(tx *Store) error {
+		names := map[string]bool{}
+		for _, id := range ids {
+			item, err := tx.GetPromotedSkill(ctx, id)
+			if errors.Is(err, store.ErrSkillNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if names[strings.ToLower(item.Name)] {
+				return fmt.Errorf("two default skills are named %s; keep one", item.Name)
+			}
+			names[strings.ToLower(item.Name)] = true
+		}
+		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM user_default_skills WHERE user_id = ?`, userID); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, err := tx.conn().ExecContext(ctx, `
+				INSERT INTO user_default_skills (user_id, skill_id, updated_at)
+				SELECT ?, id, ? FROM promoted_skills WHERE id = ?`, userID, now, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ResolveDefaultSkills expands the default skills of the person who owns a
+// workspace's device to their latest revisions.
+func (s *Store) ResolveDefaultSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
+	rows, err := s.conn().QueryContext(ctx, `
+		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
+		FROM workspaces w
+		JOIN device_identities di ON di.device_id = json_extract(w.payload_json, '$.deviceId')
+			AND di.revoked_at IS NULL
+		JOIN user_default_skills d ON d.user_id = di.owner_user_id
+		JOIN promoted_skills ps ON ps.id = d.skill_id
+		JOIN promoted_skill_revisions r ON r.skill_id = ps.id AND r.revision = ps.latest_revision
+		WHERE w.id = ?
+		ORDER BY ps.name`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve default skills: %w", err)
+	}
+	defer rows.Close()
+	refs := []store.SessionSkillRef{}
+	for rows.Next() {
+		var ref store.SessionSkillRef
+		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize); err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, rows.Err()
+}
+
+// requiresJSON is the programs a revision's package runs, as stored.
+func requiresJSON(content []byte) string {
+	tools, err := skillarchive.ArchiveToolRequirements(content)
+	if err != nil || len(tools) == 0 {
+		return "[]"
+	}
+	encoded, _ := json.Marshal(tools)
+	return string(encoded)
+}
+
+// backfillSkillRequirements works out the requirements of revisions stored
+// before they were recorded, once.
+func (s *Store) backfillSkillRequirements(ctx context.Context) error {
+	rows, err := s.conn().QueryContext(ctx, `SELECT skill_id, revision, content FROM promoted_skill_revisions WHERE requires_json IS NULL`)
+	if err != nil {
+		return err
+	}
+	type pending struct {
+		skillID  string
+		revision int
+		requires string
+	}
+	var updates []pending
+	for rows.Next() {
+		var item pending
+		var content []byte
+		if err := rows.Scan(&item.skillID, &item.revision, &content); err != nil {
+			rows.Close()
+			return err
+		}
+		item.requires = requiresJSON(content)
+		updates = append(updates, item)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, item := range updates {
+		if _, err := s.conn().ExecContext(ctx, `UPDATE promoted_skill_revisions SET requires_json = ? WHERE skill_id = ? AND revision = ?`, item.requires, item.skillID, item.revision); err != nil {
+			return err
+		}
+	}
+	return nil
 }

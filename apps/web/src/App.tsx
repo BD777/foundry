@@ -61,6 +61,8 @@ import {
   type SidebarView,
 } from "./app/navigation";
 import { mergeLoadedFoundryData } from "./app/foundry-data-projection";
+import { workspaceComposerSkills } from "./app/composer-skills";
+import { useDocumentTitle } from "./app/use-document-title";
 import {
   firstLoadedChatId,
   resolveLoadedChatSelection,
@@ -123,6 +125,7 @@ import {
   type ProfilesFeatureResult,
 } from "./features/profiles";
 import { SkillsFeature } from "./features/skills";
+import { SkillLibraryFeature } from "./features/skill-library";
 import { FeishuBotFeature } from "./features/feishu";
 import { SharingFeature } from "./features/sharing";
 import {
@@ -235,7 +238,6 @@ export function App() {
     agentProfiles: [],
     deviceProfiles: [],
     deviceSkillRoots: [],
-    deviceSkills: [],
     promotedSkills: [],
     workspaceSkillBindings: [],
     profiles: [],
@@ -255,7 +257,6 @@ export function App() {
     agentProfiles: [],
     deviceProfiles: [],
     deviceSkillRoots: [],
-    deviceSkills: [],
     promotedSkills: [],
     workspaceSkillBindings: [],
     profiles: [],
@@ -579,6 +580,12 @@ export function App() {
     [data.agents, data.workspace],
   );
   const device = currentDevice(data.devices, data.workspace);
+  useDocumentTitle({
+    view: activeView,
+    workspaceName: data.workspace.name,
+    issue: selectedIssue,
+    device: data.devices.find((row) => row.id === selectedDeviceId),
+  });
   const workspaceFiles = useMemo(
     () => currentWorkspaceItems(data.workspaceFiles, data.workspace.id),
     [data.workspace.id, data.workspaceFiles],
@@ -640,18 +647,10 @@ export function App() {
     });
   }
 
-  const workspaceSlashSkills = useMemo(() => {
-    const selected = new Set(
-      data.workspaceSkillBindings.map((binding) => binding.skillId),
-    );
-    return data.promotedSkills
-      .filter((skill) => selected.has(skill.id))
-      .map((skill) => ({
-        value: skill.name,
-        label: skill.name,
-        description: skill.description,
-      }));
-  }, [data.promotedSkills, data.workspaceSkillBindings]);
+  const workspaceComposerSlashSkills = useMemo(
+    () => workspaceComposerSkills(data),
+    [data],
+  );
 
   const chatFeature = useChatFeature({
     active: activeView === "chats",
@@ -662,7 +661,7 @@ export function App() {
     profiles: data.agentProfiles,
     selectedChatId,
     sessions: workspaceSessions,
-    slashSkills: workspaceSlashSkills,
+    slashSkills: workspaceComposerSlashSkills,
     workspace: data.workspace,
     workspaceId: data.workspace.id,
   });
@@ -875,7 +874,6 @@ export function App() {
         bindings={data.workspaceSkillBindings}
         catalog={data.promotedSkills}
         devices={data.devices}
-        deviceSkills={data.deviceSkills}
         embedded
         onChanged={() => refreshData(undefined, { silent: true })}
         onEvent={(event) => {
@@ -892,6 +890,15 @@ export function App() {
         providerHealth={data.providerHealth.filter(
           (row) => row.deviceId === data.workspace.deviceId,
         )}
+        builtinSkills={data.builtinSkills}
+        defaultSkillIds={data.defaultSkillIds}
+        deviceTools={data.deviceTools}
+        skillBundles={data.skillBundles}
+        workspaceBundleIds={data.workspaceBundleIds}
+        defaultBundleIds={data.defaultBundleIds}
+        inheritedSkillIds={data.inheritedSkillIds}
+        offSkillIds={data.offSkillIds}
+        workspaces={data.workspaces}
         readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
       />
     );
@@ -977,7 +984,6 @@ export function App() {
         agentProfiles={data.agentProfiles}
         deviceProfiles={data.deviceProfiles}
         deviceSkillRoots={data.deviceSkillRoots}
-        deviceSkills={data.deviceSkills}
         onSelect={(id, section = "agents") => {
           setSelectedDeviceId(id);
           setDeviceSection(section);
@@ -1071,6 +1077,16 @@ export function App() {
         );
       case "profiles":
         return renderProfilesView();
+      case "library":
+        return (
+          <SkillLibraryFeature
+            canManage={account.user?.role === "admin"}
+            catalog={data.promotedSkills}
+            deviceTools={data.deviceTools}
+            devices={data.devices}
+            onChanged={() => refreshData(undefined, { silent: true })}
+          />
+        );
     }
   }
 

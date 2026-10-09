@@ -309,7 +309,7 @@ export default function SkillCompareDialog({
               </p>
             ) : null}
           </div>
-          <footer className="fdy-connection-assign-actions fdy-skill-compare-actions">
+          <footer className="fdy-connection-assign-actions fdy-skill-compare-actions fdy-skill-dialog-actions">
             <Button
               size="sm"
               variant="ghost"

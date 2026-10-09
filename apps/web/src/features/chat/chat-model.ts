@@ -58,6 +58,7 @@ function chatMessages(chat: ChatThread | undefined): ChatViewMessage[] {
         {
           ...message,
           id: `chat:${chat.id}:${message.id}`,
+          ...(message.turnUsage ? { usage: message.turnUsage } : {}),
           runtime: chat.provider,
           agentLabel: chat.profileLabel,
           text: message.text,
@@ -390,6 +391,17 @@ function chatMessagesForSession(
   }
   const sessionActive =
     session.status === "queued" || session.status === "running";
+  // A new input's own event can arrive after the session turns active. Until
+  // then the transcript still ends with the previous turn: show the input as
+  // sent and keep that turn settled instead of reviving its last step.
+  const pendingInput =
+    sessionActive &&
+    session.input &&
+    session.events?.some((event) => event.label === sessionInputEventLabel) &&
+    !session.events.some((event) => event.message?.id === session.input?.id)
+      ? session.input
+      : undefined;
+  const turnLive = sessionActive && !pendingInput;
   const hasLiveResponse = agentSessionHasStreamedResponse(session);
   const duration = agentSessionDurationLabel(session);
   const terminalError = agentSessionTerminalError(session);
@@ -412,13 +424,14 @@ function chatMessagesForSession(
         id: segment.id,
         kind: "process",
         role: "bot",
-        streaming: sessionActive && isLastSegment,
+        streaming: turnLive && isLastSegment,
         text: segment.text,
+        // A group that knows its own duration shows it beside the title.
         title:
-          sessionActive && isLastSegment
+          turnLive && isLastSegment
             ? agentSessionActivityTitle(session)
             : isLastSegment
-              ? processedTitle(duration)
+              ? processedTitle(segment.durationMs ? undefined : duration)
               : (segment.title ?? processedTitle(duration)),
       });
     } else if (segment.kind === "boundary" || segment.kind === "failure") {
@@ -433,11 +446,22 @@ function chatMessagesForSession(
         statusLabel: isLastSegment
           ? agentSessionStatusLabel(session)
           : undefined,
-        streaming: sessionActive && !hasLiveResponse && isLastSegment,
+        streaming: turnLive && !hasLiveResponse && isLastSegment,
         text: segment.text,
+        usage: segment.usage,
       });
     }
   });
+  if (pendingInput) {
+    // The same id as the event's message, so nothing remounts when it lands.
+    messages.push({
+      attachments: pendingInput.attachments ?? [],
+      at: pendingInput.at,
+      id: `agent-session:${session.id}:${pendingInput.id}`,
+      role: "user",
+      text: pendingInput.prompt,
+    });
+  }
   if (segments.length === 0 && !terminalError) {
     messages.push({
       agentLabel: session.profileLabel,

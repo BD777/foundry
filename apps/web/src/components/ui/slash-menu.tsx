@@ -8,6 +8,8 @@ export interface SlashSuggestion {
   /** Primary line; defaults to value. */
   label?: string;
   description?: string;
+  /** Where the item comes from, shown beside its name (e.g. "Claude Code"). */
+  tag?: string;
 }
 
 interface SlashMenuProps {
@@ -76,7 +78,12 @@ export function SlashMenu({
             type="button"
             variant="ghost"
           >
-            <span className="fdy-slash-item-name">/{item.value}</span>
+            <span className="fdy-slash-item-title">
+              <span className="fdy-slash-item-name">/{item.value}</span>
+              {item.tag ? (
+                <span className="fdy-slash-item-tag">{item.tag}</span>
+              ) : null}
+            </span>
             {item.description ? (
               <span className="fdy-slash-item-desc">{item.description}</span>
             ) : null}

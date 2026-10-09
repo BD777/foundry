@@ -35,6 +35,15 @@ type DeviceProjection struct {
 	// WorkerUpdate is set while an update requested from Foundry runs; the
 	// server adds it to projections, the worker never reports it.
 	WorkerUpdate *DeviceWorkerUpdate `json:"workerUpdate,omitempty"`
+	// LastDisconnect is the last time the device dropped; the server adds it
+	// to projections.
+	LastDisconnect *DeviceDisconnect `json:"lastDisconnect,omitempty"`
+	// SkillsVersion changes when the device's scanned skills or the catalog
+	// they are compared with change. Workspace data leaves the skill lists
+	// out (hundreds of skills per device); clients load one device's list
+	// from /api/device-skills and reload it when this changes. The server
+	// adds it to projections.
+	SkillsVersion string `json:"skillsVersion,omitempty"`
 }
 
 // DeviceWorkerUpdate is an update in progress: when it was asked for and the
@@ -42,6 +51,13 @@ type DeviceProjection struct {
 type DeviceWorkerUpdate struct {
 	StartedAt string `json:"startedAt"`
 	Version   string `json:"version,omitempty"`
+	// FromVersion is the version the device ran when the update started.
+	FromVersion string `json:"fromVersion,omitempty"`
+	// Log is the file on the device the update writes to.
+	Log string `json:"log,omitempty"`
+	// Stalled: the device still runs FromVersion well after the update
+	// started; it did not finish and may be started again.
+	Stalled bool `json:"stalled,omitempty"`
 }
 
 // DeviceSystem describes the machine, as its worker reports it.
@@ -355,7 +371,9 @@ type DeviceSkill struct {
 
 // PromotedSkill is a server catalog entry. Content lives in revisions.
 type PromotedSkill struct {
-	SourceDigest            string            `json:"sourceDigest,omitempty"`
+	SourceDigest string `json:"sourceDigest,omitempty"`
+	// UsedByWorkspaces: the store lists workspace ids; the API answers with
+	// the names of the ones the caller can see.
 	UsedByWorkspaces        []string          `json:"usedByWorkspaces,omitempty"`
 	ID                      string            `json:"id"`
 	Name                    string            `json:"name"`
@@ -369,6 +387,8 @@ type PromotedSkill struct {
 	UpdatedLabel            string            `json:"updatedLabel"`
 	Dependencies            []SkillDependency `json:"dependencies,omitempty"`
 	DependencyAnalysisError string            `json:"dependencyAnalysisError,omitempty"`
+	// Requires names the programs the latest revision runs.
+	Requires []string `json:"requires,omitempty"`
 }
 
 // SessionSkillRef is a resolved (skill, revision) pair attached to a
@@ -385,6 +405,8 @@ type SessionSkillRef struct {
 type WorkspaceSkillBinding struct {
 	WorkspaceID string `json:"workspaceId"`
 	SkillID     string `json:"skillId"`
+	// PinnedRevision holds the workspace at one revision; 0 follows the latest.
+	PinnedRevision int `json:"pinnedRevision,omitempty"`
 }
 
 // SetDeviceSkillRootsInput replaces the custom scan roots for one device.
@@ -415,6 +437,9 @@ type PromoteSkillInput struct {
 type SetWorkspaceSkillsInput struct {
 	WorkspaceID string   `json:"workspaceId"`
 	SkillIDs    []string `json:"skillIds"`
+	// OffSkillIDs, when sent, replaces the skills the workspace turns off
+	// although its owner's defaults or its bundles give them.
+	OffSkillIDs *[]string `json:"offSkillIds,omitempty"`
 }
 
 // SkillPackage is one immutable promoted revision's zip payload.
@@ -509,6 +534,31 @@ type AgentSessionEventMetadata struct {
 	ToolUseID     string                 `json:"toolUseId,omitempty"`
 	TimerSnapshot []AgentScheduledTask   `json:"timerSnapshot,omitempty"`
 	TimerFire     *AgentSessionTimerFire `json:"timerFire,omitempty"`
+	TurnUsage     *AgentTurnUsage        `json:"turnUsage,omitempty"`
+	// SubagentUsage is what a Claude subagent has used so far, on its
+	// progress and completion events.
+	SubagentUsage *SubagentUsage `json:"subagentUsage,omitempty"`
+	// RequestUsage is a model request's final tokens (Claude), reported
+	// when its stream ends; the event itself is not shown.
+	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
+}
+
+// SubagentUsage is a subagent's own work as Claude reports it: one token
+// total, without an input/output split.
+type SubagentUsage struct {
+	TotalTokens int64 `json:"totalTokens"`
+	ToolUses    int64 `json:"toolUses"`
+	DurationMs  int64 `json:"durationMs"`
+}
+
+type AgentTurnUsage struct {
+	DurationMs       int64  `json:"durationMs"`
+	InputTokens      int64  `json:"inputTokens"`
+	CacheReadTokens  int64  `json:"cacheReadTokens"`
+	CacheWriteTokens int64  `json:"cacheWriteTokens"`
+	OutputTokens     int64  `json:"outputTokens"`
+	ReasoningTokens  *int64 `json:"reasoningTokens,omitempty"`
+	ModelRequests    *int64 `json:"modelRequests,omitempty"`
 }
 
 type AgentSubagentTranscriptMessage struct {
@@ -519,6 +569,8 @@ type AgentSubagentTranscriptMessage struct {
 	Kind    string `json:"kind,omitempty"`
 	CallID  string `json:"callId,omitempty"`
 	Status  string `json:"status,omitempty"`
+	// RequestUsage is the tokens of the subagent's model request behind it.
+	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
 }
 
 type AgentSubagentTranscript struct {
@@ -530,17 +582,19 @@ type AgentSubagentTranscript struct {
 	TaskID       string                           `json:"taskId"`
 	Title        string                           `json:"title"`
 	ToolUseID    string                           `json:"toolUseId"`
+	Usage        *SubagentUsage                   `json:"usage,omitempty"`
 }
 
 type AgentSubagentSummary struct {
-	Prompt        string   `json:"prompt,omitempty"`
-	ResponseTexts []string `json:"responseTexts"`
-	SessionID     string   `json:"sessionId"`
-	Status        string   `json:"status"`
-	SubagentType  string   `json:"subagentType,omitempty"`
-	TaskID        string   `json:"taskId"`
-	Title         string   `json:"title"`
-	ToolUseID     string   `json:"toolUseId"`
+	Prompt        string         `json:"prompt,omitempty"`
+	ResponseTexts []string       `json:"responseTexts"`
+	SessionID     string         `json:"sessionId"`
+	Status        string         `json:"status"`
+	SubagentType  string         `json:"subagentType,omitempty"`
+	TaskID        string         `json:"taskId"`
+	Title         string         `json:"title"`
+	ToolUseID     string         `json:"toolUseId"`
+	Usage         *SubagentUsage `json:"usage,omitempty"`
 }
 
 type ChatAttachment struct {
@@ -581,6 +635,14 @@ type SessionInput struct {
 	Attachments           []ChatAttachment `json:"attachments,omitempty"`
 	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
 	ImportedContext       string           `json:"importedContext,omitempty"`
+	// When the server received the input; its transcript events carry it.
+	At string `json:"at,omitempty"`
+}
+
+// NativeSessionRef names one native Claude Code or Codex session.
+type NativeSessionRef struct {
+	Provider        string `json:"provider"`
+	NativeSessionID string `json:"nativeSessionId"`
 }
 
 // AgentSession is one native agent session (a Claude Code or Codex session)
@@ -593,16 +655,23 @@ type AgentSession struct {
 	ID              string `json:"id"`
 	// ThreadID equals ID; it remains so readers that grouped legacy
 	// per-turn rows keep working.
-	ThreadID           string `json:"threadId,omitempty"`
-	NativeSessionID    string `json:"nativeSessionId,omitempty"`
-	WorkspaceID        string `json:"workspaceId"`
-	AgentID            string `json:"agentId"`
-	DeviceID           string `json:"deviceId"`
-	Provider           string `json:"provider"`
-	ProfileID          string `json:"profileId,omitempty"`
-	ProfileFingerprint string `json:"profileFingerprint,omitempty"`
-	ProfileLabel       string `json:"profileLabel,omitempty"`
-	Source             string `json:"source,omitempty"`
+	ThreadID string `json:"threadId,omitempty"`
+	// NativeSessionID is the native session it resumes on the runtime it
+	// runs on (its provider on its device); empty starts one there. The
+	// store owns every native session a session ran (sqlitestore
+	// native_sessions.go); this is that record's projection.
+	NativeSessionID string `json:"nativeSessionId,omitempty"`
+	// ForkNativeSessionID, set while a fork has not answered yet, is the
+	// native session NativeSessionID starts as a copy of.
+	ForkNativeSessionID string `json:"forkNativeSessionId,omitempty"`
+	WorkspaceID         string `json:"workspaceId"`
+	AgentID             string `json:"agentId"`
+	DeviceID            string `json:"deviceId"`
+	Provider            string `json:"provider"`
+	ProfileID           string `json:"profileId,omitempty"`
+	ProfileFingerprint  string `json:"profileFingerprint,omitempty"`
+	ProfileLabel        string `json:"profileLabel,omitempty"`
+	Source              string `json:"source,omitempty"`
 	// Role is the job the session does for Foundry; empty for a chat.
 	// AgentSessionRoleIssueExecution implements an Issue's confirmed contract
 	// in its candidate workspace; AgentSessionRoleIssueClarification talks
@@ -637,10 +706,13 @@ type AgentSession struct {
 	Input     SessionInput      `json:"input"`
 	SkillRefs []SessionSkillRef `json:"skillRefs,omitempty"`
 	// Response is the answer to the latest input.
-	Response       string              `json:"response,omitempty"`
-	Error          string              `json:"error,omitempty"`
-	StartedAt      string              `json:"startedAt,omitempty"`
-	LastActivityAt string              `json:"lastActivityAt,omitempty"`
+	Response       string `json:"response,omitempty"`
+	Error          string `json:"error,omitempty"`
+	StartedAt      string `json:"startedAt,omitempty"`
+	LastActivityAt string `json:"lastActivityAt,omitempty"`
+	// ActivityAt is its last conversation activity: the latest input, or
+	// the answer that completed it. Chat lists order by it.
+	ActivityAt     string              `json:"activityAt,omitempty"`
 	CompletedAt    string              `json:"completedAt,omitempty"`
 	AnswerRevision string              `json:"answerRevision,omitempty"`
 	CreatedLabel   string              `json:"createdLabel"`
@@ -787,6 +859,22 @@ type TranscriptMessage struct {
 	Status string `json:"status,omitempty"`
 	// Attachments travel with a user message.
 	Attachments []ChatAttachment `json:"attachments,omitempty"`
+	// RequestUsage is the tokens of the model request that produced this
+	// step (Claude).
+	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
+	// TurnUsage, on the answer that ended a turn, is the turn's usage read
+	// from the agent's own log (imported chats).
+	TurnUsage *AgentTurnUsage `json:"turnUsage,omitempty"`
+}
+
+// ModelRequestUsage is one model request's tokens; steps of one request
+// share its id and its last report counts.
+type ModelRequestUsage struct {
+	RequestID        string `json:"requestId"`
+	InputTokens      int64  `json:"inputTokens"`
+	CacheReadTokens  int64  `json:"cacheReadTokens"`
+	CacheWriteTokens int64  `json:"cacheWriteTokens"`
+	OutputTokens     int64  `json:"outputTokens"`
 }
 
 type ChatLayoutGroup struct {
@@ -898,7 +986,9 @@ type SendAgentSessionInput struct {
 	Prompt                string           `json:"prompt"`
 	Attachments           []ChatAttachment `json:"attachments,omitempty"`
 	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string           `json:"importedContext,omitempty"`
+	// ImportedContext is ignored: the server tells each native session the
+	// turns it missed. Accepted so older clients that send it still work.
+	ImportedContext string `json:"importedContext,omitempty"`
 }
 
 type CreateAgentSessionInput struct {
@@ -921,9 +1011,11 @@ type CreateAgentSessionInput struct {
 	ImportedContext       string           `json:"importedContext,omitempty"`
 	ParentSessionID       string           `json:"parentSessionId,omitempty"`
 	IssueID               string           `json:"issueId,omitempty"`
-	// ForkSessionID resumes another session's native transcript in a brand
-	// new thread without continuing its Foundry thread.
+	// ForkSessionID starts the session from a copy of another session's
+	// native history; neither writes into the other's transcript.
 	ForkSessionID string `json:"forkSessionId,omitempty"`
+	// ChatID continues a device's native chat: the session adopts it.
+	ChatID string `json:"chatId,omitempty"`
 	// Verification requests a read-only utility verifier session.
 	Verification bool   `json:"verification,omitempty"`
 	Source       string `json:"source"`
@@ -960,6 +1052,76 @@ type DaemonRegistration struct {
 	Agents           []AgentProjection        `json:"agents"`
 	Skills           []SkillPackRef           `json:"skills"`
 	WorkspaceFiles   []WorkspaceFileEntry     `json:"workspaceFiles"`
+	// Stalls are stretches the worker's event loop was blocked since its
+	// previous registration; the server logs them.
+	Stalls []WorkerStall `json:"stalls,omitempty"`
+	// Connections are the worker's own accounts of its previous connections;
+	// the server logs them and keeps the latest for the device page.
+	Connections []WorkerConnectionReport `json:"connections,omitempty"`
+}
+
+// WorkerConnectionReport is one connection to the server as the worker saw
+// it: who ended it and how long the server had been silent.
+type WorkerConnectionReport struct {
+	OpenedAt          string `json:"openedAt"`
+	ClosedAt          string `json:"closedAt"`
+	DurationMs        int64  `json:"durationMs"`
+	ClosedBy          string `json:"closedBy"`
+	CloseCode         int    `json:"closeCode,omitempty"`
+	CloseReason       string `json:"closeReason,omitempty"`
+	Error             string `json:"error,omitempty"`
+	SinceServerDataMs int64  `json:"sinceServerDataMs,omitempty"`
+	SinceServerPingMs int64  `json:"sinceServerPingMs,omitempty"`
+	BytesReceived     int64  `json:"bytesReceived,omitempty"`
+	BytesSent         int64  `json:"bytesSent,omitempty"`
+	Proxy             string `json:"proxy,omitempty"`
+	MaxLagMs          int64  `json:"maxLagMs,omitempty"`
+}
+
+// DiagnosticCheck is one check a worker ran on itself; the web words it by
+// id. Status is ok, info, warn or error.
+type DiagnosticCheck struct {
+	ID     string         `json:"id"`
+	Status string         `json:"status"`
+	Values map[string]any `json:"values,omitempty"`
+}
+
+// DeviceDiagnostics is a worker's report on itself.
+type DeviceDiagnostics struct {
+	GeneratedAt   string                   `json:"generatedAt"`
+	WorkerVersion string                   `json:"workerVersion"`
+	Checks        []DiagnosticCheck        `json:"checks"`
+	Connections   []WorkerConnectionReport `json:"connections"`
+	LogTail       []string                 `json:"logTail"`
+}
+
+// DeviceRepairResult is what a repair the person asked for changed.
+type DeviceRepairResult struct {
+	Action string         `json:"action"`
+	Values map[string]any `json:"values,omitempty"`
+}
+
+// DeviceDisconnect is the last time a device dropped, from both ends.
+type DeviceDisconnect struct {
+	At           string                  `json:"at"`
+	ServerReason string                  `json:"serverReason,omitempty"`
+	Worker       *WorkerConnectionReport `json:"worker,omitempty"`
+}
+
+// WorkerStall is a stretch when a worker's event loop was blocked.
+type WorkerStall struct {
+	At         string   `json:"at"`
+	LagMs      int64    `json:"lagMs"`
+	Activities []string `json:"activities,omitempty"`
+}
+
+// BuiltinSkill is a skill Foundry itself gives an agent runtime, beside the
+// skills the agent ships and the ones a workspace selects.
+type BuiltinSkill struct {
+	Runtime     string `json:"runtime"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Source      string `json:"source"`
 }
 
 type FoundryDataProjection struct {
@@ -972,16 +1134,33 @@ type FoundryDataProjection struct {
 	Profiles               []ProfileDefinition      `json:"profiles"`
 	DeviceProfiles         []DeviceProfileBinding   `json:"deviceProfiles"`
 	DeviceSkillRoots       []DeviceSkillRoot        `json:"deviceSkillRoots"`
-	DeviceSkills           []DeviceSkill            `json:"deviceSkills"`
 	PromotedSkills         []PromotedSkill          `json:"promotedSkills"`
+	BuiltinSkills          []BuiltinSkill           `json:"builtinSkills,omitempty"`
 	WorkspaceSkillBindings []WorkspaceSkillBinding  `json:"workspaceSkillBindings"`
-	Agents                 []AgentProjection        `json:"agents"`
-	WorkspaceFiles         []WorkspaceFileEntry     `json:"workspaceFiles"`
-	AgentSessions          []AgentSession           `json:"agentSessions"`
-	Skills                 []SkillPackRef           `json:"skills"`
-	Issues                 []Issue                  `json:"issues"`
-	Chats                  []ChatThread             `json:"chats"`
-	Assets                 []AssetProjection        `json:"assets"`
+	// DefaultSkillIDs: the owner's default skills the workspace gets, those
+	// not replaced by a selected skill of the same name.
+	DefaultSkillIDs []string `json:"defaultSkillIds,omitempty"`
+	// InheritedSkillIDs: skills the workspace gets without selecting them
+	// (defaults and bundles), including ones it turned off; OffSkillIDs the
+	// ones it turned off.
+	InheritedSkillIDs []string `json:"inheritedSkillIds,omitempty"`
+	OffSkillIDs       []string `json:"offSkillIds,omitempty"`
+	// SkillBundles are the library's bundles; WorkspaceBundleIDs the ones
+	// this workspace uses, selected or from its owner's defaults;
+	// DefaultBundleIDs its owner's default bundles.
+	SkillBundles       []SkillBundleSummary `json:"skillBundles,omitempty"`
+	WorkspaceBundleIDs []string             `json:"workspaceBundleIds,omitempty"`
+	DefaultBundleIDs   []string             `json:"defaultBundleIds,omitempty"`
+	// DeviceTools: which programs library skills need the visible devices
+	// have.
+	DeviceTools    []DeviceTool         `json:"deviceTools,omitempty"`
+	Agents         []AgentProjection    `json:"agents"`
+	WorkspaceFiles []WorkspaceFileEntry `json:"workspaceFiles"`
+	AgentSessions  []AgentSession       `json:"agentSessions"`
+	Skills         []SkillPackRef       `json:"skills"`
+	Issues         []Issue              `json:"issues"`
+	Chats          []ChatThread         `json:"chats"`
+	Assets         []AssetProjection    `json:"assets"`
 }
 
 type SyncChatsInput struct {
@@ -1059,4 +1238,203 @@ type SkillComparisonInput struct {
 	SourceDigest string `json:"sourceDigest"`
 	Path         string `json:"path,omitempty"`
 	Side         string `json:"side,omitempty"`
+}
+
+// SkillRepository is a git repository the skill library takes skills from.
+type SkillRepository struct {
+	ID string `json:"id"`
+	// URL is the https remote; Label is its short form, e.g.
+	// "github.com/anthropics/skills".
+	URL   string `json:"url"`
+	Label string `json:"label"`
+	// Ref is the branch or tag followed; empty follows the default branch.
+	Ref string `json:"ref,omitempty"`
+	// Subpath is the folder within the repository holding the skills.
+	Subpath string `json:"subpath,omitempty"`
+	// Commit is the commit last seen at Ref.
+	Commit    string                 `json:"commit,omitempty"`
+	CheckedAt string                 `json:"checkedAt,omitempty"`
+	Error     string                 `json:"error,omitempty"`
+	CreatedAt string                 `json:"createdAt"`
+	Skills    []SkillRepositorySkill `json:"skills"`
+	// Mode is "pick" (chosen skills) or "bundle" (the whole repository as
+	// one unit). Either way the skills move to the version the repository
+	// follows by themselves.
+	Mode string `json:"mode"`
+	// Name is a bundle's name, e.g. "feishu-cli".
+	Name string `json:"name,omitempty"`
+	// Version is the release tag (or short commit) the repository's skills
+	// are on.
+	Version string `json:"version,omitempty"`
+	// Paused: a rolled-back repository stays on its version until resumed.
+	Paused bool `json:"paused,omitempty"`
+	// Versions are the applied versions, newest first.
+	Versions []SkillBundleVersion `json:"versions,omitempty"`
+	// Tools are programs a bundle's skills run, with where to get them.
+	Tools []SkillBundleTool `json:"tools,omitempty"`
+	// DeclaredTools are programs named when the bundle was followed, which
+	// its source does not publish itself (e.g. a Python CLI on PyPI).
+	DeclaredTools []SkillToolDeclaration `json:"declaredTools,omitempty"`
+	// FoundCount is how many skill folders the repository held when it was
+	// last read; 0 when not known.
+	FoundCount int `json:"foundCount,omitempty"`
+	// Description is the repository's own description from its host.
+	Description string `json:"description,omitempty"`
+	// FetchDeviceID names the device that reads the repository, with its own
+	// git and npm settings and credentials, for a source the server cannot
+	// reach; empty means the server reads it.
+	FetchDeviceID string `json:"fetchDeviceId,omitempty"`
+	// FetchDeviceName is that device's name; FetchDeviceOnline says whether
+	// it is connected now (filled in when the repository is served).
+	FetchDeviceName   string `json:"fetchDeviceName,omitempty"`
+	FetchDeviceOnline bool   `json:"fetchDeviceOnline,omitempty"`
+	// Registry is the npm registry (an https URL) an npm source and the npm
+	// tools it needs come from; empty is the public registry when the server
+	// reads it, and the device's own npm settings when a device does.
+	Registry string `json:"registry,omitempty"`
+	// CheckWaiting: a check could not run because the fetch device was
+	// offline; it runs when the device reconnects.
+	CheckWaiting bool `json:"checkWaiting,omitempty"`
+}
+
+// SkillBundleSummary is a bundle as workspaces choose it.
+type SkillBundleSummary struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Label   string `json:"label"`
+	Version string `json:"version,omitempty"`
+	// SkillIDs are the library skills it delivers now.
+	SkillIDs []string `json:"skillIds"`
+}
+
+// SkillBundleVersion is one version a bundle was updated or rolled back to.
+type SkillBundleVersion struct {
+	Seq       int    `json:"seq"`
+	Tag       string `json:"tag"`
+	Commit    string `json:"commit"`
+	AppliedAt string `json:"appliedAt"`
+	// RolledBack marks a rollback to an earlier version's skills.
+	RolledBack bool     `json:"rolledBack,omitempty"`
+	Added      []string `json:"added,omitempty"`
+	Changed    []string `json:"changed,omitempty"`
+	Removed    []string `json:"removed,omitempty"`
+	// Missing are picked skills whose folder left the repository with this
+	// version; the library keeps them at their last revision.
+	Missing []string `json:"missing,omitempty"`
+	// Members are the skills and revisions this version consists of.
+	Members []SkillBundleMember `json:"members,omitempty"`
+	// Tools are the programs this version needs, at their versions; rolling
+	// back to it restores them with its skills.
+	Tools []SkillBundleTool `json:"tools,omitempty"`
+}
+
+// SkillBundleMember is one skill of a bundle version.
+type SkillBundleMember struct {
+	Dir      string `json:"dir"`
+	SkillID  string `json:"skillId"`
+	Name     string `json:"name"`
+	Revision int    `json:"revision"`
+}
+
+// SkillBundleTool is a program a bundle needs, installable from the
+// repository's GitHub release of the bundle's version.
+type SkillBundleTool struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Assets are the release downloads per platform.
+	Assets []SkillToolAsset `json:"assets,omitempty"`
+	// ChecksumsURL is the release's checksum list, when it publishes one.
+	ChecksumsURL string `json:"checksumsUrl,omitempty"`
+	// Source is where it installs from: "" (a GitHub release download),
+	// "npm" (the npm package Package at Version) or "uv" (the Python
+	// package Package at Version, through uv).
+	Source  string `json:"source,omitempty"`
+	Package string `json:"package,omitempty"`
+	// Registry is where an npm tool installs from: "" the public registry,
+	// an https URL that registry, or "device" each device's own npm
+	// settings (its npmrc and scoped registries).
+	Registry string `json:"registry,omitempty"`
+	// Setup is a step the tool needs after installing (e.g. downloading its
+	// browser), run only when the person asks.
+	Setup *SkillToolSetup `json:"setup,omitempty"`
+	// SignIn is the command a person runs once in a terminal on each device
+	// after installing (e.g. "auth login"); Foundry only shows it.
+	SignIn []string `json:"signIn,omitempty"`
+}
+
+// SkillToolDeclaration names a program a bundle needs that its source
+// does not publish: Source "uv" installs the PyPI package Package and
+// Source "npm" the npm package Package (from the repository's registry),
+// which provides the command Command. Its version follows the bundle's when
+// the package has that version, else the package's latest.
+type SkillToolDeclaration struct {
+	Source  string `json:"source"`
+	Package string `json:"package"`
+	Command string `json:"command"`
+}
+
+// SkillToolSetup runs one of the installed package's commands with fixed
+// arguments.
+type SkillToolSetup struct {
+	// Command is a command the package installs; empty is the tool itself.
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args"`
+	// Description says what it does, e.g. "Downloads Chrome for Testing".
+	Description string `json:"description"`
+}
+
+// SkillToolAsset is one platform's download of a tool.
+type SkillToolAsset struct {
+	OS   string `json:"os"`
+	Arch string `json:"arch"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+// SkillRepositorySkill is a library skill taken from a repository folder.
+type SkillRepositorySkill struct {
+	SkillID string `json:"skillId"`
+	Dir     string `json:"dir"`
+	// Commit is the repository commit the skill's latest revision came from.
+	Commit string `json:"commit"`
+	// Name is the skill's name in the library.
+	Name string `json:"name,omitempty"`
+	// Retired: the skill left its bundle; sessions no longer get it.
+	Retired bool `json:"retired,omitempty"`
+	// Missing: a picked skill's folder is gone from the repository; the
+	// library keeps its last revision.
+	Missing bool `json:"missing,omitempty"`
+}
+
+// RepositoryOrigin is the origin device id of library skills taken from a
+// repository; their origin root is the repository label and their origin
+// folder the skill's folder in it.
+func RepositoryOrigin(repositoryID string) string { return "repo:" + repositoryID }
+
+// DeviceTool says whether a device has a program some library skill needs,
+// as its worker found on its PATH at the last skill scan.
+type DeviceTool struct {
+	DeviceID  string `json:"deviceId"`
+	Tool      string `json:"tool"`
+	Available bool   `json:"available"`
+	CheckedAt string `json:"checkedAt"`
+	// Version is the version Foundry installed on the device, if it did.
+	Version string `json:"version,omitempty"`
+}
+
+// RepositorySkillFolder is a skill folder found in a repository.
+type RepositorySkillFolder struct {
+	// Dir is the folder relative to the repository root.
+	Dir         string `json:"dir"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	License     string `json:"license,omitempty"`
+	// SkillID is set when the folder is already in the library.
+	SkillID string `json:"skillId,omitempty"`
+}
+
+// SkillRepositoryView is a repository with the skill folders it holds now.
+type SkillRepositoryView struct {
+	Repository SkillRepository         `json:"repository"`
+	Available  []RepositorySkillFolder `json:"available"`
 }

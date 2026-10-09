@@ -40,6 +40,16 @@ test("Update all acts only on owned, connected, self-updating devices behind the
     ),
     "updating",
   );
+  // An update that did not finish is shown, and can be started again.
+  assert.equal(
+    workerState(
+      device({
+        workerUpdate: { startedAt: "t", version: "0.5.7-dev.3", stalled: true },
+      }),
+      release,
+    ),
+    "stalled",
+  );
   // A server on the npm release names no build to compare against.
   assert.equal(workerState(device(), { source: "npm" }), "current");
 });

@@ -646,8 +646,10 @@ func TestSessionFork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create fork via store: %v", err)
 	}
-	if fork.NativeSessionID != "native_abc" {
-		t.Fatalf("fork native session = %q, want native_abc", fork.NativeSessionID)
+	// The fork gets its own native session, a copy of the source's; the two
+	// never write into one transcript.
+	if fork.NativeSessionID == "" || fork.NativeSessionID == "native_abc" || fork.ForkNativeSessionID != "native_abc" {
+		t.Fatalf("fork native session = %q copied from %q, want its own copy of native_abc", fork.NativeSessionID, fork.ForkNativeSessionID)
 	}
 	if fork.ID == original.ID || fork.ThreadID != fork.ID {
 		t.Fatalf("fork = %q (thread %q), original = %q: a fork is a new session", fork.ID, fork.ThreadID, original.ID)

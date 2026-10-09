@@ -32,6 +32,14 @@ test("each stack resolves its own private state root", (t) => {
 
   delete process.env.FOUNDRY_STACK;
   delete process.env.FOUNDRY_STATE_ROOT;
+  // Inside a test run the real folder is refused…
+  assert.throws(() => foundryStateRoot(), /scratch folder/);
+  // …and outside one it is the default.
+  const testContext = process.env.NODE_TEST_CONTEXT;
+  delete process.env.NODE_TEST_CONTEXT;
+  t.after(() => {
+    if (testContext !== undefined) process.env.NODE_TEST_CONTEXT = testContext;
+  });
   assert.equal(foundryStateRoot(), resolve(homedir(), ".foundry"));
   assert.equal(foundryStackSuffix(), "");
 

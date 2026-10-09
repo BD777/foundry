@@ -363,6 +363,12 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.setupSkillCatalog(ctx); err != nil {
 		return err
 	}
+	if err := s.migrateSessionUsageBackfills(ctx); err != nil {
+		return err
+	}
+	if err := s.migrateNativeSessions(ctx); err != nil {
+		return err
+	}
 	if err := s.setupFeishu(ctx); err != nil {
 		return err
 	}
@@ -576,13 +582,17 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 			query: `DELETE FROM issues WHERE workspace_id = ?`,
 		},
 		{
+			label: "delete workspace native sessions",
+			query: `DELETE FROM agent_session_native_ids
+				WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?)`,
+		},
+		{
 			label: "delete workspace agent sessions",
 			query: `DELETE FROM agent_sessions WHERE workspace_id = ?`,
 		},
 		{
 			label: "delete workspace chats",
-			query: `DELETE FROM chats
-				WHERE json_extract(payload_json, '$.workspaceId') = ?`,
+			query: `DELETE FROM chats WHERE workspace_id = ?`,
 		},
 		{label: "delete workspace chat titles", query: `DELETE FROM chat_titles WHERE workspace_id = ?`},
 		{label: "delete workspace chat layout", query: `DELETE FROM chat_layouts WHERE workspace_id = ?`},
@@ -672,13 +682,22 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 	// Tombstoned devices keep their rows (history views still resolve their
 	// label) but are projected as "removed" so the UI can hide them from the
 	// available device list and mark them elsewhere.
+	//
+	// skillsVersion moves with every scan of the device (a scan rewrites its
+	// rows) and every catalog change, which can change how its skills
+	// compare with the server.
 	return listJSON[store.DeviceProjection](ctx, s.conn(), `SELECT
-		CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
-			json_set(json_set(d.payload_json, '$.status', 'removed'),
-				'$.lastSeenLabel', 'Removed from Foundry')
-		END
+		json_set(
+			CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
+				json_set(json_set(d.payload_json, '$.status', 'removed'),
+					'$.lastSeenLabel', 'Removed from Foundry')
+			END,
+			'$.skillsVersion',
+			(SELECT count(*) || '@' || ifnull(max(updated_at), '') FROM device_skills WHERE device_id = d.id)
+				|| '/' || catalog.version)
 		FROM devices d
 		LEFT JOIN removed_devices r ON r.device_id = d.id
+		CROSS JOIN (SELECT count(*) || '@' || ifnull(sum(latest_revision), 0) || '@' || ifnull(max(updated_at), '') AS version FROM promoted_skills) catalog
 		ORDER BY d.label`)
 }
 
@@ -743,34 +762,18 @@ func (s *Store) ListSkills(ctx context.Context, workspaceID string) ([]store.Ski
 	return listJSON[store.SkillPackRef](ctx, s.conn(), `SELECT payload_json FROM skills ORDER BY workspace_id, name`)
 }
 
+// ListChats lists the device-native chats no Foundry session owns, most
+// recent conversation activity first.
 func (s *Store) ListChats(ctx context.Context, workspaceID string) ([]store.ChatThread, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	chats, err := listJSON[store.ChatThread](ctx, s.conn(), `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats
-		WHERE (? = '' OR json_extract(payload_json, '$.workspaceId') = ? OR json_extract(payload_json, '$.workspaceId') IS NULL)
-		AND `+visibleChatSQL+` ORDER BY updated_at DESC`, workspaceID, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	claimed, err := s.claimedNativeChatKeys(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	return filterClaimedNativeChats(chats, claimed), nil
+	return listJSON[store.ChatThread](ctx, s.conn(), `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats
+		WHERE (? = '' OR workspace_id IN (?, ''))
+		AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL+`
+		ORDER BY activity_at DESC, id ASC`, workspaceID, workspaceID)
 }
 
 func (s *Store) GetChat(ctx context.Context, id string) (store.ChatThread, error) {
-	chat, err := getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL, id)
-	if err != nil {
-		return store.ChatThread{}, err
-	}
-	claimed, err := s.claimedNativeChatKeys(ctx, chat.WorkspaceID)
-	if err != nil {
-		return store.ChatThread{}, err
-	}
-	if claimed[nativeChatKey(chat.Provider, chat.NativeSessionID)] {
-		return store.ChatThread{}, store.ErrNotFound
-	}
-	return chat, nil
+	return getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
 }
 
 // nextIssueSequence returns one past the highest numeric suffix already used by
@@ -897,17 +900,30 @@ func (s *Store) saveChat(ctx context.Context, value store.ChatThread, updatedAt 
 	if err != nil {
 		return err
 	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO chats
-		(id, title, payload_json, updated_at)
-		VALUES (?, ?, ?, ?)
+	return s.writeChat(ctx, value, payload, updatedAt)
+}
+
+// writeChat stores a chat with the columns its list filters and orders by.
+func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload string, updatedAt time.Time) error {
+	_, err := s.conn().ExecContext(ctx, `INSERT INTO chats
+		(id, title, payload_json, updated_at, workspace_id, provider, native_session_id, activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
 			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
+			updated_at = excluded.updated_at,
+			workspace_id = excluded.workspace_id,
+			provider = excluded.provider,
+			native_session_id = excluded.native_session_id,
+			activity_at = excluded.activity_at`,
 		value.ID,
 		value.Title,
 		payload,
 		formatTime(updatedAt),
+		value.WorkspaceID,
+		value.Provider,
+		value.NativeSessionID,
+		chatActivity(value),
 	)
 	if err != nil {
 		return fmt.Errorf("save chat: %w", err)
@@ -915,7 +931,11 @@ func (s *Store) saveChat(ctx context.Context, value store.ChatThread, updatedAt 
 	return nil
 }
 
+// saveChatIfChanged stores a device's native chat unless a Foundry session
+// owns it, writing nothing when its content is unchanged. Labels are
+// computed where a chat is shown, so a label never rewrites the row.
 func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, updatedAt time.Time) error {
+	value.UpdatedLabel = ""
 	deleted, err := s.chatDeleted(ctx, value.WorkspaceID, value.ID, value.Provider, value.NativeSessionID)
 	if err != nil {
 		return err
@@ -929,13 +949,16 @@ func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, u
 		return err
 	}
 	if value.NativeSessionID != "" {
-		claimed, err := s.claimedNativeChatKeys(ctx, value.WorkspaceID)
+		claimed, err := s.claimNativeChat(ctx, value)
 		if err != nil {
 			return err
 		}
-		if claimed[nativeChatKey(value.Provider, value.NativeSessionID)] {
-			return s.deleteNativeChat(ctx, value.WorkspaceID, value.Provider, value.NativeSessionID)
+		if claimed {
+			return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
 		}
+	}
+	if nativeChatWithoutTurns(value) {
+		return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
 	}
 
 	payload, err := encode(value)
@@ -965,113 +988,12 @@ func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, u
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("read chat: %w", err)
 	}
-
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO chats
-		(id, title, payload_json, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			title = excluded.title,
-			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
-		value.ID,
-		value.Title,
-		payload,
-		formatTime(updatedAt),
-	)
-	if err != nil {
-		return fmt.Errorf("save chat: %w", err)
-	}
-	return nil
+	return s.writeChat(ctx, value, payload, updatedAt)
 }
 
-func nativeChatKey(provider string, nativeSessionID string) string {
-	provider = strings.TrimSpace(provider)
-	nativeSessionID = strings.TrimSpace(nativeSessionID)
-	if provider == "" || nativeSessionID == "" {
-		return ""
-	}
-	return provider + "\x00" + nativeSessionID
-}
-
-func (s *Store) claimedNativeChatKeys(ctx context.Context, workspaceID string) (map[string]bool, error) {
-	query := `SELECT
-		COALESCE(json_extract(payload_json, '$.source'), ''),
-		COALESCE(provider, ''),
-		COALESCE(json_extract(payload_json, '$.nativeSessionId'), '')
-		FROM agent_sessions`
-	args := []any{}
-	if workspaceID = strings.TrimSpace(workspaceID); workspaceID != "" {
-		query += ` WHERE workspace_id = ?`
-		args = append(args, workspaceID)
-	}
-	rows, err := s.conn().QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	claimed := map[string]bool{}
-	for rows.Next() {
-		var source, provider, nativeSessionID string
-		if err := rows.Scan(&source, &provider, &nativeSessionID); err != nil {
-			return nil, err
-		}
-		if !isChatSessionSource(source) && source != "naming" {
-			continue
-		}
-		key := nativeChatKey(provider, nativeSessionID)
-		if key == "" {
-			continue
-		}
-		claimed[key] = true
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return claimed, nil
-}
-
-func filterClaimedNativeChats(chats []store.ChatThread, claimed map[string]bool) []store.ChatThread {
-	if len(chats) == 0 || len(claimed) == 0 {
-		return chats
-	}
-	filtered := chats[:0]
-	for _, chat := range chats {
-		key := nativeChatKey(chat.Provider, chat.NativeSessionID)
-		if key != "" && claimed[key] {
-			continue
-		}
-		filtered = append(filtered, chat)
-	}
-	return filtered
-}
-
-func isChatSessionSource(source string) bool {
-	return source == "" || source == "chat"
-}
-
-func (s *Store) deleteClaimedNativeChat(ctx context.Context, session store.AgentSession) error {
-	if (!isChatSessionSource(session.Source) && session.Source != "naming") || session.NativeSessionID == "" {
-		return nil
-	}
-	return s.deleteNativeChat(ctx, session.WorkspaceID, session.Provider, session.NativeSessionID)
-}
-
-func (s *Store) deleteNativeChat(ctx context.Context, workspaceID string, provider string, nativeSessionID string) error {
-	provider = strings.TrimSpace(provider)
-	nativeSessionID = strings.TrimSpace(nativeSessionID)
-	if provider == "" || nativeSessionID == "" {
-		return nil
-	}
-	_, err := s.conn().ExecContext(ctx, `DELETE FROM chats
-		WHERE json_extract(payload_json, '$.provider') = ?
-			AND json_extract(payload_json, '$.nativeSessionId') = ?
-			AND (? = '' OR json_extract(payload_json, '$.workspaceId') = ?)`,
-		provider,
-		nativeSessionID,
-		strings.TrimSpace(workspaceID),
-		strings.TrimSpace(workspaceID),
-	)
+func (s *Store) deleteNativeChat(ctx context.Context, provider string, nativeSessionID string) error {
+	_, err := s.conn().ExecContext(ctx, `DELETE FROM chats WHERE provider = ? AND native_session_id = ?`,
+		strings.TrimSpace(provider), strings.TrimSpace(nativeSessionID))
 	if err != nil {
 		return fmt.Errorf("delete native chat: %w", err)
 	}
@@ -1407,12 +1329,13 @@ func (s *Store) attachAgentSessionEvents(ctx context.Context, session *store.Age
 
 func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, createdAt time.Time, updatedAt time.Time) error {
 	value.Events = nil
+	if createdAt.IsZero() {
+		createdAt = updatedAt
+	}
+	value.ActivityAt = sessionActivity(value, createdAt)
 	payload, err := encode(value)
 	if err != nil {
 		return err
-	}
-	if createdAt.IsZero() {
-		createdAt = updatedAt
 	}
 	threadID := strings.TrimSpace(value.ThreadID)
 	if threadID == "" {
@@ -1422,8 +1345,8 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 		threadID = value.ID
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO agent_sessions
-		(id, thread_id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, thread_id, workspace_id, agent_id, device_id, provider, status, parent_session_id, payload_json, created_at, updated_at, activity_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			thread_id = excluded.thread_id,
 			workspace_id = excluded.workspace_id,
@@ -1433,7 +1356,8 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 			status = excluded.status,
 			parent_session_id = excluded.parent_session_id,
 			payload_json = excluded.payload_json,
-			updated_at = excluded.updated_at`,
+			updated_at = excluded.updated_at,
+			activity_at = excluded.activity_at`,
 		value.ID,
 		threadID,
 		value.WorkspaceID,
@@ -1445,6 +1369,7 @@ func (s *Store) saveAgentSession(ctx context.Context, value store.AgentSession, 
 		payload,
 		formatTime(createdAt),
 		formatTime(updatedAt),
+		value.ActivityAt,
 	)
 	if err != nil {
 		return fmt.Errorf("save agent session: %w", err)

@@ -21,6 +21,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { readWorkspaceFile } from "../../api";
 import { Button } from "../../components/ui/button";
+import { subagentUsageSummary } from "../../components/conversation/turn-usage";
 import { MarkdownContent } from "./chat-message-content";
 import { ChatMessageList } from "./chat-message-list";
 import { chatMessagesForSubagentTranscript } from "./chat-transcript-model";
@@ -87,7 +88,9 @@ function FileDetail({ file }: { file: WorkspaceFileRead }) {
       {file.truncated ? (
         <p className="fdy-chat-detail-note">{t("detail.fileTruncated")}</p>
       ) : null}
-      <MarkdownContent>{file.content}</MarkdownContent>
+      <div className="fdy-markdown">
+        <MarkdownContent>{file.content}</MarkdownContent>
+      </div>
     </article>
   );
 }
@@ -107,6 +110,13 @@ function SubagentDetail({
   }
   return (
     <div className="fdy-chat-detail-conversation">
+      {transcript.usage ? (
+        <p className="fdy-chat-detail-note">
+          {t("detail.subagentUsage", {
+            usage: subagentUsageSummary(transcript.usage),
+          })}
+        </p>
+      ) : null}
       <ChatMessageList
         messages={chatMessagesForSubagentTranscript(transcript)}
         onImagePreview={onImagePreview}
@@ -166,7 +176,9 @@ function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
             {formatTimerDateTime(fire.completedAt)}
           </summary>
           {fire.response ? (
-            <MarkdownContent>{fire.response}</MarkdownContent>
+            <div className="fdy-chat-timer-fire-response fdy-markdown">
+              <MarkdownContent>{fire.response}</MarkdownContent>
+            </div>
           ) : (
             <p className="fdy-chat-detail-note">
               {t("detail.timer.noFireText")}

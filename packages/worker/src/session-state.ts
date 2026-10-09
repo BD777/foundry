@@ -15,6 +15,10 @@ import type {
 import { ClaudeTurnWatchdog } from "./watchdog.js";
 import type { SessionOutputFiles } from "./session-output-files.js";
 import type { ClaudeTimerTracker } from "./agent-timers.js";
+import type {
+  ClaudeRequestUsageTracker,
+  TurnTokenUsage,
+} from "./turn-usage.js";
 
 export type SessionEventEmitter = (
   label: string,
@@ -105,6 +109,12 @@ export interface ActiveClaudeTurn {
   reportNativeSessionId?: (nativeSessionId: string) => void;
   resolve: (result: AgentSessionRunResult) => void;
   resultPath: string;
+  /** Epoch ms when the runtime took this turn. */
+  startedAt: number;
+  /** Provider usage summed over the turn's results. */
+  usage?: TurnTokenUsage;
+  /** Follows each model request's stream for its final tokens. */
+  requestUsage?: ClaudeRequestUsageTracker;
   /** Files this turn produced, reported once each. */
   outputs?: SessionOutputFiles;
   watchdog: ClaudeTurnWatchdog;

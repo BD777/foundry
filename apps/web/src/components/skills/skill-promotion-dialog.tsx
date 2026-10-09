@@ -1,6 +1,6 @@
 import { SkillVersionChoice } from "./skill-version-choice";
 import {
-  defaultSkillResolution,
+  automaticSkillResolution,
   skillSourceKey,
   skillResolutionProblem,
 } from "./skill-version-state";
@@ -48,9 +48,14 @@ export function SkillPromotionDialog({
   const [related, setRelated] = useState<string[]>(() =>
     defaultSkillPromotionReferences(skill, skills),
   );
+  // A key present with undefined means the person cleared their choice.
   const [choices, setChoices] = useState<
-    Record<string, SkillPromotionResolution>
+    Record<string, SkillPromotionResolution | undefined>
   >({});
+  const resolutionFor = (s: DeviceSkill) => {
+    const key = skillSourceKey(s);
+    return key in choices ? choices[key] : automaticSkillResolution(s);
+  };
   const [comparison, setComparison] = useState<{
     skill: DeviceSkill;
     target: PromotedSkill;
@@ -61,11 +66,12 @@ export function SkillPromotionDialog({
     () => buildSkillPromotionSelection(skill, skills, related),
     [skill, skills, related],
   );
-  const resolutions = plan.skills.map(
-    (s) => choices[skillSourceKey(s)] ?? defaultSkillResolution(s),
-  );
+  const chosen = plan.skills.map(resolutionFor);
   const unresolved = plan.skills.some(
-    (s, i) => !!skillResolutionProblem(s, resolutions[i]!),
+    (s, i) => !!skillResolutionProblem(s, chosen[i]),
+  );
+  const resolutions = chosen.filter(
+    (r): r is SkillPromotionResolution => r !== undefined,
   );
   const alreadySynced =
     plan.skills.length > 0 &&
@@ -74,7 +80,10 @@ export function SkillPromotionDialog({
         resolutions[i]?.action === "reuse" &&
         resolutions[i]?.targetSkillId === s.promotedSkillId,
     );
-  const onlyReuse = resolutions.every((r) => r.action === "reuse");
+  // Nothing from the device is published: every skill uses a library entry.
+  const onlyReuse =
+    !unresolved &&
+    resolutions.every((r) => r.action === "reuse" || r.action === "keep");
   const input = {
     deviceId: skill.deviceId,
     root: skill.root,
@@ -170,10 +179,7 @@ export function SkillPromotionDialog({
                         </small>
                         <SkillVersionChoice
                           skill={item}
-                          value={
-                            choices[skillSourceKey(item)] ??
-                            defaultSkillResolution(item)
-                          }
+                          value={resolutionFor(item)}
                           disabled={busy}
                           onChange={(r) =>
                             setChoices((old) => ({
@@ -249,11 +255,12 @@ export function SkillPromotionDialog({
                 </p>
               ) : null}
             </div>
-            <footer className="fdy-connection-assign-actions">
+            <footer className="fdy-connection-assign-actions fdy-skill-dialog-actions">
               <Button variant="secondary" disabled={busy} onClick={onClose}>
                 {t("common:actions.cancel")}
               </Button>
               <Button
+                variant="primary"
                 disabled={
                   busy ||
                   !online ||

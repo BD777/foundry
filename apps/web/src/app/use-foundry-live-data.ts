@@ -40,6 +40,7 @@ export function useFoundryLiveData({
       return undefined;
     }
     let frameId: number | null = null;
+    let deviceRefreshTimer: number | null = null;
     const pendingEvents: FoundryStreamEvent[] = [];
     const flushPending = (): void => {
       frameId = null;
@@ -69,6 +70,16 @@ export function useFoundryLiveData({
       (event) => {
         pendingEvents.push(event);
         scheduleFrame();
+        // A device that reconnects may also bring a new worker version or
+        // workspaces; fetch them shortly after its status changes.
+        if (event.type === "device_status_changed") {
+          if (deviceRefreshTimer !== null)
+            window.clearTimeout(deviceRefreshTimer);
+          deviceRefreshTimer = window.setTimeout(() => {
+            deviceRefreshTimer = null;
+            void refreshRef.current();
+          }, 1500);
+        }
       },
       {
         onError: () => {
@@ -83,6 +94,7 @@ export function useFoundryLiveData({
     );
     return () => {
       unsubscribe();
+      if (deviceRefreshTimer !== null) window.clearTimeout(deviceRefreshTimer);
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);
       }

@@ -28,6 +28,10 @@ export function shouldDisplayAgentSessionEvent(
   if (event.metadata?.timerSnapshot) {
     return false;
   }
+  // A model request's final tokens belong to its steps, not a step of its own.
+  if (event.metadata?.requestUsage) {
+    return false;
+  }
   if (isProcessLabel(event.label, "loadedWorkspace")) {
     return false;
   }

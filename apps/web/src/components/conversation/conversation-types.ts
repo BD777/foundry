@@ -1,8 +1,9 @@
 import type { ReactNode, Ref } from "react";
-import type { ChatAttachment } from "@bd777/foundry-protocol";
+import type { AgentTurnUsage, ChatAttachment } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../ui/runtime-mark";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { AgentComposerProps } from "../ui/agent-composer";
+import type { ConversationStoragePrefix } from "./conversation-storage";
 
 export type ConversationComposer =
   | ({ mode: "selectable" } & Required<
@@ -26,7 +27,8 @@ export interface ConversationProps {
   /** Why sending is unavailable, shown in the composer while it is. */
   disabledReason?: string;
   readOnly?: ReactNode;
-  draftStorageKey?: string;
+  /** Keeps the draft and queued messages in this browser, per thread. */
+  storageKeyPrefix?: ConversationStoragePrefix;
   draftResetKey?: number;
   inputRef?: Ref<HTMLTextAreaElement>;
   inputLabel?: string;
@@ -39,11 +41,15 @@ export interface ConversationProps {
   onAttachmentsRestore?: (attachments: ChatAttachment[]) => void;
   /** Read-only side questions may reply without queueing another execution. */
   canSendDuringExecution?: (text: string) => boolean;
-  /** "replied" completes a conversational turn without awaiting an execution. */
+  /**
+   * A queued message passes its id as the idempotency key, so a request
+   * repeated after a reload or from another tab can be recognized.
+   */
   onSend: (
     text: string,
     attachments?: ChatAttachment[],
-  ) => Promise<boolean | "replied">;
+    options?: { idempotencyKey?: string },
+  ) => Promise<ConversationSendOutcome>;
   onSteer?: (text: string, executionId?: string) => Promise<boolean>;
   onStop?: (executionId?: string) => Promise<void> | void;
   onImagePreview?: (
@@ -51,11 +57,22 @@ export interface ConversationProps {
   ) => void;
 }
 
+/**
+ * `true` once accepted; "replied" completes a conversational turn without
+ * awaiting an execution; `{ threadKey }` when the accepted message gave the
+ * conversation a new key (a new chat's session, an adopted native chat).
+ */
+export type ConversationSendOutcome =
+  boolean | "replied" | { threadKey: string };
+
 export interface QueuedDraft {
   id: string;
   text: string;
+  /** Uploaded before queueing, so these are server references. */
   attachments?: ChatAttachment[];
   targetExecutionId?: string;
+  /** Set while a tab sends this message; a stale one may have been sent. */
+  sending?: { tab: string; at: number };
 }
 
 export interface ChatMessageItem {
@@ -64,6 +81,12 @@ export interface ChatMessageItem {
   attachments?: ChatAttachment[];
   copyAlways?: boolean;
   copyText?: string;
+  /** How long a process group ran, from its first to its last step. */
+  durationMs?: number;
+  /** When a process group's first step happened, for its live timer. */
+  startedAt?: string;
+  /** Tokens of the model requests behind a process group's steps. */
+  stepUsage?: StepUsage;
   editable?: boolean;
   editText?: string;
   id: string;
@@ -80,4 +103,17 @@ export interface ChatMessageItem {
   streaming?: boolean;
   text: ReactNode;
   title?: ReactNode;
+  /** The turn's provider usage, on the answer that ends the turn. */
+  usage?: AgentTurnUsage;
+}
+
+/**
+ * Tokens of the model requests behind some steps, each request counted once.
+ * Claude reports them per request; Codex only per turn, so its steps have none.
+ */
+export interface StepUsage {
+  requests: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
 }

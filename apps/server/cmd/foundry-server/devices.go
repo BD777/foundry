@@ -20,6 +20,10 @@ const cliPairingTokenTTL = time.Hour
 // runDevices implements `foundry-server devices <subcommand>`: issuing a
 // one-time worker pairing token without the web app (containers, scripts).
 func runDevices(args []string, getenv func(string) string, stdout io.Writer) error {
+	if len(args) > 0 && isHelpArg(args[0]) {
+		printDevicesUsage()
+		return flag.ErrHelp
+	}
 	if len(args) == 0 || args[0] != "pairing-token" {
 		printDevicesUsage()
 		return errors.New("devices: expected subcommand pairing-token")

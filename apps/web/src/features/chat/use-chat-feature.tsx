@@ -29,6 +29,7 @@ import {
 } from "../../api";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
+import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import { agentSessionNeedsDetails } from "../../lib/agent-session-events";
 import { shortUnavailableReason } from "../../lib/agent-picker";
@@ -37,18 +38,15 @@ import {
   activeThreadSessionForAgent,
   agentSessionStatusLabel,
   agentSessionTerminalError,
-  chatMatchesAgentProfile,
   chatMessageItemId,
   chatMessages,
   chatMessagesForThread,
   chatSortValue,
   chatThreadsFromSessions,
-  importedContextForSend,
   isChatSession,
   isTerminalSession,
   latestCopyableResponseIndex,
   latestThreadSession,
-  nativeChatKey,
   profileTransitionNoteForSend,
   selectedChatThread,
 } from "./chat-model";
@@ -66,6 +64,12 @@ import { useChatRuntime } from "./use-chat-runtime";
 import { useChatReadState, useChatTitles } from "./use-chat-list-state";
 import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
 import { workspaceDenial } from "../../lib/workspace-access";
+import {
+  conversationStorageKey,
+  conversationStoragePrefixes,
+  forgetConversation,
+} from "../../components/conversation/conversation-storage";
+import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
 
 export type ChatFeatureEvent =
   | { chatId: string; type: "chat.selected" }
@@ -87,8 +91,8 @@ export interface UseChatFeatureInput {
   profiles: AgentProfileProjection[];
   selectedChatId: string;
   sessions: AgentSession[];
-  /** Workspace-selected skills offered in the composer "/skill" menu. */
-  slashSkills?: SlashSuggestion[];
+  /** The composer "/" menu: workspace skills and each agent's own. */
+  slashSkills?: ComposerSlashSkills;
   workspaceId: string;
   workspace?: WorkspaceProjection;
 }
@@ -509,7 +513,8 @@ export function useChatFeature({
   async function send(
     draft: string,
     queuedAttachments?: ChatAttachment[],
-  ): Promise<boolean> {
+    options?: { idempotencyKey?: string },
+  ): Promise<ConversationSendOutcome> {
     if (!deviceOnline) {
       await emit({
         message: i18n.t("chat:notices.offlineSend"),
@@ -580,20 +585,13 @@ export function useChatFeature({
         });
         return false;
       }
-      const chatForSend =
-        selectedChat && !selectedThread && !selectedChat.handoffContext
-          ? await getChat(selectedChat.id).catch(() => selectedChat)
-          : selectedChat;
-      // An open Foundry chat is one session: the message continues it.
+      // An open Foundry chat is one session: the message continues it. An
+      // open native chat is adopted by the new session; the server tells
+      // each native session what it has not seen.
       const continuedSession = selectedThread
         ? latestThreadSession(selectedThread)
         : undefined;
-      const selectedNativeChatId = chatMatchesAgentProfile(
-        chatForSend,
-        selectedAgent,
-      )
-        ? chatForSend?.nativeSessionId
-        : undefined;
+      const chatForSend = selectedThread ? undefined : selectedChat;
       const submittedAttachmentIds = new Set(
         effectiveAttachments.map((attachment) => attachment.id),
       );
@@ -617,11 +615,6 @@ export function useChatFeature({
         codexSandboxMode:
           selectedAgent.provider === "codex" ? codexSandboxMode : undefined,
         codexSpeed: selectedAgent.provider === "codex" ? codexSpeed : undefined,
-        importedContext: importedContextForSend({
-          agent: selectedAgent,
-          selectedChat: chatForSend,
-          session: continuedSession,
-        }),
         model: modelValue || undefined,
         profileId: selectedAgent.profileId,
         profileTransitionNote: profileTransitionNoteForSend({
@@ -635,13 +628,20 @@ export function useChatFeature({
       let session: AgentSession;
       try {
         session = continuedSession
-          ? await sendAgentSessionMessage(continuedSession.id, message)
-          : await createAgentSession({
-              ...message,
-              nativeSessionId: selectedNativeChatId,
-              source: "chat",
-              workspaceId,
-            });
+          ? await sendAgentSessionMessage(
+              continuedSession.id,
+              message,
+              options?.idempotencyKey,
+            )
+          : await createAgentSession(
+              {
+                ...message,
+                chatId: chatForSend?.id,
+                source: "chat",
+                workspaceId,
+              },
+              options?.idempotencyKey,
+            );
       } catch (reason) {
         // Surface a safe, specific cause in the composer Alert. Throwing lets
         // useConversationInput retain the draft/attachments and require an
@@ -677,7 +677,11 @@ export function useChatFeature({
       } catch {
         // Already persisted; a later snapshot/refresh projects the session.
       }
-      return true;
+      // A new chat or an adopted native chat is now this session's thread;
+      // its unsent draft and queued messages move with it.
+      return {
+        threadKey: `${workspaceId}:${session.threadId || session.nativeSessionId || session.id}`,
+      };
     } finally {
       setSubmitting(false);
     }
@@ -827,25 +831,15 @@ export function useChatFeature({
       runtime: latest?.provider ?? thread.sessions[0]?.provider,
       selected: thread.id === selectedThread?.id,
       title: titleState.titles[thread.id]?.title || thread.title,
+      activityAt: latest?.activityAt,
       updateTime: chatUpdateTime(
-        latestChatTime([
-          ...thread.sessions.flatMap((session) => [
-            session.startedAt,
-            session.lastActivityAt,
-            session.completedAt,
-            ...(session.events ?? []).map((event) => event.at),
+        latest?.activityAt ??
+          latestChatTime([
+            ...thread.sessions.flatMap((session) => [
+              session.startedAt,
+              session.completedAt,
+            ]),
           ]),
-          ...sortedArchivedChats
-            .filter((chat) =>
-              thread.sessions.some(
-                (session) =>
-                  Boolean(session.nativeSessionId) &&
-                  session.nativeSessionId === chat.nativeSessionId &&
-                  session.provider === chat.provider,
-              ),
-            )
-            .map((chat) => chat.updatedAt),
-        ]),
         latest?.updatedLabel,
       ),
       status: chatListStatus(
@@ -862,46 +856,30 @@ export function useChatFeature({
       nativeSessionId: latest?.nativeSessionId,
     };
   });
-  const liveThreadIds = new Set(threads.map((thread) => thread.id));
-  const claimedNativeChatKeys = new Set(
-    threads.flatMap((thread) =>
-      thread.sessions
-        .map((session) =>
-          nativeChatKey(session.provider, session.nativeSessionId),
-        )
-        .filter(Boolean),
+  // The server lists only native chats no Foundry session owns.
+  const archiveChats = sortedArchivedChats.map((chat) => ({
+    ...menuActions(chat.id),
+    id: chat.id,
+    onSelect: () => {
+      readState.read(chat.id, chat.answerRevision ?? "");
+      void emit({ chatId: chat.id, type: "chat.selected" });
+    },
+    runtime: chat.provider,
+    selected: chat.id === selectedChat?.id && !selectedThread,
+    title: titleState.titles[chat.id]?.title || chat.title,
+    activityAt: chat.updatedAt,
+    updateTime: chatUpdateTime(chat.updatedAt, chat.updatedLabel),
+    status: chatListStatus(
+      chat.status === "running" || chat.status === "queued",
+      chat.status === "failed",
+      readState.unread(chat.id, chat.answerRevision ?? ""),
+      chat.status === "blocked",
     ),
-  );
-  const archiveChats = sortedArchivedChats
-    .filter(
-      (chat) =>
-        !liveThreadIds.has(chat.id) &&
-        !claimedNativeChatKeys.has(
-          nativeChatKey(chat.provider, chat.nativeSessionId),
-        ),
-    )
-    .map((chat) => ({
-      ...menuActions(chat.id),
-      id: chat.id,
-      onSelect: () => {
-        readState.read(chat.id, chat.answerRevision ?? "");
-        void emit({ chatId: chat.id, type: "chat.selected" });
-      },
-      runtime: chat.provider,
-      selected: chat.id === selectedChat?.id && !selectedThread,
-      title: titleState.titles[chat.id]?.title || chat.title,
-      updateTime: chatUpdateTime(chat.updatedAt, chat.updatedLabel),
-      status: chatListStatus(
-        chat.status === "running" || chat.status === "queued",
-        chat.status === "failed",
-        readState.unread(chat.id, chat.answerRevision ?? ""),
-        chat.status === "blocked",
-      ),
-      blocked: chat.status === "blocked",
-      unread: readState.unread(chat.id, chat.answerRevision ?? ""),
-      foundrySessionId: chat.id,
-      nativeSessionId: chat.nativeSessionId,
-    }));
+    blocked: chat.status === "blocked",
+    unread: readState.unread(chat.id, chat.answerRevision ?? ""),
+    foundrySessionId: chat.id,
+    nativeSessionId: chat.nativeSessionId,
+  }));
 
   return (
     <ChatSurface
@@ -911,6 +889,13 @@ export function useChatFeature({
           : workspaceDenial(workspace, "member")
       }
       onChatsDeleted={async (ids) => {
+        ids.forEach((id) => {
+          const key = conversationStorageKey(
+            conversationStoragePrefixes.chat,
+            `${workspaceId}:${id}`,
+          );
+          if (key) forgetConversation(key);
+        });
         if (selectionRef.current.workspaceId !== workspaceId) return;
         if (ids.includes(selectionRef.current.selectedId)) {
           setActiveSessionOverride(undefined);
@@ -944,7 +929,7 @@ export function useChatFeature({
       modelLoadFailed={modelLoadFailed}
       modelValue={modelValue}
       messages={messages}
-      slashSkills={slashSkills}
+      slashSkills={composerSlashItems(slashSkills, selectedAgent?.provider)}
       onAgentChange={selectAgent}
       onAttachmentsAdd={(files) => void addAttachments(files)}
       onAttachmentRemove={removeAttachment}

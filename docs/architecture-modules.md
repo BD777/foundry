@@ -65,23 +65,23 @@ flowchart TB
 
 ## 3. 模块清单
 
-| 层  | 模块               | 负责                                                                  | 不知道                 | 现有代码                                                                                           |
-| --- | ------------------ | --------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------- |
-| L0  | 平台基础           | 配置、私有状态根、原子写、通用工具；共享协议包                        | 任何业务概念           | `config.ts`、`state-root.ts`、`storage.ts`、`utils.ts`、`packages/protocol`                        |
-| L0  | Identity & Access  | 账号、actor、角色、policy、会话令牌                                   | 具体业务对象的流程     | `internal/accounts`、`httpapi/actor.go`、`policy.go`、`access.go`、`sqlitestore/session_tokens.go` |
-| L0  | Device & Transport | 配对、daemon 通道、RPC 关联、按设备路由                               | 消息的业务含义         | `daemon_ws.go`、`daemon_rpc.go`、`daemon-connection.ts`、`transport.ts`                            |
-| L0  | Workspace Registry | Workspace 身份、所在设备、仓库清单、登记与移除                        | 候选、Issue            | `workspace-*.ts`、`repository-registry.ts`                                                         |
-| L1  | 候选存储与 Git     | 执行根目录布局、锁、worktree 与 Git 操作                              | Issue 的状态与流程     | `execution-storage.ts`、`execution-git.ts`、`execution-types.ts`（现以 Issue 命名，实为共享底层）  |
-| L1  | Harness Profiles   | Claude / Codex profile、原生登录与账号检查、模型目录                  | 会话如何启动与运行     | `profiles.ts`、`native-*.ts`（除 `native-chat*`）、`models.ts`、`provider-health.ts`               |
-| L1  | Skills             | Skill 扫描、下载、物化、按 Workspace 隔离                             | 哪个会话在用           | `skill-*.ts`、`internal/skillarchive`、`sqlitestore/skill*.go`                                     |
-| L1  | Sandbox            | 按隔离 profile 包装进程；平台后端；探测与 fail closed                 | 谁在用、为什么用       | 见 §1 四处实现                                                                                     |
-| L1  | Session Runtime    | 以统一规格启动 Claude/Codex，事件流、steer、cancel、恢复、transcript  | Issue、Chat 的流程语义 | `runner.ts`、`sdk-messages.ts`、`session-*.ts`、`evidence-agent.ts` 中的启动部分                   |
-| L1  | Material Store     | 按内容寻址的材料存储、摘要校验、归属与可用性                          | 判定规则               | `evidence-store.ts`、`evidence-uploads.ts`                                                         |
-| L1  | Resource Pool      | 发现 → 登记 → 使用 → 回收；资源身份与占用（独占与排队待 M4）          | 由哪个 Workflow 使用   | `resource-pool.ts`、MCP `list_resources`                                                           |
-| L2  | Agent 能力面       | Agent 唯一的对外 API（MCP / CLI），capability 注册，统一经 policy     | 调用它的 Workflow      | `foundry-cli.ts`、`foundry-mcp.ts`、`foundry-client.ts`、`httpapi/mcp.go`                          |
-| L3  | Chat               | 会话列表、分组、对话 UI 所需的投影                                    | 沙箱与启动细节         | `sqlitestore/chat_*.go`、`apps/web/src/features/chat`                                              |
-| L3  | Issue Loop         | 契约、候选、采集、判定、准出规则、Accept、合入；loop graph 与信号入口 | 沙箱与启动细节         | `issue-*.ts`、`evidence-*.ts`（除启动与沙箱部分）、`sqlitestore/issue*.go`、`evidence*.go`         |
-| L4  | 入口               | Web、飞书；未来的通用 IM Adapter                                      | 执行细节               | `apps/web`、`internal/feishu`                                                                      |
+| 层  | 模块               | 负责                                                                  | 不知道                 | 现有代码                                                                                                       |
+| --- | ------------------ | --------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| L0  | 平台基础           | 配置、私有状态根、原子写、通用工具；共享协议包                        | 任何业务概念           | `config.ts`、`state-root.ts`、`storage.ts`、`utils.ts`、`packages/protocol`                                    |
+| L0  | Identity & Access  | 账号、actor、角色、policy、会话令牌                                   | 具体业务对象的流程     | `internal/accounts`、`httpapi/actor.go`、`policy.go`、`access.go`、`sqlitestore/session_tokens.go`             |
+| L0  | Device & Transport | 配对、daemon 通道、RPC 关联、按设备路由                               | 消息的业务含义         | `daemon_ws.go`、`daemon_rpc.go`、`daemon-connection.ts`、`transport.ts`                                        |
+| L0  | Workspace Registry | Workspace 身份、所在设备、仓库清单、登记与移除                        | 候选、Issue            | `workspace-*.ts`、`repository-registry.ts`                                                                     |
+| L1  | 候选存储与 Git     | 执行根目录布局、锁、worktree 与 Git 操作                              | Issue 的状态与流程     | `execution-storage.ts`、`execution-git.ts`、`execution-types.ts`（现以 Issue 命名，实为共享底层）              |
+| L1  | Harness Profiles   | Claude / Codex profile、原生登录与账号检查、模型目录                  | 会话如何启动与运行     | `profiles.ts`、`native-*.ts`（除 `native-chat*`）、`models.ts`、`provider-health.ts`                           |
+| L1  | Skills             | Skill 扫描、下载、物化、按 Workspace 隔离                             | 哪个会话在用           | `skill-*.ts`、`internal/skillarchive`、`internal/skillrepo`、`internal/builtinskills`、`sqlitestore/skill*.go` |
+| L1  | Sandbox            | 按隔离 profile 包装进程；平台后端；探测与 fail closed                 | 谁在用、为什么用       | 见 §1 四处实现                                                                                                 |
+| L1  | Session Runtime    | 以统一规格启动 Claude/Codex，事件流、steer、cancel、恢复、transcript  | Issue、Chat 的流程语义 | `runner.ts`、`sdk-messages.ts`、`session-*.ts`、`evidence-agent.ts` 中的启动部分                               |
+| L1  | Material Store     | 按内容寻址的材料存储、摘要校验、归属与可用性                          | 判定规则               | `evidence-store.ts`、`evidence-uploads.ts`                                                                     |
+| L1  | Resource Pool      | 发现 → 登记 → 使用 → 回收；资源身份与占用（独占与排队待 M4）          | 由哪个 Workflow 使用   | `resource-pool.ts`、MCP `list_resources`                                                                       |
+| L2  | Agent 能力面       | Agent 唯一的对外 API（MCP / CLI），capability 注册，统一经 policy     | 调用它的 Workflow      | `foundry-cli.ts`、`foundry-mcp.ts`、`foundry-client.ts`、`httpapi/mcp.go`                                      |
+| L3  | Chat               | 会话列表、分组、对话 UI 所需的投影                                    | 沙箱与启动细节         | `sqlitestore/chat_*.go`、`apps/web/src/features/chat`                                                          |
+| L3  | Issue Loop         | 契约、候选、采集、判定、准出规则、Accept、合入；loop graph 与信号入口 | 沙箱与启动细节         | `issue-*.ts`、`evidence-*.ts`（除启动与沙箱部分）、`sqlitestore/issue*.go`、`evidence*.go`                     |
+| L4  | 入口               | Web、飞书；未来的通用 IM Adapter                                      | 执行细节               | `apps/web`、`internal/feishu`                                                                                  |
 
 两个不单列为模块的能力：
 

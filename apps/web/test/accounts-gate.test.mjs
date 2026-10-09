@@ -239,3 +239,45 @@ test("invite tokens are read only from /invite/<token>", () => {
   assert.equal(inviteTokenFromPath("/invite/"), undefined);
   assert.equal(inviteTokenFromPath("/issues/invite/abc"), undefined);
 });
+
+test("signing out removes unsent drafts and queued messages from this browser", async () => {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    writable: true,
+    value: window.localStorage,
+  });
+  window.localStorage.setItem(
+    "foundry.chat-composer:w:chat",
+    JSON.stringify({ v: 1, updatedAt: Date.now(), draft: "secret", queue: [] }),
+  );
+  window.localStorage.setItem("foundry.issue-draft:issue_1", "issue secret");
+  window.localStorage.setItem("foundry.theme", "dark");
+  stubFetch({
+    "GET /api/auth/state": () =>
+      jsonResponse(200, { needsSetup: false, user: owner }),
+    "POST /api/auth/logout": () => jsonResponse(200, {}),
+  });
+  let session;
+  function SessionProbe() {
+    session = useAccountSession();
+    return createElement("p", null, `app:${session.user?.username ?? "-"}`);
+  }
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(AccountsGate, null, createElement(SessionProbe)));
+  });
+  await act(async () => {});
+  assert.equal(container.textContent, "app:owner");
+  await act(() => session.signOut());
+  assert.equal(
+    window.localStorage.getItem("foundry.chat-composer:w:chat"),
+    null,
+  );
+  assert.equal(
+    window.localStorage.getItem("foundry.issue-draft:issue_1"),
+    null,
+  );
+  assert.equal(window.localStorage.getItem("foundry.theme"), "dark");
+  await act(() => root.unmount());
+});

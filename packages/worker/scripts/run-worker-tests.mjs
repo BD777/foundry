@@ -183,6 +183,7 @@ function childEnvironment(scratchTmp, scratchState) {
     if (key.startsWith("FOUNDRY_")) delete env[key];
   // Fixed before Node starts: module-load-time path constants land in scratch.
   env.FOUNDRY_STATE_ROOT = scratchState;
+  env.FOUNDRY_TOOLS_ROOT = resolve(scratchState, "tools");
   // Everything that honors TMPDIR (incl. spawned children) lands in scratch.
   env.TMPDIR = scratchTmp;
   env.TMP = scratchTmp;

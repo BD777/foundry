@@ -271,11 +271,24 @@ export async function inspectNativeAccount(
           maxBuffer: 65536,
         },
       ).then((result) => ({ ...result, status: 0 }));
-      const parsed = JSON.parse(result.stdout) as { loggedIn?: boolean };
+      const parsed = JSON.parse(result.stdout) as {
+        loggedIn?: boolean;
+        email?: string;
+        orgName?: string;
+        subscriptionType?: string;
+      };
       if (typeof parsed.loggedIn !== "boolean") return base;
       const signedIn = isNativeAccountStatus(runtime, result);
+      // The account Claude Code itself reports for this login; read locally.
+      const account = [parsed.email, parsed.orgName]
+        .filter((part): part is string => Boolean(part?.trim()))
+        .join(" · ");
       return {
         ...base,
+        ...(signedIn && account ? { accountLabel: account } : {}),
+        ...(signedIn && parsed.subscriptionType
+          ? { plan: parsed.subscriptionType }
+          : {}),
         status: signedIn ? "local_login" : "not_signed_in",
         message: signedIn
           ? "Claude Code reports local OAuth credentials. Its SDK does not expose an account quota read; online validity and remaining usage are not verified."

@@ -3,7 +3,7 @@
  * Pure functions with no cli.ts dependencies.
  */
 
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -172,7 +172,10 @@ const deviceCommands = new Map<
  * The first candidate that runs `--version`. Every lookup of the device's
  * Claude Code and Codex goes through here, so they all agree on which program
  * Foundry runs; the answer is kept for a minute because each probe starts the
- * program.
+ * program. Only the first lookup waits for the probe: an older answer is
+ * returned while a fresh one is probed in the background, because a blocking
+ * probe of a slow program at every registration kept the worker from
+ * answering the server.
  */
 export function resolveDeviceCommand(
   candidates: string[],
@@ -180,6 +183,10 @@ export function resolveDeviceCommand(
   const key = JSON.stringify([candidates, process.env.PATH]);
   const cached = deviceCommands.get(key);
   if (cached && cached.until > Date.now()) return cached.found;
+  if (cached) {
+    refreshDeviceCommand(key, candidates);
+    return cached.found;
+  }
   let found: DeviceCommand | undefined;
   for (const candidate of candidates) {
     const result = spawnSync(candidate, ["--version"], {
@@ -199,7 +206,42 @@ export function resolveDeviceCommand(
   return found;
 }
 
-/** Forget found programs, after one is installed or updated. */
+const refreshing = new Set<string>();
+let deviceCommandsGeneration = 0;
+
+function probeVersion(candidate: string): Promise<DeviceCommand | undefined> {
+  return new Promise((resolveProbe) => {
+    execFile(
+      candidate,
+      ["--version"],
+      { encoding: "utf8", timeout: 10_000 },
+      (error, stdout, stderr) =>
+        resolveProbe(
+          error
+            ? undefined
+            : { command: candidate, versionOutput: `${stdout}${stderr}` },
+        ),
+    );
+  });
+}
+
+function refreshDeviceCommand(key: string, candidates: string[]): void {
+  if (refreshing.has(key)) return;
+  refreshing.add(key);
+  const generation = deviceCommandsGeneration;
+  void (async () => {
+    let found: DeviceCommand | undefined;
+    for (const candidate of candidates) {
+      found = await probeVersion(candidate);
+      if (found) break;
+    }
+    // A clear while probing (an install or update) makes this answer stale.
+    if (generation === deviceCommandsGeneration)
+      deviceCommands.set(key, { until: Date.now() + 60_000, found });
+  })().finally(() => refreshing.delete(key));
+}
+
 export function clearDeviceCommands(): void {
+  deviceCommandsGeneration += 1;
   deviceCommands.clear();
 }

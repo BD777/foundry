@@ -404,13 +404,7 @@ func (s *Store) insertAsset(ctx context.Context, value store.AssetProjection, no
 }
 
 func (s *Store) insertChat(ctx context.Context, value store.ChatThread, now time.Time) error {
-	payload, err := encode(value)
-	if err != nil {
-		return err
-	}
-	_, err = s.conn().ExecContext(ctx, `INSERT INTO chats VALUES (?, ?, ?, ?)`,
-		value.ID, value.Title, payload, formatTime(now))
-	return err
+	return s.saveChat(ctx, value, now)
 }
 
 func (s *Store) insertRun(ctx context.Context, value store.Run, now time.Time) error {

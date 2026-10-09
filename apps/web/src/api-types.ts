@@ -36,6 +36,14 @@ export type FoundryData = FoundryDataProjection;
 
 export type FoundryStreamEvent =
   | {
+      type: "device_status_changed";
+      payload: {
+        workspaceId: string;
+        deviceId: string;
+        status: DeviceProjection["status"];
+      };
+    }
+  | {
       type: "evidence_updated";
       payload: {
         issueId: string;
@@ -126,6 +134,8 @@ export interface UploadChatAttachmentsInput {
 export interface CreateAgentSessionInput {
   agentId: string;
   attachments?: ChatAttachment[];
+  /** Continues this device-native chat: the new session adopts it. */
+  chatId?: string;
   claudeEffort?: ClaudeEffort;
   claudePermissionMode?: ClaudePermissionMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
@@ -152,6 +162,8 @@ export interface CreateAgentSessionInput {
 export type SendAgentSessionMessageInput = Omit<
   CreateAgentSessionInput,
   | "agentId"
+  | "chatId"
+  | "importedContext"
   | "issueId"
   | "nativeSessionId"
   | "parentSessionId"

@@ -26,15 +26,21 @@ export function skillServerLabel(s: DeviceSkill): string {
         : i18n.t("skills:serverState.notPublished");
   }
 }
-export function defaultSkillResolution(
+/**
+ * What publishing does with a skill when nobody has to decide: a skill the
+ * library lacks is added; one whose content the library already holds is
+ * reused. A same-named library entry with other content returns undefined:
+ * the person chooses between the two versions.
+ */
+export function automaticSkillResolution(
   s: DeviceSkill,
-): SkillPromotionResolution {
+): SkillPromotionResolution | undefined {
   const base = { root: s.root, dirName: s.dirName };
   const linked = s.serverCandidates?.find((c) => c.id === s.promotedSkillId);
-  if (linked)
+  if (linked && s.serverState === "in_sync")
     return {
       ...base,
-      action: s.serverState === "in_sync" ? "reuse" : "update",
+      action: "reuse",
       targetSkillId: linked.id,
       expectedRevision: linked.latestRevision,
     };
@@ -48,14 +54,22 @@ export function defaultSkillResolution(
       targetSkillId: identical.id,
       expectedRevision: identical.latestRevision,
     };
-  return { ...base, action: "create" };
+  if (!s.serverCandidates?.length) return { ...base, action: "create" };
+  return undefined;
 }
+
+/** The library entry a same-named skill is weighed against: its own first. */
+export function skillConflictTarget(s: DeviceSkill) {
+  const candidates = s.serverCandidates ?? [];
+  return candidates.find((c) => c.id === s.promotedSkillId) ?? candidates[0];
+}
+
 export function skillResolutionProblem(
   s: DeviceSkill,
-  r: SkillPromotionResolution,
+  r: SkillPromotionResolution | undefined,
 ): string | undefined {
   if (!s.serverState) return i18n.t("skills:resolution.refreshFirst");
-  if (r.action === "create" && s.serverCandidates?.length)
+  if (!r || (r.action === "create" && s.serverCandidates?.length))
     return i18n.t("skills:resolution.chooseSameName", { name: s.name });
   if (
     r.action === "fork" &&

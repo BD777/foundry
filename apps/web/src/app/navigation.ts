@@ -2,6 +2,7 @@ import {
   Columns2,
   FolderOpen,
   KeyRound,
+  Library,
   MessageSquareText,
   Monitor,
 } from "lucide-react";
@@ -24,6 +25,7 @@ export type NavView =
   | "sharing"
   | "settings"
   | "profiles"
+  | "library"
   | "workspace"
   | "locations"
   | "devices";
@@ -34,7 +36,8 @@ export type DevicePairingMode = "auto" | "offline" | "online";
 
 export interface AppRoute {
   selectedDeviceId?: string;
-  deviceSection?: "resources" | "agents" | "skills" | "settings";
+  deviceSection?:
+    "resources" | "agents" | "skills" | "settings" | "diagnostics";
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -92,7 +95,8 @@ export function parseAppRoute(pathname: string): AppRoute {
             deviceSection:
               segments[2] === "resources" ||
               segments[2] === "skills" ||
-              segments[2] === "settings"
+              segments[2] === "settings" ||
+              segments[2] === "diagnostics"
                 ? segments[2]
                 : "agents",
           }
@@ -108,6 +112,8 @@ export function parseAppRoute(pathname: string): AppRoute {
       return { view: "issues" };
     case "settings":
       return { view: "settings" };
+    case "skill-library":
+      return { view: "library" };
     case "skills":
       return { view: "skills" };
     case "feishu":
@@ -155,6 +161,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return "/issues";
     case "profiles":
       return "/connections";
+    case "library":
+      return "/skill-library";
     case "settings":
       return "/workspace/settings";
     case "skills":
@@ -274,6 +282,7 @@ const pageViews = new Set<string>([
   "devices",
   "locations",
   "profiles",
+  "library",
 ]);
 
 export function scrollModeForView(view: string): "page" | "contained" {
@@ -297,6 +306,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
     label: "manage",
     items: [
       { id: "devices", label: "devices", icon: Monitor },
+      { id: "library", label: "library", icon: Library },
       { id: "profiles", label: "profiles", icon: KeyRound },
     ],
   },

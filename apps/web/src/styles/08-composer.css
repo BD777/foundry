@@ -178,6 +178,18 @@
   background: var(--fdy-control-ghost-hover);
 }
 
+.fdy-slash-item-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fdy-slash-item-tag {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+}
+
 .fdy-slash-item-name {
   color: var(--fdy-ink-strong);
   font-size: 13px;

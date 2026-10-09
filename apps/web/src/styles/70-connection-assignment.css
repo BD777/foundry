@@ -28,6 +28,14 @@
   transform: translate(-50%, -50%);
 }
 
+/* The dialog takes focus itself when the focused control inside it goes away
+   (e.g. Install once it succeeds) or when it has nothing focusable. It is a
+   surface, not a control, so it draws no focus ring; its controls keep their
+   own keyboard focus styles. */
+.fdy-connection-assign-dialog:focus-visible {
+  outline: none;
+}
+
 .fdy-connection-assign-header {
   display: flex;
   align-items: flex-start;

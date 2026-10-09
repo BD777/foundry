@@ -49,15 +49,22 @@ func TestUpdateWorkerAsksACapableConnectedWorker(t *testing.T) {
 func TestWorkerUpdateEndsWhenTheDeviceReportsItsVersion(t *testing.T) {
 	var updates workerUpdates
 	now := time.Now().UTC()
-	updates.start("dev", store.DeviceWorkerUpdate{StartedAt: now.Format(time.RFC3339), Version: "0.5.8"})
-	if _, ok := updates.active("dev", "0.5.7", now); !ok {
+	updates.start("dev", store.DeviceWorkerUpdate{StartedAt: now.Format(time.RFC3339), Version: "0.5.8", FromVersion: "0.5.7"})
+	if update, ok := updates.active("dev", "0.5.7", now); !ok || update.Stalled {
 		t.Fatal("the old version still runs: the update is in progress")
 	}
 	if _, ok := updates.active("dev", "0.5.8", now); ok {
 		t.Fatal("the device runs the new version: the update is over")
 	}
-	updates.start("dev", store.DeviceWorkerUpdate{StartedAt: now.Format(time.RFC3339), Version: "0.5.9"})
-	if _, ok := updates.active("dev", "0.5.8", now.Add(workerUpdateWindow)); ok {
-		t.Fatal("past its window an update no longer counts as running")
+	// An update that never finishes stays visible as stalled, and may be
+	// started again.
+	updates.start("dev", store.DeviceWorkerUpdate{StartedAt: now.Format(time.RFC3339), Version: "0.5.9", FromVersion: "0.5.8"})
+	update, ok := updates.active("dev", "0.5.8", now.Add(workerUpdateWindow))
+	if !ok || !update.Stalled {
+		t.Fatalf("past its window the update = %+v, %v; want it shown as stalled", update, ok)
+	}
+	// The device came back on some other version: the update is over.
+	if _, ok := updates.active("dev", "0.5.8-local", now.Add(workerUpdateWindow)); ok {
+		t.Fatal("a device on another version still shows the update")
 	}
 }

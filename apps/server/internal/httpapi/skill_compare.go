@@ -52,40 +52,7 @@ func (s *Server) handleSkillCompare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	before := map[string]store.SkillFileInfo{}
-	after := map[string]store.SkillFileInfo{}
-	paths := map[string]bool{}
-	for _, f := range remote {
-		before[f.Path] = f
-		paths[f.Path] = true
-	}
-	for _, f := range local {
-		after[f.Path] = f
-		paths[f.Path] = true
-	}
-	changes := []skillFileChange{}
-	unchanged := 0
-	for p := range paths {
-		old, hasOld := before[p]
-		next, hasNew := after[p]
-		if hasOld && hasNew && old.Digest == next.Digest {
-			unchanged++
-			continue
-		}
-		c := skillFileChange{Path: p, Kind: "modified"}
-		if hasOld {
-			c.Before = &old
-		} else {
-			c.Kind = "added"
-		}
-		if hasNew {
-			c.After = &next
-		} else {
-			c.Kind = "removed"
-		}
-		changes = append(changes, c)
-	}
-	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	changes, unchanged := compareSkillFiles(remote, local)
 	writeResult(w, store.SkillComparison{Files: changes, Unchanged: unchanged, Revision: input.Revision}, nil)
 }
 func (s *Server) handleSkillCompareFile(w http.ResponseWriter, r *http.Request) {
@@ -211,4 +178,44 @@ func (s *Server) handleSkillComparePackage(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="skill.zip"`)
 	w.Write(data)
+}
+
+// compareSkillFiles lists the files that differ between two skill versions
+// and counts the ones that do not.
+func compareSkillFiles(remote, local []store.SkillFileInfo) ([]skillFileChange, int) {
+	before := map[string]store.SkillFileInfo{}
+	after := map[string]store.SkillFileInfo{}
+	paths := map[string]bool{}
+	for _, f := range remote {
+		before[f.Path] = f
+		paths[f.Path] = true
+	}
+	for _, f := range local {
+		after[f.Path] = f
+		paths[f.Path] = true
+	}
+	changes := []skillFileChange{}
+	unchanged := 0
+	for p := range paths {
+		old, hasOld := before[p]
+		next, hasNew := after[p]
+		if hasOld && hasNew && old.Digest == next.Digest {
+			unchanged++
+			continue
+		}
+		c := skillFileChange{Path: p, Kind: "modified"}
+		if hasOld {
+			c.Before = &old
+		} else {
+			c.Kind = "added"
+		}
+		if hasNew {
+			c.After = &next
+		} else {
+			c.Kind = "removed"
+		}
+		changes = append(changes, c)
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
+	return changes, unchanged
 }

@@ -97,7 +97,8 @@ RUN mkdir -p /opt/worker && cd /opt/worker \
 # ---------- final: server ----------
 FROM alpine:3.20 AS foundry-server
 
-RUN apk add --no-cache ca-certificates wget
+# git: the skill library reads skills from public git repositories.
+RUN apk add --no-cache ca-certificates wget git
 COPY --from=server-builder /foundry-server /app/foundry-server
 COPY --from=web-builder /app/apps/web/dist /app/web/dist
 

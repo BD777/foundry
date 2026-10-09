@@ -64,16 +64,8 @@ test("projects output, subagents, and workspace source into the sidecar", () => 
     ]),
   ]);
 
-  assert.deepEqual(data?.outputs, [
-    {
-      detail: "/tmp/project/result.md",
-      id: "evt_output",
-      kind: "file",
-      label: "result.md",
-      target: "/tmp/project/result.md",
-      workspaceId: "ws_test",
-    },
-  ]);
+  // A turn's result.md is Foundry's copy of the reply already in the chat.
+  assert.deepEqual(data?.outputs, []);
   assert.deepEqual(
     data?.subagents.map((item) => [item.label, item.status]),
     [
@@ -203,11 +195,9 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
         "task_old",
       ),
       subagentEvent("evt_old_done", "子任务完成", "Older task", "task_old"),
-      event(
-        "evt_old_output",
-        "Claude Agent SDK finished",
-        "/tmp/old/result.md",
-      ),
+      event("evt_old_output", "Produced output file", "old.md", "info", {
+        outputFile: "old.md",
+      }),
     ],
     "completed",
   );
@@ -220,11 +210,9 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
         "Current task",
         "task_new",
       ),
-      event(
-        "evt_new_output",
-        "Claude Agent SDK finished",
-        "/tmp/new/result.md",
-      ),
+      event("evt_new_output", "Produced output file", "new.md", "info", {
+        outputFile: "new.md",
+      }),
     ],
     "completed",
   );
@@ -237,8 +225,8 @@ test("keeps the sidecar focused on the most recent turn with agent activity", ()
     ["Current task"],
   );
   assert.deepEqual(
-    data?.outputs.map((item) => item.detail),
-    ["/tmp/new/result.md"],
+    data?.outputs.map((item) => item.target),
+    ["new.md"],
   );
 });
 
@@ -366,14 +354,57 @@ test("projects the files a run reported, never file names merely mentioned in it
   const data = chatContextCardForSessions([item]);
 
   assert.deepEqual(
-    data?.outputs.map(({ label, target }) => [label, target]),
+    data?.outputs.map(({ label, detail, target }) => [label, detail, target]),
     [
-      ["01-06.md", "summary-parts/01-06.md"],
+      ["01-06.md", "summary-parts", "summary-parts/01-06.md"],
       [
         "地狱焚决群增量总结-20260916-0922.md",
+        undefined,
         "地狱焚决群增量总结-20260916-0922.md",
       ],
-      ["result.md", "/tmp/project/result.md"],
     ],
   );
+});
+
+test("lists the workspace files a run produced, the ones its reply names first, without task logs or turn results", () => {
+  const taskLog = (id, file) =>
+    event(id, "Subtask completed", "done", "info", {
+      outputFile: file,
+      taskId: id,
+      taskType: "local_agent",
+    });
+  const produced = (id, file) =>
+    event(id, "Produced output file", file, "info", { outputFile: file });
+  const item = session([
+    event("evt_workspace", "Loaded workspace", "/home/me/my-feishu"),
+    produced("evt_gitignore", ".gitignore"),
+    produced("evt_meta", "sessions/group-a/meta.json"),
+    taskLog(
+      "evt_task",
+      "/data00/home/me/tmp/claude-1001/x/tasks/a0d257ad330864a29.output",
+    ),
+    produced("evt_digest", "logs/2026-10-09-digest.md"),
+    produced("evt_meta_again", "sessions/group-a/meta.json"),
+    produced("evt_open", "tasks/2026-10-09-open-loops.md"),
+    event(
+      "evt_result",
+      "Claude Agent SDK finished",
+      "/home/me/my-feishu/.foundry/sessions/s/inputs/i/result.md",
+    ),
+  ]);
+  item.response =
+    "Open loops are in tasks/2026-10-09-open-loops.md and the run log is logs/2026-10-09-digest.md.";
+
+  const outputs = chatContextCardForSessions([item])?.outputs ?? [];
+
+  assert.deepEqual(
+    outputs.map(({ target, mentioned }) => [target, Boolean(mentioned)]),
+    [
+      ["tasks/2026-10-09-open-loops.md", true],
+      ["logs/2026-10-09-digest.md", true],
+      ["sessions/group-a/meta.json", false],
+      [".gitignore", false],
+    ],
+  );
+  assert.equal(outputs[0].detail, "tasks");
 });

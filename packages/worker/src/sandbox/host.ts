@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canonical } from "../paths.js";
 import {
   defaultStateRoot,
+  foundryToolsRoot,
   foundryStateRoot,
   stackStateParent,
 } from "../state-root.js";
@@ -116,6 +117,7 @@ export function writableTreeSystemRoots(): string[] {
     "/Applications",
     "/snap",
     "/nix",
+    foundryToolsRoot(),
   ].filter(existsSync);
 }
 
@@ -129,5 +131,6 @@ export function offlineCommandSystemRoots(): string[] {
     "/System",
     "/Library",
     "/opt/homebrew",
+    foundryToolsRoot(),
   ].filter(existsSync);
 }

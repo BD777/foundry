@@ -2,10 +2,11 @@
 // local filesystem and projects them as Foundry chat threads. Self-contained
 // except for protocol types and node built-ins.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
-import { open as openFile } from "node:fs/promises";
+import { open as openFile, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { nativeChatTranscript } from "./native-chat-transcript.js";
@@ -87,7 +88,8 @@ export async function nativeChatThreadsForWorkspace(
         profileLabel: candidate.profileLabel ?? profile?.label,
         readonly: false,
         title: candidate.title,
-        updatedLabel: relativeTimeLabel(candidate.updatedAt),
+        // Its last conversation activity; lists label it themselves, so
+        // time passing never changes what is uploaded.
         updatedAt: candidate.updatedAt.toISOString(),
         workspaceId: workspace.id,
       };
@@ -115,7 +117,11 @@ async function codexNativeChatThreadsForWorkspace(
   for (const codexHome of codexHomeCandidates()) {
     const titleIndex = codexSessionIndex(codexHome);
     const sessionsRoot = resolve(codexHome, "sessions");
-    const sessionPaths = jsonlFiles(sessionsRoot, 2500);
+    const sessionPaths = await jsonlFiles(
+      sessionsRoot,
+      2500,
+      codexSessionDepth,
+    );
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
@@ -137,15 +143,6 @@ async function codexNativeChatThreadsForWorkspace(
         ...parsed,
         title:
           indexed?.thread_name?.trim() || parsed.preview || "Codex session",
-        updatedAt: new Date(
-          Math.max(
-            parsed.updatedAt.getTime(),
-            indexed?.updated_at &&
-              Number.isFinite(Date.parse(indexed.updated_at))
-              ? Date.parse(indexed.updated_at)
-              : 0,
-          ),
-        ),
       };
       const current = byID.get(candidate.id);
       if (!current || candidate.updatedAt > current.updatedAt) {
@@ -165,7 +162,11 @@ async function claudeNativeChatThreadsForWorkspace(
 
   for (const claudeHome of claudeHomeCandidates()) {
     const projectsRoot = resolve(claudeHome, "projects");
-    const sessionPaths = jsonlFiles(projectsRoot, 2500);
+    const sessionPaths = await jsonlFiles(
+      projectsRoot,
+      2500,
+      claudeSessionDepth,
+    );
     for (let index = 0; index < sessionPaths.length; index += 1) {
       const sessionPath = sessionPaths[index];
       if (!sessionPath) {
@@ -196,7 +197,7 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolveYield) => setImmediate(resolveYield));
 }
 
-function claudeHomeCandidates(): string[] {
+export function claudeHomeCandidates(): string[] {
   const candidates = [
     process.env.CLAUDE_CONFIG_DIR,
     resolve(homedir(), ".claude"),
@@ -206,7 +207,7 @@ function claudeHomeCandidates(): string[] {
   );
 }
 
-function codexHomeCandidates(): string[] {
+export function codexHomeCandidates(): string[] {
   const candidates = [
     process.env.CODEX_HOME,
     resolve(homedir(), ".codex-personal"),
@@ -241,37 +242,68 @@ function codexSessionIndex(
   return index;
 }
 
-function jsonlFiles(root: string, limit: number): string[] {
+// How deep session logs sit below their root: Claude keeps a session at
+// projects/<project>/<id>.jsonl (deeper files are its subagents and tool
+// results, not chats); Codex at sessions/<yyyy>/<mm>/<dd>/<file>.jsonl.
+const claudeSessionDepth = 2;
+const codexSessionDepth = 5;
+// One listing serves every workspace synced in the same round.
+const listingReuseMs = 5000;
+const listings = new Map<string, { at: number; files: Promise<string[]> }>();
+
+/**
+ * The newest session logs under root, at most `depth` levels down. It walks
+ * asynchronously and yields between directories, so a large history never
+ * keeps the worker from answering the server.
+ */
+function jsonlFiles(
+  root: string,
+  limit: number,
+  depth: number,
+): Promise<string[]> {
+  const key = `${root}\0${limit}\0${depth}`;
+  const reused = listings.get(key);
+  if (reused && Date.now() - reused.at < listingReuseMs) return reused.files;
+  const files = walkJsonlFiles(root, limit, depth);
+  listings.set(key, { at: Date.now(), files });
+  void files.catch(() => listings.delete(key));
+  return files;
+}
+
+async function walkJsonlFiles(
+  root: string,
+  limit: number,
+  depth: number,
+): Promise<string[]> {
   if (!existsSync(root)) {
     return [];
   }
   const files: { path: string; mtimeMs: number }[] = [];
-  const stack = [root];
+  const stack: { dir: string; level: number }[] = [{ dir: root, level: 0 }];
   while (stack.length > 0) {
-    const dir = stack.pop();
-    if (!dir) {
-      continue;
-    }
-    let entries: string[] = [];
+    const { dir, level } = stack.pop()!;
+    let entries: Dirent[];
     try {
-      entries = readdirSync(dir);
+      entries = await readdir(dir, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const entry of entries) {
-      const entryPath = resolve(dir, entry);
-      let stat;
-      try {
-        stat = statSync(entryPath);
-      } catch {
-        continue;
-      }
-      if (stat.isDirectory()) {
-        stack.push(entryPath);
-      } else if (entry.endsWith(".jsonl")) {
-        files.push({ path: entryPath, mtimeMs: stat.mtimeMs });
+      const entryPath = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (level + 1 < depth) stack.push({ dir: entryPath, level: level + 1 });
+      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        try {
+          files.push({
+            path: entryPath,
+            mtimeMs: (await stat(entryPath)).mtimeMs,
+          });
+        } catch {
+          continue;
+        }
       }
     }
+    await yieldToEventLoop();
   }
   return files
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
@@ -371,16 +403,55 @@ function clipNativeRecapText(text: string): string {
  */
 const nativeTurnSilenceMs = 30 * 60 * 1000;
 
+/**
+ * Records that are the conversation itself. Claude Code appends bookkeeping
+ * (last-prompt, ai-title, cost-state, …) when an idle session closes; those
+ * are not activity.
+ */
+function conversationRecord(
+  record: Record<string, unknown> | undefined,
+  provider: "codex" | "claude",
+): boolean {
+  return provider === "claude"
+    ? record?.type === "user" || record?.type === "assistant"
+    : record?.type === "response_item" || record?.type === "event_msg";
+}
+
+/**
+ * When a native session's conversation last moved, from its records, never
+ * the file's write time: idle sessions and `/resume` rewrite files without a
+ * new turn. A file without any conversation (a `/resume` stub) is not a chat.
+ */
+function conversationActivity(
+  tailActivity: Date | undefined,
+  headLines: string[],
+  provider: "codex" | "claude",
+): Date | undefined {
+  return tailActivity ?? nativeChatRecap(headLines, provider).activityAt;
+}
+
 export function nativeChatRecap(
   lines: string[],
   provider: "codex" | "claude",
   lastWrite?: Date,
-): Pick<ChatThread, "answerRevision" | "recentMessages" | "status"> {
+): Pick<ChatThread, "answerRevision" | "recentMessages" | "status"> & {
+  /** When the conversation last moved: its latest message or step. */
+  activityAt?: Date;
+} {
   const messages: NonNullable<ChatThread["recentMessages"]> = [];
   let answerRevision: string | undefined;
   let status: ChatThread["status"];
+  let activityAt: Date | undefined;
   for (const line of lines) {
     const record = parseJSONRecord(line);
+    if (
+      conversationRecord(record, provider) &&
+      typeof record?.timestamp === "string"
+    ) {
+      const at = new Date(record.timestamp);
+      if (Number.isFinite(at.getTime()) && (!activityAt || at > activityAt))
+        activityAt = at;
+    }
     const payload =
       record?.payload && typeof record.payload === "object"
         ? (record.payload as Record<string, unknown>)
@@ -431,6 +502,7 @@ export function nativeChatRecap(
     if (messages[index]?.role === "user" && ++users === 2) break;
   }
   return {
+    activityAt,
     answerRevision,
     recentMessages: messages.slice(start).slice(-8),
     status,
@@ -487,6 +559,15 @@ async function parseCodexSessionCandidate(
   }
 
   const preview = codexSessionPreview(lines) || "Codex native session";
+  const { activityAt: tailActivity, ...recap } = nativeChatRecap(
+    stat.size <= nativeSessionTranscriptByteLimit
+      ? lines
+      : await readSessionTailLines(sessionPath, stat.size),
+    "codex",
+    stat.mtime,
+  );
+  const activityAt = conversationActivity(tailActivity, lines, "codex");
+  if (!activityAt) return undefined;
   return {
     handoffContext: codexSessionHandoffContext(lines),
     transcript: nativeChatTranscript(
@@ -494,18 +575,12 @@ async function parseCodexSessionCandidate(
       "codex",
       stat.size > nativeSessionTranscriptByteLimit,
     ),
-    ...nativeChatRecap(
-      stat.size <= nativeSessionTranscriptByteLimit
-        ? lines
-        : await readSessionTailLines(sessionPath, stat.size),
-      "codex",
-      stat.mtime,
-    ),
+    ...recap,
     id,
     preview,
     provider: "codex",
     title: preview || "Codex session",
-    updatedAt: stat.mtime,
+    updatedAt: activityAt,
     workspacePath: cwd,
   };
 }
@@ -521,7 +596,6 @@ async function parseClaudeSessionCandidate(
   );
   let id = "";
   let workspacePath = "";
-  let updatedAt = stat.mtime;
 
   for (const line of headerLines.slice(0, 200)) {
     const record = parseJSONRecord(line);
@@ -536,17 +610,6 @@ async function parseClaudeSessionCandidate(
     const cwd = typeof record.cwd === "string" ? resolve(record.cwd) : "";
     if (cwd) {
       workspacePath = cwd;
-    }
-    const timestamp =
-      typeof record.timestamp === "string"
-        ? new Date(record.timestamp)
-        : undefined;
-    if (
-      timestamp &&
-      Number.isFinite(timestamp.getTime()) &&
-      timestamp > updatedAt
-    ) {
-      updatedAt = timestamp;
     }
   }
 
@@ -569,6 +632,15 @@ async function parseClaudeSessionCandidate(
         )
       : headerLines;
   const preview = claudeSessionPreview(lines) || "Claude native session";
+  const { activityAt: tailActivity, ...recap } = nativeChatRecap(
+    stat.size <= nativeSessionTranscriptByteLimit
+      ? lines
+      : await readSessionTailLines(sessionPath, stat.size),
+    "claude",
+    stat.mtime,
+  );
+  const activityAt = conversationActivity(tailActivity, lines, "claude");
+  if (!activityAt) return undefined;
   return {
     handoffContext: claudeSessionHandoffContext(lines),
     transcript: nativeChatTranscript(
@@ -576,18 +648,12 @@ async function parseClaudeSessionCandidate(
       "claude",
       stat.size > nativeSessionTranscriptByteLimit,
     ),
-    ...nativeChatRecap(
-      stat.size <= nativeSessionTranscriptByteLimit
-        ? lines
-        : await readSessionTailLines(sessionPath, stat.size),
-      "claude",
-      stat.mtime,
-    ),
+    ...recap,
     id,
     preview,
     provider: "claude",
     title: preview || "Claude session",
-    updatedAt,
+    updatedAt: activityAt,
     workspacePath,
   };
 }
@@ -862,23 +928,4 @@ function messageContentText(content: unknown): string {
     })
     .filter(Boolean)
     .join("\n\n");
-}
-
-function relativeTimeLabel(date: Date): string {
-  const ms = Date.now() - date.getTime();
-  if (!Number.isFinite(ms) || ms < 0) {
-    return "just now";
-  }
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) {
-    return "just now";
-  }
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h`;
-  }
-  return `${Math.floor(hours / 24)}d`;
 }
