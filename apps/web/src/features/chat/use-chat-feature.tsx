@@ -17,7 +17,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { chatUpdateTime, latestChatTime } from "./chat-time";
-import { toChatSendError } from "./chat-send-error";
+import { sessionStillActive, toChatSendError } from "./chat-send-error";
 import {
   cancelAgentSession,
   createAgentSession,
@@ -37,6 +37,7 @@ import {
   activeThreadSession,
   activeThreadSessionForAgent,
   agentSessionStatusLabel,
+  chatComposerChoices,
   agentSessionTerminalError,
   chatMessageItemId,
   chatMessages,
@@ -47,7 +48,6 @@ import {
   isTerminalSession,
   latestCopyableResponseIndex,
   latestThreadSession,
-  profileTransitionNoteForSend,
   selectedChatThread,
 } from "./chat-model";
 import { ChatSurface, type ChatMessageItem } from "./chat-surface";
@@ -64,6 +64,7 @@ import {
 } from "./chat-hydration-policy";
 import { hydrateSessionThreadWithRetry } from "./chat-transcript-hydration";
 import { useChatRuntime } from "./use-chat-runtime";
+import { useChatQueue } from "./use-chat-queue";
 import { useChatReadState, useChatTitles } from "./use-chat-list-state";
 import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
 import { workspaceDenial } from "../../lib/workspace-access";
@@ -261,6 +262,27 @@ export function useChatFeature({
     selectedThread,
     threadKey: conversationThreadKey,
     workspaceId,
+  });
+  const composerChoices = (agent: AgentProjection) =>
+    chatComposerChoices(
+      agent,
+      {
+        claudeEffort,
+        claudePermissionMode,
+        codexApprovalPolicy,
+        codexReasoningEffort,
+        codexSandboxMode,
+        codexSpeed,
+        model: modelValue,
+      },
+      { selectedChat, thread: selectedThread },
+    );
+  // A new or native chat's queued messages wait in the composer for a session.
+  const queue = useChatQueue({
+    workspaceId,
+    chatId:
+      selectedThread && !unlistedSelection ? selectedThread.id : undefined,
+    runSettings: () => (selectedAgent ? composerChoices(selectedAgent) : {}),
   });
   useEffect(() => {
     if (previousWorkspaceIdRef.current === workspaceId) {
@@ -606,41 +628,18 @@ export function useChatFeature({
         effectiveAttachments.map((attachment) => attachment.id),
       );
       const message = {
-        agentId: selectedAgent.id,
+        ...composerChoices(selectedAgent),
         attachments: effectiveAttachments,
-        claudeEffort:
-          selectedAgent.provider === "claude" && claudeEffort
-            ? claudeEffort
-            : undefined,
-        claudePermissionMode:
-          selectedAgent.provider === "claude"
-            ? claudePermissionMode
-            : undefined,
-        codexApprovalPolicy:
-          selectedAgent.provider === "codex" ? codexApprovalPolicy : undefined,
-        codexReasoningEffort:
-          selectedAgent.provider === "codex" && codexReasoningEffort
-            ? codexReasoningEffort
-            : undefined,
-        codexSandboxMode:
-          selectedAgent.provider === "codex" ? codexSandboxMode : undefined,
-        codexSpeed: selectedAgent.provider === "codex" ? codexSpeed : undefined,
-        model: modelValue || undefined,
-        profileId: selectedAgent.profileId,
-        profileTransitionNote: profileTransitionNoteForSend({
-          agent: selectedAgent,
-          selectedChat: chatForSend,
-          thread: selectedThread,
-        }),
         prompt,
-        provider: selectedAgent.provider,
       };
       let session: AgentSession;
       try {
         session = continuedSession
           ? await sendAgentSessionMessage(
               continuedSession.id,
-              message,
+              // A turn that started meanwhile (a queued message went first)
+              // must not take this one as a steer: it is queued instead.
+              { ...message, requireIdle: true },
               options?.idempotencyKey,
             )
           : await createAgentSession(
@@ -653,6 +652,8 @@ export function useChatFeature({
               options?.idempotencyKey,
             );
       } catch (reason) {
+        // The turn started meanwhile: the message waits for it to end.
+        if (continuedSession && sessionStillActive(reason)) return "queue";
         // Surface a safe, specific cause in the composer Alert. Throwing lets
         // useConversationInput retain the draft/attachments and require an
         // explicit retry (no auto-replay); busy protection is in its finally.
@@ -976,6 +977,7 @@ export function useChatFeature({
       onRetryModels={retryModels}
       onSend={send}
       onSteer={steer}
+      queue={queue}
       selectedAgentId={selectedAgent?.id ?? ""}
       sendDisabled={
         !deviceOnline || !selectedAgent || selectedAgent.status !== "healthy"

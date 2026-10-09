@@ -143,8 +143,14 @@ export function codexCommandCandidates(
     "codex",
     resolve(home, ".local/bin/codex"),
     "/opt/homebrew/bin/codex",
-    "/Applications/Codex.app/Contents/Resources/codex",
-    "/Applications/ChatGPT.app/Contents/Resources/codex",
+    // The ChatGPT desktop app (which hosts Codex) ships its CLI under
+    // Contents/Resources/codex-cli/bin, as seen in ChatGPT.app with
+    // codex-cli 0.160.1; a per-user install lives under ~/Applications.
+    ...["/Applications", resolve(home, "Applications")].flatMap((apps) =>
+      ["ChatGPT.app", "Codex.app"].map((app) =>
+        resolve(apps, app, "Contents/Resources/codex-cli/bin/codex"),
+      ),
+    ),
   ].filter((value): value is string => Boolean(value));
 }
 

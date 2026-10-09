@@ -14,8 +14,11 @@ import type {
   AgentSubagentSummary,
   AgentSubagentTranscript,
   ChatAttachment,
+  ChatQueue,
   ChatThread,
   ChatLayout,
+  EditChatQueueItemInput,
+  EnqueueChatMessageInput,
   DeviceProfileBinding,
   DeviceDiagnostics,
   DeviceProjection,
@@ -140,6 +143,133 @@ export function recapChatTitle(
   });
 }
 
+/**
+ * How a change to a chat's queue went. A refusal (409) carries the queue as
+ * the server has it now and why: the message was already sent ("already_sent"),
+ * is being sent ("sending"), or the queue changed ("changed").
+ */
+export type ChatQueueResult =
+  | { ok: true; queue: ChatQueue }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      code?: "already_sent" | "sending" | "changed";
+      queue?: ChatQueue;
+    };
+
+async function chatQueueRequest(
+  method: string,
+  path: string,
+  body?: unknown,
+  idempotencyKey?: string,
+  options: RequestOptions = {},
+): Promise<ChatQueueResult> {
+  const response = await apiFetch(`${API_BASE_URL}${path}`, {
+    method,
+    signal: options.signal,
+    headers: {
+      ...jsonHeaders(body !== undefined),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const payload = (await response.json().catch(() => undefined)) as
+    | (ChatQueue & {
+        error?: string;
+        code?: "already_sent" | "sending" | "changed";
+        queue?: ChatQueue;
+      })
+    | undefined;
+  if (response.ok && payload) return { ok: true, queue: payload };
+  return {
+    ok: false,
+    status: response.status,
+    error: payload?.error ?? `${path} returned ${response.status}`,
+    code: payload?.code,
+    queue: payload?.queue,
+  };
+}
+
+function chatQueuePath(chatId: string, rest = ""): string {
+  return `/api/chats/${encodeURIComponent(chatId)}/queue${rest}`;
+}
+
+export function getChatQueue(
+  chatId: string,
+  options: RequestOptions = {},
+): Promise<ChatQueueResult> {
+  return chatQueueRequest(
+    "GET",
+    chatQueuePath(chatId),
+    undefined,
+    undefined,
+    options,
+  );
+}
+
+/** The idempotency key makes a repeated request (a reload, another tab) add the message once. */
+export function enqueueChatMessage(
+  chatId: string,
+  input: EnqueueChatMessageInput,
+  idempotencyKey: string,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest("POST", chatQueuePath(chatId), input, idempotencyKey);
+}
+
+export function editChatQueueItem(
+  chatId: string,
+  itemId: string,
+  input: EditChatQueueItemInput,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest(
+    "PATCH",
+    chatQueuePath(chatId, `/${encodeURIComponent(itemId)}`),
+    input,
+  );
+}
+
+export function deleteChatQueueItem(
+  chatId: string,
+  itemId: string,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest(
+    "DELETE",
+    chatQueuePath(chatId, `/${encodeURIComponent(itemId)}`),
+  );
+}
+
+export function reorderChatQueue(
+  chatId: string,
+  itemIds: string[],
+  expectedRevision: number,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest("PUT", chatQueuePath(chatId, "/order"), {
+    itemIds,
+    expectedRevision,
+  });
+}
+
+export function steerChatQueueItem(
+  chatId: string,
+  itemId: string,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest(
+    "POST",
+    chatQueuePath(chatId, `/${encodeURIComponent(itemId)}/steer`),
+  );
+}
+
+export function retryChatQueueItem(
+  chatId: string,
+  itemId: string,
+): Promise<ChatQueueResult> {
+  return chatQueueRequest(
+    "POST",
+    chatQueuePath(chatId, `/${encodeURIComponent(itemId)}/retry`),
+  );
+}
+
 class ApiError extends Error {
   status: number;
 
@@ -191,6 +321,7 @@ const foundryStreamEventTypes = new Set<FoundryStreamEvent["type"]>([
   "agent_session_native_session_id",
   "feishu_bot_updated",
   "workspace_members_updated",
+  "chat_queue_changed",
 ]);
 
 export function subscribeFoundryEvents(

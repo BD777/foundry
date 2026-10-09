@@ -131,7 +131,20 @@ export const conversation: Translation<typeof en> = {
     nextTurn: "下一轮",
     send: "发送",
     edit: "编辑排队消息",
+    editLabel: "排队消息",
+    reorder: "移动排队消息",
+    reorderHint: "拖动，或按 ↑ / ↓ 移动",
+    save: "保存",
+    cancel: "取消",
     remove: "删除排队消息",
+    sending: "发送中",
+    sendingHint: "这条消息正在发送",
+    retry: "重试",
+    retryHint: "重新发送这条消息；队列会等它",
+    failed: "没有发出：{{error}}",
+    waiting: "等待中",
+    waitingHint: "上面发送失败的消息重试或删除后再发送",
+    maybeSent: "可能已经在对话里，发送前请先确认",
   },
   composer: {
     inputLabel: "对话输入框",
@@ -148,5 +161,10 @@ export const conversation: Translation<typeof en> = {
     notSteered: "这条消息没能引导进去，仍留在队列里。",
     maybeSent:
       "第一条排队消息发送时页面关闭了，它可能已经在对话里。请先确认，再发送或删除它。",
+    maybeSentMarked:
+      "一条排队消息发送时页面关闭了，它可能已经在对话里。请先确认，再发送或删除标出的那条。",
+    alreadySent: "这条消息已经发出了。",
+    queueChanged: "队列在另一个标签页里变了，这里显示的是最新的。",
+    queueFailed: "队列没能修改，请再试一次。",
   },
 };

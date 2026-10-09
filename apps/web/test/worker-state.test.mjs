@@ -50,6 +50,21 @@ test("Update all acts only on owned, connected, self-updating devices behind the
     ),
     "stalled",
   );
+  // A failed update is shown as failed, even with the device offline.
+  assert.equal(
+    workerState(
+      device({
+        status: "disconnected",
+        workerUpdate: {
+          startedAt: "t",
+          failure: "the worker did not come back after updating",
+          failureCode: "not_back",
+        },
+      }),
+      release,
+    ),
+    "failed",
+  );
   // A server on the npm release names no build to compare against.
   assert.equal(workerState(device(), { source: "npm" }), "current");
 });

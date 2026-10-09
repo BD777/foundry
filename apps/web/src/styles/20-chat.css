@@ -3112,6 +3112,10 @@
   cursor: grabbing;
 }
 
+.fdy-chat-queue-grip:disabled {
+  cursor: default;
+}
+
 .fdy-chat-queue-body {
   display: grid;
   min-width: 0;
@@ -3141,6 +3145,54 @@
 
 .fdy-chat-queue-action:hover:not(:disabled) {
   color: var(--fdy-ink);
+}
+
+.fdy-chat-queue-notice {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fdy-chat-queue-item[data-state="dispatching"] {
+  opacity: 0.72;
+}
+
+.fdy-chat-queue-item[data-state="failed"] {
+  border-color: var(--fdy-error-border);
+}
+
+.fdy-chat-queue-error {
+  color: var(--fdy-error-text);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-queue-warning {
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fdy-chat-queue-item[data-maybe-sent="true"] {
+  border-color: var(--fdy-warning-border);
+}
+
+.fdy-chat-queue-editor {
+  min-width: 0;
+  font-size: 13px;
+}
+
+/* An edited message takes the row's width; Save and Cancel sit under it. */
+.fdy-chat-queue-item[data-editing="true"] {
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.fdy-chat-queue-item[data-editing="true"] .fdy-chat-queue-actions {
+  grid-column: 2;
+  justify-content: flex-end;
 }
 
 .fdy-chat-attachments {

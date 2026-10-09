@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Window } from "happy-dom";
 import { act, createElement } from "react";
 import { createFileDiff } from "../src/components/ui/file-diff-engine.ts";
@@ -177,6 +178,35 @@ test("a change opens its diff; the layout choice is remembered", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("side by side, a new file's empty side stays blank", async () => {
+  await withDom(async (container, root) => {
+    const { FileDiff } = await import("../src/components/ui/file-diff.tsx");
+    await act(async () =>
+      root.render(
+        createElement(FileDiff, {
+          before: "",
+          after: "first\nsecond\n",
+          viewType: "split",
+        }),
+      ),
+    );
+    for (let index = 0; index < 5; index += 1) await act(tick);
+    assert.equal(container.querySelectorAll(".diff-gutter-insert").length, 2);
+    // react-diff-view marks the side with no line as omitted …
+    assert.equal(container.querySelectorAll(".diff-gutter-omit").length, 2);
+    assert.equal(container.querySelectorAll(".diff-code-omit").length, 2);
+  });
+  // … and draws a line in its gutter unless its documented color is unset.
+  const styles = readFileSync(
+    new URL("../src/components/ui/file-diff.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    styles.match(/\.fdy-text-diff \{[^}]*\}/)?.[0] ?? "",
+    /--diff-omit-gutter-line-color: transparent;/,
+  );
 });
 
 test("one answer's change asks for that turn's diff", async () => {

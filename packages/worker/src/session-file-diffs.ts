@@ -326,10 +326,18 @@ export async function gitWorkTreeSnapshot(
   if (!repoRoot) return undefined;
   const temporaryFolder = mkdtempSync(join(tmpdir(), "foundry-snapshot-"));
   const temporaryIndex = join(temporaryFolder, "index");
-  const excluded = exclude
-    .map((path) => relative(repoRoot, path))
-    .filter((path) => path && !path.startsWith("..") && !isAbsolute(path))
-    .map((path) => `:(exclude)${path.split(sep).join("/")}`);
+  const inRepo = exclude
+    .map((path) => relative(repoRoot, path).split(sep).join("/"))
+    .filter((path) => path && !path.startsWith("..") && !isAbsolute(path));
+  // Only the outermost of nested paths: git (2.39) fails `add` when an
+  // exclude names a folder inside one that is already ignored, such as a
+  // session folder under `.foundry/`, which Foundry adds to info/exclude.
+  const excluded = inRepo
+    .filter(
+      (path) =>
+        !inRepo.some((other) => other !== path && path.startsWith(`${other}/`)),
+    )
+    .map((path) => `:(exclude)${path}`);
   try {
     const realIndex = resolve(
       repoRoot,

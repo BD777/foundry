@@ -233,6 +233,10 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		}
 	}
 
+	inputID, err := s.sessionInputID(ctx, input.InputID, now)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
 	titleInput := prompt
 	if titleInput == "" && len(attachments) > 0 {
 		titleInput = attachments[0].Name
@@ -270,7 +274,7 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		Title:                titleFromInput(titleInput),
 		Prompt:               prompt,
 		Input: store.SessionInput{
-			ID:                    newSessionInputID(now),
+			ID:                    inputID,
 			At:                    formatTime(now),
 			Prompt:                prompt,
 			Attachments:           attachments,
@@ -326,6 +330,23 @@ func newSessionInputID(now time.Time) string {
 	id[6] = id[6]&0x0f | 0x70
 	id[8] = id[8]&0x3f | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16])
+}
+
+// sessionInputID is the id a new input gets: the one its sender chose (a
+// queued message's), unless a session already recorded that input.
+func (s *Store) sessionInputID(ctx context.Context, requested string, now time.Time) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return newSessionInputID(now), nil
+	}
+	var recorded bool
+	if err := s.conn().QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_session_events WHERE id = ?)`, "evt_"+requested).Scan(&recorded); err != nil {
+		return "", err
+	}
+	if recorded {
+		return "", store.ErrSessionInputExists
+	}
+	return requested, nil
 }
 
 // recordSessionInput writes the input into the session's transcript.
@@ -438,9 +459,13 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			}
 		}
 		now := time.Now().UTC()
+		inputID, err := tx.sessionInputID(ctx, input.InputID, now)
+		if err != nil {
+			return err
+		}
 		previousInputID := session.Input.ID
 		session.Input = store.SessionInput{
-			ID:                    newSessionInputID(now),
+			ID:                    inputID,
 			At:                    formatTime(now),
 			Prompt:                prompt,
 			Attachments:           attachments,

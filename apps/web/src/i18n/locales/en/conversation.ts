@@ -133,7 +133,20 @@ export const conversation = {
     nextTurn: "Next turn",
     send: "Send",
     edit: "Edit queued message",
+    editLabel: "Queued message",
+    reorder: "Move queued message",
+    reorderHint: "Drag, or press ↑ / ↓ to move",
+    save: "Save",
+    cancel: "Cancel",
     remove: "Delete queued message",
+    sending: "Sending",
+    sendingHint: "This message is being sent now",
+    retry: "Retry",
+    retryHint: "Send this message again; the queue waits for it",
+    failed: "Not sent: {{error}}",
+    waiting: "Waiting",
+    waitingHint: "Sent after the failed message above is retried or deleted",
+    maybeSent: "May already be in the conversation; check before sending it",
   },
   composer: {
     inputLabel: "Chat input",
@@ -151,5 +164,10 @@ export const conversation = {
     notSteered: "The message could not be steered. It remains in the queue.",
     maybeSent:
       "The page closed while the first queued message was being sent, so it may already be in the conversation. Check, then send it or delete it.",
+    maybeSentMarked:
+      "The page closed while a queued message was being sent, so it may already be in the conversation. Check, then send or delete the marked message.",
+    alreadySent: "This message was already sent.",
+    queueChanged: "The queue changed in another tab; showing the latest.",
+    queueFailed: "The queue could not be changed. Try again.",
   },
 };

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -670,6 +671,44 @@ test("Codex diffs come from a turn-start snapshot; the user's index is untouched
   );
   assert.deepEqual(readFileSync(index), indexBefore);
   assert.equal(existsSync(join(f.workspace, ".git", "index.lock")), false);
+});
+
+test("a Codex snapshot works while Foundry's session folders are git-ignored", async (t) => {
+  // The worker lists `.foundry/sessions/` in info/exclude; git 2.39 then
+  // refused an exclude pathspec for the session folder inside it.
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  writeFileSync(join(f.workspace, "notes.txt"), "alpha\nbeta\n");
+  // Foundry's setup commits shared files under .foundry/; the snapshot
+  // starts from a copy of that index.
+  mkdirSync(join(f.workspace, ".foundry"), { recursive: true });
+  writeFileSync(join(f.workspace, ".foundry", "skills.yaml"), "skills: []\n");
+  await git(f.workspace, ["add", ".foundry/skills.yaml"]);
+  // An earlier turn's records already sit in the ignored session folder.
+  const earlier = join(f.sessionsRoot, "sess_earlier", "inputs", "in_0");
+  mkdirSync(earlier, { recursive: true });
+  writeFileSync(join(earlier, "changes.json"), "{}\n");
+  const exclude = join(f.workspace, ".git", "info", "exclude");
+  mkdirSync(join(f.workspace, ".git", "info"), { recursive: true });
+  appendFileSync(exclude, "/.foundry/sessions/\n");
+  const files = f.turn("in_1");
+  await files.snapshotWorkTree();
+  writeFileSync(join(f.workspace, "notes.txt"), "alpha\nBETA\n");
+  for (const write of codexFileWrites({
+    type: "item.completed",
+    item: {
+      type: "file_change",
+      status: "completed",
+      changes: [{ path: join(f.workspace, "notes.txt"), kind: "update" }],
+    },
+  }))
+    await files.recordToolWrite(write);
+  await files.finish("");
+  const notes = await diffOf(f, join(f.workspace, "notes.txt"), "in_1");
+  assert.equal(notes.source, "git-snapshot");
+  assert.equal(notes.before, "alpha\nbeta\n");
+  assert.equal(notes.after, "alpha\nBETA\n");
+  assert.deepEqual([notes.added, notes.removed], [1, 1]);
 });
 
 test("line counts match a minimal diff", () => {

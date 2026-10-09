@@ -8,6 +8,13 @@ type DeviceSessionStore interface {
 	UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]AgentSession, error)
 }
 
+// WorkspaceAvailabilityStore records which of a device's workspaces its
+// worker serves: the others are marked unavailable on the device, never
+// deleted. It reports whether any workspace changed.
+type WorkspaceAvailabilityStore interface {
+	SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served []string) (bool, error)
+}
+
 // IssueExecutionStore runs an Issue as the session that implements it.
 type IssueExecutionStore interface {
 	// ClaimIssueExecution claims the next ready Issue and creates the session

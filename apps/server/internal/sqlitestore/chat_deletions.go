@@ -119,6 +119,13 @@ func (s *Store) softDeleteChat(ctx context.Context, workspaceID, chatID string) 
 			return err
 		}
 	}
+	queued := []string{chatID}
+	for _, session := range sessions {
+		queued = append(queued, session.ID, session.ThreadID)
+	}
+	if err := s.deleteChatQueues(ctx, workspaceID, queued); err != nil {
+		return err
+	}
 	// A native identity may also be referenced by a different local thread.
 	// Never hide an active execution through one of those aliases.
 	var busy bool

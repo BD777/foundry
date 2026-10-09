@@ -21,7 +21,9 @@
   box-shadow: var(--fdy-panel-shadow-focus);
 }
 
-.fdy-message-composer .fdy-field-chat {
+/* Only the composer's own input is borderless; other fields placed in the
+   composer (e.g. a queued message being edited) keep their own tone. */
+.fdy-composer-input-shell > .fdy-field-chat {
   min-width: 0;
   min-height: 54px;
   max-height: none;
@@ -35,7 +37,7 @@
   resize: none;
 }
 
-.fdy-message-composer .fdy-field-chat:focus {
+.fdy-composer-input-shell > .fdy-field-chat:focus {
   box-shadow: none;
 }
 

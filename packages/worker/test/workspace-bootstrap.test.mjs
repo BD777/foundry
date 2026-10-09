@@ -22,7 +22,7 @@ import {
   prepareAcceptance,
   applyAcceptance,
 } from "../dist/workspace-acceptance.js";
-import { git } from "../dist/execution-git.js";
+import { excludeFoundryRuntimeFromGit, git } from "../dist/execution-git.js";
 import { writeJSON } from "../dist/storage.js";
 
 function fixture(t) {
@@ -438,4 +438,58 @@ test("registering a large folder without Git commits every file and never stalls
     longestStall < 1000,
     `the worker stalled for ${Math.round(longestStall)} ms`,
   );
+});
+
+test("Foundry's session files stay out of a fresh repository, its worktrees and nested workspaces, through local excludes only", async (t) => {
+  const { root } = fixture(t);
+  const repo = resolve(root, "fresh");
+  mkdirSync(repo);
+  assert.equal(
+    await excludeFoundryRuntimeFromGit(repo),
+    false,
+    "not a repository yet: nothing to exclude",
+  );
+  await git(repo, ["init", "-q", "-b", "main"]);
+  mkdirSync(resolve(repo, ".foundry/sessions/sess_1"), { recursive: true });
+  writeFileSync(resolve(repo, ".foundry/sessions/sess_1/files.json"), "{}");
+  writeFileSync(resolve(repo, ".foundry/skills.yaml"), "skills: []\n");
+  assert.equal(await excludeFoundryRuntimeFromGit(repo), true);
+  await excludeFoundryRuntimeFromGit(repo);
+  const untracked = async (cwd) =>
+    (await git(cwd, ["status", "--porcelain", "--untracked-files=all"]))
+      .split("\n")
+      .filter(Boolean);
+  assert.deepEqual(await untracked(repo), ["?? .foundry/skills.yaml"]);
+  assert.equal(existsSync(resolve(repo, ".gitignore")), false);
+  const exclude = readFileSync(resolve(repo, ".git/info/exclude"), "utf8");
+  assert.equal(
+    exclude.split("\n").filter((line) => line === "/.foundry/sessions/").length,
+    1,
+    "idempotent",
+  );
+
+  // A workspace in a subfolder anchors its entries there.
+  const nested = resolve(repo, "apps/site");
+  mkdirSync(resolve(nested, ".foundry/sessions/sess_2"), { recursive: true });
+  writeFileSync(resolve(nested, ".foundry/sessions/sess_2/files.json"), "{}");
+  await excludeFoundryRuntimeFromGit(nested);
+  assert.deepEqual(await untracked(repo), ["?? .foundry/skills.yaml"]);
+
+  // A linked worktree writes the repository's shared excludes.
+  writeFileSync(resolve(repo, "README.md"), "hi\n");
+  await git(repo, ["add", "README.md", ".foundry/skills.yaml"]);
+  await git(repo, ["commit", "-q", "-m", "init"], {
+    env: {
+      GIT_AUTHOR_NAME: "T",
+      GIT_AUTHOR_EMAIL: "t@localhost",
+      GIT_COMMITTER_NAME: "T",
+      GIT_COMMITTER_EMAIL: "t@localhost",
+    },
+  });
+  const worktree = resolve(root, "worktree");
+  await git(repo, ["worktree", "add", "-q", "-b", "side", worktree]);
+  mkdirSync(resolve(worktree, ".foundry/sessions/sess_3"), { recursive: true });
+  writeFileSync(resolve(worktree, ".foundry/sessions/sess_3/files.json"), "{}");
+  assert.equal(await excludeFoundryRuntimeFromGit(worktree), true);
+  assert.deepEqual(await untracked(worktree), []);
 });

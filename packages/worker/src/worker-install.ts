@@ -53,6 +53,10 @@ import {
   stackStateParent,
 } from "./state-root.js";
 import { releaseSelfUpdateLock } from "./self-update-lock.js";
+import {
+  recordSelfUpdateEnd,
+  recordSelfUpdateStep,
+} from "./self-update-status.js";
 import { optionEnabled, optionValue } from "./utils.js";
 import {
   homeRelative,
@@ -174,6 +178,7 @@ export function installRuntime(name: string, specs: string[]): string {
     rmSync(staging, { recursive: true, force: true });
     throw new Error(`npm could not install ${specs.join(" ")}`);
   }
+  recordSelfUpdateStep("installing");
   const manifest = JSON.parse(
     readFileSync(join(staging, "node_modules", name, "package.json"), "utf8"),
   ) as RuntimeManifest;
@@ -284,32 +289,48 @@ function packageSpecs(args: string[]): string[] {
   return specs;
 }
 
+/** Each attempt's limit; fetch's own 10 s limit covers only connecting. */
+const releaseRequestTimeoutMs = 30_000;
+
 /**
  * Where the server's worker comes from. A server that predates
  * `/api/worker/release` (404) serves no packages, so its workers use npm.
  */
 export async function serverWorkerRelease(
   serverURL: string,
-  retryDelaysMs = [2000, 5000],
+  retryDelaysMs = [2000, 5000, 10_000],
+  requestTimeoutMs = releaseRequestTimeoutMs,
 ): Promise<WorkerRelease> {
-  // A server restarting (502/503) or a dropped connection is retried.
+  // A dropped or timed-out connection, or a server restarting (502/503), is
+  // tried again: a link that keeps the worker's socket up can still fail to
+  // open a new connection for a while.
   for (let attempt = 0; ; attempt++) {
     let response: Response | undefined;
     let failure: string;
     try {
-      response = await fetch(`${serverURL}/api/worker/release`);
+      response = await fetch(`${serverURL}/api/worker/release`, {
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      });
       if (response.status === 404) return { source: "npm" };
       if (response.ok) return (await response.json()) as WorkerRelease;
       failure = `HTTP ${response.status}: ${(await response.text()).trim()}`;
     } catch (error) {
       failure = networkFailure(error);
     }
-    const retryable = !response || response.status >= 500;
+    const retryable =
+      !response ||
+      response.status >= 500 ||
+      response.status === 408 ||
+      response.status === 429;
     if (!retryable || attempt >= retryDelaysMs.length)
       throw new Error(
         `could not ask ${serverURL} which worker it serves (${failure})`,
       );
-    await new Promise((done) => setTimeout(done, retryDelaysMs[attempt]));
+    const delay = retryDelaysMs[attempt]!;
+    const retry = `trying again in ${delay / 1000} s (attempt ${attempt + 2} of ${retryDelaysMs.length + 1})`;
+    console.log(`Could not reach ${serverURL} (${failure}); ${retry}.`);
+    recordSelfUpdateStep("checking", { detail: `${failure}; ${retry}` });
+    await new Promise((done) => setTimeout(done, delay));
   }
 }
 
@@ -418,8 +439,10 @@ function handOffToServedBuild(
   // Straight into the runtime directory (no npx copy), then that build does
   // the rest of this command.
   const previous = currentRuntimeVersion(self.name);
-  if (previous !== release.version)
+  if (previous !== release.version) {
+    recordSelfUpdateStep("downloading", { version: release.version });
     installRuntime(self.name, serverPackageSpecs(release, serverURL));
+  }
   const run = spawnSync(
     process.execPath,
     [currentRuntimeCli(self.name), ...process.argv.slice(2)],
@@ -508,9 +531,27 @@ function rerunUnderPairedStack(serverURL: string): boolean {
 }
 
 export async function updateCommand(args: string[]): Promise<void> {
-  // An update started from the web holds the device's update lock until here.
+  // An update started from the web holds the device's update lock until here,
+  // and records how it ended for the worker to report.
   try {
     await runUpdate(args);
+    const exitCode = Number(process.exitCode ?? 0);
+    recordSelfUpdateEnd(
+      exitCode === 0
+        ? { ok: true }
+        : {
+            ok: false,
+            exitCode,
+            error: `the update run that took over exited with status ${exitCode}`,
+          },
+    );
+  } catch (error) {
+    recordSelfUpdateEnd({
+      ok: false,
+      exitCode: 1,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   } finally {
     releaseSelfUpdateLock();
   }
@@ -532,13 +573,15 @@ async function runUpdate(args: string[]): Promise<void> {
       "This machine has no worker installed with `install`; nothing to update. A worker run from a source checkout updates with git.",
     );
   let specs = packageSpecs(args);
+  let target: string | undefined;
   if (!specs.length) {
     // The worker follows its server: the packages it serves, else npm.
+    recordSelfUpdateStep("checking");
     const serverURL = readDaemonConfig()?.serverURL;
     const release = serverURL
       ? await serverWorkerRelease(serverURL)
       : ({ source: "npm" } as const);
-    const target =
+    target =
       release.source === "server"
         ? release.version
         : latestPublishedVersion(self.name);
@@ -561,9 +604,12 @@ async function runUpdate(args: string[]): Promise<void> {
         ? serverPackageSpecs(release, serverURL!)
         : [`${self.name}@${target}`];
   }
+  if (!handedOff(current))
+    recordSelfUpdateStep("downloading", { version: target });
   const version = handedOff(current)
     ? current
     : installRuntime(self.name, specs);
+  recordSelfUpdateStep("restarting", { version });
   const restarted = await reinstallService({
     cliPath: currentRuntimeCli(self.name),
     macApp: process.platform === "darwin",

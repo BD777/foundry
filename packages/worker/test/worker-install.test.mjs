@@ -112,7 +112,10 @@ test("a worker follows the packages its server serves, and npm when it serves no
     assert.deepEqual(await serverWorkerRelease(`${base}/old`), {
       source: "npm",
     });
-    await assert.rejects(serverWorkerRelease(`${base}/broken`), /HTTP 503/);
+    await assert.rejects(
+      serverWorkerRelease(`${base}/broken`, [1, 1, 1]),
+      /HTTP 503/,
+    );
   } finally {
     server.close();
   }

@@ -129,6 +129,8 @@
   flex-shrink: 0;
   align-items: center;
   gap: 12px;
+  /* On its own line when narrow, its buttons wrap instead of overflowing. */
+  max-width: 100%;
 }
 /* Device details: label/value pairs in a wrapping grid, no inner boxes. */
 .fdy-device-details {
@@ -156,6 +158,17 @@
 }
 .fdy-device-worker p {
   margin: 0 0 8px;
+}
+.fdy-device-worker-log {
+  margin: 0 0 8px;
+}
+.fdy-device-worker-log summary {
+  cursor: pointer;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+.fdy-device-worker-log-lines {
+  margin-top: 6px;
 }
 .fdy-device-worker-actions {
   display: flex;

@@ -317,6 +317,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_tokens_session ON session_tokens (session_id)`,
 	}
+	statements = append(statements, chatQueueSchema()...)
 	statements = append(statements, indexStatements()...)
 
 	for _, statement := range statements {

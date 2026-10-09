@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -49,6 +50,14 @@ interface Props {
   onOpenDevice: (deviceId: string) => void;
   /** Reloads data after a folder was added, renamed or removed. */
   onChanged: () => Promise<void>;
+  /**
+   * Registers a workspace's folder on its device again, after the device
+   * stopped serving it.
+   */
+  onAddAgain: (
+    workspace: WorkspaceProjection,
+    device: DeviceProjection,
+  ) => Promise<void>;
   onBrowse: () => void;
   onReturn: () => void;
 }
@@ -77,6 +86,41 @@ export function WorkspaceSelectionPanel(props: Props) {
   }>();
   const [message, setMessage] = useState("");
   const [changeError, setChangeError] = useState("");
+  const [addingAgainId, setAddingAgainId] = useState("");
+  // Once a folder is added again its button goes; focus moves to its row.
+  const detailsButtons = useRef(new Map<string, HTMLButtonElement>());
+  async function addAgain(
+    workspace: WorkspaceProjection,
+    device: DeviceProjection,
+  ) {
+    if (addingAgainId) return;
+    setAddingAgainId(workspace.id);
+    setMessage("");
+    setChangeError("");
+    try {
+      await props.onAddAgain(workspace, device);
+    } catch (cause) {
+      setChangeError(
+        cause instanceof Error ? cause.message : t("editor.saveFailed"),
+      );
+      setAddingAgainId("");
+      return;
+    }
+    setMessage(
+      t("location.addedAgain", {
+        name: workspace.name,
+        device: device.label,
+      }),
+    );
+    try {
+      await props.onChanged();
+    } catch {
+      setChangeError(t("deviceList.refreshFailed"));
+    } finally {
+      setAddingAgainId("");
+      detailsButtons.current.get(workspace.id)?.focus();
+    }
+  }
   const dialogTrigger = useRef<HTMLElement | null>(null);
   const groupRefs = useRef(new Map<string, HTMLElement>());
   const busy = !!props.busyWorkspaceId;
@@ -263,12 +307,17 @@ export function WorkspaceSelectionPanel(props: Props) {
                 device.owned &&
                 !removed &&
                 (!workspace.accessRole || workspace.accessRole === "owner");
+              // The device is connected but no longer serves the folder.
+              const unserved = !removed && !!workspace.unavailableOnDevice;
+              const unservedNoteId = `fdy-unserved-${workspace.id}`;
+              const addingAgain = addingAgainId === workspace.id;
               return (
                 <article
                   key={workspace.id}
                   className="fdy-location-workspace-row"
                   data-current={isCurrent}
                   data-removed-device={removed || undefined}
+                  data-unserved={unserved || undefined}
                   onMouseEnter={() => {
                     if (!removed) props.onPrepare(workspace);
                   }}
@@ -284,12 +333,27 @@ export function WorkspaceSelectionPanel(props: Props) {
                     aria-label={t("shared.viewDetails", {
                       name: workspace.name,
                     })}
+                    aria-describedby={unserved ? unservedNoteId : undefined}
                     onClick={() => setDetails({ workspace, device })}
+                    ref={(node) => {
+                      if (node) detailsButtons.current.set(workspace.id, node);
+                      else detailsButtons.current.delete(workspace.id);
+                    }}
                   >
                     <FolderOpen size={19} />
                     <span className="fdy-location-copy">
                       <strong>{workspace.name}</strong>
                       <small>{workspace.localPath}</small>
+                      {unserved ? (
+                        <small
+                          id={unservedNoteId}
+                          className="fdy-location-unserved-note"
+                        >
+                          {t("location.notServedNote", {
+                            device: device.label,
+                          })}
+                        </small>
+                      ) : null}
                     </span>
                     <span className="fdy-workspace-details-label">
                       {t("shared.details")}
@@ -304,6 +368,25 @@ export function WorkspaceSelectionPanel(props: Props) {
                           role: workspaceRoleLabel(workspace.accessRole),
                         })}
                       </Badge>
+                    ) : null}
+                    {unserved && manageable ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy || !!addingAgainId || !online}
+                        aria-busy={addingAgain}
+                        aria-label={t("location.addAgainTo", {
+                          name: workspace.name,
+                          device: device.label,
+                        })}
+                        title={online ? undefined : t("deviceList.reconnect")}
+                        onClick={() => void addAgain(workspace, device)}
+                      >
+                        <RotateCcw size={14} />
+                        {addingAgain
+                          ? t("location.addingAgain")
+                          : t("location.addAgain")}
+                      </Button>
                     ) : null}
                     {isCurrent ? (
                       <>

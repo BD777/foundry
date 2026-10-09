@@ -29,8 +29,16 @@ export interface ConversationProps {
   readOnly?: ReactNode;
   /** A line above the input about work that goes on between turns. */
   notice?: ReactNode;
-  /** Keeps the draft and queued messages in this browser, per thread. */
+  /**
+   * Keeps the draft in this browser, per thread; without serverQueue, the
+   * queued messages too.
+   */
   storageKeyPrefix?: ConversationStoragePrefix;
+  /**
+   * The server keeps and sends this conversation's queued messages (chats).
+   * Without it they stay in this browser, which sends them (Issues).
+   */
+  serverQueue?: ConversationServerQueue;
   draftResetKey?: number;
   inputRef?: Ref<HTMLTextAreaElement>;
   inputLabel?: string;
@@ -82,11 +90,13 @@ export interface ConversationFileActions {
 
 /**
  * `true` once accepted; "replied" completes a conversational turn without
- * awaiting an execution; `{ threadKey }` when the accepted message gave the
- * conversation a new key (a new chat's session, an adopted native chat).
+ * awaiting an execution; "queue" when a turn started meanwhile, so the
+ * message waits for it in the queue; `{ threadKey }` when the accepted
+ * message gave the conversation a new key (a new chat's session, an adopted
+ * native chat).
  */
 export type ConversationSendOutcome =
-  boolean | "replied" | { threadKey: string };
+  boolean | "replied" | "queue" | { threadKey: string };
 
 export interface QueuedDraft {
   id: string;
@@ -96,6 +106,44 @@ export interface QueuedDraft {
   targetExecutionId?: string;
   /** Set while a tab sends this message; a stale one may have been sent. */
   sending?: { tab: string; at: number };
+  /**
+   * Where a server-kept queue has it: still only in this tab (local), or the
+   * server's state. Absent in a browser-kept queue.
+   */
+  state?: "local" | "queued" | "dispatching" | "failed";
+  /** Why the server could not send it; it holds the queue. */
+  error?: string;
+  /** The server's revision of the message, for edits. */
+  revision?: number;
+}
+
+/** How a change to a server-kept queue went; a refusal leaves the server's queue shown. */
+export type ConversationQueueOutcome =
+  | { ok: true }
+  | { ok: false; reason: "sent" | "changed" | "failed"; message?: string };
+
+/**
+ * A queue the server keeps for a conversation. The host applies changes at
+ * once and rolls them back when the server refuses them.
+ */
+export interface ConversationServerQueue {
+  /** The server's id of this conversation; undefined until it has one. */
+  chatId?: string;
+  /** The server's queue of chatId, in sending order; undefined while loading. */
+  items?: QueuedDraft[];
+  enqueue: (
+    chatId: string,
+    message: Pick<QueuedDraft, "id" | "text" | "attachments">,
+  ) => Promise<ConversationQueueOutcome>;
+  edit: (
+    chatId: string,
+    id: string,
+    text: string,
+  ) => Promise<ConversationQueueOutcome>;
+  remove: (chatId: string, id: string) => Promise<ConversationQueueOutcome>;
+  reorder: (chatId: string, ids: string[]) => Promise<ConversationQueueOutcome>;
+  steer: (chatId: string, id: string) => Promise<ConversationQueueOutcome>;
+  retry: (chatId: string, id: string) => Promise<ConversationQueueOutcome>;
 }
 
 export interface ChatMessageItem {

@@ -14,7 +14,7 @@ import {
   identifier,
   within,
 } from "./execution-storage.js";
-import { git, gitCommit } from "./execution-git.js";
+import { foundryRuntimeGitExcludes, git, gitCommit } from "./execution-git.js";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import type {
   CandidateRepository,
@@ -229,14 +229,7 @@ async function prepareRepositoryUnlocked(
       (item) => item.parentId === repo.id && item.kind === "independent",
     );
     const entries = [
-      "/.foundry/sessions/",
-      "/.foundry/attachments/",
-      "/.foundry/runs/",
-      "/.foundry/worktrees/",
-      "/.foundry/issues/",
-      "/.foundry/reviews/",
-      "/.foundry/integrations/",
-      "/.foundry/daemon.json",
+      ...foundryRuntimeGitExcludes.map((entry) => `/${entry}`),
       "/.foundry/repositories.yaml",
       ...children.map(
         (item) => `/${relative(repo.sourcePath, item.sourcePath)}/`,

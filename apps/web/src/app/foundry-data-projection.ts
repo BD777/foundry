@@ -116,7 +116,8 @@ export function applyFoundryStreamEvent(
   // Feature-owned events: their features subscribe to them directly.
   if (
     streamEvent.type === "feishu_bot_updated" ||
-    streamEvent.type === "workspace_members_updated"
+    streamEvent.type === "workspace_members_updated" ||
+    streamEvent.type === "chat_queue_changed"
   ) {
     return current;
   }

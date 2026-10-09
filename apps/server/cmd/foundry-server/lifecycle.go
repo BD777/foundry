@@ -68,6 +68,7 @@ func run(ctx context.Context, deps dependencies) error {
 		}
 	}
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)
+	api.RecoverChatQueues(ctx)
 	go api.CheckSkillRepositories(ctx)
 	httpServer := newHTTPServer(cfg, api.Routes())
 	if code := api.SetupCode(); code != "" {

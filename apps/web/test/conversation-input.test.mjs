@@ -298,3 +298,27 @@ test("a send acknowledged after a new chat receives its id does not leave the ne
   assert.equal(h.input.active, false);
   assert.equal(h.input.draft, "");
 });
+
+test("a browser-kept queue moves a message one place from the keyboard", async (t) => {
+  const composer = { mode: "fixed", runtime: "codex" };
+  const h = await harness(t, composer, {
+    threadKey: "workspace:keyboard",
+    active: true,
+    activeExecutionId: "r1",
+    onSend: () => new Promise(() => {}),
+  });
+  for (const text of ["one", "two", "three"]) {
+    await h.type(text);
+    await h.submit();
+  }
+  const texts = () => h.input.queue.map((item) => item.text);
+  const item = (text) => h.input.queue.find((entry) => entry.text === text);
+  assert.deepEqual(texts(), ["one", "two", "three"]);
+  await act(async () => h.input.shift(item("three"), -1));
+  assert.deepEqual(texts(), ["one", "three", "two"]);
+  await act(async () => h.input.shift(item("one"), 1));
+  assert.deepEqual(texts(), ["three", "one", "two"]);
+  await act(async () => h.input.shift(item("three"), -1));
+  await act(async () => h.input.shift(item("two"), 1));
+  assert.deepEqual(texts(), ["three", "one", "two"]);
+});

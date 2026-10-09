@@ -9,6 +9,8 @@
   --diff-code-delete-background-color: var(--fdy-error-surface);
   --diff-gutter-insert-background-color: var(--fdy-success-surface);
   --diff-gutter-delete-background-color: var(--fdy-error-surface);
+  /* A side with no line (a new or deleted file's empty side) stays blank. */
+  --diff-omit-gutter-line-color: transparent;
 }
 .fdy-text-diff-content {
   min-width: 0;

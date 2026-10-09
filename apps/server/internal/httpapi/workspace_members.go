@@ -263,6 +263,7 @@ func (s *Server) cancelAllSessionsStartedBy(ctx context.Context, userID string) 
 }
 
 func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userID, reason string) {
+	s.dropChatQueueItemsBy(ctx, workspaceID, userID)
 	summaries, err := s.store.ListAgentSessionSummaries(ctx, workspaceID)
 	if err != nil {
 		log.Printf("cancel sessions of %s in %s: %v", userID, workspaceID, err)

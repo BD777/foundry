@@ -65,6 +65,13 @@ export const workspaces: Translation<typeof en> = {
     switch: "切换",
     noMatches: "没有匹配的工作区。",
     noWorkspaces: "这台设备上还没有工作区。",
+    notServed: "设备未提供",
+    notServedNote:
+      "{{device}} 已不再提供这个文件夹，这里暂时无法运行任务，历史记录仍保留。可以重新添加，或在行菜单中移除。",
+    addAgain: "重新添加",
+    addAgainTo: "在 {{device}} 上重新添加 {{name}}",
+    addingAgain: "正在添加…",
+    addedAgain: "{{device}} 已重新提供 {{name}}。",
   },
   overview: {
     gitStates: {

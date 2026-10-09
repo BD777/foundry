@@ -1,7 +1,7 @@
 [
   {
     "name": "list_workspaces",
-    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A session token reaches every workspace of the person who started it, as at most Member; start work in another one only when the user asks for it.",
+    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member; start work in another one only when the user asks for it.",
     "inputSchema": {
       "type": "object",
       "properties": {}

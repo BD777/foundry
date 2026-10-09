@@ -227,6 +227,7 @@ export const workerModules = {
       "diagnostics",
       "worker-self-update",
       "self-update-lock",
+      "self-update-status",
     ],
   },
 };

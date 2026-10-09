@@ -181,6 +181,9 @@ test("background snapshots stay out of the transcript; Claude's follow-up gets i
         cacheWriteTokens: 0,
         outputTokens: 5,
       },
+      fileReferences: [
+        { text: "notes.txt", path: "/work/notes.txt", kind: "file" },
+      ],
     },
   );
   const entries = sessionTranscriptEntries(session([sync, followUp]));
@@ -190,4 +193,7 @@ test("background snapshots stay out of the transcript; Claude's follow-up gets i
   assert.equal(entries[1].kind, "assistant");
   assert.equal(entries[1].text, "The sleep finished: done.");
   assert.equal(entries[1].usage.outputTokens, 5);
+  assert.deepEqual(entries[1].fileReferences, [
+    { text: "notes.txt", path: "/work/notes.txt", kind: "file" },
+  ]);
 });

@@ -363,3 +363,55 @@ test("an update the server records as running keeps the button busy on every vis
   assert.match(view.container.textContent, /Updating since/);
   await view.cleanup();
 });
+
+test("an update the server probes shows its step, and a failure at once with Retry", async () => {
+  const studio = (workerUpdate) => ({
+    id: "a",
+    label: "Studio",
+    status: "connected",
+    owned: true,
+    capabilities: ["worker_update", "worker_update_status"],
+    worker: { version: "0.5.6", command: "~/.foundry/bin/foundry-worker" },
+    workerUpdate,
+  });
+  const view = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [
+      studio({
+        startedAt: "2026-10-08T12:00:00Z",
+        version: "0.5.7",
+        step: "downloading",
+        stepDetail: "connect timeout; trying again in 5 s",
+      }),
+    ],
+  });
+  assert.match(view.container.textContent, /Downloading 0\.5\.7…/);
+  assert.match(view.container.textContent, /Waiting: connect timeout/);
+  await view.render({
+    devices: [
+      studio({
+        startedAt: "2026-10-08T12:00:00Z",
+        version: "0.5.7",
+        step: "checking",
+        failure: "could not ask the server which worker it serves",
+        failureCode: "exited",
+        exitCode: 1,
+        logTail: ["ERROR [E5001] COMMAND_FAILED"],
+      }),
+    ],
+  });
+  const text = view.container.textContent;
+  assert.match(
+    text,
+    /Update failed: could not ask the server which worker it serves/,
+  );
+  assert.match(text, /Last step: Asking the server which worker to install\./);
+  assert.match(text, /Exit status 1\./);
+  assert.match(text, /ERROR \[E5001\] COMMAND_FAILED/);
+  const retry = [...view.container.querySelectorAll("button")].find((b) =>
+    b.textContent.includes("Try the update again"),
+  );
+  assert.ok(retry && !retry.disabled, "the update can be started again");
+  await view.cleanup();
+});

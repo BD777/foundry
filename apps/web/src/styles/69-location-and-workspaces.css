@@ -84,6 +84,9 @@
   overflow-wrap: anywhere;
   white-space: normal;
 }
+.fdy-location-copy small.fdy-location-unserved-note {
+  color: var(--fdy-warning-text);
+}
 /* Only an exception is shown: online is the normal state. */
 .fdy-location-entry-status {
   flex: none;

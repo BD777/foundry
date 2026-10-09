@@ -21,6 +21,7 @@ import {
   type AgentSessionEvent,
   type AgentSessionTimerFire,
   type AgentScheduledTask,
+  type SessionFileReference,
 } from "@bd777/foundry-protocol";
 
 // Cron parsing/humanization is shared with the web UI through the protocol
@@ -65,6 +66,8 @@ export interface ClaudeTimerSink {
   emit: (event: TimerSinkEvent) => void;
   /** Foundry session id the runtime is currently attached to. */
   sessionId: () => string;
+  /** Ends a timer's turn: records its files, returns its answer's links. */
+  answerFiles?: (response: string) => Promise<SessionFileReference[]>;
 }
 
 // --- Claude tracker -------------------------------------------------------
@@ -335,7 +338,10 @@ export class ClaudeTimerTracker {
         turn &&
         (turn.origin === "scheduled" || turn.origin === "background")
       ) {
-        this.emitFire(turn, input.last_assistant_message ?? turn.response);
+        await this.emitFire(
+          turn,
+          input.last_assistant_message ?? turn.response,
+        );
       }
     }
     return undefined;
@@ -422,8 +428,20 @@ export class ClaudeTimerTracker {
     });
   }
 
-  private emitFire(turn: TranscriptTailTurn, fallbackResponse?: string): void {
+  private async emitFire(
+    turn: TranscriptTailTurn,
+    fallbackResponse?: string,
+  ): Promise<void> {
     const response = (turn.response || fallbackResponse || "").trim();
+    let fileReferences: SessionFileReference[] = [];
+    try {
+      fileReferences = (await this.sink.answerFiles?.(response)) ?? [];
+    } catch (error) {
+      // The answer is published without file links.
+      console.error(
+        `Could not record the timer turn's files: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     const completedAt = turn.completedAt ?? new Date().toISOString();
     const prompt = turn.prompt.trim();
     const timerId = this.matchTimerId(prompt);
@@ -441,7 +459,10 @@ export class ClaudeTimerTracker {
     // turn is rendered (a divider plus the auto-produced response).
     this.sink.emit({
       detail: prompt.split(/\r?\n/)[0]?.slice(0, 200) ?? prompt.slice(0, 200),
-      metadata: { timerFire: fire },
+      metadata: {
+        timerFire: fire,
+        ...(fileReferences.length > 0 ? { fileReferences } : {}),
+      },
       label,
     });
   }
