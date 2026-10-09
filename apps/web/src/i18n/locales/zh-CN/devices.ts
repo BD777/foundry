@@ -76,6 +76,7 @@ export const devices: Translation<typeof en> = {
       "在 {{device}} 上运行一次；它会找到与这台服务器配对的 Worker 并更新。之后设备就有自己的更新命令。",
     updateNow: "立即更新",
     updateAgain: "重新更新",
+    updateStalledTitle: "更新没有完成",
     updateStalled: "{{time}} 开始的更新没有完成：设备仍在运行旧的 Worker。",
     updateStalledLog:
       "{{time}} 开始的更新没有完成：设备仍在运行旧的 Worker。设备上的日志：{{log}}",
@@ -115,7 +116,8 @@ export const devices: Translation<typeof en> = {
     updateStepSince:
       "正在{{step}}…{{time}} 开始；Worker 会以新版本重启，重新连上后这里会显示新版本。",
     updateWaiting: "等待中：{{detail}}",
-    updateFailedReason: "更新失败：{{reason}}",
+    updateFailedTitle: "更新失败",
+    updateFailedReason: "原因：{{reason}}",
     failedVanished: "更新进程没有报告结果就退出了。",
     failedNotBack: "更新后 Worker 没有重新连上。",
     updateLastStep: "最后一步：{{step}}。",

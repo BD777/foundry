@@ -306,25 +306,103 @@ export function DeviceWorker({
       );
     }
   };
+  const showFailure = !updating && (failed || stalled);
+  const updateButton = (
+    <Button
+      size="sm"
+      variant="primary"
+      disabled={!!updating || !!running}
+      aria-busy={!!updating || !!running}
+      onClick={() => void startUpdate()}
+    >
+      {updating || running
+        ? t("worker.updating")
+        : stalled || failed
+          ? t("worker.updateAgain")
+          : t("worker.updateNow")}
+    </Button>
+  );
+  const canStart =
+    running ||
+    (selfUpdating && (behind || !release || release.source !== "server"));
+  // A failed or stalled update is an error of its own, apart from the warning
+  // that the worker is behind; it carries what went wrong and the retry.
+  const failure = !showFailure ? null : stalled ? (
+    <Alert
+      className="fdy-device-worker-failure"
+      tone="error"
+      title={t("worker.updateStalledTitle")}
+    >
+      <div className="fdy-device-worker-failure-body">
+        <p>
+          {t(stalled.log ? "worker.updateStalledLog" : "worker.updateStalled", {
+            time: shortTime(stalled.startedAt),
+            log: stalled.log,
+          })}
+        </p>
+        {canStart ? (
+          <div className="fdy-device-worker-actions">{updateButton}</div>
+        ) : null}
+      </div>
+    </Alert>
+  ) : failed ? (
+    <Alert
+      className="fdy-device-worker-failure"
+      tone="error"
+      title={t("worker.updateFailedTitle")}
+    >
+      <div className="fdy-device-worker-failure-body">
+        <p>
+          {t("worker.updateFailedReason", {
+            reason: workerUpdateFailure(tDevices, failed),
+          })}
+        </p>
+        {failedStep || failed.exitCode !== undefined ? (
+          <p>
+            {[
+              failedStep
+                ? t("worker.updateLastStep", { step: failedStep })
+                : undefined,
+              failed.exitCode !== undefined
+                ? t("worker.updateExitCode", { code: failed.exitCode })
+                : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          </p>
+        ) : null}
+        {failed.logTail?.length ? (
+          <details className="fdy-device-worker-log">
+            <summary>
+              {t(
+                failed.log ? "worker.updateLogTailAt" : "worker.updateLogTail",
+                {
+                  log: failed.log,
+                },
+              )}
+            </summary>
+            <TerminalBlock
+              className="fdy-device-worker-log-lines"
+              lines={failed.logTail.map((line, index) => ({
+                id: String(index),
+                value: line,
+              }))}
+            />
+          </details>
+        ) : null}
+        {canStart ? (
+          <div className="fdy-device-worker-actions">{updateButton}</div>
+        ) : null}
+      </div>
+    </Alert>
+  ) : null;
   const body = (
     <>
       {versions}
-      {running ||
-      (selfUpdating && (behind || !release || release.source !== "server")) ? (
+      {prominent ? null : failure}
+      {canStart && !showFailure ? (
         <div className="fdy-device-worker-actions">
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={!!updating || !!running}
-            aria-busy={!!updating || !!running}
-            onClick={() => void startUpdate()}
-          >
-            {updating || running
-              ? t("worker.updating")
-              : stalled || failed
-                ? t("worker.updateAgain")
-                : t("worker.updateNow")}
-          </Button>
+          {updateButton}
           {updating === "started" || running ? (
             <span role="status">
               {running
@@ -343,61 +421,6 @@ export function DeviceWorker({
       ) : null}
       {running?.stepDetail ? (
         <p>{t("worker.updateWaiting", { detail: running.stepDetail })}</p>
-      ) : null}
-      {failed && !updating ? (
-        <>
-          <p className="fdy-location-error" role="alert">
-            {t("worker.updateFailedReason", {
-              reason: workerUpdateFailure(tDevices, failed),
-            })}
-          </p>
-          {failedStep || failed.exitCode !== undefined ? (
-            <p>
-              {[
-                failedStep
-                  ? t("worker.updateLastStep", { step: failedStep })
-                  : undefined,
-                failed.exitCode !== undefined
-                  ? t("worker.updateExitCode", { code: failed.exitCode })
-                  : undefined,
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            </p>
-          ) : null}
-          {failed.logTail?.length ? (
-            <details className="fdy-device-worker-log">
-              <summary>
-                {t(
-                  failed.log
-                    ? "worker.updateLogTailAt"
-                    : "worker.updateLogTail",
-                  {
-                    log: failed.log,
-                  },
-                )}
-              </summary>
-              <TerminalBlock
-                className="fdy-device-worker-log-lines"
-                lines={failed.logTail.map((line, index) => ({
-                  id: String(index),
-                  value: line,
-                }))}
-              />
-            </details>
-          ) : null}
-        </>
-      ) : null}
-      {stalled && !updating ? (
-        <p className="fdy-location-error" role="alert">
-          {t(stalled.log ? "worker.updateStalledLog" : "worker.updateStalled", {
-            time: new Date(stalled.startedAt).toLocaleTimeString(
-              i18n.language,
-              { hour: "2-digit", minute: "2-digit" },
-            ),
-            log: stalled.log,
-          })}
-        </p>
       ) : null}
       {updateError ? (
         <p className="fdy-location-error" role="alert">
@@ -436,13 +459,16 @@ export function DeviceWorker({
     </>
   );
   return prominent ? (
-    <Alert
-      className="fdy-device-worker"
-      tone="warning"
-      title={t("worker.behindTitle")}
-    >
-      {body}
-    </Alert>
+    <>
+      <Alert
+        className="fdy-device-worker"
+        tone="warning"
+        title={t("worker.behindTitle")}
+      >
+        {body}
+      </Alert>
+      {failure}
+    </>
   ) : (
     <section className="fdy-device-section fdy-device-worker">
       <h2>{t("worker.title")}</h2>

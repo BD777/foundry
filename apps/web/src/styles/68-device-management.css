@@ -177,6 +177,15 @@
   gap: 8px 12px;
   margin-top: 8px;
 }
+.fdy-device-worker-failure-body {
+  display: grid;
+  gap: 8px;
+}
+.fdy-device-worker-failure-body > p,
+.fdy-device-worker-failure-body > .fdy-device-worker-log,
+.fdy-device-worker-failure-body > .fdy-device-worker-actions {
+  margin: 0;
+}
 .fdy-device-diagnostics {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
