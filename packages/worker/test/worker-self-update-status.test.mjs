@@ -220,7 +220,10 @@ test("the worker reports a failure as soon as the update records it", async () =
     },
     path,
   );
-  const status = await reported;
+  // The watcher's timer is unref'd (it must not keep a worker alive), so
+  // hold the event loop open while waiting for it.
+  const keepAlive = setInterval(() => undefined, 1000);
+  const status = await reported.finally(() => clearInterval(keepAlive));
   assert.equal(status.state, "failed");
   assert.match(status.error, /which worker it serves/);
 });
