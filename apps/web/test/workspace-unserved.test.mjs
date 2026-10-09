@@ -143,7 +143,40 @@ test("a workspace its device no longer serves says so and offers Add again", asy
 
     // An offline device cannot take the folder yet; another person's device
     // is not this person's to change.
-    assert.equal(addAgainIn(rowFor("Offline stale")).disabled, true);
+    const offlineAdd = addAgainIn(rowFor("Offline stale"));
+    assert.equal(offlineAdd.disabled, true);
+    const reason = container.querySelector(
+      `#${offlineAdd.getAttribute("aria-describedby")}`,
+    );
+    // The device group's note says why, once for the whole group.
+    assert.equal(
+      reason?.textContent,
+      "Reconnect this device to add or remove workspaces. Saved names and history remain available.",
+    );
+    assert.equal(
+      addAgainIn(rowFor("foundry")).getAttribute("aria-describedby"),
+      null,
+    );
+    // An offline device cannot take a new folder either, and says so.
+    const addIn = (label) =>
+      [
+        ...container.querySelectorAll(
+          `.fdy-location-group[aria-label="${label}"] .fdy-location-group-heading button`,
+        ),
+      ].find((button) => button.textContent.includes("Add workspace"));
+    const offlineAddWorkspace = addIn("Laptop");
+    assert.equal(offlineAddWorkspace.disabled, true);
+    assert.equal(offlineAddWorkspace.getAttribute("title"), null);
+    assert.match(
+      container.querySelector(
+        `#${offlineAddWorkspace.getAttribute("aria-describedby")}`,
+      )?.textContent ?? "",
+      /^Reconnect this device to add or remove workspaces\./,
+    );
+    assert.equal(
+      addIn("CanWendeMac-mini").getAttribute("aria-describedby"),
+      null,
+    );
     assert.equal(addAgainIn(rowFor("Shared stale")), undefined);
     assert.ok(
       rowFor("Shared stale").querySelector(".fdy-location-unserved-note"),

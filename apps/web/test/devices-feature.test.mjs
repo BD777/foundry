@@ -401,17 +401,75 @@ test("an update the server probes shows its step, and a failure at once with Ret
       }),
     ],
   });
-  const text = view.container.textContent;
-  assert.match(
-    text,
-    /Update failed: could not ask the server which worker it serves/,
+  // The failure is an error of its own, labelled, not part of a warning.
+  const failures = [
+    ...view.container.querySelectorAll('.fdy-alert[data-tone="error"]'),
+  ].filter(
+    (alert) => alert.querySelector("strong")?.textContent === "Update failed",
   );
-  assert.match(text, /Last step: Asking the server which worker to install\./);
-  assert.match(text, /Exit status 1\./);
-  assert.match(text, /ERROR \[E5001\] COMMAND_FAILED/);
-  const retry = [...view.container.querySelectorAll("button")].find((b) =>
-    b.textContent.includes("Try the update again"),
+  assert.ok(failures.length > 0, "the failure shows as an error alert");
+  for (const failure of failures) {
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(failure.closest('[data-tone="warning"]'), null);
+    assert.ok(failure.querySelector("svg"), "the error has an icon");
+    const text = failure.textContent;
+    assert.match(
+      text,
+      /Reason: could not ask the server which worker it serves/,
+    );
+    assert.match(
+      text,
+      /Last step: Asking the server which worker to install\./,
+    );
+    assert.match(text, /Exit status 1\./);
+    assert.match(text, /ERROR \[E5001\] COMMAND_FAILED/);
+    const retry = [...failure.querySelectorAll("button")].find((b) =>
+      b.textContent.includes("Try the update again"),
+    );
+    assert.ok(retry && !retry.disabled, "the update can be started again");
+  }
+  await view.cleanup();
+});
+
+test("a stalled update shows as an error of its own with Retry", async () => {
+  const view = await setup({
+    selectedDeviceId: "a",
+    section: "settings",
+    devices: [
+      {
+        id: "a",
+        label: "Studio",
+        status: "connected",
+        owned: true,
+        capabilities: ["worker_update", "worker_update_status"],
+        worker: { version: "0.5.6", command: "~/.foundry/bin/foundry-worker" },
+        workerUpdate: {
+          startedAt: "2026-10-08T12:00:00Z",
+          version: "0.5.7",
+          stalled: true,
+          log: "~/.foundry/logs/update.log",
+        },
+      },
+    ],
+  });
+  const stalled = [
+    ...view.container.querySelectorAll('.fdy-alert[data-tone="error"]'),
+  ].filter(
+    (alert) =>
+      alert.querySelector("strong")?.textContent === "Update did not finish",
   );
-  assert.ok(retry && !retry.disabled, "the update can be started again");
+  assert.ok(stalled.length > 0, "the stalled update shows as an error alert");
+  for (const alert of stalled) {
+    assert.equal(alert.getAttribute("role"), "alert");
+    assert.equal(alert.closest('[data-tone="warning"]'), null);
+    assert.match(
+      alert.textContent,
+      /did not finish: the device still runs its old worker\. Its log on the device: ~\/\.foundry\/logs\/update\.log/,
+    );
+    const retry = [...alert.querySelectorAll("button")].find((b) =>
+      b.textContent.includes("Try the update again"),
+    );
+    assert.ok(retry && !retry.disabled, "the update can be started again");
+  }
   await view.cleanup();
 });

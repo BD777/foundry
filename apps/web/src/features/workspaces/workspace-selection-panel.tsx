@@ -237,6 +237,7 @@ export function WorkspaceSelectionPanel(props: Props) {
       {groups.map((device) => {
         const removed = isRemovedDevice(device);
         const online = device.status === "connected";
+        const addReasonId = `fdy-add-workspace-reason-${device.id}`;
         const rows = props.workspaces.filter(
           (row) => row.deviceId === device.id,
         );
@@ -273,7 +274,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                     size="sm"
                     variant="ghost"
                     disabled={busy || !online}
-                    title={online ? undefined : t("deviceList.reconnect")}
+                    aria-describedby={online ? undefined : addReasonId}
                     onClick={(event) => {
                       dialogTrigger.current = event.currentTarget;
                       setMessage("");
@@ -300,6 +301,11 @@ export function WorkspaceSelectionPanel(props: Props) {
                 ) : null}
               </span>
             </header>
+            {device.owned && !removed && !online ? (
+              <p id={addReasonId} className="fdy-location-group-note">
+                {t("deviceList.reconnect")}
+              </p>
+            ) : null}
             {visible.map((workspace) => {
               const isCurrent = workspace.id === current?.id;
               const isBusy = workspace.id === props.busyWorkspaceId;
@@ -370,23 +376,26 @@ export function WorkspaceSelectionPanel(props: Props) {
                       </Badge>
                     ) : null}
                     {unserved && manageable ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy || !!addingAgainId || !online}
-                        aria-busy={addingAgain}
-                        aria-label={t("location.addAgainTo", {
-                          name: workspace.name,
-                          device: device.label,
-                        })}
-                        title={online ? undefined : t("deviceList.reconnect")}
-                        onClick={() => void addAgain(workspace, device)}
-                      >
-                        <RotateCcw size={14} />
-                        {addingAgain
-                          ? t("location.addingAgain")
-                          : t("location.addAgain")}
-                      </Button>
+                      <span className="fdy-location-add-again">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={busy || !!addingAgainId || !online}
+                          aria-busy={addingAgain}
+                          aria-label={t("location.addAgainTo", {
+                            name: workspace.name,
+                            device: device.label,
+                          })}
+                          // Offline: the group's note above says why.
+                          aria-describedby={online ? undefined : addReasonId}
+                          onClick={() => void addAgain(workspace, device)}
+                        >
+                          <RotateCcw size={14} />
+                          {addingAgain
+                            ? t("location.addingAgain")
+                            : t("location.addAgain")}
+                        </Button>
+                      </span>
                     ) : null}
                     {isCurrent ? (
                       <>

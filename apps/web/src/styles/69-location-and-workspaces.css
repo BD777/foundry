@@ -418,6 +418,13 @@
   gap: 4px;
   margin-left: auto;
 }
+.fdy-location-group-note {
+  margin: 0;
+  padding: 0 8px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
 /* Workspace row on the chooser: read-only details on the left, explicit Open on
    the right. One surface boundary; hover and selected stay distinguishable. */
 .fdy-location-workspace-row {
@@ -462,6 +469,12 @@
   align-items: center;
   gap: 8px;
   padding-right: 4px;
+}
+.fdy-location-add-again {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 @media (max-width: 700px) {
   .fdy-location-workspace-row {

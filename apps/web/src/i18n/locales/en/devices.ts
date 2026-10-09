@@ -79,6 +79,7 @@ export const devices = {
       "Run once on {{device}}; it finds the worker paired with this server and updates it. Afterwards the device has its own update command.",
     updateNow: "Update now",
     updateAgain: "Try the update again",
+    updateStalledTitle: "Update did not finish",
     updateStalled:
       "The update started at {{time}} did not finish: the device still runs its old worker.",
     updateStalledLog:
@@ -120,7 +121,8 @@ export const devices = {
     updateStepSince:
       "{{step}}… Started at {{time}}; the worker restarts with the new version and this page shows it when it reconnects.",
     updateWaiting: "Waiting: {{detail}}",
-    updateFailedReason: "Update failed: {{reason}}",
+    updateFailedTitle: "Update failed",
+    updateFailedReason: "Reason: {{reason}}",
     failedVanished: "the update process ended without reporting.",
     failedNotBack: "the worker did not come back after updating.",
     updateLastStep: "Last step: {{step}}.",
