@@ -8,10 +8,9 @@ import type {
   WorkspaceRegistration,
 } from "./execution-types.js";
 import { canonical, ExecutionStore, within } from "./execution-storage.js";
-import { git } from "./execution-git.js";
+import { excludeFoundryRuntimeFromGit, git } from "./execution-git.js";
 import {
   bootstrapWorkspace,
-  commitFoundryScaffold,
   workspaceContentInventory,
 } from "./workspace-bootstrap.js";
 
@@ -213,10 +212,64 @@ export async function scanRepositories(
   return result;
 }
 
-export async function registerExecutionWorkspace(
+/**
+ * Whether Issues can run in this folder as it is. A folder without Git, or a
+ * repository without commits, needs Git set up first, and only after the
+ * person confirms it (see `initializeWorkspaceGit`). A folder inside a larger
+ * repository is not Foundry's to initialize; preparing an Issue explains it.
+ */
+export async function workspaceGitState(
+  source: string,
+): Promise<"ready" | "needs_git"> {
+  source = canonical(source);
+  const top = await git(source, ["rev-parse", "--show-toplevel"], {
+    optional: true,
+  });
+  if (!top) return "needs_git";
+  if (canonical(top) !== source) return "ready";
+  return (await git(source, ["rev-parse", "--verify", "HEAD"], {
+    optional: true,
+  }))
+    ? "ready"
+    : "needs_git";
+}
+
+export const needsGitMessage =
+  "Issues need Git: this workspace has no Git repository or no commits yet. Create an Issue in Foundry and confirm setting up Git, or run git init and make a first commit yourself.";
+
+/**
+ * Registers a workspace's repositories for Issues. It never changes the
+ * person's folder or history: no `git init`, no `.gitignore`, no commit. It
+ * keeps Foundry's own `.foundry/` data out of an existing repository through
+ * its local excludes.
+ */
+export function registerExecutionWorkspace(
   source: string,
   workspaceId: string,
   store = new ExecutionStore(),
+): Promise<WorkspaceRegistration> {
+  return registerWorkspace(source, workspaceId, store, false);
+}
+
+/**
+ * What the person confirms before the first Issue in a folder without Git or
+ * commits: `git init` where needed, Foundry's paths kept out through
+ * `.git/info/exclude`, and the folder's current files committed as the first
+ * commit. Does nothing to a repository that already has commits.
+ */
+export function initializeWorkspaceGit(
+  source: string,
+  workspaceId: string,
+  store = new ExecutionStore(),
+): Promise<WorkspaceRegistration> {
+  return registerWorkspace(source, workspaceId, store, true);
+}
+
+async function registerWorkspace(
+  source: string,
+  workspaceId: string,
+  store: ExecutionStore,
+  initializeGit: boolean,
 ): Promise<WorkspaceRegistration> {
   return store.lock(workspaceId, "registration", async () => {
     source = canonical(source);
@@ -225,15 +278,26 @@ export async function registerExecutionWorkspace(
       within(store.executionRoot, source)
     )
       throw new Error("executionRoot must be outside the source workspace");
-    const containing = await git(source, ["rev-parse", "--show-toplevel"], {
-      optional: true,
-    });
-    const initialized = !containing && !existsSync(resolve(source, ".git"));
-    if (initialized) await git(source, ["init", "-b", "main"]);
+    if (initializeGit) {
+      const containing = await git(source, ["rev-parse", "--show-toplevel"], {
+        optional: true,
+      });
+      if (containing && canonical(containing) !== source)
+        throw new Error(
+          `This workspace is a folder inside the Git repository at ${containing}; Foundry does not initialize Git here.`,
+        );
+      if (!containing) await git(source, ["init", "-b", "main"]);
+    }
+    // Foundry's identity and runtime data under .foundry/ never show up as
+    // the person's changes, so they never stand between them and Accept.
+    await excludeFoundryRuntimeFromGit(source);
     let registration = await scanRepositories(source, workspaceId, store);
     // Store repository declarations without machine-local paths or credentials.
     const declaration = resolve(source, ".foundry/repositories.yaml");
-    if (!existsSync(declaration)) {
+    if (
+      !existsSync(declaration) &&
+      registration.repositories.some((repo) => repo.kind === "root")
+    ) {
       mkdirSync(dirname(declaration), { recursive: true, mode: 0o700 });
       writeFileSync(
         declaration,
@@ -249,10 +313,8 @@ export async function registerExecutionWorkspace(
         { mode: 0o600 },
       );
     }
-    const bootstrapped = await bootstrapWorkspace(registration, store);
-    if (bootstrapped || (await commitFoundryScaffold(source))) {
+    if (initializeGit && (await bootstrapWorkspace(registration, store)))
       registration = await scanRepositories(source, workspaceId, store);
-    }
     registration.content = await workspaceContentInventory(source);
     store.saveRegistration(registration);
     return registration;

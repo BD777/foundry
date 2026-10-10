@@ -287,6 +287,7 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 	if err := s.moveChatIdentity(ctx, session.WorkspaceID, chat.ID, session.ID); err != nil {
 		return err
 	}
+	session.AdoptedChatID = chat.ID
 	// The conversation already has a name; a title record keeps automatic
 	// naming from replacing it. A custom title moved above wins.
 	if title := strings.TrimSpace(chat.Title); title != "" {
@@ -637,7 +638,7 @@ func (s *Store) removeNativeChatsWithoutTurns(ctx context.Context) error {
 		return fmt.Errorf("find native chats without turns: %w", err)
 	}
 	for _, chat := range empty {
-		if err := s.deleteNativeChat(ctx, chat.Provider, chat.NativeSessionID); err != nil {
+		if _, err := s.deleteNativeChat(ctx, chat.Provider, chat.NativeSessionID); err != nil {
 			return err
 		}
 	}

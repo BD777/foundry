@@ -137,6 +137,7 @@ function codexDeviceNotes(
         workspacePath,
         undefined,
         usesSessionScratch(session) ? session.id : undefined,
+        session.id,
       );
 }
 
@@ -170,7 +171,16 @@ import {
   truncateForEvent,
   type ClaudeProcessEvent,
 } from "./sdk-messages.js";
-import { ClaudeTurnWatchdog } from "./watchdog.js";
+import {
+  ClaudeTurnLiveness,
+  CodexTurnLiveness,
+  claudeOperationBounds,
+  livenessDuration,
+  turnLivenessNoticeText,
+  turnLivenessSettings,
+  type TurnLivenessFailure,
+  type TurnLivenessNotice,
+} from "./watchdog.js";
 import {
   addTurnUsage,
   ClaudeRequestUsageTracker,
@@ -699,6 +709,24 @@ async function runCodexTurn(
           abortController.abort();
         },
       });
+      // Quiet is not failure: Codex bounds its own stream and tools.
+      let ceilingError: Error | undefined;
+      const liveness = new CodexTurnLiveness({
+        ...turnLivenessSettings(),
+        startupTimeoutMs: undefined,
+        onNotice: (notice) =>
+          void emit(
+            processLabels.notice,
+            turnLivenessNoticeText(notice),
+            "warning",
+          ),
+        onFailure: (failure) => {
+          ceilingError = new Error(
+            `The turn ran for ${livenessDuration(failure.kind === "ceiling" ? failure.elapsedMs : failure.waitedMs)}, Foundry's ceiling for one turn (FOUNDRY_TURN_MAX_DURATION_MS), and was stopped.`,
+          );
+          abortController.abort();
+        },
+      });
       try {
         const streamed = await thread.runStreamed(input, {
           signal: abortController.signal,
@@ -710,6 +738,7 @@ async function runCodexTurn(
           try {
             next = await events.next();
           } catch (error) {
+            if (ceilingError) throw ceilingError;
             if (canceled || abortController.signal.aborted) {
               throw new AgentSessionCanceledError();
             }
@@ -719,6 +748,7 @@ async function runCodexTurn(
             break;
           }
           const event = next.value;
+          liveness.observe(event);
           appendFileSync(eventsPath, `${JSON.stringify(event ?? null)}\n`);
           const eventNativeSessionId = nativeSessionIdFromEvent(event);
           if (eventNativeSessionId) {
@@ -784,6 +814,7 @@ async function runCodexTurn(
             }
           }
         }
+        if (ceilingError) throw ceilingError;
         if (canceled) {
           throw new AgentSessionCanceledError();
         }
@@ -791,6 +822,7 @@ async function runCodexTurn(
           void events.return().catch(() => undefined);
         }
       } finally {
+        liveness.close();
         unregisterCancel();
       }
     } else {
@@ -905,26 +937,42 @@ export async function runClaudeWorkspaceSession(
   );
 }
 
-export function claudeActiveTurnTimeouts(session: AgentSession): {
-  idleTimeoutMs: number;
-} {
-  const defaultIdleMs = isUtilitySession(session) ? 180000 : 600000;
-  const configuredIdleTimeoutMs = Number(
-    process.env.FOUNDRY_CLAUDE_ACTIVE_TURN_IDLE_TIMEOUT_MS ?? defaultIdleMs,
+/**
+ * Why a start-up or ceiling bound failed a turn. Quiet never does: see
+ * watchdog.ts.
+ */
+export function claudeTurnLivenessError(
+  failure: TurnLivenessFailure,
+  stderrTail = "",
+): Error {
+  const tail = stderrTail.trim()
+    ? ` Claude Code's last output: ${redactSecrets(stderrTail.trim()).slice(-1200)}`
+    : "";
+  if (failure.kind === "ceiling")
+    return new ClaudeAgentTurnError(
+      "turn_ceiling",
+      `The turn ran for ${livenessDuration(failure.elapsedMs)}, Foundry's ceiling for one turn (FOUNDRY_TURN_MAX_DURATION_MS), and was stopped.`,
+    );
+  if (failure.phase === "spawn")
+    return new ClaudeAgentTurnError(
+      "startup_timeout",
+      `Claude Code did not start: its process sent nothing within ${livenessDuration(failure.waitedMs)} of launch (phase: starting the process).${tail}`,
+    );
+  return new ClaudeAgentTurnError(
+    "startup_timeout",
+    `Claude Code started but never reached the model within ${livenessDuration(failure.waitedMs)} of launch (phase: sign-in or first response).${tail}`,
   );
-  const idleTimeoutMs = Math.max(
-    1000,
-    Number.isFinite(configuredIdleTimeoutMs) && configuredIdleTimeoutMs > 0
-      ? Math.round(configuredIdleTimeoutMs)
-      : defaultIdleMs,
-  );
-  return { idleTimeoutMs };
 }
 
-export function claudeTurnTimeoutError(kind: "idle"): Error {
-  return new ClaudeAgentTurnError(
-    "idle_timeout",
-    "Claude Agent SDK stopped producing events before the session idle timeout.",
+/** A liveness notice, on the turn's transcript. */
+export function claudeTurnLivenessNotice(
+  turn: Pick<ActiveClaudeTurn, "emit">,
+  notice: TurnLivenessNotice,
+): void {
+  void turn.emit(
+    processLabels.notice,
+    turnLivenessNoticeText(notice),
+    "warning",
   );
 }
 
@@ -938,7 +986,7 @@ export function resolveActiveClaudeTurn(
   }
   runtime.pending = undefined;
   if (turn.commandId) runtime.lastInputId = turn.commandId;
-  turn.watchdog.close();
+  turn.liveness.close();
   turn.resolve(result);
 }
 
@@ -978,20 +1026,37 @@ export function claudeRuntimeHasLiveWork(
   );
 }
 
+/**
+ * Whether the agent process is busy: a turn in progress (whatever it waits
+ * on), Claude continuing on its own between turns, or its background work
+ * and timers.
+ */
+export function claudeRuntimeIsBusy(runtime: ActiveClaudeRuntime): boolean {
+  return (
+    !runtime.closed &&
+    (runtime.pending !== undefined ||
+      runtime.continuation !== undefined ||
+      claudeRuntimeHasLiveWork(runtime))
+  );
+}
+
+/**
+ * Reaps idle runtimes only. Time since the last message says nothing about
+ * a busy process — a long tool call or model request is quiet — so a busy
+ * runtime is never reaped; its own exit ends it.
+ */
 export function cleanupActiveClaudeRuntimes(): void {
   const now = Date.now();
   const settings = readAgentRuntimeSettings();
   for (const [key, runtime] of activeClaudeRuntimes) {
-    // Silence is expected while only background work or timers remain:
-    // Claude Code's keep-alives never reach the SDK stream.
     if (
       runtime.closed ||
       (now - runtime.lastUsed > settings.activeRuntimeTtlMs &&
-        !claudeRuntimeHasLiveWork(runtime))
+        !claudeRuntimeIsBusy(runtime))
     ) {
       closeActiveClaudeRuntime(
         runtime,
-        new Error("Claude active runtime expired while its turn was pending."),
+        new Error("Claude active runtime expired after being idle."),
       );
       activeClaudeRuntimes.delete(key);
     }
@@ -1034,13 +1099,56 @@ export function closeActiveClaudeRuntime(
   runtime.timers?.close();
   runtime.background?.close();
   runtime.continuation = undefined;
-  turn?.watchdog.close();
-  turn?.reject(reason);
+  if (turn) {
+    turn.liveness.close();
+    if (turn.deliveredResponse !== undefined)
+      void completeInterruptedClaudeTurn(runtime, turn, reason);
+    else turn.reject(reason);
+  }
   runtime.input.close();
   try {
     runtime.query?.close?.();
   } catch {
     // Best-effort cleanup only.
+  }
+}
+
+/**
+ * A turn that already answered, ended by something else before the
+ * background work it waited for settled (a stop, the process ending, a new
+ * runtime): the answer stands, with a note on what was cut off.
+ */
+async function completeInterruptedClaudeTurn(
+  runtime: ActiveClaudeRuntime,
+  turn: ActiveClaudeTurn,
+  reason: unknown,
+): Promise<void> {
+  const response = turn.deliveredResponse ?? "";
+  const cause = isAgentSessionCanceledError(reason)
+    ? "it was stopped"
+    : `the run ended early (${reason instanceof Error ? reason.message : String(reason)})`;
+  try {
+    await turn.emit(
+      processLabels.notice,
+      `Claude had answered; ${cause} before the background work it was waiting for finished, so that work was cut off. The answer above stands.`,
+      "warning",
+    );
+    writeFileSync(turn.resultPath, `${response}\n`);
+    const fileReferences = (await turn.files?.finish(response)) ?? [];
+    await turn.emit("Claude Agent SDK finished", turn.resultPath, undefined, {
+      ...turnUsageMetadata(turn.usage, turn.startedAt),
+      ...(fileReferences.length > 0 ? { fileReferences } : {}),
+    });
+  } catch (error) {
+    console.error(
+      `Could not record the answer of an interrupted Claude turn: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    if (turn.commandId) runtime.lastInputId = turn.commandId;
+    turn.resolve({
+      nativeSessionId: turn.nativeSessionId || runtime.nativeSessionId,
+      response,
+    });
   }
 }
 
@@ -1366,13 +1474,12 @@ export async function handleActiveClaudeMessage(
       }
     }
   }
+  // What the process is busy with, including work a queued turn waits on.
+  const finishedTools = turn?.liveness.observe(message) ?? [];
   if (!turn || !claudeTurnOwnsMessage(runtime, turn)) {
-    // The process is alive; a waiting turn must not time out meanwhile.
-    turn?.watchdog.touch();
     await handleClaudeContinuationMessage(runtime, message);
     return;
   }
-  turn.watchdog.touch();
   updateActiveClaudeTurnTasks(turn, message);
   const processEvent = claudeProcessEvent(message);
   if (processEvent) {
@@ -1383,6 +1490,20 @@ export async function handleActiveClaudeMessage(
       processEvent.metadata,
       processEvent.message,
     );
+  }
+  // A tool call runs from Claude's call until its result.
+  for (const tool of finishedTools) {
+    const title = tool.failed
+      ? processLabels.toolFailed
+      : processLabels.usedTool;
+    await turn.emit(title, tool.detail, undefined, undefined, {
+      id: tool.id,
+      kind: "tool",
+      callId: tool.id,
+      status: tool.failed ? "failed" : "completed",
+      title,
+      text: tool.detail,
+    });
   }
   const requestUsage = turn.requestUsage?.observe(message);
   if (requestUsage) {
@@ -1431,7 +1552,9 @@ export async function handleActiveClaudeMessage(
     (message as Record<string, unknown>).type === "result"
   ) {
     const response =
-      turn.finalResult || "Claude Agent SDK completed without a text response.";
+      turn.finalResult ||
+      turn.deliveredResponse ||
+      "Claude Agent SDK completed without a text response.";
     if (turn.waitForBackgroundTasks && turn.openTaskIds.size > 0) {
       await turn.emit(
         processLabels.waitingBackgroundTasks,
@@ -1441,11 +1564,11 @@ export async function handleActiveClaudeMessage(
       // the Foundry turn. Clear the text accumulator so the continuation's
       // final response replaces this provisional response instead of being
       // concatenated with it.
+      // The answer is delivered: whatever ends the runtime from here, the
+      // turn completes with it.
+      if (turn.finalResult) turn.deliveredResponse = turn.finalResult;
       turn.finalResult = "";
       turn.partialResult = "";
-      // Nothing arrives until the background work ends; silence is not a
-      // stall here. The next message re-arms the idle timeout.
-      turn.watchdog.pause();
       return;
     }
     writeFileSync(turn.resultPath, `${response}\n`);
@@ -1671,6 +1794,15 @@ export async function runClaudeAgentSdkSession(
           (write) => claudeWriteFiles(owner)?.captureBeforeWrite(write),
         ),
       );
+      // A start-up failure names what the process last said.
+      options.stderr = (data: string) => {
+        owner.stderrTail = `${owner.stderrTail ?? ""}${data}`.slice(-4000);
+        try {
+          appendFileSync(stderrPath, data);
+        } catch {
+          // The tail in memory still serves the failure message.
+        }
+      };
       activeClaudeRuntimes.set(runtimeKey, runtime);
       await emitSetup();
       await emit("Started Claude Agent SDK", `${packageName} · ${command}`);
@@ -1718,6 +1850,7 @@ export async function runClaudeAgentSdkSession(
           steer: async (
             message: string,
             attachments: ChatAttachment[] = [],
+            steerId?: string,
           ) => {
             if (activeRuntime.pending?.resultPath !== resultPath) {
               throw new Error(
@@ -1753,6 +1886,10 @@ export async function runClaudeAgentSdkSession(
                     attachments,
                   }
                 : undefined,
+              // Named like a sent message's input event: the server then
+              // knows the message is in this session and never sends it
+              // again as an input of its own.
+              steerId ? `evt_${steerId}` : undefined,
             );
           },
         });
@@ -1770,14 +1907,24 @@ export async function runClaudeAgentSdkSession(
                 "Claude is not accepting cancellation for this active turn.",
               );
             }
+            const answered = turn.deliveredResponse !== undefined;
             closeActiveClaudeRuntime(
               activeRuntime,
               new AgentSessionCanceledError(),
             );
             activeClaudeRuntimes.delete(activeRuntime.key);
+            return { answered };
           },
         });
-        const timeouts = claudeActiveTurnTimeouts(session);
+        const livenessSettings = turnLivenessSettings();
+        const settingsEnv = (flagSettings as { env?: unknown }).env;
+        // Claude Code's own bounds, from the environment its process gets.
+        const operationBounds = claudeOperationBounds({
+          ...(baseOptions.env as Record<string, string | undefined>),
+          ...(settingsEnv && typeof settingsEnv === "object"
+            ? (settingsEnv as Record<string, string | undefined>)
+            : {}),
+        });
         let turn: ActiveClaudeTurn;
         turn = {
           emit,
@@ -1805,16 +1952,34 @@ export async function runClaudeAgentSdkSession(
           resultPath,
           startedAt,
           files,
-          watchdog: new ClaudeTurnWatchdog(timeouts.idleTimeoutMs, () => {
-            if (activeRuntime.pending !== turn) {
-              return;
-            }
-            closeActiveClaudeRuntime(
-              activeRuntime,
-              claudeTurnTimeoutError("idle"),
-            );
-            activeClaudeRuntimes.delete(activeRuntime.key);
-          }),
+          liveness: new ClaudeTurnLiveness(
+            {
+              ...livenessSettings,
+              // Only a process started for this turn has a start-up to bound.
+              ...(runtimeStartOptions
+                ? {
+                    firstResponseTimeoutMs:
+                      operationBounds.apiTimeoutMs + livenessSettings.graceMs,
+                  }
+                : { startupTimeoutMs: undefined }),
+              backgroundBusy: () =>
+                turn.openTaskIds.size > 0 ||
+                claudeRuntimeHasLiveWork(activeRuntime),
+              onNotice: (notice) => {
+                if (activeRuntime.pending === turn)
+                  claudeTurnLivenessNotice(turn, notice);
+              },
+              onFailure: (failure) => {
+                if (activeRuntime.pending !== turn) return;
+                closeActiveClaudeRuntime(
+                  activeRuntime,
+                  claudeTurnLivenessError(failure, activeRuntime.stderrTail),
+                );
+                activeClaudeRuntimes.delete(activeRuntime.key);
+              },
+            },
+            operationBounds,
+          ),
         };
         activeRuntime.pending = turn;
         try {

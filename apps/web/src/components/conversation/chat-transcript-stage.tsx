@@ -1,6 +1,18 @@
-import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso";
+import {
+  Virtuoso,
+  type Components,
+  type ListItem,
+  type VirtuosoHandle,
+} from "react-virtuoso";
 import { ArrowDown } from "lucide-react";
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
 import type { ParsedImageTag } from "./chat-message-content";
@@ -9,35 +21,39 @@ import type {
   ChatMessageItem,
   ConversationFileActions,
 } from "./conversation-types";
-import { buildChatTurnAnchors } from "./chat-turn-navigation";
+import {
+  buildChatTurnAnchors,
+  type ChatTurnAnchor,
+} from "./chat-turn-navigation";
 import { ChatTurnNavigator } from "./chat-turn-navigator";
 import { ChatTurnMenu } from "./chat-turn-menu";
 import {
-  CHAT_VIRTUOSO_MIN_OVERSCAN_ITEMS,
-  CHAT_VIRTUOSO_OVERSCAN_PX,
+  chatRenderedRows,
+  useChatFirstItemIndex,
+} from "./chat-transcript-index";
+import {
+  CHAT_VIRTUOSO_VIEWPORT,
   estimateChatMessageHeight,
 } from "./chat-virtualization";
 import type { ChatScrollFollowController } from "./use-chat-scroll-follow";
+import { useChatPrependAnchor } from "./use-chat-prepend-anchor";
 import { useChatTurnNavigation } from "./use-chat-turn-navigation";
 
 const CHAT_INITIAL_LOCATION = {
   align: "end" as const,
   index: "LAST" as const,
 };
-const CHAT_INCREASE_VIEWPORT = {
-  bottom: CHAT_VIRTUOSO_OVERSCAN_PX,
-  top: CHAT_VIRTUOSO_OVERSCAN_PX,
-};
-const CHAT_OVERSCAN = {
-  main: CHAT_VIRTUOSO_OVERSCAN_PX,
-  reverse: CHAT_VIRTUOSO_OVERSCAN_PX,
-};
-const CHAT_MIN_OVERSCAN_ITEMS = {
-  bottom: CHAT_VIRTUOSO_MIN_OVERSCAN_ITEMS,
-  top: CHAT_VIRTUOSO_MIN_OVERSCAN_ITEMS,
-};
-function ChatListHeader() {
-  return <div aria-hidden="true" className="fdy-chat-virtuoso-header" />;
+/** The transcript's top: its history notice (loading, older messages). */
+interface ChatListContext {
+  history?: ReactNode;
+}
+
+function ChatListHeader({ context }: { context?: ChatListContext }) {
+  return context?.history ? (
+    <div className="fdy-chat-virtuoso-header-history">{context.history}</div>
+  ) : (
+    <div aria-hidden="true" className="fdy-chat-virtuoso-header" />
+  );
 }
 
 function ChatListFooter() {
@@ -47,7 +63,7 @@ function ChatListFooter() {
 const CHAT_VIRTUOSO_COMPONENTS = {
   Footer: ChatListFooter,
   Header: ChatListHeader,
-} satisfies Components<ChatMessageItem, unknown>;
+} satisfies Components<ChatMessageItem, ChatListContext>;
 
 function chatMessageKey(_index: number, message: ChatMessageItem): string {
   return message.id;
@@ -55,6 +71,8 @@ function chatMessageKey(_index: number, message: ChatMessageItem): string {
 
 export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   fileActions,
+  history,
+  onReachHistoryStart,
   messages,
   onEditMessage,
   onImagePreview,
@@ -63,6 +81,10 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   threadKey,
 }: {
   fileActions?: ConversationFileActions;
+  /** Shown above the first message: loading state, older messages. */
+  history?: ReactNode;
+  /** The person scrolled to the first message. */
+  onReachHistoryStart?: () => void;
   messages: ChatMessageItem[];
   onEditMessage?: (text: string) => void;
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -80,6 +102,8 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     () => messages.map(estimateChatMessageHeight),
     [messages],
   );
+  const listContext = useMemo<ChatListContext>(() => ({ history }), [history]);
+  const firstItemIndex = useChatFirstItemIndex(threadKey, messages);
   const virtuosoKey = `${threadKey}:${messages.length === 0 ? "empty" : "ready"}`;
   const navigation = useChatTurnNavigation({
     anchors,
@@ -96,7 +120,28 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     },
     [viewportRef],
   );
-  const { onContentResized } = navigation;
+  const { onContentResized, onItemsRendered } = navigation;
+  const handleItemsRendered = useCallback(
+    (items: ListItem<ChatMessageItem>[]): void =>
+      onItemsRendered(chatRenderedRows(items, firstItemIndex)),
+    [firstItemIndex, onItemsRendered],
+  );
+  const prependAnchor = useChatPrependAnchor({
+    firstItemIndex,
+    messages,
+    personScrolling: scrollController.personScrolling,
+    topRows: navigation.topRows,
+    virtuosoRef,
+  });
+  const { navigateTo } = navigation;
+  const { listResized, release: releasePrependAnchor } = prependAnchor;
+  const navigateToTurn = useCallback(
+    (anchor: ChatTurnAnchor): void => {
+      releasePrependAnchor();
+      navigateTo(anchor);
+    },
+    [navigateTo, releasePrependAnchor],
+  );
   const handleTotalHeightChanged = useCallback((): void => {
     const viewport = viewportRef.current;
     contentRef.current =
@@ -105,7 +150,8 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
       ) ?? null;
     contentResized();
     onContentResized();
-  }, [contentRef, contentResized, onContentResized, viewportRef]);
+    listResized();
+  }, [contentRef, contentResized, listResized, onContentResized, viewportRef]);
   const renderMessage = useCallback(
     (_index: number, message: ChatMessageItem) => (
       <div className="fdy-chat-virtuoso-row">
@@ -127,27 +173,30 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
           activeIndex={navigation.activeIndex}
           anchors={anchors}
           key={`menu:${threadKey}`}
-          onNavigate={navigation.navigateTo}
+          onNavigate={navigateToTurn}
         />
       ) : null}
-      <Virtuoso<ChatMessageItem, unknown>
+      <Virtuoso<ChatMessageItem, ChatListContext>
         alignToBottom
         atBottomThreshold={24}
         className="fdy-chat-messages fdy-chat-virtuoso"
         components={CHAT_VIRTUOSO_COMPONENTS}
         computeItemKey={chatMessageKey}
+        context={listContext}
         data={messages}
         defaultItemHeight={96}
+        firstItemIndex={firstItemIndex}
         heightEstimates={heightEstimates}
-        increaseViewportBy={CHAT_INCREASE_VIEWPORT}
+        increaseViewportBy={CHAT_VIRTUOSO_VIEWPORT.increaseViewportBy}
         initialTopMostItemIndex={CHAT_INITIAL_LOCATION}
         itemContent={renderMessage}
-        itemsRendered={navigation.onItemsRendered}
+        itemsRendered={handleItemsRendered}
         key={virtuosoKey}
-        minOverscanItemCount={CHAT_MIN_OVERSCAN_ITEMS}
-        overscan={CHAT_OVERSCAN}
+        minOverscanItemCount={CHAT_VIRTUOSO_VIEWPORT.minOverscanItemCount}
+        overscan={CHAT_VIRTUOSO_VIEWPORT.overscan}
         ref={virtuosoRef}
         scrollerRef={bindScroller}
+        startReached={onReachHistoryStart}
         totalListHeightChanged={handleTotalHeightChanged}
       />
       {navigation.enabled ? (
@@ -155,14 +204,17 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
           activeIndex={navigation.activeIndex}
           anchors={anchors}
           key={`rail:${threadKey}`}
-          onNavigate={navigation.navigateTo}
+          onNavigate={navigateToTurn}
         />
       ) : null}
       <Button
         aria-label={t("turns.scrollToLatest")}
         className="fdy-chat-scroll-latest"
         data-visible={showScrollToLatest ? "true" : "false"}
-        onClick={() => scrollController.followLatest("smooth")}
+        onClick={() => {
+          releasePrependAnchor();
+          scrollController.followLatest("smooth");
+        }}
         size="icon"
         tabIndex={showScrollToLatest ? 0 : -1}
         variant="icon"

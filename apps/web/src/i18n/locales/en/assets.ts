@@ -31,7 +31,7 @@ export const assets = {
   },
   capacity: {
     previewSetup:
-      "Not set up: copy .foundry/preview.example.json to .foundry/preview.json to enable previews",
+      "Not set up: add .foundry/preview.json with a command that serves on $FOUNDRY_PREVIEW_PORT to enable previews",
     worktrees: "One git worktree per Issue",
     worktreesAt: "One git worktree per Issue · {{path}}",
     evidence:
@@ -47,8 +47,5 @@ export const assets = {
     title: "Context",
     workspace: "Workspace",
     workspaceMeta: "{{name}} · configured baseline: {{baseline}}",
-    skillsConfig: "Skills config",
-    skillsMeta_one: "{{count}} skill · {{path}}",
-    skillsMeta_other: "{{count}} skills · {{path}}",
   },
 };

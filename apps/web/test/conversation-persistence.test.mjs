@@ -384,20 +384,30 @@ test("a new chat's or adopted native chat's draft and queue move to the session'
         accept = resolve;
       }),
   });
+  // An earlier tab queued a message here; this one is sending the first.
+  localStorage.setItem(
+    `${prefix}:w:native_1`,
+    JSON.stringify({
+      v: 1,
+      updatedAt: Date.now(),
+      draft: "",
+      queue: [{ id: "q1", text: "follow-up" }],
+    }),
+  );
   await tab.type("adopt this chat");
   await tab.submit();
-  await tab.type("follow-up");
-  await tab.submit();
-  await tab.type("still typing");
   await wait(450);
-  assert.equal(stored("w:native_1").queue[0].text, "follow-up");
+  // On its way, the message stays in the composer, also across a reload.
+  assert.equal(stored("w:native_1").draft, "adopt this chat");
   await tab.render({ threadKey: "w:sess_1", active: true });
   await act(async () => accept({ threadKey: "w:sess_1" }));
   assert.equal(stored("w:native_1"), null);
   assert.equal(stored("w:sess_1").queue[0].text, "follow-up");
-  assert.equal(stored("w:sess_1").draft, "still typing");
+  // Accepted, it is in the conversation and no longer a draft anywhere.
+  assert.equal(stored("w:sess_1").draft, "");
   assert.equal(tab.input.queue[0].text, "follow-up");
-  assert.equal(tab.input.draft, "still typing");
+  await tab.type("still typing");
+  await wait(450);
   await tab.close();
   const reloaded = await open({ threadKey: "w:sess_1", active: true });
   assert.equal(reloaded.input.queue[0].text, "follow-up");

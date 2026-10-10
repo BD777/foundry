@@ -182,6 +182,42 @@ func TestAccountsCannotReachEachOthersResources(t *testing.T) {
 		http.StatusNotFound, "bob's device syncs chats into alice's workspace")
 }
 
+// The route checks the caller owns the device in the path; the handler must
+// write that device's roots, never one the body names.
+func TestSkillRootsWriteOnlyThePathDevice(t *testing.T) {
+	f := newIsolationFixture(t)
+	roots := func(deviceID string) []string {
+		items, err := f.server.store.ListDeviceSkillRoots(context.Background(), deviceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths := []string{}
+		for _, item := range items {
+			paths = append(paths, item.Path)
+		}
+		return paths
+	}
+	before := roots("dev_alice")
+
+	smuggled := doAuthCall(t, f.handler, f.as(f.bob, http.MethodPut, "/api/devices/dev_bob/skill-roots",
+		`{"deviceId":"dev_alice","paths":["/tmp/bob-owns-this"]}`))
+	expectStatus(t, smuggled, http.StatusBadRequest, "bob names alice's device in the body")
+	if after := roots("dev_alice"); strings.Join(after, ",") != strings.Join(before, ",") {
+		t.Fatalf("alice's roots changed through bob's device route: %v -> %v", before, after)
+	}
+	if got := roots("dev_bob"); len(got) != 0 {
+		t.Fatalf("a refused write still changed bob's roots: %v", got)
+	}
+
+	for _, body := range []string{`{"deviceId":"dev_bob","paths":["/tmp/bob-skills"]}`, `{"paths":["/tmp/bob-skills"]}`} {
+		expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodPut, "/api/devices/dev_bob/skill-roots", body)),
+			http.StatusOK, "bob sets his own device's roots: "+body)
+		if got := roots("dev_bob"); len(got) != 1 || got[0] != "/tmp/bob-skills" {
+			t.Fatalf("bob's roots = %v, want [/tmp/bob-skills]", got)
+		}
+	}
+}
+
 func TestWorkspaceRolesGateActions(t *testing.T) {
 	f := newIsolationFixture(t)
 	ownership := f.server.store.(store.OwnershipStore)

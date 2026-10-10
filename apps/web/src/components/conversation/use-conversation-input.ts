@@ -15,6 +15,8 @@ import {
 import { useServerQueue } from "./use-server-queue";
 
 const draftWriteDelayMs = 400;
+/** How long an accepted new chat's message waits for the host to show it. */
+const handoffLimitMs = 5000;
 let storagePruned = false;
 
 function withoutClaim({
@@ -55,6 +57,23 @@ export function useConversationInput(
   const awaitingRef = useRef(awaitingExecution);
   awaitingRef.current = awaitingExecution;
   const [steeringId, setSteeringId] = useState<string>();
+  // The conversation whose composer text is on its way to the server: it
+  // stays shown, read-only, until accepted, so it is never in two places.
+  const [sendingKey, setSendingKey] = useState<string>();
+  const sendingKeyRef = useRef<string | undefined>(undefined);
+  // A new chat's accepted message, kept until the host shows its new key.
+  const handoff = useRef<string | undefined>(undefined);
+  // The composer message on its way: let go as soon as the server accepted
+  // it or the transcript shows it, whichever comes first.
+  const inFlight = useRef<
+    | {
+        key: string;
+        clientId: string;
+        attachmentIds: string[];
+        released: boolean;
+      }
+    | undefined
+  >(undefined);
   const busy = useRef(false);
   const current = useRef(props);
   current.current = props;
@@ -130,6 +149,10 @@ export function useConversationInput(
         updateConversation(stored, () => ({ draft: text }));
   }
 
+  function markSending(key: string | undefined) {
+    sendingKeyRef.current = key;
+    setSendingKey(key);
+  }
   function updateDraft(value: string, key = threadKey) {
     draftRef.current = { ...draftRef.current, [key]: value };
     setDrafts(draftRef.current);
@@ -143,7 +166,7 @@ export function useConversationInput(
     draftWriteTimer.current = window.setTimeout(flushDrafts, draftWriteDelayMs);
   }
   /** An accepted message moved the conversation to a new key; its input follows. */
-  function moveThread(from: string, to: string) {
+  function moveThread(from: string, to: string, { carryDraft = true } = {}) {
     flushDrafts();
     server.moveThread(from, to);
     const moving = serverMode
@@ -156,10 +179,12 @@ export function useConversationInput(
         ...list.filter((item) => !moving.some((entry) => entry.id === item.id)),
       ]);
     }
-    const movedDraft = draftRef.current[from] ?? storedDraft(from);
-    if (movedDraft && !(draftRef.current[to] ?? storedDraft(to)))
-      updateDraft(movedDraft, to);
-    updateDraft("", from);
+    if (carryDraft) {
+      const movedDraft = draftRef.current[from] ?? storedDraft(from);
+      if (movedDraft && !(draftRef.current[to] ?? storedDraft(to)))
+        updateDraft(movedDraft, to);
+      updateDraft("", from);
+    }
     flushDrafts();
     setAwaitingExecution((value) => {
       const { [from]: _migrated, ...rest } = value;
@@ -217,6 +242,10 @@ export function useConversationInput(
     setDispatcher(false);
     return holdDispatchLock(storageKey, () => setDispatcher(true));
   }, [storageKey, serverMode]);
+  useEffect(() => {
+    if (handoff.current && handoff.current !== threadKey)
+      releaseHandoff(handoff.current);
+  }, [threadKey]);
   useEffect(() => {
     if (previousReset.current !== draftResetKey) updateDraft("");
     previousReset.current = draftResetKey;
@@ -320,10 +349,21 @@ export function useConversationInput(
       return;
     busy.current = true;
     setPending(true);
+    const clientId = item ? item.id : crypto.randomUUID();
+    if (!item) {
+      markSending(key);
+      inFlight.current = {
+        key,
+        clientId,
+        attachmentIds: (host.attachments ?? []).map(
+          (attachment) => attachment.id,
+        ),
+        released: false,
+      };
+    }
     try {
       if (item && !serverMode && !(await claim(item, key, force))) return;
       setErrors((value) => ({ ...value, [key]: "" }));
-      if (!item) updateDraft("", key);
       followLatest();
       try {
         const outcome = item
@@ -332,7 +372,7 @@ export function useConversationInput(
                 idempotencyKey: item.id,
               }),
             )
-          : await host.onSend(text);
+          : await host.onSend(text, undefined, { idempotencyKey: clientId });
         if (!outcome) throw new Error(i18n.t("conversation:errors.notSent"));
         if (outcome === "queue") {
           // A turn started meanwhile; the message waits for it to end.
@@ -347,6 +387,7 @@ export function useConversationInput(
             queued.attachments?.forEach((attachment) =>
               host.onAttachmentRemove?.(attachment.id),
             );
+            updateDraft("", key);
           }
           setPausedQueues((value) => ({ ...value, [key]: false }));
           return;
@@ -356,7 +397,19 @@ export function useConversationInput(
           typeof outcome === "object" && outcome.threadKey !== key
             ? outcome.threadKey
             : undefined;
-        if (movedTo) moveThread(key, movedTo);
+        if (!item && movedTo && current.current.threadKey === key) {
+          // The host shows the new key's transcript a moment later; until
+          // then the message stays here, read-only, so it is always visible.
+          handoff.current = key;
+          moveThread(key, movedTo, { carryDraft: false });
+          window.setTimeout(() => releaseHandoff(key), handoffLimitMs);
+        } else {
+          // Accepted: the transcript shows it now, so the composer lets it
+          // go (before a new chat's key moves, which would carry it along).
+          // Let go earlier, the composer may hold new text by now.
+          if (!item && !inFlight.current?.released) updateDraft("", key);
+          if (movedTo) moveThread(key, movedTo);
+        }
         const latest = current.current;
         if (
           outcome !== "replied" &&
@@ -378,24 +431,67 @@ export function useConversationInput(
                 entry.id === item.id ? withoutClaim(entry) : entry,
               ),
             );
-        } else if (!draftRef.current[key]) updateDraft(text, key);
-        else if (serverMode)
-          server.add({ id: crypto.randomUUID(), text }, key, { first: true });
-        else
-          mutateQueue(key, (list) => [
-            { id: crypto.randomUUID(), text },
-            ...list,
-          ]);
+        } else if (
+          !inFlight.current?.released &&
+          !(draftRef.current[key] ?? "").trim()
+        )
+          // Not shown anywhere else: the text returns to the composer.
+          updateDraft(text, key);
         report(reason, key);
       }
     } finally {
       busy.current = false;
       setPending(false);
+      if (!item) inFlight.current = undefined;
+      if (!item && handoff.current !== key) markSending(undefined);
+    }
+  }
+  // The transcript shows the message before the server's reply arrived:
+  // the composer lets it go now, and stays free while the reply is awaited.
+  useEffect(() => {
+    const flight = inFlight.current;
+    if (!flight || flight.released) return;
+    const messages = props.messages;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.clientId !== flight.clientId) continue;
+      flight.released = true;
+      updateDraft("", flight.key);
+      flight.attachmentIds.forEach((id) =>
+        current.current.onAttachmentRemove?.(id),
+      );
+      if (handoff.current !== flight.key) markSending(undefined);
+      return;
+    }
+  }, [props.messages]);
+  function releaseHandoff(key: string) {
+    if (handoff.current !== key) return;
+    handoff.current = undefined;
+    updateDraft("", key);
+    markSending(undefined);
+  }
+  /** Queues the composer's message on the server; it leaves once accepted. */
+  async function enqueueDraft(item: QueuedDraft, host: ConversationProps) {
+    const key = host.threadKey;
+    markSending(key);
+    setErrors((value) => ({ ...value, [key]: "" }));
+    try {
+      const refused = await server.enqueueNow(item);
+      if (refused) {
+        setErrors((value) => ({ ...value, [key]: refused }));
+        return;
+      }
+      updateDraft("", key);
+      item.attachments?.forEach((attachment) =>
+        host.onAttachmentRemove?.(attachment.id),
+      );
+    } finally {
+      markSending(undefined);
     }
   }
   function submit() {
     const host = current.current;
     if (host.disabled || host.readOnly || host.attachmentUploading) return;
+    if (sendingKeyRef.current === host.threadKey) return;
     const text =
       draftRef.current[host.threadKey] ?? storedDraft(host.threadKey);
     if (!text.trim() && !host.attachments?.length) return;
@@ -421,6 +517,10 @@ export function useConversationInput(
         attachments: [...(host.attachments ?? [])],
         targetExecutionId: host.activeExecutionId,
       };
+      if (serverMode && server.canEnqueueNow(host.threadKey)) {
+        void enqueueDraft(item, host);
+        return;
+      }
       if (serverMode) server.add(item, host.threadKey);
       else mutateQueue(host.threadKey, (list) => [...list, item]);
       updateDraft("", host.threadKey);
@@ -515,16 +615,31 @@ export function useConversationInput(
     serverMode,
   ]);
 
+  const sending = sendingKey === threadKey;
+  const hasContent = Boolean(draft.trim() || props.attachments?.length);
   return {
     draft,
     queue,
     error: errors[threadKey],
     pending,
     active,
+    /** This conversation's composer text is being sent: shown, not editable. */
+    sending,
+    /**
+     * The primary button: Stop only for a running agent and an empty
+     * composer; text typed meanwhile is sent (queued or steered) instead.
+     */
+    action: (sending
+      ? "sending"
+      : props.active && !hasContent
+        ? "stop"
+        : "send") as "send" | "stop" | "sending",
     canSteer,
     unavailable,
     steeringId,
-    updateDraft,
+    updateDraft(value: string) {
+      if (sendingKeyRef.current !== threadKey) updateDraft(value);
+    },
     submit,
     /** The person chose to send this message now. */
     sendQueued: (item: QueuedDraft) => send(item, { force: true }),
@@ -554,6 +669,7 @@ export function useConversationInput(
     saveEdit: (item: QueuedDraft, text: string) => server.edit(item, text),
     /** Moves a queued message back into the composer. */
     edit(item: QueuedDraft) {
+      if (sendingKeyRef.current === threadKey) return;
       updateDraft(item.text);
       if (item.attachments?.length)
         props.onAttachmentsRestore?.(item.attachments);

@@ -2,6 +2,8 @@ import {
   Activity,
   Bot,
   Check,
+  ChevronDown,
+  ChevronRight,
   CircleDashed,
   CircleStop,
   CircleX,
@@ -19,7 +21,15 @@ import {
   nextCronFire,
   type AgentBackgroundTask,
 } from "@bd777/foundry-protocol";
-import { useMemo, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
@@ -422,28 +432,141 @@ export function backgroundRowDetail(
     .join(" · ");
 }
 
-/** Finished rows shown before the rest fold away. */
-const finishedBackgroundShown = 5;
+/** Open folds by chat and section, for this page's lifetime only. */
+const openFolds = new Map<string, boolean>();
+
+/**
+ * Whether a section's finished rows are unfolded: remembered per chat while
+ * the page lives, closed for a chat not seen yet.
+ */
+function useFoldOpen(
+  memoryKey: string | undefined,
+): [boolean, (open: boolean) => void] {
+  const [local, setLocal] = useState(false);
+  const [, setVersion] = useState(0);
+  if (!memoryKey) return [local, setLocal];
+  return [
+    openFolds.get(memoryKey) ?? false,
+    (open) => {
+      openFolds.set(memoryKey, open);
+      setVersion((version) => version + 1);
+    },
+  ];
+}
+
+/** Finished rows behind one "12 finished" row that opens and closes them. */
+function FinishedFold({
+  children,
+  label,
+  memoryKey,
+}: {
+  children: ReactNode;
+  label: string;
+  memoryKey?: string;
+}) {
+  const [open, setOpen] = useFoldOpen(memoryKey);
+  const id = useId();
+  return (
+    <>
+      <Button
+        aria-controls={open ? id : undefined}
+        aria-expanded={open}
+        className="fdy-chat-context-fold"
+        onClick={() => setOpen(!open)}
+        size="sm"
+        variant="ghost"
+      >
+        <span className="fdy-chat-context-fold-icon">
+          {open ? (
+            <ChevronDown aria-hidden="true" size={14} />
+          ) : (
+            <ChevronRight aria-hidden="true" size={14} />
+          )}
+        </span>
+        {label}
+      </Button>
+      {open ? (
+        <div className="fdy-chat-context-list" id={id}>
+          {children}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** "12 finished", or "12 finished · 1 failed" so a failure is not lost. */
+function finishedFoldLabel(finished: string, failed?: string): string {
+  return failed ? `${finished} · ${failed}` : finished;
+}
+
+/**
+ * Focuses a section's row when a new reveal request names it first, e.g. the
+ * composer's "1 subagent running in the background" note.
+ */
+function useRevealedRow(
+  reveal: { ids: string[] } | undefined,
+): (id: string) => (element: HTMLButtonElement | null) => void {
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    const first = reveal?.ids[0];
+    const row = first ? rows.current.get(first) : undefined;
+    if (!row) return;
+    row.focus();
+    row.scrollIntoView?.({ block: "nearest" });
+    // Only a new reveal request moves the focus.
+  }, [reveal]);
+  return (id) => (element) => {
+    if (element) rows.current.set(id, element);
+    else rows.current.delete(id);
+  };
+}
 
 function BackgroundSection({
+  chatKey,
   items,
   onSelect,
+  reveal,
   selectedId,
 }: {
+  chatKey?: string;
   items: ChatBackgroundTaskItem[];
   onSelect?: (item: ChatContextSelection) => void;
+  reveal?: { ids: string[] };
   selectedId?: string;
 }) {
   const { t } = useTranslation("chat");
-  const [expanded, setExpanded] = useState(false);
   const running = items.filter((item) => item.task.status === "running");
   const finished = items.filter((item) => item.task.status !== "running");
-  const hidden = Math.max(0, finished.length - finishedBackgroundShown);
-  const visible = [
-    ...running,
-    ...(expanded ? finished : finished.slice(0, finishedBackgroundShown)),
-  ];
+  const backgroundFailed = finished.filter(
+    (item) => item.task.status === "failed",
+  ).length;
   const now = useSharedNow(running.length > 0);
+  const rowRef = useRevealedRow(reveal);
+  const row = (item: ChatBackgroundTaskItem) => (
+    <Button
+      aria-pressed={selectedId === item.id}
+      className="fdy-chat-context-row"
+      data-selected={selectedId === item.id ? "true" : "false"}
+      data-status={item.task.status}
+      key={item.id}
+      ref={rowRef(item.id)}
+      onClick={() => onSelect?.(item)}
+      title={item.label}
+      variant="ghost"
+    >
+      <span className="fdy-chat-context-row-icon" data-kind="background">
+        <BackgroundKindIcon kind={item.task.kind} />
+      </span>
+      <span className="fdy-chat-context-row-copy">
+        <strong>{item.label}</strong>
+        <em>{backgroundRowDetail(item, now)}</em>
+      </span>
+      <span className="fdy-chat-context-status">
+        <BackgroundStatusIcon status={item.task.status} />
+        {t(`contextCard.backgroundStatus.${item.task.status}`)}
+      </span>
+    </Button>
+  );
   return (
     <section className="fdy-chat-context-section">
       <h3>
@@ -453,62 +576,133 @@ function BackgroundSection({
         ) : null}
       </h3>
       <div className="fdy-chat-context-list">
-        {visible.map((item) => (
-          <Button
-            aria-pressed={selectedId === item.id}
-            className="fdy-chat-context-row"
-            data-selected={selectedId === item.id ? "true" : "false"}
-            data-status={item.task.status}
-            key={item.id}
-            onClick={() => onSelect?.(item)}
-            title={item.label}
-            variant="ghost"
+        {running.map(row)}
+        {finished.length > 0 ? (
+          <FinishedFold
+            label={finishedFoldLabel(
+              t("contextCard.backgroundFinished", { count: finished.length }),
+              backgroundFailed > 0
+                ? t("contextCard.foldFailed", { count: backgroundFailed })
+                : undefined,
+            )}
+            memoryKey={chatKey && `${chatKey}:background`}
           >
-            <span className="fdy-chat-context-row-icon" data-kind="background">
-              <BackgroundKindIcon kind={item.task.kind} />
-            </span>
-            <span className="fdy-chat-context-row-copy">
-              <strong>{item.label}</strong>
-              <em>{backgroundRowDetail(item, now)}</em>
-            </span>
-            <span className="fdy-chat-context-status">
-              <BackgroundStatusIcon status={item.task.status} />
-              {t(`contextCard.backgroundStatus.${item.task.status}`)}
-            </span>
-          </Button>
-        ))}
+            {finished.map(row)}
+          </FinishedFold>
+        ) : null}
       </div>
-      {hidden > 0 ? (
-        <Button
-          aria-expanded={expanded}
-          className="fdy-chat-context-more"
-          onClick={() => setExpanded((value) => !value)}
-          size="sm"
-          variant="ghost"
-        >
-          {expanded
-            ? t("contextCard.backgroundShowFewer")
-            : t("contextCard.backgroundShowMore", { count: hidden })}
-        </Button>
-      ) : null}
     </section>
   );
 }
 
-export function ChatContextCard({
+/**
+ * Running subagents, then every one that ended (completed, failed, canceled)
+ * folded, like background tasks; the fold names how many failed.
+ */
+function SubagentSection({
+  chatKey,
+  items,
+  onRetry,
+  onSelect,
+  reveal,
+  selectedId,
+}: {
+  chatKey?: string;
+  items: ChatSubagentItem[];
+  /** Refreshing the list failed: what is shown is the last list fetched. */
+  onRetry?: () => void;
+  onSelect?: (item: ChatContextSelection) => void;
+  reveal?: { ids: string[] };
+  selectedId?: string;
+}) {
+  const { t } = useTranslation(["chat", "common"]);
+  const rowRef = useRevealedRow(reveal);
+  // Avatar colors follow the full list, so a row keeps its color when it folds.
+  const tones = new Map(items.map((item, index) => [item.id, (index % 3) + 1]));
+  const running = items.filter((item) => item.status === "running");
+  const finished = items.filter((item) => item.status !== "running");
+  const failed = finished.filter((item) => item.status === "failed").length;
+  const row = (subagent: ChatSubagentItem) => (
+    <Button
+      aria-pressed={selectedId === subagent.id}
+      className="fdy-chat-context-row fdy-chat-subagent-row"
+      data-status={subagent.status}
+      data-selected={selectedId === subagent.id ? "true" : "false"}
+      key={subagent.id}
+      ref={rowRef(subagent.id)}
+      onClick={() => onSelect?.(subagent)}
+      title={subagent.detail ?? subagent.label}
+      variant="ghost"
+    >
+      <span
+        className="fdy-chat-subagent-avatar"
+        data-tone={tones.get(subagent.id)}
+      >
+        <Bot aria-hidden="true" size={15} />
+      </span>
+      <span className="fdy-chat-context-row-copy">
+        <strong>{subagent.label}</strong>
+        {subagent.usage ? (
+          <em>{subagentUsageSummary(subagent.usage)}</em>
+        ) : null}
+      </span>
+      <span className="fdy-chat-context-status">
+        <SubagentStatusIcon status={subagent.status} />
+        {t(`contextCard.subagentStatus.${subagent.status}`)}
+      </span>
+    </Button>
+  );
+  return (
+    <section className="fdy-chat-context-section">
+      <h3>{t("contextCard.subagents")}</h3>
+      {onRetry ? (
+        <p className="fdy-chat-context-refresh-failed" role="status">
+          {t("contextCard.subagentsRefreshFailed")}
+          <Button onClick={onRetry} size="sm" variant="link">
+            {t("common:actions.retry")}
+          </Button>
+        </p>
+      ) : null}
+      <div className="fdy-chat-context-list">
+        {running.map(row)}
+        {finished.length > 0 ? (
+          <FinishedFold
+            label={finishedFoldLabel(
+              t("contextCard.subagentsFinished", { count: finished.length }),
+              failed > 0
+                ? t("contextCard.foldFailed", { count: failed })
+                : undefined,
+            )}
+            memoryKey={chatKey && `${chatKey}:subagents`}
+          >
+            {finished.map(row)}
+          </FinishedFold>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+export const ChatContextCard = memo(function ChatContextCard({
+  chatKey,
   data,
   onClearTurnFilter,
   onClose,
+  onRetrySubagents,
   onSelect,
   reveal,
   selectedId,
   turnFilter,
 }: {
+  /** The open chat: which sections it unfolded is remembered by this key. */
+  chatKey?: string;
   data: ChatContextCardData;
   onClearTurnFilter?: () => void;
   onClose?: () => void;
+  /** Refreshing the subagents failed; offered as a retry beside them. */
+  onRetrySubagents?: () => void;
   onSelect?: (item: ChatContextSelection) => void;
-  /** Files to open and focus, e.g. those in a folder an answer names. */
+  /** Rows to open and focus: files an answer names, or running work. */
   reveal?: { ids: string[] };
   selectedId?: string;
   /** Shows only the files one turn (input) wrote or named. */
@@ -559,8 +753,10 @@ export function ChatContextCard({
 
       {data.background.length > 0 ? (
         <BackgroundSection
+          chatKey={chatKey}
           items={data.background}
           onSelect={onSelect}
+          reveal={reveal}
           selectedId={selectedId}
         />
       ) : null}
@@ -582,40 +778,14 @@ export function ChatContextCard({
       ) : null}
 
       {data.subagents.length > 0 ? (
-        <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.subagents")}</h3>
-          <div className="fdy-chat-context-list">
-            {data.subagents.map((subagent, index) => (
-              <Button
-                aria-pressed={selectedId === subagent.id}
-                className="fdy-chat-context-row fdy-chat-subagent-row"
-                data-status={subagent.status}
-                data-selected={selectedId === subagent.id ? "true" : "false"}
-                key={subagent.id}
-                onClick={() => onSelect?.(subagent)}
-                title={subagent.detail ?? subagent.label}
-                variant="ghost"
-              >
-                <span
-                  className="fdy-chat-subagent-avatar"
-                  data-tone={(index % 3) + 1}
-                >
-                  <Bot aria-hidden="true" size={15} />
-                </span>
-                <span className="fdy-chat-context-row-copy">
-                  <strong>{subagent.label}</strong>
-                  {subagent.usage ? (
-                    <em>{subagentUsageSummary(subagent.usage)}</em>
-                  ) : null}
-                </span>
-                <span className="fdy-chat-context-status">
-                  <SubagentStatusIcon status={subagent.status} />
-                  {t(`contextCard.subagentStatus.${subagent.status}`)}
-                </span>
-              </Button>
-            ))}
-          </div>
-        </section>
+        <SubagentSection
+          chatKey={chatKey}
+          items={data.subagents}
+          onRetry={onRetrySubagents}
+          onSelect={onSelect}
+          reveal={reveal}
+          selectedId={selectedId}
+        />
       ) : null}
 
       {data.sources.length > 0 ? (
@@ -636,4 +806,4 @@ export function ChatContextCard({
       ) : null}
     </aside>
   );
-}
+});

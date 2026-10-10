@@ -76,11 +76,13 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 	return ""
 }
 
-// invalidateProjections drops cached foundry-data snapshots after a profile
-// write. Profiles carry no browser stream event of their own, so this bumps
-// the cache revision directly rather than publishing a type clients discard.
-func (s *Server) invalidateProjections() {
-	s.events.revision.Add(1)
+// projectionsChanged announces a write to what foundry-data returns that no
+// other event carries (connections, skills, worker updates, ...): cached
+// snapshots are dropped and clients told to read the named fields again
+// (foundry_data_changed; none names any). workspaceID scopes it to one
+// workspace's data; "" is what every workspace's view shows.
+func (s *Server) projectionsChanged(workspaceID string, resources ...string) {
+	s.events.dataChanged(workspaceID, resources...)
 }
 
 func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +175,7 @@ func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, input store
 		}
 	}
 	profile.HasCredential = s.profileHasCredential(r.Context(), profile.ID)
-	s.invalidateProjections()
+	s.projectionsChanged("", connectionFields...)
 	writeResultWithStatus(w, status, profile, nil)
 }
 
@@ -199,7 +201,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", connectionFields...)
 	writeResult(w, profile, nil)
 }
 
@@ -221,7 +223,7 @@ func (s *Server) handleClearProfileCredential(w http.ResponseWriter, r *http.Req
 		return
 	}
 	profile.HasCredential = false
-	s.invalidateProjections()
+	s.projectionsChanged("", connectionFields...)
 	writeResult(w, profile, nil)
 }
 
@@ -311,7 +313,7 @@ func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	profile.HasCredential = s.profileHasCredential(r.Context(), profile.ID)
-	s.invalidateProjections()
+	s.projectionsChanged("", connectionFields...)
 	writeResultWithStatus(w, http.StatusCreated, profile, nil)
 }
 
@@ -383,7 +385,7 @@ func (s *Server) handleSetDeviceProfiles(w http.ResponseWriter, r *http.Request)
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", connectionFields...)
 	writeResult(w, bindings, nil)
 }
 

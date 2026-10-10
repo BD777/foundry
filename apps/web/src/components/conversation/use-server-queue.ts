@@ -144,6 +144,28 @@ export function useServerQueue(options: {
     items: [...ordered, ...local],
     notice: notice[threadKey] ?? "",
     isLocal,
+    /**
+     * The server can take a message now, ahead of nothing this tab still
+     * holds, so it can be sent from the composer and shown once accepted.
+     */
+    canEnqueueNow(key = threadKey) {
+      return (
+        Boolean(server?.chatId) &&
+        key === threadKey &&
+        !holding &&
+        !outboxRef.current[key]?.length
+      );
+    },
+    /** Hands a message to the server; why it was refused, if it was. */
+    async enqueueNow(item: QueuedDraft): Promise<string | undefined> {
+      if (!server?.chatId) return i18n.t("conversation:errors.queueFailed");
+      try {
+        const outcome = await server.enqueue(server.chatId, item);
+        return outcome.ok ? undefined : outcomeMessage(outcome);
+      } catch (reason) {
+        return reason instanceof Error ? reason.message : String(reason);
+      }
+    },
     /** Queues a message; it reaches the server as soon as it can. */
     add(item: QueuedDraft, key = threadKey, { first = false } = {}) {
       const list = outboxRef.current[key] ?? [];

@@ -368,3 +368,107 @@ test("a promoted legacy chat loads the SERVER definition's catalog, not the dead
     await view.close();
   }
 });
+
+test("opening a chat asks only the agent its runtime restores to for the model catalog, once", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body).profile.id);
+    return new Response(JSON.stringify([{ id: "found-model" }]), {
+      status: 200,
+    });
+  };
+  const localAgent = (id, profileId) => ({
+    id,
+    deviceId: "a",
+    provider: "codex",
+    status: "healthy",
+    profileId,
+    connectionType: "local_login",
+  });
+  const profile = (id) => ({
+    id,
+    deviceId: "a",
+    runtime: "codex",
+    origin: "device",
+    connectionType: "local_login",
+    configScope: "device",
+    label: id,
+    models: [],
+  });
+  const view = await mount({
+    agents: [
+      localAgent("agent_default", "p_default"),
+      localAgent("agent_chat", "p_chat"),
+    ],
+    profiles: [profile("p_default"), profile("p_chat")],
+    selectedChatId: "chat",
+    threadKey: "w1:restore-chat",
+    selectedThread: {
+      id: "chat",
+      sessions: [{ id: "chat", agentId: "agent_chat", provider: "codex" }],
+    },
+  });
+  try {
+    // The chats page shows: the chat's agent is restored before any read.
+    await view.render({ active: true });
+    await view.render();
+    assert.equal(view.value.selectedAgent.id, "agent_chat");
+    assert.deepEqual(requests, ["p_chat"], "not the default agent's catalog");
+    assert.deepEqual(
+      view.value.modelOptions.map((option) => option.id),
+      ["found-model"],
+    );
+    // An explicit retry asks again.
+    await act(async () => view.value.retryModels());
+    assert.deepEqual(requests, ["p_chat", "p_chat"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await view.close();
+  }
+});
+
+test("a model catalog is asked for once per page, unless refreshed", async () => {
+  const originalFetch = globalThis.fetch;
+  const answers = [];
+  globalThis.fetch = () =>
+    new Promise((resolve, reject) => answers.push({ resolve, reject }));
+  const { listAgentModels } = await import("../src/api.ts");
+  const profile = { id: "p_catalog", deviceId: "a", runtime: "claude" };
+  const reply = (index, body) =>
+    answers[index].resolve(new Response(JSON.stringify(body), { status: 200 }));
+  try {
+    // Two readers at once (a StrictMode remount) share one request.
+    const first = listAgentModels(profile, { reuse: true });
+    const second = listAgentModels(profile, { reuse: true });
+    assert.equal(answers.length, 1);
+    reply(0, [{ id: "m1" }]);
+    assert.deepEqual(await first, [{ id: "m1" }]);
+    assert.deepEqual(await second, [{ id: "m1" }]);
+    assert.deepEqual(await listAgentModels(profile, { reuse: true }), [
+      { id: "m1" },
+    ]);
+    assert.equal(answers.length, 1, "a read catalog answers again");
+    // A refresh asks again and keeps the new answer.
+    const refreshed = listAgentModels(profile);
+    assert.equal(answers.length, 2);
+    reply(1, [{ id: "m2" }]);
+    assert.deepEqual(await refreshed, [{ id: "m2" }]);
+    assert.deepEqual(await listAgentModels(profile, { reuse: true }), [
+      { id: "m2" },
+    ]);
+    // A failure is not kept: the next reader asks again.
+    const failing = listAgentModels({ ...profile, id: "p_failing" });
+    answers[2].reject(new Error("offline"));
+    await assert.rejects(failing, /offline/);
+    const retried = listAgentModels(
+      { ...profile, id: "p_failing" },
+      { reuse: true },
+    );
+    assert.equal(answers.length, 4);
+    reply(3, []);
+    assert.deepEqual(await retried, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

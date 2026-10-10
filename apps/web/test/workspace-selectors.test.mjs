@@ -11,9 +11,8 @@ const {
   currentWorkspaceAgents,
   currentWorkspaceAssets,
   currentWorkspaceItems,
-  currentWorkspaceSkills,
   profilesForDevice,
-  uniqueSkills,
+  workspaceActiveSkillIds,
 } = await import("../src/app/workspace-selectors.ts");
 
 function agent(id, overrides = {}) {
@@ -31,10 +30,6 @@ function agent(id, overrides = {}) {
 
 function workspace(overrides = {}) {
   return { deviceId: "dev_1", id: "ws_1", name: "Foundry", ...overrides };
-}
-
-function issue(id, skills) {
-  return { id, skills };
 }
 
 test("workspace agents exclude other workspaces", () => {
@@ -173,7 +168,7 @@ test("workspace items keep only the active workspace", () => {
   );
 });
 
-test("assets and skills without a workspace stay globally visible", () => {
+test("assets without a workspace stay globally visible", () => {
   const assets = [
     { id: "global" },
     { id: "mine", workspaceId: "ws_1" },
@@ -181,16 +176,6 @@ test("assets and skills without a workspace stay globally visible", () => {
   ];
   assert.deepEqual(
     currentWorkspaceAssets(assets, "ws_1").map((entry) => entry.id),
-    ["global", "mine"],
-  );
-
-  const skills = [
-    { id: "global", name: "global", version: "1.0.0" },
-    { id: "mine", name: "mine", version: "1.0.0", workspaceId: "ws_1" },
-    { id: "theirs", name: "theirs", version: "1.0.0", workspaceId: "ws_2" },
-  ];
-  assert.deepEqual(
-    currentWorkspaceSkills(skills, "ws_1").map((entry) => entry.id),
     ["global", "mine"],
   );
 });
@@ -238,54 +223,17 @@ test("device scoping keeps every record until a device resolves", () => {
   );
 });
 
-test("issue skills dedupe by id and keep the curated design order", () => {
-  const skills = uniqueSkills([
-    issue("i1", [
-      { id: "visual-qa", name: "Visual QA", version: "0.2.0" },
-      { id: "shadcn-ui-cleanup", name: "Cleanup", version: "0.1.0" },
-    ]),
-    issue("i2", [{ id: "visual-qa", name: "Visual QA", version: "0.3.0" }]),
+test("the workspace's skill count is what its sessions get, never prototype placeholders", () => {
+  const active = workspaceActiveSkillIds(
+    [{ skillId: "sk_selected" }, { skillId: "sk_both" }],
+    ["sk_default", "sk_bundle", "sk_off", "sk_both"],
+    ["sk_off"],
+  );
+  assert.deepEqual([...active].sort(), [
+    "sk_both",
+    "sk_bundle",
+    "sk_default",
+    "sk_selected",
   ]);
-
-  assert.deepEqual(
-    skills.map((skill) => skill.id),
-    [
-      "baseline-comparison",
-      "web-preview-acceptance",
-      "visual-qa",
-      "issue-splitting",
-      "shadcn-ui-cleanup",
-    ],
-  );
-  // The last issue reference wins for a duplicated id.
-  assert.equal(
-    skills.find((skill) => skill.id === "visual-qa").version,
-    "0.3.0",
-  );
-});
-
-test("issue skills advertise capability skills even without issues", () => {
-  assert.deepEqual(
-    uniqueSkills([]).map((skill) => skill.id),
-    [
-      "baseline-comparison",
-      "web-preview-acceptance",
-      "visual-qa",
-      "issue-splitting",
-    ],
-  );
-});
-
-test("unlisted skills sort behind the curated ones in discovery order", () => {
-  const skills = uniqueSkills([
-    issue("i1", [
-      { id: "zeta", name: "Zeta", version: "1.0.0" },
-      { id: "alpha", name: "Alpha", version: "1.0.0" },
-    ]),
-  ]);
-
-  assert.deepEqual(
-    skills.slice(-2).map((skill) => skill.id),
-    ["zeta", "alpha"],
-  );
+  assert.equal(workspaceActiveSkillIds([]).size, 0);
 });

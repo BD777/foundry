@@ -127,7 +127,7 @@ func (s *Store) ListWorkspaceMembers(ctx context.Context, workspaceID string) ([
 var _ store.OwnershipStore = (*Store)(nil)
 
 func (s *Store) WorkspaceRolesForUser(ctx context.Context, userID string) (map[string]string, error) {
-	rows, err := s.conn().QueryContext(ctx,
+	rows, err := s.reader().QueryContext(ctx,
 		`SELECT workspace_id, role FROM workspace_members WHERE user_id = ?`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace roles: %w", err)
@@ -145,7 +145,7 @@ func (s *Store) WorkspaceRolesForUser(ctx context.Context, userID string) (map[s
 }
 
 func (s *Store) DevicesOwnedBy(ctx context.Context, userID string) ([]string, error) {
-	rows, err := s.conn().QueryContext(ctx,
+	rows, err := s.reader().QueryContext(ctx,
 		`SELECT device_id FROM device_identities WHERE owner_user_id = ?`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list owned devices: %w", err)

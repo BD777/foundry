@@ -23,6 +23,11 @@ async function harness(t, fetcher) {
   const window = new Window(),
     previous = new Map();
   class EventSource {
+    static last;
+    constructor() {
+      EventSource.last = this;
+    }
+    addEventListener() {}
     close() {}
   }
   for (const [key, value] of Object.entries({
@@ -67,6 +72,13 @@ async function harness(t, fetcher) {
     });
   };
   await render();
+  // The Issue's records are read once the tab's stream opened.
+  const { isFoundryStreamOpen } = await import("../src/api.ts");
+  if (!isFoundryStreamOpen())
+    await act(async () => {
+      EventSource.last?.onopen?.();
+      await new Promise((resolve) => setImmediate(resolve));
+    });
   return {
     get state() {
       return controller;

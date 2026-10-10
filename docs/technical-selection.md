@@ -169,8 +169,10 @@ device owner from the web app, which only accepts an existing absolute folder
 on that device. Registration never deletes files; removing a workspace only
 unregisters it.
 
-`foundry-worker init` creates the workspace scaffold (`AGENTS.md`,
-`CONTEXT.md`, `.foundry/`). The full local layout
+`foundry-worker init` writes only Foundry's own `.foundry/workspace.json`
+and keeps `.foundry/` out of Git through local excludes; it creates no
+project files, never runs `git init` and commits nothing. Git is set up for a
+folder without it only when the person confirms that for its first Issue. The full local layout
 and the external execution store are described in
 [storage strategy](storage-strategy.md).
 

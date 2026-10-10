@@ -14,7 +14,7 @@ import (
 const bundleVersionsShown = 10
 
 func (s *Store) loadBundleVersions(ctx context.Context, repos []store.SkillRepository, index map[string]int) error {
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT repository_id, seq, tag, commit_sha, applied_at, payload_json FROM skill_bundle_versions
 		ORDER BY repository_id, seq DESC`)
 	if err != nil {
@@ -124,7 +124,7 @@ const (
 
 // ListBundleSelection lists the bundles a workspace or person selected.
 func (s *Store) ListBundleSelection(ctx context.Context, scope, ownerID string) ([]string, error) {
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT b.repository_id FROM skill_bundle_selections b JOIN skill_repositories r ON r.id = b.repository_id
 		WHERE b.scope = ? AND b.owner_id = ? AND r.mode = 'bundle' ORDER BY r.name, r.label`, scope, ownerID)
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 	for _, id := range repositoryIDs {
 		args = append(args, id)
 	}
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
 		FROM skill_repository_skills k
 		JOIN skill_repositories repo ON repo.id = k.repository_id AND repo.mode = 'bundle'
@@ -198,7 +198,7 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 // WorkspaceOwner is the person who owns a workspace's device.
 func (s *Store) WorkspaceOwner(ctx context.Context, workspaceID string) (string, error) {
 	var owner string
-	err := s.conn().QueryRowContext(ctx, `
+	err := s.reader().QueryRowContext(ctx, `
 		SELECT di.owner_user_id FROM workspaces w
 		JOIN device_identities di ON di.device_id = json_extract(w.payload_json, '$.deviceId') AND di.revoked_at IS NULL
 		WHERE w.id = ?`, workspaceID).Scan(&owner)

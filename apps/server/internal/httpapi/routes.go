@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -137,9 +138,36 @@ func issueWorkspace(name string) workspaceResolver {
 
 func sessionWorkspace(name string) workspaceResolver {
 	return func(s *Server, r *http.Request) (string, error) {
-		session, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue(name))
+		id := r.PathValue(name)
+		session, err := s.store.GetAgentSessionSummary(r.Context(), id)
+		if records := guardedRecordsFrom(r); err == nil && records != nil {
+			records.sessionID, records.session = id, session
+		}
 		return session.WorkspaceID, err
 	}
+}
+
+// guardedRecords carries a record a route's access check read to the
+// route's handler, so the handler does not read it again.
+type guardedRecords struct {
+	sessionID string
+	session   store.AgentSession
+}
+
+type guardedRecordsKey struct{}
+
+func guardedRecordsFrom(r *http.Request) *guardedRecords {
+	records, _ := r.Context().Value(guardedRecordsKey{}).(*guardedRecords)
+	return records
+}
+
+// sessionSummary is GetAgentSessionSummary, answered from the read the
+// route's access check made of the same session.
+func (s *Server) sessionSummary(r *http.Request, id string) (store.AgentSession, error) {
+	if records := guardedRecordsFrom(r); records != nil && id != "" && records.sessionID == id {
+		return records.session, nil
+	}
+	return s.store.GetAgentSessionSummary(r.Context(), id)
 }
 
 // chatOrSessionWorkspace resolves a chat-list id: a native chat, or a
@@ -424,6 +452,7 @@ func (s *Server) guard(rule accessRule, handler http.Handler) http.Handler {
 			}
 			r = r.WithContext(contextWithScope(r.Context(), scope))
 		}
+		r = r.WithContext(context.WithValue(r.Context(), guardedRecordsKey{}, &guardedRecords{}))
 		if !rule.check(s, w, r) {
 			return
 		}

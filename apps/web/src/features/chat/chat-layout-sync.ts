@@ -1,11 +1,13 @@
 import type { ChatLayout } from "@bd777/foundry-protocol";
+import { backgroundReadTimeoutMs } from "../../api";
 import { i18n } from "../../i18n";
+import { singleFlight } from "../../lib/single-flight";
 
 export type LayoutChange = (layout: ChatLayout) => ChatLayout;
 
 interface LayoutIO {
   save: (layout: ChatLayout) => Promise<ChatLayout>;
-  load: () => Promise<ChatLayout>;
+  load: (signal?: AbortSignal) => Promise<ChatLayout>;
   changed: (layout: ChatLayout, saving: boolean) => void;
   failed: (message: string, ready: boolean) => void;
 }
@@ -19,11 +21,23 @@ export class ChatLayoutSync {
   private active = true;
   private recovering = false;
   private deleting = false;
+  /** A refresh came while this tab's own change was in flight. */
+  private refreshWanted = false;
+  /** The newest layout pushed while this tab's own change was in flight. */
+  private pushed: ChatLayout | undefined;
   private readonly io: LayoutIO;
+  /**
+   * One read at a time; a refresh asked meanwhile reads once more after. A
+   * read that stalls fails after backgroundReadTimeoutMs.
+   */
+  readonly refresh: () => Promise<void>;
 
   constructor(initial: ChatLayout, io: LayoutIO) {
     this.confirmed = initial;
     this.io = io;
+    this.refresh = singleFlight((signal) => this.read(signal), {
+      timeoutMs: backgroundReadTimeoutMs,
+    });
   }
 
   dispose() {
@@ -45,20 +59,55 @@ export class ChatLayoutSync {
       );
   }
 
-  async refresh() {
-    if (!this.active || this.running || this.queue.length || this.recovering)
-      return;
-    const revision = this.confirmed.revision;
-    const next = await this.io.load();
-    if (
-      !this.active ||
-      this.running ||
-      this.queue.length ||
-      revision !== this.confirmed.revision
-    )
-      return;
-    this.confirmed = next;
+  private busy() {
+    return this.running || this.queue.length > 0 || this.recovering;
+  }
+
+  /**
+   * A layout the server pushed: shown when its revision is newer. One that
+   * arrives while this tab's own change is in flight waits until it settled,
+   * so the change never shows undone meanwhile.
+   */
+  apply(layout: ChatLayout) {
+    if (!this.active) return;
+    if (!this.busy()) this.take(layout);
+    else if (!this.pushed || layout.revision > this.pushed.revision)
+      this.pushed = layout;
+  }
+
+  private take(layout: ChatLayout) {
+    if (layout.revision <= this.confirmed.revision) return;
+    this.confirmed = layout;
     this.publish();
+  }
+
+  /** A push or refresh that waited for this tab's change, once it settled. */
+  private settled() {
+    if (!this.active || this.busy()) return;
+    const pushed = this.pushed;
+    this.pushed = undefined;
+    if (pushed) this.take(pushed);
+    if (this.refreshWanted) void this.refresh().catch(() => {});
+  }
+
+  private async read(signal: AbortSignal) {
+    if (!this.active) return;
+    if (this.busy()) {
+      this.refreshWanted = true;
+      return;
+    }
+    this.refreshWanted = false;
+    const next = await this.io.load(signal);
+    if (!this.active) return;
+    if (this.busy()) {
+      // This tab's own change is in flight; the read may be older than it.
+      // Read again once it settled.
+      this.refreshWanted = true;
+      return;
+    }
+    // What landed meanwhile (this tab's settled change, or a push) may be
+    // newer than the read: the newer revision is the server's layout.
+    this.take(next);
   }
 
   async deleteGroup(remove: (revision: number) => Promise<ChatLayout>) {
@@ -74,6 +123,7 @@ export class ChatLayoutSync {
       this.deleting = false;
       this.publish();
       if (this.queue.length) void this.drain();
+      else this.settled();
     }
   }
 
@@ -105,6 +155,7 @@ export class ChatLayoutSync {
       this.recovering = false;
     } finally {
       this.running = false;
+      this.settled();
     }
   }
 }

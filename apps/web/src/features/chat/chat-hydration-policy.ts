@@ -4,8 +4,6 @@
  * without a React renderer.
  */
 
-import { isProcessLabel } from "../../lib/process-labels";
-
 export interface ChatDetailHydrationInput {
   /** Chat id whose full detail is already in feature state. */
   hydratedChatId?: string;
@@ -27,101 +25,4 @@ export function chatDetailHydrationId({
     return undefined;
   }
   return hydratedChatId === selectedSummary.id ? undefined : selectedSummary.id;
-}
-
-/** Sessions whose runtime can report subagents worth discovering. */
-interface SubagentDiscoverySession {
-  events?: readonly {
-    id: string;
-    label: string;
-    metadata?: { taskId?: string };
-  }[];
-  id: string;
-  provider: string;
-  status?: string;
-}
-
-function isSubagentLifecycleLabel(label: string): boolean {
-  return (
-    isProcessLabel(
-      label,
-      "startingSubtask",
-      "subtaskRunning",
-      "subtaskCompleted",
-      "subtaskFailed",
-    ) || /^Subtask /i.test(label)
-  );
-}
-
-function hasSubagentLifecycle(session: SubagentDiscoverySession): boolean {
-  return (session.events ?? []).some(
-    (event) =>
-      Boolean(event.metadata?.taskId) || isSubagentLifecycleLabel(event.label),
-  );
-}
-
-export function subagentDiscoverySessionIds(
-  sessions: readonly SubagentDiscoverySession[],
-): string[] {
-  return sessions
-    .filter(
-      (session) =>
-        session.provider === "claude" &&
-        (session.status === "running" || hasSubagentLifecycle(session)),
-    )
-    .map((session) => session.id);
-}
-
-/** Changes only when subagent-relevant state changes, not for every token. */
-export function subagentDiscoveryRevision(
-  sessions: readonly SubagentDiscoverySession[],
-): string {
-  return sessions
-    .filter((session) => session.provider === "claude")
-    .map((session) => {
-      const taskEvents = (session.events ?? [])
-        .filter(
-          (event) =>
-            Boolean(event.metadata?.taskId) ||
-            isSubagentLifecycleLabel(event.label),
-        )
-        .map((event) => event.id)
-        .join(",");
-      return `${session.id}:${session.status ?? ""}:${taskEvents}`;
-    })
-    .join("|");
-}
-
-/**
- * A value-stable dependency for selected-thread transcript hydration.
- *
- * Session projection objects are replaced by background list refreshes even
- * when the sessions that need detail did not change. Depending on those
- * objects directly aborts otherwise healthy detail requests.
- */
-export function sessionThreadHydrationId(
-  threadId: string | undefined,
-  missingSessionIds: readonly string[],
-): string | undefined {
-  return threadId && missingSessionIds.length > 0 ? threadId : undefined;
-}
-
-export function sessionThreadHydrationRevision(
-  threadId: string | undefined,
-  sessions: readonly {
-    events?: readonly { at: string; id: string }[];
-    id: string;
-    lastActivityAt?: string;
-  }[],
-): string | undefined {
-  if (!threadId || sessions.length === 0) {
-    return undefined;
-  }
-  return [
-    threadId,
-    ...sessions.map((session) => {
-      const latest = session.events?.[session.events.length - 1];
-      return `${session.id}:${session.lastActivityAt ?? ""}:${latest?.id ?? ""}:${latest?.at ?? ""}`;
-    }),
-  ].join("|");
 }

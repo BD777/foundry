@@ -256,3 +256,70 @@ test("only the answer's verified paths become file buttons, and only once it set
   await render(false);
   assert.deepEqual(opened, ["/tmp/out/omh.md", "/w/docs/plan.md"]);
 });
+
+test("rows start at the heading's edge and step 12px a level", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(
+    new URL("../src/components/ui/file-tree.css", import.meta.url),
+    "utf8",
+  );
+  const padding = (selector) =>
+    css.match(
+      new RegExp(
+        `${selector.replace(/[.[\]"]/g, "\\$&")} \\{[^}]*?padding(?:-left)?: ([^;]+);`,
+      ),
+    )?.[1];
+  // Named with `.fdy-button` so the Button's own padding cannot win.
+  assert.equal(padding(".fdy-file-tree-row.fdy-button"), "0 6px 0 4px");
+  assert.equal(padding(".fdy-file-tree-root"), "8px 4px 4px");
+  for (let depth = 1; depth <= 8; depth += 1)
+    assert.equal(
+      padding(`.fdy-file-tree-row.fdy-button[data-depth="${depth}"]`),
+      `${4 + 12 * depth}px`,
+    );
+
+  const { FileTree } = await import("../src/components/ui/file-tree.tsx");
+  await withDom(
+    () =>
+      createElement(FileTree, {
+        "aria-label": "Files",
+        roots: [
+          {
+            id: "workspace",
+            label: "Workspace",
+            items: [
+              { id: "p", path: "docs/plan.md", status: "Named" },
+              { id: "n", path: "notes.md", status: "Named" },
+            ],
+          },
+          {
+            id: "outside",
+            label: "Outside workspace",
+            items: [{ id: "r", path: "/tmp/out/result.json" }],
+          },
+        ],
+        onSelect: () => {},
+      }),
+    async (container) => {
+      const rows = () => [...container.querySelectorAll(".fdy-file-tree-row")];
+      const shape = () =>
+        rows().map((row) => [
+          row.querySelector(".fdy-file-tree-name").firstChild.textContent,
+          row.dataset.depth,
+          Boolean(row.querySelector(".fdy-file-tree-indent")),
+        ]);
+      // Beside folders a file keeps the chevron's gap; a flat root does not.
+      assert.deepEqual(shape(), [
+        ["docs", "0", false],
+        ["plan.md", "1", true],
+        ["notes.md", "0", true],
+        ["result.json", "0", false],
+      ]);
+      const list = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "List",
+      );
+      await act(async () => list.click());
+      assert.ok(shape().every(([, depth, gap]) => depth === "0" && !gap));
+    },
+  );
+});

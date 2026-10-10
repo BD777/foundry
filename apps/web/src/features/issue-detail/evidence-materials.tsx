@@ -65,14 +65,15 @@ export function EvidenceMaterials({
       k.items.find((x) => x.revision === issue.currentContractRevision),
     );
   };
-  useEvidenceUpdates(issue.id, load, setError);
-  useEffect(() => {
-    void load().catch((e) => setError(String(e)));
-  }, [
-    issue.id,
-    issue.currentCandidateSnapshotId,
-    issue.currentContractRevision,
-  ]);
+  const loadOnOpen = useEvidenceUpdates(issue.id, load, setError);
+  useEffect(
+    () => loadOnOpen(),
+    [
+      loadOnOpen,
+      issue.currentCandidateSnapshotId,
+      issue.currentContractRevision,
+    ],
+  );
   const options =
     contract?.criteria.flatMap((c) =>
       c.evidenceRequirements.map((r) => ({

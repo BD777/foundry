@@ -160,8 +160,8 @@ runClaudeWorkspaceSession()                       [runner.ts]
        │    SDK import/start failure → runClaudeCliSession() fallback
        ├─ import @anthropic-ai/claude-agent-sdk, build base options
        └─ active runtime reuse:
-            ├─ cleanupActiveClaudeRuntimes()  ← evicts entries older
-            │    than settings.activeRuntimeTtlMs
+            ├─ cleanupActiveClaudeRuntimes()  ← evicts idle entries older
+            │    than settings.activeRuntimeTtlMs (never a busy one)
             ├─ runtimeKey = activeRuntimeKey() — SHA-256 of
             │    provider + workspace + session/profile identity + options
             ├─ reusable (open, same native session) → emit
@@ -169,7 +169,7 @@ runClaudeWorkspaceSession()                       [runner.ts]
             ├─ otherwise → close the stale entry, new runtime with
             │    AsyncInputQueue (resume the native session when known)
             └─ register steer/cancel targets, create turn +
-               ClaudeTurnWatchdog, push prompt, startActiveClaudePump()
+               ClaudeTurnLiveness, push prompt, startActiveClaudePump()
 ```
 
 ### Active runtime pump
@@ -181,8 +181,10 @@ startActiveClaudePump(runtime, query)              [runner.ts]
        always → closeActiveClaudeRuntime() + drop from the runtime map
 
 handleActiveClaudeMessage(runtime, message)        [runner.ts]
-  ├─ refresh lastUsed, extract nativeSessionId, turn.watchdog.touch()
+  ├─ refresh lastUsed, extract nativeSessionId
   ├─ append raw message to messagesPath
+  ├─ turn.liveness.observe(): tool calls, model requests, retries and
+  │    compaction in flight; a tool_result emits "Used tool"/"Tool failed"
   ├─ updateActiveClaudeTurnTasks(): task_started/background_tasks_changed
   │    → retain task IDs on the turn
   │    task_notification → settle the matching retained task ID
@@ -190,8 +192,9 @@ handleActiveClaudeMessage(runtime, message)        [runner.ts]
   ├─ claudeAgentResultError() → closeActiveClaudeRuntime(error)
   ├─ claudePartialText()      → accumulate + emit response stream
   └─ message.type === "result"
-       ├─ retained tasks remain → treat as provisional, keep the Foundry turn
-       │  running, and wait for Claude's notification-driven continuation
+       ├─ retained tasks remain → treat as provisional (the answer is kept as
+       │  deliveredResponse), keep the Foundry turn running, and wait for
+       │  Claude's notification-driven continuation
        └─ no retained tasks → write resultPath, emit finished,
           resolveActiveClaudeTurn(); an empty final result closes the runtime
 ```
@@ -203,9 +206,52 @@ handleActiveClaudeMessage(runtime, message)        [runner.ts]
 | Daemon process heartbeat file | `connectWebSocket()`, 30s interval                       | external supervisor liveness                                  |
 | Session execution claim       | `SessionExecutionRegistry.activeSessionIds()` on hello   | distinguishes same-process reconnects from orphaning restarts |
 | Native chat sync              | `runWebSocketSession()` open handler                     | periodic `syncKnownNativeChats()`                             |
-| `ClaudeTurnWatchdog`          | `watchdog.ts`, one per active-runtime turn               | idle and max-duration turn timeouts                           |
-| Active runtime TTL            | `cleanupActiveClaudeRuntimes()` vs `activeRuntimeTtlMs`  | evicts idle or closed SDK runtimes                            |
+| Turn liveness                 | `watchdog.ts`, one per Claude or Codex turn              | in-flight operations, notices, start-up bound and ceiling     |
+| Active runtime TTL            | `cleanupActiveClaudeRuntimes()` vs `activeRuntimeTtlMs`  | evicts idle or closed SDK runtimes; never a busy one          |
 | Stale reconciliation          | `reconcileAgentSession()` in `agent_session_recovery.go` | fails abandoned runs so the UI stops showing them as running  |
+
+### Turn liveness
+
+Silence is never a death signal. A turn is alive while its agent process is:
+the pump sees the process exit or the SDK stream end or throw. Claude Code's
+own keep-alives do not reach the SDK stream, and long tool calls, model
+requests, retries and background work are legitimately quiet, so time since
+the last message decides nothing.
+
+- **Expected silence is known.** `ClaudeTurnLiveness` follows the message
+  stream: a `tool_use` is in flight until its `tool_result` (the step row
+  stays "Using tool" until then), a model request from `status: requesting`
+  or `message_start` until `message_stop` (stream pings count as progress),
+  an `api_retry` for its delay plus the request timeout, compaction from
+  `status: compacting` until it ends. Background tasks and timers are the
+  runtime's (`claudeRuntimeHasLiveWork`). `CodexTurnLiveness` does the same
+  from Codex items.
+- **Bounds are the runtime's own** (Claude Code,
+  https://code.claude.com/docs/en/env-vars, read from the environment the CLI
+  process gets): a foreground Bash call its `timeout`, else
+  `BASH_DEFAULT_TIMEOUT_MS` (2 min), at most `BASH_MAX_TIMEOUT_MS` (10 min) —
+  at that limit Claude Code moves the command to the background and the call
+  returns; a model request `API_TIMEOUT_MS` (10 min) per attempt; an MCP call
+  `MCP_TOOL_TIMEOUT` (~28 h). Codex: `stream_idle_timeout_ms` (5 min). Other
+  tools have no documented limit and stay visible as running. An operation
+  past its bound plus `FOUNDRY_TURN_OPERATION_GRACE_MS` (2 min) gets one
+  "looks stuck" Notice; nothing is killed.
+- **Long quiet is a notice.** With nothing in flight for
+  `FOUNDRY_TURN_QUIET_NOTICE_MS` (10 min), the turn gets a Notice ("No
+  progress … the agent may be stuck") and keeps running; the person can stop
+  it.
+- **Start-up hangs fail.** A process started for the turn must send its first
+  message within `FOUNDRY_AGENT_STARTUP_TIMEOUT_MS` (3 min; phase "starting
+  the process") and reach the model within `API_TIMEOUT_MS` plus grace (phase
+  "sign-in or first response"). The error includes the end of Claude Code's
+  stderr.
+- **Ceiling.** `FOUNDRY_TURN_MAX_DURATION_MS` (12 h, `0` turns it off) is the
+  last-resort limit per turn.
+- **A delivered answer stands.** A turn that waits for background work
+  (`waitsForBackgroundWork`) keeps Claude's answer; if a stop, the process
+  ending or a new runtime ends it before that work settles, the turn completes
+  with the answer and a Notice saying the work was cut off. A chat's turn ends
+  with its answer anyway.
 
 The recurring timers in `daemon-connection.ts` maintain process health and
 native chat synchronization. Session liveness is connection state, not a

@@ -104,6 +104,7 @@ func (s *Server) handleRunDeviceRepair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "The repair on the device failed: "+err.Error())
 		return
 	}
-	s.invalidateProjections()
+	// A repair may change what the device reports of its agents.
+	s.projectionsChanged("", fieldDevices, fieldProviderHealth, fieldAgentProfiles, fieldAgents)
 	writeResult(w, value.Result, nil)
 }

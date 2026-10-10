@@ -24,7 +24,13 @@ test("Claude API throttling is visible without finishing the active run or leaki
     resolve: (result) => {
       resolved = result;
     },
-    watchdog: { touch: () => touches++, close: () => undefined },
+    liveness: {
+      observe: () => {
+        touches++;
+        return [];
+      },
+      close: () => undefined,
+    },
   };
   const runtime = {
     closed: false,

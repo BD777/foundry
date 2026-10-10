@@ -74,7 +74,7 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 // ListProfiles returns every server profile. HasCredential stays false: the
 // secret store is the HTTP layer's concern, and this layer never reads it.
 func (s *Store) ListProfiles(ctx context.Context) ([]store.ProfileDefinition, error) {
-	rows, err := s.conn().QueryContext(ctx, `SELECT `+profileColumns+` FROM profiles ORDER BY label, id`)
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+profileColumns+` FROM profiles ORDER BY label, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list profiles: %w", err)
 	}
@@ -195,7 +195,7 @@ func (s *Store) ListDeviceProfiles(ctx context.Context, deviceID string) ([]stor
 		query = `SELECT device_id, profile_id, enabled FROM device_profiles WHERE device_id = ? ORDER BY profile_id`
 		args = append(args, deviceID)
 	}
-	rows, err := s.conn().QueryContext(ctx, query, args...)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list device profiles: %w", err)
 	}

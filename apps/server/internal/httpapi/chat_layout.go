@@ -14,9 +14,10 @@ func (s *Server) handleGetChatLayout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspaceId is required")
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
+	// no-cache with an ETag: always checked with the server (a saved
+	// revision is never served stale), and free when unchanged.
 	result, err := s.store.GetChatLayout(r.Context(), workspaceID)
-	writeResult(w, result, err)
+	writeCacheableResult(w, r, result, err)
 }
 
 func (s *Server) handleSaveChatLayout(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,9 @@ func (s *Server) handleSaveChatLayout(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrInvalidChatLayout) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if err == nil {
+		s.publishChatLayoutChanged(input.WorkspaceID, &result)
 	}
 	writeResult(w, result, err)
 }
@@ -55,6 +59,12 @@ func (s *Server) handleDeleteChatGroup(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrInvalidChatLayout) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if err == nil {
+		// The group's chats and their sessions are deleted with it. Their
+		// titles stay (GET /api/chat-titles lists them still).
+		s.publishChatLayoutChanged(input.WorkspaceID, &result)
+		s.projectionsChanged(input.WorkspaceID, fieldChats, fieldAgentSessions)
 	}
 	writeResult(w, result, err)
 }

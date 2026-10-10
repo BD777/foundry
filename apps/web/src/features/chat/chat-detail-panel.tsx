@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   nextCronFire,
   type AgentBackgroundTaskOutput,
-  type AgentSessionTimerFire,
   type AgentScheduledTask,
   type AgentSubagentTranscript,
   type SessionFileDiff,
@@ -477,7 +476,7 @@ function formatTimerDateTime(iso?: string): string {
   return date.toLocaleString(i18n.language, { hour12: false });
 }
 
-function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
+function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
   const { t } = useTranslation("chat");
   if (fires.length === 0) {
     return <p className="fdy-chat-detail-note">{t("detail.timer.noFires")}</p>;
@@ -501,7 +500,9 @@ function TimerFireHistory({ fires }: { fires: AgentSessionTimerFire[] }) {
             </div>
           ) : (
             <p className="fdy-chat-detail-note">
-              {t("detail.timer.noFireText")}
+              {fire.answerUnloaded
+                ? t("detail.timer.fireTextUnloaded")
+                : t("detail.timer.noFireText")}
             </p>
           )}
         </details>

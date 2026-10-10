@@ -1,4 +1,4 @@
-import type { ListItem, VirtuosoHandle } from "react-virtuoso";
+import type { VirtuosoHandle } from "react-virtuoso";
 import {
   useCallback,
   useLayoutEffect,
@@ -6,6 +6,11 @@ import {
   useState,
   type RefObject,
 } from "react";
+import {
+  chatTopRows,
+  type ChatRenderedRow,
+  type ChatTopRow,
+} from "./chat-transcript-index";
 import {
   findActiveChatTurnIndexForMessage,
   chatReadingMessageIndex,
@@ -20,7 +25,10 @@ export interface ChatTurnNavigationController {
   enabled: boolean;
   navigateTo: (anchor: ChatTurnAnchor) => void;
   onContentResized: () => void;
-  onItemsRendered: (items: ListItem<unknown>[]) => void;
+  /** Rendered rows, numbered by position in the messages. */
+  onItemsRendered: (rows: readonly ChatRenderedRow[]) => void;
+  /** The rows at the top of the viewport, as of the last settled frame. */
+  topRows: () => readonly ChatTopRow[];
 }
 
 export function useChatTurnNavigation({
@@ -40,7 +48,8 @@ export function useChatTurnNavigation({
 }): ChatTurnNavigationController {
   const anchorsRef = useRef(anchors);
   const frameRef = useRef<number | null>(null);
-  const itemsRef = useRef<ListItem<unknown>[]>([]);
+  const itemsRef = useRef<readonly ChatRenderedRow[]>([]);
+  const topRowsRef = useRef<readonly ChatTopRow[]>([]);
   const [position, setPosition] = useState({
     activeIndex: -1,
     scrollable: false,
@@ -51,8 +60,13 @@ export function useChatTurnNavigation({
     const currentAnchors = anchorsRef.current;
     if (!viewport) return;
     const headerHeight =
-      viewport.querySelector<HTMLElement>(".fdy-chat-virtuoso-header")
-        ?.offsetHeight ?? 0;
+      viewport.querySelector<HTMLElement>(
+        ".fdy-chat-virtuoso-header, .fdy-chat-virtuoso-header-history",
+      )?.offsetHeight ?? 0;
+    topRowsRef.current = chatTopRows(
+      itemsRef.current,
+      viewport.scrollTop - headerHeight,
+    );
     const scrollable =
       viewport.scrollHeight >
       viewport.clientHeight + CHAT_TURN_NAV_SCROLLABLE_GAP;
@@ -89,8 +103,8 @@ export function useChatTurnNavigation({
   }, [syncPosition]);
 
   const onItemsRendered = useCallback(
-    (items: ListItem<unknown>[]): void => {
-      itemsRef.current = items;
+    (rows: readonly ChatRenderedRow[]): void => {
+      itemsRef.current = rows;
       // Virtuoso publishes while committing its own layout. Never read
       // intermediate geometry or synchronously update its parent here.
       scheduleSync();
@@ -135,6 +149,7 @@ export function useChatTurnNavigation({
         reduceMotion || Math.abs(anchor.messageIndex - currentStart) > 4
           ? "auto"
           : "smooth";
+      // Virtuoso scrolls to a position in the messages, which anchors use.
       virtuosoRef.current?.scrollToIndex({
         align: "start",
         behavior,
@@ -144,11 +159,14 @@ export function useChatTurnNavigation({
     [messageCount, readHistory, viewport, virtuosoRef],
   );
 
+  const topRows = useCallback(() => topRowsRef.current, []);
+
   return {
     activeIndex: position.activeIndex,
     enabled: position.scrollable && anchors.length >= 2,
     navigateTo,
     onContentResized: scheduleSync,
     onItemsRendered,
+    topRows,
   };
 }

@@ -37,8 +37,9 @@ import {
 import { Button } from "../ui/button";
 import {
   compactProcessToolDetail,
+  isProcessRowRunning,
   processDisplayRows,
-  processDisplaySummaryTitle,
+  processDisplaySummary,
   type ProcessDisplayRow,
   type ProcessDisplayItem,
 } from "./chat-process-display";
@@ -65,13 +66,6 @@ export interface ParsedImageTag {
 
 type MarkdownSegment =
   { kind: "image"; image: ParsedImageTag } | { kind: "text"; text: string };
-
-interface ProcessDisplaySummary {
-  detail: string;
-  iconTitle: string;
-  iconLabelKey?: ProcessLabelKey;
-  title: string;
-}
 
 function parseImageTagAttributes(
   attributes: string,
@@ -348,13 +342,17 @@ function MarkdownText({
   streaming: boolean;
   typedText: boolean;
 }) {
+  // Streaming mode splits the text into blocks so growing text re-renders only
+  // its last block. Settled text is parsed once as a whole: cheaper to mount
+  // whenever the transcript scrolls it back in, and references defined in a
+  // later paragraph resolve.
   return (
     <Streamdown
       animated={streamingTextAnimation}
       className={markdownFlowClassName}
       components={components}
       isAnimating={streaming}
-      mode="streaming"
+      mode={streaming ? "streaming" : "static"}
       parseIncompleteMarkdown={streaming}
       rehypePlugins={markdownRehypePlugins}
       remarkPlugins={typedText ? typedTextRemarkPlugins : undefined}
@@ -495,32 +493,6 @@ function ProcessItemIcon({
     return <ShieldAlert size={15} />;
   }
   return <Zap size={15} />;
-}
-
-function processDisplaySummary(
-  processItems: ProcessDisplayRow[],
-  title: ReactNode,
-  streaming: boolean,
-): ProcessDisplaySummary {
-  const fallbackTitle =
-    typeof title === "string"
-      ? title
-      : i18n.t("conversation:process.processed");
-  const activeItem = processItems?.[processItems.length - 1];
-  if (activeItem) {
-    return {
-      detail: activeItem.snippet,
-      iconTitle: activeItem.title,
-      iconLabelKey: activeItem.labelKey,
-      title: processDisplaySummaryTitle(processItems, fallbackTitle, streaming),
-    };
-  }
-  return {
-    detail: "",
-    iconTitle: fallbackTitle,
-    iconLabelKey: processLabelKey(fallbackTitle),
-    title: processDisplaySummaryTitle([], fallbackTitle, streaming),
-  };
 }
 
 function CompactToolDetailCard({
@@ -760,10 +732,13 @@ export function ProcessDisclosure({
   streaming = false,
   text,
   title,
+  turnStartedAt,
 }: {
   durationMs?: number;
   /** The first step's time; a running group counts up from it. */
   startedAt?: string;
+  /** The running turn's start; counted while no step is in progress. */
+  turnStartedAt?: string;
   stepUsage?: StepUsage;
   items?: ProcessDisplayItem[];
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -773,7 +748,16 @@ export function ProcessDisclosure({
 }) {
   const [open, setOpen] = useState(false);
   const processItems = processDisplayRows(items, streaming);
-  const summary = processDisplaySummary(processItems, title, streaming);
+  const summary = processDisplaySummary(
+    processItems,
+    typeof title === "string"
+      ? title
+      : i18n.t("conversation:process.processed"),
+    streaming,
+  );
+  // One start for the whole live turn, so the time never jumps back when a
+  // step begins or ends.
+  const elapsedFrom = turnStartedAt ?? startedAt;
 
   return (
     <section
@@ -802,8 +786,8 @@ export function ProcessDisclosure({
               {summary.detail}
             </span>
           ) : null}
-          {streaming && startedAt ? (
-            <ProcessElapsed startedAt={startedAt} />
+          {streaming && elapsedFrom ? (
+            <ProcessElapsed startedAt={elapsedFrom} />
           ) : !streaming && (durationMs || stepUsage) ? (
             <span
               className="fdy-chat-process-trigger-detail"
@@ -827,12 +811,7 @@ export function ProcessDisclosure({
               <div className="fdy-chat-process-items">
                 {processItems.map((item, index) => (
                   <ProcessDisclosureItem
-                    active={
-                      streaming &&
-                      (item.status
-                        ? item.status === "running"
-                        : index === processItems.length - 1)
-                    }
+                    active={streaming && isProcessRowRunning(item)}
                     item={item}
                     key={item.id ?? `${item.title}-${index}`}
                     onImagePreview={onImagePreview}

@@ -88,15 +88,6 @@ export function useUpdateAllWorkers(
   const running = devices.some(
     (device) => workerState(device, release) === "updating",
   );
-  // Updating devices restart and reconnect; reload until each reports back.
-  useEffect(() => {
-    if (!running) return;
-    const timer = window.setInterval(
-      () => void onRefresh().catch(() => {}),
-      5000,
-    );
-    return () => window.clearInterval(timer);
-  }, [running, onRefresh]);
   const startAll = async () => {
     setStarting(true);
     setResult(undefined);
@@ -244,7 +235,8 @@ export function DeviceWorker({
     !failed && device.workerUpdate?.stalled ? device.workerUpdate : undefined;
   const running = failed || stalled ? undefined : device.workerUpdate;
   // A worker that declares it can update itself does so on request; it
-  // restarts and reconnects, so poll until the new version reports in.
+  // restarts and reconnects. Each step and the new version reporting in
+  // reach the page as device changes; past a few minutes it is slow.
   const selfUpdating = canSelfUpdate(device);
   useEffect(() => {
     if ((updating !== "started" && !running) || !onRefresh) return;
@@ -252,18 +244,11 @@ export function DeviceWorker({
       setUpdating(undefined);
       return;
     }
-    const timer = window.setInterval(
-      () => void onRefresh().catch(() => {}),
-      5000,
-    );
     const stop = window.setTimeout(() => {
       setUpdating(undefined);
       setUpdateError(t("worker.updateSlow"));
     }, 180000);
-    return () => {
-      window.clearInterval(timer);
-      window.clearTimeout(stop);
-    };
+    return () => window.clearTimeout(stop);
   }, [updating, running, failed, behind, onRefresh, t]);
   if (prominent && !behind && !updating && !running) return null;
   const shortTime = (iso: string) =>

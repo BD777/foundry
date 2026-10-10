@@ -29,6 +29,14 @@ type ChatQueueStore interface {
 	// SettleChatQueueItem ends a dispatch: sent (to sessionID), failed (with
 	// message) or queued again. A message no longer dispatching is left as is.
 	SettleChatQueueItem(ctx context.Context, itemID, state, sessionID, message string) (ChatQueue, error)
+	// SettleChatQueueItemUnconfirmed ends a dispatch whose device never
+	// said whether it took the message (it did not answer in time): failed,
+	// so the queue waits for the person, and marked maybe sent.
+	SettleChatQueueItemUnconfirmed(ctx context.Context, itemID, message string) (ChatQueue, error)
+	// SettleRecordedChatQueueItem marks a waiting or failed message sent to
+	// sessionID, whose transcript shows it arrived after all (a steer its
+	// device applied late). It reports whether the message was settled.
+	SettleRecordedChatQueueItem(ctx context.Context, itemID, sessionID string) (ChatQueue, bool, error)
 	// ChatQueueInputSession is the session that recorded the message as an
 	// input, if any: the evidence a dispatch reached its session.
 	ChatQueueInputSession(ctx context.Context, itemID string) (string, bool, error)

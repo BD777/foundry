@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,72 +35,189 @@ func (s *Store) assertWorkspaceClaimable(ctx context.Context, workspaceID, devic
 }
 
 func (s *Store) RegisterDaemon(ctx context.Context, input store.DaemonRegistration) error {
+	_, err := s.RegisterDaemonChanges(ctx, input)
+	return err
+}
+
+// RegisterDaemonChanges stores a device's report and says what it changed.
+func (s *Store) RegisterDaemonChanges(ctx context.Context, input store.DaemonRegistration) (store.DaemonChanges, error) {
 	now := time.Now().UTC()
 	// A name given on the server outlives the hostname the worker reports.
 	if name, err := s.deviceDisplayName(ctx, input.Device.ID); err != nil {
-		return err
+		return store.DaemonChanges{}, err
 	} else if name != "" {
 		input.Device.Label = name
 	}
 	input.Workspace.DeviceID = input.Device.ID
 	input.Workspace.DeviceLabel = input.Device.Label
-	return s.withTx(ctx, func(tx *Store) error {
+	// Each chat is compared before the transaction, so the writer is held
+	// only to write the chats that changed.
+	comparisons := make([]chatComparison, len(input.Chats))
+	if input.Workspace.ID != "" {
+		for index, chat := range input.Chats {
+			if chat.WorkspaceID == "" {
+				chat.WorkspaceID = input.Workspace.ID
+			}
+			comparisons[index] = s.compareChat(ctx, chat)
+		}
+	}
+	var changes store.DaemonChanges
+	err := s.withTx(ctx, func(tx *Store) error {
 		// A soft-removed device must never upsert itself back. Refuse the whole
 		// registration (device, workspace, profiles, chats) so a reconnecting
 		// worker cannot resurrect anything.
 		if err := tx.assertDeviceNotRemoved(ctx, input.Device.ID); err != nil {
 			return err
 		}
-		// A device that has no workspace yet reports only itself.
-		if input.Workspace.ID == "" {
-			if err := tx.saveDevice(ctx, input.Device, now); err != nil {
-				return err
-			}
-			if err := tx.replaceDeviceProviderHealth(ctx, input.Device.ID, input.ProviderHealth, now); err != nil {
-				return err
-			}
-			return tx.replaceDeviceAgentProfiles(ctx, input.Device.ID, input.AgentProfiles, now)
-		}
-		if err := tx.assertWorkspaceClaimable(ctx, input.Workspace.ID, input.Device.ID); err != nil {
+		before, err := tx.daemonState(ctx, input.Device.ID, input.Workspace.ID)
+		if err != nil {
 			return err
 		}
-		if err := tx.saveWorkspace(ctx, input.Workspace, now); err != nil {
+		chatsChanged, err := tx.registerDaemon(ctx, input, comparisons, now)
+		if err != nil {
 			return err
 		}
-		if err := tx.ensureDeviceOwnerMembership(ctx, input.Workspace.ID, input.Device.ID); err != nil {
+		after, err := tx.daemonState(ctx, input.Device.ID, input.Workspace.ID)
+		if err != nil {
 			return err
 		}
-		if err := tx.saveDevice(ctx, input.Device, now); err != nil {
-			return err
+		parts := store.DaemonChangedParts{
+			Known:          true,
+			Device:         before.device != after.device,
+			ProviderHealth: before.health != after.health,
+			AgentProfiles:  before.profiles != after.profiles,
+			NewWorkspace:   !before.hasWorkspace && after.hasWorkspace,
+			Workspace:      before.workspace != after.workspace,
+			Agents:         before.agents != after.agents,
+			Assets:         before.assets != after.assets,
+			Skills:         before.skills != after.skills,
+			WorkspaceFiles: before.files != after.files,
+			Chats:          chatsChanged,
 		}
-		// A daemon report is the machine's full picture, so anything it stops
-		// reporting has to disappear here too. Upserting alone left phantom rows
-		// that no UI could delete.
-		if err := tx.replaceDeviceProviderHealth(ctx, input.Device.ID, input.ProviderHealth, now); err != nil {
-			return err
+		changes.Parts = parts
+		changes.Global = parts.Device || parts.ProviderHealth || parts.AgentProfiles || parts.NewWorkspace
+		if input.Workspace.ID != "" && (parts.Chats || parts.Workspace || parts.Agents || parts.Assets || parts.Skills || parts.WorkspaceFiles) {
+			changes.Workspaces = []string{input.Workspace.ID}
 		}
-		if err := tx.replaceDeviceAgentProfiles(ctx, input.Device.ID, input.AgentProfiles, now); err != nil {
-			return err
-		}
-		for _, chat := range input.Chats {
-			if chat.WorkspaceID == "" {
-				chat.WorkspaceID = input.Workspace.ID
-			}
-			if err := tx.saveChatIfChanged(ctx, chat, now); err != nil {
-				return err
-			}
-		}
-		if err := tx.replaceWorkspaceAssets(ctx, input.Workspace.ID, input.Assets, now); err != nil {
-			return err
-		}
-		if err := tx.replaceWorkspaceSkills(ctx, input.Workspace.ID, input.Skills, now); err != nil {
-			return err
-		}
-		if err := tx.replaceWorkspaceFiles(ctx, input.Workspace.ID, input.WorkspaceFiles, now); err != nil {
-			return err
-		}
-		return tx.replaceWorkspaceAgents(ctx, input.Workspace.ID, input.Device.ID, input.Agents, now)
+		return nil
 	})
+	if err != nil {
+		return store.DaemonChanges{}, err
+	}
+	return changes, nil
+}
+
+// registerDaemon writes a registration in the caller's transaction and
+// reports whether its chats changed.
+func (s *Store) registerDaemon(ctx context.Context, input store.DaemonRegistration, comparisons []chatComparison, now time.Time) (bool, error) {
+	// A device that has no workspace yet reports only itself.
+	if input.Workspace.ID == "" {
+		if err := s.saveDevice(ctx, input.Device, now); err != nil {
+			return false, err
+		}
+		if err := s.replaceDeviceProviderHealth(ctx, input.Device.ID, input.ProviderHealth, now); err != nil {
+			return false, err
+		}
+		return false, s.replaceDeviceAgentProfiles(ctx, input.Device.ID, input.AgentProfiles, now)
+	}
+	if err := s.assertWorkspaceClaimable(ctx, input.Workspace.ID, input.Device.ID); err != nil {
+		return false, err
+	}
+	if err := s.saveWorkspace(ctx, input.Workspace, now); err != nil {
+		return false, err
+	}
+	if err := s.ensureDeviceOwnerMembership(ctx, input.Workspace.ID, input.Device.ID); err != nil {
+		return false, err
+	}
+	if err := s.saveDevice(ctx, input.Device, now); err != nil {
+		return false, err
+	}
+	// A daemon report is the machine's full picture, so anything it stops
+	// reporting has to disappear here too. Upserting alone left phantom rows
+	// that no UI could delete.
+	if err := s.replaceDeviceProviderHealth(ctx, input.Device.ID, input.ProviderHealth, now); err != nil {
+		return false, err
+	}
+	if err := s.replaceDeviceAgentProfiles(ctx, input.Device.ID, input.AgentProfiles, now); err != nil {
+		return false, err
+	}
+	chatsChanged := false
+	for index, chat := range input.Chats {
+		if chat.WorkspaceID == "" {
+			chat.WorkspaceID = input.Workspace.ID
+		}
+		changed, err := s.saveComparedChat(ctx, chat, now, comparisons[index])
+		if err != nil {
+			return false, err
+		}
+		chatsChanged = chatsChanged || changed
+	}
+	if err := s.replaceWorkspaceAssets(ctx, input.Workspace.ID, input.Assets, now); err != nil {
+		return false, err
+	}
+	if err := s.replaceWorkspaceSkills(ctx, input.Workspace.ID, input.Skills, now); err != nil {
+		return false, err
+	}
+	if err := s.replaceWorkspaceFiles(ctx, input.Workspace.ID, input.WorkspaceFiles, now); err != nil {
+		return false, err
+	}
+	return chatsChanged, s.replaceWorkspaceAgents(ctx, input.Workspace.ID, input.Device.ID, input.Agents, now)
+}
+
+// daemonState is what a registration writes that clients read, as stored:
+// the device (its row, provider health and agent profiles), and the
+// workspace with its agents, assets, skills and files (all "" when there is
+// no workspace row). A device's status travels in device_status_changed,
+// which is routed by workspace: only without one does it count here.
+type daemonState struct {
+	device, health, profiles                 string
+	hasWorkspace                             bool
+	workspace, agents, assets, skills, files string
+}
+
+func (s *Store) daemonState(ctx context.Context, deviceID, workspaceID string) (daemonState, error) {
+	read := func(query string, args ...any) (string, error) {
+		rows, err := listStrings(ctx, s.conn(), query, args...)
+		return strings.Join(rows, "\n"), err
+	}
+	var state daemonState
+	var err error
+	if state.health, err = read(`SELECT payload_json FROM provider_health WHERE substr(provider, 1, length(?)) = ? ORDER BY provider`, deviceID+":", deviceID+":"); err != nil {
+		return state, err
+	}
+	if state.profiles, err = read(`SELECT payload_json FROM agent_profiles WHERE device_id = ? ORDER BY id`, deviceID); err != nil {
+		return state, err
+	}
+	row := `SELECT json_remove(payload_json, '$.status', '$.lastSeenLabel') FROM devices WHERE id = ?`
+	if workspaceID == "" {
+		row = `SELECT payload_json FROM devices WHERE id = ?`
+	}
+	if state.device, err = read(row, deviceID); err != nil {
+		return state, err
+	}
+	if workspaceID == "" {
+		return state, nil
+	}
+	if state.workspace, err = read(`SELECT payload_json FROM workspaces WHERE id = ?`, workspaceID); err != nil || state.workspace == "" {
+		// No workspace row yet.
+		return state, err
+	}
+	state.hasWorkspace = true
+	for _, part := range []struct {
+		into *string
+		sql  string
+		args []any
+	}{
+		{&state.agents, `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY id`, []any{workspaceID, deviceID}},
+		{&state.assets, `SELECT payload_json FROM assets WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
+		{&state.skills, `SELECT payload_json FROM skills WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
+		{&state.files, `SELECT payload_json FROM workspace_files WHERE workspace_id = ? ORDER BY id`, []any{workspaceID}},
+	} {
+		if *part.into, err = read(part.sql, part.args...); err != nil {
+			return state, err
+		}
+	}
+	return state, nil
 }
 
 func (s *Store) ClaimNextIssue(ctx context.Context, deviceID string, workspaceID string) (store.Issue, error) {
@@ -253,7 +371,16 @@ func (s *Store) claimNextIssue(ctx context.Context, deviceID string, workspaceID
 // native sessions Foundry sessions own in the same transaction it is
 // written in, so a chat being continued at that moment cannot reappear.
 func (s *Store) SyncChats(ctx context.Context, input store.SyncChatsInput) error {
+	_, err := s.SyncChatsChanges(ctx, input)
+	return err
+}
+
+// SyncChatsChanges is SyncChats reporting the workspaces whose chat list
+// changed. A worker resends chats it is unsure about; an unchanged one
+// changes nothing.
+func (s *Store) SyncChatsChanges(ctx context.Context, input store.SyncChatsInput) (store.DaemonChanges, error) {
 	now := time.Now().UTC()
+	var changes store.DaemonChanges
 	for _, chat := range input.Chats {
 		if chat.ID == "" {
 			continue
@@ -261,13 +388,20 @@ func (s *Store) SyncChats(ctx context.Context, input store.SyncChatsInput) error
 		if chat.WorkspaceID == "" {
 			chat.WorkspaceID = input.WorkspaceID
 		}
+		comparison := s.compareChat(ctx, chat)
+		var changed bool
 		if err := s.withTx(ctx, func(tx *Store) error {
-			return tx.saveChatIfChanged(ctx, chat, now)
-		}); err != nil {
+			var err error
+			changed, err = tx.saveComparedChat(ctx, chat, now, comparison)
 			return err
+		}); err != nil {
+			return changes, err
+		}
+		if changed && !slices.Contains(changes.Workspaces, chat.WorkspaceID) {
+			changes.Workspaces = append(changes.Workspaces, chat.WorkspaceID)
 		}
 	}
-	return nil
+	return changes, nil
 }
 
 func (s *Store) StartIssueRun(ctx context.Context, issueID string, run store.Run) (store.Issue, error) {

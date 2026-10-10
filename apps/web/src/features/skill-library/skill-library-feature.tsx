@@ -25,6 +25,8 @@ import { SkillRepositoriesSection } from "./skill-repositories-section";
 
 export interface SkillLibraryFeatureProps {
   catalog: PromotedSkill[];
+  /** The catalog has not been read yet: it shows as loading, not empty. */
+  catalogLoading?: boolean;
   devices: DeviceProjection[];
   /** What the devices reported about programs skills and bundles need. */
   deviceTools?: DeviceTool[];
@@ -44,6 +46,7 @@ const sameSet = (a: Set<string>, b: Set<string>) =>
  */
 export function SkillLibraryFeature({
   catalog,
+  catalogLoading,
   devices,
   deviceTools,
   canManage,
@@ -165,6 +168,7 @@ export function SkillLibraryFeature({
       />
       <SkillCatalogList
         description={t("library.description")}
+        loading={catalogLoading}
         emptyState={{
           title: t("library.emptyTitle"),
           body: t("library.emptyBody"),

@@ -223,17 +223,54 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.events.Publish(chatQueueChangedEvent, queue)
+	// The claim is settled whatever becomes of the person's request.
+	settleCtx := context.WithoutCancel(r.Context())
+	// Already in a session's transcript (a steer its device applied after
+	// its answer came too late): sent, not steered a second time.
+	if recordedBy, recorded, err := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
+		queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
+		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+		return
+	}
 	_, status, steerErr := s.sendSessionMessage(r.Context(), session.ID, store.SendAgentSessionInput{
 		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID,
 	})
 	if steerErr == nil {
-		queue, err = queues.SettleChatQueueItem(r.Context(), item.ID, store.ChatQueueStateSent, session.ID, "")
+		queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
 		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
 		return
 	}
-	// Not steered: the message waits in its place again.
-	if queue, err := queues.SettleChatQueueItem(r.Context(), item.ID, store.ChatQueueStateQueued, "", ""); err == nil {
-		s.events.Publish(chatQueueChangedEvent, queue)
+	var settled store.ChatQueue
+	var unanswered *deviceNoAnswerError
+	if errors.As(steerErr, &unanswered) {
+		// The device was handed the steer and its answer did not come. Its
+		// transcript may already show the message (the event came, the
+		// answer is late): then it was steered.
+		if recordedBy, recorded, err := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
+			queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
+			s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+			return
+		}
+		// Otherwise it may still apply it. Queued again, the message would
+		// also go out as the next turn; it waits for the person instead,
+		// marked maybe sent. A worker that knows the steer's id applies it
+		// only once, and its transcript event settles the message
+		// (onSteerRecorded); an older one leaves the decision to the person.
+		settled, err = queues.SettleChatQueueItemUnconfirmed(settleCtx, item.ID, unanswered.summary())
+		// The event may have landed between the check and the settle.
+		if recordedBy, recorded, recordErr := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recordErr == nil && recorded {
+			if confirmed, confirmedNow, confirmErr := queues.SettleRecordedChatQueueItem(settleCtx, item.ID, recordedBy); confirmErr == nil && confirmedNow {
+				settled = confirmed
+			}
+		}
+	} else {
+		// Refused: the message waits in its place again.
+		settled, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateQueued, "", "")
+	}
+	if err == nil {
+		s.events.Publish(chatQueueChangedEvent, settled)
+	} else {
+		log.Printf("settle steered message %s: %v", item.ID, err)
 	}
 	if status == 0 {
 		status = http.StatusConflict
@@ -285,8 +322,12 @@ func (s *Server) kickPendingChatQueues(ctx context.Context) {
 }
 
 // onChatQueueEvent sends a chat's next queued message when its turn ends,
-// however it ended.
+// however it ended, and settles a message a turn took in late.
 func (s *Server) onChatQueueEvent(eventType string, payload any) {
+	if eventType == sessionEventStreamType {
+		s.onSteerRecorded(payload)
+		return
+	}
 	if eventType != "agent_session_completed" {
 		return
 	}
@@ -302,6 +343,42 @@ func (s *Server) onChatQueueEvent(eventType string, payload any) {
 		chatID = session.ID
 	}
 	s.kickChatQueue(session.WorkspaceID, chatID)
+}
+
+// steeredIntoTurnLabel is the transcript event of a message steered into a
+// running turn. A worker given the message's id names it evt_<id>.
+const steeredIntoTurnLabel = "Steered into active turn"
+
+// onSteerRecorded settles a queued message whose steer its device applied
+// after the server stopped waiting for the answer: the message was marked
+// maybe sent (or queued again by a retry) and holds the queue. Its
+// transcript event shows it arrived, so it is sent and the queue moves on.
+func (s *Server) onSteerRecorded(payload any) {
+	event, ok := payload.(store.AgentSessionEvent)
+	if !ok || event.Label != steeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
+		return
+	}
+	queues, ok := s.chatQueues()
+	if !ok {
+		return
+	}
+	itemID := strings.TrimPrefix(event.ID, "evt_")
+	s.chatQueueKicks.Add(1)
+	go func() {
+		defer s.chatQueueKicks.Done()
+		ctx := context.Background()
+		queue, settled, err := queues.SettleRecordedChatQueueItem(ctx, itemID, event.SessionID)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) {
+				log.Printf("settle steered message %s: %v", itemID, err)
+			}
+			return
+		}
+		if settled {
+			s.events.Publish(chatQueueChangedEvent, queue)
+			s.kickChatQueue(queue.WorkspaceID, queue.ChatID)
+		}
+	}()
 }
 
 // RecoverChatQueues settles what a stopped server left mid-send, then sends

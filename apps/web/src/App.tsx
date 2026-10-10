@@ -19,19 +19,19 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  backgroundReadTimeoutMs,
   clearProfileCredential,
   createProfile,
   deleteProfile,
   emptyWorkspace,
   isAbortError,
-  loadFoundryData,
   loadFoundryWorkspace,
   listAgentModels,
   readWorkspaceFile,
   setDeviceProfiles,
   updateProfile,
 } from "./api";
-import type { FoundryData } from "./api-types";
+import type { FoundryData, FoundryDataField } from "./api-types";
 import {
   FoundryMain,
   FoundrySidebar,
@@ -60,27 +60,35 @@ import {
   type NavView,
   type SidebarView,
 } from "./app/navigation";
-import { mergeLoadedFoundryData } from "./app/foundry-data-projection";
 import { workspaceComposerSkills } from "./app/composer-skills";
 import { useDocumentTitle } from "./app/use-document-title";
+import { firstLoadedChatId } from "./app/chat-selection";
 import {
-  firstLoadedChatId,
-  resolveLoadedChatSelection,
-  type LoadedChatSelection,
-} from "./app/chat-selection";
+  applyFoundryDataAnswer,
+  loadedChatSelection,
+  resolveChatSelection,
+  readFoundryDataSelection,
+  useRemovedChatSelection,
+} from "./app/loaded-foundry-data";
 import {
   currentDevice,
   currentProviderHealth,
   currentWorkspaceAgents,
   currentWorkspaceAssets,
   currentWorkspaceItems,
-  currentWorkspaceSkills,
-  uniqueSkills,
+  workspaceActiveSkillIds,
 } from "./app/workspace-selectors";
 import { viewErrorLabel, viewErrorResetKey } from "./app/view-error-policy";
 import { useAppRouteSync } from "./app/use-app-route-sync";
 import { useRequestChannels } from "./app/use-request-channels";
 import { useFoundryLiveData } from "./app/use-foundry-live-data";
+import { createStreamTouchLedger } from "./app/stream-touches";
+import {
+  useSelectionFlight,
+  type FieldRequest,
+  type FieldSelection,
+} from "./lib/single-flight";
+import { mergeLoadedFoundryData } from "./app/foundry-data-projection";
 import { useViewScrollReset } from "./app/use-view-scroll-reset";
 import { useAccountSession } from "./app/accounts-gate";
 import { SidebarLanguage } from "./app/sidebar-language";
@@ -103,8 +111,6 @@ import { ConnectDeviceSetup } from "./app/connect-device-setup";
 import { Tooltip } from "./components/ui/tooltip";
 import { AssetsFeature } from "./features/assets";
 import {
-  chatThreadsFromSessions,
-  isChatSession,
   preferredChatId,
   useChatFeature,
   type ChatFeatureEvent,
@@ -165,49 +171,9 @@ import {
 
 type BadgeTone = "neutral" | "online" | "brass" | "warn" | "slate" | "error";
 
-// Project a freshly-loaded payload into the chat identities the selection
-// policy needs. Thread grouping stays owned by the chat feature.
-function loadedChatSelection(loaded: FoundryData): LoadedChatSelection {
-  const chatSessions = loaded.agentSessions.filter(isChatSession);
-  return {
-    chatSessions,
-    chatThreads: chatThreadsFromSessions(chatSessions),
-    chats: loaded.chats,
-    preferredChatId: preferredChatId(loaded.chats),
-  };
-}
-
-// Resolve which chat should stay selected after a data load. Shared by
-// refreshData and the workspace deletion handler. The route check stays here
-// because it reads live browser location.
-function resolveChatSelection(
-  loaded: FoundryData,
-  current: string,
-  options: { respectChatRoute?: boolean } = {},
-): string {
-  if (options.respectChatRoute) {
-    const chatRoute = parseAppRoute(window.location.pathname);
-    if (chatRoute.view === "chats" && !chatRoute.selectedChatId) {
-      return "";
-    }
-  }
-  return resolveLoadedChatSelection(loadedChatSelection(loaded), current);
-}
-
-// Apply a freshly-loaded FoundryData payload: merge it into state, update
-// the active workspace id, and mark the API as connected. Shared by
-// refreshData, loadWorkspace, and the workspace deletion handler.
-function applyLoadedData(
-  setData: React.Dispatch<React.SetStateAction<FoundryData>>,
-  setActiveWorkspaceId: (id: string) => void,
-  setApiState: (state: "connected" | "fallback" | "loading" | "saving") => void,
-  loaded: FoundryData,
-): void {
-  setData((current) => mergeLoadedFoundryData(current, loaded));
-  setActiveWorkspaceId(loaded.workspace.id);
-  persistWorkspaceId(loaded.workspace.id);
-  setApiState("connected");
-}
+// The skill library's catalog, which only the Skills pages read.
+const catalogFields: readonly FoundryDataField[] = ["promotedSkills"];
+const noFields: readonly FoundryDataField[] = [];
 
 const workspaceScopedViews = new Set<NavView>([
   "workspace",
@@ -312,6 +278,28 @@ export function App() {
   const workspaceLoadSeqRef = useRef(0);
   const workspaceLoadingRef = useRef(false);
   const requestChannels = useRequestChannels();
+  const [streamTouches] = useState(createStreamTouchLedger);
+  const pendingIssueSelectionRef = useRef<string | undefined>(undefined);
+  const readDataOnce = useSelectionFlight(readLatestData, {
+    timeoutMs: backgroundReadTimeoutMs,
+  });
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const readContext = {
+    touches: streamTouches,
+    shown: () => dataRef.current,
+    setData,
+    setActiveWorkspaceId,
+    setApiState,
+  };
+  // What a workspace switch left to read, once the switch has rendered.
+  const [switchRead, setSwitchRead] =
+    useState<FieldRequest<FoundryDataField>>();
+  useEffect(() => {
+    if (!switchRead) return;
+    setSwitchRead(undefined);
+    void readDataOnce(switchRead);
+  }, [switchRead]);
 
   useEffect(() => {
     persistSidebarCollapsed(sidebarCollapsed);
@@ -331,50 +319,57 @@ export function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  async function refreshData(
-    nextSelectedIssueId?: string,
-    options: { silent?: boolean; throwOnError?: boolean } = {},
-  ): Promise<void> {
-    if (workspaceLoadingRef.current) return;
+  // Reads workspace data once (see refreshData): the default set, or the
+  // fields selected; a read that stalls fails after backgroundReadTimeoutMs.
+  // Whatever live events changed after the read started stays as shown
+  // when it lands.
+  async function readLatestData(
+    selection: FieldSelection<FoundryDataField>,
+    signal: AbortSignal,
+  ): Promise<"applied" | "failed" | "skipped"> {
+    if (workspaceLoadingRef.current) return "skipped";
     const workspaceSeq = workspaceLoadSeqRef.current;
+    const nextSelectedIssueId = pendingIssueSelectionRef.current;
+    pendingIssueSelectionRef.current = undefined;
+    const mark = streamTouches.mark();
+    const touched = () => streamTouches.since(mark);
     try {
-      const result = await loadFoundryData(activeWorkspaceId);
-      if (workspaceSeq !== workspaceLoadSeqRef.current) return;
-      if (result.notModified) {
-        applyLoadedData(
-          setData,
-          setActiveWorkspaceId,
-          setApiState,
-          result.data,
-        );
-        setApiState("connected");
-        if (!options.silent) {
-          setNotice(t("notices.dataRefreshed"));
-        }
-        return;
-      }
-      const loaded = result.data;
-      applyLoadedData(setData, setActiveWorkspaceId, setApiState, loaded);
-      setSelectedIssueId((current) => {
-        if (
-          nextSelectedIssueId &&
-          loaded.issues.some((issue) => issue.id === nextSelectedIssueId)
-        ) {
-          return nextSelectedIssueId;
-        }
-        return loaded.issues.some((issue) => issue.id === current)
-          ? current
-          : preferredIssueId(loaded.issues);
-      });
-      setSelectedChatId((current) =>
-        resolveChatSelection(loaded, current, { respectChatRoute: true }),
+      const result = await readFoundryDataSelection(
+        activeWorkspaceId,
+        selection,
+        signal,
       );
-      setApiState("connected");
-      if (!options.silent) {
-        setNotice(t("notices.dataRefreshed"));
+      if (workspaceSeq !== workspaceLoadSeqRef.current) return "skipped";
+      const { data: loaded, fields } = result;
+      const missed = applyFoundryDataAnswer(result, mark, readContext);
+      if (missed) setSwitchRead(missed);
+      if (result.notModified) return "applied";
+      const read = (field: FoundryDataField) =>
+        !fields || fields.includes(field);
+      if (read("issues"))
+        setSelectedIssueId((current) => {
+          if (
+            nextSelectedIssueId &&
+            loaded.issues.some((issue) => issue.id === nextSelectedIssueId)
+          ) {
+            return nextSelectedIssueId;
+          }
+          return loaded.issues.some((issue) => issue.id === current)
+            ? current
+            : preferredIssueId(loaded.issues);
+        });
+      if (read("chats") || read("agentSessions")) {
+        // A selection holds only its fields: resolve against all of them.
+        const shown = fields
+          ? mergeLoadedFoundryData(dataRef.current, loaded, touched(), fields)
+          : loaded;
+        setSelectedChatId((current) =>
+          resolveChatSelection(shown, current, { respectChatRoute: true }),
+        );
       }
+      return "applied";
     } catch {
-      if (workspaceSeq !== workspaceLoadSeqRef.current) return;
+      if (workspaceSeq !== workspaceLoadSeqRef.current) return "skipped";
       // A transient reconnect must not erase the task or unmount its draft.
       setData((current) =>
         current.workspace.id
@@ -384,14 +379,38 @@ export function App() {
             : emptyData,
       );
       setApiState("fallback");
-      if (options.throwOnError) throw new Error("Local API is not reachable.");
-      if (!options.silent) {
-        setNotice(
-          demoFallbackEnabled
-            ? "Using fixture data because the local API is not reachable."
-            : "Local API is not reachable.",
-        );
-      }
+      return "failed";
+    }
+  }
+
+  // The page fields the view shown reads (see useFoundryLiveData).
+  const pageFields =
+    activeView === "skills" || activeView === "library"
+      ? catalogFields
+      : noFields;
+
+  // At most one read runs; callers meanwhile share one more read that starts
+  // after it, so each caller sees data read after its call, with the page
+  // fields the view shows.
+  async function refreshData(
+    nextSelectedIssueId?: string,
+    options: { silent?: boolean; throwOnError?: boolean } = {},
+  ): Promise<void> {
+    if (nextSelectedIssueId)
+      pendingIssueSelectionRef.current = nextSelectedIssueId;
+    const outcome = await readDataOnce({ all: true, fields: pageFields });
+    if (outcome === "applied") {
+      if (!options.silent) setNotice(t("notices.dataRefreshed"));
+      return;
+    }
+    if (outcome !== "failed") return;
+    if (options.throwOnError) throw new Error("Local API is not reachable.");
+    if (!options.silent) {
+      setNotice(
+        demoFallbackEnabled
+          ? "Using fixture data because the local API is not reachable."
+          : "Local API is not reachable.",
+      );
     }
   }
 
@@ -409,7 +428,9 @@ export function App() {
     const signal = requestChannels.signalFor("workspace-load");
     try {
       setApiState("loading");
-      const loaded = (await loadFoundryWorkspace(workspaceId, { signal })).data;
+      const mark = streamTouches.mark();
+      const result = await loadFoundryWorkspace(workspaceId, { signal });
+      const loaded = result.data;
       // The sequence guard still protects state that a resolved-but-stale
       // response could clobber before its abort is observed.
       if (workspaceLoadSeqRef.current !== requestSeq) {
@@ -418,7 +439,8 @@ export function App() {
       if (loaded.workspace.id !== workspaceId) {
         throw new Error("The requested workspace is no longer available.");
       }
-      applyLoadedData(setData, setActiveWorkspaceId, setApiState, loaded);
+      const missed = applyFoundryDataAnswer(result, mark, readContext);
+      if (missed) setSwitchRead(missed);
       requestChannels.abort("file-read");
       setSelectedFileRead(undefined);
       setSelectedChatId(
@@ -491,25 +513,28 @@ export function App() {
     }
   }
 
+  // The live-data layer reads once the stream opens; the demo reads here.
   useEffect(() => {
     const routeWorkspaceId = workspaceIdFromLocation();
     if (routeWorkspaceId) {
       persistWorkspaceId(routeWorkspaceId);
     }
-    void refreshData(selectedIssueId, { silent: true });
+    pendingIssueSelectionRef.current = selectedIssueId || undefined;
+    if (demoFallbackEnabled) void refreshData(undefined, { silent: true });
   }, []);
 
-  const hasActiveAgentSession = data.agentSessions.some(
-    (session) => session.status === "queued" || session.status === "running",
-  );
-
-  useFoundryLiveData({
+  const pageFieldsLoaded = useFoundryLiveData({
     activeSession:
-      hasActiveAgentSession ||
-      data.issues.some((issue) => issue.status === "in_progress"),
+      data.agentSessions.some(
+        (session) =>
+          session.status === "queued" || session.status === "running",
+      ) || data.issues.some((issue) => issue.status === "in_progress"),
+    devices: data.devices,
     enabled: !demoFallbackEnabled,
-    onRefresh: () => refreshData(undefined, { silent: true }),
+    onRefresh: readDataOnce,
+    pageFields,
     setData,
+    touches: streamTouches,
     workspaceId: activeWorkspaceId,
   });
   useAppRouteSync({
@@ -559,14 +584,14 @@ export function App() {
     [data.assets, data.workspace.id],
   );
 
-  const issueSkills = useMemo(() => uniqueSkills(sortedIssues), [sortedIssues]);
-  const workspaceSkills = useMemo(
-    () => currentWorkspaceSkills(data.skills, data.workspace.id),
-    [data.skills, data.workspace.id],
-  );
-  const skills = useMemo(
-    () => (workspaceSkills.length > 0 ? workspaceSkills : issueSkills),
-    [issueSkills, workspaceSkills],
+  const activeSkillCount = useMemo(
+    () =>
+      workspaceActiveSkillIds(
+        data.workspaceSkillBindings,
+        data.inheritedSkillIds,
+        data.offSkillIds,
+      ).size,
+    [data.workspaceSkillBindings, data.inheritedSkillIds, data.offSkillIds],
   );
 
   const reviewCount = sortedIssues.filter(
@@ -652,6 +677,8 @@ export function App() {
     [data],
   );
 
+  useRemovedChatSelection(data, selectedChatId, setSelectedChatId);
+
   const chatFeature = useChatFeature({
     active: activeView === "chats",
     agents: workspaceAgents,
@@ -680,7 +707,7 @@ export function App() {
             item.id === "issues" && reviewCount
               ? { children: reviewCount, tone: "brass" }
               : item.id === "skills"
-                ? { children: skills.length, tone: "neutral" }
+                ? { children: activeSkillCount, tone: "neutral" }
                 : undefined,
           liveCount:
             item.id === "issues" && runningCount
@@ -688,7 +715,7 @@ export function App() {
               : undefined,
         })),
       })),
-    [account.user?.role, reviewCount, runningCount, skills.length],
+    [account.user?.role, reviewCount, runningCount, activeSkillCount],
   );
 
   function handleSidebarNavSelect(view: SidebarView): void {
@@ -862,7 +889,6 @@ export function App() {
         }}
         providerHealth={workspaceProviderHealth}
         runningCount={runningCount}
-        skillCount={skills.length}
         workspace={data.workspace}
       />
     );
@@ -873,6 +899,7 @@ export function App() {
       <SkillsFeature
         bindings={data.workspaceSkillBindings}
         catalog={data.promotedSkills}
+        catalogLoading={!pageFieldsLoaded.has("promotedSkills")}
         devices={data.devices}
         embedded
         onChanged={() => refreshData(undefined, { silent: true })}
@@ -1082,6 +1109,7 @@ export function App() {
           <SkillLibraryFeature
             canManage={account.user?.role === "admin"}
             catalog={data.promotedSkills}
+            catalogLoading={!pageFieldsLoaded.has("promotedSkills")}
             deviceTools={data.deviceTools}
             devices={data.devices}
             onChanged={() => refreshData(undefined, { silent: true })}

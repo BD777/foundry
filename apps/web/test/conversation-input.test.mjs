@@ -111,25 +111,62 @@ test("read-only status questions bypass the execution queue without steering or 
   assert.equal(h.input.active, true);
 });
 for (const [name, composer] of Object.entries(modes)) {
-  test(`${name}: a failed send retains the original message and any newly typed draft`, async (t) => {
-    let rejectSend;
+  test(`${name}: a message being sent stays in the composer, read-only, until accepted or refused`, async (t) => {
+    let settleSend;
     const h = await harness(t, composer, {
       onSend: () =>
-        new Promise((_, reject) => {
-          rejectSend = reject;
+        new Promise((resolve, reject) => {
+          settleSend = { resolve, reject };
         }),
     });
     await h.type("first message");
     await h.submit();
+    assert.equal(h.input.draft, "first message");
+    assert.equal(h.input.sending, true);
+    assert.equal(h.input.action, "sending");
+    // Not editable meanwhile: nothing can race the message on its way.
     await h.type("new draft");
+    assert.equal(h.input.draft, "first message");
+    await h.submit();
     await act(async () => {
-      rejectSend(new Error("offline"));
+      settleSend.reject(new Error("offline"));
     });
-    assert.equal(h.input.draft, "new draft");
-    assert.equal(h.input.queue[0].text, "first message");
+    assert.equal(h.input.draft, "first message");
+    assert.equal(h.input.sending, false);
+    assert.equal(h.input.action, "send");
+    assert.equal(h.input.queue.length, 0);
     assert.match(h.input.error, /offline/);
     await h.settle();
-    assert.equal(h.input.queue.length, 1);
+    assert.equal(h.input.queue.length, 0);
+    await h.submit();
+    assert.equal(h.input.draft, "first message");
+    await act(async () => settleSend.resolve(true));
+    assert.equal(h.input.draft, "");
+    assert.equal(h.input.sending, false);
+  });
+  test(`${name}: while the agent runs the button stops only an empty composer`, async (t) => {
+    const stopped = [];
+    const h = await harness(t, composer, {
+      active: true,
+      activeExecutionId: "r1",
+      onStop: async (id) => stopped.push(id),
+    });
+    assert.equal(h.input.action, "stop");
+    await h.type("  ");
+    assert.equal(h.input.action, "stop");
+    await h.type("one more thing");
+    assert.equal(h.input.action, "send");
+    // Enter sends what was typed; it never stops the agent.
+    await h.submit();
+    assert.deepEqual(stopped, []);
+    assert.equal(h.input.queue[0].text, "one more thing");
+    assert.equal(h.input.action, "stop");
+    await h.render({
+      attachments: [{ id: "f", kind: "file", name: "f", path: "/f" }],
+    });
+    assert.equal(h.input.action, "send");
+    await h.render({ attachments: [], active: false });
+    assert.equal(h.input.action, "send");
   });
   test(`${name}: Claude steer sends a queued message's attachments with it and targets the original execution`, async (t) => {
     const attachment = {
@@ -237,7 +274,7 @@ for (const [name, composer] of Object.entries(modes)) {
     assert.deepEqual(sent, []);
   });
 }
-test("Codex keeps messages queued and a new chat migrates its queue to its assigned thread", async (t) => {
+test("Codex keeps messages queued and a new chat's accepted message leaves its assigned thread's composer free", async (t) => {
   const composer = { mode: "fixed", runtime: "codex" };
   let accept;
   const h = await harness(t, composer, {
@@ -250,14 +287,15 @@ test("Codex keeps messages queued and a new chat migrates its queue to its assig
   });
   await h.type("first");
   await h.submit();
-  await h.type("next");
-  await h.submit();
-  await h.type("draft");
   await h.render({
     threadKey: "workspace:assigned",
     active: true,
     activeExecutionId: "r1",
   });
+  // The accepted message stays behind; the new key's composer is free.
+  await h.type("next");
+  await h.submit();
+  await h.type("draft");
   await act(async () => accept({ threadKey: "workspace:assigned" }));
   assert.equal(h.input.draft, "draft");
   assert.equal(h.input.queue[0].text, "next");
@@ -321,4 +359,28 @@ test("a browser-kept queue moves a message one place from the keyboard", async (
   await act(async () => h.input.shift(item("three"), -1));
   await act(async () => h.input.shift(item("two"), 1));
   assert.deepEqual(texts(), ["three", "one", "two"]);
+});
+
+test("a new chat's accepted message stays in the composer until the chat it started is shown", async (t) => {
+  let accept;
+  const h = await harness(t, modes.fixed, {
+    threadKey: "w:new",
+    onSend: () =>
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+  });
+  await h.type("start a chat");
+  await h.submit();
+  await act(async () => accept({ threadKey: "w:chat" }));
+  // Accepted, but the page still shows the empty new chat: no gap.
+  assert.equal(h.input.draft, "start a chat");
+  assert.equal(h.input.sending, true);
+  await h.render({ threadKey: "w:chat", active: true });
+  assert.equal(h.input.draft, "");
+  assert.equal(h.input.sending, false);
+  assert.equal(h.input.action, "stop");
+  await h.render({ threadKey: "w:new", active: false });
+  assert.equal(h.input.draft, "");
+  assert.equal(h.input.sending, false);
 });

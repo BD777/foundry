@@ -21,6 +21,10 @@ type projectionCache struct {
 
 // Events invalidate immediately. The short TTL also bounds staleness for
 // changes made outside the HTTP/event path and time-dependent recovery checks.
+//
+// Requests that arrive while a snapshot of the same revision is being built
+// share that build, whether or not it may be cached: answering them one
+// after another made N concurrent readers wait N builds.
 func (c *projectionCache) load(ctx context.Context, key string, revision func() uint64, build func() ([]byte, bool, error)) ([]byte, error) {
 	for {
 		current := revision()
@@ -42,7 +46,12 @@ func (c *projectionCache) load(ctx context.Context, key string, revision func() 
 					return nil, ctx.Err()
 				case <-entry.ready:
 				}
-				// A write may have arrived while the first request built its snapshot.
+				// A write may have arrived while the first request built its
+				// snapshot; a failed build (its request may have gone) is
+				// built again.
+				if entry.err == nil && revision() == entry.revision {
+					return entry.body, nil
+				}
 				continue
 			}
 		}

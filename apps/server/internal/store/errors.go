@@ -68,6 +68,9 @@ var ErrAgentSessionActive = errors.New("agent session is still active")
 // recorded: a queued message is sent once.
 var ErrSessionInputExists = errors.New("this message was already sent")
 
+// ErrInvalidEventsCursor refuses an events cursor no window read returned.
+var ErrInvalidEventsCursor = errors.New("invalid events cursor")
+
 // ErrChatQueueConflict means the queue or the message changed since the
 // caller read it; the caller shows the current queue.
 var ErrChatQueueConflict = errors.New("the queue changed in another tab")

@@ -162,7 +162,7 @@ func (s *Store) ResolveDeviceCredential(ctx context.Context, credentialHash stri
 	var pairedAt string
 	var revokedAt sql.NullString
 	var ownerDisabled sql.NullString
-	err := s.conn().QueryRowContext(ctx, `SELECT d.device_id, d.owner_user_id, d.machine_fingerprint, d.paired_at,
+	err := s.reader().QueryRowContext(ctx, `SELECT d.device_id, d.owner_user_id, d.machine_fingerprint, d.paired_at,
 			d.revoked_at, u.disabled_at
 		FROM device_identities AS d JOIN users AS u ON u.id = d.owner_user_id
 		WHERE d.credential_hash = ?`, credentialHash).
@@ -191,7 +191,7 @@ func (s *Store) RevokeDeviceCredential(ctx context.Context, deviceID string) err
 
 func (s *Store) DeviceOwner(ctx context.Context, deviceID string) (string, error) {
 	var owner string
-	err := s.conn().QueryRowContext(ctx,
+	err := s.reader().QueryRowContext(ctx,
 		`SELECT owner_user_id FROM device_identities WHERE device_id = ?`, deviceID).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil

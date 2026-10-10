@@ -16,6 +16,10 @@ func indexStatements() []string {
 		`CREATE INDEX IF NOT EXISTS idx_run_events_created ON run_events (created_at DESC)`,
 		// ListAgentSessions / GetAgentSession
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_updated ON agent_sessions (workspace_id, updated_at DESC)`,
+		// ActiveAgentSessions: only the few sessions that run hold an entry.
+		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_active ON agent_sessions (status) WHERE status IN ('running','blocked')`,
+		// QueuedAgentSessions: only sessions waiting for their device.
+		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_queued ON agent_sessions (status) WHERE status = 'queued'`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_session_events_session_created ON agent_session_events (session_id, created_at ASC)`,
 		// ListAgents / getAgent / replaceWorkspaceAgents
 		`CREATE INDEX IF NOT EXISTS idx_agents_workspace_device ON agents (workspace_id, device_id)`,

@@ -17,6 +17,23 @@ export function chatIsUnread(
   );
 }
 
+/**
+ * The chat the person is reading, or "" when none: the Chats view is shown,
+ * a chat is open and the tab is visible. A new answer is marked read only
+ * while this names its chat, so an answer that lands in a hidden tab stays
+ * unread until the person comes back to it.
+ */
+export function chatReadView(input: {
+  workspaceId: string;
+  active: boolean;
+  visible: boolean;
+  selectedId: string;
+}): string {
+  return input.active && input.visible && input.selectedId
+    ? `${input.workspaceId}:${input.selectedId}`
+    : "";
+}
+
 export function chatListStatus(
   processing: boolean,
   failed: boolean,

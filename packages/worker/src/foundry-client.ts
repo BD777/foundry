@@ -220,6 +220,30 @@ export class FoundryClient {
     );
   }
 
+  /**
+   * Calls one of the server's Foundry tools and returns its text; a failed
+   * call throws with the server's message.
+   */
+  async callTool(name: string, args: Record<string, unknown>): Promise<string> {
+    const reply = (await this.mcp({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args },
+    })) as {
+      result?: { content?: { text?: string }[]; isError?: boolean };
+      error?: { message?: string };
+    };
+    if (reply?.error) {
+      throw new FoundryClientError(reply.error.message ?? `${name} failed`);
+    }
+    const text = (reply?.result?.content ?? [])
+      .map((item) => item.text ?? "")
+      .join("\n");
+    if (reply?.result?.isError) throw new FoundryClientError(text);
+    return text;
+  }
+
   // --- Profiles / agents -------------------------------------------------
 
   async listProfiles(runtime?: string): Promise<AgentProfileLike[]> {
@@ -256,8 +280,19 @@ export class FoundryClient {
     );
   }
 
-  async getSession(id: string): Promise<SessionSummary> {
-    return this.request<SessionSummary>("GET", `/api/agent-sessions/${id}`);
+  /**
+   * A session; `events: false` leaves its transcript out, which for a long
+   * session is most of the reply. Servers before it ignore the parameter.
+   */
+  async getSession(
+    id: string,
+    options: { events?: boolean } = {},
+  ): Promise<SessionSummary> {
+    const query = options.events === false ? "?events=none" : "";
+    return this.request<SessionSummary>(
+      "GET",
+      `/api/agent-sessions/${id}${query}`,
+    );
   }
 
   async getThread(id: string): Promise<SessionSummary[]> {
@@ -360,7 +395,9 @@ export class FoundryClient {
   }): Promise<SessionSummary> {
     // A factual handoff: carry only facts (goal, final response, status), not
     // the contaminated transcript, into a fresh independent session.
-    const source = await this.getSession(input.fromSessionId);
+    const source = await this.getSession(input.fromSessionId, {
+      events: false,
+    });
     const facts = [
       `Handoff from session ${source.id} ("${source.title ?? ""}", status: ${source.status}).`,
       source.prompt ? `Original goal:\n${source.prompt}` : "",
@@ -467,7 +504,8 @@ export class FoundryClient {
     const deadline = Date.now() + timeoutMs;
     let last = "";
     for (;;) {
-      const session = await this.getSession(id);
+      // Polled every interval: status and answer only, never the transcript.
+      const session = await this.getSession(id, { events: false });
       if (session.status !== last) {
         onTick?.(session.status);
         last = session.status;

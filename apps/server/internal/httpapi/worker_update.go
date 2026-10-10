@@ -250,9 +250,9 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 		return wsWorkerUpdateStarted{}, err
 	}
 	s.workerUpdates.setLog(deviceID, value.Log)
-	s.invalidateProjections()
+	s.projectionsChanged("", fieldDevices)
 	// Once the window passes, projections show the update as not finished.
-	time.AfterFunc(workerUpdateWindow, s.invalidateProjections)
+	time.AfterFunc(workerUpdateWindow, func() { s.projectionsChanged("", fieldDevices) })
 	if connection.hasCapability(workerUpdateStatusCapability) {
 		go s.watchWorkerUpdate(deviceID, startedAt)
 	}
@@ -282,7 +282,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 			}
 			if now.Sub(away) >= grace {
 				if s.workerUpdates.fail(deviceID, startedAt, workerUpdateFailedNotBack, "the worker did not come back after updating") {
-					s.invalidateProjections()
+					s.projectionsChanged("", fieldDevices)
 				}
 				return
 			}
@@ -297,7 +297,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 		update, ok := s.workerUpdates.active(deviceID, version, now.UTC())
 		if !ok || update.StartedAt != startedAt || update.Failure != "" {
 			if !ok {
-				s.invalidateProjections()
+				s.projectionsChanged("", fieldDevices)
 			}
 			return
 		}
@@ -312,7 +312,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 		}
 		changed, settled := s.workerUpdates.apply(deviceID, startedAt, status)
 		if changed {
-			s.invalidateProjections()
+			s.projectionsChanged("", fieldDevices)
 		}
 		if settled {
 			return
@@ -326,7 +326,7 @@ func (s *Server) recordWorkerUpdateStatus(deviceID string, status wsWorkerUpdate
 		return
 	}
 	if changed, _ := s.workerUpdates.apply(deviceID, "", status); changed {
-		s.invalidateProjections()
+		s.projectionsChanged("", fieldDevices)
 	}
 }
 

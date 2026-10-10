@@ -9,6 +9,7 @@ import {
 } from "./chat-message-content";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./chat-context-card";
+import { backgroundWorkNote } from "./chat-context-model";
 import { ChatDetailPanel } from "./chat-detail-panel";
 import { ChatDetailSplitPane } from "./chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
@@ -22,6 +23,10 @@ import type {
 } from "../../components/conversation/conversation-types";
 import { ChatSidebar } from "./chat-thread-view";
 import { useChatContextDetail } from "./use-chat-context-detail";
+import { useMediaQuery } from "./use-media-query";
+
+/** Where the context rail sits beside the chat (see 90-responsive.css). */
+const contextRailQuery = "(min-width: 1361px)";
 import type { ChatSessionFileItem } from "./chat-types";
 
 export type {
@@ -85,6 +90,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
     closeDetail();
     setContextCardOpen(true);
   }, [closeDetail]);
+  // An idle chat whose agent still works: the note names what keeps running
+  // and opens the panel on those rows.
+  const backgroundWork = props.agentActive ? undefined : props.backgroundWork;
+  const backgroundNote = backgroundWork
+    ? backgroundWorkNote(backgroundWork)
+    : undefined;
+  const revealBackgroundWork = useCallback(() => {
+    if (!backgroundWork) return;
+    setReveal({
+      ids: [...backgroundWork.taskIds, ...backgroundWork.subagentIds],
+    });
+    showPanel();
+  }, [backgroundWork, showPanel]);
   const openFileReference = useCallback(
     (reference: ConversationFileReference) => {
       if (reference.kind === "file") {
@@ -115,17 +133,21 @@ export function ChatSurface(props: ChatSurfaceProps) {
     }),
     [openFileReference, showPanel],
   );
-  // The tab title names the open chat and marks it while it runs.
+  // The tab names the open chat and marks it while it runs, or while the
+  // note above says its agent still works in the background.
   const chatName =
     !threadKey.endsWith(":new") && typeof chatTitle === "string"
       ? chatTitle
       : "";
   const chatRunning = Boolean(props.agentActive);
+  const chatBackground = Boolean(backgroundNote);
   useEffect(() => {
     setDocumentChat(
-      chatName ? { title: chatName, running: chatRunning } : undefined,
+      chatName
+        ? { title: chatName, running: chatRunning, background: chatBackground }
+        : undefined,
     );
-  }, [chatName, chatRunning]);
+  }, [chatName, chatRunning, chatBackground]);
   useEffect(() => () => setDocumentChat(undefined), []);
   const selectedRuntime =
     props.agentOptions.find((agent) => agent.value === props.selectedAgentId)
@@ -133,18 +155,37 @@ export function ChatSurface(props: ChatSurfaceProps) {
     props.agentOptions[0]?.runtime ??
     "codex";
   useEffect(() => setContextCardOpen(false), [threadKey]);
-  const handleNewChat = () => {
+  // Wide screens show the panel beside the chat; narrow ones on request.
+  const widePanel = useMediaQuery(contextRailQuery);
+  const panelVisible = Boolean(
+    contextCard && !contextDetail.selection && (widePanel || contextCardOpen),
+  );
+  const { onContextPanelVisibleChange } = props;
+  useEffect(() => {
+    onContextPanelVisibleChange?.(panelVisible);
+  }, [onContextPanelVisibleChange, panelVisible]);
+  // Stable, so the memoized chat list does not render for transcript events.
+  const latestCallbacks = useRef({ onChatsDeleted, onNewChat });
+  latestCallbacks.current = { onChatsDeleted, onNewChat };
+  const clearTurnFilter = useCallback(() => setTurnFilter(undefined), []);
+  const closeContextCard = useCallback(() => setContextCardOpen(false), []);
+  const handleNewChat = useCallback(() => {
     setDraftResetKey((value) => value + 1);
     setNarrowPane("thread");
-    onNewChat();
-  };
+    latestCallbacks.current.onNewChat();
+  }, []);
+  const handleChatsDeleted = useCallback(
+    (ids: string[]) =>
+      latestCallbacks.current.onChatsDeleted?.(ids) ?? Promise.resolve(),
+    [],
+  );
   const disabledAgentDeviceId = props.agentOptions.find(
     (agent) => agent.disabled,
   )?.deviceId;
   return (
     <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
       <ChatSidebar
-        onChatsDeleted={onChatsDeleted}
+        onChatsDeleted={handleChatsDeleted}
         key={workspaceId}
         workspaceId={workspaceId}
         chats={listChats}
@@ -204,6 +245,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
         >
           <Conversation
             fileActions={contextCard ? fileActions : undefined}
+            history={props.history}
+            onReachHistoryStart={props.onReachHistoryStart}
             threadKey={props.threadKey}
             messages={props.messages}
             active={props.agentActive}
@@ -224,17 +267,15 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onAttachmentsRestore={props.onAttachmentsRestore}
             onImagePreview={setPreviewImage}
             notice={
-              !props.agentActive && props.backgroundRunning ? (
+              backgroundNote ? (
                 <Button
                   className="fdy-chat-background-note"
-                  onClick={showPanel}
+                  onClick={revealBackgroundWork}
                   size="sm"
                   variant="ghost"
                 >
                   <LoaderCircle aria-hidden="true" size={14} />
-                  {t("contextCard.backgroundRunningNote", {
-                    count: props.backgroundRunning,
-                  })}
+                  {backgroundNote}
                 </Button>
               ) : undefined
             }
@@ -290,9 +331,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
               data-open={contextCardOpen ? "true" : "false"}
             >
               <ChatContextCard
+                chatKey={threadKey}
                 data={contextCard}
-                onClearTurnFilter={() => setTurnFilter(undefined)}
-                onClose={() => setContextCardOpen(false)}
+                onClearTurnFilter={clearTurnFilter}
+                onClose={closeContextCard}
+                onRetrySubagents={props.onRetrySubagents}
                 onSelect={contextDetail.setSelection}
                 reveal={reveal}
                 turnFilter={turnFilter}

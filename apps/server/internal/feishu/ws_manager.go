@@ -395,7 +395,7 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string,
 	}
 	// The topic is one session: a running one is steered, an idle one takes
 	// the message as its next input.
-	session, err := m.store.GetAgentSession(ctx, thread.LatestSessionID)
+	session, err := store.AgentSessionRecord(ctx, m.store, thread.LatestSessionID)
 	if err != nil {
 		if _, replyErr := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", "找不到该话题的智能体会话", err.Error())); replyErr != nil {
 			log.Printf("[feishu] failed to reply card: %v", replyErr)

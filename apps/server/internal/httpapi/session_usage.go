@@ -295,11 +295,9 @@ func (s *Server) runSessionUsageBackfill(usageStore sessionUsageStore, connectio
 		return
 	}
 	turns, requests := matchSessionUsage(session.Events, usage)
+	// Usage lives on transcript events, which foundry-data does not carry:
+	// a thread read shows it, so there is nothing to announce.
 	if err := usageStore.BackfillAgentSessionUsage(ctx, session.ID, turns, requests); err != nil {
 		log.Printf("usage backfill of %s: %v", session.ID, strings.TrimSpace(err.Error()))
-		return
-	}
-	if len(turns) > 0 || len(requests) > 0 {
-		s.invalidateProjections()
 	}
 }

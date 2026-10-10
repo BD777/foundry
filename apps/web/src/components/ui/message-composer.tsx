@@ -1,4 +1,4 @@
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, LoaderCircle, Square } from "lucide-react";
 import {
   useCallback,
   useLayoutEffect,
@@ -246,21 +246,29 @@ export function ComposerFooter({
   return <div className={cn("fdy-composer-footer", className)} {...props} />;
 }
 
+/** Send, stop the running agent, or a send on its way (busy, inert). */
+export type ComposerSubmitState = "send" | "stop" | "sending";
+
 export function ComposerSubmit({
-  active = false,
+  state = "send",
   className,
   ...props
-}: ButtonProps & { active?: boolean }) {
+}: ButtonProps & { state?: ComposerSubmitState }) {
   return (
     <Button
       {...props}
+      aria-busy={state === "sending" || undefined}
       className={cn("fdy-composer-submit", className)}
-      data-state={active ? "active" : "idle"}
+      data-state={
+        state === "stop" ? "active" : state === "sending" ? "busy" : "idle"
+      }
       size="icon"
       variant="primary"
     >
-      {active ? (
+      {state === "stop" ? (
         <Square className="fdy-composer-stop-icon" size={12} />
+      ) : state === "sending" ? (
+        <LoaderCircle className="fdy-composer-busy-icon" size={16} />
       ) : (
         <ArrowUp size={16} />
       )}

@@ -767,6 +767,11 @@ const DaemonCapabilityIssueSessions = "issue_sessions"
 // clarification as a session with the issue_clarification role.
 const DaemonCapabilityIssueClarification = "issue_clarification"
 
+// DaemonCapabilityWorkspaceGitSetup: the worker leaves a folder without Git
+// as it is and answers the git_status / initialize_git Issue environment
+// actions, so Git is set up only after the person confirms it.
+const DaemonCapabilityWorkspaceGitSetup = "workspace_git_setup"
+
 // SessionInput is one message delivered to a session: the unit of dispatch.
 // It is not a session of its own; identity, permissions and lineage belong
 // to the session it was sent to.
@@ -828,6 +833,11 @@ type AgentSession struct {
 	// GroupNameTarget marks a source=naming utility session whose response
 	// should rename the auto-created orchestration group with this id.
 	GroupNameTarget string `json:"groupNameTarget,omitempty"`
+	// AdoptedChatID names the device's native chat a new session took over
+	// (its title, queue and list position), named by its chat id or by its
+	// native session id, so the HTTP layer can announce the change. It is
+	// set only on the session CreateAgentSession returns.
+	AdoptedChatID string `json:"-"`
 	// CreatedGroupID is populated on a session that caused a new orchestration
 	// group to be created, so the HTTP layer can trigger async naming.
 	CreatedGroupID       string `json:"createdGroupId,omitempty"`
@@ -1077,6 +1087,9 @@ type ChatQueueItem struct {
 	State         string               `json:"state"`
 	Error         string               `json:"error,omitempty"`
 	SentSessionID string               `json:"sentSessionId,omitempty"`
+	// MaybeSent: a failed message its device may have taken after all (it
+	// did not answer in time); the person checks the chat before a retry.
+	MaybeSent bool `json:"maybeSent,omitempty"`
 }
 
 // ChatQueue lists a chat's unsent messages in sending order. Revision grows
@@ -1209,8 +1222,10 @@ type SendAgentSessionInput struct {
 	// RequireIdle refuses (ErrAgentSessionActive) a message to a running
 	// session instead of steering it: the sender meant the next turn.
 	RequireIdle bool `json:"requireIdle,omitempty"`
-	// InputID names the input (a queued message's id); empty generates one.
-	InputID string `json:"-"`
+	// InputID names the input: a queued message's id, or the id a client
+	// gave its message so a retried send records it once (see
+	// ValidSessionInputID). Empty generates one.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type CreateAgentSessionInput struct {
@@ -1241,8 +1256,30 @@ type CreateAgentSessionInput struct {
 	// Verification requests a read-only utility verifier session.
 	Verification bool   `json:"verification,omitempty"`
 	Source       string `json:"source"`
-	// InputID names the first input (a queued message's id); empty generates one.
-	InputID string `json:"-"`
+	// InputID names the first input, as SendAgentSessionInput.InputID does.
+	InputID string `json:"inputId,omitempty"`
+}
+
+// ValidSessionInputID reports whether a client may name an input this way:
+// a lowercase canonical UUID. Input ids become event ids and Claude's
+// native message uuid, and a transcript recognises them by that form.
+func ValidSessionInputID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for index, char := range id {
+		switch index {
+		case 8, 13, 18, 23:
+			if char != '-' {
+				return false
+			}
+		default:
+			if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type AgentModelOption struct {

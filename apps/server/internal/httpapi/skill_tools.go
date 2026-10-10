@@ -516,6 +516,6 @@ func (s *Server) handleInstallDeviceTool(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", fieldDeviceTools)
 	writeResult(w, value, nil)
 }

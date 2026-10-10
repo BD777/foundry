@@ -195,7 +195,7 @@ func (s *Server) addSkillBundle(w http.ResponseWriter, r *http.Request, repos sk
 		return
 	}
 	s.describeRepository(r.Context(), repos, created)
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	updated, err := repos.GetSkillRepository(r.Context(), created.ID)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -265,7 +265,7 @@ func (s *Server) handleSetSkillRepositoryMode(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.describeRepository(r.Context(), repos, repo)
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, updated, err)
 }
@@ -483,7 +483,7 @@ func (s *Server) checkSkillRepository(ctx context.Context, repos skillRepository
 	if err != nil {
 		return err
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	return nil
 }
 
@@ -573,7 +573,7 @@ func (s *Server) handleRollbackSkillBundle(w http.ResponseWriter, r *http.Reques
 	if toolsErr != nil {
 		_ = repos.RecordSkillRepositoryCheck(r.Context(), repo.ID, "", toolsErr.Error())
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, updated, err)
 }
@@ -646,7 +646,7 @@ func (s *Server) handleSetWorkspaceSkillBundles(w http.ResponseWriter, r *http.R
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged(workspaceID, append([]string{fieldWorkspaceBundleIDs}, workspaceSkillFields...)...)
 	_, ids, _, err := s.bundleProjection(r.Context(), workspaceID)
 	writeResult(w, map[string]any{"bundleIds": ids}, err)
 }

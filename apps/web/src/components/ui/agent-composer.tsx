@@ -16,7 +16,9 @@ import {
   ComposerFooter,
   ComposerSubmit,
   type ComposerInputProps,
+  type ComposerSubmitState,
 } from "./message-composer";
+import { Tooltip } from "./tooltip";
 import type { SlashSuggestion } from "./slash-menu";
 import type { PanelProps } from "./panel";
 
@@ -50,8 +52,11 @@ export interface AgentComposerProps extends PanelProps {
   onAttach?: () => void;
   onAction: () => void;
   actionLabel: string;
+  /** What the action does now; its icon and busy state follow. */
+  actionState?: ComposerSubmitState;
+  /** A longer explanation shown on hover/focus; defaults to the label. */
+  actionHint?: ReactNode;
   actionDisabled?: boolean;
-  active?: boolean;
 }
 
 /** One complete composer for Chats and Issues. Feature code supplies state, not toolbar markup. */
@@ -72,8 +77,9 @@ export function AgentComposer({
   onAttach,
   onAction,
   actionLabel,
+  actionState = "send",
+  actionHint,
   actionDisabled,
-  active,
   slashItems,
   ...panel
 }: AgentComposerProps) {
@@ -151,13 +157,15 @@ export function AgentComposer({
             disabled={controlsDisabled}
           />
         ) : null}
-        <ComposerSubmit
-          aria-label={actionLabel}
-          className="fdy-chat-send-button"
-          active={active}
-          disabled={actionDisabled}
-          onClick={onAction}
-        />
+        <Tooltip content={actionHint ?? actionLabel}>
+          <ComposerSubmit
+            aria-label={actionLabel}
+            className="fdy-chat-send-button"
+            state={actionState}
+            disabled={actionDisabled}
+            onClick={onAction}
+          />
+        </Tooltip>
       </ComposerFooter>
     </MessageComposer>
   );

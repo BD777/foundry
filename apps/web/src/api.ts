@@ -59,6 +59,7 @@ import type {
   CreateWorkspaceInput,
   WorkspaceInspection,
   FoundryData,
+  FoundryDataField,
   FoundryStreamEvent,
   ListWorkspaceSubdirectoriesInput,
   ReadWorkspaceFileInput,
@@ -86,9 +87,13 @@ export interface ChatTitleMetadata {
   generationError?: string;
 }
 
-export function getChatLayout(workspaceId: string): Promise<ChatLayout> {
+export function getChatLayout(
+  workspaceId: string,
+  options: RequestOptions = {},
+): Promise<ChatLayout> {
   return getJSON(
     `/api/chat-layout?workspaceId=${encodeURIComponent(workspaceId)}`,
+    options,
   );
 }
 
@@ -117,9 +122,11 @@ export function deleteChatGroup(
 
 export function listChatTitles(
   workspaceId: string,
+  options: RequestOptions = {},
 ): Promise<ChatTitleMetadata[]> {
   return getJSON(
     `/api/chat-titles?workspaceId=${encodeURIComponent(workspaceId)}`,
+    options,
   );
 }
 
@@ -272,12 +279,27 @@ export function retryChatQueueItem(
 
 class ApiError extends Error {
   status: number;
+  /** The server's machine-readable reason, when it gives one. */
+  code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
+}
+
+/**
+ * The workspace has no Git repository or no commits yet: creating an Issue
+ * needs the person to confirm setting up Git first (`initializeGit`).
+ */
+export function workspaceNeedsGit(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.code === "workspace_needs_git"
+  );
 }
 
 const authRequiredListeners = new Set<() => void>();
@@ -312,40 +334,291 @@ export function localImageUrl(path: string): string {
 const foundryStreamEventTypes = new Set<FoundryStreamEvent["type"]>([
   "device_status_changed",
   "evidence_updated",
+  "issue_created",
   "issue_updated",
   "issue_run_event",
   "agent_session_created",
   "agent_session_started",
   "agent_session_event",
+  "agent_subagent_updated",
+  "agent_session_blocked",
+  "agent_session_resumed",
   "agent_session_completed",
   "agent_session_native_session_id",
   "feishu_bot_updated",
   "workspace_members_updated",
   "chat_queue_changed",
+  "chat_titles_changed",
+  "chat_layout_changed",
+  "foundry_data_changed",
+  "chats_changed",
 ]);
+
+export interface FoundryStreamResync {
+  /**
+   * The first connection this subscriber sees open: state it loaded while
+   * that connection was opening may predate it. False: events stopped
+   * arriving after they had arrived.
+   */
+  initial: boolean;
+}
+
+export interface FoundryStreamLifecycle {
+  /** The stream stopped delivering events; it reconnects by itself. */
+  onError?: () => void;
+  /**
+   * The stream delivers events (again). Told at once when joining an open
+   * stream. A reconnect resumes where the last connection stopped (the
+   * server replays what was missed), so this is no reason to reload.
+   */
+  onOpen?: () => void;
+  /**
+   * Events may be missing: the server could not replay them (it says so
+   * with a `resync` message), or a connection opened with nowhere to resume
+   * from. State derived from the stream must be loaded again.
+   */
+  onResync?: (resync: FoundryStreamResync) => void;
+}
+
+interface FoundryStreamListener {
+  onEvent: (event: FoundryStreamEvent) => void;
+  lifecycle: FoundryStreamLifecycle;
+  /** It was told the stream is open at least once. */
+  sawOpen: boolean;
+}
+
+/** Waits between reopening a connection the browser gave up on. */
+export const foundryStreamReopenDelaysMs = [
+  1_000, 2_000, 5_000, 10_000, 30_000,
+] as const;
+
+/**
+ * One EventSource per tab, shared by every subscriber. Every message carries
+ * an `id:`; the browser resends the last one as Last-Event-ID when it
+ * reconnects by itself, and a connection opened again after the browser gave
+ * up passes it as `lastEventId`, so the server replays what was missed (or
+ * says `resync` when it cannot).
+ */
+const foundryStream = {
+  listeners: new Set<FoundryStreamListener>(),
+  open: false,
+  source: undefined as EventSource | undefined,
+  closeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+  reopenTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+  reopenAttempts: 0,
+  /** The newest message id seen: where a new connection resumes. */
+  lastEventId: "",
+  /** When the connection last opened or delivered a message. */
+  heardAt: 0,
+  /** Rises whenever events may have been missed (see foundryStreamEpoch). */
+  epoch: 0,
+  /** Reads waiting for the connection to open (see foundryStreamOpened). */
+  openWaiters: new Set<() => void>(),
+};
+
+/** EventSource.CLOSED: the browser will not reconnect this source itself. */
+const eventSourceClosed = 2;
+
+export function isFoundryStreamOpen(): boolean {
+  return foundryStream.open;
+}
+
+/**
+ * Rises each time events may have been missed: a connection opened with
+ * nowhere to resume from (the first one too), or the server said resync. A
+ * read that started at the current epoch, after the stream opened, misses
+ * nothing: every later change arrives on the stream. One from an earlier
+ * epoch may be behind and is read again (see foundryStreamOpened).
+ */
+export function foundryStreamEpoch(): number {
+  return foundryStream.epoch;
+}
+
+/** How long a read waits for the stream to open (foundryStreamOpened). */
+export const foundryStreamOpenWaitMs = 1_500;
+
+/**
+ * Resolves when a read of state the stream keeps current may start: at once
+ * while the stream is open (the server registered this tab before it
+ * answered the opening, so it delivers every change after a later read),
+ * else when it opens. A stream not open within foundryStreamOpenWaitMs is
+ * waited for no longer, so a slow stream does not keep the page empty;
+ * resolves `false` then: the read starts at an epoch the opening ends, and
+ * is made again on its resync.
+ */
+export function foundryStreamOpened(): Promise<boolean> {
+  if (foundryStream.open) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const opened = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      foundryStream.openWaiters.delete(opened);
+      resolve(false);
+    }, foundryStreamOpenWaitMs);
+    foundryStream.openWaiters.add(opened);
+  });
+}
+
+/** How long the open connection has delivered nothing (0 when not open). */
+export function foundryStreamQuietMs(now = Date.now()): number {
+  return foundryStream.open ? Math.max(0, now - foundryStream.heardAt) : 0;
+}
+
+/**
+ * Opens the connection again, resuming after the last message: for one that
+ * may have died without an error (a sleeping laptop, a stuck proxy). The
+ * server's keepalives are comments a page cannot observe.
+ */
+export function reconnectFoundryStream(): void {
+  if (foundryStream.listeners.size === 0) return;
+  if (foundryStream.reopenTimer !== undefined)
+    clearTimeout(foundryStream.reopenTimer);
+  foundryStream.reopenTimer = undefined;
+  foundryStream.source?.close();
+  foundryStream.source = undefined;
+  foundryStream.open = false;
+  openFoundryStream();
+}
+
+function notifyFoundryStream(
+  notify: (listener: FoundryStreamListener) => void,
+): void {
+  for (const listener of [...foundryStream.listeners]) {
+    if (foundryStream.listeners.has(listener)) notify(listener);
+  }
+}
+
+function rememberStreamId(message: MessageEvent): void {
+  foundryStream.heardAt = Date.now();
+  if (message.lastEventId) foundryStream.lastEventId = message.lastEventId;
+}
+
+function openFoundryStream(): void {
+  if (foundryStream.source || foundryStream.reopenTimer !== undefined) return;
+  const resumeFrom = foundryStream.lastEventId;
+  const source = new EventSource(
+    resumeFrom
+      ? `${API_BASE_URL}/api/events?lastEventId=${encodeURIComponent(resumeFrom)}`
+      : `${API_BASE_URL}/api/events`,
+    { withCredentials: true },
+  );
+  foundryStream.source = source;
+  source.onopen = () => {
+    if (foundryStream.source !== source) return;
+    foundryStream.open = true;
+    foundryStream.reopenAttempts = 0;
+    foundryStream.heardAt = Date.now();
+    // The browser's own reconnects send the newest id this source saw; a
+    // source that saw none sends what it was opened with. Either way it
+    // resumes from lastEventId, and only without one can events be lost.
+    const fresh = foundryStream.lastEventId === "";
+    if (fresh) foundryStream.epoch += 1;
+    notifyFoundryStream((listener) => {
+      const initial = !listener.sawOpen;
+      listener.sawOpen = true;
+      listener.lifecycle.onOpen?.();
+      if (fresh) listener.lifecycle.onResync?.({ initial });
+    });
+    const waiters = [...foundryStream.openWaiters];
+    foundryStream.openWaiters.clear();
+    waiters.forEach((opened) => opened());
+  };
+  source.onerror = () => {
+    if (foundryStream.source !== source) return;
+    foundryStream.open = false;
+    notifyFoundryStream((listener) => listener.lifecycle.onError?.());
+    // A connection answered with an error status (a proxy's 502 while the
+    // server restarts) is closed for good: open a new one, resuming.
+    if (source.readyState !== eventSourceClosed) return;
+    source.close();
+    foundryStream.source = undefined;
+    if (foundryStream.listeners.size === 0) return;
+    const delays = foundryStreamReopenDelaysMs;
+    const delay =
+      delays[Math.min(foundryStream.reopenAttempts, delays.length - 1)]!;
+    foundryStream.reopenAttempts += 1;
+    foundryStream.reopenTimer = setTimeout(() => {
+      foundryStream.reopenTimer = undefined;
+      if (foundryStream.listeners.size > 0) openFoundryStream();
+    }, delay);
+  };
+  const resync = (message: MessageEvent) => {
+    if (foundryStream.source !== source) return;
+    rememberStreamId(message);
+    foundryStream.epoch += 1;
+    notifyFoundryStream((listener) =>
+      listener.lifecycle.onResync?.({ initial: false }),
+    );
+  };
+  source.addEventListener("resync", resync as EventListener);
+  source.onmessage = (message) => {
+    if (foundryStream.source !== source) return;
+    rememberStreamId(message);
+    let event: FoundryStreamEvent | undefined;
+    try {
+      const envelope = parseProtocolEnvelopeJSON(message.data);
+      if (envelope.type === "resync") {
+        resync(message);
+        return;
+      }
+      event = envelope as FoundryStreamEvent;
+    } catch {
+      // A later persisted snapshot repairs malformed or interrupted stream data.
+      return;
+    }
+    if (!event?.payload || !foundryStreamEventTypes.has(event.type)) return;
+    for (const listener of [...foundryStream.listeners]) {
+      listener.onEvent(event);
+    }
+  };
+}
+
+function closeFoundryStream(): void {
+  if (foundryStream.reopenTimer !== undefined)
+    clearTimeout(foundryStream.reopenTimer);
+  foundryStream.reopenTimer = undefined;
+  foundryStream.reopenAttempts = 0;
+  foundryStream.source?.close();
+  foundryStream.source = undefined;
+  foundryStream.open = false;
+  // Whoever subscribes next loads its own state; nothing to resume.
+  foundryStream.lastEventId = "";
+}
 
 export function subscribeFoundryEvents(
   onEvent: (event: FoundryStreamEvent) => void,
-  lifecycle: { onError?: () => void; onOpen?: () => void } = {},
+  lifecycle: FoundryStreamLifecycle = {},
 ): () => void {
-  const source = new EventSource(`${API_BASE_URL}/api/events`, {
-    withCredentials: true,
-  });
-  source.onopen = () => lifecycle.onOpen?.();
-  source.onerror = () => lifecycle.onError?.();
-  source.onmessage = (message) => {
-    try {
-      const event = parseProtocolEnvelopeJSON(
-        message.data,
-      ) as FoundryStreamEvent;
-      if (event?.payload && foundryStreamEventTypes.has(event.type)) {
-        onEvent(event);
-      }
-    } catch {
-      // A later persisted snapshot repairs malformed or interrupted stream data.
-    }
+  const listener: FoundryStreamListener = {
+    onEvent,
+    lifecycle,
+    sawOpen: foundryStream.open,
   };
-  return () => source.close();
+  foundryStream.listeners.add(listener);
+  if (foundryStream.closeTimer !== undefined) {
+    clearTimeout(foundryStream.closeTimer);
+    foundryStream.closeTimer = undefined;
+  }
+  if (foundryStream.open && lifecycle.onOpen) {
+    // Joined an open stream: the subscriber loads its own state after this,
+    // so it only needs to know the stream is up.
+    const onOpen = lifecycle.onOpen;
+    queueMicrotask(() => {
+      if (foundryStream.listeners.has(listener)) onOpen();
+    });
+  }
+  openFoundryStream();
+  return () => {
+    foundryStream.listeners.delete(listener);
+    if (foundryStream.listeners.size > 0) return;
+    // A remount re-subscribes at once; keep the connection for it.
+    foundryStream.closeTimer = setTimeout(() => {
+      foundryStream.closeTimer = undefined;
+      if (foundryStream.listeners.size === 0) closeFoundryStream();
+    }, 1000);
+  };
 }
 
 export const emptyWorkspace: WorkspaceProjection = {
@@ -361,6 +634,13 @@ export const emptyWorkspace: WorkspaceProjection = {
 export interface RequestOptions {
   signal?: AbortSignal;
 }
+
+/**
+ * How long a read the app repeats in the background (workspace data, chat
+ * titles, chat layout) may take: one that stalls fails then, so the reads
+ * queued behind it go on.
+ */
+export const backgroundReadTimeoutMs = 30_000;
 
 /** Distinguishes caller-driven cancellation from transport failure. */
 export function isAbortError(error: unknown): boolean {
@@ -403,6 +683,7 @@ async function postJSON<T>(
     throw new ApiError(
       await responseErrorMessage(response, path),
       response.status,
+      await responseErrorCode(response),
     );
   }
   return (await response.json()) as T;
@@ -456,6 +737,17 @@ function jsonHeaders(includeContentType: boolean): Record<string, string> {
   return includeContentType ? { "Content-Type": "application/json" } : {};
 }
 
+async function responseErrorCode(
+  response: Response,
+): Promise<string | undefined> {
+  try {
+    const payload = (await response.clone().json()) as { code?: unknown };
+    return typeof payload.code === "string" ? payload.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function responseErrorMessage(
   response: Response,
   path: string,
@@ -474,16 +766,29 @@ async function responseErrorMessage(
   return `${path} returned ${response.status}`;
 }
 
+/**
+ * Reads workspace data: without `fields`, every field but the pages' own
+ * (the skill library's catalog); with them, those fields and the workspace.
+ * Each selection keeps its own ETag, so an unchanged read costs a 304.
+ */
 export async function loadFoundryData(
   activeWorkspaceId?: string,
-  options: RequestOptions = {},
+  options: RequestOptions & { fields?: readonly FoundryDataField[] } = {},
 ): Promise<FoundryDataLoadResult> {
-  const query = activeWorkspaceId
-    ? `?workspaceId=${encodeURIComponent(activeWorkspaceId)}`
-    : "";
+  const params = new URLSearchParams();
+  if (activeWorkspaceId) params.set("workspaceId", activeWorkspaceId);
+  const fields = options.fields ? [...new Set(options.fields)].sort() : [];
+  if (fields.length) params.set("fields", fields.join(","));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const selection = fields.length ? fields : undefined;
   try {
-    return await getFoundryData(`/api/foundry-data${query}`, options);
+    return await getFoundryData(
+      `/api/foundry-data${query}`,
+      options,
+      selection,
+    );
   } catch (error) {
+    // The workspace is gone: read whatever workspace there is now, whole.
     if (
       activeWorkspaceId &&
       error instanceof ApiError &&
@@ -496,8 +801,13 @@ export async function loadFoundryData(
 }
 
 export interface FoundryDataLoadResult {
+  /** A selection's answer holds only its fields (and the workspace). */
   data: FoundryData;
   notModified: boolean;
+  /** The fields read; undefined: every field but the pages' own. */
+  fields?: readonly FoundryDataField[];
+  /** When the read was asked for (Date.now()): its answer is older. */
+  requestedAt: number;
 }
 
 // Warm only the row the user points at or focuses. Consume each result once so
@@ -543,18 +853,20 @@ const foundryDataCache = new Map<string, { data: FoundryData; etag: string }>();
 async function getFoundryData(
   path: string,
   options: RequestOptions,
+  fields?: readonly FoundryDataField[],
 ): Promise<FoundryDataLoadResult> {
   const cached = foundryDataCache.get(path);
   const headers = jsonHeaders(false);
   if (cached?.etag) {
     headers["If-None-Match"] = cached.etag;
   }
+  const requestedAt = Date.now();
   const response = await apiFetch(`${API_BASE_URL}${path}`, {
     headers,
     signal: options.signal,
   });
   if (response.status === 304 && cached) {
-    return { data: cached.data, notModified: true };
+    return { data: cached.data, notModified: true, fields, requestedAt };
   }
   if (!response.ok) {
     throw new ApiError(
@@ -563,20 +875,29 @@ async function getFoundryData(
     );
   }
   const data = (await response.json()) as FoundryData;
-  data.issues = (data.issues ?? []).map((issue) => ({
-    ...issue,
-    status: issueDisplayStatus(issue),
-  }));
-  // Older servers omit the skill-isolation collections; default to empty so
-  // the new UI treats them as "nothing configured" rather than undefined.
-  data.deviceSkillRoots ??= [];
-  data.promotedSkills ??= [];
-  data.workspaceSkillBindings ??= [];
+  // Every field but the workspace is a list: one answered null (an empty
+  // list, from some servers) is one.
+  for (const [field, value] of Object.entries(data))
+    if (value === null)
+      (data as unknown as Record<string, unknown>)[field] = [];
+  if (data.issues)
+    data.issues = data.issues.map((issue) => ({
+      ...issue,
+      status: issueDisplayStatus(issue),
+    }));
+  if (!fields) {
+    // Older servers omit the skill-isolation collections; default to empty
+    // so the new UI treats them as "nothing configured" rather than
+    // undefined.
+    data.issues ??= [];
+    data.deviceSkillRoots ??= [];
+    data.workspaceSkillBindings ??= [];
+  }
   const etag = response.headers.get("ETag") ?? "";
   if (etag) {
     foundryDataCache.set(path, { data, etag });
   }
-  return { data, notModified: false };
+  return { data, notModified: false, fields, requestedAt };
 }
 
 export function inspectWorkspace(
@@ -894,14 +1215,37 @@ export function readAgentSubagentTranscript(
   );
 }
 
-export function listAgentSubagents(
+export interface AgentSubagentsResult {
+  /** Undefined when the server answered 304: the list known is current. */
+  subagents?: AgentSubagentSummary[];
+  etag?: string;
+}
+
+/**
+ * A session's subagents. With the ETag of the list already shown, a server
+ * that supports it answers 304 and nothing is transferred again.
+ */
+export async function listAgentSubagents(
   sessionId: string,
-  options: RequestOptions = {},
-): Promise<AgentSubagentSummary[]> {
-  return getJSON<AgentSubagentSummary[]>(
-    `/api/agent-sessions/${encodeURIComponent(sessionId)}/subagents`,
-    options,
-  );
+  options: RequestOptions & { etag?: string } = {},
+): Promise<AgentSubagentsResult> {
+  const path = `/api/agent-sessions/${encodeURIComponent(sessionId)}/subagents`;
+  const response = await apiFetch(`${API_BASE_URL}${path}`, {
+    headers: options.etag ? { "If-None-Match": options.etag } : {},
+    signal: options.signal,
+  });
+  const etag = response.headers.get("ETag") ?? undefined;
+  if (response.status === 304) return { etag: etag ?? options.etag };
+  if (!response.ok) {
+    throw new ApiError(
+      await responseErrorMessage(response, path),
+      response.status,
+    );
+  }
+  return {
+    etag,
+    subagents: (await response.json()) as AgentSubagentSummary[],
+  };
 }
 
 export async function uploadChatAttachments(
@@ -947,14 +1291,93 @@ export function listIssueSessions(
   return getJSON<AgentSession[]>(`/api/agent-sessions?${params.toString()}`);
 }
 
-export function getAgentSessionThread(
+/**
+ * A session as a windowed transcript load returns it: `eventsBefore` is the
+ * cursor of the events older than those included, absent once the session's
+ * history is complete (and always from a server that sends all events).
+ * `stateEvents`, with the newest window only, are those of the older events
+ * the side panel reads (snapshots, recorded files, subagents), cut to what
+ * it reads; a page of older events, or an older server, sends none.
+ */
+export type WindowedAgentSession = AgentSession & {
+  eventsBefore?: string;
+  stateEvents?: NonNullable<AgentSession["events"]>;
+};
+
+export interface TranscriptLoadProgress {
+  loadedBytes: number;
+  /** The transfer size when the server states it and it is not compressed. */
+  totalBytes?: number;
+}
+
+export interface TranscriptRequestOptions extends RequestOptions {
+  /** Only the most recent events of each session (older ones by page). */
+  eventsLimit?: number;
+  onProgress?: (progress: TranscriptLoadProgress) => void;
+}
+
+async function readJSONWithProgress<T>(
+  response: Response,
+  onProgress?: (progress: TranscriptLoadProgress) => void,
+): Promise<T> {
+  if (!onProgress || !response.body) return (await response.json()) as T;
+  const declared = Number(response.headers.get("Content-Length"));
+  const encoded = Boolean(response.headers.get("Content-Encoding"));
+  const totalBytes =
+    Number.isFinite(declared) && declared > 0 && !encoded
+      ? declared
+      : undefined;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let loadedBytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    loadedBytes += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+    onProgress({ loadedBytes, totalBytes });
+  }
+  text += decoder.decode();
+  return JSON.parse(text) as T;
+}
+
+export async function getAgentSessionThread(
   threadId: string,
   workspaceId: string,
-  options: RequestOptions = {},
-): Promise<AgentSession[]> {
+  options: TranscriptRequestOptions = {},
+): Promise<WindowedAgentSession[]> {
   const params = new URLSearchParams({ workspaceId });
-  return getJSON<AgentSession[]>(
-    `/api/agent-session-threads/${encodeURIComponent(threadId)}?${params.toString()}`,
+  if (options.eventsLimit)
+    params.set("eventsLimit", String(options.eventsLimit));
+  const path = `/api/agent-session-threads/${encodeURIComponent(threadId)}?${params.toString()}`;
+  const response = await apiFetch(`${API_BASE_URL}${path}`, {
+    headers: jsonHeaders(false),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    throw new ApiError(
+      await responseErrorMessage(response, path),
+      response.status,
+    );
+  }
+  return readJSONWithProgress<WindowedAgentSession[]>(
+    response,
+    options.onProgress,
+  );
+}
+
+/** A page of a session's events older than `before` (a cursor from a load). */
+export function getAgentSessionEventsBefore(
+  sessionId: string,
+  before: string,
+  options: RequestOptions & { eventsLimit?: number } = {},
+): Promise<WindowedAgentSession> {
+  const params = new URLSearchParams({ eventsBefore: before });
+  if (options.eventsLimit)
+    params.set("eventsLimit", String(options.eventsLimit));
+  return getJSON<WindowedAgentSession>(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}?${params.toString()}`,
     options,
   );
 }
@@ -993,12 +1416,34 @@ export function createAgentProfile(
   return postJSON<AgentProfileProjection>("/api/agent-profiles", input);
 }
 
+/**
+ * Model catalogs this page read or is reading, by request body. A catalog
+ * does not change while the page is open; failures are not kept.
+ */
+const agentModelCatalogs = new Map<string, Promise<AgentModelOption[]>>();
+
+/**
+ * Asks the profile's device for its model catalog. With `reuse`, a catalog
+ * this page read (or is reading) for the same request answers instead; an
+ * explicit refresh leaves it out, asks again, and keeps the new answer. A
+ * request carrying a typed API key is never kept: the key stays in its form.
+ */
 export function listAgentModels(
   profile: CreateAgentProfileInput,
+  { reuse = false }: { reuse?: boolean } = {},
 ): Promise<AgentModelOption[]> {
-  return postJSON<AgentModelOption[]>("/api/agent-profiles/models", {
-    profile,
+  const body = { profile };
+  if (profile.apiKey)
+    return postJSON<AgentModelOption[]>("/api/agent-profiles/models", body);
+  const key = JSON.stringify(body);
+  const known = agentModelCatalogs.get(key);
+  if (reuse && known) return known;
+  const read = postJSON<AgentModelOption[]>("/api/agent-profiles/models", body);
+  agentModelCatalogs.set(key, read);
+  read.catch(() => {
+    if (agentModelCatalogs.get(key) === read) agentModelCatalogs.delete(key);
   });
+  return read;
 }
 
 export function listProfiles(): Promise<ProfileDefinition[]> {

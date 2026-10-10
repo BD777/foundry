@@ -10,7 +10,7 @@ import (
 )
 
 // slowTransactionThreshold is when a transaction is worth a log line: the
-// pool has one connection, so every other request waits for it meanwhile.
+// writer has one connection, so every other write waits for it meanwhile.
 const slowTransactionThreshold = time.Second
 
 func logSlowTransaction(started time.Time) {
@@ -44,6 +44,23 @@ func (s *Store) conn() dbExecutor {
 	return s.db
 }
 
+// reader returns the executor for a read that takes no write decision of
+// its own: inside a transaction the transaction (it must see its own
+// writes), otherwise the read-only pool, so the read neither waits for nor
+// delays the writer. A read in WAL mode sees every committed write; one
+// that ran while a transaction was open sees the state before it, as it
+// would have had it run a moment earlier. Reads whose result decides a
+// write outside a transaction stay on conn.
+func (s *Store) reader() dbExecutor {
+	if s.exec != nil {
+		return s.exec
+	}
+	if s.read != nil {
+		return s.read
+	}
+	return s.db
+}
+
 // withTx runs fn against a Store clone bound to a single transaction. Every
 // helper reached through that clone uses the transaction, which matters because
 // the pool is limited to one connection: a stray s.db call inside fn would
@@ -59,7 +76,7 @@ func (s *Store) withTx(ctx context.Context, fn func(tx *Store) error) error {
 	defer logSlowTransaction(time.Now())
 	defer tx.Rollback()
 
-	if err := fn(&Store{db: s.db, exec: tx, kek: s.kek}); err != nil {
+	if err := fn(&Store{db: s.db, read: s.read, exec: tx, kek: s.kek}); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

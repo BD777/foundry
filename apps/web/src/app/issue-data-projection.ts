@@ -41,10 +41,10 @@ export function applyIssueStreamEvent(
   current: FoundryData,
   event: Extract<
     FoundryStreamEvent,
-    { type: "issue_updated" | "issue_run_event" }
+    { type: "issue_created" | "issue_updated" | "issue_run_event" }
   >,
 ): FoundryData {
-  if (event.type === "issue_updated") {
+  if (event.type === "issue_created" || event.type === "issue_updated") {
     const incoming = event.payload;
     if (incoming.workspaceId !== current.workspace.id) return current;
     const issue = mergeIssue(

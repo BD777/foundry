@@ -70,10 +70,11 @@ export function useIssueContract(
     const result = await listContracts(issue.id);
     setContracts(result.items);
   }, [issue.id]);
-  useEvidenceUpdates(issue.id, load, setError);
-  useEffect(() => {
-    void load().catch((e) => setError(String(e)));
-  }, [load, issue.currentContractRevision, issue.draftContractRevision]);
+  const loadOnOpen = useEvidenceUpdates(issue.id, load, setError);
+  useEffect(
+    () => loadOnOpen(),
+    [loadOnOpen, issue.currentContractRevision, issue.draftContractRevision],
+  );
 
   const perform = async (action: () => Promise<unknown>) => {
     if (lock.current)

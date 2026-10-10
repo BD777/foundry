@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -42,10 +43,28 @@ func (s *Store) ListAgentSessionSummaries(ctx context.Context, workspaceID strin
 // ListAgentSessionThread returns one complete, ordered transcript snapshot.
 // The id may identify either the thread itself or any session within it.
 func (s *Store) ListAgentSessionThread(ctx context.Context, workspaceID string, id string) ([]store.AgentSession, error) {
+	sessions, resolvedWorkspaceID, resolvedThreadID, err := s.listAgentSessionThreadRecords(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachAgentSessionThreadEvents(ctx, sessions, resolvedWorkspaceID, resolvedThreadID); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
+// ListAgentSessionThreadRecords is ListAgentSessionThread without events:
+// a windowed read attaches each session's own (AgentSessionEventWindow).
+func (s *Store) ListAgentSessionThreadRecords(ctx context.Context, workspaceID string, id string) ([]store.AgentSession, error) {
+	sessions, _, _, err := s.listAgentSessionThreadRecords(ctx, workspaceID, id)
+	return sessions, err
+}
+
+func (s *Store) listAgentSessionThreadRecords(ctx context.Context, workspaceID string, id string) ([]store.AgentSession, string, string, error) {
 	id = strings.TrimSpace(id)
 	workspaceID = strings.TrimSpace(workspaceID)
 	if id == "" {
-		return nil, errors.New("agent session thread id is required")
+		return nil, "", "", errors.New("agent session thread id is required")
 	}
 
 	query := `SELECT workspace_id, thread_id FROM agent_sessions WHERE (id = ? OR thread_id = ?) AND ` + visibleAgentSessionSQL
@@ -59,25 +78,22 @@ func (s *Store) ListAgentSessionThread(ctx context.Context, workspaceID string, 
 
 	var resolvedWorkspaceID string
 	var resolvedThreadID string
-	if err := s.conn().QueryRowContext(ctx, query, args...).Scan(&resolvedWorkspaceID, &resolvedThreadID); err != nil {
-		return nil, err
+	if err := s.reader().QueryRowContext(ctx, query, args...).Scan(&resolvedWorkspaceID, &resolvedThreadID); err != nil {
+		return nil, "", "", err
 	}
 
-	sessions, err := listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at)
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at)
 		FROM agent_sessions
 		WHERE workspace_id = ? AND thread_id = ?
 		ORDER BY created_at ASC, id ASC`, resolvedWorkspaceID, resolvedThreadID)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
-	if err := s.attachAgentSessionThreadEvents(ctx, sessions, resolvedWorkspaceID, resolvedThreadID); err != nil {
-		return nil, err
-	}
-	return sessions, nil
+	return sessions, resolvedWorkspaceID, resolvedThreadID, nil
 }
 
 func (s *Store) attachAgentSessionThreadEvents(ctx context.Context, sessions []store.AgentSession, workspaceID string, threadID string) error {
-	events, err := listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT event.payload_json
+	events, err := listJSON[store.AgentSessionEvent](ctx, s.reader(), `SELECT event.payload_json
 		FROM agent_session_events AS event
 		JOIN agent_sessions AS session ON session.id = event.session_id
 		WHERE session.workspace_id = ? AND session.thread_id = ?
@@ -104,9 +120,9 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
@@ -129,8 +145,67 @@ func (s *Store) UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID str
 	return sessions, nil
 }
 
+// QueuedAgentSessions returns summaries of every queued session, oldest
+// first, read through idx_agent_sessions_queued.
+func (s *Store) QueuedAgentSessions(ctx context.Context) ([]store.AgentSession, error) {
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE status = 'queued' AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	for index := range sessions {
+		sessions[index].Input.ImportedContext = ""
+		sessions[index].Response = ""
+		sessions[index].Events = nil
+	}
+	return sessions, nil
+}
+
+// AddQueuedSessionNotice stores a notice the server writes on a waiting
+// session (not a device's event) once, and only while the session still
+// waits on that input: an event with its id already stored stays.
+func (s *Store) AddQueuedSessionNotice(ctx context.Context, event store.AgentSessionEvent, inputID string) (bool, error) {
+	now := time.Now().UTC()
+	if at, err := time.Parse(time.RFC3339Nano, event.At); err == nil {
+		now = at.UTC()
+	}
+	event.At = formatTime(now)
+	payload, err := encode(event)
+	if err != nil {
+		return false, err
+	}
+	result, err := s.conn().ExecContext(ctx, `INSERT INTO agent_session_events
+		(id, session_id, level, payload_json, created_at, state_key)
+		SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM agent_sessions WHERE id = ? AND status = 'queued'
+			AND COALESCE(json_extract(payload_json, '$.input.id'), '') = ?)
+		ON CONFLICT(id) DO NOTHING`,
+		event.ID, event.SessionID, event.Level, payload, formatTime(now), store.SessionStateKey(event), event.SessionID, strings.TrimSpace(inputID))
+	if err != nil {
+		return false, fmt.Errorf("add agent session notice: %w", err)
+	}
+	added, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("check agent session notice: %w", err)
+	}
+	return added > 0, nil
+}
+
+// ActiveAgentSessions returns summaries of every running or blocked session,
+// oldest first, read through idx_agent_sessions_active.
+func (s *Store) ActiveAgentSessions(ctx context.Context) ([]store.AgentSession, error) {
+	sessions, err := listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE status IN ('running','blocked') AND `+visibleAgentSessionSQL+` ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	for index := range sessions {
+		sessions[index].Input.ImportedContext = ""
+		sessions[index].Response = ""
+		sessions[index].Events = nil
+	}
+	return sessions, nil
+}
+
 func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSession, error) {
-	session, err := getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	session, err := s.GetAgentSessionRecord(ctx, id)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -140,9 +215,15 @@ func (s *Store) GetAgentSession(ctx context.Context, id string) (store.AgentSess
 	return session, nil
 }
 
+// GetAgentSessionRecord loads the session row alone. A long chat has
+// thousands of events; transitions and replies never need them.
+func (s *Store) GetAgentSessionRecord(ctx context.Context, id string) (store.AgentSession, error) {
+	return getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+}
+
 // Routing a daemon request needs identity and status, not the entire transcript.
 func (s *Store) GetAgentSessionSummary(ctx context.Context, id string) (store.AgentSession, error) {
-	return getJSON[store.AgentSession](ctx, s.conn(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
+	return getJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events', '$.response', '$.input.importedContext', '$.input.profileTransitionNote'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE id = ? AND `+visibleAgentSessionSQL, id)
 }
 
 func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
@@ -479,7 +560,9 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		}
 		session.Input.ImportedContext = missed
 		session.Status = "queued"
-		session.Response, session.Error, session.BlockedReason = "", "", ""
+		// The previous input's answer is not this one's: a reader of the
+		// session must never take it for the current answer.
+		session.Response, session.Error, session.BlockedReason, session.AnswerRevision = "", "", "", ""
 		session.StartedAt, session.CompletedAt = "", ""
 		session.UpdatedLabel = "queued"
 		if err := tx.saveAgentSession(ctx, session, time.Time{}, now); err != nil {
@@ -523,7 +606,7 @@ func (s *Store) StartAgentSession(ctx context.Context, id string) (store.AgentSe
 	// running on a device that is already disconnected for good.
 	var session store.AgentSession
 	err := s.withTx(ctx, func(tx *Store) error {
-		existing, err := tx.GetAgentSession(ctx, id)
+		existing, err := tx.GetAgentSessionRecord(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -539,6 +622,11 @@ func (s *Store) StartAgentSession(ctx context.Context, id string) (store.AgentSe
 			return nil
 		}
 		now := time.Now().UTC()
+		if existing.Status == "queued" {
+			// Its input starts now: whatever answer the row still holds
+			// belongs to an earlier input.
+			existing.Response, existing.Error, existing.AnswerRevision = "", "", ""
+		}
 		existing.Status = "running"
 		existing.BlockedReason = ""
 		existing.StartedAt = formatTime(now)
@@ -556,10 +644,35 @@ func (s *Store) StartAgentSession(ctx context.Context, id string) (store.AgentSe
 	return session, nil
 }
 
+// AppendAgentSessionEvent stores an event at the time it carries, or now
+// when it carries none, and moves the session's updated_at (its
+// lastActivityAt) to that time: a caller that streams the event before or
+// after storing it shows the same time a later read returns.
 func (s *Store) AppendAgentSessionEvent(ctx context.Context, event store.AgentSessionEvent) error {
+	_, err := s.RecordAgentSessionEvent(ctx, event)
+	return err
+}
+
+// RecordAgentSessionEvent is AppendAgentSessionEvent reporting whether the
+// event changed anything. One the session already holds unchanged, which a
+// device sends again when its acknowledgement was late or lost, changes
+// nothing: it keeps the time it was first stored, and the session its
+// activity; nor does one that would replace a person's input (see
+// holdsAgentSessionEvent). An event sent again with new content (a growing
+// response keeps its id) is stored as before.
+func (s *Store) RecordAgentSessionEvent(ctx context.Context, event store.AgentSessionEvent) (bool, error) {
 	now := time.Now().UTC()
+	if at, err := time.Parse(time.RFC3339Nano, event.At); err == nil {
+		now = at.UTC()
+	}
 	event.At = formatTime(now)
-	return s.withTx(ctx, func(tx *Store) error {
+	stored := false
+	err := s.withTx(ctx, func(tx *Store) error {
+		held, err := tx.holdsAgentSessionEvent(ctx, event)
+		if err != nil || held {
+			return err
+		}
+		stored = true
 		result, err := tx.conn().ExecContext(ctx, `UPDATE agent_sessions
 			SET payload_json = CASE
 					WHEN status IN ('queued', 'running')
@@ -580,6 +693,39 @@ func (s *Store) AppendAgentSessionEvent(ctx context.Context, event store.AgentSe
 		}
 		return tx.saveAgentSessionEvent(ctx, event, now)
 	})
+	if err != nil {
+		return false, err
+	}
+	return stored, nil
+}
+
+// holdsAgentSessionEvent reports whether what is stored under the event's
+// id stays as it is: the same event (whatever time each copy carries), or
+// one no device event may replace: a person's input (a late steer named
+// after a message the person then sent as an input of its own) or another
+// session's event.
+func (s *Store) holdsAgentSessionEvent(ctx context.Context, event store.AgentSessionEvent) (bool, error) {
+	var sessionID, payload string
+	var at, label sql.NullString
+	err := s.conn().QueryRowContext(ctx, `SELECT session_id, payload_json, json_extract(payload_json, '$.at'), json_extract(payload_json, '$.label')
+		FROM agent_session_events WHERE id = ?`, event.ID).Scan(&sessionID, &payload, &at, &label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read agent session event: %w", err)
+	}
+	if sessionID != event.SessionID || label.String == store.SessionInputEventLabel {
+		return true, nil
+	}
+	// Stored as encode wrote it: the incoming event, at the stored time,
+	// encodes the same when nothing else changed.
+	event.At = at.String
+	incoming, err := encode(event)
+	if err != nil {
+		return false, err
+	}
+	return incoming == payload, nil
 }
 
 // SetAgentSessionNativeSessionID records the native session the worker runs
@@ -587,7 +733,7 @@ func (s *Store) AppendAgentSessionEvent(ctx context.Context, event store.AgentSe
 func (s *Store) SetAgentSessionNativeSessionID(ctx context.Context, sessionID string, nativeSessionID string) (store.AgentSession, error) {
 	var result store.AgentSession
 	err := s.withTx(ctx, func(tx *Store) error {
-		session, err := tx.GetAgentSession(ctx, sessionID)
+		session, err := tx.GetAgentSessionRecord(ctx, sessionID)
 		if err != nil {
 			return err
 		}
@@ -622,7 +768,7 @@ func (s *Store) CompleteAgentSession(ctx context.Context, id string, response st
 }
 
 func (s *Store) completeAgentSession(ctx context.Context, id string, response string, nativeSessionID string) (store.AgentSession, error) {
-	session, err := s.GetAgentSession(ctx, id)
+	session, err := s.GetAgentSessionRecord(ctx, id)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -662,7 +808,7 @@ func (s *Store) completeAgentSession(ctx context.Context, id string, response st
 }
 
 func (s *Store) FailAgentSession(ctx context.Context, id string, message string) (store.AgentSession, error) {
-	session, err := s.GetAgentSession(ctx, id)
+	session, err := s.GetAgentSessionRecord(ctx, id)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -684,7 +830,7 @@ func (s *Store) FailAgentSession(ctx context.Context, id string, message string)
 }
 
 func (s *Store) CancelAgentSession(ctx context.Context, id string, message string) (store.AgentSession, error) {
-	session, err := s.GetAgentSession(ctx, id)
+	session, err := s.GetAgentSessionRecord(ctx, id)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -720,7 +866,7 @@ func (s *Store) ResumeAgentSession(ctx context.Context, id string) (store.AgentS
 func (s *Store) transitionAgentSessionBlocked(ctx context.Context, id string, reason string, blocked bool) (store.AgentSession, error) {
 	var result store.AgentSession
 	err := s.withTx(ctx, func(tx *Store) error {
-		session, err := tx.GetAgentSession(ctx, id)
+		session, err := tx.GetAgentSessionRecord(ctx, id)
 		if err != nil {
 			return err
 		}

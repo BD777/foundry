@@ -413,7 +413,7 @@ test("moving a message from the keyboard reorders the server's queue in one step
   );
 });
 
-test("messages queued during a turn go to the server, after the message this tab is still sending", async (t) => {
+test("a message sent or queued stays in the composer until the server has it", async (t) => {
   const server = fakeServer();
   let finishSend;
   const sent = [];
@@ -425,15 +425,26 @@ test("messages queued during a turn go to the server, after the message this tab
   });
   await tab.type("direct");
   await tab.submit();
-  await tab.type("queued while sending");
+  await tab.type("typed while sending");
   await tab.submit();
   await wait(0);
   assert.deepEqual(sent, ["direct"]);
-  assert.deepEqual(server.enqueued, []);
-  assert.deepEqual(tab.texts(), ["queued while sending"]);
+  assert.equal(tab.input.draft, "direct");
+  assert.equal(tab.input.sending, true);
+  assert.deepEqual(tab.texts(), []);
   await act(async () => finishSend(true));
   await wait(0);
+  assert.equal(tab.input.draft, "");
   await tab.render({ active: true, activeExecutionId: "chat" });
+
+  // Queued during the turn: shown in the queue only once the server took it.
+  server.hold();
+  await tab.type("queued during the turn");
+  await tab.submit();
+  assert.equal(tab.input.draft, "queued during the turn");
+  assert.equal(tab.input.action, "sending");
+  assert.deepEqual(tab.texts(), []);
+  await server.release();
   await wait(0);
   assert.deepEqual(
     server.enqueued.map(({ chatId, text, settings }) => [
@@ -441,22 +452,26 @@ test("messages queued during a turn go to the server, after the message this tab
       text,
       settings.agentId,
     ]),
-    [["chat", "queued while sending", "agent_claude"]],
+    [["chat", "queued during the turn", "agent_claude"]],
   );
-  assert.deepEqual(tab.texts(), ["queued while sending"]);
+  assert.deepEqual(tab.texts(), ["queued during the turn"]);
   assert.equal(tab.input.queue[0].state, "queued");
+  assert.equal(tab.input.draft, "");
+  assert.equal(tab.input.action, "stop");
 
-  await tab.type("queued during the turn");
+  // Refused: it stays in the composer with the reason, not in the queue.
+  server.failNextRequest();
+  await tab.type("lost on the way");
   await tab.submit();
   await wait(0);
-  assert.deepEqual(
-    server.enqueued.map((entry) => entry.text),
-    ["queued while sending", "queued during the turn"],
-  );
+  assert.equal(tab.input.draft, "lost on the way");
+  assert.equal(tab.input.sending, false);
+  assert.match(tab.input.error, /network down/);
+  assert.deepEqual(tab.texts(), ["queued during the turn"]);
   assert.deepEqual(sent, ["direct"]);
 });
 
-test("a new chat's queued messages reach the server once its first message made it a chat", async (t) => {
+test("a new chat's next message reaches the server's queue once its first message made it a chat", async (t) => {
   const server = fakeServer();
   let finishSend;
   const tab = await page(t, server).open({
@@ -466,12 +481,13 @@ test("a new chat's queued messages reach the server once its first message made 
   });
   await tab.type("start a chat");
   await tab.submit();
-  await tab.type("and then this");
-  await tab.submit();
   await act(async () => finishSend({ threadKey: "w:chat" }));
   await wait(0);
   assert.deepEqual(server.enqueued, []);
   await tab.render({ threadKey: "w:chat", chatId: "chat", active: true });
+  assert.equal(tab.input.draft, "");
+  await tab.type("and then this");
+  await tab.submit();
   await wait(0);
   assert.deepEqual(
     server.enqueued.map((entry) => entry.text),

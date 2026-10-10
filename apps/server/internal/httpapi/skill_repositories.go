@@ -193,7 +193,7 @@ func (s *Server) handleAddSkillRepository(w http.ResponseWriter, r *http.Request
 			writeResult(w, nil, err)
 			return
 		}
-		s.invalidateProjections()
+		s.projectionsChanged("", skillLibraryFields...)
 	}
 	created, err = repos.GetSkillRepository(r.Context(), created.ID)
 	if err != nil {
@@ -325,7 +325,7 @@ func (s *Server) handleImportRepositorySkills(w http.ResponseWriter, r *http.Req
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, updated, err)
 }
@@ -358,6 +358,9 @@ func (s *Server) handleDeleteSkillRepository(w http.ResponseWriter, r *http.Requ
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "skill repository not found")
 		return
+	}
+	if err == nil {
+		s.projectionsChanged("", skillLibraryFields...)
 	}
 	writeResult(w, map[string]string{"id": r.PathValue("id")}, err)
 }

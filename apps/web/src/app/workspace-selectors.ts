@@ -3,34 +3,14 @@ import type {
   AgentProjection,
   AssetProjection,
   DeviceProjection,
-  Issue,
   ProviderHealth,
-  SkillPackRef,
   WorkspaceProjection,
+  WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
 
 // Providers the local daemon can run. Provider health is always reported for
 // this set so Settings and Devices show a stable row order.
 const localProviders = ["claude", "codex"] as const;
-
-// Capability skills Foundry always advertises, even before an issue references
-// them.
-const capabilitySkillIds = [
-  "issue-splitting",
-  "web-preview-acceptance",
-  "baseline-comparison",
-  "visual-qa",
-];
-
-// Design-led ordering for the skills view; unlisted skills keep their
-// discovery order behind the curated ones.
-const skillDesignOrder = [
-  "baseline-comparison",
-  "web-preview-acceptance",
-  "visual-qa",
-  "issue-splitting",
-  "shadcn-ui-cleanup",
-];
 
 function isCurrentWorkspace<T extends { workspaceId: string }>(
   item: T,
@@ -124,15 +104,20 @@ export function currentWorkspaceAssets(
   );
 }
 
-/** Skills without a workspace are global, so they stay visible everywhere. */
-export function currentWorkspaceSkills(
-  skills: SkillPackRef[],
-  workspaceId: string,
-): SkillPackRef[] {
-  return skills.filter(
-    (skill) =>
-      skill.workspaceId === undefined || skill.workspaceId === workspaceId,
-  );
+/**
+ * Library skills the workspace's sessions get: the ones it selected, and those
+ * its defaults or bundles give it that it did not turn off.
+ */
+export function workspaceActiveSkillIds(
+  bindings: WorkspaceSkillBinding[],
+  inheritedSkillIds: string[] = [],
+  offSkillIds: string[] = [],
+): Set<string> {
+  const off = new Set(offSkillIds);
+  return new Set([
+    ...bindings.map((binding) => binding.skillId),
+    ...inheritedSkillIds.filter((id) => !off.has(id)),
+  ]);
 }
 
 /** A missing workspace device must never silently select another machine. */
@@ -163,27 +148,4 @@ export function profilesForDevice(
   return deviceId
     ? profiles.filter((profile) => profile.deviceId === deviceId)
     : profiles;
-}
-
-/**
- * Skills referenced by the loaded issues plus the always-advertised capability
- * skills, deduped by id and ordered for the skills view.
- */
-export function uniqueSkills(issues: Issue[]): SkillPackRef[] {
-  const seen = new Map<string, SkillPackRef>();
-  for (const issue of issues) {
-    for (const skill of issue.skills) {
-      seen.set(skill.id, skill);
-    }
-  }
-  for (const skillId of capabilitySkillIds) {
-    if (!seen.has(skillId)) {
-      seen.set(skillId, { id: skillId, name: skillId, version: "0.1.0" });
-    }
-  }
-  return [...seen.values()].sort((a, b) => {
-    const aIndex = skillDesignOrder.indexOf(a.id);
-    const bIndex = skillDesignOrder.indexOf(b.id);
-    return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex);
-  });
 }

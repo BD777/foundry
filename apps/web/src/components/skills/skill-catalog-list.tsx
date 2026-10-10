@@ -51,6 +51,8 @@ export interface SkillCatalogListProps<
     body: string;
     action?: ReactNode;
   };
+  /** The skills are still being read: say so instead of the empty state. */
+  loading?: boolean;
 }
 
 export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
@@ -76,8 +78,9 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
   headerExtras,
   footerActions,
   emptyState,
+  loading,
 }: SkillCatalogListProps<T>) {
-  const { t } = useTranslation("skills");
+  const { t } = useTranslation(["skills", "common"]);
   const placeholder = searchPlaceholder ?? t("catalog.searchPlaceholder");
   const [query, setQuery] = useState("");
 
@@ -168,7 +171,9 @@ export function SkillCatalogList<T extends NormalizedSkill = NormalizedSkill>({
         </>
       ) : null}
 
-      {skills.length === 0 ? (
+      {skills.length === 0 && loading ? (
+        <p role="status">{t("common:states.loading")}</p>
+      ) : skills.length === 0 ? (
         emptyState ? (
           <div className="fdy-workspace-skills-empty">
             <EmptyState body={emptyState.body} title={emptyState.title} />

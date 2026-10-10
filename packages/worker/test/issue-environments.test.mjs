@@ -38,7 +38,7 @@ import {
   recordedIssueCompletion,
   recoveredIssueCompletion,
 } from "../dist/issue-recovery.js";
-import { registerExecutionWorkspace } from "../dist/repository-registry.js";
+import { initializeWorkspaceGit } from "../dist/repository-registry.js";
 import { runIssueExecutor } from "../dist/issue-executor.js";
 import { refreshCandidate } from "../dist/candidate-refresh.js";
 import { writeJSON } from "../dist/storage.js";
@@ -552,7 +552,7 @@ test(
   },
 );
 
-test("new non-Git workspace bootstraps guidance without staging independent repositories or secrets", async (t) => {
+test("confirmed Git setup in a non-Git workspace stages no independent repositories, secrets or Foundry files", async (t) => {
   const directory = mkdtempSync(resolve(tmpdir(), "foundry-init-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const source = resolve(directory, "source");
@@ -561,15 +561,15 @@ test("new non-Git workspace bootstraps guidance without staging independent repo
   writeFileSync(resolve(source, "AGENTS.md"), "Rules");
   writeFileSync(resolve(source, ".env"), "PRIVATE=value");
   const store = new ExecutionStore(resolve(directory, "state"));
-  const registration = await registerExecutionWorkspace(
-    source,
-    "ws_init",
-    store,
-  );
+  const registration = await initializeWorkspaceGit(source, "ws_init", store);
   assert.equal(registration.repositories.length, 2);
   assert.equal(await git(source, ["status", "--porcelain"]), "");
-  assert.doesNotMatch(await git(source, ["ls-files"]), /code.txt|\.env/);
-  assert.match(await git(source, ["ls-files"]), /repositories.yaml/);
+  assert.doesNotMatch(
+    await git(source, ["ls-files"]),
+    /code.txt|\.env|\.foundry|\.gitignore/,
+  );
+  assert.match(await git(source, ["ls-files"]), /AGENTS.md/);
+  assert.equal(existsSync(resolve(source, ".gitignore")), false);
 });
 
 test("existing submodules use durable child worktrees and child-first Accept", async (t) => {

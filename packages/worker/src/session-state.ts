@@ -13,7 +13,7 @@ import type {
   ChatAttachment,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
-import { ClaudeTurnWatchdog } from "./watchdog.js";
+import type { ClaudeTurnLiveness } from "./watchdog.js";
 import type { SessionTurnFiles } from "./session-files.js";
 import type { ClaudeTimerTracker } from "./agent-timers.js";
 import type { ClaudeBackgroundTaskTracker } from "./agent-background-tasks.js";
@@ -28,6 +28,8 @@ export type SessionEventEmitter = (
   level?: AgentSessionEvent["level"],
   metadata?: AgentSessionEventMetadata,
   message?: TranscriptMessage,
+  /** The event's id, when it must have a known one; otherwise a new one. */
+  eventId?: string,
 ) => Promise<void>;
 
 // --- Async input queue ---
@@ -136,7 +138,13 @@ export interface ActiveClaudeTurn {
   requestUsage?: ClaudeRequestUsageTracker;
   /** Files this turn's tools wrote and its answer named. */
   files?: SessionTurnFiles;
-  watchdog: ClaudeTurnWatchdog;
+  /** What the turn is busy with, and its start-up and ceiling bounds. */
+  liveness: ClaudeTurnLiveness;
+  /**
+   * The answer Claude already gave while the turn waits for background work.
+   * Whatever ends the runtime afterwards, the turn completes with it.
+   */
+  deliveredResponse?: string;
 }
 
 /**
@@ -177,6 +185,8 @@ export interface ActiveClaudeRuntime {
   lastInputId?: string;
   /** Files Claude writes between turns, until its answer there is published. */
   betweenTurnFiles?: SessionTurnFiles;
+  /** The end of the Claude Code process's stderr, for start-up failures. */
+  stderrTail?: string;
 }
 
 export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
@@ -205,13 +215,31 @@ export const activeCodexThreads = new Map<string, ActiveCodexThread>();
 
 export interface ActiveSessionSteerTarget {
   provider: AgentSession["provider"];
-  /** Injects a message, and the files that came with it, into the turn. */
-  steer: (message: string, attachments?: ChatAttachment[]) => Promise<void>;
+  /**
+   * Injects a message, and the files that came with it, into the turn.
+   * steerId, the server's id for the message, names its transcript event
+   * (evt_<steerId>, as the input event of a sent message is named).
+   */
+  steer: (
+    message: string,
+    attachments?: ChatAttachment[],
+    steerId?: string,
+  ) => Promise<void>;
+}
+
+/**
+ * What a stop did. answered: the turn had already answered, so the stop ended
+ * only the background work it waited for and the turn completes with that
+ * answer.
+ */
+export interface SessionCancelOutcome {
+  answered?: boolean;
 }
 
 export interface ActiveSessionCancelTarget {
   provider: AgentSession["provider"];
-  cancel: () => Promise<void> | void;
+  cancel: () =>
+    Promise<SessionCancelOutcome | void> | SessionCancelOutcome | void;
 }
 
 export const activeSessionSteerTargets = new Map<

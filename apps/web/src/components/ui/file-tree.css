@@ -47,7 +47,7 @@
   min-width: 0;
   align-items: baseline;
   gap: 6px;
-  padding: 8px 6px 4px;
+  padding: 8px 4px 4px;
   color: var(--fdy-ink-faint);
   font-size: 11.5px;
   line-height: 1.3;
@@ -72,13 +72,17 @@
   white-space: nowrap;
 }
 
-.fdy-file-tree-row {
+/*
+ * Rows sit flush with the root heading; each level adds one 12px step.
+ * `.fdy-button` is named so these beat the Button's own size and gap.
+ */
+.fdy-file-tree-row.fdy-button {
   display: flex;
   width: 100%;
   height: 28px;
   justify-content: flex-start;
-  gap: 6px;
-  padding: 0 8px 0 6px;
+  gap: 5px;
+  padding: 0 6px 0 4px;
   border-radius: 7px;
   color: var(--fdy-ink);
   font-size: 12.5px;
@@ -86,12 +90,12 @@
   text-align: left;
 }
 
-.fdy-file-tree-row:hover {
+.fdy-file-tree-row.fdy-button:hover {
   background: var(--fdy-control-ghost-hover);
 }
 
-.fdy-file-tree-row[data-selected="true"],
-.fdy-file-tree-row[data-selected="true"]:hover {
+.fdy-file-tree-row.fdy-button[data-selected="true"],
+.fdy-file-tree-row.fdy-button[data-selected="true"]:hover {
   background: var(--fdy-brass-soft);
   color: var(--fdy-ink-strong);
   font-weight: 650;
@@ -105,32 +109,32 @@
   color: var(--fdy-ink-muted);
 }
 
-.fdy-file-tree-row[data-depth="1"] {
-  padding-left: 22px;
+.fdy-file-tree-row.fdy-button[data-depth="1"] {
+  padding-left: 16px;
 }
-.fdy-file-tree-row[data-depth="2"] {
-  padding-left: 38px;
+.fdy-file-tree-row.fdy-button[data-depth="2"] {
+  padding-left: 28px;
 }
-.fdy-file-tree-row[data-depth="3"] {
-  padding-left: 54px;
+.fdy-file-tree-row.fdy-button[data-depth="3"] {
+  padding-left: 40px;
 }
-.fdy-file-tree-row[data-depth="4"] {
-  padding-left: 70px;
+.fdy-file-tree-row.fdy-button[data-depth="4"] {
+  padding-left: 52px;
 }
-.fdy-file-tree-row[data-depth="5"] {
-  padding-left: 86px;
+.fdy-file-tree-row.fdy-button[data-depth="5"] {
+  padding-left: 64px;
 }
-.fdy-file-tree-row[data-depth="6"] {
-  padding-left: 102px;
+.fdy-file-tree-row.fdy-button[data-depth="6"] {
+  padding-left: 76px;
 }
-.fdy-file-tree-row[data-depth="7"] {
-  padding-left: 118px;
+.fdy-file-tree-row.fdy-button[data-depth="7"] {
+  padding-left: 88px;
 }
-.fdy-file-tree-row[data-depth="8"] {
-  padding-left: 134px;
+.fdy-file-tree-row.fdy-button[data-depth="8"] {
+  padding-left: 100px;
 }
 
-/* Files line up with folder names: the chevron's width. */
+/* Beside folders, a file's icon lines up with theirs: the chevron's width. */
 .fdy-file-tree-indent {
   width: 14px;
   flex: none;

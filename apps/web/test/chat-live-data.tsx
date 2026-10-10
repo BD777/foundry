@@ -100,6 +100,7 @@ class FixtureEventSource {
     FixtureEventSource.current = this;
     queueMicrotask(() => this.onopen?.());
   }
+  addEventListener() {}
   close() {
     if (FixtureEventSource.current === this)
       FixtureEventSource.current = undefined;

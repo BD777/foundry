@@ -242,6 +242,7 @@ export function buildClaudeLaunchPlan(input: {
         workspacePath,
         undefined,
         usesSessionScratch(session) ? session.id : undefined,
+        session.id,
       );
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const role = claudeRoleOptions(session);

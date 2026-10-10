@@ -113,39 +113,53 @@ the environment, worktree cleanup cannot delete proof.
 
 ### Workspace `.foundry/`
 
-`initWorkspace` in `packages/worker/src/workspaces.ts` creates:
+The workspace folder belongs to the person. Foundry writes nothing outside
+`.foundry/` and commits nothing, except Git setup the person confirms for a
+folder's first Issue (below). `initWorkspace` in
+`packages/worker/src/workspaces.ts` writes only:
 
 ```text
 workspace/
-  AGENTS.md
-  CONTEXT.md
   .foundry/
     workspace.json
-    skills.yaml
-    agent-profiles.local.example.json
-    preview.example.json
-    issues/  integrations/  runs/  reviews/  worktrees/
 ```
 
-and, at runtime:
+and, at runtime, creates as needed:
+
+```text
+  .foundry/
+    repositories.yaml            # repository declarations (relative paths)
+    sessions/<session-id>/       # local provider session messages, logs, results
+    attachments/YYYYMMDD/        # browser uploads
+```
+
+A person may add:
 
 ```text
   .foundry/
     preview.json                 # optional workspace preview command and port range
-    sessions/<session-id>/       # local provider session messages, logs, results
-    attachments/YYYYMMDD/        # browser uploads
 ```
 
 Rules:
 
 - `.foundry/workspace.json` identifies the workspace and baseline metadata.
-- In a repository that already has commits, registration commits the
-  scaffolding above (not `workspace.json` or `repositories.yaml`, which are
-  local and go into `.git/info/exclude`) in one "Foundry workspace files"
-  commit, so Foundry's own files never block Accept. Only untracked,
-  unignored files whose content is still exactly what Foundry wrote are
-  committed; anything the person staged or edited is left as it was. Nothing
-  is committed on a detached HEAD or during a merge, rebase or cherry-pick.
+- Registration adds `/.foundry/*` and `!/.foundry/preview.json` to the
+  repository's local `.git/info/exclude` (anchored at the workspace's folder,
+  worktree-aware; never a committed `.gitignore`), so Foundry's own data never
+  shows as the person's change and never blocks Accept. `preview.json` is
+  configuration the person writes and stays visible to Git. Files already
+  tracked are unaffected.
+- Registering a folder and chatting never run `git init`, write a
+  `.gitignore` or commit; a folder without Git or commits stays as it is.
+  Issues need a baseline, so creating the first Issue there is refused (409,
+  `workspace_needs_git`) until the person confirms. Then the worker runs
+  `git init` where needed, adds Foundry's paths and a block of dependency,
+  cache and secret patterns to `.git/info/exclude`, and commits the folder's
+  current files as the first commit with Foundry's identity, leaving out
+  ignored files and everything under `.foundry/` (`initializeWorkspaceGit` in
+  `repository-registry.ts`, `bootstrapWorkspace` in `workspace-bootstrap.ts`).
+- Foundry reads a person's own `AGENTS.md` / `CLAUDE.md` through the native
+  agents; it does not create, edit or commit them.
 - `.foundry/sessions/` stores Chat session records; `.foundry/attachments/`
   stores browser uploads. The server resolves symlinks and rejects reads
   outside registered attachment roots.
@@ -153,18 +167,23 @@ Rules:
   starts inside an Issue's candidate write boundary.
 - Device-scoped profile secrets, environment variables, and commands belong
   in the state root's `agent-profiles.local.json`, never in the workspace.
-- `skills.yaml` declares workspace skill packs projected to the server's
-  `skills` table (device skill roots and the promoted catalog are configured
-  separately).
+- Workers up to 0.5.6 wrote `AGENTS.md`, `CONTEXT.md`,
+  `.foundry/skills.yaml`, `.foundry/agent-profiles.local.example.json` and
+  `.foundry/preview.example.json`, and in a repository with commits
+  committed the unchanged ones as "Foundry workspace files". They are no
+  longer written, committed or read; existing copies and commits are left
+  alone. Workspace skills come from the Skill library (device skill roots and
+  the promoted catalog). The server still accepts the `skills` list older
+  workers send in their hello; nothing shows it.
 - Workspaces created before 0.5.4 also have `.foundry/assets.yaml`,
   `.foundry/providers.yaml`, `artifacts/` and `accepted/`. Nothing read them,
   so they are no longer created; existing copies are left alone. The
   workspace's Resources page shows where Issue worktrees and evidence really
   live (the execution store above).
 - `.foundry/issues/`, `integrations/`, `runs/`, `reviews/` and `worktrees/`
-  are the legacy per-workspace Issue layout. New Issue candidates, runs and
-  journals use the execution store above; legacy records remain readable and
-  are never moved automatically.
+  are the legacy per-workspace Issue layout and are no longer created. New
+  Issue candidates, runs and journals use the execution store above; legacy
+  records remain readable and are never moved automatically.
 - Private JSON and attachment files use mode `0600`; private directories use
   mode `0700`.
 

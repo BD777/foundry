@@ -14,6 +14,8 @@ import { createRoot } from "react-dom/client";
 register("./bundler-resolve.mjs", import.meta.url);
 const { useFoundryLiveData } =
   await import("../src/app/use-foundry-live-data.ts");
+const { createStreamTouchLedger } =
+  await import("../src/app/stream-touches.ts");
 
 test("an SSE frame and synchronous hydration commit one consistent projection", async () => {
   const window = new Window();
@@ -24,6 +26,7 @@ test("an SSE frame and synchronous hydration commit one consistent projection", 
     constructor() {
       source = this;
     }
+    addEventListener() {}
     close() {
       closed += 1;
     }
@@ -50,6 +53,7 @@ test("an SSE frame and synchronous hydration commit one consistent projection", 
   };
   window.cancelAnimationFrame = (id) => frames.delete(id);
   const snapshots = [];
+  const touches = createStreamTouchLedger();
   let hydrate;
   function Harness() {
     const [data, setData] = useState({
@@ -59,12 +63,14 @@ test("an SSE frame and synchronous hydration commit one consistent projection", 
       ],
     });
     useFoundryLiveData({
-      enabled: true,
       activeSession: true,
+      devices: [],
+      enabled: true,
       onRefresh: () => {
         refreshes++;
       },
       setData,
+      touches,
       workspaceId: "ws_1",
     });
     hydrate = () =>
@@ -89,18 +95,12 @@ test("an SSE frame and synchronous hydration commit one consistent projection", 
     assert.equal(
       refreshes,
       1,
-      "connection open repairs the persisted snapshot",
-    );
-    await act(() => source.onerror());
-    await act(() => source.onopen());
-    assert.equal(
-      refreshes,
-      3,
-      "reconnection must refresh even if the previous snapshot was cached",
+      "the first connection has nowhere to resume from: the snapshot is read",
     );
     snapshots.length = 0;
     const emit = (index) =>
       source.onmessage({
+        lastEventId: `epoch-${index + 1}`,
         data: JSON.stringify({
           type: "agent_session_event",
           payload: {
@@ -135,14 +135,33 @@ test("an SSE frame and synchronous hydration commit one consistent projection", 
       [{ events: 10, hydrated: true }],
       "hydration must not overtake a deferred stream projection and force reducer rebasing",
     );
+    await act(() => source.onerror());
+    await act(() => source.onopen());
+    assert.equal(
+      refreshes,
+      1,
+      "a reconnect resumes after the last id (the server replays): no read",
+    );
+    await act(() =>
+      source.onmessage({
+        lastEventId: "epoch-10",
+        data: JSON.stringify({
+          type: "resync",
+          payload: { reason: "expired" },
+        }),
+      }),
+    );
+    assert.equal(refreshes, 2, "a resync reads the snapshot again");
     emit(10);
     assert.equal(frames.size, 1);
     await act(() => root.unmount());
     assert.equal(frames.size, 0);
+    assert.equal(closed, 0, "a remount could still reuse the connection");
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     assert.equal(
       closed,
-      2,
-      "StrictMode replay and final unmount each close their SSE connection",
+      1,
+      "StrictMode replay shares one tab connection, closed once unused",
     );
   } finally {
     await act(() => root.unmount());

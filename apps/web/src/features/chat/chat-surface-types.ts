@@ -11,7 +11,10 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { RuntimeKind } from "../../components/ui/runtime-mark";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
-import type { ChatContextCardData } from "./chat-types";
+import type {
+  ChatContextCardData,
+  ChatRunningBackgroundWork,
+} from "./chat-types";
 import type { ChatListStatus } from "./chat-list-state";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { ChatUpdateTime } from "./chat-time";
@@ -71,11 +74,19 @@ export interface ChatSurfaceProps {
   chats: ChatListItem[];
   chatTitle: ReactNode;
   contextCard?: ChatContextCardData;
+  /** The side panel (the context card) is on screen, or no longer is. */
+  onContextPanelVisibleChange?: (visible: boolean) => void;
+  /** Set when refreshing the subagents failed: the panel offers a retry. */
+  onRetrySubagents?: () => void;
+  /** Above the first message: how the transcript loads, older messages. */
+  history?: ReactNode;
+  /** The person scrolled to the first message. */
+  onReachHistoryStart?: () => void;
   /**
-   * Background work still running while no turn is (subagents included):
-   * the chat is idle, yet its agent keeps working.
+   * Background work still running while no turn is: the chat is idle, yet
+   * its agent's commands or subagents keep working.
    */
-  backgroundRunning?: number;
+  backgroundWork?: ChatRunningBackgroundWork;
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;

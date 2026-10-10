@@ -14,8 +14,15 @@ import {
   identifier,
   within,
 } from "./execution-storage.js";
-import { foundryRuntimeGitExcludes, git, gitCommit } from "./execution-git.js";
-import { registerExecutionWorkspace } from "./repository-registry.js";
+import {
+  anchoredFoundryRuntimeExcludes,
+  git,
+  gitCommit,
+} from "./execution-git.js";
+import {
+  needsGitMessage,
+  registerExecutionWorkspace,
+} from "./repository-registry.js";
 import type {
   CandidateRepository,
   IssueEnvironment,
@@ -44,9 +51,10 @@ export async function prepareIssueEnvironment(
     throw new Error(
       enclosing
         ? `Issues need a repository root. This workspace is a folder inside the Git repository at ${enclosing}; register that folder as a workspace to run Issues. Chats work here as they are.`
-        : "Workspace root is not ready for worktree execution",
+        : needsGitMessage,
     );
   }
+  if (root.status === "unborn") throw new Error(needsGitMessage);
   if (root.status !== "ready")
     throw new Error(
       root.error ?? "Workspace root is not ready for worktree execution",
@@ -229,8 +237,7 @@ async function prepareRepositoryUnlocked(
       (item) => item.parentId === repo.id && item.kind === "independent",
     );
     const entries = [
-      ...foundryRuntimeGitExcludes.map((entry) => `/${entry}`),
-      "/.foundry/repositories.yaml",
+      ...anchoredFoundryRuntimeExcludes("/"),
       ...children.map(
         (item) => `/${relative(repo.sourcePath, item.sourcePath)}/`,
       ),

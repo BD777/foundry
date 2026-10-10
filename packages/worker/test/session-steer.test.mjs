@@ -24,7 +24,8 @@ register("./fixtures/fake-steer-sdk-hooks.mjs", import.meta.url);
 const { received } = await import("./fixtures/fake-steer-sdk.mjs");
 const { closeAllActiveRuntimes, runClaudeWorkspaceSession } =
   await import("../dist/runner.js");
-const { steerActiveSession } = await import("../dist/session-helpers.js");
+const { noteSessionInput, steerActiveSession, steerActiveSessionOnce } =
+  await import("../dist/session-helpers.js");
 const { sessionPrompt, userMessageText } =
   await import("../dist/session-prompt.js");
 test.after(() => closeAllActiveRuntimes());
@@ -58,18 +59,17 @@ function chatSession() {
 }
 
 /** Starts a turn that stays open until something is steered into it. */
-async function openTurn() {
+async function openTurn(session = chatSession()) {
   const cwd = join(root, `ws-${randomUUID()}`);
   mkdirSync(cwd, { recursive: true });
-  const session = chatSession();
   const events = [];
   received.length = 0;
   const finished = runClaudeWorkspaceSession(
     cwd,
     session,
     { id: "claude_local", runtime: "claude", label: "Claude" },
-    async (label, detail, level, metadata, message) =>
-      events.push({ label, detail, message }),
+    async (label, detail, level, metadata, message, eventId) =>
+      events.push({ label, detail, message, eventId }),
     async () => {},
     () => {},
   );
@@ -127,4 +127,57 @@ test("an image steers in without text; an empty steer is refused", async () => {
   );
   assert.equal(steered.length, 1);
   assert.deepEqual(steered[0].message.attachments, [image]);
+});
+
+test("a steer the server sends again is applied once, under its message's id", async () => {
+  const { session, events, finished } = await openTurn();
+  const id = randomUUID();
+  // The server's wait ran out, and it sent the steer again.
+  await Promise.all([
+    steerActiveSessionOnce(session.id, id, "Also check mobile", []),
+    steerActiveSessionOnce(session.id, id, "Also check mobile", []),
+  ]);
+  await finished;
+  // Even once the turn ended, a repeat is answered as applied.
+  await steerActiveSessionOnce(session.id, id, "Also check mobile", []);
+
+  assert.deepEqual(received.slice(1), ["Also check mobile"]);
+  const steered = events.filter(
+    (event) => event.label === "Steered into active turn",
+  );
+  assert.equal(steered.length, 1);
+  // Named like a sent message's input event, so the server can tell.
+  assert.equal(steered[0].eventId, `evt_${id}`);
+});
+
+test("a refused steer with an id can be sent again", async () => {
+  const session = chatSession();
+  const id = randomUUID();
+  // The turn has not started yet: refused, and not remembered as applied.
+  await assert.rejects(
+    steerActiveSessionOnce(session.id, id, "hello", []),
+    /not accepting active steer input/,
+  );
+  const { finished } = await openTurn(session);
+  await steerActiveSessionOnce(session.id, id, "hello", []);
+  await finished;
+  assert.deepEqual(received.slice(1), ["hello"]);
+});
+
+test("a late steer of a message the session took as an input of its own does not reach the agent", async () => {
+  const session = chatSession();
+  const id = randomUUID();
+  // The server stopped waiting for the steer, and the person sent the
+  // message again: it was dispatched as this input.
+  session.input = { id, prompt: "Also check mobile" };
+  noteSessionInput(session.id, id);
+  const { events, finished } = await openTurn(session);
+  await steerActiveSessionOnce(session.id, id, "Also check mobile", []);
+  await steerActiveSession(session.id, "Something else", []);
+  await finished;
+  assert.deepEqual(received.slice(1), ["Something else"]);
+  assert.equal(
+    events.filter((event) => event.label === "Steered into active turn").length,
+    1,
+  );
 });

@@ -1458,6 +1458,11 @@ export interface ChatQueueItem {
   state: ChatQueueItemState;
   error?: string;
   sentSessionId?: string;
+  /**
+   * A failed message its device may have taken after all (it did not answer
+   * in time); the person checks the chat before retrying it.
+   */
+  maybeSent?: boolean;
 }
 
 /** A chat's unsent messages in sending order; revision grows with each change. */
@@ -1720,7 +1725,7 @@ export const fixtureIssues: Issue[] = [
           runId: "run_2411",
           at: "2m ago",
           label: "Loaded workspace context",
-          detail: "AGENTS.md, CONTEXT.md, and installed skills",
+          detail: "AGENTS.md and installed skills",
           level: "info",
         },
         {

@@ -4,8 +4,12 @@ import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 
-const { npxUpdateCommand, npxWorkerCommand } =
-  await import("../src/lib/worker-commands.ts");
+const {
+  loadWorkerRelease,
+  npxUpdateCommand,
+  npxWorkerCommand,
+  workerReleaseReuseMs,
+} = await import("../src/lib/worker-commands.ts");
 const { workerBehind } =
   await import("../src/features/devices/device-worker.tsx");
 
@@ -83,4 +87,38 @@ test("the bootstrap runs the worker the server names", () => {
     ),
     "npx -y --prefer-offline --package=https://dev.example.com/api/worker/packages/latest/foundry-protocol.tgz --package=https://dev.example.com/api/worker/packages/latest/foundry-worker.tgz foundry-worker",
   );
+});
+
+test("components showing the worker release share one read", async (t) => {
+  const reads = [];
+  let fail = false;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    reads.push(String(url));
+    if (fail) return new Response("{}", { status: 503 });
+    return new Response(JSON.stringify(served), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const now = 5_000_000;
+  const [a, b, c] = await Promise.all([
+    loadWorkerRelease(now),
+    loadWorkerRelease(now),
+    loadWorkerRelease(now + 10),
+  ]);
+  assert.equal(reads.length, 1, "panels mounting together read once");
+  assert.equal(reads[0], "http://127.0.0.1:31982/api/worker/release");
+  assert.deepEqual(
+    [a.version, b.version, c.version],
+    Array(3).fill(served.version),
+  );
+  await loadWorkerRelease(now + workerReleaseReuseMs - 1);
+  assert.equal(reads.length, 1);
+  // Later mounts read again: the server may repack without a restart.
+  fail = true;
+  const later = now + workerReleaseReuseMs;
+  await assert.rejects(loadWorkerRelease(later));
+  assert.equal(reads.length, 2);
+  fail = false;
+  await loadWorkerRelease(later + 1);
+  assert.equal(reads.length, 3, "a failed read is not kept");
 });

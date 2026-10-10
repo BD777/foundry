@@ -6,8 +6,10 @@ import type {
   AgentRuntimeSettings,
   AgentSession,
   AgentSessionEvent,
+  AgentSubagentSummary,
   AssetProjection,
   ChatAttachment,
+  ChatLayout,
   ChatQueue,
   ChatThread,
   ClaudeEffort,
@@ -32,17 +34,54 @@ import type {
   WorkspaceProjection,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
+import type { ChatTitleMetadata } from "./api";
 
-export type FoundryData = FoundryDataProjection;
+/** A library skill as the composer's "/" menu offers it. */
+export interface WorkspaceSkillSummary {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export type FoundryData = FoundryDataProjection & {
+  /**
+   * The library skills the workspace selected or gets by default, for the
+   * composer's menu. The whole catalog (promotedSkills) is read only by the
+   * pages that show it.
+   */
+  workspaceSkills?: WorkspaceSkillSummary[];
+};
+
+/** A top-level field of GET /api/foundry-data besides `workspace`. */
+export type FoundryDataField = Exclude<keyof FoundryData, "workspace">;
+
+/** A device went online or offline. */
+export interface DeviceStatusChangedPayload {
+  workspaceId: string;
+  deviceId: string;
+  status: DeviceProjection["status"];
+  /**
+   * The device as workspace data lists it to a viewer who does not own it
+   * (no `owned`, no `runtimeSettings`). Older servers send status only.
+   */
+  device?: DeviceProjection;
+}
+
+/**
+ * One subagent of a session as its list shows it, sent when it starts and
+ * when it ends. Without `subagent` the list may have changed in a way the
+ * server cannot name: it is read again.
+ */
+export interface AgentSubagentUpdate {
+  workspaceId: string;
+  sessionId: string;
+  subagent?: AgentSubagentSummary;
+}
 
 export type FoundryStreamEvent =
   | {
       type: "device_status_changed";
-      payload: {
-        workspaceId: string;
-        deviceId: string;
-        status: DeviceProjection["status"];
-      };
+      payload: DeviceStatusChangedPayload;
     }
   | {
       type: "evidence_updated";
@@ -54,12 +93,15 @@ export type FoundryStreamEvent =
         status: string;
       };
     }
+  | { type: "issue_created"; payload: Issue }
   | { type: "issue_updated"; payload: Issue }
   | { type: "issue_run_event"; payload: RunEvent }
   | {
       type:
         | "agent_session_created"
         | "agent_session_started"
+        | "agent_session_blocked"
+        | "agent_session_resumed"
         | "agent_session_completed"
         | "agent_session_native_session_id";
       payload: AgentSession;
@@ -69,6 +111,10 @@ export type FoundryStreamEvent =
       payload: AgentSessionEvent;
     }
   | {
+      type: "agent_subagent_updated";
+      payload: AgentSubagentUpdate;
+    }
+  | {
       type: "feishu_bot_updated";
       payload: WorkspaceFeishuConfig;
     }
@@ -76,7 +122,47 @@ export type FoundryStreamEvent =
       type: "workspace_members_updated";
       payload: { workspaceId: string };
     }
-  | { type: "chat_queue_changed"; payload: ChatQueue };
+  | { type: "chat_queue_changed"; payload: ChatQueue }
+  | {
+      /**
+       * Chat titles of the workspace changed: `titles` are the changed chats'
+       * entries as GET /api/chat-titles lists them, `removed` the changed
+       * chats it no longer lists. Without either, read the list again.
+       */
+      type: "chat_titles_changed";
+      payload: {
+        workspaceId: string;
+        titles?: ChatTitleMetadata[];
+        removed?: string[];
+      };
+    }
+  | {
+      /**
+       * The workspace's chat groups and order were saved or deleted: `layout`
+       * as GET /api/chat-layout answers it (a later revision supersedes it).
+       * Without it, read the layout again.
+       */
+      type: "chat_layout_changed";
+      payload: { workspaceId: string; layout?: ChatLayout };
+    }
+  | {
+      /**
+       * Workspace data no other event carries changed: of one workspace, or
+       * of every workspace when `workspaceId` is "" (devices, profiles,
+       * provider health, skills). Coalesced by the server. `resources`
+       * names the fields that changed; without it any may have.
+       */
+      type: "foundry_data_changed";
+      payload: { workspaceId: string; resources?: FoundryDataField[] };
+    }
+  | {
+      /**
+       * Chats of the workspace's chat list as it shows them, and the ids of
+       * chats it no longer shows.
+       */
+      type: "chats_changed";
+      payload: { workspaceId: string; chats: ChatThread[]; removed: string[] };
+    };
 
 export interface CreateIssueInput {
   codexSpeed?: CodexSpeed;
@@ -87,6 +173,8 @@ export interface CreateIssueInput {
   runtime?: WorkerRuntimeId;
   sourceInput: string;
   workspaceId?: string;
+  /** The person confirmed setting up Git in a workspace without it. */
+  initializeGit?: boolean;
 }
 
 export interface CreateWorkspaceInput {
@@ -145,6 +233,11 @@ export interface CreateAgentSessionInput {
   codexSandboxMode?: CodexSandboxMode;
   codexSpeed?: CodexSpeed;
   importedContext?: string;
+  /**
+   * Names the input (a lowercase UUID): a retried send with the same id
+   * gets the session that took it instead of starting a second turn.
+   */
+  inputId?: string;
   issueId?: string;
   parentSessionId?: string;
   model?: string;

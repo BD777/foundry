@@ -88,7 +88,7 @@ func (s *Server) handleSetMyDefaultSkills(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", append([]string{fieldWorkspaceBundleIDs, fieldDefaultBundleIDs}, workspaceSkillFields...)...)
 	result, err := s.myDefaults(r.Context(), defaults, user)
 	writeResult(w, result, err)
 }

@@ -5,6 +5,7 @@ import {
   type AgentSubagentTranscript,
 } from "@bd777/foundry-protocol";
 import {
+  agentSessionDisplayEvents,
   responseStreamLabel,
   shouldDisplayAgentSessionEvent,
 } from "../../lib/agent-session-events";
@@ -40,14 +41,39 @@ export function legacyTranscriptEntries(
  * the latest ones, unless it ended with an answer (then the turn's footer
  * covers it).
  */
+/** Entries by the model request they name, indexed as entries are added. */
+class RequestUsageIndex {
+  private byRequest = new Map<string, TranscriptEntry[]>();
+  private indexed = 0;
+  private readonly entries: TranscriptEntry[];
+
+  constructor(entries: TranscriptEntry[]) {
+    this.entries = entries;
+  }
+
+  named(requestId: string): TranscriptEntry[] {
+    for (; this.indexed < this.entries.length; this.indexed += 1) {
+      this.add(this.entries[this.indexed]!);
+    }
+    return this.byRequest.get(requestId) ?? [];
+  }
+
+  add(entry: TranscriptEntry): void {
+    const requestId = entry.requestUsage?.requestId;
+    if (!requestId) return;
+    const list = this.byRequest.get(requestId);
+    if (!list) this.byRequest.set(requestId, [entry]);
+    else if (!list.includes(entry)) list.push(entry);
+  }
+}
+
 function applyRequestUsage(
   entries: TranscriptEntry[],
+  index: RequestUsageIndex,
   pendingAnswer: TranscriptEntry | undefined,
   usage: ModelRequestUsage,
 ): void {
-  const named = entries.filter(
-    (entry) => entry.requestUsage?.requestId === usage.requestId,
-  );
+  const named = index.named(usage.requestId);
   for (const entry of named)
     entry.requestUsage = {
       requestId: usage.requestId,
@@ -67,8 +93,10 @@ function applyRequestUsage(
     };
   if (named.length > 0 || pendingAnswer) return;
   const last = entries[entries.length - 1];
-  if (last && processEntryKinds.has(last.kind) && !last.requestUsage)
+  if (last && processEntryKinds.has(last.kind) && !last.requestUsage) {
     last.requestUsage = usage;
+    index.add(last);
+  }
 }
 
 const processEntryKinds = new Set<TranscriptEntry["kind"]>([
@@ -84,7 +112,7 @@ export function sessionTranscriptEntries(
   session: AgentSession,
   suppressed: ReadonlySet<string> = new Set(),
 ): TranscriptEntry[] {
-  const events = (session.events ?? []).filter(
+  const events = agentSessionDisplayEvents(session).filter(
     (event) =>
       event.message ||
       event.metadata?.turnUsage ||
@@ -101,6 +129,7 @@ export function sessionTranscriptEntries(
         : event.label === responseStreamLabel,
     )?.id;
   const entries: TranscriptEntry[] = [];
+  const usageIndex = new RequestUsageIndex(entries);
   let response: TranscriptEntry | undefined;
   // Files are counted per turn (input) and shown on the turn's last answer.
   let turnId = session.id;
@@ -200,7 +229,7 @@ export function sessionTranscriptEntries(
     }
     const requestUsage = event.metadata?.requestUsage;
     if (requestUsage) {
-      applyRequestUsage(entries, response, requestUsage);
+      applyRequestUsage(entries, usageIndex, response, requestUsage);
       continue;
     }
     flushResponse();

@@ -85,6 +85,7 @@ export function completedProcessTitle(title: string): string {
     [/^Reading\b/i, "Read"],
     [/^Searching\b/i, "Searched"],
     [/^Editing\b/i, "Edited"],
+    [/^Loading\b/i, "Loaded"],
   ];
   for (const [pattern, replacement] of englishPrefixes) {
     if (pattern.test(trimmed)) {
@@ -94,10 +95,25 @@ export function completedProcessTitle(title: string): string {
   return trimmed;
 }
 
+/** Whether a step is still going; a finished one never shows as running. */
+export function isProcessRowRunning(row: ProcessDisplayItem): boolean {
+  if (row.status) return row.status === "running";
+  return (
+    isInProgressTitle(row.title) ||
+    isProcessLabel(
+      row.title,
+      "requestingModel",
+      "compactingContext",
+      "rateLimited",
+      "waitingBackgroundTasks",
+    )
+  );
+}
+
 function isInProgressTitle(title: string): boolean {
   const key = processLabelKey(title);
   if (key) return isInProgressProcessLabel(key);
-  return /^(?:正在|处理中|Working\b|Running\b|Using\b|Reading\b|Searching\b|Editing\b)/i.test(
+  return /^(?:正在|处理中|Working\b|Running\b|Using\b|Reading\b|Searching\b|Editing\b|Loading\b)/i.test(
     title.trim(),
   );
 }
@@ -406,4 +422,43 @@ export function processDisplaySummaryTitle(
         first: initial,
         second: continuation(second),
       });
+}
+
+export interface ProcessDisplaySummary {
+  detail: string;
+  iconTitle: string;
+  iconLabelKey?: ProcessLabelKey;
+  title: string;
+  /**
+   * The turn runs but its last step finished: a neutral "Working…" with the
+   * turn's time, never that step's past-tense label with a spinner.
+   */
+  between?: boolean;
+}
+
+/** What a process group's one-line trigger shows. */
+export function processDisplaySummary(
+  processItems: ProcessDisplayRow[],
+  fallbackTitle: string,
+  streaming: boolean,
+): ProcessDisplaySummary {
+  const activeItem = processItems?.[processItems.length - 1];
+  if (activeItem && streaming && !isProcessRowRunning(activeItem)) {
+    const working = i18n.t("conversation:process.working");
+    return { between: true, detail: "", iconTitle: working, title: working };
+  }
+  if (activeItem) {
+    return {
+      detail: activeItem.snippet,
+      iconTitle: activeItem.title,
+      iconLabelKey: activeItem.labelKey,
+      title: processDisplaySummaryTitle(processItems, fallbackTitle, streaming),
+    };
+  }
+  return {
+    detail: "",
+    iconTitle: fallbackTitle,
+    iconLabelKey: processLabelKey(fallbackTitle),
+    title: processDisplaySummaryTitle([], fallbackTitle, streaming),
+  };
 }

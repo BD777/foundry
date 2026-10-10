@@ -679,8 +679,8 @@ test("a Codex snapshot works while Foundry's session folders are git-ignored", a
   const f = fixture(t);
   await gitWorkspace(f.workspace);
   writeFileSync(join(f.workspace, "notes.txt"), "alpha\nbeta\n");
-  // Foundry's setup commits shared files under .foundry/; the snapshot
-  // starts from a copy of that index.
+  // A repository may track files under .foundry/ (earlier workers committed
+  // some); the snapshot starts from a copy of that index.
   mkdirSync(join(f.workspace, ".foundry"), { recursive: true });
   writeFileSync(join(f.workspace, ".foundry", "skills.yaml"), "skills: []\n");
   await git(f.workspace, ["add", ".foundry/skills.yaml"]);

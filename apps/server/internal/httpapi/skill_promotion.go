@@ -221,7 +221,7 @@ func (s *Server) promoteSkillClosure(w http.ResponseWriter, r *http.Request, inp
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	for i, item := range published {
 		if packages[i].Source.Root == input.Root && packages[i].Source.DirName == input.DirName {
 			view, err := s.callerVisibility(r)

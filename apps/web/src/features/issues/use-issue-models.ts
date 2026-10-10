@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   AgentModelOption,
@@ -56,6 +56,8 @@ export function useIssueModels(
     failed: boolean;
   }>({ key: "", models: [], loading: false, failed: false });
   const [retry, setRetry] = useState(0);
+  // The retry count the catalog was last read at: a new one reads afresh.
+  const readAtRetry = useRef(0);
   const model = drafts[key]?.model ?? profile?.model ?? "";
   const speed = drafts[key]?.speed ?? profile?.codexSpeed ?? "standard";
   const effort =
@@ -82,8 +84,10 @@ export function useIssueModels(
   useEffect(() => {
     let current = true;
     setDiscovery({ key, models: [], loading: Boolean(request), failed: false });
+    const reuse = readAtRetry.current === retry;
+    readAtRetry.current = retry;
     if (request)
-      void listAgentModels(JSON.parse(request)).then(
+      void listAgentModels(JSON.parse(request), { reuse }).then(
         (models) => {
           if (current)
             setDiscovery({ key, models, loading: false, failed: false });

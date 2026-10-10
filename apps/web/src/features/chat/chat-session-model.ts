@@ -18,7 +18,12 @@ export function agentSessionMessageText(
   session: AgentSession,
   context: { sessions?: AgentSession[] } = {},
 ): string {
-  if (session.response) {
+  // While a turn runs, the response is still the previous turn's answer.
+  if (
+    session.response &&
+    session.status !== "running" &&
+    session.status !== "queued"
+  ) {
     return session.response;
   }
   if (session.error) {

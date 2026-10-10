@@ -314,7 +314,8 @@ func TestBrowserEventHubStreamsEvents(t *testing.T) {
 		scanner := bufio.NewScanner(response.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if strings.HasPrefix(line, "data: ") {
+			// A fresh stream starts with its place to resume from.
+			if strings.HasPrefix(line, "data: ") && !strings.Contains(line, streamReadyEventType) {
 				lines <- strings.TrimPrefix(line, "data: ")
 				return
 			}
@@ -855,7 +856,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 				continue
 			}
 			var event browserEventEnvelope
-			if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) == nil {
+			if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) == nil && event.Type != streamReadyEventType {
 				select {
 				case streamedEvents <- event:
 				case <-streamContext.Done():
@@ -1222,7 +1223,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 				continue
 			}
 			var event browserEventEnvelope
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil {
+			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Type != streamReadyEventType {
 				streamedEvents <- event
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -259,50 +260,48 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(ids)
 	case "get_session":
-		session, err := s.store.GetAgentSession(r.Context(), mcpArgString(args, "sessionId"))
-		if err != nil {
-			return "", err
-		}
-		if !s.canReadSession(r.Context(), actor, session) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
-		}
-		return encode(session)
+		return s.sessionDigestForMCP(r.Context(), actor, mcpArgString(args, "sessionId"))
 	case "read_context":
-		id := mcpArgString(args, "sessionId")
+		id := mcpSessionID(args, "sessionId")
 		scope := mcpArgString(args, "scope")
-		if scope == "" {
-			scope = "summary"
-		}
 		maxBytes := mcpArgNumber(args, "maxBytes", 12_000)
 		var value any
 		switch scope {
+		case "", "summary":
+			return s.sessionDigestForMCP(r.Context(), actor, id)
+		case "events":
+			return s.sessionEventsForMCP(r.Context(), actor, args)
 		case "thread":
-			items, err := s.store.ListAgentSessionThread(r.Context(), workspace, id)
+			anchor, err := s.resolveInspectTarget(r.Context(), actor, id, false)
 			if err != nil {
 				return "", err
 			}
-			anchor, err := s.store.GetAgentSessionSummary(r.Context(), id)
-			if err != nil || !s.canReadSession(r.Context(), actor, anchor) {
-				return "", &mcpToolError{http.StatusForbidden, "cannot read this thread"}
+			if anchor.session == nil {
+				return "", &mcpToolError{http.StatusBadRequest, id + " is a native chat: read it with scope=transcript or events"}
+			}
+			items, err := s.store.ListAgentSessionThread(r.Context(), anchor.session.WorkspaceID, anchor.session.ID)
+			if err != nil {
+				return "", err
 			}
 			value = items
 		case "transcript":
 			chat, err := s.store.GetChat(r.Context(), id)
+			if errors.Is(err, store.ErrNotFound) || (err == nil && !s.canReadNativeChat(r.Context(), actor, chat.WorkspaceID, chat.ID)) {
+				return "", inspectNotFound(id)
+			}
 			if err != nil {
 				return "", err
-			}
-			if !s.canReadNativeChat(r.Context(), actor, chat.WorkspaceID, chat.ID) {
-				return "", &mcpToolError{http.StatusForbidden, "cannot read this chat"}
 			}
 			value = chat
 		case "subagents":
-			session, err := s.store.GetAgentSessionSummary(r.Context(), id)
+			target, err := s.resolveInspectTarget(r.Context(), actor, id, false)
 			if err != nil {
 				return "", err
 			}
-			if !s.canReadSession(r.Context(), actor, session) {
-				return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
+			if target.session == nil {
+				return "", &mcpToolError{http.StatusBadRequest, id + " is a native chat: it has no Foundry subagent records"}
 			}
+			session := *target.session
 			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 			defer cancel()
 			if taskID := mcpArgString(args, "taskId"); taskID != "" {
@@ -314,18 +313,11 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 				return "", err
 			}
 		default:
-			session, err := s.store.GetAgentSessionSummary(r.Context(), id)
-			if err != nil {
-				return "", err
-			}
-			if !s.canReadSession(r.Context(), actor, session) {
-				return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
-			}
-			value = session
+			return "", &mcpToolError{http.StatusBadRequest, "unknown scope " + scope + ": use summary, events, thread, transcript or subagents"}
 		}
 		raw, _ := json.MarshalIndent(value, "", "  ")
 		if len(raw) > maxBytes {
-			raw = append(raw[:maxBytes], []byte("\n…[truncated]")...)
+			raw = append(raw[:maxBytes], []byte(fmt.Sprintf("\n…[truncated at maxBytes %d; scope=events reads events filtered and paged]", maxBytes))...)
 		}
 		return string(raw), nil
 	case "create_session":
@@ -359,7 +351,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	case "handoff_session":
 		// A factual handoff: only the goal, last result and status carry over,
 		// never the contaminated transcript.
-		source, err := s.store.GetAgentSession(r.Context(), mcpArgString(args, "fromSessionId"))
+		source, err := store.AgentSessionRecord(r.Context(), s.store, mcpSessionID(args, "fromSessionId"))
 		if err != nil {
 			return "", err
 		}
@@ -406,7 +398,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return "", &mcpToolError{http.StatusNotFound, "unknown profile: " + profileID}
 	case "send_message":
-		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpArgString(args, "sessionId"))
+		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpSessionID(args, "sessionId"))
 		if err != nil {
 			return "", err
 		}
@@ -430,11 +422,11 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 				return "", err
 			}
 		}
-		return encode(session)
+		return encode(slimAgentSession(session))
 	case "ask_person":
 		return s.askPersonForMCP(r, actor, args)
 	case "cancel_session":
-		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpArgString(args, "sessionId"))
+		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpSessionID(args, "sessionId"))
 		if err != nil {
 			return "", err
 		}
@@ -448,9 +440,9 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			}
 			return "", err
 		}
-		return encode(session)
+		return encode(slimAgentSession(session))
 	case "wait_session":
-		id := mcpArgString(args, "sessionId")
+		id := mcpSessionID(args, "sessionId")
 		session, err := s.store.GetAgentSessionSummary(r.Context(), id)
 		if err != nil {
 			return "", err
@@ -472,7 +464,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(waited)
 	case "rename_session":
-		id := mcpArgString(args, "sessionId")
+		id := mcpSessionID(args, "sessionId")
 		target, err := s.store.GetAgentSessionSummary(r.Context(), id)
 		if err != nil {
 			return "", err
@@ -487,6 +479,7 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		if err != nil {
 			return "", err
 		}
+		s.publishChatTitlesChanged(target.WorkspaceID, updated.ChatID)
 		return encode(updated)
 	default:
 		return "", &mcpToolError{http.StatusBadRequest, "unknown tool: " + name}
@@ -601,11 +594,13 @@ func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.C
 		return store.AgentSession{}, err
 	}
 	s.events.Publish("agent_session_created", session)
+	s.publishCreatedSessionChatList(session)
 	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
 		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
 	}
 	if err := s.hub.DispatchAgentSession(session); err != nil {
 		failed, _ := s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
+		s.events.dataChanged(session.WorkspaceID, fieldAgentSessions)
 		return failed, &mcpToolError{http.StatusConflict, "local daemon is not connected"}
 	}
 	return session, nil
@@ -679,7 +674,7 @@ func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSessio
 	default:
 		return summary, nil
 	}
-	full, err := s.store.GetAgentSession(ctx, summary.ID)
+	full, err := store.AgentSessionRecord(ctx, s.store, summary.ID)
 	if err != nil {
 		return summary, nil
 	}

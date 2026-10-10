@@ -181,12 +181,13 @@
   },
   {
     "name": "get_session",
-    "description": "Get one session's current summary (status, title, lineage).",
+    "description": "Get a compact summary of any session or synced native chat you can read, in any workspace you reach: title, status and error, runtime/profile/model, device (and whether it is online), workspace, times, lineage, event counts, the last answer (first 1000 characters), the last error event with the events just before it, and background tasks still open in its latest turn. Read events with read_context scope=events.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "A session id (sess_…), a native chat id (native_claude_…, native_codex_…) or a Foundry chat link (https://<host>/chats/<id>?workspace=…)."
         }
       },
       "required": ["sessionId"]
@@ -194,16 +195,56 @@
   },
   {
     "name": "read_context",
-    "description": "Read another session's context. scope=summary (default, cheap), thread (the session's full transcript), transcript (raw native chat) or subagents (the session's native subagents; with taskId, one subagent's transcript). Output is tail-truncated by maxBytes to protect your context window.",
+    "description": "Read a session or native chat you can read, in any workspace you reach, by id or Foundry link. scope=summary (default) is get_session's summary; events lists its events one line each (time | level | label | detail), filtered by levels, labels and query, newest with tail or paged with after/before cursors, within maxBytes; thread (the session's full transcript), transcript (raw native chat) and subagents (the session's native subagents; with taskId, one subagent's transcript) return JSON cut at maxBytes. Start with summary and events; read thread or transcript only when you need the whole conversation.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "A session id (sess_…), a native chat id (native_claude_…, native_codex_…) or a Foundry chat link (https://<host>/chats/<id>?workspace=…)."
         },
         "scope": {
           "type": "string",
-          "enum": ["summary", "thread", "transcript", "subagents"]
+          "enum": ["summary", "events", "thread", "transcript", "subagents"]
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["error", "warning", "info"]
+          },
+          "description": "scope=events: only events of these levels, e.g. [\"error\",\"warning\"]."
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "scope=events: only events with these labels (exact, case-insensitive), e.g. [\"Session failed\"]."
+        },
+        "query": {
+          "type": "string",
+          "description": "scope=events: only events whose label, detail or message contains this text (case-insensitive)."
+        },
+        "tail": {
+          "type": "number",
+          "description": "scope=events: the last N matching events (at most 500). Without it, the first `limit` matches."
+        },
+        "limit": {
+          "type": "number",
+          "description": "scope=events: page size without tail; default 50, at most 500."
+        },
+        "after": {
+          "type": "string",
+          "description": "scope=events: only events after this cursor, an event id this tool printed or a time (2026-10-09T20:40:00Z)."
+        },
+        "before": {
+          "type": "string",
+          "description": "scope=events: only events before this cursor, an event id or a time."
+        },
+        "context": {
+          "type": "number",
+          "description": "scope=events: also show up to N events (at most 5) just before each match, to see what led to it."
         },
         "taskId": {
           "type": "string",
@@ -211,7 +252,7 @@
         },
         "maxBytes": {
           "type": "number",
-          "description": "Default 12000."
+          "description": "Default 12000. events keeps whole lines within it and prints the cursor that continues."
         }
       },
       "required": ["sessionId"]

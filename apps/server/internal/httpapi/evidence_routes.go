@@ -122,6 +122,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 	}
 	if err == nil {
 		s.publishEvidenceUpdate(issue, result.Candidate.ID, input.ExpectedContractRevision, "sealed")
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, result, err)
 }
@@ -205,6 +206,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 		}
 		results = append(results, v)
 		s.publishEvidenceUpdate(issue, v.ID, v.Sequence, v.Status)
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 		if v.Status == "queued" {
 			go s.dispatchVerification(issue, contract, v)
 		}

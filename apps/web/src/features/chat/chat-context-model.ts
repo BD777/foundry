@@ -2,21 +2,55 @@ import type {
   AgentBackgroundTask,
   AgentSession,
   AgentSessionEvent,
-  AgentSessionTimerFire,
   AgentScheduledTask,
   AgentSubagentSummary,
 } from "@bd777/foundry-protocol";
 import { humanizeCron } from "@bd777/foundry-protocol";
+import type { WindowedAgentSession } from "../../api";
 import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
   ChatContextResourceItem,
+  ChatRunningBackgroundWork,
   ChatSessionFileItem,
   ChatSubagentItem,
+  ChatTimerFire,
   ChatTimerItem,
 } from "./chat-types";
 import { i18n } from "../../i18n";
+import { agentEventKey, eventPosition } from "../../lib/agent-event-log";
 import { isProcessLabel } from "../../lib/process-labels";
+
+/** State events a windowed read sent for this panel, cut to what it reads. */
+const panelOnlyEvents = new WeakSet<AgentSessionEvent>();
+
+/**
+ * The session's events as the panel reads them: the state events a
+ * windowed read sent from before the loaded ones (see WindowedAgentSession),
+ * each placed by its time, and the loaded events. One loaded since is read
+ * from those.
+ */
+function withStateEvents(session: AgentSession): AgentSession {
+  const state = (session as WindowedAgentSession).stateEvents;
+  if (!state?.length) return session;
+  const loaded = session.events ?? [];
+  const older = state.filter(
+    (event) => eventPosition(loaded, agentEventKey(event)) < 0,
+  );
+  if (older.length === 0) return session;
+  older.forEach((event) => panelOnlyEvents.add(event));
+  const events: AgentSessionEvent[] = [];
+  let next = 0;
+  for (const event of loaded) {
+    const at = Date.parse(event.at);
+    while (next < older.length && !(Date.parse(older[next]!.at) > at)) {
+      events.push(older[next++]!);
+    }
+    events.push(event);
+  }
+  events.push(...older.slice(next));
+  return { ...session, events };
+}
 
 // Event labels emitted by workers (protocol values): matched, never shown.
 // "Subtask started" / "Subtask finished" are older English spellings.
@@ -366,12 +400,14 @@ function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
 }
 
 /** Timer-triggered turns observed for the session, newest first. */
-function timerFiresForSession(session: AgentSession): AgentSessionTimerFire[] {
-  const fires: AgentSessionTimerFire[] = [];
+function timerFiresForSession(session: AgentSession): ChatTimerFire[] {
+  const fires: ChatTimerFire[] = [];
   for (const event of session.events ?? []) {
     const fire = event.metadata?.timerFire;
     if (fire) {
-      fires.push(fire);
+      fires.push(
+        panelOnlyEvents.has(event) ? { ...fire, answerUnloaded: true } : fire,
+      );
     }
   }
   return fires.reverse();
@@ -457,17 +493,44 @@ export function projectBackgroundTasks(
 }
 
 /**
- * Background work still running for a chat whose turn has ended (subagents
- * included): the chat is idle, yet the agent keeps working.
+ * Work still running for a chat whose turn has ended: the chat is idle, yet
+ * the agent keeps working. Read from the side panel's own rows, so the note
+ * counts exactly the running rows of its Background and Subagents sections.
  */
-export function runningBackgroundWork(sessions: AgentSession[]): number {
-  const latest = [...sessions]
-    .reverse()
-    .find((session) => latestBackgroundSnapshot(session));
-  if (!latest || latest.provider !== "claude") return 0;
-  return (latestBackgroundSnapshot(latest) ?? []).filter(
-    (task) => task.status === "running",
-  ).length;
+export function runningBackgroundWork(
+  card: ChatContextCardData | undefined,
+): ChatRunningBackgroundWork {
+  return {
+    taskIds: (card?.background ?? [])
+      .filter((item) => item.task.status === "running")
+      .map((item) => item.id),
+    subagentIds: (card?.subagents ?? [])
+      .filter((item) => item.status === "running")
+      .map((item) => item.id),
+  };
+}
+
+/** "2 tasks and 1 subagent running in the background"; empty when none run. */
+export function backgroundWorkNote(work: ChatRunningBackgroundWork): string {
+  const tasks = work.taskIds.length;
+  const subagents = work.subagentIds.length;
+  if (tasks > 0 && subagents > 0) {
+    return i18n.t("chat:contextCard.backgroundRunningNoteMixed", {
+      tasks: i18n.t("chat:contextCard.backgroundTaskCount", { count: tasks }),
+      subagents: i18n.t("chat:contextCard.backgroundSubagentCount", {
+        count: subagents,
+      }),
+    });
+  }
+  if (subagents > 0) {
+    return i18n.t("chat:contextCard.backgroundSubagentsNote", {
+      count: subagents,
+    });
+  }
+  if (tasks > 0) {
+    return i18n.t("chat:contextCard.backgroundRunningNote", { count: tasks });
+  }
+  return "";
 }
 
 export interface ActiveWorkspaceContext {
@@ -485,7 +548,9 @@ export function chatContextCardForSessions(
   const previews: ChatContextResourceItem[] = [];
   const sources: ChatContextResourceItem[] = [];
   const timers: ChatTimerItem[] = [];
-  const focusSession = [...sessions]
+  // The panel shows each session's state, whichever of its events are loaded.
+  const panelSessions = sessions.map(withStateEvents);
+  const focusSession = [...panelSessions]
     .reverse()
     .find(
       (session) =>
@@ -500,7 +565,7 @@ export function chatContextCardForSessions(
         (latestTimerSnapshot(session)?.tasks.length ?? 0) > 0 ||
         extractWebURLs(session.response ?? "").length > 0,
     );
-  const sourceSession = [...sessions]
+  const sourceSession = [...panelSessions]
     .reverse()
     .find((session) => (session.events ?? []).some(isWorkspaceSourceEvent));
   const background = focusSession ? projectBackgroundTasks(focusSession) : [];
@@ -569,7 +634,7 @@ export function chatContextCardForSessions(
   }
 
   const seenPreviews = new Set<string>();
-  const sessionFiles = chatSessionFiles(sessions, activeWorkspace);
+  const sessionFiles = chatSessionFiles(panelSessions, activeWorkspace);
   const data = {
     // Changes are what this chat's own tools edited in a repository; a file
     // the answer only names is a file to open, not a change.

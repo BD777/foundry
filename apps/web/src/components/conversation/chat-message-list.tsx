@@ -108,6 +108,7 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.turnFiles?.count === right.turnFiles?.count &&
       left.durationMs === right.durationMs &&
       left.startedAt === right.startedAt &&
+      left.turnStartedAt === right.turnStartedAt &&
       stepUsageEqual(left.stepUsage, right.stepUsage) &&
       processItemsEqual(left.processItems, right.processItems) &&
       left.title === right.title &&
@@ -173,6 +174,7 @@ export const ChatMessageRow = memo(
           durationMs={message.durationMs}
           items={message.processItems}
           startedAt={message.startedAt}
+          turnStartedAt={message.turnStartedAt}
           stepUsage={message.stepUsage}
           onImagePreview={onImagePreview}
           streaming={message.streaming}
