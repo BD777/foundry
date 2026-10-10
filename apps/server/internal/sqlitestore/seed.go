@@ -242,7 +242,7 @@ func seedIssues() []store.Issue {
 				Runtime:      "codex",
 				StartedLabel: "2m ago",
 				Events: []store.RunEvent{
-					{ID: "evt_1", RunID: "run_2411", At: "2m ago", Label: "Loaded workspace context", Detail: "AGENTS.md, CONTEXT.md, and installed skills", Level: "info"},
+					{ID: "evt_1", RunID: "run_2411", At: "2m ago", Label: "Loaded workspace context", Detail: "AGENTS.md and installed skills", Level: "info"},
 					{ID: "evt_2", RunID: "run_2411", At: "90s ago", Label: "Produced acceptance artifact", Detail: "Local preview and comparison notes", Level: "info"},
 				},
 			},

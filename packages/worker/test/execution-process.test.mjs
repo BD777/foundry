@@ -22,6 +22,7 @@ import {
   executorEnvironment,
 } from "../dist/execution-sandbox.js";
 import { ExecutionStore } from "../dist/execution-storage.js";
+import { initializeWorkspaceGit } from "../dist/repository-registry.js";
 import {
   prepareIssueEnvironment,
   ensureRepository,
@@ -74,6 +75,8 @@ test(
     await gitCommit(resolve(source, "nested/repo"), "Child");
     writeFileSync(resolve(source, "AGENTS.md"), "rules");
     const store = new ExecutionStore(resolve(root, "state"));
+    // The person confirmed setting up Git for the first Issue.
+    await initializeWorkspaceGit(source, "ws_policy", store);
     let env = await prepareIssueEnvironment(
       source,
       "ws_policy",

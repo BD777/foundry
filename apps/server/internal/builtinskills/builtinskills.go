@@ -16,7 +16,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
 )
 
-//go:embed all:skill-creator
+//go:embed all:skill-creator all:foundry
 var files embed.FS
 
 // Skill is one Foundry built-in skill, packaged as the workers expect: a zip
@@ -41,6 +41,8 @@ type definition struct {
 // Bump a revision whenever its folder changes, so workers fetch it again.
 var definitions = []definition{
 	{dir: "skill-creator", runtime: "claude", source: "Anthropic skills", revision: 1},
+	{dir: "foundry", runtime: "claude", source: "Foundry", revision: 1},
+	{dir: "foundry", runtime: "codex", source: "Foundry", revision: 1},
 }
 
 var skills = mustBuild()

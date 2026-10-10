@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -117,6 +119,7 @@ func daemonRequest[T any](
 	var value T
 	id := c.rpc.newRequestID(requestType)
 	waiter := c.rpc.register(id)
+	started := time.Now()
 	if !c.queue(wsEnvelope{ID: id, Type: requestType, Payload: payload}) {
 		c.rpc.cancel(id)
 		return value, errors.New(daemonDisconnectedReason)
@@ -125,7 +128,7 @@ func daemonRequest[T any](
 	select {
 	case <-ctx.Done():
 		c.rpc.cancel(id)
-		return value, ctx.Err()
+		return value, c.requestEnded(ctx, started)
 	case result := <-waiter:
 		if result.err != nil {
 			return value, result.err
@@ -159,4 +162,69 @@ func deliverDaemonResponse[T any](
 		return nil
 	}
 	return unsolicited(payload)
+}
+
+// deviceNoAnswerError is a request handed to a device whose answer had not
+// come when its caller stopped waiting: the wait ran out (a timeout) or the
+// caller went away. Its text names the device, never "context deadline
+// exceeded"; errors.Is still finds the context's error in it.
+type deviceNoAnswerError struct {
+	device string
+	wait   time.Duration
+	cause  error
+}
+
+func (e *deviceNoAnswerError) Error() string {
+	if !errors.Is(e.cause, context.DeadlineExceeded) {
+		return e.summary()
+	}
+	return e.summary() + " Its worker may be busy or catching up on a slow connection; try again in a moment."
+}
+
+// summary says only which device did not answer, and within how long.
+func (e *deviceNoAnswerError) summary() string {
+	if !errors.Is(e.cause, context.DeadlineExceeded) {
+		return fmt.Sprintf("The request ended before %s answered.", e.device)
+	}
+	wait := fmt.Sprintf("%d s", int(e.wait.Round(time.Second)/time.Second))
+	if e.wait < time.Second {
+		wait = fmt.Sprintf("%d ms", e.wait.Round(10*time.Millisecond).Milliseconds())
+	}
+	return fmt.Sprintf("%s did not answer within %s.", e.device, wait)
+}
+
+func (e *deviceNoAnswerError) Unwrap() error { return e.cause }
+
+// requestEnded is why a request handed to the device stopped waiting.
+func (c *daemonConnection) requestEnded(ctx context.Context, started time.Time) error {
+	wait := time.Since(started)
+	if deadline, ok := ctx.Deadline(); ok {
+		wait = deadline.Sub(started)
+	}
+	return &deviceNoAnswerError{device: c.deviceLabel(), wait: wait, cause: ctx.Err()}
+}
+
+// deviceLabel is the device as people know it: its label, else its id.
+func (c *daemonConnection) deviceLabel() string {
+	deviceID, registration := c.registrationSnapshot()
+	if label := strings.TrimSpace(registration.Device.Label); label != "" {
+		return label
+	}
+	if deviceID != "" {
+		return deviceID
+	}
+	return "The device"
+}
+
+// isDeviceTimeout reports a device request that got no answer in time.
+func isDeviceTimeout(err error) bool {
+	var unanswered *deviceNoAnswerError
+	return errors.As(err, &unanswered) && errors.Is(unanswered.cause, context.DeadlineExceeded)
+}
+
+// handedToDevice reports a request that reached the device's connection and
+// was not answered: the device may still act on it.
+func handedToDevice(err error) bool {
+	var unanswered *deviceNoAnswerError
+	return errors.As(err, &unanswered)
 }

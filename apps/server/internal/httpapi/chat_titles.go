@@ -12,7 +12,7 @@ import (
 func (s *Server) handleListChatTitles(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
 	items, err := s.store.ListChatTitles(r.Context(), workspaceID)
-	writeResult(w, items, err)
+	writeCacheableResult(w, r, items, err)
 }
 
 func (s *Server) handleRenameChat(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +41,9 @@ func (s *Server) handleRenameChat(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, store.ErrTitleConflict) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
+	}
+	if err == nil {
+		s.publishChatTitlesChanged(input.WorkspaceID, result.ChatID)
 	}
 	writeResult(w, result, err)
 }

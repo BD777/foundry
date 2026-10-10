@@ -49,8 +49,7 @@ test("a session judged on its answer keeps its turn until background tasks settl
   writeFileSync(messagesPath, "");
   const events = [];
   let resolved;
-  let watchdogClosed = false;
-  let watchdogPaused = 0;
+  let livenessClosed = false;
   const turn = {
     emit: async (label, detail) => events.push({ detail, label }),
     finalResult: "",
@@ -66,14 +65,11 @@ test("a session judged on its answer keeps its turn until background tasks settl
     },
     resultPath,
     waitForBackgroundTasks: true,
-    watchdog: {
+    liveness: {
+      observe: () => [],
       close: () => {
-        watchdogClosed = true;
+        livenessClosed = true;
       },
-      pause: () => {
-        watchdogPaused += 1;
-      },
-      touch: () => undefined,
     },
   };
   const runtime = {
@@ -143,11 +139,6 @@ test("a session judged on its answer keeps its turn until background tasks settl
 
     assert.equal(runtime.pending, turn);
     assert.deepEqual([...turn.openTaskIds], ["task_b"]);
-    assert.equal(
-      watchdogPaused,
-      2,
-      "waiting only on background work is not a stall",
-    );
 
     await handleActiveClaudeMessage(runtime, {
       type: "system",
@@ -165,7 +156,7 @@ test("a session judged on its answer keeps its turn until background tasks settl
       response: "Final synthesis.",
     });
     assert.equal(readFileSync(resultPath, "utf8"), "Final synthesis.\n");
-    assert.equal(watchdogClosed, true);
+    assert.equal(livenessClosed, true);
     assert.equal(
       events.filter(({ label }) => label === "Waiting for background tasks")
         .length,
@@ -308,11 +299,7 @@ function chatTurn(runtime, directory, commandId) {
     },
     resultPath: join(directory, `${commandId}.result.md`),
     waitForBackgroundTasks: false,
-    watchdog: {
-      close: () => undefined,
-      pause: () => undefined,
-      touch: () => undefined,
-    },
+    liveness: { observe: () => [], close: () => undefined },
   };
   runtime.pending = turn;
   return turn;

@@ -241,6 +241,8 @@ interface Row {
   parent?: string;
   /** List view: the file's folder below the root. */
   folder?: string;
+  /** Tree view beside folders: a gap where a chevron would be. */
+  chevronGap?: boolean;
 }
 
 function folderKey(rootId: string, path: string): string {
@@ -379,13 +381,15 @@ export function FileTree({
       }
       continue;
     }
+    // A root of only files needs no chevron column.
+    const chevronGap = nodes.some((node) => node.kind === "folder");
     const walk = (list: FileTreeNode[], depth: number, parent?: string) => {
       for (const node of list) {
         const key =
           node.kind === "folder"
             ? folderKey(root.id, node.path)
             : fileKey(root.id, node.item.id);
-        rows.push({ key, rootId: root.id, depth, node, parent });
+        rows.push({ chevronGap, key, rootId: root.id, depth, node, parent });
         if (node.kind === "folder" && isOpen(root.id, node.path))
           walk(node.children, depth + 1, key);
       }
@@ -529,7 +533,9 @@ export function FileTree({
         }}
         title={item.title ?? item.path}
       >
-        <span className="fdy-file-tree-indent" aria-hidden="true" />
+        {row.chevronGap ? (
+          <span className="fdy-file-tree-indent" aria-hidden="true" />
+        ) : null}
         {fileIconForName(row.node.name)}
         <span className="fdy-file-tree-name">
           {row.node.name}

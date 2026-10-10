@@ -54,9 +54,10 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 ├── bin foundry-worker …… 运维命令（setup/connect/install-service …）
 └── bin foundry        …… 人与 Agent 的统一入口
     ├── foundry mcp                 stdio 桥，转发 Server 的 /api/mcp
-    ├── foundry session <verb>      人 / 脚本用 CLI，默认 JSON 输出
+    ├── foundry session <verb>      人 / 脚本用 CLI，默认 JSON 输出（get / events 走只读检查工具）
+    ├── foundry workspace list / device list
     ├── foundry profile list
-    └── foundry skill               打印 foundry-orchestrator SKILL.md
+    └── foundry skill [name]        打印 / 安装随包 Skill（foundry-orchestrator、foundry）
 ```
 
 - **会话如何拿到工具（2026-09-26 起）**：Session Runtime 在启动持有会话令牌的
@@ -194,20 +195,20 @@ Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace�
 工具描述中写明：写者唯一、并行写同一仓库的风险、上下文默认截断、Codex
 活动 turn 不支持 steer（语义为下一轮排队）。
 
-| 工具                  | 映射                                | 备注                                                                                                                                                   |
-| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `list_profiles`       | `GET /api/agent-profiles`           | 按本 device 过滤                                                                                                                                       |
-| `list_models`         | `POST /api/agent-profiles/models`   |                                                                                                                                                        |
-| `create_session`      | `POST /api/agent-sessions`          | `parentSessionId` 默认取自身；不指定 profile 与 runtime 时沿用父会话的；可选 `issueId`、`forkSessionId`、`verification`、`wait?`（等到结束并带回回答） |
-| `list_sessions`       | `GET /api/agent-sessions`           | 支持 `parentOnly`                                                                                                                                      |
-| `list_group_sessions` | layout + session 列表               | 接手编排用                                                                                                                                             |
-| `get_session`         | `GET /api/agent-sessions/{id}`      | 摘要档                                                                                                                                                 |
-| `read_context`        | session / thread / chat / subagents | `scope=summary\|thread\|transcript`，`tail?`、`maxBytes?` 默认截断                                                                                     |
-| `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                                                                                               |
-| `send_message`        | `…/messages`                        | 运行中则 steer；空闲则作为下一条输入继续同一原生会话，可切换 runtime；可选 `wait`                                                                      |
-| `cancel_session`      | `…/cancel`                          | 不级联                                                                                                                                                 |
-| `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                   |
-| `rename_session`      | `POST /api/chats/{id}/title`        | 同 Workspace                                                                                                                                           |
+| 工具                  | 映射                                | 备注                                                                                                                                                                            |
+| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_profiles`       | `GET /api/agent-profiles`           | 按本 device 过滤                                                                                                                                                                |
+| `list_models`         | `POST /api/agent-profiles/models`   |                                                                                                                                                                                 |
+| `create_session`      | `POST /api/agent-sessions`          | `parentSessionId` 默认取自身；不指定 profile 与 runtime 时沿用父会话的；可选 `issueId`、`forkSessionId`、`verification`、`wait?`（等到结束并带回回答）                          |
+| `list_sessions`       | `GET /api/agent-sessions`           | 支持 `parentOnly`                                                                                                                                                               |
+| `list_group_sessions` | layout + session 列表               | 接手编排用                                                                                                                                                                      |
+| `get_session`         | 紧凑摘要（`mcp_inspect.go`）        | 摘要档：状态、错误、设备在线、最后回答 ≤1000 字、最后错误及其前 3 条事件、未结束后台任务；id 或 Foundry 链接，跨可达 Workspace                                                  |
+| `read_context`        | session / thread / chat / subagents | `scope=summary\|events\|thread\|transcript\|subagents`；`events` 每行一事件，`levels`/`labels`/`query` 过滤，`tail`/`limit` 与 `after`/`before` 游标翻页，`maxBytes` 内整行截断 |
+| `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                                                                                                                        |
+| `send_message`        | `…/messages`                        | 运行中则 steer；空闲则作为下一条输入继续同一原生会话，可切换 runtime；可选 `wait`                                                                                               |
+| `cancel_session`      | `…/cancel`                          | 不级联                                                                                                                                                                          |
+| `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                                            |
+| `rename_session`      | `POST /api/chats/{id}/title`        | 同 Workspace                                                                                                                                                                    |
 
 工具只在服务端实现一次（`httpapi/mcp.go`），会话经注入的 HTTP MCP 或 stdio 桥
 调用它。人用 CLI 经 `foundry-client.ts` 走上表的 REST 端点，默认输出 JSON。

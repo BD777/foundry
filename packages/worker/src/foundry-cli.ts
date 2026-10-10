@@ -5,14 +5,17 @@
  *
  *   foundry mcp                 stdio MCP server for agents
  *   foundry session <verb>      JSON-first session control for people/scripts
+ *   foundry workspace list      workspaces this credential reaches
+ *   foundry device list         devices, whether online, and what they offer
  *   foundry profile list        list runnable profiles on this device
- *   foundry skill              print the orchestrator skill
+ *   foundry skill [name]        print or install a bundled skill
  *
  * Operational worker commands remain on the separate `foundry-worker` bin.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   FoundryClient,
@@ -39,6 +42,50 @@ function present(args: string[], name: string): boolean {
   return args.includes(name);
 }
 
+/** A positive whole number flag, or undefined when absent. */
+function numberFlag(args: string[], name: string): number | undefined {
+  const raw = flag(args, name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new FoundryClientError(`${name} needs a positive whole number`);
+  }
+  return value;
+}
+
+function listFlag(args: string[], name: string): string[] {
+  const values: string[] = [];
+  args.forEach((arg, index) => {
+    if (arg === name && args[index + 1] !== undefined) {
+      values.push(...args[index + 1]!.split(","));
+    }
+  });
+  return values.map((value) => value.trim()).filter(Boolean);
+}
+
+/** `session events` flags as read_context scope=events arguments. */
+function eventArguments(args: string[]): Record<string, unknown> {
+  const levels = listFlag(args, "--level");
+  if (present(args, "--errors")) levels.push("error", "warning");
+  const labels = listFlag(args, "--label");
+  const values: Record<string, unknown> = {
+    sessionId: requireId(args),
+    scope: "events",
+    levels: levels.length ? [...new Set(levels)] : undefined,
+    labels: labels.length ? labels : undefined,
+    query: flag(args, "--query"),
+    tail: numberFlag(args, "--tail"),
+    limit: numberFlag(args, "--limit"),
+    context: numberFlag(args, "--context"),
+    after: flag(args, "--after"),
+    before: flag(args, "--before"),
+    maxBytes: numberFlag(args, "--max-bytes"),
+  };
+  return Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  );
+}
+
 function client(args: string[]): FoundryClient {
   return new FoundryClient(
     resolveConfig({
@@ -53,6 +100,7 @@ const SESSION_VERBS = new Set([
   "list",
   "children",
   "get",
+  "events",
   "thread",
   "chat",
   "subagents",
@@ -82,7 +130,12 @@ async function runSessionCommand(args: string[]): Promise<void> {
       return;
     }
     case "get":
-      print(await foundry.getSession(requireId(rest)));
+      print(
+        await foundry.callTool("get_session", { sessionId: requireId(rest) }),
+      );
+      return;
+    case "events":
+      print(await foundry.callTool("read_context", eventArguments(rest)));
       return;
     case "thread":
       print(await foundry.getThread(requireId(rest)));
@@ -213,25 +266,61 @@ async function runSessionCommand(args: string[]): Promise<void> {
 
 function requireId(args: string[]): string {
   const id = args[0];
-  if (!id) throw new FoundryClientError("session id is required");
+  if (!id || id.startsWith("--")) {
+    throw new FoundryClientError("session id or Foundry chat link is required");
+  }
   return id;
 }
 
-function printSkill(): void {
+/** The skills shipped in this package's skills/ folder. */
+function bundledSkillsRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    resolve(here, "..", "skills", "foundry-orchestrator", "SKILL.md"),
-    resolve(here, "..", "..", "skills", "foundry-orchestrator", "SKILL.md"),
-  ];
-  for (const path of candidates) {
+  for (const root of [
+    resolve(here, "..", "skills"),
+    resolve(here, "..", "..", "skills"),
+  ]) {
     try {
-      process.stdout.write(readFileSync(path, "utf8"));
-      return;
+      readdirSync(root);
+      return root;
     } catch {
       // try next
     }
   }
-  throw new FoundryClientError("orchestrator skill file is missing");
+  throw new FoundryClientError("bundled skills folder is missing");
+}
+
+function bundledSkill(name: string): string {
+  try {
+    return readFileSync(join(bundledSkillsRoot(), name, "SKILL.md"), "utf8");
+  } catch {
+    throw new FoundryClientError(
+      `no bundled skill ${name} (see: foundry skill list)`,
+    );
+  }
+}
+
+/**
+ * `foundry skill` prints the orchestrator skill; `list`, `<name>` and
+ * `install <name> [--dir <skills folder>]` cover every bundled skill, so a
+ * session started outside Foundry can have them too.
+ */
+function runSkillCommand(args: string[]): void {
+  const [verb, name] = args;
+  if (verb === "list") {
+    print(readdirSync(bundledSkillsRoot()).sort().join("\n"));
+    return;
+  }
+  if (verb === "install") {
+    if (!name) throw new FoundryClientError("usage: skill install <name>");
+    const content = bundledSkill(name);
+    const root = flag(args, "--dir") ?? join(homedir(), ".claude", "skills");
+    const target = join(root, name, "SKILL.md");
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+    print(`installed ${name} at ${target}`);
+    return;
+  }
+  process.stdout.write(bundledSkill(verb ?? "foundry-orchestrator"));
 }
 
 function usage(): string {
@@ -240,9 +329,14 @@ function usage(): string {
     "",
     "Usage:",
     "  foundry mcp",
-    "  foundry session list|children|get|thread|chat|subagents|create|handoff|send|cancel|wait|rename|groups|group [flags]",
+    "  foundry session list|children|get|events|thread|chat|subagents|create|handoff|send|cancel|wait|rename|groups|group [flags]",
+    "  foundry session get <id|link>",
+    "  foundry session events <id|link> [--errors] [--level error,warning] [--label <label>] [--query <text>]",
+    "                         [--tail N | --limit N] [--context N] [--after <cursor>] [--before <cursor>] [--max-bytes N]",
+    "  foundry workspace list",
+    "  foundry device list",
     "  foundry profile list",
-    "  foundry skill",
+    "  foundry skill [list | <name> | install <name> [--dir <skills folder>]]",
     "",
     "Common flags: --workspace <id>  --server <url>  --session <id>",
     "Credentials are read from FOUNDRY_SESSION_TOKEN or the local paired daemon config.",
@@ -268,8 +362,20 @@ async function main(): Promise<void> {
         return;
       }
       break;
+    case "workspace":
+      if (rest[0] === "list") {
+        print(await client(rest.slice(1)).callTool("list_workspaces", {}));
+        return;
+      }
+      break;
+    case "device":
+      if (rest[0] === "list") {
+        print(await client(rest.slice(1)).callTool("list_resources", {}));
+        return;
+      }
+      break;
     case "skill":
-      printSkill();
+      runSkillCommand(rest);
       return;
     case "--help":
     case "-h":

@@ -27,16 +27,25 @@ export function Conversation(props: ConversationProps) {
   const onPreview = props.onImagePreview ?? setPreview;
   const focus = () => requestAnimationFrame(() => textarea.current?.focus());
   const addFiles = (list: FileList | File[] | null | undefined) => {
+    if (input.sending) return;
     const selected = Array.from(list ?? []).filter((file) => file.size > 0);
     if (selected.length) props.onAttachmentsAdd?.(selected);
   };
   const selectable =
     props.composer.mode === "selectable" ? props.composer : undefined;
   const hasDraft = Boolean(input.draft.trim() || props.attachments?.length);
+  const actionLabel =
+    input.action === "sending"
+      ? t("composer.sending")
+      : input.action === "stop"
+        ? t("composer.stop")
+        : (props.sendLabel ?? t("composer.send"));
   return (
     <div className="fdy-chat-conversation">
       <ChatTranscriptStage
         fileActions={props.fileActions}
+        history={props.history}
+        onReachHistoryStart={props.onReachHistoryStart}
         messages={props.messages}
         threadKey={props.threadKey}
         scrollController={scroll}
@@ -64,10 +73,12 @@ export function Conversation(props: ConversationProps) {
               else if (props.inputRef) props.inputRef.current = node;
             },
             value: input.draft,
+            readOnly: input.sending,
+            "aria-busy": input.sending,
             onChange: (event) => input.updateDraft(event.target.value),
             onInput: (event) => input.updateDraft(event.currentTarget.value),
             onSubmit: input.submit,
-            submitDisabled: input.unavailable || !hasDraft,
+            submitDisabled: input.unavailable || !hasDraft || input.sending,
             onPaste: props.onAttachmentsAdd
               ? (event) => {
                   if (event.clipboardData.files.length) {
@@ -109,20 +120,23 @@ export function Conversation(props: ConversationProps) {
           onAttach={
             props.onAttachmentsAdd ? () => files.current?.click() : undefined
           }
-          active={input.active}
-          actionLabel={
-            input.active
-              ? t("composer.stop")
-              : (props.sendLabel ?? t("composer.send"))
+          controlsDisabled={input.sending}
+          actionState={input.action}
+          actionLabel={actionLabel}
+          actionHint={
+            input.action === "send" && props.active
+              ? t("composer.sendWhileRunning")
+              : actionLabel
           }
           actionDisabled={
-            input.active
+            input.action === "sending" ||
+            (input.action === "stop"
               ? !props.onStop || !props.active || input.pending
-              : input.unavailable || !hasDraft
+              : input.unavailable || !hasDraft)
           }
           onAction={() => {
-            if (input.active) void input.stop();
-            else input.submit();
+            if (input.action === "stop") void input.stop();
+            else if (input.action === "send") input.submit();
           }}
           className="fdy-chat-composer"
           data-drag-active={dragActive ? "true" : "false"}
@@ -173,8 +187,8 @@ export function Conversation(props: ConversationProps) {
               <AttachmentList
                 attachments={props.attachments ?? []}
                 onPreview={onPreview}
-                onRemove={props.onAttachmentRemove}
-                removable
+                onRemove={input.sending ? undefined : props.onAttachmentRemove}
+                removable={!input.sending}
               />
               {props.attachmentUploading ? (
                 <span className="fdy-chat-attachment-uploading">

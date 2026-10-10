@@ -142,11 +142,13 @@ test("a sent message shows at once and leaves the previous turn settled", () => 
     sessions: [session],
     title: "t",
   });
-  const last = before.at(-1);
+  // Under it, only the indicator that the agent is on it.
+  assert.equal(before.at(-1).id, "agent-session:s:awaiting-step");
+  const last = before.at(-2);
   assert.equal(last.role, "user");
   assert.equal(last.text, "next question");
   assert.equal(
-    before.some((message) => message.streaming),
+    before.slice(0, -1).some((message) => message.streaming),
     false,
     "the previous turn's last step must not look live again",
   );

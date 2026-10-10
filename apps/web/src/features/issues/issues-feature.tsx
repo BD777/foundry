@@ -4,14 +4,13 @@ import type {
   Issue,
   AgentProjection,
   AgentProfileProjection,
-  ClaudeEffort,
-  CodexReasoningEffort,
   IssueStatus,
   ProviderHealth,
   WorkerRuntimeId,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { createIssue } from "../../api";
+import { InitializeGitDialog } from "./initialize-git-dialog";
+import { issueInput, useIssueCreation } from "./use-issue-creation";
 import { IssueListStatus, WorkerUpdateNotice } from "./issue-notices";
 import { useIssueModels } from "./use-issue-models";
 import { IssueCard } from "./issue-board-card";
@@ -111,6 +110,7 @@ export function IssuesFeature({
   );
   const disabledAgentDeviceId = firstDisabledDeviceId(agentOptions);
   const [submitting, setSubmitting] = useState(false);
+  const creation = useIssueCreation(created);
   const createDenial = workspaceDenial(workspace, "member");
   const submitBlocked =
     submitting || !runtimeReady || !draft.trim() || !!createDenial;
@@ -189,33 +189,9 @@ export function IssuesFeature({
         message: t("notices.creating"),
         type: "notice.requested",
       });
-      const issue = await createIssue({
-        runtime,
-        model: modelSettings.model || undefined,
-        codexSpeed: runtime === "codex" ? modelSettings.speed : undefined,
-        profileId: modelSettings.profileId,
-        claudeEffort:
-          runtime === "claude"
-            ? (modelSettings.effort as ClaudeEffort)
-            : undefined,
-        codexReasoningEffort:
-          runtime === "codex"
-            ? (modelSettings.effort as CodexReasoningEffort)
-            : undefined,
-        sourceInput: sourceInput.trim(),
-        workspaceId: workspace.id,
-      });
-      // Historical drafts must not dispatch an Agent merely by being opened.
-      try {
-        sessionStorage.setItem(
-          `foundry.initial-clarification:${issue.id}`,
-          "pending",
-        );
-      } catch {}
-      setDraft("");
-      setBoardMode("board");
-      setFeedback(t("notices.created"));
-      await onEvent({ issue, type: "issue.created" });
+      await creation.create(
+        issueInput(runtime, modelSettings, sourceInput.trim(), workspace.id),
+      );
     } catch {
       setFeedback("");
       await onEvent({
@@ -225,6 +201,20 @@ export function IssuesFeature({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function created(issue: Issue): Promise<void> {
+    // Historical drafts must not dispatch an Agent merely by being opened.
+    try {
+      sessionStorage.setItem(
+        `foundry.initial-clarification:${issue.id}`,
+        "pending",
+      );
+    } catch {}
+    setDraft("");
+    setBoardMode("board");
+    setFeedback(t("notices.created"));
+    await onEvent({ issue, type: "issue.created" });
   }
 
   const columns = issueStatuses.map((status) => ({
@@ -338,6 +328,13 @@ export function IssuesFeature({
       ) : (
         <IssueListTable rows={listRows} />
       )}
+      {creation.gitSetupPending ? (
+        <InitializeGitDialog
+          path={workspace.localPath}
+          onCancel={creation.cancelGitSetup}
+          onConfirm={creation.confirmGitSetup}
+        />
+      ) : null}
     </IssuesScreen>
   );
 }

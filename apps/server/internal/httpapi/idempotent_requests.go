@@ -81,3 +81,56 @@ func (s *Server) lockIdempotencyKey(id string) func() {
 		mutex.Unlock()
 	}
 }
+
+// validRequestedInputID refuses an input id a client may not choose (see
+// store.ValidSessionInputID); no id lets the store generate one.
+func validRequestedInputID(w http.ResponseWriter, id string) bool {
+	if id == "" || store.ValidSessionInputID(id) {
+		return true
+	}
+	writeError(w, http.StatusBadRequest, "inputId must be a lowercase UUID")
+	return false
+}
+
+// sentInput is a direct send that named its input: the session it went to
+// ("" when it starts one) and the answer a send gets.
+type sentInput struct {
+	id          string
+	sessionID   string
+	workspaceID string
+	status      int
+}
+
+// replaySentInput answers a send whose input a session already recorded
+// with that session, as the first send was answered, so a retry (a lost
+// response, a reload) never starts a second turn. It reports whether it
+// answered. The same id in another session, workspace or one the caller
+// cannot read is refused, never shown.
+func (s *Server) replaySentInput(w http.ResponseWriter, r *http.Request, sent sentInput, idempotent *idempotentRequest) bool {
+	inputs, ok := s.store.(store.ChatQueueStore)
+	if sent.id == "" || !ok {
+		return false
+	}
+	sessionID, found, err := inputs.ChatQueueInputSession(r.Context(), sent.id)
+	if err != nil {
+		writeResult(w, nil, err)
+		return true
+	}
+	if !found {
+		return false
+	}
+	session, err := store.AgentSessionRecord(r.Context(), s.store, sessionID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return true
+	}
+	if (sent.sessionID != "" && session.ID != sent.sessionID) || session.WorkspaceID != sent.workspaceID ||
+		!s.canReadSession(r.Context(), actorFromContext(r.Context()), session) {
+		writeError(w, http.StatusConflict, store.ErrSessionInputExists.Error())
+		return true
+	}
+	session = slimAgentSession(session)
+	idempotent.record(r.Context(), session)
+	writeJSON(w, sent.status, session)
+	return true
+}

@@ -64,6 +64,9 @@ export function useChatRuntime({
   );
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const autoSelectedAgentRef = useRef("");
+  // The agent the open chat's runtime was just restored to: its models are
+  // read once it shows, not those of the agent shown before.
+  const restoringAgentRef = useRef("");
   const previousWorkspaceIdRef = useRef(workspaceId);
 
   const promotedLegacyIds = useMemo(
@@ -191,7 +194,7 @@ export function useChatRuntime({
   );
 
   const loadModels = useCallback(
-    async (input: CreateAgentProfileInput, quiet = false) => {
+    async (input: CreateAgentProfileInput, quiet = false, reuse = false) => {
       if (!input.id || !input.deviceId) {
         return [];
       }
@@ -202,7 +205,7 @@ export function useChatRuntime({
           ...current,
           [profileId]: false,
         }));
-        const models = await listAgentModels(input);
+        const models = await listAgentModels(input, { reuse });
         setModelOptions((current) => ({ ...current, [profileId]: models }));
         if (!quiet) {
           await onNotice(
@@ -237,6 +240,7 @@ export function useChatRuntime({
     setOverrides({});
     setSelectedAgentId("");
     autoSelectedAgentRef.current = "";
+    restoringAgentRef.current = "";
   }, [workspaceId]);
 
   useEffect(() => {
@@ -274,6 +278,7 @@ export function useChatRuntime({
     if (!restored) {
       return;
     }
+    restoringAgentRef.current = restored.agentId;
     setSelectedAgentId(restored.agentId);
     setOverrides((current) => ({
       ...current,
@@ -307,6 +312,10 @@ export function useChatRuntime({
   }, [loadModels, selectedProfileModelInput]);
 
   useEffect(() => {
+    if (restoringAgentRef.current) {
+      if (restoringAgentRef.current !== selectedAgentId) return;
+      restoringAgentRef.current = "";
+    }
     if (
       !active ||
       !selectedProfileModelInput ||
@@ -318,13 +327,14 @@ export function useChatRuntime({
     ) {
       return;
     }
-    void loadModels(selectedProfileModelInput, true);
+    void loadModels(selectedProfileModelInput, true, true);
   }, [
     active,
     loadModels,
     modelLoadFailed,
     modelLoading,
     modelOptions,
+    selectedAgentId,
     selectedProfileKey,
     selectedProfileModelInput,
   ]);

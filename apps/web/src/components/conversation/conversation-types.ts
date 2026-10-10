@@ -29,6 +29,10 @@ export interface ConversationProps {
   readOnly?: ReactNode;
   /** A line above the input about work that goes on between turns. */
   notice?: ReactNode;
+  /** Above the first message: how the transcript loads, older messages. */
+  history?: ReactNode;
+  /** The person scrolled to the first message (older ones may load). */
+  onReachHistoryStart?: () => void;
   /**
    * Keeps the draft in this browser, per thread; without serverQueue, the
    * queued messages too.
@@ -113,6 +117,11 @@ export interface QueuedDraft {
   state?: "local" | "queued" | "dispatching" | "failed";
   /** Why the server could not send it; it holds the queue. */
   error?: string;
+  /**
+   * Failed without its device's answer: it may be in the conversation
+   * already, so the person checks before retrying it.
+   */
+  maybeSent?: boolean;
   /** The server's revision of the message, for edits. */
   revision?: number;
 }
@@ -148,6 +157,11 @@ export interface ConversationServerQueue {
 
 export interface ChatMessageItem {
   at?: string;
+  /**
+   * The client id of a message this tab sent (its Idempotency-Key): the
+   * composer lets it go once the transcript shows it.
+   */
+  clientId?: string;
   agentLabel?: ReactNode;
   attachments?: ChatAttachment[];
   copyAlways?: boolean;
@@ -156,6 +170,8 @@ export interface ChatMessageItem {
   durationMs?: number;
   /** When a process group's first step happened, for its live timer. */
   startedAt?: string;
+  /** When the running turn began: a live group's timer counts from it. */
+  turnStartedAt?: string;
   /** Tokens of the model requests behind a process group's steps. */
   stepUsage?: StepUsage;
   editable?: boolean;

@@ -1,5 +1,11 @@
 import type { AgentSession, AgentSessionEvent } from "@bd777/foundry-protocol";
+import type { WindowedAgentSession } from "../api";
 import { isProcessLabel } from "./process-labels";
+import {
+  appendAgentEvent,
+  normalizeAgentEvents,
+  reconcileAgentEvents,
+} from "./agent-event-log";
 
 // i18n-ignore: protocol event label the worker emits, never shown as copy
 export const responseStreamLabel = "Response stream";
@@ -27,6 +33,19 @@ export function shouldDisplayAgentSessionEvent(
   // Timer and background-work snapshots drive the side panel only; they are
   // not chat.
   if (event.metadata?.timerSnapshot || event.metadata?.backgroundTaskSnapshot) {
+    return false;
+  }
+  // Bookkeeping the worker records after an answer: known by its label too,
+  // so one that arrives without its metadata never becomes a step of its own.
+  if (
+    isProcessLabel(
+      event.label,
+      "timerSync",
+      "backgroundTasksSync",
+      "recordedFile",
+      "modelRequestUsage",
+    )
+  ) {
     return false;
   }
   // Recorded files fill the side panel. Older workers' "Produced output
@@ -99,164 +118,216 @@ export function isMatchingResponseStreamEvent(
   );
 }
 
+/** Adds one live event in O(1) amortized time; see agent-event-log. */
 export function mergeAgentSessionEvent(
   events: AgentSessionEvent[] | undefined,
   incoming: AgentSessionEvent,
 ): AgentSessionEvent[] {
-  const current = events ?? [];
-  if (
-    incoming.message
-      ? incoming.message.kind !== "assistant"
-      : incoming.label !== responseStreamLabel
-  ) {
-    return [
-      ...current.filter((candidate) => candidate.id !== incoming.id),
-      incoming,
-    ];
-  }
-
-  const existingIndex = current.findIndex((candidate) =>
-    isMatchingResponseStreamEvent(candidate, incoming),
-  );
-
-  if (existingIndex < 0) {
-    return [...current, incoming];
-  }
-  return current.map((candidate, index) =>
-    index === existingIndex ? incoming : candidate,
-  );
+  return appendAgentEvent(events, incoming);
 }
 
+/** Collapses persisted response snapshots and repeated ids, in one pass. */
 export function normalizeAgentSessionEvents(
   events: AgentSessionEvent[] | undefined,
 ): AgentSessionEvent[] {
-  return (events ?? []).reduce<AgentSessionEvent[]>(
-    (merged, event) => mergeAgentSessionEvent(merged, event),
-    [],
-  );
+  return normalizeAgentEvents(events);
 }
 
+function isTerminalStatus(status: AgentSession["status"] | undefined): boolean {
+  return status === "completed" || status === "failed" || status === "canceled";
+}
+
+function isResponseLike(event: AgentSessionEvent): boolean {
+  return event.message
+    ? event.message.kind === "assistant"
+    : event.label === responseStreamLabel;
+}
+
+/** The input a response event answers: its id is `evt_<session>_<input>_response_stream[_N]`. */
+function responseEventInputId(
+  sessionId: string,
+  eventId: string,
+): string | undefined {
+  const prefix = `evt_${sessionId}_`;
+  if (!eventId.startsWith(prefix)) return undefined;
+  const match = eventId
+    .slice(prefix.length)
+    .match(/^(.+)_response_stream(?:_\d+)?$/);
+  return match?.[1];
+}
+
+const displayed = new WeakMap<
+  AgentSessionEvent[],
+  {
+    response: string;
+    inputId: string;
+    status: string;
+    events: AgentSessionEvent[];
+  }
+>();
+
+/**
+ * The events a transcript shows. Never stored: `session.response` can be a
+ * previous turn's answer (the server keeps it while a new turn runs, and a
+ * missed completion leaves it stale), so it never rewrites an event. It only
+ * stands in for a finished session's answer when the current input has no
+ * response event of its own, every response event is tied to an input, and
+ * the text is not an earlier turn's answer.
+ */
+export function agentSessionDisplayEvents(
+  session: AgentSession,
+): AgentSessionEvent[] {
+  const events = normalizeAgentEvents(session.events);
+  const response = session.response?.trim() ?? "";
+  const inputId = session.input?.id ?? "";
+  const status = session.status ?? "";
+  const cached = displayed.get(events);
+  if (
+    cached &&
+    cached.response === response &&
+    cached.inputId === inputId &&
+    cached.status === status
+  ) {
+    return cached.events;
+  }
+  const synthesized = terminalResponseEvent(session, events, response);
+  const result = synthesized ? [...events, synthesized] : events;
+  displayed.set(events, { response, inputId, status, events: result });
+  return result;
+}
+
+function terminalResponseEvent(
+  session: AgentSession,
+  events: AgentSessionEvent[],
+  response: string,
+): AgentSessionEvent | undefined {
+  if (!response || !isTerminalStatus(session.status)) return undefined;
+  const inputId = session.input?.id;
+  const responses = events.filter(isResponseLike);
+  if (responses.length > 0) {
+    if (!inputId) return undefined;
+    for (const event of responses) {
+      const answers = responseEventInputId(session.id, event.id);
+      // An answer that cannot be tied to its input, or the current input's
+      // own answer: the events already say everything.
+      if (answers === undefined || answers === inputId) return undefined;
+      // An earlier turn's answer: the response is stale.
+      if ((event.message?.text ?? event.detail).trim() === response)
+        return undefined;
+    }
+  }
+  return {
+    at: session.completedAt || session.startedAt || "",
+    detail: response,
+    id: inputId
+      ? `evt_${session.id}_${inputId}_response_stream_final`
+      : `evt_${session.id}_response_stream_final`,
+    label: responseStreamLabel,
+    level: "info",
+    sessionId: session.id,
+  };
+}
+
+/** A session as a transcript shows it; see agentSessionDisplayEvents. */
 export function normalizeAgentSessionForDisplay(
   session: AgentSession,
 ): AgentSession {
   if (session.events === undefined) {
     return session;
   }
-  const events = normalizeAgentSessionEvents(session.events);
-  return {
-    ...session,
-    events: normalizeTerminalResponseEvent(session, events),
-  };
+  const events = agentSessionDisplayEvents(session);
+  return events === session.events ? session : { ...session, events };
 }
 
-function normalizeTerminalResponseEvent(
-  session: AgentSession,
-  events: AgentSessionEvent[],
-): AgentSessionEvent[] {
-  const response = session.response?.trim();
-  if (!response) {
-    return events;
-  }
-  const responseIndex = findLastIndex(events, (event) =>
-    event.message
-      ? event.message.kind === "assistant"
-      : event.label === responseStreamLabel,
-  );
-  const existingResponseEvent =
-    responseIndex >= 0 ? events[responseIndex] : undefined;
-  const responseEvent: AgentSessionEvent =
-    existingResponseEvent !== undefined
-      ? {
-          ...existingResponseEvent,
-          detail: response,
-          message: existingResponseEvent.message
-            ? { ...existingResponseEvent.message, text: response }
-            : undefined,
-        }
-      : {
-          at: session.completedAt || session.startedAt || "",
-          detail: response,
-          id: `evt_${session.id}_response_stream_final`,
-          label: responseStreamLabel,
-          level: "info",
-          sessionId: session.id,
-        };
-  if (responseIndex < 0) {
-    return [...events, responseEvent];
-  }
-  return events.map((event, index) =>
-    index === responseIndex ? responseEvent : event,
-  );
-}
-
-function findLastIndex<T>(
-  values: T[],
-  predicate: (value: T, index: number) => boolean,
-): number {
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    if (predicate(values[index] as T, index)) {
-      return index;
-    }
-  }
-  return -1;
-}
-
+/**
+ * Merges a session payload (SSE, a POST reply, a list refresh, a transcript
+ * load) into the one shown. Events are reconciled append-only: a payload
+ * adds and updates events but never removes one already shown, so an older
+ * snapshot cannot erase a newer steer. A payload without events keeps the
+ * events shown. Display normalization is never stored.
+ */
 export function mergeLoadedAgentSession(
   existing: AgentSession | undefined,
   incoming: AgentSession,
 ): AgentSession {
-  const normalizedIncoming = normalizeAgentSessionForDisplay(incoming);
-  if (!existing || normalizedIncoming.events !== undefined) {
-    return normalizedIncoming;
+  if (!existing) {
+    return incoming.events === undefined
+      ? incoming
+      : { ...incoming, events: normalizeAgentEvents(incoming.events) };
+  }
+  if (incoming.events !== undefined) {
+    const merged: WindowedAgentSession = {
+      ...incoming,
+      events: reconcileAgentEvents(existing.events, incoming.events),
+    };
+    // A page of older events brings no state events: those held stay.
+    const stateEvents =
+      (incoming as WindowedAgentSession).stateEvents ??
+      (existing as WindowedAgentSession).stateEvents;
+    if (stateEvents) merged.stateEvents = stateEvents;
+    return merged;
   }
   if (!agentSessionHasDetails(existing)) {
-    return normalizedIncoming;
+    return incoming;
   }
-  return normalizeAgentSessionForDisplay({
+  return {
     ...existing,
-    ...normalizedIncoming,
-    error: normalizedIncoming.error || existing.error,
+    ...incoming,
+    error: incoming.error || existing.error,
     events: existing.events,
     input:
-      normalizedIncoming.input?.id === existing.input?.id && existing.input
+      incoming.input?.id === existing.input?.id && existing.input
         ? {
             ...existing.input,
-            ...normalizedIncoming.input,
+            ...incoming.input,
             importedContext:
-              normalizedIncoming.input?.importedContext ||
-              existing.input.importedContext,
+              incoming.input?.importedContext || existing.input.importedContext,
             profileTransitionNote:
-              normalizedIncoming.input?.profileTransitionNote ||
+              incoming.input?.profileTransitionNote ||
               existing.input.profileTransitionNote,
           }
-        : normalizedIncoming.input,
-    response: normalizedIncoming.response || existing.response,
-  });
+        : incoming.input,
+    // List summaries carry no response. The kept one only answers "is this
+    // session's detail loaded"; a transcript never shows it over events.
+    response: incoming.response || existing.response,
+  };
 }
 
 export function agentSessionNeedsDetails(session: AgentSession): boolean {
+  return (
+    agentSessionLacksDetails(session) || agentSessionBehindActivity(session)
+  );
+}
+
+/**
+ * What is shown is missing outright: no transcript at all, or a finished
+ * session without its answer or error.
+ */
+export function agentSessionLacksDetails(session: AgentSession): boolean {
   if (session.events === undefined) {
     return true;
   }
-  if (
-    session.status === "completed" ||
-    session.status === "failed" ||
-    session.status === "canceled"
-  ) {
-    return !session.response && !session.error;
+  return (
+    isTerminalStatus(session.status) && !session.response && !session.error
+  );
+}
+
+/**
+ * The session reports activity newer than its newest event shown. A sign of
+ * missed events only while live events are not arriving: with the stream
+ * delivering, they arrive (or the server says resync), and the times of a
+ * summary and of the events need not match exactly.
+ */
+export function agentSessionBehindActivity(session: AgentSession): boolean {
+  if (session.events === undefined || isTerminalStatus(session.status)) {
+    return false;
   }
   const lastActivityAt = Date.parse(session.lastActivityAt ?? "");
-  const latestEventAt = Math.max(
-    Number.NEGATIVE_INFINITY,
-    ...session.events.map((event) => Date.parse(event.at)),
-  );
-  if (
+  const latestEventAt = latestEventTime(session.events);
+  return (
     Number.isFinite(lastActivityAt) &&
     (!Number.isFinite(latestEventAt) || lastActivityAt > latestEventAt)
-  ) {
-    return true;
-  }
-  return false;
+  );
 }
 
 /** A terminal list projection whose response has not been hydrated yet. */
@@ -279,4 +350,13 @@ function agentSessionHasDetails(session: AgentSession): boolean {
     session.input?.importedContext ||
     session.input?.profileTransitionNote,
   );
+}
+
+function latestEventTime(events: readonly AgentSessionEvent[]): number {
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const event of events) {
+    const at = Date.parse(event.at);
+    if (at > latest) latest = at;
+  }
+  return latest;
 }

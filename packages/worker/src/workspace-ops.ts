@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type {
   AgentModelOption,
   AgentProfileProjection,
@@ -45,21 +45,16 @@ import {
 } from "./profiles.js";
 import { deviceSystem, getDevice } from "./device.js";
 import { runningWorker } from "./worker-identity.js";
-import { optionValue, readOptionalText, safeID, sizeLabel } from "./utils.js";
+import { optionValue, safeID, sizeLabel } from "./utils.js";
 import {
   readRegistry,
   readWorkspace,
   workspaceFilePath,
-  writeIfMissing,
 } from "./workspaces.js";
 import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
-
-export function defaultSkillsConfig(): string {
-  return `skills:\n  issue-splitting:\n    version: 0.2.0\n    scope: workspace\n    source: .foundry/skills.yaml\n  visual-qa:\n    version: 0.9.0\n    scope: workspace\n    source: .foundry/skills.yaml\n`;
-}
 
 interface SetupWorkspacePayload {
   path: string;
@@ -140,75 +135,9 @@ export function assetsForWorkspace(
       status: previewConfigured ? "available" : "missing",
       detail: previewConfigured
         ? ".foundry/preview.json"
-        : "copy preview.example.json to preview.json",
+        : "add .foundry/preview.json",
     },
   ];
-}
-
-export function skillsForWorkspace(
-  workspace: WorkspaceProjection,
-  workspacePath: string,
-): SkillPackRef[] {
-  const source = ".foundry/skills.yaml";
-  const text = readOptionalText(resolve(workspacePath, source));
-  if (!text) {
-    return [];
-  }
-
-  const skills: SkillPackRef[] = [];
-  let current: Partial<SkillPackRef> | undefined;
-  const finishCurrent = (): void => {
-    if (!current?.name) {
-      return;
-    }
-    skills.push({
-      id: current.id ?? current.name,
-      name: current.name,
-      scope: current.scope ?? "workspace",
-      source: current.source ?? source,
-      version: current.version ?? "0.0.0",
-      workspaceId: workspace.id,
-    });
-  };
-
-  for (const line of text.split(/\r?\n/)) {
-    const skillMatch = /^  ([a-zA-Z0-9_.-]+):\s*$/.exec(line);
-    if (skillMatch) {
-      finishCurrent();
-      current = {
-        id: skillMatch[1],
-        name: skillMatch[1],
-      };
-      continue;
-    }
-    const fieldMatch = /^    ([a-zA-Z0-9_-]+):\s*(.+?)\s*$/.exec(line);
-    if (fieldMatch && current) {
-      const key = fieldMatch[1] ?? "";
-      const value = (fieldMatch[2] ?? "").replace(/^["']|["']$/g, "");
-      if (key === "version") {
-        current.version = value;
-      } else if (key === "scope") {
-        current.scope = value as SkillPackRef["scope"];
-      } else if (key === "source") {
-        current.source = value;
-      }
-    }
-  }
-  finishCurrent();
-
-  return skills;
-}
-
-export function ensureRuntimeWorkspaceFiles(workspacePath: string): void {
-  const foundryPath = resolve(workspacePath, ".foundry");
-  if (!existsSync(foundryPath)) {
-    return;
-  }
-  writeIfMissing(
-    resolve(foundryPath, "skills.yaml"),
-    defaultSkillsConfig(),
-    0o700,
-  );
 }
 
 export function agentsForWorkspace(
@@ -281,26 +210,6 @@ export function workspaceFilesForWorkspace(
     });
   }
 
-  for (const path of ["AGENTS.md", "CONTEXT.md", ".foundry/skills.yaml"]) {
-    if (entries.some((entry) => entry.path === path)) {
-      continue;
-    }
-    const absolutePath = resolve(root, path);
-    if (!existsSync(absolutePath)) {
-      continue;
-    }
-    const stat = statSync(absolutePath);
-    entries.push({
-      id: workspaceFileID(workspaceID, path),
-      workspaceId: workspaceID,
-      path,
-      name: basename(path),
-      kind: "file",
-      sizeLabel: sizeLabel(stat.size),
-      updatedLabel: "local",
-    });
-  }
-
   return entries.sort((left, right) => {
     if (left.kind !== right.kind) {
       return left.kind === "file" ? -1 : 1;
@@ -353,14 +262,7 @@ export function doctor(inputPath: string | undefined): void {
   const workspace = readWorkspace(workspacePath);
   console.log(`\nWorkspace ${workspace.name}`);
   console.log(`Path: ${workspace.path}`);
-  for (const file of [
-    "AGENTS.md",
-    "CONTEXT.md",
-    ".foundry/skills.yaml",
-    ".foundry/runs",
-  ]) {
-    report(existsSync(resolve(workspacePath, file)), file);
-  }
+  report(true, ".foundry/workspace.json");
   process.exitCode = failed ? 1 : 0;
 }
 
@@ -518,6 +420,7 @@ export const daemonCapabilities = [
   "diagnostics",
   "skill_repository_fetch",
   "workspace_inventory",
+  "workspace_git_setup",
 ];
 
 /**
@@ -547,7 +450,6 @@ export function daemonRegistration(workspacePath: string): {
   workspace: WorkspaceProjection;
   workspaceFiles: WorkspaceFileEntry[];
 } {
-  ensureRuntimeWorkspaceFiles(workspacePath);
   const device = getDevice();
   const workspaceProjection = workspaceProjectionForPath(workspacePath, device);
   const providerHealth = providerHealthData();
@@ -571,7 +473,9 @@ export function daemonRegistration(workspacePath: string): {
       system: deviceSystem(),
     },
     providerHealth,
-    skills: skillsForWorkspace(workspaceProjection, workspacePath),
+    // Workspace skills come from the server's Skill library; the field stays
+    // empty for servers that still expect it.
+    skills: [],
     workspace: workspaceProjection,
     workspaceFiles: workspaceFilesForWorkspace(
       workspacePath,

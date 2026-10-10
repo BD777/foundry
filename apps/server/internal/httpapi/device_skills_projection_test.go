@@ -25,7 +25,7 @@ func TestFoundryDataLeavesDeviceSkillListsOut(t *testing.T) {
 		}}); err != nil {
 			t.Fatalf("scan: %v", err)
 		}
-		server.invalidateProjections()
+		server.projectionsChanged("")
 	}
 	skillsVersion := func() string {
 		t.Helper()

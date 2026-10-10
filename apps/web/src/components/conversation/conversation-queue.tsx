@@ -122,7 +122,9 @@ export function ConversationQueue({
             data-dragging={dragged === item.id ? "true" : "false"}
             data-editing={editing?.id === item.id ? "true" : "false"}
             data-maybe-sent={
-              item.state === "local" && item.sending ? "true" : "false"
+              (item.state === "local" && item.sending) || item.maybeSent
+                ? "true"
+                : "false"
             }
             data-state={item.state ?? "queued"}
             draggable={draggable}
@@ -208,8 +210,17 @@ export function ConversationQueue({
                 </span>
               ) : null}
               {item.state === "failed" && item.error ? (
-                <span className="fdy-chat-queue-error" role="alert">
-                  {t("queue.failed", { error: item.error })}
+                <span
+                  className={
+                    item.maybeSent
+                      ? "fdy-chat-queue-warning"
+                      : "fdy-chat-queue-error"
+                  }
+                  role="alert"
+                >
+                  {item.maybeSent
+                    ? t("queue.unconfirmed", { error: item.error })
+                    : t("queue.failed", { error: item.error })}
                 </span>
               ) : null}
             </div>

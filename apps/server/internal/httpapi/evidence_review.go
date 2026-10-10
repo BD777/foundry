@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -103,6 +104,12 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			review, err = st.CurrentReview(r.Context(), issue.ID)
 		}
+	}
+	// A review that changed became the Issue's current one, with its
+	// verification summary.
+	if current, readErr := s.store.GetIssue(r.Context(), issue.ID); readErr == nil &&
+		!reflect.DeepEqual(current.CurrentReviewSnapshotID, issue.CurrentReviewSnapshotID) {
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeResult(w, review, err)
 }

@@ -58,6 +58,7 @@ lines.once("line", async (line) => {
             input.session.id,
             command.message,
             command.attachments,
+            command.steerId,
           );
           output({ type: "steer_result", id });
         } catch (error) {
@@ -73,8 +74,16 @@ lines.once("line", async (line) => {
       input.cwd,
       input.session,
       input.profile,
-      async (label, detail, level = "info", metadata, message) => {
-        output({ type: "event", label, detail, level, metadata, message });
+      async (label, detail, level = "info", metadata, message, eventId) => {
+        output({
+          type: "event",
+          label,
+          detail,
+          level,
+          metadata,
+          message,
+          eventId,
+        });
       },
       async () => output({ type: "setup" }),
       (nativeSessionId) => output({ type: "native", nativeSessionId }),

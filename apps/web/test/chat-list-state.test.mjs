@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   chatIsUnread,
   chatListStatus,
+  chatReadView,
   threadAnswerRevision,
 } from "../src/features/chat/chat-list-state.ts";
 
@@ -28,4 +29,12 @@ test("row uses one status with processing, failure, and unread precedence", () =
   assert.equal(chatListStatus(false, true, true), "failed");
   assert.equal(chatListStatus(false, false, true), "unread");
   assert.equal(chatListStatus(false, false, false), "idle");
+});
+
+test("an answer is read only while its chat is open in a visible tab", () => {
+  const open = { workspaceId: "ws", active: true, selectedId: "chat-1" };
+  assert.equal(chatReadView({ ...open, visible: true }), "ws:chat-1");
+  assert.equal(chatReadView({ ...open, visible: false }), "");
+  assert.equal(chatReadView({ ...open, visible: true, active: false }), "");
+  assert.equal(chatReadView({ ...open, visible: true, selectedId: "" }), "");
 });

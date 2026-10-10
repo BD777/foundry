@@ -11,8 +11,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Claude sessions always get Foundry's built-in skills; a workspace skill of
-// the same name gives way, and other agents are left as they are.
+// Sessions always get their agent's Foundry built-in skills; a workspace
+// skill of the same name gives way.
 func TestSessionsGetTheirAgentsBuiltinSkills(t *testing.T) {
 	workspace := []store.SessionSkillRef{
 		{SkillID: "skill-qa", Name: "qa", Revision: 1},
@@ -26,12 +26,13 @@ func TestSessionsGetTheirAgentsBuiltinSkills(t *testing.T) {
 	if names["skill-creator"] != "builtin-claude-skill-creator" || names["qa"] != "skill-qa" {
 		t.Fatalf("claude refs = %+v", claude)
 	}
-	if _, ok := names["Skill-Creator"]; ok || len(claude) != 2 {
+	if _, ok := names["Skill-Creator"]; ok || len(claude) != 3 || names["foundry"] != "builtin-claude-foundry" {
 		t.Fatalf("the same-named workspace skill must give way: %+v", claude)
 	}
+	// Codex keeps its own skill-creator and gets Foundry's foundry skill.
 	codex := withBuiltinSkills(workspace, "codex")
-	if len(codex) != 2 || codex[1].SkillID != "skill-own-creator" {
-		t.Fatalf("codex refs changed: %+v", codex)
+	if len(codex) != 3 || codex[0].SkillID != "builtin-codex-foundry" || codex[2].SkillID != "skill-own-creator" {
+		t.Fatalf("codex refs = %+v", codex)
 	}
 }
 

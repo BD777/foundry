@@ -32,6 +32,8 @@ export interface ChatOverrideDraft {
 
 /** UI-neutral projection consumed by the Chat message view. */
 export interface ChatViewMessage {
+  /** The client id of the message this tab sent, once the transcript shows it. */
+  clientId?: string;
   at?: string;
   agentLabel?: string;
   attachments?: ChatAttachment[];
@@ -41,6 +43,8 @@ export interface ChatViewMessage {
   durationMs?: number;
   /** When a process group's first step happened, for its live timer. */
   startedAt?: string;
+  /** When the running turn began: a live group's timer counts from it. */
+  turnStartedAt?: string;
   /** Tokens of the model requests behind a process group's steps. */
   stepUsage?: StepUsage;
   idea?: string;
@@ -87,10 +91,16 @@ export interface ChatSubagentItem {
 }
 
 /** A live agent-created timer observed via the agent timer interface. */
+/**
+ * A timer's firing. `answerUnloaded`: its turn is older than the events
+ * loaded, so its answer is not here yet (it comes with them).
+ */
+export type ChatTimerFire = AgentSessionTimerFire & { answerUnloaded?: true };
+
 export interface ChatTimerItem {
   detail?: string;
   /** Observed automatic firings, newest first. */
-  fires: AgentSessionTimerFire[];
+  fires: ChatTimerFire[];
   id: string;
   kind: "timer";
   label: string;
@@ -163,6 +173,14 @@ export interface ChatContextCardData {
   timers: ChatTimerItem[];
   /** Commands, monitors and workflows (not subagents), running first. */
   background: ChatBackgroundTaskItem[];
+}
+
+/** Rows of the side panel still running while the chat's turn has ended. */
+export interface ChatRunningBackgroundWork {
+  /** Running commands, monitors and workflows in the Background section. */
+  taskIds: string[];
+  /** Running subagents in the Subagents section. */
+  subagentIds: string[];
 }
 
 /** A durable Chat thread assembled from one or more agent sessions. */

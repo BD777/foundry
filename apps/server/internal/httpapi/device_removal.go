@@ -30,5 +30,6 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.closeRemovedDevice(id)
+	s.projectionsChanged("")
 	writeResult(w, device, nil)
 }

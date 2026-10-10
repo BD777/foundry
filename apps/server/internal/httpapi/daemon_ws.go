@@ -119,10 +119,12 @@ type DaemonHub struct {
 	// onWorkerUpdateStatus receives an update failure a worker reports
 	// without being asked.
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
-	connections          map[string]*daemonConnection
-	events               *browserEventHub
-	store                store.Store
-	secrets              secretKeeper
+	// deviceProjection is the device a device_status_changed event carries.
+	deviceProjection func(ctx context.Context, deviceID string) (store.DeviceProjection, bool)
+	connections      map[string]*daemonConnection
+	events           *browserEventHub
+	store            store.Store
+	secrets          secretKeeper
 	// live tracks every upgraded socket, including ones that never sent
 	// hello and so never landed in connections. Shutdown needs all of them.
 	live         map[*daemonConnection]struct{}
@@ -131,6 +133,11 @@ type DaemonHub struct {
 	upgrader     websocket.Upgrader
 	// disconnects keeps each device's last drop for the device page.
 	disconnects deviceDisconnects
+	// subagents caches each session's subagent list as its device read it.
+	subagents *subagentListCache
+	// subagentEnds gathers the ends of a session's subagents (see
+	// publishSubagentChange).
+	subagentEnds subagentEndSignals
 	// readTimeout is how long a connection may receive nothing at all from
 	// its device (no pong, no part of a message) before it is dropped.
 	readTimeout time.Duration
@@ -161,6 +168,7 @@ var (
 	closeUndecodableMessage    = daemonCloseCause{websocket.CloseInvalidFramePayloadData, "undecodable message"}
 	closeInvalidEnvelope       = daemonCloseCause{websocket.CloseProtocolError, "invalid message envelope"}
 	closeByServer              = daemonCloseCause{websocket.CloseGoingAway, "closed by server"}
+	closeRepliesBacklog        = daemonCloseCause{websocket.CloseGoingAway, "device sent faster than its connection took the answers"}
 )
 
 // closeReadTimeout is the cause for a device that sent nothing for timeout.
@@ -237,6 +245,15 @@ type daemonConnection struct {
 	// by the time a request reports the disconnect.
 	lifetime    context.Context
 	endLifetime context.CancelFunc
+	// connectedAt is when the device opened this connection.
+	connectedAt time.Time
+	// outbox is the worker's latest report of its session outbox.
+	outbox workerOutboxReport
+	// replies wait for the write loop: answers to the device's own
+	// messages, never dropped (see reply).
+	replyMu    sync.Mutex
+	replies    []wsEnvelope
+	replyReady chan struct{}
 }
 
 type wsEnvelope struct {
@@ -428,11 +445,17 @@ type wsSteerSessionPayload struct {
 	Message     string                 `json:"message"`
 	Attachments []store.ChatAttachment `json:"attachments,omitempty"`
 	SessionID   string                 `json:"sessionId"`
+	// InputID is the message's id (a queued message's): a worker that
+	// already applied a steer with it answers without applying it again,
+	// and names its transcript event evt_<InputID>. Older workers ignore it.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type wsSessionSteeredPayload struct {
 	Error     string `json:"error,omitempty"`
 	SessionID string `json:"sessionId"`
+	// InputID echoes the steer's id; older workers send none.
+	InputID string `json:"inputId,omitempty"`
 }
 
 type wsCancelSessionPayload struct {
@@ -445,6 +468,10 @@ type wsCancelSessionPayload struct {
 type wsSessionCanceledPayload struct {
 	Error     string `json:"error,omitempty"`
 	SessionID string `json:"sessionId"`
+	// Answered: the turn had already answered, and the stop ended only the
+	// background work it waited for. The device reports the session
+	// completed with that answer instead of canceled.
+	Answered bool `json:"answered,omitempty"`
 }
 
 type wsSessionStartedPayload struct {
@@ -500,6 +527,7 @@ func NewDaemonHub(store store.Store, events *browserEventHub, allowedOrigin stri
 		events:      events,
 		live:        make(map[*daemonConnection]struct{}),
 		store:       store,
+		subagents:   newSubagentListCache(),
 		readTimeout: daemonReadTimeout,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -543,6 +571,7 @@ func newDaemonConnection(hub *DaemonHub, socket *websocket.Conn) *daemonConnecti
 	lifetime, endLifetime := context.WithCancel(context.Background())
 	return &daemonConnection{
 		activeSessions:     make(map[string]bool),
+		connectedAt:        time.Now(),
 		done:               make(chan struct{}),
 		dispatchedSessions: make(map[string]string),
 		endLifetime:        endLifetime,
@@ -552,6 +581,7 @@ func newDaemonConnection(hub *DaemonHub, socket *websocket.Conn) *daemonConnecti
 		registrations:      make(map[string]store.DaemonRegistration),
 		rpc:                newDaemonRPC(),
 		send:               make(chan wsEnvelope, 128),
+		replyReady:         make(chan struct{}, 1),
 		socket:             socket,
 		writeFinished:      make(chan struct{}),
 	}
@@ -684,18 +714,23 @@ func (h *DaemonHub) DispatchAgentSession(session store.AgentSession) error {
 	return connection.dispatchAgentSession(session)
 }
 
-func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, message string, attachments []store.ChatAttachment) error {
+// SteerAgentSession moves a message into the session's running turn.
+// inputID, the message's id when it has one, lets the device apply a steer
+// sent again only once.
+func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, inputID string, message string, attachments []store.ChatAttachment) error {
 	connection := h.connectionFor(session.DeviceID)
 	if connection == nil {
 		return store.ErrNotFound
 	}
-	return connection.steerAgentSession(ctx, session.ID, message, attachments)
+	return connection.steerAgentSession(ctx, session.ID, inputID, message, attachments)
 }
 
-func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentSession) error {
+// CancelAgentSession stops a session on its device. answered reports that
+// the turn had already answered: the device completes it with that answer.
+func (h *DaemonHub) CancelAgentSession(ctx context.Context, session store.AgentSession) (answered bool, err error) {
 	connection := h.connectionFor(session.DeviceID)
 	if connection == nil {
-		return store.ErrNotFound
+		return false, store.ErrNotFound
 	}
 	return connection.cancelAgentSession(ctx, session.ID, session.Input.ID)
 }
@@ -823,10 +858,28 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 		sessionID = probe.Event.SessionID
 	}
 	session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
 	if err != nil || session.DeviceID != deviceID {
 		return errForeignTarget
 	}
 	return nil
+}
+
+// sessionLifecycleTypes are the session messages a worker keeps until the
+// server acknowledges them (its reliable session outbox).
+var sessionLifecycleTypes = map[string]bool{
+	wsSessionStartedType: true, wsSessionEventType: true, wsSessionBlockedType: true,
+	wsSessionResumedType: true, wsSessionNativeSessionIDType: true, wsSessionCompleteType: true,
+}
+
+// refusedForGood reports a session message refused for a reason no retry
+// changes: its session does not exist (any more), no longer takes it, or
+// belongs to another device. Other failures (the store) may pass.
+func refusedForGood(messageType string, err error) bool {
+	return sessionLifecycleTypes[messageType] &&
+		(errors.Is(err, errForeignTarget) || errors.Is(err, store.ErrNotFound))
 }
 
 func (h *DaemonHub) workspaceOnDevice(ctx context.Context, workspaceID, deviceID string) bool {
@@ -983,7 +1036,46 @@ func (h *DaemonHub) syncRegistration(registration store.DaemonRegistration) erro
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
-	return h.store.RegisterDaemon(context.Background(), registration)
+	return h.registerDaemon(context.Background(), registration)
+}
+
+// registerDaemon stores a device's report and announces what it changed
+// that no other event carries (device_status_changed carries the device).
+func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.DaemonRegistration) error {
+	changes := store.DaemonChanges{Global: true}
+	if registration.Workspace.ID != "" {
+		changes.Workspaces = []string{registration.Workspace.ID}
+	}
+	if reporting, ok := h.store.(store.DaemonChangeStore); ok {
+		var err error
+		if changes, err = reporting.RegisterDaemonChanges(ctx, registration); err != nil {
+			return err
+		}
+	} else if err := h.store.RegisterDaemon(ctx, registration); err != nil {
+		return err
+	}
+	if h.events != nil {
+		h.events.announce(changes)
+	}
+	return nil
+}
+
+// syncChats stores a device's native chats and sends viewers what changed
+// in their chat lists.
+func (h *DaemonHub) syncChats(ctx context.Context, input store.SyncChatsInput) error {
+	changes := store.DaemonChanges{Workspaces: []string{input.WorkspaceID}}
+	if reporting, ok := h.store.(store.DaemonChangeStore); ok {
+		var err error
+		if changes, err = reporting.SyncChatsChanges(ctx, input); err != nil {
+			return err
+		}
+	} else if err := h.store.SyncChats(ctx, input); err != nil {
+		return err
+	}
+	if h.events != nil {
+		h.events.pushSyncedChats(ctx, h.store, input, changes)
+	}
+	return nil
 }
 
 func (c *daemonConnection) syncRegistration(registration store.DaemonRegistration) error {
@@ -1000,7 +1092,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
-	if err := c.hub.store.RegisterDaemon(context.Background(), registration); err == nil {
+	if err := c.hub.registerDaemon(context.Background(), registration); err == nil {
 		c.hub.publishDeviceStatus(registration)
 	} else {
 		if errors.Is(err, store.ErrDeviceRemoved) {
@@ -1145,7 +1237,7 @@ func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentS
 func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 	sessions, err := c.unsettledSessions(workspaceID)
 	if err != nil {
-		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
+		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
 	for _, session := range sessions {
@@ -1154,7 +1246,7 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		}
 		reconciled, recovered, err := c.hub.reconcileAgentSession(context.Background(), session)
 		if err != nil {
-			c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
+			c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 			return
 		}
 		if recovered || reconciled.Status != "queued" {
@@ -1172,7 +1264,7 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 			continue
 		}
 		if err := c.dispatchAgentSession(session); err != nil {
-			c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
+			c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 			return
 		}
 	}
@@ -1191,7 +1283,7 @@ func (c *daemonConnection) recoverOrphanedAgentSessions(claimsReported bool) {
 	deviceID, _ := c.registrationSnapshot()
 	sessions, err := c.unsettledSessions("")
 	if err != nil {
-		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
+		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
 	for _, session := range sessions {
@@ -1239,12 +1331,18 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	}
 	connection.registrationMu.Unlock()
 	if len(registrations) == 0 {
+		// A device without a workspace has no row to mark offline; its
+		// disconnect record (lastDisconnect) is still news, and no device
+		// event reaches its viewers without a workspace.
+		if h.events != nil {
+			h.events.dataChanged("", fieldDevices)
+		}
 		return
 	}
 	for _, registration := range registrations {
 		registration.Device.Status = "disconnected"
 		registration.Device.LastSeenLabel = "offline"
-		if err := h.store.RegisterDaemon(context.Background(), registration); err == nil {
+		if err := h.registerDaemon(context.Background(), registration); err == nil {
 			h.publishDeviceStatus(registration)
 		} else {
 			// A soft-removed device is expected to fail the offline upsert;
@@ -1315,7 +1413,16 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 		// run the read deadline out, so slowness is worth a line.
 		started := time.Now()
 		if err := c.handleEnvelope(ctx, envelope); err != nil {
-			c.queue(wsEnvelope{Type: wsErrorType, ID: envelope.ID, Error: err.Error()})
+			if refusedForGood(envelope.Type, err) {
+				// No later attempt could change it: the session is gone,
+				// finished or another device's. Workers send a refused
+				// session message again; acknowledged, they stop.
+				deviceID, _ := c.registrationSnapshot()
+				log.Printf("daemon %s: %s %s dropped: %v", deviceID, envelope.Type, envelope.ID, err)
+				c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			} else {
+				c.reply(wsEnvelope{Type: wsErrorType, ID: envelope.ID, Error: err.Error()})
+			}
 		}
 		if elapsed := time.Since(started); elapsed > 10*time.Second {
 			log.Printf("daemon message %s took %s", envelope.Type, elapsed.Round(time.Millisecond))
@@ -1380,7 +1487,15 @@ func (c *daemonConnection) writeLoop() {
 				websocket.FormatCloseMessage(cause.code, cause.text),
 			)
 			return
+		case <-c.replyReady:
+			if !c.writeReplies() {
+				return
+			}
 		case envelope := <-c.send:
+			// Answers the device waits for go ahead of the server's requests.
+			if !c.writeReplies() {
+				return
+			}
 			if err := c.socket.WriteJSON(envelope); err != nil {
 				log.Printf("daemon websocket write failed type=%s id=%s connection=%p: %v", envelope.Type, envelope.ID, c, err)
 				return
@@ -1414,7 +1529,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			return err
 		}
 		c.applyServedWorkspaces(registration)
-		c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+		c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 		if c.hub.onDeviceConnected != nil {
 			go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
 		}
@@ -1424,10 +1539,11 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 		return nil
 	case wsHeartbeatType:
-		c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+		c.noteHeartbeat(envelope.Payload)
+		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		return nil
 	case wsReadyForIssueType:
-		c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		go c.claimAndSend()
 		return nil
 	case wsFileReadType:
@@ -1488,7 +1604,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 				if err := c.syncRegistration(payload.Registration); err != nil {
 					return err
 				}
-				c.queue(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+				c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
 				go c.dispatchQueuedAgentSessions(payload.Registration.Workspace.ID)
 				go c.claimAndSend()
 			}
@@ -1590,13 +1706,13 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		existing, existingErr := c.hub.store.GetAgentSessionSummary(ctx, payload.SessionID)
 		if existingErr == nil && staleSessionInput(existing, payload.InputID) {
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			return nil
 		}
 		if existingErr == nil && (existing.Status == "running" || !isRecoverableAgentSessionStatus(existing.Status)) {
 			c.setActiveSession(payload.SessionID, existing.Status == "running")
 			c.clearDispatchedSession(payload.SessionID)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			return nil
 		}
 		session, err := c.hub.store.StartAgentSession(ctx, payload.SessionID)
@@ -1605,7 +1721,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.clearDispatchedSession(payload.SessionID)
 			c.hub.events.Publish("agent_session_started", session)
 			c.hub.startIssueExecution(ctx, session)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
 	case wsSessionEventType:
@@ -1613,17 +1729,27 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
 			return err
 		}
+		// The server's clock, never the worker's: the store keeps this time,
+		// so the streamed event and a later read of it agree.
 		payload.Event.At = time.Now().UTC().Format(time.RFC3339Nano)
-		err := c.hub.store.AppendAgentSessionEvent(ctx, payload.Event)
+		// An event sent again (its acknowledgement was late) is acknowledged
+		// again and nothing else: no new time, no stream, no cache change.
+		stored, err := c.recordSessionEvent(ctx, payload.Event)
 		if err == nil {
 			target := c.sessionTarget(ctx, payload.Event.SessionID)
-			c.hub.events.PublishIn(target.workspaceID, "agent_session_event", payload.Event)
+			if stored {
+				subagents := c.hub.subagents.observe(payload.Event)
+				c.hub.events.PublishIn(target.workspaceID, "agent_session_event", payload.Event)
+				c.publishSubagentChange(target.workspaceID, payload.Event, subagents)
+			}
+			// Also for one sent again: the attempt that stored it in the
+			// session may have failed to add it to the Issue's run.
 			if target.executionIssue != "" {
-				err = c.hub.appendIssueExecutionEvent(ctx, target.workspaceID, payload.Event)
+				err = c.hub.appendIssueExecutionEvent(ctx, target.workspaceID, payload.Event, stored)
 			}
 		}
 		if err == nil {
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
 	case wsSessionBlockedType:
@@ -1637,7 +1763,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		session, err := c.hub.store.BlockAgentSession(ctx, payload.SessionID, payload.Reason)
 		if err == nil {
 			c.hub.events.Publish("agent_session_blocked", session)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
 	case wsSessionResumedType:
@@ -1650,7 +1776,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		session, err := c.hub.store.ResumeAgentSession(ctx, payload.SessionID)
 		if err == nil {
 			c.hub.events.Publish("agent_session_resumed", session)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
 	case wsSessionNativeSessionIDType:
@@ -1661,7 +1787,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		session, err := c.hub.store.SetAgentSessionNativeSessionID(ctx, payload.SessionID, payload.NativeSessionID)
 		if err == nil {
 			c.hub.events.Publish("agent_session_native_session_id", session)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
 	case wsSessionCompleteType:
@@ -1669,9 +1795,9 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
 			return err
 		}
-		existing, existingErr := c.hub.store.GetAgentSession(ctx, payload.SessionID)
+		existing, existingErr := store.AgentSessionRecord(ctx, c.hub.store, payload.SessionID)
 		if existingErr == nil && staleSessionInput(existing, payload.InputID) {
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			return nil
 		}
 		if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
@@ -1680,7 +1806,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			// A session the server already settled (a stale reconcile) still
 			// hands over the Issue result the device recorded.
 			c.hub.settleIssueSession(ctx, existing, payload.IssueResult, payload.ClarificationResult)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, existing)
 			}
@@ -1698,9 +1824,10 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err == nil {
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
+			c.hub.subagents.invalidate(payload.SessionID)
 			c.hub.events.Publish("agent_session_completed", session)
 			c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
-			c.queue(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 			if c.hub.onSessionCompleted != nil {
 				c.hub.onSessionCompleted(ctx, session)
 			}
@@ -1808,8 +1935,8 @@ func (c *daemonConnection) listAgentSubagents(ctx context.Context, workspaceID s
 	return value.Subagents, nil
 }
 
-func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID string, message string, attachments []store.ChatAttachment) error {
-	payload, err := json.Marshal(wsSteerSessionPayload{SessionID: sessionID, Message: message, Attachments: attachments})
+func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID string, inputID string, message string, attachments []store.ChatAttachment) error {
+	payload, err := json.Marshal(wsSteerSessionPayload{SessionID: sessionID, Message: message, Attachments: attachments, InputID: strings.TrimSpace(inputID)})
 	if err != nil {
 		return err
 	}
@@ -1823,19 +1950,19 @@ func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID stri
 	return nil
 }
 
-func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string, inputID string) error {
+func (c *daemonConnection) cancelAgentSession(ctx context.Context, sessionID string, inputID string) (bool, error) {
 	payload, err := json.Marshal(wsCancelSessionPayload{SessionID: sessionID, InputID: inputID})
 	if err != nil {
-		return err
+		return false, err
 	}
 	value, err := daemonRequest[wsSessionCanceledPayload](ctx, c, wsCancelSessionType, payload)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if value.Error != "" {
-		return errors.New(value.Error)
+		return false, errors.New(value.Error)
 	}
-	return nil
+	return value.Answered, nil
 }
 
 func (c *daemonConnection) listSubdirectories(ctx context.Context, path string) ([]store.WorkspaceDirectoryEntry, error) {
@@ -2137,8 +2264,12 @@ func (c *daemonConnection) claimAndSend() {
 		return
 	}
 	if err != nil {
-		c.queue(wsEnvelope{Type: wsErrorType, Error: err.Error()})
+		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
+	}
+	// The claim started the Issue and queued its session without an event.
+	if c.hub.events != nil {
+		c.hub.events.dataChanged(session.WorkspaceID, fieldIssues, fieldAgentSessions)
 	}
 	// A dispatch that does not reach the worker leaves the session queued;
 	// the device's next registration sends it again.
@@ -2167,10 +2298,55 @@ func (c *daemonConnection) queue(envelope wsEnvelope) bool {
 		return true
 	default:
 		// Backpressure on server-to-daemon traffic must not tear down a live
-		// agent session. Callers can retry request/response RPC, while ACKs are
-		// advisory and session events remain durable in the store.
+		// agent session. Callers can retry request/response RPC; answers to
+		// the device's own messages never come here (see reply).
 		return false
 	}
+}
+
+// maxPendingReplies bounds the answers waiting for a device whose link does
+// not take them: past it the connection is ended, and the device sends again
+// what was not acknowledged once it reconnects.
+const maxPendingReplies = 4096
+
+// reply queues an answer to one of the device's own messages: an ack, an
+// error or a registration. Unlike queue it never drops one. A device that
+// never hears whether its message was taken keeps it, and lags by it.
+func (c *daemonConnection) reply(envelope wsEnvelope) bool {
+	select {
+	case <-c.done:
+		return false
+	default:
+	}
+	c.replyMu.Lock()
+	if len(c.replies) >= maxPendingReplies {
+		c.replyMu.Unlock()
+		go c.closeWith(closeRepliesBacklog)
+		return false
+	}
+	c.replies = append(c.replies, envelope)
+	c.replyMu.Unlock()
+	select {
+	case c.replyReady <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+// writeReplies writes every waiting reply, in order; false once the socket
+// fails.
+func (c *daemonConnection) writeReplies() bool {
+	c.replyMu.Lock()
+	replies := c.replies
+	c.replies = nil
+	c.replyMu.Unlock()
+	for _, envelope := range replies {
+		if err := c.socket.WriteJSON(envelope); err != nil {
+			log.Printf("daemon websocket write failed type=%s id=%s connection=%p: %v", envelope.Type, envelope.ID, c, err)
+			return false
+		}
+	}
+	return true
 }
 
 // close ends the connection for no more specific reason than closeByServer.
@@ -2267,6 +2443,10 @@ type deviceStatusEvent struct {
 	WorkspaceID string `json:"workspaceId"`
 	DeviceID    string `json:"deviceId"`
 	Status      string `json:"status"`
+	// Device is the device as workspace data lists it to a viewer who does
+	// not own it (no runtimeSettings, no owned), so a client can replace
+	// its copy and keep only those two fields of its own.
+	Device *store.DeviceProjection `json:"device,omitempty"`
 }
 
 // publishDeviceStatus reaches whoever can see the registration's workspace;
@@ -2275,11 +2455,17 @@ func (h *DaemonHub) publishDeviceStatus(registration store.DaemonRegistration) {
 	if h.events == nil {
 		return
 	}
-	h.events.Publish("device_status_changed", deviceStatusEvent{
+	event := deviceStatusEvent{
 		WorkspaceID: registration.Workspace.ID,
 		DeviceID:    registration.Device.ID,
 		Status:      registration.Device.Status,
-	})
+	}
+	if h.deviceProjection != nil {
+		if device, ok := h.deviceProjection(context.Background(), registration.Device.ID); ok {
+			event.Device = &device
+		}
+	}
+	h.events.Publish("device_status_changed", event)
 }
 
 // logWorkerStalls writes the event-loop stalls a worker reported: a stall

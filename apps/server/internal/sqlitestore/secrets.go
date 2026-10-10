@@ -145,7 +145,7 @@ func (s *Store) DeleteSecret(ctx context.Context, id string) error {
 // HasSecret reports whether a record exists under id without unsealing it.
 func (s *Store) HasSecret(ctx context.Context, id string) (bool, error) {
 	var one int
-	err := s.conn().QueryRowContext(ctx, `SELECT 1 FROM secret_records WHERE id = ?`, id).Scan(&one)
+	err := s.reader().QueryRowContext(ctx, `SELECT 1 FROM secret_records WHERE id = ?`, id).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

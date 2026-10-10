@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -29,6 +30,46 @@ func (s *Server) reconcileAgentSessions(ctx context.Context, sessions []store.Ag
 		}
 	}
 	return sessions
+}
+
+// staleSessionSweepInterval is how often the server looks for sessions whose
+// device stopped reporting, so they fail without anyone reading them.
+var staleSessionSweepInterval = 30 * time.Second
+
+// ReconcileStaleSessions fails, every staleSessionSweepInterval until ctx
+// ends, the running and blocked sessions whose device stopped reporting
+// (see reconcileAgentSession); each failure is published like any other.
+// Queued sessions a connected device has not started for a while are told
+// so (see noticeUnstartedSessions).
+func (s *Server) ReconcileStaleSessions(ctx context.Context) {
+	ticker := time.NewTicker(staleSessionSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if err := s.reconcileStaleSessions(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("stale session sweep: %v", err)
+		}
+		if err := s.noticeUnstartedSessions(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("unstarted session sweep: %v", err)
+		}
+	}
+}
+
+func (s *Server) reconcileStaleSessions(ctx context.Context) error {
+	active, ok := s.store.(store.ActiveAgentSessionStore)
+	if !ok {
+		return nil
+	}
+	sessions, err := active.ActiveAgentSessions(ctx)
+	if err != nil {
+		return err
+	}
+	s.reconcileAgentSessions(ctx, sessions)
+	return nil
 }
 
 func (h *DaemonHub) reconcileAgentSession(ctx context.Context, session store.AgentSession) (store.AgentSession, bool, error) {

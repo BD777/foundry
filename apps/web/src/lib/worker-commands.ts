@@ -40,6 +40,28 @@ export function npxUpdateCommand(
     : `${bootstrap} update`;
 }
 
+/** How long one read of the release serves every component that asks. */
+export const workerReleaseReuseMs = 60_000;
+
+let sharedRelease:
+  { promise: Promise<WorkerRelease>; startedAt: number } | undefined;
+
+/**
+ * This server's worker release, read once for every component that shows it
+ * at about the same time (the server may repack it without a restart, so a
+ * later mount reads again). A failed read is not kept.
+ */
+export function loadWorkerRelease(now = Date.now()): Promise<WorkerRelease> {
+  if (sharedRelease && now - sharedRelease.startedAt < workerReleaseReuseMs)
+    return sharedRelease.promise;
+  const entry = { promise: getWorkerRelease(), startedAt: now };
+  sharedRelease = entry;
+  entry.promise.catch(() => {
+    if (sharedRelease === entry) sharedRelease = undefined;
+  });
+  return entry.promise;
+}
+
 /** This server's worker release; undefined until loaded. */
 export function useWorkerRelease(): {
   release?: WorkerRelease;
@@ -51,7 +73,7 @@ export function useWorkerRelease(): {
   const [error, setError] = useState<string>();
   useEffect(() => {
     let cancelled = false;
-    getWorkerRelease()
+    loadWorkerRelease()
       .then((loaded) => {
         if (!cancelled) setRelease(loaded);
       })

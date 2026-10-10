@@ -31,7 +31,8 @@ func chatQueueSchema() []string {
 			revision INTEGER NOT NULL DEFAULT 1,
 			state TEXT NOT NULL DEFAULT 'queued',
 			error TEXT NOT NULL DEFAULT '',
-			sent_session_id TEXT NOT NULL DEFAULT ''
+			sent_session_id TEXT NOT NULL DEFAULT '',
+			maybe_sent INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_queue_items_chat ON chat_queue_items (chat_id, position)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_queue_items_state ON chat_queue_items (state)`,
@@ -45,7 +46,12 @@ func chatQueueSchema() []string {
 }
 
 const chatQueueItemColumns = `id, workspace_id, chat_id, position, text, attachments_json, run_settings_json,
-	created_by, created_at, updated_at, revision, state, error, sent_session_id`
+	created_by, created_at, updated_at, revision, state, error, sent_session_id, maybe_sent`
+
+// migrateChatQueue adds what later versions keep of a queued message.
+func (s *Store) migrateChatQueue(ctx context.Context) error {
+	return s.ensureColumn(ctx, "chat_queue_items", "maybe_sent", `ALTER TABLE chat_queue_items ADD COLUMN maybe_sent INTEGER NOT NULL DEFAULT 0`)
+}
 
 // unsentChatQueueStates are the states a queue lists.
 const unsentChatQueueStates = `('queued', 'dispatching', 'failed')`
@@ -58,11 +64,13 @@ type chatQueueRow struct {
 func scanChatQueueRow(scan func(...any) error) (chatQueueRow, error) {
 	var row chatQueueRow
 	var attachments, settings string
+	var maybeSent int
 	item := &row.item
 	if err := scan(&item.ID, &row.workspaceID, &item.ChatID, &item.Position, &item.Text, &attachments, &settings,
-		&item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.State, &item.Error, &item.SentSessionID); err != nil {
+		&item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.State, &item.Error, &item.SentSessionID, &maybeSent); err != nil {
 		return row, err
 	}
+	item.MaybeSent = maybeSent != 0
 	if err := json.Unmarshal([]byte(attachments), &item.Attachments); err != nil {
 		return row, fmt.Errorf("decode queued message attachments: %w", err)
 	}
@@ -97,11 +105,11 @@ func (s *Store) chatQueueItem(ctx context.Context, workspaceID, chatID, itemID s
 
 func (s *Store) ChatQueue(ctx context.Context, workspaceID, chatID string) (store.ChatQueue, error) {
 	queue := store.ChatQueue{WorkspaceID: workspaceID, ChatID: chatID, Items: []store.ChatQueueItem{}}
-	err := s.conn().QueryRowContext(ctx, `SELECT revision FROM chat_queue_revisions WHERE workspace_id = ? AND chat_id = ?`, workspaceID, chatID).Scan(&queue.Revision)
+	err := s.reader().QueryRowContext(ctx, `SELECT revision FROM chat_queue_revisions WHERE workspace_id = ? AND chat_id = ?`, workspaceID, chatID).Scan(&queue.Revision)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return queue, err
 	}
-	rows, err := s.conn().QueryContext(ctx, `SELECT `+chatQueueItemColumns+` FROM chat_queue_items
+	rows, err := s.reader().QueryContext(ctx, `SELECT `+chatQueueItemColumns+` FROM chat_queue_items
 		WHERE workspace_id = ? AND chat_id = ? AND state IN `+unsentChatQueueStates+`
 		ORDER BY position ASC, created_at ASC, id ASC`, workspaceID, chatID)
 	if err != nil {
@@ -175,7 +183,7 @@ func (s *Store) EnqueueChatMessage(ctx context.Context, workspaceID, chatID, cre
 		// The id becomes the input's id when the message is sent: a UUIDv7,
 		// like every input id.
 		_, err := tx.conn().ExecContext(ctx, `INSERT INTO chat_queue_items (`+chatQueueItemColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '')`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'queued', '', '', 0)`,
 			newSessionInputID(time.Now().UTC()), workspaceID, chatID, last+1, text, attachments, settings, createdBy, now, now)
 		return err
 	})
@@ -291,7 +299,7 @@ func (s *Store) RetryChatQueueItem(ctx context.Context, workspaceID, chatID, ite
 			WHERE workspace_id = ? AND chat_id = ? AND state IN `+unsentChatQueueStates, workspaceID, chatID).Scan(&first); err != nil {
 			return err
 		}
-		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'queued', error = '', position = ?,
+		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'queued', error = '', maybe_sent = 0, position = ?,
 			revision = revision + 1, updated_at = ? WHERE id = ?`, first-1, now, itemID)
 		return err
 	})
@@ -327,9 +335,9 @@ func (s *Store) ClaimChatQueueItem(ctx context.Context, workspaceID, chatID, ite
 			}
 			return store.ErrNotFound
 		}
-		claimed.State, claimed.Error, claimed.UpdatedAt = store.ChatQueueStateDispatching, "", now
+		claimed.State, claimed.Error, claimed.MaybeSent, claimed.UpdatedAt = store.ChatQueueStateDispatching, "", false, now
 		claimed.Revision++
-		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'dispatching', error = '',
+		_, err = tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'dispatching', error = '', maybe_sent = 0,
 			revision = revision + 1, updated_at = ? WHERE id = ?`, now, itemID)
 		return err
 	})
@@ -350,9 +358,47 @@ func (s *Store) SettleChatQueueItem(ctx context.Context, itemID, state, sessionI
 		return store.ChatQueue{}, err
 	}
 	return s.changeChatQueue(ctx, row.workspaceID, row.item.ChatID, func(tx *Store, now string) error {
-		_, err := tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = ?, sent_session_id = ?, error = ?,
+		_, err := tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = ?, sent_session_id = ?, error = ?, maybe_sent = 0,
 			revision = revision + 1, updated_at = ? WHERE id = ? AND state = 'dispatching'`,
 			state, sessionID, strings.TrimSpace(message), now, itemID)
+		return err
+	})
+}
+
+func (s *Store) SettleRecordedChatQueueItem(ctx context.Context, itemID, sessionID string) (store.ChatQueue, bool, error) {
+	row, err := s.chatQueueRow(ctx, itemID)
+	if err != nil {
+		return store.ChatQueue{}, false, err
+	}
+	if row.item.State != store.ChatQueueStateQueued && row.item.State != store.ChatQueueStateFailed {
+		return store.ChatQueue{}, false, nil
+	}
+	settled := false
+	queue, err := s.changeChatQueue(ctx, row.workspaceID, row.item.ChatID, func(tx *Store, now string) error {
+		result, err := tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'sent', sent_session_id = ?, error = '', maybe_sent = 0,
+			revision = revision + 1, updated_at = ? WHERE id = ? AND state IN ('queued', 'failed')`, sessionID, now, itemID)
+		if err != nil {
+			return err
+		}
+		changed, err := result.RowsAffected()
+		settled = changed > 0
+		return err
+	})
+	if err != nil {
+		return store.ChatQueue{}, false, err
+	}
+	return queue, settled, nil
+}
+
+func (s *Store) SettleChatQueueItemUnconfirmed(ctx context.Context, itemID, message string) (store.ChatQueue, error) {
+	row, err := s.chatQueueRow(ctx, itemID)
+	if err != nil {
+		return store.ChatQueue{}, err
+	}
+	return s.changeChatQueue(ctx, row.workspaceID, row.item.ChatID, func(tx *Store, now string) error {
+		_, err := tx.conn().ExecContext(ctx, `UPDATE chat_queue_items SET state = 'failed', sent_session_id = '', error = ?, maybe_sent = 1,
+			revision = revision + 1, updated_at = ? WHERE id = ? AND state = 'dispatching'`,
+			strings.TrimSpace(message), now, itemID)
 		return err
 	})
 }
@@ -432,7 +478,7 @@ func (s *Store) DeleteChatQueueItemsBy(ctx context.Context, workspaceID, userID 
 func (s *Store) ChatQueueSession(ctx context.Context, workspaceID, chatID string) (store.AgentSession, bool, bool, error) {
 	var latestID string
 	var active bool
-	err := s.conn().QueryRowContext(ctx, `SELECT id,
+	err := s.reader().QueryRowContext(ctx, `SELECT id,
 		EXISTS (SELECT 1 FROM agent_sessions WHERE workspace_id = ? AND (id = ? OR thread_id = ?) AND status IN ('queued', 'running', 'blocked'))
 		FROM agent_sessions WHERE workspace_id = ? AND (id = ? OR thread_id = ?)
 		ORDER BY created_at DESC, id DESC LIMIT 1`,

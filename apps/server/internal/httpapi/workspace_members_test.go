@@ -221,6 +221,63 @@ func TestMembershipChangesEndTheAccountsEventStream(t *testing.T) {
 	}
 }
 
+// Added to a workspace, bob's browser reconnects from the last event its old
+// stream delivered and is told to resync, so it reads the workspace it can
+// now see instead of resuming with its old view.
+func TestAccessChangeMakesTheResumingStreamResync(t *testing.T) {
+	f := newIsolationFixture(t)
+	live := httptest.NewServer(f.handler)
+	defer live.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	open := func(lastEventID string) *streamReaderForTest {
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, live.URL+"/api/events", nil)
+		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: f.bob})
+		if lastEventID != "" {
+			request.Header.Set("Last-Event-ID", lastEventID)
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { response.Body.Close() })
+		reader := &streamReaderForTest{response: response, frames: make(chan string, 16)}
+		go func() {
+			scanner := bufio.NewScanner(response.Body)
+			var frame strings.Builder
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line == "" && frame.Len() > 0 {
+					reader.frames <- frame.String()
+					frame.Reset()
+				} else if line != "" && !strings.HasPrefix(line, ":") && !strings.HasPrefix(line, "retry:") {
+					frame.WriteString(line + "\n")
+				}
+			}
+			close(reader.frames)
+		}()
+		return reader
+	}
+	stream := open("")
+	f.server.events.Publish(chatTitlesChangedEvent, chatListChange{WorkspaceID: "ws_bob"})
+	lastEventID, _ := stream.next(t)
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"viewer"}`)),
+		http.StatusNoContent, "share with bob")
+	deadline := time.After(3 * time.Second)
+	for ended := false; !ended; {
+		select {
+		case _, more := <-stream.frames:
+			ended = !more
+		case <-deadline:
+			t.Fatal("bob's old stream did not end")
+		}
+	}
+	_, envelope := open(lastEventID).next(t)
+	if envelope["type"] != resyncEventType || envelope["payload"].(map[string]any)["reason"] != resyncReasonReauthorized {
+		t.Fatalf("bob's resumed stream began with %v, want a resync", envelope)
+	}
+}
+
 func TestInviteCanCarryAWorkspaceTheAdminOwns(t *testing.T) {
 	f := newIsolationFixture(t)
 	if got := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/invites",

@@ -274,14 +274,14 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 		if summary.CreatedByUserID != userID || !activeOrBlocked(summary.Status) || summary.Role != "" {
 			continue
 		}
-		session, err := s.store.GetAgentSession(ctx, summary.ID)
+		session, err := store.AgentSessionRecord(ctx, s.store, summary.ID)
 		if err != nil {
 			log.Printf("cancel session %s: %v", summary.ID, err)
 			continue
 		}
 		if s.hub.HasConnection(session.DeviceID) {
 			cancelCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-			if err := s.hub.CancelAgentSession(cancelCtx, session); err != nil {
+			if _, err := s.hub.CancelAgentSession(cancelCtx, session); err != nil {
 				log.Printf("stop session %s on its device: %v", session.ID, err)
 			}
 			cancel()

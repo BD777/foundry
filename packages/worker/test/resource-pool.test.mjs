@@ -93,6 +93,11 @@ test("session notes name what the device offers and where images go", () => {
   );
   assert.match(sessionResourceNotes("/w", []), /No browser was found/);
   assert.doesNotMatch(sessionResourceNotes("/w", []), /Screen control/);
+  // A session learns its own id and what Foundry ids and links name.
+  assert.doesNotMatch(notes, /You are Foundry session/);
+  const own = sessionResourceNotes("/w", [], undefined, "sess_42");
+  assert.match(own, /^- You are Foundry session sess_42\. /m);
+  assert.match(own, /sess_….*ws_… and dev_….*\/chats\/<id>.*foundry skill/);
 });
 
 const linuxOnly = { skip: process.platform !== "linux" };

@@ -62,9 +62,9 @@ test("registerExecutionWorkspace allows a subdirectory inside an existing Git re
     "Must not initialize nested .git inside existing Git repo",
   );
   assert.equal(
-    existsSync(join(subDir, ".foundry")),
-    true,
-    "Should initialize .foundry metadata in subdirectory workspace",
+    await git(repoRoot, ["status", "--porcelain", "--untracked-files=all"]),
+    "",
+    "Registration leaves the enclosing repository as it was",
   );
 });
 

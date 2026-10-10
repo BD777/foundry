@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/chattitle"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -18,6 +19,15 @@ type chatTitleService struct {
 	dispatch  func(store.AgentSession) error
 	connected func(string) bool
 	publish   func(string, any)
+	// dataChanged announces a change to a workspace's data no other event
+	// carries.
+	dataChanged func(workspaceID string, resources ...string)
+	// announcing orders chat_titles_changed: each reads the titles it
+	// carries and publishes them under it (see publishTitles).
+	announcing sync.Mutex
+	// jobChats is the chat each naming job seen running names: its title
+	// stops naming the job once the job completes.
+	jobChats map[string]string
 }
 
 func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string, automatic bool) (store.AgentSession, error) {
@@ -149,12 +159,12 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 		if name == "" {
 			return
 		}
-		if _, err := s.store.RenameLayoutGroup(ctx, session.WorkspaceID, session.GroupNameTarget, name); err != nil {
+		layout, err := s.store.RenameLayoutGroup(ctx, session.WorkspaceID, session.GroupNameTarget, name)
+		if err != nil {
 			log.Printf("automatic group naming: %v", err)
 			return
 		}
-		layout, _ := s.store.GetChatLayout(ctx, session.WorkspaceID)
-		s.publish("chat_layout_changed", layout)
+		s.publish(chatLayoutChangedEvent, chatLayoutChange{WorkspaceID: session.WorkspaceID, Layout: &layout})
 		return
 	}
 	// Automatic naming happens once per chat; the title record guards reruns.
@@ -228,6 +238,7 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 	s.publish("agent_session_created", job)
 	if err := s.dispatch(job); err != nil {
 		_, _ = s.store.FailAgentSession(ctx, job.ID, err.Error())
+		s.dataChanged(workspaceID, fieldAgentSessions)
 	}
 }
 

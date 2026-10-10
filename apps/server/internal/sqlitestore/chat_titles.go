@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Store) ListChatTitles(ctx context.Context, workspaceID string) ([]store.ChatTitle, error) {
-	rows, err := s.conn().QueryContext(ctx, `SELECT t.chat_id, t.title, t.version, t.generation_session_id, COALESCE(json_extract(s.payload_json, '$.status'), ''), COALESCE(json_extract(s.payload_json, '$.error'), '') FROM chat_titles t LEFT JOIN agent_sessions s ON s.id=t.generation_session_id WHERE t.workspace_id = ?`, workspaceID)
+	rows, err := s.reader().QueryContext(ctx, `SELECT t.chat_id, t.title, t.version, t.generation_session_id, COALESCE(json_extract(s.payload_json, '$.status'), ''), COALESCE(json_extract(s.payload_json, '$.error'), '') FROM chat_titles t LEFT JOIN agent_sessions s ON s.id=t.generation_session_id WHERE t.workspace_id = ?`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *Store) CreateChatTitleJob(ctx context.Context, chatID string, input sto
 			return nil
 		}
 		if existing != "" {
-			prior, err := tx.GetAgentSession(ctx, existing)
+			prior, err := tx.GetAgentSessionRecord(ctx, existing)
 			if err != nil {
 				return err
 			}

@@ -2191,3 +2191,25 @@
   font-size: 11.5px;
   line-height: 1.4;
 }
+
+.fdy-git-setup-form {
+  display: grid;
+  gap: 12px;
+}
+
+.fdy-git-setup-error {
+  margin: 0;
+  padding: 12px;
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-git-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}

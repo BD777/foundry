@@ -19,6 +19,8 @@ export interface ChatScrollFollowController {
   contentRef: RefObject<HTMLDivElement | null>;
   contentResized: () => void;
   followLatest: (behavior?: ScrollBehavior) => void;
+  /** The person is scrolling now: wheel, touch, keys or the scrollbar. */
+  personScrolling: () => boolean;
   readHistory: () => void;
   showScrollToLatest: boolean;
   viewportRef: RefObject<HTMLDivElement | null>;
@@ -31,6 +33,7 @@ export function useChatScrollFollow(
   const contentRef = useRef<HTMLDivElement | null>(null);
   const modeRef = useRef<ChatScrollFollowMode>("following");
   const scrollFrameRef = useRef<number | null>(null);
+  const userInputRef = useRef({ at: -Infinity, scrollbarHeld: false });
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   const transition = useCallback(
@@ -100,6 +103,13 @@ export function useChatScrollFollow(
     }
   }, [scheduleScrollToLatest, transition]);
 
+  // Scrolls within this window of the person's own input, or while they hold
+  // the scrollbar, are theirs.
+  const personScrolling = useCallback((): boolean => {
+    const input = userInputRef.current;
+    return input.scrollbarHeld || performance.now() - input.at < 300;
+  }, []);
+
   const followLatest = useCallback(
     (behavior: ScrollBehavior = "auto") => {
       transition({ type: "follow.requested" });
@@ -131,17 +141,16 @@ export function useChatScrollFollow(
     // Scrolls within this window of the person's own input, or while they
     // hold the scrollbar, are theirs; any other scroll comes from content
     // resizing and must not resume following.
-    let lastUserInputAt = -Infinity;
-    let scrollbarHeld = false;
+    const input = userInputRef.current;
     const userInput = (): void => {
-      lastUserInputAt = performance.now();
+      input.at = performance.now();
     };
     const markHistoryReading = (): void => {
       userInput();
       transition({ type: "user.scroll-intent" });
     };
     const syncFollowFromPosition = (): void => {
-      const byUser = scrollbarHeld || performance.now() - lastUserInputAt < 300;
+      const byUser = personScrolling();
       transition({
         type: byUser ? "user.scrolled" : "viewport.scrolled",
         viewport: viewportMetrics(),
@@ -173,12 +182,12 @@ export function useChatScrollFollow(
         target === viewport ||
         (target instanceof Node && !viewport.contains(target))
       ) {
-        scrollbarHeld = true;
+        input.scrollbarHeld = true;
       }
     };
     const handlePointerUp = (): void => {
-      if (scrollbarHeld) userInput();
-      scrollbarHeld = false;
+      if (input.scrollbarHeld) userInput();
+      input.scrollbarHeld = false;
     };
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (
@@ -240,7 +249,7 @@ export function useChatScrollFollow(
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [threadKey, transition]);
+  }, [personScrolling, threadKey, transition]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -266,6 +275,7 @@ export function useChatScrollFollow(
     contentRef,
     contentResized,
     followLatest,
+    personScrolling,
     readHistory,
     showScrollToLatest,
     viewportRef,

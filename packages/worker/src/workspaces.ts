@@ -9,14 +9,9 @@ import {
   hardenPrivateFile,
   writeJSON,
   writePrivateJSONAtomic,
-  writePublicTextIfMissing,
 } from "./storage.js";
 import { safeID } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
-
-function defaultSkillsConfig(): string {
-  return `skills:\n  issue-splitting:\n    version: 0.2.0\n    scope: workspace\n    source: .foundry/skills.yaml\n  visual-qa:\n    version: 0.9.0\n    scope: workspace\n    source: .foundry/skills.yaml\n`;
-}
 
 // --- Types ---
 
@@ -167,14 +162,6 @@ export function recordExplicitWorkspace(workspacePath: string): boolean {
   return true;
 }
 
-export function writeIfMissing(
-  path: string,
-  contents: string,
-  directoryMode = 0o755,
-): void {
-  writePublicTextIfMissing(path, contents, directoryMode);
-}
-
 export function workspaceFilePath(workspacePath: string): string {
   return resolve(workspacePath, ".foundry", "workspace.json");
 }
@@ -205,81 +192,17 @@ export function readWorkspace(workspacePath: string): WorkspaceFile {
 }
 
 /**
- * The files Foundry scaffolds in a workspace, as it writes them. A file with
- * exactly this content is still Foundry's; one with any other is the person's.
+ * Registers a folder as a workspace. The folder is the person's: Foundry
+ * writes only its own identity under `.foundry/` (kept out of Git through the
+ * repository's local excludes once the folder is registered for Issues) and
+ * creates its runtime folders there when it first needs them.
  */
-export function foundryScaffold(
-  workspace: Pick<WorkspaceFile, "name" | "baseline">,
-): Array<{ path: string; contents: string; directoryMode?: number }> {
-  return [
-    {
-      path: "AGENTS.md",
-      contents: `# ${workspace.name}\n\nFoundry workers should treat this workspace context as authoritative.\n\n- Workspace evolves.\n- Skills accumulate.\n- Workers do not remember.\n`,
-    },
-    {
-      path: "CONTEXT.md",
-      contents: `# Context\n\n${workspace.name} is a Foundry workspace.\n\nCurrent baseline: \`${workspace.baseline}\`\n`,
-    },
-    {
-      path: ".foundry/skills.yaml",
-      contents: defaultSkillsConfig(),
-      directoryMode: 0o700,
-    },
-    {
-      path: ".foundry/agent-profiles.local.example.json",
-      contents: `${JSON.stringify(
-        {
-          profiles: [
-            {
-              id: "codex-third-party",
-              label: "Codex Third-party",
-              runtime: "codex",
-              connectionType: "openai_compatible",
-              baseUrl: "https://provider.example/v1",
-              model: "model-name",
-              apiKey: "local-only",
-            },
-            {
-              id: "claude-provider-a",
-              label: "Claude Provider A",
-              runtime: "claude",
-              connectionType: "anthropic_compatible",
-              baseUrl: "https://provider.example",
-              model: "model-name",
-              apiKey: "local-only",
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-      directoryMode: 0o700,
-    },
-    {
-      path: ".foundry/preview.example.json",
-      contents: `${JSON.stringify(
-        {
-          command: "pnpm dev --host 127.0.0.1 --port $FOUNDRY_PREVIEW_PORT",
-          portStart: 4300,
-          portEnd: 4399,
-          readyPath: "/",
-          readyTimeoutMs: 15000,
-        },
-        null,
-        2,
-      )}\n`,
-      directoryMode: 0o700,
-    },
-  ];
-}
-
 export function initWorkspace(inputPath: string | undefined): void {
   if (!inputPath) {
     throw new Error("Usage: foundry-worker init <path>");
   }
 
   const workspacePath = resolve(inputPath);
-  const foundryPath = resolve(workspacePath, ".foundry");
   const now = new Date().toISOString();
   const existingWorkspacePath = workspaceFilePath(workspacePath);
   const existing = existsSync(existingWorkspacePath)
@@ -295,25 +218,7 @@ export function initWorkspace(inputPath: string | undefined): void {
   };
 
   mkdirSync(workspacePath, { recursive: true });
-  mkdirSync(resolve(foundryPath, "issues"), { mode: 0o700, recursive: true });
-  mkdirSync(resolve(foundryPath, "integrations"), {
-    mode: 0o700,
-    recursive: true,
-  });
-  mkdirSync(resolve(foundryPath, "runs"), { mode: 0o700, recursive: true });
-  mkdirSync(resolve(foundryPath, "reviews"), { mode: 0o700, recursive: true });
-  mkdirSync(resolve(foundryPath, "worktrees"), {
-    mode: 0o700,
-    recursive: true,
-  });
-
   writeJSON(existingWorkspacePath, workspace);
-  for (const file of foundryScaffold(workspace))
-    writeIfMissing(
-      resolve(workspacePath, file.path),
-      file.contents,
-      file.directoryMode,
-    );
   upsertRegistry({
     id: workspace.id,
     name: workspace.name,

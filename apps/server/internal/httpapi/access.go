@@ -150,7 +150,7 @@ func (s *Server) limitToDevice(ctx context.Context, scope *accessScope, deviceID
 // Choosing option B would change only this function.
 func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore, actor Actor) (accessScope, error) {
 	scope := accessScope{roles: map[string]string{}, owned: map[string]bool{}}
-	session, err := s.store.GetAgentSession(ctx, actor.Identity.SessionID)
+	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
 	if err != nil {
 		return scope, nil
 	}

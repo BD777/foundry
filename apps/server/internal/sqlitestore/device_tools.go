@@ -59,7 +59,7 @@ func (s *Store) ListDeviceTools(ctx context.Context, deviceID string) ([]store.D
 		query += ` WHERE device_id = ?`
 		args = append(args, deviceID)
 	}
-	rows, err := s.conn().QueryContext(ctx, query+` ORDER BY device_id, tool`, args...)
+	rows, err := s.reader().QueryContext(ctx, query+` ORDER BY device_id, tool`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list device tools: %w", err)
 	}

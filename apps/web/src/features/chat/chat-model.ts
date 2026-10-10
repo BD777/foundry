@@ -402,6 +402,7 @@ function chatMessagesForSession(
       ? session.input
       : undefined;
   const turnLive = sessionActive && !pendingInput;
+  const turnStartedAt = turnLive ? currentTurnStartedAt(session) : undefined;
   const hasLiveResponse = agentSessionHasStreamedResponse(session);
   const duration = agentSessionDurationLabel(session);
   const terminalError = agentSessionTerminalError(session);
@@ -425,6 +426,9 @@ function chatMessagesForSession(
         kind: "process",
         role: "bot",
         streaming: turnLive && isLastSegment,
+        ...(turnLive && isLastSegment && turnStartedAt
+          ? { turnStartedAt }
+          : {}),
         text: segment.text,
         // A group that knows its own duration shows it beside the title.
         title:
@@ -464,6 +468,26 @@ function chatMessagesForSession(
       text: pendingInput.prompt,
     });
   }
+  // Until the turn's first shown step, the session can stay silent for a
+  // long time (dispatch, a steer waiting on a running tool, only side-panel
+  // events): the input the agent is working on still shows it is.
+  const latest = messages.at(-1);
+  if (
+    sessionActive &&
+    !terminalError &&
+    segments.length > 0 &&
+    (latest?.role === "user" || latest?.kind === "boundary")
+  ) {
+    messages.push({
+      id: `agent-session:${session.id}:awaiting-step`,
+      kind: "process",
+      role: "bot",
+      streaming: true,
+      ...(turnStartedAt ? { turnStartedAt } : {}),
+      text: "",
+      title: i18n.t("chat:transcript.processing"),
+    });
+  }
   if (segments.length === 0 && !terminalError) {
     messages.push({
       agentLabel: session.profileLabel,
@@ -488,6 +512,22 @@ function chatMessagesForSession(
     });
   }
   return messages;
+}
+
+/** When the input the session is working on arrived. */
+/**
+ * When the running turn began: the person's message, or a timer or finished
+ * background task that woke the agent. A message steered into the running
+ * turn does not start a new one.
+ */
+function currentTurnStartedAt(session: AgentSession): string | undefined {
+  const events = session.events ?? [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]!;
+    if (event.label === sessionInputEventLabel || event.metadata?.timerFire)
+      return event.message?.at ?? event.at;
+  }
+  return session.input?.at ?? session.startedAt;
 }
 
 function processedTitle(duration: string | undefined): string {
@@ -610,18 +650,20 @@ function agentSessionDurationLabel(session: AgentSession): string | undefined {
   const completedAt = session.completedAt
     ? Date.parse(session.completedAt)
     : Number.NaN;
-  const times = (session.events ?? [])
-    .map((event) => Date.parse(event.at))
-    .filter((time) => Number.isFinite(time));
-  const firstTime = Number.isFinite(startedAt)
-    ? startedAt
-    : times.length > 0
-      ? Math.min(...times)
-      : Number.NaN;
+  // Events are in server order: the first and the last carry the span.
+  const events = session.events ?? [];
+  const eventTime = (from: number, step: number): number => {
+    for (let index = from; index >= 0 && index < events.length; index += step) {
+      const time = Date.parse(events[index]!.at);
+      if (Number.isFinite(time)) return time;
+    }
+    return Number.NaN;
+  };
+  const firstTime = Number.isFinite(startedAt) ? startedAt : eventTime(0, 1);
   const lastTime = Number.isFinite(completedAt)
     ? completedAt
-    : times.length > 1
-      ? Math.max(...times)
+    : events.length > 1
+      ? eventTime(events.length - 1, -1)
       : Number.NaN;
   if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime)) {
     return undefined;

@@ -86,6 +86,14 @@ export const issues = {
     needsAgent: "Configure an agent in Settings to create an Issue",
     hint: "Describe the goal first; you can upload references in the conversation. Execution starts only after you confirm the completion criteria.",
   },
+  gitSetup: {
+    title: "Set up Git for Issues",
+    description:
+      "Issues need Git. Foundry will run git init in {{path}} (if needed), keep its own files out of Git through .git/info/exclude, and commit the folder's current files as the first commit.",
+    confirm: "Confirm",
+    confirming: "Setting up Git…",
+    failed: "Setting up Git failed.",
+  },
   notices: {
     needsRealAgent: "Configure a real agent in Settings first.",
     stillSaving: "Still saving the current issue.",

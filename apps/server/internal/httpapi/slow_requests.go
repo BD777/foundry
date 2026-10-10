@@ -8,7 +8,7 @@ import (
 )
 
 // slowRequestThreshold is when an ordinary request is worth a log line: with
-// one database connection, a request this slow is usually waiting for it.
+// one database writer, a request this slow is usually waiting for it.
 const slowRequestThreshold = time.Second
 
 // withSlowRequestLog logs ordinary requests that take longer than the

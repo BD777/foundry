@@ -54,8 +54,8 @@ func TestDefaultSkillsFollowTheWorkspaceOwner(t *testing.T) {
 	for _, ref := range refs {
 		got[ref.Name] = ref.SkillID
 	}
-	if len(refs) != 2 || got["review"] != ownReview.ID || got["notes"] != notes.ID {
-		t.Fatalf("alice's workspace gets %+v, want her own review plus default notes", refs)
+	if len(refs) != 3 || got["review"] != ownReview.ID || got["notes"] != notes.ID || got["foundry"] != "builtin-codex-foundry" {
+		t.Fatalf("alice's workspace gets %+v, want her own review plus default notes (and Foundry's built-in)", refs)
 	}
 
 	usage := func(session string) map[string][]string {
@@ -77,7 +77,7 @@ func TestDefaultSkillsFollowTheWorkspaceOwner(t *testing.T) {
 		t.Fatalf("bob sees alice's workspaces using a skill: %v", used)
 	}
 
-	bobRefs, err := sessionSkillRefs(ctx, f.server.store, "ws_bob", "codex")
+	bobRefs, _, err := workspaceSkillRefs(ctx, f.server.store, "ws_bob")
 	if err != nil {
 		t.Fatal(err)
 	}

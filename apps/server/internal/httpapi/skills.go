@@ -349,7 +349,7 @@ func (s *Server) keepDeviceSkillsScanned(ctx context.Context, deviceID string, c
 				log.Printf("skill scan of %s: %v", deviceID, err)
 			}
 		} else {
-			s.invalidateProjections()
+			s.projectionsChanged("", deviceScanFields...)
 		}
 		select {
 		case <-ctx.Done():
@@ -382,25 +382,33 @@ func (s *Server) handleScanDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", deviceScanFields...)
 	view, err := s.callerVisibility(r)
 	writeResult(w, view.deviceSkillUsage(skills), err)
 }
 
+// handleSetDeviceSkillRoots writes the roots of the device in the path, the
+// one the route checked the caller owns; a body naming another is refused.
 func (s *Server) handleSetDeviceSkillRoots(w http.ResponseWriter, r *http.Request) {
+	deviceID := strings.TrimSpace(r.PathValue("deviceId"))
+	if deviceID == "" {
+		writeError(w, http.StatusBadRequest, "device id is required")
+		return
+	}
 	var input store.SetDeviceSkillRootsInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.DeviceID) == "" {
-		writeError(w, http.StatusBadRequest, "deviceId is required")
+	if body := strings.TrimSpace(input.DeviceID); body != "" && body != deviceID {
+		writeError(w, http.StatusBadRequest, "deviceId does not match the device in the path")
 		return
 	}
+	input.DeviceID = deviceID
 	if err := s.store.SetDeviceSkillRoots(r.Context(), input); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", fieldDeviceSkillRoots)
 	roots, err := s.effectiveSkillRoots(r.Context(), input.DeviceID)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -447,7 +455,7 @@ func (s *Server) handleDeletePromotedSkill(w http.ResponseWriter, r *http.Reques
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged("", skillLibraryFields...)
 	writeResult(w, map[string]string{"id": r.PathValue("id")}, nil)
 }
 
@@ -509,7 +517,9 @@ func (s *Server) handleSetWorkspaceSkills(w http.ResponseWriter, r *http.Request
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged(input.WorkspaceID, workspaceSkillFields...)
+	// Every view's catalog lists the workspaces using each skill.
+	s.projectionsChanged("", fieldPromotedSkills)
 	bindings, err := s.store.ListWorkspaceSkillBindings(r.Context(), input.WorkspaceID)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -547,7 +557,7 @@ func (s *Server) handleSetWorkspaceSkillPin(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
-	s.invalidateProjections()
+	s.projectionsChanged(workspaceID, fieldWorkspaceSkillBindings)
 	bindings, err := s.store.ListWorkspaceSkillBindings(r.Context(), workspaceID)
 	writeResult(w, bindings, err)
 }

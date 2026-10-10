@@ -53,14 +53,15 @@ export function IssueEvidencePanel({
     setVerifications(v.items);
     setAssessments(a.items);
   };
-  useEvidenceUpdates(issue.id, load, setError);
-  useEffect(() => {
-    void load().catch((e) => setError(String(e)));
-  }, [
-    issue.id,
-    issue.currentContractRevision,
-    issue.currentCandidateSnapshotId,
-  ]);
+  const loadOnOpen = useEvidenceUpdates(issue.id, load, setError);
+  useEffect(
+    () => loadOnOpen(),
+    [
+      loadOnOpen,
+      issue.currentContractRevision,
+      issue.currentCandidateSnapshotId,
+    ],
+  );
   const conflicts = alignmentConflicts(error);
   // The review's own blocking reason explains it and offers alignment.
   const baselineMoved =

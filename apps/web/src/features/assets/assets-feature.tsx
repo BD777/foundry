@@ -6,7 +6,6 @@ import {
   Gauge,
   GitBranch,
   Monitor,
-  Package,
   RefreshCw,
   Zap,
 } from "lucide-react";
@@ -48,7 +47,6 @@ export interface AssetsFeatureProps {
   onEvent?: (event: AssetsFeatureEvent) => void;
   providerHealth: ProviderHealth[];
   runningCount: number;
-  skillCount: number;
   workspace: WorkspaceProjection;
 }
 
@@ -63,7 +61,6 @@ export function AssetsFeature({
   onEvent,
   providerHealth,
   runningCount,
-  skillCount,
   workspace,
 }: AssetsFeatureProps) {
   const { t } = useTranslation("assets");
@@ -73,7 +70,6 @@ export function AssetsFeature({
     (asset) => asset.kind === "artifact_archive",
   );
   const agentsFile = files.find((file) => file.path === "AGENTS.md");
-  const skillsFile = files.find((file) => file.path === ".foundry/skills.yaml");
   const configuredAgentCount = agents.filter(
     (agent) => agent.status === "healthy",
   ).length;
@@ -242,23 +238,6 @@ export function AssetsFeature({
             id: "agents",
             label: "AGENTS.md",
             meta: agentsFile?.path ?? notReported,
-          },
-          {
-            end: (
-              <Badge dot={false} tone={skillsFile ? "brass" : "neutral"}>
-                {skillsFile ? t("status.present") : t("status.missing")}
-              </Badge>
-            ),
-            endWidth: 74,
-            icon: Package,
-            id: "skills-config",
-            label: t("context.skillsConfig"),
-            meta: skillsFile
-              ? t("context.skillsMeta", {
-                  count: skillCount,
-                  path: skillsFile.path,
-                })
-              : notReported,
           },
         ]}
         title={t("context.title")}

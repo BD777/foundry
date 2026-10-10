@@ -134,7 +134,7 @@ func (s *Store) querySkillRepositories(ctx context.Context, id string) ([]store.
 		query += ` WHERE r.id = ?`
 		args = append(args, id)
 	}
-	rows, err := s.conn().QueryContext(ctx, query+` ORDER BY r.label, r.ref, r.subpath`, args...)
+	rows, err := s.reader().QueryContext(ctx, query+` ORDER BY r.label, r.ref, r.subpath`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list skill repositories: %w", err)
 	}
@@ -162,7 +162,7 @@ func (s *Store) querySkillRepositories(ctx context.Context, id string) ([]store.
 	if err := s.loadBundleVersions(ctx, repos, index); err != nil {
 		return nil, err
 	}
-	skills, err := s.conn().QueryContext(ctx, `
+	skills, err := s.reader().QueryContext(ctx, `
 		SELECT k.repository_id, k.skill_id, k.dir, k.commit_sha, COALESCE(p.name, ''), k.retired, k.missing
 		FROM skill_repository_skills k
 		LEFT JOIN promoted_skills p ON p.id = k.skill_id

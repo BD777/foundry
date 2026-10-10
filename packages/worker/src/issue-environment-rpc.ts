@@ -3,6 +3,10 @@ import { prepareAcceptance, applyAcceptance } from "./workspace-acceptance.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { git } from "./execution-git.js";
+import {
+  initializeWorkspaceGit,
+  workspaceGitState,
+} from "./repository-registry.js";
 import { assertMutable } from "./issue-environments.js";
 import { cancelIssueExecution, executionActive } from "./execution-process.js";
 import { cleanupEnvironment } from "./issue-environments.js";
@@ -19,6 +23,8 @@ export async function issueEnvironmentAction(
     revision: number;
     message?: string;
     expectedRunId?: string;
+    /** The workspace folder, for the Git actions. */
+    sourcePath?: string;
   },
   store = new ExecutionStore(),
 ): Promise<{
@@ -27,6 +33,21 @@ export async function issueEnvironmentAction(
   review?: unknown;
   environment?: unknown;
 }> {
+  // Before a workspace's first Issue: can Issues run here, and, once the
+  // person confirms, setting up Git.
+  if (payload.action === "git_status" || payload.action === "initialize_git") {
+    if (!payload.sourcePath) throw new Error("Workspace path is missing");
+    if (payload.action === "initialize_git")
+      await initializeWorkspaceGit(
+        payload.sourcePath,
+        payload.workspaceId,
+        store,
+      );
+    return {
+      status: await workspaceGitState(payload.sourcePath),
+      revision: 0,
+    };
+  }
   if (payload.action === "status")
     return {
       status: "ok",

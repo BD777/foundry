@@ -74,6 +74,7 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 	c, err := st.CreateContract(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.publishEvidenceUpdate(issue, c.ID, c.Revision, c.Status)
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, c, err)
 }
@@ -97,6 +98,7 @@ func (s *Server) handleLegacyContractImport(w http.ResponseWriter, r *http.Reque
 	contract, err := st.ImportLegacyContract(r.Context(), issue.ID, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.publishEvidenceUpdate(issue, contract.ID, contract.Revision, "draft")
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, contract, err)
 }
@@ -140,6 +142,7 @@ func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil {
 		s.publishEvidenceUpdate(issue, c.ID, c.Revision, c.Status)
+		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, c, err)
 }

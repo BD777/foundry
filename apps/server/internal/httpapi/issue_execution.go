@@ -35,8 +35,8 @@ func (h *DaemonHub) startIssueExecution(ctx context.Context, session store.Agent
 }
 
 // appendIssueExecutionEvent mirrors an execution session's event onto its
-// Issue's Run.
-func (h *DaemonHub) appendIssueExecutionEvent(ctx context.Context, workspaceID string, event store.AgentSessionEvent) error {
+// Issue's Run, and streams it when publish. A Run holds an event once.
+func (h *DaemonHub) appendIssueExecutionEvent(ctx context.Context, workspaceID string, event store.AgentSessionEvent, publish bool) error {
 	runEvent := store.RunEvent{
 		ID:     event.ID,
 		RunID:  event.SessionID,
@@ -48,7 +48,9 @@ func (h *DaemonHub) appendIssueExecutionEvent(ctx context.Context, workspaceID s
 	if err := h.store.AppendRunEvent(ctx, runEvent); err != nil {
 		return err
 	}
-	h.events.PublishIn(workspaceID, "issue_run_event", runEvent)
+	if publish {
+		h.events.PublishIn(workspaceID, "issue_run_event", runEvent)
+	}
 	return nil
 }
 

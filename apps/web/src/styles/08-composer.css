@@ -72,6 +72,28 @@
   stroke-width: 0;
 }
 
+.fdy-composer-busy-icon {
+  animation: fdy-composer-busy-spin 0.9s linear infinite;
+}
+
+@keyframes fdy-composer-busy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-composer-busy-icon {
+    animation: none;
+  }
+}
+
+/* The message on its way stays visible but reads as not editable. */
+.fdy-composer-input-shell > .fdy-field-chat[aria-busy="true"] {
+  color: var(--fdy-ink-muted);
+  cursor: progress;
+}
+
 /* Runtime menus use the same portaled surface in both composer placements. */
 .fdy-runtime-popover.fdy-chat-popover {
   position: relative;

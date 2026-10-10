@@ -86,6 +86,14 @@ export const issues: Translation<typeof en> = {
     needsAgent: "先在设置中配置 Agent，才能创建 Issue",
     hint: "先描述目标，进入主对话后可上传参考。确认完成标准后才开始执行。",
   },
+  gitSetup: {
+    title: "为 Issue 设置 Git",
+    description:
+      "Issue 需要 Git。Foundry 将在 {{path}} 中运行 git init（如需要），通过 .git/info/exclude 让它自己的文件不进入 Git，并把文件夹当前的文件提交为第一个提交。",
+    confirm: "确认",
+    confirming: "正在设置 Git…",
+    failed: "设置 Git 失败。",
+  },
   notices: {
     needsRealAgent: "请先在设置中配置一个真实的 Agent。",
     stillSaving: "当前 Issue 还在保存中。",

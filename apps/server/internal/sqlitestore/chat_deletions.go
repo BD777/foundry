@@ -13,10 +13,14 @@ const visibleAgentSessionSQL = `NOT EXISTS (SELECT 1 FROM chat_deletions d
 		'id:' || agent_sessions.id, 'id:' || agent_sessions.thread_id,
 		'native:' || agent_sessions.provider || ':' || json_extract(agent_sessions.payload_json, '$.nativeSessionId')))`
 
+// visibleChatSQL reads the columns writeChat keeps equal to the payload's
+// workspaceId, provider and nativeSessionId (empty where the payload omits
+// one), so a list does not parse every chat's JSON. An empty provider or
+// native id makes no native key, as a missing JSON field did.
 const visibleChatSQL = `NOT EXISTS (SELECT 1 FROM chat_deletions d
-	WHERE d.workspace_id = COALESCE(json_extract(chats.payload_json, '$.workspaceId'), '') AND d.deletion_key IN (
+	WHERE d.workspace_id = chats.workspace_id AND d.deletion_key IN (
 		'id:' || chats.id,
-		'native:' || json_extract(chats.payload_json, '$.provider') || ':' || json_extract(chats.payload_json, '$.nativeSessionId')))`
+		'native:' || NULLIF(chats.provider, '') || ':' || NULLIF(chats.native_session_id, '')))`
 
 func (s *Store) chatDeleted(ctx context.Context, workspaceID, id, provider, nativeID string) (bool, error) {
 	var deleted bool

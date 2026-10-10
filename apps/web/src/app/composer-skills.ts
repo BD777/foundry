@@ -8,18 +8,13 @@ const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
  * and default skills, and each agent's own and Foundry built-in skills.
  */
 export function workspaceComposerSkills(data: FoundryData) {
-  const workspaceIds = new Set([
-    ...data.workspaceSkillBindings.map((binding) => binding.skillId),
-    ...(data.defaultSkillIds ?? []),
-  ]);
   return {
-    workspace: data.promotedSkills
-      .filter((skill) => workspaceIds.has(skill.id))
-      .map((skill) => ({
-        value: skill.name,
-        label: skill.name,
-        description: skill.description,
-      })),
+    // The server lists the selected and default skills (workspaceSkills).
+    workspace: (data.workspaceSkills ?? []).map((skill) => ({
+      value: skill.name,
+      label: skill.name,
+      description: skill.description,
+    })),
     byAgent: Object.fromEntries(
       data.providerHealth
         .filter((row) => row.deviceId === data.workspace.deviceId)

@@ -21,7 +21,7 @@ function event(id, label, detail) {
   };
 }
 
-test("typed answer identity survives normalization and terminal response hydration", () => {
+test("typed answer identity survives normalization; the session response never rewrites an answer", () => {
   const first = {
     ...event("event-a", "Response stream", "one"),
     message: { id: "a", kind: "assistant", text: "one" },
@@ -37,7 +37,7 @@ test("typed answer identity survives normalization and terminal response hydrati
   });
   assert.equal(normalized.events.length, 2);
   assert.equal(normalized.events[0].message.text, "one");
-  assert.equal(normalized.events[1].message.text, "two completed");
+  assert.equal(normalized.events[1].message.text, "two");
 });
 
 test("replaces streamed response snapshots in place without moving prior text", () => {
@@ -175,9 +175,10 @@ test("keeps details when a lifecycle event carries a session without event detai
 
   assert.equal(merged.status, "completed");
   assert.equal(merged.response, "final");
+  // The stored events stay what the server sent; `response` is not an event.
   assert.deepEqual(
     merged.events.map((item) => [item.label, item.detail]),
-    [["Response stream", "final"]],
+    [["Response stream", "partial"]],
   );
 });
 
@@ -351,7 +352,7 @@ test("keeps response snapshots anchored before later process events from the sam
   );
 });
 
-test("keeps a terminal response snapshot anchored when later process events exist", () => {
+test("a terminal response never rewrites a response event already loaded", () => {
   const session = normalizeAgentSessionForDisplay({
     agentId: "agent_test",
     completedAt: "2026-08-01T00:00:05.000Z",
@@ -375,7 +376,7 @@ test("keeps a terminal response snapshot anchored when later process events exis
   assert.deepEqual(
     session.events.map((item) => [item.label, item.detail]),
     [
-      ["Response stream", "final answer"],
+      ["Response stream", "early text"],
       ["正在使用工具", "Bash"],
       ["已使用工具", "Bash result"],
     ],

@@ -34,6 +34,8 @@ export type SkillsFeatureEvent =
 export interface SkillsFeatureProps {
   embedded?: boolean;
   catalog: PromotedSkill[];
+  /** The catalog has not been read yet: it shows as loading, not empty. */
+  catalogLoading?: boolean;
   bindings: WorkspaceSkillBinding[];
   devices: DeviceProjection[];
   /** The workspace device's Claude Code / Codex, with their own skills. */
@@ -72,6 +74,7 @@ export interface SkillsFeatureProps {
 export function SkillsFeature({
   onEvent,
   catalog,
+  catalogLoading,
   bindings,
   devices,
   providerHealth,
@@ -171,6 +174,7 @@ export function SkillsFeature({
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}
+        loading={catalogLoading}
         description={
           defaultSkillIds?.some((id) =>
             normalizedSkills.some((skill) => skill.id === id),

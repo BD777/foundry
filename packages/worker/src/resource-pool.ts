@@ -305,12 +305,14 @@ export function discoverResources(): DeviceResource[] {
 
 /**
  * What a workspace session is told about its device: to use what is
- * installed, which resources it may use, and how an image reaches the person.
+ * installed, which resources it may use, how an image reaches the person,
+ * and which Foundry session it is.
  */
 export function sessionResourceNotes(
   workspacePath: string,
   resources: DeviceResource[] = discoverResources(),
   sessionId?: string,
+  foundrySessionId?: string,
 ): string {
   const browsers = resources.filter(
     (resource) => resource.kind === "browser" && resource.available,
@@ -339,7 +341,13 @@ export function sessionResourceNotes(
       : []),
     `- To show an image to the person, save it under ${attachments}/ and put <image path="<its absolute path>"> in your reply.`,
     "- When your reply mentions files you created or changed, cite each by its absolute or workspace-relative path in inline code (for example `docs/summary.md`), so the person can open it from the reply.",
+    ...(foundrySessionId ? [foundrySessionNote(foundrySessionId)] : []),
   ].join("\n");
+}
+
+/** Which Foundry session this is, and what Foundry ids and links name. */
+export function foundrySessionNote(sessionId: string): string {
+  return `- You are Foundry session ${sessionId}. Ids such as sess_…, native_claude_…, native_codex_…, ws_… and dev_…, and Foundry chat links (…/chats/<id>), name Foundry sessions, chats, workspaces and devices; read them with the foundry skill.`;
 }
 
 const scratchDirectories = new Map<string, string>();

@@ -472,3 +472,60 @@ func TestReconnectRecoversAnOrphanedIssueExecution(t *testing.T) {
 		t.Fatalf("recovered Issue = %s %#v %#v", issue.Status, issue.Artifact, issue.Run)
 	}
 }
+
+// The server fails a session whose device stopped reporting on its own timer
+// and publishes the failure: nobody has to read the workspace's data. A
+// session still reporting stays as it is.
+func TestStaleSessionsAreFailedWithoutAnyRead(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	registerEventsWorkspaceForTest(t, db, "ws_sweep")
+	start := func() store.AgentSession {
+		t.Helper()
+		session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_sweep", AgentID: "agent_ws_sweep", Provider: "codex", Prompt: "work", Source: "chat"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	stale := start()
+	server := NewServerWithOptions(db, ServerOptions{AgentSessionStaleAfter: time.Hour})
+	viewer := subscribeForTest(server.events, 256)
+	if err := server.reconcileStaleSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if events := drainForTest(t, viewer); len(events) != 0 {
+		t.Fatalf("a session that reports recently was swept: %+v", events)
+	}
+
+	server.options.AgentSessionStaleAfter = time.Nanosecond
+	interval := staleSessionSweepInterval
+	staleSessionSweepInterval = 10 * time.Millisecond
+	defer func() { staleSessionSweepInterval = interval }()
+	sweepCtx, stop := context.WithCancel(ctx)
+	swept := make(chan struct{})
+	go func() {
+		server.ReconcileStaleSessions(sweepCtx)
+		close(swept)
+	}()
+	deadline := time.After(5 * time.Second)
+	for completed := false; !completed; {
+		select {
+		case frame := <-viewer.ch:
+			_, envelope := frameForTest(t, frame)
+			payload, _ := envelope["payload"].(map[string]any)
+			completed = envelope["type"] == "agent_session_completed" && payload["id"] == stale.ID && payload["status"] == "failed"
+		case <-deadline:
+			t.Fatal("the stale session's failure was not published")
+		}
+	}
+	stop()
+	<-swept
+	failed, err := db.GetAgentSessionSummary(ctx, stale.ID)
+	if err != nil || failed.Status != "failed" || !strings.Contains(failed.Error, "stopped reporting session activity") {
+		t.Fatalf("stale session = %s %q, %v; want failed as stale", failed.Status, failed.Error, err)
+	}
+}

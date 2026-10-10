@@ -91,10 +91,11 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		server.secrets = keeper
 		server.hub.secrets = keeper
 	}
-	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish}
+	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish, dataChanged: events.dataChanged}
 	server.hub.onSessionCompleted = server.titles.SessionCompleted
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
+	server.hub.deviceProjection = server.deviceForEvent
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
 		// Messages queued while the device was away go out now.
@@ -104,6 +105,7 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	server.feishu = feishu.NewWSManager(store, server.secrets, server)
 	server.events.SubscribeInternal(server.feishu.HandleInternalEvent)
 	server.events.SubscribeInternal(server.onChatQueueEvent)
+	server.events.SubscribeInternal(server.onChatTitleJobEvent)
 	go server.feishu.StartAllConfiguredBots(context.Background())
 	return server
 }
@@ -147,234 +149,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		Status:    "ok",
 		StartedAt: s.startedAt.Format(time.RFC3339),
 	})
-}
-
-func (s *Server) handleFoundryData(w http.ResponseWriter, r *http.Request) {
-	actor := actorFromContext(r.Context())
-	workspaceID := requestedWorkspace(actor, r.URL.Query().Get("workspaceId"))
-	view, err := s.visibilityFor(r.Context(), actor)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	started := time.Now()
-	// The projection is per caller: the key carries the caller's reach, so a
-	// membership change never serves a stale view.
-	cacheKey := workspaceID + "|" + view.scope.fingerprint()
-	payload, err := s.projections.load(r.Context(), cacheKey, s.events.revision.Load, func() ([]byte, bool, error) {
-		data, err := s.foundryData(r.Context(), workspaceID, view)
-		if err != nil {
-			return nil, false, err
-		}
-		cacheable := true
-		for _, session := range data.AgentSessions {
-			if isRecoverableAgentSessionStatus(session.Status) {
-				cacheable = false
-				break
-			}
-		}
-		encoded, err := json.Marshal(data)
-		if err == nil && len(encoded) > largeProjectionBytes {
-			logProjectionSize(workspaceID, encoded)
-		}
-		return encoded, cacheable, err
-	})
-	w.Header().Set("Server-Timing", fmt.Sprintf("projection;dur=%.3f", float64(time.Since(started).Microseconds())/1000))
-	if err != nil {
-		writeResult(w, payload, err)
-		return
-	}
-	writeCacheableJSON(w, r, payload)
-}
-
-// foundryData projects what one caller may see: visible workspaces, the
-// devices it owns or reaches through them, and its own connections.
-func (s *Server) foundryData(ctx context.Context, workspaceID string, view visibility) (store.FoundryDataProjection, error) {
-	timer := newPhaseTimer("foundry-data")
-	defer timer.logIfSlow(time.Second)
-	workspaces := view.workspaces
-	if view.scope.all {
-		timer.mark("ListWorkspaces")
-		all, err := s.store.ListWorkspaces(ctx)
-		if err != nil {
-			return store.FoundryDataProjection{}, err
-		}
-		workspaces = view.scope.filterWorkspaces(all)
-	}
-	if workspaceID != "" && !view.scope.can(workspaceID, store.WorkspaceRoleViewer) {
-		return store.FoundryDataProjection{}, store.ErrNotFound
-	}
-	workspace, err := selectWorkspace(ctx, s.store, workspaces, workspaceID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	if workspace.ID != "" {
-		workspace.AccessRole = view.scope.role(workspace.ID)
-	}
-	timer.mark("ListDevices")
-	allDevices, err := s.store.ListDevices(ctx)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	devices := s.hub.withDisconnects(s.withWorkerUpdates(view.filterDevices(allDevices)))
-	timer.mark("ListProfiles")
-	allProfiles, err := s.store.ListProfiles(ctx)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	profiles := s.overlayProfileCredentials(ctx, view.filterConnections(allProfiles))
-	timer.mark("ListDeviceProfiles")
-	deviceProfiles, err := s.store.ListDeviceProfiles(ctx, "")
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	deviceProfiles = filterOwnedDevice(view, deviceProfiles, func(item store.DeviceProfileBinding) string { return item.DeviceID })
-	timer.mark("ListProviderHealth")
-	providerHealth, err := s.store.ListProviderHealth(ctx, "")
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	providerHealth = filterByDevice(view, providerHealth, func(item store.ProviderHealth) string { return item.DeviceID })
-	timer.mark("ListAgentProfiles")
-	agentProfiles, err := s.store.ListAgentProfiles(ctx, "")
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	agentProfiles = filterByDevice(view, s.overlayServerCredential(ctx, agentProfiles),
-		func(item store.AgentProfileProjection) string { return item.DeviceID })
-	if workspace.ID == "" {
-		// Server profiles exist before any workspace does, so the settings and
-		// devices views stay accurate on a fresh install.
-		timer.mark("serverProfileProjections")
-		serverProfiles, _, err := s.serverProfileProjections(ctx, workspace, devices, profiles, deviceProfiles, agentProfiles, []store.AgentProjection{})
-		if err != nil {
-			return store.FoundryDataProjection{}, err
-		}
-		return store.FoundryDataProjection{
-			Workspace:      workspace,
-			Workspaces:     workspaces,
-			Devices:        devices,
-			ProviderHealth: providerHealth,
-			AgentProfiles:  serverProfiles,
-			Profiles:       profiles,
-			DeviceProfiles: deviceProfiles,
-			Agents:         []store.AgentProjection{},
-			WorkspaceFiles: []store.WorkspaceFileEntry{},
-			AgentSessions:  []store.AgentSession{},
-			Skills:         []store.SkillPackRef{},
-			Issues:         []store.Issue{},
-			Chats:          []store.ChatThread{},
-			Assets:         []store.AssetProjection{},
-		}, nil
-	}
-	deviceID := strings.TrimSpace(workspace.DeviceID)
-	timer.mark("ListAgents")
-	agents, err := s.store.ListAgents(ctx, workspace.ID, deviceID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("serverProfileProjections")
-	agentProfiles, agents, err = s.serverProfileProjections(ctx, workspace, devices, profiles, deviceProfiles, agentProfiles, agents)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListWorkspaceFiles")
-	workspaceFiles, err := s.store.ListWorkspaceFiles(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListAgentSessionSummaries")
-	agentSessions, err := s.store.ListAgentSessionSummaries(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	agentSessions = summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, agentSessions))
-	timer.mark("ListAssets")
-	assets, err := s.store.ListAssets(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListSkills")
-	skills, err := s.store.ListSkills(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListIssues")
-	issues, err := s.store.ListIssues(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListChats")
-	chats, err := s.store.ListChats(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListRuns")
-	runs, err := s.store.ListRuns(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("ListPromotedSkills")
-	promotedSkills, err := s.store.ListPromotedSkills(ctx)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("allEffectiveSkillRoots")
-	deviceSkillRoots, err := s.allEffectiveSkillRoots(ctx, devices)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	deviceSkillRoots = filterOwnedDevice(view, deviceSkillRoots, func(item store.DeviceSkillRoot) string { return item.DeviceID })
-	timer.mark("ListWorkspaceSkillBindings")
-	workspaceSkillBindings, err := s.store.ListWorkspaceSkillBindings(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	skillSources, err := resolveWorkspaceSkills(ctx, s.store, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	timer.mark("bundleProjection")
-	skillBundles, workspaceBundleIDs, defaultBundleIDs, err := s.bundleProjection(ctx, workspace.ID)
-	if err != nil {
-		return store.FoundryDataProjection{}, err
-	}
-	var deviceTools []store.DeviceTool
-	if tools, ok := s.store.(deviceToolStore); ok {
-		all, err := tools.ListDeviceTools(ctx, "")
-		if err != nil {
-			return store.FoundryDataProjection{}, err
-		}
-		deviceTools = filterByDevice(view, all, func(item store.DeviceTool) string { return item.DeviceID })
-	}
-	return store.FoundryDataProjection{
-		Runs:                   runs,
-		Workspace:              workspace,
-		Workspaces:             workspaces,
-		Devices:                devices,
-		ProviderHealth:         providerHealth,
-		AgentProfiles:          agentProfiles,
-		Profiles:               profiles,
-		DeviceProfiles:         deviceProfiles,
-		DeviceSkillRoots:       deviceSkillRoots,
-		PromotedSkills:         view.skillUsage(promotedSkills),
-		BuiltinSkills:          builtinSkillProjections(),
-		WorkspaceSkillBindings: workspaceSkillBindings,
-		DefaultSkillIDs:        skillSources.DefaultIDs,
-		InheritedSkillIDs:      skillSources.InheritedIDs,
-		OffSkillIDs:            skillSources.OffIDs,
-		DeviceTools:            deviceTools,
-		SkillBundles:           skillBundles,
-		WorkspaceBundleIDs:     workspaceBundleIDs,
-		DefaultBundleIDs:       defaultBundleIDs,
-		Agents:                 agents,
-		WorkspaceFiles:         workspaceFiles,
-		AgentSessions:          agentSessions,
-		Skills:                 skills,
-		Issues:                 issues,
-		Chats:                  chats,
-		Assets:                 assets,
-	}, nil
 }
 
 // allEffectiveSkillRoots reports every device's effective scan roots in one
@@ -496,6 +270,11 @@ func (s *Server) handleRenameWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := s.store.RenameWorkspace(r.Context(), r.PathValue("id"), name)
+	if err == nil {
+		// The workspace list every view shows changed, and the catalog's
+		// list of the workspaces using each skill.
+		s.projectionsChanged("", fieldWorkspaces, fieldPromotedSkills)
+	}
 	writeResult(w, item, err)
 }
 
@@ -524,6 +303,10 @@ func (s *Server) handleRenameDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := namer.RenameDevice(r.Context(), r.PathValue("deviceId"), name)
+	if err == nil {
+		// Workspaces, connections and skills show the device's name too.
+		s.projectionsChanged("", append([]string{fieldDevices, fieldWorkspaces, fieldPromotedSkills}, connectionFields...)...)
+	}
 	writeResult(w, item, err)
 }
 
@@ -542,6 +325,7 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
+	s.projectionsChanged("")
 	if s.feishu != nil {
 		s.feishu.StopBot(id)
 	}
@@ -714,6 +498,8 @@ func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		// The device's agent profile now shows a server credential.
+		s.projectionsChanged("", fieldAgentProfiles, fieldAgents)
 		profile.ServerCredential = true
 	} else if s.secrets != nil {
 		if stored, err := s.secrets.HasSecret(r.Context(), agentProfileSecretID(profile.DeviceID, profile.ID)); err == nil {
@@ -807,6 +593,19 @@ const deviceFileRequestTimeout = 15 * time.Second
 // writeDeviceRequestError answers a request the workspace's device could not
 // serve: offline, or connected without answering in time. It names the
 // device instead of passing on "context deadline exceeded".
+// sessionControlTimeout is how long a steer or a stop waits for the
+// session's device to answer.
+var sessionControlTimeout = 8 * time.Second
+
+// deviceRequestStatus is the status for a device request that failed: 504
+// when the device did not answer in time, otherwise fallback.
+func deviceRequestStatus(err error, fallback int) int {
+	if isDeviceTimeout(err) {
+		return http.StatusGatewayTimeout
+	}
+	return fallback
+}
+
 func writeDeviceRequestError(w http.ResponseWriter, workspace store.WorkspaceProjection, err error) bool {
 	device := strings.TrimSpace(workspace.DeviceLabel)
 	if device == "" {
@@ -883,10 +682,16 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
-	var input store.CreateIssueInput
-	if !decodeEvidenceRequest(w, r, "", &input) {
+	var request struct {
+		store.CreateIssueInput
+		// InitializeGit: the person confirmed setting up Git in a workspace
+		// that has none, or no commits yet (see ensureIssueGit).
+		InitializeGit bool `json:"initializeGit,omitempty"`
+	}
+	if !decodeEvidenceRequest(w, r, "", &request) {
 		return
 	}
+	input := request.CreateIssueInput
 	if err := input.ValidateRuntimeOptions(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -900,12 +705,16 @@ func (s *Server) handleCreateIssue(w http.ResponseWriter, r *http.Request) {
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return
 	}
+	if !s.ensureIssueGit(w, r, input.WorkspaceID, request.InitializeGit) {
+		return
+	}
 	input.CreatedByUserID = actor.AccountID()
 	item, err := st.CreateIssueIdempotent(r.Context(), input, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		writeEvidenceMutation(w, nil, err)
 		return
 	}
+	s.projectionsChanged(item.WorkspaceID, fieldIssues)
 	writeResultWithStatus(w, http.StatusCreated, item, err)
 }
 
@@ -954,6 +763,7 @@ func (s *Server) handleRequestChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := s.store.RequestIssueChanges(r.Context(), r.PathValue("id"), input.Message, input.ExpectedRunID, "")
 	if err == nil {
+		s.projectionsChanged(item.WorkspaceID, fieldIssues)
 		go s.hub.DispatchReady()
 	}
 	writeResult(w, item, err)
@@ -989,9 +799,14 @@ func summarizeAgentSessionForList(session store.AgentSession) store.AgentSession
 }
 
 func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
+	window, windowed, err := requestedEventWindow(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Authorize against the side-effect-free summary first; only a permitted
 	// caller may then trigger stale-session reconciliation.
-	anchor, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue("id"))
+	anchor, err := s.sessionSummary(r, r.PathValue("id"))
 	if err != nil {
 		writeResult(w, anchor, err)
 		return
@@ -1001,22 +816,48 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "session token cannot read this session")
 		return
 	}
-	item, err := s.store.GetAgentSession(r.Context(), anchor.ID)
+	item, err := store.AgentSessionRecord(r.Context(), s.store, anchor.ID)
 	if err != nil {
 		writeResult(w, item, err)
 		return
 	}
 	item, _, err = s.reconcileAgentSession(r.Context(), item)
+	if err == nil && sessionEventsRequested(r) {
+		// A store that cannot window its events returns them all, without
+		// a cursor: the history is complete.
+		if windows, ok := s.store.(store.SessionEventWindowStore); ok && windowed {
+			page, pageErr := windowSessionEvents(r.Context(), windows, item, window)
+			if pageErr != nil {
+				writeEventWindowError(w, pageErr)
+				return
+			}
+			writeResult(w, page, nil)
+			return
+		}
+		item, err = s.store.GetAgentSession(r.Context(), item.ID)
+	}
 	writeResult(w, item, err)
 }
 
 func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Request) {
+	window, windowed, err := requestedEventWindow(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if window.before != "" {
+		writeError(w, http.StatusBadRequest, "eventsBefore pages one session: read GET /api/agent-sessions/{id}")
+		return
+	}
+	windows, canWindow := s.store.(store.SessionEventWindowStore)
+	windowed = windowed && canWindow
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
-	items, err := s.store.ListAgentSessionThread(
-		r.Context(),
-		workspaceID,
-		r.PathValue("id"),
-	)
+	var items []store.AgentSession
+	if windowed {
+		items, err = windows.ListAgentSessionThreadRecords(r.Context(), workspaceID, r.PathValue("id"))
+	} else {
+		items, err = s.store.ListAgentSessionThread(r.Context(), workspaceID, r.PathValue("id"))
+	}
 	if err != nil {
 		writeResult(w, items, err)
 		return
@@ -1031,7 +872,21 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 	}
 	items = s.reconcileAgentSessions(r.Context(), items)
 	items = s.backfillSessionUsage(r.Context(), items)
-	writeResult(w, items, nil)
+	if !windowed {
+		writeResult(w, items, nil)
+		return
+	}
+	// Each session's newest events: older ones are paged per session.
+	pages := make([]windowedAgentSession, 0, len(items))
+	for _, item := range items {
+		page, err := windowSessionEvents(r.Context(), windows, item, window)
+		if err != nil {
+			writeEventWindowError(w, err)
+			return
+		}
+		pages = append(pages, page)
+	}
+	writeResult(w, pages, nil)
 }
 
 func (s *Server) handleGetAgentSubagentTranscript(w http.ResponseWriter, r *http.Request) {
@@ -1041,7 +896,7 @@ func (s *Server) handleGetAgentSubagentTranscript(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "session id and task id are required")
 		return
 	}
-	session, err := s.store.GetAgentSessionSummary(r.Context(), sessionID)
+	session, err := s.sessionSummary(r, sessionID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -1062,7 +917,7 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "session id is required")
 		return
 	}
-	session, err := s.store.GetAgentSessionSummary(r.Context(), sessionID)
+	session, err := s.sessionSummary(r, sessionID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -1071,10 +926,19 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 		writeForbidden(w, "session token cannot read this session's subagents")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	// Readers read this list once per session view and then follow
+	// agent_subagent_updated; it is served from the cache until a subagent
+	// event arrives, and concurrent readers share one device round trip.
+	ctx, cancel := context.WithTimeout(r.Context(), subagentReadWait)
 	defer cancel()
-	subagents, err := s.hub.ListAgentSubagents(ctx, session)
-	writeResult(w, subagents, err)
+	body, err := s.hub.subagents.load(ctx, session.ID, isRecoverableAgentSessionStatus(session.Status), func(ctx context.Context) ([]store.AgentSubagentSummary, error) {
+		return s.hub.ListAgentSubagents(ctx, session)
+	})
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeCacheableJSON(w, r, body)
 }
 
 // applySessionFork resolves forkSessionId: a new Foundry session starts from
@@ -1106,7 +970,7 @@ func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessi
 func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	var input store.CreateAgentSessionInput
-	if !decodeJSONRequest(w, r, &input) {
+	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
 	// Agents inherit their parent session's creator in the store.
@@ -1130,6 +994,10 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer idempotent.release()
+	sent := sentInput{id: input.InputID, workspaceID: strings.TrimSpace(input.WorkspaceID), status: http.StatusCreated}
+	if s.replaySentInput(w, r, sent, idempotent) {
+		return
+	}
 	if input.Verification {
 		input.Source = "verification"
 	}
@@ -1142,9 +1010,10 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	session, status, err := s.startAgentSession(r.Context(), input)
 	if err != nil {
 		switch {
+		case errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent):
 		case session.ID != "":
 			// Created, but its device could not take it: the failed session.
-			writeJSON(w, status, session)
+			writeJSON(w, status, slimAgentSession(session))
 		case status == 0:
 			writeResult(w, nil, err)
 		case status == http.StatusForbidden:
@@ -1154,6 +1023,7 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
+	session = slimAgentSession(session)
 	idempotent.record(r.Context(), session)
 	writeJSON(w, http.StatusCreated, session)
 }
@@ -1178,7 +1048,8 @@ func (s *Server) startAgentSession(ctx context.Context, input store.CreateAgentS
 		return store.AgentSession{}, 0, err
 	}
 	s.events.Publish("agent_session_created", session)
-	if chatID := strings.TrimSpace(input.ChatID); chatID != "" {
+	s.publishCreatedSessionChatList(session)
+	if chatID := session.AdoptedChatID; chatID != "" {
 		// The adopted native chat's queued messages are the session's now.
 		s.publishChatQueue(ctx, session.WorkspaceID, chatID)
 		s.publishChatQueue(ctx, session.WorkspaceID, session.ID)
@@ -1326,6 +1197,7 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 		return store.AgentSession{}, err
 	}
 	s.events.Publish("agent_session_created", session)
+	s.publishCreatedSessionChatList(session)
 	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
 		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
 	}
@@ -1348,7 +1220,7 @@ func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message stri
 // running session is steered, an idle one takes the message as its next
 // input and is dispatched again. A non-zero status classifies a refusal.
 func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, int, error) {
-	session, err := s.store.GetAgentSession(ctx, sessionID)
+	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
 	if err != nil {
 		return store.AgentSession{}, 0, err
 	}
@@ -1374,12 +1246,12 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 		if !s.hub.HasConnection(session.DeviceID) {
 			return store.AgentSession{}, http.StatusConflict, ErrLocalDaemonNotConnected
 		}
-		steerCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		steerCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 		defer cancel()
-		if err := s.hub.SteerAgentSession(steerCtx, session, message, attachments); err != nil {
-			return store.AgentSession{}, http.StatusConflict, err
+		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments); err != nil {
+			return store.AgentSession{}, deviceRequestStatus(err, http.StatusConflict), err
 		}
-		session, err = s.store.GetAgentSession(ctx, session.ID)
+		session, err = store.AgentSessionRecord(ctx, s.store, session.ID)
 		return session, 0, err
 	}
 	if refusal := unservedWorkspace(ctx, s.store, session.WorkspaceID); refusal != nil {
@@ -1423,7 +1295,7 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var input store.SendAgentSessionInput
-	if !decodeJSONRequest(w, r, &input) {
+	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
 	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/messages:"+anchor.ID, input, http.StatusOK)
@@ -1431,9 +1303,18 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer idempotent.release()
+	// A message this session already took is answered with the session,
+	// before a now-running turn could refuse (requireIdle) or be steered.
+	sent := sentInput{id: input.InputID, sessionID: anchor.ID, workspaceID: anchor.WorkspaceID, status: http.StatusOK}
+	if s.replaySentInput(w, r, sent, idempotent) {
+		return
+	}
 	wasActive := activeOrBlocked(anchor.Status)
 	session, status, err := s.sendSessionMessage(r.Context(), anchor.ID, input)
 	if err != nil {
+		if errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent) {
+			return
+		}
 		if status == 0 {
 			writeResult(w, nil, err)
 		} else {
@@ -1442,8 +1323,9 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if wasActive {
-		s.appendSessionControlAudit(r.Context(), session.ID, "Steered by orchestrator", actor)
+		s.appendSessionControlAudit(r.Context(), session, "Steered by orchestrator", actor)
 	}
+	session = slimAgentSession(session)
 	idempotent.record(r.Context(), session)
 	writeResult(w, session, nil)
 }
@@ -1464,13 +1346,13 @@ func (s *Server) handleCancelAgentSession(w http.ResponseWriter, r *http.Request
 		writeError(w, status, err.Error())
 		return
 	}
-	writeResult(w, session, err)
+	writeResult(w, slimAgentSession(session), err)
 }
 
 // cancelSession stops the work a session is doing. It never cascades:
 // sessions it created keep running. A non-zero status classifies a refusal.
 func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID string) (store.AgentSession, int, error) {
-	session, err := s.store.GetAgentSession(ctx, sessionID)
+	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
 	if err != nil {
 		return store.AgentSession{}, 0, err
 	}
@@ -1487,10 +1369,18 @@ func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID strin
 	if !s.hub.HasConnection(session.DeviceID) {
 		return store.AgentSession{}, http.StatusConflict, ErrLocalDaemonNotConnected
 	}
-	cancelCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	cancelCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 	defer cancel()
-	if err := s.hub.CancelAgentSession(cancelCtx, session); err != nil {
-		return store.AgentSession{}, http.StatusConflict, err
+	answered, err := s.hub.CancelAgentSession(cancelCtx, session)
+	if err != nil {
+		return store.AgentSession{}, deviceRequestStatus(err, http.StatusConflict), err
+	}
+	if answered {
+		// The turn had already answered; the stop ended only the background
+		// work it waited for. The device reports it completed with that
+		// answer, so it is not recorded as canceled.
+		s.appendSessionControlAudit(ctx, session, "Stopped by orchestrator", actor)
+		return session, 0, nil
 	}
 	cancelMessage := "Canceled by user"
 	if actor.Agent() {
@@ -1500,18 +1390,23 @@ func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID strin
 	if err != nil {
 		return store.AgentSession{}, 0, err
 	}
-	s.appendSessionControlAudit(ctx, session.ID, "Canceled by orchestrator", actor)
+	s.appendSessionControlAudit(ctx, session, "Canceled by orchestrator", actor)
 	s.events.Publish("agent_session_completed", session)
 	return session, 0, nil
 }
 
-func (s *Server) appendSessionControlAudit(ctx context.Context, sessionID string, label string, actor Actor) {
+// appendSessionControlAudit records in the session's transcript that an
+// orchestrating session controlled it, and streams the event like the
+// transcript's others.
+func (s *Server) appendSessionControlAudit(ctx context.Context, session store.AgentSession, label string, actor Actor) {
 	if !actor.Agent() {
 		return
 	}
+	now := time.Now().UTC()
 	event := store.AgentSessionEvent{
-		ID:        fmt.Sprintf("audit_%d", time.Now().UnixNano()),
-		SessionID: sessionID,
+		ID:        fmt.Sprintf("audit_%d", now.UnixNano()),
+		SessionID: session.ID,
+		At:        now.Format(time.RFC3339Nano),
 		Label:     label,
 		Detail:    actor.Identity.SessionID,
 		Level:     "info",
@@ -1519,7 +1414,11 @@ func (s *Server) appendSessionControlAudit(ctx context.Context, sessionID string
 			TaskID: actor.Identity.SessionID,
 		},
 	}
-	_ = s.store.AppendAgentSessionEvent(ctx, event)
+	if err := s.store.AppendAgentSessionEvent(ctx, event); err != nil {
+		log.Printf("record %q on session %s: %v", label, session.ID, err)
+		return
+	}
+	s.events.PublishIn(session.WorkspaceID, sessionEventStreamType, event)
 }
 
 func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
@@ -1531,7 +1430,7 @@ func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "registration device does not match its credential")
 		return
 	}
-	if err := s.store.RegisterDaemon(r.Context(), input); err != nil {
+	if err := s.hub.registerDaemon(r.Context(), input); err != nil {
 		if errors.Is(err, store.ErrDeviceRemoved) {
 			writeError(w, http.StatusGone, "device_removed")
 			return
@@ -1554,7 +1453,7 @@ func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDeviceWorkspace(w, r, input.WorkspaceID) {
 		return
 	}
-	if err := s.store.SyncChats(r.Context(), input); err != nil {
+	if err := s.hub.syncChats(r.Context(), input); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1598,6 +1497,7 @@ func (s *Server) handleDevResetDemo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.projectionsChanged("")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
 
@@ -1633,6 +1533,10 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 			writeError(w, http.StatusGone, "device_removed")
 			return
 		}
+		if isDeviceTimeout(err) {
+			writeError(w, http.StatusGatewayTimeout, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1652,7 +1556,7 @@ func writeCacheableJSON(w http.ResponseWriter, r *http.Request, encoded []byte) 
 	etag := `"` + fmt.Sprintf("%x", digest) + `"`
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("ETag", etag)
-	if strings.TrimSpace(r.Header.Get("If-None-Match")) == etag {
+	if ifNoneMatch(r.Header.Values("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -1660,6 +1564,23 @@ func writeCacheableJSON(w http.ResponseWriter, r *http.Request, encoded []byte) 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(encoded)
 	_, _ = w.Write([]byte("\n"))
+}
+
+// ifNoneMatch applies If-None-Match with the weak comparison RFC 9110
+// §13.1.2 prescribes for it: "*" or any listed tag whose opaque part equals
+// etag's, with or without W/. A proxy that compresses the body (nginx gzip)
+// sends our strong tag back as W/"…".
+func ifNoneMatch(headers []string, etag string) bool {
+	opaque := strings.TrimPrefix(etag, "W/")
+	for _, header := range headers {
+		for _, candidate := range strings.Split(header, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == opaque {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

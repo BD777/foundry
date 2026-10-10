@@ -95,7 +95,7 @@ func TestWorkspaceSnapshotIncludesOtherDevicesWithoutTheirWorkspaceData(t *testi
 		}
 	}
 	server := NewServer(backing)
-	snapshot, err := server.foundryData(context.Background(), "ws_one", visibility{scope: accessScope{all: true}})
+	snapshot, err := server.foundryData(context.Background(), "ws_one", visibility{scope: accessScope{all: true}}, everyFoundryDataField())
 	if err != nil {
 		t.Fatal(err)
 	}

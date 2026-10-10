@@ -139,7 +139,7 @@ func (s *Store) ListDeviceSkillRoots(ctx context.Context, deviceID string) ([]st
 		query = `SELECT device_id, path FROM device_skill_roots WHERE device_id = ? ORDER BY path`
 		args = append(args, deviceID)
 	}
-	rows, err := s.conn().QueryContext(ctx, query, args...)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list device skill roots: %w", err)
 	}
@@ -275,7 +275,7 @@ func (s *Store) ListDeviceSkills(ctx context.Context, deviceID string) ([]store.
 // ListPromotedSkills returns the whole server catalog with origin device
 // labels joined live, so a renamed or removed device never shows a stale name.
 func (s *Store) ListPromotedSkills(ctx context.Context) ([]store.PromotedSkill, error) {
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT ps.id, ps.name, ps.description, ps.origin_device_id,
 			COALESCE(d.label, ''), ps.origin_root, ps.origin_dir_name,
 			ps.latest_revision, ps.created_at, ps.updated_at,
@@ -533,7 +533,7 @@ func (s *Store) ListWorkspaceSkillBindings(ctx context.Context, workspaceID stri
 		query = `SELECT workspace_id, skill_id, pinned_revision FROM workspace_skill_bindings WHERE workspace_id = ? ORDER BY skill_id`
 		args = append(args, workspaceID)
 	}
-	rows, err := s.conn().QueryContext(ctx, query, args...)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace skill bindings: %w", err)
 	}
@@ -613,7 +613,7 @@ func (s *Store) SetWorkspaceSkills(ctx context.Context, input store.SetWorkspace
 // ListWorkspaceSkillExclusions is the skills a workspace turned off although
 // its owner's defaults or its bundles give them.
 func (s *Store) ListWorkspaceSkillExclusions(ctx context.Context, workspaceID string) ([]string, error) {
-	rows, err := s.conn().QueryContext(ctx,
+	rows, err := s.reader().QueryContext(ctx,
 		`SELECT skill_id FROM workspace_skill_exclusions WHERE workspace_id = ? ORDER BY skill_id`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace skills turned off: %w", err)
@@ -633,7 +633,7 @@ func (s *Store) ListWorkspaceSkillExclusions(ctx context.Context, workspaceID st
 // ResolveSessionSkills expands a workspace's selection to the current latest
 // revisions. An empty slice means the runtime must expose no skills.
 func (s *Store) ResolveSessionSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT ps.id, r.revision, ps.name, r.checksum, r.byte_size
 		FROM workspace_skill_bindings b
 		JOIN promoted_skills ps ON ps.id = b.skill_id
@@ -659,7 +659,7 @@ func (s *Store) ResolveSessionSkills(ctx context.Context, workspaceID string) ([
 // AttachSessionSkills stamps the resolved selection onto the session payload
 // so dispatch, resume and audit all agree on what the run was allowed to use.
 func (s *Store) AttachSessionSkills(ctx context.Context, sessionID string, refs []store.SessionSkillRef) error {
-	session, err := s.GetAgentSession(ctx, sessionID)
+	session, err := s.GetAgentSessionRecord(ctx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -791,7 +791,7 @@ func (s *Store) SetUserDefaultSkills(ctx context.Context, userID string, skillID
 // ResolveDefaultSkills expands the default skills of the person who owns a
 // workspace's device to their latest revisions.
 func (s *Store) ResolveDefaultSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
-	rows, err := s.conn().QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
 		FROM workspaces w
 		JOIN device_identities di ON di.device_id = json_extract(w.payload_json, '$.deviceId')

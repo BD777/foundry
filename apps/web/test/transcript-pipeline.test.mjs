@@ -219,3 +219,121 @@ test("legacy managed Claude still combines its existing process rows", () => {
   assert.equal(processDisplayRows(messages[1].processItems, false).length, 1);
   assert.equal(messages[2].text, "Answer");
 });
+
+test("bookkeeping after an answer never forms a process row of its own", () => {
+  // The worker's records after a turn's answer, as a real chat stored them:
+  // request usage, the turn's files, its finish, background-work and subagent
+  // bookkeeping. Some arrive without their metadata (older workers).
+  const at = (second) => `2026-10-10T01:00:${String(second).padStart(2, "0")}Z`;
+  const sessionFile = (path) => ({
+    sessionFile: {
+      path: `/w/${path}`,
+      workspacePath: path,
+      origin: "reference",
+      op: "referenced",
+      inGitRepo: true,
+      inputId: "in_1",
+    },
+  });
+  const event = (id, second, label, detail = "", metadata, message) => ({
+    id,
+    at: at(second),
+    label,
+    detail,
+    level: "info",
+    sessionId: "s",
+    ...(metadata ? { metadata } : {}),
+    ...(message ? { message } : {}),
+  });
+  const running = {
+    id: "a1",
+    provider: "claude",
+    kind: "subagent",
+    description: "Stop writing scaffold",
+    status: "running",
+    startedAt: at(0),
+    hasOutput: false,
+  };
+  const messages = chatMessagesForThread({
+    id: "t",
+    sessions: [
+      {
+        id: "s",
+        provider: "claude",
+        prompt: "Q",
+        status: "completed",
+        events: [
+          event("input", 1, "User message", "", undefined, {
+            id: "in_1",
+            kind: "user",
+            text: "Change it",
+          }),
+          event("think", 2, "Thinking", "Claude is processing the request."),
+          event(
+            "answer",
+            30,
+            "Response stream",
+            "Done: the subagent is on it.",
+          ),
+          event("usage", 30, "Model request usage", "msg_1", {
+            requestUsage: {
+              requestId: "msg_1",
+              inputTokens: 10,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 5,
+            },
+          }),
+          event(
+            "file1",
+            31,
+            "Recorded file",
+            "AGENTS.md",
+            sessionFile("AGENTS.md"),
+          ),
+          event(
+            "file2",
+            32,
+            "Recorded file",
+            "CONTEXT.md",
+            sessionFile("CONTEXT.md"),
+          ),
+          event("finished", 33, "Claude Agent SDK finished", "/w/result.md", {
+            turnUsage: {
+              durationMs: 28000,
+              inputTokens: 10,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 5,
+              modelRequests: 1,
+            },
+          }),
+          event("bg", 34, "Background tasks updated", running.description, {
+            backgroundTaskSnapshot: [running],
+          }),
+          event("sub", 35, "Subtask running", "Running Read files", {
+            taskId: "a1",
+            toolUseId: "toolu_a1",
+          }),
+          // Older workers: the same bookkeeping without its metadata.
+          event("file3", 36, "Recorded file", "AGENTS.md"),
+          event("bg2", 37, "Background tasks updated", running.description),
+          event("timers", 38, "Scheduled tasks updated", "Check CI hourly"),
+          event("usage2", 39, "Model request usage", "msg_2"),
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(
+    messages.map((m) => [m.role, m.kind]),
+    [
+      ["user", undefined],
+      ["bot", "process"],
+      ["bot", undefined],
+    ],
+  );
+  const answer = messages.at(-1);
+  assert.equal(answer.text, "Done: the subagent is on it.");
+  assert.equal(answer.usage?.durationMs, 28000);
+  assert.deepEqual(answer.turnFiles, { turnId: "in_1", count: 2 });
+});

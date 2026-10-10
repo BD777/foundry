@@ -99,3 +99,16 @@ test("while an answer streams, a relative link is text titled with its target", 
   assert.match(html, /<span title="docs\/plan\.md">the plan<\/span>/);
   assert.doesNotMatch(html, /\[blocked\]/);
 });
+
+test("a settled answer is parsed as one document, so later link definitions resolve", async () => {
+  const html = await renderMarkdown(
+    {},
+    "See [the plan][plan] for details.\n\n- first\n- second\n\n[plan]: https://example.com/plan",
+  );
+  assert.match(
+    html,
+    /<a [^>]*href="https:\/\/example\.com\/plan"[^>]*>the plan<\/a>/,
+  );
+  assert.doesNotMatch(html, /\[plan\]/);
+  assert.equal(html.match(/<li/g)?.length, 2);
+});

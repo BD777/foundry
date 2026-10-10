@@ -48,6 +48,7 @@ import {
   type ActiveSessionCancelTarget,
   type ActiveSessionSteerTarget,
   type AgentSessionRunResult,
+  type SessionCancelOutcome,
 } from "./session-state.js";
 import { safeID } from "./utils.js";
 import { sessionInputDirectory } from "./session-artifacts.js";
@@ -106,6 +107,152 @@ export function createSessionStatusEventFilter(): (
     const duplicate = status !== undefined && status === previousStatus;
     previousStatus = status;
     return !duplicate;
+  };
+}
+
+/** A streamed answer is sent at most this often. */
+export const responseStreamIntervalMs = 250;
+
+/**
+ * Batches a streamed answer. Each update carries the whole text so far and
+ * was stored and streamed every 50ms; a quarter second keeps it live at a
+ * fifth of the copies. The first update goes out at once, later ones within
+ * the interval are held and the latest is sent when it ends. A different
+ * message flushes the held one first; `flush` sends what is held, so the
+ * final text is exact before the turn completes.
+ */
+export function createResponseStreamBatcher<
+  T extends { message?: { id?: string } },
+>(
+  send: (update: T) => void,
+  options: {
+    intervalMs?: number;
+    now?: () => number;
+    setTimer?: (callback: () => void, ms: number) => unknown;
+    clearTimer?: (timer: unknown) => void;
+  } = {},
+): { offer: (update: T) => void; flush: () => void } {
+  const intervalMs = options.intervalMs ?? responseStreamIntervalMs;
+  const now = options.now ?? Date.now;
+  const setTimer = options.setTimer ?? setTimeout;
+  const clearTimer =
+    options.clearTimer ??
+    ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+  let pending: T | undefined;
+  let lastSentAt = Number.NEGATIVE_INFINITY;
+  let timer: unknown;
+  const flush = (): void => {
+    if (timer !== undefined) {
+      clearTimer(timer);
+      timer = undefined;
+    }
+    const update = pending;
+    pending = undefined;
+    if (!update) return;
+    lastSentAt = now();
+    send(update);
+  };
+  const offer = (update: T): void => {
+    const heldID = pending?.message?.id;
+    if (heldID && update.message?.id && heldID !== update.message.id) flush();
+    pending = update;
+    const elapsed = now() - lastSentAt;
+    if (elapsed >= intervalMs) flush();
+    else if (timer === undefined) timer = setTimer(flush, intervalMs - elapsed);
+  };
+  return { offer, flush };
+}
+
+/** A subagent's progress is sent at most this often; the latest wins. */
+export const subtaskProgressIntervalMs = 10_000;
+const subtaskProgressTaskLimit = 1024;
+const subtaskBoundaryLabels = new Set<string>([
+  processLabels.startingSubtask,
+  processLabels.subtaskCompleted,
+  processLabels.subtaskFailed,
+]);
+
+/**
+ * Coalesces "Subtask running" progress: Claude reports it several times a
+ * second per subagent, and every report was a stored, streamed event. The
+ * first report of a task goes out at once; later ones within the interval
+ * are held and only the latest is sent when it ends. Start, completion and
+ * failure always go out, and drop held progress the completion supersedes.
+ */
+export function createSubtaskProgressCoalescer(
+  options: {
+    intervalMs?: number;
+    now?: () => number;
+    setTimer?: (callback: () => void, ms: number) => unknown;
+    clearTimer?: (timer: unknown) => void;
+  } = {},
+): (
+  sessionId: string,
+  event: Pick<AgentSessionEvent, "label" | "metadata">,
+  send: () => void,
+) => void {
+  const intervalMs = options.intervalMs ?? subtaskProgressIntervalMs;
+  const now = options.now ?? Date.now;
+  const setTimer =
+    options.setTimer ??
+    ((callback: () => void, ms: number) => {
+      const timer = setTimeout(callback, ms);
+      timer.unref?.();
+      return timer;
+    });
+  const clearTimer =
+    options.clearTimer ??
+    ((timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+  const tasks = new Map<
+    string,
+    { sentAt: number; pending?: () => void; timer?: unknown }
+  >();
+  const forget = (key: string): void => {
+    const task = tasks.get(key);
+    if (task?.timer !== undefined) clearTimer(task.timer);
+    tasks.delete(key);
+  };
+  return (sessionId, event, send) => {
+    const taskId = event.metadata?.taskId;
+    if (!taskId) {
+      send();
+      return;
+    }
+    const key = `${sessionId}\u0000${taskId}`;
+    if (event.label !== processLabels.subtaskRunning) {
+      if (subtaskBoundaryLabels.has(event.label)) forget(key);
+      send();
+      return;
+    }
+    let task = tasks.get(key);
+    if (!task) {
+      if (tasks.size >= subtaskProgressTaskLimit) {
+        const oldest = tasks.keys().next().value;
+        if (oldest !== undefined) forget(oldest);
+      }
+      task = { sentAt: Number.NEGATIVE_INFINITY };
+      tasks.set(key, task);
+    }
+    const elapsed = now() - task.sentAt;
+    if (task.timer === undefined && elapsed >= intervalMs) {
+      task.sentAt = now();
+      send();
+      return;
+    }
+    task.pending = send;
+    if (task.timer !== undefined) return;
+    const held = task;
+    held.timer = setTimer(
+      () => {
+        held.timer = undefined;
+        const pending = held.pending;
+        held.pending = undefined;
+        if (!pending || tasks.get(key) !== held) return;
+        held.sentAt = now();
+        pending();
+      },
+      Math.max(0, intervalMs - elapsed),
+    );
   };
 }
 
@@ -514,12 +661,61 @@ export async function steerActiveSession(
   sessionID: string,
   message: string,
   attachments?: ChatAttachment[],
+  steerID?: string,
 ): Promise<void> {
   const target = activeSessionSteerTargets.get(sessionID);
   if (!target) {
     throw new Error("This session is not accepting active steer input.");
   }
-  await target.steer(message, attachments);
+  await target.steer(message, attachments, steerID);
+}
+
+/**
+ * Steers the server named (by session and id), applied or being applied. A
+ * steer whose reply reached the server too late is sent again; it must not
+ * reach the agent twice. A refused steer is forgotten so it can be retried.
+ */
+const appliedSteers = new Map<string, Promise<void>>();
+const appliedSteerLimit = 512;
+
+function rememberSteer(key: string, applying: Promise<void>): void {
+  appliedSteers.set(key, applying);
+  if (appliedSteers.size > appliedSteerLimit) {
+    const oldest = appliedSteers.keys().next().value;
+    if (oldest !== undefined) appliedSteers.delete(oldest);
+  }
+}
+
+/**
+ * A message the session was given as an input of its own: a steer of it
+ * (sent before the server stopped waiting for its answer) is answered as
+ * applied and never reaches the agent a second time.
+ */
+export function noteSessionInput(sessionID: string, inputID: string): void {
+  rememberSteer(`${sessionID}\u0000${inputID}`, Promise.resolve());
+}
+
+/** steerActiveSession, once per id; without an id, every time. */
+export function steerActiveSessionOnce(
+  sessionID: string,
+  steerID: string | undefined,
+  message: string,
+  attachments?: ChatAttachment[],
+): Promise<void> {
+  if (!steerID) {
+    return steerActiveSession(sessionID, message, attachments);
+  }
+  const key = `${sessionID}\u0000${steerID}`;
+  const known = appliedSteers.get(key);
+  if (known) {
+    return known;
+  }
+  const applying = steerActiveSession(sessionID, message, attachments, steerID);
+  rememberSteer(key, applying);
+  applying.catch(() => {
+    if (appliedSteers.get(key) === applying) appliedSteers.delete(key);
+  });
+  return applying;
 }
 
 class AgentSessionCanceledError extends Error {
@@ -639,11 +835,11 @@ export function recoveredSessionCompletion(
 export async function cancelActiveSession(
   sessionID: string,
   inputID = "",
-): Promise<void> {
+): Promise<SessionCancelOutcome> {
   const target = activeSessionCancelTargets.get(sessionID);
   if (!target) {
     queuedSessionCancelRequests.add(dispatchKey(sessionID, inputID));
-    return;
+    return {};
   }
-  await target.cancel();
+  return (await target.cancel()) ?? {};
 }

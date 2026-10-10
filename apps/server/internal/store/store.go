@@ -2,10 +2,95 @@ package store
 
 import "context"
 
+// SessionRecordStore loads a session without its transcript: what a status
+// change or a reply needs. A long chat has thousands of events.
+type SessionRecordStore interface {
+	GetAgentSessionRecord(ctx context.Context, id string) (AgentSession, error)
+}
+
+// SessionEventWindowStore reads a transcript a window at a time: a reader
+// shows a chat's newest events first and pages back on request.
+type SessionEventWindowStore interface {
+	// ListAgentSessionThreadRecords is ListAgentSessionThread without events.
+	ListAgentSessionThreadRecords(ctx context.Context, workspaceID string, id string) ([]AgentSession, error)
+	// AgentSessionEventWindow returns at most limit of the session's events
+	// before the cursor (the newest without one), oldest first, and the
+	// cursor of the events older than those ("" when there are none). A
+	// cursor it cannot read is ErrInvalidEventsCursor.
+	AgentSessionEventWindow(ctx context.Context, sessionID string, before string, limit int) ([]AgentSessionEvent, string, error)
+}
+
+// AgentSessionRecord is the session with its answer and input but no
+// events, read without them where the store can.
+func AgentSessionRecord(ctx context.Context, st Store, id string) (AgentSession, error) {
+	if records, ok := st.(SessionRecordStore); ok {
+		return records.GetAgentSessionRecord(ctx, id)
+	}
+	session, err := st.GetAgentSession(ctx, id)
+	session.Events = nil
+	return session, err
+}
+
+// DaemonChanges is what a device's report changed in what clients read,
+// so the server announces real changes only. A device resends its picture
+// on every connect and its chats every minute; most reports change nothing.
+type DaemonChanges struct {
+	// Global: what every workspace's view shows changed (the device's
+	// provider health or agent profiles), or a workspace appeared.
+	Global bool
+	// Workspaces whose own data (the workspace, its agents, assets, skills,
+	// files or chats) changed.
+	Workspaces []string
+	// Parts says which of those changed, when the store can tell.
+	Parts DaemonChangedParts
+}
+
+// DaemonChangedParts names what a device report changed. Unless Known, any
+// part DaemonChanges covers may have.
+type DaemonChangedParts struct {
+	Known bool
+	// Of the device: its row, provider health and agent profiles; and a
+	// workspace that appeared.
+	Device, ProviderHealth, AgentProfiles, NewWorkspace bool
+	// Of the workspace: its row, agents, assets, skills, files and chats.
+	Workspace, Agents, Assets, Skills, WorkspaceFiles, Chats bool
+}
+
+// DaemonChangeStore records device reports and says what they changed.
+type DaemonChangeStore interface {
+	RegisterDaemonChanges(ctx context.Context, input DaemonRegistration) (DaemonChanges, error)
+	SyncChatsChanges(ctx context.Context, input SyncChatsInput) (DaemonChanges, error)
+}
+
 // DeviceSessionStore lists what a device still owes: every queued, running or
 // blocked session on it, across all of its workspaces and without a page limit.
 type DeviceSessionStore interface {
 	UnsettledAgentSessionsOnDevice(ctx context.Context, deviceID string) ([]AgentSession, error)
+}
+
+// ActiveAgentSessionStore lists every running or blocked session, in every
+// workspace: the ones a device that stopped reporting can leave stale.
+type ActiveAgentSessionStore interface {
+	ActiveAgentSessions(ctx context.Context) ([]AgentSession, error)
+}
+
+// SessionEventRecorder appends a device's session event like
+// AppendAgentSessionEvent and reports false, changing nothing, for one the
+// session already holds unchanged (the device sent it again) or one that
+// would replace a person's input.
+type SessionEventRecorder interface {
+	RecordAgentSessionEvent(ctx context.Context, event AgentSessionEvent) (bool, error)
+}
+
+// QueuedAgentSessionStore lists every session waiting for its device to
+// start it, and records notices on them that change nothing else.
+type QueuedAgentSessionStore interface {
+	QueuedAgentSessions(ctx context.Context) ([]AgentSession, error)
+	// AddQueuedSessionNotice stores event while its session is still
+	// queued on inputID and holds no event with its id; the session's
+	// status and activity stay as they are. It reports whether the event
+	// was added.
+	AddQueuedSessionNotice(ctx context.Context, event AgentSessionEvent, inputID string) (bool, error)
 }
 
 // WorkspaceAvailabilityStore records which of a device's workspaces its

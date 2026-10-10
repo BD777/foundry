@@ -103,6 +103,11 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
   assert.equal(plan.sdk.settingSources, undefined);
   assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
+  assert.ok(
+    plan.sdk.systemPrompt.append.includes(
+      `You are Foundry session ${session.id}.`,
+    ),
+  );
   // Claude Code's own skills stay enabled beside the workspace's.
   assert.deepEqual(plan.sdk.skills, ["simplify", "foundry-workspace:qa"]);
   assert.deepEqual(plan.sdk.plugins, [

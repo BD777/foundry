@@ -17,10 +17,22 @@ import (
 )
 
 type Store struct {
-	db   *sql.DB
+	// db is the writer: one connection, so every write and every
+	// transaction is serialized, and per-connection state (PRAGMA
+	// foreign_keys toggles) stays on that connection.
+	db *sql.DB
+	// read is a bounded pool of query_only connections for reads that need
+	// no write lock (see reader). Nil for an in-memory database, whose
+	// contents a second connection could not see.
+	read *sql.DB
 	exec dbExecutor
 	kek  secretstore.KEK
 }
+
+// readerConnections bounds the read pool. The server runs on small
+// machines (2 vCPUs); a few readers keep a long projection read from
+// stalling a short one without competing with the writer for CPU.
+const readerConnections = 4
 
 // issueSequenceStart keeps generated issue numbers in the same range the
 // demo seed and earlier count-based sequencing produced.
@@ -73,8 +85,38 @@ func OpenWithOptions(path string, options Options) (*Store, error) {
 			return nil, err
 		}
 	}
+	if path != ":memory:" {
+		read, err := openReader(path)
+		if err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		s.read = read
+	}
 
 	return s, nil
+}
+
+// openReader opens the read pool. Its connections are query_only, so a
+// write sent to one fails instead of bypassing the writer; WAL lets them
+// read while the writer holds a transaction.
+func openReader(path string) (*sql.DB, error) {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	read, err := sql.Open("sqlite", path+separator+
+		"_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=query_only(1)")
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite reader: %w", err)
+	}
+	read.SetMaxOpenConns(readerConnections)
+	read.SetMaxIdleConns(readerConnections)
+	if err := read.Ping(); err != nil {
+		_ = read.Close()
+		return nil, fmt.Errorf("open sqlite reader: %w", err)
+	}
+	return read, nil
 }
 
 func OpenDemo(path string) (*Store, error) {
@@ -82,6 +124,12 @@ func OpenDemo(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error {
+	if s.read != nil {
+		if err := s.read.Close(); err != nil {
+			_ = s.db.Close()
+			return err
+		}
+	}
 	return s.db.Close()
 }
 
@@ -325,6 +373,13 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite: %w", err)
 		}
 	}
+	// Before any later step saves an event.
+	if err := s.migrateSessionStateKeys(ctx); err != nil {
+		return err
+	}
+	if err := s.migrateChatQueue(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "chat_titles", "generation_session_id", `ALTER TABLE chat_titles ADD COLUMN generation_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
@@ -502,14 +557,14 @@ func (s *Store) workspaceIDForDevice(ctx context.Context, deviceID string) strin
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context) ([]store.WorkspaceProjection, error) {
-	return listJSON[store.WorkspaceProjection](ctx, s.conn(), `SELECT
+	return listJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT
 		CASE WHEN d.name IS NULL THEN w.payload_json ELSE json_set(w.payload_json, '$.name', d.name) END
 		FROM workspaces w LEFT JOIN workspace_display_names d ON d.workspace_id = w.id
 		ORDER BY w.updated_at DESC, w.name`)
 }
 
 func (s *Store) GetWorkspace(ctx context.Context, id string) (store.WorkspaceProjection, error) {
-	return getJSON[store.WorkspaceProjection](ctx, s.conn(), `SELECT
+	return getJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT
 		CASE WHEN d.name IS NULL THEN w.payload_json ELSE json_set(w.payload_json, '$.name', d.name) END
 		FROM workspaces w LEFT JOIN workspace_display_names d ON d.workspace_id = w.id WHERE w.id = ?`, id)
 }
@@ -687,7 +742,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 	// skillsVersion moves with every scan of the device (a scan rewrites its
 	// rows) and every catalog change, which can change how its skills
 	// compare with the server.
-	return listJSON[store.DeviceProjection](ctx, s.conn(), `SELECT
+	return listJSON[store.DeviceProjection](ctx, s.reader(), `SELECT
 		json_set(
 			CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
 				json_set(json_set(d.payload_json, '$.status', 'removed'),
@@ -703,7 +758,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 }
 
 func (s *Store) ListProviderHealth(ctx context.Context, deviceID string) ([]store.ProviderHealth, error) {
-	providers, err := listJSON[store.ProviderHealth](ctx, s.conn(), `SELECT payload_json FROM provider_health ORDER BY provider`)
+	providers, err := listJSON[store.ProviderHealth](ctx, s.reader(), `SELECT payload_json FROM provider_health ORDER BY provider`)
 	if err != nil {
 		return nil, err
 	}
@@ -722,59 +777,78 @@ func (s *Store) ListProviderHealth(ctx context.Context, deviceID string) ([]stor
 
 func (s *Store) ListAgentProfiles(ctx context.Context, deviceID string) ([]store.AgentProfileProjection, error) {
 	if deviceID != "" {
-		return listJSON[store.AgentProfileProjection](ctx, s.conn(), `SELECT payload_json FROM agent_profiles WHERE device_id = ? ORDER BY runtime, id`, deviceID)
+		return listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles WHERE device_id = ? ORDER BY runtime, id`, deviceID)
 	}
-	return listJSON[store.AgentProfileProjection](ctx, s.conn(), `SELECT payload_json FROM agent_profiles ORDER BY device_id, runtime, id`)
+	return listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles ORDER BY device_id, runtime, id`)
 }
 
 func (s *Store) ListAgents(ctx context.Context, workspaceID string, deviceID string) ([]store.AgentProjection, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	deviceID = strings.TrimSpace(deviceID)
 	if workspaceID != "" && deviceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY updated_at DESC, provider`, workspaceID, deviceID)
+		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY updated_at DESC, provider`, workspaceID, deviceID)
 	}
 	if workspaceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE workspace_id = ? ORDER BY updated_at DESC, provider`, workspaceID)
+		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? ORDER BY updated_at DESC, provider`, workspaceID)
 	}
 	if deviceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE device_id = ? ORDER BY updated_at DESC, provider`, deviceID)
+		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE device_id = ? ORDER BY updated_at DESC, provider`, deviceID)
 	}
-	return listJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents ORDER BY updated_at DESC, provider`)
+	return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents ORDER BY updated_at DESC, provider`)
 }
 
 func (s *Store) ListWorkspaceFiles(ctx context.Context, workspaceID string) ([]store.WorkspaceFileEntry, error) {
 	if workspaceID == "" {
-		return listJSON[store.WorkspaceFileEntry](ctx, s.conn(), `SELECT payload_json FROM workspace_files ORDER BY path`)
+		return listJSON[store.WorkspaceFileEntry](ctx, s.reader(), `SELECT payload_json FROM workspace_files ORDER BY path`)
 	}
-	return listJSON[store.WorkspaceFileEntry](ctx, s.conn(), `SELECT payload_json FROM workspace_files WHERE workspace_id = ? ORDER BY path`, workspaceID)
+	return listJSON[store.WorkspaceFileEntry](ctx, s.reader(), `SELECT payload_json FROM workspace_files WHERE workspace_id = ? ORDER BY path`, workspaceID)
 }
 
 func (s *Store) ListAssets(ctx context.Context, workspaceID string) ([]store.AssetProjection, error) {
 	if workspaceID != "" {
-		return listJSON[store.AssetProjection](ctx, s.conn(), `SELECT payload_json FROM assets WHERE workspace_id = ? ORDER BY name`, workspaceID)
+		return listJSON[store.AssetProjection](ctx, s.reader(), `SELECT payload_json FROM assets WHERE workspace_id = ? ORDER BY name`, workspaceID)
 	}
-	return listJSON[store.AssetProjection](ctx, s.conn(), `SELECT payload_json FROM assets ORDER BY name`)
+	return listJSON[store.AssetProjection](ctx, s.reader(), `SELECT payload_json FROM assets ORDER BY name`)
 }
 
 func (s *Store) ListSkills(ctx context.Context, workspaceID string) ([]store.SkillPackRef, error) {
 	if workspaceID != "" {
-		return listJSON[store.SkillPackRef](ctx, s.conn(), `SELECT payload_json FROM skills WHERE workspace_id = ? ORDER BY name`, workspaceID)
+		return listJSON[store.SkillPackRef](ctx, s.reader(), `SELECT payload_json FROM skills WHERE workspace_id = ? ORDER BY name`, workspaceID)
 	}
-	return listJSON[store.SkillPackRef](ctx, s.conn(), `SELECT payload_json FROM skills ORDER BY workspace_id, name`)
+	return listJSON[store.SkillPackRef](ctx, s.reader(), `SELECT payload_json FROM skills ORDER BY workspace_id, name`)
 }
 
 // ListChats lists the device-native chats no Foundry session owns, most
-// recent conversation activity first.
+// recent conversation activity first. A workspace's list reads only its
+// rows (and unassigned ones) through idx_chats_workspace_activity.
 func (s *Store) ListChats(ctx context.Context, workspaceID string) ([]store.ChatThread, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	return listJSON[store.ChatThread](ctx, s.conn(), `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats
-		WHERE (? = '' OR workspace_id IN (?, ''))
-		AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL+`
-		ORDER BY activity_at DESC, id ASC`, workspaceID, workspaceID)
+	const columns = `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats WHERE `
+	const visible = visibleChatSQL + ` AND NOT ` + nativeClaimedSQL + ` ORDER BY activity_at DESC, id ASC`
+	if workspaceID == "" {
+		return listJSON[store.ChatThread](ctx, s.reader(), columns+visible)
+	}
+	return listJSON[store.ChatThread](ctx, s.reader(), columns+`workspace_id IN (?, '') AND `+visible, workspaceID)
+}
+
+// ListChatsByID is ListChats narrowed to the given chats: those of them the
+// workspace's chat list shows, as it shows them.
+func (s *Store) ListChatsByID(ctx context.Context, workspaceID string, ids []string) ([]store.ChatThread, error) {
+	if len(ids) == 0 {
+		return []store.ChatThread{}, nil
+	}
+	args := []any{strings.TrimSpace(workspaceID)}
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(ids)), ", ")
+	return listJSON[store.ChatThread](ctx, s.reader(), `SELECT json_remove(payload_json, '$.handoffContext', '$.recentMessages', '$.transcript') FROM chats
+		WHERE workspace_id IN (?, '') AND id IN (`+placeholders+`) AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL+`
+		ORDER BY activity_at DESC, id ASC`, args...)
 }
 
 func (s *Store) GetChat(ctx context.Context, id string) (store.ChatThread, error) {
-	return getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
+	return getJSON[store.ChatThread](ctx, s.reader(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
 }
 
 // nextIssueSequence returns one past the highest numeric suffix already used by
@@ -932,14 +1006,45 @@ func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload s
 	return nil
 }
 
-// saveChatIfChanged stores a device's native chat unless a Foundry session
+// chatComparison is compareChat's answer for one chat: whether the stored
+// row held the payload a sync would write, and the row's updated_at then.
+type chatComparison struct {
+	unchanged bool
+	updatedAt string
+}
+
+// compareChat does saveComparedChat's content comparison on the reader,
+// before the write transaction: a device reports every chat on each
+// (re)connect, and encoding and comparing multi-megabyte transcripts inside
+// the transaction held the writer for seconds. Reading the row fails only
+// the shortcut; the write path compares again.
+func (s *Store) compareChat(ctx context.Context, value store.ChatThread) chatComparison {
+	value.UpdatedLabel = ""
+	var current, updatedAt string
+	if err := s.reader().QueryRowContext(ctx, `SELECT payload_json, updated_at FROM chats WHERE id = ?`, value.ID).Scan(&current, &updatedAt); err != nil {
+		return chatComparison{}
+	}
+	_, payload, err := chatPayload(value, current, true)
+	if err != nil {
+		return chatComparison{}
+	}
+	return chatComparison{unchanged: current == payload, updatedAt: updatedAt}
+}
+
+// saveComparedChat stores a device's native chat unless a Foundry session
 // owns it, writing nothing when its content is unchanged. Labels are
-// computed where a chat is shown, so a label never rewrites the row.
-func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, updatedAt time.Time) error {
+// computed where a chat is shown, so a label never rewrites the row. It
+// reports whether the chat list changed: the chat was written or removed.
+//
+// known is compareChat's answer (zero: not compared). A chat compared
+// unchanged is not compared again while its row's updated_at shows nothing
+// wrote it since (every write stamps the writer's own time); the deletion,
+// ownership and empty-chat checks still run here, in order.
+func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, updatedAt time.Time, known chatComparison) (bool, error) {
 	value.UpdatedLabel = ""
 	deleted, err := s.chatDeleted(ctx, value.WorkspaceID, value.ID, value.Provider, value.NativeSessionID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if deleted {
 		// A deleted, previously unloaded projection may reveal its native ID on
@@ -947,12 +1052,12 @@ func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, u
 		if value.Provider != "" && value.NativeSessionID != "" {
 			_, err = s.conn().ExecContext(ctx, `INSERT OR IGNORE INTO chat_deletions(workspace_id, deletion_key) VALUES (?, ?)`, value.WorkspaceID, "native:"+value.Provider+":"+value.NativeSessionID)
 		}
-		return err
+		return false, err
 	}
 	if value.NativeSessionID != "" {
 		claimed, err := s.claimNativeChat(ctx, value)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if claimed {
 			return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
@@ -962,43 +1067,59 @@ func (s *Store) saveChatIfChanged(ctx context.Context, value store.ChatThread, u
 		return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
 	}
 
-	payload, err := encode(value)
-	if err != nil {
-		return err
+	if known.unchanged {
+		var stamp string
+		err := s.conn().QueryRowContext(ctx, `SELECT updated_at FROM chats WHERE id = ?`, value.ID).Scan(&stamp)
+		if err == nil && stamp == known.updatedAt {
+			return false, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("read chat: %w", err)
+		}
 	}
-
 	var current string
 	err = s.conn().QueryRowContext(ctx, `SELECT payload_json FROM chats WHERE id = ?`, value.ID).Scan(&current)
-	// During a rolling worker upgrade, unchanged legacy snapshots must not erase
-	// structured detail already synced by a newer worker. Changed history falls
-	// back to its legacy display until it is imported again.
-	if err == nil && value.Transcript == nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("read chat: %w", err)
+	}
+	found := err == nil
+	value, payload, err := chatPayload(value, current, found)
+	if err != nil {
+		return false, err
+	}
+	if found && current == payload {
+		return false, nil
+	}
+	return true, s.writeChat(ctx, value, payload, updatedAt)
+}
+
+// chatPayload is the chat and payload a sync stores over the stored row
+// (current, when found). During a rolling worker upgrade, unchanged legacy
+// snapshots must not erase structured detail already synced by a newer
+// worker. Changed history falls back to its legacy display until it is
+// imported again.
+func chatPayload(value store.ChatThread, current string, found bool) (store.ChatThread, string, error) {
+	if found && value.Transcript == nil {
 		var previous store.ChatThread
 		if json.Unmarshal([]byte(current), &previous) == nil &&
 			previous.HandoffContext == value.HandoffContext && previous.AnswerRevision == value.AnswerRevision {
 			value.Transcript = previous.Transcript
-			payload, err = encode(value)
-			if err != nil {
-				return err
-			}
 		}
 	}
-	if err == nil && current == payload {
-		return nil
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("read chat: %w", err)
-	}
-	return s.writeChat(ctx, value, payload, updatedAt)
+	payload, err := encode(value)
+	return value, payload, err
 }
 
-func (s *Store) deleteNativeChat(ctx context.Context, provider string, nativeSessionID string) error {
-	_, err := s.conn().ExecContext(ctx, `DELETE FROM chats WHERE provider = ? AND native_session_id = ?`,
+// deleteNativeChat removes a native session's chat and reports whether
+// there was one.
+func (s *Store) deleteNativeChat(ctx context.Context, provider string, nativeSessionID string) (bool, error) {
+	result, err := s.conn().ExecContext(ctx, `DELETE FROM chats WHERE provider = ? AND native_session_id = ?`,
 		strings.TrimSpace(provider), strings.TrimSpace(nativeSessionID))
 	if err != nil {
-		return fmt.Errorf("delete native chat: %w", err)
+		return false, fmt.Errorf("delete native chat: %w", err)
 	}
-	return nil
+	removed, err := result.RowsAffected()
+	return removed > 0, err
 }
 
 func (s *Store) saveProviderHealth(ctx context.Context, value store.ProviderHealth, updatedAt time.Time) error {
@@ -1320,7 +1441,7 @@ func (s *Store) saveSkill(ctx context.Context, value store.SkillPackRef, updated
 }
 
 func (s *Store) attachAgentSessionEvents(ctx context.Context, session *store.AgentSession) error {
-	events, err := listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT payload_json FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
+	events, err := listJSON[store.AgentSessionEvent](ctx, s.reader(), `SELECT payload_json FROM agent_session_events WHERE session_id = ? ORDER BY created_at ASC`, session.ID)
 	if err != nil {
 		return err
 	}
@@ -1384,17 +1505,19 @@ func (s *Store) saveAgentSessionEvent(ctx context.Context, value store.AgentSess
 		return err
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO agent_session_events
-		(id, session_id, level, payload_json, created_at)
-		VALUES (?, ?, ?, ?, ?)
+		(id, session_id, level, payload_json, created_at, state_key)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			level = excluded.level,
 			payload_json = excluded.payload_json,
-			created_at = excluded.created_at`,
+			created_at = excluded.created_at,
+			state_key = excluded.state_key`,
 		value.ID,
 		value.SessionID,
 		value.Level,
 		payload,
 		formatTime(createdAt),
+		store.SessionStateKey(value),
 	)
 	if err != nil {
 		return fmt.Errorf("save agent session event: %w", err)
@@ -1483,29 +1606,39 @@ func (s *Store) saveArtifact(ctx context.Context, value store.AcceptanceArtifact
 	return nil
 }
 
+// listJSON reads every row's payload first and decodes once the rows are
+// closed: a long transcript has thousands of events, and decoding them
+// while the statement is open would hold its connection that much longer.
 func listJSON[T any](ctx context.Context, db dbExecutor, query string, args ...any) ([]T, error) {
+	payloads, err := listPayloads(ctx, db, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]T, len(payloads))
+	for index, payload := range payloads {
+		if err := json.Unmarshal(payload, &items[index]); err != nil {
+			return nil, err
+		}
+		payloads[index] = nil
+	}
+	return items, nil
+}
+
+func listPayloads(ctx context.Context, db dbExecutor, query string, args ...any) ([][]byte, error) {
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	items := make([]T, 0)
+	payloads := make([][]byte, 0)
 	for rows.Next() {
-		var payload string
+		var payload []byte
 		if err := rows.Scan(&payload); err != nil {
 			return nil, err
 		}
-		var item T
-		if err := json.Unmarshal([]byte(payload), &item); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
+		payloads = append(payloads, payload)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return payloads, rows.Err()
 }
 
 func getJSON[T any](ctx context.Context, db dbExecutor, query string, args ...any) (T, error) {

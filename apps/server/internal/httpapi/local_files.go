@@ -20,6 +20,15 @@ const (
 	maxLocalImageBytes       = 25 * 1024 * 1024
 )
 
+// A device that stops answering held an image request open for minutes.
+// Each chunk's round trip and the whole image have a deadline; a missed
+// first one answers 504, a later one ends the short body. Variables so tests
+// can shorten them.
+var (
+	localImageChunkTimeout = 30 * time.Second
+	localImageTimeout      = 3 * time.Minute
+)
+
 var errAttachmentOutsideWorkspace = errors.New("attachment is outside a registered workspace")
 
 func (s *Server) handleUploadAttachments(w http.ResponseWriter, r *http.Request) {
@@ -180,7 +189,18 @@ func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "image not found")
 		return
 	}
-	chunk, err := s.hub.ReadAttachmentImageChunk(r.Context(), workspace, requestedPath, 0, maxLocalImageBytes)
+	ctx, cancel := context.WithTimeout(r.Context(), localImageTimeout)
+	defer cancel()
+	readChunk := func(offset int64) (attachmentChunk, error) {
+		chunkCtx, cancelChunk := context.WithTimeout(ctx, localImageChunkTimeout)
+		defer cancelChunk()
+		return s.hub.ReadAttachmentImageChunk(chunkCtx, workspace, requestedPath, offset, maxLocalImageBytes)
+	}
+	chunk, err := readChunk(0)
+	if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
+		writeError(w, http.StatusGatewayTimeout, "the device did not send the image within "+localImageChunkTimeout.String())
+		return
+	}
 	if err != nil {
 		writeError(w, attachmentReadStatus(err), err.Error())
 		return
@@ -197,7 +217,7 @@ func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
 		if offset >= chunk.Size || len(chunk.Data) == 0 {
 			return
 		}
-		if chunk, err = s.hub.ReadAttachmentImageChunk(r.Context(), workspace, requestedPath, offset, maxLocalImageBytes); err != nil {
+		if chunk, err = readChunk(offset); err != nil {
 			return
 		}
 	}

@@ -16,6 +16,7 @@ import {
   stopIssuePreview,
 } from "../dist/issue-preview.js";
 import { ExecutionStore } from "../dist/execution-storage.js";
+import { initializeWorkspaceGit } from "../dist/repository-registry.js";
 import {
   prepareIssueEnvironment,
   snapshotEnvironment,
@@ -41,6 +42,7 @@ test(
       }),
     );
     const store = new ExecutionStore(resolve(root, "state"));
+    await initializeWorkspaceGit(source, "ws_preview", store);
     let env = await prepareIssueEnvironment(
       source,
       "ws_preview",

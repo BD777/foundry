@@ -87,20 +87,22 @@ export async function gitCommit(
 }
 
 /**
- * Foundry's runtime data under a workspace's `.foundry/`: never the person's
- * to commit. Shared configuration there (`skills.yaml`, `preview.json`, …)
- * stays visible to Git.
+ * Everything Foundry keeps under a workspace's `.foundry/` (its identity, this
+ * machine's repository list, sessions, runs) is its own and never the
+ * person's to commit. The one file a person writes there themselves,
+ * `preview.json`, stays visible to Git.
  */
 export const foundryRuntimeGitExcludes = [
-  ".foundry/sessions/",
-  ".foundry/attachments/",
-  ".foundry/runs/",
-  ".foundry/worktrees/",
-  ".foundry/issues/",
-  ".foundry/reviews/",
-  ".foundry/integrations/",
-  ".foundry/daemon.json",
+  ".foundry/*",
+  "!.foundry/preview.json",
 ];
+
+/** The excludes as `info/exclude` lines for a workspace at `anchor` ("/…/"). */
+export function anchoredFoundryRuntimeExcludes(anchor: string): string[] {
+  return foundryRuntimeGitExcludes.map((entry) =>
+    entry.startsWith("!") ? `!${anchor}${entry.slice(1)}` : `${anchor}${entry}`,
+  );
+}
 
 const excludedWorkspaces = new Set<string>();
 const excludesInProgress = new Map<string, Promise<boolean>>();
@@ -131,9 +133,9 @@ export function excludeFoundryRuntimeFromGit(
     const anchor = `/${prefix.replace(/[\\*?[\]#! ]/g, "\\$&")}`;
     const existing = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
     const lines = existing.split("\n");
-    const added = foundryRuntimeGitExcludes
-      .map((entry) => `${anchor}${entry}`)
-      .filter((entry) => !lines.includes(entry));
+    const added = anchoredFoundryRuntimeExcludes(anchor).filter(
+      (entry) => !lines.includes(entry),
+    );
     if (added.length) {
       mkdirSync(dirname(exclude), { recursive: true });
       const separator = existing && !existing.endsWith("\n") ? "\n" : "";

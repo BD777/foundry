@@ -328,7 +328,7 @@ export const cliCommands: CliCommandContract[] = [
     ],
     brief: "Initialize a local Foundry workspace.",
     description:
-      "Creates the workspace scaffolding and registers the workspace locally. Existing user-authored files are preserved.",
+      "Registers the workspace locally. Foundry keeps its own data under .foundry/, out of Git through the repository's local excludes. It never runs git init or commits: a folder without Git or commits gets Git only when you confirm it for its first Issue.",
     examples: [
       {
         command: "foundry-worker init .",

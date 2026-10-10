@@ -14,9 +14,9 @@ func (s *Store) ListIssues(ctx context.Context, workspaceID string) ([]store.Iss
 	var issues []store.Issue
 	var err error
 	if workspaceID != "" {
-		issues, err = listJSON[store.Issue](ctx, s.conn(), `SELECT payload_json FROM issues WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
+		issues, err = listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
 	} else {
-		issues, err = listJSON[store.Issue](ctx, s.conn(), `SELECT payload_json FROM issues ORDER BY updated_at DESC`)
+		issues, err = listJSON[store.Issue](ctx, s.reader(), `SELECT payload_json FROM issues ORDER BY updated_at DESC`)
 	}
 	for index := range issues {
 		issues[index] = normalizeIssueStatus(issues[index])
@@ -238,9 +238,9 @@ func (s *Store) AbandonIssue(ctx context.Context, id string, expectedRunID strin
 func (s *Store) ListRuns(ctx context.Context, workspaceID string) ([]store.Run, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID != "" {
-		return listJSON[store.Run](ctx, s.conn(), `SELECT payload_json FROM runs WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
+		return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs WHERE workspace_id = ? ORDER BY updated_at DESC`, workspaceID)
 	}
-	return listJSON[store.Run](ctx, s.conn(), `SELECT payload_json FROM runs ORDER BY updated_at DESC`)
+	return listJSON[store.Run](ctx, s.reader(), `SELECT payload_json FROM runs ORDER BY updated_at DESC`)
 }
 
 func (s *Store) ListRunEvents(ctx context.Context, workspaceID string) ([]store.RunEvent, error) {

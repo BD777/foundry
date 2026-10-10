@@ -165,6 +165,8 @@ import {
   cancelActiveSession,
   createResponseStreamEventIDAllocator,
   createSessionStatusEventFilter,
+  createSubtaskProgressCoalescer,
+  createResponseStreamBatcher,
   isAgentSessionCanceledError,
   registerActiveSessionSteerTarget,
   sendDirectoryListing,
@@ -174,7 +176,8 @@ import {
   sendWorkspaceTreeListing,
   type ListWorkspaceTreePayload,
   sessionEvent,
-  steerActiveSession,
+  noteSessionInput,
+  steerActiveSessionOnce,
   writeAgentSessionCompletionMarker,
   readAgentSessionCompletionMarker,
   recoveredSessionCompletion,
@@ -283,6 +286,11 @@ interface SteerSessionPayload {
   message?: string;
   attachments?: ChatAttachment[];
   sessionId?: string;
+  /**
+   * The message's id (a queued message's): a steer the server sends again
+   * is applied once. Older servers send none.
+   */
+  inputId?: string;
 }
 
 interface CancelSessionPayload {
@@ -479,6 +487,12 @@ function sessionExecution(
     : { cwd: rootPath, stateRoot: rootPath };
 }
 
+/**
+ * One per process: a subagent reports progress both inside a turn and,
+ * running in the background, between turns (the out-of-band sink).
+ */
+const coalesceSubtaskProgress = createSubtaskProgressCoalescer();
+
 async function executeAgentSession(
   transport: ReliableSessionTransport,
   execution: SessionExecution,
@@ -512,59 +526,47 @@ async function executeAgentSession(
     session.input ? `${session.id}_${session.input.id}` : session.id,
   );
   const shouldSendEvent = createSessionStatusEventFilter();
-  const responseIntervalMs = 50;
-  let lastResponseSentAt = 0;
-  let pendingResponse:
-    | {
-        detail: string;
-        level: AgentSessionEvent["level"];
-        metadata?: AgentSessionEventMetadata;
-        message?: AgentSessionEvent["message"];
-      }
-    | undefined;
-  let responseTimer: ReturnType<typeof setTimeout> | undefined;
   const sendEvent = (
     label: string,
     detail: string,
     level: AgentSessionEvent["level"],
     metadata?: AgentSessionEventMetadata,
     message?: AgentSessionEvent["message"],
+    knownEventID?: string,
   ): void => {
     if (!shouldSendEvent({ label, detail, level, metadata })) {
       return;
     }
-    const eventID = responseEventID(label, message?.id);
-    transport.send(daemonMessageTypes.sessionEvent, {
-      event: sessionEvent(
-        session.id,
-        label,
-        detail,
-        level,
-        eventID,
-        metadata,
-        message,
-      ),
-    });
+    const eventID = responseEventID(label, message?.id) ?? knownEventID;
+    coalesceSubtaskProgress(session.id, { label, metadata }, () =>
+      transport.send(daemonMessageTypes.sessionEvent, {
+        event: sessionEvent(
+          session.id,
+          label,
+          detail,
+          level,
+          eventID,
+          metadata,
+          message,
+        ),
+      }),
+    );
   };
-  const flushPendingResponse = (): void => {
-    if (responseTimer) {
-      clearTimeout(responseTimer);
-      responseTimer = undefined;
-    }
-    const pending = pendingResponse;
-    pendingResponse = undefined;
-    if (!pending) {
-      return;
-    }
-    lastResponseSentAt = Date.now();
+  const responseStream = createResponseStreamBatcher<{
+    detail: string;
+    level: AgentSessionEvent["level"];
+    metadata?: AgentSessionEventMetadata;
+    message?: AgentSessionEvent["message"];
+  }>((pending) =>
     sendEvent(
       "Response stream",
       pending.detail,
       pending.level,
       pending.metadata,
       pending.message,
-    );
-  };
+    ),
+  );
+  const flushPendingResponse = responseStream.flush;
   // A session waiting out a model rate-limit retry is blocked (active but
   // waiting), not running. Any other progress — including the next response
   // stream after the retry — clears the marker.
@@ -580,6 +582,7 @@ async function executeAgentSession(
     level: AgentSessionEvent["level"] = "info",
     metadata?: AgentSessionEventMetadata,
     message?: AgentSessionEvent["message"],
+    eventId?: string,
   ): Promise<void> => {
     message = inputScopedMessage(session, message);
     const retrying = level === "warning" && blockOnRateLimitLabels.has(label);
@@ -596,26 +599,11 @@ async function executeAgentSession(
       });
     }
     if (label === "Response stream") {
-      if (
-        pendingResponse?.message?.id &&
-        message?.id &&
-        pendingResponse.message.id !== message.id
-      )
-        flushPendingResponse();
-      pendingResponse = { detail, level, metadata, message };
-      const elapsed = Date.now() - lastResponseSentAt;
-      if (elapsed >= responseIntervalMs) {
-        flushPendingResponse();
-      } else if (!responseTimer) {
-        responseTimer = setTimeout(
-          flushPendingResponse,
-          responseIntervalMs - elapsed,
-        );
-      }
+      responseStream.offer({ detail, level, metadata, message });
       return;
     }
     flushPendingResponse();
-    sendEvent(label, detail, level, metadata, message);
+    sendEvent(label, detail, level, metadata, message, eventId);
   };
   // Resource Pool lease: browser processes this session started and left
   // running are closed when its input ends — unless background work the
@@ -783,6 +771,9 @@ const heartbeatIntervalMs = Number(
   process.env.FOUNDRY_HEARTBEAT_INTERVAL_MS || 25_000,
 );
 
+/** Longest a closing connection waits for the server to take the outbox. */
+const outboxSettleMs = 10_000;
+
 /** Longest the server may stay silent; it pings every 30s. */
 const serverSilenceMs = Number(process.env.FOUNDRY_SERVER_SILENCE_MS || 75_000);
 
@@ -820,9 +811,14 @@ function runWebSocketSession(options: {
     // whole message, and a large upload on a slow link outlasted it while
     // the pongs queued behind it. The server now counts any bytes.)
     let heartbeatTimer: NodeJS.Timeout | undefined;
+    // It carries how far behind the session outbox is (see
+    // ReliableSessionTransport); an older server ignores it.
     socket.on("open", () => {
       heartbeatTimer = setInterval(
-        () => trySendWebSocket(socket, daemonMessageTypes.heartbeat, {}),
+        () =>
+          trySendWebSocket(socket, daemonMessageTypes.heartbeat, {
+            outbox: options.sessionTransport.outboxStats(),
+          }),
         heartbeatIntervalMs,
       );
     });
@@ -849,17 +845,19 @@ function runWebSocketSession(options: {
       sessionId: string,
       partial: OutOfBandSessionEvent,
     ): void => {
-      options.sessionTransport.send(daemonMessageTypes.sessionEvent, {
-        event: sessionEvent(
-          sessionId,
-          partial.label,
-          partial.detail,
-          partial.level ?? "info",
-          undefined,
-          partial.metadata,
-          partial.message,
-        ),
-      });
+      coalesceSubtaskProgress(sessionId, partial, () =>
+        options.sessionTransport.send(daemonMessageTypes.sessionEvent, {
+          event: sessionEvent(
+            sessionId,
+            partial.label,
+            partial.detail,
+            partial.level ?? "info",
+            undefined,
+            partial.metadata,
+            partial.message,
+          ),
+        }),
+      );
     };
 
     function registerWorkspacePath(
@@ -959,8 +957,13 @@ function runWebSocketSession(options: {
       }
       if (providerCheckTimer) clearInterval(providerCheckTimer);
       clearOutOfBandSessionEventSink(outOfBandSink);
-      socket.close();
-      resolveSession(outcome);
+      // A session's last messages may still wait in the outbox (--once
+      // ends right after them): the server takes them before the socket
+      // closes, for a bounded time. A closed socket waits for nothing.
+      void options.sessionTransport.whenSettled(outboxSettleMs).then(() => {
+        socket.close();
+        resolveSession(outcome);
+      });
     }
 
     function announceAdditionalIssueCapacity(): void {
@@ -1281,6 +1284,8 @@ function runWebSocketSession(options: {
         console.error(
           `Server error: ${envelope.error ?? "unknown websocket error"}`,
         );
+        // A session message the server could not store goes again later.
+        if (options.sessionTransport.retryAfterError(envelope.id)) return;
         // A refused registration leaves this socket unable to do anything:
         // reconnect with backoff rather than sit connected and offline.
         if (!registered) {
@@ -1705,9 +1710,10 @@ function runWebSocketSession(options: {
           const workspacePath = existingWorkspaceFolder(payload.path);
           initWorkspace(workspacePath);
           // Chats work in the folder as soon as it is registered. Finding its
-          // repositories and, for a folder without Git, committing a first
-          // baseline grow with the folder's size, so they run after the
-          // reply; Issue preparation waits for them on the same lock.
+          // repositories grows with the folder's size, so it runs after the
+          // reply; Issue preparation waits for it on the same lock. A folder
+          // without Git is left as it is until the person confirms setting
+          // Git up for its first Issue.
           const workspaceId = readWorkspace(workspacePath).id;
           void registerExecutionWorkspace(workspacePath, workspaceId).then(
             (prepared) =>
@@ -2331,12 +2337,13 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        void steerActiveSession(sessionId, message, attachments)
+        const inputId = payload?.inputId?.trim() || undefined;
+        void steerActiveSessionOnce(sessionId, inputId, message, attachments)
           .then(() => {
             trySendWebSocket(
               socket,
               daemonMessageTypes.sessionSteered,
-              { sessionId },
+              { sessionId, inputId },
               envelope.id,
             );
           })
@@ -2346,7 +2353,7 @@ function runWebSocketSession(options: {
             trySendWebSocket(
               socket,
               daemonMessageTypes.sessionSteered,
-              { sessionId, error: errorMessage },
+              { sessionId, inputId, error: errorMessage },
               envelope.id,
             );
           });
@@ -2365,11 +2372,11 @@ function runWebSocketSession(options: {
           return;
         }
         void cancelActiveSession(sessionId, payload?.inputId?.trim())
-          .then(() => {
+          .then((outcome) => {
             trySendWebSocket(
               socket,
               daemonMessageTypes.sessionCanceled,
-              { sessionId },
+              outcome.answered ? { sessionId, answered: true } : { sessionId },
               envelope.id,
             );
           })
@@ -2465,6 +2472,9 @@ function runWebSocketSession(options: {
           return;
         }
         acceptedRun = true;
+        // A steer of the same message arriving late must not add it to
+        // this input's own turn.
+        if (inputId) noteSessionInput(payload.session.id, inputId);
         if (payload.session.role === "issue_execution") {
           runIssueExecution(payload, inputId);
           return;
@@ -2577,7 +2587,7 @@ function runWebSocketSession(options: {
           revision: number;
         };
         try {
-          workspacePathFor(payload.workspaceId);
+          const sourcePath = workspacePathFor(payload.workspaceId);
           if (payload.action === "preview_start") {
             queuePreview(payload.issueId);
             void taskScheduler
@@ -2593,7 +2603,10 @@ function runWebSocketSession(options: {
             );
             return;
           }
-          const result = await issueEnvironmentAction(payload);
+          const result = await issueEnvironmentAction({
+            ...payload,
+            sourcePath,
+          });
           trySendWebSocket(
             socket,
             daemonMessageTypes.issueEnvironmentResult,

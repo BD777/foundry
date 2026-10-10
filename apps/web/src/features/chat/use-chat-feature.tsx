@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -11,7 +12,6 @@ import type {
   AgentProfileProjection,
   AgentProjection,
   AgentSession,
-  AgentSubagentSummary,
   ChatAttachment,
   ChatThread,
   WorkspaceProjection,
@@ -21,9 +21,7 @@ import { sessionStillActive, toChatSendError } from "./chat-send-error";
 import {
   cancelAgentSession,
   createAgentSession,
-  getAgentSessionThread,
   getChat,
-  listAgentSubagents,
   sendAgentSessionMessage,
   uploadChatAttachments,
 } from "../../api";
@@ -31,7 +29,6 @@ import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
 import type { SlashSuggestion } from "../../components/ui/slash-menu";
-import { agentSessionNeedsDetails } from "../../lib/agent-session-events";
 import { shortUnavailableReason } from "../../lib/agent-picker";
 import {
   activeThreadSession,
@@ -55,17 +52,18 @@ import {
   chatContextCardForSessions,
   runningBackgroundWork,
 } from "./chat-context-model";
-import {
-  chatDetailHydrationId,
-  sessionThreadHydrationId,
-  sessionThreadHydrationRevision,
-  subagentDiscoveryRevision,
-  subagentDiscoverySessionIds,
-} from "./chat-hydration-policy";
-import { hydrateSessionThreadWithRetry } from "./chat-transcript-hydration";
+import { chatDetailHydrationId } from "./chat-hydration-policy";
+import { useChatTranscript } from "./use-chat-transcript";
+import { ChatTranscriptHistory } from "./chat-transcript-history";
+import { useChatSubagents } from "./use-chat-subagents";
+import { withOutbox } from "./chat-outbox";
+import { useChatOutbox, usePruneDeliveredOutbox } from "./use-chat-outbox";
+import { useStableValue } from "./use-stable-value";
 import { useChatRuntime } from "./use-chat-runtime";
 import { useChatQueue } from "./use-chat-queue";
+import { retainChatLayouts } from "./use-chat-layout";
 import { useChatReadState, useChatTitles } from "./use-chat-list-state";
+import { useUnreadTabMarker } from "./use-chat-list-state";
 import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
 import { workspaceDenial } from "../../lib/workspace-access";
 import {
@@ -75,6 +73,8 @@ import {
   moveRuntimeChoice,
 } from "../../components/conversation/conversation-storage";
 import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
+
+const noSessions: AgentSession[] = [];
 
 export type ChatFeatureEvent =
   | { chatId: string; type: "chat.selected" }
@@ -135,9 +135,7 @@ export function useChatFeature({
   const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [chatDetail, setChatDetail] = useState<ChatThread>();
   const [respondingSessionId, setRespondingSessionId] = useState("");
-  const [subagentsBySession, setSubagentsBySession] = useState<
-    Record<string, AgentSubagentSummary[]>
-  >({});
+  const [contextPanelVisible, setContextPanelVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
 
@@ -169,26 +167,25 @@ export function useChatFeature({
   const unlistedSelection = Boolean(
     selectedThread && !threads.includes(selectedThread),
   );
-  const sessionsNeedingDetails = useMemo(
-    () => (selectedThread?.sessions ?? []).filter(agentSessionNeedsDetails),
-    [selectedThread],
-  );
-  const detailHydrationId = sessionThreadHydrationId(
-    selectedThread?.id,
-    sessionsNeedingDetails.map((session) => session.id),
-  );
-  const detailHydrationRevision = sessionThreadHydrationRevision(
-    selectedThread?.id,
-    sessionsNeedingDetails,
-  );
-  const discoverableSessionIds = useMemo(
-    () => subagentDiscoverySessionIds(selectedThread?.sessions ?? []),
-    [selectedThread],
-  );
-  const subagentRevision = useMemo(
-    () => subagentDiscoveryRevision(selectedThread?.sessions ?? []),
-    [selectedThread],
-  );
+  const threadSessions = selectedThread?.sessions ?? noSessions;
+  const transcript = useChatTranscript({
+    onLoaded: (loaded) =>
+      void emit({
+        sessions: loaded,
+        type: "thread.details.loaded",
+        workspaceId,
+      }),
+    sessions: threadSessions,
+    threadId: selectedThread?.id,
+    workspaceId,
+  });
+  const subagents = useChatSubagents({
+    panelVisible: contextPanelVisible,
+    sessions: threadSessions,
+    workspaceId,
+  });
+  const subagentsBySession = subagents.bySession;
+  const outbox = useChatOutbox(workspaceId);
   const sortedArchivedChats = useMemo(
     () =>
       archivedChats
@@ -283,6 +280,19 @@ export function useChatFeature({
     chatId:
       selectedThread && !unlistedSelection ? selectedThread.id : undefined,
     runSettings: () => (selectedAgent ? composerChoices(selectedAgent) : {}),
+    onSent: (chatId, items) =>
+      items.forEach((item) =>
+        outbox.add({
+          at: item.updatedAt || new Date().toISOString(),
+          attachments: item.attachments,
+          id: item.id,
+          inputId: item.id,
+          sessionId: item.sentSessionId,
+          state: "accepted",
+          text: item.text,
+          threadId: chatId,
+        }),
+      ),
   });
   useEffect(() => {
     if (previousWorkspaceIdRef.current === workspaceId) {
@@ -294,7 +304,6 @@ export function useChatFeature({
     setAttachmentUploading(false);
     setChatDetail(undefined);
     setRespondingSessionId("");
-    setSubagentsBySession({});
   }, [workspaceId]);
 
   useEffect(() => {
@@ -339,73 +348,6 @@ export function useChatFeature({
   }, [chatDetail?.id, selectedChatSummary, selectedThread, workspaceId]);
 
   useEffect(() => {
-    if (!detailHydrationId || !workspaceId) {
-      return;
-    }
-    const controller = new AbortController();
-    void hydrateSessionThreadWithRetry({
-      load: (signal) =>
-        getAgentSessionThread(detailHydrationId, workspaceId, { signal }),
-      onLoaded: (loadedSessions) =>
-        emit({
-          sessions: loadedSessions,
-          type: "thread.details.loaded",
-          workspaceId,
-        }),
-      signal: controller.signal,
-    });
-    return () => {
-      controller.abort();
-    };
-  }, [detailHydrationId, detailHydrationRevision, emit, workspaceId]);
-
-  useEffect(() => {
-    if (discoverableSessionIds.length === 0) {
-      return;
-    }
-    const controller = new AbortController();
-    void Promise.all(
-      discoverableSessionIds.map(async (sessionId) => {
-        try {
-          return [
-            sessionId,
-            await listAgentSubagents(sessionId, {
-              signal: controller.signal,
-            }),
-          ] as const;
-        } catch {
-          return [sessionId, [] as AgentSubagentSummary[]] as const;
-        }
-      }),
-    )
-      .then((entries) => {
-        if (!controller.signal.aborted) {
-          setSubagentsBySession((current) => ({
-            ...current,
-            ...Object.fromEntries(entries),
-          }));
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      controller.abort();
-    };
-  }, [subagentRevision, workspaceId]);
-
-  const suppressedSubagentResponses = useMemo(
-    () =>
-      new Set(
-        Object.values(subagentsBySession)
-          .flatMap((subagents) =>
-            subagents.flatMap((subagent) => subagent.responseTexts),
-          )
-          .map((text) => text.trim())
-          .filter(Boolean),
-      ),
-    [subagentsBySession],
-  );
-
-  useEffect(() => {
     if (!respondingSessionId) {
       return;
     }
@@ -426,15 +368,21 @@ export function useChatFeature({
     });
   }, [emit, respondingSessionId, sessions]);
 
-  const viewMessages = useMemo(
+  const projection = useMemo(
     () =>
-      selectedThread
-        ? chatMessagesForThread(selectedThread, {
-            suppressedResponseTexts: suppressedSubagentResponses,
-          })
-        : chatMessages(selectedChat),
-    [selectedChat, selectedThread, suppressedSubagentResponses],
+      withOutbox(
+        selectedThread
+          ? chatMessagesForThread(selectedThread, {
+              suppressedResponseTexts: subagents.responseTexts,
+            })
+          : chatMessages(selectedChat),
+        outbox.entries,
+        selectedThread?.id,
+      ),
+    [outbox.entries, selectedChat, selectedThread, subagents.responseTexts],
   );
+  const viewMessages = projection.messages;
+  usePruneDeliveredOutbox(outbox, projection.delivered);
   const messages = useMemo((): ChatMessageItem[] => {
     const latestResponseIndex = latestCopyableResponseIndex(viewMessages);
     let latestEditableUserIndex = -1;
@@ -473,19 +421,24 @@ export function useChatFeature({
         : undefined,
     }));
   }, [activeSession, emit, viewMessages]);
-  const contextCard = useMemo(
-    () =>
-      chatContextCardForSessions(
-        selectedThread?.sessions ?? [],
-        subagentsBySession,
-        workspace,
-      ),
-    // The timer labels are written in the viewer's language.
-    [selectedThread, subagentsBySession, workspace, activeI18n.language],
+  // The side panel follows the transcript a moment later, and only renders
+  // again when what it shows changed.
+  const contextSessions = useDeferredValue(threadSessions);
+  const contextCard = useStableValue(
+    useMemo(
+      () =>
+        chatContextCardForSessions(
+          contextSessions,
+          subagentsBySession,
+          workspace,
+        ),
+      // The timer labels are written in the viewer's language.
+      [contextSessions, subagentsBySession, workspace, activeI18n.language],
+    ),
   );
-  const backgroundRunning = useMemo(
-    () => runningBackgroundWork(selectedThread?.sessions ?? []),
-    [selectedThread],
+  const backgroundWork = useMemo(
+    () => runningBackgroundWork(contextCard),
+    [contextCard],
   );
 
   const addAttachments = useCallback(
@@ -627,12 +580,25 @@ export function useChatFeature({
       const submittedAttachmentIds = new Set(
         effectiveAttachments.map((attachment) => attachment.id),
       );
+      // One id for this message: its Idempotency-Key, its input id and its
+      // outbox entry, which tells the composer once the transcript shows it.
+      const clientId = options?.idempotencyKey ?? crypto.randomUUID();
       const message = {
         ...composerChoices(selectedAgent),
         attachments: effectiveAttachments,
+        inputId: clientId,
         prompt,
       };
       let session: AgentSession;
+      outbox.add({
+        at: new Date().toISOString(),
+        attachments: effectiveAttachments,
+        id: clientId,
+        sessionId: continuedSession?.id,
+        state: "pending",
+        text: prompt,
+        threadId: selectedThread?.id,
+      });
       try {
         session = continuedSession
           ? await sendAgentSessionMessage(
@@ -640,7 +606,7 @@ export function useChatFeature({
               // A turn that started meanwhile (a queued message went first)
               // must not take this one as a steer: it is queued instead.
               { ...message, requireIdle: true },
-              options?.idempotencyKey,
+              clientId,
             )
           : await createAgentSession(
               {
@@ -649,9 +615,10 @@ export function useChatFeature({
                 source: "chat",
                 workspaceId,
               },
-              options?.idempotencyKey,
+              clientId,
             );
       } catch (reason) {
+        outbox.remove(clientId);
         // The turn started meanwhile: the message waits for it to end.
         if (continuedSession && sessionStillActive(reason)) return "queue";
         // Surface a safe, specific cause in the composer Alert. Throwing lets
@@ -662,6 +629,11 @@ export function useChatFeature({
       // The message is persisted server-side from here on. View-sync failures
       // must not look like an unsent draft, or the user could replay a session
       // that was already created.
+      outbox.accept(clientId, {
+        inputId: session.input?.id,
+        sessionId: session.id,
+        threadId: session.threadId || session.nativeSessionId || session.id,
+      });
       setActiveSessionOverride(session);
       setRespondingSessionId(session.id);
       // A new chat or an adopted native chat is now this session's thread;
@@ -803,11 +775,9 @@ export function useChatFeature({
     }
   }
 
-  const namingRevision = sessions
-    .filter((session) => session.source === "naming")
-    .map((session) => `${session.id}:${session.status}`)
-    .join("|");
-  const titleState = useChatTitles(workspaceId, active, namingRevision, notify);
+  const titleState = useChatTitles(workspaceId, active, notify);
+  // The chat list's layout stays current between its visits: no read then.
+  useEffect(() => retainChatLayouts(), []);
   const selectedId = selectedThread?.id ?? selectedChat?.id ?? "";
   const selectionRef = useRef({ workspaceId, selectedId });
   selectionRef.current = { workspaceId, selectedId };
@@ -820,17 +790,15 @@ export function useChatFeature({
     selectedId,
     selectedAnswer,
   );
-  const menuActions = (id: string) => {
-    return {
-      onRename: (title: string) => titleState.rename(id, title),
-      onAutoRename: () => titleState.recap(id),
-      onMarkUnread: () => readState.markUnread(id),
-      onNotify: notify,
-      renaming: ["queued", "running"].includes(
-        titleState.titles[id]?.generationStatus ?? "",
-      ),
-    };
-  };
+  const menuActions = (id: string) => ({
+    onRename: (title: string) => titleState.rename(id, title),
+    onAutoRename: () => titleState.recap(id),
+    onMarkUnread: () => readState.markUnread(id),
+    onNotify: notify,
+    renaming: ["queued", "running"].includes(
+      titleState.titles[id]?.generationStatus ?? "",
+    ),
+  });
 
   const sessionChats = threads.map((thread) => {
     const latest = latestThreadSession(thread);
@@ -898,6 +866,23 @@ export function useChatFeature({
     foundrySessionId: chat.id,
     nativeSessionId: chat.nativeSessionId,
   }));
+  const history = useMemo(
+    () => (
+      <ChatTranscriptHistory
+        onLoadEarlier={transcript.loadEarlier}
+        onRetry={transcript.retry}
+        state={transcript.state}
+      />
+    ),
+    [transcript.loadEarlier, transcript.retry, transcript.state],
+  );
+  // What the list shows rarely changes while a transcript streams; then it
+  // keeps its identity and the list does not render again.
+  const listChats = useStableValue(
+    [...sessionChats, ...archiveChats],
+    threads.map((thread) => threadAnswerRevision(thread.sessions)).join("\n"),
+  );
+  useUnreadTabMarker(listChats, selectedId);
 
   return (
     <ChatSurface
@@ -928,7 +913,7 @@ export function useChatFeature({
       agentOptions={agentOptions}
       attachmentUploading={attachmentUploading}
       attachments={attachments}
-      chats={[...sessionChats, ...archiveChats]}
+      chats={listChats}
       chatTitle={
         titleState.titles[selectedId]?.title ||
         selectedThread?.title ||
@@ -936,7 +921,11 @@ export function useChatFeature({
         i18n.t("chat:list.newChat")
       }
       contextCard={contextCard}
-      backgroundRunning={backgroundRunning}
+      history={history}
+      onReachHistoryStart={transcript.loadEarlier}
+      onContextPanelVisibleChange={setContextPanelVisible}
+      onRetrySubagents={subagents.failed ? subagents.retry : undefined}
+      backgroundWork={backgroundWork}
       claudeEffort={claudeEffort}
       claudePermissionMode={claudePermissionMode}
       codexApprovalPolicy={codexApprovalPolicy}

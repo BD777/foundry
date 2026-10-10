@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -233,7 +234,8 @@ func TestDaemonRequestHonorsContextAndDropsRegistration(t *testing.T) {
 		wsReadFileType,
 		json.RawMessage(`{"workspaceId":"ws","path":"README.md"}`),
 	)
-	if err != context.DeadlineExceeded {
+	// The deadline, in words that name the device and the wait.
+	if !errors.Is(err, context.DeadlineExceeded) || !isDeviceTimeout(err) {
 		t.Fatalf("daemonRequest() error = %v, want %v", err, context.DeadlineExceeded)
 	}
 	connection.rpc.mu.Lock()

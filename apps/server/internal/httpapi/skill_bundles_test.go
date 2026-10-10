@@ -116,7 +116,10 @@ func TestSkillBundleLifecycle(t *testing.T) {
 		}
 		var list []string
 		for _, ref := range refs {
-			list = append(list, ref.Name)
+			// Foundry's built-in skills come with every session.
+			if !strings.HasPrefix(ref.SkillID, "builtin-") {
+				list = append(list, ref.Name)
+			}
 		}
 		return strings.Join(list, ",")
 	}
@@ -212,7 +215,7 @@ func TestSkillBundleLifecycle(t *testing.T) {
 	if selected, _ := f.server.store.(bundleStore).ListBundleSelection(ctx, bundleScopeWorkspace, "ws_alice"); len(selected) != 0 {
 		t.Fatalf("turning a default back on stored a selection %v", selected)
 	}
-	if bobRefs, _ := sessionSkillRefs(ctx, f.server.store, "ws_bob", "codex"); len(bobRefs) != 0 {
+	if bobRefs, _, _ := workspaceSkillRefs(ctx, f.server.store, "ws_bob"); len(bobRefs) != 0 {
 		t.Fatalf("bob's workspace got alice's default bundle: %+v", bobRefs)
 	}
 

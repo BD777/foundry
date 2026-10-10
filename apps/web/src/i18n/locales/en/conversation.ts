@@ -50,6 +50,7 @@ export const conversation = {
     modelThinking: "The model is thinking.",
   },
   process: {
+    working: "Working…",
     running: "Running",
     processed: "Processed",
     tool: "Tool",
@@ -144,6 +145,8 @@ export const conversation = {
     retry: "Retry",
     retryHint: "Send this message again; the queue waits for it",
     failed: "Not sent: {{error}}",
+    unconfirmed:
+      "Not confirmed: {{error}} It may already be in the conversation; check before retrying.",
     waiting: "Waiting",
     waitingHint: "Sent after the failed message above is retried or deleted",
     maybeSent: "May already be in the conversation; check before sending it",
@@ -154,6 +157,8 @@ export const conversation = {
     agentLabel: "Chat agent",
     stop: "Stop agent response",
     send: "Send chat message",
+    sending: "Sending message…",
+    sendWhileRunning: "Send — it waits in the queue for the current response",
     uploading: "Uploading…",
     requestFailed: "Could not complete request",
   },

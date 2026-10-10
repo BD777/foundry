@@ -3,8 +3,11 @@ import { register } from "node:module";
 import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const { chatContextCardForSessions, runningBackgroundWork } =
-  await import("../src/features/chat/chat-context-model.ts");
+const {
+  backgroundWorkNote,
+  chatContextCardForSessions,
+  runningBackgroundWork,
+} = await import("../src/features/chat/chat-context-model.ts");
 const { backgroundRowDetail } =
   await import("../src/features/chat/chat-context-card.tsx");
 const { sessionTranscriptEntries } =
@@ -129,25 +132,79 @@ test("the Background section lists commands, monitors and workflows, running fir
   );
 });
 
-test("an idle chat whose agent keeps working says how much is still running", () => {
-  const running = [
-    session([
-      snapshot("evt_1", [
-        task("bsleep", { status: "running", endedAt: undefined }),
-        task("a4c35", {
-          kind: "subagent",
-          status: "running",
-          endedAt: undefined,
-        }),
-        task("bdone"),
-      ]),
-    ]),
-  ];
-  assert.equal(runningBackgroundWork(running), 2);
+const subagentStart = (id, taskId, description) =>
+  event(id, "Starting subtask", description, {
+    taskId,
+    taskType: "local_agent",
+    toolUseId: `toolu_${taskId}`,
+  });
+
+test("an idle chat's note counts running tasks and running subagents", async () => {
+  await i18n.changeLanguage("en");
+  const card = (events) => chatContextCardForSessions([session(events)]);
+  const commands = snapshot("evt_bg", [
+    task("bsleep", { status: "running", endedAt: undefined }),
+    task("bwatch", { kind: "monitor", status: "running", endedAt: undefined }),
+    // The snapshot's own subagent row is the Subagents section's to count.
+    task("a4c35", { kind: "subagent", status: "running", endedAt: undefined }),
+    task("bdone"),
+  ]);
+  const audit = subagentStart("evt_sub1", "a4c35", "Audit auth");
+  const review = subagentStart("evt_sub2", "a9f01", "Review styles");
+  const reviewDone = event("evt_sub2_done", "Subtask completed", "", {
+    taskId: "a9f01",
+    toolUseId: "toolu_a9f01",
+  });
+
+  const subagentOnly = runningBackgroundWork(card([audit, review, reviewDone]));
+  assert.deepEqual(subagentOnly, {
+    taskIds: [],
+    subagentIds: ["evt_sub1"],
+  });
   assert.equal(
-    runningBackgroundWork([session([snapshot("evt_1", [task("bdone")])])]),
-    0,
+    backgroundWorkNote(subagentOnly),
+    "1 subagent running in the background",
   );
+
+  const mixed = runningBackgroundWork(card([commands, audit, review]));
+  assert.deepEqual(mixed, {
+    taskIds: ["sess_bg:background:bsleep", "sess_bg:background:bwatch"],
+    subagentIds: ["evt_sub1", "evt_sub2"],
+  });
+  assert.equal(
+    backgroundWorkNote(mixed),
+    "2 tasks and 2 subagents running in the background",
+  );
+  assert.equal(
+    backgroundWorkNote({ taskIds: ["t1"], subagentIds: [] }),
+    "1 task running in the background",
+  );
+  assert.equal(
+    backgroundWorkNote({ taskIds: ["t1", "t2"], subagentIds: ["s1"] }),
+    "2 tasks and 1 subagent running in the background",
+  );
+
+  await i18n.changeLanguage("zh-CN");
+  assert.equal(
+    backgroundWorkNote({ taskIds: [], subagentIds: ["s1"] }),
+    "1 个子智能体在后台运行",
+  );
+  assert.equal(
+    backgroundWorkNote({ taskIds: ["t1", "t2"], subagentIds: ["s1"] }),
+    "2 个任务、1 个子智能体在后台运行",
+  );
+  await i18n.changeLanguage("en");
+
+  // Nothing running, or no side panel at all: no note.
+  const idle = runningBackgroundWork(
+    card([snapshot("evt_1", [task("bdone")]), review, reviewDone]),
+  );
+  assert.deepEqual(idle, { taskIds: [], subagentIds: [] });
+  assert.equal(backgroundWorkNote(idle), "");
+  assert.deepEqual(runningBackgroundWork(undefined), {
+    taskIds: [],
+    subagentIds: [],
+  });
   // Codex reports no background work: nothing to show.
   assert.equal(
     chatContextCardForSessions([

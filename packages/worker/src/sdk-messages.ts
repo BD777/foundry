@@ -475,7 +475,12 @@ export function claudeAssistantProcessEvent(
     return undefined;
   }
   for (const block of content) {
-    const event = claudeContentBlockProcessEvent(block, true);
+    // A written tool call now runs; its result (a user message) finishes it.
+    const running =
+      Boolean(block) &&
+      typeof block === "object" &&
+      (block as Record<string, unknown>).type === "tool_use";
+    const event = claudeContentBlockProcessEvent(block, !running);
     if (event) {
       return event;
     }

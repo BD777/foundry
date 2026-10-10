@@ -16,7 +16,7 @@ func (s *Store) GetChatLayout(ctx context.Context, workspaceID string) (store.Ch
 		return result, err
 	}
 	var payload string
-	err := s.conn().QueryRowContext(ctx, `SELECT payload_json FROM chat_layouts WHERE workspace_id = ?`, workspaceID).Scan(&payload)
+	err := s.reader().QueryRowContext(ctx, `SELECT payload_json FROM chat_layouts WHERE workspace_id = ?`, workspaceID).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, nil
 	}

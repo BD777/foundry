@@ -41,6 +41,7 @@ Object.assign(globalThis, {
 const { createRoot } = await import("react-dom/client");
 
 globalThis.EventSource = class {
+  addEventListener() {}
   close() {}
 };
 const { SharingFeature } = await import("../src/features/sharing/index.ts");

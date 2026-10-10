@@ -26,7 +26,7 @@ const preview = {
   name: "Local preview ports",
   kind: "preview_ports",
   status: "missing",
-  detail: "copy preview.example.json to preview.json",
+  detail: "add .foundry/preview.json",
 };
 
 test("worker asset names, statuses and known details follow the viewer's language", async () => {
@@ -40,6 +40,15 @@ test("worker asset names, statuses and known details follow the viewer's languag
     "每个 Issue 一个 git worktree · ~/.foundry/workspaces/ws_1/environments",
   );
   assert.match(assetDetail(preview), /^未配置：/);
+  assert.equal(
+    assetDetail({
+      ...preview,
+      detail: "copy preview.example.json to preview.json",
+    }),
+    assetDetail(preview),
+    "an older worker's hint reads the same; no example file is assumed",
+  );
+  assert.ok(!assetDetail(preview).includes("preview.example.json"));
   await i18n.changeLanguage("en");
   assert.equal(assetName(preview), "Preview ports");
   assert.equal(assetStatusLabel("leased"), "In use");

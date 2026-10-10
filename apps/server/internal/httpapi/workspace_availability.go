@@ -53,5 +53,10 @@ func (c *daemonConnection) applyServedWorkspaces(registration store.DaemonRegist
 	if changed {
 		log.Printf("device %s serves %d workspaces; availability of its others updated", registration.Device.ID, len(registration.ServedWorkspaceIDs))
 		c.hub.publishDeviceStatus(registration)
+		// Which of its workspaces changed is not known here; the workspace
+		// list every view shows did.
+		if c.hub.events != nil {
+			c.hub.events.dataChanged("", fieldWorkspaces)
+		}
 	}
 }

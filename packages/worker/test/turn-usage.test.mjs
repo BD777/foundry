@@ -95,11 +95,7 @@ test("a turn that waits for background work reports the usage of every result it
     resolve: () => undefined,
     resultPath: join(directory, "result.md"),
     startedAt: Date.now() - 5000,
-    watchdog: {
-      close: () => undefined,
-      pause: () => undefined,
-      touch: () => undefined,
-    },
+    liveness: { observe: () => [], close: () => undefined },
   };
   const runtime = {
     closed: false,
@@ -159,11 +155,7 @@ test("a chat turn ends with its answer and reports that answer's usage", async (
     resolve: () => undefined,
     resultPath: join(directory, "result.md"),
     startedAt: Date.now() - 5000,
-    watchdog: {
-      close: () => undefined,
-      pause: () => undefined,
-      touch: () => undefined,
-    },
+    liveness: { observe: () => [], close: () => undefined },
   };
   const runtime = {
     closed: false,

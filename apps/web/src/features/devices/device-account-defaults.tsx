@@ -42,12 +42,13 @@ export function DeviceAccountDefaults({
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  async function load() {
+  /** `refresh` asks the device again rather than reuse this page's read. */
+  async function load(refresh = false) {
     if (loading || device.status !== "connected") return;
     setLoading(true);
     setNote("");
     try {
-      const result = await listAgentModels(draft);
+      const result = await listAgentModels(draft, { reuse: !refresh });
       setModels(result.map((row) => row.id));
       setNote(
         profile.runtime === "codex"
@@ -91,7 +92,7 @@ export function DeviceAccountDefaults({
           options={models}
           busy={loading}
           placeholder={t("accountDefaults.nativeDefault")}
-          onRefresh={() => void load()}
+          onRefresh={() => void load(true)}
           note={note}
           onChange={({ value }) => setDraft({ ...draft, model: value })}
         />

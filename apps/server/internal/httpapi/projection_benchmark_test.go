@@ -39,6 +39,9 @@ func TestLocalProjectionTimings(t *testing.T) {
 	s := NewServer(db)
 	defer s.Shutdown(ctx)
 	for i := 0; i < 3; i++ {
-		timed("full projection", func() error { _, e := s.foundryData(ctx, ws, visibility{scope: accessScope{all: true}}); return e })
+		timed("full projection", func() error {
+			_, e := s.foundryData(ctx, ws, visibility{scope: accessScope{all: true}}, everyFoundryDataField())
+			return e
+		})
 	}
 }

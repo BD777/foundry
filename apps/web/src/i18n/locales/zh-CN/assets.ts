@@ -33,7 +33,7 @@ export const assets: Translation<typeof en> = {
   },
   capacity: {
     previewSetup:
-      "未配置：把 .foundry/preview.example.json 复制为 .foundry/preview.json 即可启用预览",
+      "未配置：添加 .foundry/preview.json，写入一条在 $FOUNDRY_PREVIEW_PORT 上启动服务的命令即可启用预览",
     worktrees: "每个 Issue 一个 git worktree",
     worktreesAt: "每个 Issue 一个 git worktree · {{path}}",
     evidence: "每个 Issue 的检查结果与证据；接受后改动合并回仓库",
@@ -47,8 +47,5 @@ export const assets: Translation<typeof en> = {
     title: "上下文",
     workspace: "工作区",
     workspaceMeta: "{{name}} · 配置的基线：{{baseline}}",
-    skillsConfig: "Skills 配置",
-    skillsMeta_one: "{{count}} 个 Skill · {{path}}",
-    skillsMeta_other: "{{count}} 个 Skills · {{path}}",
   },
 };
