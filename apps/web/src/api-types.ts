@@ -5,36 +5,29 @@ import type {
   AgentProfileProjection,
   AgentRuntimeSettings,
   AgentSession,
-  AgentSessionEvent,
-  AgentSubagentSummary,
   AssetProjection,
+  BrowserEvent,
+  BrowserEventType,
+  BrowserNoticeType,
   ChatAttachment,
-  ChatLayout,
-  ChatQueue,
-  ChatThread,
   ClaudeEffort,
   ClaudePermissionMode,
   CodexApprovalPolicy,
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
-  DeviceProjection,
   DeviceSkill,
   DeviceSkillRoot,
   FoundryDataProjection,
-  Issue,
   PromotedSkill,
-  RunEvent,
   ProviderHealth,
   SkillPackRef,
   WorkerRuntimeId,
   WorkspaceFileEntry,
   WorkspaceAccessRole,
-  WorkspaceFeishuConfig,
   WorkspaceProjection,
   WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
-import type { ChatTitleMetadata } from "./api";
 
 /** A library skill as the composer's "/" menu offers it. */
 export interface WorkspaceSkillSummary {
@@ -52,117 +45,15 @@ export type FoundryData = FoundryDataProjection & {
   workspaceSkills?: WorkspaceSkillSummary[];
 };
 
-/** A top-level field of GET /api/foundry-data besides `workspace`. */
-export type FoundryDataField = Exclude<keyof FoundryData, "workspace">;
-
-/** A device went online or offline. */
-export interface DeviceStatusChangedPayload {
-  workspaceId: string;
-  deviceId: string;
-  status: DeviceProjection["status"];
-  /**
-   * The device as workspace data lists it to a viewer who does not own it
-   * (no `owned`, no `runtimeSettings`). Older servers send status only.
-   */
-  device?: DeviceProjection;
-}
+export type { FoundryDataField } from "@bd777/foundry-protocol";
 
 /**
- * One subagent of a session as its list shows it, sent when it starts and
- * when it ends. Without `subagent` the list may have changed in a way the
- * server cannot name: it is read again.
+ * An event of the workspace-data stream (onAnyStreamEvent): every browser
+ * event but notices, which reach only the feature they name (onStreamEvent).
  */
-export interface AgentSubagentUpdate {
-  workspaceId: string;
-  sessionId: string;
-  subagent?: AgentSubagentSummary;
-}
-
-export type FoundryStreamEvent =
-  | {
-      type: "device_status_changed";
-      payload: DeviceStatusChangedPayload;
-    }
-  | {
-      type: "evidence_updated";
-      payload: {
-        issueId: string;
-        workspaceId: string;
-        entityId: string;
-        version: number;
-        status: string;
-      };
-    }
-  | { type: "issue_created"; payload: Issue }
-  | { type: "issue_updated"; payload: Issue }
-  | { type: "issue_run_event"; payload: RunEvent }
-  | {
-      type:
-        | "agent_session_created"
-        | "agent_session_started"
-        | "agent_session_blocked"
-        | "agent_session_resumed"
-        | "agent_session_completed"
-        | "agent_session_native_session_id";
-      payload: AgentSession;
-    }
-  | {
-      type: "agent_session_event";
-      payload: AgentSessionEvent;
-    }
-  | {
-      type: "agent_subagent_updated";
-      payload: AgentSubagentUpdate;
-    }
-  | {
-      type: "feishu_bot_updated";
-      payload: WorkspaceFeishuConfig;
-    }
-  | {
-      type: "workspace_members_updated";
-      payload: { workspaceId: string };
-    }
-  | { type: "chat_queue_changed"; payload: ChatQueue }
-  | {
-      /**
-       * Chat titles of the workspace changed: `titles` are the changed chats'
-       * entries as GET /api/chat-titles lists them, `removed` the changed
-       * chats it no longer lists. Without either, read the list again.
-       */
-      type: "chat_titles_changed";
-      payload: {
-        workspaceId: string;
-        titles?: ChatTitleMetadata[];
-        removed?: string[];
-      };
-    }
-  | {
-      /**
-       * The workspace's chat groups and order were saved or deleted: `layout`
-       * as GET /api/chat-layout answers it (a later revision supersedes it).
-       * Without it, read the layout again.
-       */
-      type: "chat_layout_changed";
-      payload: { workspaceId: string; layout?: ChatLayout };
-    }
-  | {
-      /**
-       * Workspace data no other event carries changed: of one workspace, or
-       * of every workspace when `workspaceId` is "" (devices, profiles,
-       * provider health, skills). Coalesced by the server. `resources`
-       * names the fields that changed; without it any may have.
-       */
-      type: "foundry_data_changed";
-      payload: { workspaceId: string; resources?: FoundryDataField[] };
-    }
-  | {
-      /**
-       * Chats of the workspace's chat list as it shows them, and the ids of
-       * chats it no longer shows.
-       */
-      type: "chats_changed";
-      payload: { workspaceId: string; chats: ChatThread[]; removed: string[] };
-    };
+export type FoundryStreamEvent = BrowserEvent<
+  Exclude<BrowserEventType, BrowserNoticeType>
+>;
 
 export interface CreateIssueInput {
   codexSpeed?: CodexSpeed;

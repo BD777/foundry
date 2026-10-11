@@ -2,6 +2,7 @@ package sqlitestore
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -18,57 +19,72 @@ import (
 // which is how that index breaks ties. The cursor names the oldest event
 // returned by both keys.
 func (s *Store) AgentSessionEventWindow(ctx context.Context, sessionID string, before string, limit int) ([]store.AgentSessionEvent, string, error) {
+	events, older, _, err := s.AgentSessionEventWindowSpan(ctx, sessionID, before, limit)
+	return events, older, err
+}
+
+// AgentSessionEventWindowSpan is AgentSessionEventWindow that also names
+// the window's newest event ("" for an empty window): a reader holding the
+// newest window catches up from it (AgentSessionEventsAfter).
+func (s *Store) AgentSessionEventWindowSpan(ctx context.Context, sessionID string, before string, limit int) (events []store.AgentSessionEvent, older, newest string, err error) {
 	if limit <= 0 {
-		return nil, "", fmt.Errorf("events window limit must be positive, got %d", limit)
+		return nil, "", "", fmt.Errorf("events window limit must be positive, got %d", limit)
 	}
 	args := []any{sessionID}
 	if before != "" {
 		createdAt, rowID, err := decodeEventsCursor(before)
 		if err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 		args = append(args, createdAt, createdAt, rowID)
 	}
 	// One more than asked says whether anything is older.
 	args = append(args, limit+1)
-	type windowRow struct {
-		rowID     int64
-		createdAt string
-		payload   []byte
-	}
-	page, err := func() ([]windowRow, error) {
-		rows, err := s.reader().QueryContext(ctx, eventWindowQuery(before != ""), args...)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		page := make([]windowRow, 0, limit+1)
-		for rows.Next() {
-			var row windowRow
-			if err := rows.Scan(&row.rowID, &row.createdAt, &row.payload); err != nil {
-				return nil, err
-			}
-			page = append(page, row)
-		}
-		return page, rows.Err()
-	}()
+	page, err := s.readWindowRows(ctx, eventWindowQuery(before != ""), limit+1, args...)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
-	// The statement is closed: decoding no longer holds its connection.
-	older := ""
 	if len(page) > limit {
 		page = page[:limit]
-		oldest := page[len(page)-1]
-		older = encodeEventsCursor(oldest.createdAt, oldest.rowID)
+		older = page[len(page)-1].cursor()
 	}
-	events := make([]store.AgentSessionEvent, len(page))
+	if len(page) > 0 {
+		newest = page[0].cursor()
+	}
+	events = make([]store.AgentSessionEvent, len(page))
 	for index, row := range page {
 		if err := json.Unmarshal(row.payload, &events[len(page)-1-index]); err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 	}
-	return events, older, nil
+	return events, older, newest, nil
+}
+
+// windowRow is a stored event as the transcript reads read it: its order
+// keys and its payload, decoded once the statement is closed so decoding
+// no longer holds its connection.
+type windowRow struct {
+	rowID     int64
+	createdAt string
+	payload   []byte
+}
+
+func (row windowRow) cursor() string {
+	return encodeEventsCursor(row.createdAt, row.rowID)
+}
+
+// readWindowRows runs a query of rowid, created_at and payload_json.
+func (s *Store) readWindowRows(ctx context.Context, query string, capacity int, args ...any) ([]windowRow, error) {
+	page := make([]windowRow, 0, capacity)
+	err := scanRows(ctx, s.reader(), query, func(rows *sql.Rows) error {
+		var row windowRow
+		if err := rows.Scan(&row.rowID, &row.createdAt, &row.payload); err != nil {
+			return err
+		}
+		page = append(page, row)
+		return nil
+	}, args...)
+	return page, err
 }
 
 func eventWindowQuery(paged bool) string {

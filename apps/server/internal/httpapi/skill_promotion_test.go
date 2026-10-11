@@ -128,7 +128,7 @@ func TestPromotionHTTPPublishesRequiredClosureAndRejectsStalePlan(t *testing.T) 
 			}
 		}
 	}()
-	if _, err := server.hub.ScanDeviceSkills(context.Background(), "dev_deps", []string{"~/.claude/skills"}); err != nil {
+	if _, _, err := server.hub.ScanDeviceSkills(context.Background(), "dev_deps", []string{"~/.claude/skills"}); err != nil {
 		t.Fatal(err)
 	}
 	if scans.Load() != 1 {
@@ -167,7 +167,7 @@ func TestPromotionHTTPPublishesRequiredClosureAndRejectsStalePlan(t *testing.T) 
 
 func TestPromotionPreviewUsesPersistedGraphWithoutDaemon(t *testing.T) {
 	db := newEmptyTestStore(t)
-	if err := db.ReplaceDeviceSkills(context.Background(), store.ReplaceDeviceSkillsInput{DeviceID: "offline", Skills: []store.DeviceSkill{
+	if _, err := db.ReplaceDeviceSkills(context.Background(), store.ReplaceDeviceSkillsInput{DeviceID: "offline", Skills: []store.DeviceSkill{
 		{Root: "/skills", DirName: "a", Name: "a", DependenciesAnalyzed: true, SourceDigest: "snapshot"},
 	}}); err != nil {
 		t.Fatal(err)

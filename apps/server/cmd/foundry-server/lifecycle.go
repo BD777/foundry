@@ -71,6 +71,7 @@ func run(ctx context.Context, deps dependencies) error {
 	api.RecoverChatQueues(ctx)
 	go api.CheckSkillRepositories(ctx)
 	go api.ReconcileStaleSessions(ctx)
+	go api.RunExternalAccountKeepAlive(ctx)
 	httpServer := newHTTPServer(cfg, api.Routes())
 	if code := api.SetupCode(); code != "" {
 		deps.logf("no Foundry account exists yet; create the first owner in the web app with setup code %s (valid until an owner is created or the server restarts)", code)

@@ -56,15 +56,6 @@ export function claudeCommandLifecycle(
   return commandId && state ? { commandId, state } : undefined;
 }
 
-/** Who a result answered: "task-notification" for Claude's own follow-up. */
-export function claudeResultOrigin(message: unknown): string | undefined {
-  if (!message || typeof message !== "object") return undefined;
-  const record = message as Record<string, unknown>;
-  if (record.type !== "result") return undefined;
-  const origin = record.origin as Record<string, unknown> | undefined;
-  return sdkString(origin?.kind) || undefined;
-}
-
 /**
  * A synthetic assistant message the CLI emits when the API rejects the turn
  * before any real response (e.g. 401 or an overlong prompt). It carries

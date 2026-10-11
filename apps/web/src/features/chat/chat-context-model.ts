@@ -1,11 +1,13 @@
 import type {
   AgentBackgroundTask,
+  AgentContextUsage,
   AgentSession,
   AgentSessionEvent,
+  AgentSessionSchedule,
   AgentScheduledTask,
-  AgentSubagentSummary,
+  AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
-import { humanizeCron } from "@bd777/foundry-protocol";
+import { humanizeCron, sessionScheduleNextFire } from "@bd777/foundry-protocol";
 import type { WindowedAgentSession } from "../../api";
 import type {
   ChatBackgroundTaskItem,
@@ -13,6 +15,7 @@ import type {
   ChatContextResourceItem,
   ChatRunningBackgroundWork,
   ChatSessionFileItem,
+  ChatSessionStatus,
   ChatSubagentItem,
   ChatTimerFire,
   ChatTimerItem,
@@ -216,10 +219,9 @@ function projectSessionSubagents(session: AgentSession): ChatSubagentItem[] {
 
 function projectDiscoveredSubagents(
   session: AgentSession,
-  summaries: AgentSubagentSummary[],
+  summaries: AgentSubagentDigest[],
 ): ChatSubagentItem[] {
   return summaries.map((summary) => ({
-    detail: summary.prompt,
     id: `${session.id}:${summary.taskId}`,
     kind: "subagent",
     label: summary.title,
@@ -533,6 +535,122 @@ export function backgroundWorkNote(work: ChatRunningBackgroundWork): string {
   return "";
 }
 
+/**
+ * "1 scheduled task · next at 07:37": the chat is idle, yet timers its agent
+ * holds will wake it. The time is when Claude Code fires the next one.
+ */
+export function scheduledNote(
+  schedule: AgentSessionSchedule,
+  now: Date = new Date(),
+): string {
+  const count = schedule.timers.length;
+  const next = sessionScheduleNextFire(schedule, now);
+  if (!next) return i18n.t("chat:contextCard.scheduledNoteNoTime", { count });
+  const sameDay = next.toDateString() === now.toDateString();
+  const time = next.toLocaleString(i18n.language, {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(sameDay ? {} : { month: "2-digit", day: "2-digit" }),
+  });
+  return i18n.t("chat:contextCard.scheduledNote", { count, time });
+}
+
+/**
+ * The open session's status line. The context is the newest report of it
+ * (a compaction's included); workers before those reports name only each
+ * request's tokens, so their window is unknown. Turns, their totals and
+ * compactions count every one the session's events and state events hold.
+ */
+export function chatSessionStatus(
+  session: AgentSession,
+  activeWorkspace?: ActiveWorkspaceContext,
+): ChatSessionStatus {
+  let context: AgentContextUsage | undefined;
+  let window: { tokens: number; model?: string } | undefined;
+  let requestTokens: number | undefined;
+  let compactions = 0;
+  let turns = 0;
+  let lastTurnDurationMs: number | undefined;
+  const totals: ChatSessionStatus["totals"] = {
+    inputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    outputTokens: 0,
+    costTurns: 0,
+  };
+  for (const event of session.events ?? []) {
+    const metadata = event.metadata;
+    if (!metadata) continue;
+    if (metadata.contextUsage) {
+      context = metadata.contextUsage;
+      if (context.compaction) compactions += 1;
+      if (context.contextWindow)
+        window = { tokens: context.contextWindow, model: context.model };
+    } else if (metadata.requestUsage) {
+      requestTokens = metadata.requestUsage.inputTokens;
+    }
+    const usage = metadata.turnUsage;
+    if (usage) {
+      turns += 1;
+      totals.inputTokens += usage.inputTokens;
+      totals.cacheReadTokens += usage.cacheReadTokens;
+      totals.cacheWriteTokens += usage.cacheWriteTokens;
+      totals.outputTokens += usage.outputTokens;
+      if (usage.costUsd !== undefined) {
+        totals.costUsd = (totals.costUsd ?? 0) + usage.costUsd;
+        totals.costTurns += 1;
+      }
+      lastTurnDurationMs = usage.durationMs;
+    }
+  }
+  // A report made before its model's window was known takes the one a
+  // later report of the same model named.
+  const contextWindow =
+    context?.contextWindow ??
+    (window && (!context?.model || window.model === context.model)
+      ? window.tokens
+      : undefined);
+  const model = context?.model || session.model?.trim() || undefined;
+  const effort =
+    session.provider === "claude"
+      ? session.claudeEffort
+      : session.codexReasoningEffort;
+  return {
+    sessionId: session.id,
+    ...(session.nativeSessionId
+      ? { nativeSessionId: session.nativeSessionId }
+      : {}),
+    runtime: session.provider,
+    ...(session.profileLabel ? { profileLabel: session.profileLabel } : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    ...(session.provider === "claude" && session.claudePermissionMode
+      ? { claudePermissionMode: session.claudePermissionMode }
+      : {}),
+    ...(session.provider === "codex" && session.codexSandboxMode
+      ? { codexSandboxMode: session.codexSandboxMode }
+      : {}),
+    ...(session.provider === "codex" && session.codexApprovalPolicy
+      ? { codexApprovalPolicy: session.codexApprovalPolicy }
+      : {}),
+    ...(activeWorkspace?.deviceLabel &&
+    activeWorkspace.id === session.workspaceId
+      ? { deviceLabel: activeWorkspace.deviceLabel }
+      : {}),
+    context: {
+      ...((context ? context.inputTokens : requestTokens) !== undefined
+        ? { usedTokens: context ? context.inputTokens : requestTokens }
+        : {}),
+      ...(contextWindow ? { contextWindow } : {}),
+    },
+    turns,
+    totals,
+    ...(lastTurnDurationMs !== undefined ? { lastTurnDurationMs } : {}),
+    compactions,
+  };
+}
+
 export interface ActiveWorkspaceContext {
   id: string;
   localPath?: string;
@@ -542,7 +660,7 @@ export interface ActiveWorkspaceContext {
 
 export function chatContextCardForSessions(
   sessions: AgentSession[],
-  discoveredSubagents: Readonly<Record<string, AgentSubagentSummary[]>> = {},
+  discoveredSubagents: Readonly<Record<string, AgentSubagentDigest[]>> = {},
   activeWorkspace?: ActiveWorkspaceContext,
 ): ChatContextCardData | undefined {
   const previews: ChatContextResourceItem[] = [];
@@ -635,7 +753,11 @@ export function chatContextCardForSessions(
 
   const seenPreviews = new Set<string>();
   const sessionFiles = chatSessionFiles(panelSessions, activeWorkspace);
+  const openSession = panelSessions.at(-1);
   const data = {
+    ...(openSession
+      ? { status: chatSessionStatus(openSession, activeWorkspace) }
+      : {}),
     // Changes are what this chat's own tools edited in a repository; a file
     // the answer only names is a file to open, not a change.
     changes: sessionFiles.filter(isSessionChange),
@@ -650,7 +772,8 @@ export function chatContextCardForSessions(
     timers,
     background,
   };
-  return data.changes.length > 0 ||
+  return data.status ||
+    data.changes.length > 0 ||
     data.background.length > 0 ||
     data.files.length > 0 ||
     data.previews.length > 0 ||

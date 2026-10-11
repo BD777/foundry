@@ -250,9 +250,9 @@ func (s *Server) startWorkerUpdate(ctx context.Context, deviceID string) (wsWork
 		return wsWorkerUpdateStarted{}, err
 	}
 	s.workerUpdates.setLog(deviceID, value.Log)
-	s.projectionsChanged("", fieldDevices)
+	s.workerUpdateChanged(deviceID)
 	// Once the window passes, projections show the update as not finished.
-	time.AfterFunc(workerUpdateWindow, func() { s.projectionsChanged("", fieldDevices) })
+	time.AfterFunc(workerUpdateWindow, func() { s.workerUpdateChanged(deviceID) })
 	if connection.hasCapability(workerUpdateStatusCapability) {
 		go s.watchWorkerUpdate(deviceID, startedAt)
 	}
@@ -282,7 +282,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 			}
 			if now.Sub(away) >= grace {
 				if s.workerUpdates.fail(deviceID, startedAt, workerUpdateFailedNotBack, "the worker did not come back after updating") {
-					s.projectionsChanged("", fieldDevices)
+					s.workerUpdateChanged(deviceID)
 				}
 				return
 			}
@@ -297,7 +297,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 		update, ok := s.workerUpdates.active(deviceID, version, now.UTC())
 		if !ok || update.StartedAt != startedAt || update.Failure != "" {
 			if !ok {
-				s.projectionsChanged("", fieldDevices)
+				s.workerUpdateChanged(deviceID)
 			}
 			return
 		}
@@ -312,7 +312,7 @@ func (s *Server) watchWorkerUpdate(deviceID, startedAt string) {
 		}
 		changed, settled := s.workerUpdates.apply(deviceID, startedAt, status)
 		if changed {
-			s.projectionsChanged("", fieldDevices)
+			s.workerUpdateChanged(deviceID)
 		}
 		if settled {
 			return
@@ -326,6 +326,16 @@ func (s *Server) recordWorkerUpdateStatus(deviceID string, status wsWorkerUpdate
 		return
 	}
 	if changed, _ := s.workerUpdates.apply(deviceID, "", status); changed {
+		s.workerUpdateChanged(deviceID)
+	}
+}
+
+// workerUpdateChanged tells whoever sees the device how its update goes:
+// the device, update and all, travels in its event, and no one reads. A
+// device on no workspace, which no device event reaches, is announced as a
+// change to devices instead.
+func (s *Server) workerUpdateChanged(deviceID string) {
+	if !s.devices.changed(context.Background(), deviceID) {
 		s.projectionsChanged("", fieldDevices)
 	}
 }

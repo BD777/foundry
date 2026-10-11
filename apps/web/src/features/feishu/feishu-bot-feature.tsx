@@ -2,15 +2,16 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   FeishuPairingCodeResult,
-  WorkspaceFeishuConfig,
+  WorkspaceFeishuBot,
 } from "@bd777/foundry-protocol";
 import {
   generateFeishuPairingCode,
   getWorkspaceFeishuBot,
   saveWorkspaceFeishuBot,
-  subscribeFoundryEvents,
   unbindFeishuGroup,
 } from "../../api";
+import { onStreamEvent } from "../../stream";
+import { useReadOrder } from "../../lib/read-order";
 import { Alert } from "../../components/ui/alert";
 import { FeishuCredentialsPanel } from "./feishu-credentials-panel";
 import { FeishuPairingPanel } from "./feishu-pairing-panel";
@@ -38,38 +39,49 @@ function FeishuBotSettings({
   onNotice,
 }: FeishuBotFeatureProps) {
   const { t } = useTranslation("feishu");
-  const [bot, setBot] = useState<WorkspaceFeishuConfig>();
+  const [bot, setBot] = useState<WorkspaceFeishuBot>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pairing, setPairing] = useState(false);
   // The server keeps only a hash, so the plaintext code exists only in the
   // response that generated it.
   const [issuedCode, setIssuedCode] = useState<FeishuPairingCodeResult>();
-
-  async function loadConfig() {
-    if (!workspaceId) return;
-    setLoading(true);
-    try {
-      const data = await getWorkspaceFeishuBot(workspaceId);
-      setBot(data);
-    } catch (err) {
-      onNotice?.(t("notices.loadFailed", { error: errorText(err) }));
-    } finally {
-      setLoading(false);
-    }
-  }
+  // A read answered after an update (an event, an action's answer) or a
+  // later read is older than what is shown.
+  const order = useReadOrder();
+  const showBot = (next: WorkspaceFeishuBot) => {
+    order.changed();
+    setBot(next);
+  };
 
   useEffect(() => {
+    let active = true;
+    /** `quiet` reads again behind what is shown, which stays usable. */
+    async function loadConfig({ quiet = false } = {}) {
+      if (!workspaceId) return;
+      const current = order.started();
+      if (!quiet) setLoading(true);
+      try {
+        const data = await getWorkspaceFeishuBot(workspaceId);
+        if (active && current()) setBot(data);
+      } catch (err) {
+        if (active)
+          onNotice?.(t("notices.loadFailed", { error: errorText(err) }));
+      } finally {
+        if (active && !quiet) setLoading(false);
+      }
+    }
     setIssuedCode(undefined);
     void loadConfig();
-    return subscribeFoundryEvents((event) => {
-      if (
-        event.type === "feishu_bot_updated" &&
-        event.payload.workspaceId === workspaceId
-      ) {
-        setBot(event.payload);
-      }
+    const stop = onStreamEvent("feishu_bot_updated", showBot, {
+      workspaceId,
+      // Changes may have been missed: the bot shown is read again.
+      onResync: () => void loadConfig({ quiet: true }),
     });
+    return () => {
+      active = false;
+      stop();
+    };
   }, [workspaceId]);
 
   async function handleSaveConfig(appId: string, appSecret: string) {
@@ -83,7 +95,7 @@ function FeishuBotSettings({
         appId: appId.trim(),
         appSecret: appSecret.trim() || undefined,
       });
-      setBot(saved);
+      showBot(saved);
       onNotice?.(t("notices.saved"));
     } catch (err) {
       onNotice?.(t("notices.saveFailed", { error: errorText(err) }));
@@ -109,7 +121,7 @@ function FeishuBotSettings({
     if (!confirm(t("notices.unbindConfirm"))) return;
     try {
       const updated = await unbindFeishuGroup(workspaceId);
-      setBot(updated);
+      showBot(updated);
       onNotice?.(t("notices.unbound"));
     } catch (err) {
       onNotice?.(t("notices.unbindFailed", { error: errorText(err) }));

@@ -122,6 +122,130 @@ export function nextCronFire(
   return undefined;
 }
 
+// --- When Claude Code fires a timer ----------------------------------------
+
+/**
+ * Claude Code fires a session timer later than its cron says, by an offset
+ * fixed by the timer's id, so sessions do not all hit the API on the same
+ * minute: a recurring timer up to half its period late (at most 30 minutes),
+ * a one-shot timer on :00 or :30 up to 90 s early, and an every-five-minutes
+ * timer 15 s before the prompt cache expires. These are Claude Code's
+ * defaults (its cron jitter config, 2.1.x); its servers may tune them.
+ */
+const claudeTimerJitter = {
+  recurringFraction: 0.5,
+  recurringCapMs: 30 * 60_000,
+  oneShotEarlyMs: 90_000,
+  oneShotMinuteMod: 30,
+  cacheLeadMs: 15_000,
+  cacheTtlMs: 5 * 60_000,
+};
+
+/** Recurring timers live this long; Claude Code then deletes them. */
+export const claudeRecurringTimerMaxAgeMs = 7 * 24 * 60 * 60_000;
+
+function claudeTimerFraction(id: string): number {
+  const value = Number.parseInt(id.slice(0, 8), 16) / 4294967296;
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * When Claude Code fires a recurring timer after it last fired (or was
+ * created): the cron's next time plus the timer's offset. Claude fires only
+ * while the session is idle, so a busy session runs it later.
+ */
+export function claudeRecurringFireAfter(
+  schedule: string,
+  id: string,
+  after: Date,
+): Date | undefined {
+  const next = nextCronFire(schedule, after);
+  if (!next) return undefined;
+  const offset = recurringOffset(schedule, id, next);
+  // Kept warm for the prompt cache: a period after the last fire, a little
+  // early.
+  if (offset === "cache") {
+    const following = nextCronFire(schedule, next);
+    const period = following ? following.getTime() - next.getTime() : 0;
+    return new Date(after.getTime() + period - claudeTimerJitter.cacheLeadMs);
+  }
+  return new Date(next.getTime() + offset);
+}
+
+/** A recurring timer's delay after the cron time `slot`, in ms. */
+function recurringOffset(
+  schedule: string,
+  id: string,
+  slot: Date,
+): number | "cache" {
+  const following = nextCronFire(schedule, slot);
+  if (!following) return 0;
+  const period = following.getTime() - slot.getTime();
+  const { cacheLeadMs, cacheTtlMs } = claudeTimerJitter;
+  if (
+    /^\*\/\d+ \* \* \* \*$/.test(schedule.trim()) &&
+    cacheLeadMs < period &&
+    period >= cacheTtlMs &&
+    period - cacheLeadMs < cacheTtlMs
+  ) {
+    return "cache";
+  }
+  return Math.min(
+    claudeTimerFraction(id) * claudeTimerJitter.recurringFraction * period,
+    claudeTimerJitter.recurringCapMs,
+  );
+}
+
+/** When Claude Code fires a one-shot timer created at `createdAt`. */
+export function claudeOneShotFireAt(
+  schedule: string,
+  id: string,
+  createdAt: Date,
+): Date | undefined {
+  const next = nextCronFire(schedule, createdAt);
+  if (!next) return undefined;
+  if (next.getMinutes() % claudeTimerJitter.oneShotMinuteMod !== 0) return next;
+  return new Date(
+    Math.max(
+      next.getTime() -
+        claudeTimerFraction(id) * claudeTimerJitter.oneShotEarlyMs,
+      createdAt.getTime(),
+    ),
+  );
+}
+
+/**
+ * The next time Claude Code fires a timer, seen from `now`, without knowing
+ * when it last fired: the first of its cron times whose offset time is still
+ * ahead. A one-shot timer that is due but has not fired (its session was
+ * busy) answers its due time, which may be past.
+ */
+export function claudeTimerNextFire(
+  timer: { id: string; schedule: string; recurring: boolean },
+  now: Date = new Date(),
+): Date | undefined {
+  if (!timer.recurring) {
+    return claudeOneShotFireAt(
+      timer.schedule,
+      timer.id,
+      new Date(now.getTime() - 24 * 60 * 60_000),
+    );
+  }
+  // A slot up to the largest offset ago may still be ahead of now.
+  let slot = nextCronFire(
+    timer.schedule,
+    new Date(now.getTime() - claudeTimerJitter.recurringCapMs - 60_000),
+  );
+  for (let index = 0; slot && index < 64; index += 1) {
+    const offset = recurringOffset(timer.schedule, timer.id, slot);
+    // A cache-warm timer's offset hangs on its last fire, which is unknown.
+    const fire = slot.getTime() + (offset === "cache" ? 0 : offset);
+    if (fire > now.getTime()) return new Date(fire);
+    slot = nextCronFire(timer.schedule, slot);
+  }
+  return undefined;
+}
+
 // --- Humanized schedule ---------------------------------------------------
 
 const pad2 = (value: number): string => String(value).padStart(2, "0");

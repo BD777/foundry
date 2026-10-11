@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -45,18 +46,25 @@ type subagentListCache struct {
 	entries map[string]*subagentListEntry
 }
 
+// subagentListView is what a list read answers: the whole list (prompts and
+// answers, which agents read) or digests (what a chat shows: answers only as
+// fingerprints, no prompts), which its viewers read after every change.
+type subagentListView int
+
+const (
+	subagentListFull subagentListView = iota
+	subagentListDigests
+	subagentListViews
+)
+
 type subagentListEntry struct {
 	// revision rises when one of the session's subagents starts, finishes
 	// or fails; progress rises with each of their progress reports.
 	revision uint64
 	progress uint64
-	body     []byte
-	// bodyRevision and bodyProgress are what body was read at.
-	bodyRevision uint64
-	bodyProgress uint64
-	readAt       time.Time
-	used         time.Time
-	inflight     *subagentListCall
+	// reads are what was read of the list, by view.
+	reads [subagentListViews]subagentListRead
+	used  time.Time
 	// tasks are the session's tasks seen starting that have not ended, by
 	// id: whether each is a subagent. End events do not name a task's type.
 	tasks map[string]bool
@@ -68,6 +76,65 @@ type subagentListEntry struct {
 	// remembered until failedAt+subagentFailureMemory.
 	failure  error
 	failedAt time.Time
+}
+
+// subagentListRead is the list as last read in one view.
+type subagentListRead struct {
+	body []byte
+	// bodyRevision and bodyProgress are what body was read at.
+	bodyRevision uint64
+	bodyProgress uint64
+	readAt       time.Time
+	inflight     *subagentListCall
+}
+
+// subagentList is a device's list of a session's subagents in one view.
+type subagentList interface {
+	// encode is the list as JSON, each subagent ended as ended says.
+	encode(ended func(taskID string) (subagentEnd, bool)) ([]byte, error)
+}
+
+type subagentSummaries []store.AgentSubagentSummary
+
+func (list subagentSummaries) encode(ended func(string) (subagentEnd, bool)) ([]byte, error) {
+	for index := range list {
+		if end, ok := ended(list[index].TaskID); ok {
+			end.apply(&list[index].Status, &list[index].Usage)
+		}
+	}
+	return json.Marshal(list)
+}
+
+type subagentDigests []store.AgentSubagentDigest
+
+func (list subagentDigests) encode(ended func(string) (subagentEnd, bool)) ([]byte, error) {
+	for index := range list {
+		if end, ok := ended(list[index].TaskID); ok {
+			end.apply(&list[index].Status, &list[index].Usage)
+		}
+	}
+	return json.Marshal(list)
+}
+
+// subagentListViewOf is the view a list request asks for: ?view=digest for
+// digests, else the whole list.
+func subagentListViewOf(r *http.Request) subagentListView {
+	if r.URL.Query().Get("view") == subagentDigestView {
+		return subagentListDigests
+	}
+	return subagentListFull
+}
+
+// subagentListFetch reads the session's list in view from its device.
+func (h *DaemonHub) subagentListFetch(session store.AgentSession, view subagentListView) func(context.Context) (subagentList, error) {
+	return func(ctx context.Context) (subagentList, error) {
+		if view == subagentListDigests {
+			digests, err := h.ListAgentSubagentDigests(ctx, session)
+			return subagentDigests(digests), err
+		}
+		subagents, err := h.ListAgentSubagents(ctx, session)
+		return subagentSummaries(subagents), err
+	}
 }
 
 type subagentListCall struct {
@@ -182,10 +249,10 @@ func (c *subagentListCache) observe(event store.AgentSessionEvent) subagentChang
 	return subagentTaskEnded
 }
 
-// load returns the session's list encoded as JSON. fetch runs at most once
-// at a time per session, detached from any one reader, so a reader that
-// gives up does not fail the others.
-func (c *subagentListCache) load(ctx context.Context, sessionID string, active bool, fetch func(context.Context) ([]store.AgentSubagentSummary, error)) ([]byte, error) {
+// load returns the session's list in view encoded as JSON. fetch runs at
+// most once at a time per session and view, detached from any one reader,
+// so a reader that gives up does not fail the others.
+func (c *subagentListCache) load(ctx context.Context, sessionID string, view subagentListView, active bool, fetch func(context.Context) (subagentList, error)) ([]byte, error) {
 	c.mu.Lock()
 	entry := c.entries[sessionID]
 	if entry == nil {
@@ -195,15 +262,16 @@ func (c *subagentListCache) load(ctx context.Context, sessionID string, active b
 	}
 	now := time.Now()
 	entry.used = now
-	age := now.Sub(entry.readAt)
-	if entry.body != nil && entry.bodyRevision == entry.revision &&
+	read := &entry.reads[view]
+	age := now.Sub(read.readAt)
+	if read.body != nil && read.bodyRevision == entry.revision &&
 		(!active || age < subagentListActiveTTL) &&
-		(entry.bodyProgress == entry.progress || age < subagentProgressInterval) {
-		body := entry.body
+		(read.bodyProgress == entry.progress || age < subagentProgressInterval) {
+		body := read.body
 		c.mu.Unlock()
 		return body, nil
 	}
-	call := entry.inflight
+	call := read.inflight
 	// A read that started before a subagent's start or end may not have it.
 	if call == nil || call.revision != entry.revision {
 		if entry.failure != nil && now.Sub(entry.failedAt) < subagentFailureMemory {
@@ -212,8 +280,8 @@ func (c *subagentListCache) load(ctx context.Context, sessionID string, active b
 			return nil, err
 		}
 		call = &subagentListCall{done: make(chan struct{}), revision: entry.revision, progress: entry.progress}
-		entry.inflight = call
-		go c.run(sessionID, entry, call, fetch)
+		read.inflight = call
+		go c.run(sessionID, entry, read, call, fetch)
 	}
 	c.mu.Unlock()
 	select {
@@ -224,7 +292,7 @@ func (c *subagentListCache) load(ctx context.Context, sessionID string, active b
 	}
 }
 
-func (c *subagentListCache) run(sessionID string, entry *subagentListEntry, call *subagentListCall, fetch func(context.Context) ([]store.AgentSubagentSummary, error)) {
+func (c *subagentListCache) run(sessionID string, entry *subagentListEntry, read *subagentListRead, call *subagentListCall, fetch func(context.Context) (subagentList, error)) {
 	ctx, cancel := context.WithTimeout(context.Background(), subagentListTimeout)
 	defer cancel()
 	subagents, err := fetch(ctx)
@@ -232,11 +300,13 @@ func (c *subagentListCache) run(sessionID string, entry *subagentListEntry, call
 	defer c.mu.Unlock()
 	var body []byte
 	if err == nil {
-		body, err = json.Marshal(entry.withEnds(subagents, call.revision))
+		body, err = subagents.encode(func(taskID string) (subagentEnd, bool) {
+			return entry.endedBy(taskID, call.revision)
+		})
 	}
 	call.body, call.err = body, err
-	if entry.inflight == call {
-		entry.inflight = nil
+	if read.inflight == call {
+		read.inflight = nil
 	}
 	switch {
 	case err == nil:
@@ -244,8 +314,8 @@ func (c *subagentListCache) run(sessionID string, entry *subagentListEntry, call
 	case errors.Is(err, context.DeadlineExceeded):
 		entry.failure, entry.failedAt = err, time.Now()
 	}
-	if err == nil && c.entries[sessionID] == entry && (entry.body == nil || call.revision >= entry.bodyRevision) {
-		entry.body, entry.bodyRevision, entry.bodyProgress, entry.readAt = body, call.revision, call.progress, time.Now()
+	if err == nil && c.entries[sessionID] == entry && (read.body == nil || call.revision >= read.bodyRevision) {
+		read.body, read.bodyRevision, read.bodyProgress, read.readAt = body, call.revision, call.progress, time.Now()
 	}
 	close(call.done)
 }
@@ -258,22 +328,34 @@ type subagentEnd struct {
 	revision uint64
 }
 
-// withEnds is the device's list, read at revision, with each subagent the
-// server saw end by then ended as its event said, with what it used: the
-// device's transcript may lag behind the event. Callers hold mu.
-func (entry *subagentListEntry) withEnds(subagents []store.AgentSubagentSummary, revision uint64) []store.AgentSubagentSummary {
-	for index, subagent := range subagents {
-		end, ended := entry.ended[subagent.TaskID]
-		status := subagentEndStatus[end.label]
-		if !ended || status == "" || end.revision > revision {
-			continue
-		}
-		subagents[index].Status = status
-		if end.usage != nil {
-			subagents[index].Usage = end.usage
+// apply makes a listed subagent's status and usage what its end said.
+func (end subagentEnd) apply(status *string, usage **store.SubagentUsage) {
+	*status = subagentEndStatus[end.label]
+	if end.usage != nil {
+		*usage = end.usage
+	}
+}
+
+// endedBy says how the task ended if the server saw it end by the list
+// revision a device read started at: a subagent the read lists ends as its
+// event said, with what it used, since the device's transcript may lag
+// behind the event. Callers hold mu.
+func (entry *subagentListEntry) endedBy(taskID string, revision uint64) (subagentEnd, bool) {
+	end, ended := entry.ended[taskID]
+	if !ended || subagentEndStatus[end.label] == "" || end.revision > revision {
+		return subagentEnd{}, false
+	}
+	return end, true
+}
+
+// reading says whether a device read of the session's list is under way.
+func (entry *subagentListEntry) reading() bool {
+	for _, read := range entry.reads {
+		if read.inflight != nil {
+			return true
 		}
 	}
-	return subagents
+	return false
 }
 
 // evict drops the least recently read session once the cache is full.
@@ -285,7 +367,7 @@ func (c *subagentListCache) evict() {
 	oldestID := ""
 	var oldest time.Time
 	for id, entry := range c.entries {
-		if entry.inflight != nil {
+		if entry.reading() {
 			continue
 		}
 		if oldestID == "" || entry.used.Before(oldest) {

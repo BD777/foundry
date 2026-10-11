@@ -3,22 +3,28 @@
 // installs a resource. On whatever device the worker runs, it discovers them,
 // lists them for the server with its registration, tells each workspace
 // session what it may use, and reclaims what a session left running when an
-// input ends. See docs/architecture-modules.md §5.6.
+// input ends and its scratch directory once it is idle. See
+// docs/architecture-modules.md §5.6.
 
 import { execFileSync, spawnSync } from "node:child_process";
 
+import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, delimiter, join } from "node:path";
+import { basename, delimiter, isAbsolute, join } from "node:path";
 import type { DeviceResource } from "@bd777/foundry-protocol";
+import { foundryStatePath } from "./state-root.js";
+import { writePrivateJSONAtomic } from "./storage.js";
 
 interface BrowserFamily {
   id: string;
@@ -345,12 +351,132 @@ export function sessionResourceNotes(
   ].join("\n");
 }
 
-/** Which Foundry session this is, and what Foundry ids and links name. */
+/**
+ * Which Foundry session this is, what Foundry ids and links name, and that
+ * the foundry skill also works through other sessions.
+ */
 export function foundrySessionNote(sessionId: string): string {
-  return `- You are Foundry session ${sessionId}. Ids such as sess_…, native_claude_…, native_codex_…, ws_… and dev_…, and Foundry chat links (…/chats/<id>), name Foundry sessions, chats, workspaces and devices; read them with the foundry skill.`;
+  return `- You are Foundry session ${sessionId}. Ids such as sess_…, native_claude_…, native_codex_…, ws_… and dev_…, and Foundry chat links (…/chats/<id>), name Foundry sessions, chats, workspaces and devices; the foundry skill reads them and, when the person asks for work in other sessions or on other devices, starts, steers and waits on those sessions.`;
 }
 
-const scratchDirectories = new Map<string, string>();
+// A session's scratch directory lives as long as the session, not as this
+// process: the directory each session got is recorded in the worker's state
+// root, so a restarted or updated worker gives the session the same one. A
+// directory unused for sessionScratchIdleMs() is removed once nothing of its
+// session runs. Only recorded directories are ever removed: other workers on
+// the device (their own state roots) make theirs under the same prefix.
+
+const defaultScratchIdleMs = 3 * 24 * 60 * 60 * 1000;
+/** How often a session's use is written to its record at most. */
+const scratchUseRecordIntervalMs = 60_000;
+/** The name mkdtemp gives a scratch directory. */
+const scratchName = /^fdy-[A-Za-z0-9]{6}$/;
+
+/**
+ * How long a session's scratch directory outlives its last use:
+ * FOUNDRY_SESSION_SCRATCH_IDLE_MS, three days by default.
+ */
+export function sessionScratchIdleMs(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const configured = Number(env.FOUNDRY_SESSION_SCRATCH_IDLE_MS);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : defaultScratchIdleMs;
+}
+
+interface ScratchRecord {
+  sessionId: string;
+  directory: string;
+  lastUsedAt: string;
+}
+
+/** Directories this process knows, with when it last recorded their use. */
+const scratchDirectories = new Map<
+  string,
+  { directory: string; recordedAt: number }
+>();
+
+function scratchRecordsDirectory(): string {
+  return foundryStatePath("session-scratch");
+}
+
+function scratchRecordPath(sessionId: string): string {
+  const name = /^[A-Za-z0-9_-]{1,128}$/.test(sessionId)
+    ? sessionId
+    : `h-${createHash("sha256").update(sessionId).digest("hex").slice(0, 40)}`;
+  return join(scratchRecordsDirectory(), `${name}.json`);
+}
+
+function parseScratchRecord(path: string): ScratchRecord | undefined {
+  try {
+    const value = JSON.parse(
+      readFileSync(path, "utf8"),
+    ) as Partial<ScratchRecord>;
+    if (
+      typeof value.sessionId === "string" &&
+      typeof value.directory === "string" &&
+      isAbsolute(value.directory) &&
+      typeof value.lastUsedAt === "string"
+    )
+      return value as ScratchRecord;
+  } catch {
+    // Missing or unreadable: no record.
+  }
+  return undefined;
+}
+
+function readScratchRecord(sessionId: string): ScratchRecord | undefined {
+  const record = parseScratchRecord(scratchRecordPath(sessionId));
+  return record?.sessionId === sessionId ? record : undefined;
+}
+
+/** Notes that the session uses its directory now, at most once a minute. */
+function recordScratchUse(sessionId: string, directory: string): void {
+  const known = scratchDirectories.get(sessionId);
+  const now = Date.now();
+  if (
+    known?.directory === directory &&
+    now - known.recordedAt < scratchUseRecordIntervalMs
+  )
+    return;
+  scratchDirectories.set(sessionId, { directory, recordedAt: now });
+  const record: ScratchRecord = {
+    sessionId,
+    directory,
+    lastUsedAt: new Date(now).toISOString(),
+  };
+  try {
+    writePrivateJSONAtomic(scratchRecordPath(sessionId), record);
+  } catch (error) {
+    // The session keeps working; only a restart would not find the directory.
+    console.warn(
+      `Could not record the scratch directory of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function isOwnDirectory(path: string): boolean {
+  try {
+    const stat = lstatSync(path);
+    return (
+      stat.isDirectory() &&
+      (process.getuid === undefined || stat.uid === process.getuid())
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The directory, made again when it was removed, if it is this user's own. */
+function ownDirectory(path: string): string | undefined {
+  try {
+    mkdirSync(path, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") return undefined;
+  }
+  return isOwnDirectory(path) ? path : undefined;
+}
 
 /** Unix socket and profile paths stay short; TMPDIR can be deep. */
 function shortTemporaryRoot(): string {
@@ -362,21 +488,34 @@ function shortTemporaryRoot(): string {
  * A session's own temporary directory, its TMPDIR. What the session creates
  * there (a browser's profile or singleton files) marks processes as the
  * session's even after they rewrite their environment or leave its tree.
+ * The session keeps it across worker restarts; one removed from outside
+ * (tmpfiles, macOS's cleanup of $TMPDIR) is made again at the same path.
  */
 export function sessionScratchDirectory(sessionId: string): string {
-  let directory = scratchDirectories.get(sessionId);
-  if (!directory) {
-    directory = mkdtempSync(join(shortTemporaryRoot(), "fdy-"));
-    scratchDirectories.set(sessionId, directory);
-  }
+  const known = knownSessionScratchDirectory(sessionId);
+  const directory =
+    (known ? ownDirectory(known) : undefined) ??
+    mkdtempSync(join(shortTemporaryRoot(), "fdy-"));
+  recordScratchUse(sessionId, directory);
   return directory;
 }
 
-/** The session's scratch directory if this process made one; never makes one. */
+/**
+ * The session's scratch directory if this worker made one, in this process
+ * or an earlier one; never makes one.
+ */
 export function knownSessionScratchDirectory(
   sessionId: string,
 ): string | undefined {
-  return scratchDirectories.get(sessionId);
+  const known = scratchDirectories.get(sessionId);
+  if (known) return known.directory;
+  const record = readScratchRecord(sessionId);
+  if (!record) return undefined;
+  scratchDirectories.set(sessionId, {
+    directory: record.directory,
+    recordedAt: 0,
+  });
+  return record.directory;
 }
 
 /** TMPDIR and friends pointing at the session's scratch directory. */
@@ -530,20 +669,26 @@ function isBrowser(executable: string): boolean {
   return browserProcessNames.some((prefix) => name.startsWith(prefix));
 }
 
+interface SessionProcesses {
+  /** The session's browsers, each with its topmost browser process. */
+  browsers: Map<number, ProcessEntry>;
+  /** Its other processes: the agent, background work, servers it left. */
+  others: ProcessEntry[];
+}
+
 /**
- * Close the browsers a session started and left running. A browser process
- * belongs to the session when it, or a process of the same browser below it,
- * carries the session's id in its environment or uses the session's scratch
- * directory; the whole browser is closed from its topmost process. Browsers
- * can rewrite their own environment (Chrome on Linux does), which is why the
- * scratch directory and the climb to the top are needed. The agent runtime
- * and anything else the session started are left alone. Returns the
- * executables that were closed.
+ * The running processes that belong to a session. A browser process belongs
+ * to it when it is leased to the session, or when it or a process of the same
+ * browser below it carries the session's id in its environment or uses the
+ * session's scratch directory. Browsers can rewrite their own environment
+ * (Chrome on Linux does), which is why the scratch directory and the climb to
+ * the top are needed.
  */
-export function reclaimSessionResources(sessionId: string): string[] {
-  if (!sessionId) return [];
+function sessionProcesses(
+  sessionId: string,
+  scratch: string | undefined,
+): SessionProcesses {
   const marker = `FOUNDRY_SESSION_ID=${sessionId}`;
-  const scratch = scratchDirectories.get(sessionId);
   const entries =
     process.platform === "linux"
       ? linuxProcesses(marker, scratch)
@@ -551,32 +696,199 @@ export function reclaimSessionResources(sessionId: string): string[] {
         ? macProcesses(marker, scratch)
         : [];
   const byPid = new Map(entries.map((entry) => [entry.pid, entry]));
-  const targets = new Map<number, ProcessEntry>();
+  const browsers = new Map<number, ProcessEntry>();
+  const others: ProcessEntry[] = [];
   // Leased browsers first: exact, whatever the browser did since.
   for (const pid of leasedPids(scratch)) {
     const entry = byPid.get(pid);
-    if (entry && isBrowser(entry.executable)) targets.set(pid, entry);
+    if (entry && isBrowser(entry.executable)) browsers.set(pid, entry);
   }
   for (const entry of entries) {
-    if (!entry.marked || !isBrowser(entry.executable)) continue;
+    if (!entry.marked) continue;
+    if (!isBrowser(entry.executable)) {
+      others.push(entry);
+      continue;
+    }
     let top = entry;
     for (;;) {
       const parent = byPid.get(top.ppid);
       if (!parent || !isBrowser(parent.executable)) break;
       top = parent;
     }
-    targets.set(top.pid, top);
-    targets.set(entry.pid, entry);
+    browsers.set(top.pid, top);
+    browsers.set(entry.pid, entry);
   }
-  if (scratch) writeFileSync(leaseFile(scratch), "");
-  const reclaimed: string[] = [];
-  for (const target of targets.values()) {
+  return { browsers, others };
+}
+
+function closeProcesses(targets: Iterable<ProcessEntry>): string[] {
+  const closed: string[] = [];
+  for (const target of targets) {
     try {
       process.kill(target.pid, "SIGKILL");
-      reclaimed.push(basename(target.executable));
+      closed.push(basename(target.executable));
     } catch {
       // Already exited.
     }
   }
-  return reclaimed;
+  return closed;
+}
+
+/** Empties the lease file; a scratch directory removed from outside has none. */
+function clearLeases(scratch: string): void {
+  try {
+    writeFileSync(leaseFile(scratch), "");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR")
+      console.warn(
+        `Could not clear the browser leases in ${scratch}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+  }
+}
+
+/**
+ * Close the browsers a session started and left running (see
+ * sessionProcesses); the whole browser is closed from its topmost process.
+ * The agent runtime and anything else the session started are left alone.
+ * Returns the executables that were closed.
+ */
+export function reclaimSessionResources(sessionId: string): string[] {
+  if (!sessionId) return [];
+  const scratch = knownSessionScratchDirectory(sessionId);
+  const { browsers } = sessionProcesses(sessionId, scratch);
+  if (scratch) {
+    clearLeases(scratch);
+    // An input ended: the session used its directory until now.
+    recordScratchUse(sessionId, scratch);
+  }
+  return closeProcesses(browsers.values());
+}
+
+export interface SessionScratchSweep {
+  /** Whether the session still runs an input or background work here. */
+  busy?: (sessionId: string) => boolean;
+  /** How long a directory outlives its session's last use. */
+  idleMs?: number;
+  now?: () => number;
+}
+
+export interface RemovedSessionScratch {
+  sessionId: string;
+  directory: string;
+  /** Browsers of the session that were closed first. */
+  closed: string[];
+}
+
+/** How long closed browsers get to exit before a directory is removed. */
+const browserExitWaitMs = 3000;
+
+/**
+ * Removes the scratch directories this worker recorded, in this process or
+ * an earlier one, for sessions unused for longer than idleMs: the session's
+ * browsers are closed first, then the directory and its record go. A session
+ * still running an input, background work or any other process of its own
+ * keeps its directory, as does one used again meanwhile.
+ */
+export async function sweepSessionScratchDirectories(
+  options: SessionScratchSweep = {},
+): Promise<RemovedSessionScratch[]> {
+  const idleMs = options.idleMs ?? sessionScratchIdleMs();
+  const now = options.now ?? Date.now;
+  const idleRecord = (sessionId: string): ScratchRecord | undefined => {
+    const record = readScratchRecord(sessionId);
+    if (!record || options.busy?.(sessionId)) return undefined;
+    const lastUsed = Math.max(
+      Date.parse(record.lastUsedAt) || 0,
+      scratchDirectories.get(sessionId)?.recordedAt ?? 0,
+    );
+    return now() - lastUsed > idleMs ? record : undefined;
+  };
+  const recordsDirectory = scratchRecordsDirectory();
+  let names: string[];
+  try {
+    names = readdirSync(recordsDirectory).filter((name) =>
+      /^[^.].*\.json$/.test(name),
+    );
+  } catch {
+    return [];
+  }
+  const removed: RemovedSessionScratch[] = [];
+  for (const name of names) {
+    const sessionId = parseScratchRecord(
+      join(recordsDirectory, name),
+    )?.sessionId;
+    const record = sessionId ? idleRecord(sessionId) : undefined;
+    if (!sessionId || !record) continue;
+    const { directory } = record;
+    try {
+      let processes = sessionProcesses(sessionId, directory);
+      const closed = closeProcesses(processes.browsers.values());
+      const deadline = Date.now() + browserExitWaitMs;
+      while (processes.browsers.size > 0 && Date.now() < deadline) {
+        await new Promise((done) => setTimeout(done, 100));
+        processes = sessionProcesses(sessionId, directory);
+      }
+      // Decided with nothing awaited before the removal.
+      if (
+        processes.browsers.size > 0 ||
+        processes.others.length > 0 ||
+        idleRecord(sessionId)?.directory !== directory
+      )
+        continue;
+      if (scratchName.test(basename(directory)) && isOwnDirectory(directory))
+        rmSync(directory, { recursive: true, force: true });
+      else if (existsSync(directory))
+        console.warn(
+          `Not removing ${directory} of session ${sessionId}: it is not a scratch directory of this user.`,
+        );
+      rmSync(scratchRecordPath(sessionId), { force: true });
+      scratchDirectories.delete(sessionId);
+      removed.push({ sessionId, directory, closed });
+    } catch (error) {
+      console.warn(
+        `Could not remove the scratch directory ${directory} of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return removed;
+}
+
+let scratchSweepTimer: NodeJS.Timeout | undefined;
+
+/**
+ * Sweeps this worker's idle scratch directories now, including those its
+ * earlier processes left, and then regularly.
+ */
+export function startSessionScratchSweeps(
+  busy: (sessionId: string) => boolean,
+): void {
+  if (scratchSweepTimer) return;
+  const idleMs = sessionScratchIdleMs();
+  let sweeping = false;
+  const sweep = (): void => {
+    if (sweeping) return;
+    sweeping = true;
+    sweepSessionScratchDirectories({ busy, idleMs })
+      .then((removed) => {
+        for (const { sessionId, directory, closed } of removed)
+          console.log(
+            `Removed the scratch directory ${directory} of idle session ${sessionId}${closed.length ? `; closed ${closed.join(", ")}` : ""}`,
+          );
+      })
+      .catch((error) =>
+        console.warn(
+          `Sweeping session scratch directories failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+      .finally(() => {
+        sweeping = false;
+      });
+  };
+  sweep();
+  scratchSweepTimer = setInterval(
+    sweep,
+    Math.min(60 * 60_000, Math.max(10_000, idleMs / 4)),
+  );
+  scratchSweepTimer.unref();
 }

@@ -141,10 +141,9 @@ test("foundry mcp forwards stdio JSON-RPC to the server's tools with the session
   assert.ok(
     requests.every((request) => request.authorization === "Bearer tok_parent"),
   );
-  assert.deepEqual(requests[2].body.params.arguments, {
-    parentOnly: true,
-    workspaceId: "ws_1",
-  });
+  // A session token already means the session's workspace: the bridge
+  // passes the call through as the client sent it.
+  assert.deepEqual(requests[2].body.params.arguments, { parentOnly: true });
 });
 
 test("foundry mcp without a session token authenticates as the paired device", async (t) => {
@@ -162,16 +161,28 @@ test("foundry mcp without a session token authenticates as the paired device", a
   withEnv(t, {
     FOUNDRY_SERVER_URL: undefined,
     FOUNDRY_SESSION_TOKEN: undefined,
-    FOUNDRY_WORKSPACE_ID: undefined,
+    FOUNDRY_WORKSPACE_ID: "ws_device",
     FOUNDRY_STATE_ROOT: state,
   });
 
   const output = new CollectWriter();
   await runMcpServer(
-    jsonLines([{ jsonrpc: "2.0", id: 1, method: "tools/list" }]),
+    jsonLines([
+      { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "list_sessions", arguments: {} },
+      },
+    ]),
     output,
   );
   assert.equal(output.messages()[0].id, 1);
   assert.equal(requests[0].authorization, undefined);
   assert.equal(requests[0].device, "dev_secret");
+  // A device names no workspace by itself: the bridge adds the configured one.
+  assert.deepEqual(requests[1].body.params.arguments, {
+    workspaceId: "ws_device",
+  });
 });

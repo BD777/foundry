@@ -4,10 +4,12 @@ import { claudeRequestUsage, claudeSubagentUsage } from "./turn-usage.js";
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { sessionArtifactDirectories } from "./session-artifacts.js";
-import type {
-  AgentSubagentSummary,
-  AgentSubagentTranscript,
-  AgentSubagentTranscriptMessage,
+import {
+  subagentResponseFingerprint,
+  type AgentSubagentDigest,
+  type AgentSubagentSummary,
+  type AgentSubagentTranscript,
+  type AgentSubagentTranscriptMessage,
 } from "@bd777/foundry-protocol";
 
 const maxToolResultCharacters = 6000;
@@ -189,6 +191,21 @@ export async function listAgentSubagents(
           : {}),
       };
     });
+}
+
+/** The subagent as a chat lists it: answers as fingerprints, no prompt. */
+export function agentSubagentDigest({
+  prompt: _prompt,
+  responseTexts,
+  ...subagent
+}: AgentSubagentSummary): AgentSubagentDigest {
+  const fingerprints = responseTexts
+    .filter((text) => text.trim() !== "")
+    .map(subagentResponseFingerprint);
+  return {
+    ...subagent,
+    responseFingerprints: [...new Set(fingerprints)],
+  };
 }
 
 export async function readAgentSubagentTranscript(

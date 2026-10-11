@@ -259,7 +259,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.loginLimiter.succeed(key)
-	s.events.Reauthorize(account.ID)
+	s.stream.Reauthorize(account.ID)
 	if s.startSession(w, r, *account) {
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -297,7 +297,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeAccountError(w, err)
 		return
 	}
-	s.events.Reauthorize(user.ID)
+	s.stream.Reauthorize(user.ID)
 	if !user.Active() {
 		s.cancelAllSessionsStartedBy(r.Context(), user.ID)
 	}

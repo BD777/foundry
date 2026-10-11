@@ -43,7 +43,7 @@ func TestSkillVersionLifecycle(t *testing.T) {
 	first := publish(source, zip1, store.SkillPromotionResolution{Action: "create"})
 	scan := func(s store.DeviceSkill) store.DeviceSkill {
 		t.Helper()
-		if err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: s.DeviceID, Skills: []store.DeviceSkill{s}}); err != nil {
+		if _, err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: s.DeviceID, Skills: []store.DeviceSkill{s}}); err != nil {
 			t.Fatal(err)
 		}
 		items, err := db.ListDeviceSkills(ctx, s.DeviceID)

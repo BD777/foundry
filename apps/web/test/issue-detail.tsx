@@ -356,7 +356,6 @@ function Fixture() {
           callbacks={{
             onDraftFromSource: setNotice,
             onNotice: setNotice,
-            onRefresh: () => {},
           }}
         />
       )}

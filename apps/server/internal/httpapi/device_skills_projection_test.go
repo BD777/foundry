@@ -18,9 +18,9 @@ func TestFoundryDataLeavesDeviceSkillListsOut(t *testing.T) {
 	server := NewServer(db)
 	ctx := context.Background()
 	const description = "a long description only the skill list carries"
-	scan := func() {
+	scan := func(description string) {
 		t.Helper()
-		if err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_mbp", Skills: []store.DeviceSkill{
+		if _, err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_mbp", Skills: []store.DeviceSkill{
 			{Root: "/skills", DirName: "alpha", Name: "alpha", Description: description},
 		}}); err != nil {
 			t.Fatalf("scan: %v", err)
@@ -56,7 +56,7 @@ func TestFoundryDataLeavesDeviceSkillListsOut(t *testing.T) {
 		return ""
 	}
 
-	scan()
+	scan(description)
 	first := skillsVersion()
 	if again := skillsVersion(); again != first {
 		t.Fatalf("skillsVersion moved without a change: %q -> %q", first, again)
@@ -73,8 +73,12 @@ func TestFoundryDataLeavesDeviceSkillListsOut(t *testing.T) {
 		t.Fatalf("device skills = %+v", listed.Skills)
 	}
 
-	scan()
+	scan(description)
+	if next := skillsVersion(); next != first {
+		t.Fatalf("skillsVersion moved after a scan that found the same skills: %q -> %q", first, next)
+	}
+	scan("a changed description")
 	if next := skillsVersion(); next == first {
-		t.Fatalf("skillsVersion did not move after a scan: %q", next)
+		t.Fatalf("skillsVersion did not move after a scan that changed a skill: %q", next)
 	}
 }

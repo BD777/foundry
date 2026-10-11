@@ -41,13 +41,13 @@ const commandFinished = (id, taskId) => ({
   ...subtask(id, "Subtask completed", taskId),
   metadata: { taskId },
 });
-const summary = (taskId, status = "running", responseTexts = []) => ({
+const summary = (taskId, status = "running", responseFingerprints = []) => ({
   sessionId: "s",
   taskId,
   toolUseId: `tool_${taskId}`,
   title: taskId,
   status,
-  responseTexts,
+  responseFingerprints,
 });
 
 test("progress reports never change what the subagent list depends on", () => {
@@ -452,7 +452,10 @@ test("stream open: a session's list is read once, then updates keep it current",
         stream.push({ subagent: summary("a", "completed", ["answer of a"]) }),
       );
       await elapse(subagentRefreshIntervalMs);
-      assert.ok(shown.current.responseTexts.has("answer of a"), "an end");
+      assert.ok(
+        shown.current.responseFingerprints.has("answer of a"),
+        "an end",
+      );
       await apply(() => stream.push({ subagent: summary("a") }));
       assert.equal(shown.current.bySession.s[0].status, "completed");
       events.push(commandStarted("c1", "bash"), commandFinished("c2", "bash"));
@@ -729,7 +732,7 @@ test("stream down: one subagent ending while another runs is fetched at once, pa
     await show();
     await elapse(0);
     assert.equal(calls.length, 1, "an end: fetched at once");
-    assert.ok(shown.current.responseTexts.has("answer of a"));
+    assert.ok(shown.current.responseFingerprints.has("answer of a"));
     events.push(progress("e4", "b"));
     await show();
     await elapse(subagentRefreshIntervalMs);

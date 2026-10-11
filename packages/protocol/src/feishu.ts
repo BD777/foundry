@@ -1,7 +1,7 @@
 export type FeishuBotStatus =
   "unconfigured" | "connecting" | "connected" | "error";
 
-export interface WorkspaceFeishuConfig {
+export interface WorkspaceFeishuBot {
   workspaceId: string;
   appId: string;
   hasAppSecret: boolean;
@@ -15,7 +15,7 @@ export interface WorkspaceFeishuConfig {
   updatedAt?: string;
 }
 
-export interface SaveWorkspaceFeishuConfigInput {
+export interface SaveWorkspaceFeishuBotInput {
   workspaceId: string;
   appId: string;
   appSecret?: string;
@@ -25,8 +25,4 @@ export interface FeishuPairingCodeResult {
   workspaceId: string;
   pairingCode: string;
   pairingCodeExpiresAt: string;
-}
-
-export interface UnbindFeishuGroupInput {
-  workspaceId: string;
 }

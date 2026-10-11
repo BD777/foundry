@@ -503,6 +503,7 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "sandbox.test.mjs",
   "session-runtime.test.mjs",
   "session-workspace.test.mjs",
+  "verification-session.test.mjs",
 ]);
 
 function runTests() {

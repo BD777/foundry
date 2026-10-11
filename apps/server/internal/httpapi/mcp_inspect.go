@@ -358,6 +358,14 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 		}
 	}
 	if workspaceID != "" {
+		// The title the person sees: a rename or an AI title wins.
+		if titles, err := s.store.ListChatTitles(ctx, workspaceID); err == nil {
+			for _, title := range titles {
+				if title.ChatID == digest.ID && strings.TrimSpace(title.Title) != "" {
+					digest.Title = title.Title
+				}
+			}
+		}
 		digest.Workspace = &inspectPlace{ID: workspaceID}
 		if workspace, err := s.store.GetWorkspace(ctx, workspaceID); err == nil {
 			digest.Workspace.Name = workspace.Name

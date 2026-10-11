@@ -3,6 +3,7 @@ import {
   type ModelRequestUsage,
   type AgentSession,
   type AgentSubagentTranscript,
+  type SessionFileRecord,
 } from "@bd777/foundry-protocol";
 import {
   agentSessionDisplayEvents,
@@ -10,6 +11,7 @@ import {
   shouldDisplayAgentSessionEvent,
 } from "../../lib/agent-session-events";
 import { shouldDisplayResponseEvent } from "./subagent-response-filter";
+import { settledFileReferences } from "./pending-file-references";
 import type { ChatViewMessage } from "./chat-types";
 import type { TranscriptEntry } from "./transcript-projection";
 import { i18n } from "../../i18n";
@@ -110,7 +112,7 @@ const processEntryKinds = new Set<TranscriptEntry["kind"]>([
 /** Translate the managed event envelope; new events can supply typed messages. */
 export function sessionTranscriptEntries(
   session: AgentSession,
-  suppressed: ReadonlySet<string> = new Set(),
+  suppressedFingerprints: ReadonlySet<string> = new Set(),
 ): TranscriptEntry[] {
   const events = agentSessionDisplayEvents(session).filter(
     (event) =>
@@ -134,6 +136,8 @@ export function sessionTranscriptEntries(
   // Files are counted per turn (input) and shown on the turn's last answer.
   let turnId = session.id;
   const turnFiles = new Map<string, Set<string>>();
+  // Each recorded path's latest op: a pending link settles on its file.
+  const recordedFiles = new Map<string, SessionFileRecord["op"]>();
   const lastAnswer = new Map<string, TranscriptEntry>();
   const flushResponse = () => {
     if (response) {
@@ -149,6 +153,7 @@ export function sessionTranscriptEntries(
       const paths = turnFiles.get(id) ?? new Set<string>();
       paths.add(sessionFile.path);
       turnFiles.set(id, paths);
+      recordedFiles.set(sessionFile.path, sessionFile.op);
       continue;
     }
     if (event.label === sessionInputEventLabel && event.message?.id) {
@@ -161,7 +166,14 @@ export function sessionTranscriptEntries(
     const id = `agent-session:${session.id}:${event.message?.id ?? event.id}`;
     if (isResponse) {
       const value = event.message?.text ?? event.detail;
-      if (shouldDisplayResponseEvent(event.id, value, terminalId, suppressed)) {
+      if (
+        shouldDisplayResponseEvent(
+          event,
+          value,
+          terminalId,
+          suppressedFingerprints,
+        )
+      ) {
         // Legacy snapshots update a contiguous answer. Typed identities allow
         // consecutive independent answers without guessing from their text.
         if (event.message && response && response.id !== id) flushResponse();
@@ -180,9 +192,10 @@ export function sessionTranscriptEntries(
     const timerFire = event.metadata?.timerFire;
     if (timerFire) {
       flushResponse();
-      const firedAt = timerFire.completedAt
-        ? new Date(timerFire.completedAt)
-        : undefined;
+      // A timer's prompt the device sent to resume the session is an input:
+      // it fired when it was sent.
+      const firedAtText = timerFire.completedAt || timerFire.startedAt;
+      const firedAt = firedAtText ? new Date(firedAtText) : undefined;
       const when =
         firedAt && !Number.isNaN(firedAt.getTime())
           ? firedAt.toLocaleString(i18n.language, {
@@ -259,6 +272,13 @@ export function sessionTranscriptEntries(
     }
   }
   flushResponse();
+  for (const entry of entries)
+    if (entry.fileReferences)
+      entry.fileReferences = settledFileReferences(
+        entry.fileReferences,
+        recordedFiles,
+        session.id,
+      );
   for (const [id, paths] of turnFiles) {
     const answer = lastAnswer.get(id);
     if (answer) answer.turnFiles = { turnId: id, count: paths.size };

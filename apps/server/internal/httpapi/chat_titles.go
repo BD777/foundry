@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,6 +9,25 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
+
+// Browsers read a workspace's chat titles (GET /api/chat-titles) and chat
+// layout (GET /api/chat-layout) once, then keep them from the chat list's
+// events (see chatListEvents).
+
+// writeCacheableResult answers a list the browser keeps current from
+// events with an ETag: reading it again unchanged costs no body.
+func writeCacheableResult(w http.ResponseWriter, r *http.Request, payload any, err error) {
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	writeCacheableJSON(w, r, body)
+}
 
 func (s *Server) handleListChatTitles(w http.ResponseWriter, r *http.Request) {
 	workspaceID := requestedWorkspace(actorFromContext(r.Context()), r.URL.Query().Get("workspaceId"))
@@ -43,7 +63,7 @@ func (s *Server) handleRenameChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err == nil {
-		s.publishChatTitlesChanged(input.WorkspaceID, result.ChatID)
+		s.chats.announceTitles(input.WorkspaceID, result.ChatID)
 	}
 	writeResult(w, result, err)
 }

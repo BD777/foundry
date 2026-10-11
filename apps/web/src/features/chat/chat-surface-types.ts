@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type {
   AgentModelOption,
+  AgentSessionSchedule,
   ChatAttachment,
   ClaudeEffort,
   ClaudePermissionMode,
@@ -87,6 +88,8 @@ export interface ChatSurfaceProps {
    * its agent's commands or subagents keep working.
    */
   backgroundWork?: ChatRunningBackgroundWork;
+  /** Timers the agent holds: the idle chat wakes when the next is due. */
+  schedule?: AgentSessionSchedule;
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;

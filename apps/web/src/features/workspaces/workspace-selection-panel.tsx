@@ -45,7 +45,10 @@ interface Props {
     workspace: WorkspaceProjection,
     options?: { stayOnLocation?: boolean },
   ) => Promise<boolean>;
+  /** The person may be about to switch to the workspace (hover, focus). */
   onPrepare: (workspace: WorkspaceProjection) => void;
+  /** They moved on (the pointer left, the focus moved). */
+  onPrepareEnd: () => void;
   /** Opens the device's own page: system, accounts, skills, settings. */
   onOpenDevice: (deviceId: string) => void;
   /** Reloads data after a folder was added, renamed or removed. */
@@ -327,9 +330,11 @@ export function WorkspaceSelectionPanel(props: Props) {
                   onMouseEnter={() => {
                     if (!removed) props.onPrepare(workspace);
                   }}
+                  onMouseLeave={props.onPrepareEnd}
                   onFocus={() => {
                     if (!removed) props.onPrepare(workspace);
                   }}
+                  onBlur={props.onPrepareEnd}
                 >
                   <Button
                     variant="bare"

@@ -82,7 +82,7 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 // (foundry_data_changed; none names any). workspaceID scopes it to one
 // workspace's data; "" is what every workspace's view shows.
 func (s *Server) projectionsChanged(workspaceID string, resources ...string) {
-	s.events.dataChanged(workspaceID, resources...)
+	s.dataChanges.changed(workspaceID, resources...)
 }
 
 func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {

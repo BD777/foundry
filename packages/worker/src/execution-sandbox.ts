@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, copyFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { canonical } from "./execution-storage.js";
-import { foundryStatePath } from "./state-root.js";
+import {
+  isolatedAgentEnvironment,
+  skillSetsReadRoot,
+} from "./session/isolated-environment.js";
 import {
   isSandboxError,
   sandboxLaunch,
@@ -13,10 +14,9 @@ import type {
   WorkspaceRegistration,
 } from "./execution-types.js";
 
-/** The one private-state subdir an issue executor may read skill files from. */
-export function skillSetsReadRoot(): string {
-  return foundryStatePath("skill-sets");
-}
+// The environment every sandboxed agent session gets lives with the session
+// runtime; Issue code keeps importing it from here.
+export { isolatedAgentEnvironment, skillSetsReadRoot };
 
 /**
  * The sandbox of every process working in an Issue's candidate: the executor,
@@ -98,67 +98,5 @@ export function executorEnvironment(
     // An execution always runs inside Foundry's sandbox, so a worker running
     // as root says so truthfully; Claude Code then allows skipping prompts.
     ...(uid === 0 ? { IS_SANDBOX: "1" } : {}),
-  };
-}
-
-/**
- * The environment of an agent working for an Issue inside a sandbox: its
- * home, temporary space and native session records live in a private
- * scratch directory that holds a copy of the provider login, never in the
- * workspace. Foundry's own credentials are not passed on.
- */
-export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
-  const codexHome = resolve(scratch, "codex");
-  const claudeHome = resolve(scratch, "claude");
-  const temp = resolve(scratch, "tmp");
-  for (const directory of [codexHome, claudeHome, temp])
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-  // Provider authentication stays private and is never staged in the candidate.
-  for (const [source, target] of [
-    [
-      resolve(
-        process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
-        "auth.json",
-      ),
-      resolve(codexHome, "auth.json"),
-    ],
-    [
-      resolve(
-        process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
-        "config.toml",
-      ),
-      resolve(codexHome, "config.toml"),
-    ],
-    [
-      resolve(
-        process.env.CLAUDE_CONFIG_DIR ?? resolve(homedir(), ".claude"),
-        ".credentials.json",
-      ),
-      resolve(claudeHome, ".credentials.json"),
-    ],
-  ]) {
-    // The device's login is the source of truth, copied on every launch:
-    // providers rotate refresh tokens, and a copy kept from an earlier run
-    // (or one its CLI signed out after a failed refresh) never works again.
-    if (source && target && existsSync(source)) copyFileSync(source, target);
-  }
-  const inherited = { ...process.env };
-  for (const key of Object.keys(inherited)) {
-    if (/FOUNDRY.*(?:TOKEN|PAIRING|CONTROL|CREDENTIAL)/i.test(key))
-      delete inherited[key];
-  }
-  return {
-    ...inherited,
-    HOME: scratch,
-    CODEX_HOME: codexHome,
-    CLAUDE_CONFIG_DIR: claudeHome,
-    TMPDIR: temp,
-    CLAUDE_CODE_TMPDIR: temp,
-    TMP: temp,
-    TEMP: temp,
-    FOUNDRY_EXECUTION_SESSION_ROOT: resolve(scratch, "sessions"),
-    // The person's claude.ai connectors (mail, drive, calendar) are outside
-    // the Issue; an execution reaches only its candidate and Foundry's tools.
-    ENABLE_CLAUDEAI_MCP_SERVERS: "false",
   };
 }

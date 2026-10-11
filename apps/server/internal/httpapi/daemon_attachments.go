@@ -35,6 +35,9 @@ type wsAttachmentReadPayload struct {
 	Path        string `json:"path"`
 	Offset      int64  `json:"offset"`
 	MaxBytes    int64  `json:"maxBytes"`
+	// Scope "workspace" reads any regular file inside the workspace, not
+	// only an image among its attachments (DaemonCapabilityAttachmentFiles).
+	Scope string `json:"scope,omitempty"`
 }
 
 type wsAttachmentChunkReadPayload struct {
@@ -92,11 +95,23 @@ func (h *DaemonHub) attachmentWrite(ctx context.Context, workspace store.Workspa
 // ReadAttachmentImageChunk reads one chunk of an image attachment from the
 // workspace's device, which validates the path and the image type.
 func (h *DaemonHub) ReadAttachmentImageChunk(ctx context.Context, workspace store.WorkspaceProjection, path string, offset int64, maxBytes int64) (attachmentChunk, error) {
+	return h.readAttachmentChunk(ctx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxBytes})
+}
+
+// ReadWorkspaceFileChunk reads one chunk of any regular file inside the
+// workspace from its device, which keeps the path inside the workspace after
+// resolving links; MIMEType is set for an image only. It needs a worker with
+// DaemonCapabilityAttachmentFiles.
+func (h *DaemonHub) ReadWorkspaceFileChunk(ctx context.Context, workspace store.WorkspaceProjection, path string, offset int64, maxBytes int64) (attachmentChunk, error) {
+	return h.readAttachmentChunk(ctx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxBytes, Scope: "workspace"})
+}
+
+func (h *DaemonHub) readAttachmentChunk(ctx context.Context, workspace store.WorkspaceProjection, payload wsAttachmentReadPayload) (attachmentChunk, error) {
 	connection := h.connectionFor(workspace.DeviceID)
 	if connection == nil {
 		return attachmentChunk{}, ErrLocalDaemonNotConnected
 	}
-	raw, err := json.Marshal(wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxBytes})
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return attachmentChunk{}, err
 	}

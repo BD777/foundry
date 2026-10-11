@@ -446,6 +446,11 @@
   align-self: center;
 }
 
+/* Not written yet: still a link, quieter, its clock icon says why. */
+.fdy-chat-file-reference[data-pending="true"] {
+  color: var(--fdy-ink-muted);
+}
+
 .fdy-chat-turn-files {
   display: flex;
   width: fit-content;
@@ -692,6 +697,156 @@
   width: 28px;
   flex: none;
   justify-content: center;
+}
+
+/* The open session's status line: its context, the rest folded below. */
+.fdy-chat-status {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.fdy-chat-status-toggle.fdy-button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 6px;
+  border-radius: 10px;
+}
+
+.fdy-chat-status-toggle:focus-visible {
+  outline: 2px solid var(--fdy-brass-line);
+  outline-offset: 1px;
+}
+
+.fdy-chat-status-name {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fdy-chat-status-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-status-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-status-meter {
+  --fdy-chat-status-fill: var(--fdy-brass);
+  display: block;
+  width: calc(100% - 12px);
+  height: 5px;
+  margin: 0 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fdy-line);
+  appearance: none;
+}
+
+.fdy-chat-status-meter::-webkit-progress-bar {
+  background: var(--fdy-line);
+}
+
+.fdy-chat-status-meter::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--fdy-chat-status-fill);
+}
+
+.fdy-chat-status-meter::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--fdy-chat-status-fill);
+}
+
+.fdy-chat-status[data-level="high"] .fdy-chat-status-value,
+.fdy-chat-status-warning {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-chat-status[data-level="high"] .fdy-chat-status-meter {
+  --fdy-chat-status-fill: var(--fdy-warning-text);
+}
+
+.fdy-chat-status[data-level="full"] .fdy-chat-status-value,
+.fdy-chat-status[data-level="full"] .fdy-chat-status-warning {
+  color: var(--fdy-red);
+}
+
+.fdy-chat-status[data-level="full"] .fdy-chat-status-meter {
+  --fdy-chat-status-fill: var(--fdy-red);
+}
+
+.fdy-chat-status-warning {
+  margin: 0 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.fdy-chat-status-details {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fdy-chat-status-details > div {
+  display: grid;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  grid-template-columns: 86px minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.fdy-chat-status-details dt {
+  color: var(--fdy-ink-faint);
+  font-weight: 600;
+}
+
+.fdy-chat-status-details dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-status-details code {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-status-copy.fdy-button {
+  width: 24px;
+  height: 24px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-status-copy[data-copied="true"] {
+  color: var(--fdy-success-text);
 }
 
 .fdy-chat-timer-row .fdy-chat-context-row-copy em {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +21,22 @@ var backgroundTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // background tasks: its last 64 KB as plain text with secrets redacted, and
 // the redacted command line. Members only (the route): output and commands
 // can carry what the session worked on outside the workspace.
+//
+// ?after= continues an earlier read from the lineEnd it returned: the device
+// sends only what the log gained when it can. ?follow=1 asks the device to
+// tell when a running task's log grows (background_task_output_changed)
+// for a short while each read renews; the answer says whether it will.
 func (s *Server) handleReadBackgroundTaskOutput(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	sessionID := strings.TrimSpace(r.PathValue("id"))
 	taskID := strings.TrimSpace(r.PathValue("taskId"))
 	if sessionID == "" || !backgroundTaskID.MatchString(taskID) {
 		writeError(w, http.StatusBadRequest, "a session id and a background task id are required")
+		return
+	}
+	read, err := backgroundOutputReadFrom(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	session, err := s.store.GetAgentSessionSummary(r.Context(), sessionID)
@@ -44,7 +55,7 @@ func (s *Server) handleReadBackgroundTaskOutput(w http.ResponseWriter, r *http.R
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), deviceFileRequestTimeout)
 	defer cancel()
-	output, err := s.hub.ReadBackgroundTaskOutput(ctx, session, taskID)
+	output, err := s.hub.ReadBackgroundTaskOutput(ctx, session, taskID, read)
 	if writeDeviceRequestError(w, workspace, err) {
 		return
 	}
@@ -108,6 +119,27 @@ type wsBackgroundTaskRequestPayload struct {
 	WorkspaceID string `json:"workspaceId"`
 	SessionID   string `json:"sessionId"`
 	TaskID      string `json:"taskId"`
+	backgroundOutputRead
+}
+
+// backgroundOutputRead is how a log is read: continuing an earlier read
+// (After, the lineEnd it returned) and following the log while it grows.
+type backgroundOutputRead struct {
+	After  *int64 `json:"after,omitempty"`
+	Follow bool   `json:"follow,omitempty"`
+}
+
+func backgroundOutputReadFrom(r *http.Request) (backgroundOutputRead, error) {
+	query := r.URL.Query()
+	read := backgroundOutputRead{Follow: query.Get("follow") == "1"}
+	if raw := strings.TrimSpace(query.Get("after")); raw != "" {
+		after, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || after < 0 {
+			return read, errors.New("after must be an offset an earlier read returned")
+		}
+		read.After = &after
+	}
+	return read, nil
 }
 
 type wsBackgroundTaskOutputReadPayload struct {
@@ -121,12 +153,12 @@ type wsBackgroundTaskStoppedPayload struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func (h *DaemonHub) ReadBackgroundTaskOutput(ctx context.Context, session store.AgentSession, taskID string) (store.AgentBackgroundTaskOutput, error) {
+func (h *DaemonHub) ReadBackgroundTaskOutput(ctx context.Context, session store.AgentSession, taskID string, read backgroundOutputRead) (store.AgentBackgroundTaskOutput, error) {
 	connection := h.connectionFor(session.DeviceID)
 	if connection == nil {
 		return store.AgentBackgroundTaskOutput{}, store.ErrNotFound
 	}
-	payload, err := json.Marshal(wsBackgroundTaskRequestPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, TaskID: taskID})
+	payload, err := json.Marshal(wsBackgroundTaskRequestPayload{WorkspaceID: session.WorkspaceID, SessionID: session.ID, TaskID: taskID, backgroundOutputRead: read})
 	if err != nil {
 		return store.AgentBackgroundTaskOutput{}, err
 	}
@@ -156,5 +188,29 @@ func (h *DaemonHub) StopBackgroundTask(ctx context.Context, session store.AgentS
 	if value.Error != "" {
 		return backgroundTaskRefusal{value.Error}
 	}
+	return nil
+}
+
+type wsBackgroundTaskOutputChangedPayload struct {
+	SessionID string `json:"sessionId"`
+	TaskID    string `json:"taskId"`
+}
+
+// backgroundTaskOutputChanged is a device telling that a followed log of
+// one of its sessions changed. One of another device's is not told.
+func (c *daemonConnection) backgroundTaskOutputChanged(ctx context.Context, envelope wsEnvelope) error {
+	var payload wsBackgroundTaskOutputChangedPayload
+	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
+		return err
+	}
+	if !backgroundTaskID.MatchString(payload.TaskID) {
+		return nil
+	}
+	session, err := c.hub.store.GetAgentSessionSummary(ctx, payload.SessionID)
+	deviceID, _ := c.registrationSnapshot()
+	if err != nil || deviceID == "" || session.DeviceID != deviceID {
+		return nil
+	}
+	c.hub.sessions.backgroundTaskOutputChanged(session, payload.TaskID)
 	return nil
 }

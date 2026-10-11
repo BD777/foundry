@@ -6,39 +6,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
 
 type streamedForTest struct {
-	kind    string
+	kind    browserevent.Type
 	payload json.RawMessage
 }
 
 // drainForTest returns the events a subscriber holds, in order.
-func drainForTest(t *testing.T, viewer *eventSubscription) []streamedForTest {
+func drainForTest(t *testing.T, viewer *eventstream.Subscription) []streamedForTest {
 	t.Helper()
 	events := []streamedForTest{}
-	for len(viewer.ch) > 0 {
-		frame := <-viewer.ch
-		data := ""
-		for _, line := range strings.Split(string(frame), "\n") {
-			if value, ok := strings.CutPrefix(line, "data: "); ok {
-				data = value
-			}
-		}
-		var envelope struct {
-			Type    string          `json:"type"`
-			Payload json.RawMessage `json:"payload"`
-		}
-		if err := json.Unmarshal([]byte(data), &envelope); err != nil {
-			t.Fatalf("frame %q: %v", frame, err)
-		}
-		events = append(events, streamedForTest{envelope.Type, envelope.Payload})
+	for len(viewer.C) > 0 {
+		events = append(events, decodeStreamedForTest(t, <-viewer.C))
 	}
 	return events
 }
@@ -49,34 +38,34 @@ func chatListEventsForTest(t *testing.T, events []streamedForTest) []string {
 	t.Helper()
 	found := []string{}
 	for _, event := range events {
-		if event.kind != chatTitlesChangedEvent && event.kind != chatLayoutChangedEvent {
+		if event.kind != browserevent.ChatTitlesChanged && event.kind != browserevent.ChatLayoutChanged {
 			continue
 		}
 		var payload map[string]any
 		if err := json.Unmarshal(event.payload, &payload); err != nil || payload["workspaceId"] == nil {
 			t.Fatalf("%s payload = %s, want {\"workspaceId\": …}", event.kind, event.payload)
 		}
-		allowed := map[string]bool{"workspaceId": true, "titles": event.kind == chatTitlesChangedEvent,
-			"removed": event.kind == chatTitlesChangedEvent, "layout": event.kind == chatLayoutChangedEvent}
+		allowed := map[string]bool{"workspaceId": true, "titles": event.kind == browserevent.ChatTitlesChanged,
+			"removed": event.kind == browserevent.ChatTitlesChanged, "layout": event.kind == browserevent.ChatLayoutChanged}
 		for key := range payload {
 			if !allowed[key] {
 				t.Fatalf("%s payload = %s: unexpected %q", event.kind, event.payload, key)
 			}
 		}
-		found = append(found, event.kind+" "+payload["workspaceId"].(string))
+		found = append(found, string(event.kind)+" "+payload["workspaceId"].(string))
 	}
 	return found
 }
 
 // titlesChangesForTest decodes the chat_titles_changed payloads.
-func titlesChangesForTest(t *testing.T, events []streamedForTest) []chatTitlesChange {
+func titlesChangesForTest(t *testing.T, events []streamedForTest) []browserevent.ChatTitlesChangedPayload {
 	t.Helper()
-	found := []chatTitlesChange{}
+	found := []browserevent.ChatTitlesChangedPayload{}
 	for _, event := range events {
-		if event.kind != chatTitlesChangedEvent {
+		if event.kind != browserevent.ChatTitlesChanged {
 			continue
 		}
-		var change chatTitlesChange
+		var change browserevent.ChatTitlesChangedPayload
 		if err := json.Unmarshal(event.payload, &change); err != nil {
 			t.Fatal(err)
 		}
@@ -86,14 +75,14 @@ func titlesChangesForTest(t *testing.T, events []streamedForTest) []chatTitlesCh
 }
 
 // layoutChangesForTest decodes the chat_layout_changed payloads.
-func layoutChangesForTest(t *testing.T, events []streamedForTest) []chatLayoutChange {
+func layoutChangesForTest(t *testing.T, events []streamedForTest) []browserevent.ChatLayoutChangedPayload {
 	t.Helper()
-	found := []chatLayoutChange{}
+	found := []browserevent.ChatLayoutChangedPayload{}
 	for _, event := range events {
-		if event.kind != chatLayoutChangedEvent {
+		if event.kind != browserevent.ChatLayoutChanged {
 			continue
 		}
-		var change chatLayoutChange
+		var change browserevent.ChatLayoutChangedPayload
 		if err := json.Unmarshal(event.payload, &change); err != nil {
 			t.Fatal(err)
 		}
@@ -150,7 +139,7 @@ func TestChatTitleAndLayoutChangesAreAnnounced(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	expect := func(want ...string) {
 		t.Helper()
 		if want == nil {
@@ -252,7 +241,7 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	announced := func(want func(store.ChatTitle) bool) {
 		t.Helper()
 		changes := titlesChangesForTest(t, drainForTest(t, viewer))
@@ -261,7 +250,7 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 			t.Fatalf("announced %+v, listed %+v", changes, listed)
 		}
 	}
-	server.events.Publish("agent_session_created", job)
+	server.sessions.changed(ctx, sessionCreated, job)
 	announced(func(title store.ChatTitle) bool {
 		return title.GenerationSessionID == job.ID && title.GenerationStatus == "queued"
 	})
@@ -269,7 +258,7 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.events.Publish("agent_session_completed", completed)
+	server.sessions.changed(ctx, sessionCompleted, completed)
 	announced(func(title store.ChatTitle) bool {
 		return title.Title == "Named by the job" && title.GenerationSessionID == ""
 	})
@@ -280,15 +269,15 @@ func TestChatTitleJobEventsCarryTheChatsTitle(t *testing.T) {
 // job and transcript events are not.
 func TestChatTitleJobEventsAnnounceTitles(t *testing.T) {
 	server := NewServer(newTestStore(t))
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	naming := store.AgentSession{ID: "sess_naming", WorkspaceID: "ws_names", Source: "naming", Status: "queued"}
-	for _, kind := range []string{"agent_session_created", "agent_session_started", "agent_session_completed"} {
-		server.events.Publish(kind, naming)
+	ctx := context.Background()
+	for _, change := range []sessionChange{sessionCreated, sessionStarted, sessionCompleted, sessionCompleted} {
+		server.sessions.changed(ctx, change, naming)
 	}
-	server.events.Publish("agent_session_completed", &naming)
-	server.events.Publish("agent_session_completed", store.AgentSession{ID: "sess_group", WorkspaceID: "ws_names", Source: "naming", GroupNameTarget: "g"})
-	server.events.Publish("agent_session_completed", store.AgentSession{ID: "sess_chat", WorkspaceID: "ws_names", Source: "chat"})
-	server.events.PublishIn("ws_names", sessionEventStreamType, store.AgentSessionEvent{ID: "evt", SessionID: "sess_naming"})
+	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_group", WorkspaceID: "ws_names", Source: "naming", GroupNameTarget: "g"})
+	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_chat", WorkspaceID: "ws_names", Source: "chat"})
+	server.sessions.recorded(ctx, "ws_names", store.AgentSessionEvent{ID: "evt", SessionID: "sess_naming"})
 	got := chatListEventsForTest(t, drainForTest(t, viewer))
 	want := []string{"chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names"}
 	if !reflect.DeepEqual(got, want) {
@@ -308,7 +297,7 @@ func TestGroupNamingAnnouncesItsWorkspaceLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	server.titles.SessionCompleted(ctx, store.AgentSession{ID: "sess_group", WorkspaceID: "ws_group", Source: "naming", GroupNameTarget: "g",
 		Status: "completed", Response: `{"title":"Billing"}`})
 	events := drainForTest(t, viewer)
@@ -326,7 +315,7 @@ func TestGroupNamingAnnouncesItsWorkspaceLayout(t *testing.T) {
 
 func TestCreatedSessionAnnouncesItsChatListChanges(t *testing.T) {
 	server := NewServer(newTestStore(t))
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	for _, test := range []struct {
 		session store.AgentSession
 		want    []string
@@ -336,7 +325,7 @@ func TestCreatedSessionAnnouncesItsChatListChanges(t *testing.T) {
 		{store.AgentSession{WorkspaceID: "ws_new", ParentSessionID: "sess_parent", IssueID: "iss_1"}, []string{}},
 		{store.AgentSession{WorkspaceID: "ws_new", AdoptedChatID: "native_chat"}, []string{"chat_titles_changed ws_new", "chat_layout_changed ws_new"}},
 	} {
-		server.publishCreatedSessionChatList(test.session)
+		server.chats.sessionCreated(test.session)
 		if got := chatListEventsForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, test.want) {
 			t.Fatalf("%+v: %v, want %v", test.session, got, test.want)
 		}
@@ -348,7 +337,7 @@ func dataChangesForTest(t *testing.T, events []streamedForTest) []string {
 	t.Helper()
 	found := []string{}
 	for _, event := range events {
-		if event.kind != foundryDataChangedEvent {
+		if event.kind != browserevent.FoundryDataChanged {
 			continue
 		}
 		var payload map[string]any
@@ -365,9 +354,29 @@ func dataChangesForTest(t *testing.T, events []streamedForTest) []string {
 	return found
 }
 
+// sessionEndsForTest keeps the agent_session_created and
+// agent_session_completed events, as "type id status".
+func sessionEndsForTest(t *testing.T, events []streamedForTest) []string {
+	t.Helper()
+	found := []string{}
+	for _, event := range events {
+		if event.kind != browserevent.AgentSessionCreated && event.kind != browserevent.AgentSessionCompleted {
+			continue
+		}
+		var session store.AgentSession
+		if err := json.Unmarshal(event.payload, &session); err != nil {
+			t.Fatal(err)
+		}
+		found = append(found, string(event.kind)+" "+session.ID+" "+session.Status)
+	}
+	return found
+}
+
 // A child an agent starts joins its parent's layout group, which is
-// announced; when its device takes no more messages, its failure (which has
-// no session event on this path) is announced as a data change.
+// announced; when its device takes no more messages, its failure is told
+// like any other end (agent_session_completed, which invalidates cached
+// snapshots), and what reacts to an ended session is told it. It used to be
+// announced only as a data change, which nothing on the server reacts to.
 func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	db, parent := lineageFixture(t)
 	token, err := db.(interface {
@@ -381,7 +390,10 @@ func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	stalled := newDaemonConnection(server.hub, nil)
 	stalled.send = make(chan wsEnvelope)
 	server.hub.connections["dev_lineage"] = stalled
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
+	observer := &sessionObserverForTest{}
+	sessionEventsForTest(server).observe(observer)
+	revision := server.stream.Revision()
 	request := httptest.NewRequest(http.MethodPost, "/api/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_session","arguments":{"prompt":"child"}}}`))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+token)
@@ -394,30 +406,39 @@ func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	if got := chatListEventsForTest(t, events); !reflect.DeepEqual(got, []string{"chat_layout_changed ws_lineage"}) {
 		t.Fatalf("chat list events = %v", got)
 	}
-	if got := dataChangesForTest(t, events); !reflect.DeepEqual(got, []string{"ws_lineage"}) {
-		t.Fatalf("data changes = %v, want the failed child's workspace", got)
+	if got := dataChangesForTest(t, events); len(got) != 0 {
+		t.Fatalf("data changes = %v, want the failure told as the child's end", got)
+	}
+	// The child is told first; the naming of the group it opened runs
+	// alongside, and its job may be told too.
+	ends := sessionEndsForTest(t, events)
+	if len(ends) == 0 || !strings.HasPrefix(ends[0], "agent_session_created sess_") {
+		t.Fatalf("session events = %v, want the child created first", ends)
+	}
+	failed := "agent_session_completed " + strings.Fields(ends[0])[1] + " failed"
+	if !slices.Contains(ends, failed) {
+		t.Fatalf("session events = %v, want %q", ends, failed)
+	}
+	if told := observer.told(failed); len(told) != 1 {
+		t.Fatalf("observers were told %v, want the child's failure", observer.told("agent_session_completed"))
+	}
+	if server.stream.Revision() == revision {
+		t.Fatal("the failure kept cached snapshots")
 	}
 }
 
 // The chat list events reach exactly the streams that may view the workspace.
 func TestChatListEventsFollowWorkspaceAccess(t *testing.T) {
-	hub := newBrowserEventHub()
-	subscribe := func(subscription *eventSubscription) *eventSubscription {
-		subscription.ch, subscription.ended = make(chan []byte, 8), make(chan struct{})
-		hub.mu.Lock()
-		hub.subscribers[subscription] = struct{}{}
-		hub.mu.Unlock()
-		return subscription
-	}
-	member := subscribe(&eventSubscription{scope: &accessScope{roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}})
-	outsider := subscribe(&eventSubscription{scope: &accessScope{roles: map[string]string{"ws_b": store.WorkspaceRoleOwner}}})
-	agent := subscribe(&eventSubscription{workspace: "ws_a"})
-	hub.Publish(chatTitlesChangedEvent, chatListChange{WorkspaceID: "ws_a"})
-	hub.Publish(chatLayoutChangedEvent, chatListChange{WorkspaceID: "ws_a"})
-	hub.Publish(chatTitlesChangedEvent, chatTitlesChange{WorkspaceID: "ws_a", Titles: []store.ChatTitle{{ChatID: "c", Title: "Secret"}}, Removed: []string{"d"}})
-	hub.Publish(chatLayoutChangedEvent, chatLayoutChange{WorkspaceID: "ws_a", Layout: &store.ChatLayout{Revision: 3, Groups: []store.ChatLayoutGroup{{ID: "g", Name: "Secret"}}}})
-	if len(member.ch) != 4 || len(agent.ch) != 4 || len(outsider.ch) != 0 {
-		t.Fatalf("delivered member %d, agent %d, outsider %d; want 4, 4, 0", len(member.ch), len(agent.ch), len(outsider.ch))
+	events := newNotifiersForTest(nil)
+	member := subscribeReachForTest(events.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}})
+	outsider := subscribeReachForTest(events.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_b": store.WorkspaceRoleOwner}}})
+	agent := subscribeReachForTest(events.stream, streamReach{workspace: "ws_a"})
+	events.chatList.titlesStale("ws_a")
+	events.chatList.layoutStale("ws_a")
+	events.chatList.titlesChanged("ws_a", []store.ChatTitle{{ChatID: "c", Title: "Secret"}}, []string{"d"})
+	events.chatList.layoutChanged("ws_a", store.ChatLayout{Revision: 3, Groups: []store.ChatLayoutGroup{{ID: "g", Name: "Secret"}}})
+	if len(member.C) != 4 || len(agent.C) != 4 || len(outsider.C) != 0 {
+		t.Fatalf("delivered member %d, agent %d, outsider %d; want 4, 4, 0", len(member.C), len(agent.C), len(outsider.C))
 	}
 }
 
@@ -426,7 +447,7 @@ func TestChatListEventsFollowWorkspaceAccess(t *testing.T) {
 func TestDeviceStatusCarriesTheListedDevice(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
 	conn := dialDaemonForTest(t, testServer)
@@ -490,12 +511,7 @@ func TestClaimedIssueExecutionIsAnnounced(t *testing.T) {
 	testfixture.ConfirmContract(t, db, created["id"].(string))
 	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
-	claims := make(chan string, 8)
-	server.events.SubscribeInternal(func(eventType string, payload any) {
-		if change, ok := payload.(foundryDataChange); ok && eventType == foundryDataChangedEvent {
-			claims <- change.WorkspaceID
-		}
-	})
+	viewer := subscribeForTest(server.stream)
 	conn := dialDaemonForTest(t, testServer)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	writeWSForTest(t, conn, "hello", map[string]any{
@@ -513,36 +529,40 @@ func TestClaimedIssueExecutionIsAnnounced(t *testing.T) {
 	}
 	// The hello's registration created the workspace (announced too), then
 	// the claim.
-	deadline := time.After(3 * time.Second)
-	announced := 0
-	for announced < 2 {
-		select {
-		case workspaceID := <-claims:
-			if workspaceID == "ws_claim" {
-				announced++
-			}
-		case <-deadline:
-			t.Fatalf("ws_claim announced %d times, want the registration and the claim", announced)
+	for announced := 0; announced < 2; {
+		change := payloadForTest[browserevent.FoundryDataChangedPayload](t, nextStreamedForTest(t, viewer, browserevent.FoundryDataChanged))
+		if change.WorkspaceID == "ws_claim" {
+			announced++
 		}
 	}
 }
 
-// A group-naming job its device cannot take fails without a session event;
-// the failure is announced as a data change of its workspace.
+// A group-naming job its device cannot take fails, and its failure is told
+// like any other end (agent_session_completed), also to what reacts to
+// ended sessions. It used to be announced only as a data change.
 func TestUndeliveredGroupNamingIsAnnounced(t *testing.T) {
 	db, parent := lineageFixture(t)
 	server := NewServer(db)
 	stalled := newDaemonConnection(server.hub, nil)
 	stalled.send = make(chan wsEnvelope)
 	server.hub.connections["dev_lineage"] = stalled
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
+	observer := &sessionObserverForTest{}
+	sessionEventsForTest(server).observe(observer)
 	server.titles.StartGroupName(context.Background(), "ws_lineage", "group_1", parent.ID)
 	events := drainForTest(t, viewer)
 	if len(events) == 0 || events[0].kind != "agent_session_created" {
 		t.Fatalf("events = %v, want the naming job created first", events)
 	}
-	if got := dataChangesForTest(t, events); !reflect.DeepEqual(got, []string{"ws_lineage"}) {
-		t.Fatalf("data changes = %v", got)
+	if got := dataChangesForTest(t, events); len(got) != 0 {
+		t.Fatalf("data changes = %v, want the failure told as the job's end", got)
+	}
+	ends := sessionEndsForTest(t, events)
+	if len(ends) != 2 || ends[1] != "agent_session_completed "+strings.Fields(ends[0])[1]+" failed" {
+		t.Fatalf("session events = %v, want the job created, then failed", ends)
+	}
+	if told := observer.told("agent_session_completed"); !reflect.DeepEqual(told, ends[1:]) {
+		t.Fatalf("observers were told %v, want the job's failure", told)
 	}
 }
 
@@ -568,7 +588,7 @@ func TestSessionContinuingANativeSessionAnnouncesTheAdoptedChat(t *testing.T) {
 	stalled := newDaemonConnection(server.hub, nil)
 	stalled.send = make(chan wsEnvelope)
 	server.hub.connections["dev_ws_adopt"] = stalled
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	response := requestForTest(t, server, http.MethodPost, "/api/agent-sessions",
 		`{"workspaceId":"ws_adopt","agentId":"agent_ws_adopt","provider":"codex","prompt":"continue","nativeSessionId":"term","source":"chat"}`, http.StatusConflict)
 	var session store.AgentSession
@@ -615,7 +635,7 @@ func TestSessionControlAuditIsStreamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	server.appendSessionControlAudit(ctx, session, "Steered by orchestrator", Actor{Kind: ActorAccount})
 	if events := drainForTest(t, viewer); len(events) != 0 {
 		t.Fatalf("a person's control was streamed: %+v", events)
@@ -623,7 +643,7 @@ func TestSessionControlAuditIsStreamed(t *testing.T) {
 	orchestrator := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: "sess_orchestrator", WorkspaceID: "ws_audit"}}
 	server.appendSessionControlAudit(ctx, session, "Steered by orchestrator", orchestrator)
 	events := drainForTest(t, viewer)
-	if len(events) != 1 || events[0].kind != sessionEventStreamType {
+	if len(events) != 1 || events[0].kind != browserevent.AgentSessionEvent {
 		t.Fatalf("streamed %+v, want one transcript event", events)
 	}
 	var streamed store.AgentSessionEvent

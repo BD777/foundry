@@ -84,6 +84,10 @@ export interface ConversationFileReference {
   text: string;
   path: string;
   kind: "file" | "dir";
+  /** Named before it existed, and no file is recorded at `path` yet. */
+  pending?: boolean;
+  /** The session whose answer named a pending file: reads go through it. */
+  sessionId?: string;
 }
 
 /** What an answer's file links and its "N files" chip do in the host. */

@@ -17,6 +17,7 @@ import type { ClaudeTurnLiveness } from "./watchdog.js";
 import type { SessionTurnFiles } from "./session-files.js";
 import type { ClaudeTimerTracker } from "./agent-timers.js";
 import type { ClaudeBackgroundTaskTracker } from "./agent-background-tasks.js";
+import type { ClaudeContextTracker } from "./context-usage.js";
 import type {
   ClaudeRequestUsageTracker,
   TurnTokenUsage,
@@ -172,6 +173,8 @@ export interface ActiveClaudeRuntime {
   timers?: ClaudeTimerTracker;
   /** Background work of the agent process; it outlives Foundry turns. */
   background?: ClaudeBackgroundTaskTracker;
+  /** How full the process's context is, and what its results cost. */
+  context?: ClaudeContextTracker;
   continuation?: ActiveClaudeContinuation;
   /** Summaries of background tasks that ended since the last answer. */
   notifications?: string[];
@@ -187,6 +190,8 @@ export interface ActiveClaudeRuntime {
   betweenTurnFiles?: SessionTurnFiles;
   /** The end of the Claude Code process's stderr, for start-up failures. */
   stderrTail?: string;
+  /** The Claude Code process, once the worker has spawned it (supervised). */
+  pid?: number;
 }
 
 export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();

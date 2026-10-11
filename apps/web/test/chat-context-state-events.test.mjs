@@ -11,6 +11,12 @@ const { appendAgentEvents } = await import("../src/lib/agent-event-log.ts");
 
 const minute = (n) => `2026-10-10T06:${String(n).padStart(2, "0")}:00.000Z`;
 
+/** The sections a card shows below the session's status line. */
+const panelSections = (card) =>
+  Object.entries(card ?? {})
+    .filter(([key, value]) => key !== "status" && value.length > 0)
+    .map(([key]) => key);
+
 function event(id, at, label, detail, metadata) {
   return {
     at,
@@ -144,8 +150,12 @@ test("the panel shows state older than the loaded events", () => {
     taskIds: ["sess_state:background:bg1"],
     subagentIds: ["evt_subagent"],
   });
-  // Without state events the window alone shows nothing (an older server).
-  assert.equal(chatContextCardForSessions([session(newest)]), undefined);
+  // Without state events the window alone shows only the status line (an
+  // older server).
+  assert.deepEqual(
+    panelSections(chatContextCardForSessions([session(newest)])),
+    [],
+  );
 });
 
 test("live events keep updating state that came before the window", () => {
@@ -208,7 +218,7 @@ test("state events take their place by time among the loaded events", () => {
   const card = chatContextCardForSessions([
     session(loaded, [timers(minute(30), [])]),
   ]);
-  assert.equal(card, undefined);
+  assert.deepEqual(panelSections(card), []);
 });
 
 test("a page of older events keeps the state events a window read brought", () => {

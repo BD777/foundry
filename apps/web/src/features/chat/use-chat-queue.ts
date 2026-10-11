@@ -8,15 +8,17 @@ import {
   deleteChatQueueItem,
   editChatQueueItem,
   enqueueChatMessage,
-  foundryStreamEpoch,
-  foundryStreamOpened,
   getChatQueue,
   reorderChatQueue,
   retryChatQueueItem,
   steerChatQueueItem,
-  subscribeFoundryEvents,
   type ChatQueueResult,
 } from "../../api";
+import {
+  foundryStreamEpoch,
+  foundryStreamOpened,
+  onStreamEvent,
+} from "../../stream";
 import type {
   ConversationQueueOutcome,
   ConversationServerQueue,
@@ -61,12 +63,7 @@ export const chatQueueTransport: ChatQueueTransport = {
   steer: steerChatQueueItem,
   retry: retryChatQueueItem,
   subscribe: (onQueue, onResync) =>
-    subscribeFoundryEvents(
-      (event) => {
-        if (event.type === "chat_queue_changed") onQueue(event.payload);
-      },
-      { onResync },
-    ),
+    onStreamEvent("chat_queue_changed", onQueue, { onResync }),
   opened: foundryStreamOpened,
   epoch: foundryStreamEpoch,
 };

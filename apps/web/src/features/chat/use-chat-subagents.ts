@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgentSession,
-  AgentSubagentSummary,
+  AgentSubagentDigest,
+  AgentSubagentUpdatedPayload,
 } from "@bd777/foundry-protocol";
+import { listAgentSubagents, type AgentSubagentsResult } from "../../api";
 import {
+  carriedData,
   foundryStreamEpoch,
   foundryStreamOpened,
   isFoundryStreamOpen,
-  listAgentSubagents,
-  subscribeFoundryEvents,
-  type AgentSubagentsResult,
+  onStreamEvent,
   type FoundryStreamLifecycle,
-} from "../../api";
-import type { AgentSubagentUpdate } from "../../api-types";
+} from "../../stream";
 import {
   applySubagentUpdate,
   subagentActivity,
@@ -24,7 +24,7 @@ import {
 /** The event stream as subagent lists use it; tests replace it. */
 export interface SubagentStream {
   subscribe: (
-    onUpdate: (update: AgentSubagentUpdate) => void,
+    onUpdate: (update: AgentSubagentUpdatedPayload) => void,
     lifecycle: FoundryStreamLifecycle,
   ) => () => void;
   isOpen: () => boolean;
@@ -36,9 +36,7 @@ export interface SubagentStream {
 
 export const subagentStream: SubagentStream = {
   subscribe: (onUpdate, lifecycle) =>
-    subscribeFoundryEvents((event) => {
-      if (event.type === "agent_subagent_updated") onUpdate(event.payload);
-    }, lifecycle),
+    onStreamEvent("agent_subagent_updated", onUpdate, lifecycle),
   isOpen: isFoundryStreamOpen,
   epoch: foundryStreamEpoch,
   opened: foundryStreamOpened,
@@ -54,7 +52,7 @@ interface SessionFetchState {
   /** Reads that failed in a row; their retries back off. */
   failures?: number;
   /** Updates that arrived while a read ran: applied over its answer. */
-  pushed?: AgentSubagentSummary[];
+  pushed?: AgentSubagentDigest[];
   fetchedRevision?: string;
   endedAtFetch?: number;
   inFlight: boolean;
@@ -65,9 +63,12 @@ interface SessionFetchState {
 }
 
 export interface ChatSubagents {
-  bySession: Readonly<Record<string, AgentSubagentSummary[]>>;
-  /** What subagents answered: kept out of the main transcript. */
-  responseTexts: ReadonlySet<string>;
+  bySession: Readonly<Record<string, AgentSubagentDigest[]>>;
+  /**
+   * Fingerprints of what subagents answered (subagentResponseFingerprint):
+   * kept out of the main transcript.
+   */
+  responseFingerprints: ReadonlySet<string>;
   /** The last refresh failed; the list shown is the last one fetched. */
   failed: boolean;
   retry: () => void;
@@ -98,7 +99,7 @@ export function useChatSubagents({
   stream?: SubagentStream;
 }): ChatSubagents {
   const [bySession, setBySession] = useState<
-    Record<string, AgentSubagentSummary[]>
+    Record<string, AgentSubagentDigest[]>
   >({});
   const [failedSessions, setFailedSessions] = useState<Record<string, boolean>>(
     {},
@@ -265,7 +266,7 @@ export function useChatSubagents({
           const state = fetches.current.get(update.sessionId);
           // A list neither held nor being read is read when it is shown.
           if (!state || (state.epoch === undefined && !state.inFlight)) return;
-          const subagent = update.subagent;
+          const subagent = carriedData("agent_subagent_updated", update);
           if (!subagent) {
             state.stale = true;
             schedule.current(update.sessionId);
@@ -309,17 +310,14 @@ export function useChatSubagents({
     () => sessionIds.split("|").some((id) => failedSessions[id]),
     [failedSessions, sessionIds],
   );
-  const responseTexts = useMemo(
+  const responseFingerprints = useMemo(
     () =>
       new Set(
-        Object.values(bySession)
-          .flatMap((subagents) =>
-            subagents.flatMap((subagent) => subagent.responseTexts),
-          )
-          .map((text) => text.trim())
-          .filter(Boolean),
+        Object.values(bySession).flatMap((subagents) =>
+          subagents.flatMap((subagent) => subagent.responseFingerprints),
+        ),
       ),
     [bySession],
   );
-  return { bySession, failed, responseTexts, retry };
+  return { bySession, failed, responseFingerprints, retry };
 }

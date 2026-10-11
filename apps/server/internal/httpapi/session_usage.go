@@ -197,7 +197,19 @@ func addTurnUsage(total, next store.AgentTurnUsage) store.AgentTurnUsage {
 		OutputTokens:     total.OutputTokens + next.OutputTokens,
 		ReasoningTokens:  optional(total.ReasoningTokens, next.ReasoningTokens),
 		ModelRequests:    optional(total.ModelRequests, next.ModelRequests),
+		CostUSD:          addCost(total.CostUSD, next.CostUSD),
 	}
+}
+
+func addCost(total, next *float64) *float64 {
+	if total == nil {
+		return next
+	}
+	if next == nil {
+		return total
+	}
+	sum := *total + *next
+	return &sum
 }
 
 // sessionUsageBackfills runs each session's backfill once at a time.

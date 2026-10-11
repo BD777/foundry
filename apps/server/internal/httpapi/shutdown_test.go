@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -41,27 +42,19 @@ func TestServerShutdownReleasesSSEHandlerAndRejectsNewOnes(t *testing.T) {
 	server := NewServer(newTestStore(t))
 
 	request := httptest.NewRequest(http.MethodGet, "/api/events", nil)
+	request = request.WithContext(contextWithScope(request.Context(), accessScope{all: true}))
 	streamed := make(chan struct{})
+	// The handler flushes once it is subscribed, so shutdown is what
+	// releases it rather than a race against registration.
+	opened := &flushSignalForTest{ResponseRecorder: httptest.NewRecorder(), flushed: make(chan struct{})}
 	go func() {
 		defer close(streamed)
-		server.events.ServeHTTP(httptest.NewRecorder(), request)
+		server.handleEvents(opened, request)
 	}()
-
-	// Wait until the handler is actually subscribed, so shutdown is what
-	// releases it rather than a race against registration.
-	deadline := time.After(2 * time.Second)
-	for {
-		server.events.mu.RLock()
-		subscribed := len(server.events.subscribers)
-		server.events.mu.RUnlock()
-		if subscribed == 1 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("SSE handler never subscribed")
-		case <-time.After(time.Millisecond):
-		}
+	select {
+	case <-opened.flushed:
+	case <-streamed:
+		t.Fatal("SSE handler ended before it subscribed")
 	}
 
 	if err := server.Shutdown(context.Background()); err != nil {
@@ -75,14 +68,14 @@ func TestServerShutdownReleasesSSEHandlerAndRejectsNewOnes(t *testing.T) {
 	}
 
 	rejected := httptest.NewRecorder()
-	server.events.ServeHTTP(rejected, request)
+	server.handleEvents(rejected, request)
 	if rejected.Code != http.StatusServiceUnavailable {
 		t.Fatalf("post-shutdown SSE status = %d, want %d", rejected.Code, http.StatusServiceUnavailable)
 	}
 }
 
 func TestDaemonHubShutdownRejectsNewUpgrades(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	if err := hub.Shutdown(context.Background()); err != nil {
 		t.Fatalf("Shutdown() error = %v, want nil", err)
 	}
@@ -104,7 +97,7 @@ func TestDaemonHubShutdownRejectsNewUpgrades(t *testing.T) {
 }
 
 func TestDaemonHubShutdownClosesActiveConnections(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	first := trackedConnection(t, hub)
 	second := trackedConnection(t, hub)
 
@@ -133,7 +126,7 @@ func TestDaemonHubShutdownClosesActiveConnections(t *testing.T) {
 }
 
 func TestDaemonHubShutdownFailsPendingCallers(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	connection := trackedConnection(t, hub)
 
 	failed := make(chan error, 1)
@@ -171,7 +164,7 @@ func TestDaemonHubShutdownFailsPendingCallers(t *testing.T) {
 }
 
 func TestDaemonHubShutdownHonorsContext(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	// Tracked without the readLoop stand-in, so it never reports completion.
 	stuck := newDaemonConnection(hub, nil)
 	if !hub.track(stuck) {
@@ -189,4 +182,16 @@ func TestDaemonHubShutdownHonorsContext(t *testing.T) {
 	default:
 		t.Fatal("stuck connection was not closed before the wait timed out")
 	}
+}
+
+// flushSignalForTest closes flushed at its first flush.
+type flushSignalForTest struct {
+	*httptest.ResponseRecorder
+	flushed chan struct{}
+	once    sync.Once
+}
+
+func (f *flushSignalForTest) Flush() {
+	f.ResponseRecorder.Flush()
+	f.once.Do(func() { close(f.flushed) })
 }

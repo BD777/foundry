@@ -52,11 +52,11 @@ func (s *Server) noticeUnstartedSessions(ctx context.Context) error {
 		if !added {
 			continue
 		}
-		s.events.PublishIn(session.WorkspaceID, sessionEventStreamType, event)
+		s.sessions.recorded(ctx, session.WorkspaceID, event)
 		// Viewers show a session that receives an event as running; this
 		// one still waits, as the session itself says.
 		if current, err := s.store.GetAgentSessionSummary(ctx, session.ID); err == nil && current.Status == "queued" {
-			s.events.Publish("agent_session_created", current)
+			s.sessions.changed(ctx, sessionQueued, current)
 		}
 	}
 	return nil

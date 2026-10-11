@@ -2,6 +2,7 @@ import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { sessionScratchEnvironment } from "./resource-pool.js";
 import { isUtilitySession } from "./utils.js";
+import { isVerificationSession } from "./session-roles.js";
 import {
   baseProcessEnvironment,
   profileID,
@@ -13,11 +14,13 @@ import { currentInput } from "./session-prompt.js";
 /**
  * Per-session ambient environment (CHAT-01).
  *
- * When the daemon dispatches a session it now carries a one-time
- * FOUNDRY_SESSION_TOKEN plus the server URL; the spawned native agent exposes
- * them to its child `foundry mcp` / `foundry session` processes. The values
- * are process-scoped and never written to disk. Registered for the lifetime
- * of one executeAgentSession run, keyed by Foundry session id.
+ * Each dispatch of a session carries a freshly minted FOUNDRY_SESSION_TOKEN
+ * (earlier ones stay valid while the session exists) plus the server URL.
+ * They authorize the session's Foundry tools, the server's HTTP MCP
+ * (foundryToolsEndpoint: a Claude header, Codex reads the variable), and
+ * reach the session's processes as environment, for the `foundry` CLI. The
+ * values are process-scoped and never written to disk. Registered for the
+ * lifetime of one executeAgentSession run, keyed by Foundry session id.
  */
 
 export interface SessionAmbientEnv {
@@ -64,14 +67,15 @@ export function sessionAmbientEnvironment(
 /**
  * Whether a session gets its own scratch directory (TMPDIR) and browser
  * leases from the Resource Pool: sessions the daemon dispatched. Issue
- * sessions run in a sandbox with their own temporary space.
+ * sessions and verifiers run in a sandbox with their own temporary space.
  */
 export function usesSessionScratch(session: AgentSession): boolean {
   return (
     Boolean(session.id) &&
     ambientBySession.has(session.id) &&
     !session.issueId &&
-    !isUtilitySession(session)
+    !isUtilitySession(session) &&
+    !isVerificationSession(session)
   );
 }
 

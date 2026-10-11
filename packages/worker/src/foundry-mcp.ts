@@ -26,17 +26,10 @@ export async function runMcpServer(
   const client = new FoundryClient(resolveConfig());
 
   const forward = async (message: JsonRpcMessage): Promise<void> => {
-    // Without a session token the server needs the workspace named; a paired
-    // device supplies its configured one unless the caller chose another.
-    const args = message.params?.arguments;
-    if (
-      message.method === "tools/call" &&
-      client.workspaceId &&
-      args &&
-      !args.workspaceId
-    ) {
-      args.workspaceId = client.workspaceId;
-    }
+    if (message.method === "tools/call" && message.params)
+      message.params.arguments = client.toolArguments(
+        message.params.arguments ?? {},
+      );
     let reply: unknown;
     try {
       reply = await client.mcp(message);

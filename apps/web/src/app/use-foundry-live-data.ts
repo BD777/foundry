@@ -9,9 +9,9 @@ import {
   foundryStreamEpoch,
   foundryStreamOpened,
   foundryStreamQuietMs,
+  onAnyStreamEvent,
   reconnectFoundryStream,
-  subscribeFoundryEvents,
-} from "../api";
+} from "../stream";
 import type {
   FoundryData,
   FoundryDataField,
@@ -21,16 +21,12 @@ import {
   applyFoundryStreamEvents,
   compactFoundryStreamEvents,
   foundryDataPageFields,
-  streamedDevice,
 } from "./foundry-data-projection";
+import { streamEventReads } from "./projections";
 import type { StreamTouchLedger } from "./stream-touches";
 
 /** While the stream is down, workspace data is read this often instead. */
 export const streamDownRefreshIntervalMs = 5_000;
-/** Status changes of devices are read after this quiet period. */
-export const deviceRefreshDelayMs = 1_500;
-/** A `foundry_data_changed` burst is read once, after this quiet period. */
-export const dataChangeRefreshDelayMs = 500;
 /** The longest wait before a read that keeps failing is made again. */
 export const failedReadRetryCapMs = 5 * 60_000;
 /** A hidden tab gets no animation frames; its events apply this often. */
@@ -40,19 +36,6 @@ export const hiddenFlushMs = 250;
  * resuming after its last message (it may have died without an error).
  */
 export const streamSilenceMs = 60_000;
-
-/**
- * What a device status event leaves for a read: agents and agent profiles
- * are usable only while their device is online, and a device coming online
- * may serve other workspaces now; the device itself when the event lacks it.
- */
-const deviceEventFields: readonly FoundryDataField[] = [
-  "agentProfiles",
-  "agents",
-  "workspaces",
-  // A device's scan folders are its defaults until set.
-  "deviceSkillRoots",
-];
 
 const noPageFields: readonly FoundryDataField[] = [];
 
@@ -90,50 +73,16 @@ export interface UseFoundryLiveDataInput {
 }
 
 /**
- * Whether a device status event leaves something only a read can show: an
- * event without the whole device, a device this tab does not list yet, a
- * device coming online (it may serve other workspaces now), or a status
- * change either way (agents and profiles are usable only while their device
- * is online, which the event does not carry).
- */
-export function deviceEventNeedsRefresh(
-  data: Pick<FoundryData, "devices">,
-  event: Extract<FoundryStreamEvent, { type: "device_status_changed" }>,
-): boolean {
-  const shown = data.devices.find(
-    (device) => device.id === event.payload.deviceId,
-  );
-  return (
-    !streamedDevice(event.payload) ||
-    !shown ||
-    event.payload.status === "connected" ||
-    shown.status !== event.payload.status
-  );
-}
-
-/** Whether a `foundry_data_changed` concerns the workspace shown. */
-export function dataChangeConcerns(
-  event: Extract<FoundryStreamEvent, { type: "foundry_data_changed" }>,
-  workspaceId: string,
-): boolean {
-  return (
-    event.payload.workspaceId === "" ||
-    event.payload.workspaceId === workspaceId
-  );
-}
-
-/**
  * Owns transport-level freshness: streamed events are frame-batched and
  * applied in order. The first read waits for the stream to open (see
  * foundryStreamOpened), so every change after it arrives as an event and a
  * page load reads once. A connection that resumes needs no read (the server
  * replays what it missed); data read before an epoch the stream started
  * (a resync, a connection with nowhere to resume from) is read again.
- * `foundry_data_changed` reads only the fields it names, after a short
- * quiet period (one read per burst), in hidden tabs too, so a tab shows
- * current data when it comes back; so do devices whose change events leave
- * something out. Reads poll only while the stream is down. Returns the page
- * fields read at least once.
+ * What an event leaves to a read (see StreamProjection.reads) is read after
+ * a short quiet period (one read per burst), in hidden tabs too, so a tab
+ * shows current data when it comes back. Reads poll only while the stream
+ * is down. Returns the page fields read at least once.
  * Feature components never see this layer.
  */
 export function useFoundryLiveData({
@@ -191,6 +140,8 @@ export function useFoundryLiveData({
       const done = (outcome: string | void) => {
         if (outcome === undefined || outcome === "applied") {
           retryRef.current.failures = 0;
+          // A whole read that applied makes a waiting whole retry needless.
+          if (all) retryRef.current.whole = false;
           if (page.size > 0)
             setLoadedPageFields((loaded) =>
               [...page].every((field) => loaded.has(field))
@@ -297,35 +248,16 @@ export function useFoundryLiveData({
         void readLatest.current(all, fields);
       }, delayMs);
     };
-    const unsubscribe = subscribeFoundryEvents(
-      (event) => {
-        touches.record(event);
+    const unsubscribe = onAnyStreamEvent(
+      (event, receivedAt) => {
+        touches.record(event, receivedAt);
         pendingEvents.push(event);
         scheduleFrame();
-        if (
-          event.type === "device_status_changed" &&
-          deviceEventNeedsRefresh({ devices: devicesRef.current }, event)
-        ) {
-          const listed =
-            streamedDevice(event.payload) &&
-            devicesRef.current.some(
-              (device) => device.id === event.payload.deviceId,
-            );
-          refreshAfterQuiet(
-            deviceRefreshDelayMs,
-            listed ? deviceEventFields : [...deviceEventFields, "devices"],
-          );
-        }
-        if (
-          event.type === "foundry_data_changed" &&
-          dataChangeConcerns(event, workspaceIdRef.current)
-        )
-          refreshAfterQuiet(
-            dataChangeRefreshDelayMs,
-            event.payload.resources?.length
-              ? event.payload.resources
-              : undefined,
-          );
+        const read = streamEventReads(event, {
+          workspaceId: workspaceIdRef.current,
+          devices: devicesRef.current,
+        });
+        if (read) refreshAfterQuiet(read.delayMs, read.fields);
       },
       {
         onError: () => setStreamDown(true),

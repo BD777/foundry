@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -19,8 +21,11 @@ import (
 type SessionDispatcher interface {
 	CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error)
 	SendSessionMessage(ctx context.Context, sessionID, message string) error
-	PublishEvent(eventType string, payload any)
 }
+
+// botUpdated tells the workspace's viewers what its bot is now: connected,
+// in error, or bound to a group.
+var botUpdated = browserevent.Define[store.WorkspaceFeishuBot](browserevent.FeishuBotUpdated, eventstream.Options{})
 
 type SecretProvider interface {
 	GetSecret(ctx context.Context, id string) ([]byte, error)
@@ -50,6 +55,7 @@ type WSManager struct {
 	store        store.Store
 	secrets      SecretProvider
 	dispatcher   SessionDispatcher
+	events       eventstream.Publisher
 	streamBuffer *StreamBuffer
 	activeBots   map[string]*activeBot
 	sessions     map[string]*sessionMetadata
@@ -57,11 +63,14 @@ type WSManager struct {
 	reporting sync.Mutex
 }
 
-func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher) *WSManager {
+// NewWSManager runs the workspaces' bots; what changes about a bot is
+// published to events.
+func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher, events eventstream.Publisher) *WSManager {
 	return &WSManager{
 		store:        s,
 		secrets:      secrets,
 		dispatcher:   disp,
+		events:       events,
 		streamBuffer: NewStreamBuffer(800 * time.Millisecond),
 		activeBots:   make(map[string]*activeBot),
 		sessions:     make(map[string]*sessionMetadata),
@@ -125,7 +134,7 @@ func (m *WSManager) StartBot(workspaceID, appID, appSecret string) error {
 				bot.Status = store.FeishuBotStatusConnected
 				bot.StatusDetail = ""
 				_, _ = m.store.SaveWorkspaceFeishuBot(context.Background(), bot)
-				m.dispatcher.PublishEvent("feishu_bot_updated", bot)
+				m.botChanged(bot)
 			}
 		}),
 		ws.WithOnError(func(err error) {
@@ -135,7 +144,7 @@ func (m *WSManager) StartBot(workspaceID, appID, appSecret string) error {
 				bot.Status = store.FeishuBotStatusError
 				bot.StatusDetail = err.Error()
 				_, _ = m.store.SaveWorkspaceFeishuBot(context.Background(), bot)
-				m.dispatcher.PublishEvent("feishu_bot_updated", bot)
+				m.botChanged(bot)
 			}
 		}),
 	)
@@ -327,9 +336,13 @@ func (m *WSManager) handlePairCommand(ctx context.Context, workspaceID string, c
 		log.Printf("[feishu] failed to send pairing success card: %v", err)
 	}
 
-	// Publish update to Web UI
-	m.dispatcher.PublishEvent("feishu_bot_updated", bot)
+	m.botChanged(bot)
 	return nil
+}
+
+// botChanged tells the bot's workspace what the bot is now.
+func (m *WSManager) botChanged(bot store.WorkspaceFeishuBot) {
+	botUpdated.Publish(m.events, eventstream.Route{Workspace: bot.WorkspaceID}, bot)
 }
 
 func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, client botClient, messageID, chatID, prompt string) error {
@@ -440,90 +453,79 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string,
 	return nil
 }
 
-func (m *WSManager) HandleInternalEvent(eventType string, payload any) {
-	dataBytes, err := json.Marshal(payload)
-	if err != nil {
+// IssueUpdated tells the thread following the Issue, if any, what changed
+// since it was last told. It reads the Issue again, so a report never runs
+// behind; reports go out one at a time.
+func (m *WSManager) IssueUpdated(issue store.Issue) {
+	go func() {
+		m.reporting.Lock()
+		defer m.reporting.Unlock()
+		m.reportIssue(context.Background(), issue.ID)
+	}()
+}
+
+// SessionEventRecorded shows a session's answer as it streams, and what it
+// is doing, on the card of the topic that started it.
+func (m *WSManager) SessionEventRecorded(event store.AgentSessionEvent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	meta, ok := m.sessions[event.SessionID]
+	if !ok {
+		return
+	}
+	bot, botOk := m.activeBots[meta.workspaceID]
+	if !botOk {
 		return
 	}
 
-	switch eventType {
-	case "issue_updated":
-		var issue store.Issue
-		if err := json.Unmarshal(dataBytes, &issue); err != nil {
-			return
+	if event.Label == "Response stream" && event.Detail != "" {
+		meta.currentText = event.Detail
+		tip := meta.lastTip
+		if tip == "" {
+			tip = "正在生成回答..."
 		}
-		go func() {
-			m.reporting.Lock()
-			defer m.reporting.Unlock()
-			m.reportIssue(context.Background(), issue.ID)
-		}()
-	case "agent_session_event":
-		var event store.AgentSessionEvent
-		if err := json.Unmarshal(dataBytes, &event); err != nil {
-			return
-		}
-		m.mu.Lock()
-		meta, ok := m.sessions[event.SessionID]
-		if !ok {
-			m.mu.Unlock()
-			return
-		}
-		bot, botOk := m.activeBots[meta.workspaceID]
-		if !botOk {
-			m.mu.Unlock()
-			return
-		}
-
-		if event.Label == "Response stream" && event.Detail != "" {
-			meta.currentText = event.Detail
-			tip := meta.lastTip
-			if tip == "" {
-				tip = "正在生成回答..."
+		m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
+	} else if event.Message != nil {
+		if event.Message.Kind == "assistant" {
+			if event.Message.Text != "" {
+				meta.currentText = event.Message.Text
 			}
+			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, "正在生成回答...")
+		} else if event.Message.Kind == "tool" {
+			tip := "执行工具"
+			if event.Message.Title != "" {
+				tip += ": " + cardProcessLabel(event.Message.Title)
+			}
+			meta.lastTip = tip
 			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
-		} else if event.Message != nil {
-			if event.Message.Kind == "assistant" {
-				if event.Message.Text != "" {
-					meta.currentText = event.Message.Text
-				}
-				m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, "正在生成回答...")
-			} else if event.Message.Kind == "tool" {
-				tip := "执行工具"
-				if event.Message.Title != "" {
-					tip += ": " + cardProcessLabel(event.Message.Title)
-				}
-				meta.lastTip = tip
-				m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
-			}
-		} else if isThinkingLabel(event.Label) {
-			meta.lastTip = "正在思考..."
-			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, meta.lastTip)
 		}
-		m.mu.Unlock()
-	case "agent_session_completed":
-		var session store.AgentSession
-		if err := json.Unmarshal(dataBytes, &session); err != nil {
-			return
-		}
-		m.mu.Lock()
-		meta, ok := m.sessions[session.ID]
-		if !ok {
-			m.mu.Unlock()
-			return
-		}
-		delete(m.sessions, session.ID)
-		bot, botOk := m.activeBots[meta.workspaceID]
-		m.mu.Unlock()
-		if !botOk {
-			return
-		}
+	} else if isThinkingLabel(event.Label) {
+		meta.lastTip = "正在思考..."
+		m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, meta.lastTip)
+	}
+}
 
-		duration := time.Since(meta.startTime)
-		if session.Status == "completed" {
-			m.streamBuffer.Complete(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, duration)
-		} else {
-			m.streamBuffer.Fail(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, session.Error)
-		}
+// SessionEnded settles the card of the topic that started the session with
+// its answer, or why it failed; the topic's card follows it no longer.
+func (m *WSManager) SessionEnded(session store.AgentSession) {
+	m.mu.Lock()
+	meta, ok := m.sessions[session.ID]
+	if !ok {
+		m.mu.Unlock()
+		return
+	}
+	delete(m.sessions, session.ID)
+	bot, botOk := m.activeBots[meta.workspaceID]
+	m.mu.Unlock()
+	if !botOk {
+		return
+	}
+
+	duration := time.Since(meta.startTime)
+	if session.Status == "completed" {
+		m.streamBuffer.Complete(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, duration)
+	} else {
+		m.streamBuffer.Fail(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, session.Error)
 	}
 }
 

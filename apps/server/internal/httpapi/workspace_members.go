@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -20,10 +22,6 @@ type workspaceMemberView struct {
 	Disabled    bool      `json:"disabled,omitempty"`
 	DeviceOwner bool      `json:"deviceOwner,omitempty"`
 	AddedAt     time.Time `json:"addedAt"`
-}
-
-type workspaceMembersUpdated struct {
-	WorkspaceID string `json:"workspaceId"`
 }
 
 var (
@@ -234,15 +232,20 @@ func (s *Server) workspaceDeviceOwner(ctx context.Context, workspaceID string) (
 	return credentials.DeviceOwner(ctx, workspace.DeviceID)
 }
 
+// workspaceMembersUpdatedEvent says who may use a workspace changed; its
+// viewers read the members again.
+var workspaceMembersUpdatedEvent = browserevent.Define[browserevent.WorkspaceMembersUpdatedPayload](browserevent.WorkspaceMembersUpdated, eventstream.Options{})
+
 // afterMembershipChange makes a new role take effect at once: the account's
 // event streams reconnect with the new reach, and when it can no longer run
-// in the workspace its running sessions there are canceled.
+// in the workspace its running sessions there are canceled. The
+// workspace's viewers are told its members changed.
 func (s *Server) afterMembershipChange(ctx context.Context, workspaceID, userID, role string) {
-	s.events.Reauthorize(userID)
+	s.stream.Reauthorize(userID)
 	if !roleAtLeast(role, store.WorkspaceRoleMember) {
 		s.cancelSessionsStartedBy(ctx, workspaceID, userID, "Canceled: the account that started it can no longer run in this workspace")
 	}
-	s.events.Publish("workspace_members_updated", workspaceMembersUpdated{WorkspaceID: workspaceID})
+	workspaceMembersUpdatedEvent.Publish(s.stream, eventstream.Route{Workspace: workspaceID}, browserevent.WorkspaceMembersUpdatedPayload{WorkspaceID: workspaceID})
 }
 
 // cancelAllSessionsStartedBy stops a disabled account's running sessions in
@@ -291,6 +294,6 @@ func (s *Server) cancelSessionsStartedBy(ctx context.Context, workspaceID, userI
 			log.Printf("cancel session %s: %v", session.ID, err)
 			continue
 		}
-		s.events.Publish("agent_session_completed", canceled)
+		s.sessions.changed(ctx, sessionCompleted, canceled)
 	}
 }

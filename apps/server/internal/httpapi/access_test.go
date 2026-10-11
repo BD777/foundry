@@ -8,22 +8,25 @@ import (
 
 func TestEventSubscriptionsOnlyReceiveVisibleWorkspaces(t *testing.T) {
 	scope := accessScope{roles: map[string]string{"ws_mine": store.WorkspaceRoleViewer}}
-	subscription := &eventSubscription{scope: &scope}
-	if !subscription.receives("ws_mine") {
+	subscription := streamReach{scope: &scope}
+	if !subscription.Receives("ws_mine") {
 		t.Fatal("an event of a visible workspace must be delivered")
 	}
-	if subscription.receives("ws_other") {
+	if subscription.Receives("ws_other") {
 		t.Fatal("an event of another workspace must be dropped")
 	}
-	if subscription.receives("") {
+	if subscription.Receives("") {
 		t.Fatal("an event without a workspace must be dropped")
 	}
-	if (&eventSubscription{}).receives("ws_mine") {
+	if (streamReach{}).Receives("ws_mine") {
 		t.Fatal("an unauthenticated subscription must receive nothing")
 	}
-	agent := &eventSubscription{workspace: "ws_agent"}
-	if !agent.receives("ws_agent") || agent.receives("ws_mine") {
+	agent := streamReach{workspace: "ws_agent"}
+	if !agent.Receives("ws_agent") || agent.Receives("ws_mine") {
 		t.Fatal("agent subscriptions stay on their own workspace")
+	}
+	if !(streamReach{scope: &accessScope{all: true}}).Receives("") {
+		t.Fatal("an event of no workspace must reach those who see every workspace")
 	}
 }
 
@@ -51,13 +54,22 @@ func TestRoleOrder(t *testing.T) {
 func TestEvidenceUpdatesReachTheIssueWorkspace(t *testing.T) {
 	server := NewServer(newTestStore(t))
 	scope := accessScope{roles: map[string]string{"ws_mine": store.WorkspaceRoleViewer}}
-	viewer := &eventSubscription{ch: make(chan []byte, 4), scope: &scope, ended: make(chan struct{})}
-	server.events.mu.Lock()
-	server.events.subscribers[viewer] = struct{}{}
-	server.events.mu.Unlock()
-	server.publishEvidenceUpdate(store.Issue{ID: "iss_1", WorkspaceID: "ws_mine"}, "verify_1", 2, "passed")
-	server.publishEvidenceUpdate(store.Issue{ID: "iss_2", WorkspaceID: "ws_other"}, "verify_2", 1, "passed")
-	if len(viewer.ch) != 1 {
-		t.Fatalf("viewer received %d evidence updates, want exactly its workspace's one", len(viewer.ch))
+	viewer := subscribeReachForTest(server.stream, streamReach{scope: &scope})
+	server.issues.evidenceChanged(store.Issue{ID: "iss_1", WorkspaceID: "ws_mine"}, "verify_1", 2, "passed")
+	server.issues.evidenceChanged(store.Issue{ID: "iss_2", WorkspaceID: "ws_other"}, "verify_2", 1, "passed")
+	if len(viewer.C) != 1 {
+		t.Fatalf("viewer received %d evidence updates, want exactly its workspace's one", len(viewer.C))
+	}
+}
+
+// A device registered without a workspace has no workspace's viewers to
+// reach: its status goes to those who see every workspace, not to everyone.
+func TestDeviceStatusWithoutAWorkspaceReachesOnlyThoseWhoSeeEveryWorkspace(t *testing.T) {
+	events := newNotifiersForTest(nil)
+	admin := subscribeReachForTest(events.stream, streamReach{scope: &accessScope{all: true}})
+	member := subscribeReachForTest(events.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_a": store.WorkspaceRoleOwner}}})
+	events.devices.registrationChanged(store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_alone", Status: "connected"}})
+	if len(admin.C) != 1 || len(member.C) != 0 {
+		t.Fatalf("delivered admin %d, member %d; want 1, 0", len(admin.C), len(member.C))
 	}
 }

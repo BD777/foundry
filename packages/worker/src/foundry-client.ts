@@ -1,6 +1,7 @@
 /**
- * HTTP client for the Foundry agent-facing surface (CHAT-01), shared by the
- * `foundry mcp` stdio server and the human/script `foundry session` CLI.
+ * Client of the server's Foundry tools (`/api/mcp`), shared by the `foundry
+ * mcp` stdio bridge and the `foundry` CLI: both reach Foundry only through
+ * the tools sessions call, so the tools are the one implementation.
  *
  * Credentials come only from the environment (MCP stdio convention) or, for a
  * local human at the paired device, from the owner-only daemon config. This
@@ -10,7 +11,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { DaemonConfig } from "./config.js";
 import { foundryStatePath } from "./state-root.js";
-import type { ChatAttachment } from "@bd777/foundry-protocol";
 
 export interface FoundryClientConfig {
   serverURL: string;
@@ -19,7 +19,6 @@ export interface FoundryClientConfig {
   /** Local fallback: this device's credential, acting as its owner. */
   deviceCredential?: string;
   workspaceId?: string;
-  sessionId?: string;
 }
 
 export class FoundryClientError extends Error {
@@ -60,57 +59,7 @@ export function resolveConfig(
       overrides.deviceCredential ?? daemonConfig?.deviceCredential,
     workspaceId:
       overrides.workspaceId ?? env("FOUNDRY_WORKSPACE_ID") ?? undefined,
-    sessionId: overrides.sessionId ?? env("FOUNDRY_SESSION_ID") ?? undefined,
   };
-}
-
-export interface AgentProfileLike {
-  id: string;
-  deviceId: string;
-  runtime: string;
-  label: string;
-  status?: string;
-  connectionType?: string;
-  baseUrl?: string;
-  model?: string;
-  models?: string[];
-  origin?: string;
-  claudeEffort?: string;
-  claudePermissionMode?: string;
-  codexReasoningEffort?: string;
-  codexSandboxMode?: string;
-  codexApprovalPolicy?: string;
-  codexSpeed?: string;
-}
-
-export interface AgentLike {
-  id: string;
-  workspaceId: string;
-  deviceId: string;
-  provider: string;
-  profileId?: string;
-  status?: string;
-}
-
-export interface SessionSummary {
-  id: string;
-  threadId?: string;
-  workspaceId: string;
-  deviceId: string;
-  provider: string;
-  profileId?: string;
-  profileLabel?: string;
-  parentSessionId?: string;
-  source?: string;
-  status: string;
-  title: string;
-  prompt?: string;
-  response?: string;
-  startedAt?: string;
-  lastActivityAt?: string;
-  completedAt?: string;
-  updatedLabel?: string;
-  events?: unknown[];
 }
 
 export class FoundryClient {
@@ -127,14 +76,6 @@ export class FoundryClient {
     }
   }
 
-  get workspaceId(): string {
-    return this.config.workspaceId ?? "";
-  }
-
-  get sessionId(): string {
-    return this.config.sessionId ?? "";
-  }
-
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     const headers: Record<string, string> = { ...extra };
     if (this.config.sessionToken) {
@@ -145,42 +86,22 @@ export class FoundryClient {
     return headers;
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const url = new URL(
-      path.startsWith("/") ? path : `/${path}`,
-      this.config.serverURL,
-    );
-    const init: RequestInit = { method, headers: this.headers() };
-    if (body !== undefined) {
-      (init.headers as Record<string, string>)["Content-Type"] =
-        "application/json";
-      init.body = JSON.stringify(body);
-    }
-    let response: Response;
-    try {
-      response = await fetch(url.toString(), init);
-    } catch (error) {
-      throw new FoundryClientError(
-        `cannot reach Foundry server at ${this.config.serverURL}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-    const raw = await response.text();
-    if (!response.ok) {
-      let detail = raw;
-      try {
-        detail = JSON.parse(raw).error ?? raw;
-      } catch {
-        // keep raw body
-      }
-      throw new FoundryClientError(
-        `${method} ${pathnameOf(url)} -> ${response.status}: ${detail}`,
-        response.status,
-      );
-    }
-    if (!raw) return undefined as T;
-    return JSON.parse(raw) as T;
+  /**
+   * A tool call's arguments as the server needs them. Without a session
+   * token the server needs the workspace named; a paired device supplies its
+   * configured one unless the caller chose another. A session token already
+   * means the session's own workspace, and naming it would change what a
+   * tool defaults to (handoff_session continues a session in that session's
+   * workspace).
+   */
+  toolArguments(args: Record<string, unknown>): Record<string, unknown> {
+    if (
+      this.config.sessionToken ||
+      !this.config.workspaceId ||
+      args.workspaceId
+    )
+      return args;
+    return { ...args, workspaceId: this.config.workspaceId };
   }
 
   /**
@@ -229,7 +150,7 @@ export class FoundryClient {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
-      params: { name, arguments: args },
+      params: { name, arguments: this.toolArguments(args) },
     })) as {
       result?: { content?: { text?: string }[]; isError?: boolean };
       error?: { message?: string };
@@ -243,284 +164,4 @@ export class FoundryClient {
     if (reply?.result?.isError) throw new FoundryClientError(text);
     return text;
   }
-
-  // --- Profiles / agents -------------------------------------------------
-
-  async listProfiles(runtime?: string): Promise<AgentProfileLike[]> {
-    const profiles = await this.request<AgentProfileLike[]>(
-      "GET",
-      "/api/agent-profiles",
-    );
-    return runtime
-      ? profiles.filter((profile) => profile.runtime === runtime)
-      : profiles;
-  }
-
-  async listAgents(): Promise<AgentLike[]> {
-    const params = new URLSearchParams();
-    if (this.workspaceId) params.set("workspaceId", this.workspaceId);
-    return this.request<AgentLike[]>("GET", `/api/agents?${params.toString()}`);
-  }
-
-  // --- Sessions ----------------------------------------------------------
-
-  async listSessions(): Promise<SessionSummary[]> {
-    const params = new URLSearchParams();
-    if (this.workspaceId) params.set("workspaceId", this.workspaceId);
-    return this.request<SessionSummary[]>(
-      "GET",
-      `/api/agent-sessions?${params.toString()}`,
-    );
-  }
-
-  async listChildren(parentSessionId: string): Promise<SessionSummary[]> {
-    const sessions = await this.listSessions();
-    return sessions.filter(
-      (session) => session.parentSessionId === parentSessionId,
-    );
-  }
-
-  /**
-   * A session; `events: false` leaves its transcript out, which for a long
-   * session is most of the reply. Servers before it ignore the parameter.
-   */
-  async getSession(
-    id: string,
-    options: { events?: boolean } = {},
-  ): Promise<SessionSummary> {
-    const query = options.events === false ? "?events=none" : "";
-    return this.request<SessionSummary>(
-      "GET",
-      `/api/agent-sessions/${id}${query}`,
-    );
-  }
-
-  async getThread(id: string): Promise<SessionSummary[]> {
-    const params = new URLSearchParams();
-    if (this.workspaceId) params.set("workspaceId", this.workspaceId);
-    return this.request<SessionSummary[]>(
-      "GET",
-      `/api/agent-session-threads/${id}?${params.toString()}`,
-    );
-  }
-
-  async getChat(id: string): Promise<unknown> {
-    return this.request("GET", `/api/chats/${id}`);
-  }
-
-  async listSubagents(id: string): Promise<unknown> {
-    return this.request("GET", `/api/agent-sessions/${id}/subagents`);
-  }
-
-  async createSession(input: {
-    prompt: string;
-    profileId?: string;
-    provider?: string;
-    model?: string;
-    threadId?: string;
-    importedContext?: string;
-    issueId?: string;
-    forkSessionId?: string;
-    verification?: boolean;
-    claudeEffort?: string;
-    claudePermissionMode?: string;
-    codexReasoningEffort?: string;
-    codexSandboxMode?: string;
-    codexApprovalPolicy?: string;
-    codexSpeed?: string;
-  }): Promise<SessionSummary> {
-    if (!this.workspaceId && this.config.sessionToken) {
-      throw new FoundryClientError("session token has no workspace id");
-    }
-    if (input.forkSessionId) {
-      // The server inherits agent/provider/profile from the forked session.
-      return this.request<SessionSummary>("POST", "/api/agent-sessions", {
-        workspaceId: this.workspaceId,
-        prompt: input.prompt,
-        forkSessionId: input.forkSessionId,
-        ...(input.verification ? { verification: true } : {}),
-      });
-    }
-    const agents = await this.listAgents();
-    let agent: AgentLike | undefined;
-    if (input.profileId) {
-      agent = agents.find((item) => item.profileId === input.profileId);
-    }
-    if (!agent && input.provider) {
-      agent = agents.find((item) => item.provider === input.provider);
-    }
-    if (!agent) {
-      agent = agents[0];
-    }
-    if (!agent) {
-      throw new FoundryClientError(
-        "no connected agent is available for this workspace",
-        409,
-      );
-    }
-    const body: Record<string, unknown> = {
-      workspaceId: this.workspaceId,
-      agentId: agent.id,
-      provider: agent.provider,
-      prompt: input.prompt,
-    };
-    if (input.verification) body.verification = true;
-    if (input.forkSessionId) body.forkSessionId = input.forkSessionId;
-    const optional = [
-      "profileId",
-      "model",
-      "threadId",
-      "importedContext",
-      "issueId",
-      "claudeEffort",
-      "claudePermissionMode",
-      "codexReasoningEffort",
-      "codexSandboxMode",
-      "codexApprovalPolicy",
-      "codexSpeed",
-    ] as const;
-    for (const key of optional) {
-      const value = input[key];
-      if (value !== undefined && value !== "") body[key] = value;
-    }
-    if (input.profileId) body.profileId = input.profileId;
-    return this.request<SessionSummary>("POST", "/api/agent-sessions", body);
-  }
-
-  async handoffSession(input: {
-    fromSessionId: string;
-    prompt: string;
-    profileId?: string;
-    issueId?: string;
-  }): Promise<SessionSummary> {
-    // A factual handoff: carry only facts (goal, final response, status), not
-    // the contaminated transcript, into a fresh independent session.
-    const source = await this.getSession(input.fromSessionId, {
-      events: false,
-    });
-    const facts = [
-      `Handoff from session ${source.id} ("${source.title ?? ""}", status: ${source.status}).`,
-      source.prompt ? `Original goal:\n${source.prompt}` : "",
-      source.response ? `Last recorded result:\n${source.response}` : "",
-      input.prompt,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    return this.createSession({
-      prompt: facts,
-      profileId: input.profileId,
-      issueId: input.issueId,
-    });
-  }
-
-  /**
-   * Uploads a file into a workspace's attachments on its device, ready to be
-   * sent with a message.
-   */
-  async uploadAttachment(
-    workspaceId: string,
-    file: { name: string; mimeType: string; bytes: Uint8Array },
-  ): Promise<ChatAttachment> {
-    const form = new FormData();
-    form.set("workspaceId", workspaceId);
-    form.set(
-      "files",
-      new Blob([new Uint8Array(file.bytes)], { type: file.mimeType }),
-      file.name,
-    );
-    const url = new URL("/api/attachments", this.config.serverURL);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: this.headers(),
-      body: form,
-    });
-    const raw = await response.text();
-    if (!response.ok) {
-      throw new FoundryClientError(
-        `POST /api/attachments -> ${response.status}: ${raw}`,
-        response.status,
-      );
-    }
-    const [attachment] = JSON.parse(raw) as ChatAttachment[];
-    if (!attachment)
-      throw new FoundryClientError("upload returned no attachment");
-    return attachment;
-  }
-
-  /**
-   * Talks to a session: a running one is steered, an idle one takes the
-   * message as its next input and continues its native session.
-   */
-  async send(id: string, message: string): Promise<SessionSummary> {
-    return this.request("POST", `/api/agent-sessions/${id}/messages`, {
-      prompt: message,
-    });
-  }
-
-  async cancel(id: string): Promise<SessionSummary> {
-    return this.request("POST", `/api/agent-sessions/${id}/cancel`);
-  }
-
-  async rename(id: string, title: string): Promise<unknown> {
-    return this.request("POST", `/api/chats/${id}/title`, {
-      workspaceId: this.workspaceId,
-      title,
-    });
-  }
-
-  async getLayout(): Promise<{
-    revision: number;
-    groups: { id: string; name: string }[];
-    positions: { chatId: string; groupId: string }[];
-  }> {
-    const params = new URLSearchParams();
-    if (this.workspaceId) params.set("workspaceId", this.workspaceId);
-    return this.request("GET", `/api/chat-layout?${params.toString()}`);
-  }
-
-  async listGroupSessions(groupId: string): Promise<SessionSummary[]> {
-    const layout = await this.getLayout();
-    const ids = new Set(
-      layout.positions
-        .filter((position) => position.groupId === groupId)
-        .map((position) => position.chatId),
-    );
-    const sessions = await this.listSessions();
-    return sessions.filter((session) => ids.has(session.id));
-  }
-
-  /**
-   * Poll until the session reaches one of the requested statuses. SSE is the
-   * push transport in the browser; a bounded poll is the dependency-free
-   * equivalent for a short-lived CLI/MCP process.
-   */
-  async waitFor(
-    id: string,
-    until: string[],
-    timeoutMs = 600_000,
-    intervalMs = 1_500,
-    onTick?: (status: string) => void,
-  ): Promise<SessionSummary> {
-    const deadline = Date.now() + timeoutMs;
-    let last = "";
-    for (;;) {
-      // Polled every interval: status and answer only, never the transcript.
-      const session = await this.getSession(id, { events: false });
-      if (session.status !== last) {
-        onTick?.(session.status);
-        last = session.status;
-      }
-      if (until.includes(session.status)) return session;
-      if (Date.now() >= deadline) {
-        throw new FoundryClientError(
-          `timed out after ${timeoutMs}ms waiting for ${id} (last status: ${session.status})`,
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-  }
-}
-
-function pathnameOf(url: URL): string {
-  return url.pathname;
 }

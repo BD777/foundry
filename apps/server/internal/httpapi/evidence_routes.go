@@ -121,7 +121,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if err == nil {
-		s.publishEvidenceUpdate(issue, result.Candidate.ID, input.ExpectedContractRevision, "sealed")
+		s.issues.evidenceChanged(issue, result.Candidate.ID, input.ExpectedContractRevision, "sealed")
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 	}
 	writeEvidenceMutation(w, result, err)
@@ -205,7 +205,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results = append(results, v)
-		s.publishEvidenceUpdate(issue, v.ID, v.Sequence, v.Status)
+		s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
 		if v.Status == "queued" {
 			go s.dispatchVerification(issue, contract, v)
@@ -231,11 +231,11 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		return
 	}
 	if current.Status != "running" {
-		s.publishEvidenceUpdate(issue, current.ID, current.Sequence, current.Status)
+		s.issues.evidenceChanged(issue, current.ID, current.Sequence, current.Status)
 		return
 	}
 	v = current
-	s.publishEvidenceUpdate(issue, v.ID, v.Sequence, v.Status)
+	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
 	raw, err := st.GetEvidenceRecord(ctx, issue.ID, "input", v.VerificationInputID)
 	var input store.VerificationInput
 	if err == nil {
@@ -294,7 +294,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 		}
 		unlock()
 		if err == nil {
-			s.publishEvidenceUpdate(issue, v.ID, v.Sequence, result.Verification.Status)
+			s.issues.evidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
 			return
 		}
 	}
@@ -313,7 +313,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	if st.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
 		s.refreshIssueReview(finishCtx, st, issue)
 	}
-	s.publishEvidenceUpdate(issue, v.ID, v.Sequence, v.Status)
+	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
 }
 func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
 	unlock := s.lockIssueMutation(r.PathValue("id"))
@@ -329,7 +329,7 @@ func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := st.CreateHumanAssessment(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.publishEvidenceUpdate(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, value.ContractRevision, value.Verdict)
+		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, value.ContractRevision, value.Verdict)
 	}
 	writeEvidenceMutation(w, value, err)
 }
@@ -347,7 +347,7 @@ func (s *Server) handleHumanEvidence(w http.ResponseWriter, r *http.Request) {
 	}
 	value, err := st.RegisterHumanEvidence(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.publishEvidenceUpdate(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, input.ExpectedContractRevision, "registered")
+		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, input.ExpectedContractRevision, "registered")
 	}
 	writeEvidenceMutation(w, value, err)
 }
@@ -420,7 +420,7 @@ func (s *Server) handleMaterialUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "worker omitted sealed material")
 		return
 	}
-	s.publishEvidenceUpdate(issue, result.Materials[0].ID, 1, "available")
+	s.issues.evidenceChanged(issue, result.Materials[0].ID, 1, "available")
 	writeJSON(w, 201, result.Materials[0])
 }
 func (s *Server) handleMaterialContent(w http.ResponseWriter, r *http.Request) {

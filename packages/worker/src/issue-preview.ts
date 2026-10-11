@@ -4,6 +4,7 @@ import { ExecutionStore } from "./execution-storage.js";
 import { sandboxCommand, executorEnvironment } from "./execution-sandbox.js";
 import { spawnProcessGroup } from "./process-group.js";
 import { isPortAvailable, waitForPreview } from "./issues.js";
+import { issueEnvironmentChanged } from "./issue-environment-changes.js";
 
 type Preview = {
   state: "queued" | "running" | "stopped" | "failed";
@@ -43,6 +44,7 @@ export function queuePreview(issueId: string): void {
   if (previous && ["queued", "running"].includes(previous.state))
     throw new Error("Preview already exists");
   previews.set(issueId, { state: "queued", control: new AbortController() });
+  issueEnvironmentChanged({ issueId });
 }
 export async function stopIssuePreview(issueId: string): Promise<void> {
   const preview = previews.get(issueId);
@@ -50,6 +52,7 @@ export async function stopIssuePreview(issueId: string): Promise<void> {
     preview.control.abort();
     await preview.done?.catch(() => {});
     preview.state = "stopped";
+    issueEnvironmentChanged({ issueId });
   }
 }
 export async function runIssuePreview(
@@ -124,6 +127,7 @@ export async function runIssuePreview(
       );
     preview.url = url;
     preview.state = "running";
+    issueEnvironmentChanged({ workspaceId, issueId });
     await preview.done;
   } catch (error) {
     preview.control.abort();
@@ -133,5 +137,6 @@ export async function runIssuePreview(
   } finally {
     if (port !== undefined) leasedPorts.delete(port);
     delete preview.url;
+    issueEnvironmentChanged({ workspaceId, issueId });
   }
 }

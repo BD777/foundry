@@ -193,9 +193,9 @@ func TestFoundryDataIsCachedWhileASessionRuns(t *testing.T) {
 	if !cached() {
 		t.Fatal("a projection with a running session was not cached")
 	}
-	before := server.events.revision.Load()
-	server.events.Publish("agent_session_completed", store.AgentSession{ID: session.ID, WorkspaceID: "ws_running", Status: "completed"})
-	if server.events.revision.Load() == before {
+	before := server.stream.Revision()
+	server.sessions.changed(context.Background(), sessionCompleted, store.AgentSession{ID: session.ID, WorkspaceID: "ws_running", Status: "completed"})
+	if server.stream.Revision() == before {
 		t.Fatal("a session transition did not invalidate the snapshot")
 	}
 }

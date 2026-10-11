@@ -32,6 +32,7 @@ import {
 import {
   reclaimSessionResources,
   requestResourceAccess,
+  startSessionScratchSweeps,
 } from "./resource-pool.js";
 import { homedir } from "node:os";
 import { existingWorkspaceFolder } from "./workspace-registration.js";
@@ -60,6 +61,7 @@ import {
   postJSON,
   ReliableSessionTransport,
   sendWebSocket,
+  serverFeatures,
   trySendWebSocket,
   webSocketURL,
   SessionRunTransport,
@@ -69,6 +71,7 @@ import {
   AttachmentError,
   abortAttachmentUpload,
   readAttachmentImageChunk,
+  readWorkspaceFileChunk,
   writeAttachmentChunk,
 } from "./workspace-attachments.js";
 import { ConcurrentTaskScheduler } from "./task-scheduler.js";
@@ -106,13 +109,24 @@ import {
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
 import {
+  claudeBackgroundTaskLog,
   claudeBackgroundTaskOutput,
   closeAllActiveRuntimes,
   sessionHasRunningBackgroundTasks,
   stopClaudeBackgroundTask,
 } from "./runner.js";
 import { runWorkspaceSession, type WorkspaceSandbox } from "./session/index.js";
+import { BackgroundOutputFollowers } from "./background-output-follow.js";
+import {
+  coalescedIssueEnvironmentChanges,
+  onIssueEnvironmentChange,
+} from "./issue-environment-changes.js";
 import { issueSessionExecution } from "./issue-sessions.js";
+import {
+  verificationDirectory,
+  verificationExecution,
+} from "./verification-session.js";
+import { isVerificationSession } from "./session-roles.js";
 import {
   prepareClarification,
   recoveredClarificationCompletion,
@@ -174,6 +188,7 @@ import {
   sendSubagentList,
   sendSubagentTranscript,
   sendWorkspaceTreeListing,
+  type ListSubagentsPayload,
   type ListWorkspaceTreePayload,
   sessionEvent,
   noteSessionInput,
@@ -204,6 +219,8 @@ import {
 import { queuePreview, runIssuePreview } from "./issue-preview.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock, pairDevice } from "./device-pairing.js";
+import { superviseAgentProcesses } from "./agent-processes.js";
+import { startSessionTimers } from "./session-timers.js";
 
 interface ReadFilePayload {
   path: string;
@@ -224,16 +241,13 @@ interface AttachmentReadPayload {
   path: string;
   offset: number;
   maxBytes: number;
+  /** "workspace": any file of the workspace, not only an image attachment. */
+  scope?: "workspace";
 }
 
 interface ReadSubagentTranscriptPayload {
   sessionId: string;
   taskId: string;
-  workspaceId: string;
-}
-
-interface ListSubagentsPayload {
-  sessionId: string;
   workspaceId: string;
 }
 
@@ -343,6 +357,9 @@ export async function connect(args: string[]): Promise<void> {
     );
   }
   acquireDaemonLock();
+  // Agent processes die with this worker; those a previous one left
+  // running stop before any work starts here.
+  await superviseAgentProcesses();
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -410,9 +427,18 @@ async function connectWebSocket(args: string[]): Promise<void> {
   clearClaudeSettingsFiles();
   heartbeatTimer.unref();
   if (!(await registerAtStartup(serverURL, workspacePath))) return;
+  // Timers of sessions no process of this worker runs, kept across restarts.
+  if (!once) startSessionTimers(serverURL);
   if (workspacePath) await syncReviews(serverURL, workspacePath);
   const sessionTransport = new ReliableSessionTransport();
   const sessionExecutions = new SessionExecutionRegistry();
+  // Scratch directories of sessions idle too long, earlier runs' included.
+  if (!once)
+    startSessionScratchSweeps(
+      (sessionId) =>
+        sessionExecutions.activeSessionIds().includes(sessionId) ||
+        sessionHasRunningBackgroundTasks(sessionId),
+    );
   const taskScheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,
   );
@@ -475,16 +501,24 @@ interface SessionExecution {
 }
 
 // Chats run unsandboxed in the workspace itself; Issue-backed sessions run
-// where and how the Issue decides.
+// where and how the Issue decides; a verifier runs in the workspace inside a
+// sandbox that keeps it read-only.
 function sessionExecution(
   rootPath: string,
   session: AgentSession,
   ambient: SessionAmbientEnv,
 ): SessionExecution {
   const issueId = session.issueId?.trim();
-  return issueId
-    ? issueSessionExecution(session.workspaceId, issueId, session.id, ambient)
-    : { cwd: rootPath, stateRoot: rootPath };
+  if (issueId)
+    return issueSessionExecution(
+      session.workspaceId,
+      issueId,
+      session.id,
+      ambient,
+    );
+  if (isVerificationSession(session))
+    return verificationExecution(session, rootPath, ambient);
+  return { cwd: rootPath, stateRoot: rootPath };
 }
 
 /**
@@ -837,6 +871,33 @@ function runWebSocketSession(options: {
     // Once per connection and workspace (see recheckRunningNativeChats).
     const runningChatsRechecked = new Set<string>();
     const workspacePaths = new Map<string, string>();
+    // Background task logs read while they grow (see background-output-follow).
+    const outputFollowers = new BackgroundOutputFollowers({
+      notify: (sessionId, taskId) =>
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.backgroundTaskOutputChanged,
+          { sessionId, taskId },
+        ),
+    });
+    // Issue environment changes go to a server once it asks for them (a
+    // status read with notifyChanges); older servers never do.
+    let stopEnvironmentChanges: (() => void) | undefined;
+    function tellEnvironmentChanges(): void {
+      if (stopEnvironmentChanges) return;
+      const coalesced = coalescedIssueEnvironmentChanges((change) =>
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.issueEnvironmentChanged,
+          change,
+        ),
+      );
+      const unsubscribe = onIssueEnvironmentChange(coalesced.listener);
+      stopEnvironmentChanges = () => {
+        unsubscribe();
+        coalesced.close();
+      };
+    }
 
     // Timer-driven background turns arrive while no Foundry turn is active.
     // They cross the socket as ordinary session_event envelopes, which the
@@ -1301,7 +1362,8 @@ function runWebSocketSession(options: {
       }
       if (envelope.type === daemonMessageTypes.registered) {
         registered = true;
-        options.sessionTransport.bind(socket);
+        // A server that takes large envelopes in pieces says so here.
+        options.sessionTransport.bind(socket, serverFeatures(envelope.payload));
         // Timer-driven background turns arrive while no Foundry turn is
         // active; route their events over this socket as ordinary
         // session_event envelopes the server persists and broadcasts.
@@ -1347,7 +1409,11 @@ function runWebSocketSession(options: {
         const payload = envelope.payload as AttachmentReadPayload;
         let reply: Record<string, unknown>;
         try {
-          const chunk = readAttachmentImageChunk({
+          const read =
+            payload.scope === "workspace"
+              ? readWorkspaceFileChunk
+              : readAttachmentImageChunk;
+          const chunk = read({
             workspacePath: workspacePathFor(payload.workspaceId),
             path: payload.path,
             offset: payload.offset,
@@ -1483,20 +1549,32 @@ function runWebSocketSession(options: {
       if (envelope.type === daemonMessageTypes.readBackgroundTaskOutput) {
         // The request names a task, never a path: the device reads the log
         // it recorded for that task of that session.
+        // A reader that follows a running task's log is told when it grows
+        // (backgroundTaskOutputChanged) and continues from `after`.
         const payload = (envelope.payload ?? {}) as Partial<{
           workspaceId: string;
           sessionId: string;
           taskId: string;
+          after: number;
+          follow: boolean;
         }>;
         let reply: Record<string, unknown>;
         try {
-          reply = {
-            ...claudeBackgroundTaskOutput({
-              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
-              sessionId: payload.sessionId ?? "",
-              taskId: payload.taskId ?? "",
-            }),
-          };
+          const sessionId = payload.sessionId ?? "";
+          const taskId = payload.taskId ?? "";
+          const output = claudeBackgroundTaskOutput({
+            workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+            sessionId,
+            taskId,
+            after: payload.after,
+          });
+          const following =
+            payload.follow === true &&
+            output.kind !== "binary" &&
+            outputFollowers.follow(sessionId, taskId, output.bytes, () =>
+              claudeBackgroundTaskLog(sessionId, taskId),
+            );
+          reply = { ...output, ...(following ? { following } : {}) };
         } catch (error) {
           reply = {
             sessionId: payload.sessionId ?? "",
@@ -2495,7 +2573,12 @@ function runWebSocketSession(options: {
             recorded = report.clarificationResult ? report : undefined;
           } else if (!payload.session.issueId) {
             const marker = readAgentSessionCompletionMarker(
-              workspacePathFor(payload.session.workspaceId),
+              isVerificationSession(payload.session)
+                ? verificationDirectory(
+                    payload.session.workspaceId,
+                    payload.session.id,
+                  )
+                : workspacePathFor(payload.session.workspaceId),
               payload.session.id,
               inputId,
             );
@@ -2586,6 +2669,7 @@ function runWebSocketSession(options: {
           workspaceId: string;
           issueId: string;
           revision: number;
+          notifyChanges?: boolean;
         };
         try {
           const sourcePath = workspacePathFor(payload.workspaceId);
@@ -2608,10 +2692,13 @@ function runWebSocketSession(options: {
             ...payload,
             sourcePath,
           });
+          const notifiesChanges =
+            payload.action === "status" && payload.notifyChanges === true;
+          if (notifiesChanges) tellEnvironmentChanges();
           trySendWebSocket(
             socket,
             daemonMessageTypes.issueEnvironmentResult,
-            result,
+            notifiesChanges ? { ...result, notifiesChanges } : result,
             envelope.id,
           );
         } catch (error) {
@@ -2648,6 +2735,8 @@ function runWebSocketSession(options: {
 
     socket.on("close", (code?: number, reason?: Buffer) => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      outputFollowers.close();
+      stopEnvironmentChanges?.();
       options.sessionTransport.unbind(socket);
       if (currentSocket === socket) currentSocket = undefined;
       const report = connection.closed(code, reason?.toString());

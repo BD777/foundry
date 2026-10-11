@@ -290,6 +290,8 @@ export function mergeLoadedAgentSession(
     // List summaries carry no response. The kept one only answers "is this
     // session's detail loaded"; a transcript never shows it over events.
     response: incoming.response || existing.response,
+    // A session without one holds no timers any more.
+    scheduled: incoming.scheduled,
   };
 }
 

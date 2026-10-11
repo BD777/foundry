@@ -42,7 +42,10 @@ import {
   claudeRoleOptions,
   clarificationFoundryTools,
   isClarificationSession,
+  isVerificationSession,
+  verificationMaxTurns,
 } from "./session-roles.js";
+import { verificationNotes } from "./verification-session.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -222,6 +225,33 @@ export function validateClaudeLaunch(input: {
 }
 
 /**
+ * What a workspace session is told about the device it runs on: none for a
+ * utility session, a verifier's own notes for a verifier, the Resource
+ * Pool's notes otherwise. `temporaryDirectory` is the session's TMPDIR.
+ */
+export function sessionDeviceNotes(
+  workspacePath: string,
+  session: AgentSession,
+  temporaryDirectory?: string,
+): string {
+  if (isUtilitySession(session)) return "";
+  if (isVerificationSession(session))
+    return verificationNotes({
+      workspacePath,
+      sessionId: session.id,
+      temporaryDirectory,
+      maxTurns:
+        session.provider === "claude" ? verificationMaxTurns : undefined,
+    });
+  return sessionResourceNotes(
+    workspacePath,
+    undefined,
+    usesSessionScratch(session) ? session.id : undefined,
+    session.id,
+  );
+}
+
+/**
  * Assemble the complete launch configuration for one Claude workspace
  * session turn, on the native session it was prepared with.
  */
@@ -236,14 +266,7 @@ export function buildClaudeLaunchPlan(input: {
   validateClaudeLaunch(input);
 
   const env = sessionEnvironment(workspacePath, profile, session);
-  const deviceNotes = isUtilitySession(session)
-    ? ""
-    : sessionResourceNotes(
-        workspacePath,
-        undefined,
-        usesSessionScratch(session) ? session.id : undefined,
-        session.id,
-      );
+  const deviceNotes = sessionDeviceNotes(workspacePath, session, env.TMPDIR);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const role = claudeRoleOptions(session);
   const tools = foundryToolsEndpoint(session);

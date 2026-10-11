@@ -61,6 +61,26 @@ func (s *Store) reader() dbExecutor {
 	return s.db
 }
 
+// readSnapshot runs fn's reads, which take no write decision of their own,
+// against one state of the database: the current transaction's, or else a
+// read transaction on the read pool, so reads made in several statements
+// see the same commits.
+func (s *Store) readSnapshot(ctx context.Context, fn func(db dbExecutor) error) error {
+	if s.exec != nil {
+		return fn(s.exec)
+	}
+	pool := s.read
+	if pool == nil {
+		pool = s.db
+	}
+	tx, err := pool.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin read transaction: %w", err)
+	}
+	defer tx.Rollback()
+	return fn(tx)
+}
+
 // withTx runs fn against a Store clone bound to a single transaction. Every
 // helper reached through that clone uses the transaction, which matters because
 // the pool is limited to one connection: a stray s.db call inside fn would

@@ -205,7 +205,40 @@ export interface ReliableSessionTransportOptions {
   answerTimeoutMs?: number;
   /** How often unanswered messages are looked for. */
   answerCheckMs?: number;
+  /**
+   * An envelope sent on the bound socket whose JSON is longer than this
+   * goes in pieces of this many characters, once the server takes pieces
+   * (see bind).
+   */
+  pieceChars?: number;
   now?: () => number;
+}
+
+/** What the server said it takes, in its answer to the registration. */
+export interface ServerFeatures {
+  /** Large envelopes may go in pieces (reply_chunk). */
+  replyChunks?: boolean;
+}
+
+/** The server's registered answer as features; an older server sends none. */
+export function serverFeatures(payload: unknown): ServerFeatures {
+  const features =
+    payload && typeof payload === "object"
+      ? (payload as { features?: unknown }).features
+      : undefined;
+  return {
+    replyChunks: Array.isArray(features) && features.includes("reply_chunks"),
+  };
+}
+
+/** A large envelope going out in pieces. */
+interface PiecedEnvelope {
+  id: string;
+  data: string;
+  /** Characters of data already sent. */
+  sent: number;
+  /** The next piece's number. */
+  seq: number;
 }
 
 /**
@@ -227,6 +260,18 @@ const defaultMaxFailureRetries = 8;
 const defaultAnswerTimeoutMs = 5 * 60_000;
 const defaultAnswerCheckMs = 60_000;
 const recentAckMs = 2 * 60_000;
+// At 10 KB/s 16 KB is under two seconds: what a small reply waits for at
+// most beyond the high-water mark.
+const defaultPieceChars = 16 * 1024;
+
+/**
+ * The outbox bound to a socket whose server takes pieces: sendWebSocket
+ * hands it that socket's large envelopes.
+ */
+const piecingOutboxes = new WeakMap<
+  WebSocketSender,
+  ReliableSessionTransport
+>();
 
 /**
  * Reliable, reconnectable outbox for agent-session lifecycle traffic.
@@ -253,6 +298,15 @@ const recentAckMs = 2 * 60_000;
  * an older one the server has not acknowledged: not yet written, it never
  * goes; written, it is not sent again after a reconnect. Lifecycle messages
  * and other events are never dropped.
+ *
+ * A large envelope sent on the bound socket with sendWebSocket (a skill scan,
+ * a 1 MiB file chunk) would otherwise sit in the socket ahead of everything
+ * after it for minutes on a slow uplink. When the server takes pieces it
+ * goes as reply_chunk pieces instead, written like events while the socket
+ * has room, taking turns with the events and with other large envelopes, so
+ * urgent lifecycle messages and small replies are never behind more than
+ * the high-water mark and one piece. Pieces belong to their socket: like
+ * the request they answer, they are dropped with it.
  */
 export class ReliableSessionTransport {
   private readonly coalescedEnvelopeIds = new Map<string, string>();
@@ -272,10 +326,15 @@ export class ReliableSessionTransport {
   private readonly maxFailureRetries: number;
   private readonly answerTimeoutMs: number;
   private readonly answerCheckMs: number;
+  private readonly pieceChars: number;
   private readonly now: () => number;
+  /** Large envelopes going out in pieces, the next to send a piece first. */
+  private readonly pieced: PiecedEnvelope[] = [];
   private answerTimer?: ReturnType<typeof setTimeout>;
   private drainTimer?: ReturnType<typeof setTimeout>;
   private lastAck?: { at: number; latencyMs: number };
+  /** Whether a piece goes before the next queued event. */
+  private pieceTurn = false;
   private pumpScheduled = false;
   private sequence = 0;
   private socket?: WebSocketSender;
@@ -289,17 +348,28 @@ export class ReliableSessionTransport {
       options.maxFailureRetries ?? defaultMaxFailureRetries;
     this.answerTimeoutMs = options.answerTimeoutMs ?? defaultAnswerTimeoutMs;
     this.answerCheckMs = options.answerCheckMs ?? defaultAnswerCheckMs;
+    this.pieceChars = options.pieceChars ?? defaultPieceChars;
     this.now = options.now ?? Date.now;
   }
 
-  bind(socket: WebSocketSender): void {
+  /**
+   * Carries the outbox on socket from now on. features is what the server
+   * said it takes; large envelopes go in pieces only to a server that takes
+   * them.
+   */
+  bind(socket: WebSocketSender, features: ServerFeatures = {}): void {
+    if (features.replyChunks) piecingOutboxes.set(socket, this);
+    else piecingOutboxes.delete(socket);
     if (this.socket === socket) {
       // Registered again on the same connection: it already has what was
       // written to it.
       this.pump();
       return;
     }
+    if (this.socket) piecingOutboxes.delete(this.socket);
     this.socket = socket;
+    // What was going out in pieces answered the old connection's requests.
+    this.pieced.length = 0;
     // A new connection carries everything unacknowledged again, in order.
     this.clearFailureRetries();
     this.urgent.clear();
@@ -315,6 +385,8 @@ export class ReliableSessionTransport {
 
   unbind(socket: WebSocketSender): void {
     if (this.socket === socket) {
+      piecingOutboxes.delete(socket);
+      this.pieced.length = 0;
       this.socket = undefined;
       this.clearDrainCheck();
       this.clearAnswerCheck();
@@ -406,6 +478,24 @@ export class ReliableSessionTransport {
   }
 
   /**
+   * Sends one serialized envelope on the bound socket in pieces, taking
+   * turns with events and other large envelopes. False when it is small,
+   * socket is not the bound one or its server does not take pieces: send it
+   * whole.
+   */
+  sendInPieces(socket: WebSocketSender, id: string, data: string): boolean {
+    if (
+      data.length <= this.pieceChars ||
+      socket !== this.socket ||
+      piecingOutboxes.get(socket) !== this
+    )
+      return false;
+    this.pieced.push({ id, data, sent: 0, seq: 0 });
+    this.pump();
+    return true;
+  }
+
+  /**
    * Resolves true once the server acknowledged everything sent, false when
    * timeoutMs passes first or no socket is left to carry it.
    */
@@ -479,7 +569,10 @@ export class ReliableSessionTransport {
     }
   }
 
-  /** Writes what may go now: urgent messages, then events while there is room. */
+  /**
+   * Writes what may go now: urgent messages, then events and pieces of
+   * large envelopes, taking turns, while there is room.
+   */
   private pump(): void {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -491,18 +584,59 @@ export class ReliableSessionTransport {
       }
       this.urgent.delete(id);
     }
-    while (this.queued.size > 0) {
+    while (this.queued.size > 0 || this.pieced.length > 0) {
       if ((socket.bufferedAmount ?? 0) >= this.highWaterMarkBytes) {
         this.scheduleDrainCheck();
         return;
+      }
+      if (
+        this.pieced.length > 0 &&
+        (this.pieceTurn || this.queued.size === 0)
+      ) {
+        if (!this.writePiece(socket)) {
+          return;
+        }
+        this.pieceTurn = false;
+        continue;
       }
       const id = this.queued.values().next().value as string;
       if (!this.write(socket, id)) {
         return;
       }
       this.queued.delete(id);
+      this.pieceTurn = true;
     }
     this.clearDrainCheck();
+  }
+
+  /** Writes the next piece of the first large envelope, which then waits its turn. */
+  private writePiece(socket: WebSocketSender): boolean {
+    const envelope = this.pieced[0]!;
+    let end = Math.min(envelope.sent + this.pieceChars, envelope.data.length);
+    // A piece ends between characters, never inside a surrogate pair.
+    const last = envelope.data.charCodeAt(end - 1);
+    if (end < envelope.data.length && last >= 0xd800 && last <= 0xdbff) {
+      end -= 1;
+    }
+    const piece: ProtocolEnvelope = {
+      type: daemonMessageTypes.replyChunk,
+      payload: {
+        id: envelope.id,
+        seq: envelope.seq,
+        ...(end === envelope.data.length ? { last: true } : {}),
+        data: envelope.data.slice(envelope.sent, end),
+      },
+    };
+    try {
+      socket.send(JSON.stringify(piece), () => this.pumpSoon());
+    } catch {
+      return false;
+    }
+    this.pieced.shift();
+    envelope.sent = end;
+    envelope.seq += 1;
+    if (envelope.sent < envelope.data.length) this.pieced.push(envelope);
+    return true;
   }
 
   private write(socket: WebSocketSender, id: string): boolean {
@@ -522,7 +656,10 @@ export class ReliableSessionTransport {
   }
 
   private pumpSoon(): void {
-    if (this.pumpScheduled || this.queued.size === 0) {
+    if (
+      this.pumpScheduled ||
+      (this.queued.size === 0 && this.pieced.length === 0)
+    ) {
       return;
     }
     this.pumpScheduled = true;
@@ -586,7 +723,8 @@ export class ReliableSessionTransport {
     const drained =
       (socket.bufferedAmount ?? 0) === 0 &&
       this.urgent.size === 0 &&
-      this.queued.size === 0;
+      this.queued.size === 0 &&
+      this.pieced.length === 0;
     const now = this.now();
     for (const [id, entry] of this.pending) {
       if (
@@ -674,6 +812,11 @@ export function webSocketURL(serverURL: string): string {
   return url.toString();
 }
 
+/**
+ * Writes one envelope to the socket at once, unless it is large and the
+ * socket's outbox sends large envelopes in pieces (see
+ * ReliableSessionTransport).
+ */
 export function sendWebSocket(
   socket: WebSocket,
   type: string,
@@ -683,12 +826,14 @@ export function sendWebSocket(
   if (socket.readyState !== WebSocket.OPEN) {
     return;
   }
-  const envelope: ProtocolEnvelope = {
-    id: id ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    payload,
-    type,
-  };
-  socket.send(JSON.stringify(envelope));
+  const envelopeId =
+    id ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const envelope: ProtocolEnvelope = { id: envelopeId, payload, type };
+  const data = JSON.stringify(envelope);
+  if (piecingOutboxes.get(socket)?.sendInPieces(socket, envelopeId, data)) {
+    return;
+  }
+  socket.send(data);
 }
 
 export function trySendWebSocket(

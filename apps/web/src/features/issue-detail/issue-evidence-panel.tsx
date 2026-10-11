@@ -26,13 +26,7 @@ import { ExitRulesList } from "./exit-rules-list";
 import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
 import { requestChanges } from "../../api";
 
-export function IssueEvidencePanel({
-  issue,
-  onRefresh,
-}: {
-  issue: Issue;
-  onRefresh: (id: string) => void;
-}) {
+export function IssueEvidencePanel({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
   const [review, setReview] = useState<ReviewSnapshot>();
@@ -74,7 +68,6 @@ export function IssueEvidencePanel({
     try {
       await action();
       await load();
-      onRefresh(issue.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       // A refused action can change what is possible next (a moved baseline

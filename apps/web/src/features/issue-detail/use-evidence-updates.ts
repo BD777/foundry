@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   foundryStreamEpoch,
   foundryStreamOpened,
-  subscribeFoundryEvents,
-} from "../../api";
+  onStreamEvent,
+} from "../../stream";
 
 /**
  * SSE contains IDs/status only; fetch the authoritative review after a burst,
@@ -40,13 +40,10 @@ export function useEvidenceUpdates(
           });
       }, 100);
     };
-    const close = subscribeFoundryEvents(
-      (event) => {
-        if (
-          event.type === "evidence_updated" &&
-          event.payload.issueId === issueId
-        )
-          schedule();
+    const close = onStreamEvent(
+      "evidence_updated",
+      (payload) => {
+        if (payload.issueId === issueId) schedule();
       },
       {
         onResync: () => {

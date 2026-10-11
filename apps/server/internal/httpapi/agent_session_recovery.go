@@ -11,9 +11,8 @@ import (
 )
 
 func (s *Server) reconcileAgentSession(ctx context.Context, session store.AgentSession) (store.AgentSession, bool, error) {
-	result, recovered, err := reconcileAgentSession(ctx, s.store, s.events, session, s.options.AgentSessionStaleAfter, s.hub.HasActiveSession)
+	result, recovered, err := reconcileAgentSession(ctx, s.store, s.sessions, session, s.options.AgentSessionStaleAfter, s.hub.HasActiveSession)
 	if recovered && err == nil {
-		s.titles.SessionCompleted(ctx, result)
 		s.hub.settleIssueSession(ctx, result, nil, nil)
 	}
 	return result, recovered, err
@@ -73,7 +72,7 @@ func (s *Server) reconcileStaleSessions(ctx context.Context) error {
 }
 
 func (h *DaemonHub) reconcileAgentSession(ctx context.Context, session store.AgentSession) (store.AgentSession, bool, error) {
-	result, recovered, err := reconcileAgentSession(ctx, h.store, h.events, session, defaultAgentSessionStaleAfter, h.HasActiveSession)
+	result, recovered, err := reconcileAgentSession(ctx, h.store, h.sessions, session, defaultAgentSessionStaleAfter, h.HasActiveSession)
 	if recovered && err == nil {
 		h.settleIssueSession(ctx, result, nil, nil)
 	}
@@ -83,7 +82,7 @@ func (h *DaemonHub) reconcileAgentSession(ctx context.Context, session store.Age
 // reconcileAgentSession fails an input whose device stopped reporting
 // activity. Whether an orphaned input finished is the device's to say
 // (recover_session on reconnect); the server never reads a workspace's disk.
-func reconcileAgentSession(ctx context.Context, st store.Store, events *browserEventHub, session store.AgentSession, staleAfter time.Duration, hasActiveSession func(deviceID string, sessionID string) bool) (store.AgentSession, bool, error) {
+func reconcileAgentSession(ctx context.Context, st store.Store, events sessionChangeNotifier, session store.AgentSession, staleAfter time.Duration, hasActiveSession func(deviceID string, sessionID string) bool) (store.AgentSession, bool, error) {
 	if !isRecoverableAgentSessionStatus(session.Status) {
 		return session, false, nil
 	}
@@ -92,7 +91,7 @@ func reconcileAgentSession(ctx context.Context, st store.Store, events *browserE
 		if err != nil {
 			return session, false, err
 		}
-		events.Publish("agent_session_completed", updated)
+		events.changed(ctx, sessionCompleted, updated)
 		return updated, true, nil
 	}
 	return session, false, nil

@@ -289,7 +289,7 @@ func (s *Server) routeTable() []route {
 	}
 	routes := []route{
 		// Session event stream: each subscriber only receives its workspaces.
-		{pattern: "GET /api/events", handler: s.events, rule: filtered()},
+		fn("GET /api/events", s.handleEvents, filtered()),
 		fn("POST /api/mcp", s.handleMCP, inHandler()),
 
 		fn("GET /api/auth/state", s.handleAuthState, publicRoute()),
@@ -356,6 +356,22 @@ func (s *Server) routeTable() []route {
 		fn("PUT /api/profiles/{id}", s.handleUpdateProfile, connectionOwner("id")),
 		fn("DELETE /api/profiles/{id}", s.handleDeleteProfile, connectionOwner("id")),
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
+
+		// External accounts (external_accounts.go): a person's own logins at
+		// third-party platforms; a workspace's bindings; a device's re-mint.
+		fn("GET /api/external-accounts", s.handleExternalAccountsView, filtered()),
+		fn("POST /api/external-apps", s.handleCreateExternalApp, inHandler()),
+		fn("DELETE /api/external-apps/{id}", s.handleDeleteExternalApp, inHandler()),
+		fn("POST /api/external-accounts/connect", s.handleConnectExternalAccount, inHandler()),
+		fn("GET /api/external-accounts/logins/{id}", s.handleExternalAccountLogin, inHandler()),
+		fn("GET /api/external-accounts/{id}", s.handleGetExternalAccount, externalAccountOwner("id")),
+		fn("PATCH /api/external-accounts/{id}", s.handleUpdateExternalAccount, externalAccountOwner("id")),
+		fn("DELETE /api/external-accounts/{id}", s.handleDisconnectExternalAccount, externalAccountOwner("id")),
+		fn("POST /api/external-accounts/{id}/refresh", s.handleRefreshExternalAccount, externalAccountOwner("id")),
+		fn("POST /api/external-accounts/{id}/revoke", s.handleRevokeExternalAccount, externalAccountOwner("id")),
+		fn("POST /api/external-accounts/{id}/mint", s.handleMintExternalAccountToken, daemonProtocol()),
+		fn("GET /api/workspaces/{id}/external-accounts", s.handleWorkspaceExternalAccounts, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/external-accounts", s.handleSetWorkspaceExternalAccounts, workspaceRole(maintainer, pathWorkspace("id"))),
 
 		fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files", s.handleListWorkspaceFiles, workspaceRole(viewer, queryWorkspace())),
@@ -460,6 +476,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
+		fn("POST /api/daemon/sessions/{id}/timer-fires", s.handleDaemonTimerFire, daemonProtocol()),
 		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}

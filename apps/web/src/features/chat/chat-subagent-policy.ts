@@ -1,7 +1,7 @@
 import type {
   AgentSession,
   AgentSessionEvent,
-  AgentSubagentSummary,
+  AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
 import { isProcessLabel } from "../../lib/process-labels";
 
@@ -191,9 +191,9 @@ export function subagentReadDelay({
  * replaces the subagent the list has: a read may already hold its end.
  */
 export function applySubagentUpdate(
-  subagents: AgentSubagentSummary[],
-  update: AgentSubagentSummary,
-): AgentSubagentSummary[] {
+  subagents: AgentSubagentDigest[],
+  update: AgentSubagentDigest,
+): AgentSubagentDigest[] {
   const index = subagents.findIndex(
     (subagent) => subagent.taskId === update.taskId,
   );

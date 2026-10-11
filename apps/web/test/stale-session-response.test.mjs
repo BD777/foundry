@@ -92,7 +92,7 @@ function session(overrides) {
 function shownAnswers(value) {
   const thread = chatThreadsFromSessions([value])[0];
   const messages = chatMessagesForThread(thread, {
-    suppressedResponseTexts: new Set(),
+    suppressedResponseFingerprints: new Set(),
   });
   const answers = [];
   let current;

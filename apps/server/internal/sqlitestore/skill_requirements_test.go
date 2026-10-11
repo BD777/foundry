@@ -44,10 +44,10 @@ func TestSkillRequirementsAndDeviceTools(t *testing.T) {
 		t.Fatalf("backfilled requires %v", loaded.Requires)
 	}
 
-	if err := db.ReplaceDeviceTools(ctx, "dev", map[string]bool{"ffmpeg": false, "python3": true}, nil); err != nil {
+	if _, err := db.ReplaceDeviceTools(ctx, "dev", map[string]bool{"ffmpeg": false, "python3": true}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ReplaceDeviceTools(ctx, "dev", map[string]bool{"ffmpeg": true}, map[string]string{"feishu-cli": "v1.41.0"}); err != nil {
+	if _, err := db.ReplaceDeviceTools(ctx, "dev", map[string]bool{"ffmpeg": true}, map[string]string{"feishu-cli": "v1.41.0"}); err != nil {
 		t.Fatal(err)
 	}
 	tools, err := db.ListDeviceTools(ctx, "dev")

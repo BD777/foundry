@@ -3,3 +3,8 @@
 import { register } from "node:module";
 
 register("./bundler-resolve.mjs", import.meta.url);
+
+// Node offers BroadcastChannel and navigator.locks, which the event stream
+// uses to share one connection between a browser's tabs. A test file is
+// one tab: it streams alone unless it builds tabs of its own.
+delete globalThis.BroadcastChannel;

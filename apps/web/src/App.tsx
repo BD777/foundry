@@ -23,7 +23,6 @@ import {
   clearProfileCredential,
   createProfile,
   deleteProfile,
-  emptyWorkspace,
   isAbortError,
   loadFoundryWorkspace,
   listAgentModels,
@@ -61,11 +60,22 @@ import {
   type SidebarView,
 } from "./app/navigation";
 import { workspaceComposerSkills } from "./app/composer-skills";
+import { demoFoundryData, emptyFoundryData } from "./app/initial-data";
+import {
+  assetsViewFields,
+  devicesViewFields,
+  libraryViewFields,
+  profilesViewFields,
+  skillsViewFields,
+  workspacesViewFields,
+} from "./app/view-fields";
 import { useDocumentTitle } from "./app/use-document-title";
 import { firstLoadedChatId } from "./app/chat-selection";
 import {
+  applyAnsweredEvent,
   applyFoundryDataAnswer,
   loadedChatSelection,
+  withSessionDetails,
   resolveChatSelection,
   readFoundryDataSelection,
   useRemovedChatSelection,
@@ -142,7 +152,6 @@ import {
   type WorkspacesFeatureEvent,
 } from "./features/workspaces";
 import { liveDevices } from "./lib/devices";
-import { mergeLoadedAgentSession } from "./lib/agent-session-events";
 import { workspaceDenial } from "./lib/workspace-access";
 import {
   issueDisplayId,
@@ -150,12 +159,6 @@ import {
   preferredIssueId,
 } from "./lib/issue-meta";
 import {
-  fixtureAssets,
-  fixtureChats,
-  fixtureDevice,
-  fixtureIssues,
-  fixtureProviderHealth,
-  fixtureWorkspace,
   type AgentProjection,
   type AssetProjection,
   type DeviceProjection,
@@ -196,44 +199,8 @@ export function App() {
   const demoFallbackEnabled =
     import.meta.env.VITE_DEMO_FALLBACK === "1" ||
     new URLSearchParams(window.location.search).get("demo") === "1";
-  const fallbackData: FoundryData = {
-    workspace: fixtureWorkspace,
-    workspaces: [fixtureWorkspace],
-    devices: [fixtureDevice],
-    providerHealth: fixtureProviderHealth,
-    agentProfiles: [],
-    deviceProfiles: [],
-    deviceSkillRoots: [],
-    promotedSkills: [],
-    workspaceSkillBindings: [],
-    profiles: [],
-    agents: [],
-    workspaceFiles: [],
-    agentSessions: [],
-    skills: [],
-    issues: fixtureIssues,
-    chats: fixtureChats,
-    assets: fixtureAssets,
-  };
-  const emptyData: FoundryData = {
-    workspace: emptyWorkspace,
-    workspaces: [],
-    devices: [],
-    providerHealth: [],
-    agentProfiles: [],
-    deviceProfiles: [],
-    deviceSkillRoots: [],
-    promotedSkills: [],
-    workspaceSkillBindings: [],
-    profiles: [],
-    agents: [],
-    workspaceFiles: [],
-    agentSessions: [],
-    skills: [],
-    issues: [],
-    chats: [],
-    assets: [],
-  };
+  const fallbackData = demoFoundryData;
+  const emptyData = emptyFoundryData;
   const [activeView, setActiveView] = useState<NavView>(
     initialRouteRef.current.view,
   );
@@ -331,8 +298,6 @@ export function App() {
     const workspaceSeq = workspaceLoadSeqRef.current;
     const nextSelectedIssueId = pendingIssueSelectionRef.current;
     pendingIssueSelectionRef.current = undefined;
-    const mark = streamTouches.mark();
-    const touched = () => streamTouches.since(mark);
     try {
       const result = await readFoundryDataSelection(
         activeWorkspaceId,
@@ -341,6 +306,9 @@ export function App() {
       );
       if (workspaceSeq !== workspaceLoadSeqRef.current) return "skipped";
       const { data: loaded, fields } = result;
+      // The answer may have started in another tab, before this call.
+      const mark = streamTouches.markAt(result.requestedAt);
+      const touched = () => streamTouches.since(mark);
       const missed = applyFoundryDataAnswer(result, mark, readContext);
       if (missed) setSwitchRead(missed);
       if (result.notModified) return "applied";
@@ -359,10 +327,14 @@ export function App() {
             : preferredIssueId(loaded.issues);
         });
       if (read("chats") || read("agentSessions")) {
-        // A selection holds only its fields: resolve against all of them.
-        const shown = fields
-          ? mergeLoadedFoundryData(dataRef.current, loaded, touched(), fields)
-          : loaded;
+        // Resolve against what the read shows: merged with what live events
+        // (and answered actions) changed after it started.
+        const shown = mergeLoadedFoundryData(
+          dataRef.current,
+          loaded,
+          touched(),
+          fields,
+        );
         setSelectedChatId((current) =>
           resolveChatSelection(shown, current, { respectChatRoute: true }),
         );
@@ -390,15 +362,20 @@ export function App() {
       : noFields;
 
   // At most one read runs; callers meanwhile share one more read that starts
-  // after it, so each caller sees data read after its call, with the page
-  // fields the view shows.
+  // after it, so each caller sees data read after its call: the default set
+  // with the page fields the view shows, or only `fields` (see view-fields).
   async function refreshData(
-    nextSelectedIssueId?: string,
-    options: { silent?: boolean; throwOnError?: boolean } = {},
+    options: {
+      silent?: boolean;
+      throwOnError?: boolean;
+      fields?: readonly FoundryDataField[];
+    } = {},
   ): Promise<void> {
-    if (nextSelectedIssueId)
-      pendingIssueSelectionRef.current = nextSelectedIssueId;
-    const outcome = await readDataOnce({ all: true, fields: pageFields });
+    const outcome = await readDataOnce(
+      options.fields
+        ? { fields: options.fields }
+        : { all: true, fields: pageFields },
+    );
     if (outcome === "applied") {
       if (!options.silent) setNotice(t("notices.dataRefreshed"));
       return;
@@ -428,8 +405,11 @@ export function App() {
     const signal = requestChannels.signalFor("workspace-load");
     try {
       setApiState("loading");
-      const mark = streamTouches.mark();
-      const result = await loadFoundryWorkspace(workspaceId, { signal });
+      // With nothing shown yet there is nothing to keep: read it whole.
+      const result = await loadFoundryWorkspace(workspaceId, {
+        signal,
+        whole: !data.workspace.id,
+      });
       const loaded = result.data;
       // The sequence guard still protects state that a resolved-but-stale
       // response could clobber before its abort is observed.
@@ -439,7 +419,11 @@ export function App() {
       if (loaded.workspace.id !== workspaceId) {
         throw new Error("The requested workspace is no longer available.");
       }
-      const missed = applyFoundryDataAnswer(result, mark, readContext);
+      const missed = applyFoundryDataAnswer(
+        result,
+        streamTouches.markAt(result.requestedAt),
+        readContext,
+      );
       if (missed) setSwitchRead(missed);
       requestChannels.abort("file-read");
       setSelectedFileRead(undefined);
@@ -497,7 +481,12 @@ export function App() {
       return;
     }
     if (event.type === "workspaces.changed") {
-      await refreshData(undefined, { silent: true, throwOnError: true });
+      // The first workspace becomes the one shown: a whole read switches.
+      await refreshData({
+        silent: true,
+        throwOnError: true,
+        fields: data.workspace.id ? workspacesViewFields : undefined,
+      });
       return;
     }
     if (event.type === "workspace.activation.requested") {
@@ -520,7 +509,7 @@ export function App() {
       persistWorkspaceId(routeWorkspaceId);
     }
     pendingIssueSelectionRef.current = selectedIssueId || undefined;
-    if (demoFallbackEnabled) void refreshData(undefined, { silent: true });
+    if (demoFallbackEnabled) void refreshData({ silent: true });
   }, []);
 
   const pageFieldsLoaded = useFoundryLiveData({
@@ -646,30 +635,16 @@ export function App() {
       draftFromSource(event.source);
       return;
     }
-    if (event.type === "data.refresh.requested") {
-      await refreshData(undefined, { silent: true });
+    if (event.type === "session.answered") {
+      applyAnsweredEvent(readContext, {
+        type: "agent_session_created",
+        payload: event.session,
+      });
       return;
     }
-    setData((current) => {
-      if (current.workspace.id !== event.workspaceId) {
-        return current;
-      }
-      const loadedById = new Map(
-        event.sessions
-          .filter((session) => session.workspaceId === event.workspaceId)
-          .map((session) => [session.id, session]),
-      );
-      if (loadedById.size === 0) {
-        return current;
-      }
-      return {
-        ...current,
-        agentSessions: current.agentSessions.map((session) => {
-          const loaded = loadedById.get(session.id);
-          return loaded ? mergeLoadedAgentSession(session, loaded) : session;
-        }),
-      };
-    });
+    setData((current) =>
+      withSessionDetails(current, event.workspaceId, event.sessions),
+    );
   }
 
   const workspaceComposerSlashSkills = useMemo(
@@ -760,8 +735,10 @@ export function App() {
       openIssue(event.issueId);
       return;
     }
-    setSelectedIssueId(event.issue.id);
-    await refreshData(event.issue.id);
+    applyAnsweredEvent(readContext, {
+      type: "issue_created",
+      payload: event.issue,
+    });
     openIssue(event.issue.id);
     setNotice(
       `${issueDisplayId(event.issue)} created · awaiting contract confirmation.`,
@@ -806,25 +783,25 @@ export function App() {
           deviceId: event.deviceId,
           profileIds: event.profileIds,
         });
-        await refreshData();
+        await refreshData({ fields: profilesViewFields });
         return;
       }
       if (event.type === "save-profile") {
         const profile = event.input.id
           ? await updateProfile(event.input.id, event.input)
           : await createProfile(event.input);
-        await refreshData();
+        await refreshData({ fields: profilesViewFields });
         setNotice(`${profile.label} saved.`);
         return profile;
       }
       if (event.type === "delete-profile") {
         const profile = await deleteProfile(event.profileId);
-        await refreshData();
+        await refreshData({ fields: profilesViewFields });
         setNotice(`${profile.label} deleted.`);
         return profile;
       }
       const profile = await clearProfileCredential(event.profileId);
-      await refreshData();
+      await refreshData({ fields: profilesViewFields });
       setNotice(`Credential cleared for ${profile.label}.`);
       return profile;
     } catch (error) {
@@ -882,7 +859,7 @@ export function App() {
         files={workspaceFiles}
         onEvent={(event) => {
           if (event.type === "data.refresh.requested") {
-            void refreshData();
+            void refreshData({ fields: assetsViewFields });
           } else {
             setNotice(t("notices.openDaemonLogs"));
           }
@@ -902,7 +879,9 @@ export function App() {
         catalogLoading={!pageFieldsLoaded.has("promotedSkills")}
         devices={data.devices}
         embedded
-        onChanged={() => refreshData(undefined, { silent: true })}
+        onChanged={() =>
+          refreshData({ silent: true, fields: skillsViewFields })
+        }
         onEvent={(event) => {
           if (event.type === "notice.requested") {
             setNotice(event.message);
@@ -982,8 +961,9 @@ export function App() {
             canInvite={account.user?.role === "admin"}
             onLeft={() => {
               setNotice(`You left ${data.workspace.name}.`);
+              // The server ends this account's stream; it resyncs, and the
+              // whole read then shows another workspace.
               setActiveView("locations");
-              void refreshData(undefined, { silent: true });
             }}
           />
         ) : null}
@@ -1025,7 +1005,11 @@ export function App() {
           return loaded;
         }}
         onRefresh={() =>
-          refreshData(undefined, { silent: true, throwOnError: true })
+          refreshData({
+            silent: true,
+            throwOnError: true,
+            fields: devicesViewFields,
+          })
         }
         onManageConnections={() => setActiveView("profiles")}
         profiles={data.profiles}
@@ -1071,7 +1055,6 @@ export function App() {
             callbacks={{
               onDraftFromSource: draftFromSource,
               onNotice: setNotice,
-              onRefresh: (issueId) => void refreshData(issueId),
             }}
             deviceLabel={device?.label ?? t("notices.noDevice")}
             issue={selectedIssue}
@@ -1112,7 +1095,9 @@ export function App() {
             catalogLoading={!pageFieldsLoaded.has("promotedSkills")}
             deviceTools={data.deviceTools}
             devices={data.devices}
-            onChanged={() => refreshData(undefined, { silent: true })}
+            onChanged={() =>
+              refreshData({ silent: true, fields: libraryViewFields })
+            }
           />
         );
     }

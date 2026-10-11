@@ -1,10 +1,13 @@
 [
   {
     "name": "list_workspaces",
-    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member; start work in another one only when the user asks for it.",
+    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member (a session working in an Issue: only the Issue's workspace); start work in another one only when the person asks for it there or the task needs what only that workspace's device has (list_resources).",
     "inputSchema": {
       "type": "object",
       "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -19,11 +22,14 @@
           "description": "Only resources of this kind."
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "list_profiles",
-    "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: yours by default, or another device hosting a workspace you reach (see list_workspaces).",
+    "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: the calling session's device by default, or another device hosting a workspace you reach (see list_workspaces). A profile belongs to its device.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -37,6 +43,9 @@
           "description": "Only profiles of this runtime."
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
@@ -54,11 +63,14 @@
         }
       },
       "required": ["profileId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "create_session",
-    "description": "Create a new Foundry session and deliver it a task. With a session token the new session is your child; in your own workspace (the default) it runs on your device, joins your orchestration group and, without profileId and provider, runs like you. Name workspaceId to start it in another workspace you reach (list_workspaces), on that workspace's device, only when the user asked for work there. Returns once queued unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
+    "description": "Create a new Foundry session and deliver it a task. With a session token the new session records you as its parent; in your own workspace (the default) it runs on your device, joins your orchestration group and, without profileId and provider, runs like you. Name workspaceId to start it in another workspace you reach as Member (list_workspaces), on that workspace's device, with your runtime unless you choose a profile there; do that only when the person asked for work there or the task needs a resource only that device has (list_resources). Returns the queued session unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -98,17 +110,24 @@
           "type": "string",
           "description": "Background the new session should know before the prompt."
         },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into the .foundry/attachments folder of the workspace the session runs in, on its device, and lists their paths at the top of the message."
+        },
         "verification": {
           "type": "boolean",
-          "description": "Run a read-only independent verifier (no Write/Edit/Bash); use for checking another session's work."
+          "description": "Start an independent verifier, to check another session's work. It reads the workspace and runs commands that only read (tests, linters, type checks, git status and diff); the device's sandbox keeps the workspace read-only, so anything that would change it fails, and its commands write only to its own temporary directory outside the workspace. It has no file editing tools and, of the Foundry tools, only those that read; Claude stops after 20 turns per message. A verifier on a device whose worker is older is refused: that device needs a worker update."
         },
         "forkSessionId": {
           "type": "string",
-          "description": "Fork: resume another session's native transcript in a brand new thread."
+          "description": "Fork: a new session that starts from a copy of this session's native transcript, leaving the source untouched. It runs in the source's workspace, on its device, so you need Member there."
         },
         "issueId": {
           "type": "string",
-          "description": "Run inside that Issue's candidate worktree and sandbox (requires an active Issue run)."
+          "description": "Run inside that Issue's candidate worktree and sandbox; the Issue must be in this workspace and in progress, blocked or verifying. A session working in an Issue starts its sessions there without it."
         },
         "wait": {
           "type": "boolean",
@@ -120,7 +139,7 @@
         },
         "workspaceId": {
           "type": "string",
-          "description": "Workspace to start the session in; defaults to yours with a session token, required without one."
+          "description": "Workspace to start the session in, one you reach as Member; defaults to yours with a session token, required without one."
         }
       },
       "required": ["prompt"]
@@ -128,16 +147,21 @@
   },
   {
     "name": "handoff_session",
-    "description": "Start a fresh session that continues another one from facts only: its original goal, last recorded result and status, plus your prompt. Use it instead of fork when the old transcript is misleading or too long.",
+    "description": "Start a fresh session that continues another one from facts only: its original goal, last recorded result and status, plus your prompt; never its transcript. Use it instead of forkSessionId when the old transcript is misleading or too long. The source is any session you can read. The new session starts in workspaceId if given (one you reach as Member), else in the source's workspace; without profileId it runs like the source (its profile on the same device, else its runtime). With a session token it records you as its parent.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "fromSessionId": {
-          "type": "string"
+        "sessionId": {
+          "type": "string",
+          "description": "The session to continue: an id (sess_…) or a Foundry chat link."
         },
         "prompt": {
           "type": "string",
           "description": "What the new session should do next."
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Workspace to start the new session in; defaults to the source's."
         },
         "profileId": {
           "type": "string"
@@ -146,12 +170,12 @@
           "type": "string"
         }
       },
-      "required": ["fromSessionId", "prompt"]
+      "required": ["sessionId", "prompt"]
     }
   },
   {
     "name": "list_sessions",
-    "description": "List sessions in a workspace (id, title, status, parentSessionId): yours by default. Use it to see what exists before creating or acting.",
+    "description": "List the sessions of one workspace, newest activity first, one line each: id, title, status, runtime, profile, device, workspaceId, parentSessionId, activityAt (and issueId, role, source when set). Yours by default; any workspace you reach with workspaceId. parentSessionId lists the sessions one session started (in that session's workspace unless you name another). Pages of limit sessions; pass the nextCursor a page returns as cursor for the next. Read one session's details with read_context.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -161,27 +185,49 @@
         },
         "parentOnly": {
           "type": "boolean",
-          "description": "Only sessions you created."
+          "description": "Only the sessions your session created (needs a session token)."
+        },
+        "parentSessionId": {
+          "type": "string",
+          "description": "Only the sessions this session (an id or a Foundry chat link) started."
+        },
+        "limit": {
+          "type": "number",
+          "description": "Sessions per page; default 30, at most 100."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "The nextCursor of the previous page."
         }
       }
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "list_group_sessions",
-    "description": "List every session in one orchestration group, in list order. A replacement orchestrator uses this to take over a group without lineage transfer.",
+    "description": "List the sessions of one orchestration group in list order, in the same one-line form as list_sessions (a device's native chat in the group has kind native_chat). read_context's summary names a session's group. A replacement orchestrator uses this to take over a group: control does not depend on who started a session.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "groupId": {
           "type": "string"
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "The group's workspace; defaults to yours with a session token."
         }
       },
       "required": ["groupId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "get_session",
-    "description": "Get a compact summary of any session or synced native chat you can read, in any workspace you reach: title, status and error, runtime/profile/model, device (and whether it is online), workspace, times, lineage, event counts, the last answer (first 1000 characters), the last error event with the events just before it, and background tasks still open in its latest turn. Read events with read_context scope=events.",
+    "description": "The same compact summary as read_context with scope=summary, of any session or synced native chat you can read in any workspace you reach: title, status and error, runtime/profile/model, device (and whether it is online), workspace, group, times, lineage, event counts, the last input (first 300 characters) and answer (first 1000), the last error event with the events just before it, and background tasks still open in its latest turn. Read events with read_context scope=events.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -191,11 +237,14 @@
         }
       },
       "required": ["sessionId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "read_context",
-    "description": "Read a session or native chat you can read, in any workspace you reach, by id or Foundry link. scope=summary (default) is get_session's summary; events lists its events one line each (time | level | label | detail), filtered by levels, labels and query, newest with tail or paged with after/before cursors, within maxBytes; thread (the session's full transcript), transcript (raw native chat) and subagents (the session's native subagents; with taskId, one subagent's transcript) return JSON cut at maxBytes. Start with summary and events; read thread or transcript only when you need the whole conversation.",
+    "description": "Read a session or native chat you can read, in any workspace you reach, by id or Foundry link. scope=summary (default) is get_session's summary; events lists its events one line each (time | level | label | detail), filtered by levels, labels and query, newest with tail or paged with after/before cursors, within maxBytes; thread (the session's full transcript), transcript (raw native chat) and subagents (the session's native subagents; with taskId, one subagent's transcript) return JSON cut at maxBytes. What a session produced: changes lists the files its own tools wrote and its answers named, one line each with the lines added and removed (with path: that file's diff, the whole session's or one turn's with inputId); file with path reads one of those files as it is now on the session's device; background lists the commands it left running in the background (with taskId: the end of one's output, which needs Member in the session's workspace). Start with summary and events; read thread or transcript only when you need the whole conversation.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -205,7 +254,16 @@
         },
         "scope": {
           "type": "string",
-          "enum": ["summary", "events", "thread", "transcript", "subagents"]
+          "enum": [
+            "summary",
+            "events",
+            "thread",
+            "transcript",
+            "subagents",
+            "changes",
+            "file",
+            "background"
+          ]
         },
         "levels": {
           "type": "array",
@@ -248,27 +306,95 @@
         },
         "taskId": {
           "type": "string",
-          "description": "With scope=subagents: the subagent to read."
+          "description": "With scope=subagents: the subagent to read. With scope=background: the task whose output to read."
+        },
+        "path": {
+          "type": "string",
+          "description": "With scope=changes: the file whose diff to read; with scope=file: the file to read. A path changes lists."
+        },
+        "inputId": {
+          "type": "string",
+          "description": "With scope=changes and path: only what that turn (an input id changes lists) changed."
         },
         "maxBytes": {
           "type": "number",
-          "description": "Default 12000. events keeps whole lines within it and prints the cursor that continues."
+          "description": "Default 12000. events keeps whole lines within it and prints the cursor that continues; background output keeps its end."
         }
       },
       "required": ["sessionId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "list_issues",
+    "description": "List the Issues of one workspace, most recently updated first, one line each: id, shortId, title, status, contract (its state and confirmed revision), run (the status of its latest execution), question (the kind of question waiting for the person, if any) and verified (required criteria passed of total). Yours by default; any workspace you reach with workspaceId. A session working in an Issue sees only that Issue. Read one with get_issue. Issues are read-only here: the person drives them in Foundry.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "Workspace to list; defaults to yours with a session token."
+        },
+        "status": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "in_progress",
+              "blocked",
+              "verifying",
+              "accepted",
+              "abandoned"
+            ]
+          },
+          "description": "Only Issues in these statuses."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "get_issue",
+    "description": "Read one Issue you can reach: status (and why it is blocked), the person's request, the confirmed contract (revision, goal, scope, constraints and each criterion with its latest verification verdict) and whether a newer draft waits for confirmation, the question waiting for the person, the verification summary and whether the latest review allows acceptance, and its latest execution run (its session id, which read_context reads, status and error).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "issueId": {
+          "type": "string",
+          "description": "The Issue's id (iss_…) or short id."
+        }
+      },
+      "required": ["issueId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "send_message",
-    "description": "Send a message to any session in this workspace. A running session is steered (Claude adjusts its active turn; Codex queues it for the next one). An idle session takes it as its next input and continues the same native session; profileId/provider/model switch its runtime first. wait=true blocks until it settles and returns its response.",
+    "description": "Send a message to a session you control: any session in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions), except an Issue's own execution or clarification, which their Issue drives. A running session is steered (Claude adjusts its active turn; Codex queues it for the next one). An idle session takes it as its next input and continues the same native session; profileId/provider/model switch its runtime first (only while it is idle). wait=true blocks until it settles and returns its response.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "An id (sess_…) or a Foundry chat link."
         },
-        "message": {
-          "type": "string"
+        "prompt": {
+          "type": "string",
+          "description": "The message."
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into the .foundry/attachments folder of the workspace the session runs in, on its device, and lists their paths at the top of the message."
         },
         "profileId": {
           "type": "string"
@@ -289,17 +415,18 @@
           "description": "How long to wait, at most 600000 (10 minutes, the default). If the session is still running when it elapses, call wait_session again."
         }
       },
-      "required": ["sessionId", "message"]
+      "required": ["sessionId", "prompt"]
     }
   },
   {
     "name": "cancel_session",
-    "description": "Stop the work a session in this workspace is doing. Cancelling never cascades: sessions it created keep running. The session stays usable: send_message continues it.",
+    "description": "Stop the work a session you control is doing (any session in a workspace you reach as Member; a session working in an Issue: only that Issue's sessions). Cancelling never cascades: sessions it created keep running. The session stays usable: send_message continues it.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "An id (sess_…) or a Foundry chat link."
         }
       },
       "required": ["sessionId"]
@@ -307,18 +434,20 @@
   },
   {
     "name": "wait_session",
-    "description": "Block until a session reaches one of the requested statuses (default: completed/failed/canceled) or the timeout elapses, and return it with its response once settled. Prefer this over polling loops.",
+    "description": "Block until a session you can read reaches one of the requested statuses (default: completed/failed/canceled) or the timeout elapses, and return it with its response once settled. Prefer this over polling loops.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "An id (sess_…) or a Foundry chat link."
         },
         "until": {
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Statuses to wait for, e.g. [\"running\"]; default completed, failed and canceled."
         },
         "timeoutMs": {
           "type": "number",
@@ -326,16 +455,20 @@
         }
       },
       "required": ["sessionId"]
+    },
+    "annotations": {
+      "readOnlyHint": true
     }
   },
   {
     "name": "rename_session",
-    "description": "Rename a session in this workspace (1-120 characters).",
+    "description": "Rename a session you control (1-120 characters): any session in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions).",
     "inputSchema": {
       "type": "object",
       "properties": {
         "sessionId": {
-          "type": "string"
+          "type": "string",
+          "description": "An id (sess_…) or a Foundry chat link."
         },
         "title": {
           "type": "string"
@@ -346,7 +479,7 @@
   },
   {
     "name": "ask_person",
-    "description": "Only for the execution of an Issue: ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). After calling it, end your turn with a short summary of where you are; the Issue waits for the person and Foundry resumes you in the same candidate with their answer. Ask one question at a time and never about anything you can decide yourself.",
+    "description": "Ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). Only an Issue's execution has this tool. After calling it, end your turn with a short summary of where you are; the Issue waits for the person and Foundry resumes you in the same candidate with their answer. Ask one question at a time and never about anything you can decide yourself.",
     "inputSchema": {
       "type": "object",
       "properties": {

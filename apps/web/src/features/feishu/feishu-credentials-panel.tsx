@@ -7,7 +7,7 @@ import {
   ExternalLink,
   HelpCircle,
 } from "lucide-react";
-import type { WorkspaceFeishuConfig } from "@bd777/foundry-protocol";
+import type { WorkspaceFeishuBot } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
@@ -16,7 +16,7 @@ import { Panel, PanelHeader } from "../../components/ui/panel";
 const guideSteps = ["step1", "step2", "step3", "step4", "step5"] as const;
 
 export interface FeishuCredentialsPanelProps {
-  bot?: WorkspaceFeishuConfig;
+  bot?: WorkspaceFeishuBot;
   loading: boolean;
   saving: boolean;
   onSave: (appId: string, appSecret: string) => Promise<void>;

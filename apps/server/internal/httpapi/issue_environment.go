@@ -24,6 +24,9 @@ type wsIssueEnvironmentResult struct {
 	Status      string          `json:"status"`
 	Error       string          `json:"error,omitempty"`
 	Revision    int             `json:"revision"`
+	// NotifiesChanges: the device tells when what the status read returns
+	// changes (issue_environment_changed). Older devices do not.
+	NotifiesChanges bool `json:"notifiesChanges,omitempty"`
 }
 
 func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +87,8 @@ func (s *Server) handleIssueEnvironment(w http.ResponseWriter, r *http.Request) 
 	if issue.Run != nil {
 		revision = issue.Run.EnvironmentRevision
 	}
-	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision, "message": input.Message, "expectedRunId": input.ExpectedRunID})
+	// A status read asks the device to tell this server when it changes.
+	payload, _ := json.Marshal(map[string]any{"action": action, "workspaceId": workspace.ID, "issueId": issue.ID, "revision": revision, "message": input.Message, "expectedRunId": input.ExpectedRunID, "notifyChanges": action == "status"})
 	result, err := daemonRequest[wsIssueEnvironmentResult](r.Context(), connection, wsIssueEnvironmentType, payload)
 	if err == nil && result.Error != "" {
 		err = errors.New(result.Error)
@@ -129,5 +133,38 @@ func (h *DaemonHub) checkIssueRetry(ctx context.Context, workspace store.Workspa
 	if result.Error != "" {
 		return errors.New(result.Error)
 	}
+	return nil
+}
+
+type wsIssueEnvironmentChangedPayload struct {
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	IssueID     string `json:"issueId,omitempty"`
+}
+
+// issueEnvironmentChanged is a device telling that an Issue's environment
+// (or, without an Issue, every environment of a workspace) changed. Only a
+// workspace the device serves is told.
+func (c *daemonConnection) issueEnvironmentChanged(ctx context.Context, envelope wsEnvelope) error {
+	var payload wsIssueEnvironmentChangedPayload
+	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
+		return err
+	}
+	workspaceID := payload.WorkspaceID
+	if payload.IssueID != "" {
+		issue, err := c.hub.store.GetIssue(ctx, payload.IssueID)
+		if err != nil || (workspaceID != "" && workspaceID != issue.WorkspaceID) {
+			return nil
+		}
+		workspaceID = issue.WorkspaceID
+	}
+	if workspaceID == "" {
+		return nil
+	}
+	workspace, err := c.hub.store.GetWorkspace(ctx, workspaceID)
+	deviceID, _ := c.registrationSnapshot()
+	if err != nil || deviceID == "" || workspace.DeviceID != deviceID {
+		return nil
+	}
+	c.hub.issues.environmentChanged(workspaceID, payload.IssueID)
 	return nil
 }

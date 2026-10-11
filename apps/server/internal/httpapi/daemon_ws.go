@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
 )
@@ -107,10 +108,19 @@ const (
 	wsSessionNativeSessionIDType   = "session_native_session_id"
 	wsSessionCompleteType          = "session_completed"
 	wsRecoverSessionType           = "recover_session"
+	// A piece of a large envelope; see daemon_reply_chunks.go.
+	wsReplyChunkType = "reply_chunk"
+)
+
+// Changes a device tells on its own; nothing answers them.
+const (
+	wsBackgroundTaskOutputChangedType = "background_task_output_changed"
+	wsIssueEnvironmentChangedType     = "issue_environment_changed"
 )
 
 type DaemonHub struct {
-	onSessionCompleted  func(context.Context, store.AgentSession)
+	// What the hub tells browsers of what devices report.
+	daemonNotifiers
 	onEvidenceConnected func(context.Context, string)
 	skillScans          map[string]*skillScan
 	skillScansMu        sync.Mutex
@@ -119,12 +129,11 @@ type DaemonHub struct {
 	// onWorkerUpdateStatus receives an update failure a worker reports
 	// without being asked.
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
-	// deviceProjection is the device a device_status_changed event carries.
-	deviceProjection func(ctx context.Context, deviceID string) (store.DeviceProjection, bool)
-	connections      map[string]*daemonConnection
-	events           *browserEventHub
-	store            store.Store
-	secrets          secretKeeper
+	connections          map[string]*daemonConnection
+	store                store.Store
+	secrets              secretKeeper
+	// externalAccounts mints what a session may act as (external_accounts.go).
+	externalAccounts *externalaccounts.Service
 	// live tracks every upgraded socket, including ones that never sent
 	// hello and so never landed in connections. Shutdown needs all of them.
 	live         map[*daemonConnection]struct{}
@@ -135,9 +144,6 @@ type DaemonHub struct {
 	disconnects deviceDisconnects
 	// subagents caches each session's subagent list as its device read it.
 	subagents *subagentListCache
-	// subagentEnds gathers the ends of a session's subagents (see
-	// publishSubagentChange).
-	subagentEnds subagentEndSignals
 	// readTimeout is how long a connection may receive nothing at all from
 	// its device (no pong, no part of a message) before it is dropped.
 	readTimeout time.Duration
@@ -259,6 +265,10 @@ type daemonConnection struct {
 	replyMu    sync.Mutex
 	replies    []wsEnvelope
 	replyReady chan struct{}
+
+	// pieces holds envelopes the worker is sending in pieces (reply_chunk);
+	// only the read loop uses it.
+	pieces envelopePieces
 }
 
 type wsEnvelope struct {
@@ -318,12 +328,22 @@ type wsSessionFileDiffReadPayload struct {
 type wsListSubagentsPayload struct {
 	WorkspaceID string `json:"workspaceId"`
 	SessionID   string `json:"sessionId"`
+	// View is subagentDigestView for the list as a chat shows it; workers
+	// before 0.5.7 answer every read with the whole list.
+	View string `json:"view,omitempty"`
 }
 
+// subagentDigestView asks a device for its subagent list as digests
+// (store.AgentSubagentDigest), and its answer says it gave them.
+const subagentDigestView = "digest"
+
 type wsSubagentsListedPayload struct {
-	SessionID string                       `json:"sessionId"`
-	Subagents []store.AgentSubagentSummary `json:"subagents"`
-	Error     string                       `json:"error,omitempty"`
+	SessionID string `json:"sessionId"`
+	// View is the view Subagents are in: subagentDigestView, or "" for
+	// store.AgentSubagentSummary.
+	View      string          `json:"view,omitempty"`
+	Subagents json.RawMessage `json:"subagents"`
+	Error     string          `json:"error,omitempty"`
 }
 
 type wsListDirectoriesPayload struct {
@@ -444,6 +464,10 @@ type wsRunSessionPayload struct {
 	// Clarification is the draft and conversation an issue_clarification
 	// input is about.
 	Clarification *store.ClarificationTurn `json:"clarification,omitempty"`
+	// ExternalAccounts are the third-party accounts the session may act as,
+	// each with a short-lived access token (never a refresh token); only an
+	// account owner's own session on their own device gets them.
+	ExternalAccounts []store.ExternalAccountMaterial `json:"externalAccounts,omitempty"`
 }
 
 type wsSteerSessionPayload struct {
@@ -526,14 +550,14 @@ func staleSessionInput(session store.AgentSession, inputID string) bool {
 	return inputID != "" && session.Input.ID != "" && inputID != session.Input.ID
 }
 
-func NewDaemonHub(store store.Store, events *browserEventHub, allowedOrigin string) *DaemonHub {
+func NewDaemonHub(store store.Store, notifiers daemonNotifiers, allowedOrigin string) *DaemonHub {
 	return &DaemonHub{
-		connections: make(map[string]*daemonConnection),
-		events:      events,
-		live:        make(map[*daemonConnection]struct{}),
-		store:       store,
-		subagents:   newSubagentListCache(),
-		readTimeout: daemonReadTimeout,
+		daemonNotifiers: notifiers,
+		connections:     make(map[string]*daemonConnection),
+		live:            make(map[*daemonConnection]struct{}),
+		store:           store,
+		subagents:       newSubagentListCache(),
+		readTimeout:     daemonReadTimeout,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return webSocketOriginAllowed(allowedOrigin, r)
@@ -788,7 +812,47 @@ func (h *DaemonHub) ListAgentSubagents(ctx context.Context, session store.AgentS
 	if connection == nil {
 		return nil, store.ErrNotFound
 	}
-	return connection.listAgentSubagents(ctx, session.WorkspaceID, session.ID)
+	listed, err := connection.listAgentSubagents(ctx, session.WorkspaceID, session.ID, "")
+	if err != nil {
+		return nil, err
+	}
+	var subagents []store.AgentSubagentSummary
+	return subagents, decodeListedSubagents(listed.Subagents, &subagents)
+}
+
+// ListAgentSubagentDigests reads the session's subagents as a chat lists
+// them. Its device sends no prompts and only fingerprints of the answers;
+// those of a worker that sends the whole list anyway are made here.
+func (h *DaemonHub) ListAgentSubagentDigests(ctx context.Context, session store.AgentSession) ([]store.AgentSubagentDigest, error) {
+	connection := h.connectionFor(session.DeviceID)
+	if connection == nil {
+		return nil, store.ErrNotFound
+	}
+	listed, err := connection.listAgentSubagents(ctx, session.WorkspaceID, session.ID, subagentDigestView)
+	if err != nil {
+		return nil, err
+	}
+	var digests []store.AgentSubagentDigest
+	if listed.View == subagentDigestView {
+		return digests, decodeListedSubagents(listed.Subagents, &digests)
+	}
+	var subagents []store.AgentSubagentSummary
+	if err := decodeListedSubagents(listed.Subagents, &subagents); err != nil || subagents == nil {
+		return nil, err
+	}
+	digests = make([]store.AgentSubagentDigest, 0, len(subagents))
+	for _, subagent := range subagents {
+		digests = append(digests, subagent.Digest())
+	}
+	return digests, nil
+}
+
+// decodeListedSubagents decodes a device's list; one it left out is nil.
+func decodeListedSubagents(raw json.RawMessage, target any) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	return decodeWebSocketPayload(raw, target)
 }
 
 func (h *DaemonHub) SetupWorkspace(ctx context.Context, deviceID string, path string) (store.WorkspaceProjection, error) {
@@ -1060,28 +1124,26 @@ func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.Daemo
 	} else if err := h.store.RegisterDaemon(ctx, registration); err != nil {
 		return store.DaemonChanges{}, err
 	}
-	if h.events != nil {
-		h.events.announce(changes)
-	}
+	h.devices.reported(changes)
 	return changes, nil
 }
 
 // syncChats stores a device's native chats and sends viewers what changed
 // in their chat lists.
-func (h *DaemonHub) syncChats(ctx context.Context, input store.SyncChatsInput) error {
+// syncChats stores a device's chats and returns the ones this server never
+// keeps (see store.DaemonChanges.RefusedChats).
+func (h *DaemonHub) syncChats(ctx context.Context, input store.SyncChatsInput) ([]string, error) {
 	changes := store.DaemonChanges{Workspaces: []string{input.WorkspaceID}}
 	if reporting, ok := h.store.(store.DaemonChangeStore); ok {
 		var err error
 		if changes, err = reporting.SyncChatsChanges(ctx, input); err != nil {
-			return err
+			return nil, err
 		}
 	} else if err := h.store.SyncChats(ctx, input); err != nil {
-		return err
+		return nil, err
 	}
-	if h.events != nil {
-		h.events.pushSyncedChats(ctx, h.store, input, changes)
-	}
-	return nil
+	h.chats.chatsSynced(ctx, input, changes)
+	return changes.RefusedChats, nil
 }
 
 func (c *daemonConnection) syncRegistration(registration store.DaemonRegistration) error {
@@ -1114,7 +1176,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		go c.forgetDeletedWorkspace(registration.Device.ID, registration.Workspace)
 		registration.Workspace = store.WorkspaceProjection{}
 	}
-	c.hub.publishDeviceStatus(registration)
+	c.hub.devices.registrationChanged(registration)
 	if registration.ActiveSessionIDs != nil {
 		c.replaceActiveSessions(registration.ActiveSessionIDs)
 	}
@@ -1271,8 +1333,8 @@ func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 		}
 		// The device would refuse it; fail it with the reason instead.
 		if refusal := unservedWorkspace(context.Background(), c.hub.store, session.WorkspaceID); refusal != nil {
-			if failed, err := c.hub.store.FailAgentSession(context.Background(), session.ID, refusal.Error()); err == nil && c.hub.events != nil {
-				c.hub.events.Publish("agent_session_completed", failed)
+			if failed, err := c.hub.store.FailAgentSession(context.Background(), session.ID, refusal.Error()); err == nil {
+				c.hub.sessions.changed(context.Background(), sessionCompleted, failed)
 			}
 			continue
 		}
@@ -1347,16 +1409,14 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 		// A device without a workspace has no row to mark offline; its
 		// disconnect record (lastDisconnect) is still news, and no device
 		// event reaches its viewers without a workspace.
-		if h.events != nil {
-			h.events.dataChanged("", fieldDevices)
-		}
+		h.dataChanges.changed("", fieldDevices)
 		return
 	}
 	for _, registration := range registrations {
 		registration.Device.Status = "disconnected"
 		registration.Device.LastSeenLabel = "offline"
 		if _, err := h.registerDaemon(context.Background(), registration); err == nil {
-			h.publishDeviceStatus(registration)
+			h.devices.registrationChanged(registration)
 		} else {
 			// A soft-removed device is expected to fail the offline upsert;
 			// its connection was dropped on purpose, so this is not worth a
@@ -1542,7 +1602,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			return err
 		}
 		c.applyServedWorkspaces(registration)
-		c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+		c.reply(registeredEnvelope(envelope.ID))
 		if c.hub.onDeviceConnected != nil {
 			go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
 		}
@@ -1551,6 +1611,12 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		go c.dispatchQueuedAgentSessions("")
 		go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 		return nil
+	case wsReplyChunkType:
+		whole, complete, err := c.handleEnvelopePiece(envelope)
+		if err != nil || !complete {
+			return err
+		}
+		return c.handleEnvelope(ctx, whole)
 	case wsHeartbeatType:
 		c.noteHeartbeat(envelope.Payload)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
@@ -1598,6 +1664,10 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		return deliverDaemonResponse[wsSessionFileDiffReadPayload](c, envelope, nil)
 	case wsBackgroundTaskOutputReadType:
 		return deliverDaemonResponse[wsBackgroundTaskOutputReadPayload](c, envelope, nil)
+	case wsBackgroundTaskOutputChangedType:
+		return c.backgroundTaskOutputChanged(ctx, envelope)
+	case wsIssueEnvironmentChangedType:
+		return c.issueEnvironmentChanged(ctx, envelope)
 	case wsBackgroundTaskStoppedType:
 		return deliverDaemonResponse[wsBackgroundTaskStoppedPayload](c, envelope, nil)
 	case wsSessionUsageReadType:
@@ -1617,7 +1687,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 				if err := c.syncRegistration(payload.Registration); err != nil {
 					return err
 				}
-				c.reply(wsEnvelope{Type: wsRegisteredType, ID: envelope.ID})
+				c.reply(registeredEnvelope(envelope.ID))
 				go c.dispatchQueuedAgentSessions(payload.Registration.Workspace.ID)
 				go c.claimAndSend()
 			}
@@ -1732,7 +1802,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		if err == nil {
 			c.setActiveSession(payload.SessionID, true)
 			c.clearDispatchedSession(payload.SessionID)
-			c.hub.events.Publish("agent_session_started", session)
+			c.hub.sessions.changed(ctx, sessionStarted, session)
 			c.hub.startIssueExecution(ctx, session)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
@@ -1752,8 +1822,8 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			target := c.sessionTarget(ctx, payload.Event.SessionID)
 			if stored {
 				subagents := c.hub.subagents.observe(payload.Event)
-				c.hub.events.PublishIn(target.workspaceID, "agent_session_event", payload.Event)
-				c.publishSubagentChange(target.workspaceID, payload.Event, subagents)
+				c.hub.sessions.recorded(ctx, target.workspaceID, payload.Event)
+				c.hub.sessions.subagentChanged(target.workspaceID, payload.Event, subagents)
 			}
 			// Also for one sent again: the attempt that stored it in the
 			// session may have failed to add it to the Issue's run.
@@ -1775,7 +1845,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		session, err := c.hub.store.BlockAgentSession(ctx, payload.SessionID, payload.Reason)
 		if err == nil {
-			c.hub.events.Publish("agent_session_blocked", session)
+			c.hub.sessions.changed(ctx, sessionBlocked, session)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
@@ -1788,7 +1858,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		session, err := c.hub.store.ResumeAgentSession(ctx, payload.SessionID)
 		if err == nil {
-			c.hub.events.Publish("agent_session_resumed", session)
+			c.hub.sessions.changed(ctx, sessionResumed, session)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
@@ -1799,7 +1869,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		}
 		session, err := c.hub.store.SetAgentSessionNativeSessionID(ctx, payload.SessionID, payload.NativeSessionID)
 		if err == nil {
-			c.hub.events.Publish("agent_session_native_session_id", session)
+			c.hub.sessions.changed(ctx, sessionNativeSessionID, session)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 		}
 		return err
@@ -1820,9 +1890,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			// hands over the Issue result the device recorded.
 			c.hub.settleIssueSession(ctx, existing, payload.IssueResult, payload.ClarificationResult)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-			if c.hub.onSessionCompleted != nil {
-				c.hub.onSessionCompleted(ctx, existing)
-			}
+			c.hub.sessions.endReported(ctx, existing)
 			return nil
 		}
 		var (
@@ -1838,12 +1906,10 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 			c.setActiveSession(payload.SessionID, false)
 			c.clearDispatchedSession(payload.SessionID)
 			c.hub.subagents.invalidate(payload.SessionID)
-			c.hub.events.Publish("agent_session_completed", session)
+			c.hub.sessions.changed(ctx, sessionCompleted, session)
 			c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
 			c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
-			if c.hub.onSessionCompleted != nil {
-				c.hub.onSessionCompleted(ctx, session)
-			}
+			c.hub.sessions.endReported(ctx, session)
 		}
 		return err
 	default:
@@ -1930,22 +1996,25 @@ type sessionFileRefusal struct{ reason string }
 
 func (r sessionFileRefusal) Error() string { return r.reason }
 
-func (c *daemonConnection) listAgentSubagents(ctx context.Context, workspaceID string, sessionID string) ([]store.AgentSubagentSummary, error) {
+// listAgentSubagents asks the device for the session's subagents in view
+// ("" or subagentDigestView); the answer says the view it is in.
+func (c *daemonConnection) listAgentSubagents(ctx context.Context, workspaceID string, sessionID string, view string) (wsSubagentsListedPayload, error) {
 	payload, err := json.Marshal(wsListSubagentsPayload{
 		WorkspaceID: workspaceID,
 		SessionID:   sessionID,
+		View:        view,
 	})
 	if err != nil {
-		return nil, err
+		return wsSubagentsListedPayload{}, err
 	}
 	value, err := daemonRequest[wsSubagentsListedPayload](ctx, c, wsListSubagentsType, payload)
 	if err != nil {
-		return nil, err
+		return wsSubagentsListedPayload{}, err
 	}
 	if value.Error != "" {
-		return nil, errors.New(value.Error)
+		return wsSubagentsListedPayload{}, errors.New(value.Error)
 	}
-	return value.Subagents, nil
+	return value, nil
 }
 
 func (c *daemonConnection) steerAgentSession(ctx context.Context, sessionID string, inputID string, message string, attachments []store.ChatAttachment) error {
@@ -2244,7 +2313,8 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles, Clarification: clarification})
+	externalAccounts := c.hub.sessionExternalAccounts(ctx, session, c.actor)
+	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles, Clarification: clarification, ExternalAccounts: externalAccounts})
 	if err != nil {
 		return err
 	}
@@ -2329,9 +2399,7 @@ func (c *daemonConnection) claimAndSend() {
 		return
 	}
 	// The claim started the Issue and queued its session without an event.
-	if c.hub.events != nil {
-		c.hub.events.dataChanged(session.WorkspaceID, fieldIssues, fieldAgentSessions)
-	}
+	c.hub.dataChanges.changed(session.WorkspaceID, fieldIssues, fieldAgentSessions)
 	// A dispatch that does not reach the worker leaves the session queued;
 	// the device's next registration sends it again.
 	if err := c.dispatchAgentSession(session); err != nil {
@@ -2496,37 +2564,6 @@ func issueUserFiles(issue store.Issue, device Actor) string {
 		return "readable"
 	}
 	return "hidden"
-}
-
-// deviceStatusEvent tells browsers a device went online or offline, so
-// device lists change at once instead of at their next poll.
-type deviceStatusEvent struct {
-	WorkspaceID string `json:"workspaceId"`
-	DeviceID    string `json:"deviceId"`
-	Status      string `json:"status"`
-	// Device is the device as workspace data lists it to a viewer who does
-	// not own it (no runtimeSettings, no owned), so a client can replace
-	// its copy and keep only those two fields of its own.
-	Device *store.DeviceProjection `json:"device,omitempty"`
-}
-
-// publishDeviceStatus reaches whoever can see the registration's workspace;
-// a device registered without one reaches admins only.
-func (h *DaemonHub) publishDeviceStatus(registration store.DaemonRegistration) {
-	if h.events == nil {
-		return
-	}
-	event := deviceStatusEvent{
-		WorkspaceID: registration.Workspace.ID,
-		DeviceID:    registration.Device.ID,
-		Status:      registration.Device.Status,
-	}
-	if h.deviceProjection != nil {
-		if device, ok := h.deviceProjection(context.Background(), registration.Device.ID); ok {
-			event.Device = &device
-		}
-	}
-	h.events.Publish("device_status_changed", event)
 }
 
 // logWorkerStalls writes the event-loop stalls a worker reported: a stall

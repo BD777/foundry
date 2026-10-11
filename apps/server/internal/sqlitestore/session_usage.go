@@ -32,7 +32,8 @@ func (s *Store) SessionUsageBackfilled(ctx context.Context, sessionID string) (b
 // BackfillAgentSessionUsage stores usage read back from an agent's log on
 // the session's events: turn usage on the events that ended turns, request
 // usage on tool steps. Usage an event already carries is kept. The session
-// is then marked, so its log is read once.
+// is then marked, so its log is read once. An event given turn usage gets
+// its state key again (see store.SessionStateKey).
 func (s *Store) BackfillAgentSessionUsage(ctx context.Context, sessionID string, turns map[string]store.AgentTurnUsage, requests map[string]store.ModelRequestUsage) error {
 	return s.withTx(ctx, func(tx *Store) error {
 		for eventID, usage := range turns {
@@ -41,7 +42,7 @@ func (s *Store) BackfillAgentSessionUsage(ctx context.Context, sessionID string,
 				return err
 			}
 			if _, err := tx.conn().ExecContext(ctx, `UPDATE agent_session_events
-				SET payload_json = json_set(payload_json, '$.metadata.turnUsage', json(?))
+				SET payload_json = json_set(payload_json, '$.metadata.turnUsage', json(?)), state_key = NULL
 				WHERE id = ? AND session_id = ? AND json_extract(payload_json, '$.metadata.turnUsage') IS NULL`,
 				string(encoded), eventID, sessionID); err != nil {
 				return fmt.Errorf("backfill turn usage: %w", err)
@@ -60,6 +61,9 @@ func (s *Store) BackfillAgentSessionUsage(ctx context.Context, sessionID string,
 				string(encoded), eventID, sessionID); err != nil {
 				return fmt.Errorf("backfill request usage: %w", err)
 			}
+		}
+		if err := tx.backfillSessionStateKeys(ctx); err != nil {
+			return err
 		}
 		_, err := tx.conn().ExecContext(ctx, `INSERT INTO agent_session_usage_backfills (session_id, backfilled_at)
 			VALUES (?, ?) ON CONFLICT (session_id) DO NOTHING`, sessionID, formatTime(time.Now()))

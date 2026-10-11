@@ -1,4 +1,4 @@
-import { ChevronLeft, LoaderCircle, PanelRight } from "lucide-react";
+import { ChevronLeft, Clock, LoaderCircle, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
@@ -9,7 +9,8 @@ import {
 } from "./chat-message-content";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./chat-context-card";
-import { backgroundWorkNote } from "./chat-context-model";
+import { backgroundWorkNote, scheduledNote } from "./chat-context-model";
+import { useSharedNow } from "./use-shared-now";
 import { ChatDetailPanel } from "./chat-detail-panel";
 import { ChatDetailSplitPane } from "./chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
@@ -28,6 +29,7 @@ import { useMediaQuery } from "./use-media-query";
 /** Where the context rail sits beside the chat (see 90-responsive.css). */
 const contextRailQuery = "(min-width: 1361px)";
 import type { ChatSessionFileItem } from "./chat-types";
+import { pendingSessionFile } from "./pending-file-references";
 
 export type {
   ChatAgentOption,
@@ -86,6 +88,14 @@ export function ChatSurface(props: ChatSurfaceProps) {
     ...(contextCard?.changes ?? []),
     ...(contextCard?.files ?? []),
   ];
+  // A pending file's panel turns into the file once the session records it.
+  const recordedPending =
+    selection?.kind === "session-file" && selection.pending
+      ? sessionFiles.current.find((item) => item.path === selection.path)
+      : undefined;
+  useEffect(() => {
+    if (recordedPending) setSelection(recordedPending);
+  }, [recordedPending, setSelection]);
   const showPanel = useCallback(() => {
     closeDetail();
     setContextCardOpen(true);
@@ -103,13 +113,30 @@ export function ChatSurface(props: ChatSurfaceProps) {
     });
     showPanel();
   }, [backgroundWork, showPanel]);
+  // Otherwise timers its agent holds: the note says when it wakes next and
+  // opens the panel on them.
+  const schedule =
+    props.agentActive || backgroundNote ? undefined : props.schedule;
+  const timerIds = useMemo(
+    () => contextCard?.timers.map((item) => item.id) ?? [],
+    [contextCard],
+  );
+  const revealTimers = useCallback(() => {
+    setReveal({ ids: timerIds });
+    showPanel();
+  }, [timerIds, showPanel]);
   const openFileReference = useCallback(
     (reference: ConversationFileReference) => {
       if (reference.kind === "file") {
         const file = sessionFiles.current.find(
           (item) => item.path === reference.path,
         );
+        // Not recorded yet: the session that named it reads it, or says so.
         if (file) setSelection(file);
+        else if (reference.pending && reference.sessionId)
+          setSelection(
+            pendingSessionFile(reference, reference.sessionId, workspaceId),
+          );
         return;
       }
       const folder = `${reference.path.replace(/\/+$/, "")}/`;
@@ -121,7 +148,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       });
       showPanel();
     },
-    [setSelection, showPanel],
+    [setSelection, showPanel, workspaceId],
   );
   const fileActions = useMemo<ConversationFileActions>(
     () => ({
@@ -277,6 +304,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
                   <LoaderCircle aria-hidden="true" size={14} />
                   {backgroundNote}
                 </Button>
+              ) : schedule ? (
+                <ScheduledNote onClick={revealTimers} schedule={schedule} />
               ) : undefined
             }
             readOnly={
@@ -351,5 +380,30 @@ export function ChatSurface(props: ChatSurfaceProps) {
         />
       ) : null}
     </section>
+  );
+}
+
+/** The next wake-up of an idle chat's timers, kept current by the minute. */
+function ScheduledNote(props: {
+  onClick: () => void;
+  schedule: NonNullable<ChatSurfaceProps["schedule"]>;
+}) {
+  const { i18n } = useTranslation();
+  const minute = Math.floor(useSharedNow(true) / 60_000);
+  const note = useMemo(
+    () => scheduledNote(props.schedule, new Date(minute * 60_000)),
+    // The note is written in the viewer's language.
+    [props.schedule, minute, i18n.language],
+  );
+  return (
+    <Button
+      className="fdy-chat-background-note"
+      onClick={props.onClick}
+      size="sm"
+      variant="ghost"
+    >
+      <Clock aria-hidden="true" size={14} />
+      {note}
+    </Button>
   );
 }

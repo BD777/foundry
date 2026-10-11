@@ -9,12 +9,21 @@ import { test } from "node:test";
 import { resolve } from "node:path";
 
 import {
+  browserEventFailures,
+  compareBrowserEvents,
   compareDtoFields,
   compareMessageVocabularies,
+  findGoEventLiterals,
+  goDtoPaths,
+  parseGoBrowserEvents,
   parseGoMessageTypes,
+  parseGoNotices,
   parseGoStructs,
+  parseTsBrowserEvents,
   parseTsInterfaces,
   parseTsMessageTypes,
+  readMerged,
+  tsDtoPaths,
 } from "../../../scripts/audit-contract.mjs";
 import { daemonMessageTypes } from "../dist/index.js";
 
@@ -97,12 +106,131 @@ test("checked-in daemon vocabularies are in set parity", () => {
 });
 
 test("checked-in DTOs are in field parity", () => {
-  const tsInterfaces = parseTsInterfaces(
-    readFileSync(resolve(root, "packages/protocol/src/index.ts"), "utf8"),
-  );
-  const goStructs = parseGoStructs(
-    readFileSync(resolve(root, "apps/server/internal/store/models.go"), "utf8"),
-  );
+  const tsInterfaces = readMerged(tsDtoPaths, parseTsInterfaces);
+  const goStructs = readMerged(goDtoPaths, parseGoStructs);
   assert.ok(tsInterfaces.size > 0, "expected TS interfaces to parse");
+  for (const name of ["ChatTitle", "WorkspaceFeishuBot", "ResyncPayload"])
+    assert.ok(tsInterfaces.has(name), `expected ${name} among the DTOs`);
   assert.deepEqual(compareDtoFields(tsInterfaces, goStructs), []);
+});
+
+const tsBrowserEventsSource = `export const browserEventTypes = {
+  // Issues.
+  issueUpdated: "issue_updated",
+  issueEnvironmentChanged: "issue_environment_changed",
+} as const satisfies Record<string, keyof BrowserEventPayloads>;
+
+export type BrowserEventPayloads = {
+  issue_updated: Issue;
+  issue_environment_changed: IssueEnvironmentChangedPayload;
+};
+
+export const browserNoticeTypes = [
+  browserEventTypes.issueEnvironmentChanged,
+] as const satisfies readonly BrowserEventType[];
+
+export const browserStreamControlTypes = {
+  resync: "resync",
+} as const;
+
+export type BrowserStreamControlPayloads = {
+  resync: ResyncPayload;
+};
+`;
+
+const goBrowserEventSource = `const (
+	IssueUpdated            Type = "issue_updated"
+	IssueEnvironmentChanged Type = "issue_environment_changed"
+	// Resync tells a stream it missed events.
+	Resync Type = "resync"
+)
+
+var payloadTypes = map[Type]reflect.Type{
+	IssueUpdated:            reflect.TypeFor[store.Issue](),
+	IssueEnvironmentChanged: reflect.TypeFor[IssueEnvironmentChangedPayload](),
+	Resync:                  reflect.TypeFor[ResyncPayload](),
+}
+
+var notices = map[Type]bool{
+	IssueEnvironmentChanged: true,
+}
+`;
+
+test("browser event parsers read names, payload types and notices", () => {
+  const ts = parseTsBrowserEvents(tsBrowserEventsSource);
+  assert.deepEqual(
+    [...ts.events],
+    ["issue_updated", "issue_environment_changed"],
+  );
+  assert.deepEqual([...ts.controls], ["resync"]);
+  assert.deepEqual(Object.fromEntries(ts.payloads), {
+    issue_updated: "Issue",
+    issue_environment_changed: "IssueEnvironmentChangedPayload",
+    resync: "ResyncPayload",
+  });
+  assert.deepEqual([...ts.notices], ["issue_environment_changed"]);
+
+  const go = parseGoBrowserEvents(goBrowserEventSource);
+  assert.deepEqual(Object.fromEntries(go.constants), {
+    IssueUpdated: "issue_updated",
+    IssueEnvironmentChanged: "issue_environment_changed",
+    Resync: "resync",
+  });
+  assert.deepEqual(Object.fromEntries(go.payloads), {
+    issue_updated: "Issue",
+    issue_environment_changed: "IssueEnvironmentChangedPayload",
+    resync: "ResyncPayload",
+  });
+  const notices = parseGoNotices(goBrowserEventSource, go.constants);
+  assert.deepEqual([...notices], ["issue_environment_changed"]);
+  assert.deepEqual(compareBrowserEvents(ts, go, notices), []);
+});
+
+test("compareBrowserEvents reports name, payload and notice drift", () => {
+  const ts = parseTsBrowserEvents(
+    tsBrowserEventsSource
+      .replace("issue_updated: Issue;", "issue_updated: IssueView;")
+      .replace(
+        `  resync: "resync",\n} as const;`,
+        `  resync: "resync",\n  streamReady: "stream_ready",\n} as const;`,
+      ),
+  );
+  const go = parseGoBrowserEvents(goBrowserEventSource);
+  const problems = compareBrowserEvents(ts, go, new Set()).join(" | ");
+  assert.match(
+    problems,
+    /in browser-events\.ts but not in package browserevent: stream_ready/,
+  );
+  assert.match(
+    problems,
+    /in browser-events\.ts names but not in browser-events\.ts payload maps: stream_ready/,
+  );
+  assert.match(
+    problems,
+    /notices in browserNoticeTypes but not in package browserevent notices: issue_environment_changed/,
+  );
+  assert.match(
+    problems,
+    /"issue_updated" carries IssueView in TS but Issue in Go/,
+  );
+});
+
+test("findGoEventLiterals flags names spelled outside their constants", () => {
+  const names = new Set(["issue_updated", "background_task_output_changed"]);
+  const source = [
+    `	s.events.Publish("issue_updated", issue)`,
+    `	// "issue_updated" in a comment is fine`,
+    '	Type string `json:"issue_updated"`',
+    `	wsBackgroundTaskOutputChangedType = "background_task_output_changed"`,
+    `	s.events.Publish(browserevent.IssueUpdated, issue)`,
+  ].join("\n");
+  assert.deepEqual(findGoEventLiterals(source, names), [
+    { line: 1, name: "issue_updated" },
+  ]);
+});
+
+test("checked-in browser event vocabularies are in parity", () => {
+  const { failures, names } = browserEventFailures();
+  assert.ok(names > 0, "expected browser event names to parse");
+  assert.deepEqual(failures, []);
 });

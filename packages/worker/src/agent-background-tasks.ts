@@ -41,7 +41,7 @@ import {
   relative,
   resolve,
 } from "node:path";
-import { redactSecrets } from "./secret-redaction.js";
+import { redactSecrets, secretSeparatorLine } from "./secret-redaction.js";
 import type { TimerSinkEvent } from "./agent-timers.js";
 
 export interface AgentBackgroundTasksCapability {
@@ -789,7 +789,11 @@ export function verifiedTaskOutputPath(
   return named;
 }
 
-function readTail(path: string, limit: number): { data: Buffer; size: number } {
+/** Opens a task log without following a link and passes it on with its size. */
+function withLog<T>(
+  path: string,
+  read: (descriptor: number, size: number) => T,
+): T {
   const descriptor = openSync(
     path,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
@@ -800,24 +804,38 @@ function readTail(path: string, limit: number): { data: Buffer; size: number } {
       throw new Error(
         "This task's output is not shown: it is not a regular file.",
       );
-    const length = Math.min(limit, stat.size);
-    const data = Buffer.alloc(length);
-    let offset = 0;
-    while (offset < length) {
-      const read = readSync(
-        descriptor,
-        data,
-        offset,
-        length - offset,
-        stat.size - length + offset,
-      );
-      if (read <= 0) break;
-      offset += read;
-    }
-    return { data: data.subarray(0, offset), size: stat.size };
+    return read(descriptor, stat.size);
   } finally {
     closeSync(descriptor);
   }
+}
+
+/** Bytes [start, end) of an open log; fewer when it was cut meanwhile. */
+function readRange(descriptor: number, start: number, end: number): Buffer {
+  const data = Buffer.alloc(Math.max(0, end - start));
+  let offset = 0;
+  while (offset < data.length) {
+    const read = readSync(
+      descriptor,
+      data,
+      offset,
+      data.length - offset,
+      start + offset,
+    );
+    if (read <= 0) break;
+    offset += read;
+  }
+  return data.subarray(0, offset);
+}
+
+/** What a person may read of raw output: plain text, secrets redacted. */
+function readableOutput(raw: Buffer): string {
+  return redactSecrets(plainTerminalText(raw.toString("utf8")));
+}
+
+/** The index just past the last line break in data, or 0 without one. */
+function afterLastLine(data: Buffer): number {
+  return data.lastIndexOf(0x0a) + 1;
 }
 
 export interface BackgroundTaskOutputRequest {
@@ -829,15 +847,27 @@ export interface BackgroundTaskOutputRequest {
   scratchDirectory?: string;
   /** For the persisted record when the process is gone. */
   sessionsRoot?: string;
+  /**
+   * Continue an earlier read: the `lineEnd` it returned. Only what the log
+   * gained since is read when that is possible, else its end as without.
+   */
+  after?: number;
+}
+
+/** A task's record as the device keeps it, and its verified log. */
+export interface BackgroundTaskOutputLocation {
+  record: BackgroundTaskRecord;
+  /** Undefined while the task has written no log. */
+  path?: string;
 }
 
 /**
- * The end of a task's output: the last 64 KB as plain, redacted text. The
- * path comes from the device's own record of the task, never the request.
+ * Where a task's output is. The path comes from the device's own record of
+ * the task, never the request. Throws when the task is not the session's.
  */
-export function readBackgroundTaskOutput(
+export function backgroundTaskOutputLocation(
   request: BackgroundTaskOutputRequest,
-): AgentBackgroundTaskOutput {
+): BackgroundTaskOutputLocation {
   const persisted = request.sessionsRoot
     ? readPersistedBackgroundTasks(request.sessionsRoot, request.sessionId)
     : undefined;
@@ -846,6 +876,33 @@ export function readBackgroundTaskOutput(
     persisted?.tasks.find((task) => task.id === request.taskId);
   if (!record)
     throw new Error("This background task is not one of this chat's.");
+  const scratch = request.scratchDirectory ?? persisted?.scratchDirectory;
+  if (!scratch) return { record };
+  const path =
+    record.outputPath ??
+    (writesOutput(record.kind)
+      ? discoverOutputPath(scratch, record.id)
+      : undefined);
+  if (!path) return { record };
+  try {
+    return { record, path: verifiedTaskOutputPath(scratch, record.id, path) };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { record };
+    throw error;
+  }
+}
+
+/**
+ * The end of a task's output: the last 64 KB as plain, redacted text; or,
+ * continuing an earlier read (`after`), what the log gained since. Either
+ * way `lineEnd` is where a later read continues and the first `stable`
+ * characters of the content cover the log before it: the rest is a line
+ * still being written, which that read returns again.
+ */
+export function readBackgroundTaskOutput(
+  request: BackgroundTaskOutputRequest,
+): AgentBackgroundTaskOutput {
+  const { record, path } = backgroundTaskOutputLocation(request);
   const base: AgentBackgroundTaskOutput = {
     sessionId: request.sessionId,
     taskId: record.id,
@@ -855,33 +912,122 @@ export function readBackgroundTaskOutput(
     bytes: 0,
     kind: "missing",
   };
-  const scratch = request.scratchDirectory ?? persisted?.scratchDirectory;
-  if (!scratch) return base;
-  const path =
-    record.outputPath ??
-    (writesOutput(record.kind)
-      ? discoverOutputPath(scratch, record.id)
-      : undefined);
   if (!path) return base;
-  let verified: string;
-  try {
-    verified = verifiedTaskOutputPath(scratch, record.id, path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return base;
-    throw error;
-  }
-  const { data, size } = readTail(verified, backgroundOutputTailBytes);
-  const truncated = size > data.length;
+  return withLog(
+    path,
+    (descriptor, size) =>
+      (request.after === undefined
+        ? undefined
+        : continuedOutput(base, descriptor, size, request.after)) ??
+      tailOutput(base, descriptor, size),
+  );
+}
+
+function tailOutput(
+  base: AgentBackgroundTaskOutput,
+  descriptor: number,
+  size: number,
+): AgentBackgroundTaskOutput {
+  const tailStart = Math.max(0, size - backgroundOutputTailBytes);
+  const data = readRange(descriptor, tailStart, size);
+  const bytes = tailStart + data.length;
+  const truncated = tailStart > 0;
   if (data.subarray(0, 8192).includes(0))
-    return { ...base, bytes: size, truncated, kind: "binary" };
-  let content = data.toString("utf8");
+    return { ...base, bytes, truncated, kind: "binary" };
   // A cut in the middle of the file: start at the first whole line.
-  if (truncated) content = content.slice(content.indexOf("\n") + 1);
+  const start = truncated ? data.indexOf(0x0a) + 1 : 0;
+  const complete = Math.max(start, afterLastLine(data));
+  const readable = (end: number) =>
+    readableOutput(data.subarray(start, end)).replace(/^\n+/, "");
+  const content = readable(data.length);
+  const settled = readable(complete);
+  const stable = content.startsWith(settled) ? settled.length : undefined;
   return {
     ...base,
-    content: redactSecrets(plainTerminalText(content)).replace(/^\n+/, ""),
+    content,
     truncated,
-    bytes: size,
+    bytes,
     kind: "text",
+    lineEnd: tailStart + (stable === undefined ? start : complete),
+    stable: stable ?? 0,
   };
+}
+
+/** How far before a continued read its redaction may look for context. */
+const continuationContextBytes = 8 * 1024;
+
+/**
+ * What the log gained since `after`, a line start an earlier read returned,
+ * redacted as it would be within the whole log; undefined when that cannot
+ * be told (the log was cut or replaced, gained more than a tail, holds
+ * binary data, or a secret may reach across `after`): the caller reads the
+ * tail instead.
+ */
+function continuedOutput(
+  base: AgentBackgroundTaskOutput,
+  descriptor: number,
+  size: number,
+  after: number,
+): AgentBackgroundTaskOutput | undefined {
+  if (
+    !Number.isSafeInteger(after) ||
+    after < 0 ||
+    after > size ||
+    size - after > backgroundOutputTailBytes
+  )
+    return undefined;
+  const windowStart = Math.max(0, after - continuationContextBytes);
+  const data = readRange(descriptor, windowStart, size);
+  const at = after - windowStart;
+  if (data.length < at || (at > 0 && data[at - 1] !== 0x0a)) return undefined;
+  if (data.subarray(at).includes(0)) return undefined;
+  const contextStart = redactionContextStart(data, at, windowStart === 0);
+  if (contextStart === undefined) return undefined;
+  const context = readableOutput(data.subarray(contextStart, at));
+  const added = (end: number) => {
+    const text = readableOutput(data.subarray(contextStart, end));
+    return text.startsWith(context) ? text.slice(context.length) : undefined;
+  };
+  const content = added(data.length);
+  if (content === undefined) return undefined;
+  const complete = Math.max(at, afterLastLine(data));
+  const settled = added(complete);
+  const stable =
+    settled !== undefined && content.startsWith(settled)
+      ? settled.length
+      : undefined;
+  return {
+    ...base,
+    content,
+    truncated: false,
+    bytes: windowStart + data.length,
+    kind: "text",
+    from: after,
+    lineEnd: stable === undefined ? after : windowStart + complete,
+    stable: stable ?? 0,
+  };
+}
+
+/**
+ * Where redacting what follows `at` (a line start) must begin so a secret
+ * named before it is still found: the last line before `at` that is not a
+ * secretSeparatorLine. Undefined when that line lies before what data holds.
+ */
+function redactionContextStart(
+  data: Buffer,
+  at: number,
+  fromFileStart: boolean,
+): number | undefined {
+  let end = at;
+  while (end > 0) {
+    const start = end >= 2 ? data.lastIndexOf(0x0a, end - 2) + 1 : 0;
+    // A line data holds only the end of is not known to be harmless.
+    if (start === 0 && !fromFileStart) return undefined;
+    const line = plainTerminalText(
+      data.subarray(start, end - 1).toString("utf8"),
+    );
+    if (!secretSeparatorLine(line) || start === 0) return start;
+    end = start;
+  }
+  return 0;
 }

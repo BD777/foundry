@@ -9,15 +9,19 @@ flowchart TB
   APP["app/* + App.tsx\nroute, live data, shell coordination"]
   FEATURE["features/*\nprivate state + controller + feature UI"]
   SHARED["components/ui + lib\nstateless primitives and shared helpers"]
-  API["api.ts\ntransport only"]
+  API["api.ts\nHTTP transport"]
+  STREAM["stream/*\nevent stream: connection, typed dispatch"]
   PROTOCOL["@bd777/foundry-protocol\nDTO contract"]
 
   APP -->|domain input| FEATURE
   FEATURE -->|semantic event| APP
   FEATURE --> SHARED
   FEATURE --> API
+  FEATURE --> STREAM
   APP --> API
+  APP --> STREAM
   API --> PROTOCOL
+  STREAM --> PROTOCOL
   FEATURE --> PROTOCOL
 ```
 
@@ -71,9 +75,40 @@ feature instead of adding it to `components/ui`.
 
 ### Transport and protocol
 
-`api.ts` performs HTTP/SSE transport. `@bd777/foundry-protocol` defines transport DTOs.
+`api.ts` performs HTTP transport. `@bd777/foundry-protocol` defines transport DTOs.
 Feature view models may derive from protocol data, but UI-only state must not be
 added to protocol DTOs.
+
+`stream/` owns the event stream (`GET /api/events`): one shared connection per
+browser with resume, epoch, reconnect and resync, and dispatch by event type.
+Tabs of one origin elect a leader with a Web Lock (`tabs.ts`); it keeps the
+connection and relays every message over a BroadcastChannel, and the next
+tab in line takes over, resuming from the last relayed id, when it closes.
+Each tab keeps its own subscribers, lifecycle and epoch. Reads every tab
+makes when the same thing happens (workspace data, chat titles, layout,
+queue) go through `shared-reads.ts`: the leader reads once for all tabs.
+Without Web Locks or BroadcastChannel every tab streams and reads alone.
+Features never see tabs.
+
+- A feature follows the types it owns with `onStreamEvent` (inside an
+  effect) or `useStreamEvent` (a hook that requires `onResync`), optionally
+  for one `workspaceId`. It receives only its own type's payloads; it never
+  filters every event.
+- A hybrid event carries what changed or only says it changed;
+  `carriedData(type, payload)` decides which, once, for every consumer.
+- The workspace-data projection alone follows every event
+  (`onAnyStreamEvent`). What an event does to that data is declared per domain
+  in `app/projections/` (`sessions`, `issues`, `devices`, `chats`,
+  `data-changes`): `apply` a run of events, `reads` what only a read shows,
+  `touches` for ordering reads against events, `supersedes` for compaction;
+  each domain also names the kinds of entity it touches and how a read's
+  answer of its fields merges with what events changed (`LoadedMerges`).
+  A type no domain declares changes nothing there; adding an event type means
+  adding a slice, not editing the live-data, merge or ledger modules.
+- A user action does not re-read workspace data: its answer and the events
+  the server publishes for it show the result (a chat's session answer is
+  applied as its stream event would be). A view that waits for its change to
+  show reads only the fields it shows (`app/view-fields.ts`).
 
 ## State placement test
 
@@ -125,7 +160,8 @@ file while preserving cascade order and visual audit coverage.
   `components/conversation/` and used by both Chat and Issue detail; the chat
   feature folder holds projection adapters and re-export shims.
 - `app`: browser routing, view scroll reset, live SSE batching/polling, and
-  shared server-projection merging are isolated from feature code. Workspace
+  shared server-projection merging are isolated from feature code; the
+  per-domain event slices live in `app/projections/`. Workspace
   scoping/selection (`workspace-selectors.ts`) and loaded-chat selection
   precedence (`chat-selection.ts`) are pure modules with unit tests; `App` keeps
   only the state and browser-coupled wiring around them.

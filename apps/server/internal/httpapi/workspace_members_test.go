@@ -259,7 +259,7 @@ func TestAccessChangeMakesTheResumingStreamResync(t *testing.T) {
 		return reader
 	}
 	stream := open("")
-	f.server.events.Publish(chatTitlesChangedEvent, chatListChange{WorkspaceID: "ws_bob"})
+	chatListNotifierForTest(f.server).titlesStale("ws_bob")
 	lastEventID, _ := stream.next(t)
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"viewer"}`)),
 		http.StatusNoContent, "share with bob")
@@ -273,7 +273,7 @@ func TestAccessChangeMakesTheResumingStreamResync(t *testing.T) {
 		}
 	}
 	_, envelope := open(lastEventID).next(t)
-	if envelope["type"] != resyncEventType || envelope["payload"].(map[string]any)["reason"] != resyncReasonReauthorized {
+	if envelope["type"] != "resync" || envelope["payload"].(map[string]any)["reason"] != "reauthorized" {
 		t.Fatalf("bob's resumed stream began with %v, want a resync", envelope)
 	}
 }

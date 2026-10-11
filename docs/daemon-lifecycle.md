@@ -23,6 +23,8 @@ symbol name to find the current code.
 | Native account inspection                             | `packages/worker/src/native-inspection.ts`                                |
 | Workspace inspection and Issue environment RPC        | `packages/worker/src/workspace-inspection.ts`, `issue-environment-rpc.ts` |
 | Browser SSE lifecycle                                 | `apps/server/internal/httpapi/browser_events.go`                          |
+| Browser event names and payloads (server)             | `apps/server/internal/browserevent/`                                      |
+| Browser event names and payloads (clients)            | `packages/protocol/src/browser-events.ts`                                 |
 | Server process configuration and lifecycle            | `apps/server/cmd/foundry-server/main.go`, `config.go`, `lifecycle.go`     |
 | Stale-session reconciliation                          | `apps/server/internal/httpapi/agent_session_recovery.go`                  |
 | Workspace skill scanning and packaging                | `packages/worker/src/skill-*.ts`                                          |

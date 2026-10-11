@@ -369,7 +369,7 @@ function chatMessagesForSession(
   session: AgentSession | undefined,
   context: {
     sessions?: AgentSession[];
-    suppressedResponseTexts?: ReadonlySet<string>;
+    suppressedResponseFingerprints?: ReadonlySet<string>;
   } = {},
 ): ChatViewMessage[] {
   if (!session) {
@@ -407,7 +407,7 @@ function chatMessagesForSession(
   const duration = agentSessionDurationLabel(session);
   const terminalError = agentSessionTerminalError(session);
   const segments = projectTranscript(
-    sessionTranscriptEntries(session, context.suppressedResponseTexts),
+    sessionTranscriptEntries(session, context.suppressedResponseFingerprints),
   );
   segments.forEach((segment, index) => {
     const isLastSegment = index === segments.length - 1;
@@ -568,7 +568,7 @@ function agentSessionFailureMessage(
 
 function chatMessagesForThread(
   thread: ChatSessionThread | undefined,
-  context: { suppressedResponseTexts?: ReadonlySet<string> } = {},
+  context: { suppressedResponseFingerprints?: ReadonlySet<string> } = {},
 ): ChatViewMessage[] {
   if (!thread) {
     return [];
@@ -576,7 +576,7 @@ function chatMessagesForThread(
   return thread.sessions.flatMap((session) =>
     chatMessagesForSession(session, {
       sessions: thread.sessions,
-      suppressedResponseTexts: context.suppressedResponseTexts,
+      suppressedResponseFingerprints: context.suppressedResponseFingerprints,
     }),
   );
 }

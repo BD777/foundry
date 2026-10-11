@@ -1,14 +1,15 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
-	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"math/big"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -122,10 +123,10 @@ func (s *Server) handleGenerateFeishuPairingCode(w http.ResponseWriter, r *http.
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"workspaceId":          workspaceID,
-		"pairingCode":          code,
-		"pairingCodeExpiresAt": saved.PairingCodeExpiresAt,
+	writeJSON(w, http.StatusOK, store.FeishuPairingCodeResult{
+		WorkspaceID:          workspaceID,
+		PairingCode:          code,
+		PairingCodeExpiresAt: saved.PairingCodeExpiresAt,
 	})
 }
 
@@ -171,4 +172,22 @@ func (s *Server) handleDeleteWorkspaceFeishuBot(w http.ResponseWriter, r *http.R
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// feishuReactions hands Feishu what its group threads follow: a session's
+// answer as it streams and how it ended, and what happens to an Issue.
+type feishuReactions struct{ manager *feishu.WSManager }
+
+func (f feishuReactions) sessionChanged(_ context.Context, change sessionChange, session store.AgentSession) {
+	if change == sessionCompleted {
+		f.manager.SessionEnded(session)
+	}
+}
+
+func (f feishuReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
+	f.manager.SessionEventRecorded(event)
+}
+
+func (f feishuReactions) issueUpdated(issue store.Issue) {
+	f.manager.IssueUpdated(issue)
 }

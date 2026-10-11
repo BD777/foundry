@@ -5,6 +5,8 @@
 export const calls = [];
 /** Native sessions the fake Claude refuses to resume. */
 export const refused = new Set();
+/** Prompt text the fake Claude takes but never answers: its turn stays open. */
+export const held = new Set();
 let fresh = 0;
 
 export function query({ prompt, options }) {
@@ -27,6 +29,10 @@ export function query({ prompt, options }) {
         continue;
       }
       yield { type: "system", subtype: "init", session_id: session };
+      if (
+        [...held].some((text) => String(message.message.content).includes(text))
+      )
+        continue;
       yield {
         type: "assistant",
         session_id: session,
@@ -55,12 +61,31 @@ export class Codex {
   }
   thread(kind, id, thread) {
     const options = this.options;
+    const threadId = id ?? `codex-fresh-${++fresh}`;
     return {
-      id: id ?? `codex-fresh-${++fresh}`,
+      id: threadId,
       run: async (input) => {
         calls.push({ sdk: "codex", kind, id, input, thread, options });
         return { finalResponse: "codex answer", items: [] };
       },
+      // The model "fails-midway" streams: its turn fails while its process
+      // runs on until the runner aborts it.
+      ...(thread?.model === "fails-midway"
+        ? {
+            runStreamed: async (input, { signal }) => {
+              calls.push({ sdk: "codex", kind, id, input, thread, signal });
+              return {
+                events: (async function* () {
+                  yield { type: "thread.started", thread_id: threadId };
+                  yield { type: "turn.failed", error: { message: "midway" } };
+                  await new Promise((done) =>
+                    signal.addEventListener("abort", done),
+                  );
+                })(),
+              };
+            },
+          }
+        : {}),
     };
   }
 }

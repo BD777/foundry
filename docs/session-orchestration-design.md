@@ -32,7 +32,7 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 | ------------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `foundry` CLI / stdio MCP      | `packages/worker/src/foundry-cli.ts`、`foundry-mcp.ts`、`foundry-client.ts`                           |
 | 会话身份环境变量               | `packages/worker/src/session-ambient.ts`、`profiles.ts` `sessionEnvironment()`                        |
-| 随包 Skill                     | `packages/worker/skills/foundry-orchestrator/SKILL.md`                                                |
+| 内置 Skill                     | `apps/server/internal/builtinskills/foundry/`（随包同一份：`packages/worker/skills/foundry/`）        |
 | Actor 与鉴权中间件             | `apps/server/internal/httpapi/actor.go`、`security.go`                                                |
 | Policy                         | `apps/server/internal/httpapi/policy.go`                                                              |
 | HTTP MCP                       | `apps/server/internal/httpapi/mcp.go`                                                                 |
@@ -54,10 +54,11 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
 ├── bin foundry-worker …… 运维命令（setup/connect/install-service …）
 └── bin foundry        …… 人与 Agent 的统一入口
     ├── foundry mcp                 stdio 桥，转发 Server 的 /api/mcp
-    ├── foundry session <verb>      人 / 脚本用 CLI，默认 JSON 输出（get / events 走只读检查工具）
+    ├── foundry session <verb>      人 / 脚本用 CLI：每个命令调用一个 MCP 工具，打印它的回答
+    ├── foundry issue list / get
     ├── foundry workspace list / device list
-    ├── foundry profile list
-    └── foundry skill [name]        打印 / 安装随包 Skill（foundry-orchestrator、foundry）
+    ├── foundry profile list / model list
+    └── foundry skill [name]        打印 / 安装随包 Skill（foundry，含 references/）
 ```
 
 - **会话如何拿到工具（2026-09-26 起）**：Session Runtime 在启动持有会话令牌的
@@ -76,7 +77,8 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
   的参数类型定义，与实现它的处理函数（`mcp.go`）放在一起。stdio 的
   `foundry mcp`（2026-09-26 起）只是转发桥：把每行 JSON-RPC 原样 POST 到 Server 的
   `/api/mcp` 并写回回复，不含任何工具定义或策略，供在 Foundry 之外手动配置的客户端
-  使用。`foundry session` 命令仍走 REST。
+  使用。`foundry` CLI 的每个命令也只调用这些工具（2026-10-11 起），不再有 REST
+  实现；CLI 不加进会话的 PATH，会话用 MCP 工具。
 - stdio 桥 **无状态、不监听端口**；凭据来自会话令牌环境变量，没有令牌时用本机
   配对的设备凭据（此时补上配置的 `FOUNDRY_WORKSPACE_ID`）。
 
@@ -108,38 +110,46 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
 
 ### 4.2 Session token 生命周期
 
-- 表 `agent_session_tokens`：
-  `session_id PRIMARY KEY, token_hash, created_at, last_used_at, expires_at`；
-  明文只在内存。
-- **dispatch 时铸造**：派发 `run_session` 前调用
-  `MintAgentSessionToken(sessionID)`（`crypto/rand` 256-bit，存 SHA-256），
-  明文放入 `run_session` payload 的 `sessionToken`。首次投递与断线重投都
-  得到新令牌（重铸即吊销旧令牌），queued 但从未投递的 session 不产生有效
-  令牌。
-- Session 进入终态（completed/failed/canceled）时在保存状态的同一事务删除
-  令牌行；会话被删除后令牌同样失效。
+- 表 `session_tokens`：`token_hash PRIMARY KEY, session_id, created_at,
+last_used_at, expires_at`（`session_id` 有索引）；只存 SHA-256，明文只在内存
+  （`sqlitestore/session_tokens.go`）。
+- **每次派发铸造**：派发 `run_session` 前调用 `MintAgentSessionToken(sessionID)`
+  （`crypto/rand` 256-bit），明文放入 payload 的 `sessionToken`。首次投递、
+  后续每条输入、断线重投都会铸造新令牌；**旧令牌不吊销**，同一会话的令牌在会话
+  存在期间都有效，因为复用的长驻运行时仍拿着先前的令牌。从未投递的 queued
+  会话没有令牌。
+- 会话进入终态不删令牌：会话在终态后仍可接收下一条输入。会话被删除
+  （`chat_deletions`）后其令牌不再解析。
 - 防御性 `expires_at`（30 天）；过期行在解析时删除。
-- Worker 不持久化该令牌：只作为执行环境变量注入；MCP 子进程随会话生灭。
+- Worker 不持久化该令牌：只作为执行环境变量和本轮 MCP 配置注入。
 - 令牌只接受 `Authorization: Bearer` 头；唯一例外是 SSE `GET /api/events`
   允许 `access_token` query 参数（EventSource 无法设置头）。
-- 无效/过期 → 401；身份有效但越权 → 403。
+- 无效/过期 → 401。MCP 工具里，不可达的会话与不存在的会话一样回答 not found，
+  不可达的 workspace 回答 `workspace not found`；可读但不可控制的会话（Viewer、
+  Issue 外的会话）回答 403 并说明原因。
 
 ### 4.3 Agent Policy（§5.6 方案 A，2026-09-28 确认）
 
 Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace，角色封顶 Member。
 判定只在 `access.go` 的 `agentScope` 一处；选方案 B 只改这一个函数。
 
-| 操作                                              | 规则                                                                                   |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `list_workspaces`                                 | 列出可达 Workspace 及角色                                                              |
-| `create_session`                                  | 默认 caller 的 workspace；可指定可达 workspace（需 Member），跑在该 workspace 的设备上 |
-| `list_sessions` / `list_group_sessions`           | 默认 caller 的 workspace；可指定可达 workspace（需 Viewer）                            |
-| `read_context` / `send_message` / `cancel` / 改名 | 可达 Workspace 内的**任意**会话；由用户在对话中指定对象即可                            |
-| `list_profiles` / `list_models`                   | 默认本设备；可指定承载可达 workspace 的设备                                            |
-| SSE `/api/events`                                 | agent actor 按单个 workspace 过滤（默认自己的，可指定可达的）                          |
+| 操作                                              | 规则                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `list_workspaces`                                 | 列出可达 Workspace 及角色                                                                                 |
+| `create_session` / `handoff_session`              | 默认 caller 的 workspace（handoff：来源的）；可指定可达 workspace（需 Member），跑在该 workspace 的设备上 |
+| `list_sessions` / `list_group_sessions`           | 默认 caller 的 workspace；可指定可达 workspace（需 Viewer）                                               |
+| `read_context` / `send_message` / `cancel` / 改名 | 可达 Workspace 内的**任意**会话：读需 Viewer，控制需 Member；由用户在对话中指定对象即可                   |
+| `list_profiles` / `list_models`                   | 默认本设备；可指定承载可达 workspace 的设备                                                               |
+| SSE `/api/events`                                 | agent actor 按单个 workspace 过滤（默认自己的，可指定可达的）                                             |
 
 跨 workspace 的子会话保留血缘（深度、扇出上限照算），但不进入父会话的编排分组
 （分组布局按 workspace 存）。不可达的 workspace 一律 404，不泄露存在性。
+
+REST `POST /api/agent-sessions` 对会话令牌执行与 MCP 相同的可达范围：拒绝
+`nativeSessionId`；`chatId` 只能接管新会话所在 workspace（需 Member）里的原生会话，
+未归属 workspace 的原生会话对令牌不可见。对所有调用方：`agentId` 只在请求所在
+workspace 内解析（store 层 `getAgent`），按原生会话 id 续接只认同一 workspace 的会话，
+fork 在来源会话的 workspace 运行并在那里检查 Member。
 
 血缘只作记录（界面归属、深度与扇出上限），不是权限来源；adopt / 监管机制已删除。
 这样 `handoff_session` 之后的接替者、同一对话的后续输入都能继续管理之前派出的会话。
@@ -192,26 +202,78 @@ Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace�
 
 ## 6. MCP 工具面
 
-工具描述中写明：写者唯一、并行写同一仓库的风险、上下文默认截断、Codex
-活动 turn 不支持 steer（语义为下一轮排队）。
+工具目录与描述在 `apps/server/internal/httpapi/mcp_tools.json`，实现在 `mcp.go`、
+`mcp_sessions.go`、`mcp_inspect.go`、`mcp_outputs.go`（会话产出）、`mcp_issues.go`
+（Issue 只读）、`mcp_attachments.go`（交给子会话的文件）、`mcp_verification.go`。
+不改变任何东西的工具在目录里带 MCP 的 `annotations.readOnlyHint`。描述写明可达范围（可达 Workspace，控制需
+Member；Issue 内只限该 Issue）、写者唯一、并行写同一仓库的风险、Codex 活动 turn
+不支持 steer（语义为下一轮排队）。
 
-| 工具                  | 映射                                | 备注                                                                                                                                                                            |
-| --------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_profiles`       | `GET /api/agent-profiles`           | 按本 device 过滤                                                                                                                                                                |
-| `list_models`         | `POST /api/agent-profiles/models`   |                                                                                                                                                                                 |
-| `create_session`      | `POST /api/agent-sessions`          | `parentSessionId` 默认取自身；不指定 profile 与 runtime 时沿用父会话的；可选 `issueId`、`forkSessionId`、`verification`、`wait?`（等到结束并带回回答）                          |
-| `list_sessions`       | `GET /api/agent-sessions`           | 支持 `parentOnly`                                                                                                                                                               |
-| `list_group_sessions` | layout + session 列表               | 接手编排用                                                                                                                                                                      |
-| `get_session`         | 紧凑摘要（`mcp_inspect.go`）        | 摘要档：状态、错误、设备在线、最后回答 ≤1000 字、最后错误及其前 3 条事件、未结束后台任务；id 或 Foundry 链接，跨可达 Workspace                                                  |
-| `read_context`        | session / thread / chat / subagents | `scope=summary\|events\|thread\|transcript\|subagents`；`events` 每行一事件，`levels`/`labels`/`query` 过滤，`tail`/`limit` 与 `after`/`before` 游标翻页，`maxBytes` 内整行截断 |
-| `handoff_session`     | 创建新 Session 并交接事实           | 只带事实，不带污染上下文                                                                                                                                                        |
-| `send_message`        | `…/messages`                        | 运行中则 steer；空闲则作为下一条输入继续同一原生会话，可切换 runtime；可选 `wait`                                                                                               |
-| `cancel_session`      | `…/cancel`                          | 不级联                                                                                                                                                                          |
-| `wait_session`        | SSE `/api/events` + 轮询兜底        | `until`、`timeoutMs`；结束时带回回答                                                                                                                                            |
-| `rename_session`      | `POST /api/chats/{id}/title`        | 同 Workspace                                                                                                                                                                    |
+**按角色列出工具**：`tools/list` 只列调用方可调用的工具，`tools/call` 同样拒绝
+列表外的工具。Issue 澄清会话只有 `list_sessions`、`read_context`（与 Worker 的
+`session-roles.ts` 一致）；verifier 只有标了 `readOnlyHint` 的工具；`ask_person`
+只给 Issue 执行会话；其余会话和设备凭据得到其余全部工具。
 
-工具只在服务端实现一次（`httpapi/mcp.go`），会话经注入的 HTTP MCP 或 stdio 桥
-调用它。人用 CLI 经 `foundry-client.ts` 走上表的 REST 端点，默认输出 JSON。
+**会话参数**：作用于会话的工具都用 `sessionId`，接受 id、Foundry 链接或已被会话
+接管的原生会话 id；读不到的会话与不存在的一样回答 not found。改名保留旧参数名作
+别名：`handoff_session` 的 `fromSessionId`、`send_message` 的 `message`（现为
+`prompt`，与 `create_session` 一致）。
+
+| 工具                  | 行为                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_workspaces`     | 可达 Workspace 及调用方角色；设备不再服务的标 `unavailable`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `list_resources`      | 可达设备、是否在线、提供的资源（浏览器、macOS 屏幕控制）及其上的可达 Workspace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `list_profiles`       | 默认调用会话所在设备；可指定承载可达 workspace 的设备                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `list_models`         | 某 profile 的模型目录（兼容端点只读 `/models`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `create_session`      | 默认 caller 的 workspace；可指定可达 workspace（需 Member）；血缘父会话取自身；同 workspace 不指定 profile 与 runtime 时沿用父会话 profile，跨 workspace 只沿用 runtime；可选 `issueId`、`forkSessionId`、`verification`（见下文 verifier）、`attachments`（见下文）、`wait`。不再接受未写入目录的 `nativeSessionId`（无调用方；它可绕过读权限 fork 或接管原生会话）                                                                                                                                                                                                                                                          |
+| `handoff_session`     | 只带事实（原始目标、最后结果、状态）开新会话；来源为任一可读会话；默认在来源的 workspace，可选 `workspaceId`（需 Member）；不指定 profile 时同设备沿用来源 profile，否则只沿用 runtime                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `list_sessions`       | 一行一个会话的精简摘要（id、title、status、runtime、profile、device、workspaceId、parentSessionId、activityAt 等），按活动时间倒序；`limit`（默认 30，至多 100）+ `cursor` 翻页；`parentOnly`（自己派出的）与 `parentSessionId`（任一可读会话派出的，默认在该会话的 workspace）在 SQL 中先于 limit 过滤；不含 naming 会话                                                                                                                                                                                                                                                                                                     |
+| `list_group_sessions` | 一个编排分组按列表顺序的同样精简摘要（组内原生会话标 `kind: native_chat`）；接手编排用                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `get_session`         | 与 `read_context` scope=summary 相同的紧凑摘要（`mcp_inspect.go`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `read_context`        | `scope=summary\|events\|thread\|transcript\|subagents\|changes\|file\|background`；`events` 每行一事件，`levels`/`labels`/`query` 过滤，`tail`/`limit` 与 `after`/`before` 游标翻页，`maxBytes` 内整行截断。会话产出（与 Web 上下文面板同一来源与可达规则）：`changes` 按路径合并 worker 的 sessionFile 账本（变更类型、增删行数、轮次），带 `path` 时从设备读该文件的 diff（`inputId` 限一轮）并在服务端生成 unified diff（`internal/textdiff`）；`file` 读文件当前内容；`background` 列后台任务，带 `taskId` 读输出末尾（需 Member）。工具写的文件与 workspace 内文件 Viewer 可读，仅被回答提到的 workspace 外文件需 Member |
+| `list_issues`         | 一个 workspace 的 Issue，一行一个：状态、合同状态与已确认修订号、最新执行状态、等待人回答的问题种类、必需标准通过数；可按 `status` 过滤；Issue 内的会话只看到该 Issue                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `get_issue`           | 一个可读 Issue：请求、已确认合同（无则草稿）及每条标准在该修订上的最新验证结论、待确认的新草稿、等待中的问题、验证汇总与最新 review 是否可接受、最新执行（会话 id、状态、错误）。只读                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `send_message`        | 运行中则 steer；空闲则作为下一条输入继续同一原生会话，可切换 runtime；Issue 自己的执行与澄清会话除外；可选 `attachments`、`wait`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `cancel_session`      | 不级联；会话仍可继续                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `wait_session`        | 服务端每 1.5 秒查一次状态直到 `until`（默认终态）或 `timeoutMs`（至多 600000）；结束时带回回答                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `rename_session`      | 可控制的会话，1–120 字符                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `ask_person`          | 仅 Issue 执行会话：向人提问或请求许可，Issue 等待回答后在同一候选中恢复                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+工具只在服务端实现一次，会话经注入的 HTTP MCP 调用；stdio 桥只转发（有会话令牌时
+不改参数，用设备凭据时补上配置的 `FOUNDRY_WORKSPACE_ID`）。人用的 CLI 同样只是
+这些工具的客户端：`foundry-cli-commands.ts` 的命令表写明每个命令调用哪个工具、位置
+参数和每个 flag 设哪个参数，CLI 按表调用 `/api/mcp` 并打印工具的回答；`session wait`
+在 `--timeout-ms` 超过一次调用的 10 分钟时接着再等。
+
+**交给子会话的文件**（`attachments`，`create_session` 与 `send_message`）：调用方
+会话自己 workspace 目录里的路径（绝对或相对），或它收到过的附件 id（`att_…`）。
+Server 经 daemon 通道从调用方设备分块读出（worker 能力 `attachment_files`：
+`attachment_read` 带 `scope:"workspace"`，worker 解析链接后要求仍在 workspace 内），
+写进目标会话所在 workspace 设备的 `.foundry/attachments`（与人上传附件同一写入
+路径），作为这条输入的附件交付，所以另一台设备上的会话也能读到。每条至多 10 个、
+单个 25 MB；需要会话令牌。
+
+**Verifier**（`verification:true`）：独立核查者，可以读 workspace、运行只读命令
+（测试、lint、类型检查、git status/diff），但改不了 workspace。约束在操作系统层面：
+worker（能力 `verification_sessions`；旧 worker 所在设备上的 verifier 被拒绝并提示
+更新）用 `writable_tree` 沙箱（Linux bubblewrap / macOS Seatbelt）运行整个 agent
+进程，workspace 只读挂载，唯一可写的是 workspace 外的私有 scratch（agent 的 HOME、
+原生会话记录和 `$TMPDIR`，`$TMPDIR` 每轮开始清空，一周未用的 verifier 目录删除）；
+用户自己的文件可读（跑项目自己的工具链）。运行时一层的限制叠加其上：Claude 为
+`dontAsk`，只预先放行 Read/Grep/Glob/Bash/Skill 与 foundry 工具，禁用
+Write/Edit/MultiEdit/NotebookEdit/Task 等，每条消息至多 20 轮；Codex 在其自身的
+`workspace-write` 沙箱里（外层沙箱让 workspace 只读，所以命令只能写 `$TMPDIR`）。
+Claude Agent SDK 的 `sandbox` 选项只隔离 Bash、Linux 上还依赖 socat，因此没有采用。
+Foundry 工具只有只读的那些，device notes 换成 verifier 自己的说明。
+
+内置 `foundry` Skill（`builtinskills/foundry/`）随每个派发的会话交付，是唯一入口：
+SKILL.md 讲 Foundry 是什么、会话代表谁、可达范围、工具、读会话与它的产出、读
+Issue、给人展示图片和文件、何时以及如何通过其他会话工作；`references/orchestration.md`
+（编排规则：brief、交文件、verifier 等）与 `references/diagnosing.md`（排查失败或卡住
+的会话）按需读取。Skill 只教 MCP 工具，CLI 只一句话提到是给人用的。
+`packages/worker/test/foundry-skill.test.mjs` 保证 Skill 只写存在的工具和参数（枚举值
+也核对）、覆盖全部工具、不写 CLI 命令，并保证 CLI 命令表里每个命令调用的工具、参数都在
+目录中，且除 `ask_person` 外每个工具都有命令。
 
 ## 7. 端到端流程
 
@@ -235,8 +297,9 @@ Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace�
    Codex 记录为下一轮语义）。
 4. 页面/列表刷新后，血缘、分组、消息均保留。
 5. Parent cancel：children 继续运行到终态（孤儿不级联）。
-6. 无 token / 坏 token → 401；同 workspace 但操控非后代 Session 的
-   steer/cancel → 403；跨 workspace 访问 → 403。
+6. 无 token / 坏 token → 401；血缘不是权限：可达 Workspace（Member）内的任意
+   会话都可 steer/cancel/改名；只读可达（Viewer）的会话可读不可控制（403 并说明
+   原因）；不可达的会话或 workspace 与不存在的一样回答 not found。
 7. Session 终态后其 token 立即失效；重新 dispatch 的 queued session 获得新
    token。
 8. `list_profiles` 对 agent actor 只返回本设备 profile。
@@ -248,13 +311,13 @@ Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace�
 ## 9. 分期与交付状态
 
 - **P0（已交付）**：会话令牌与 Policy、血缘与自动入组、`foundry` CLI / stdio
-  MCP、`foundry-orchestrator` Skill；第 8 节全部场景。
+  MCP、编排 Skill（现为内置 `foundry` Skill 的一部分）；第 8 节全部场景。
 - **P1（已交付）**：worktree-backed 子 Session（`issueId`，在候选 worktree
   执行，校验 Issue 处于活动状态）；UI 血缘 badge；`blocked` 状态（模型限流
   等待时由 worker 上报、恢复时清除）；派生深度与活动子会话上限。显式
   `adopt` 已于 2026-09-27 随会话模型重构删除。
 - **P2（已交付）**：服务端 HTTP MCP（`POST /api/mcp`）；`handoff_session`；
-  只读 verifier（`verification:true`，复用 naming 同构的 utility 限制）；
+  verifier（`verification:true`；2026-10-11 起在只读沙箱里运行只读命令，见第 6 节）；
   session fork（`forkSessionId` 续接原生 transcript、开新 Foundry thread）；
   自动组 AI 异步命名。
 - **未实现**：HTTP MCP OAuth 2.1（PKCE + Authorization Server Metadata +

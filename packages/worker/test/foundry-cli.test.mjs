@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +31,10 @@ async function fakeTools(t, reply) {
         name: message.params?.name,
         arguments: message.params?.arguments,
       });
-      const [text, isError] = reply(message.params?.name);
+      const [text, isError] = reply(
+        message.params?.name,
+        message.params?.arguments,
+      );
       res.setHeader("Content-Type", "application/json");
       res.end(
         JSON.stringify({
@@ -106,7 +115,7 @@ test("session get and events read a session by link through the Foundry tools", 
   assert.deepEqual(calls[1].arguments, {
     sessionId: link,
     scope: "events",
-    levels: ["info", "error", "warning"],
+    levels: ["error", "warning", "info"],
     labels: ["Session failed", "Waiting for background tasks"],
     query: "idle timeout",
     tail: 20,
@@ -141,7 +150,10 @@ test("session events refuses bad flags and reports tool errors", async (t) => {
   assert.match(badTail.stderr, /--tail needs a positive whole number/);
   const noId = await foundry(["session", "events", "--errors"], env);
   assert.equal(noId.code, 1);
-  assert.match(noId.stderr, /session id or Foundry chat link is required/);
+  assert.match(noId.stderr, /foundry session events needs <sessionId>/);
+  const unknown = await foundry(["session", "get", "sess_x", "--verbose"], env);
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.stderr, /foundry session get reads no --verbose/);
   assert.equal(calls.length, 0);
   const missing = await foundry(["session", "get", "sess_x"], env);
   assert.equal(missing.code, 1);
@@ -165,26 +177,224 @@ test("workspace and device lists come from the Foundry tools", async (t) => {
   );
 });
 
+// The CLI is a client of the same tools sessions call: every command sends
+// its tool the arguments its words and flags name, nothing else.
+test("every command calls its tool with the arguments its flags set", async (t) => {
+  const { calls, url } = await fakeTools(t, (name) => [
+    `${name} answered`,
+    false,
+  ]);
+  const session = { FOUNDRY_SERVER_URL: url, FOUNDRY_SESSION_TOKEN: "token-1" };
+  const brief = join(mkdtempSync(join(tmpdir(), "foundry-brief-")), "brief.md");
+  writeFileSync(brief, "Check the build\n");
+  const runs = [
+    [
+      ["session", "list", "--parent-only", "--limit", "5"],
+      "list_sessions",
+      { parentOnly: true, limit: 5 },
+    ],
+    [
+      ["session", "children", "sess_p"],
+      "list_sessions",
+      { parentSessionId: "sess_p" },
+    ],
+    [
+      ["session", "thread", "sess_1", "--max-bytes", "900"],
+      "read_context",
+      { sessionId: "sess_1", scope: "thread", maxBytes: 900 },
+    ],
+    [
+      ["session", "chat", "native_claude_1"],
+      "read_context",
+      { sessionId: "native_claude_1", scope: "transcript" },
+    ],
+    [
+      ["session", "subagents", "sess_1", "--task", "task_1"],
+      "read_context",
+      { sessionId: "sess_1", scope: "subagents", taskId: "task_1" },
+    ],
+    [
+      ["session", "changes", "sess_1", "--path", "/w/a.go", "--input", "inp_1"],
+      "read_context",
+      {
+        sessionId: "sess_1",
+        scope: "changes",
+        path: "/w/a.go",
+        inputId: "inp_1",
+      },
+    ],
+    [
+      ["session", "file", "sess_1", "--path", "/w/a.go"],
+      "read_context",
+      { sessionId: "sess_1", scope: "file", path: "/w/a.go" },
+    ],
+    [
+      ["session", "background", "sess_1", "--task", "bash_1"],
+      "read_context",
+      { sessionId: "sess_1", scope: "background", taskId: "bash_1" },
+    ],
+    [
+      [
+        "session",
+        "create",
+        "--prompt-file",
+        brief,
+        "--verification",
+        "--wait",
+        "--timeout-ms",
+        "60000",
+        "--workspace",
+        "ws_b",
+      ],
+      "create_session",
+      {
+        prompt: "Check the build\n",
+        verification: true,
+        wait: true,
+        timeoutMs: 60000,
+        workspaceId: "ws_b",
+      },
+    ],
+    [
+      ["session", "handoff", "sess_1", "--message", "go on"],
+      "handoff_session",
+      { sessionId: "sess_1", prompt: "go on" },
+    ],
+    [
+      ["session", "send", "sess_1", "--message", "and the tests", "--wait"],
+      "send_message",
+      { sessionId: "sess_1", prompt: "and the tests", wait: true },
+    ],
+    [
+      ["session", "cancel", "sess_1"],
+      "cancel_session",
+      { sessionId: "sess_1" },
+    ],
+    [
+      ["session", "rename", "sess_1", "--title", "Build check"],
+      "rename_session",
+      { sessionId: "sess_1", title: "Build check" },
+    ],
+    [
+      ["session", "group", "grp_1"],
+      "list_group_sessions",
+      { groupId: "grp_1" },
+    ],
+    [
+      ["issue", "list", "--status", "blocked,verifying"],
+      "list_issues",
+      { status: ["blocked", "verifying"] },
+    ],
+    [["issue", "get", "ISS-7"], "get_issue", { issueId: "ISS-7" }],
+    [
+      ["profile", "list", "--runtime", "codex"],
+      "list_profiles",
+      { runtime: "codex" },
+    ],
+    [
+      ["model", "list", "--profile", "claude_p"],
+      "list_models",
+      { profileId: "claude_p" },
+    ],
+  ];
+  for (const [args, tool, expected] of runs) {
+    const before = calls.length;
+    const run = await foundry(args, session);
+    assert.equal(run.code, 0, `${args.join(" ")}: ${run.stderr}`);
+    assert.equal(run.stdout.trim(), `${tool} answered`);
+    assert.equal(calls.length, before + 1);
+    assert.equal(calls.at(-1).name, tool, args.join(" "));
+    assert.deepEqual(calls.at(-1).arguments, expected, args.join(" "));
+  }
+});
+
+test("a paired device's CLI names its workspace, and waits past one call", async (t) => {
+  // The session settles on the third call; a call shorter than a second
+  // times out at once, as the server's would.
+  let waits = 0;
+  const { calls, url } = await fakeTools(t, (name, args) => {
+    if (name !== "wait_session") return ["[]", false];
+    if (args.timeoutMs < 1000 || ++waits < 3)
+      return ["timed out waiting for sess_1", true];
+    return ['{"id":"sess_1","status":"completed"}', false];
+  });
+  const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
+  t.after(() => rmSync(state, { recursive: true, force: true }));
+  writeFileSync(
+    join(state, "daemon-config.json"),
+    JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
+  );
+  const device = {
+    FOUNDRY_SERVER_URL: "",
+    FOUNDRY_SESSION_TOKEN: "",
+    FOUNDRY_WORKSPACE_ID: "ws_device",
+    FOUNDRY_STATE_ROOT: state,
+  };
+  const listed = await foundry(["session", "list"], device);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.equal(calls[0].authorization, undefined);
+  assert.deepEqual(calls[0].arguments, { workspaceId: "ws_device" });
+
+  const waited = await foundry(
+    ["session", "wait", "sess_1", "--timeout-ms", "1300000"],
+    device,
+  );
+  assert.equal(waited.code, 0, waited.stderr);
+  assert.equal(waited.stdout.trim(), '{"id":"sess_1","status":"completed"}');
+  assert.deepEqual(
+    calls.slice(1).map((call) => call.arguments.timeoutMs),
+    [600000, 600000, 600000],
+    "each call waits at most ten minutes",
+  );
+  const short = await foundry(
+    ["session", "wait", "sess_1", "--timeout-ms", "500"],
+    device,
+  );
+  assert.equal(short.code, 1);
+  assert.match(short.stderr, /timed out waiting for sess_1/);
+  assert.ok(
+    calls.slice(4).every((call) => call.arguments.timeoutMs <= 500),
+    "no call waits past the time asked for",
+  );
+});
+
+/** Every file of a skill folder, as paths relative to it. */
+function skillFiles(root, prefix = "") {
+  return readdirSync(join(root, prefix), { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory()
+        ? skillFiles(root, join(prefix, entry.name))
+        : [join(prefix, entry.name)],
+    )
+    .sort();
+}
+
 test("the foundry skill ships with the CLI, same as the server's built-in, and installs", async () => {
   const listed = await foundry(["skill", "list"]);
   assert.equal(listed.code, 0, listed.stderr);
-  assert.deepEqual(listed.stdout.trim().split("\n"), [
-    "foundry",
-    "foundry-orchestrator",
+  assert.deepEqual(listed.stdout.trim().split("\n"), ["foundry"]);
+  const bundled = join(packageDir, "skills", "foundry");
+  const builtin = resolve(
+    packageDir,
+    "../../apps/server/internal/builtinskills/foundry",
+  );
+  const files = skillFiles(bundled);
+  assert.deepEqual(files, [
+    "SKILL.md",
+    join("references", "diagnosing.md"),
+    join("references", "orchestration.md"),
   ]);
+  assert.deepEqual(skillFiles(builtin), files, "both copies hold one folder");
+  for (const file of files) {
+    assert.equal(
+      readFileSync(join(bundled, file), "utf8"),
+      readFileSync(join(builtin, file), "utf8"),
+      `${file} differs between the CLI's copy and the server's built-in`,
+    );
+  }
   const printed = await foundry(["skill", "foundry"]);
-  const builtin = readFileSync(
-    resolve(
-      packageDir,
-      "../../apps/server/internal/builtinskills/foundry/SKILL.md",
-    ),
-    "utf8",
-  );
-  assert.equal(printed.stdout, builtin);
-  assert.match(
-    (await foundry(["skill"])).stdout,
-    /^---\nname: foundry-orchestrator\n/,
-  );
+  assert.equal(printed.stdout, readFileSync(join(builtin, "SKILL.md"), "utf8"));
+  assert.equal((await foundry(["skill"])).stdout, printed.stdout);
   const root = mkdtempSync(join(tmpdir(), "foundry-skill-"));
   try {
     const installed = await foundry([
@@ -195,10 +405,13 @@ test("the foundry skill ships with the CLI, same as the server's built-in, and i
       root,
     ]);
     assert.equal(installed.code, 0, installed.stderr);
-    assert.equal(
-      readFileSync(join(root, "foundry", "SKILL.md"), "utf8"),
-      builtin,
-    );
+    assert.deepEqual(skillFiles(join(root, "foundry")), files);
+    for (const file of files) {
+      assert.equal(
+        readFileSync(join(root, "foundry", file), "utf8"),
+        readFileSync(join(builtin, file), "utf8"),
+      );
+    }
     const unknown = await foundry(["skill", "install", "nope", "--dir", root]);
     assert.equal(unknown.code, 1);
     assert.match(unknown.stderr, /no bundled skill nope/);

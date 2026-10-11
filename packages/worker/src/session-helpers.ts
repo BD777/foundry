@@ -37,6 +37,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { sendWebSocket, trySendWebSocket } from "./transport.js";
 import {
+  agentSubagentDigest,
   listAgentSubagents,
   readAgentSubagentTranscript,
 } from "./subagent-transcript.js";
@@ -71,7 +72,15 @@ export interface ReadSubagentTranscriptPayload {
 export interface ListSubagentsPayload {
   sessionId: string;
   workspaceId: string;
+  /**
+   * "digest": the list as a chat shows it (AgentSubagentDigest), which the
+   * reply names; else the whole list, prompts and answers.
+   */
+  view?: string;
 }
+
+/** The view of a subagent list a chat reads (see ListSubagentsPayload). */
+export const subagentDigestView = "digest";
 
 export interface ListDirectoriesPayload {
   path: string;
@@ -474,13 +483,20 @@ export async function sendSubagentList(
   payload: ListSubagentsPayload,
 ): Promise<void> {
   try {
+    const subagents = await listAgentSubagents(
+      workspacePath,
+      payload.sessionId,
+    );
     sendWebSocket(
       socket,
       daemonMessageTypes.subagentsListed,
-      {
-        sessionId: payload.sessionId,
-        subagents: await listAgentSubagents(workspacePath, payload.sessionId),
-      },
+      payload.view === subagentDigestView
+        ? {
+            sessionId: payload.sessionId,
+            view: subagentDigestView,
+            subagents: subagents.map(agentSubagentDigest),
+          }
+        : { sessionId: payload.sessionId, subagents },
       id,
     );
   } catch (error) {

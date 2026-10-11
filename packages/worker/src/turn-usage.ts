@@ -22,11 +22,13 @@ function record(value: unknown): Record<string, unknown> | undefined {
 /**
  * Usage of a Claude Agent SDK `result` message. Claude reports cache reads
  * and writes beside `input_tokens`, so the prompt total is their sum. Its
- * `total_cost_usd` is not used: it accumulates over the runtime's whole life,
- * while `usage` covers just this result.
+ * `total_cost_usd` accumulates over the runtime's whole life, while `usage`
+ * covers just this result: the result's own cost, when known, is passed in
+ * (see ClaudeContextTracker).
  */
 export function claudeResultUsage(
   message: unknown,
+  costUsd?: number,
 ): TurnTokenUsage | undefined {
   const result = record(message);
   if (result?.type !== "result") return undefined;
@@ -42,6 +44,7 @@ export function claudeResultUsage(
     ...(count(result.num_turns) > 0
       ? { modelRequests: count(result.num_turns) }
       : {}),
+    ...(costUsd !== undefined ? { costUsd } : {}),
   };
 }
 
@@ -63,7 +66,10 @@ export function codexTurnUsage(event: unknown): TurnTokenUsage | undefined {
   };
 }
 
-/** One Foundry turn can span several provider results (background tasks). */
+/**
+ * One Foundry turn can span several provider results (background tasks). Its
+ * cost is known only when every result's is.
+ */
 export function addTurnUsage(
   total: TurnTokenUsage | undefined,
   next: TurnTokenUsage,
@@ -80,6 +86,9 @@ export function addTurnUsage(
     outputTokens: total.outputTokens + next.outputTokens,
     ...optional("reasoningTokens"),
     ...optional("modelRequests"),
+    ...(total.costUsd !== undefined && next.costUsd !== undefined
+      ? { costUsd: total.costUsd + next.costUsd }
+      : {}),
   };
 }
 

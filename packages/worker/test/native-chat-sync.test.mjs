@@ -223,3 +223,64 @@ test("a /resume stub is not a chat, and later system records don't move a chat's
     process.env.CLAUDE_CONFIG_DIR = previousHome;
   }
 });
+
+test(
+  "a chat the server never keeps is not sent again",
+  { timeout: 60000 },
+  async () => {
+    const workspace = join(root, "ws-refused");
+    mkdirSync(workspace);
+    initWorkspace(workspace);
+    // Its own config home: a listing of the shared one is reused for seconds.
+    const previousHome = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = join(root, "claude-refused");
+    const owned = "66666666-6666-6666-6666-666666666666";
+    const other = "77777777-7777-7777-7777-777777777777";
+    const ownedPath = session(workspace, owned, "a Foundry session's turn");
+    const otherPath = session(workspace, other, "a terminal chat");
+    const posts = [];
+    const server = createServer((request, response) => {
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        const post = JSON.parse(body);
+        posts.push(post);
+        response.setHeader("Content-Type", "application/json");
+        // As the server answers a chat a Foundry session owns.
+        const refused = post.chats
+          .map((chat) => chat.id)
+          .filter((id) => id === `native_claude_${owned}`);
+        response.end(
+          JSON.stringify({
+            status: "synced",
+            count: post.chats.length,
+            refused,
+          }),
+        );
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${server.address().port}`;
+    const reply = (path) =>
+      appendFileSync(
+        path,
+        `${JSON.stringify({ type: "assistant", timestamp: new Date().toISOString(), message: { role: "assistant", content: `reply ${posts.length}` } })}\n`,
+      );
+    try {
+      await syncNativeChats(url, workspace);
+      assert.ok(posts.length > 0);
+      posts.length = 0;
+      reply(ownedPath);
+      reply(otherPath);
+      assert.equal(await syncNativeChats(url, workspace), 1);
+      assert.deepEqual(
+        posts.map((post) => post.chats.map((chat) => chat.id)),
+        [[`native_claude_${other}`]],
+        "the refused chat changed but is not sent",
+      );
+    } finally {
+      process.env.CLAUDE_CONFIG_DIR = previousHome;
+      server.close();
+    }
+  },
+);

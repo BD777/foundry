@@ -51,8 +51,9 @@ const {
   foundryStreamQuietMs,
   foundryStreamReopenDelaysMs,
   reconnectFoundryStream,
-  subscribeFoundryEvents,
-} = await import("../src/api.ts");
+  onAnyStreamEvent: subscribeFoundryEvents,
+} = await import("../src/stream/index.ts");
+const { onStreamEvent } = await import("../src/stream/index.ts");
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -247,4 +248,67 @@ test("a connection that may have died silently is reopened, resuming", async (t)
   t.mock.timers.tick(1100);
   reconnectFoundryStream();
   assert.equal(FakeEventSource.all.length, 2, "nobody listens: nothing opens");
+});
+
+test("a handler receives only the events of its type; notices reach no projection", async () => {
+  FakeEventSource.all.length = 0;
+  const queues = [];
+  const layouts = [];
+  const notices = [];
+  const any = [];
+  const stopQueues = onStreamEvent("chat_queue_changed", (queue) =>
+    queues.push(queue.chatId),
+  );
+  const stopLayouts = onStreamEvent(
+    "chat_layout_changed",
+    (change) => layouts.push(change.workspaceId),
+    { workspaceId: "ws" },
+  );
+  const stopNotices = onStreamEvent("issue_environment_changed", (change) =>
+    notices.push(change.issueId),
+  );
+  const stopAny = subscribeFoundryEvents((event) => any.push(event.type));
+  assert.equal(FakeEventSource.all.length, 1, "subscribers share a source");
+  const source = FakeEventSource.last;
+  assert.equal(source.named.size, 0, "every message is unnamed");
+  source.open();
+
+  source.send("ep-1", "chat_queue_changed", {
+    workspaceId: "ws",
+    chatId: "c1",
+    revision: 1,
+    items: [],
+  });
+  source.send("ep-2", "chat_layout_changed", { workspaceId: "ws" });
+  source.send("ep-3", "chat_layout_changed", { workspaceId: "ws_other" });
+  source.send("ep-4", "issue_environment_changed", {
+    workspaceId: "ws",
+    issueId: "i1",
+  });
+  source.send("ep-5", "chat_titles_changed", { workspaceId: "ws" });
+  assert.deepEqual(queues, ["c1"], "only queue changes");
+  assert.deepEqual(layouts, ["ws"], "only layout changes of its workspace");
+  assert.deepEqual(notices, ["i1"], "a notice reaches its own type");
+  assert.deepEqual(
+    any,
+    [
+      "chat_queue_changed",
+      "chat_layout_changed",
+      "chat_layout_changed",
+      "chat_titles_changed",
+    ],
+    "every event but the notice, in order",
+  );
+
+  stopQueues();
+  source.send("ep-6", "chat_queue_changed", {
+    workspaceId: "ws",
+    chatId: "c2",
+    revision: 1,
+    items: [],
+  });
+  assert.deepEqual(queues, ["c1"], "nothing after it left");
+  assert.equal(any.at(-1), "chat_queue_changed", "the others still receive");
+  await closeAll([stopLayouts, stopNotices, stopAny]);
+  assert.equal(source.closed, true);
 });

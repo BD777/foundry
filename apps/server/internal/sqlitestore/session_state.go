@@ -50,8 +50,45 @@ func (s *Store) migrateSessionStateKeys(ctx context.Context) error {
 				return fmt.Errorf("index session state events: %w", err)
 			}
 		}
+		if err := tx.rekeySessionStateEvents(ctx); err != nil {
+			return err
+		}
 		return tx.backfillSessionStateKeys(ctx)
 	})
+}
+
+// sessionStateKeyRevision counts the changes to store.SessionStateKey
+// that give a key to events stored without one. Revision 2 keys the
+// context's size, compactions and each turn's usage.
+const sessionStateKeyRevision = 2
+
+// rekeySessionStateEvents computes again, once per revision, the keys of
+// the stored events the newer rules may key: those that carry usage. A
+// binary of an older revision writes no such keys; after a downgrade its
+// events keep none.
+func (s *Store) rekeySessionStateEvents(ctx context.Context) error {
+	if _, err := s.conn().ExecContext(ctx, `CREATE TABLE IF NOT EXISTS session_state_key_revision (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		revision INTEGER NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("create session state key revision: %w", err)
+	}
+	var revision int
+	if err := s.conn().QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) FROM session_state_key_revision`).Scan(&revision); err != nil {
+		return fmt.Errorf("read session state key revision: %w", err)
+	}
+	if revision >= sessionStateKeyRevision {
+		return nil
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE agent_session_events SET state_key = NULL
+		WHERE state_key = '' AND (payload_json LIKE '%"turnUsage"%' OR payload_json LIKE '%"requestUsage"%' OR payload_json LIKE '%"contextUsage"%')`); err != nil {
+		return fmt.Errorf("rekey session state events: %w", err)
+	}
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO session_state_key_revision (id, revision) VALUES (1, ?)
+		ON CONFLICT (id) DO UPDATE SET revision = excluded.revision`, sessionStateKeyRevision); err != nil {
+		return fmt.Errorf("record session state key revision: %w", err)
+	}
+	return nil
 }
 
 // backfillSessionStateKeys computes the keys of the events that have none

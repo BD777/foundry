@@ -33,7 +33,7 @@ test("evidence: a page load reads once the stream opens, and once more only for 
     });
   }
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const { foundryStreamOpenWaitMs } = await import("../src/api.ts");
+  const { foundryStreamOpenWaitMs } = await import("../src/stream/index.ts");
   const { useEvidenceUpdates } =
     await import("../src/features/issue-detail/use-evidence-updates.ts");
   let reads = 0;

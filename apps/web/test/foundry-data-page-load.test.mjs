@@ -17,17 +17,16 @@ class FakeEventSource {
 }
 globalThis.EventSource = FakeEventSource;
 
-const { foundryStreamOpenWaitMs } = await import("../src/api.ts");
+const { foundryStreamOpenWaitMs } = await import("../src/stream/index.ts");
 const { selectionFlight } = await import("../src/lib/single-flight.ts");
 const { createStreamTouchLedger } =
   await import("../src/app/stream-touches.ts");
 const { applyFoundryDataAnswer, readFoundryDataSelection, replayMissedEvents } =
   await import("../src/app/loaded-foundry-data.ts");
-const {
-  dataChangeRefreshDelayMs,
-  streamDownRefreshIntervalMs,
-  useFoundryLiveData,
-} = await import("../src/app/use-foundry-live-data.ts");
+const { streamDownRefreshIntervalMs, useFoundryLiveData } =
+  await import("../src/app/use-foundry-live-data.ts");
+const { dataChangeRefreshDelayMs } =
+  await import("../src/app/projections/data-changes.ts");
 
 const settle = async () => {
   for (let index = 0; index < 5; index++)
