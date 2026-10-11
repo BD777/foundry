@@ -21,6 +21,11 @@ import { claudeHarness } from "./claude.js";
 import { codexHarness } from "./codex.js";
 import type { HarnessAdapter } from "./harness.js";
 import { sessionPolicy } from "./policy.js";
+import {
+  ensureFreshClaudeLogin,
+  keepSandboxCredentialsCurrent,
+  sandboxCredentialCopies,
+} from "./provider-credentials.js";
 import type { SessionHandle, SessionResult, SessionSpec } from "./types.js";
 
 export type {
@@ -90,6 +95,19 @@ async function run(
   };
   for (const [key, value] of Object.entries(profileRuntimeEnvironment(profile)))
     if (providerEnvironmentKeys.includes(key)) env[key] = value;
+  // The harness gets the device's access token only; the device renews its
+  // own Claude login, and the copy follows it (provider-credentials.ts).
+  const deviceClaudeLogin =
+    spec.harness === "claude" && profile.connectionType === "local_login";
+  if (deviceClaudeLogin) await ensureFreshClaudeLogin();
+  const stopCredentials = keepSandboxCredentialsCurrent(
+    sandboxCredentialCopies(
+      spec.harness === "claude"
+        ? { CLAUDE_CONFIG_DIR: resolve(home, ".claude") }
+        : { CODEX_HOME: resolve(home, "codex") },
+    ),
+    { renewClaude: deviceClaudeLogin ? undefined : async () => undefined },
+  );
   const timeout = new AbortController();
   const timer = setTimeout(() => timeout.abort(), policy.timeoutMs);
   try {
@@ -114,6 +132,7 @@ async function run(
     return { ...result, activity };
   } finally {
     clearTimeout(timer);
+    stopCredentials();
   }
 }
 

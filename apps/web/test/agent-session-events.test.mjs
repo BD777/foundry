@@ -432,3 +432,32 @@ test("recorded files and older workers' output guesses are not chat rows", () =>
     false,
   );
 });
+
+test("a session that runs again drops the failed run's error", () => {
+  const failed = {
+    agentId: "agent_test",
+    createdLabel: "just now",
+    deviceId: "dev_test",
+    error: "You've hit your session limit",
+    events: [event("evt_response", "Response stream", "partial")],
+    id: "sess_test",
+    prompt: "hello",
+    provider: "claude",
+    status: "failed",
+    title: "hello",
+    updatedLabel: "failed",
+    workspaceId: "ws_test",
+  };
+  const { error: _error, ...resumed } = {
+    ...failed,
+    status: "running",
+    updatedLabel: "running",
+  };
+  delete resumed.events;
+
+  assert.equal(mergeLoadedAgentSession(failed, resumed).error, undefined);
+  assert.equal(
+    mergeLoadedAgentSession(failed, { ...resumed, status: "failed" }).error,
+    "You've hit your session limit",
+  );
+});

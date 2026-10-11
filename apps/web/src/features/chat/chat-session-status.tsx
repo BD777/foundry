@@ -237,7 +237,13 @@ export function ChatSessionStatusLine({
       className="fdy-chat-context-section fdy-chat-status"
       data-level={level}
     >
-      <Tooltip content={t("contextCard.status.contextHint")}>
+      <Tooltip
+        content={t(
+          contextWindow
+            ? "contextCard.status.contextHint"
+            : "contextCard.status.contextWindowPending",
+        )}
+      >
         <Button
           aria-controls={open ? id : undefined}
           aria-expanded={open}

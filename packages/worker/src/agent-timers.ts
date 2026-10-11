@@ -68,6 +68,11 @@ export interface ClaudeTimerSink {
   sessionId: () => string;
   /** The session's timers changed (the device keeps them; see session-timers.ts). */
   timersChanged?: (tasks: AgentScheduledTask[]) => void;
+  /**
+   * Claude starts a timer's turn on its own, before it reads the prompt:
+   * the process gets what the turn needs (a current Foundry token).
+   */
+  timerTurnStarting?: () => Promise<void>;
 }
 
 /** A turn Claude started for a timer: from its prompt until its result. */
@@ -170,7 +175,7 @@ export class ClaudeTimerTracker {
         {
           hooks: [
             async (input: unknown) =>
-              this.handlePromptSubmit(input as UserPromptSubmitHookInput),
+              await this.handlePromptSubmit(input as UserPromptSubmitHookInput),
           ],
         },
       ],
@@ -208,13 +213,17 @@ export class ClaudeTimerTracker {
    * the session's timers, or any prompt while no Foundry turn runs, starts
    * a timer's turn. A Foundry turn's own prompt and steers name none.
    */
-  private handlePromptSubmit(input: UserPromptSubmitHookInput): undefined {
+  private async handlePromptSubmit(
+    input: UserPromptSubmitHookInput,
+  ): Promise<undefined> {
     if (this.closed || input.agent_id) return undefined;
     const prompt = String(input.prompt ?? "").trim();
     if (!prompt || taskNotificationPrompt.test(prompt)) return undefined;
     const id = this.matchTimerId(prompt);
     if (!id && this.sink.isActiveTurn()) return undefined;
     this.firing = { id, prompt, startedAt: new Date().toISOString() };
+    // A Foundry turn's dispatch brought a fresh token already.
+    if (!this.sink.isActiveTurn()) await this.sink.timerTurnStarting?.();
     return undefined;
   }
 

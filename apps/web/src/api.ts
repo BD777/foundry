@@ -45,6 +45,14 @@ import type {
   WorkspaceFileRead,
   WorkspaceFeishuBot,
   FeishuPairingCodeResult,
+  ConnectExternalAccountInput,
+  ExternalAccount,
+  ExternalAccountLogin,
+  ExternalAccountUpdate,
+  ExternalAccountsView,
+  ExternalProviderApp,
+  SaveExternalProviderAppInput,
+  WorkspaceExternalAccounts,
   WorkspaceAccessRole,
   WorkspaceProjection,
   WorkspaceTreeEntry,
@@ -1742,6 +1750,87 @@ export function unbindFeishuGroup(
 export function deleteWorkspaceFeishuBot(workspaceId: string): Promise<void> {
   return deleteJSON<void>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu`,
+  );
+}
+
+// --- External accounts ---
+
+const externalAccountPath = (id: string) =>
+  `/api/external-accounts/${encodeURIComponent(id)}`;
+
+export function getExternalAccounts(): Promise<ExternalAccountsView> {
+  return getJSON<ExternalAccountsView>("/api/external-accounts");
+}
+
+/** The secret is write-only: sealed by the server, never returned. */
+export function createExternalApp(
+  input: SaveExternalProviderAppInput,
+): Promise<ExternalProviderApp> {
+  return postJSON<ExternalProviderApp>("/api/external-apps", input);
+}
+
+export function deleteExternalApp(appId: string): Promise<unknown> {
+  return deleteJSON(`/api/external-apps/${encodeURIComponent(appId)}`);
+}
+
+/** Starts a device-flow login; the answer is the code to show. */
+export function connectExternalAccount(
+  input: ConnectExternalAccountInput,
+): Promise<ExternalAccountLogin> {
+  return postJSON<ExternalAccountLogin>(
+    "/api/external-accounts/connect",
+    input,
+  );
+}
+
+export function getExternalAccountLogin(
+  loginId: string,
+): Promise<ExternalAccountLogin> {
+  return getJSON<ExternalAccountLogin>(
+    `/api/external-accounts/logins/${encodeURIComponent(loginId)}`,
+  );
+}
+
+export function updateExternalAccount(
+  accountId: string,
+  update: ExternalAccountUpdate,
+): Promise<ExternalAccount> {
+  return patchJSON<ExternalAccount>(externalAccountPath(accountId), update);
+}
+
+export function refreshExternalAccount(
+  accountId: string,
+): Promise<ExternalAccount> {
+  return postJSON<ExternalAccount>(`${externalAccountPath(accountId)}/refresh`);
+}
+
+/** "Stop using now": revoked at the provider; held tokens lapse. */
+export function revokeExternalAccount(
+  accountId: string,
+): Promise<ExternalAccount> {
+  return postJSON<ExternalAccount>(`${externalAccountPath(accountId)}/revoke`);
+}
+
+export function disconnectExternalAccount(accountId: string): Promise<unknown> {
+  return deleteJSON(externalAccountPath(accountId));
+}
+
+export function getWorkspaceExternalAccounts(
+  workspaceId: string,
+): Promise<WorkspaceExternalAccounts> {
+  return getJSON<WorkspaceExternalAccounts>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/external-accounts`,
+  );
+}
+
+/** Replaces the caller's own bindings in the workspace. */
+export function setWorkspaceExternalAccounts(
+  workspaceId: string,
+  accountIds: string[],
+): Promise<WorkspaceExternalAccounts> {
+  return putJSON<WorkspaceExternalAccounts>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/external-accounts`,
+    { accountIds },
   );
 }
 

@@ -50,6 +50,7 @@ import {
 import { ChatSurface, type ChatMessageItem } from "./chat-surface";
 import {
   chatContextCardForSessions,
+  liveThreadSchedule,
   runningBackgroundWork,
 } from "./chat-context-model";
 import { chatDetailHydrationId } from "./chat-hydration-policy";
@@ -447,7 +448,7 @@ export function useChatFeature({
     [contextCard],
   );
   const schedule = useMemo(
-    () => [...threadSessions].reverse().find((s) => s.scheduled)?.scheduled,
+    () => liveThreadSchedule(threadSessions),
     [threadSessions],
   );
 

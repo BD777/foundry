@@ -1,0 +1,143 @@
+/** External accounts: a person's logins at other platforms (Feishu first). */
+export const externalAccounts = {
+  page: {
+    title: "External accounts",
+    intro:
+      "Your logins at other platforms, used by command-line tools such as feishu-cli in your sessions. Foundry keeps each login on the server and hands a session a short-lived token (at most 2 hours) only when you start it, on a device you own, in a workspace you bound the account to.",
+    connect: "Connect account",
+    loading: "Loading external accounts…",
+    loadFailed: "Could not load external accounts: {{error}}",
+    secretsMissing:
+      "This server has no secret-store key, so it cannot keep logins. An administrator has to configure one before accounts can be connected.",
+    actionsNote:
+      "Stop using now revokes the login at the platform; a session that already holds a token keeps it until it expires (at most 2 hours). Remove also deletes the account and its workspace bindings.",
+  },
+  list: {
+    title: "Accounts",
+    count_one: "{{count}} account",
+    count_other: "{{count}} accounts",
+    emptyTitle: "No external accounts yet",
+    emptyBody:
+      "Connect a Feishu account so feishu-cli in your sessions works as you.",
+    usedBy: "{{provider}} · used by {{tools}}",
+    identityUnknown: "Identity not read",
+    tenant: "tenant {{tenant}}",
+    app: "app {{app}}",
+    notBound: "Not bound to a workspace",
+    workspaces_one: "Bound to {{count}} workspace",
+    workspaces_other: "Bound to {{count}} workspaces",
+  },
+  providers: {
+    feishu: "Feishu",
+  },
+  status: {
+    ready: "Ready",
+    expiring: "Expires soon",
+    needs_reauth: "Needs re-authorization",
+    revoked: "Revoked",
+  },
+  statusDetail: {
+    refresh_token_expired:
+      "The login lapsed after a week without use. Reconnect to use it again.",
+    authorization_expired:
+      "The authorization reached its one-year limit. Reconnect to use it again.",
+    revoked: "Revoked at the platform. Reconnect to use it again.",
+    other:
+      "The platform refused the last refresh ({{detail}}). Reconnect to use it again.",
+  },
+  keepAlive: {
+    label: "Keep alive",
+    on: "Kept alive by Foundry · last refreshed {{when}}",
+    onNever: "Kept alive by Foundry · not refreshed yet",
+    off: "Not kept alive · lapses {{when}} unless a session uses it",
+    offUnknown: "Not kept alive · lapses after a week without use",
+    lastRefreshed: "Last refreshed {{when}}",
+  },
+  actions: {
+    refresh: "Refresh now",
+    revoke: "Stop using now",
+    revokeConfirm: "Revoke now?",
+    remove: "Remove",
+    removeConfirm: "Remove for good?",
+    reconnect: "Reconnect",
+    working: "Working…",
+  },
+  notices: {
+    connected: "Connected {{name}}.",
+    refreshed: "{{name}} was refreshed.",
+    revoked: "{{name}} is revoked. Sessions lose access within 2 hours.",
+    removed: "{{name}} was removed.",
+    keepAliveOn: "Foundry keeps {{name}} alive.",
+    keepAliveOff: "{{name}} is no longer kept alive.",
+    appRemoved: "{{name}} was removed.",
+    failed: "{{error}}",
+  },
+  apps: {
+    title: "Feishu apps",
+    intro:
+      "A Feishu login belongs to one app. Connect through the organization app an administrator set up, or through your own app.",
+    instance: "Organization app",
+    personal: "Your app",
+    empty: "No app yet. Add your own when you connect an account.",
+    remove: "Remove app",
+    removeConfirm: "Remove app?",
+  },
+  connect: {
+    title: "Connect a Feishu account",
+    description:
+      "You approve the sign-in at Feishu with a code; Foundry never sees your password.",
+    appLabel: "Feishu app",
+    ownApp: "Use my own app…",
+    ownAppMeta: "Paste an app ID and secret",
+    appIdLabel: "App ID",
+    appIdPlaceholder: "cli_…",
+    appSecretLabel: "App secret",
+    appSecretHint:
+      "Sealed on the server and never shown again. Sessions on your own devices receive it, because feishu-cli refuses to run without it.",
+    baseUrlLabel: "Open API base URL (optional)",
+    baseUrlPlaceholder: "https://open.feishu.cn",
+    baseUrlHint:
+      "Empty means Feishu (open.feishu.cn). For Lark use https://open.larksuite.com.",
+    shareLabel: "Offer this app to everyone on this server",
+    shareHint: "Admins only. Each person still signs in as themselves.",
+    nameLabel: "Name (optional)",
+    namePlaceholder: "Work Feishu",
+    scopesLabel: "Scopes",
+    scopesHint:
+      "Space-separated Feishu scopes to grant, as feishu-cli names them (feishu-cli auth login --domain … --recommend lists them per domain). The app must have them enabled. Foundry always adds offline_access and auth:user.id:read.",
+    scopesPlaceholder: "docx:document search:docs:read",
+    appIdRequired: "Enter the app ID.",
+    appSecretRequired: "Enter the app secret.",
+    start: "Start sign-in",
+    starting: "Starting…",
+    codeTitle: "Approve in Feishu",
+    codeBody:
+      "Open the verification page, sign in to Feishu and confirm this code. This dialog finishes by itself once you approve.",
+    userCode: "Code",
+    copyCode: "Copy code",
+    openPage: "Open verification page",
+    copyLink: "Copy link",
+    waiting: "Waiting for approval · expires in {{time}}",
+    expired: "The code expired before it was approved.",
+    failed: "Sign-in failed: {{error}}",
+    tryAgain: "Try again",
+    close: "Close",
+    cancel: "Cancel",
+  },
+  workspace: {
+    rule: "Only sessions you start, on devices you own, use your accounts. Other members see that an account is bound, not whose it is.",
+    mine: "Your accounts",
+    others: "Bound by other members",
+    use: "Use {{name}} in this workspace",
+    emptyMine: "You have no external accounts yet.",
+    connect: "Connect an account",
+    manage: "Manage external accounts",
+    otherAccount: "{{provider}} account {{name}}",
+    loading: "Loading accounts…",
+    loadFailed: "Could not load this workspace's accounts: {{error}}",
+    saveFailed: "Could not change the binding: {{error}}",
+    bound: "{{name}} is used in this workspace.",
+    unbound: "{{name}} is no longer used in this workspace.",
+    notUsable: "{{status}}: sessions get no token until you reconnect it.",
+  },
+};

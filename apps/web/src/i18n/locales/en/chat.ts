@@ -293,6 +293,7 @@ export const chat = {
     today: "Today {{time}}",
     tomorrow: "Tomorrow {{time}}",
     nextFire: "Next {{time}}",
+    timerInactive: "Not active",
     fireCount_one: "Fired {{count}} time",
     fireCount_other: "Fired {{count}} times",
     status: {
@@ -303,6 +304,8 @@ export const chat = {
       unknown: "—",
       contextHint:
         "The input of the session's latest model request, cache included, against its model's context window. Select for session details.",
+      contextWindowPending:
+        "The context window shows after this session's next turn on an updated worker. Select for session details.",
       contextMeter: "Context used",
       nearlyFull: "Context nearly full; the agent will compact it soon.",
       full: "Context full; the agent compacts it or the next request may fail.",
@@ -430,6 +433,7 @@ export const chat = {
       recurring: "Recurring task",
       oneShot: "One-time reminder",
       nextFire: "Next run",
+      inactive: "Not active: the agent no longer holds this task",
       cron: "Cron expression",
       prompt: "Runs this prompt",
     },

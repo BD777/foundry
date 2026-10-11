@@ -65,14 +65,19 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
   Claude 会话（Chat、编排子会话；命名等工具性会话除外）时，把 Server 的 HTTP
   MCP（`POST /api/mcp`，`Authorization: Bearer <会话令牌>`）注册为 `foundry`
   MCP，并预先放行 `mcp__foundry`：这些能力由 Foundry 授予、由 Server 按令牌
-  逐次授权，无人值守的会话没有人去点"允许"。每轮派发都会重铸令牌，复用的长驻
-  运行时在每轮开始前用 SDK 的 `setMcpServers` 换上本轮令牌；MCP 配置不进运行时
-  复用的身份，所以不会因为令牌变化而丢掉长驻运行时。
+  逐次授权，无人值守的会话没有人去点"允许"。每轮派发都会重铸令牌；新进程在第一轮
+  之前、复用的长驻运行时在每轮开始前，都用 SDK 的 `setMcpServers` 经输入流拿到本轮
+  令牌（2026-10-12 起），令牌不进 `--mcp-config` 参数，也不进 Claude 的环境变量，
+  Claude 运行的命令看不到它；MCP 配置不进运行时复用的身份，所以不会因为令牌变化而
+  丢掉长驻运行时。
 - **Codex 会话（2026-09-27 起）**：同一个 HTTP MCP 以 Codex 配置注入
   （`mcp_servers.foundry.url`，通过 SDK 的 `config`），令牌由 Codex
   从自己的环境变量 `FOUNDRY_SESSION_TOKEN` 读取（`bearer_token_env_var`），不进配置和
-  命令行；`default_tools_approval_mode = "approve"` 对应 Claude 的预先放行。令牌跟会话走，
-  复用的 Codex 线程拿着的旧令牌同样有效。Codex 不能 steer 进行中的一轮，消息排到下一轮。
+  命令行；`default_tools_approval_mode = "approve"` 对应 Claude 的预先放行。Codex 运行的
+  命令看不到这个变量（2026-10-12 起）：`shell_environment_policy.exclude` 排除它，并关掉
+  `features.shell_snapshot`——快照把整个环境（包括被排除的变量）写进 `CODEX_HOME` 下
+  每条命令都会 source 的文件。令牌跟会话走，复用的 Codex 线程拿着的旧令牌在会话活跃时
+  同样有效。Codex 不能 steer 进行中的一轮，消息排到下一轮。
 - 工具目录与实现只有一份：`apps/server/internal/httpapi/mcp_tools.json` 带完整
   的参数类型定义，与实现它的处理函数（`mcp.go`）放在一起。stdio 的
   `foundry mcp`（2026-09-26 起）只是转发桥：把每行 JSON-RPC 原样 POST 到 Server 的
@@ -80,12 +85,14 @@ Worker Daemon，Agent 在 Device 上执行。Agent 操作 Server 读写接口时
   使用。`foundry` CLI 的每个命令也只调用这些工具（2026-10-11 起），不再有 REST
   实现；CLI 不加进会话的 PATH，会话用 MCP 工具。
 - stdio 桥 **无状态、不监听端口**；凭据来自会话令牌环境变量，没有令牌时用本机
-  配对的设备凭据（此时补上配置的 `FOUNDRY_WORKSPACE_ID`）。
+  配对的设备凭据（此时补上配置的 `FOUNDRY_WORKSPACE_ID`）。会话里运行的命令
+  （设置了 `FOUNDRY_SESSION_ID`）不回退到设备凭据：那会以设备主人的身份越过会话的
+  范围；会话用自己的 Foundry 工具。
 
 ### 身份环境变量
 
 Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三条执行
-路径都经 `sessionEnvironment()`）：
+路径都经 `sessionEnvironment()`；Claude 的环境去掉令牌，Codex 不把它传给命令）：
 
 | 变量                     | 内容                                              |
 | ------------------------ | ------------------------------------------------- |
@@ -93,7 +100,7 @@ Worker 启动 Session 时统一注入（Claude SDK、Codex、custom-command 三�
 | `FOUNDRY_SESSION_ID`     | 当前 Agent 自己的 Foundry session id              |
 | `FOUNDRY_SESSION_SOURCE` | `chat` / `agent` / `naming` / …                   |
 | `FOUNDRY_WORKSPACE_ID`   | 当前 Workspace id（`FOUNDRY_WORKSPACE` 仍为路径） |
-| `FOUNDRY_SESSION_TOKEN`  | 会话级 Bearer 令牌，仅内存                        |
+| `FOUNDRY_SESSION_TOKEN`  | 会话级 Bearer 令牌，仅内存；Agent 的命令看不到    |
 
 ## 4. 鉴权与授权
 
@@ -115,13 +122,20 @@ last_used_at, expires_at`（`session_id` 有索引）；只存 SHA-256，明文�
   （`sqlitestore/session_tokens.go`）。
 - **每次派发铸造**：派发 `run_session` 前调用 `MintAgentSessionToken(sessionID)`
   （`crypto/rand` 256-bit），明文放入 payload 的 `sessionToken`。首次投递、
-  后续每条输入、断线重投都会铸造新令牌；**旧令牌不吊销**，同一会话的令牌在会话
-  存在期间都有效，因为复用的长驻运行时仍拿着先前的令牌。从未投递的 queued
-  会话没有令牌。
-- 会话进入终态不删令牌：会话在终态后仍可接收下一条输入。会话被删除
-  （`chat_deletions`）后其令牌不再解析。
-- 防御性 `expires_at`（30 天）；过期行在解析时删除。
-- Worker 不持久化该令牌：只作为执行环境变量和本轮 MCP 配置注入。
+  后续每条输入、断线重投都会铸造新令牌；**旧令牌不吊销**，因为复用的长驻
+  运行时（Codex 线程的环境）仍拿着先前的令牌。从未投递的 queued 会话没有令牌。
+- **有效期（2026-10-12 起）**：会话处于 queued / running / blocked 时其令牌都有效
+  （一轮可以几小时不调用工具）；否则令牌在最后一次使用（或铸造）后 24 小时失效。
+  这样终态会话里还活着的 Claude 进程（被定时器或后台任务留住）只要在用工具就不断，
+  被复制出会话的令牌很快作废。Server 派发的定时器轮次随派发铸造新令牌；Claude 进程
+  自己触发的定时器轮次在开始时（`UserPromptSubmit`）由设备向
+  `POST /api/daemon/sessions/{id}/session-tokens` 要一个新令牌，经 `setMcpServers`
+  交给进程。会话被删除（`chat_deletions`）后其令牌不再解析。
+- 防御性 `expires_at`（30 天）上限；失效行在解析时删除。
+- Worker 不持久化该令牌：Claude 经输入流拿到，Codex 经自己的环境变量，只有
+  custom-command 把它作为环境变量交给命令。
+- Worker 记住它拿到的令牌和设备凭据的明文，在会话事件、最终回答和原生会话记录里
+  替换成 `[REDACTED]`，同时去掉常见的密钥形状（`secret-redaction.ts`）。
 - 令牌只接受 `Authorization: Bearer` 头；唯一例外是 SSE `GET /api/events`
   允许 `access_token` query 参数（EventSource 无法设置头）。
 - 无效/过期 → 401。MCP 工具里，不可达的会话与不存在的会话一样回答 not found，
@@ -261,8 +275,10 @@ worker（能力 `verification_sessions`；旧 worker 所在设备上的 verifier
 原生会话记录和 `$TMPDIR`，`$TMPDIR` 每轮开始清空，一周未用的 verifier 目录删除）；
 用户自己的文件可读（跑项目自己的工具链）。运行时一层的限制叠加其上：Claude 为
 `dontAsk`，只预先放行 Read/Grep/Glob/Bash/Skill 与 foundry 工具，禁用
-Write/Edit/MultiEdit/NotebookEdit/Task 等，每条消息至多 20 轮；Codex 在其自身的
-`workspace-write` 沙箱里（外层沙箱让 workspace 只读，所以命令只能写 `$TMPDIR`）。
+Write/Edit/MultiEdit/NotebookEdit/Task 等，每条消息至多 20 轮；Codex 不再套自己的
+沙箱（`danger-full-access`，同 Issue 执行）：它的 `workspace-write` 要在 workspace
+里为 `.git`/`.agents`/`.codex` 建挂载点，在只读 workspace 里建不了，macOS 也不允许
+嵌套沙箱；命令只能写 `$TMPDIR` 由外层沙箱保证。
 Claude Agent SDK 的 `sandbox` 选项只隔离 Bash、Linux 上还依赖 socat，因此没有采用。
 Foundry 工具只有只读的那些，device notes 换成 verifier 自己的说明。
 

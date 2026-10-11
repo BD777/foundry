@@ -1,8 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveCodexCommand } from "../utils.js";
 import type { HarnessAdapter } from "./harness.js";
+import {
+  sandboxCredentialCopies,
+  writeSandboxCredentials,
+} from "./provider-credentials.js";
 import { codexDisabledFeatures } from "./policy.js";
 
 /**
@@ -53,11 +56,8 @@ export const codexHarness: HarnessAdapter = {
     const workspace = spec.workspace;
     const config = resolve(home, "codex");
     mkdirSync(config, { mode: 0o700 });
-    const auth = resolve(
-      process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
-      "auth.json",
-    );
-    if (existsSync(auth)) copyFileSync(auth, resolve(config, "auth.json"));
+    // The device's access token only (provider-credentials.ts).
+    writeSandboxCredentials(sandboxCredentialCopies({ CODEX_HOME: config }));
     env.CODEX_HOME = config;
     // The read-only shell is how Codex looks at files: a directory, or the
     // PDFs it is given to read.

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -65,6 +66,14 @@ func TestDaemonTimerFireResumesTheSessionOnce(t *testing.T) {
 	if runs[0].NativeSessionID != "native_inspect" {
 		t.Fatalf("the input resumes %q, want the timers' native session", runs[0].NativeSessionID)
 	}
+	// A timer may fire long after the session last used its tools: the
+	// turn it starts carries a token of its own.
+	daemon.mu.Lock()
+	timerToken := daemon.tokens[0]
+	daemon.mu.Unlock()
+	if identity, err := backing.ResolveSessionToken(ctx, timerToken); err != nil || identity.SessionID != session.ID {
+		t.Fatalf("the timer turn's token = %+v, %v; want a fresh token of the session", identity, err)
+	}
 	recorded, err := backing.GetAgentSession(ctx, session.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -104,5 +113,21 @@ func TestDaemonTimerFireResumesTheSessionOnce(t *testing.T) {
 	}
 	if status, _ := client.call(http.MethodPost, "/api/daemon/sessions/sess_missing/timer-fires", fire, ""); status != http.StatusNotFound {
 		t.Fatalf("fire for an unknown session = %d, want 404", status)
+	}
+
+	// Claude fires a timer itself while its process lives: the device asks
+	// for a token for the turn, the session settled or not.
+	status, raw = client.call(http.MethodPost, "/api/daemon/sessions/"+session.ID+"/session-tokens", "", "")
+	var minted struct {
+		SessionToken string `json:"sessionToken"`
+	}
+	if status != http.StatusOK || json.Unmarshal(raw, &minted) != nil || minted.SessionToken == "" {
+		t.Fatalf("session token for a timer turn = %d %s", status, raw)
+	}
+	if identity, err := backing.ResolveSessionToken(ctx, minted.SessionToken); err != nil || identity.SessionID != session.ID {
+		t.Fatalf("minted token = %+v, %v", identity, err)
+	}
+	if status, _ := client.call(http.MethodPost, "/api/daemon/sessions/sess_missing/session-tokens", "", ""); status != http.StatusNotFound {
+		t.Fatalf("token for an unknown session = %d, want 404", status)
 	}
 }

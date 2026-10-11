@@ -11,7 +11,8 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { useUnreadTabMarker } =
   await import("../src/features/chat/use-chat-list-state.ts");
-const { setDocumentPage } = await import("../src/lib/document-title.ts");
+const { setDocumentChat, setDocumentPage } =
+  await import("../src/lib/document-title.ts");
 
 function Marker({ chats, openChatId }) {
   useUnreadTabMarker(chats, openChatId);
@@ -20,6 +21,7 @@ function Marker({ chats, openChatId }) {
 
 test("✅ marks only the open chat's unseen answer, not other unread chats", async () => {
   setDocumentPage({ primary: "Chats", context: "ws" });
+  setDocumentChat({ title: "Chat a", running: false });
   const root = createRoot(document.createElement("div"));
   const render = (chats, openChatId) =>
     act(async () => {
@@ -33,7 +35,7 @@ test("✅ marks only the open chat's unseen answer, not other unread chats", asy
     ],
     "a",
   );
-  assert.equal(document.title, "Chats · ws — Foundry");
+  assert.equal(document.title, "Chat a · ws — Foundry");
   // The open chat finished while the tab was hidden: marked.
   await render(
     [
@@ -42,7 +44,7 @@ test("✅ marks only the open chat's unseen answer, not other unread chats", asy
     ],
     "a",
   );
-  assert.equal(document.title, "✅ Chats · ws — Foundry");
+  assert.equal(document.title, "✅ Chat a · ws — Foundry");
   // Seen: cleared, although another chat is still unread.
   await render(
     [
@@ -51,6 +53,6 @@ test("✅ marks only the open chat's unseen answer, not other unread chats", asy
     ],
     "a",
   );
-  assert.equal(document.title, "Chats · ws — Foundry");
+  assert.equal(document.title, "Chat a · ws — Foundry");
   await act(async () => root.unmount());
 });

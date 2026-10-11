@@ -273,7 +273,11 @@ export function mergeLoadedAgentSession(
   return {
     ...existing,
     ...incoming,
-    error: incoming.error || existing.error,
+    // An error belongs to a failed run: a summary of that run may omit it,
+    // but a session that runs again (or ended otherwise) cleared it.
+    error:
+      incoming.error ||
+      (incoming.status === "failed" ? existing.error : undefined),
     events: existing.events,
     input:
       incoming.input?.id === existing.input?.id && existing.input

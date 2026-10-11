@@ -17,10 +17,19 @@ import (
 // Session-scoped bearer tokens for the agent-facing MCP/CLI surface.
 // Plaintext is minted at dispatch, sent to the daemon inside the ephemeral
 // run_session payload, and never persisted or logged; the store only keeps a
-// SHA-256 hash. A token lives as long as its session (or its TTL): deleting
-// the session revokes every token it was given.
+// SHA-256 hash. Deleting the session revokes every token it was given.
+//
+// A token is valid while its session is queued, running or blocked (a turn
+// may run for hours without calling a tool), and otherwise until it has gone
+// unused for agentSessionTokenIdle: a settled session's agent process (a
+// Claude process kept alive by a timer or background work) keeps its tools
+// while it uses them, and a token copied out of a finished session dies
+// soon. No token outlives agentSessionTokenTTL.
 
-const agentSessionTokenTTL = 30 * 24 * time.Hour
+const (
+	agentSessionTokenTTL  = 30 * 24 * time.Hour
+	agentSessionTokenIdle = 24 * time.Hour
+)
 
 var ErrSessionTokenInvalid = errors.New("invalid or expired session token")
 
@@ -60,26 +69,25 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 	hash := hashSessionToken(plaintext)
 	var identity store.SessionTokenIdentity
 	var workspaceID, deviceID sql.NullString
-	var expiresAt string
+	var expiresAt, lastUsedAt, status string
 	err := s.conn().QueryRowContext(ctx, `SELECT token.session_id,
 			COALESCE(NULLIF(session.workspace_id, ''), ''),
 			COALESCE(NULLIF(session.device_id, ''), ''),
-			token.expires_at
+			token.expires_at, token.last_used_at, session.status
 		FROM session_tokens AS token
 		JOIN agent_sessions AS session ON session.id = token.session_id
 		WHERE token.token_hash = ? AND NOT EXISTS (SELECT 1 FROM chat_deletions d
 			WHERE d.workspace_id = session.workspace_id AND d.deletion_key IN (
 				'id:' || session.id, 'id:' || session.thread_id,
 				'native:' || session.provider || ':' || json_extract(session.payload_json, '$.nativeSessionId')))`,
-		hash).Scan(&identity.SessionID, &workspaceID, &deviceID, &expiresAt)
+		hash).Scan(&identity.SessionID, &workspaceID, &deviceID, &expiresAt, &lastUsedAt, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
 	}
 	if err != nil {
 		return store.SessionTokenIdentity{}, err
 	}
-	expiry, parseErr := time.Parse(time.RFC3339Nano, expiresAt)
-	if parseErr != nil || time.Now().UTC().After(expiry) {
+	if !sessionTokenLive(time.Now().UTC(), expiresAt, lastUsedAt, status) {
 		_, _ = s.conn().ExecContext(ctx, `DELETE FROM session_tokens WHERE token_hash = ?`, hash)
 		return store.SessionTokenIdentity{}, ErrSessionTokenInvalid
 	}
@@ -88,6 +96,19 @@ func (s *Store) ResolveSessionToken(ctx context.Context, plaintext string) (stor
 	_, _ = s.conn().ExecContext(ctx, `UPDATE session_tokens SET last_used_at = ? WHERE token_hash = ?`,
 		formatTime(time.Now().UTC()), hash)
 	return identity, nil
+}
+
+// sessionTokenLive applies the token lifetime described above.
+func sessionTokenLive(now time.Time, expiresAt, lastUsedAt, status string) bool {
+	expiry, err := time.Parse(time.RFC3339Nano, expiresAt)
+	if err != nil || now.After(expiry) {
+		return false
+	}
+	if isActiveAgentSession(status) {
+		return true
+	}
+	lastUsed, err := time.Parse(time.RFC3339Nano, lastUsedAt)
+	return err == nil && !now.After(lastUsed.Add(agentSessionTokenIdle))
 }
 
 func trimToken(value string) string {

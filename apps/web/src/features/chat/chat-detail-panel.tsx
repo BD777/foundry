@@ -520,7 +520,10 @@ function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
 
 function TimerDetail({ item }: { item: ChatTimerItem }) {
   const task: AgentScheduledTask = item.task;
-  const liveNext = claudeTimerNextFire(task)?.toISOString();
+  const scheduled = item.scheduled;
+  const liveNext = scheduled
+    ? (claudeTimerNextFire(scheduled)?.toISOString() ?? scheduled.nextFireAt)
+    : undefined;
   const { t } = useTranslation("chat");
   return (
     <article className="fdy-chat-meta-detail">
@@ -535,7 +538,11 @@ function TimerDetail({ item }: { item: ChatTimerItem }) {
         </div>
         <div>
           <dt>{t("detail.timer.nextFire")}</dt>
-          <dd>{formatTimerDateTime(liveNext ?? task.nextFireAt)}</dd>
+          <dd>
+            {scheduled
+              ? formatTimerDateTime(liveNext)
+              : t("detail.timer.inactive")}
+          </dd>
         </div>
         <div>
           <dt>{t("detail.timer.cron")}</dt>

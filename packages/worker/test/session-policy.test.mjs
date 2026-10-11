@@ -8,6 +8,7 @@ import {
   codexFoundryTools,
   foundryClaudeSettings,
   resolvedClaudeCredential,
+  codexSessionSecretsConfig,
 } from "../dist/session-policy.js";
 import { claudeRootBypassRefusal } from "../dist/runner.js";
 
@@ -204,6 +205,16 @@ test("sessions with an orchestration identity get the Foundry tools with their o
       "kept out of the runtime identity",
     );
     assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry"]);
+    assert.equal(
+      plan.env.FOUNDRY_SESSION_TOKEN,
+      undefined,
+      "the commands Claude runs never inherit the token",
+    );
+    assert.equal(plan.env.FOUNDRY_SERVER_URL, "http://127.0.0.1:31982");
+    assert.equal(
+      JSON.stringify(plan.env).includes("token-for-sess_tools"),
+      false,
+    );
     const naming = buildClaudeLaunchPlan({
       workspacePath: "/tmp",
       session: { ...chat, source: "naming" },
@@ -248,6 +259,14 @@ test("Codex sessions get the same pre-approved Foundry tools, token read from th
       JSON.stringify(tools.config).includes("token-for-sess_codex_tools"),
       false,
       "the token stays in the environment, never in config or argv",
+    );
+    assert.deepEqual(
+      codexSessionSecretsConfig(),
+      {
+        shell_environment_policy: { exclude: ["FOUNDRY_SESSION_TOKEN"] },
+        features: { shell_snapshot: false },
+      },
+      "Codex keeps the token out of the commands it runs",
     );
     assert.equal(
       codexFoundryTools({

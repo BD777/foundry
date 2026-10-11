@@ -114,11 +114,11 @@ test("one leading marker: running, else unread, else background", () => {
   assert.equal(title({ running: true, background: true }), title(all));
 });
 
-test("an unread finished chat marks every page until it is read", () => {
+test("status marks show only while a chat is open, never on other pages", () => {
   setDocumentChat(undefined);
-  setDocumentPage({ primary: "Issues", context: "my-feishu" });
+  setDocumentPage({ primary: "Devices", context: "my-feishu" });
   setDocumentUnread(true);
-  assert.equal(document.title, "✅ Issues · my-feishu — Foundry");
+  assert.equal(document.title, "Devices · my-feishu — Foundry");
   setDocumentPage({ primary: "Chats", context: "my-feishu" });
   setDocumentChat({ title: "Digest the group", running: true });
   assert.equal(document.title, "⏳ Digest the group · my-feishu — Foundry");

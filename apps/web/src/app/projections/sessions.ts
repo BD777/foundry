@@ -82,6 +82,7 @@ function applyAgentSessionEvents(
             scheduled: sessionScheduleFromSnapshot(
               snapshot.metadata?.timerSnapshot ?? [],
               snapshot.at,
+              session.scheduled,
             ),
           }
         : {}),

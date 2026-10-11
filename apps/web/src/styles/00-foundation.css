@@ -902,6 +902,14 @@ a {
   flex: none;
 }
 
+/* The stack lets clicks through to the page; a notice's action takes them. */
+.fdy-notice-line-action {
+  display: inline-flex;
+  flex: none;
+  margin-left: 3px;
+  pointer-events: auto;
+}
+
 .fdy-view {
   min-height: 0;
   flex: 1;

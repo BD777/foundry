@@ -4,6 +4,10 @@ import type { ServiceHost } from "./service.js";
 import { checkPrograms } from "./skill-requirements.js";
 import { recordActivity, runDiagnostics, runRepair } from "./diagnostics.js";
 import {
+  redactTranscriptText,
+  registerKnownSecret,
+} from "./secret-redaction.js";
+import {
   ConnectionRecorder,
   describeConnectionReport,
   watchServerSilence,
@@ -34,6 +38,7 @@ import {
   requestResourceAccess,
   startSessionScratchSweeps,
 } from "./resource-pool.js";
+import { adoptEarlierSessionScratch } from "./session-scratch-adoption.js";
 import { homedir } from "node:os";
 import { existingWorkspaceFolder } from "./workspace-registration.js";
 import { resolve } from "node:path";
@@ -48,6 +53,7 @@ import {
   type AgentSessionEventMetadata,
   type ChatAttachment,
   type ClarificationTurn,
+  type ExternalAccountMaterial,
   type DeviceProjection,
   type Issue,
   type SessionSkillRef,
@@ -201,6 +207,11 @@ import {
   registerSessionAmbientEnv,
   type SessionAmbientEnv,
 } from "./session-ambient.js";
+import {
+  materializeSessionAccounts,
+  reapExternalAccountProfiles,
+  serverMint,
+} from "./external-accounts.js";
 import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
 import { issueEnvironmentAction } from "./issue-environment-rpc.js";
 import { evidenceWorkerAction } from "./evidence-rpc.js";
@@ -208,6 +219,7 @@ import { stopAllEvidenceHTTPServices } from "./evidence-http-service.js";
 import type {
   DeviceRepairAction,
   EvidenceWorkerRequest,
+  SessionTimers,
 } from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { inspectWorkspace } from "./workspace-inspection.js";
@@ -220,7 +232,7 @@ import { queuePreview, runIssuePreview } from "./issue-preview.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock, pairDevice } from "./device-pairing.js";
 import { superviseAgentProcesses } from "./agent-processes.js";
-import { startSessionTimers } from "./session-timers.js";
+import { sessionTimers, startSessionTimers } from "./session-timers.js";
 
 interface ReadFilePayload {
   path: string;
@@ -294,6 +306,8 @@ interface RunSessionPayload {
   userFiles?: "readable" | "hidden";
   /** The draft and conversation an issue_clarification input is about. */
   clarification?: ClarificationTurn;
+  /** Third-party accounts the session may act as: minted tokens, no refresh. */
+  externalAccounts?: ExternalAccountMaterial[];
 }
 
 interface SteerSessionPayload {
@@ -356,10 +370,13 @@ export async function connect(args: string[]): Promise<void> {
       "This worker is not paired. In the Foundry web app open Devices → Add device, then run foundry-worker setup --token <token>.",
     );
   }
+  registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
   // Agent processes die with this worker; those a previous one left
   // running stop before any work starts here.
   await superviseAgentProcesses();
+  // External-account profiles a previous process wrote for its sessions.
+  reapExternalAccountProfiles({ log: (message) => console.error(message) });
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -432,13 +449,22 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (workspacePath) await syncReviews(serverURL, workspacePath);
   const sessionTransport = new ReliableSessionTransport();
   const sessionExecutions = new SessionExecutionRegistry();
-  // Scratch directories of sessions idle too long, earlier runs' included.
-  if (!once)
+  // Scratch directories of sessions idle too long, earlier runs' included;
+  // those runs that kept no record had theirs adopted first.
+  if (!once) {
+    for (const { sessionId, adopted } of adoptEarlierSessionScratch([
+      ...(workspacePath ? [workspacePath] : []),
+      ...readRegistry().map((entry) => entry.path),
+    ]))
+      console.log(
+        `Adopted the earlier scratch directories ${adopted.join(", ")} of session ${sessionId}`,
+      );
     startSessionScratchSweeps(
       (sessionId) =>
         sessionExecutions.activeSessionIds().includes(sessionId) ||
         sessionHasRunningBackgroundTasks(sessionId),
     );
+  }
   const taskScheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,
   );
@@ -729,7 +755,7 @@ async function executeAgentSession(
       sessionId: session.id,
       inputId: session.input?.id,
       nativeSessionId: result.nativeSessionId,
-      response: result.response,
+      response: redactTranscriptText(result.response),
       ...settled,
     });
   } catch (error) {
@@ -1372,6 +1398,13 @@ function runWebSocketSession(options: {
         if (options.once && options.idleTimeoutMs > 0) {
           idleTimer = setTimeout(() => finish("exit"), options.idleTimeoutMs);
         }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.sessionTimers) {
+        // Timers of a session the server knows: kept here unless this
+        // worker keeps or runs that session's own.
+        if (!options.once)
+          sessionTimers.adopt([envelope.payload as SessionTimers]);
         return;
       }
       if (envelope.type === daemonMessageTypes.attachmentWrite) {
@@ -2606,6 +2639,9 @@ function runWebSocketSession(options: {
             console.log(
               `Running ${payload.session.provider} session ${payload.session.id}`,
             );
+            // Its tool profiles live while this run does; a run that never
+            // returns (a killed worker) leaves them to the next start's reap.
+            let releaseAccounts = () => {};
             try {
               const ambient: SessionAmbientEnv = {
                 serverURL: options.serverURL,
@@ -2625,6 +2661,15 @@ function runWebSocketSession(options: {
                     ambient,
                   )
                 : undefined;
+              if (!clarification)
+                releaseAccounts = materializeSessionAccounts(
+                  payload.session,
+                  payload.externalAccounts,
+                  {
+                    mint: serverMint(options.serverURL),
+                    log: (message) => console.log(message),
+                  },
+                ).release;
               await executeAgentSession(
                 options.sessionTransport,
                 clarification?.execution ??
@@ -2647,6 +2692,7 @@ function runWebSocketSession(options: {
                 },
               );
             } finally {
+              releaseAccounts();
               options.sessionExecutions.complete(payload.session.id, inputId);
               if (options.once) {
                 finish("exit");

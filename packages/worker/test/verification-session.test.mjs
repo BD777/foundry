@@ -104,7 +104,8 @@ test("a verifier's Claude runs reading tools and a shell only, for at most 20 tu
     label: "Claude",
     connectionType: "local_login",
   });
-  const { options } = calls.find((call) => call.sdk === "claude");
+  const call = calls.find((item) => item.sdk === "claude");
+  const { options } = call;
   assert.equal(options.permissionMode, "dontAsk");
   assert.equal(options.allowDangerouslySkipPermissions, undefined);
   assert.deepEqual(options.allowedTools, [
@@ -121,7 +122,9 @@ test("a verifier's Claude runs reading tools and a shell only, for at most 20 tu
   assert.deepEqual(options.settingSources, ["project"]);
   assert.equal(options.strictMcpConfig, true);
   // Its Foundry tools: the server lists a verifier only those that read.
-  assert.ok(options.mcpServers.foundry);
+  // They reach the process over its input stream, never as an argument.
+  assert.ok(call.mcpServers.foundry);
+  assert.equal(options.mcpServers, undefined);
   const notes = options.systemPrompt.append;
   assert.match(notes, /an independent verifier/);
   assert.match(notes, /read-only at the operating-system level/);
@@ -129,7 +132,7 @@ test("a verifier's Claude runs reading tools and a shell only, for at most 20 tu
   assert.doesNotMatch(notes, /\.foundry\/attachments/);
 });
 
-test("a verifier's Codex lets commands write only where its sandbox allows", async () => {
+test("a verifier's Codex leaves its commands to the verifier's sandbox", async () => {
   calls.length = 0;
   await run(verifier("codex"), {
     id: "codex_local",
@@ -138,7 +141,9 @@ test("a verifier's Codex lets commands write only where its sandbox allows", asy
     connectionType: "local_login",
   });
   const call = calls.find((item) => item.sdk === "codex");
-  assert.equal(call.thread.sandboxMode, "workspace-write");
+  // Codex's own sandbox cannot nest inside the verifier's: the outer one
+  // keeps the workspace read-only (see the sandbox test below).
+  assert.equal(call.thread.sandboxMode, "danger-full-access");
   assert.equal(call.thread.approvalPolicy, "never");
   assert.equal(call.thread.webSearchMode, "disabled");
   assert.ok(call.options.config.mcp_servers.foundry);

@@ -298,3 +298,18 @@ test("no timer list is published before any timer exists", async () => {
   await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
   assert.equal(events.length, 0);
 });
+
+test("a timer turn Claude starts on its own waits for what it needs; a Foundry turn's does not", async () => {
+  let active = false;
+  const started = [];
+  const { tracker: timerTracker } = makeTracker({
+    isActiveTurn: () => active,
+    timerTurnStarting: async () => started.push("refresh"),
+  });
+  const submit = timerTracker.hooks().UserPromptSubmit[0].hooks[0];
+  await submit({ prompt: "check the deploy" });
+  assert.deepEqual(started, ["refresh"]);
+  active = true;
+  await submit({ prompt: "a Foundry turn's prompt" });
+  assert.deepEqual(started, ["refresh"], "a dispatch brought its own token");
+});

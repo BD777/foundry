@@ -23,9 +23,11 @@ export type { CronLanguage, ParsedCron } from "./cron.js";
 export {
   sessionScheduleFromSnapshot,
   sessionScheduleNextFire,
+  sessionScheduledTimerExpired,
 } from "./session-schedule.js";
 
 export * from "./browser-events.js";
+export * from "./external-accounts.js";
 export * from "./feishu.js";
 export * from "./process-labels.js";
 export { subagentResponseFingerprint } from "./subagent-responses.js";
@@ -1056,6 +1058,27 @@ export interface AgentSessionScheduledTimer {
   schedule: string;
   recurring: boolean;
   nextFireAt?: string;
+  /**
+   * When a snapshot first listed the timer: a recurring one ends
+   * claudeRecurringTimerMaxAgeMs later.
+   */
+  firstSeenAt?: string;
+}
+
+/**
+ * A session's timers as its device keeps them, prompts included: the
+ * server sends a device that connects its sessions' timers
+ * (`session_timers`), so it fires them while no process runs the session.
+ */
+export interface SessionTimers {
+  sessionId: string;
+  nativeSessionId: string;
+  timers: SessionKeptTimer[];
+}
+
+/** A timer of a session's schedule with its prompt. */
+export interface SessionKeptTimer extends AgentScheduledTask {
+  firstSeenAt: string;
 }
 
 /** One automatic, timer-driven turn that ran without a Foundry turn open. */

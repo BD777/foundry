@@ -17,6 +17,7 @@ import {
   claudeRecurringFireAfter,
   claudeRecurringTimerMaxAgeMs,
   type AgentScheduledTask,
+  type SessionTimers as SessionTimersPayload,
 } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "./state-root.js";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
@@ -214,6 +215,61 @@ export class SessionTimers {
     this.save();
   }
 
+  /**
+   * The timers the server knows a session holds, sent when this worker
+   * connects. A session this worker keeps timers of, or runs, keeps its
+   * own: they are at least as recent. The rest are adopted as if their
+   * process just ended (one that ran under an older worker, which kept
+   * none): they are due from now on. Returns whether any was adopted.
+   */
+  adopt(sessions: readonly SessionTimersPayload[]): boolean {
+    const now = this.now();
+    let adopted = false;
+    for (const session of sessions) {
+      if (!session?.sessionId || !Array.isArray(session.timers)) continue;
+      if (this.sessions.has(session.sessionId) || this.live(session.sessionId))
+        continue;
+      const nativeSessionId = session.nativeSessionId ?? "";
+      // One native session's timers belong to one Foundry session.
+      if (
+        nativeSessionId &&
+        [...this.sessions.values()].some(
+          (kept) => kept.nativeSessionId === nativeSessionId,
+        )
+      )
+        continue;
+      const timers = session.timers.filter(
+        (timer) =>
+          timer?.id &&
+          timer.schedule &&
+          timer.prompt &&
+          !(
+            timer.recurring &&
+            now.getTime() - Date.parse(timer.firstSeenAt) >=
+              claudeRecurringTimerMaxAgeMs
+          ),
+      );
+      if (timers.length === 0) continue;
+      this.sessions.set(session.sessionId, {
+        sessionId: session.sessionId,
+        nativeSessionId,
+        endedAt: now.toISOString(),
+        timers: timers.map(({ firstSeenAt, ...task }) => ({
+          ...task,
+          firstSeenAt: Number.isFinite(Date.parse(firstSeenAt))
+            ? firstSeenAt
+            : now.toISOString(),
+        })),
+      });
+      adopted = true;
+      console.log(
+        `Adopted ${timers.length} timer(s) of session ${session.sessionId} from the server`,
+      );
+    }
+    if (adopted) this.save();
+    return adopted;
+  }
+
   /** The session's timers, as kept (for tests and diagnostics). */
   kept(sessionId: string): readonly KeptTimer[] | undefined {
     return this.sessions.get(sessionId)?.timers;
@@ -362,12 +418,40 @@ export const sessionTimers = new SessionTimers();
  * send the ones due while no process runs their session.
  */
 export function startSessionTimers(serverURL: string): void {
+  timerServerURL = serverURL;
   sessionTimers.configure({
     path: foundryStatePath("session-timers.json"),
     send: (request) => sendTimerFire(serverURL, request),
   });
   sessionTimers.load();
   sessionTimers.start();
+}
+
+let timerServerURL: string | undefined;
+
+/**
+ * A fresh Foundry token for a session whose Claude process fires a timer
+ * itself: no dispatch mints one for that turn, and the token the process
+ * holds may have idled out. Undefined where this worker has no server (a
+ * sandboxed session) or the server refuses.
+ */
+export async function mintTimerTurnToken(
+  sessionId: string,
+): Promise<string | undefined> {
+  if (!timerServerURL) return undefined;
+  try {
+    const response = await fetch(
+      `${timerServerURL}/api/daemon/sessions/${encodeURIComponent(sessionId)}/session-tokens`,
+      { method: "POST", headers: daemonRequestHeaders(true) },
+    );
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as { sessionToken?: unknown };
+    return typeof body.sessionToken === "string" && body.sessionToken
+      ? body.sessionToken
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function sendTimerFire(

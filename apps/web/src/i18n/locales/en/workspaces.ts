@@ -21,6 +21,7 @@ export const workspaces = {
       assets: "Assets",
       skills: "Skills",
       feishu: "Feishu Bot",
+      accounts: "Accounts",
       sharing: "Sharing",
     },
     notes: {
@@ -32,6 +33,8 @@ export const workspaces = {
         "Choose which server-published skills this workspace exposes to its Chats and Issues. A skill on this workspace's device can be added below; skills elsewhere stay unavailable until published to the server.",
       feishu:
         "Connect a Feishu Bot and associate a group thread as an interactive agent channel for this workspace.",
+      accounts:
+        "Choose which of your external accounts sessions in this workspace may act as. These are personal logins for tools such as feishu-cli; the Feishu Bot tab is the workspace's group bot, which is something else.",
       sharing:
         "Share this workspace with other Foundry accounts. Access covers this workspace only, never the rest of its device.",
     },

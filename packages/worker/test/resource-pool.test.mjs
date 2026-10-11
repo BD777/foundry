@@ -9,7 +9,9 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -651,3 +653,212 @@ test("a sweep removes only its own worker's directories, not another's under the
   assert.deepEqual(theirs, [other]);
   assert.deepEqual(fdy(), [basename(unrecorded)]);
 });
+
+// --- Scratch directories from before records were kept ----------------------
+
+/**
+ * The state an older worker left: scratch directories it made per run and
+ * never recorded, the session records it wrote in a workspace, and no
+ * scratch record at all.
+ */
+function preRecordWorker(t) {
+  const worker = scratchWorker(t);
+  const workspace = join(worker.base, "workspace");
+  const sessions = join(workspace, ".foundry", "sessions");
+  const made = (name, changedSecondsAgo) => {
+    const directory = join(worker.temporary, name);
+    mkdirSync(join(directory, "bin"), { recursive: true });
+    const at = new Date(Date.now() - changedSecondsAgo * 1000);
+    utimesSync(directory, at, at);
+    return directory;
+  };
+  /** Claude's task files of a native session, as its CLI leaves them. */
+  const nativeFiles = (directory, native) => {
+    const at = statSync(directory).mtime;
+    mkdirSync(join(directory, "claude-1000", "-ws", native, "tasks"), {
+      recursive: true,
+    });
+    utimesSync(directory, at, at);
+  };
+  const completed = (sessionId, inputId, native, completedAt) => {
+    const input = join(sessions, sessionId, "inputs", inputId);
+    mkdirSync(input, { recursive: true });
+    writeFileSync(
+      join(input, "completion.json"),
+      JSON.stringify({ sessionId, nativeSessionId: native, completedAt }),
+    );
+  };
+  const backgroundTasks = (sessionId, scratchDirectory, outputPaths = []) => {
+    mkdirSync(join(sessions, sessionId), { recursive: true });
+    writeFileSync(
+      join(sessions, sessionId, "background-tasks.json"),
+      JSON.stringify({
+        version: 1,
+        sessionId,
+        scratchDirectory,
+        tasks: outputPaths.map((outputPath, index) => ({
+          id: `b${index}`,
+          kind: "command",
+          status: "completed",
+          description: "task",
+          startedAt: "",
+          outputPath,
+        })),
+      }),
+    );
+  };
+  return {
+    ...worker,
+    workspace,
+    made,
+    nativeFiles,
+    completed,
+    backgroundTasks,
+  };
+}
+
+const adoptionModule = JSON.stringify(
+  distModule("session-scratch-adoption.js"),
+);
+
+test("an updated worker adopts the scratch directories its sessions provably had, and sweeps them later", async (t) => {
+  const w = preRecordWorker(t);
+  const native = "c3c2ace3-f771-4586-b256-abfd1ff3d6dc";
+  // A long session resumed by two worker runs: one directory per run.
+  const older = w.made("fdy-Older1", 7200);
+  const newer = w.made("fdy-Newer1", 60);
+  w.nativeFiles(older, native);
+  w.nativeFiles(newer, native);
+  w.completed("sess_long", "in_1", native, "2026-10-09T12:00:00.000Z");
+  w.completed(
+    "sess_long",
+    "in_2",
+    native.toUpperCase(),
+    "2026-10-10T12:00:00.000Z",
+  );
+  // A session whose background task record names its TMPDIR and a log.
+  const tasks = w.made("fdy-Tasks1", 600);
+  const logged = w.made("fdy-Logged", 900);
+  w.backgroundTasks("sess_tasks", tasks, [
+    join(logged, "claude-1000", "-ws", "n", "tasks", "b0.output"),
+  ]);
+  // A session that already has a record from the updated worker.
+  const current = inWorkerProcess(
+    w.state,
+    `return pool.sessionScratchDirectory("sess_recorded");`,
+  );
+  const before = w.made("fdy-Before", 3000);
+  w.backgroundTasks("sess_recorded", before);
+  // Unproven: another worker's session, and one two sessions claim.
+  const foreign = w.made("fdy-Foreig", 30);
+  w.nativeFiles(foreign, "11111111-2222-3333-4444-555555555555");
+  const shared = w.made("fdy-Shared", 30);
+  w.backgroundTasks("sess_a", shared);
+  w.backgroundTasks("sess_b", shared);
+
+  const adopted = inWorkerProcess(
+    w.state,
+    `const adoption = await import(${adoptionModule});
+    return adoption.adoptEarlierSessionScratch([${JSON.stringify(w.workspace)}]);`,
+  );
+  assert.deepEqual(
+    Object.fromEntries(
+      adopted.map(({ sessionId, directory, adopted }) => [
+        sessionId,
+        { directory, adopted: [...adopted].sort() },
+      ]),
+    ),
+    {
+      sess_long: { directory: newer, adopted: [newer, older].sort() },
+      sess_tasks: { directory: tasks, adopted: [logged, tasks].sort() },
+      sess_recorded: { directory: current, adopted: [before] },
+    },
+  );
+  const record = (sessionId) =>
+    JSON.parse(
+      readFileSync(
+        join(w.state, "session-scratch", `${sessionId}.json`),
+        "utf8",
+      ),
+    );
+  assert.deepEqual(record("sess_long").previousDirectories, [older]);
+  assert.equal(
+    record("sess_long").lastUsedAt,
+    new Date(
+      Math.max(Date.parse("2026-10-10T12:00:00.000Z"), statSync(newer).mtimeMs),
+    ).toISOString(),
+  );
+  assert.deepEqual(record("sess_recorded").previousDirectories, [before]);
+
+  // The session keeps the directory it last had, after any restart.
+  const used = inWorkerProcess(
+    w.state,
+    `return [pool.sessionScratchDirectory("sess_long"), pool.sessionScratchDirectory("sess_recorded")];`,
+  );
+  assert.deepEqual(used, [newer, current]);
+  assert.deepEqual(
+    record("sess_recorded").previousDirectories,
+    [before],
+    "a use dropped the earlier directories",
+  );
+  // A second start adopts nothing more.
+  assert.deepEqual(
+    inWorkerProcess(
+      w.state,
+      `const adoption = await import(${adoptionModule});
+      return adoption.adoptEarlierSessionScratch([${JSON.stringify(w.workspace)}]);`,
+    ),
+    [],
+  );
+
+  // Idle: each session goes with its earlier directories; the unproven stay.
+  const swept = inWorkerProcess(
+    w.state,
+    `return (await pool.sweepSessionScratchDirectories({ idleMs: 0, now: () => Date.now() + 1000 }))
+      .map((entry) => [entry.sessionId, entry.directory, entry.previousDirectories ?? []]);`,
+  );
+  assert.deepEqual(swept.sort(), [
+    ["sess_long", newer, [older]],
+    ["sess_recorded", current, [before]],
+    ["sess_tasks", tasks, [logged]],
+  ]);
+  assert.deepEqual(w.fdy(), [basename(foreign), basename(shared)].sort());
+});
+
+test(
+  "an earlier directory a process still uses as its TMPDIR keeps the session's directories",
+  linuxOnly,
+  async (t) => {
+    const w = preRecordWorker(t);
+    const earlier = w.made("fdy-Server", 600);
+    w.backgroundTasks("sess_served", earlier);
+    const current = sessionScratchDirectory("sess_served");
+    const { adoptEarlierSessionScratch } = await import(
+      distModule("session-scratch-adoption.js")
+    );
+    assert.deepEqual(
+      adoptEarlierSessionScratch([w.workspace]).map((entry) => entry.adopted),
+      [[earlier]],
+    );
+    // A server the session started long ago, no longer carrying its id.
+    const server = spawn("/bin/sleep", ["60"], {
+      env: { PATH: "/usr/bin:/bin", TMPDIR: earlier },
+      stdio: "ignore",
+    });
+    t.after(() => server.kill("SIGKILL"));
+    await waitFor(() => existsSync(`/proc/${server.pid}/environ`));
+    assert.deepEqual(
+      await sweepSessionScratchDirectories({ idleMs: 0, now: later(1000) }),
+      [],
+    );
+    assert.ok(existsSync(earlier) && existsSync(current));
+    server.kill("SIGKILL");
+    await waitFor(() => !alive(server.pid));
+    assert.deepEqual(
+      (
+        await sweepSessionScratchDirectories({ idleMs: 0, now: later(1000) })
+      ).map((entry) => [entry.directory, entry.previousDirectories]),
+      [[current, [earlier]]],
+    );
+  },
+);

@@ -24,6 +24,7 @@ type queueDaemon struct {
 	conn    *websocket.Conn
 	mu      sync.Mutex
 	runs    []store.AgentSession
+	tokens  []string // each run's session token
 	steered []wsSteerSessionPayload
 	writeMu sync.Mutex
 }
@@ -82,6 +83,7 @@ func connectQueueDaemon(t *testing.T, serverURL, deviceID, workspaceID, provider
 				if err := json.Unmarshal(envelope.Payload, &payload); err == nil && payload.Session.Source != "naming" {
 					daemon.mu.Lock()
 					daemon.runs = append(daemon.runs, payload.Session)
+					daemon.tokens = append(daemon.tokens, payload.SessionToken)
 					daemon.mu.Unlock()
 				}
 			}

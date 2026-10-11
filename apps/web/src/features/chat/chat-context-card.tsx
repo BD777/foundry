@@ -315,12 +315,20 @@ function TimerRow({
   selected: boolean;
 }) {
   const { t } = useTranslation("chat");
-  // Recompute from the cron expression on each render: the worker snapshot
-  // captures the next fire at emit time, which goes stale within a cycle.
-  const liveNext = claudeTimerNextFire(item.task);
-  const nextFire = formatNextFireLabel(
-    liveNext?.toISOString() ?? item.task.nextFireAt,
-  );
+  // Only a timer the server's schedule holds fires. Recompute from the cron
+  // expression on each render: the reported next fire goes stale within a
+  // cycle.
+  const scheduled = item.scheduled;
+  const nextFire = scheduled
+    ? formatNextFireLabel(
+        claudeTimerNextFire(scheduled)?.toISOString() ?? scheduled.nextFireAt,
+      )
+    : "";
+  const status = scheduled
+    ? nextFire
+      ? t("contextCard.nextFire", { time: nextFire })
+      : ""
+    : t("contextCard.timerInactive");
   const fireCount = item.fires.length;
   return (
     <Button
@@ -341,8 +349,8 @@ function TimerRow({
       <span className="fdy-chat-context-row-copy">
         <strong>{item.label}</strong>
         <em>
-          {nextFire ? t("contextCard.nextFire", { time: nextFire }) : ""}
-          {nextFire && fireCount > 0 ? " · " : ""}
+          {status}
+          {status && fireCount > 0 ? " · " : ""}
           {fireCount > 0
             ? t("contextCard.fireCount", { count: fireCount })
             : ""}

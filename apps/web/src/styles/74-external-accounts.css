@@ -1,0 +1,308 @@
+/* External accounts page, its connect dialog and the workspace Accounts tab. */
+.fdy-page-surface-externalAccounts {
+  max-width: 920px;
+  gap: 18px;
+}
+
+.fdy-xacc-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-xacc-intro > span {
+  display: grid;
+  min-width: 0;
+  max-width: 680px;
+  flex: 1 1 320px;
+  gap: 6px;
+}
+
+.fdy-xacc-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-xacc-intro p,
+.fdy-xacc-muted {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-xacc-section {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 18px;
+}
+
+.fdy-xacc-section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.fdy-xacc-section-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fdy-xacc-section-head strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-xacc-section-head em,
+.fdy-xacc-section-head p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.fdy-xacc-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-xacc-row,
+.fdy-xacc-app-row,
+.fdy-xacc-binding-row {
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-xacc-list > li:first-child {
+  border-top: 0;
+}
+
+.fdy-xacc-row {
+  display: grid;
+  gap: 10px;
+}
+
+.fdy-xacc-row-main,
+.fdy-xacc-app-row,
+.fdy-xacc-binding-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-xacc-identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-xacc-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fdy-xacc-identity span,
+.fdy-xacc-identity small {
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-row-detail {
+  margin: 0;
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.fdy-xacc-row-buttons,
+.fdy-xacc-code-actions,
+.fdy-xacc-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-xacc-row-buttons {
+  margin-left: auto;
+}
+
+.fdy-xacc-form-actions {
+  justify-content: flex-end;
+}
+
+.fdy-xacc-check {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fdy-xacc-check .fdy-checkbox {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fdy-xacc-check > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-xacc-check small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-xacc-workspace {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+/* Connect dialog. */
+.fdy-xacc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: var(--fdy-overlay);
+}
+
+.fdy-xacc-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 81;
+  display: grid;
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  box-sizing: border-box;
+  align-content: start;
+  gap: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 14px;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  transform: translate(-50%, -50%);
+}
+
+.fdy-xacc-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fdy-xacc-modal-header h2 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.fdy-xacc-modal-header p {
+  margin: 5px 0 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-form {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.fdy-xacc-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-xacc-field > span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-xacc-field > small {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-code-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.fdy-xacc-code-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+}
+
+.fdy-xacc-code-copy p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-code {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-xacc-code span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-xacc-code code {
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.fdy-xacc-waiting {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}

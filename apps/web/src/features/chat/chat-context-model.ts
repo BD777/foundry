@@ -7,7 +7,11 @@ import type {
   AgentScheduledTask,
   AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
-import { humanizeCron, sessionScheduleNextFire } from "@bd777/foundry-protocol";
+import {
+  humanizeCron,
+  sessionScheduleNextFire,
+  sessionScheduledTimerExpired,
+} from "@bd777/foundry-protocol";
 import type { WindowedAgentSession } from "../../api";
 import type {
   ChatBackgroundTaskItem,
@@ -421,8 +425,15 @@ function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
     return [];
   }
   const allFires = timerFiresForSession(session);
+  // The server's schedule says which timers the agent still holds.
+  const held = new Map(
+    (session.scheduled?.timers ?? [])
+      .filter((timer) => !sessionScheduledTimerExpired(timer))
+      .map((timer) => [timer.id, timer]),
+  );
   return snapshot.tasks.map((task) => {
     const label = timerScheduleLabel(task, snapshot.at);
+    const scheduled = held.get(task.id);
     return {
       detail: task.prompt.split(/\r?\n/)[0]?.slice(0, 120) || label,
       fires: allFires.filter((fire) => fire.id === task.id),
@@ -431,6 +442,7 @@ function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
       label,
       sessionId: session.id,
       task,
+      ...(scheduled ? { scheduled } : {}),
       workspaceId: session.workspaceId,
     };
   });
@@ -533,6 +545,20 @@ export function backgroundWorkNote(work: ChatRunningBackgroundWork): string {
     return i18n.t("chat:contextCard.backgroundRunningNote", { count: tasks });
   }
   return "";
+}
+
+/**
+ * The schedule the server keeps for the thread's latest session that has
+ * one, cut to its live timers: an expired one wakes nothing.
+ */
+export function liveThreadSchedule(
+  sessions: readonly AgentSession[],
+): AgentSessionSchedule | undefined {
+  const scheduled = [...sessions].reverse().find((s) => s.scheduled)?.scheduled;
+  const timers = (scheduled?.timers ?? []).filter(
+    (timer) => !sessionScheduledTimerExpired(timer),
+  );
+  return scheduled && timers.length > 0 ? { ...scheduled, timers } : undefined;
 }
 
 /**

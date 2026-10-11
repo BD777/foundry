@@ -276,6 +276,7 @@ export const chat: Translation<typeof en> = {
     today: "今天 {{time}}",
     tomorrow: "明天 {{time}}",
     nextFire: "下次 {{time}}",
+    timerInactive: "未生效",
     fireCount_one: "已触发 {{count}} 次",
     fireCount_other: "已触发 {{count}} 次",
     status: {
@@ -286,6 +287,8 @@ export const chat: Translation<typeof en> = {
       unknown: "—",
       contextHint:
         "会话最近一次模型请求的输入（含缓存）占模型上下文窗口的多少。点击查看会话详情。",
+      contextWindowPending:
+        "上下文窗口会在本会话下一轮（由已更新的 Worker 运行）后显示。点击查看会话详情。",
       contextMeter: "已用上下文",
       nearlyFull: "上下文快满了，agent 即将压缩上下文。",
       full: "上下文已满，agent 会压缩上下文，否则下一次请求可能失败。",
@@ -408,6 +411,7 @@ export const chat: Translation<typeof en> = {
       recurring: "周期任务",
       oneShot: "单次提醒",
       nextFire: "下次触发",
+      inactive: "未生效：智能体已不再持有该任务",
       cron: "Cron 表达式",
       prompt: "触发时执行",
     },

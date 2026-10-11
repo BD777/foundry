@@ -4,6 +4,7 @@ import type {
   AgentSessionTimerFire,
   SessionFileRecord,
   AgentScheduledTask,
+  AgentSessionScheduledTimer,
   AgentTurnUsage,
   ChatAttachment,
   ClaudeEffort,
@@ -108,6 +109,12 @@ export interface ChatTimerItem {
   label: string;
   sessionId: string;
   task: AgentScheduledTask;
+  /**
+   * The timer as the session's schedule on the server holds it: when it
+   * fires next comes from here. Absent when the agent no longer holds it
+   * (deleted, expired, or never adopted): it is not active.
+   */
+  scheduled?: AgentSessionScheduledTimer;
   workspaceId: string;
 }
 

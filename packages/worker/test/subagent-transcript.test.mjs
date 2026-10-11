@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
 import { sendSubagentList } from "../dist/session-helpers.js";
 import {
+  agentSubagentDigest,
+  listAgentSubagentDigests,
   listAgentSubagents,
   readAgentSubagentTranscript,
 } from "../dist/subagent-transcript.js";
@@ -206,4 +214,111 @@ test("answers a chat's list read with digests: fingerprints, no prompts", async 
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
+});
+
+test("a digest across a session's inputs is the list's, and follows appends", async (t) => {
+  const workspace = mkdtempSync(join(tmpdir(), "foundry-subagent-"));
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const sessionId = "sess_inputs";
+  const inputs = join(workspace, ".foundry", "sessions", sessionId, "inputs");
+  const transcript = (inputId) => {
+    mkdirSync(join(inputs, inputId), { recursive: true });
+    return join(inputs, inputId, "claude-sdk.messages.jsonl");
+  };
+  const line = (record) => `${JSON.stringify(record)}\n`;
+  const started = (id, extra = {}) => ({
+    type: "system",
+    subtype: "task_started",
+    task_id: `task_${id}`,
+    task_type: "local_agent",
+    tool_use_id: `tool_${id}`,
+    prompt: `do ${id}`,
+    ...extra,
+  });
+  const answer = (id, text) => ({
+    type: "assistant",
+    parent_tool_use_id: `tool_${id}`,
+    message: { role: "assistant", content: [{ type: "text", text }] },
+  });
+  const first = transcript("01_first");
+  const second = transcript("02_second");
+  writeFileSync(
+    first,
+    [
+      started("a", { description: "Look", subagent_type: "Explore" }),
+      // Main-thread records, and a subagent's tool result, are skipped.
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: { role: "assistant", content: "main" },
+      },
+      {
+        type: "user",
+        parent_tool_use_id: "tool_a",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", content: "big output" }],
+        },
+      },
+      answer("a", "Found it."),
+      answer("a", "Found it."),
+      started("b"),
+    ]
+      .map(line)
+      .join(""),
+  );
+  writeFileSync(
+    second,
+    [
+      answer("b", "Partial"),
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "task_a",
+        status: "completed",
+        summary: "Looked",
+        usage: { total_tokens: 10, tool_uses: 1, duration_ms: 5 },
+      },
+      {
+        type: "system",
+        subtype: "task_notification",
+        task_id: "task_b",
+        status: "stopped",
+        summary: "B",
+      },
+    ]
+      .map(line)
+      .join(""),
+  );
+  const expected = async () =>
+    (await listAgentSubagents(workspace, sessionId)).map(agentSubagentDigest);
+  const digests = await listAgentSubagentDigests(workspace, sessionId);
+  assert.deepEqual(digests, await expected());
+  assert.deepEqual(
+    digests.map(({ taskId, status, title, responseFingerprints }) => ({
+      taskId,
+      status,
+      title,
+      answers: responseFingerprints.length,
+    })),
+    [
+      { taskId: "task_a", status: "completed", title: "Look", answers: 1 },
+      { taskId: "task_b", status: "failed", title: "B", answers: 1 },
+    ],
+  );
+  assert.equal(digests[0].usage.totalTokens, 10);
+
+  // A later input starts another subagent, half a line at a time.
+  const third = transcript("03_third");
+  const text = line(started("c")) + line(answer("c", "Done c"));
+  writeFileSync(third, text.slice(0, text.length - 7));
+  appendFileSync(second, line(answer("b", "More b")));
+  const partial = await listAgentSubagentDigests(workspace, sessionId);
+  assert.deepEqual(partial, await expected());
+  assert.equal(partial[1].responseFingerprints.length, 2);
+  assert.equal(partial[2].responseFingerprints.length, 0);
+  appendFileSync(third, text.slice(text.length - 7));
+  const complete = await listAgentSubagentDigests(workspace, sessionId);
+  assert.deepEqual(complete, await expected());
+  assert.equal(complete[2].responseFingerprints.length, 1);
 });

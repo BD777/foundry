@@ -365,6 +365,9 @@ export function foundrySessionNote(sessionId: string): string {
 // directory unused for sessionScratchIdleMs() is removed once nothing of its
 // session runs. Only recorded directories are ever removed: other workers on
 // the device (their own state roots) make theirs under the same prefix.
+// Directories a session got before records were kept (one per worker run)
+// are adopted into its record as earlier directories once the worker proves
+// they are the session's (see session-scratch-adoption.ts), and go with it.
 
 const defaultScratchIdleMs = 3 * 24 * 60 * 60 * 1000;
 /** How often a session's use is written to its record at most. */
@@ -389,6 +392,8 @@ interface ScratchRecord {
   sessionId: string;
   directory: string;
   lastUsedAt: string;
+  /** Directories the session had before, removed together with directory. */
+  previousDirectories?: string[];
 }
 
 /** Directories this process knows, with when it last recorded their use. */
@@ -419,7 +424,15 @@ function parseScratchRecord(path: string): ScratchRecord | undefined {
       isAbsolute(value.directory) &&
       typeof value.lastUsedAt === "string"
     )
-      return value as ScratchRecord;
+      return {
+        ...(value as ScratchRecord),
+        previousDirectories: Array.isArray(value.previousDirectories)
+          ? value.previousDirectories.filter(
+              (directory): directory is string =>
+                typeof directory === "string" && isAbsolute(directory),
+            )
+          : undefined,
+      };
   } catch {
     // Missing or unreadable: no record.
   }
@@ -441,10 +454,14 @@ function recordScratchUse(sessionId: string, directory: string): void {
   )
     return;
   scratchDirectories.set(sessionId, { directory, recordedAt: now });
+  const previousDirectories = readScratchRecord(
+    sessionId,
+  )?.previousDirectories?.filter((previous) => previous !== directory);
   const record: ScratchRecord = {
     sessionId,
     directory,
     lastUsedAt: new Date(now).toISOString(),
+    ...(previousDirectories?.length ? { previousDirectories } : {}),
   };
   try {
     writePrivateJSONAtomic(scratchRecordPath(sessionId), record);
@@ -516,6 +533,93 @@ export function knownSessionScratchDirectory(
     recordedAt: 0,
   });
   return record.directory;
+}
+
+/**
+ * Scratch directories in the temporary root that are this user's and that no
+ * record of this worker names: made by a worker run that kept no records, or
+ * by another worker on the device.
+ */
+export function unrecordedScratchDirectories(): string[] {
+  const root = shortTemporaryRoot();
+  const recorded = new Set<string>();
+  for (const record of scratchRecords())
+    for (const directory of [
+      record.directory,
+      ...(record.previousDirectories ?? []),
+    ])
+      recorded.add(directory);
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  return names
+    .filter((name) => scratchName.test(name))
+    .map((name) => join(root, name))
+    .filter((path) => !recorded.has(path) && isOwnDirectory(path));
+}
+
+function scratchRecords(): ScratchRecord[] {
+  const directory = scratchRecordsDirectory();
+  let names: string[];
+  try {
+    names = readdirSync(directory).filter((name) =>
+      /^[^.].*\.json$/.test(name),
+    );
+  } catch {
+    return [];
+  }
+  return names.flatMap((name) => {
+    const record = parseScratchRecord(join(directory, name));
+    return record ? [record] : [];
+  });
+}
+
+/**
+ * Takes directories proven to be the session's into its record. A session
+ * with no record yet keeps using the most recently changed of them; the
+ * others, and all of them for a session with a record, become its earlier
+ * directories. lastUsedAt is when the session last used any of them.
+ * Returns the directory the session now uses.
+ */
+export function adoptSessionScratchDirectories(
+  sessionId: string,
+  directories: readonly string[],
+  lastUsedAt: number,
+): string | undefined {
+  const existing = readScratchRecord(sessionId);
+  const changed = (path: string) => {
+    try {
+      return lstatSync(path).mtimeMs;
+    } catch {
+      return -1;
+    }
+  };
+  const candidates = [...new Set(directories)]
+    .filter((directory) => isAbsolute(directory))
+    .sort((left, right) => changed(right) - changed(left));
+  const directory =
+    existing?.directory ??
+    candidates.find((candidate) => isOwnDirectory(candidate));
+  if (!directory) return undefined;
+  const previousDirectories = [
+    ...new Set([...(existing?.previousDirectories ?? []), ...candidates]),
+  ].filter((previous) => previous !== directory);
+  const used = Math.max(
+    lastUsedAt,
+    existing ? Date.parse(existing.lastUsedAt) || 0 : 0,
+  );
+  writePrivateJSONAtomic(scratchRecordPath(sessionId), {
+    sessionId,
+    directory,
+    lastUsedAt: new Date(used).toISOString(),
+    ...(previousDirectories.length ? { previousDirectories } : {}),
+  } satisfies ScratchRecord);
+  if (!scratchDirectories.has(sessionId))
+    scratchDirectories.set(sessionId, { directory, recordedAt: 0 });
+  return directory;
 }
 
 /** TMPDIR and friends pointing at the session's scratch directory. */
@@ -602,9 +706,15 @@ function linuxProcesses(marker: string, scratch?: string): ProcessEntry[] {
       );
       let marked = false;
       try {
-        marked = readFileSync(`/proc/${pid}/environ`, "utf8")
-          .split("\0")
-          .includes(marker);
+        const environment = readFileSync(`/proc/${pid}/environ`, "utf8").split(
+          "\0",
+        );
+        // TMPDIR inherited by processes that dropped the session's id.
+        marked =
+          environment.includes(marker) ||
+          Boolean(
+            scratch && environment.some((entry) => entry.includes(scratch)),
+          );
       } catch {
         marked = false;
       }
@@ -776,6 +886,8 @@ export interface SessionScratchSweep {
 export interface RemovedSessionScratch {
   sessionId: string;
   directory: string;
+  /** Earlier directories of the session removed with it. */
+  previousDirectories?: string[];
   /** Browsers of the session that were closed first. */
   closed: string[];
 }
@@ -821,30 +933,51 @@ export async function sweepSessionScratchDirectories(
     const record = sessionId ? idleRecord(sessionId) : undefined;
     if (!sessionId || !record) continue;
     const { directory } = record;
+    const directories = [directory, ...(record.previousDirectories ?? [])];
+    // What runs of the session, or uses any of its directories.
+    const processesOf = () => {
+      const each = directories.map((path) => sessionProcesses(sessionId, path));
+      return {
+        browsers: new Map(each.flatMap((found) => [...found.browsers])),
+        others: each.flatMap((found) => found.others),
+      };
+    };
     try {
-      let processes = sessionProcesses(sessionId, directory);
+      let processes = processesOf();
       const closed = closeProcesses(processes.browsers.values());
       const deadline = Date.now() + browserExitWaitMs;
       while (processes.browsers.size > 0 && Date.now() < deadline) {
         await new Promise((done) => setTimeout(done, 100));
-        processes = sessionProcesses(sessionId, directory);
+        processes = processesOf();
       }
       // Decided with nothing awaited before the removal.
+      const current = idleRecord(sessionId);
       if (
         processes.browsers.size > 0 ||
         processes.others.length > 0 ||
-        idleRecord(sessionId)?.directory !== directory
+        current?.directory !== directory ||
+        (current.previousDirectories ?? []).some(
+          (previous) => !directories.includes(previous),
+        )
       )
         continue;
-      if (scratchName.test(basename(directory)) && isOwnDirectory(directory))
-        rmSync(directory, { recursive: true, force: true });
-      else if (existsSync(directory))
-        console.warn(
-          `Not removing ${directory} of session ${sessionId}: it is not a scratch directory of this user.`,
-        );
+      for (const path of directories)
+        if (scratchName.test(basename(path)) && isOwnDirectory(path))
+          rmSync(path, { recursive: true, force: true });
+        else if (existsSync(path))
+          console.warn(
+            `Not removing ${path} of session ${sessionId}: it is not a scratch directory of this user.`,
+          );
       rmSync(scratchRecordPath(sessionId), { force: true });
       scratchDirectories.delete(sessionId);
-      removed.push({ sessionId, directory, closed });
+      removed.push({
+        sessionId,
+        directory,
+        ...(directories.length > 1
+          ? { previousDirectories: directories.slice(1) }
+          : {}),
+        closed,
+      });
     } catch (error) {
       console.warn(
         `Could not remove the scratch directory ${directory} of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -871,9 +1004,14 @@ export function startSessionScratchSweeps(
     sweeping = true;
     sweepSessionScratchDirectories({ busy, idleMs })
       .then((removed) => {
-        for (const { sessionId, directory, closed } of removed)
+        for (const {
+          sessionId,
+          directory,
+          previousDirectories,
+          closed,
+        } of removed)
           console.log(
-            `Removed the scratch directory ${directory} of idle session ${sessionId}${closed.length ? `; closed ${closed.join(", ")}` : ""}`,
+            `Removed the scratch directory ${directory} of idle session ${sessionId}${previousDirectories?.length ? ` and its earlier ${previousDirectories.join(", ")}` : ""}${closed.length ? `; closed ${closed.join(", ")}` : ""}`,
           );
       })
       .catch((error) =>

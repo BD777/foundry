@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // SessionRecordStore loads a session without its transcript: what a status
 // change or a reply needs. A long chat has thousands of events.
@@ -115,6 +118,14 @@ type QueuedAgentSessionStore interface {
 // deleted. It reports whether any workspace changed.
 type WorkspaceAvailabilityStore interface {
 	SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served []string) (bool, error)
+}
+
+// SessionTimerStore lists the timers of a device's sessions.
+type SessionTimerStore interface {
+	// DeviceSessionTimers returns the live timers of the device's Claude
+	// chat sessions that are not deleted, with the prompts of their latest
+	// timer snapshot; expired recurring timers are left out.
+	DeviceSessionTimers(ctx context.Context, deviceID string, now time.Time) ([]SessionTimers, error)
 }
 
 // IssueExecutionStore runs an Issue as the session that implements it.

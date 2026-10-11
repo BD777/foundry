@@ -13,6 +13,12 @@ import {
   runCodexWorkspaceSession,
 } from "../runner.js";
 import { sandboxLaunch, type WritableTreeProfile } from "../sandbox/index.js";
+import {
+  ensureFreshClaudeLogin,
+  keepSandboxCredentialsCurrent,
+  sandboxCredentialCopies,
+  writeSandboxCredentials,
+} from "./provider-credentials.js";
 import type { SessionAmbientEnv } from "../session-ambient.js";
 import {
   activeSessionCancelTargets,
@@ -89,6 +95,16 @@ async function runSandboxed(
   const harness = run.profile.command
     ? undefined
     : harnessExecutable(session.provider);
+  // The agent gets the device's provider logins as access tokens only. The
+  // device renews its own Claude login, and the copies follow it while the
+  // agent runs (provider-credentials.ts).
+  const credentials = sandboxCredentialCopies(sandbox.env);
+  const deviceClaudeLogin =
+    session.provider === "claude" &&
+    !run.profile.command &&
+    run.profile.connectionType === "local_login";
+  if (deviceClaudeLogin) await ensureFreshClaudeLogin();
+  writeSandboxCredentials(credentials);
   const launch = sandboxLaunch(
     {
       ...sandbox.profile,
@@ -166,6 +182,9 @@ async function runSandboxed(
   if (session.provider !== "codex")
     activeSessionSteerTargets.set(session.id, steerTarget);
   activeSessionCancelTargets.set(session.id, cancelTarget);
+  const stopCredentials = keepSandboxCredentialsCurrent(credentials, {
+    renewClaude: deviceClaudeLogin ? undefined : async () => undefined,
+  });
   try {
     return await new Promise<AgentSessionRunResult>((done, reject) => {
       let result: AgentSessionRunResult | undefined;
@@ -246,6 +265,7 @@ async function runSandboxed(
       );
     });
   } finally {
+    stopCredentials();
     if (activeSessionSteerTargets.get(session.id) === steerTarget)
       activeSessionSteerTargets.delete(session.id);
     if (activeSessionCancelTargets.get(session.id) === cancelTarget)
