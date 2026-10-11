@@ -525,6 +525,36 @@ test("a pending name outside the workspace must be in a temporary folder", (t) =
   assert.deepEqual(resolveIn([]), []);
 });
 
+test("a temporary root, the workspace or home is never a folder reference", (t) => {
+  const f = fixture(t);
+  const reports = join(f.outside, "reports");
+  mkdirSync(reports);
+  const report = join(reports, "q3.md");
+  writeFileSync(report, "# Q3\n");
+  writeFileSync(join(f.workspace, "plan.md"), "# Plan\n");
+  const references = resolveFileReferences({
+    // Seen live: "/tmp" alone, its recorded files inside, became a folder.
+    answer: [
+      `Scratch lives in \`${f.root}\`, \`${f.outside}\`, \`${f.home}\` and \`${f.workspace}\`.`,
+      "",
+      `The report is in \`${reports}/\`.`,
+    ].join("\n"),
+    workspacePath: f.workspace,
+    recorded: [
+      { path: report, origin: "tool" },
+      { path: join(f.workspace, "plan.md"), origin: "tool" },
+      { path: join(f.home, "notes.md"), origin: "tool" },
+    ],
+    turnStartedAt: Date.now(),
+    allowedRoots: [f.outside],
+    home: f.home,
+  });
+  assert.deepEqual(
+    references.map(({ path, kind }) => ({ path, kind })),
+    [{ path: reports, kind: "dir" }],
+  );
+});
+
 test("fenced code is not scanned and candidates are capped", () => {
   const blocks = answerBlocks(
     ["```", "`/tmp/a.md`", "```", "`/tmp/b.md`"].join("\n"),

@@ -97,7 +97,8 @@ function apply(): void {
           background: chat.background,
         }
       : {}),
-    unread,
+    // Status marks belong to an open chat; other pages never carry them.
+    unread: chat ? unread : false,
   };
   document.title = buildDocumentTitle(parts);
   applyIcon(tabStatus(parts));

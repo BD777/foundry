@@ -142,3 +142,73 @@ test("a timer's prompt the device sent to resume the session shows as the timer 
   const divider = entries.find((entry) => entry.kind === "boundary");
   assert.match(divider.text, /^⏰ Scheduled task fired · /);
 });
+
+test("the card's timers are active only while the server's schedule holds them", async () => {
+  await i18n.changeLanguage("en");
+  const { chatContextCardForSessions } =
+    await import("../src/features/chat/chat-context-model.ts");
+  const events = [snapshotEvent("evt_1", [inspection])];
+  // The real failure: the snapshot says a timer exists, yet the server's
+  // session holds none (no process and no device keeps it).
+  const stale = chatContextCardForSessions([session({ events })]);
+  assert.equal(stale.timers.length, 1);
+  assert.equal(stale.timers[0].scheduled, undefined, "not active");
+
+  const scheduled = {
+    reportedAt: "2026-10-11T05:02:03.000Z",
+    timers: [
+      {
+        id: "9b17c9d2",
+        kind: "cron",
+        schedule: "28,58 * * * *",
+        recurring: true,
+        firstSeenAt: new Date(Date.now() - 60_000).toISOString(),
+      },
+    ],
+  };
+  const held = chatContextCardForSessions([session({ events, scheduled })]);
+  assert.equal(held.timers[0].scheduled.id, "9b17c9d2");
+
+  // A week after it was first seen, Claude Code deleted it.
+  const expired = chatContextCardForSessions([
+    session({
+      events,
+      scheduled: {
+        ...scheduled,
+        timers: [
+          { ...scheduled.timers[0], firstSeenAt: "2026-01-01T00:00:00Z" },
+        ],
+      },
+    }),
+  ]);
+  assert.equal(expired.timers[0].scheduled, undefined);
+});
+
+test("a pushed snapshot keeps when each timer was first seen", () => {
+  const data = {
+    workspace: { id: "ws_test" },
+    agentSessions: [
+      session({
+        scheduled: {
+          reportedAt: "2026-10-10T06:27:13.000Z",
+          timers: [
+            {
+              id: "9b17c9d2",
+              kind: "cron",
+              schedule: "28,58 * * * *",
+              recurring: true,
+              firstSeenAt: "2026-10-10T06:27:13.000Z",
+            },
+          ],
+        },
+      }),
+    ],
+  };
+  const next = sessionProjections.agent_session_event.apply(data, [
+    snapshotEvent("evt_2", [inspection, { ...inspection, id: "other" }]),
+  ]);
+  assert.deepEqual(
+    next.agentSessions[0].scheduled.timers.map((timer) => timer.firstSeenAt),
+    ["2026-10-10T06:27:13.000Z", "2026-10-11T05:02:03.000Z"],
+  );
+});

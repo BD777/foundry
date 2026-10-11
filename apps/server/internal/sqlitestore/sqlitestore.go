@@ -360,9 +360,9 @@ func (s *Store) migrate(ctx context.Context) error {
 			updated_at TEXT NOT NULL
 		)`,
 		// Bearer tokens for the session-scoped MCP/CLI surface. Each dispatch
-		// mints one; all of a session's tokens stay valid while the session
-		// exists, so a long-lived agent process never holds a stale one. Only
-		// SHA-256 hashes are stored; plaintext rides run_session to the daemon.
+		// mints one; a session's tokens stay valid while it is active and
+		// until a day after their last use (session_tokens.go). Only SHA-256
+		// hashes are stored; plaintext rides run_session to the daemon.
 		// It replaces agent_session_tokens, which kept one token per turn.
 		`DROP TABLE IF EXISTS agent_session_tokens`,
 		`CREATE TABLE IF NOT EXISTS session_tokens (
@@ -390,6 +390,10 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	// Before any later step saves an event.
 	if err := s.migrateSessionStateKeys(ctx); err != nil {
+		return err
+	}
+	// After the state keys, which find the timer snapshots.
+	if err := s.backfillSessionSchedules(ctx); err != nil {
 		return err
 	}
 	if err := s.migrateChatQueue(ctx); err != nil {

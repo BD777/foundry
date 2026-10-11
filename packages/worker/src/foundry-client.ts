@@ -6,6 +6,11 @@
  * Credentials come only from the environment (MCP stdio convention) or, for a
  * local human at the paired device, from the owner-only daemon config. This
  * client never listens on a socket and never persists a token.
+ *
+ * A command an agent runs inside a Foundry session (FOUNDRY_SESSION_ID set)
+ * never falls back to the device credential: that would act as the device's
+ * owner, beyond the session's reach. Agents use their Foundry tools, whose
+ * token their commands do not see.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -56,10 +61,15 @@ export function resolveConfig(
       "",
     sessionToken: overrides.sessionToken ?? env("FOUNDRY_SESSION_TOKEN"),
     deviceCredential:
-      overrides.deviceCredential ?? daemonConfig?.deviceCredential,
+      overrides.deviceCredential ??
+      (insideFoundrySession() ? undefined : daemonConfig?.deviceCredential),
     workspaceId:
       overrides.workspaceId ?? env("FOUNDRY_WORKSPACE_ID") ?? undefined,
   };
+}
+
+function insideFoundrySession(): boolean {
+  return Boolean(env("FOUNDRY_SESSION_ID"));
 }
 
 export class FoundryClient {
@@ -71,7 +81,9 @@ export class FoundryClient {
     }
     if (!config.sessionToken && !config.deviceCredential) {
       throw new FoundryClientError(
-        "no credentials: set FOUNDRY_SESSION_TOKEN (run inside a Foundry session) or pair a worker on this device",
+        insideFoundrySession()
+          ? "no credentials inside a Foundry session: use the session's Foundry tools (mcp__foundry__*) instead of the foundry CLI"
+          : "no credentials: set FOUNDRY_SESSION_TOKEN (run inside a Foundry session) or pair a worker on this device",
       );
     }
   }

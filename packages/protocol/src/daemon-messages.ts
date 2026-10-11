@@ -71,6 +71,8 @@ export const daemonMessageTypes = {
   sessionEvent: "session_event",
   sessionNativeSessionId: "session_native_session_id",
   sessionStarted: "session_started",
+  /** A session's timers the server knows, sent on hello (SessionTimers). */
+  sessionTimers: "session_timers",
   sessionSteered: "session_steered",
   sessionUsageRead: "session_usage_read",
   skillContentRead: "skill_content_read",

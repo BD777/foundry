@@ -14,6 +14,7 @@ import { join } from "node:path";
 import type { OfficialSkill } from "@bd777/foundry-protocol";
 import { withCodexControl } from "./native-inspection.js";
 import { nativeCli } from "./native-cli.js";
+import { claudeRenewalPending } from "./native-login.js";
 import { foundryStatePath } from "./state-root.js";
 import { writeJSON } from "./storage.js";
 import { resolveClaudeCommand } from "./utils.js";
@@ -31,11 +32,20 @@ type OfficialSkillCache = Partial<
 
 const cachePath = () => foundryStatePath("official-skills.json");
 
+/**
+ * What this process read where the cache cannot be written: a sandboxed
+ * session sees no device state and may not write it.
+ */
+let unsaved: OfficialSkillCache = {};
+
 function readCache(): OfficialSkillCache {
   try {
-    return JSON.parse(readFileSync(cachePath(), "utf8")) as OfficialSkillCache;
+    return {
+      ...(JSON.parse(readFileSync(cachePath(), "utf8")) as OfficialSkillCache),
+      ...unsaved,
+    };
   } catch {
-    return {};
+    return { ...unsaved };
   }
 }
 
@@ -125,6 +135,11 @@ async function claudeSessionCommands(
 }
 
 async function readClaudeOfficialSkills(): Promise<InstalledOfficialSkill[]> {
+  // Two sessions that end at once would race Claude Code's start-up renewal.
+  if (claudeRenewalPending())
+    throw new Error(
+      "Claude Code's login is due for renewal; its skills are read on a later check.",
+    );
   const cwd = mkdtempSync(join(tmpdir(), "foundry-official-skills-"));
   try {
     const [withBundled, without] = await Promise.all([
@@ -168,6 +183,13 @@ export async function refreshOfficialSkills(
       );
     }
   }
-  if (changed) writeJSON(cachePath(), cache);
+  if (changed) {
+    try {
+      writeJSON(cachePath(), cache);
+      unsaved = {};
+    } catch {
+      unsaved = cache;
+    }
+  }
   return changed;
 }

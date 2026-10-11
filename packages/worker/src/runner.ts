@@ -63,14 +63,14 @@ import {
   AsyncInputQueue,
 } from "./session-state.js";
 import { ClaudeTimerTracker } from "./agent-timers.js";
-import { sessionTimers } from "./session-timers.js";
+import { mintTimerTurnToken, sessionTimers } from "./session-timers.js";
 import {
   ClaudeBackgroundTaskTracker,
   backgroundTaskOutputLocation,
   readBackgroundTaskOutput,
 } from "./agent-background-tasks.js";
 import type { FollowedLog } from "./background-output-follow.js";
-import { redactSecrets } from "./secret-redaction.js";
+import { redactSecrets, registerKnownSecret } from "./secret-redaction.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
 import {
@@ -83,8 +83,8 @@ import {
   codexFoundryTools,
   buildClaudeLaunchPlan,
   validateClaudeLaunch,
-  claudeLaunchMcpServers,
   claudeSessionOptions,
+  codexSessionSecretsConfig,
   claudeSettingsFile,
   sessionDeviceNotes,
   type ClaudeLaunchPlan,
@@ -204,7 +204,7 @@ import {
   profileRuntimeEnvironment,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
-import { sessionEnvironment } from "./session-ambient.js";
+import { sessionEnvironment, withoutSessionToken } from "./session-ambient.js";
 import {
   codexRoleOptions,
   isClarificationSession,
@@ -671,6 +671,7 @@ async function runCodexTurn(
       );
     } else {
       await emitSetup();
+      const secrets = codexSessionSecretsConfig();
       const codex = new sdk.Codex({
         codexPathOverride,
         baseUrl:
@@ -687,7 +688,12 @@ async function runCodexTurn(
           ...codexProfileConfig(profile),
           ...codexSessionConfig(managedSkills, deviceNotes),
           ...codexFoundryTools(session)?.config,
+          ...secrets,
           ...role?.config,
+          features: {
+            ...secrets.features,
+            ...(role?.config?.features as Record<string, boolean> | undefined),
+          },
         },
       });
       await emit("Started Codex SDK", `${packageName} · ${codexCommand}`);
@@ -951,7 +957,9 @@ export async function runClaudeWorkspaceSession(
       provider: "claude",
       session,
       workspacePath,
-      env: sessionEnvironment(workspacePath, profile, session),
+      env: withoutSessionToken(
+        sessionEnvironment(workspacePath, profile, session),
+      ),
       isolated: Boolean(managedSkills),
       emit: (label, detail, level) => emit(label, detail, level),
       reportNativeSessionId,
@@ -1819,7 +1827,9 @@ export async function runClaudeAgentSdkSession(
   const prompt =
     plan?.prompt ??
     claudeManagedPrompt(sessionPrompt(session, profile), managedSkills);
-  const env = plan?.env ?? sessionEnvironment(workspacePath, profile, session);
+  const env =
+    plan?.env ??
+    withoutSessionToken(sessionEnvironment(workspacePath, profile, session));
   const sdk = (await import(packageName)) as {
     query?: (input: {
       options?: Record<string, unknown>;
@@ -1917,8 +1927,6 @@ export async function runClaudeAgentSdkSession(
       } else if (requestedNativeSessionId) {
         options.resume = requestedNativeSessionId;
       }
-      if (plan?.mcpServers)
-        options.mcpServers = claudeLaunchMcpServers(plan.mcpServers);
       runtime = {
         closed: false,
         foundrySessionId: session.id,
@@ -1945,6 +1953,7 @@ export async function runClaudeAgentSdkSession(
               owner.nativeSessionId,
               tasks,
             ),
+          timerTurnStarting: () => refreshClaudeFoundryTools(owner),
         },
         sessionTimers.attach(session.id, requestedNativeSessionId, owner),
       );
@@ -2018,9 +2027,10 @@ export async function runClaudeAgentSdkSession(
         reusableRuntime,
       );
       reusableRuntime.background?.attach();
-      // Each dispatch mints a new session token and revokes the previous
-      // one, so the Foundry tools are re-pointed at this turn's identity.
-      await reusableRuntime.query?.setMcpServers?.(plan?.mcpServers ?? {});
+      // Each dispatch mints a new session token: the Foundry tools carry
+      // this turn's, which stays valid while the session is active.
+      reusableRuntime.mcpServers = plan?.mcpServers ?? {};
+      await reusableRuntime.query?.setMcpServers?.(reusableRuntime.mcpServers);
       await emit(
         "Reused active Claude Agent SDK",
         reusableRuntime.nativeSessionId || "in memory",
@@ -2181,7 +2191,7 @@ export async function runClaudeAgentSdkSession(
           ),
         };
         activeRuntime.pending = turn;
-        try {
+        const pushPrompt = () =>
           activeRuntime.input.push({
             message: { role: "user", content: prompt },
             parent_tool_use_id: null,
@@ -2189,14 +2199,21 @@ export async function runClaudeAgentSdkSession(
             // The Foundry input is Claude's user message: one identity.
             ...(session.input ? { uuid: session.input.id as UUID } : {}),
           });
-          if (runtimeStartOptions) {
-            startActiveClaudePump(
-              activeRuntime,
-              query({
-                prompt: activeRuntime.input,
-                options: runtimeStartOptions,
-              }) as ClaudeSDKQuery,
-            );
+        try {
+          if (!runtimeStartOptions) pushPrompt();
+          else {
+            const started = query({
+              prompt: activeRuntime.input,
+              options: runtimeStartOptions,
+            }) as ClaudeSDKQuery;
+            startActiveClaudePump(activeRuntime, started);
+            activeRuntime.mcpServers = plan?.mcpServers;
+            // The Foundry tools reach a new process over its input stream,
+            // before its first turn: in --mcp-config or the environment
+            // their token would be readable by every command Claude runs.
+            void startClaudeFoundryTools(started, plan?.mcpServers, emit)
+              .then(pushPrompt)
+              .catch((error) => closeActiveClaudeRuntime(activeRuntime, error));
           }
         } catch (error) {
           closeActiveClaudeRuntime(activeRuntime, error);
@@ -2209,6 +2226,80 @@ export async function runClaudeAgentSdkSession(
     writeFileSync(stderrPath, `${message}\n`);
     throw error;
   }
+}
+
+/**
+ * Hands a new Claude process its Foundry tools. A failure leaves the
+ * session without them, as a missing token does, rather than failing it.
+ */
+export async function startClaudeFoundryTools(
+  query: Pick<ClaudeSDKQuery, "setMcpServers">,
+  servers: Record<string, unknown> | undefined,
+  emit: (
+    label: string,
+    detail: string,
+    level?: AgentSessionEvent["level"],
+  ) => Promise<void> | void,
+): Promise<void> {
+  if (!servers || Object.keys(servers).length === 0) return;
+  try {
+    const result = (await query.setMcpServers?.(servers)) as
+      { errors?: Record<string, string> } | undefined;
+    const errors = Object.entries(result?.errors ?? {});
+    if (errors.length > 0)
+      await emit(
+        "Foundry tools unavailable",
+        errors.map(([name, error]) => `${name}: ${error}`).join("; "),
+        "warning",
+      );
+  } catch (error) {
+    await emit(
+      "Foundry tools unavailable",
+      error instanceof Error ? error.message : String(error),
+      "warning",
+    );
+  }
+}
+
+/**
+ * Gives a running Claude process a fresh Foundry token as it starts a timer's
+ * turn on its own: the token of the last dispatch may have idled out. Bounded,
+ * so a slow server delays the turn at most briefly; on any failure the
+ * process keeps the token it has.
+ */
+export async function refreshClaudeFoundryTools(
+  runtime: Pick<
+    ActiveClaudeRuntime,
+    "foundrySessionId" | "mcpServers" | "query" | "closed"
+  >,
+  mint: (sessionId: string) => Promise<string | undefined> = mintTimerTurnToken,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const foundry = runtime.mcpServers?.foundry as
+    { headers?: Record<string, string> } | undefined;
+  if (runtime.closed || !foundry?.headers?.Authorization) return;
+  const refresh = async () => {
+    const token = await mint(runtime.foundrySessionId);
+    if (!token || runtime.closed || !runtime.query?.setMcpServers) return;
+    registerKnownSecret(token);
+    const servers = {
+      ...runtime.mcpServers,
+      foundry: {
+        ...foundry,
+        headers: { ...foundry.headers, Authorization: `Bearer ${token}` },
+      },
+    };
+    runtime.mcpServers = servers;
+    await runtime.query.setMcpServers(servers);
+  };
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    refresh().catch(() => undefined),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 export function claudeMaxTurns(session: AgentSession): number | undefined {

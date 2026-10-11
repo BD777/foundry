@@ -3,6 +3,7 @@ import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { codexTranscriptRecord } from "./transcript-adapters/codex.js";
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
 import { record } from "./transcript-adapters/values.js";
+import { redactTranscriptMessage } from "./secret-redaction.js";
 import { claudeNativeUsage, codexNativeUsage } from "./native-usage.js";
 import { claudeRequestUsage } from "./turn-usage.js";
 
@@ -112,7 +113,7 @@ export function nativeChatTranscript(
       kind: "boundary",
       text: processLabels.transcriptTailUnloaded,
     });
-  return messages;
+  return messages.map(redactTranscriptMessage);
 }
 
 /** A turn's usage goes on the answer that ended it, as live turns report it. */

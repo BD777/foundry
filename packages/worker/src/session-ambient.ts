@@ -10,17 +10,22 @@ import {
   type AgentProfileLocalConfig,
 } from "./profiles.js";
 import { currentInput } from "./session-prompt.js";
+import { registerKnownSecret } from "./secret-redaction.js";
+import { sessionExternalAccountEnvironment } from "./external-accounts.js";
 
 /**
  * Per-session ambient environment (CHAT-01).
  *
  * Each dispatch of a session carries a freshly minted FOUNDRY_SESSION_TOKEN
- * (earlier ones stay valid while the session exists) plus the server URL.
- * They authorize the session's Foundry tools, the server's HTTP MCP
- * (foundryToolsEndpoint: a Claude header, Codex reads the variable), and
- * reach the session's processes as environment, for the `foundry` CLI. The
- * values are process-scoped and never written to disk. Registered for the
- * lifetime of one executeAgentSession run, keyed by Foundry session id.
+ * plus the server URL. They authorize the session's Foundry tools, the
+ * server's HTTP MCP (foundryToolsEndpoint). The commands an agent runs never
+ * see the token: Claude gets it over its input stream (a header of the MCP
+ * server it is handed after start, see withoutSessionToken), Codex reads the
+ * variable itself and keeps it out of its shell (codexSessionSecretsConfig).
+ * Only a custom profile command, which is not an agent Foundry can configure,
+ * receives it as environment. The values are process-scoped and never
+ * written to disk. Registered for the lifetime of one executeAgentSession
+ * run, keyed by Foundry session id.
  */
 
 export interface SessionAmbientEnv {
@@ -36,6 +41,8 @@ export function registerSessionAmbientEnv(
   ambient: SessionAmbientEnv,
 ): () => void {
   ambientBySession.set(sessionID, ambient);
+  // Stays known after the run: a later transcript may still show it.
+  registerKnownSecret(ambient.sessionToken);
   return () => {
     if (ambientBySession.get(sessionID) === ambient) {
       ambientBySession.delete(sessionID);
@@ -62,6 +69,16 @@ export function sessionAmbientEnvironment(
     [foundryTokenEnvName]: ambient.sessionToken,
     FOUNDRY_WORKSPACE_ID: ambient.workspaceID,
   };
+}
+
+/**
+ * A session environment without the Foundry token, for an agent that gets
+ * it another way: every process the agent starts inherits this environment,
+ * and a prompt-injected command could send the token anywhere.
+ */
+export function withoutSessionToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { [foundryTokenEnvName]: _token, ...rest } = env;
+  return rest;
 }
 
 /**
@@ -96,6 +113,7 @@ export function sessionEnvironment(
     PATH: withManagedTools(base.PATH),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
+    ...sessionExternalAccountEnvironment(session?.id),
     FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(
       session ? (currentInput(session).attachments ?? []) : [],
     ),

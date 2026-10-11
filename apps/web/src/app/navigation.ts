@@ -1,6 +1,7 @@
 import {
   Columns2,
   FolderOpen,
+  IdCard,
   KeyRound,
   Library,
   MessageSquareText,
@@ -25,6 +26,8 @@ export type NavView =
   | "sharing"
   | "settings"
   | "profiles"
+  | "externalAccounts"
+  | "accounts"
   | "library"
   | "workspace"
   | "locations"
@@ -108,6 +111,8 @@ export function parseAppRoute(pathname: string): AppRoute {
     case "profiles":
     case "connections":
       return { view: "profiles" };
+    case "external-accounts":
+      return { view: "externalAccounts" };
     case "runs":
       return { view: "issues" };
     case "settings":
@@ -124,7 +129,8 @@ export function parseAppRoute(pathname: string): AppRoute {
         id === "assets" ||
         id === "skills" ||
         id === "feishu" ||
-        id === "sharing"
+        id === "sharing" ||
+        id === "accounts"
       )
         return { view: id };
       return { view: "workspace" };
@@ -161,6 +167,10 @@ export function pathForAppRoute(route: AppRoute): string {
       return "/issues";
     case "profiles":
       return "/connections";
+    case "externalAccounts":
+      return "/external-accounts";
+    case "accounts":
+      return "/workspace/accounts";
     case "library":
       return "/skill-library";
     case "settings":
@@ -282,6 +292,8 @@ const pageViews = new Set<string>([
   "devices",
   "locations",
   "profiles",
+  "externalAccounts",
+  "accounts",
   "library",
 ]);
 
@@ -308,6 +320,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
       { id: "devices", label: "devices", icon: Monitor },
       { id: "library", label: "library", icon: Library },
       { id: "profiles", label: "profiles", icon: KeyRound },
+      { id: "externalAccounts", label: "externalAccounts", icon: IdCard },
     ],
   },
 ];

@@ -108,6 +108,9 @@ const (
 	wsSessionNativeSessionIDType   = "session_native_session_id"
 	wsSessionCompleteType          = "session_completed"
 	wsRecoverSessionType           = "recover_session"
+	// A session's timers the server knows, sent to its device on hello
+	// (session_timers.go); older workers ignore it.
+	wsSessionTimersType = "session_timers"
 	// A piece of a large envelope; see daemon_reply_chunks.go.
 	wsReplyChunkType = "reply_chunk"
 )
@@ -1610,6 +1613,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		// A daemon serves several workspaces; hello names only one of them.
 		go c.dispatchQueuedAgentSessions("")
 		go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
+		go c.sendSessionTimers()
 		return nil
 	case wsReplyChunkType:
 		whole, complete, err := c.handleEnvelopePiece(envelope)

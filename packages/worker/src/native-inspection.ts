@@ -10,7 +10,8 @@ import type {
 } from "@bd777/foundry-protocol";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
-import { isNativeAccountStatus } from "./native-login.js";
+import { claudeAccount } from "./native-account.js";
+import { claudeRenewalPending, isNativeAccountStatus } from "./native-login.js";
 import { parse as parseTOML } from "smol-toml";
 
 const exec = promisify(execFile);
@@ -125,6 +126,10 @@ export async function withCodexControl<T>(
 }
 
 export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
+  if (claudeRenewalPending())
+    throw new Error(
+      "Claude Code's login is due for renewal, so its model catalog is not read now. Retry in a few minutes.",
+    );
   let release!: () => void;
   const closed = new Promise<void>((resolveClose) => {
     release = resolveClose;
@@ -262,6 +267,22 @@ export async function inspectNativeAccount(
     };
   try {
     if (runtime === "claude") {
+      const pending = claudeRenewalPending();
+      if (pending) {
+        const account = claudeAccount(
+          process.env.CLAUDE_CONFIG_DIR || homedir(),
+        )?.label;
+        return {
+          ...base,
+          ...(account ? { accountLabel: account } : {}),
+          ...(pending.subscriptionType
+            ? { plan: pending.subscriptionType }
+            : {}),
+          status: "local_login",
+          message:
+            "Claude Code's stored login is due for renewal; it renews on its next request. Read from the credentials file without running the CLI; online validity and remaining usage are not verified.",
+        };
+      }
       const result = await exec(
         resolveClaudeCommand(),
         ["auth", "status", "--json"],

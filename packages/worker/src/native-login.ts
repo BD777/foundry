@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import type { ProviderHealth } from "@bd777/foundry-protocol";
 import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
@@ -33,6 +36,71 @@ export function isNativeAccountStatus(
   } catch {
     return false;
   }
+}
+
+/** Claude Code renews a claude.ai access token this close to its expiry. */
+export const claudeRenewalWindowMs = 5 * 60 * 1000;
+// A CLI takes a moment to start; one checked just outside the window can be
+// inside it by the time it reads the credentials.
+const claudeStartupMarginMs = 60 * 1000;
+
+export interface ClaudeStoredLogin {
+  /** When the claude.ai access token expires, in epoch milliseconds. */
+  expiresAt: number;
+  renewable: boolean;
+  subscriptionType?: string;
+}
+
+/**
+ * The device's claude.ai login as the credentials file describes it: expiry
+ * and plan only, never a token. Undefined where there is no such file (e.g.
+ * macOS, which keeps the login in the keychain).
+ */
+export function claudeStoredLogin(
+  configDir: string = process.env.CLAUDE_CONFIG_DIR ||
+    resolve(homedir(), ".claude"),
+): ClaudeStoredLogin | undefined {
+  let oauth: Record<string, unknown> | undefined;
+  try {
+    const parsed: unknown = JSON.parse(
+      readFileSync(resolve(configDir, ".credentials.json"), "utf8"),
+    );
+    const value =
+      parsed && typeof parsed === "object"
+        ? (parsed as Record<string, unknown>).claudeAiOauth
+        : undefined;
+    oauth =
+      value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : undefined;
+  } catch {
+    return undefined;
+  }
+  if (!oauth || typeof oauth.expiresAt !== "number") return undefined;
+  return {
+    expiresAt: oauth.expiresAt,
+    renewable: typeof oauth.refreshToken === "string" && !!oauth.refreshToken,
+    ...(typeof oauth.subscriptionType === "string" && oauth.subscriptionType
+      ? { subscriptionType: oauth.subscriptionType }
+      : {}),
+  };
+}
+
+/**
+ * The stored login Claude Code would renew on start-up. It starts that
+ * renewal without awaiting it, so a command that exits at once (`auth
+ * status`, a session opened only to read its catalog) can end after the
+ * provider rotated the refresh token but before the new one is saved,
+ * signing the device out. Such commands are not run while this is set.
+ */
+export function claudeRenewalPending(
+  now: number = Date.now(),
+  login: ClaudeStoredLogin | undefined = claudeStoredLogin(),
+): ClaudeStoredLogin | undefined {
+  return login?.renewable &&
+    login.expiresAt - now <= claudeRenewalWindowMs + claudeStartupMarginMs
+    ? login
+    : undefined;
 }
 
 const cache = new Map<string, { until: number; health: ProviderHealth }>();
@@ -83,6 +151,14 @@ function loginHealth(runtime: "claude" | "codex"): ProviderHealth {
     };
     return health;
   }
+  if (runtime === "claude" && claudeRenewalPending())
+    return {
+      ...health,
+      status: "healthy",
+      authMode: "local_config",
+      statusDetail:
+        "Claude Code's stored login is due for renewal; it renews on its next request. Online account validity has not been verified.",
+    };
   try {
     const result = spawnSync(
       command,

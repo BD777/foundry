@@ -64,9 +64,16 @@ export function NoticeStack({
 
 export interface NoticeLineProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
+  /** What the notice offers to do, after its text (a Button). */
+  action?: ReactNode;
 }
 
-export function NoticeLine({ children, className, ...props }: NoticeLineProps) {
+export function NoticeLine({
+  action,
+  children,
+  className,
+  ...props
+}: NoticeLineProps) {
   return (
     <div
       className={cn("fdy-notice-line", className)}
@@ -75,6 +82,7 @@ export function NoticeLine({ children, className, ...props }: NoticeLineProps) {
     >
       <Zap size={13} />
       {children}
+      {action ? <span className="fdy-notice-line-action">{action}</span> : null}
     </div>
   );
 }

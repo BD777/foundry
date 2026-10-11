@@ -170,6 +170,8 @@ export interface ActiveClaudeRuntime {
   nativeSessionId: string;
   pending?: ActiveClaudeTurn;
   query?: ClaudeSDKQuery;
+  /** The MCP servers the process was last handed, the Foundry tools among them. */
+  mcpServers?: Record<string, unknown>;
   timers?: ClaudeTimerTracker;
   /** Background work of the agent process; it outlives Foundry turns. */
   background?: ClaudeBackgroundTaskTracker;

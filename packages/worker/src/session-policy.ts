@@ -27,6 +27,7 @@ import {
   foundryTokenEnvName,
   foundryToolsEndpoint,
   sessionEnvironment,
+  withoutSessionToken,
   usesSessionScratch,
 } from "./session-ambient.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
@@ -37,6 +38,7 @@ import {
 } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
+import { sessionExternalAccountNote } from "./external-accounts.js";
 import { isUtilitySession } from "./utils.js";
 import {
   claudeRoleOptions,
@@ -243,12 +245,17 @@ export function sessionDeviceNotes(
       maxTurns:
         session.provider === "claude" ? verificationMaxTurns : undefined,
     });
-  return sessionResourceNotes(
-    workspacePath,
-    undefined,
-    usesSessionScratch(session) ? session.id : undefined,
-    session.id,
-  );
+  return [
+    sessionResourceNotes(
+      workspacePath,
+      undefined,
+      usesSessionScratch(session) ? session.id : undefined,
+      session.id,
+    ),
+    sessionExternalAccountNote(session.id),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -265,7 +272,9 @@ export function buildClaudeLaunchPlan(input: {
   const managedSkills = input.managedSkills;
   validateClaudeLaunch(input);
 
-  const env = sessionEnvironment(workspacePath, profile, session);
+  const env = withoutSessionToken(
+    sessionEnvironment(workspacePath, profile, session),
+  );
   const deviceNotes = sessionDeviceNotes(workspacePath, session, env.TMPDIR);
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const role = claudeRoleOptions(session);
@@ -335,30 +344,19 @@ export function clearClaudeSettingsFiles(): void {
 }
 
 /**
- * The Foundry tools server for a new Claude process, with its token read
- * from the process environment (Claude Code expands `${VAR}` in headers)
- * instead of written into the `--mcp-config` argument. A process already
- * running gets the literal token over its input stream instead, which no
- * other process can read.
+ * Keeps Codex's shell from passing the session token on: Codex reads it for
+ * the Foundry tools (bearer_token_env_var) from its own environment, which
+ * its commands would otherwise inherit. Codex's default excludes cover
+ * `*TOKEN*` names in some versions only, and its shell snapshot writes the
+ * whole environment, excluded names included, to a file under CODEX_HOME
+ * that every command sources, so the snapshot is off.
  */
-export function claudeLaunchMcpServers(
-  servers: Record<string, unknown>,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(servers).map(([name, server]) => {
-      const config = server as { headers?: Record<string, string> };
-      return [
-        name,
-        config.headers?.Authorization
-          ? {
-              ...config,
-              headers: {
-                ...config.headers,
-                Authorization: `Bearer \${${foundryTokenEnvName}}`,
-              },
-            }
-          : config,
-      ];
-    }),
-  );
+export function codexSessionSecretsConfig(): {
+  shell_environment_policy: { exclude: string[] };
+  features: Record<string, boolean>;
+} {
+  return {
+    shell_environment_policy: { exclude: [foundryTokenEnvName] },
+    features: { shell_snapshot: false },
+  };
 }

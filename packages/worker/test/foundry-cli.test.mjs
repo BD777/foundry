@@ -419,3 +419,23 @@ test("the foundry skill ships with the CLI, same as the server's built-in, and i
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("inside a Foundry session the CLI never acts with the device credential", async (t) => {
+  const { calls, url } = await fakeTools(t, () => ["[]", false]);
+  const state = mkdtempSync(join(tmpdir(), "foundry-cli-state-"));
+  t.after(() => rmSync(state, { recursive: true, force: true }));
+  writeFileSync(
+    join(state, "daemon-config.json"),
+    JSON.stringify({ serverURL: url, deviceCredential: "dev_secret" }),
+  );
+  const listed = await foundry(["session", "list"], {
+    FOUNDRY_SERVER_URL: url,
+    FOUNDRY_SESSION_TOKEN: "",
+    FOUNDRY_SESSION_ID: "sess_agent",
+    FOUNDRY_WORKSPACE_ID: "ws_device",
+    FOUNDRY_STATE_ROOT: state,
+  });
+  assert.notEqual(listed.code, 0);
+  assert.match(listed.stderr, /Foundry tools/);
+  assert.equal(calls.length, 0, "no request carries the device credential");
+});

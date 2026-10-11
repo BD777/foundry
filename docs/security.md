@@ -210,6 +210,46 @@ modified after the turn started. Reads:
 Workspace file reads (`/api/workspace-files/read`) likewise read only their
 first 128 KiB.
 
+## Agent Credentials
+
+- A session's Foundry token reaches its agent, never the commands the agent
+  runs: Claude Code is handed its Foundry tools over its input stream, Codex
+  reads the token from its own environment, excludes it from its shell and
+  runs without a shell snapshot. A `foundry` command inside a session never
+  falls back to the device credential. A token is valid while its session is
+  queued, running or blocked, otherwise for 24 hours after its last use, and
+  never longer than 30 days; a timer Claude fires itself gets a fresh one
+  (`POST /api/daemon/sessions/{id}/session-tokens`, the session's own device
+  only). Details: [session orchestration §4.2](session-orchestration-design.md).
+- Sandboxed agents (an Issue's execution, clarification, verifiers) get the
+  device's Claude and Codex access tokens, never a refresh token, so nothing
+  in a sandbox can rotate the device's login. The device renews its own Claude
+  login with its own CLI as the token nears expiry, and the copy follows one
+  way, device to sandbox (`packages/worker/src/session/provider-credentials.ts`).
+- The worker removes the tokens it knows (session tokens, the device
+  credential) and common secret shapes from transcripts before they leave the
+  device (`packages/worker/src/secret-redaction.ts`).
+
+### Known risk: the device credential is readable by unsandboxed agents
+
+Chats and orchestrated sessions outside an Issue run as the device's user
+without an OS sandbox. Such an agent, prompt-injected or not, can read
+`~/.foundry/daemon-config.json`, which holds the device credential (it acts as
+the device's owner on every workspace of the device), and the environments
+and memory of the user's other processes (`/proc/<pid>/environ`, and
+`/proc/<pid>/mem` where `ptrace_scope` is 0), including the agent processes
+that hold session tokens and provider logins. Keeping tokens out of command
+environments stops casual leaks, not a determined agent. Options, not yet
+chosen:
+
+- **OS-level isolation for every session**, as Issue sandboxes already have:
+  the agent's process tree cannot read the worker's state directory or other
+  processes. Costs: some tools that expect the whole home stop working.
+- **Move the credential out of the agent's reach**: keep it in the OS
+  keychain or a root/other-user-owned helper the worker talks to, so the
+  agent's user cannot read it directly. Does not protect other processes'
+  environments without isolation.
+
 ## Protocol Validation
 
 - Normal JSON API bodies are capped at 1 MiB and reject unknown fields, trailing values, and malformed JSON.

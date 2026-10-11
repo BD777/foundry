@@ -104,3 +104,28 @@ func TestWebStaticUnknownAPIReturnsJSON(t *testing.T) {
 		t.Fatalf("expected JSON error body, got %q", response.Body.String())
 	}
 }
+
+// A page that reloads must get the build deployed now: only hashed assets
+// may be served from a cache without asking.
+func TestWebStaticCacheControl(t *testing.T) {
+	server := newWebDistServer(t, ServerOptions{})
+	if err := os.WriteFile(filepath.Join(server.options.WebDistDir, "version.json"), []byte(`{"build":"b1"}`), 0o600); err != nil {
+		t.Fatalf("write version.json: %v", err)
+	}
+
+	for path, want := range map[string]string{
+		"/":                       "no-cache",
+		"/issues":                 "no-cache",
+		"/version.json":           "no-cache",
+		"/assets/index-abc123.js": "public, max-age=31536000, immutable",
+	} {
+		response := httptest.NewRecorder()
+		server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: expected status %d, got %d", path, http.StatusOK, response.Code)
+		}
+		if got := response.Header().Get("Cache-Control"); got != want {
+			t.Fatalf("%s: Cache-Control %q, want %q", path, got, want)
+		}
+	}
+}

@@ -235,3 +235,61 @@ test("an old process ending after a new one took the session leaves the timers t
   await kept.tick();
   assert.equal(sent.length, 0, "the running process fires them itself");
 });
+
+test("timers the server knows are adopted unless the worker keeps or runs the session's own", async () => {
+  // An older worker ran the session and kept nothing; the new one connects
+  // at 15:26 and the server sends the timers it knows.
+  const time = clock("2026-10-11T15:26:00");
+  const { kept, sent } = timers(time);
+  const fromServer = {
+    sessionId: "sess_1",
+    nativeSessionId: "native_1",
+    timers: [{ ...inspection, firstSeenAt: "2026-10-10T06:27:13Z" }],
+  };
+  assert.equal(kept.adopt([fromServer]), true);
+  assert.equal(kept.adopt([fromServer]), false, "sent again on reconnect");
+  time.set("2026-10-11T15:37:04");
+  await kept.tick();
+  assert.equal(sent.length, 0, "not before Claude Code would fire it");
+  time.set("2026-10-11T15:37:06");
+  await kept.tick();
+  assert.equal(sent.length, 1, "due at its first time after the adoption");
+  assert.equal(sent[0].sessionId, "sess_1");
+  assert.equal(sent[0].nativeSessionId, "native_1");
+  assert.equal(sent[0].timerId, inspection.id);
+  assert.equal(sent[0].prompt, inspection.prompt);
+  assert.equal(new Date(sent[0].dueAt).getMinutes(), 37);
+
+  // A session the worker keeps or runs keeps its own timers.
+  kept.record("sess_2", "native_2", [inspection]);
+  assert.equal(
+    kept.adopt([
+      { sessionId: "sess_2", nativeSessionId: "native_2", timers: [] },
+    ]),
+    false,
+  );
+  assert.equal(kept.attach("sess_3", "native_3", process_sess_3).length, 0);
+  assert.equal(
+    kept.adopt([
+      {
+        sessionId: "sess_3",
+        nativeSessionId: "native_3",
+        timers: [{ ...inspection, firstSeenAt: "2026-10-11T00:00:00Z" }],
+      },
+    ]),
+    false,
+  );
+  assert.equal(kept.kept("sess_3"), undefined);
+
+  // A recurring timer a week old was deleted by Claude Code.
+  assert.equal(
+    kept.adopt([
+      {
+        sessionId: "sess_4",
+        nativeSessionId: "native_4",
+        timers: [{ ...inspection, firstSeenAt: "2026-10-03T00:00:00Z" }],
+      },
+    ]),
+    false,
+  );
+});

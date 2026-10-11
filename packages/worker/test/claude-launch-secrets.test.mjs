@@ -14,8 +14,10 @@ const root = mkdtempSync(join(tmpdir(), "foundry-claude-launch-"));
 process.env.FOUNDRY_STATE_ROOT = root;
 test.after(() => rmSync(root, { recursive: true, force: true }));
 
-const { claudeLaunchMcpServers, claudeSettingsFile, clearClaudeSettingsFiles } =
+const { claudeSettingsFile, clearClaudeSettingsFiles } =
   await import("../dist/session-policy.js");
+const { startClaudeFoundryTools } = await import("../dist/runner.js");
+const { withoutSessionToken } = await import("../dist/session-ambient.js");
 
 test("Claude's settings, key included, go to an owner-only file, not an argument", () => {
   const path = claudeSettingsFile("sess_1", {
@@ -31,7 +33,7 @@ test("Claude's settings, key included, go to an owner-only file, not an argument
   assert.equal(existsSync(path), false);
 });
 
-test("a new Claude process reads the Foundry tools token from its environment", () => {
+test("a new Claude process gets its Foundry tools over its input stream before its first turn", async () => {
   const servers = {
     foundry: {
       type: "http",
@@ -39,12 +41,96 @@ test("a new Claude process reads the Foundry tools token from its environment", 
       headers: { Authorization: "Bearer tok-secret" },
     },
   };
-  const launched = claudeLaunchMcpServers(servers);
-  assert.equal(
-    launched.foundry.headers.Authorization,
-    "Bearer ${FOUNDRY_SESSION_TOKEN}",
+  const handed = [];
+  const events = [];
+  await startClaudeFoundryTools(
+    { setMcpServers: async (value) => handed.push(value) },
+    servers,
+    (...event) => events.push(event),
   );
-  assert.doesNotMatch(JSON.stringify(launched), /tok-secret/);
-  // The live update path keeps the literal token.
-  assert.equal(servers.foundry.headers.Authorization, "Bearer tok-secret");
+  assert.deepEqual(handed, [servers]);
+  assert.deepEqual(events, []);
+
+  await startClaudeFoundryTools(
+    {
+      setMcpServers: async () => ({ errors: { foundry: "connect refused" } }),
+    },
+    servers,
+    (...event) => events.push(event),
+  );
+  await startClaudeFoundryTools(
+    {
+      setMcpServers: async () => {
+        throw new Error("process exited");
+      },
+    },
+    servers,
+    (...event) => events.push(event),
+  );
+  assert.deepEqual(
+    events.map(([label, detail, level]) => [label, detail, level]),
+    [
+      ["Foundry tools unavailable", "foundry: connect refused", "warning"],
+      ["Foundry tools unavailable", "process exited", "warning"],
+    ],
+    "a session without its tools still runs",
+  );
+  await startClaudeFoundryTools({}, undefined, () => assert.fail());
+});
+
+test("withoutSessionToken drops only the token", () => {
+  assert.deepEqual(
+    withoutSessionToken({
+      FOUNDRY_SESSION_TOKEN: "tok",
+      FOUNDRY_SERVER_URL: "https://server",
+      PATH: "/bin",
+    }),
+    { FOUNDRY_SERVER_URL: "https://server", PATH: "/bin" },
+  );
+});
+
+test("a timer turn Claude starts on its own gets a fresh Foundry token", async () => {
+  const { refreshClaudeFoundryTools } = await import("../dist/runner.js");
+  const handed = [];
+  const runtime = {
+    closed: false,
+    foundrySessionId: "sess_timer",
+    mcpServers: {
+      foundry: {
+        type: "http",
+        url: "https://server/api/mcp",
+        headers: { Authorization: "Bearer old-token-0123456789" },
+        timeout: 660000,
+      },
+    },
+    query: { setMcpServers: async (servers) => handed.push(servers) },
+  };
+  const minted = [];
+  await refreshClaudeFoundryTools(runtime, async (id) => {
+    minted.push(id);
+    return "fresh-token-0123456789abcdef";
+  });
+  assert.deepEqual(minted, ["sess_timer"]);
+  assert.equal(
+    handed[0].foundry.headers.Authorization,
+    "Bearer fresh-token-0123456789abcdef",
+  );
+  assert.equal(handed[0].foundry.url, "https://server/api/mcp");
+  assert.equal(
+    runtime.mcpServers,
+    handed[0],
+    "the next refresh starts from it",
+  );
+
+  // No token from the server: the process keeps the one it has.
+  await refreshClaudeFoundryTools(runtime, async () => undefined);
+  assert.equal(handed.length, 1);
+  // A server that hangs delays the turn only briefly.
+  const began = Date.now();
+  await refreshClaudeFoundryTools(runtime, () => new Promise(() => {}), 50);
+  assert.ok(Date.now() - began < 1000);
+  // A process without Foundry tools asks for nothing.
+  await refreshClaudeFoundryTools({ ...runtime, mcpServers: {} }, async () =>
+    assert.fail("no mint"),
+  );
 });

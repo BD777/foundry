@@ -5,13 +5,18 @@
 
 import { discoverResources } from "./resource-pool.js";
 import {
+  chatFingerprint,
+  chatUploads,
+  reconcileWithServer,
+  rememberUpload,
+} from "./chat-uploads.js";
+import {
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type {
@@ -324,21 +329,6 @@ export async function registerDaemon(
   return registration.device;
 }
 
-/**
- * What this worker last uploaded for each native chat, per server and
- * workspace: a sync only sends chats that changed since. In memory, so a
- * restarted worker uploads each chat once more.
- */
-const uploadedChats = new Map<string, Map<string, string>>();
-
-/**
- * Chats a server said it never keeps (deleted, or a Foundry session owns
- * them), per server and workspace: they are not sent again. A session's own
- * native chat changes all the time it runs, and each change would send its
- * transcript for nothing. In memory: a restarted worker sends each once more.
- */
-const refusedChats = new Map<string, Set<string>>();
-
 /** What the server answers a chat sync; older servers name no refusals. */
 interface SyncedChats {
   refused?: string[];
@@ -365,24 +355,29 @@ export async function syncNativeChats(
     profiles,
     historyIds ? Number.POSITIVE_INFINITY : 60,
   );
-  const key = `${serverURL}\n${workspace.id}`;
-  const uploaded = uploadedChats.get(key) ?? new Map<string, string>();
-  uploadedChats.set(key, uploaded);
-  const refused = refusedChats.get(key) ?? new Set<string>();
-  refusedChats.set(key, refused);
+  // What was uploaded (by fingerprint), and the chats the server never
+  // keeps (deleted, or a Foundry session owns them: its native chat changes
+  // all the time it runs), are kept across restarts in the state root.
+  const uploads = chatUploads(serverURL, workspace.id);
+  const { uploaded, refused } = uploads;
+  if (
+    !uploads.reconciled &&
+    (await reconcileWithServer(serverURL, workspace.id, uploads, candidates))
+  )
+    uploads.save();
   const remember = (answer: SyncedChats | undefined) => {
+    const before = refused.size;
     for (const id of answer?.refused ?? []) refused.add(id);
+    if (refused.size !== before) uploads.save();
   };
   // A chat carries content only (its time is its last activity, never a
   // label), so a chat nobody touched is never uploaded again.
-  const fingerprint = (chat: ChatThread) =>
-    createHash("sha256").update(JSON.stringify(chat)).digest("hex");
   const chats = candidates
     .filter((chat) => !refused.has(chat.id))
     .filter((chat) =>
       historyIds
         ? historyIds.has(chat.id)
-        : uploaded.get(chat.id) !== fingerprint(chat),
+        : uploaded.get(chat.id) !== chatFingerprint(chat),
     );
   // Chats this worker has not sent yet go up first as summaries, a batch per
   // request, so the whole list appears at once; the server keeps any
@@ -407,7 +402,8 @@ export async function syncNativeChats(
         chats: [chat],
       }),
     );
-    uploaded.set(chat.id, fingerprint(chat));
+    rememberUpload(uploads, chat);
+    uploads.save();
   }
   return chats.length;
 }

@@ -34,11 +34,13 @@ const root = resolve(import.meta.dirname, "..");
 export const tsDtoPaths = [
   "packages/protocol/src/index.ts",
   "packages/protocol/src/feishu.ts",
+  "packages/protocol/src/external-accounts.ts",
   "packages/protocol/src/browser-events.ts",
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
   "apps/server/internal/store/models.go",
   "apps/server/internal/store/feishu.go",
+  "apps/server/internal/store/external_accounts.go",
   "apps/server/internal/browserevent/payloads.go",
 ].map((path) => resolve(root, path));
 const tsMessagesPath = resolve(

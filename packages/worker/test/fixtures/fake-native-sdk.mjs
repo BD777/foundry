@@ -15,7 +15,7 @@ export function query({ prompt, options }) {
   const session = options.forkSession
     ? options.sessionId
     : (options.resume ?? `fresh-${++fresh}`);
-  return (async function* () {
+  const stream = (async function* () {
     for await (const message of prompt) {
       call.prompts.push(message.message.content);
       if (refused.has(options.resume)) {
@@ -47,6 +47,12 @@ export function query({ prompt, options }) {
     }
     call.closed = true;
   })();
+  // The MCP servers handed to the running process over its input stream.
+  stream.setMcpServers = async (servers) => {
+    call.mcpServers = servers;
+    return { added: Object.keys(servers), removed: [], errors: {} };
+  };
+  return stream;
 }
 
 export class Codex {

@@ -22,6 +22,7 @@ export const workspaces: Translation<typeof en> = {
       assets: "资产",
       skills: "Skills",
       feishu: "飞书机器人",
+      accounts: "账号",
       sharing: "共享",
     },
     notes: {
@@ -32,6 +33,8 @@ export const workspaces: Translation<typeof en> = {
         "选择这个工作区向其对话和 Issue 开放哪些由服务器发布的 Skill。这个工作区所在设备上的 Skill 可以在下方直接添加；其他地方的 Skill 需要先发布到服务器才能使用。",
       feishu:
         "连接飞书机器人，并把一个群聊话题关联为这个工作区的 Agent 互动渠道。",
+      accounts:
+        "选择此工作区的会话可以使用你的哪些外部账号。这里是供 feishu-cli 等工具使用的个人登录；“飞书机器人”标签页是工作区的群机器人，两者不同。",
       sharing:
         "把这个工作区共享给其他 Foundry 账号。访问权限只涵盖这个工作区，不涉及设备上的其他内容。",
     },

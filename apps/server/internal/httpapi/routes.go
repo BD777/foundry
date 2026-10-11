@@ -476,7 +476,9 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/daemon/register", s.handleDaemonRegister, daemonProtocol()),
 		fn("POST /api/daemon/chats/sync", s.handleDaemonSyncChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
+		fn("GET /api/daemon/chats/digests", s.handleDaemonChatDigests, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/timer-fires", s.handleDaemonTimerFire, daemonProtocol()),
+		fn("POST /api/daemon/sessions/{id}/session-tokens", s.handleDaemonSessionToken, daemonProtocol()),
 		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),
 	}

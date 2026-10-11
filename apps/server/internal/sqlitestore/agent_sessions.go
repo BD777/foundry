@@ -792,7 +792,11 @@ func (s *Store) saveSessionSchedule(ctx context.Context, event store.AgentSessio
 	if event.Metadata == nil || event.Metadata.TimerSnapshot == nil {
 		return nil
 	}
-	schedule := store.SessionScheduleFromSnapshot(*event.Metadata.TimerSnapshot, event.At)
+	previous, err := s.sessionSchedule(ctx, event.SessionID)
+	if err != nil {
+		return err
+	}
+	schedule := store.SessionScheduleFromSnapshot(previous, *event.Metadata.TimerSnapshot, event.At)
 	if schedule == nil {
 		if _, err := s.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_remove(payload_json, '$.scheduled') WHERE id = ?`, event.SessionID); err != nil {
 			return fmt.Errorf("clear session schedule: %w", err)
@@ -857,6 +861,10 @@ func (s *Store) SetAgentSessionNativeSessionID(ctx context.Context, sessionID st
 		}
 		if session.NativeSessionID == result.NativeSessionID {
 			return nil
+		}
+		if result.NativeSessionID != "" {
+			// Another native session holds none of the old one's timers.
+			session.Scheduled = nil
 		}
 		if err := tx.saveAgentSession(ctx, session, time.Time{}, time.Now().UTC()); err != nil {
 			return err

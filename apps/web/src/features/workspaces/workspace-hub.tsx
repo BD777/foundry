@@ -5,13 +5,20 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 
 export type WorkspaceSection =
-  "workspace" | "settings" | "assets" | "skills" | "feishu" | "sharing";
+  | "workspace"
+  | "settings"
+  | "assets"
+  | "skills"
+  | "feishu"
+  | "accounts"
+  | "sharing";
 const sections: WorkspaceSection[] = [
   "workspace",
   "settings",
   "assets",
   "skills",
   "feishu",
+  "accounts",
   "sharing",
 ];
 

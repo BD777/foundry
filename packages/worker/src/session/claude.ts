@@ -1,9 +1,12 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { redactSecrets } from "../secret-redaction.js";
 import { resolveClaudeCommand } from "../utils.js";
 import type { HarnessAdapter } from "./harness.js";
+import {
+  sandboxCredentialCopies,
+  writeSandboxCredentials,
+} from "./provider-credentials.js";
 
 /** Claude Agent SDK session in a private config directory. */
 export const claudeHarness: HarnessAdapter = {
@@ -27,12 +30,10 @@ export const claudeHarness: HarnessAdapter = {
       if (model) env[key] = model;
     const config = resolve(home, ".claude");
     mkdirSync(config, { mode: 0o700 });
-    const auth = resolve(
-      process.env.CLAUDE_CONFIG_DIR ?? resolve(homedir(), ".claude"),
-      ".credentials.json",
+    // The device's access token only (provider-credentials.ts).
+    writeSandboxCredentials(
+      sandboxCredentialCopies({ CLAUDE_CONFIG_DIR: config }),
     );
-    if (existsSync(auth))
-      copyFileSync(auth, resolve(config, ".credentials.json"));
     env.CLAUDE_CONFIG_DIR = config;
     const sdkName = "@anthropic-ai/claude-agent-sdk";
     const sdk = (await import(sdkName)) as {

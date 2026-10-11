@@ -70,6 +70,7 @@ import {
   workspacesViewFields,
 } from "./app/view-fields";
 import { useDocumentTitle } from "./app/use-document-title";
+import { NewBuildNotice } from "./app/deployed-build";
 import { firstLoadedChatId } from "./app/chat-selection";
 import {
   applyAnsweredEvent,
@@ -143,6 +144,10 @@ import {
 import { SkillsFeature } from "./features/skills";
 import { SkillLibraryFeature } from "./features/skill-library";
 import { FeishuBotFeature } from "./features/feishu";
+import {
+  ExternalAccountsFeature,
+  WorkspaceAccountsFeature,
+} from "./features/external-accounts";
 import { SharingFeature } from "./features/sharing";
 import {
   WorkspacesFeature,
@@ -187,6 +192,7 @@ const workspaceScopedViews = new Set<NavView>([
   "skills",
   "settings",
   "feishu",
+  "accounts",
   "sharing",
 ]);
 
@@ -976,6 +982,15 @@ export function App() {
             onNotice={setNotice}
           />
         ) : null}
+        {section === "accounts" ? (
+          <WorkspaceAccountsFeature
+            currentUserId={account.user?.id ?? ""}
+            onNotice={setNotice}
+            onOpenExternalAccounts={() => setActiveView("externalAccounts")}
+            readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
+            workspaceId={data.workspace.id}
+          />
+        ) : null}
       </WorkspaceHub>
     );
   }
@@ -1069,6 +1084,7 @@ export function App() {
       case "skills":
       case "settings":
       case "feishu":
+      case "accounts":
       case "sharing":
         return renderWorkspaceView(activeView);
       case "workspace":
@@ -1087,6 +1103,14 @@ export function App() {
         );
       case "profiles":
         return renderProfilesView();
+      case "externalAccounts":
+        return (
+          <ExternalAccountsFeature
+            currentUserId={account.user?.id ?? ""}
+            isAdmin={account.user?.role === "admin"}
+            onNotice={setNotice}
+          />
+        );
       case "library":
         return (
           <SkillLibraryFeature
@@ -1149,6 +1173,7 @@ export function App() {
             <NoticeLine>{t("common:states.loading")}</NoticeLine>
           ) : null}
           {notice ? <NoticeLine>{notice}</NoticeLine> : null}
+          <NewBuildNotice />
         </NoticeStack>
         <FoundryView scrollMode={viewScrollMode}>
           <ErrorBoundary

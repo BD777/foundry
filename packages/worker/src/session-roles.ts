@@ -108,14 +108,17 @@ export function codexRoleOptions(session: AgentSession):
   | undefined {
   if (isVerificationSession(session))
     return {
-      // Codex's own sandbox lets commands write the working directory and
-      // the temporary one; the verifier's sandbox around it keeps the
-      // workspace read-only, so they write only the temporary directory.
+      // The verifier's own sandbox (verification-session.ts) keeps the
+      // workspace read-only and lets commands write only its scratch
+      // directory. Codex's sandbox cannot run inside it: its
+      // workspace-write mode mounts over the workspace's .git, .agents and
+      // .codex, which needs directories it cannot create there, and macOS
+      // does not nest sandboxes. So Codex runs its commands unsandboxed,
+      // as in an Issue's execution, and the verifier's sandbox decides.
       config: { features: codexDisabledFeatures(true) },
       thread: {
-        sandboxMode: "workspace-write",
+        sandboxMode: "danger-full-access",
         approvalPolicy: "never",
-        networkAccessEnabled: true,
         webSearchMode: "disabled",
       },
     };

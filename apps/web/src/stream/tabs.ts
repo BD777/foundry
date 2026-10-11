@@ -32,7 +32,9 @@ export type TabMessage =
   /** A read's answer, for every tab that asked for it or will. */
   | { kind: "answer"; key: string; answer: SharedAnswer; requests: string[] }
   /** A read that got no answer (the network failed, it timed out). */
-  | { kind: "read-failed"; key: string; requests: string[]; message: string };
+  | { kind: "read-failed"; key: string; requests: string[]; message: string }
+  /** Which build of the web app is deployed, as a tab read it at `at`. */
+  | { kind: "build"; build: string; at: number };
 
 /** A read's answer as tabs share it (see shared-reads.ts). */
 export interface SharedAnswer {

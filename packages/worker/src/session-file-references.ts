@@ -278,6 +278,7 @@ export function resolveFileReferences(
   )
     .map(realRoot)
     .filter((root): root is string => Boolean(root));
+  const broadFolders = [...roots, workspace, realRoot(home) ?? home];
   const recordedTool = new Set<string>();
   const recordedAll: string[] = [];
   for (const entry of context.recorded) {
@@ -336,6 +337,15 @@ export function resolveFileReferences(
       return undefined;
     const insideWorkspace = pathWithin(workspace, found.realpath);
     if (found.stat.isDirectory()) {
+      // A temporary root, the workspace, home or a folder above them holds
+      // everything; naming it points at no work of the session.
+      if (
+        broadFolders.some(
+          (folder) =>
+            pathWithin(path, folder) || pathWithin(found.realpath, folder),
+        )
+      )
+        return undefined;
       const holdsRecorded = recordedAll.some(
         (recorded) =>
           recorded !== path &&

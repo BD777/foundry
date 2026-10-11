@@ -5,6 +5,7 @@ import { chat as enChat } from "./locales/en/chat";
 import { common as enCommon } from "./locales/en/common";
 import { conversation as enConversation } from "./locales/en/conversation";
 import { devices as enDevices } from "./locales/en/devices";
+import { externalAccounts as enExternalAccounts } from "./locales/en/externalAccounts";
 import { feishu as enFeishu } from "./locales/en/feishu";
 import { issueDetail as enIssueDetail } from "./locales/en/issueDetail";
 import { issues as enIssues } from "./locales/en/issues";
@@ -22,6 +23,7 @@ import { chat as zhChat } from "./locales/zh-CN/chat";
 import { common as zhCommon } from "./locales/zh-CN/common";
 import { conversation as zhConversation } from "./locales/zh-CN/conversation";
 import { devices as zhDevices } from "./locales/zh-CN/devices";
+import { externalAccounts as zhExternalAccounts } from "./locales/zh-CN/externalAccounts";
 import { feishu as zhFeishu } from "./locales/zh-CN/feishu";
 import { issueDetail as zhIssueDetail } from "./locales/zh-CN/issueDetail";
 import { issues as zhIssues } from "./locales/zh-CN/issues";
@@ -46,6 +48,7 @@ export const en = {
   common: enCommon,
   conversation: enConversation,
   devices: enDevices,
+  externalAccounts: enExternalAccounts,
   feishu: enFeishu,
   issueDetail: enIssueDetail,
   issues: enIssues,
@@ -68,6 +71,7 @@ export const resources = {
     common: zhCommon,
     conversation: zhConversation,
     devices: zhDevices,
+    externalAccounts: zhExternalAccounts,
     feishu: zhFeishu,
     issueDetail: zhIssueDetail,
     issues: zhIssues,

@@ -37,7 +37,7 @@ import {
 } from "@bd777/foundry-protocol";
 import { sendWebSocket, trySendWebSocket } from "./transport.js";
 import {
-  agentSubagentDigest,
+  listAgentSubagentDigests,
   listAgentSubagents,
   readAgentSubagentTranscript,
 } from "./subagent-transcript.js";
@@ -55,6 +55,10 @@ import { safeID } from "./utils.js";
 import { sessionInputDirectory } from "./session-artifacts.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import { readFilePrefix, utf8Prefix } from "./session-files.js";
+import {
+  redactTranscriptMessage,
+  redactTranscriptText,
+} from "./secret-redaction.js";
 
 // --- Payload types ---
 
@@ -483,10 +487,6 @@ export async function sendSubagentList(
   payload: ListSubagentsPayload,
 ): Promise<void> {
   try {
-    const subagents = await listAgentSubagents(
-      workspacePath,
-      payload.sessionId,
-    );
     sendWebSocket(
       socket,
       daemonMessageTypes.subagentsListed,
@@ -494,9 +494,18 @@ export async function sendSubagentList(
         ? {
             sessionId: payload.sessionId,
             view: subagentDigestView,
-            subagents: subagents.map(agentSubagentDigest),
+            subagents: await listAgentSubagentDigests(
+              workspacePath,
+              payload.sessionId,
+            ),
           }
-        : { sessionId: payload.sessionId, subagents },
+        : {
+            sessionId: payload.sessionId,
+            subagents: await listAgentSubagents(
+              workspacePath,
+              payload.sessionId,
+            ),
+          },
       id,
     );
   } catch (error) {
@@ -642,10 +651,13 @@ export function sessionEvent(
     sessionId: sessionID,
     at: "just now",
     label,
-    detail,
+    // What an agent printed reaches every reader of the transcript.
+    detail: redactTranscriptText(detail),
     level,
     metadata,
-    message: message ? { ...message, id: message.id || id } : undefined,
+    message: message
+      ? redactTranscriptMessage({ ...message, id: message.id || id })
+      : undefined,
   };
 }
 
