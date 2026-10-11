@@ -3,7 +3,6 @@ import type {
   AgentSession,
   AgentSessionTimerFire,
   SessionFileRecord,
-  SessionFileReference,
   AgentScheduledTask,
   AgentTurnUsage,
   ChatAttachment,
@@ -17,7 +16,10 @@ import type {
   WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
 import type { ProcessDisplayItem } from "./chat-process-display";
-import type { StepUsage } from "../../components/conversation/conversation-types";
+import type {
+  ConversationFileReference,
+  StepUsage,
+} from "../../components/conversation/conversation-types";
 
 /** User-editable runtime settings for one selected Chat agent. */
 export interface ChatOverrideDraft {
@@ -61,7 +63,7 @@ export interface ChatViewMessage {
   /** The turn's provider usage, on the answer that ends the turn. */
   usage?: AgentTurnUsage;
   /** Paths the answer names that its device verified, linked in its text. */
-  fileReferences?: SessionFileReference[];
+  fileReferences?: ConversationFileReference[];
   /** The files the answer's turn wrote or named, on the answer ending it. */
   turnFiles?: { turnId: string; count: number };
 }
@@ -146,6 +148,8 @@ export interface ChatSessionFileItem {
   turnLineChanges?: Record<string, ChatLineChanges>;
   /** Opened from one answer's files: shows that turn's diff. */
   diffTurnId?: string;
+  /** Opened from a pending link: no session file is recorded here yet. */
+  pending?: true;
 }
 
 export interface ChatLineChanges {
@@ -161,7 +165,39 @@ export type ChatContextSelection =
   | ChatTimerItem;
 
 /** Compact, UI-neutral projection for the Codex-style thread sidecar. */
+/** The open session's status line: its context, then the rest folded. */
+export interface ChatSessionStatus {
+  sessionId: string;
+  nativeSessionId?: string;
+  runtime: AgentSession["provider"];
+  profileLabel?: string;
+  /** The model that answered, else the one the session asked for. */
+  model?: string;
+  effort?: ClaudeEffort | CodexReasoningEffort;
+  claudePermissionMode?: ClaudePermissionMode;
+  codexSandboxMode?: CodexSandboxMode;
+  codexApprovalPolicy?: CodexApprovalPolicy;
+  deviceLabel?: string;
+  /** The latest model request's whole input against the model's window. */
+  context: { usedTokens?: number; contextWindow?: number };
+  /** Turns that reported usage, and what they used together. */
+  turns: number;
+  totals: {
+    inputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    outputTokens: number;
+    /** Summed over the `costTurns` turns whose cost is known. */
+    costUsd?: number;
+    costTurns: number;
+  };
+  lastTurnDurationMs?: number;
+  compactions: number;
+}
+
 export interface ChatContextCardData {
+  /** The open session's status line; absent before the chat has one. */
+  status?: ChatSessionStatus;
   /** Files inside a Git work tree (diffs come in a later phase). */
   changes: ChatSessionFileItem[];
   /** Every other file, such as deliverables written to /tmp. */

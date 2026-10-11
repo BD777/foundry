@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  appendFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -510,6 +511,88 @@ test("output is the task's own log in the session's scratch directory, as plain 
   } finally {
     rmSync(scratch, { force: true, recursive: true });
     rmSync(root, { force: true, recursive: true });
+  }
+});
+
+test("a continued read returns what the log gained, as the whole log would read", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "fdy-"));
+  try {
+    const tasks = join(scratch, "claude-1", "-ws", "n", "tasks");
+    mkdirSync(tasks, { recursive: true });
+    const output = join(tasks, "bgrow.output");
+    const record = {
+      id: "bgrow",
+      provider: "claude",
+      kind: "command",
+      description: "Build",
+      status: "running",
+      startedAt: "2026-10-09T15:00:00Z",
+      hasOutput: true,
+      outputPath: output,
+    };
+    const read = (after) =>
+      readBackgroundTaskOutput({
+        sessionId: "sess_bg",
+        taskId: "bgrow",
+        record,
+        scratchDirectory: scratch,
+        after,
+      });
+    // What a reader shows: the settled part of each read plus the open line.
+    const follow = (shown, value) => {
+      const stable = value.stable ?? 0;
+      return value.from === undefined
+        ? {
+            settled: value.content.slice(0, stable),
+            all: value.content,
+            at: value.lineEnd,
+          }
+        : {
+            settled: shown.settled + value.content.slice(0, stable),
+            all: shown.settled + value.content,
+            at: value.lineEnd,
+          };
+    };
+
+    writeFileSync(output, "\n\u001b[32mstep 1\u001b[0m\nstep 2 50%\rstep 2 9");
+    let first = read();
+    assert.equal(first.from, undefined);
+    let shown = follow(undefined, first);
+    assert.equal(shown.all, "step 1\nstep 2 9");
+    assert.equal(shown.settled, "step 1\n");
+
+    appendFileSync(output, "0%\rstep 2 done\npassword=\nhunter2\nstep 3");
+    let next = read(shown.at);
+    assert.equal(next.from, first.lineEnd, "only what was added");
+    shown = follow(shown, next);
+    assert.equal(shown.all, read().content, "reads as the whole log does");
+    assert.doesNotMatch(shown.all, /hunter2/);
+
+    // Nothing new: nothing sent, the open line again.
+    next = read(shown.at);
+    assert.equal(next.content, "step 3");
+    assert.equal(next.stable, 0);
+
+    // A secret named before the continued part is still redacted.
+    appendFileSync(output, "\nAuthorization: Bearer\n");
+    shown = follow(shown, read(shown.at));
+    appendFileSync(output, "abc.def.ghi\nend\n");
+    next = read(shown.at);
+    shown = follow(shown, next);
+    assert.doesNotMatch(next.content, /abc\.def\.ghi/);
+    assert.doesNotMatch(shown.all, /abc\.def\.ghi/);
+
+    // An offset no read returned, a cut log, or one past its end: the tail.
+    for (const after of [3, 10_000_000]) {
+      const whole = read(after);
+      assert.equal(whole.from, undefined);
+      assert.equal(whole.content, read().content);
+    }
+    writeFileSync(output, "replaced\n");
+    assert.equal(read(shown.at).from, undefined);
+    assert.equal(read(shown.at).content, "replaced\n");
+  } finally {
+    rmSync(scratch, { force: true, recursive: true });
   }
 });
 

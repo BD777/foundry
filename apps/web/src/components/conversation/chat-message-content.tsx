@@ -2,6 +2,7 @@ import {
   Check,
   ChevronRight,
   Copy,
+  FileClock,
   FileText,
   FolderOpen,
   Search,
@@ -235,7 +236,10 @@ function decodedHref(href: string): string {
   }
 }
 
-/** A file or folder an answer names, opened in the chat's side panel. */
+/**
+ * A file or folder an answer names, opened in the chat's side panel. A file
+ * not written yet keeps its link, marked by a clock: opening it says so.
+ */
 function FileReferenceButton({
   children,
   code,
@@ -251,16 +255,23 @@ function FileReferenceButton({
   return (
     <Button
       className="fdy-chat-file-reference"
+      data-pending={reference.pending ? "true" : undefined}
       onClick={() => onOpen(reference)}
       size="inline"
       title={t(
-        reference.kind === "dir" ? "message.showFolder" : "message.openFile",
+        reference.kind === "dir"
+          ? "message.showFolder"
+          : reference.pending
+            ? "message.openPendingFile"
+            : "message.openFile",
         { path: reference.path },
       )}
       variant="link"
     >
       {reference.kind === "dir" ? (
         <FolderOpen aria-hidden="true" size={13} />
+      ) : reference.pending ? (
+        <FileClock aria-hidden="true" size={13} />
       ) : (
         <FileText aria-hidden="true" size={13} />
       )}
@@ -399,11 +410,16 @@ export function MarkdownContent({
     [fileReferences, onOpenFileReference, streaming],
   );
   // Streamdown keeps rendered blocks while their text is unchanged; new
-  // links (the turn ended, its paths verified) need a fresh render.
+  // links (the turn ended, its paths verified, a pending file written) need
+  // a fresh render.
   const linked =
     components === markdownComponents
       ? ""
-      : (fileReferences ?? []).map((reference) => reference.text).join("\n");
+      : (fileReferences ?? [])
+          .map(
+            (reference) => `${reference.pending ? "?" : ""}${reference.text}`,
+          )
+          .join("\n");
   if (typeof children !== "string") {
     return <>{children}</>;
   }

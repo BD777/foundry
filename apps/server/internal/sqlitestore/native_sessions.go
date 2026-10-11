@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -178,14 +179,10 @@ func (s *Store) resumeNativeSession(ctx context.Context, session *store.AgentSes
 	if found && row.lastInputID != "" && row.lastInputID == previousInputID {
 		return "", nil
 	}
-	events, err := s.sessionTranscriptEvents(ctx, session.ID)
-	if err != nil {
-		return "", err
-	}
 	if !found {
-		return conversationContext(events, "", inputID, true), nil
+		return s.sessionConversation(ctx, session.ID, "", inputID, true)
 	}
-	return conversationContext(events, row.lastInputID, inputID, false), nil
+	return s.sessionConversation(ctx, session.ID, row.lastInputID, inputID, false)
 }
 
 // bindNativeSession gives a new session the native history it starts from:
@@ -212,7 +209,15 @@ func (s *Store) bindNativeSession(ctx context.Context, session *store.AgentSessi
 	}
 	if owner != "" {
 		// Another Foundry session's native session: continuing it is a fork,
-		// so neither writes into the other's transcript.
+		// so neither writes into the other's transcript. Only one of this
+		// workspace: the request was authorized for this workspace alone.
+		source, err := s.GetAgentSessionSummary(ctx, owner)
+		if err != nil {
+			return err
+		}
+		if source.WorkspaceID != session.WorkspaceID {
+			return store.ErrNotFound
+		}
 		return s.forkNativeSession(ctx, session, owner, nativeID)
 	}
 	chat, err := getJSON[store.ChatThread](ctx, s.conn(), `SELECT payload_json FROM chats WHERE provider = ? AND native_session_id = ? AND workspace_id IN (?, '')`, session.Provider, nativeID, session.WorkspaceID)
@@ -248,11 +253,11 @@ func (s *Store) forkNativeSession(ctx context.Context, session *store.AgentSessi
 		session.ForkNativeSessionID = nativeID
 		return s.attachNativeSession(ctx, session, newNativeSessionUUID(), "")
 	}
-	events, err := s.sessionTranscriptEvents(ctx, source.ID)
+	conversation, err := s.sessionConversation(ctx, source.ID, "", "", true)
 	if err != nil {
 		return err
 	}
-	session.Input.ImportedContext = conversationContext(events, "", "", true)
+	session.Input.ImportedContext = conversation
 	return nil
 }
 
@@ -303,11 +308,11 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 	if _, err := s.claimNativeSession(ctx, session.ID, runtime, chat.NativeSessionID, "", true); err != nil {
 		return err
 	}
-	events, err := s.sessionTranscriptEvents(ctx, session.ID)
+	conversation, err := s.sessionConversation(ctx, session.ID, "", session.Input.ID, true)
 	if err != nil {
 		return err
 	}
-	session.Input.ImportedContext = conversationContext(events, "", session.Input.ID, true)
+	session.Input.ImportedContext = conversation
 	return nil
 }
 
@@ -428,17 +433,146 @@ func (s *Store) AgentSessionConversation(ctx context.Context, sessionID string) 
 	if err != nil {
 		return "", err
 	}
-	events, err := s.sessionTranscriptEvents(ctx, session.ID)
-	if err != nil {
-		return "", err
-	}
-	return conversationContext(events, "", session.Input.ID, true), nil
+	return s.sessionConversation(ctx, session.ID, "", session.Input.ID, true)
 }
 
-func (s *Store) sessionTranscriptEvents(ctx context.Context, sessionID string) ([]store.AgentSessionEvent, error) {
-	return listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT payload_json FROM agent_session_events
-		WHERE session_id = ? AND (json_type(payload_json, '$.message') IS NOT NULL OR json_extract(payload_json, '$.label') = 'Response stream')
-		ORDER BY created_at ASC, id ASC`, sessionID)
+// transcriptEventsFilter selects a session's conversation events: messages
+// and response streams.
+const transcriptEventsFilter = `json_type(payload_json, '$.message') IS NOT NULL OR json_extract(payload_json, '$.label') = 'Response stream'`
+
+// sessionConversation is conversationContext over the session's transcript,
+// read newest first and only as far back as the result needs: to the turn
+// after which it starts, or until the answered turns read already fill the
+// imported context, which keeps only the newest text. Each turn is still
+// built by conversationTurns from its own events, so the result is the one
+// conversationContext gives on the whole transcript. Inside a transaction
+// (sending an input, forking a session) this keeps the writer from reading
+// a long session's every event.
+func (s *Store) sessionConversation(ctx context.Context, sessionID, after, before string, withHistory bool) (string, error) {
+	var conversation string
+	err := s.readSnapshot(ctx, func(db dbExecutor) error {
+		// Reading stops early only while no unread turn can change the
+		// result: after's turn exists (so it lies where the reading is still
+		// to go, or it would have ended it), and before's turn, where the
+		// turns end, is read already or not there at all. An input's turn
+		// starts at its input event, the one row stored as evt_<input id>.
+		afterRecorded, err := sessionInputRecorded(ctx, db, sessionID, after)
+		if err != nil {
+			return err
+		}
+		beforeRecorded, err := sessionInputRecorded(ctx, db, sessionID, before)
+		if err != nil {
+			return err
+		}
+		var (
+			newest       []conversationTurn        // the turns in range read so far, newest first
+			newestLength int                       // their answered lines' length, a little over
+			segment      []store.AgentSessionEvent // the events of the turn being read, newest first
+			afterFound   bool
+			beforeSeen   bool
+			historyOnly  bool // after's turn is read; only the history is still wanted
+			filled       bool
+		)
+		err = eventsNewestFirst(ctx, db, sessionID, transcriptEventsFilter, "", func(payload []byte) (bool, error) {
+			var event store.AgentSessionEvent
+			if err := json.Unmarshal(payload, &event); err != nil {
+				return false, err
+			}
+			segment = append(segment, event)
+			if !sessionInputEvent(event) {
+				return true, nil
+			}
+			turn := conversationTurns(oldestFirst(segment))[1]
+			segment = segment[:0]
+			if historyOnly {
+				return true, nil
+			}
+			switch {
+			case after != "" && turn.inputID == after:
+				afterFound = true
+			case before != "" && turn.inputID == before:
+				newest, newestLength, beforeSeen = newest[:0], 0, true
+			default:
+				newest = append(newest, turn)
+				if turn.answered {
+					for _, line := range turn.lines {
+						newestLength += utf8.RuneCountInString(line) + len("\n\n")
+					}
+				}
+			}
+			if newestLength > importedContextLimit && (after == "" || afterRecorded || afterFound) && (!beforeRecorded || beforeSeen) &&
+				utf8.RuneCountInString(joinedLines(nil, newest)) > importedContextLimit {
+				filled = true
+				return false, nil
+			}
+			if afterFound && !withHistory {
+				return false, nil
+			}
+			historyOnly = afterFound
+			return true, nil
+		})
+		if err != nil {
+			return err
+		}
+		if after != "" && !afterFound && !filled {
+			return nil
+		}
+		var history []string
+		if withHistory && !filled && (after == "" || historyOnly) {
+			history = conversationTurns(oldestFirst(segment))[0].lines
+		}
+		// Once filled, the newest turns' text is the end of the whole
+		// conversation's (every line starts with its speaker), and it is
+		// longer than truncateContext keeps.
+		conversation = truncateContext(joinedLines(history, newest))
+		return nil
+	})
+	return conversation, err
+}
+
+// sessionInputRecorded reports whether the session holds input's event.
+func sessionInputRecorded(ctx context.Context, db dbExecutor, sessionID, input string) (bool, error) {
+	if input == "" {
+		return false, nil
+	}
+	var payload []byte
+	err := db.QueryRowContext(ctx, `SELECT payload_json FROM agent_session_events WHERE id = ? AND session_id = ?`, "evt_"+input, sessionID).Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("find session input event: %w", err)
+	}
+	var event store.AgentSessionEvent
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return false, err
+	}
+	return sessionInputEvent(event) && event.Message.ID == input, nil
+}
+
+// sessionInputEvent is the event that starts an input's turn.
+func sessionInputEvent(event store.AgentSessionEvent) bool {
+	return event.Message != nil && event.Message.Kind == "user" && event.Label == store.SessionInputEventLabel
+}
+
+func oldestFirst(events []store.AgentSessionEvent) []store.AgentSessionEvent {
+	ordered := make([]store.AgentSessionEvent, len(events))
+	for index, event := range events {
+		ordered[len(events)-1-index] = event
+	}
+	return ordered
+}
+
+// joinedLines is the conversation text of the history and the answered
+// turns of newest (given newest first), as conversationContext joins it.
+func joinedLines(history []string, newest []conversationTurn) string {
+	lines := append([]string(nil), history...)
+	for index := len(newest) - 1; index >= 0; index-- {
+		if newest[index].answered {
+			lines = append(lines, newest[index].lines...)
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n\n"))
 }
 
 // importedContextLimit matches what the web and the worker hand an agent as
@@ -575,6 +709,10 @@ func sessionActivity(session store.AgentSession, fallback time.Time) string {
 // whatever an older server wrote meanwhile (a native id it switched to,
 // payloads without activity, native chats it synced back) is repaired, and
 // on consistent data it writes nothing.
+//
+// Its chat repairs read only the chats not checked since they were last
+// written (uncheckedChatSQL): a chat payload holds its transcript, and
+// reading them all took seconds on every start.
 func (s *Store) migrateNativeSessions(ctx context.Context) error {
 	return s.withTx(ctx, func(tx *Store) error {
 		for _, statement := range nativeSessionSchema() {
@@ -591,8 +729,33 @@ func (s *Store) migrateNativeSessions(ctx context.Context) error {
 		if _, err := tx.linkNativeTranscripts(ctx); err != nil {
 			return err
 		}
-		return tx.removeNativeChatsWithoutTurns(ctx)
+		if err := tx.removeNativeChatsWithoutTurns(ctx); err != nil {
+			return err
+		}
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE chats INDEXED BY idx_chats_unchecked SET checked_at = updated_at
+			WHERE `+uncheckedChatSQL+` AND updated_at <> ''`); err != nil {
+			return fmt.Errorf("mark checked chats: %w", err)
+		}
+		return nil
 	})
+}
+
+// A chat row is checked when the startup repairs have nothing to do for it:
+// its checked_at is the updated_at of that write. saveComparedChat marks
+// the chats it stores so (it claims them first, and derives the columns
+// from the payload it writes), migrateNativeSessions the ones it repaired.
+// Every server writes a chat with its own updated_at, and one that does not
+// know checked_at leaves it as it was, so a chat any other server wrote is
+// unchecked again until the next start.
+const uncheckedChatSQL = `(checked_at = '' OR checked_at <> updated_at)`
+
+// chatCheckedOnWrite reports whether a chat saveComparedChat stores, having
+// claimed it, needs none of the startup repairs: encoding keeps its column
+// values as they are (valid UTF-8), and it is not a native chat without
+// turns, which a restart removes.
+func chatCheckedOnWrite(chat store.ChatThread) bool {
+	return utf8.ValidString(chat.WorkspaceID) && utf8.ValidString(chat.Provider) && utf8.ValidString(chat.NativeSessionID) &&
+		(chat.NativeSessionID == "" || chatHasTurns(chat))
 }
 
 // nativeChatWithoutTurns is a device's native session file that holds no
@@ -619,8 +782,8 @@ func chatHasTurns(chat store.ChatThread) bool {
 // an empty transcript, so here no recap and no turn is enough.
 func (s *Store) removeNativeChatsWithoutTurns(ctx context.Context) error {
 	var empty []store.ChatThread
-	err := scanRows(ctx, s.conn(), `SELECT payload_json FROM chats WHERE native_session_id <> ''
-		AND COALESCE(json_array_length(payload_json, '$.recentMessages'), 0) = 0`, func(rows *sql.Rows) error {
+	err := scanRows(ctx, s.conn(), `SELECT payload_json FROM chats INDEXED BY idx_chats_unchecked WHERE `+uncheckedChatSQL+`
+		AND native_session_id <> '' AND COALESCE(json_array_length(payload_json, '$.recentMessages'), 0) = 0`, func(rows *sql.Rows) error {
 		var payload string
 		if err := rows.Scan(&payload); err != nil {
 			return err
@@ -655,6 +818,7 @@ func (s *Store) migrateActivityColumns(ctx context.Context) error {
 		{"chats", "native_session_id", `ALTER TABLE chats ADD COLUMN native_session_id TEXT NOT NULL DEFAULT ''`},
 		{"chats", "activity_at", `ALTER TABLE chats ADD COLUMN activity_at TEXT NOT NULL DEFAULT ''`},
 		{"agent_sessions", "activity_at", `ALTER TABLE agent_sessions ADD COLUMN activity_at TEXT NOT NULL DEFAULT ''`},
+		{"chats", "checked_at", `ALTER TABLE chats ADD COLUMN checked_at TEXT NOT NULL DEFAULT ''`},
 	} {
 		if err := s.ensureColumn(ctx, column.table, column.name, column.statement); err != nil {
 			return err
@@ -664,13 +828,14 @@ func (s *Store) migrateActivityColumns(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_chats_workspace_activity ON chats (workspace_id, activity_at DESC, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chats_native ON chats (provider, native_session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_agent_sessions_workspace_activity ON agent_sessions (workspace_id, activity_at DESC)`,
-		`UPDATE chats SET
+		`CREATE INDEX IF NOT EXISTS idx_chats_unchecked ON chats (id) WHERE ` + uncheckedChatSQL,
+		`UPDATE chats INDEXED BY idx_chats_unchecked SET
 			workspace_id = COALESCE(json_extract(payload_json, '$.workspaceId'), ''),
 			provider = COALESCE(json_extract(payload_json, '$.provider'), ''),
 			native_session_id = COALESCE(json_extract(payload_json, '$.nativeSessionId'), '')
-		WHERE workspace_id <> COALESCE(json_extract(payload_json, '$.workspaceId'), '')
+		WHERE ` + uncheckedChatSQL + ` AND (workspace_id <> COALESCE(json_extract(payload_json, '$.workspaceId'), '')
 			OR provider <> COALESCE(json_extract(payload_json, '$.provider'), '')
-			OR native_session_id <> COALESCE(json_extract(payload_json, '$.nativeSessionId'), '')`,
+			OR native_session_id <> COALESCE(json_extract(payload_json, '$.nativeSessionId'), ''))`,
 	} {
 		if _, err := s.conn().ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("migrate activity columns: %w", err)
@@ -678,7 +843,8 @@ func (s *Store) migrateActivityColumns(ctx context.Context) error {
 	}
 	type chatTime struct{ id, updatedAt, activity string }
 	var chats []chatTime
-	if err := scanRows(ctx, s.conn(), `SELECT id, COALESCE(json_extract(payload_json, '$.updatedAt'), ''), activity_at FROM chats`, func(rows *sql.Rows) error {
+	if err := scanRows(ctx, s.conn(), `SELECT id, COALESCE(json_extract(payload_json, '$.updatedAt'), ''), activity_at FROM chats INDEXED BY idx_chats_unchecked
+		WHERE `+uncheckedChatSQL, func(rows *sql.Rows) error {
 		var row chatTime
 		if err := rows.Scan(&row.id, &row.updatedAt, &row.activity); err != nil {
 			return err
@@ -809,8 +975,8 @@ func (s *Store) backfillNativeSessions(ctx context.Context) error {
 // Foundry session and removes every claimed one from the chats. It returns
 // the native sessions it linked by transcript.
 func (s *Store) linkNativeTranscripts(ctx context.Context) ([]store.NativeSessionRef, error) {
-	ids, err := listStrings(ctx, s.conn(), `SELECT id FROM chats WHERE provider = 'claude' AND NOT `+nativeClaimedSQL+`
-		AND json_type(payload_json, '$.transcript') = 'array'`)
+	ids, err := listStrings(ctx, s.conn(), `SELECT id FROM chats INDEXED BY idx_chats_unchecked WHERE `+uncheckedChatSQL+`
+		AND provider = 'claude' AND NOT `+nativeClaimedSQL+` AND json_type(payload_json, '$.transcript') = 'array'`)
 	if err != nil {
 		return nil, err
 	}
@@ -828,7 +994,9 @@ func (s *Store) linkNativeTranscripts(ctx context.Context) ([]store.NativeSessio
 			linked = append(linked, store.NativeSessionRef{Provider: chat.Provider, NativeSessionID: chat.NativeSessionID})
 		}
 	}
-	if _, err := s.conn().ExecContext(ctx, `DELETE FROM chats WHERE `+nativeClaimedSQL); err != nil {
+	// Every claimed chat, found on idx_chats_native alone: no payload is read.
+	if _, err := s.conn().ExecContext(ctx, `DELETE FROM chats WHERE rowid IN (
+		SELECT rowid FROM chats INDEXED BY idx_chats_native WHERE `+nativeClaimedSQL+`)`); err != nil {
 		return nil, fmt.Errorf("remove claimed native chats: %w", err)
 	}
 	return linked, nil

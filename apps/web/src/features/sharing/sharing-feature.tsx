@@ -9,9 +9,9 @@ import {
   createInvite,
   listWorkspaceMembers,
   removeWorkspaceMember,
-  subscribeFoundryEvents,
   updateWorkspaceMember,
 } from "../../api";
+import { onStreamEvent } from "../../stream";
 import type { WorkspaceMember } from "../../api-types";
 import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
@@ -20,6 +20,7 @@ import { TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { inviteLink } from "../../lib/invite-link";
+import { useReadOrder } from "../../lib/read-order";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { SharingMemberRow } from "./sharing-member-row";
 import { roleOptions, runsCode } from "./sharing-roles";
@@ -53,8 +54,13 @@ export function SharingFeature({
   const device = deviceLabel ?? t("thisDevice");
   const owner = members.find((member) => member.deviceOwner);
 
+  // Reads overlap (an event, an action, a workspace switch): the members
+  // shown are those of the latest read.
+  const order = useReadOrder();
   const reload = useCallback(async () => {
-    setMembers(await listWorkspaceMembers(workspace.id));
+    const current = order.started();
+    const read = await listWorkspaceMembers(workspace.id);
+    if (current()) setMembers(read);
   }, [workspace.id]);
 
   useEffect(() => {
@@ -64,16 +70,18 @@ export function SharingFeature({
         if (!cancelled) setError(messageOf(reason));
       });
     void refresh();
-    const unsubscribe = subscribeFoundryEvents((event) => {
-      if (
-        event.type === "workspace_members_updated" &&
-        event.payload.workspaceId === workspace.id
-      )
-        void refresh();
-    });
+    // Without a workspace (yet) there is nothing to follow.
+    const unsubscribe = workspace.id
+      ? onStreamEvent(
+          "workspace_members_updated",
+          () => void refresh(),
+          // Changes may have been missed: the members shown are read again.
+          { workspaceId: workspace.id, onResync: () => void refresh() },
+        )
+      : undefined;
     return () => {
       cancelled = true;
-      unsubscribe();
+      unsubscribe?.();
     };
   }, [reload, workspace.id]);
 

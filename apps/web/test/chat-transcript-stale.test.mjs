@@ -185,7 +185,7 @@ test("transcript: a load made before a late stream opened is made again once it 
     });
   }
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000_000 });
-  const { foundryStreamOpenWaitMs } = await import("../src/api.ts");
+  const { foundryStreamOpenWaitMs } = await import("../src/stream/index.ts");
   const loads = [];
   const transport = {
     loadRecent: async (threadId) => {

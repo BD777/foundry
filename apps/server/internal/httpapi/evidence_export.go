@@ -72,7 +72,7 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		err = st.RegisterExportEvidence(r.Context(), issue.ID, result.Evidence[0])
 	}
 	if err == nil {
-		s.publishEvidenceUpdate(issue, result.Evidence[0].ID, input.ExpectedContractRevision, "registered")
+		s.issues.evidenceChanged(issue, result.Evidence[0].ID, input.ExpectedContractRevision, "registered")
 	}
 	writeEvidenceMutation(w, result, err)
 }

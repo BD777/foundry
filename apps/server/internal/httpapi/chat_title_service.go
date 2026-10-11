@@ -15,19 +15,23 @@ import (
 // Both explicit recap and first-answer naming enter this service. Jobs are
 // durable, independent provider sessions; no original thread/native ID resumes.
 type chatTitleService struct {
-	store     store.Store
-	dispatch  func(store.AgentSession) error
+	store store.Store
+	// dispatch hands a job its viewers know of to its device; one the
+	// device does not take comes back failed, its end told like any other.
+	dispatch  func(context.Context, store.AgentSession) (store.AgentSession, error)
 	connected func(string) bool
-	publish   func(string, any)
-	// dataChanged announces a change to a workspace's data no other event
-	// carries.
-	dataChanged func(workspaceID string, resources ...string)
-	// announcing orders chat_titles_changed: each reads the titles it
-	// carries and publishes them under it (see publishTitles).
-	announcing sync.Mutex
-	// jobChats is the chat each naming job seen running names: its title
-	// stops naming the job once the job completes.
-	jobChats map[string]string
+	// sessions tells the jobs it creates; chats announces the titles and
+	// the layout groups naming changes.
+	sessions sessionChangeNotifier
+	chats    chatTitleAnnouncer
+	// jobChats follows the chat each naming job names (jobTitleChanged).
+	jobChats namingJobChats
+}
+
+// chatTitleAnnouncer is the part of the chat list's notifier naming uses.
+type chatTitleAnnouncer interface {
+	announcePickedTitles(workspaceID string, pick func(titles []store.ChatTitle) []string)
+	layoutChanged(workspaceID string, layout store.ChatLayout)
 }
 
 func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string, automatic bool) (store.AgentSession, error) {
@@ -140,13 +144,8 @@ func (s *chatTitleService) createTitleJob(ctx context.Context, chatID string, in
 	if job.Status != "queued" {
 		return job, nil
 	}
-	s.publish("agent_session_created", job)
-	if err := s.dispatch(job); err != nil {
-		failed, _ := s.store.FailAgentSession(ctx, job.ID, err.Error())
-		s.publish("agent_session_completed", failed)
-		return failed, err
-	}
-	return job, nil
+	s.sessions.changed(ctx, sessionCreated, job)
+	return s.dispatch(ctx, job)
 }
 
 func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.AgentSession) {
@@ -164,7 +163,7 @@ func (s *chatTitleService) SessionCompleted(ctx context.Context, session store.A
 			log.Printf("automatic group naming: %v", err)
 			return
 		}
-		s.publish(chatLayoutChangedEvent, chatLayoutChange{WorkspaceID: session.WorkspaceID, Layout: &layout})
+		s.chats.layoutChanged(session.WorkspaceID, layout)
 		return
 	}
 	// Automatic naming happens once per chat; the title record guards reruns.
@@ -235,11 +234,8 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 	if err != nil || job.ID == "" {
 		return
 	}
-	s.publish("agent_session_created", job)
-	if err := s.dispatch(job); err != nil {
-		_, _ = s.store.FailAgentSession(ctx, job.ID, err.Error())
-		s.dataChanged(workspaceID, fieldAgentSessions)
-	}
+	s.sessions.changed(ctx, sessionCreated, job)
+	_, _ = s.dispatch(ctx, job)
 }
 
 // groupNameFromResponse reads a group-naming answer. The job uses the chat
@@ -266,4 +262,71 @@ func sessionRecordsInputs(session store.AgentSession) bool {
 		}
 	}
 	return false
+}
+
+// sessionChanged follows a chat-naming job's changes: the title list shows
+// the job's state (queued, running, failed) and, once it completes, the
+// title it wrote.
+func (s *chatTitleService) sessionChanged(_ context.Context, _ sessionChange, session store.AgentSession) {
+	if session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) == "" && strings.TrimSpace(session.WorkspaceID) != "" {
+		s.jobTitleChanged(session)
+	}
+}
+
+// sessionEndReported names what a session its device reported completed
+// answered: a chat's first answer names the chat, a group-naming job's
+// answer its group (SessionCompleted). It reads the chat's whole thread and
+// starts a job on a device, so it runs on its own, after the device that
+// reported the end was answered and without holding its next message up.
+func (s *chatTitleService) sessionEndReported(ctx context.Context, session store.AgentSession) {
+	namesGroup := session.Source == "naming" && strings.TrimSpace(session.GroupNameTarget) != ""
+	if session.Status != "completed" || strings.TrimSpace(session.Response) == "" || (session.Source != "chat" && !namesGroup) {
+		return
+	}
+	go s.SessionCompleted(context.WithoutCancel(ctx), session)
+}
+
+// jobTitleChanged announces the title of the chat a naming job names. A
+// job's events do not name its chat: while it runs, the chat's title names
+// the job; once it completed, jobChats remembers the chat.
+func (s *chatTitleService) jobTitleChanged(job store.AgentSession) {
+	s.chats.announcePickedTitles(job.WorkspaceID, func(titles []store.ChatTitle) []string {
+		if chatID := s.jobChats.follow(job, titles); chatID != "" {
+			return []string{chatID}
+		}
+		return nil
+	})
+}
+
+// namingJobChats remembers the chat each naming job seen running names:
+// its title stops naming the job once the job completes.
+type namingJobChats struct {
+	mu    sync.Mutex
+	chats map[string]string
+}
+
+// follow is the chat job names, as titles list it or as remembered; it is
+// remembered while the job runs and forgotten once the job ended.
+func (j *namingJobChats) follow(job store.AgentSession, titles []store.ChatTitle) string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	chatID := j.chats[job.ID]
+	for _, title := range titles {
+		if title.GenerationSessionID == job.ID {
+			chatID = title.ChatID
+			break
+		}
+	}
+	switch job.Status {
+	case "completed", "failed", "canceled":
+		delete(j.chats, job.ID)
+	default:
+		if chatID != "" {
+			if j.chats == nil {
+				j.chats = map[string]string{}
+			}
+			j.chats[job.ID] = chatID
+		}
+	}
+	return chatID
 }

@@ -22,14 +22,12 @@ const { createStreamTouchLedger } =
   await import("../src/app/stream-touches.ts");
 const { applyFoundryStreamEvents, mergeLoadedFoundryData, streamedDevice } =
   await import("../src/app/foundry-data-projection.ts");
-const {
-  dataChangeRefreshDelayMs,
-  deviceEventNeedsRefresh,
-  deviceRefreshDelayMs,
-  hiddenFlushMs,
-  streamSilenceMs,
-  useFoundryLiveData,
-} = await import("../src/app/use-foundry-live-data.ts");
+const { hiddenFlushMs, streamSilenceMs, useFoundryLiveData } =
+  await import("../src/app/use-foundry-live-data.ts");
+const { deviceEventNeedsRefresh, deviceRefreshDelayMs } =
+  await import("../src/app/projections/devices.ts");
+const { dataChangeRefreshDelayMs } =
+  await import("../src/app/projections/data-changes.ts");
 
 function deferred() {
   let resolve;
@@ -316,8 +314,16 @@ test("device events read workspace data only for what they leave out", () => {
   );
   assert.equal(
     deviceEventNeedsRefresh(shown, event(whole("connected"))),
+    false,
+    "a device that changed otherwise (its worker update moved on): all in the event",
+  );
+  assert.equal(
+    deviceEventNeedsRefresh(
+      { devices: [{ id: "dev", label: "Mac", status: "disconnected" }] },
+      event(whole("connected")),
+    ),
     true,
-    "a device online again may serve other workspaces",
+    "a device online again: its agents and profiles are usable again",
   );
   assert.equal(
     deviceEventNeedsRefresh(
@@ -426,6 +432,21 @@ test("live data: reads once for device changes that need it, never per reconnect
     });
     await act(() => t.mock.timers.tick(deviceRefreshDelayMs + 10));
     assert.equal(refreshes, 3, "status-only bursts read once, after a pause");
+    await send("e-4", "device_status_changed", {
+      workspaceId: "ws",
+      deviceId: "dev",
+      status: "connected",
+      device: {
+        ...device,
+        workerUpdate: { startedAt: "2026-10-11T02:06:38Z", step: "installing" },
+      },
+    });
+    await act(() => t.mock.timers.tick(deviceRefreshDelayMs + 10));
+    assert.equal(
+      refreshes,
+      3,
+      "a device whose worker update moved on is all in its event",
+    );
   } finally {
     await act(() => root.unmount());
     t.mock.timers.tick(1100);

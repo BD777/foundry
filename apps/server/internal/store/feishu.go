@@ -36,6 +36,14 @@ type SaveWorkspaceFeishuBotInput struct {
 	AppSecret   string `json:"appSecret,omitempty"`
 }
 
+// FeishuPairingCodeResult is a newly generated group pairing code: the only
+// answer that carries its plaintext.
+type FeishuPairingCodeResult struct {
+	WorkspaceID          string `json:"workspaceId"`
+	PairingCode          string `json:"pairingCode"`
+	PairingCodeExpiresAt string `json:"pairingCodeExpiresAt"`
+}
+
 type FeishuChatThread struct {
 	RootMessageID   string `json:"rootMessageId"`
 	WorkspaceID     string `json:"workspaceId"`

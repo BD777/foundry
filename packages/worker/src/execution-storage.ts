@@ -12,6 +12,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { canonical, within } from "./paths.js";
 import { writeJSON } from "./storage.js";
 import { foundryStateRoot } from "./state-root.js";
+import { issueEnvironmentChanged } from "./issue-environment-changes.js";
 import type {
   IssueEnvironment,
   WorkspaceRegistration,
@@ -116,6 +117,7 @@ export class ExecutionStore {
       ),
       registration,
     );
+    issueEnvironmentChanged({ workspaceId: registration.workspaceId });
   }
   environmentPath(workspaceId: string, issueId: string): string {
     const pointer = resolve(
@@ -154,6 +156,10 @@ export class ExecutionStore {
       ),
       { path },
     );
+    issueEnvironmentChanged({
+      workspaceId: environment.workspaceId,
+      issueId: environment.issueId,
+    });
   }
   runDirectory(environment: IssueEnvironment, runId: string): string {
     return resolve(

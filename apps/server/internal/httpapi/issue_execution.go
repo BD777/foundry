@@ -31,7 +31,7 @@ func (h *DaemonHub) startIssueExecution(ctx context.Context, session store.Agent
 		log.Printf("start issue %s run for session %s: %v", session.IssueID, session.ID, err)
 		return
 	}
-	h.events.Publish("issue_updated", issue)
+	h.issues.updated(issue)
 }
 
 // appendIssueExecutionEvent mirrors an execution session's event onto its
@@ -49,7 +49,7 @@ func (h *DaemonHub) appendIssueExecutionEvent(ctx context.Context, workspaceID s
 		return err
 	}
 	if publish {
-		h.events.PublishIn(workspaceID, "issue_run_event", runEvent)
+		h.issues.runEventRecorded(workspaceID, runEvent)
 	}
 	return nil
 }
@@ -86,6 +86,6 @@ func (h *DaemonHub) settleIssueExecution(ctx context.Context, session store.Agen
 		log.Printf("complete issue %s from session %s: %v", session.IssueID, session.ID, err)
 		return
 	}
-	h.events.Publish("issue_updated", issue)
+	h.issues.updated(issue)
 	h.DispatchReady()
 }

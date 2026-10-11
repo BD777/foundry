@@ -193,7 +193,8 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   `list_profiles` 的 runtime 过滤；模型目录查询抽成 HTTP 与 MCP 共用的一个方法。stdio
   `foundry mcp` 改为纯转发桥，删掉 TypeScript 里重复的工具定义与处理（约 300 行），
   工具只剩 Server 一处实现。`foundry session` 命令保持 REST（它是人和脚本的界面，
-  不是 MCP）。REST 与 MCP 创建会话时"选哪个 Agent、在哪台设备"的判断也合并为一个方法，
+  不是 MCP）；2026-10-11 起 CLI 也改为只调用这些工具，REST 实现删除
+  （[会话编排 §6](session-orchestration-design.md)）。REST 与 MCP 创建会话时"选哪个 Agent、在哪台设备"的判断也合并为一个方法，
   只给 profile 时由它确定运行时；`handoff_session` 未指定 profile 时沿用被接替会话的。
   实测中顺带修复：自定义命令不读 stdin 就退出时，Worker 写 prompt 触发的 `EPIPE`
   未被处理，会让执行进程崩溃。
@@ -247,6 +248,12 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   Agent 绕过启动器直接启动浏览器时，按会话环境变量或会话临时目录识别，并上溯到同一浏览器
   的顶层进程关闭。之所以需要租约：Chrome 在 Linux 上会改写自己的环境，macOS 上读不到
   签名应用的环境，headless Chrome 也不一定写 `TMPDIR`，只凭进程上的痕迹靠不住。
+- **临时目录的生命周期**跟随会话而非 Worker 进程：会话对应的目录记在 Worker 状态根的
+  `session-scratch/<sessionId>.json`，重启或更新后同一会话继续用原目录；目录被外部删掉
+  （tmpfiles、macOS 清理 `$TMPDIR`）时在原路径重建。闲置超过
+  `FOUNDRY_SESSION_SCRATCH_IDLE_MS`（默认 3 天）的会话，在 Worker 启动时和此后定期清理：
+  先关闭它的浏览器，再删目录与记录；有运行中的输入、后台任务或会话的其他进程时保留。只删
+  本状态根记录过的目录，同一台机器上其他 Worker 的同前缀目录不受影响。
 - **独占与排队**：第一版没有独占资源。带登录态的浏览器资料、模拟器、预览端口等独占资源，
   在第一个实际场景（M4 验收取证：预览服务 + 浏览器截图）中加入显式的申请 / 释放与排队。
 
@@ -397,21 +404,22 @@ function startSession(spec: SessionSpec): SessionHandle;
 
 role 到 policy 的映射集中在一处（草案，实施时以现有行为为准逐项核对）：
 
-| role            | 沙箱                                                                      | 工具                           | foundry MCP    | 项目指令 / Skills         |
-| --------------- | ------------------------------------------------------------------------- | ------------------------------ | -------------- | ------------------------- |
-| chat            | host                                                                      | profile 默认                   | 是             | 是                        |
-| orchestrated    | Workspace 根目录为 host；带 `issueId` 为候选写（**现状未隔离，M1 补上**） | profile 默认                   | 是             | 是                        |
-| issue_execution | 候选写                                                                    | profile 默认                   | **是（新增）** | 是                        |
-| clarification   | 阶段只读                                                                  | Read / Grep / Glob             | 否             | 读项目指令，不加载 Skills |
-| verification    | 阶段只读                                                                  | Read / Grep / Glob + 只读 Bash | 否             | 否                        |
-| utility         | host（无工具，不需要沙箱）                                                | 无                             | 否             | 否                        |
+| role            | 沙箱                                                                      | 工具                              | foundry MCP    | 项目指令 / Skills         |
+| --------------- | ------------------------------------------------------------------------- | --------------------------------- | -------------- | ------------------------- |
+| chat            | host                                                                      | profile 默认                      | 是             | 是                        |
+| orchestrated    | Workspace 根目录为 host；带 `issueId` 为候选写（**现状未隔离，M1 补上**） | profile 默认                      | 是             | 是                        |
+| issue_execution | 候选写                                                                    | profile 默认                      | **是（新增）** | 是                        |
+| clarification   | 阶段只读                                                                  | Read / Grep / Glob                | 否             | 读项目指令，不加载 Skills |
+| verification    | 阶段只读                                                                  | Read / Grep / Glob + 只读 Bash    | 否             | 否                        |
+| 编排 verifier   | Workspace 只读、私有 scratch 可写（`verification-session.ts`，已实现）    | Read / Grep / Glob / Bash / Skill | 只读工具       | 读项目指令与 Skills       |
+| utility         | host（无工具，不需要沙箱）                                                | 无                                | 否             | 否                        |
 
 进程模型按沙箱推导，不作为独立选项：
 
 - **host 会话**（chat、不带 `issueId` 的 orchestrated、utility）：和现在一样在 Worker
   进程内运行，没有额外进程。
 - **沙箱会话**（issue_execution、带 `issueId` 的 orchestrated、clarification、
-  verification）：Worker 另起一个 Node 子进程运行 SDK，整个子进程在
+  verification、编排 verifier）：Worker 另起一个 Node 子进程运行 SDK，整个子进程在
   `sandbox-exec` / `bwrap` 内启动。这是 Issue 执行现在的做法。判定阶段现在的做法是只把
   `claude` / `codex` 可执行文件包进沙箱，SDK 本身留在沙箱外，M1 统一改为前者：一种机制
   同时约束 SDK 和它拉起的工具进程，stdio 上的 steer 协议和进程组回收都已有实现。
@@ -544,7 +552,7 @@ Issue 的全部会话（执行、澄清、协作会话及其派出者），点�
   共用的只有这一层；中断恢复另有一套（`issue-recovery.ts`、`completion.json` 回放）。
 - 已有的连接点：`AgentSession.IssueID`、带 `issueId` 的编排子会话已在候选与 Issue 沙箱内
   运行（`issue-sessions.ts`）；`AgentSession` 还没有 `role` 字段。
-- 读 `Run` 的地方：Issue 投影与详情页（`issue-data-projection.ts`、`issue-detail/*`）、
+- 读 `Run` 的地方：Issue 投影与详情页（`app/projections/issues.ts`、`issue-detail/*`）、
   steer 的 `expectedRunId`、删除 Workspace / 移除设备的在跑检查、若干证据对齐逻辑；
   `/api/runs`、`/api/run-events` 与 `features/runs` 已无调用方。
 - 因此第 1 步按"执行会话 = AgentSession(role, issueId)，`Run` 由它投影"落地，

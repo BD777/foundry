@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import {
   ClaudeTimerTracker,
@@ -9,7 +6,7 @@ import {
   nextCronFire,
 } from "../dist/agent-timers.js";
 
-function makeTracker(sinkProps = {}) {
+function makeTracker(sinkProps = {}, known = []) {
   const events = [];
   const sink = {
     emit: (event) => events.push(event),
@@ -17,7 +14,7 @@ function makeTracker(sinkProps = {}) {
     sessionId: () => "sess_test",
     ...sinkProps,
   };
-  const tracker = new ClaudeTimerTracker(sink);
+  const tracker = new ClaudeTimerTracker(sink, known);
   return { events, sink, tracker };
 }
 
@@ -125,86 +122,130 @@ test("subagent timer tool calls are ignored", async () => {
   assert.equal(events.length, 0);
 });
 
-test("Stop outside an active turn reports a scheduled firing from the transcript", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "foundry-timers-"));
-  const transcriptPath = join(directory, "native.jsonl");
-  const promptText = "跟进飞书群新消息";
-  const answerText = "群里暂无新消息";
-  writeFileSync(
-    transcriptPath,
-    [
-      JSON.stringify({
-        type: "user",
-        turnOrigin: "scheduled",
-        timestamp: "2026-09-20T03:59:37.981Z",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: promptText }],
-        },
-      }),
-      JSON.stringify({
-        type: "assistant",
-        timestamp: "2026-09-20T04:00:34.000Z",
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: answerText }],
-        },
-      }),
-    ].join("\n") + "\n",
-  );
-
-  const answered = [];
-  const reference = {
-    text: "notes.txt",
-    path: "/work/notes.txt",
-    kind: "file",
-  };
-  const { events, tracker: timerTracker } = makeTracker({
-    isActiveTurn: () => false,
-    answerFiles: async (response) => {
-      answered.push(response);
-      return [reference];
+test("a prompt Claude submits for a timer starts that timer's turn", async () => {
+  const { events, tracker: timerTracker } = makeTracker();
+  const hooks = timerTracker.hooks();
+  await hooks.PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: {
+      cron: "28,58 * * * *",
+      prompt: "巡检 20 台容器",
+      recurring: true,
     },
+    tool_response: { id: "9b17c9d2", recurring: true, durable: false },
   });
-  await timerTracker.hooks().Stop[0].hooks[0]({
+  // Claude Code submits it as a meta prompt of origin "scheduled"; the
+  // transcript row is isMeta, the hook still sees it.
+  await hooks.UserPromptSubmit[0].hooks[0]({ prompt: "巡检 20 台容器" });
+  const fire = timerTracker.takeFire();
+  assert.equal(fire.id, "9b17c9d2");
+  assert.equal(fire.prompt, "巡检 20 台容器");
+  assert.ok(Date.parse(fire.startedAt) > 0);
+  assert.equal(timerTracker.takeFire(), undefined, "a fire is taken once");
+  assert.equal(
+    events.filter((event) => event.metadata.timerFire).length,
+    0,
+    "the runner publishes the fire with its answer",
+  );
+});
+
+test("a Foundry turn's prompt or a task notification starts no timer turn", async () => {
+  let active = true;
+  const { tracker: timerTracker } = makeTracker({ isActiveTurn: () => active });
+  const submit = timerTracker.hooks().UserPromptSubmit[0].hooks[0];
+  await submit({ prompt: "what changed?" });
+  assert.equal(timerTracker.takeFire(), undefined);
+  active = false;
+  await submit({
+    prompt: "<task-notification>\n<task-id>b1</task-id>\n</task-notification>",
+  });
+  assert.equal(timerTracker.takeFire(), undefined);
+  await submit({ agent_id: "sub_1", prompt: "a subagent's prompt" });
+  assert.equal(timerTracker.takeFire(), undefined);
+  // A prompt Claude submits on its own while no turn runs: a timer's, even
+  // one it has not listed yet (a durable task).
+  await submit({ prompt: "check the deploy" });
+  assert.deepEqual(
+    { ...timerTracker.takeFire(), startedAt: undefined },
+    { id: undefined, prompt: "check the deploy", startedAt: undefined },
+  );
+});
+
+test("a timer whose prompt Claude lists clipped keeps its whole prompt and is recognized", async () => {
+  const { events, tracker: timerTracker } = makeTracker();
+  const hooks = timerTracker.hooks();
+  const prompt = `inspect ${"x".repeat(1200)}`;
+  await hooks.PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: { cron: "*/30 * * * *", prompt, recurring: true },
+    tool_response: { id: "c1", recurring: true },
+  });
+  await hooks.Stop[0].hooks[0]({
     session_crons: [
       {
-        id: "job_9",
-        prompt: promptText,
+        id: "c1",
+        schedule: "*/30 * * * *",
         recurring: true,
-        schedule: "*/10 * * * *",
+        prompt: `${prompt.slice(0, 1000)}… [+${prompt.length - 1000} chars]`,
       },
     ],
-    transcript_path: transcriptPath,
-    last_assistant_message: answerText,
   });
+  assert.equal(timerTracker.snapshot()[0].prompt, prompt);
+  assert.equal(events.length, 1, "the listed timer is the one already shown");
+  await hooks.UserPromptSubmit[0].hooks[0]({ prompt });
+  assert.equal(timerTracker.takeFire().id, "c1");
+});
 
-  const snapshotEvent = events.find((event) => event.metadata.timerSnapshot);
-  assert.ok(snapshotEvent);
-  assert.equal(snapshotEvent.metadata.timerSnapshot[0].id, "job_9");
+test("an ended process's timers are returned, not cleared; a resumed one starts with them", async () => {
+  const task = {
+    id: "9b17c9d2",
+    kind: "cron",
+    schedule: "28,58 * * * *",
+    humanSchedule: "每 30 分钟",
+    recurring: true,
+    prompt: "巡检",
+  };
+  const { events, tracker: timerTracker } = makeTracker();
+  await timerTracker.hooks().Stop[0].hooks[0]({
+    session_crons: [{ ...task, schedule: task.schedule }],
+  });
+  assert.equal(events.length, 1);
+  assert.deepEqual(
+    timerTracker.close().map((entry) => entry.id),
+    ["9b17c9d2"],
+  );
+  assert.equal(events.length, 1, "closing publishes no empty list");
 
-  const fireEvent = events.find((event) => event.metadata.timerFire);
-  assert.ok(fireEvent, "a timer fire event should be emitted out of band");
-  assert.equal(fireEvent.metadata.timerFire.origin, "scheduled");
-  assert.equal(fireEvent.metadata.timerFire.prompt, promptText);
-  assert.equal(fireEvent.metadata.timerFire.response, answerText);
-  assert.equal(fireEvent.metadata.timerFire.id, "job_9");
-  // The timer's turn records its files; its answer links the ones it names.
-  assert.deepEqual(answered, [answerText]);
-  assert.deepEqual(fireEvent.metadata.fileReferences, [reference]);
-  rmSync(directory, { recursive: true, force: true });
+  const resumed = makeTracker({}, [task]);
+  assert.deepEqual(resumed.tracker.snapshot(), [task]);
+  await resumed.tracker.hooks().Stop[0].hooks[0]({ session_crons: [task] });
+  assert.equal(resumed.events.length, 0, "the same timers say nothing new");
+  await resumed.tracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
+  assert.deepEqual(resumed.events.at(-1).metadata.timerSnapshot, []);
+});
+
+test("a snapshot names when Claude Code fires each timer, its offset included", async () => {
+  const { events, tracker: timerTracker } = makeTracker();
+  await timerTracker.hooks().PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: { cron: "28,58 * * * *", prompt: "p", recurring: true },
+    tool_response: { id: "9b17c9d2", recurring: true },
+  });
+  const [task] = events[0].metadata.timerSnapshot;
+  const next = new Date(task.nextFireAt);
+  // 0x9b17c9d2 / 2^32 of half the 30-minute period: 9 min 5 s late.
+  assert.equal(next.getSeconds(), 5);
+  assert.ok([7, 37].includes(next.getMinutes()), task.nextFireAt);
 });
 
 test("Stop during an active turn only syncs the snapshot, no fire", async () => {
   const { events, tracker: timerTracker } = makeTracker({
     isActiveTurn: () => true,
   });
-  await timerTracker.hooks().Stop[0].hooks[0]({
-    session_crons: [],
-    transcript_path: "/nonexistent/native.jsonl",
-  });
+  await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
   const fires = events.filter((event) => event.metadata.timerFire);
   assert.equal(fires.length, 0);
+  assert.equal(timerTracker.takeFire(), undefined);
 });
 
 test("a wake-up shows as soon as Claude schedules it, then takes its real id", async () => {
@@ -256,43 +297,4 @@ test("no timer list is published before any timer exists", async () => {
   });
   await timerTracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
   assert.equal(events.length, 0);
-});
-
-test("Claude's follow-up to a background task is not mistaken for an older timer firing", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "foundry-timers-"));
-  const transcriptPath = join(directory, "native.jsonl");
-  const row = (value) => JSON.stringify(value);
-  writeFileSync(
-    transcriptPath,
-    [
-      row({
-        type: "user",
-        turnOrigin: "scheduled",
-        message: { content: [{ type: "text", text: "old timer prompt" }] },
-      }),
-      row({
-        type: "assistant",
-        message: { content: [{ type: "text", text: "old answer" }] },
-      }),
-      row({
-        type: "user",
-        message: {
-          content:
-            "<task-notification>\n<status>completed</status>\n</task-notification>",
-        },
-      }),
-      row({
-        type: "assistant",
-        message: { content: [{ type: "text", text: "the build passed" }] },
-      }),
-    ].join("\n") + "\n",
-  );
-  const { events, tracker: timerTracker } = makeTracker({
-    isActiveTurn: () => false,
-  });
-  await timerTracker
-    .hooks()
-    .Stop[0].hooks[0]({ session_crons: [], transcript_path: transcriptPath });
-  assert.equal(events.filter((event) => event.metadata.timerFire).length, 0);
-  rmSync(directory, { recursive: true, force: true });
 });

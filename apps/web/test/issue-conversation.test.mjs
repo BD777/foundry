@@ -44,7 +44,6 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
   const originalFetch = globalThis.fetch;
   const requests = [];
   let fail = false;
-  let refreshed = "";
   globalThis.fetch = async (url, options) => {
     requests.push(JSON.parse(options.body));
     return fail
@@ -73,9 +72,6 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
           createElement(IssueConversation, {
             issue,
             inputRef: null,
-            onRefresh: (id) => {
-              refreshed = id;
-            },
           }),
         ),
       ),
@@ -96,7 +92,11 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
     );
     assert.equal(requests[0].expectedRunId, "run_latest");
     assert.equal(requests[0].message, "Fix the knowledge document");
-    assert.equal(refreshed, "iss_feedback");
+    assert.equal(
+      requests.length,
+      1,
+      "no read follows: the server announces the changed Issue",
+    );
     // Project the newly completed execution before submitting another message.
     await act(() =>
       root.render(
@@ -106,7 +106,6 @@ test("Issue follow-up preserves history, submits feedback with current Run and d
           createElement(IssueConversation, {
             issue: { ...issue, run: { id: "run_next", status: "completed" } },
             inputRef: null,
-            onRefresh() {},
           }),
         ),
       ),

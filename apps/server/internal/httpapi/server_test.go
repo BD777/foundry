@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	storepkg "github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
@@ -288,9 +289,9 @@ func TestAttachmentsGoThroughTheWorkspaceDevice(t *testing.T) {
 }
 
 func TestBrowserEventHubStreamsEvents(t *testing.T) {
-	hub := newBrowserEventHub()
+	server := NewServer(newTestStore(t))
 	streamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hub.ServeHTTP(w, r.WithContext(contextWithScope(r.Context(), accessScope{all: true})))
+		server.handleEvents(w, r.WithContext(contextWithScope(r.Context(), accessScope{all: true})))
 	}))
 	defer streamServer.Close()
 
@@ -315,14 +316,14 @@ func TestBrowserEventHubStreamsEvents(t *testing.T) {
 		for scanner.Scan() {
 			line := scanner.Text()
 			// A fresh stream starts with its place to resume from.
-			if strings.HasPrefix(line, "data: ") && !strings.Contains(line, streamReadyEventType) {
+			if strings.HasPrefix(line, "data: ") && !strings.Contains(line, string(browserevent.StreamReady)) {
 				lines <- strings.TrimPrefix(line, "data: ")
 				return
 			}
 		}
 	}()
 
-	hub.Publish("agent_session_event", map[string]string{"id": "evt_1"})
+	server.sessions.recorded(context.Background(), "ws_1", storepkg.AgentSessionEvent{ID: "evt_1"})
 	select {
 	case line := <-lines:
 		var event browserEventEnvelope
@@ -856,7 +857,7 @@ func TestDaemonWebSocketRoundTrip(t *testing.T) {
 				continue
 			}
 			var event browserEventEnvelope
-			if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) == nil && event.Type != streamReadyEventType {
+			if json.Unmarshal([]byte(strings.TrimPrefix(scanner.Text(), "data: ")), &event) == nil && event.Type != browserevent.StreamReady {
 				select {
 				case streamedEvents <- event:
 				case <-streamContext.Done():
@@ -1223,7 +1224,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 				continue
 			}
 			var event browserEventEnvelope
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Type != streamReadyEventType {
+			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Type != browserevent.StreamReady {
 				streamedEvents <- event
 			}
 		}
@@ -1281,7 +1282,7 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		t.Fatalf("automatic title not saved: %+v", titles)
 	}
 
-	expectedStreamEvents := []string{
+	expectedStreamEvents := []browserevent.Type{
 		"agent_session_created",
 		"agent_session_started",
 		"agent_session_native_session_id",

@@ -1,4 +1,8 @@
-import type { TranscriptLoadProgress, WindowedAgentSession } from "../../api";
+import type {
+  CaughtUpAgentSession,
+  TranscriptLoadProgress,
+  WindowedAgentSession,
+} from "../../api";
 
 /** How many recent events of each session the first load asks for. */
 export const transcriptWindowEvents = 200;
@@ -36,6 +40,16 @@ export interface TranscriptLoaderTransport {
     before: string,
     signal: AbortSignal,
   ) => Promise<WindowedAgentSession>;
+  /**
+   * The session's events after `after` (a cursor a load returned), at most
+   * a window's worth (`eventsMore` beyond). Without it, a repair reloads the
+   * recent window.
+   */
+  loadAfter?: (
+    sessionId: string,
+    after: string,
+    signal: AbortSignal,
+  ) => Promise<CaughtUpAgentSession>;
 }
 
 export interface TranscriptLoaderOptions {
@@ -75,6 +89,9 @@ const idle = (threadId?: string): TranscriptLoadState => ({
  * request. Live events never abort a load (they are merged in by the
  * caller); only leaving the chat or an explicit retry does. A reason to load
  * again while a load runs (a resync, a detected gap) runs once after it.
+ * Such a repair reads only the events after the newest each session holds
+ * (loadAfter), and reloads the window when one cannot catch up (no cursor,
+ * one the server no longer knows, or more than a window behind).
  */
 export function createTranscriptLoader(options: TranscriptLoaderOptions) {
   const now = options.now ?? (() => Date.now());
@@ -96,6 +113,12 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
   let begun = false;
   /** The epoch the latest load started at; +∞ while one waits to start. */
   let loadEpoch = Number.NEGATIVE_INFINITY;
+  /**
+   * Where each session of the chat catches up from: the newest event a
+   * window or a catch-up returned; undefined for one a window returned
+   * empty. Empty until the first load.
+   */
+  let cursors = new Map<string, string | undefined>();
 
   function publish(next: Partial<TranscriptLoadState>) {
     state = { ...state, ...next };
@@ -107,7 +130,29 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
     slowTimer = retryTimer = undefined;
   }
 
-  function start(threadId: string) {
+  /** The events after each session's cursor; undefined: reload instead. */
+  async function catchUp(
+    signal: AbortSignal,
+  ): Promise<WindowedAgentSession[] | undefined> {
+    const loadAfter = options.transport.loadAfter;
+    const from = [...cursors];
+    if (!loadAfter || from.length === 0) return undefined;
+    if (from.some(([, after]) => after === undefined)) return undefined;
+    try {
+      const sessions = await Promise.all(
+        from.map(([sessionId, after]) => loadAfter(sessionId, after!, signal)),
+      );
+      return sessions.some((session) => session.eventsMore)
+        ? undefined
+        : sessions;
+    } catch (error) {
+      if (signal.aborted) throw error;
+      // A cursor the server no longer knows, or an older server.
+      return undefined;
+    }
+  }
+
+  function start(threadId: string, repair = false) {
     controller?.abort();
     const current = new AbortController();
     controller = current;
@@ -130,6 +175,17 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
         },
       });
     };
+    /** A repair catches up when it can; its sessions replace no cursor. */
+    let caughtUp = false;
+    const load = (): Promise<WindowedAgentSession[]> => {
+      if (!repair) return recent();
+      loadEpoch = options.epoch?.() ?? 0;
+      return catchUp(current.signal).then((sessions) => {
+        if (!sessions) return recent();
+        caughtUp = true;
+        return sessions;
+      });
+    };
     // The chat's first load starts once the stream opened, so the stream
     // carries every change after it; a resync meanwhile needs no load.
     const opened = begun ? undefined : options.opened?.();
@@ -137,8 +193,8 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
     if (opened) loadEpoch = Number.POSITIVE_INFINITY;
     void (
       opened
-        ? opened.then(() => (controller === current ? recent() : []))
-        : recent()
+        ? opened.then(() => (controller === current ? load() : []))
+        : load()
     ).then(
       (sessions) => {
         if (controller !== current) return;
@@ -158,6 +214,11 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
               earlier[session.id] = session.eventsBefore;
           }
         }
+        // A window names where each of its sessions continues; a session
+        // it returns without one (no events) cannot catch up.
+        if (!caughtUp) cursors = new Map();
+        for (const session of sessions)
+          cursors.set(session.id, session.eventsAfter);
         publish({
           loading: false,
           slow: false,
@@ -166,7 +227,7 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
           earlier,
         });
         if (sessions.length > 0) options.onLoaded(sessions);
-        if (again) start(threadId);
+        if (again) start(threadId, true);
       },
       () => {
         if (controller !== current) return;
@@ -196,6 +257,7 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
       lastLoadedAt = Number.NEGATIVE_INFINITY;
       begun = false;
       loadEpoch = Number.NEGATIVE_INFINITY;
+      cursors = new Map();
       state = idle(threadId);
       options.onState(state);
     },
@@ -222,7 +284,7 @@ export function createTranscriptLoader(options: TranscriptLoaderOptions) {
       }
       // A session the last load did not return is not asked for in a loop.
       if (reason === "missing" && now() - lastLoadedAt < missingRetryMs) return;
-      start(threadId);
+      start(threadId, reason === "resync" || reason === "stale");
     },
     loadEarlier() {
       const entry = Object.entries(state.earlier)[0];

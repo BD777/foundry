@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -367,9 +368,12 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		Events:       []store.AgentSessionEvent{},
 	}
 	// Verification sessions are independent read-only judges: force the
-	// read-only runtime knobs server-side, never trusting client input.
+	// read-only runtime knobs server-side, never trusting client input. The
+	// worker runs them in a sandbox that keeps the workspace read-only and
+	// lets them run commands (worker: verification-session.ts); Claude runs
+	// only the tools its role pre-approves.
 	if source == "verification" {
-		session.ClaudePermissionMode = "plan"
+		session.ClaudePermissionMode = "dontAsk"
 		session.CodexSandboxMode = "read-only"
 		session.CodexApprovalPolicy = "never"
 	}
@@ -453,26 +457,105 @@ func (s *Store) recordInputAnswer(ctx context.Context, session store.AgentSessio
 	if answer == "" || session.Input.ID == "" {
 		return nil
 	}
-	events, err := listJSON[store.AgentSessionEvent](ctx, s.conn(), `SELECT payload_json FROM agent_session_events
-		WHERE session_id = ? ORDER BY created_at DESC, id DESC`, session.ID)
-	if err != nil {
+	answered, err := s.inputAnswered(ctx, session.ID, session.Input.ID, answer)
+	if err != nil || answered {
 		return err
-	}
-	for _, event := range events {
-		if event.ID == "evt_"+session.Input.ID {
-			break
-		}
-		if event.Message != nil && event.Message.Kind == "assistant" && strings.TrimSpace(event.Message.Text) == answer {
-			return nil
-		}
-		if event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer {
-			return nil
-		}
 	}
 	return s.saveAgentSessionEvent(ctx, store.AgentSessionEvent{
 		ID: "evt_" + session.Input.ID + "_answer", SessionID: session.ID, At: formatTime(now),
 		Label: "Response stream", Detail: answer, Level: "info",
 	}, now)
+}
+
+// inputAnswered reports whether the session's events since its input hold
+// answer, read newest first up to the input. It runs inside the writer's
+// transaction, so it reads no further: only rows created at or after the
+// input's own (the rows the order puts ahead of it). Only when that row is
+// missing, or does not end the walk, are the older events read too.
+func (s *Store) inputAnswered(ctx context.Context, sessionID, inputID, answer string) (bool, error) {
+	var since string
+	err := s.conn().QueryRowContext(ctx, `SELECT created_at FROM agent_session_events WHERE id = ? AND session_id = ?`,
+		"evt_"+inputID, sessionID).Scan(&since)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("find session input event: %w", err)
+	}
+	decided, answered := false, false
+	visit := func(payload []byte) (bool, error) {
+		var event store.AgentSessionEvent
+		if err := json.Unmarshal(payload, &event); err != nil {
+			return false, err
+		}
+		switch {
+		case event.ID == "evt_"+inputID:
+			decided = true
+		case event.Message != nil && event.Message.Kind == "assistant" && strings.TrimSpace(event.Message.Text) == answer,
+			event.Label == "Response stream" && (event.Metadata == nil || event.Metadata.TaskID == "") && strings.TrimSpace(event.Detail) == answer:
+			decided, answered = true, true
+		}
+		return !decided, nil
+	}
+	if err == nil {
+		if err := eventsNewestFirst(ctx, s.conn(), sessionID, "", since, visit); err != nil || decided {
+			return answered, err
+		}
+	}
+	return answered, eventsNewestFirst(ctx, s.conn(), sessionID, "", "", visit)
+}
+
+// Chunk sizes, in events, of eventsNewestFirst's reads.
+const (
+	firstEventChunk = 512
+	maxEventChunk   = 4096
+)
+
+// eventsNewestFirst passes visit the payloads of a session's events created
+// at or after since ("" for all), newest first by created_at then id, until
+// visit returns false. It reads them in chunks of growing size toward the
+// past, each oldest first: a long session costs about the end its caller
+// needs, and the disk is read forward, which on a cold cache is several
+// times faster than backward. Each chunk ends at a created_at found on the
+// covering idx_agent_session_events_session_created, so a chunk holds every
+// event of the created_at values it covers. filter narrows the rows (an SQL
+// condition; "" for none).
+func eventsNewestFirst(ctx context.Context, db dbExecutor, sessionID, filter, since string, visit func(payload []byte) (bool, error)) error {
+	if filter != "" {
+		filter = ` AND (` + filter + `)`
+	}
+	below, bounded := "", false
+	for size := firstEventChunk; ; size = min(size*2, maxEventChunk) {
+		where := ` WHERE session_id = ? AND created_at >= ?`
+		args := []any{sessionID, since}
+		if bounded {
+			where += ` AND created_at < ?`
+			args = append(args, below)
+		}
+		var from string
+		err := db.QueryRowContext(ctx, `SELECT created_at FROM agent_session_events`+where+`
+			ORDER BY created_at DESC LIMIT 1 OFFSET ?`, append(args, size-1)...).Scan(&from)
+		last := errors.Is(err, sql.ErrNoRows)
+		if err != nil && !last {
+			return fmt.Errorf("find session event chunk: %w", err)
+		}
+		if !last {
+			where += ` AND created_at >= ?`
+			args = append(args, from)
+		}
+		payloads, err := listPayloads(ctx, db, `SELECT payload_json FROM agent_session_events`+where+filter+`
+			ORDER BY created_at ASC, id ASC`, args...)
+		if err != nil {
+			return err
+		}
+		for index := len(payloads) - 1; index >= 0; index-- {
+			more, err := visit(payloads[index])
+			if err != nil || !more {
+				return err
+			}
+		}
+		if last {
+			return nil
+		}
+		below, bounded = from, true
+	}
 }
 
 // SendAgentSessionInput gives an idle session its next input. The session
@@ -551,6 +634,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			Prompt:                prompt,
 			Attachments:           attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
+			TimerFire:             input.TimerFire,
 		}
 		// What the native session missed is the server's to tell, never the
 		// client's: it alone knows which turns each native session ran.
@@ -691,12 +775,38 @@ func (s *Store) RecordAgentSessionEvent(ctx context.Context, event store.AgentSe
 		if rowsAffected == 0 {
 			return store.ErrNotFound
 		}
+		if err := tx.saveSessionSchedule(ctx, event); err != nil {
+			return err
+		}
 		return tx.saveAgentSessionEvent(ctx, event, now)
 	})
 	if err != nil {
 		return false, err
 	}
 	return stored, nil
+}
+
+// saveSessionSchedule keeps the session's schedule (AgentSession.Scheduled)
+// from a timer snapshot event: the timers its agent holds now.
+func (s *Store) saveSessionSchedule(ctx context.Context, event store.AgentSessionEvent) error {
+	if event.Metadata == nil || event.Metadata.TimerSnapshot == nil {
+		return nil
+	}
+	schedule := store.SessionScheduleFromSnapshot(*event.Metadata.TimerSnapshot, event.At)
+	if schedule == nil {
+		if _, err := s.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_remove(payload_json, '$.scheduled') WHERE id = ?`, event.SessionID); err != nil {
+			return fmt.Errorf("clear session schedule: %w", err)
+		}
+		return nil
+	}
+	encoded, err := encode(schedule)
+	if err != nil {
+		return err
+	}
+	if _, err := s.conn().ExecContext(ctx, `UPDATE agent_sessions SET payload_json = json_set(payload_json, '$.scheduled', json(?)) WHERE id = ?`, encoded, event.SessionID); err != nil {
+		return fmt.Errorf("save session schedule: %w", err)
+	}
+	return nil
 }
 
 // holdsAgentSessionEvent reports whether what is stored under the event's

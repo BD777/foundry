@@ -1,0 +1,500 @@
+[
+  {
+    "type": "agent_session_created",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "queued",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "activityAt": "2026-10-11T08:12:03Z",
+      "createdLabel": "just now",
+      "updatedLabel": "just now"
+    }
+  },
+  {
+    "type": "agent_session_started",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "running",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "startedAt": "2026-10-11T08:12:04Z",
+      "lastActivityAt": "2026-10-11T08:12:04Z",
+      "activityAt": "2026-10-11T08:12:03Z",
+      "createdLabel": "just now",
+      "updatedLabel": "running"
+    }
+  },
+  {
+    "type": "agent_session_native_session_id",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "running",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "startedAt": "2026-10-11T08:12:04Z",
+      "lastActivityAt": "2026-10-11T08:12:06Z",
+      "activityAt": "2026-10-11T08:12:03Z",
+      "createdLabel": "just now",
+      "updatedLabel": "running"
+    }
+  },
+  {
+    "type": "agent_session_blocked",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "blocked",
+      "blockedReason": "Waiting for permission to run pnpm test",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "startedAt": "2026-10-11T08:12:04Z",
+      "lastActivityAt": "2026-10-11T08:13:40Z",
+      "activityAt": "2026-10-11T08:12:03Z",
+      "createdLabel": "just now",
+      "updatedLabel": "blocked"
+    }
+  },
+  {
+    "type": "agent_session_resumed",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "running",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "startedAt": "2026-10-11T08:12:04Z",
+      "lastActivityAt": "2026-10-11T08:14:02Z",
+      "activityAt": "2026-10-11T08:12:03Z",
+      "createdLabel": "just now",
+      "updatedLabel": "running"
+    }
+  },
+  {
+    "type": "agent_session_completed",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "sess_7c1e4b2a",
+      "threadId": "sess_7c1e4b2a",
+      "nativeSessionId": "5b8a2f0e-6c1d-4e7a-9f3b-2d4c6e8a0b1c",
+      "workspaceId": "ws_atlas",
+      "agentId": "agent_claude_dev_mbp",
+      "deviceId": "dev_mbp",
+      "provider": "claude",
+      "profileId": "prof_claude_login",
+      "profileFingerprint": "9f2c4e1a",
+      "profileLabel": "Claude (local login)",
+      "source": "chat",
+      "model": "opus",
+      "claudeEffort": "high",
+      "claudePermissionMode": "default",
+      "status": "completed",
+      "title": "Fix the flaky upload test",
+      "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+      "input": {
+        "id": "in_5d0a9e31",
+        "prompt": "The upload test fails about one run in five. Find out why and fix it.",
+        "at": "2026-10-11T08:12:03Z"
+      },
+      "response": "The test raced the upload's progress callback. It now waits for the upload to settle; 50 runs passed.",
+      "startedAt": "2026-10-11T08:12:04Z",
+      "lastActivityAt": "2026-10-11T08:19:47Z",
+      "activityAt": "2026-10-11T08:19:47Z",
+      "completedAt": "2026-10-11T08:19:47Z",
+      "answerRevision": "ans_8e21c0d4",
+      "createdLabel": "just now",
+      "updatedLabel": "1 min ago"
+    }
+  },
+  {
+    "type": "agent_session_event",
+    "payload": {
+      "id": "evt_7c1e4b2a_0007",
+      "sessionId": "sess_7c1e4b2a",
+      "at": "2026-10-11T08:15:22Z",
+      "label": "Assistant",
+      "detail": "The failure comes from the progress callback firing after the test's assertion.",
+      "level": "info",
+      "message": {
+        "at": "2026-10-11T08:15:22Z",
+        "id": "msg_7c1e4b2a_0007",
+        "kind": "assistant",
+        "text": "The failure comes from the progress callback firing after the test's assertion."
+      }
+    }
+  },
+  {
+    "type": "agent_subagent_updated",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "sessionId": "sess_7c1e4b2a",
+      "subagent": {
+        "responseFingerprints": [],
+        "sessionId": "sess_7c1e4b2a",
+        "status": "running",
+        "subagentType": "Explore",
+        "taskId": "a3f9c2",
+        "title": "Find where uploads report progress",
+        "toolUseId": "toolu_01H8Xb2c"
+      }
+    }
+  },
+  {
+    "type": "background_task_output_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "sessionId": "sess_7c1e4b2a",
+      "taskId": "b7qp2"
+    }
+  },
+  {
+    "type": "issue_created",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "iss_2b7f90c3",
+      "workspaceId": "ws_atlas",
+      "shortId": "ATL-42",
+      "title": "Show upload progress in the file list",
+      "status": "pending",
+      "priority": "medium",
+      "readiness": "ready",
+      "sourceInput": "Uploads show no progress until they finish; show it in the file list.",
+      "inferredTask": "Show each upload's progress in its file list row.",
+      "runtime": "claude",
+      "skills": [
+        {
+          "id": "skill_frontend",
+          "name": "frontend-conventions",
+          "scope": "workspace",
+          "version": "3"
+        }
+      ],
+      "acceptanceCriteria": [
+        "A running upload shows its percentage in its row"
+      ],
+      "checks": ["pnpm test"],
+      "updatedLabel": "just now"
+    }
+  },
+  {
+    "type": "issue_updated",
+    "payload": {
+      "createdByUserId": "usr_alice",
+      "id": "iss_2b7f90c3",
+      "workspaceId": "ws_atlas",
+      "shortId": "ATL-42",
+      "title": "Show upload progress in the file list",
+      "status": "in_progress",
+      "priority": "medium",
+      "readiness": "ready",
+      "sourceInput": "Uploads show no progress until they finish; show it in the file list.",
+      "inferredTask": "Show each upload's progress in its file list row.",
+      "runtime": "claude",
+      "skills": [
+        {
+          "id": "skill_frontend",
+          "name": "frontend-conventions",
+          "scope": "workspace",
+          "version": "3"
+        }
+      ],
+      "acceptanceCriteria": [
+        "A running upload shows its percentage in its row"
+      ],
+      "checks": ["pnpm test"],
+      "run": {
+        "id": "sess_c41d8e07",
+        "issueId": "iss_2b7f90c3",
+        "workspaceId": "ws_atlas",
+        "status": "running",
+        "runtime": "claude",
+        "startedLabel": "just now",
+        "startedAt": "2026-10-11T08:20:11Z",
+        "events": [
+          {
+            "id": "evt_c41d8e07_0001",
+            "runId": "sess_c41d8e07",
+            "at": "2026-10-11T08:20:12Z",
+            "label": "Session started",
+            "detail": "Claude is working in the Issue's candidate.",
+            "level": "info"
+          }
+        ]
+      },
+      "updatedLabel": "running"
+    }
+  },
+  {
+    "type": "issue_run_event",
+    "payload": {
+      "id": "evt_c41d8e07_0002",
+      "runId": "sess_c41d8e07",
+      "at": "2026-10-11T08:20:31Z",
+      "label": "Tool",
+      "detail": "pnpm test --filter upload",
+      "level": "info"
+    }
+  },
+  {
+    "type": "issue_environment_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "issueId": "iss_2b7f90c3"
+    }
+  },
+  {
+    "type": "evidence_updated",
+    "payload": {
+      "issueId": "iss_2b7f90c3",
+      "workspaceId": "ws_atlas",
+      "entityId": "ver_61a0f4b9",
+      "version": 2,
+      "status": "passed"
+    }
+  },
+  {
+    "type": "device_status_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "deviceId": "dev_mbp",
+      "status": "connected",
+      "device": {
+        "id": "dev_mbp",
+        "label": "Alice's MacBook Pro",
+        "status": "connected",
+        "lastSeenLabel": "online",
+        "capabilities": [
+          "issue_environment_changes",
+          "background_output_follow"
+        ],
+        "worker": {
+          "version": "0.5.6"
+        },
+        "system": {
+          "hostname": "alice-mbp",
+          "os": "darwin",
+          "osVersion": "15.6",
+          "arch": "arm64",
+          "cpuModel": "Apple M3 Pro",
+          "cpuCount": 12,
+          "memoryBytes": 38654705664,
+          "nodeVersion": "v24.11.0"
+        }
+      }
+    }
+  },
+  {
+    "type": "feishu_bot_updated",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "appId": "cli_a1b2c3d4e5f60718",
+      "hasAppSecret": true,
+      "chatId": "oc_5f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "chatName": "Atlas team",
+      "boundUserId": "usr_alice",
+      "status": "connected",
+      "updatedAt": "2026-10-11T07:58:00Z"
+    }
+  },
+  {
+    "type": "workspace_members_updated",
+    "payload": {
+      "workspaceId": "ws_atlas"
+    }
+  },
+  {
+    "type": "foundry_data_changed",
+    "payload": {
+      "workspaceId": "",
+      "resources": ["agentProfiles", "agents", "devices"]
+    }
+  },
+  {
+    "type": "chats_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "chats": [
+        {
+          "updatedAt": "2026-10-11T08:02:45Z",
+          "id": "native_claude_0d3b6f2e",
+          "workspaceId": "ws_atlas",
+          "provider": "claude",
+          "nativeSessionId": "0d3b6f2e-1a4c-4b8e-9d7f-3c2b1a0e9f8d",
+          "title": "Rename the settings page",
+          "preview": "Renamed it to Preferences and updated the links.",
+          "status": "completed",
+          "readonly": false,
+          "updatedLabel": "10 min ago"
+        }
+      ],
+      "removed": ["native_codex_9a8b7c6d"]
+    }
+  },
+  {
+    "type": "chat_queue_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "chatId": "sess_7c1e4b2a",
+      "revision": 3,
+      "items": [
+        {
+          "id": "cq_4e5f6a7b",
+          "chatId": "sess_7c1e4b2a",
+          "position": 1,
+          "text": "Also run the e2e suite once it passes.",
+          "runSettings": {
+            "agentId": "agent_claude_dev_mbp",
+            "provider": "claude",
+            "model": "opus",
+            "claudeEffort": "high"
+          },
+          "createdBy": "usr_alice",
+          "createdAt": "2026-10-11T08:16:09Z",
+          "updatedAt": "2026-10-11T08:16:09Z",
+          "revision": 1,
+          "state": "queued"
+        }
+      ]
+    }
+  },
+  {
+    "type": "chat_titles_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "titles": [
+        {
+          "chatId": "sess_7c1e4b2a",
+          "title": "Flaky upload test",
+          "version": "v3"
+        }
+      ],
+      "removed": ["native_codex_9a8b7c6d"]
+    }
+  },
+  {
+    "type": "chat_layout_changed",
+    "payload": {
+      "workspaceId": "ws_atlas",
+      "layout": {
+        "revision": 7,
+        "groups": [
+          {
+            "id": "grp_uploads",
+            "name": "Uploads"
+          }
+        ],
+        "positions": [
+          {
+            "chatId": "sess_7c1e4b2a",
+            "groupId": "grp_uploads"
+          },
+          {
+            "chatId": "native_claude_0d3b6f2e",
+            "groupId": ""
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "stream_ready",
+    "payload": {}
+  },
+  {
+    "type": "resync",
+    "payload": {
+      "reason": "expired"
+    }
+  }
+]

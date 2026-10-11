@@ -3,13 +3,12 @@ package httpapi
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,15 +17,126 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func subscribeForTest(hub *browserEventHub, buffer int) *eventSubscription {
-	subscription := &eventSubscription{ch: make(chan []byte, buffer), scope: &accessScope{all: true}, ended: make(chan struct{})}
-	hub.mu.Lock()
-	hub.subscribers[subscription] = struct{}{}
-	hub.mu.Unlock()
+// subscribeForTest opens a stream that receives every workspace's events.
+func subscribeForTest(stream *eventstream.Hub) *eventstream.Subscription {
+	return subscribeReachForTest(stream, streamReach{scope: &accessScope{all: true}})
+}
+
+// subscribeReachForTest opens a stream of reach; its frames arrive on C as
+// they are published.
+func subscribeReachForTest(stream *eventstream.Hub, reach streamReach) *eventstream.Subscription {
+	subscription, open := stream.Subscribe(reach, "")
+	if !open {
+		panic("the event stream shut down")
+	}
 	return subscription
+}
+
+// notifiersForTest are the domains' notifiers over one stream as a server
+// wires them, without a server; its devices carry no device in their events.
+type notifiersForTest struct {
+	stream   *eventstream.Hub
+	data     *dataChanges
+	sessions *sessionEvents
+	issues   *issueEvents
+	chatList *chatListEvents
+	devices  *deviceEvents
+}
+
+func newNotifiersForTest(db store.Store) *notifiersForTest {
+	stream := newBrowserStream()
+	data := newDataChanges(stream)
+	return &notifiersForTest{
+		stream:   stream,
+		data:     data,
+		sessions: newSessionEvents(stream),
+		issues:   &issueEvents{stream: stream},
+		chatList: newChatListEvents(stream, db, data),
+		devices:  newDeviceEvents(stream, db, data, noDevicesForTest{}),
+	}
+}
+
+// daemon is what a device hub tells over these notifiers.
+func (n *notifiersForTest) daemon() daemonNotifiers {
+	return daemonNotifiers{sessions: n.sessions, issues: n.issues, devices: n.devices, chats: n.chatList, dataChanges: n.data}
+}
+
+// noDevicesForTest projects no device.
+type noDevicesForTest struct{}
+
+func (noDevicesForTest) deviceForEvent(context.Context, string) (store.DeviceProjection, bool) {
+	return store.DeviceProjection{}, false
+}
+
+// sessionEventsForTest is the server's session notifier, to observe.
+func sessionEventsForTest(server *Server) *sessionEvents {
+	return server.sessions.(*sessionEvents)
+}
+
+// chatListNotifierForTest is the server's chat list notifier.
+func chatListNotifierForTest(server *Server) *chatListEvents {
+	return server.chats.(*chatListEvents)
+}
+
+// nextStreamedForTest waits for the next frame on the stream of one of the
+// given types.
+func nextStreamedForTest(t *testing.T, viewer *eventstream.Subscription, types ...browserevent.Type) streamedForTest {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case frame := <-viewer.C:
+			streamed := decodeStreamedForTest(t, frame)
+			for _, eventType := range types {
+				if streamed.kind == eventType {
+					return streamed
+				}
+			}
+		case <-deadline:
+			t.Fatalf("no %v event", types)
+			return streamedForTest{}
+		}
+	}
+}
+
+// decodeStreamedForTest reads one SSE frame's envelope.
+func decodeStreamedForTest(t *testing.T, frame []byte) streamedForTest {
+	t.Helper()
+	data := ""
+	for _, line := range strings.Split(string(frame), "\n") {
+		if value, ok := strings.CutPrefix(line, "data: "); ok {
+			data = value
+		}
+	}
+	var envelope struct {
+		Type    browserevent.Type `json:"type"`
+		Payload json.RawMessage   `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+		t.Fatalf("frame %q: %v", frame, err)
+	}
+	return streamedForTest{envelope.Type, envelope.Payload}
+}
+
+// payloadForTest decodes a streamed payload.
+func payloadForTest[P any](t *testing.T, streamed streamedForTest) P {
+	t.Helper()
+	var payload P
+	if err := json.Unmarshal(streamed.payload, &payload); err != nil {
+		t.Fatalf("decode %s payload %s: %v", streamed.kind, streamed.payload, err)
+	}
+	return payload
+}
+
+// browserEventEnvelope is one streamed message as a browser reads it.
+type browserEventEnvelope struct {
+	Type    browserevent.Type `json:"type"`
+	Payload any               `json:"payload"`
 }
 
 // frameForTest splits one SSE frame into its id and decoded envelope.
@@ -59,17 +169,17 @@ func sessionWithTranscriptForTest() store.AgentSession {
 // A session published on the stream never carries its transcript: a long
 // chat's events ran to megabytes per lifecycle change.
 func TestPublishedSessionsCarryNoEvents(t *testing.T) {
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 4)
-	var internal []any
-	hub.SubscribeInternal(func(_ string, payload any) { internal = append(internal, payload) })
+	events := newNotifiersForTest(nil)
+	viewer := subscribeForTest(events.stream)
+	observer := &sessionObserverForTest{}
+	events.sessions.observe(observer)
 	session := sessionWithTranscriptForTest()
 
-	hub.Publish("agent_session_completed", session)
-	hub.Publish("agent_session_started", &session)
+	events.sessions.changed(context.Background(), sessionCompleted, session)
+	events.sessions.changed(context.Background(), sessionStarted, session)
 
 	for range 2 {
-		_, envelope := frameForTest(t, <-viewer.ch)
+		_, envelope := frameForTest(t, <-viewer.C)
 		payload := envelope["payload"].(map[string]any)
 		if _, ok := payload["events"]; ok {
 			t.Fatalf("published session carries events: %v", payload)
@@ -79,45 +189,30 @@ func TestPublishedSessionsCarryNoEvents(t *testing.T) {
 			t.Fatalf("published session = %v, want the answer and input without imported context", payload)
 		}
 	}
-	for _, payload := range internal {
-		var events []store.AgentSessionEvent
-		switch value := payload.(type) {
-		case store.AgentSession:
-			events = value.Events
-		case *store.AgentSession:
-			events = value.Events
+	for _, observed := range observer.sessions {
+		if len(observed.Events) != 0 || observed.Input.ImportedContext != "" {
+			t.Fatalf("an observer got the transcript: %+v", observed)
 		}
-		if len(events) != 0 {
-			t.Fatalf("internal subscriber got the transcript: %+v", payload)
-		}
+	}
+	if len(observer.sessions) != 2 {
+		t.Fatalf("observers were told %d changes, want 2", len(observer.sessions))
 	}
 	if len(session.Events) != 1 {
 		t.Fatal("publishing changed the caller's session")
 	}
 }
 
-func TestStreamFramesCarryRisingIDs(t *testing.T) {
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 4)
-	hub.Publish("issue_updated", store.Issue{ID: "iss_1", WorkspaceID: "ws_1"})
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_1"})
-	first, _ := frameForTest(t, <-viewer.ch)
-	second, _ := frameForTest(t, <-viewer.ch)
-	if first != hub.epoch+"-1" || second != hub.epoch+"-2" {
-		t.Fatalf("ids = %q, %q; want %s-1, %s-2", first, second, hub.epoch, hub.epoch)
-	}
-}
-
 // Transcript events do not invalidate the foundry-data snapshot; every other
 // published change does.
 func TestTranscriptEventsKeepTheSnapshotRevision(t *testing.T) {
-	hub := newBrowserEventHub()
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_1", Label: "Response stream"})
-	if hub.revision.Load() != 0 {
+	events := newNotifiersForTest(nil)
+	ctx := context.Background()
+	events.sessions.recorded(ctx, "ws_1", store.AgentSessionEvent{ID: "evt_1", Label: "Response stream"})
+	if events.stream.Revision() != 0 {
 		t.Fatal("a transcript event invalidated the snapshot")
 	}
-	hub.Publish("agent_session_completed", store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1"})
-	if hub.revision.Load() != 1 {
+	events.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1"})
+	if events.stream.Revision() != 1 {
 		t.Fatal("a session change kept the snapshot")
 	}
 }
@@ -125,6 +220,41 @@ func TestTranscriptEventsKeepTheSnapshotRevision(t *testing.T) {
 type streamReaderForTest struct {
 	response *http.Response
 	frames   chan string
+}
+
+func (r *streamReaderForTest) next(t *testing.T) (string, map[string]any) {
+	t.Helper()
+	select {
+	case frame, ok := <-r.frames:
+		if !ok {
+			t.Fatal("stream ended")
+		}
+		return frameForTest(t, []byte(frame))
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for a stream frame")
+	}
+	return "", nil
+}
+
+// The stream's own messages are the browser events stream_ready and
+// resync: a fresh stream starts with stream_ready, and one that resumes
+// from an id it cannot continue is told to resync, with the reason.
+func TestStreamControlMessagesAreBrowserEvents(t *testing.T) {
+	events := newNotifiersForTest(nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		events.stream.Serve(w, r, streamReach{scope: &accessScope{all: true}})
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events.data.changed("")
+	if _, envelope := openStreamForTest(t, ctx, server.URL, "").next(t); envelope["type"] != string(browserevent.StreamReady) {
+		t.Fatalf("a fresh stream began with %v", envelope)
+	}
+	_, envelope := openStreamForTest(t, ctx, server.URL, "garbage").next(t)
+	if envelope["type"] != string(browserevent.Resync) || envelope["payload"].(map[string]any)["reason"] != string(browserevent.ResyncRestarted) {
+		t.Fatalf("a stream resuming from nowhere it knows began with %v", envelope)
+	}
 }
 
 func openStreamForTest(t *testing.T, ctx context.Context, url string, lastEventID string) *streamReaderForTest {
@@ -165,223 +295,14 @@ func openStreamForTest(t *testing.T, ctx context.Context, url string, lastEventI
 	return reader
 }
 
-func (r *streamReaderForTest) next(t *testing.T) (string, map[string]any) {
-	t.Helper()
-	select {
-	case frame, ok := <-r.frames:
-		if !ok {
-			t.Fatal("stream ended")
-		}
-		return frameForTest(t, []byte(frame))
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for a stream frame")
-	}
-	return "", nil
-}
-
-func streamServerForTest(hub *browserEventHub) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hub.ServeHTTP(w, r.WithContext(contextWithScope(r.Context(), accessScope{all: true})))
-	}))
-}
-
-// A browser reconnecting with Last-Event-ID gets exactly what it missed.
-func TestStreamResumesFromLastEventID(t *testing.T) {
-	hub := newBrowserEventHub()
-	server := streamServerForTest(hub)
-	defer server.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	for index := 1; index <= 5; index++ {
-		hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: fmt.Sprintf("evt_%d", index)})
-	}
-	stream := openStreamForTest(t, ctx, server.URL, hub.epoch+"-2")
-	for _, want := range []string{"evt_3", "evt_4", "evt_5"} {
-		id, envelope := stream.next(t)
-		payload := envelope["payload"].(map[string]any)
-		if payload["id"] != want || !strings.HasPrefix(id, hub.epoch+"-") {
-			t.Fatalf("replayed %s %v, want %s", id, payload, want)
-		}
-	}
-	// Live events follow the replay.
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_6"})
-	if id, envelope := stream.next(t); envelope["payload"].(map[string]any)["id"] != "evt_6" || id != hub.epoch+"-6" {
-		t.Fatalf("live event = %s %v, want evt_6", id, envelope)
-	}
-}
-
-// When the missed events are gone (another server process, or older than
-// the ring), the stream says so instead of resuming with a gap.
-func TestStreamAsksForResyncWhenItCannotResume(t *testing.T) {
-	hub := newBrowserEventHub()
-	server := streamServerForTest(hub)
-	defer server.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	for index := 0; index < eventRingEntries+10; index++ {
-		hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: fmt.Sprintf("evt_%d", index)})
-	}
-	for _, test := range []struct{ lastEventID, reason string }{
-		{"otherprocess-3", resyncReasonRestarted},
-		{hub.epoch + "-3", resyncReasonExpired},
-		{"garbage", resyncReasonRestarted},
-	} {
-		stream := openStreamForTest(t, ctx, server.URL, test.lastEventID)
-		id, envelope := stream.next(t)
-		payload, _ := envelope["payload"].(map[string]any)
-		if envelope["type"] != resyncEventType || payload["reason"] != test.reason {
-			t.Fatalf("resume from %s = %v, want resync %s", test.lastEventID, envelope, test.reason)
-		}
-		if id != fmt.Sprintf("%s-%d", hub.epoch, eventRingEntries+10) {
-			t.Fatalf("resync id = %s, want the newest event", id)
-		}
-	}
-	// Up to date: nothing to replay and no resync.
-	stream := openStreamForTest(t, ctx, server.URL, fmt.Sprintf("%s-%d", hub.epoch, eventRingEntries+10))
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_live"})
-	if _, envelope := stream.next(t); envelope["type"] != "agent_session_event" {
-		t.Fatalf("up-to-date resume = %v, want the live event", envelope)
-	}
-}
-
-// A change of an account's access ends its streams; one resuming from an
-// event before the change is told to resync (the replay would not show what
-// the new access adds or takes away), and after that resumes normally.
-// Other accounts resume as before.
-func TestStreamResumingAcrossAnAccessChangeResyncs(t *testing.T) {
-	hub := newBrowserEventHub()
-	bobScope := func() *accessScope {
-		return &accessScope{userID: "usr_bob", roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}
-	}
-	subscription := func(scope *accessScope) *eventSubscription {
-		return &eventSubscription{ch: make(chan []byte, 8), scope: scope, ended: make(chan struct{})}
-	}
-	bob := subscription(bobScope())
-	if _, open := hub.resume(bob, ""); !open {
-		t.Fatal("hub closed")
-	}
-	carol := subscription(&accessScope{userID: "usr_carol", roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}})
-	if _, open := hub.resume(carol, ""); !open {
-		t.Fatal("hub closed")
-	}
-	hub.Publish(chatTitlesChangedEvent, chatListChange{WorkspaceID: "ws_a"})
-	seen, _ := frameForTest(t, <-bob.ch)
-	<-carol.ch
-
-	hub.Reauthorize("usr_bob")
-	select {
-	case <-bob.ended:
-	default:
-		t.Fatal("bob's stream did not end")
-	}
-	hub.Publish(chatTitlesChangedEvent, chatListChange{WorkspaceID: "ws_a"})
-	if len(bob.ch) != 0 {
-		t.Fatal("an ended stream was delivered an event published after the access change")
-	}
-	if len(carol.ch) != 1 {
-		t.Fatalf("carol holds %d events, want the live one", len(carol.ch))
-	}
-
-	resumed := subscription(bobScope())
-	backlog, _ := hub.resume(resumed, seen)
-	if len(backlog) != 1 {
-		t.Fatalf("bob resumed with %d frames, want one resync", len(backlog))
-	}
-	id, envelope := frameForTest(t, backlog[0])
-	if envelope["type"] != resyncEventType || envelope["payload"].(map[string]any)["reason"] != resyncReasonReauthorized {
-		t.Fatalf("bob resumed with %v, want resync %s", envelope, resyncReasonReauthorized)
-	}
-	if id != fmt.Sprintf("%s-%d", hub.epoch, hub.seq) {
-		t.Fatalf("resync id = %s, want the newest event", id)
-	}
-	if again, _ := hub.resume(subscription(bobScope()), id); len(again) != 0 {
-		t.Fatalf("resuming after the resync = %d frames, want none", len(again))
-	}
-	if replay, _ := hub.resume(subscription(&accessScope{userID: "usr_carol", roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}), seen); len(replay) != 1 {
-		t.Fatalf("carol resumed with %d frames, want the one event she missed", len(replay))
-	} else if _, envelope := frameForTest(t, replay[0]); envelope["type"] != chatTitlesChangedEvent {
-		t.Fatalf("carol resumed with %v", envelope)
-	}
-}
-
-// A subscriber whose buffer overflows is told to resync once it has written
-// what it holds, and receives events again afterwards.
-func TestOverflowingSubscriberGetsResync(t *testing.T) {
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 2)
-	for index := 0; index < 5; index++ {
-		hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: fmt.Sprintf("evt_%d", index)})
-	}
-	if !viewer.lost.Load() || len(viewer.ch) != 2 {
-		t.Fatalf("lost=%v buffered=%d, want a lost subscriber holding 2", viewer.lost.Load(), len(viewer.ch))
-	}
-	<-viewer.ch
-	<-viewer.ch
-	id, envelope := frameForTest(t, hub.recover(viewer))
-	if envelope["type"] != resyncEventType || envelope["payload"].(map[string]any)["reason"] != resyncReasonOverflow || id != hub.epoch+"-5" {
-		t.Fatalf("resync = %s %v", id, envelope)
-	}
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_after"})
-	if _, envelope := frameForTest(t, <-viewer.ch); envelope["payload"].(map[string]any)["id"] != "evt_after" {
-		t.Fatalf("after resync = %v", envelope)
-	}
-}
-
-// End to end over HTTP: a stream that cannot keep up sees resync on the wire.
-func TestSlowStreamSeesResync(t *testing.T) {
-	hub := newBrowserEventHub()
-	server := streamServerForTest(hub)
-	defer server.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stream := openStreamForTest(t, ctx, server.URL, "")
-	// Publish far more than the subscriber buffer at once; large payloads
-	// fill the socket so the writer falls behind. They are random: the
-	// stream is compressed, and a repeated letter would not fill it.
-	random := make([]byte, 48<<10)
-	if _, err := rand.Read(random); err != nil {
-		t.Fatal(err)
-	}
-	detail := base64.StdEncoding.EncodeToString(random)
-	for index := 0; index < eventSubscriberBuffer*4; index++ {
-		hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: fmt.Sprintf("evt_%d", index), Detail: detail})
-	}
-	deadline := time.After(10 * time.Second)
-	for {
-		select {
-		case frame, ok := <-stream.frames:
-			if !ok {
-				t.Fatal("stream ended before a resync")
-			}
-			if _, envelope := frameForTest(t, []byte(frame)); envelope["type"] == resyncEventType {
-				return
-			}
-		case <-deadline:
-			t.Fatal("no resync after overflowing the subscriber")
-		}
-	}
-}
-
-func TestRingStaysWithinItsBounds(t *testing.T) {
-	hub := newBrowserEventHub()
-	detail := strings.Repeat("y", 1<<20)
-	for index := 0; index < 20; index++ {
-		hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: fmt.Sprintf("evt_%d", index), Detail: detail})
-	}
-	if hub.ringBytes > eventRingBytes || len(hub.ring) == 0 || hub.ring[len(hub.ring)-1].seq != 20 {
-		t.Fatalf("ring holds %d bytes in %d events", hub.ringBytes, len(hub.ring))
-	}
-}
-
 func TestSubagentListCacheSharesOneDeviceRead(t *testing.T) {
 	cache := newSubagentListCache()
 	var calls atomic.Int32
 	release := make(chan struct{})
-	fetch := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	fetch := func(context.Context) (subagentList, error) {
 		calls.Add(1)
 		<-release
-		return []store.AgentSubagentSummary{{TaskID: "task_1", Status: "running"}}, nil
+		return subagentSummaries{{TaskID: "task_1", Status: "running"}}, nil
 	}
 	var wait sync.WaitGroup
 	bodies := make([][]byte, 8)
@@ -389,7 +310,7 @@ func TestSubagentListCacheSharesOneDeviceRead(t *testing.T) {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			body, err := cache.load(context.Background(), "sess_1", false, fetch)
+			body, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch)
 			if err != nil {
 				t.Error(err)
 			}
@@ -408,35 +329,35 @@ func TestSubagentListCacheSharesOneDeviceRead(t *testing.T) {
 		}
 	}
 	// Cached until a subagent event arrives.
-	if _, err := cache.load(context.Background(), "sess_1", false, fetch); err != nil || calls.Load() != 1 {
+	if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch); err != nil || calls.Load() != 1 {
 		t.Fatalf("cached read went to the device (%d calls, %v)", calls.Load(), err)
 	}
 	cache.invalidate("sess_1")
-	if _, err := cache.load(context.Background(), "sess_1", false, fetch); err != nil || calls.Load() != 2 {
+	if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch); err != nil || calls.Load() != 2 {
 		t.Fatalf("invalidated read did not reach the device (%d calls, %v)", calls.Load(), err)
 	}
 }
 
 func TestSubagentListCacheKeepsNoErrorsAndOutlivesAGoneReader(t *testing.T) {
 	cache := newSubagentListCache()
-	failing := func(context.Context) ([]store.AgentSubagentSummary, error) { return nil, errors.New("device busy") }
-	if _, err := cache.load(context.Background(), "sess_1", false, failing); err == nil {
+	failing := func(context.Context) (subagentList, error) { return nil, errors.New("device busy") }
+	if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, failing); err == nil {
 		t.Fatal("want the device error")
 	}
 	release := make(chan struct{})
 	var calls atomic.Int32
-	slow := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	slow := func(context.Context) (subagentList, error) {
 		calls.Add(1)
 		<-release
-		return []store.AgentSubagentSummary{}, nil
+		return subagentSummaries{}, nil
 	}
 	gone, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := cache.load(gone, "sess_1", false, slow); !errors.Is(err, context.Canceled) {
+	if _, err := cache.load(gone, "sess_1", subagentListFull, false, slow); !errors.Is(err, context.Canceled) {
 		t.Fatalf("gone reader err = %v", err)
 	}
 	close(release)
-	body, err := cache.load(context.Background(), "sess_1", false, slow)
+	body, err := cache.load(context.Background(), "sess_1", subagentListFull, false, slow)
 	if err != nil || string(body) != "[]" || calls.Load() != 1 {
 		t.Fatalf("after a gone reader: %s %v (%d reads), want the shared read's result", body, err, calls.Load())
 	}
@@ -460,40 +381,12 @@ func TestSubagentEventsAreLifecycleEventsWithATask(t *testing.T) {
 	}
 }
 
-// Completions are never lost to a slow stream: a subscriber that overflowed
-// is told to resync, and a reconnect with Last-Event-ID replays them.
-func TestCompletionSurvivesAnOverflowingStream(t *testing.T) {
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 1)
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_seen"})
-	seenID, _ := frameForTest(t, <-viewer.ch)
-	hub.PublishIn("ws_1", "agent_session_event", store.AgentSessionEvent{ID: "evt_buffered"})
-	hub.Publish("agent_session_completed", store.AgentSession{ID: "sess_1", WorkspaceID: "ws_1", Status: "completed", Response: "done"})
-	if !viewer.lost.Load() {
-		t.Fatal("the completion fit a full buffer")
-	}
-	<-viewer.ch
-	if _, envelope := frameForTest(t, hub.recover(viewer)); envelope["type"] != resyncEventType {
-		t.Fatalf("overflowed stream got %v, want resync", envelope)
-	}
-
-	server := streamServerForTest(hub)
-	defer server.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	stream := openStreamForTest(t, ctx, server.URL, seenID)
-	stream.next(t)
-	if _, envelope := stream.next(t); envelope["type"] != "agent_session_completed" {
-		t.Fatalf("resume replayed %v, want the completion", envelope)
-	}
-}
-
 // Over HTTP: create, follow-up and cancel replies and every streamed session
 // leave the transcript out; ?events=none reads a session without it.
 func TestSessionRepliesCarryNoTranscript(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
 	conn := dialDaemonForTest(t, testServer)
@@ -573,9 +466,28 @@ func TestSessionRepliesCarryNoTranscript(t *testing.T) {
 	if cached.Code != http.StatusNotModified {
 		t.Fatalf("revalidation = %d %s, want 304 from the cache", cached.Code, cached.Body.String())
 	}
+	// A chat's read asks the device for digests, which it sends as they are.
+	digested := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		digested <- requestForTest(t, server, http.MethodGet, "/api/agent-sessions/"+sessionID+"/subagents?view=digest", "", http.StatusOK)
+	}()
+	var digestRequest struct {
+		View string `json:"view"`
+	}
+	digestID := readWSUntilForTest(t, conn, "list_subagents", &digestRequest)
+	if digestRequest.View != "digest" {
+		t.Fatalf("digest read asked view %q", digestRequest.View)
+	}
+	digest := map[string]any{"sessionId": sessionID, "taskId": "task_1", "toolUseId": "tool_1", "title": "Look", "status": "running", "responseFingerprints": []string{"85944171f73967e8"}}
+	writeWSIDForTest(t, conn, digestID, "subagents_listed", map[string]any{"sessionId": sessionID, "view": "digest", "subagents": []map[string]any{digest}})
+	var digests []map[string]any
+	if body := (<-digested).Body.Bytes(); json.Unmarshal(body, &digests) != nil || len(digests) != 1 ||
+		!reflect.DeepEqual(digests[0]["responseFingerprints"], []any{"85944171f73967e8"}) || digests[0]["prompt"] != nil || digests[0]["responseTexts"] != nil {
+		t.Fatalf("digest list = %s", body)
+	}
 
-	for len(viewer.ch) > 0 {
-		_, envelope := frameForTest(t, <-viewer.ch)
+	for len(viewer.C) > 0 {
+		_, envelope := frameForTest(t, <-viewer.C)
 		if payload, ok := envelope["payload"].(map[string]any); ok && strings.HasPrefix(envelope["type"].(string), "agent_session_") && envelope["type"] != "agent_session_event" {
 			assertNoTranscript("streamed "+envelope["type"].(string), payload)
 		}

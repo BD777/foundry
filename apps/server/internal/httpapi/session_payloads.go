@@ -66,6 +66,10 @@ type windowedAgentSession struct {
 	// Events is always present: [] is an empty window, not an unread one.
 	Events       []store.AgentSessionEvent `json:"events"`
 	EventsBefore string                    `json:"eventsBefore,omitempty"`
+	// EventsAfter comes with the newest window: the cursor of its newest
+	// event, from which a reader holding it catches up on what it missed
+	// (?eventsAfter=). A page of older events carries none.
+	EventsAfter string `json:"eventsAfter,omitempty"`
 	// StateEvents come with the newest window when older events exist:
 	// those of the older events the side panel reads (see
 	// panelStateEvents), so it shows the session's state whatever is
@@ -74,12 +78,22 @@ type windowedAgentSession struct {
 }
 
 func windowSessionEvents(ctx context.Context, windows store.SessionEventWindowStore, session store.AgentSession, window eventWindow) (windowedAgentSession, error) {
-	events, before, err := windows.AgentSessionEventWindow(ctx, session.ID, window.before, window.limit)
+	var events []store.AgentSessionEvent
+	var before, newest string
+	var err error
+	if spans, ok := windows.(store.SessionEventCatchUpStore); ok {
+		events, before, newest, err = spans.AgentSessionEventWindowSpan(ctx, session.ID, window.before, window.limit)
+	} else {
+		events, before, err = windows.AgentSessionEventWindow(ctx, session.ID, window.before, window.limit)
+	}
 	if err != nil {
 		return windowedAgentSession{}, err
 	}
 	session.Events = nil
 	page := windowedAgentSession{AgentSession: session, Events: events, EventsBefore: before}
+	if window.before == "" {
+		page.EventsAfter = newest
+	}
 	if states, ok := windows.(store.SessionStateStore); ok && window.before == "" && before != "" {
 		older, err := states.AgentSessionStateEvents(ctx, session.ID, before)
 		if err != nil {

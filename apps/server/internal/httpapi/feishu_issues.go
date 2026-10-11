@@ -37,7 +37,7 @@ func (s *Server) StartIssue(ctx context.Context, workspaceID, userID, goal strin
 	if err != nil {
 		return store.Issue{}, err
 	}
-	s.events.Publish("issue_created", issue)
+	s.issues.created(issue)
 	draft, err := currentDraft(ctx, st, issue)
 	if err != nil {
 		return issue, err
@@ -78,7 +78,7 @@ func (s *Server) IssueMessage(ctx context.Context, issueID, userID, text string)
 		if err != nil {
 			return "", err
 		}
-		s.events.Publish("issue_updated", updated)
+		s.issues.updated(updated)
 		go s.hub.DispatchReady()
 		return "已作为回答交给 Agent，它会在同一个候选里继续。", nil
 	case issue.ContractState != "confirmed":
@@ -106,7 +106,7 @@ func (s *Server) IssueMessage(ctx context.Context, issueID, userID, text string)
 		if err != nil {
 			return "", err
 		}
-		s.events.Publish("issue_updated", updated)
+		s.issues.updated(updated)
 		go s.hub.DispatchReady()
 		return "已作为反馈交给 Agent，它会在同一个候选里继续修改。", nil
 	}
@@ -140,7 +140,7 @@ func (s *Server) ConfirmIssue(ctx context.Context, issueID, userID string) (stri
 		return "", err
 	}
 	if updated, err := s.store.GetIssue(ctx, issue.ID); err == nil {
-		s.events.Publish("issue_updated", updated)
+		s.issues.updated(updated)
 	}
 	go s.hub.DispatchReady()
 	return fmt.Sprintf("已确认完成标准第 %d 版，开始实现。", draft.Revision), nil

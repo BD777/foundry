@@ -260,3 +260,63 @@ test("streamed state survives a following list refresh", () => {
     ["hello"],
   );
 });
+
+test("an event the workspace data does not follow changes nothing", () => {
+  const current = data("ws_1", [session("sess_1")]);
+  // Their features follow them; none falls through to the session list,
+  // even with a payload shaped like a session of this workspace.
+  for (const type of [
+    "evidence_updated",
+    "feishu_bot_updated",
+    "workspace_members_updated",
+    "chat_queue_changed",
+    "agent_subagent_updated",
+    "chat_titles_changed",
+    "chat_layout_changed",
+    "foundry_data_changed",
+    "not_a_client_event",
+  ])
+    assert.equal(
+      applyFoundryStreamEvent(current, {
+        type,
+        payload: session("sess_2"),
+      }),
+      current,
+      type,
+    );
+});
+
+test("a switch reads what differs between workspaces and keeps the rest as shown", async () => {
+  const { workspaceSwitchFields } = await import("../src/api.ts");
+  const shown = {
+    ...data("ws_1", [session("s1")]),
+    devices: [{ id: "dev", label: "Studio", status: "connected" }],
+    workspaces: [{ id: "ws_1" }, { id: "ws_2" }],
+    chats: [{ id: "chat_1" }],
+  };
+  const answer = {
+    workspace: { id: "ws_2", name: "Other" },
+    agentSessions: [session("s2", { workspaceId: "ws_2" })],
+    chats: [],
+    issues: [],
+  };
+  const switched = mergeLoadedFoundryData(
+    shown,
+    answer,
+    undefined,
+    workspaceSwitchFields,
+  );
+  assert.equal(switched.workspace.id, "ws_2");
+  assert.deepEqual(
+    switched.agentSessions.map((item) => item.id),
+    ["s2"],
+  );
+  assert.deepEqual(switched.chats, []);
+  assert.equal(switched.devices, shown.devices, "devices stay as shown");
+  assert.equal(switched.workspaces, shown.workspaces);
+  // Any other selection of another workspace changes nothing.
+  assert.equal(
+    mergeLoadedFoundryData(shown, answer, undefined, ["chats"]),
+    shown,
+  );
+});

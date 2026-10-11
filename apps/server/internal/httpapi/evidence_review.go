@@ -277,8 +277,8 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 	}
 	current, err := s.store.GetIssue(r.Context(), issue.ID)
 	if err == nil {
-		s.publishEvidenceUpdate(issue, decision.ID, review.ContractRevision, "integrated")
-		s.events.Publish("issue_updated", current)
+		s.issues.evidenceChanged(issue, decision.ID, review.ContractRevision, "integrated")
+		s.issues.updated(current)
 	}
 	writeResult(w, current, err)
 }

@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -31,7 +33,6 @@ type Server struct {
 	issueMutationLocks sync.Map
 	idempotencyLocks   sync.Map
 	titles             *chatTitleService
-	events             *browserEventHub
 	hub                *DaemonHub
 	feishu             *feishu.WSManager
 	options            ServerOptions
@@ -39,10 +40,20 @@ type Server struct {
 	store              store.Store
 	secrets            secretKeeper
 	accounts           store.AccountStore
-	loginLimiter       *loginLimiter
-	setupMu            sync.Mutex
-	workerUpdates      workerUpdates
-	setupCode          string
+	// externalAccounts holds people's third-party logins (external_accounts.go).
+	externalAccounts *externalaccounts.Service
+	loginLimiter     *loginLimiter
+	setupMu          sync.Mutex
+	workerUpdates    workerUpdates
+	setupCode        string
+	// stream is GET /api/events; the notifiers tell browsers on it, by
+	// domain, what the server's handlers change.
+	stream      *eventstream.Hub
+	sessions    sessionNotifier
+	issues      issueNotifier
+	chats       chatListNotifier
+	devices     deviceNotifier
+	dataChanges dataChangeNotifier
 	// skillRepos reads git repositories for the skill library; repoMu runs
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
@@ -67,6 +78,36 @@ type Server struct {
 	testFullAccess bool
 }
 
+// What the server's handlers tell browsers, by domain: each is the part of
+// the domain's notifier (events_*.go, data_changes.go) they use.
+type (
+	sessionChangeNotifier interface {
+		changed(ctx context.Context, change sessionChange, session store.AgentSession)
+	}
+	sessionNotifier interface {
+		sessionChangeNotifier
+		recorded(ctx context.Context, workspaceID string, event store.AgentSessionEvent)
+	}
+	issueNotifier interface {
+		created(issue store.Issue)
+		updated(issue store.Issue)
+		evidenceChanged(issue store.Issue, entityID string, version int, status string)
+	}
+	chatListNotifier interface {
+		sessionCreated(session store.AgentSession)
+		announceTitles(workspaceID string, chatIDs ...string)
+		layoutChanged(workspaceID string, layout store.ChatLayout)
+		queueChanged(queue store.ChatQueue)
+		announceQueue(ctx context.Context, workspaceID, chatID string)
+	}
+	deviceNotifier interface {
+		changed(ctx context.Context, deviceID string) bool
+	}
+	dataChangeNotifier interface {
+		changed(workspaceID string, resources ...string)
+	}
+)
+
 type healthResponse struct {
 	Status    string `json:"status"`
 	StartedAt string `json:"startedAt"`
@@ -74,10 +115,17 @@ type healthResponse struct {
 
 func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	options = normalizeServerOptions(options)
-	events := newBrowserEventHub()
+	stream := newBrowserStream()
+	data := newDataChanges(stream)
+	sessions := newSessionEvents(stream)
+	issues := &issueEvents{stream: stream}
+	chats := newChatListEvents(stream, store, data)
 	server := &Server{
-		events:       events,
-		hub:          NewDaemonHub(store, events, options.AllowedOrigin),
+		stream:       stream,
+		sessions:     sessions,
+		issues:       issues,
+		chats:        chats,
+		dataChanges:  data,
 		options:      options,
 		startedAt:    time.Now().UTC(),
 		store:        store,
@@ -86,26 +134,31 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		releaseAPI:   "https://api.github.com",
 		pypiAPI:      "https://pypi.org",
 	}
+	devices := newDeviceEvents(stream, store, data, server)
+	server.devices = devices
+	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessions, issues: issues, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
 	server.initAccounts()
 	if keeper, ok := store.(secretKeeper); ok {
 		server.secrets = keeper
 		server.hub.secrets = keeper
 	}
-	server.titles = &chatTitleService{store: store, dispatch: server.hub.DispatchAgentSession, connected: server.hub.HasConnection, publish: events.Publish, dataChanged: events.dataChanged}
-	server.hub.onSessionCompleted = server.titles.SessionCompleted
+	server.externalAccounts = newExternalAccountService(store, server.secrets)
+	server.hub.externalAccounts = server.externalAccounts
+	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
-	server.hub.deviceProjection = server.deviceForEvent
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
 	}
-	server.feishu = feishu.NewWSManager(store, server.secrets, server)
-	server.events.SubscribeInternal(server.feishu.HandleInternalEvent)
-	server.events.SubscribeInternal(server.onChatQueueEvent)
-	server.events.SubscribeInternal(server.onChatTitleJobEvent)
+	server.feishu = feishu.NewWSManager(store, server.secrets, server, stream)
+	// What follows a session's changes, in this order: its Feishu card, the
+	// chat's queued messages, the chat's title; and, once a device that
+	// reported a session ended was answered, naming what it answered.
+	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles)
+	issues.observe(feishuReactions{server.feishu})
 	go server.feishu.StartAllConfiguredBots(context.Background())
 	return server
 }
@@ -119,12 +172,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.feishu != nil {
 		s.feishu.StopAll()
 	}
-	s.events.Shutdown()
+	s.stream.Shutdown()
 	return s.hub.Shutdown(ctx)
-}
-
-func (s *Server) PublishEvent(eventType string, payload any) {
-	s.events.Publish(eventType, payload)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -325,7 +374,9 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	s.projectionsChanged("")
+	// Other workspaces' views read what changed for them; the workspace's
+	// own viewers have nothing left to read.
+	s.projectionsChanged("", workspaceRemovalFields...)
 	if s.feishu != nil {
 		s.feishu.StopBot(id)
 	}
@@ -799,6 +850,11 @@ func summarizeAgentSessionForList(session store.AgentSession) store.AgentSession
 }
 
 func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
+	// A reader that missed stream events reads only those (session_events_after.go).
+	if r.URL.Query().Has("eventsAfter") {
+		s.handleGetAgentSessionEventsAfter(w, r)
+		return
+	}
 	window, windowed, err := requestedEventWindow(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -929,11 +985,11 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 	// Readers read this list once per session view and then follow
 	// agent_subagent_updated; it is served from the cache until a subagent
 	// event arrives, and concurrent readers share one device round trip.
+	// Chats read digests (?view=digest); agents, the whole list.
 	ctx, cancel := context.WithTimeout(r.Context(), subagentReadWait)
 	defer cancel()
-	body, err := s.hub.subagents.load(ctx, session.ID, isRecoverableAgentSessionStatus(session.Status), func(ctx context.Context) ([]store.AgentSubagentSummary, error) {
-		return s.hub.ListAgentSubagents(ctx, session)
-	})
+	view := subagentListViewOf(r)
+	body, err := s.hub.subagents.load(ctx, session.ID, view, isRecoverableAgentSessionStatus(session.Status), s.hub.subagentListFetch(session, view))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -942,15 +998,15 @@ func (s *Server) handleListAgentSubagents(w http.ResponseWriter, r *http.Request
 }
 
 // applySessionFork resolves forkSessionId: a new Foundry session starts from
-// a copy of the source's native history, on its agent and profile. Forking
-// needs ordinary read visibility into the source.
+// a copy of the source's native history, on its agent and profile, so in its
+// workspace; callers check the caller may start work there. Forking needs
+// ordinary read visibility into the source.
 func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessionInput, actor Actor) (int, error) {
+	// A source the caller cannot read is not found either, so reach is not
+	// disclosed.
 	target, err := s.store.GetAgentSessionSummary(r.Context(), strings.TrimSpace(input.ForkSessionID))
-	if err != nil {
+	if err != nil || !s.canReadSession(r.Context(), actor, target) {
 		return http.StatusNotFound, fmt.Errorf("fork source session not found")
-	}
-	if !s.canReadSession(r.Context(), actor, target) {
-		return http.StatusForbidden, fmt.Errorf("session token cannot fork this session")
 	}
 	// The store gives the fork its own native session, copied from the
 	// source's; it runs on the source's agent so that copy is on its device.
@@ -961,9 +1017,7 @@ func (s *Server) applySessionFork(r *http.Request, input *store.CreateAgentSessi
 	if input.ProfileID == "" {
 		input.ProfileID = target.ProfileID
 	}
-	if input.WorkspaceID == "" {
-		input.WorkspaceID = target.WorkspaceID
-	}
+	input.WorkspaceID = target.WorkspaceID
 	return 0, nil
 }
 
@@ -985,9 +1039,31 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 			writeForbidden(w, err.Error())
 			return
 		}
+		// The same reach as its Foundry tools (create_session): a native
+		// session is not named by id, which could fork one it cannot read.
+		if strings.TrimSpace(input.NativeSessionID) != "" {
+			writeError(w, http.StatusBadRequest, "nativeSessionId is not accepted from a session: continue a Foundry session with its messages endpoint or fork it with forkSessionId")
+			return
+		}
+	}
+	// A fork runs in its source's workspace; that is the one checked.
+	if strings.TrimSpace(input.ForkSessionID) != "" {
+		if status, forkErr := s.applySessionFork(r, &input, actor); forkErr != nil {
+			writeError(w, status, forkErr.Error())
+			return
+		}
 	}
 	if !s.requireWorkspace(w, r, strings.TrimSpace(input.WorkspaceID), store.WorkspaceRoleMember) {
 		return
+	}
+	// A session adopts a native chat only from the workspace it starts in,
+	// which it reaches as Member; an unassigned chat is in no workspace a
+	// session reaches.
+	if chatID := strings.TrimSpace(input.ChatID); chatID != "" && actor.Agent() {
+		if chat, err := s.store.GetChat(r.Context(), chatID); err != nil || chat.WorkspaceID != strings.TrimSpace(input.WorkspaceID) {
+			writeError(w, http.StatusNotFound, "chat not found")
+			return
+		}
 	}
 	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/create", input, http.StatusCreated)
 	if handled {
@@ -1000,12 +1076,6 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 	}
 	if input.Verification {
 		input.Source = "verification"
-	}
-	if strings.TrimSpace(input.ForkSessionID) != "" {
-		if status, forkErr := s.applySessionFork(r, &input, actor); forkErr != nil {
-			writeError(w, status, forkErr.Error())
-			return
-		}
 	}
 	session, status, err := s.startAgentSession(r.Context(), input)
 	if err != nil {
@@ -1035,39 +1105,86 @@ func (s *Server) startAgentSession(ctx context.Context, input store.CreateAgentS
 	if status, err := s.resolveSessionDevice(ctx, &input); err != nil {
 		return store.AgentSession{}, status, err
 	}
-	if input.WorkspaceID != "" {
+	session, err := s.createAndDispatch(ctx, input, true)
+	switch {
+	case err == nil:
+		return session, 0, nil
+	case errors.Is(err, ErrLocalDaemonNotConnected):
+		return session, http.StatusConflict, err
+	case errors.Is(err, store.ErrDeviceRemoved):
+		return store.AgentSession{}, http.StatusGone, errors.New("device_removed")
+	default:
+		return store.AgentSession{}, 0, err
+	}
+}
+
+var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
+
+// createAndDispatch creates a session, tells its viewers and hands it to its
+// device: the one way a new session starts, whoever starts it (a person,
+// the chat queue, Feishu, an agent over MCP). reconcile first settles the
+// workspace's sessions whose device stopped reporting (MCP creates without
+// it). A session its device does not take comes back failed, with
+// ErrLocalDaemonNotConnected; a refused creation, with the store's error.
+func (s *Server) createAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool) (store.AgentSession, error) {
+	if reconcile && input.WorkspaceID != "" {
 		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
 			s.reconcileAgentSessions(ctx, sessions)
 		}
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
 	if err != nil {
-		if errors.Is(err, store.ErrDeviceRemoved) {
-			return store.AgentSession{}, http.StatusGone, errors.New("device_removed")
-		}
-		return store.AgentSession{}, 0, err
+		return store.AgentSession{}, err
 	}
-	s.events.Publish("agent_session_created", session)
-	s.publishCreatedSessionChatList(session)
+	s.sessions.changed(ctx, sessionCreated, session)
+	s.chats.sessionCreated(session)
 	if chatID := session.AdoptedChatID; chatID != "" {
 		// The adopted native chat's queued messages are the session's now.
-		s.publishChatQueue(ctx, session.WorkspaceID, chatID)
-		s.publishChatQueue(ctx, session.WorkspaceID, session.ID)
+		s.chats.announceQueue(ctx, session.WorkspaceID, chatID)
+		s.chats.announceQueue(ctx, session.WorkspaceID, session.ID)
 	}
 	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
 		// Best-effort asynchronous AI naming; failures keep the deterministic
 		// placeholder name and never block session dispatch.
 		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
 	}
-	if err := s.hub.DispatchAgentSession(session); err != nil {
-		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
-		s.events.Publish("agent_session_completed", session)
-		return session, http.StatusConflict, ErrLocalDaemonNotConnected
+	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
+		return failed, ErrLocalDaemonNotConnected
 	}
-	return session, 0, nil
+	return session, nil
 }
 
-var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
+// dispatchOrFail hands a session its viewers know of to its device. One the
+// device does not take fails with failure(err) as its error (see
+// failUndelivered). It comes back failed, with the dispatch's error.
+func (s *Server) dispatchOrFail(ctx context.Context, session store.AgentSession, failure func(error) string) (store.AgentSession, error) {
+	if err := s.hub.DispatchAgentSession(session); err != nil {
+		return s.failUndelivered(ctx, session, failure(err)), err
+	}
+	return session, nil
+}
+
+// failUndelivered fails a session its device did not take, and tells it
+// like any other end, so what reacts to an ended session follows (the
+// chat's queued messages, Feishu's card, naming).
+func (s *Server) failUndelivered(ctx context.Context, session store.AgentSession, reason string) store.AgentSession {
+	failed, err := s.store.FailAgentSession(ctx, session.ID, reason)
+	if err != nil {
+		log.Printf("fail session %s its device did not take: %v", session.ID, err)
+		return failed
+	}
+	s.sessions.changed(ctx, sessionCompleted, failed)
+	return failed
+}
+
+// notConnected records a failed dispatch as the device not taking it.
+func notConnected(error) string { return ErrLocalDaemonNotConnected.Error() }
+
+// dispatchNamingJob hands a naming job to its device; one it does not take
+// fails with what failed.
+func (s *Server) dispatchNamingJob(ctx context.Context, job store.AgentSession) (store.AgentSession, error) {
+	return s.dispatchOrFail(ctx, job, func(err error) string { return err.Error() })
+}
 
 // pickSessionAgent chooses the agent a request names, most specific first:
 // its agent id, else its profile (within the requested runtime), else the
@@ -1187,26 +1304,7 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 	if deviceID != "" && !s.hub.HasConnection(deviceID) {
 		return store.AgentSession{}, ErrLocalDaemonNotConnected
 	}
-	if input.WorkspaceID != "" {
-		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
-			s.reconcileAgentSessions(ctx, sessions)
-		}
-	}
-	session, err := s.store.CreateAgentSession(ctx, input)
-	if err != nil {
-		return store.AgentSession{}, err
-	}
-	s.events.Publish("agent_session_created", session)
-	s.publishCreatedSessionChatList(session)
-	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
-		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
-	}
-	if err := s.hub.DispatchAgentSession(session); err != nil {
-		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
-		s.events.Publish("agent_session_completed", session)
-		return session, ErrLocalDaemonNotConnected
-	}
-	return session, nil
+	return s.createAndDispatch(ctx, input, true)
 }
 
 // SendSessionMessage delivers a follow-up to a session on behalf of an
@@ -1267,18 +1365,14 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 	// A summary carries no events, so the input's own transcript events are
 	// streamed too; otherwise viewers keep the previous turn as the latest.
 	for _, event := range store.SessionInputEvents(session.ID, session.Input) {
-		s.events.PublishIn(session.WorkspaceID, "agent_session_event", event)
+		s.sessions.recorded(ctx, session.WorkspaceID, event)
 	}
-	s.events.Publish("agent_session_created", session)
+	s.sessions.changed(ctx, sessionQueued, session)
 	if !s.hub.HasConnection(session.DeviceID) {
-		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
-		s.events.Publish("agent_session_completed", session)
-		return session, http.StatusConflict, ErrLocalDaemonNotConnected
+		return s.failUndelivered(ctx, session, notConnected(nil)), http.StatusConflict, ErrLocalDaemonNotConnected
 	}
-	if err := s.hub.DispatchAgentSession(session); err != nil {
-		session, _ = s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
-		s.events.Publish("agent_session_completed", session)
-		return session, http.StatusConflict, ErrLocalDaemonNotConnected
+	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
+		return failed, http.StatusConflict, ErrLocalDaemonNotConnected
 	}
 	return session, 0, nil
 }
@@ -1391,7 +1485,7 @@ func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID strin
 		return store.AgentSession{}, 0, err
 	}
 	s.appendSessionControlAudit(ctx, session, "Canceled by orchestrator", actor)
-	s.events.Publish("agent_session_completed", session)
+	s.sessions.changed(ctx, sessionCompleted, session)
 	return session, 0, nil
 }
 
@@ -1418,7 +1512,7 @@ func (s *Server) appendSessionControlAudit(ctx context.Context, session store.Ag
 		log.Printf("record %q on session %s: %v", label, session.ID, err)
 		return
 	}
-	s.events.PublishIn(session.WorkspaceID, sessionEventStreamType, event)
+	s.sessions.recorded(ctx, session.WorkspaceID, event)
 }
 
 func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
@@ -1453,11 +1547,21 @@ func (s *Server) handleDaemonSyncChats(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDeviceWorkspace(w, r, input.WorkspaceID) {
 		return
 	}
-	if err := s.hub.syncChats(r.Context(), input); err != nil {
+	refused, err := s.hub.syncChats(r.Context(), input)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "synced", "count": len(input.Chats)})
+	writeJSON(w, http.StatusOK, syncedChats{Status: "synced", Count: len(input.Chats), Refused: refused})
+}
+
+// syncedChats answers a device's chat sync. Refused names the chats this
+// server never keeps (deleted, or a Foundry session owns them), which the
+// device need not send again; older workers ignore it.
+type syncedChats struct {
+	Status  string   `json:"status"`
+	Count   int      `json:"count"`
+	Refused []string `json:"refused,omitempty"`
 }
 
 // handleDaemonRunningChats names the device-native chats this server shows as

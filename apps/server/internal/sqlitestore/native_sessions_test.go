@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -581,5 +582,38 @@ func TestNativeFilesWithoutTurnsAreNotChats(t *testing.T) {
 	}
 	if got := listedChatIDs(t, db, "ws_stub"); !slices.Equal(got, []string{"native_claude_real"}) {
 		t.Fatalf("listed = %v; a full upload without turns is not a chat", got)
+	}
+}
+
+// A request authorized for one workspace reaches nothing of another: not
+// its agent (and so its device), not a native session one of its sessions
+// owns.
+func TestSessionsStayInTheWorkspaceTheyNamed(t *testing.T) {
+	ctx := context.Background()
+	db := newTestStore(t)
+	registerAgentSessionTestDaemon(t, db, "ws_a", "agent_a")
+	registerAgentSessionTestDaemon(t, db, "ws_b", "agent_b")
+	if _, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_a", AgentID: "agent_b", Provider: "codex", Prompt: "run elsewhere"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a session for ws_a on ws_b's agent: %v, want not found", err)
+	}
+	source, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_b", AgentID: "agent_b", Provider: "codex", Prompt: "private plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteAgentSession(ctx, source.ID, "private answer", "native_b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_a", AgentID: "agent_a", Provider: "codex", Prompt: "same history", NativeSessionID: "native_b"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("naming ws_b's native session from ws_a: %v, want not found", err)
+	}
+	own, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_a", AgentID: "agent_a", Provider: "codex", Prompt: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CompleteAgentSession(ctx, own.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SendAgentSessionInput(ctx, own.ID, store.SendAgentSessionInput{Prompt: "next", AgentID: "agent_b"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("switching a ws_a session onto ws_b's agent: %v, want not found", err)
 	}
 }

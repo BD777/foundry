@@ -22,32 +22,75 @@ func (s *Store) migrateDeviceTools(ctx context.Context) error {
 	return s.ensureColumn(ctx, "device_tools", "version", `ALTER TABLE device_tools ADD COLUMN version TEXT NOT NULL DEFAULT ''`)
 }
 
+// deviceToolAnswer is what a device reported about one program.
+type deviceToolAnswer struct {
+	available bool
+	version   string
+}
+
 // ReplaceDeviceTools records which of the programs skills need a device
 // has, and the versions Foundry installed there, replacing its previous
-// answer.
-func (s *Store) ReplaceDeviceTools(ctx context.Context, deviceID string, tools map[string]bool, versions map[string]string) error {
+// answer. Only programs whose answer changed are written, so checked_at is
+// when the current answer was first given; it reports whether any changed.
+func (s *Store) ReplaceDeviceTools(ctx context.Context, deviceID string, tools map[string]bool, versions map[string]string) (bool, error) {
+	answers := map[string]deviceToolAnswer{}
+	for tool, available := range tools {
+		answers[tool] = deviceToolAnswer{available: available, version: versions[tool]}
+	}
+	for tool, version := range versions {
+		if _, found := tools[tool]; !found {
+			answers[tool] = deviceToolAnswer{available: true, version: version}
+		}
+	}
 	now := formatTime(time.Now())
-	return s.withTx(ctx, func(tx *Store) error {
-		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_tools WHERE device_id = ?`, deviceID); err != nil {
+	changed := false
+	err := s.withTx(ctx, func(tx *Store) error {
+		rows, err := tx.conn().QueryContext(ctx, `SELECT tool, available, version FROM device_tools WHERE device_id = ?`, deviceID)
+		if err != nil {
 			return err
 		}
-		for tool, available := range tools {
-			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO device_tools (device_id, tool, available, checked_at, version) VALUES (?, ?, ?, ?, ?)`,
-				deviceID, tool, available, now, versions[tool]); err != nil {
+		stored := map[string]deviceToolAnswer{}
+		for rows.Next() {
+			var tool string
+			var answer deviceToolAnswer
+			if err := rows.Scan(&tool, &answer.available, &answer.version); err != nil {
+				rows.Close()
+				return err
+			}
+			stored[tool] = answer
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for tool := range stored {
+			if _, found := answers[tool]; found {
+				continue
+			}
+			changed = true
+			if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_tools WHERE device_id = ? AND tool = ?`, deviceID, tool); err != nil {
 				return err
 			}
 		}
-		for tool, version := range versions {
-			if _, found := tools[tool]; found {
+		for tool, answer := range answers {
+			if previous, found := stored[tool]; found && previous == answer {
 				continue
 			}
-			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO device_tools (device_id, tool, available, checked_at, version) VALUES (?, ?, 1, ?, ?)`,
-				deviceID, tool, now, version); err != nil {
+			changed = true
+			if _, err := tx.conn().ExecContext(ctx, `
+				INSERT INTO device_tools (device_id, tool, available, checked_at, version) VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT (device_id, tool) DO UPDATE SET available = excluded.available, checked_at = excluded.checked_at, version = excluded.version`,
+				deviceID, tool, answer.available, now, answer.version); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
 }
 
 // ListDeviceTools lists what devices reported; an empty id lists every

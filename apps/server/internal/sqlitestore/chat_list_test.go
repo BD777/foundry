@@ -177,7 +177,7 @@ func TestComparedChatIsCheckedAgainInTheTransaction(t *testing.T) {
 	save := func(value store.ChatThread, known chatComparison) {
 		t.Helper()
 		if err := db.withTx(ctx, func(tx *Store) error {
-			_, err := tx.saveComparedChat(ctx, value, time.Now(), known)
+			_, _, err := tx.saveComparedChat(ctx, value, time.Now(), known)
 			return err
 		}); err != nil {
 			t.Fatal(err)

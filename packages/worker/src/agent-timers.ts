@@ -2,26 +2,26 @@
  * Agent timer abstraction.
  *
  * Agents can create session-scoped timers that wake the agent later
- * (Claude's CronCreate/ScheduleWakeup). The application layer must observe
- * those timers without knowing provider-specific mechanics, so every runtime
- * exposes an {@link AgentTimersCapability}. Only Claude supports timers today;
- * the headless Codex protocol has no equivalent.
+ * (Claude's CronCreate, ScheduleWakeup and /loop). Claude Code schedules
+ * them: it fires a timer while its process runs and the session is idle
+ * (later than the cron says, by an offset fixed by the timer's id; see
+ * claudeTimerNextFire), and brings its timers back when the session
+ * resumes. Foundry observes them through SDK hooks, and resumes a session
+ * whose timer is due while no process runs it (session-timers.ts). Every
+ * runtime exposes an {@link AgentTimersCapability}; only Claude supports
+ * timers today, the headless Codex protocol has no equivalent.
  *
- * Timer events can arrive while no Foundry turn owns the agent process (the
- * timer wakes the long-lived process directly). Trackers therefore emit
- * through a sink that routes to either the active turn or the out-of-band
- * session-event channel.
+ * A timer's turn runs while no Foundry turn owns the agent process. The
+ * tracker marks that turn when Claude submits the timer's prompt; the runner
+ * publishes it with its answer when it ends (see takeFire).
  */
 
 import { processLabels } from "@bd777/foundry-protocol";
-import { readFileSync } from "node:fs";
 import {
+  claudeTimerNextFire,
   humanizeCron,
-  nextCronFire,
   type AgentSessionEvent,
-  type AgentSessionTimerFire,
   type AgentScheduledTask,
-  type SessionFileReference,
 } from "@bd777/foundry-protocol";
 
 // Cron parsing/humanization is shared with the web UI through the protocol
@@ -66,22 +66,28 @@ export interface ClaudeTimerSink {
   emit: (event: TimerSinkEvent) => void;
   /** Foundry session id the runtime is currently attached to. */
   sessionId: () => string;
-  /** Ends a timer's turn: records its files, returns its answer's links. */
-  answerFiles?: (response: string) => Promise<SessionFileReference[]>;
+  /** The session's timers changed (the device keeps them; see session-timers.ts). */
+  timersChanged?: (tasks: AgentScheduledTask[]) => void;
+}
+
+/** A turn Claude started for a timer: from its prompt until its result. */
+export interface ClaudeTimerTurn {
+  /** The timer, when its prompt names one the session holds. */
+  id?: string;
+  prompt: string;
+  startedAt: string;
 }
 
 // --- Claude tracker -------------------------------------------------------
 
 interface StopHookInput {
   agent_id?: string;
-  last_assistant_message?: string;
   session_crons?: Array<{
     id: string;
     prompt: string;
     recurring: boolean;
     schedule: string;
   }>;
-  transcript_path?: string;
 }
 
 interface PostToolUseHookInput {
@@ -94,104 +100,13 @@ interface PostToolUseHookInput {
   toolResponse?: unknown;
 }
 
-interface TranscriptTailTurn {
-  completedAt?: string;
-  origin: AgentSessionTimerFire["origin"];
-  prompt: string;
-  response?: string;
-  startedAt?: string;
+interface UserPromptSubmitHookInput {
+  agent_id?: string;
+  prompt?: string;
 }
 
-const transcriptTailBytes = 131072;
-const transcriptTailRows = 300;
-
-function recordText(content: unknown): string {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((block) =>
-        block &&
-        typeof block === "object" &&
-        (block as Record<string, unknown>).type === "text"
-          ? String((block as Record<string, unknown>).text ?? "")
-          : "",
-      )
-      .join("")
-      .trim();
-  }
-  return "";
-}
-
-/**
- * Recover the most recent user prompt turn from a transcript tail. Cron wake
- * prompts land as ordinary user records with `turnOrigin: "scheduled"`.
- */
-function readTranscriptTailTurn(
-  transcriptPath: string | undefined,
-): TranscriptTailTurn | undefined {
-  if (!transcriptPath) {
-    return undefined;
-  }
-  let rows: Array<Record<string, unknown>> = [];
-  try {
-    const buffer = readFileSync(transcriptPath);
-    const slice = buffer.subarray(
-      Math.max(0, buffer.length - transcriptTailBytes),
-    );
-    rows = slice
-      .toString("utf8")
-      .split(/\r?\n/)
-      .filter((line) => line.trim().startsWith("{"))
-      .slice(-transcriptTailRows)
-      .map((line) => {
-        try {
-          return JSON.parse(line) as Record<string, unknown>;
-        } catch {
-          return {};
-        }
-      });
-  } catch {
-    return undefined;
-  }
-
-  let response: string | undefined;
-  let completedAt: string | undefined;
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const row = rows[index];
-    if (row?.type === "assistant" && !response) {
-      const message = row.message as Record<string, unknown> | undefined;
-      const text = recordText(message?.content);
-      if (text) {
-        response = text;
-        completedAt =
-          typeof row.timestamp === "string" ? row.timestamp : undefined;
-      }
-    }
-    if (row?.type === "user" && row.isMeta !== true) {
-      const message = row.message as Record<string, unknown> | undefined;
-      const prompt = recordText(message?.content);
-      // Only timer-driven wakes carry the scheduled origin marker. A normal
-      // Foundry turn whose Stop hook races result-resolution must never be
-      // mistaken for a background turn, and neither may Claude's follow-up
-      // to a background task: only the latest prompt counts.
-      if (prompt) {
-        return row.turnOrigin === "scheduled"
-          ? {
-              completedAt,
-              origin: "scheduled",
-              prompt,
-              response,
-              startedAt:
-                typeof row.timestamp === "string" ? row.timestamp : undefined,
-            }
-          : undefined;
-      }
-    }
-  }
-  return undefined;
-}
+/** Claude Code's prompt for a background task's end, not a timer's. */
+const taskNotificationPrompt = /^\s*<task-notification>/;
 
 function toScheduledTask(
   raw: {
@@ -202,7 +117,7 @@ function toScheduledTask(
   },
   now: Date,
 ): AgentScheduledTask {
-  const next = raw.recurring ? nextCronFire(raw.schedule, now) : undefined;
+  const next = claudeTimerNextFire(raw, now);
   return {
     humanSchedule: humanizeCron(raw.schedule, raw.recurring, now),
     id: raw.id,
@@ -216,14 +131,25 @@ function toScheduledTask(
 
 /**
  * Observes Claude session timers through SDK hooks for one long-lived runtime
- * and forwards snapshot/fire events through the sink.
+ * and forwards snapshots through the sink.
  */
 export class ClaudeTimerTracker {
   private readonly tasks = new Map<string, AgentScheduledTask>();
   private lastSignature = "";
   private closed = false;
+  private firing?: ClaudeTimerTurn;
 
-  constructor(private readonly sink: ClaudeTimerSink) {}
+  /**
+   * `known` are the session's timers from before this process: Claude Code
+   * brings them back when it resumes the session.
+   */
+  constructor(
+    private readonly sink: ClaudeTimerSink,
+    known: readonly AgentScheduledTask[] = [],
+  ) {
+    for (const task of known) this.tasks.set(task.id, task);
+    if (this.tasks.size > 0) this.lastSignature = this.signature();
+  }
 
   /** Options fragment merged into the Claude SDK `query()` options. */
   hooks(): Record<string, unknown> {
@@ -240,6 +166,14 @@ export class ClaudeTimerTracker {
           ],
         },
       ],
+      UserPromptSubmit: [
+        {
+          hooks: [
+            async (input: unknown) =>
+              this.handlePromptSubmit(input as UserPromptSubmitHookInput),
+          ],
+        },
+      ],
     };
   }
 
@@ -247,17 +181,41 @@ export class ClaudeTimerTracker {
     return [...this.tasks.values()];
   }
 
-  /** The agent process is gone; its in-memory timers died with it. */
-  close(): void {
-    if (this.closed) {
-      return;
-    }
+  /**
+   * The timer turn running since Claude submitted its prompt, once: the
+   * runner publishes it with its answer when the turn ends, or drops it when
+   * a Foundry turn took the stream.
+   */
+  takeFire(): ClaudeTimerTurn | undefined {
+    const fire = this.firing;
+    this.firing = undefined;
+    return fire;
+  }
+
+  /**
+   * The agent process is gone. Its timers are not: Claude Code brings them
+   * back when the session resumes. Returns them.
+   */
+  close(): AgentScheduledTask[] {
     this.closed = true;
-    if (this.tasks.size > 0) {
-      this.tasks.clear();
-      this.lastSignature = "";
-      this.dispatchSnapshot();
-    }
+    this.firing = undefined;
+    return this.snapshot();
+  }
+
+  /**
+   * Claude submits a timer's prompt itself when the timer fires (in the
+   * transcript a meta prompt of origin "scheduled"): a prompt naming one of
+   * the session's timers, or any prompt while no Foundry turn runs, starts
+   * a timer's turn. A Foundry turn's own prompt and steers name none.
+   */
+  private handlePromptSubmit(input: UserPromptSubmitHookInput): undefined {
+    if (this.closed || input.agent_id) return undefined;
+    const prompt = String(input.prompt ?? "").trim();
+    if (!prompt || taskNotificationPrompt.test(prompt)) return undefined;
+    const id = this.matchTimerId(prompt);
+    if (!id && this.sink.isActiveTurn()) return undefined;
+    this.firing = { id, prompt, startedAt: new Date().toISOString() };
+    return undefined;
   }
 
   private handlePostToolUse(input: unknown): undefined {
@@ -331,19 +289,6 @@ export class ClaudeTimerTracker {
         recurring: cron.recurring,
       })),
     );
-
-    if (!this.sink.isActiveTurn()) {
-      const turn = readTranscriptTailTurn(input.transcript_path);
-      if (
-        turn &&
-        (turn.origin === "scheduled" || turn.origin === "background")
-      ) {
-        await this.emitFire(
-          turn,
-          input.last_assistant_message ?? turn.response,
-        );
-      }
-    }
     return undefined;
   }
 
@@ -367,12 +312,20 @@ export class ClaudeTimerTracker {
       if (!id || !schedule) {
         continue;
       }
+      const reported = String(job.prompt ?? "");
+      // Claude caps a listed prompt (session_crons) at 1000 characters;
+      // the full one CronCreate saw stays.
+      const known = this.tasks.get(id)?.prompt;
+      const prompt =
+        known && known.length > reported.length && clippedFrom(reported, known)
+          ? known
+          : reported;
       next.set(
         id,
         toScheduledTask(
           {
             id,
-            prompt: String(job.prompt ?? ""),
+            prompt,
             recurring: job.recurring !== false,
             schedule,
           },
@@ -421,6 +374,7 @@ export class ClaudeTimerTracker {
       snapshot.length > 0
         ? snapshot.map((task) => task.humanSchedule).join("、")
         : "";
+    this.sink.timersChanged?.(snapshot);
     this.sink.emit({
       detail,
       metadata: { timerSnapshot: snapshot },
@@ -428,52 +382,25 @@ export class ClaudeTimerTracker {
     });
   }
 
-  private async emitFire(
-    turn: TranscriptTailTurn,
-    fallbackResponse?: string,
-  ): Promise<void> {
-    const response = (turn.response || fallbackResponse || "").trim();
-    let fileReferences: SessionFileReference[] = [];
-    try {
-      fileReferences = (await this.sink.answerFiles?.(response)) ?? [];
-    } catch (error) {
-      // The answer is published without file links.
-      console.error(
-        `Could not record the timer turn's files: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    const completedAt = turn.completedAt ?? new Date().toISOString();
-    const prompt = turn.prompt.trim();
-    const timerId = this.matchTimerId(prompt);
-    const fire: AgentSessionTimerFire = {
-      completedAt,
-      id: timerId,
-      origin: turn.origin,
-      prompt,
-      response: response || undefined,
-      startedAt: turn.startedAt,
-    };
-    const label =
-      turn.origin === "scheduled" ? timerFireLabel : backgroundTurnLabel;
-    // No typed message here: the web layer decides how a timer-triggered
-    // turn is rendered (a divider plus the auto-produced response).
-    this.sink.emit({
-      detail: prompt.split(/\r?\n/)[0]?.slice(0, 200) ?? prompt.slice(0, 200),
-      metadata: {
-        timerFire: fire,
-        ...(fileReferences.length > 0 ? { fileReferences } : {}),
-      },
-      label,
-    });
-  }
-
   private matchTimerId(prompt: string): string | undefined {
     const head = prompt.slice(0, 200);
     for (const task of this.tasks.values()) {
-      if (task.prompt === prompt || task.prompt.startsWith(head)) {
+      const timerPrompt = task.prompt.trim();
+      if (
+        timerPrompt &&
+        (timerPrompt === prompt ||
+          timerPrompt.startsWith(head) ||
+          clippedFrom(timerPrompt, prompt))
+      ) {
         return task.id;
       }
     }
     return undefined;
   }
+}
+
+/** Whether `listed` is `full` as Claude lists it, cut with "… [+N chars]". */
+function clippedFrom(listed: string, full: string): boolean {
+  const match = /^([\s\S]*?)… \[\+\d+ chars\]$/.exec(listed);
+  return Boolean(match?.[1] && full.startsWith(match[1]));
 }

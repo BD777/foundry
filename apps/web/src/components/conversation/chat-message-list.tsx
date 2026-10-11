@@ -90,7 +90,9 @@ function fileReferencesEqual(
     (reference, index) =>
       reference.text === right[index]!.text &&
       reference.path === right[index]!.path &&
-      reference.kind === right[index]!.kind,
+      reference.kind === right[index]!.kind &&
+      Boolean(reference.pending) === Boolean(right[index]!.pending) &&
+      reference.sessionId === right[index]!.sessionId,
   );
 }
 

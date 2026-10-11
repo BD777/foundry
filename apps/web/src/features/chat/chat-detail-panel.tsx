@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  nextCronFire,
-  type AgentBackgroundTaskOutput,
+  claudeTimerNextFire,
   type AgentScheduledTask,
   type AgentSubagentTranscript,
   type SessionFileDiff,
@@ -25,7 +24,6 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   isAbortError,
-  readBackgroundTaskOutput,
   readSessionFileDiff,
   readWorkspaceFile,
   stopBackgroundTask,
@@ -47,6 +45,7 @@ import type {
 import { BackgroundKindIcon, BackgroundStatusIcon } from "./chat-context-card";
 import { formatDuration } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "./use-shared-now";
+import { useBackgroundTaskOutput } from "./use-background-task-output";
 import type { ParsedImageTag } from "./chat-message-content";
 import { WorkspaceDirectoryBrowser } from "./workspace-directory-browser";
 import { i18n } from "../../i18n";
@@ -181,9 +180,17 @@ function SessionFileView({
     <article className="fdy-chat-detail-document">
       {toolbar}
       <p className="fdy-chat-file-path" title={file.path}>
-        {item.workspacePath ?? file.path}
+        {item.workspacePath ?? file.workspacePath ?? file.path}
       </p>
-      {file.kind === "missing" ? (
+      {file.kind === "missing" && item.pending ? (
+        <Alert
+          className="fdy-chat-file-banner"
+          tone="info"
+          title={t("detail.fileNotYet", { device })}
+        >
+          {t("detail.fileNotYetHint")}
+        </Alert>
+      ) : file.kind === "missing" ? (
         <Alert
           className="fdy-chat-file-banner"
           tone="warning"
@@ -513,7 +520,7 @@ function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
 
 function TimerDetail({ item }: { item: ChatTimerItem }) {
   const task: AgentScheduledTask = item.task;
-  const liveNext = nextCronFire(task.schedule)?.toISOString();
+  const liveNext = claudeTimerNextFire(task)?.toISOString();
   const { t } = useTranslation("chat");
   return (
     <article className="fdy-chat-meta-detail">
@@ -544,9 +551,6 @@ function TimerDetail({ item }: { item: ChatTimerItem }) {
   );
 }
 
-/** A running task's output is read again this often while it is open. */
-const backgroundOutputRefreshMs = 5000;
-
 /**
  * One background task: what it is, how long it ran and how it ended; for
  * members, its redacted command and the end of its output, refreshed while
@@ -563,54 +567,20 @@ function BackgroundTaskDetail({
   const task = item.task;
   const running = task.status === "running";
   const now = useSharedNow(running);
-  const [output, setOutput] = useState<AgentBackgroundTaskOutput>();
-  const [outputError, setOutputError] = useState<string>();
-  const [membersOnly, setMembersOnly] = useState(false);
+  const {
+    output,
+    error: outputError,
+    membersOnly,
+  } = useBackgroundTaskOutput(item.sessionId, task.id, running);
   const [confirming, setConfirming] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string>();
 
   useEffect(() => {
-    setOutput(undefined);
-    setOutputError(undefined);
-    setMembersOnly(false);
     setConfirming(false);
     setStopping(false);
     setStopError(undefined);
   }, [item.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: number | undefined;
-    const controller = new AbortController();
-    const load = async () => {
-      try {
-        const value = await readBackgroundTaskOutput(item.sessionId, task.id, {
-          signal: controller.signal,
-        });
-        if (cancelled) return;
-        setOutput(value);
-        setOutputError(undefined);
-      } catch (reason) {
-        if (cancelled || isAbortError(reason)) return;
-        if ((reason as { status?: number }).status === 403) {
-          setMembersOnly(true);
-          return;
-        }
-        setOutputError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-      }
-      if (!cancelled && running)
-        timer = window.setTimeout(() => void load(), backgroundOutputRefreshMs);
-    };
-    void load();
-    return () => {
-      cancelled = true;
-      controller.abort();
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-  }, [item.sessionId, task.id, running]);
 
   useEffect(() => {
     if (!running) setStopping(false);

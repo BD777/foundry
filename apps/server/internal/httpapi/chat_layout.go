@@ -38,7 +38,7 @@ func (s *Server) handleSaveChatLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err == nil {
-		s.publishChatLayoutChanged(input.WorkspaceID, &result)
+		s.chats.layoutChanged(input.WorkspaceID, result)
 	}
 	writeResult(w, result, err)
 }
@@ -63,7 +63,7 @@ func (s *Server) handleDeleteChatGroup(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		// The group's chats and their sessions are deleted with it. Their
 		// titles stay (GET /api/chat-titles lists them still).
-		s.publishChatLayoutChanged(input.WorkspaceID, &result)
+		s.chats.layoutChanged(input.WorkspaceID, result)
 		s.projectionsChanged(input.WorkspaceID, fieldChats, fieldAgentSessions)
 	}
 	writeResult(w, result, err)

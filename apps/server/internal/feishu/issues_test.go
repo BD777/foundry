@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -12,10 +13,11 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// fakeBot records the cards a bot would send.
+// fakeBot records the cards a bot would send and the patches it would make.
 type fakeBot struct {
 	mu      sync.Mutex
 	replies []struct{ to, card string }
+	patches []struct{ to, card string }
 }
 
 func (b *fakeBot) ReplyCard(_ context.Context, messageID, card string) (string, error) {
@@ -24,7 +26,12 @@ func (b *fakeBot) ReplyCard(_ context.Context, messageID, card string) (string, 
 	b.replies = append(b.replies, struct{ to, card string }{messageID, card})
 	return "card_" + messageID, nil
 }
-func (b *fakeBot) PatchCard(context.Context, string, string) error     { return nil }
+func (b *fakeBot) PatchCard(_ context.Context, cardMessageID, card string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.patches = append(b.patches, struct{ to, card string }{cardMessageID, card})
+	return nil
+}
 func (b *fakeBot) GetChatInfo(context.Context, string) (string, error) { return "Group", nil }
 func (b *fakeBot) take() []struct{ to, card string } {
 	b.mu.Lock()
@@ -32,6 +39,13 @@ func (b *fakeBot) take() []struct{ to, card string } {
 	r := b.replies
 	b.replies = nil
 	return r
+}
+func (b *fakeBot) takePatches() []struct{ to, card string } {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p := b.patches
+	b.patches = nil
+	return p
 }
 
 // fakeDesk stands in for the server's Issue workflow.
@@ -45,7 +59,6 @@ func (d *fakeDesk) CreateSessionAndDispatch(context.Context, store.CreateAgentSe
 	return store.AgentSession{}, nil
 }
 func (d *fakeDesk) SendSessionMessage(context.Context, string, string) error { return nil }
-func (d *fakeDesk) PublishEvent(string, any)                                 {}
 func (d *fakeDesk) StartIssue(_ context.Context, workspaceID, userID, goal string) (store.Issue, error) {
 	d.issue.WorkspaceID, d.issue.SourceInput, d.issue.CreatedByUserID = workspaceID, goal, userID
 	return d.issue, nil
@@ -93,7 +106,7 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	desk := &fakeDesk{issue: store.Issue{ID: "iss_1", ShortID: "ISS-1", Title: "Add usage", Status: "pending", ContractState: "draft", DraftContractRevision: &draft,
 		Messages: []store.IssueConversationMessage{{ID: "clarify_u1", Role: "user", Text: "Add usage"}}}}
 	current := desk.issue
-	manager := NewWSManager(issueStore{db, &current}, nil, desk)
+	manager := NewWSManager(issueStore{db, &current}, nil, desk, eventsForTest())
 	bot := &fakeBot{}
 	manager.activeBots["ws_1"] = &activeBot{workspaceID: "ws_1", client: bot}
 
@@ -142,9 +155,15 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	if len(cards) != 1 || !strings.Contains(cards[0].card, "许可") || !strings.Contains(cards[0].card, "Create docs/USAGE.md?") {
 		t.Fatalf("question report = %+v", cards)
 	}
+	// What the server's Issue observer hands over is reported the same way,
+	// in the background.
 	issue.Status, issue.Question = "verifying", nil
-	manager.reportIssue(ctx, issue.ID)
-	cards = bot.take()
+	manager.IssueUpdated(*issue)
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if cards = bot.take(); len(cards) > 0 {
+			break
+		}
+	}
 	if len(cards) != 1 || !strings.Contains(cards[0].card, "等待验收") || !strings.Contains(cards[0].card, "foundry.example/issues/iss_1") {
 		t.Fatalf("verifying report = %+v", cards)
 	}

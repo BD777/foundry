@@ -13,11 +13,9 @@ import { Button } from "../../components/ui/button";
 export function IssueQuestionCard({
   issue,
   question,
-  onAnswered,
 }: {
   issue: Issue;
   question: IssueQuestion;
-  onAnswered: () => void;
 }) {
   const { t } = useTranslation("issueDetail");
   const [busy, setBusy] = useState(false);
@@ -31,8 +29,8 @@ export function IssueQuestionCard({
     setBusy(true);
     setError("");
     try {
+      // The Issue arrives answered as its issue_updated event.
       await answerIssueQuestion(issue.id, question.id, text);
-      onAnswered();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {

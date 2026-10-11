@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
-  foundryStreamEpoch,
-  foundryStreamOpened,
+  getAgentSessionEventsAfter,
   getAgentSessionEventsBefore,
   getAgentSessionThread,
-  isFoundryStreamOpen,
-  subscribeFoundryEvents,
   type WindowedAgentSession,
 } from "../../api";
+import {
+  foundryStreamEpoch,
+  foundryStreamOpened,
+  isFoundryStreamOpen,
+  onStreamLifecycle,
+} from "../../stream";
 import {
   agentSessionBehindActivity,
   agentSessionLacksDetails,
@@ -31,10 +34,11 @@ const loadedSessions = new Set<string>();
 
 /**
  * Keeps the selected chat's transcript loaded: a recent window first (once
- * the stream opened), older pages on request, and a repair load after a
- * server resync or a connection that could not resume, when what was loaded
- * predates it, or — while live events are not arriving — a gap the session
- * summary reveals; never by aborting a running load. A connection that
+ * the stream opened), older pages on request, and a repair load (the events
+ * after those held, see createTranscriptLoader) after a server resync or a
+ * connection that could not resume, when what was loaded predates it, or —
+ * while live events are not arriving — a gap the session summary reveals;
+ * never by aborting a running load. A connection that
  * resumes replays what it missed, so it needs no load.
  */
 export function useChatTranscript({
@@ -72,6 +76,12 @@ export function useChatTranscript({
         }),
       loadEarlier: (sessionId, before, signal) =>
         getAgentSessionEventsBefore(sessionId, before, {
+          eventsLimit: transcriptWindowEvents,
+          signal,
+        }),
+      // A repair costs at most a window: more than that reloads it.
+      loadAfter: (sessionId, after, signal) =>
+        getAgentSessionEventsAfter(sessionId, after, {
           eventsLimit: transcriptWindowEvents,
           signal,
         }),
@@ -114,7 +124,7 @@ export function useChatTranscript({
   useEffect(() => {
     if (!selection) return;
     setStreamOpen(isFoundryStreamOpen());
-    return subscribeFoundryEvents(() => undefined, {
+    return onStreamLifecycle({
       onError: () => setStreamOpen(false),
       onOpen: () => setStreamOpen(true),
       onResync: () => loader.request("resync"),

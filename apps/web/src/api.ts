@@ -11,11 +11,12 @@ import type {
   AgentProfileProjection,
   AgentRuntimeSettings,
   AgentSession,
-  AgentSubagentSummary,
+  AgentSubagentDigest,
   AgentSubagentTranscript,
   ChatAttachment,
   ChatQueue,
   ChatThread,
+  ChatTitle,
   ChatLayout,
   EditChatQueueItemInput,
   EnqueueChatMessageInput,
@@ -42,15 +43,17 @@ import type {
   SessionFileRead,
   WorkspaceDirectoryEntry,
   WorkspaceFileRead,
-  WorkspaceFeishuConfig,
+  WorkspaceFeishuBot,
   FeishuPairingCodeResult,
   WorkspaceAccessRole,
   WorkspaceProjection,
   WorkspaceTreeEntry,
   WorkerRelease,
 } from "@bd777/foundry-protocol";
-import { parseProtocolEnvelopeJSON } from "@bd777/foundry-protocol";
+import { apiBaseUrl } from "./lib/api-base-url";
 import { issueDisplayStatus } from "./lib/issue-meta";
+import { foundryStream } from "./stream/foundry-stream";
+import { createSharedReads, type SharedAnswer } from "./stream/shared-reads";
 import type {
   CreateAgentProfileInput,
   CreateAgentSessionInput,
@@ -60,7 +63,6 @@ import type {
   WorkspaceInspection,
   FoundryData,
   FoundryDataField,
-  FoundryStreamEvent,
   ListWorkspaceSubdirectoriesInput,
   ReadWorkspaceFileInput,
   SaveAgentRuntimeSettingsInput,
@@ -75,23 +77,13 @@ import type {
   WorkspaceMember,
 } from "./api-types";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:31982";
-
-export interface ChatTitleMetadata {
-  chatId: string;
-  title: string;
-  version: string;
-  generationSessionId?: string;
-  generationStatus?: string;
-  generationError?: string;
-}
+const API_BASE_URL = apiBaseUrl;
 
 export function getChatLayout(
   workspaceId: string,
   options: RequestOptions = {},
 ): Promise<ChatLayout> {
-  return getJSON(
+  return sharedGetJSON(
     `/api/chat-layout?workspaceId=${encodeURIComponent(workspaceId)}`,
     options,
   );
@@ -123,8 +115,8 @@ export function deleteChatGroup(
 export function listChatTitles(
   workspaceId: string,
   options: RequestOptions = {},
-): Promise<ChatTitleMetadata[]> {
-  return getJSON(
+): Promise<ChatTitle[]> {
+  return sharedGetJSON(
     `/api/chat-titles?workspaceId=${encodeURIComponent(workspaceId)}`,
     options,
   );
@@ -134,7 +126,7 @@ export function renameChat(
   chatId: string,
   workspaceId: string,
   title: string,
-): Promise<ChatTitleMetadata> {
+): Promise<ChatTitle> {
   return postJSON(`/api/chats/${encodeURIComponent(chatId)}/title`, {
     workspaceId,
     title,
@@ -170,29 +162,45 @@ async function chatQueueRequest(
   path: string,
   body?: unknown,
   idempotencyKey?: string,
-  options: RequestOptions = {},
 ): Promise<ChatQueueResult> {
   const response = await apiFetch(`${API_BASE_URL}${path}`, {
     method,
-    signal: options.signal,
     headers: {
       ...jsonHeaders(body !== undefined),
       ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => undefined)) as
+  return chatQueueResult(
+    response.status,
+    await response.text().catch(() => ""),
+    path,
+  );
+}
+
+function chatQueueResult(
+  status: number,
+  text: string,
+  path: string,
+): ChatQueueResult {
+  let payload:
     | (ChatQueue & {
         error?: string;
         code?: "already_sent" | "sending" | "changed";
         queue?: ChatQueue;
       })
     | undefined;
-  if (response.ok && payload) return { ok: true, queue: payload };
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    payload = undefined;
+  }
+  if (status >= 200 && status < 300 && payload)
+    return { ok: true, queue: payload };
   return {
     ok: false,
-    status: response.status,
-    error: payload?.error ?? `${path} returned ${response.status}`,
+    status,
+    error: payload?.error ?? `${path} returned ${status}`,
     code: payload?.code,
     queue: payload?.queue,
   };
@@ -202,17 +210,15 @@ function chatQueuePath(chatId: string, rest = ""): string {
   return `/api/chats/${encodeURIComponent(chatId)}/queue${rest}`;
 }
 
-export function getChatQueue(
+/** The chat's queue; tabs showing the chat share the read (sharedReads). */
+export async function getChatQueue(
   chatId: string,
   options: RequestOptions = {},
 ): Promise<ChatQueueResult> {
-  return chatQueueRequest(
-    "GET",
-    chatQueuePath(chatId),
-    undefined,
-    undefined,
-    options,
-  );
+  const path = chatQueuePath(chatId);
+  const answer = await sharedReads.read(path, options.signal);
+  if (answer.status === 401) notifyAuthRequired();
+  return chatQueueResult(answer.status, answer.body, path);
 }
 
 /** The idempotency key makes a repeated request (a reload, another tab) add the message once. */
@@ -304,10 +310,21 @@ export function workspaceNeedsGit(error: unknown): boolean {
 
 const authRequiredListeners = new Set<() => void>();
 
-/** Subscribes to HTTP 401 answers, i.e. the login session is missing or gone. */
+/**
+ * Subscribes to HTTP 401 answers, i.e. the login session is missing or gone,
+ * and to signing out in another tab, which ends it here too.
+ */
 export function onAuthRequired(listener: () => void): () => void {
   authRequiredListeners.add(listener);
-  return () => authRequiredListeners.delete(listener);
+  const stopTabs = foundryStream.onSignedOutElsewhere(listener);
+  return () => {
+    authRequiredListeners.delete(listener);
+    stopTabs();
+  };
+}
+
+function notifyAuthRequired(): void {
+  authRequiredListeners.forEach((listener) => listener());
 }
 
 /**
@@ -317,308 +334,22 @@ export function onAuthRequired(listener: () => void): () => void {
 export async function apiFetch(
   input: string,
   init: RequestInit = {},
-  { notifyAuthRequired = true } = {},
+  { notifyAuthRequired: notify = true } = {},
 ): Promise<Response> {
-  const response = await fetch(input, { ...init, credentials: "include" });
-  if (response.status === 401 && notifyAuthRequired) {
-    authRequiredListeners.forEach((listener) => listener());
+  const writes = (init.method ?? "GET").toUpperCase() !== "GET";
+  try {
+    const response = await fetch(input, { ...init, credentials: "include" });
+    if (response.status === 401 && notify) notifyAuthRequired();
+    return response;
+  } finally {
+    // What it changed is not in answers that started before it ended.
+    if (writes) sharedReads.wrote();
   }
-  return response;
 }
 
 export function localImageUrl(path: string): string {
   const params = new URLSearchParams({ path });
   return `${API_BASE_URL}/api/local-files/image?${params.toString()}`;
-}
-
-const foundryStreamEventTypes = new Set<FoundryStreamEvent["type"]>([
-  "device_status_changed",
-  "evidence_updated",
-  "issue_created",
-  "issue_updated",
-  "issue_run_event",
-  "agent_session_created",
-  "agent_session_started",
-  "agent_session_event",
-  "agent_subagent_updated",
-  "agent_session_blocked",
-  "agent_session_resumed",
-  "agent_session_completed",
-  "agent_session_native_session_id",
-  "feishu_bot_updated",
-  "workspace_members_updated",
-  "chat_queue_changed",
-  "chat_titles_changed",
-  "chat_layout_changed",
-  "foundry_data_changed",
-  "chats_changed",
-]);
-
-export interface FoundryStreamResync {
-  /**
-   * The first connection this subscriber sees open: state it loaded while
-   * that connection was opening may predate it. False: events stopped
-   * arriving after they had arrived.
-   */
-  initial: boolean;
-}
-
-export interface FoundryStreamLifecycle {
-  /** The stream stopped delivering events; it reconnects by itself. */
-  onError?: () => void;
-  /**
-   * The stream delivers events (again). Told at once when joining an open
-   * stream. A reconnect resumes where the last connection stopped (the
-   * server replays what was missed), so this is no reason to reload.
-   */
-  onOpen?: () => void;
-  /**
-   * Events may be missing: the server could not replay them (it says so
-   * with a `resync` message), or a connection opened with nowhere to resume
-   * from. State derived from the stream must be loaded again.
-   */
-  onResync?: (resync: FoundryStreamResync) => void;
-}
-
-interface FoundryStreamListener {
-  onEvent: (event: FoundryStreamEvent) => void;
-  lifecycle: FoundryStreamLifecycle;
-  /** It was told the stream is open at least once. */
-  sawOpen: boolean;
-}
-
-/** Waits between reopening a connection the browser gave up on. */
-export const foundryStreamReopenDelaysMs = [
-  1_000, 2_000, 5_000, 10_000, 30_000,
-] as const;
-
-/**
- * One EventSource per tab, shared by every subscriber. Every message carries
- * an `id:`; the browser resends the last one as Last-Event-ID when it
- * reconnects by itself, and a connection opened again after the browser gave
- * up passes it as `lastEventId`, so the server replays what was missed (or
- * says `resync` when it cannot).
- */
-const foundryStream = {
-  listeners: new Set<FoundryStreamListener>(),
-  open: false,
-  source: undefined as EventSource | undefined,
-  closeTimer: undefined as ReturnType<typeof setTimeout> | undefined,
-  reopenTimer: undefined as ReturnType<typeof setTimeout> | undefined,
-  reopenAttempts: 0,
-  /** The newest message id seen: where a new connection resumes. */
-  lastEventId: "",
-  /** When the connection last opened or delivered a message. */
-  heardAt: 0,
-  /** Rises whenever events may have been missed (see foundryStreamEpoch). */
-  epoch: 0,
-  /** Reads waiting for the connection to open (see foundryStreamOpened). */
-  openWaiters: new Set<() => void>(),
-};
-
-/** EventSource.CLOSED: the browser will not reconnect this source itself. */
-const eventSourceClosed = 2;
-
-export function isFoundryStreamOpen(): boolean {
-  return foundryStream.open;
-}
-
-/**
- * Rises each time events may have been missed: a connection opened with
- * nowhere to resume from (the first one too), or the server said resync. A
- * read that started at the current epoch, after the stream opened, misses
- * nothing: every later change arrives on the stream. One from an earlier
- * epoch may be behind and is read again (see foundryStreamOpened).
- */
-export function foundryStreamEpoch(): number {
-  return foundryStream.epoch;
-}
-
-/** How long a read waits for the stream to open (foundryStreamOpened). */
-export const foundryStreamOpenWaitMs = 1_500;
-
-/**
- * Resolves when a read of state the stream keeps current may start: at once
- * while the stream is open (the server registered this tab before it
- * answered the opening, so it delivers every change after a later read),
- * else when it opens. A stream not open within foundryStreamOpenWaitMs is
- * waited for no longer, so a slow stream does not keep the page empty;
- * resolves `false` then: the read starts at an epoch the opening ends, and
- * is made again on its resync.
- */
-export function foundryStreamOpened(): Promise<boolean> {
-  if (foundryStream.open) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const opened = () => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    const timer = setTimeout(() => {
-      foundryStream.openWaiters.delete(opened);
-      resolve(false);
-    }, foundryStreamOpenWaitMs);
-    foundryStream.openWaiters.add(opened);
-  });
-}
-
-/** How long the open connection has delivered nothing (0 when not open). */
-export function foundryStreamQuietMs(now = Date.now()): number {
-  return foundryStream.open ? Math.max(0, now - foundryStream.heardAt) : 0;
-}
-
-/**
- * Opens the connection again, resuming after the last message: for one that
- * may have died without an error (a sleeping laptop, a stuck proxy). The
- * server's keepalives are comments a page cannot observe.
- */
-export function reconnectFoundryStream(): void {
-  if (foundryStream.listeners.size === 0) return;
-  if (foundryStream.reopenTimer !== undefined)
-    clearTimeout(foundryStream.reopenTimer);
-  foundryStream.reopenTimer = undefined;
-  foundryStream.source?.close();
-  foundryStream.source = undefined;
-  foundryStream.open = false;
-  openFoundryStream();
-}
-
-function notifyFoundryStream(
-  notify: (listener: FoundryStreamListener) => void,
-): void {
-  for (const listener of [...foundryStream.listeners]) {
-    if (foundryStream.listeners.has(listener)) notify(listener);
-  }
-}
-
-function rememberStreamId(message: MessageEvent): void {
-  foundryStream.heardAt = Date.now();
-  if (message.lastEventId) foundryStream.lastEventId = message.lastEventId;
-}
-
-function openFoundryStream(): void {
-  if (foundryStream.source || foundryStream.reopenTimer !== undefined) return;
-  const resumeFrom = foundryStream.lastEventId;
-  const source = new EventSource(
-    resumeFrom
-      ? `${API_BASE_URL}/api/events?lastEventId=${encodeURIComponent(resumeFrom)}`
-      : `${API_BASE_URL}/api/events`,
-    { withCredentials: true },
-  );
-  foundryStream.source = source;
-  source.onopen = () => {
-    if (foundryStream.source !== source) return;
-    foundryStream.open = true;
-    foundryStream.reopenAttempts = 0;
-    foundryStream.heardAt = Date.now();
-    // The browser's own reconnects send the newest id this source saw; a
-    // source that saw none sends what it was opened with. Either way it
-    // resumes from lastEventId, and only without one can events be lost.
-    const fresh = foundryStream.lastEventId === "";
-    if (fresh) foundryStream.epoch += 1;
-    notifyFoundryStream((listener) => {
-      const initial = !listener.sawOpen;
-      listener.sawOpen = true;
-      listener.lifecycle.onOpen?.();
-      if (fresh) listener.lifecycle.onResync?.({ initial });
-    });
-    const waiters = [...foundryStream.openWaiters];
-    foundryStream.openWaiters.clear();
-    waiters.forEach((opened) => opened());
-  };
-  source.onerror = () => {
-    if (foundryStream.source !== source) return;
-    foundryStream.open = false;
-    notifyFoundryStream((listener) => listener.lifecycle.onError?.());
-    // A connection answered with an error status (a proxy's 502 while the
-    // server restarts) is closed for good: open a new one, resuming.
-    if (source.readyState !== eventSourceClosed) return;
-    source.close();
-    foundryStream.source = undefined;
-    if (foundryStream.listeners.size === 0) return;
-    const delays = foundryStreamReopenDelaysMs;
-    const delay =
-      delays[Math.min(foundryStream.reopenAttempts, delays.length - 1)]!;
-    foundryStream.reopenAttempts += 1;
-    foundryStream.reopenTimer = setTimeout(() => {
-      foundryStream.reopenTimer = undefined;
-      if (foundryStream.listeners.size > 0) openFoundryStream();
-    }, delay);
-  };
-  const resync = (message: MessageEvent) => {
-    if (foundryStream.source !== source) return;
-    rememberStreamId(message);
-    foundryStream.epoch += 1;
-    notifyFoundryStream((listener) =>
-      listener.lifecycle.onResync?.({ initial: false }),
-    );
-  };
-  source.addEventListener("resync", resync as EventListener);
-  source.onmessage = (message) => {
-    if (foundryStream.source !== source) return;
-    rememberStreamId(message);
-    let event: FoundryStreamEvent | undefined;
-    try {
-      const envelope = parseProtocolEnvelopeJSON(message.data);
-      if (envelope.type === "resync") {
-        resync(message);
-        return;
-      }
-      event = envelope as FoundryStreamEvent;
-    } catch {
-      // A later persisted snapshot repairs malformed or interrupted stream data.
-      return;
-    }
-    if (!event?.payload || !foundryStreamEventTypes.has(event.type)) return;
-    for (const listener of [...foundryStream.listeners]) {
-      listener.onEvent(event);
-    }
-  };
-}
-
-function closeFoundryStream(): void {
-  if (foundryStream.reopenTimer !== undefined)
-    clearTimeout(foundryStream.reopenTimer);
-  foundryStream.reopenTimer = undefined;
-  foundryStream.reopenAttempts = 0;
-  foundryStream.source?.close();
-  foundryStream.source = undefined;
-  foundryStream.open = false;
-  // Whoever subscribes next loads its own state; nothing to resume.
-  foundryStream.lastEventId = "";
-}
-
-export function subscribeFoundryEvents(
-  onEvent: (event: FoundryStreamEvent) => void,
-  lifecycle: FoundryStreamLifecycle = {},
-): () => void {
-  const listener: FoundryStreamListener = {
-    onEvent,
-    lifecycle,
-    sawOpen: foundryStream.open,
-  };
-  foundryStream.listeners.add(listener);
-  if (foundryStream.closeTimer !== undefined) {
-    clearTimeout(foundryStream.closeTimer);
-    foundryStream.closeTimer = undefined;
-  }
-  if (foundryStream.open && lifecycle.onOpen) {
-    // Joined an open stream: the subscriber loads its own state after this,
-    // so it only needs to know the stream is up.
-    const onOpen = lifecycle.onOpen;
-    queueMicrotask(() => {
-      if (foundryStream.listeners.has(listener)) onOpen();
-    });
-  }
-  openFoundryStream();
-  return () => {
-    foundryStream.listeners.delete(listener);
-    if (foundryStream.listeners.size > 0) return;
-    // A remount re-subscribes at once; keep the connection for it.
-    foundryStream.closeTimer = setTimeout(() => {
-      foundryStream.closeTimer = undefined;
-      if (foundryStream.listeners.size === 0) closeFoundryStream();
-    }, 1000);
-  };
 }
 
 export const emptyWorkspace: WorkspaceProjection = {
@@ -766,6 +497,63 @@ async function responseErrorMessage(
   return `${path} returned ${response.status}`;
 }
 
+/** An error answer's message, as responseErrorMessage reads it. */
+function errorMessageOf(body: string, path: string, status: number): string {
+  try {
+    const payload = JSON.parse(body) as { error?: string };
+    if (payload.error) return payload.error;
+  } catch {
+    // Fall back to the text below.
+  }
+  if (body.trim() && !body.trimStart().startsWith("<"))
+    return body.trim().slice(0, 2000);
+  return `${path} returned ${status}`;
+}
+
+/**
+ * Reads the tabs of this browser share (see stream/shared-reads.ts): each
+ * read answers every tab that needs it at the time.
+ */
+const sharedReads = createSharedReads({
+  stream: foundryStream,
+  timeoutMs: backgroundReadTimeoutMs,
+  fetch: async (path, etag, signal) => {
+    const response = await apiFetch(
+      `${API_BASE_URL}${path}`,
+      { headers: etag ? { "If-None-Match": etag } : {}, signal },
+      // The tab that asked hears of a 401 (sharedGet).
+      { notifyAuthRequired: false },
+    );
+    return {
+      status: response.status,
+      etag: response.headers.get("ETag") ?? "",
+      body: response.status === 304 ? "" : await response.text(),
+    };
+  },
+});
+
+/** A shared read (sharedReads), failing like getJSON on an error status. */
+async function sharedGet(
+  path: string,
+  options: RequestOptions = {},
+): Promise<SharedAnswer> {
+  const answer = await sharedReads.read(path, options.signal);
+  if (answer.status === 401) notifyAuthRequired();
+  if (answer.status < 200 || answer.status >= 300)
+    throw new ApiError(
+      errorMessageOf(answer.body, path, answer.status),
+      answer.status,
+    );
+  return answer;
+}
+
+async function sharedGetJSON<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  return JSON.parse((await sharedGet(path, options)).body) as T;
+}
+
 /**
  * Reads workspace data: without `fields`, every field but the pages' own
  * (the skill library's catalog); with them, those fields and the workspace.
@@ -810,6 +598,32 @@ export interface FoundryDataLoadResult {
   requestedAt: number;
 }
 
+/**
+ * The fields that differ between workspaces: what a switch reads. The
+ * others (the workspace list, devices, connections, and what derives from
+ * devices alone) are the same whichever workspace is shown; the stream
+ * keeps them current, and a switch keeps them as shown.
+ */
+export const workspaceSwitchFields: readonly FoundryDataField[] = [
+  "agentProfiles",
+  "agents",
+  "agentSessions",
+  "assets",
+  "chats",
+  "defaultBundleIds",
+  "defaultSkillIds",
+  "inheritedSkillIds",
+  "issues",
+  "offSkillIds",
+  "providerHealth",
+  "runs",
+  "skillBundles",
+  "workspaceBundleIds",
+  "workspaceFiles",
+  "workspaceSkillBindings",
+  "workspaceSkills",
+];
+
 // Warm only the row the user points at or focuses. Consume each result once so
 // a later visit cannot keep reusing a stale workspace snapshot.
 const workspacePreloads = new Map<
@@ -830,24 +644,39 @@ export function prefetchFoundryWorkspace(workspaceId: string): void {
   }
   workspacePreloads.set(workspaceId, {
     startedAt: Date.now(),
-    result: loadFoundryData(workspaceId).catch(() => undefined),
+    result: loadFoundryData(workspaceId, {
+      fields: workspaceSwitchFields,
+    }).catch(() => undefined),
   });
 }
 
+/**
+ * Reads a workspace to switch to it: what differs between workspaces
+ * (workspaceSwitchFields), or everything when `whole` (nothing is shown
+ * yet to keep the rest of).
+ */
 export async function loadFoundryWorkspace(
   workspaceId: string,
-  options: RequestOptions = {},
+  options: RequestOptions & { whole?: boolean } = {},
 ): Promise<FoundryDataLoadResult> {
   const preloaded = workspacePreloads.get(workspaceId);
   workspacePreloads.delete(workspaceId);
-  if (preloaded && Date.now() - preloaded.startedAt < workspacePreloadTTL) {
+  if (
+    !options.whole &&
+    preloaded &&
+    Date.now() - preloaded.startedAt < workspacePreloadTTL
+  ) {
     const result = await preloaded.result;
     options.signal?.throwIfAborted();
     if (result) return result;
   }
-  return loadFoundryData(workspaceId, options);
+  return loadFoundryData(workspaceId, {
+    signal: options.signal,
+    fields: options.whole ? undefined : workspaceSwitchFields,
+  });
 }
 
+/** Each read's answer as this tab parsed it, by path, with its ETag. */
 const foundryDataCache = new Map<string, { data: FoundryData; etag: string }>();
 
 async function getFoundryData(
@@ -855,26 +684,14 @@ async function getFoundryData(
   options: RequestOptions,
   fields?: readonly FoundryDataField[],
 ): Promise<FoundryDataLoadResult> {
+  const answer = await sharedGet(path, options);
+  const { requestedAt } = answer;
+  // The same answer as this tab's last (it would have been a 304).
   const cached = foundryDataCache.get(path);
-  const headers = jsonHeaders(false);
-  if (cached?.etag) {
-    headers["If-None-Match"] = cached.etag;
-  }
-  const requestedAt = Date.now();
-  const response = await apiFetch(`${API_BASE_URL}${path}`, {
-    headers,
-    signal: options.signal,
-  });
-  if (response.status === 304 && cached) {
+  if (cached && answer.etag && cached.etag === answer.etag) {
     return { data: cached.data, notModified: true, fields, requestedAt };
   }
-  if (!response.ok) {
-    throw new ApiError(
-      await responseErrorMessage(response, path),
-      response.status,
-    );
-  }
-  const data = (await response.json()) as FoundryData;
+  const data = JSON.parse(answer.body) as FoundryData;
   // Every field but the workspace is a list: one answered null (an empty
   // list, from some servers) is one.
   for (const [field, value] of Object.entries(data))
@@ -893,9 +710,8 @@ async function getFoundryData(
     data.deviceSkillRoots ??= [];
     data.workspaceSkillBindings ??= [];
   }
-  const etag = response.headers.get("ETag") ?? "";
-  if (etag) {
-    foundryDataCache.set(path, { data, etag });
+  if (answer.etag) {
+    foundryDataCache.set(path, { data, etag: answer.etag });
   }
   return { data, notModified: false, fields, requestedAt };
 }
@@ -1059,13 +875,19 @@ export interface IssueEnvironmentData {
     error?: string;
   }>;
 }
-export async function readIssueEnvironment(
+export interface IssueEnvironmentRead {
+  environment: IssueEnvironmentData;
+  /** The device tells when this read would answer differently. */
+  notifiesChanges?: boolean;
+}
+export function readIssueEnvironment(
   issueId: string,
-): Promise<IssueEnvironmentData> {
-  const result = await getJSON<{ environment: IssueEnvironmentData }>(
+  options: RequestOptions = {},
+): Promise<IssueEnvironmentRead> {
+  return getJSON<IssueEnvironmentRead>(
     `/api/issues/${encodeURIComponent(issueId)}/environment`,
+    options,
   );
-  return result.environment;
 }
 export function issueEnvironmentAction(
   issueId: string,
@@ -1168,15 +990,23 @@ export function readSessionFileDiff(
   );
 }
 
-/** The end of a background task's output and its command (members). */
+/**
+ * The end of a background task's output and its command (members); with
+ * `after` (an earlier read's lineEnd) what it gained since when the device
+ * can tell. `follow` asks to be told while a running task's log grows.
+ */
 export function readBackgroundTaskOutput(
   sessionId: string,
   taskId: string,
-  options: RequestOptions = {},
+  options: RequestOptions & { after?: number; follow?: boolean } = {},
 ): Promise<AgentBackgroundTaskOutput> {
+  const params = new URLSearchParams();
+  if (options.after !== undefined) params.set("after", String(options.after));
+  if (options.follow) params.set("follow", "1");
+  const query = params.toString();
   return getJSON<AgentBackgroundTaskOutput>(
-    `/api/agent-sessions/${encodeURIComponent(sessionId)}/background-tasks/${encodeURIComponent(taskId)}/output`,
-    options,
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}/background-tasks/${encodeURIComponent(taskId)}/output${query ? `?${query}` : ""}`,
+    { signal: options.signal },
   );
 }
 
@@ -1217,19 +1047,21 @@ export function readAgentSubagentTranscript(
 
 export interface AgentSubagentsResult {
   /** Undefined when the server answered 304: the list known is current. */
-  subagents?: AgentSubagentSummary[];
+  subagents?: AgentSubagentDigest[];
   etag?: string;
 }
 
 /**
- * A session's subagents. With the ETag of the list already shown, a server
- * that supports it answers 304 and nothing is transferred again.
+ * A session's subagents as a chat lists them: answers only as fingerprints,
+ * no prompts (a subagent's own transcript is read when it is opened). With
+ * the ETag of the list already shown, a server that supports it answers 304
+ * and nothing is transferred again.
  */
 export async function listAgentSubagents(
   sessionId: string,
   options: RequestOptions & { etag?: string } = {},
 ): Promise<AgentSubagentsResult> {
-  const path = `/api/agent-sessions/${encodeURIComponent(sessionId)}/subagents`;
+  const path = `/api/agent-sessions/${encodeURIComponent(sessionId)}/subagents?view=digest`;
   const response = await apiFetch(`${API_BASE_URL}${path}`, {
     headers: options.etag ? { "If-None-Match": options.etag } : {},
     signal: options.signal,
@@ -1244,7 +1076,7 @@ export async function listAgentSubagents(
   }
   return {
     etag,
-    subagents: (await response.json()) as AgentSubagentSummary[],
+    subagents: (await response.json()) as AgentSubagentDigest[],
   };
 }
 
@@ -1301,7 +1133,22 @@ export function listIssueSessions(
  */
 export type WindowedAgentSession = AgentSession & {
   eventsBefore?: string;
+  /**
+   * The newest window's newest event: where a reader holding it catches up
+   * (getAgentSessionEventsAfter). Absent for an empty window, an older
+   * page, and from older servers.
+   */
+  eventsAfter?: string;
   stateEvents?: NonNullable<AgentSession["events"]>;
+};
+
+/**
+ * A session with the events stored after a cursor, oldest first, and where
+ * to catch up next. `eventsMore`: more than the limit followed, none are
+ * returned, and the reader reads the newest window instead.
+ */
+export type CaughtUpAgentSession = WindowedAgentSession & {
+  eventsMore?: boolean;
 };
 
 export interface TranscriptLoadProgress {
@@ -1364,6 +1211,26 @@ export async function getAgentSessionThread(
   return readJSONWithProgress<WindowedAgentSession[]>(
     response,
     options.onProgress,
+  );
+}
+
+/**
+ * A session's events after `after` (a window's or a catch-up's
+ * `eventsAfter`): what a reader that missed stream events lacks. More than
+ * `eventsLimit` of them answer `eventsMore` instead; a cursor the server no
+ * longer knows fails (410).
+ */
+export function getAgentSessionEventsAfter(
+  sessionId: string,
+  after: string,
+  options: RequestOptions & { eventsLimit?: number } = {},
+): Promise<CaughtUpAgentSession> {
+  const params = new URLSearchParams({ eventsAfter: after });
+  if (options.eventsLimit)
+    params.set("eventsLimit", String(options.eventsLimit));
+  return getJSON<CaughtUpAgentSession>(
+    `/api/agent-sessions/${encodeURIComponent(sessionId)}?${params.toString()}`,
+    options,
   );
 }
 
@@ -1838,8 +1705,8 @@ export async function downloadSkillComparisonPackage(
 
 export function getWorkspaceFeishuBot(
   workspaceId: string,
-): Promise<WorkspaceFeishuConfig> {
-  return getJSON<WorkspaceFeishuConfig>(
+): Promise<WorkspaceFeishuBot> {
+  return getJSON<WorkspaceFeishuBot>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu`,
   );
 }
@@ -1847,8 +1714,8 @@ export function getWorkspaceFeishuBot(
 export function saveWorkspaceFeishuBot(
   workspaceId: string,
   input: { appId: string; appSecret?: string },
-): Promise<WorkspaceFeishuConfig> {
-  return postJSON<WorkspaceFeishuConfig>(
+): Promise<WorkspaceFeishuBot> {
+  return postJSON<WorkspaceFeishuBot>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu`,
     input,
   );
@@ -1865,8 +1732,8 @@ export function generateFeishuPairingCode(
 
 export function unbindFeishuGroup(
   workspaceId: string,
-): Promise<WorkspaceFeishuConfig> {
-  return postJSON<WorkspaceFeishuConfig>(
+): Promise<WorkspaceFeishuBot> {
+  return postJSON<WorkspaceFeishuBot>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu/unbind`,
     {},
   );
@@ -1922,8 +1789,10 @@ export function login(username: string, password: string): Promise<AuthState> {
   return accountRequest("POST", "/api/auth/login", { username, password });
 }
 
-export function logout(): Promise<void> {
-  return accountRequest("POST", "/api/auth/logout");
+export async function logout(): Promise<void> {
+  await accountRequest("POST", "/api/auth/logout");
+  sharedReads.forget();
+  foundryStream.announceSignedOut();
 }
 
 export function updateMyDisplayName(displayName: string): Promise<AccountUser> {

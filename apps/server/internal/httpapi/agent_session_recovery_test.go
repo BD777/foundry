@@ -493,7 +493,7 @@ func TestStaleSessionsAreFailedWithoutAnyRead(t *testing.T) {
 	}
 	stale := start()
 	server := NewServerWithOptions(db, ServerOptions{AgentSessionStaleAfter: time.Hour})
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	if err := server.reconcileStaleSessions(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +514,7 @@ func TestStaleSessionsAreFailedWithoutAnyRead(t *testing.T) {
 	deadline := time.After(5 * time.Second)
 	for completed := false; !completed; {
 		select {
-		case frame := <-viewer.ch:
+		case frame := <-viewer.C:
 			_, envelope := frameForTest(t, frame)
 			payload, _ := envelope["payload"].(map[string]any)
 			completed = envelope["type"] == "agent_session_completed" && payload["id"] == stale.ID && payload["status"] == "failed"

@@ -3,6 +3,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
+import { sendSubagentList } from "../dist/session-helpers.js";
 import {
   listAgentSubagents,
   readAgentSubagentTranscript,
@@ -127,6 +129,80 @@ test("does not expose local bash tasks as subagent transcripts", async () => {
       () => readAgentSubagentTranscript(workspace, sessionId, "task_bash"),
       /subagent task was not found/,
     );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("answers a chat's list read with digests: fingerprints, no prompts", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "foundry-subagent-"));
+  const sessionId = "sess_digest";
+  const sessionDirectory = join(workspace, ".foundry", "sessions", sessionId);
+  mkdirSync(sessionDirectory, { recursive: true });
+  const answer = (uuid, text) => ({
+    type: "assistant",
+    uuid,
+    parent_tool_use_id: "tool_agent",
+    message: { role: "assistant", content: [{ type: "text", text }] },
+  });
+  writeFileSync(
+    join(sessionDirectory, "claude-sdk.messages.jsonl"),
+    `${[
+      {
+        type: "system",
+        subtype: "task_started",
+        task_id: "task_agent",
+        task_type: "local_agent",
+        tool_use_id: "tool_agent",
+        description: "Inspect the workspace",
+        prompt: "Find the bug",
+      },
+      answer("a1", "Looking."),
+      answer("a2", "The bug is in app.ts."),
+      // The same answer once trimmed: one fingerprint.
+      answer("a3", "  The bug is in app.ts.\n"),
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n")}\n`,
+  );
+  const replies = [];
+  const socket = {
+    readyState: 1,
+    send: (data) => replies.push(JSON.parse(data)),
+  };
+  try {
+    await sendSubagentList(socket, "msg_full", workspace, {
+      sessionId,
+      workspaceId: "ws_1",
+    });
+    await sendSubagentList(socket, "msg_digest", workspace, {
+      sessionId,
+      workspaceId: "ws_1",
+      view: "digest",
+    });
+    const [full, digest] = replies;
+    assert.equal(full.id, "msg_full");
+    assert.equal(full.payload.view, undefined);
+    assert.equal(full.payload.subagents[0].prompt, "Find the bug");
+    assert.equal(full.payload.subagents[0].responseTexts.length, 3);
+    assert.equal(digest.id, "msg_digest");
+    assert.deepEqual(digest.payload, {
+      sessionId,
+      view: "digest",
+      subagents: [
+        {
+          responseFingerprints: [
+            subagentResponseFingerprint("Looking."),
+            subagentResponseFingerprint("The bug is in app.ts."),
+          ],
+          sessionId,
+          status: "running",
+          taskId: "task_agent",
+          title: "Inspect the workspace",
+          toolUseId: "tool_agent",
+        },
+      ],
+    });
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

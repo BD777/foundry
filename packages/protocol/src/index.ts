@@ -10,11 +10,25 @@ export type { ProtocolEnvelope } from "./validation.js";
 export { daemonMessageTypes, isDaemonMessageType } from "./daemon-messages.js";
 export type { DaemonMessageType } from "./daemon-messages.js";
 
-export { humanizeCron, nextCronFire, parseCron } from "./cron.js";
+export {
+  claudeOneShotFireAt,
+  claudeRecurringFireAfter,
+  claudeRecurringTimerMaxAgeMs,
+  claudeTimerNextFire,
+  humanizeCron,
+  nextCronFire,
+  parseCron,
+} from "./cron.js";
 export type { CronLanguage, ParsedCron } from "./cron.js";
+export {
+  sessionScheduleFromSnapshot,
+  sessionScheduleNextFire,
+} from "./session-schedule.js";
 
+export * from "./browser-events.js";
 export * from "./feishu.js";
 export * from "./process-labels.js";
+export { subagentResponseFingerprint } from "./subagent-responses.js";
 
 export type IssueStatus =
   | "pending"
@@ -579,6 +593,12 @@ export interface SessionFileReference {
   text: string;
   path: string;
   kind: "file" | "dir";
+  /**
+   * No file was there when the answer ended (a background subagent's
+   * deliverable, say): it links once a session file is recorded at `path`,
+   * and reading it before then says it does not exist yet.
+   */
+  pending?: boolean;
 }
 
 /** One of a session's recorded files, read from its device. */
@@ -989,9 +1009,11 @@ export interface AgentSessionEvent {
 /**
  * A timer/scheduled task an agent created inside its own session.
  *
- * Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup); they
- * live only while the agent process stays alive. Codex headless sessions have
- * no equivalent, so timers never appear for Codex threads.
+ * Claude exposes session-scoped cron jobs (CronCreate/ScheduleWakeup). Claude
+ * Code fires them while its process runs and brings them back when the
+ * session resumes; the device resumes a session whose timer is due while no
+ * process runs it. Codex headless sessions have no equivalent, so timers
+ * never appear for Codex threads.
  */
 export interface AgentScheduledTask {
   id: string;
@@ -1004,7 +1026,35 @@ export interface AgentScheduledTask {
   recurring: boolean;
   /** Prompt submitted to the agent when the timer fires. */
   prompt: string;
-  /** Next computed fire time (ISO 8601), when still computable. */
+  /**
+   * When Claude Code fires it next (ISO 8601), its id's offset included, as
+   * of the snapshot; readers recompute it from `schedule` as time passes.
+   */
+  nextFireAt?: string;
+}
+
+/**
+ * The timers a session's agent holds (Claude's CronCreate, ScheduleWakeup,
+ * /loop): they wake it later, so the session is not idle even when its
+ * latest input completed. `status` still describes that input. The server
+ * derives it from the latest timer snapshot the device reported.
+ */
+export interface AgentSessionSchedule {
+  /** When the device reported these timers. */
+  reportedAt: string;
+  timers: AgentSessionScheduledTimer[];
+}
+
+/**
+ * A timer of a session's schedule, without its prompt. `nextFireAt` is as
+ * of the schedule's `reportedAt`; readers recompute it from `schedule` as
+ * time passes (sessionScheduleNextFire).
+ */
+export interface AgentSessionScheduledTimer {
+  id: string;
+  kind: AgentScheduledTask["kind"];
+  schedule: string;
+  recurring: boolean;
   nextFireAt?: string;
 }
 
@@ -1064,6 +1114,20 @@ export interface AgentBackgroundTaskOutput {
   bytes: number;
   /** "missing": no output was written, or it was cleaned up. */
   kind: "text" | "binary" | "missing";
+  /**
+   * Present when `content` continues an earlier read: what the log gained
+   * from this offset (the `lineEnd` that read returned) on.
+   */
+  from?: number;
+  /** Where a later read continues (`after`). Older devices omit it. */
+  lineEnd?: number;
+  /**
+   * How many characters of `content` cover the log before `lineEnd`; the
+   * rest is a line still being written, which the next read sends again.
+   */
+  stable?: number;
+  /** The device tells when this running task's log grows. */
+  following?: boolean;
 }
 
 export interface AgentSessionEventMetadata {
@@ -1096,6 +1160,33 @@ export interface AgentSessionEventMetadata {
    * Steps of that request share the id; the event itself is not shown.
    */
   requestUsage?: ModelRequestUsage;
+  /**
+   * How full the session's context is after a main-agent model request or
+   * a compaction (latest wins), on "Model request usage" events.
+   */
+  contextUsage?: AgentContextUsage;
+}
+
+/**
+ * The session's context as its runtime reports it. `inputTokens` is the
+ * whole input of the latest main-agent model request: Claude's prompt with
+ * its cache reads and writes, Codex's last request input, cached included.
+ */
+export interface AgentContextUsage {
+  /** Absent when unknown, e.g. after a compaction that reports no size. */
+  inputTokens?: number;
+  /** The model's context window, once the runtime has reported it. */
+  contextWindow?: number;
+  /** The model that served the request. */
+  model?: string;
+  /** Present when the runtime compacted the context. */
+  compaction?: AgentContextCompaction;
+}
+
+export interface AgentContextCompaction {
+  trigger: "auto" | "manual";
+  /** Tokens in the context before it was compacted. */
+  preTokens?: number;
 }
 
 /**
@@ -1124,6 +1215,11 @@ export interface AgentTurnUsage {
   reasoningTokens?: number;
   /** Model requests in the turn (Claude reports them; Codex does not). */
   modelRequests?: number;
+  /**
+   * What Claude priced the turn at, in US dollars at list price; absent when
+   * unknown (Codex, or the first turn of a resumed Claude process).
+   */
+  costUsd?: number;
 }
 
 export interface AgentSubagentTranscriptMessage {
@@ -1162,6 +1258,21 @@ export interface AgentSubagentSummary {
   usage?: SubagentUsage;
 }
 
+/**
+ * A subagent as a chat lists it: its answers only as fingerprints (see
+ * subagentResponseFingerprint, distinct, in order), without its prompt.
+ */
+export interface AgentSubagentDigest {
+  responseFingerprints: string[];
+  sessionId: string;
+  status: "running" | "completed" | "failed";
+  subagentType?: string;
+  taskId: string;
+  title: string;
+  toolUseId: string;
+  usage?: SubagentUsage;
+}
+
 export interface ChatAttachment {
   id: string;
   name: string;
@@ -1183,6 +1294,11 @@ export interface SessionInput {
   importedContext?: string;
   /** When the server received it; its transcript events carry the same time. */
   at?: string;
+  /**
+   * Set when the input is a timer's prompt: the device resumed the session
+   * because the timer was due while no agent process ran it.
+   */
+  timerFire?: AgentSessionTimerFire;
 }
 
 /** Label of the transcript event each session input writes. */
@@ -1265,6 +1381,8 @@ export interface AgentSession {
   createdLabel: string;
   answerRevision?: string;
   updatedLabel: string;
+  /** Present while the agent holds timers that will wake the session. */
+  scheduled?: AgentSessionSchedule;
   events?: AgentSessionEvent[];
 }
 
@@ -1413,6 +1531,16 @@ export interface ChatLayoutGroup {
 export interface ChatPlacement {
   chatId: string;
   groupId: string;
+}
+
+/** A chat's title as GET /api/chat-titles lists it. */
+export interface ChatTitle {
+  chatId: string;
+  title: string;
+  version: string;
+  generationSessionId?: string;
+  generationStatus?: string;
+  generationError?: string;
 }
 
 // Array order defines group order and the order of chats within each container.

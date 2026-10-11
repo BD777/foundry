@@ -17,8 +17,6 @@ import (
 // browser only shows and edits the queue, so it keeps going with every tab
 // closed, and every tab shows the same one.
 
-const chatQueueChangedEvent = "chat_queue_changed"
-
 // chatQueueConflict is a refused queue change with the queue as it is now.
 type chatQueueConflict struct {
 	Error string          `json:"error"`
@@ -74,7 +72,7 @@ func (s *Server) chatQueueChat(w http.ResponseWriter, r *http.Request, change bo
 // refusal with the queue as it is.
 func (s *Server) writeChatQueueResult(w http.ResponseWriter, r *http.Request, queues store.ChatQueueStore, workspaceID, chatID string, queue store.ChatQueue, err error, status int) {
 	if err == nil {
-		s.events.Publish(chatQueueChangedEvent, queue)
+		s.chats.queueChanged(queue)
 		writeJSON(w, status, queue)
 		return
 	}
@@ -222,7 +220,7 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
 		return
 	}
-	s.events.Publish(chatQueueChangedEvent, queue)
+	s.chats.queueChanged(queue)
 	// The claim is settled whatever becomes of the person's request.
 	settleCtx := context.WithoutCancel(r.Context())
 	// Already in a session's transcript (a steer its device applied after
@@ -268,7 +266,7 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		settled, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateQueued, "", "")
 	}
 	if err == nil {
-		s.events.Publish(chatQueueChangedEvent, settled)
+		s.chats.queueChanged(settled)
 	} else {
 		log.Printf("settle steered message %s: %v", item.ID, err)
 	}
@@ -276,19 +274,6 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		status = http.StatusConflict
 	}
 	writeError(w, status, steerErr.Error())
-}
-
-func (s *Server) publishChatQueue(ctx context.Context, workspaceID, chatID string) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
-	queue, err := queues.ChatQueue(ctx, workspaceID, chatID)
-	if err != nil {
-		log.Printf("read chat queue %s: %v", chatID, err)
-		return
-	}
-	s.events.Publish(chatQueueChangedEvent, queue)
 }
 
 // kickChatQueue sends the chat's next queued message, in the background,
@@ -321,28 +306,23 @@ func (s *Server) kickPendingChatQueues(ctx context.Context) {
 	}
 }
 
-// onChatQueueEvent sends a chat's next queued message when its turn ends,
+// chatQueueReactions sends a chat's next queued message when its turn ends,
 // however it ended, and settles a message a turn took in late.
-func (s *Server) onChatQueueEvent(eventType string, payload any) {
-	if eventType == sessionEventStreamType {
-		s.onSteerRecorded(payload)
-		return
-	}
-	if eventType != "agent_session_completed" {
-		return
-	}
-	session, ok := payload.(store.AgentSession)
-	if pointer, isPointer := payload.(*store.AgentSession); isPointer && pointer != nil {
-		session, ok = *pointer, true
-	}
-	if !ok || session.Role != "" || (session.Source != "" && session.Source != "chat") {
+type chatQueueReactions struct{ s *Server }
+
+func (r chatQueueReactions) sessionChanged(_ context.Context, change sessionChange, session store.AgentSession) {
+	if change != sessionCompleted || session.Role != "" || (session.Source != "" && session.Source != "chat") {
 		return
 	}
 	chatID := session.ThreadID
 	if chatID == "" {
 		chatID = session.ID
 	}
-	s.kickChatQueue(session.WorkspaceID, chatID)
+	r.s.kickChatQueue(session.WorkspaceID, chatID)
+}
+
+func (r chatQueueReactions) sessionEventRecorded(_ context.Context, event store.AgentSessionEvent) {
+	r.s.onSteerRecorded(event)
 }
 
 // steeredIntoTurnLabel is the transcript event of a message steered into a
@@ -353,9 +333,8 @@ const steeredIntoTurnLabel = "Steered into active turn"
 // after the server stopped waiting for the answer: the message was marked
 // maybe sent (or queued again by a retry) and holds the queue. Its
 // transcript event shows it arrived, so it is sent and the queue moves on.
-func (s *Server) onSteerRecorded(payload any) {
-	event, ok := payload.(store.AgentSessionEvent)
-	if !ok || event.Label != steeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
+func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
+	if event.Label != steeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
 		return
 	}
 	queues, ok := s.chatQueues()
@@ -375,7 +354,7 @@ func (s *Server) onSteerRecorded(payload any) {
 			return
 		}
 		if settled {
-			s.events.Publish(chatQueueChangedEvent, queue)
+			s.chats.queueChanged(queue)
 			s.kickChatQueue(queue.WorkspaceID, queue.ChatID)
 		}
 	}()
@@ -393,7 +372,7 @@ func (s *Server) RecoverChatQueues(ctx context.Context) {
 		log.Printf("recover chat queues: %v", err)
 	}
 	for _, queue := range recovered {
-		s.events.Publish(chatQueueChangedEvent, queue)
+		s.chats.queueChanged(queue)
 	}
 	s.kickPendingChatQueues(ctx)
 }
@@ -449,7 +428,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 	if err != nil {
 		return false
 	}
-	s.events.Publish(chatQueueChangedEvent, claimed)
+	s.chats.queueChanged(claimed)
 	sent, _, sendErr := s.sendChatQueueItem(ctx, workspaceID, chatID, session, found, item)
 	state, sessionID, message := store.ChatQueueStateSent, sent.ID, ""
 	if recordedBy, recorded, err := queues.ChatQueueInputSession(ctx, item.ID); err == nil && recorded {
@@ -468,7 +447,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 		log.Printf("settle queued message %s as %s: %v", item.ID, state, err)
 		return false
 	}
-	s.events.Publish(chatQueueChangedEvent, settled)
+	s.chats.queueChanged(settled)
 	return false
 }
 
@@ -530,7 +509,7 @@ func (s *Server) dropChatQueueItemsBy(ctx context.Context, workspaceID, userID s
 		return
 	}
 	for _, ref := range refs {
-		s.publishChatQueue(ctx, ref.WorkspaceID, ref.ChatID)
+		s.chats.announceQueue(ctx, ref.WorkspaceID, ref.ChatID)
 		s.kickChatQueue(ref.WorkspaceID, ref.ChatID)
 	}
 }

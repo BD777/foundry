@@ -18,13 +18,13 @@ import (
 func TestSubagentProgressIsCoalescedAndLifecycleIsNot(t *testing.T) {
 	cache := newSubagentListCache()
 	var reads atomic.Int32
-	fetch := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	fetch := func(context.Context) (subagentList, error) {
 		reads.Add(1)
-		return []store.AgentSubagentSummary{{TaskID: "task_1", Status: "running"}}, nil
+		return subagentSummaries{{TaskID: "task_1", Status: "running"}}, nil
 	}
 	load := func(want int32, why string) {
 		t.Helper()
-		if _, err := cache.load(context.Background(), "sess_1", false, fetch); err != nil {
+		if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch); err != nil {
 			t.Fatal(err)
 		}
 		if reads.Load() != want {
@@ -36,7 +36,8 @@ func TestSubagentProgressIsCoalescedAndLifecycleIsNot(t *testing.T) {
 	}
 	backdate := func() {
 		cache.mu.Lock()
-		cache.entries["sess_1"].readAt = cache.entries["sess_1"].readAt.Add(-subagentProgressInterval)
+		read := &cache.entries["sess_1"].reads[subagentListFull]
+		read.readAt = read.readAt.Add(-subagentProgressInterval)
 		cache.mu.Unlock()
 	}
 
@@ -88,8 +89,8 @@ func TestSessionReadsLookUpTheSessionOnce(t *testing.T) {
 	}
 	counting := &summaryCountingStore{Store: backing}
 	server := NewServer(counting)
-	if _, err := server.hub.subagents.load(ctx, session.ID, true, func(context.Context) ([]store.AgentSubagentSummary, error) {
-		return []store.AgentSubagentSummary{{TaskID: "task_1"}}, nil
+	if _, err := server.hub.subagents.load(ctx, session.ID, subagentListFull, true, func(context.Context) (subagentList, error) {
+		return subagentSummaries{{TaskID: "task_1"}}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +109,14 @@ func TestSessionReadsLookUpTheSessionOnce(t *testing.T) {
 func TestSubagentChangesFollowTaskTypes(t *testing.T) {
 	cache := newSubagentListCache()
 	var reads atomic.Int32
-	fetch := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	fetch := func(context.Context) (subagentList, error) {
 		reads.Add(1)
-		return []store.AgentSubagentSummary{}, nil
+		return subagentSummaries{}, nil
 	}
 	event := func(label, taskID, taskType string) store.AgentSessionEvent {
 		return store.AgentSessionEvent{SessionID: "sess_1", Label: label, Metadata: &store.AgentSessionEventMetadata{TaskID: taskID, TaskType: taskType}}
 	}
-	if _, err := cache.load(context.Background(), "sess_1", false, fetch); err != nil {
+	if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch); err != nil {
 		t.Fatal(err)
 	}
 	for _, step := range []struct {
@@ -130,7 +131,7 @@ func TestSubagentChangesFollowTaskTypes(t *testing.T) {
 			t.Errorf("%s %s = %v, want %v", step.event.Label, step.event.Metadata.TaskID, got, step.want)
 		}
 	}
-	if _, err := cache.load(context.Background(), "sess_1", false, fetch); err != nil {
+	if _, err := cache.load(context.Background(), "sess_1", subagentListFull, false, fetch); err != nil {
 		t.Fatal(err)
 	}
 	if reads.Load() != 1 {
@@ -163,22 +164,22 @@ func TestSubagentReadsAfterAnEndDoNotJoinOlderReads(t *testing.T) {
 	release := make(chan struct{})
 	older := make(chan []byte, 1)
 	go func() {
-		body, _ := cache.load(ctx, "sess_1", false, func(context.Context) ([]store.AgentSubagentSummary, error) {
+		body, _ := cache.load(ctx, "sess_1", subagentListFull, false, func(context.Context) (subagentList, error) {
 			<-release
-			return []store.AgentSubagentSummary{{TaskID: "task_1", Status: "running"}}, nil
+			return subagentSummaries{{TaskID: "task_1", Status: "running"}}, nil
 		})
 		older <- body
 	}()
 	for inFlight := false; !inFlight; {
 		cache.mu.Lock()
 		entry := cache.entries["sess_1"]
-		inFlight = entry != nil && entry.inflight != nil
+		inFlight = entry != nil && entry.reading()
 		cache.mu.Unlock()
 		time.Sleep(time.Millisecond)
 	}
 	cache.observe(store.AgentSessionEvent{SessionID: "sess_1", Label: "Subtask completed", Metadata: &store.AgentSessionEventMetadata{TaskID: "task_1", TaskType: "local_agent"}})
-	body, err := cache.load(ctx, "sess_1", false, func(context.Context) ([]store.AgentSubagentSummary, error) {
-		return []store.AgentSubagentSummary{{TaskID: "task_1", Status: "completed"}}, nil
+	body, err := cache.load(ctx, "sess_1", subagentListFull, false, func(context.Context) (subagentList, error) {
+		return subagentSummaries{{TaskID: "task_1", Status: "completed"}}, nil
 	})
 	if err != nil || !strings.Contains(string(body), `"completed"`) {
 		t.Fatalf("a read after the end = %s, %v; want the subagent completed", body, err)
@@ -187,7 +188,7 @@ func TestSubagentReadsAfterAnEndDoNotJoinOlderReads(t *testing.T) {
 	if body := <-older; !strings.Contains(string(body), `"running"`) {
 		t.Fatalf("the older read answered %s", body)
 	}
-	body, err = cache.load(ctx, "sess_1", false, func(context.Context) ([]store.AgentSubagentSummary, error) {
+	body, err = cache.load(ctx, "sess_1", subagentListFull, false, func(context.Context) (subagentList, error) {
 		t.Fatal("the list was read again")
 		return nil, nil
 	})

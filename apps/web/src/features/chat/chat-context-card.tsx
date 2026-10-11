@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import {
-  nextCronFire,
+  claudeTimerNextFire,
   type AgentBackgroundTask,
 } from "@bd777/foundry-protocol";
 import {
@@ -43,6 +43,7 @@ import {
   subagentUsageSummary,
 } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "./use-shared-now";
+import { ChatSessionStatusLine } from "./chat-session-status";
 import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
@@ -316,7 +317,7 @@ function TimerRow({
   const { t } = useTranslation("chat");
   // Recompute from the cron expression on each render: the worker snapshot
   // captures the next fire at emit time, which goes stale within a cycle.
-  const liveNext = nextCronFire(item.task.schedule);
+  const liveNext = claudeTimerNextFire(item.task);
   const nextFire = formatNextFireLabel(
     liveNext?.toISOString() ?? item.task.nextFireAt,
   );
@@ -709,6 +710,9 @@ export const ChatContextCard = memo(function ChatContextCard({
   turnFilter?: string;
 }) {
   const { t } = useTranslation("chat");
+  const [statusOpen, setStatusOpen] = useFoldOpen(
+    chatKey && `${chatKey}:status`,
+  );
   return (
     <aside
       className="fdy-chat-context-card"
@@ -724,6 +728,14 @@ export const ChatContextCard = memo(function ChatContextCard({
         >
           <X size={16} />
         </Button>
+      ) : null}
+
+      {data.status ? (
+        <ChatSessionStatusLine
+          onOpenChange={setStatusOpen}
+          open={statusOpen}
+          status={data.status}
+        />
       ) : null}
 
       <SessionFileSections

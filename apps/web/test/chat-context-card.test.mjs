@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
 import { chatContextCardForSessions } from "../src/features/chat/chat-context-model.ts";
 import { shouldDisplayResponseEvent } from "../src/features/chat/subagent-response-filter.ts";
 
@@ -158,8 +159,7 @@ test("merges subagent status monotonically using raw transcript state", () => {
   const completed = chatContextCardForSessions([item], {
     [item.id]: [
       {
-        prompt: "Inspect the bug",
-        responseTexts: ["Done"],
+        responseFingerprints: [subagentResponseFingerprint("Done")],
         sessionId: item.id,
         status: "completed",
         taskId: "task_1",
@@ -176,7 +176,7 @@ test("merges subagent status monotonically using raw transcript state", () => {
   const staleDiscovery = chatContextCardForSessions([item], {
     [item.id]: [
       {
-        responseTexts: [],
+        responseFingerprints: [],
         sessionId: item.id,
         status: "running",
         taskId: "task_1",
@@ -260,8 +260,7 @@ test("recovers historical subagents when persisted lifecycle metadata is missing
   const data = chatContextCardForSessions([item], {
     [item.id]: [
       {
-        prompt: "Inspect the bug",
-        responseTexts: ["Subagent answer"],
+        responseFingerprints: [subagentResponseFingerprint("Subagent answer")],
         sessionId: item.id,
         status: "completed",
         subagentType: "general-purpose",
@@ -279,24 +278,28 @@ test("recovers historical subagents when persisted lifecycle metadata is missing
 });
 
 test("suppresses historical forwarded subagent body but keeps the parent final", () => {
-  const suppressed = new Set(["Subagent answer", "Parent answer"]);
+  const suppressed = new Set(
+    ["Subagent answer", "Parent answer"].map(subagentResponseFingerprint),
+  );
+  const child = event("evt_child", "Response stream", "  Subagent answer\n");
   assert.equal(
-    shouldDisplayResponseEvent(
-      "evt_child",
-      "Subagent answer",
-      "evt_parent",
-      suppressed,
-    ),
+    shouldDisplayResponseEvent(child, child.detail, "evt_parent", suppressed),
     false,
   );
+  const parent = event("evt_parent", "Response stream", "Parent answer");
   assert.equal(
-    shouldDisplayResponseEvent(
-      "evt_parent",
-      "Parent answer",
-      "evt_parent",
-      suppressed,
-    ),
+    shouldDisplayResponseEvent(parent, parent.detail, "evt_parent", suppressed),
     true,
+  );
+  const other = event("evt_other", "Response stream", "Subagent answers");
+  assert.equal(
+    shouldDisplayResponseEvent(other, other.detail, "evt_parent", suppressed),
+    true,
+  );
+  const blank = event("evt_blank", "Response stream", " \n");
+  assert.equal(
+    shouldDisplayResponseEvent(blank, blank.detail, "evt_blank", new Set()),
+    false,
   );
 });
 

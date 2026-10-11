@@ -28,6 +28,7 @@ const { noteSessionInput, steerActiveSession, steerActiveSessionOnce } =
   await import("../dist/session-helpers.js");
 const { sessionPrompt, userMessageText } =
   await import("../dist/session-prompt.js");
+const { activeClaudeRuntimes } = await import("../dist/session-state.js");
 test.after(() => closeAllActiveRuntimes());
 
 const image = {
@@ -58,16 +59,18 @@ function chatSession() {
   };
 }
 
+const profile = { id: "claude_local", runtime: "claude", label: "Claude" };
+
 /** Starts a turn that stays open until something is steered into it. */
-async function openTurn(session = chatSession()) {
-  const cwd = join(root, `ws-${randomUUID()}`);
+async function openTurn(session = chatSession(), { cwd, runtime } = {}) {
+  cwd ??= join(root, `ws-${randomUUID()}`);
   mkdirSync(cwd, { recursive: true });
   const events = [];
   received.length = 0;
   const finished = runClaudeWorkspaceSession(
     cwd,
     session,
-    { id: "claude_local", runtime: "claude", label: "Claude" },
+    runtime ?? profile,
     async (label, detail, level, metadata, message, eventId) =>
       events.push({ label, detail, message, eventId }),
     async () => {},
@@ -180,4 +183,44 @@ test("a late steer of a message the session took as an input of its own does not
     events.filter((event) => event.label === "Steered into active turn").length,
     1,
   );
+});
+
+test("one process writes a session: a newer one under another key replaces it and ends its open turn", async () => {
+  const session = chatSession();
+  const cwd = join(root, `ws-${randomUUID()}`);
+  const first = await openTurn(session, { cwd });
+  const [earlier] = [...activeClaudeRuntimes.values()].filter(
+    (runtime) => runtime.foundrySessionId === session.id,
+  );
+  assert.ok(earlier, "the first process is registered");
+  const firstEnded = assert.rejects(
+    first.finished,
+    /newer Claude process took over/,
+  );
+
+  // The same session continues on another model: another runtime key, the
+  // same native session.
+  const second = await openTurn(
+    {
+      ...session,
+      nativeSessionId: "steer-session",
+      input: { id: randomUUID(), prompt: "Run the long task" },
+    },
+    { cwd, runtime: { ...profile, model: "opus" } },
+  );
+  await firstEnded;
+  const writers = [...activeClaudeRuntimes.values()].filter(
+    (runtime) => runtime.foundrySessionId === session.id,
+  );
+  assert.equal(writers.length, 1, "one process serves the session");
+  assert.notEqual(writers[0], earlier);
+  assert.notEqual(writers[0].key, earlier.key);
+  assert.equal(earlier.closed, true);
+  assert.equal(writers[0].closed, false);
+
+  await steerActiveSession(session.id, "Go on", []);
+  const result = await second.finished;
+  assert.equal(result.response, "green");
+  assert.deepEqual(received, [received[0], "Go on"]);
+  assert.equal(activeClaudeRuntimes.get(writers[0].key), writers[0]);
 });

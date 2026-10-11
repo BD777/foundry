@@ -25,13 +25,11 @@ export function IssueConversation({
   issue,
   history = [],
   inputRef,
-  onRefresh,
   contract,
 }: {
   issue: Issue;
   history?: Run[];
   inputRef: Ref<HTMLTextAreaElement>;
-  onRefresh: (issueId?: string) => void;
   contract?: IssueContractController;
 }) {
   const { t } = useTranslation("issueDetail");
@@ -58,23 +56,20 @@ export function IssueConversation({
           statusRequest.current = { text, key: crypto.randomUUID() };
         await askIssueStatus(issue.id, text, statusRequest.current.key);
         statusRequest.current = undefined;
-        onRefresh(issue.id);
         return "replied" as const;
       }
       if (clarifying && contract) return contract.send(text, attachments);
       // Free text answers the execution's question when one is waiting.
       if (issue.question && issue.status === "blocked") {
         await answerIssueQuestion(issue.id, issue.question.id, text);
-        onRefresh(issue.id);
         return true;
       }
       if (contract && issue.contractState !== "confirmed")
         throw new Error(t("conversation.clarifyFirst"));
       await requestChanges(issue.id, text, runId);
-      onRefresh(issue.id);
       return true;
     },
-    [issue, runId, onRefresh, clarifying, contract, t],
+    [issue, runId, clarifying, contract, t],
   );
   const steer = useCallback(
     async (
@@ -86,15 +81,13 @@ export function IssueConversation({
       // An execution takes text only; files wait for the next turn.
       if (attachments?.length) throw new Error(t("conversation.steerTextOnly"));
       await steerIssue(issue.id, text, executionId);
-      onRefresh(issue.id);
       return true;
     },
-    [issue.id, onRefresh, t],
+    [issue.id, t],
   );
   const stop = useCallback(async () => {
     await issueEnvironmentAction(issue.id, "cancel");
-    onRefresh(issue.id);
-  }, [issue.id, onRefresh]);
+  }, [issue.id]);
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
   const displayed: ChatMessageItem[] = [...messages];
   if (contract?.busy || contract?.replying) {
@@ -152,13 +145,7 @@ export function IssueConversation({
     displayed.push({
       id: `question-${issue.question.id}`,
       role: "bot",
-      text: (
-        <IssueQuestionCard
-          issue={issue}
-          question={issue.question}
-          onAnswered={() => onRefresh(issue.id)}
-        />
-      ),
+      text: <IssueQuestionCard issue={issue} question={issue.question} />,
     });
   if (contract?.error)
     displayed.push({

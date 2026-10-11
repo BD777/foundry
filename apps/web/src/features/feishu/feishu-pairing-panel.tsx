@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { Copy, Link2, RefreshCw, Unlink } from "lucide-react";
-import type { WorkspaceFeishuConfig } from "@bd777/foundry-protocol";
+import type { WorkspaceFeishuBot } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 
 export interface FeishuPairingPanelProps {
-  bot?: WorkspaceFeishuConfig;
+  bot?: WorkspaceFeishuBot;
   /** Plaintext code from this page's last generate call. */
   pairingCode?: string;
   workspaceName?: string;

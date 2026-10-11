@@ -3,7 +3,10 @@
 // the person's own terminal agent would. An Issue's clarification talks the
 // Issue through with the person: it reads the project, its instructions and
 // the workspace's selected skills, and may look up the workspace's sessions,
-// but it never writes, runs commands or starts other work.
+// but it never writes, runs commands or starts other work. A verifier (a
+// session started with verification) checks another session's work: it
+// reads and runs commands that only read, inside a sandbox that keeps the
+// workspace read-only (verification-session.ts), and starts nothing.
 
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { codexDisabledFeatures } from "./session/policy.js";
@@ -34,6 +37,38 @@ export function isClarificationSession(session: AgentSession): boolean {
   return session.role === "issue_clarification";
 }
 
+export function isVerificationSession(session: AgentSession): boolean {
+  return session.source === "verification";
+}
+
+/** Turns a verifier's Claude takes per message before it must answer. */
+export const verificationMaxTurns = 20;
+
+/**
+ * A verifier's tools: reading and searching files, a shell (the sandbox
+ * keeps the workspace read-only), its skills, and the Foundry tools, of
+ * which the server lists it only those that change nothing.
+ */
+const verificationClaudeTools = [
+  "Read",
+  "Grep",
+  "Glob",
+  "Bash",
+  "Skill",
+  "mcp__foundry",
+];
+
+const verificationDeniedClaudeTools = [
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookEdit",
+  "Task",
+  "Agent",
+  "WebFetch",
+  "WebSearch",
+];
+
 /**
  * Claude launch options a role overrides. Only the listed tools run; any
  * other request is denied without a prompt, and only the project's own
@@ -42,6 +77,16 @@ export function isClarificationSession(session: AgentSession): boolean {
 export function claudeRoleOptions(
   session: AgentSession,
 ): { sdk: Record<string, unknown> } | undefined {
+  if (isVerificationSession(session))
+    return {
+      sdk: {
+        permissionMode: "dontAsk",
+        allowedTools: verificationClaudeTools,
+        disallowedTools: verificationDeniedClaudeTools,
+        settingSources: ["project"],
+        strictMcpConfig: true,
+      },
+    };
   if (!isClarificationSession(session)) return undefined;
   return {
     sdk: {
@@ -61,6 +106,19 @@ export function codexRoleOptions(session: AgentSession):
       thread: Record<string, unknown>;
     }
   | undefined {
+  if (isVerificationSession(session))
+    return {
+      // Codex's own sandbox lets commands write the working directory and
+      // the temporary one; the verifier's sandbox around it keeps the
+      // workspace read-only, so they write only the temporary directory.
+      config: { features: codexDisabledFeatures(true) },
+      thread: {
+        sandboxMode: "workspace-write",
+        approvalPolicy: "never",
+        networkAccessEnabled: true,
+        webSearchMode: "disabled",
+      },
+    };
   if (!isClarificationSession(session)) return undefined;
   return {
     // Its read-only shell stays: Codex reads files through it, inside a

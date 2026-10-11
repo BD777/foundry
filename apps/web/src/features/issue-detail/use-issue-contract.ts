@@ -32,10 +32,7 @@ export function contractContent(contract: IssueContract): ContractContent {
   return { goal, inScope, outOfScope, constraints, criteria };
 }
 
-export function useIssueContract(
-  issue: Issue,
-  onRefresh: (id: string) => void,
-) {
+export function useIssueContract(issue: Issue) {
   const [contracts, setContracts] = useState<IssueContract[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -88,7 +85,6 @@ export function useIssueContract(
       await load().catch(() =>
         setError(i18n.t("issueDetail:contractErrors.savedNotRefreshed")),
       );
-      onRefresh(issue.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       throw e;

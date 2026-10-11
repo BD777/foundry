@@ -157,7 +157,7 @@ func (s *Store) registerDaemon(ctx context.Context, input store.DaemonRegistrati
 		if chat.WorkspaceID == "" {
 			chat.WorkspaceID = input.Workspace.ID
 		}
-		changed, err := s.saveComparedChat(ctx, chat, now, comparisons[index])
+		changed, _, err := s.saveComparedChat(ctx, chat, now, comparisons[index])
 		if err != nil {
 			return false, err
 		}
@@ -400,13 +400,16 @@ func (s *Store) SyncChatsChanges(ctx context.Context, input store.SyncChatsInput
 			chat.WorkspaceID = input.WorkspaceID
 		}
 		comparison := s.compareChat(ctx, chat)
-		var changed bool
+		var changed, refused bool
 		if err := s.withTx(ctx, func(tx *Store) error {
 			var err error
-			changed, err = tx.saveComparedChat(ctx, chat, now, comparison)
+			changed, refused, err = tx.saveComparedChat(ctx, chat, now, comparison)
 			return err
 		}); err != nil {
 			return changes, err
+		}
+		if refused {
+			changes.RefusedChats = append(changes.RefusedChats, chat.ID)
 		}
 		if changed && !slices.Contains(changes.Workspaces, chat.WorkspaceID) {
 			changes.Workspaces = append(changes.Workspaces, chat.WorkspaceID)

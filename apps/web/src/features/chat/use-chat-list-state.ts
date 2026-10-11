@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChatTitle } from "@bd777/foundry-protocol";
 import {
   chatIsUnread,
   chatReadView,
@@ -9,14 +10,16 @@ import {
 import { setDocumentUnread } from "../../lib/document-title";
 import {
   backgroundReadTimeoutMs,
-  foundryStreamEpoch,
-  foundryStreamOpened,
   listChatTitles,
   recapChatTitle,
   renameChat,
-  subscribeFoundryEvents,
-  type ChatTitleMetadata,
 } from "../../api";
+import {
+  carriedData,
+  foundryStreamEpoch,
+  foundryStreamOpened,
+  useStreamEvent,
+} from "../../stream";
 import { i18n } from "../../i18n";
 import { singleFlight } from "../../lib/single-flight";
 
@@ -111,7 +114,7 @@ export function useUnreadTabMarker(
 
 /** A workspace's chat titles, by chat. */
 interface ChatTitleList {
-  items: Record<string, ChatTitleMetadata>;
+  items: Record<string, ChatTitle>;
   /**
    * The stream epoch it was read at (see foundryStreamEpoch); -1 once an
    * event said it changed without saying how.
@@ -121,14 +124,14 @@ interface ChatTitleList {
 
 /** What chat_titles_changed carries: the changed chats' entries. */
 interface ChatTitlesChange {
-  titles?: ChatTitleMetadata[];
+  titles?: ChatTitle[];
   removed?: string[];
 }
 
 function withTitles(
-  items: Record<string, ChatTitleMetadata>,
+  items: Record<string, ChatTitle>,
   change: ChatTitlesChange,
-): Record<string, ChatTitleMetadata> {
+): Record<string, ChatTitle> {
   const next = { ...items };
   for (const chatId of change.removed ?? []) delete next[chatId];
   for (const title of change.titles ?? []) next[title.chatId] = title;
@@ -177,24 +180,21 @@ export function useChatTitles(
    * Follows naming jobs while the list shows: one seen queued or running
    * that failed is told once.
    */
-  const watch = useCallback(
-    (id: string, titles: Iterable<ChatTitleMetadata>) => {
-      if (!activeRef.current || workspaceRef.current !== id) return;
-      for (const title of titles) {
-        if (!title.generationSessionId) continue;
-        if (["queued", "running"].includes(title.generationStatus ?? ""))
-          watchedJobsRef.current.add(title.generationSessionId);
-        else if (
-          title.generationStatus === "failed" &&
-          watchedJobsRef.current.delete(title.generationSessionId)
-        )
-          notifyRef.current(
-            title.generationError || i18n.t("chat:autoName.failedRetry"),
-          );
-      }
-    },
-    [],
-  );
+  const watch = useCallback((id: string, titles: Iterable<ChatTitle>) => {
+    if (!activeRef.current || workspaceRef.current !== id) return;
+    for (const title of titles) {
+      if (!title.generationSessionId) continue;
+      if (["queued", "running"].includes(title.generationStatus ?? ""))
+        watchedJobsRef.current.add(title.generationSessionId);
+      else if (
+        title.generationStatus === "failed" &&
+        watchedJobsRef.current.delete(title.generationSessionId)
+      )
+        notifyRef.current(
+          title.generationError || i18n.t("chat:autoName.failedRetry"),
+        );
+    }
+  }, []);
   const change = useCallback(
     (id: string, heard: ChatTitlesChange) => {
       for (const read of readingRef.current)
@@ -256,35 +256,32 @@ export function useChatTitles(
       if (waitingRef.current === waiting) waitingRef.current = undefined;
     };
   }, [active, workspaceId, refresh, watch]);
-  useEffect(
-    () =>
-      subscribeFoundryEvents(
-        (event) => {
-          if (event.type !== "chat_titles_changed") return;
-          const { workspaceId: id, titles, removed } = event.payload;
-          if (titles || removed) {
-            change(id, { titles, removed });
-            return;
-          }
-          // Said to have changed: what is held is read again when shown.
-          for (const read of readingRef.current)
-            if (read.workspaceId === id) read.stale = true;
-          const list = listsRef.current[id];
-          if (list) keep(id, { ...list, epoch: -1 });
-          if (id === workspaceRef.current && activeRef.current)
-            void refreshRef.current().catch(() => {});
-        },
-        {
-          // Held lists are older than the new epoch now; the one shown is
-          // read again unless its first read is still waiting to start.
-          onResync: () => {
-            const id = workspaceRef.current;
-            if (!id || !activeRef.current || waitingRef.current) return;
-            void refreshRef.current().catch(() => {});
-          },
-        },
-      ),
-    [change, keep],
+  useStreamEvent(
+    "chat_titles_changed",
+    (payload) => {
+      const id = payload.workspaceId;
+      const changed = carriedData("chat_titles_changed", payload);
+      if (changed) {
+        change(id, changed);
+        return;
+      }
+      // Said to have changed: what is held is read again when shown.
+      for (const read of readingRef.current)
+        if (read.workspaceId === id) read.stale = true;
+      const list = listsRef.current[id];
+      if (list) keep(id, { ...list, epoch: -1 });
+      if (id === workspaceRef.current && activeRef.current)
+        void refreshRef.current().catch(() => {});
+    },
+    {
+      // Held lists are older than the new epoch now; the one shown is read
+      // again unless its first read is still waiting to start.
+      onResync: () => {
+        const id = workspaceRef.current;
+        if (!id || !activeRef.current || waitingRef.current) return;
+        void refreshRef.current().catch(() => {});
+      },
+    },
   );
   const rename = useCallback(
     async (id: string, title: string) => {

@@ -354,6 +354,8 @@ type SessionFileReference struct {
 	Text string `json:"text"`
 	Path string `json:"path"`
 	Kind string `json:"kind"`
+	// Pending: no file was there when the answer ended; it links once one is.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // SessionFileRead is one of a session's recorded files, read from its device.
@@ -612,6 +614,43 @@ type AgentScheduledTask struct {
 	NextFireAt    string `json:"nextFireAt,omitempty"`
 }
 
+// AgentSessionSchedule is the timers a session's agent holds (Claude's
+// CronCreate, ScheduleWakeup, /loop): they wake it later, so the session is
+// not idle even when its latest input completed (Status still describes
+// that input). Derived from the latest timer snapshot its device reported
+// (SessionScheduleFromSnapshot).
+type AgentSessionSchedule struct {
+	// ReportedAt is when the device reported these timers.
+	ReportedAt string                       `json:"reportedAt"`
+	Timers     []AgentSessionScheduledTimer `json:"timers"`
+}
+
+// AgentSessionScheduledTimer is a timer of a session's schedule, without
+// its prompt. NextFireAt is as of ReportedAt; readers recompute it from
+// Schedule as time passes.
+type AgentSessionScheduledTimer struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`
+	Schedule   string `json:"schedule"`
+	Recurring  bool   `json:"recurring"`
+	NextFireAt string `json:"nextFireAt,omitempty"`
+}
+
+// SessionScheduleFromSnapshot is a session's schedule from a timer snapshot
+// reported at `at`; nil when it holds no timers.
+func SessionScheduleFromSnapshot(tasks []AgentScheduledTask, at string) *AgentSessionSchedule {
+	if len(tasks) == 0 {
+		return nil
+	}
+	schedule := &AgentSessionSchedule{ReportedAt: at, Timers: make([]AgentSessionScheduledTimer, 0, len(tasks))}
+	for _, task := range tasks {
+		schedule.Timers = append(schedule.Timers, AgentSessionScheduledTimer{
+			ID: task.ID, Kind: task.Kind, Schedule: task.Schedule, Recurring: task.Recurring, NextFireAt: task.NextFireAt,
+		})
+	}
+	return schedule
+}
+
 type AgentSessionTimerFire struct {
 	ID          string `json:"id,omitempty"`
 	Origin      string `json:"origin"`
@@ -652,6 +691,15 @@ type AgentBackgroundTaskOutput struct {
 	Truncated bool   `json:"truncated"`
 	Bytes     int64  `json:"bytes"`
 	Kind      string `json:"kind"`
+	// From is set when Content continues an earlier read: what the log
+	// gained from that read's LineEnd on.
+	From *int64 `json:"from,omitempty"`
+	// LineEnd is where a later read continues; Stable is how many characters
+	// of Content cover the log before it (the rest is an unfinished line).
+	LineEnd *int64 `json:"lineEnd,omitempty"`
+	Stable  *int64 `json:"stable,omitempty"`
+	// Following: the device tells when this running task's log grows.
+	Following bool `json:"following,omitempty"`
 }
 
 type AgentSessionEventMetadata struct {
@@ -678,6 +726,25 @@ type AgentSessionEventMetadata struct {
 	// RequestUsage is a model request's final tokens (Claude), reported
 	// when its stream ends; the event itself is not shown.
 	RequestUsage *ModelRequestUsage `json:"requestUsage,omitempty"`
+	// ContextUsage is how full the session's context is after a main-agent
+	// model request or a compaction; the newest counts.
+	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
+}
+
+// AgentContextUsage is the session's context as its runtime reports it:
+// InputTokens is the whole input of the latest main-agent model request,
+// cache reads and writes included.
+type AgentContextUsage struct {
+	InputTokens   *int64                  `json:"inputTokens,omitempty"`
+	ContextWindow *int64                  `json:"contextWindow,omitempty"`
+	Model         string                  `json:"model,omitempty"`
+	Compaction    *AgentContextCompaction `json:"compaction,omitempty"`
+}
+
+// AgentContextCompaction marks the runtime compacting the context.
+type AgentContextCompaction struct {
+	Trigger   string `json:"trigger"`
+	PreTokens *int64 `json:"preTokens,omitempty"`
 }
 
 // SubagentUsage is a subagent's own work as Claude reports it: one token
@@ -696,6 +763,8 @@ type AgentTurnUsage struct {
 	OutputTokens     int64  `json:"outputTokens"`
 	ReasoningTokens  *int64 `json:"reasoningTokens,omitempty"`
 	ModelRequests    *int64 `json:"modelRequests,omitempty"`
+	// CostUSD is what Claude priced the turn at (list price), when known.
+	CostUSD *float64 `json:"costUsd,omitempty"`
 }
 
 type AgentSubagentTranscriptMessage struct {
@@ -734,6 +803,20 @@ type AgentSubagentSummary struct {
 	Usage         *SubagentUsage `json:"usage,omitempty"`
 }
 
+// AgentSubagentDigest is a subagent as a chat lists it: its answers only as
+// fingerprints (SubagentResponseFingerprint, distinct, in order), without
+// its prompt.
+type AgentSubagentDigest struct {
+	ResponseFingerprints []string       `json:"responseFingerprints"`
+	SessionID            string         `json:"sessionId"`
+	Status               string         `json:"status"`
+	SubagentType         string         `json:"subagentType,omitempty"`
+	TaskID               string         `json:"taskId"`
+	Title                string         `json:"title"`
+	ToolUseID            string         `json:"toolUseId"`
+	Usage                *SubagentUsage `json:"usage,omitempty"`
+}
+
 type ChatAttachment struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -767,6 +850,16 @@ const DaemonCapabilityIssueSessions = "issue_sessions"
 // clarification as a session with the issue_clarification role.
 const DaemonCapabilityIssueClarification = "issue_clarification"
 
+// DaemonCapabilityVerificationSessions: the worker runs a verification
+// session in a sandbox that keeps the workspace read-only while it runs
+// commands; an older worker ran verifiers without commands.
+const DaemonCapabilityVerificationSessions = "verification_sessions"
+
+// DaemonCapabilityAttachmentFiles: the worker reads any file of a
+// workspace it serves for the attachments one session hands another
+// (attachment_read with scope "workspace").
+const DaemonCapabilityAttachmentFiles = "attachment_files"
+
 // DaemonCapabilityWorkspaceGitSetup: the worker leaves a folder without Git
 // as it is and answers the git_status / initialize_git Issue environment
 // actions, so Git is set up only after the person confirms it.
@@ -783,6 +876,10 @@ type SessionInput struct {
 	ImportedContext       string           `json:"importedContext,omitempty"`
 	// When the server received the input; its transcript events carry it.
 	At string `json:"at,omitempty"`
+	// TimerFire is set when the input is a timer's prompt: its device
+	// resumed the session because the timer was due while no agent process
+	// ran it. Its transcript event shows the timer firing.
+	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
 }
 
 // NativeSessionRef names one native Claude Code or Codex session.
@@ -863,12 +960,15 @@ type AgentSession struct {
 	LastActivityAt string `json:"lastActivityAt,omitempty"`
 	// ActivityAt is its last conversation activity: the latest input, or
 	// the answer that completed it. Chat lists order by it.
-	ActivityAt     string              `json:"activityAt,omitempty"`
-	CompletedAt    string              `json:"completedAt,omitempty"`
-	AnswerRevision string              `json:"answerRevision,omitempty"`
-	CreatedLabel   string              `json:"createdLabel"`
-	UpdatedLabel   string              `json:"updatedLabel"`
-	Events         []AgentSessionEvent `json:"events,omitempty"`
+	ActivityAt     string `json:"activityAt,omitempty"`
+	CompletedAt    string `json:"completedAt,omitempty"`
+	AnswerRevision string `json:"answerRevision,omitempty"`
+	CreatedLabel   string `json:"createdLabel"`
+	UpdatedLabel   string `json:"updatedLabel"`
+	// Scheduled is set while the agent holds timers that will wake the
+	// session; the store keeps it from the session's timer snapshots.
+	Scheduled *AgentSessionSchedule `json:"scheduled,omitempty"`
+	Events    []AgentSessionEvent   `json:"events,omitempty"`
 }
 
 type IssueConversationMessage struct {
@@ -1226,6 +1326,9 @@ type SendAgentSessionInput struct {
 	// gave its message so a retried send records it once (see
 	// ValidSessionInputID). Empty generates one.
 	InputID string `json:"inputId,omitempty"`
+	// TimerFire marks the input as a timer's prompt (set by the server for
+	// a device that resumes a session for a due timer, never by clients).
+	TimerFire *AgentSessionTimerFire `json:"-"`
 }
 
 type CreateAgentSessionInput struct {
@@ -1682,6 +1785,8 @@ type DeviceTool struct {
 	DeviceID  string `json:"deviceId"`
 	Tool      string `json:"tool"`
 	Available bool   `json:"available"`
+	// CheckedAt is when the device first gave its current answer; a scan
+	// that finds the same answer leaves it.
 	CheckedAt string `json:"checkedAt"`
 	// Version is the version Foundry installed on the device, if it did.
 	Version string `json:"version,omitempty"`

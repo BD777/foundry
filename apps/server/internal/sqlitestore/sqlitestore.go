@@ -373,6 +373,12 @@ func (s *Store) migrate(ctx context.Context) error {
 			expires_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_tokens_session ON session_tokens (session_id)`,
+		// The highest issue number ever handed out. Issue numbers never come
+		// back: a worker names candidate branches and folders after them.
+		`CREATE TABLE IF NOT EXISTS issue_sequence (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			last_number INTEGER NOT NULL
+		)`,
 	}
 	statements = append(statements, chatQueueSchema()...)
 	statements = append(statements, indexStatements()...)
@@ -446,13 +452,21 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.setupOwnership(ctx); err != nil {
 		return err
 	}
+	if err := s.setupExternalAccounts(ctx); err != nil {
+		return err
+	}
 	if err := s.backfillWorkspaceScopedRecords(ctx); err != nil {
 		return err
 	}
 	if err := s.pruneAgentSessionInlineEvents(ctx); err != nil {
 		return err
 	}
-	return nil
+	// Before the prune, so an issue number only orphaned rows still mention
+	// is not handed out again.
+	if err := s.raiseIssueSequence(ctx); err != nil {
+		return err
+	}
+	return s.pruneOrphanedRows(ctx)
 }
 
 func (s *Store) backfillAgentSessionThreadIDs(ctx context.Context) error {
@@ -619,75 +633,11 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 		return store.WorkspaceProjection{}, store.ErrWorkspaceBusy
 	}
 
-	statements := []struct {
-		label string
-		query string
-	}{
-		{
-			label: "delete workspace run events",
-			query: `DELETE FROM run_events
-				WHERE run_id IN (SELECT id FROM runs WHERE workspace_id = ?)`,
-		},
-		{
-			label: "delete workspace agent session events",
-			query: `DELETE FROM agent_session_events
-				WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?)`,
-		},
-		{
-			label: "delete workspace acceptance artifacts",
-			query: `DELETE FROM acceptance_artifacts
-				WHERE issue_id IN (SELECT id FROM issues WHERE workspace_id = ?)`,
-		},
-		{
-			label: "delete workspace runs",
-			query: `DELETE FROM runs WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace issues",
-			query: `DELETE FROM issues WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace native sessions",
-			query: `DELETE FROM agent_session_native_ids
-				WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?)`,
-		},
-		{
-			label: "delete workspace agent sessions",
-			query: `DELETE FROM agent_sessions WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace chats",
-			query: `DELETE FROM chats WHERE workspace_id = ?`,
-		},
-		{label: "delete workspace chat titles", query: `DELETE FROM chat_titles WHERE workspace_id = ?`},
-		{label: "delete workspace chat layout", query: `DELETE FROM chat_layouts WHERE workspace_id = ?`},
-		{label: "delete workspace chat deletion markers", query: `DELETE FROM chat_deletions WHERE workspace_id = ?`},
-		{label: "delete workspace display name", query: `DELETE FROM workspace_display_names WHERE workspace_id = ?`},
-		{
-			label: "delete workspace agents",
-			query: `DELETE FROM agents WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace files",
-			query: `DELETE FROM workspace_files WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace assets",
-			query: `DELETE FROM assets WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace skills",
-			query: `DELETE FROM skills WHERE workspace_id = ?`,
-		},
-		{
-			label: "delete workspace row",
-			query: `DELETE FROM workspaces WHERE id = ?`,
-		},
+	if err := deleteWorkspaceRows(ctx, tx, id); err != nil {
+		return store.WorkspaceProjection{}, err
 	}
-	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement.query, id); err != nil {
-			return store.WorkspaceProjection{}, fmt.Errorf("%s: %w", statement.label, err)
-		}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, id); err != nil {
+		return store.WorkspaceProjection{}, fmt.Errorf("delete workspace row: %w", err)
 	}
 	if err := recordWorkspaceDeletion(ctx, tx, workspace, time.Now().UTC()); err != nil {
 		return store.WorkspaceProjection{}, err
@@ -751,9 +701,10 @@ func (s *Store) ListDevices(ctx context.Context) ([]store.DeviceProjection, erro
 	// label) but are projected as "removed" so the UI can hide them from the
 	// available device list and mark them elsewhere.
 	//
-	// skillsVersion moves with every scan of the device (a scan rewrites its
-	// rows) and every catalog change, which can change how its skills
-	// compare with the server.
+	// skillsVersion moves when a scan of the device changes its rows (an
+	// unchanged scan writes none; see ReplaceDeviceSkills) and with every
+	// catalog change, which can change how its skills compare with the
+	// server.
 	return listJSON[store.DeviceProjection](ctx, s.reader(), `SELECT
 		json_set(
 			CASE WHEN r.device_id IS NULL THEN d.payload_json ELSE
@@ -863,17 +814,14 @@ func (s *Store) GetChat(ctx context.Context, id string) (store.ChatThread, error
 	return getJSON[store.ChatThread](ctx, s.reader(), `SELECT payload_json FROM chats WHERE id = ? AND `+visibleChatSQL+` AND NOT `+nativeClaimedSQL, id)
 }
 
-// nextIssueSequence returns one past the highest numeric suffix already used by
-// an issue id or short id, so deleting an issue can never hand its number to a
-// new one. Callers must hold the surrounding transaction.
+// nextIssueSequence hands out the next issue number: one past the highest
+// ever handed out or still in use, so a deleted issue's number never comes
+// back. Callers must hold the surrounding transaction.
 func (s *Store) nextIssueSequence(ctx context.Context) (int, error) {
 	var highest sql.NullInt64
-	if err := s.conn().QueryRowContext(ctx, `SELECT MAX(sequence) FROM (
-			SELECT CAST(substr(id, 5) AS INTEGER) AS sequence FROM issues
-				WHERE substr(id, 1, 4) = 'iss_' AND substr(id, 5) GLOB '[0-9]*'
-			UNION ALL
-			SELECT CAST(substr(short_id, 5) AS INTEGER) AS sequence FROM issues
-				WHERE substr(short_id, 1, 4) = 'ISS-' AND substr(short_id, 5) GLOB '[0-9]*'
+	if err := s.conn().QueryRowContext(ctx, `SELECT MAX(number) FROM (
+			SELECT last_number AS number FROM issue_sequence
+			UNION ALL `+issueNumbersSQL(`SELECT id AS ref FROM issues UNION ALL SELECT short_id FROM issues`)+`
 		)`).Scan(&highest); err != nil {
 		return 0, fmt.Errorf("next issue sequence: %w", err)
 	}
@@ -881,7 +829,37 @@ func (s *Store) nextIssueSequence(ctx context.Context) (int, error) {
 	if highest.Valid && int(highest.Int64) >= next {
 		next = int(highest.Int64) + 1
 	}
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO issue_sequence (id, last_number) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET last_number = excluded.last_number`, next); err != nil {
+		return 0, fmt.Errorf("record issue sequence: %w", err)
+	}
 	return next, nil
+}
+
+// raiseIssueSequence moves the issue counter past every issue number the
+// database mentions, in issues or in rows an issue owns, so numbers handed
+// out before the counter existed, or that only orphaned rows still name,
+// are not handed out again.
+func (s *Store) raiseIssueSequence(ctx context.Context) error {
+	references := []string{`SELECT id AS ref FROM issues`, `SELECT short_id FROM issues`}
+	for _, rows := range workspaceOwnedRows {
+		if rows.owner == ownerIssue {
+			references = append(references, `SELECT `+rows.key+` FROM `+rows.table)
+		}
+	}
+	if _, err := s.conn().ExecContext(ctx, `INSERT INTO issue_sequence (id, last_number)
+		SELECT 1, COALESCE(MAX(number), 0) FROM (`+issueNumbersSQL(strings.Join(references, " UNION ALL "))+`) WHERE true
+		ON CONFLICT(id) DO UPDATE SET last_number = max(last_number, excluded.last_number)`); err != nil {
+		return fmt.Errorf("raise issue sequence: %w", err)
+	}
+	return nil
+}
+
+// issueNumbersSQL selects, as column number, the issue numbers of the issue
+// ids and short ids that refs (a query with column ref) lists.
+func issueNumbersSQL(refs string) string {
+	return `SELECT CAST(substr(ref, 5) AS INTEGER) AS number FROM (` + refs + `)
+		WHERE substr(ref, 1, 4) IN ('iss_', 'ISS-') AND substr(ref, 5) GLOB '[0-9]*'`
 }
 
 func (s *Store) saveIssue(ctx context.Context, issue store.Issue, createdAt time.Time, updatedAt time.Time) error {
@@ -987,14 +965,20 @@ func (s *Store) saveChat(ctx context.Context, value store.ChatThread, updatedAt 
 	if err != nil {
 		return err
 	}
-	return s.writeChat(ctx, value, payload, updatedAt)
+	return s.writeChat(ctx, value, payload, updatedAt, false)
 }
 
 // writeChat stores a chat with the columns its list filters and orders by.
-func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload string, updatedAt time.Time) error {
+// checked marks it as one the startup repairs need not read (see
+// uncheckedChatSQL).
+func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload string, updatedAt time.Time, checked bool) error {
+	checkedAt := ""
+	if checked {
+		checkedAt = formatTime(updatedAt)
+	}
 	_, err := s.conn().ExecContext(ctx, `INSERT INTO chats
-		(id, title, payload_json, updated_at, workspace_id, provider, native_session_id, activity_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(id, title, payload_json, updated_at, workspace_id, provider, native_session_id, activity_at, checked_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title = excluded.title,
 			payload_json = excluded.payload_json,
@@ -1002,7 +986,8 @@ func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload s
 			workspace_id = excluded.workspace_id,
 			provider = excluded.provider,
 			native_session_id = excluded.native_session_id,
-			activity_at = excluded.activity_at`,
+			activity_at = excluded.activity_at,
+			checked_at = excluded.checked_at`,
 		value.ID,
 		value.Title,
 		payload,
@@ -1011,6 +996,7 @@ func (s *Store) writeChat(ctx context.Context, value store.ChatThread, payload s
 		value.Provider,
 		value.NativeSessionID,
 		chatActivity(value),
+		checkedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("save chat: %w", err)
@@ -1052,11 +1038,14 @@ func (s *Store) compareChat(ctx context.Context, value store.ChatThread) chatCom
 // unchanged is not compared again while its row's updated_at shows nothing
 // wrote it since (every write stamps the writer's own time); the deletion,
 // ownership and empty-chat checks still run here, in order.
-func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, updatedAt time.Time, known chatComparison) (bool, error) {
+//
+// refused reports a chat this server never keeps: it was deleted, or a
+// Foundry session owns it. Neither is undone while the workspace exists.
+func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, updatedAt time.Time, known chatComparison) (changed bool, refused bool, err error) {
 	value.UpdatedLabel = ""
 	deleted, err := s.chatDeleted(ctx, value.WorkspaceID, value.ID, value.Provider, value.NativeSessionID)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if deleted {
 		// A deleted, previously unloaded projection may reveal its native ID on
@@ -1064,45 +1053,47 @@ func (s *Store) saveComparedChat(ctx context.Context, value store.ChatThread, up
 		if value.Provider != "" && value.NativeSessionID != "" {
 			_, err = s.conn().ExecContext(ctx, `INSERT OR IGNORE INTO chat_deletions(workspace_id, deletion_key) VALUES (?, ?)`, value.WorkspaceID, "native:"+value.Provider+":"+value.NativeSessionID)
 		}
-		return false, err
+		return false, true, err
 	}
 	if value.NativeSessionID != "" {
 		claimed, err := s.claimNativeChat(ctx, value)
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if claimed {
-			return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
+			removed, err := s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
+			return removed, true, err
 		}
 	}
 	if nativeChatWithoutTurns(value) {
-		return s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
+		removed, err := s.deleteNativeChat(ctx, value.Provider, value.NativeSessionID)
+		return removed, false, err
 	}
 
 	if known.unchanged {
 		var stamp string
 		err := s.conn().QueryRowContext(ctx, `SELECT updated_at FROM chats WHERE id = ?`, value.ID).Scan(&stamp)
 		if err == nil && stamp == known.updatedAt {
-			return false, nil
+			return false, false, nil
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return false, fmt.Errorf("read chat: %w", err)
+			return false, false, fmt.Errorf("read chat: %w", err)
 		}
 	}
 	var current string
 	err = s.conn().QueryRowContext(ctx, `SELECT payload_json FROM chats WHERE id = ?`, value.ID).Scan(&current)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return false, fmt.Errorf("read chat: %w", err)
+		return false, false, fmt.Errorf("read chat: %w", err)
 	}
 	found := err == nil
 	value, payload, err := chatPayload(value, current, found)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if found && current == payload {
-		return false, nil
+		return false, false, nil
 	}
-	return true, s.writeChat(ctx, value, payload, updatedAt)
+	return true, false, s.writeChat(ctx, value, payload, updatedAt, chatCheckedOnWrite(value))
 }
 
 // chatPayload is the chat and payload a sync stores over the stored row
@@ -1246,7 +1237,13 @@ func (s *Store) replaceDeviceAgentProfiles(ctx context.Context, deviceID string,
 	return nil
 }
 
+// getAgent finds an agent by id, or the newest of a runtime in a workspace.
+// An id is looked up within the named workspace: a request authorized for
+// one workspace never reaches another's agent, and so its device.
 func (s *Store) getAgent(ctx context.Context, id string, workspaceID string, provider string) (store.AgentProjection, error) {
+	if id != "" && workspaceID != "" {
+		return getJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE id = ? AND workspace_id = ?`, id, workspaceID)
+	}
 	if id != "" {
 		return getJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE id = ?`, id)
 	}

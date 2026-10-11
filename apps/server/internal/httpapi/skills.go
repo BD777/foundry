@@ -81,7 +81,8 @@ type wsSkillsScannedPayload struct {
 
 // deviceToolStore records which programs skills need a device has.
 type deviceToolStore interface {
-	ReplaceDeviceTools(ctx context.Context, deviceID string, tools map[string]bool, versions map[string]string) error
+	// ReplaceDeviceTools reports whether the device's answer changed.
+	ReplaceDeviceTools(ctx context.Context, deviceID string, tools map[string]bool, versions map[string]string) (bool, error)
 	SetDeviceToolVersion(ctx context.Context, deviceID, tool, version string) error
 	ListDeviceTools(ctx context.Context, deviceID string) ([]store.DeviceTool, error)
 }
@@ -144,21 +145,23 @@ type wsSkillContentReadPayload struct {
 var defaultSkillRoots = []string{"~/.claude/skills", "~/.codex/skills"}
 
 // ScanDeviceSkills asks an online daemon to scan the given roots, then stores
-// the snapshot. An empty root list means the daemon-side defaults.
+// the snapshot. An empty root list means the daemon-side defaults. changed
+// reports whether the scan changed what is stored (the device's skills or
+// tools); a scan that found nothing new changes nothing clients compare.
 //
 // A scan already running for the same device and folders is joined rather
 // than started again: a click on Scan during the automatic scan on connect
 // waits for that one instead of making the device scan twice.
-func (h *DaemonHub) ScanDeviceSkills(ctx context.Context, deviceID string, roots []string) ([]store.DeviceSkill, error) {
+func (h *DaemonHub) ScanDeviceSkills(ctx context.Context, deviceID string, roots []string) (skills []store.DeviceSkill, changed bool, err error) {
 	key := deviceID + "\x00" + strings.Join(roots, "\x00")
 	h.skillScansMu.Lock()
 	if scan, running := h.skillScans[key]; running {
 		h.skillScansMu.Unlock()
 		select {
 		case <-scan.done:
-			return scan.skills, scan.err
+			return scan.skills, scan.changed, scan.err
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, false, ctx.Err()
 		}
 	}
 	scan := &skillScan{done: make(chan struct{})}
@@ -169,53 +172,58 @@ func (h *DaemonHub) ScanDeviceSkills(ctx context.Context, deviceID string, roots
 	h.skillScansMu.Unlock()
 	// Shared by everyone who joined, so one caller leaving does not cancel it
 	// for the rest; it still ends when the device disconnects.
-	scan.skills, scan.err = h.scanDeviceSkills(context.WithoutCancel(ctx), deviceID, roots)
+	scan.skills, scan.changed, scan.err = h.scanDeviceSkills(context.WithoutCancel(ctx), deviceID, roots)
 	h.skillScansMu.Lock()
 	delete(h.skillScans, key)
 	h.skillScansMu.Unlock()
 	close(scan.done)
-	return scan.skills, scan.err
+	return scan.skills, scan.changed, scan.err
 }
 
 // skillScan is one scan in flight; done closes when its result is set.
 type skillScan struct {
-	done   chan struct{}
-	skills []store.DeviceSkill
-	err    error
+	done    chan struct{}
+	skills  []store.DeviceSkill
+	changed bool
+	err     error
 }
 
-func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots []string) ([]store.DeviceSkill, error) {
+func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots []string) ([]store.DeviceSkill, bool, error) {
 	connection := h.connectionFor(deviceID)
 	if connection == nil {
-		return nil, store.ErrNotFound
+		return nil, false, store.ErrNotFound
 	}
 	request, err := json.Marshal(wsScanSkillsPayload{Roots: roots, Tools: libraryTools(ctx, h.store)})
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	value, err := daemonRequest[wsSkillsScannedPayload](ctx, connection, wsScanSkillsType, request)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if value.Error != "" {
-		return nil, errors.New(value.Error)
+		return nil, false, errors.New(value.Error)
 	}
 	skills := value.Skills
 	for i := range skills {
 		skills[i].DeviceID = deviceID
 	}
-	if err := h.store.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
+	changed, err := h.store.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
 		DeviceID: deviceID,
 		Skills:   skills,
-	}); err != nil {
-		return nil, err
+	})
+	if err != nil {
+		return nil, false, err
 	}
 	if tools, ok := h.store.(deviceToolStore); ok && value.Tools != nil {
-		if err := tools.ReplaceDeviceTools(ctx, deviceID, value.Tools, value.ToolVersions); err != nil {
-			return nil, err
+		toolsChanged, err := tools.ReplaceDeviceTools(ctx, deviceID, value.Tools, value.ToolVersions)
+		if err != nil {
+			return nil, false, err
 		}
+		changed = changed || toolsChanged
 	}
-	return h.store.ListDeviceSkills(ctx, deviceID)
+	listed, err := h.store.ListDeviceSkills(ctx, deviceID)
+	return listed, changed, err
 }
 
 // ReadDeviceSkillContent fetches one skill zip from an online daemon.
@@ -318,8 +326,26 @@ func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
+	answer := map[string]any{"roots": roots}
+	// When the device last scanned, whether or not that changed its skills.
+	if scans, ok := s.store.(deviceSkillScanStore); ok {
+		scannedAt, err := scans.DeviceSkillsScannedAt(r.Context(), deviceID)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		if scannedAt != "" {
+			answer["scannedAt"] = scannedAt
+		}
+	}
 	view, err := s.callerVisibility(r)
-	writeResult(w, map[string]any{"roots": roots, "skills": view.deviceSkillUsage(skills)}, err)
+	answer["skills"] = view.deviceSkillUsage(skills)
+	writeResult(w, answer, err)
+}
+
+// deviceSkillScanStore knows when each device last scanned its skills.
+type deviceSkillScanStore interface {
+	DeviceSkillsScannedAt(ctx context.Context, deviceID string) (string, error)
 }
 
 // deviceSkillRescanInterval is how often a connected device's skill folders
@@ -344,11 +370,11 @@ func (s *Server) keepDeviceSkillsScanned(ctx context.Context, deviceID string, c
 	for {
 		if paths, err := s.scanPaths(ctx, deviceID); err != nil {
 			log.Printf("skill scan of %s: %v", deviceID, err)
-		} else if _, err := s.hub.ScanDeviceSkills(ctx, deviceID, paths); err != nil {
+		} else if _, changed, err := s.hub.ScanDeviceSkills(ctx, deviceID, paths); err != nil {
 			if ctx.Err() == nil {
 				log.Printf("skill scan of %s: %v", deviceID, err)
 			}
-		} else {
+		} else if changed {
 			s.projectionsChanged("", deviceScanFields...)
 		}
 		select {
@@ -373,7 +399,7 @@ func (s *Server) handleScanDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	skills, err := s.hub.ScanDeviceSkills(r.Context(), deviceID, paths)
+	skills, changed, err := s.hub.ScanDeviceSkills(r.Context(), deviceID, paths)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusBadGateway, "device is offline; connect it to scan skills")
@@ -382,7 +408,9 @@ func (s *Server) handleScanDeviceSkills(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	s.projectionsChanged("", deviceScanFields...)
+	if changed {
+		s.projectionsChanged("", deviceScanFields...)
+	}
 	view, err := s.callerVisibility(r)
 	writeResult(w, view.deviceSkillUsage(skills), err)
 }

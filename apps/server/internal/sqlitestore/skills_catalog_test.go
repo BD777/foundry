@@ -31,7 +31,7 @@ func TestSkillRootsDefaultToEmptyRowsAndReplace(t *testing.T) {
 func TestReplaceDeviceSkillsSnapshotAndPromotedBackfill(t *testing.T) {
 	db := newTestStore(t)
 	ctx := context.Background()
-	if err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
+	if _, err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
 		DeviceID: "dev_1",
 		Skills: []store.DeviceSkill{
 			{DeviceID: "wrong", Root: "/r", DirName: "a", Name: "Alpha"},
@@ -76,7 +76,7 @@ func TestPromoteAddsRevisionAndBackfillsOnRescan(t *testing.T) {
 	}
 
 	// The rescan projection backfills the promoted id.
-	if err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
+	if _, err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{
 		DeviceID: "dev_1",
 		Skills:   []store.DeviceSkill{{Root: "/r", DirName: "alpha", Name: "Alpha Two"}},
 	}); err != nil {

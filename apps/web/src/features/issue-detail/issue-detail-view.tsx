@@ -61,7 +61,7 @@ function IssueDetail({
     "details" | "changes" | "environment" | "evidence"
   >("details");
   const meta = issueBadgeMeta(issue);
-  const contract = useIssueContract(issue, callbacks.onRefresh);
+  const contract = useIssueContract(issue);
   const phase = issuePhase(issue);
   const [abandoning, setAbandoning] = useState(false);
   const terminal = issue.status === "accepted" || issue.status === "abandoned";
@@ -70,7 +70,6 @@ function IssueDetail({
     setAbandoning(true);
     try {
       await abandonIssue(issue.id, issue.run?.id);
-      callbacks.onRefresh(issue.id);
     } catch (error) {
       callbacks.onNotice(String(error));
     } finally {
@@ -148,7 +147,7 @@ function IssueDetail({
       <ScrollArea key={tab} className="fdy-issue-details-scroll">
         <div className="fdy-issue-details-content">
           {tab === "evidence" ? (
-            <IssueEvidencePanel issue={issue} onRefresh={callbacks.onRefresh} />
+            <IssueEvidencePanel issue={issue} />
           ) : tab === "environment" ? (
             <>
               <p className="fdy-issue-tab-intro">
@@ -164,7 +163,7 @@ function IssueDetail({
                 </dl>
               </section>
               <IssueSessions issue={issue} />
-              <IssueEnvironment issue={issue} onRefresh={callbacks.onRefresh} />
+              <IssueEnvironment issue={issue} />
             </>
           ) : tab === "changes" ? (
             issue.run?.environmentId &&
@@ -279,7 +278,6 @@ function IssueDetail({
             issue={issue}
             history={history}
             inputRef={inputRef}
-            onRefresh={callbacks.onRefresh}
             contract={contract}
           />
         </ChatDetailSplitPane>

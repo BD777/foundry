@@ -62,7 +62,7 @@ func TestDaemonOutboundBackpressureDoesNotCloseTheConnection(t *testing.T) {
 }
 
 func TestActiveSessionClaimBelongsToExactConnectionAndSession(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	first := &daemonConnection{
 		activeSessions: map[string]bool{"session": true},
 		done:           make(chan struct{}),
@@ -201,7 +201,7 @@ func TestDeliverDaemonResponseRejectsMalformedCorrelatedPayload(t *testing.T) {
 }
 
 func TestDaemonRequestFailedQueueLeavesNoRegistryEntry(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	connection := trackedConnection(t, hub)
 	connection.close()
 
@@ -223,7 +223,7 @@ func TestDaemonRequestFailedQueueLeavesNoRegistryEntry(t *testing.T) {
 }
 
 func TestDaemonRequestHonorsContextAndDropsRegistration(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	connection := trackedConnection(t, hub)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)

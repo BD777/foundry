@@ -1,0 +1,46 @@
+[
+  {
+    "text": "",
+    "fingerprint": "cbf29ce484222325"
+  },
+  {
+    "text": "a",
+    "fingerprint": "af63dc4c8601ec8c"
+  },
+  {
+    "text": "foobar",
+    "fingerprint": "85944171f73967e8"
+  },
+  {
+    "text": "  foobar\n\t",
+    "fingerprint": "85944171f73967e8"
+  },
+  {
+    "text": "\ufeff foobar \u3000",
+    "fingerprint": "85944171f73967e8"
+  },
+  {
+    "text": "\u0085foobar",
+    "fingerprint": "1549a311000b301d"
+  },
+  {
+    "text": "\u00a0\u2028Done.\u2029\u00a0",
+    "fingerprint": "7301570d0bb8fc6d"
+  },
+  {
+    "text": "\u180efoobar",
+    "fingerprint": "83b5eea39705f447"
+  },
+  {
+    "text": "\u200bfoobar",
+    "fingerprint": "e96ce264ceaa5d31"
+  },
+  {
+    "text": "\u4f60\u597d\uff0c\u4e16\u754c \ud83d\ude00\n",
+    "fingerprint": "d4d20c8fee9fee6b"
+  },
+  {
+    "text": "## Findings\n\n- `apps/web/src/api.ts:1228` lists subagents\n- Three packages.\r\n",
+    "fingerprint": "fa8cfbd7d7334004"
+  }
+]

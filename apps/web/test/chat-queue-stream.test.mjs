@@ -46,7 +46,7 @@ test("queue: on page load the selected chat's queue is read once the stream open
     });
   }
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const { foundryStreamOpenWaitMs } = await import("../src/api.ts");
+  const { foundryStreamOpenWaitMs } = await import("../src/stream/index.ts");
   const { useChatQueue } =
     await import("../src/features/chat/use-chat-queue.ts");
   function Harness({ chatId }) {
@@ -122,7 +122,8 @@ test("queue: read once per chat shown; reconnects resume, only a resync reads ag
       configurable: true,
     });
   }
-  const { subscribeFoundryEvents } = await import("../src/api.ts");
+  const { onAnyStreamEvent: subscribeFoundryEvents } =
+    await import("../src/stream/index.ts");
   const { useChatQueue } =
     await import("../src/features/chat/use-chat-queue.ts");
   // The app's own subscription has the tab's connection open already.
@@ -249,7 +250,8 @@ test("queue: a chat of another workspace that changed while it was not shown is 
       configurable: true,
     });
   }
-  const { subscribeFoundryEvents } = await import("../src/api.ts");
+  const { onAnyStreamEvent: subscribeFoundryEvents } =
+    await import("../src/stream/index.ts");
   const { useChatQueue } =
     await import("../src/features/chat/use-chat-queue.ts");
   const stopApp = subscribeFoundryEvents(() => {});

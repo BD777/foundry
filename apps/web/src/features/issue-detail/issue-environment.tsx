@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Issue } from "@bd777/foundry-protocol";
-import {
-  readIssueEnvironment,
-  issueEnvironmentAction,
-  type IssueEnvironmentData,
-} from "../../api";
+import { issueEnvironmentAction } from "../../api";
 import { Button } from "../../components/ui/button";
 import { Panel, SectionLabel } from "../../components/ui/panel";
 import { Alert } from "../../components/ui/alert";
@@ -13,54 +9,29 @@ import { InfoRow } from "../../components/ui/info-row";
 import { RepositoryList } from "./repository-list";
 import { environmentCounts, environmentLabel } from "./environment-model";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
+import { useIssueEnvironment } from "./use-issue-environment";
 import "./issue-execution.css";
 
-export function IssueEnvironment({
-  issue,
-  onRefresh,
-}: {
-  issue: Issue;
-  onRefresh: (issueId?: string) => void;
-}) {
+export function IssueEnvironment({ issue }: { issue: Issue }) {
   const { t, i18n } = useTranslation("issueDetail");
-  const [data, setData] = useState<IssueEnvironmentData>();
-  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
   const [reload, setReload] = useState(0);
+  const { data, error: readError } = useIssueEnvironment(issue, reload);
+  // A read that succeeds after a failed action clears its error, as before.
+  useEffect(() => setActionError(""), [data]);
+  const error = actionError || readError;
   const counts = data ? environmentCounts(data) : undefined;
-  useEffect(() => {
-    let active = true;
-    const load = () => {
-      void readIssueEnvironment(issue.id).then(
-        (value) => {
-          if (active) {
-            setData(value);
-            setError("");
-          }
-        },
-        (reason) => {
-          if (active) setError(String(reason));
-        },
-      );
-    };
-    load();
-    const timer = setInterval(load, 4000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [issue.id, issue.status, reload]);
   async function act(
     action: "cancel" | "cleanup" | "preview_start" | "preview_stop",
   ) {
     setPending(true);
-    setError("");
+    setActionError("");
     try {
       await issueEnvironmentAction(issue.id, action);
       setReload((value) => value + 1);
-      onRefresh(issue.id);
     } catch (reason) {
-      setError(String(reason));
+      setActionError(String(reason));
     } finally {
       setPending(false);
     }

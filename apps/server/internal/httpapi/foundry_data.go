@@ -78,6 +78,12 @@ var (
 	// What a device's skill scan changes: its skills version and tools, and
 	// the dependencies the catalog finds among the skills it reports.
 	deviceScanFields = []string{fieldDevices, fieldDeviceTools, fieldPromotedSkills}
+	// What removing a workspace changes beyond its own data, which goes with
+	// it: the workspace list, the catalog's list of the workspaces using each
+	// skill and, for whoever reached a device only through the workspace,
+	// the devices shown and what derives from them.
+	workspaceRemovalFields = append([]string{fieldWorkspaces, fieldPromotedSkills, fieldDevices,
+		fieldDeviceTools, fieldDeviceSkillRoots, fieldProviderHealth}, connectionFields...)
 )
 
 // foundryDataAnswer is what GET /api/foundry-data answers: the projection,
@@ -162,7 +168,7 @@ func (s *Server) handleFoundryData(w http.ResponseWriter, r *http.Request) {
 	// publishes an event (or invalidates), and what a running session
 	// changes without one (its activity time, which agent_session_event
 	// carries live) is bounded by the TTL.
-	payload, err := s.projections.load(r.Context(), cacheKey, s.events.revision.Load, func() ([]byte, bool, error) {
+	payload, err := s.projections.load(r.Context(), cacheKey, s.stream.Revision, func() ([]byte, bool, error) {
 		data, err := s.foundryData(r.Context(), workspaceID, view, want)
 		if err != nil {
 			return nil, false, err
@@ -235,7 +241,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		if err != nil {
 			return foundryDataAnswer{}, err
 		}
-		data.Devices = s.hub.withDisconnects(s.withWorkerUpdates(view.filterDevices(allDevices)))
+		data.Devices = s.liveDevices(view.filterDevices(allDevices))
 	}
 	if connections || want.has(fieldProfiles) {
 		timer.mark("ListProfiles")

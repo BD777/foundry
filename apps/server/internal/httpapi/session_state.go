@@ -9,7 +9,7 @@ import (
 // panelStateEvents are the state events before a window (see
 // store.SessionStateStore) that the side panel still reads beside it, cut
 // to what it reads: one the window replaces is left out, as is a fire of a
-// timer the newest snapshot no longer lists.
+// timer the newest snapshot no longer lists (its turn's usage stays).
 func panelStateEvents(older, window []store.AgentSessionEvent) []store.AgentSessionEvent {
 	replaced := map[string]bool{}
 	var timers *[]store.AgentScheduledTask
@@ -41,6 +41,12 @@ func panelStateEvents(older, window []store.AgentSessionEvent) []store.AgentSess
 			continue
 		}
 		if event.Metadata != nil && event.Metadata.TimerFire != nil && !live[event.Metadata.TimerFire.ID] {
+			if event.Metadata.TurnUsage == nil {
+				continue
+			}
+			state := panelStateEvent(event, key)
+			state.Metadata.TimerFire = nil
+			events = append(events, state)
 			continue
 		}
 		events = append(events, panelStateEvent(event, key))
@@ -71,6 +77,9 @@ func panelStateEvent(event store.AgentSessionEvent, key string) store.AgentSessi
 		TaskType:               metadata.TaskType,
 		ToolUseID:              metadata.ToolUseID,
 		SubagentUsage:          metadata.SubagentUsage,
+		TurnUsage:              metadata.TurnUsage,
+		RequestUsage:           metadata.RequestUsage,
+		ContextUsage:           metadata.ContextUsage,
 	}
 	if fire := metadata.TimerFire; fire != nil {
 		state.Metadata.TimerFire = &store.AgentSessionTimerFire{ID: fire.ID, Origin: fire.Origin, StartedAt: fire.StartedAt, CompletedAt: fire.CompletedAt}

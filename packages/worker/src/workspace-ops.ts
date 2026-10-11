@@ -331,6 +331,19 @@ export async function registerDaemon(
  */
 const uploadedChats = new Map<string, Map<string, string>>();
 
+/**
+ * Chats a server said it never keeps (deleted, or a Foundry session owns
+ * them), per server and workspace: they are not sent again. A session's own
+ * native chat changes all the time it runs, and each change would send its
+ * transcript for nothing. In memory: a restarted worker sends each once more.
+ */
+const refusedChats = new Map<string, Set<string>>();
+
+/** What the server answers a chat sync; older servers name no refusals. */
+interface SyncedChats {
+  refused?: string[];
+}
+
 const summaryBatchSize = 20;
 
 export async function syncNativeChats(
@@ -355,31 +368,45 @@ export async function syncNativeChats(
   const key = `${serverURL}\n${workspace.id}`;
   const uploaded = uploadedChats.get(key) ?? new Map<string, string>();
   uploadedChats.set(key, uploaded);
+  const refused = refusedChats.get(key) ?? new Set<string>();
+  refusedChats.set(key, refused);
+  const remember = (answer: SyncedChats | undefined) => {
+    for (const id of answer?.refused ?? []) refused.add(id);
+  };
   // A chat carries content only (its time is its last activity, never a
   // label), so a chat nobody touched is never uploaded again.
   const fingerprint = (chat: ChatThread) =>
     createHash("sha256").update(JSON.stringify(chat)).digest("hex");
-  const chats = historyIds
-    ? candidates.filter((chat) => historyIds.has(chat.id))
-    : candidates.filter((chat) => uploaded.get(chat.id) !== fingerprint(chat));
+  const chats = candidates
+    .filter((chat) => !refused.has(chat.id))
+    .filter((chat) =>
+      historyIds
+        ? historyIds.has(chat.id)
+        : uploaded.get(chat.id) !== fingerprint(chat),
+    );
   // Chats this worker has not sent yet go up first as summaries, a batch per
   // request, so the whole list appears at once; the server keeps any
   // transcript it already holds for an unchanged answer.
   const unseen = chats.filter((chat) => !uploaded.has(chat.id));
   for (let offset = 0; offset < unseen.length; offset += summaryBatchSize)
-    await postJSON(serverURL, "/api/daemon/chats/sync", {
-      workspaceId: workspace.id,
-      chats: unseen
-        .slice(offset, offset + summaryBatchSize)
-        .map((chat) => ({ ...chat, transcript: undefined })),
-    });
+    remember(
+      await postJSON<SyncedChats>(serverURL, "/api/daemon/chats/sync", {
+        workspaceId: workspace.id,
+        chats: unseen
+          .slice(offset, offset + summaryBatchSize)
+          .map((chat) => ({ ...chat, transcript: undefined })),
+      }),
+    );
   // Full detail includes typed transcripts: one chat per request so a long
   // history cannot exceed the HTTP request size limit.
   for (const chat of chats) {
-    await postJSON(serverURL, "/api/daemon/chats/sync", {
-      workspaceId: workspace.id,
-      chats: [chat],
-    });
+    if (refused.has(chat.id)) continue;
+    remember(
+      await postJSON<SyncedChats>(serverURL, "/api/daemon/chats/sync", {
+        workspaceId: workspace.id,
+        chats: [chat],
+      }),
+    );
     uploaded.set(chat.id, fingerprint(chat));
   }
   return chats.length;
@@ -422,6 +449,8 @@ export const daemonCapabilities = [
   "skill_repository_fetch",
   "workspace_inventory",
   "workspace_git_setup",
+  "verification_sessions",
+  "attachment_files",
 ];
 
 /**

@@ -31,6 +31,7 @@ import {
   answerBlocks,
   candidatePath,
   privateDevicePath,
+  resolveFileReferences,
 } from "../dist/session-file-references.js";
 import { safeWorkspaceFileRead } from "../dist/session-helpers.js";
 import { git, commitIdentity } from "../dist/execution-git.js";
@@ -145,8 +146,8 @@ test("a subagent's write outside the workspace is attributed to it", async (t) =
     agent: "main",
   });
   await f.turn("in_1").recordToolWrite({
-    path: join(f.workspace, ".foundry", "attachments", "a.png"),
-    op: "created",
+    path: join(f.workspace, ".foundry", "workspace.json"),
+    op: "modified",
     agent: "main",
   });
   assert.equal(f.ledger().length, 1);
@@ -326,6 +327,202 @@ test("line suffixes, unique names, and refusals", async (t) => {
     .find((file) => file.path === join(deep, "unique-name.md"));
   assert.equal(entry.origin, "tool");
   assert.deepEqual(entry.inputIds, ["in_1", "in_2"]);
+});
+
+test("files under the workspace's attachments are outputs; Foundry's own state is not", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const foundry = join(f.workspace, ".foundry");
+  const attachments = join(foundry, "attachments");
+  mkdirSync(join(attachments, "20261011"), { recursive: true });
+  mkdirSync(join(f.sessionsRoot, "sess_other"), { recursive: true });
+  const decisions = join(attachments, "decisions.md");
+  writeFileSync(decisions, "# Decisions\n");
+  const shot = join(attachments, "20261011", "after.png");
+  writeFileSync(shot, Buffer.from("89504e470d0a1a0a", "hex"));
+  const internal = [
+    join(f.sessionsRoot, "sess_other", "notes.md"),
+    join(foundry, "workspace.json"),
+    join(foundry, "preview.json"),
+    join(foundry, "issues", "ISS-1.json"),
+  ];
+  mkdirSync(join(foundry, "issues"));
+  for (const path of internal) writeFileSync(path, "{}\n");
+  // A link inside the attachments that leads into Foundry's own state.
+  const leak = join(attachments, "leak.md");
+  symlinkSync(join(f.sessionsRoot, "sess_other", "notes.md"), leak);
+
+  const files = f.turn("in_1");
+  for (const path of [decisions, shot, ...internal, leak])
+    await files.recordToolWrite({ path, op: "created", agent: "agent_3" });
+  const references = await files.finish(
+    [
+      "The decision doc is `.foundry/attachments/decisions.md`.",
+      "Not shown: `.foundry/workspace.json`, `.foundry/sessions/sess_other/notes.md`.",
+    ].join("\n"),
+  );
+
+  assert.deepEqual(
+    f.ledger().map((entry) => [entry.workspacePath, entry.origin, entry.op]),
+    [
+      [".foundry/attachments/decisions.md", "tool", "created"],
+      [".foundry/attachments/20261011/after.png", "tool", "created"],
+    ],
+  );
+  const recorded = f.events.map((event) => event.metadata.sessionFile);
+  assert.deepEqual(
+    recorded.map((file) => [file.workspacePath, file.agent, file.inGitRepo]),
+    [
+      // Attachments are Foundry's, never part of the work tree: Files.
+      [".foundry/attachments/decisions.md", "agent_3", false],
+      [".foundry/attachments/20261011/after.png", "agent_3", false],
+    ],
+  );
+  assert.deepEqual(references, [
+    {
+      text: ".foundry/attachments/decisions.md",
+      path: decisions,
+      kind: "file",
+    },
+  ]);
+  assert.equal(f.read(decisions).content, "# Decisions\n");
+  assert.equal(f.read(shot).kind, "image");
+
+  assert.equal(privateDevicePath(decisions, f.home, f.workspace), false);
+  assert.equal(privateDevicePath(attachments, f.home, f.workspace), false);
+  for (const path of [
+    ...internal,
+    join(attachments, "..", "workspace.json"),
+    join(attachments, ".env"),
+  ])
+    assert.ok(privateDevicePath(resolve(path), f.home, f.workspace), path);
+});
+
+test("a file named before it exists links as pending and opens once written", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const attachments = join(f.workspace, ".foundry", "attachments");
+  mkdirSync(attachments, { recursive: true });
+  mkdirSync(join(f.workspace, "docs"));
+  const design = join(attachments, "design.md");
+  const later = join(f.workspace, "docs", "later.md");
+  const swapped = join(f.workspace, "docs", "swapped.md");
+  const gone = join(f.workspace, "docs", "gone.md");
+  writeFileSync(gone, "old\n");
+  const first = f.turn("in_0");
+  await first.recordToolWrite({ path: gone, op: "created", agent: "main" });
+  await first.finish("");
+  unlinkSync(gone);
+  f.events.length = 0;
+
+  // The answer ends while a background subagent still writes the doc.
+  const files = f.turn("in_1");
+  const references = await files.finish(
+    [
+      "The design will be at `.foundry/attachments/design.md`; see also",
+      "[the follow-up](docs/later.md) and `docs/swapped.md`.",
+      "Not linked: `docs/gone.md` (removed), `notes.md` (a name, not a",
+      "location), `nowhere/else.md` (no such folder), `docs/drafts`",
+      "(no extension) and `.foundry/sessions/sess_files/next.md`.",
+    ].join("\n"),
+  );
+  assert.deepEqual(references, [
+    {
+      text: ".foundry/attachments/design.md",
+      path: design,
+      kind: "file",
+      pending: true,
+    },
+    { text: "docs/later.md", path: later, kind: "file", pending: true },
+    { text: "docs/swapped.md", path: swapped, kind: "file", pending: true },
+  ]);
+  // Not an output yet: nothing is reported, the ledger keeps the names.
+  assert.deepEqual(f.events, []);
+  assert.deepEqual(
+    f
+      .ledger()
+      .filter((entry) => entry.pending)
+      .map((entry) => [entry.workspacePath, entry.origin, entry.inputIds]),
+    [
+      [".foundry/attachments/design.md", "reference", ["in_1"]],
+      ["docs/later.md", "reference", ["in_1"]],
+      ["docs/swapped.md", "reference", ["in_1"]],
+    ],
+  );
+  assert.equal(f.read(design).kind, "missing");
+
+  // The subagent's write after the turn: recorded, no longer pending.
+  writeFileSync(design, "# Design\n");
+  const between = f.turn("in_1");
+  await between.recordToolWrite({
+    path: design,
+    op: "created",
+    agent: "agent_9",
+  });
+  await between.finish("");
+  const entry = f.ledger().find((file) => file.path === design);
+  assert.equal(entry.pending, undefined);
+  assert.equal(entry.origin, "tool");
+  assert.equal(entry.op, "created");
+  assert.deepEqual(
+    f.events.map((event) => [
+      event.label,
+      event.metadata.sessionFile.workspacePath,
+      event.metadata.sessionFile.origin,
+      event.metadata.sessionFile.inGitRepo,
+    ]),
+    [["Recorded file", ".foundry/attachments/design.md", "tool", false]],
+  );
+  assert.equal(f.read(design).content, "# Design\n");
+
+  // Written some other way (a shell command): a read still finds it.
+  writeFileSync(later, "# Later\n");
+  const read = f.read(later);
+  assert.equal(read.content, "# Later\n");
+  assert.equal(read.origin, "reference");
+  assert.equal(read.insideWorkspace, true);
+  // A name that now leads somewhere else is refused.
+  writeFileSync(join(f.home, "secret.md"), "secret\n");
+  symlinkSync(join(f.home, "secret.md"), swapped);
+  assert.throws(() => f.read(swapped), /resolves somewhere else/);
+
+  // Named again once it exists: an ordinary reference, now reported.
+  f.events.length = 0;
+  const next = await f.turn("in_2").finish("Done: `docs/later.md`.");
+  assert.deepEqual(next, [
+    { text: "docs/later.md", path: later, kind: "file" },
+  ]);
+  assert.equal(
+    f.ledger().find((file) => file.path === later).pending,
+    undefined,
+  );
+  assert.deepEqual(
+    f.events.map((event) => event.metadata.sessionFile.op),
+    ["referenced"],
+  );
+});
+
+test("a pending name outside the workspace must be in a temporary folder", (t) => {
+  const f = fixture(t);
+  const reports = join(f.outside, "reports");
+  mkdirSync(reports);
+  const resolveIn = (allowedRoots) =>
+    resolveFileReferences({
+      answer: `The report will be \`${reports}/q3.md\`.`,
+      workspacePath: f.workspace,
+      recorded: [],
+      turnStartedAt: Date.now(),
+      allowedRoots,
+      home: f.home,
+    }).map(({ path, pending, insideWorkspace }) => ({
+      path,
+      pending,
+      insideWorkspace,
+    }));
+  assert.deepEqual(resolveIn([f.outside]), [
+    { path: join(reports, "q3.md"), pending: true, insideWorkspace: false },
+  ]);
+  assert.deepEqual(resolveIn([]), []);
 });
 
 test("fenced code is not scanned and candidates are capped", () => {

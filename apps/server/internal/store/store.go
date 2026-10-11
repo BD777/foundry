@@ -46,6 +46,10 @@ type DaemonChanges struct {
 	// DeletedWorkspace is the workspace the report named that the person
 	// deleted from this device; nothing of it was stored.
 	DeletedWorkspace string
+	// RefusedChats are the chats a sync named that this server never keeps
+	// (deleted, or a Foundry session owns them): there is no need to send
+	// them again.
+	RefusedChats []string
 }
 
 // DaemonChangedParts names what a device report changed. Unless Known, any
@@ -156,7 +160,8 @@ type Store interface {
 
 	ListDeviceSkillRoots(ctx context.Context, deviceID string) ([]DeviceSkillRoot, error)
 	SetDeviceSkillRoots(ctx context.Context, input SetDeviceSkillRootsInput) error
-	ReplaceDeviceSkills(ctx context.Context, input ReplaceDeviceSkillsInput) error
+	// ReplaceDeviceSkills stores a scan and reports whether it changed anything.
+	ReplaceDeviceSkills(ctx context.Context, input ReplaceDeviceSkillsInput) (bool, error)
 	ListDeviceSkills(ctx context.Context, deviceID string) ([]DeviceSkill, error)
 	ListPromotedSkills(ctx context.Context) ([]PromotedSkill, error)
 	GetPromotedSkill(ctx context.Context, id string) (PromotedSkill, error)

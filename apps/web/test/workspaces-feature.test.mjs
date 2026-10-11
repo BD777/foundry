@@ -268,3 +268,52 @@ test("each device group adds folders on that device and opens the device itself"
   assert.match(dialog.textContent, /linux/, "it adds the folder to linux");
   await view.cleanup();
 });
+
+test("resting on a workspace reads what a switch to it needs, once; passing over reads nothing", async (t) => {
+  const reads = [];
+  t.mock.method(globalThis, "fetch", async (input) => {
+    reads.push(String(input));
+    return Response.json({ workspace: { id: "ws-other" } });
+  });
+  const { workspaceSwitchIntentMs } =
+    await import("../src/features/workspaces/workspaces-feature.tsx");
+  const { workspaceSwitchFields } = await import("../src/api.ts");
+  const view = await setup();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const row = view.container.querySelector(
+    '.fdy-location-workspace-row[data-current="false"]',
+  );
+  const enter = () =>
+    act(async () =>
+      row.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true })),
+    );
+  const leave = () =>
+    act(async () =>
+      row.dispatchEvent(
+        new window.MouseEvent("mouseout", {
+          bubbles: true,
+          relatedTarget: window.document.body,
+        }),
+      ),
+    );
+
+  await enter();
+  t.mock.timers.tick(workspaceSwitchIntentMs - 1);
+  await leave();
+  t.mock.timers.tick(workspaceSwitchIntentMs);
+  assert.deepEqual(reads, [], "passing over reads nothing");
+
+  await enter();
+  t.mock.timers.tick(workspaceSwitchIntentMs);
+  await act(async () => undefined);
+  assert.equal(reads.length, 1);
+  const url = new URL(reads[0]);
+  assert.equal(url.searchParams.get("workspaceId"), "ws-other");
+  assert.deepEqual(
+    url.searchParams.get("fields").split(","),
+    [...workspaceSwitchFields].sort(),
+    "only what differs between workspaces, not the whole default read",
+  );
+  t.mock.timers.reset();
+  await view.cleanup();
+});

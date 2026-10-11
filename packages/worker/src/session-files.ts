@@ -49,6 +49,7 @@ import {
   pathWithin,
   privateDevicePath,
   resolveFileReferences,
+  workspaceAttachmentPath,
 } from "./session-file-references.js";
 
 /** One file in a session's ledger. */
@@ -68,6 +69,12 @@ export interface SessionFileEntry {
   bytes?: number;
   /** Modification time when its last turn ended. */
   mtimeMs?: number;
+  /**
+   * An answer named it before it existed. Not reported as a session file
+   * until a write tool records it or an answer names it once it exists;
+   * reads serve it once it appears where it was expected to resolve.
+   */
+  pending?: true;
 }
 
 interface SessionFileLedger {
@@ -271,6 +278,7 @@ export class SessionTurnFiles {
       return created;
     }
     existing.op = mergedOp(existing.op, entry.op);
+    if (!entry.pending) delete existing.pending;
     if (entry.origin === "tool") {
       existing.origin = "tool";
       existing.agent = entry.agent;
@@ -365,6 +373,18 @@ export class SessionTurnFiles {
     );
   }
 
+  /**
+   * Listed under Changes: inside a Git work tree, but not the workspace's
+   * attachments, which are Foundry's and never part of the work tree.
+   */
+  private inGitRepo(path: string, realpath: string): boolean {
+    return (
+      !workspaceAttachmentPath(path, this.options.workspacePath) &&
+      !workspaceAttachmentPath(realpath, this.workspaceRealpath) &&
+      insideGitWorkTree(realpath)
+    );
+  }
+
   /** A write tool reported success for this file. */
   recordToolWrite(write: ToolFileWrite): Promise<void> {
     this.queue = this.queue
@@ -389,7 +409,7 @@ export class SessionTurnFiles {
       workspacePath: this.workspaceRelative(path, realpath),
       origin: "tool",
       op: write.op,
-      inGitRepo: insideGitWorkTree(realpath),
+      inGitRepo: this.inGitRepo(path, realpath),
       agent: write.agent,
       realpath,
       ...(found ? { bytes: found.bytes, mtimeMs: found.mtimeMs } : {}),
@@ -446,6 +466,8 @@ export class SessionTurnFiles {
   /**
    * Ends the turn: records the files its answer names and returns the ones
    * the answer can link. A text naming two different files links neither.
+   * A file named before it exists is kept as pending, linked but not
+   * reported, so a read finds it once it is written.
    */
   async finish(answer: string): Promise<SessionFileReference[]> {
     await this.queue;
@@ -458,24 +480,26 @@ export class SessionTurnFiles {
       home: this.options.home,
     });
     const named: SessionFileEntry[] = [];
+    let pending = false;
     for (const reference of resolved) {
       if (reference.kind !== "file") continue;
-      named.push(
-        this.upsert(files, {
-          path: reference.path,
-          workspacePath: this.workspaceRelative(
-            reference.path,
-            reference.realpath,
-          ),
-          origin: "reference",
-          op: "referenced",
-          inGitRepo: insideGitWorkTree(reference.realpath),
-          agent: "main",
-          realpath: reference.realpath,
-          bytes: reference.bytes,
-          mtimeMs: reference.mtimeMs,
-        }),
-      );
+      const entry = this.upsert(files, {
+        path: reference.path,
+        workspacePath: this.workspaceRelative(
+          reference.path,
+          reference.realpath,
+        ),
+        origin: "reference",
+        op: "referenced",
+        inGitRepo: this.inGitRepo(reference.path, reference.realpath),
+        agent: "main",
+        realpath: reference.realpath,
+        bytes: reference.bytes,
+        mtimeMs: reference.mtimeMs,
+        ...(reference.pending ? { pending: true as const } : {}),
+      });
+      if (reference.pending) pending = true;
+      else named.push(entry);
     }
     // "Changed on device since this turn" compares with the turn's end.
     for (const entry of files) {
@@ -486,7 +510,7 @@ export class SessionTurnFiles {
         entry.mtimeMs = found.mtimeMs;
       }
     }
-    if (named.length > 0 || this.reported.size > 0) this.save(files);
+    if (named.length > 0 || pending || this.reported.size > 0) this.save(files);
     for (const entry of named) await this.report(entry, "referenced");
     await this.reportLineCounts(files);
 
@@ -509,6 +533,7 @@ export class SessionTurnFiles {
         text: reference.text,
         path: reference.path,
         kind: reference.kind,
+        ...(reference.pending ? { pending: true } : {}),
       });
     }
     return references;

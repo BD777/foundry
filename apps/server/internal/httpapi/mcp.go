@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -40,13 +41,93 @@ type mcpRequest struct {
 //go:embed mcp_tools.json
 var remoteMCPToolsJSON []byte
 
-var remoteMCPTools = func() []json.RawMessage {
-	var tools []json.RawMessage
-	if err := json.Unmarshal(remoteMCPToolsJSON, &tools); err != nil {
+type mcpTool struct {
+	name       string
+	definition json.RawMessage
+	// readOnly: the tool changes nothing (MCP's readOnlyHint annotation).
+	readOnly bool
+}
+
+var remoteMCPTools = func() []mcpTool {
+	var definitions []json.RawMessage
+	if err := json.Unmarshal(remoteMCPToolsJSON, &definitions); err != nil {
 		panic("mcp_tools.json: " + err.Error())
+	}
+	tools := make([]mcpTool, len(definitions))
+	for index, definition := range definitions {
+		var named struct {
+			Name        string `json:"name"`
+			Annotations struct {
+				ReadOnlyHint bool `json:"readOnlyHint"`
+			} `json:"annotations"`
+		}
+		if err := json.Unmarshal(definition, &named); err != nil || named.Name == "" {
+			panic(fmt.Sprintf("mcp_tools.json: tool %d has no name", index))
+		}
+		tools[index] = mcpTool{named.Name, definition, named.Annotations.ReadOnlyHint}
 	}
 	return tools
 }()
+
+// clarificationMCPTools are the tools an Issue's clarification may call:
+// it only reads sessions. The worker grants it the same ones
+// (session-roles.ts clarificationFoundryTools).
+var clarificationMCPTools = map[string]bool{"list_sessions": true, "read_context": true}
+
+// mcpToolAvailability decides which tools a caller may call; tools/list
+// shows exactly those. A session's role narrows its tools: an Issue's
+// clarification only reads sessions, a verifier only calls the tools that
+// change nothing, and only an Issue's execution asks the person. Reach is
+// still checked per call.
+func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name string) error {
+	role, verifier := "", false
+	if actor.Agent() {
+		if session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID); err == nil {
+			role, verifier = session.Role, session.Source == verificationSource
+		}
+	}
+	return func(name string) error {
+		if role == store.AgentSessionRoleIssueClarification && !clarificationMCPTools[name] {
+			return &mcpToolError{http.StatusForbidden, name + " is not available to an Issue's clarification: it reads sessions with list_sessions and read_context"}
+		}
+		if verifier && !readOnlyMCPTool(name) {
+			return &mcpToolError{http.StatusForbidden, name + " is not available to a verifier: it checks work with the Foundry tools that only read, and reports what it found to whoever started it"}
+		}
+		if name == "ask_person" && role != store.AgentSessionRoleIssueExecution {
+			return &mcpToolError{http.StatusForbidden, "only an Issue's execution can ask the person; say what you need in your reply to whoever started you"}
+		}
+		return nil
+	}
+}
+
+func (s *Server) mcpToolsFor(ctx context.Context, actor Actor) []json.RawMessage {
+	available := s.mcpToolAvailability(ctx, actor)
+	tools := []json.RawMessage{}
+	for _, tool := range remoteMCPTools {
+		if available(tool.name) == nil {
+			tools = append(tools, tool.definition)
+		}
+	}
+	return tools
+}
+
+func knownMCPTool(name string) bool {
+	for _, tool := range remoteMCPTools {
+		if tool.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func readOnlyMCPTool(name string) bool {
+	for _, tool := range remoteMCPTools {
+		if tool.name == name {
+			return tool.readOnly
+		}
+	}
+	return false
+}
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// The session-token endpoint surface restriction does not apply to the
@@ -85,7 +166,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	case "ping":
 		s.writeMCPResult(w, request.ID, map[string]any{})
 	case "tools/list":
-		s.writeMCPResult(w, request.ID, map[string]any{"tools": remoteMCPTools})
+		s.writeMCPResult(w, request.ID, map[string]any{"tools": s.mcpToolsFor(r.Context(), actorFromContext(r.Context()))})
 	case "tools/call":
 		var params struct {
 			Name      string                     `json:"name"`
@@ -140,6 +221,17 @@ func mcpArgString(args map[string]json.RawMessage, key string) string {
 	return strings.TrimSpace(value)
 }
 
+// mcpArgAlias reads an argument by its name, else by an older name that a
+// session holding an earlier tool list may still send.
+func mcpArgAlias(args map[string]json.RawMessage, key string, older ...string) string {
+	for _, name := range append([]string{key}, older...) {
+		if value := mcpArgString(args, name); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func mcpArgBool(args map[string]json.RawMessage, key string) bool {
 	raw, ok := args[key]
 	if !ok {
@@ -188,6 +280,12 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	encode := func(value any) (string, error) {
 		raw, err := json.MarshalIndent(value, "", "  ")
 		return string(raw), err
+	}
+	if !knownMCPTool(name) {
+		return "", &mcpToolError{http.StatusBadRequest, "unknown tool: " + name}
+	}
+	if err := s.mcpToolAvailability(r.Context(), actor)(name); err != nil {
+		return "", err
 	}
 	if err := s.authorizeMCPTool(r, actor, name, workspace, args); err != nil {
 		return "", err
@@ -238,29 +336,15 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(profiles)
 	case "list_sessions":
-		sessions, err := s.store.ListAgentSessionSummaries(r.Context(), workspace)
-		if err != nil {
-			return "", err
-		}
-		if mcpArgBool(args, "parentOnly") && actor.Agent() {
-			filtered := sessions[:0]
-			for _, session := range sessions {
-				if session.ParentSessionID == actor.Identity.SessionID {
-					filtered = append(filtered, session)
-				}
-			}
-			sessions = filtered
-		}
-		return encode(sessions)
+		return s.listSessionsForMCP(r.Context(), actor, workspace, args)
 	case "list_group_sessions":
-		groupID := mcpArgString(args, "groupId")
-		ids, err := s.store.SessionsInGroup(r.Context(), workspace, groupID)
-		if err != nil {
-			return "", err
-		}
-		return encode(ids)
+		return s.listGroupSessionsForMCP(r.Context(), workspace, mcpArgString(args, "groupId"))
 	case "get_session":
 		return s.sessionDigestForMCP(r.Context(), actor, mcpArgString(args, "sessionId"))
+	case "list_issues":
+		return s.listIssuesForMCP(r.Context(), actor, workspace, mcpArgList(args, "status"))
+	case "get_issue":
+		return s.issueForMCP(r.Context(), actor, mcpArgString(args, "issueId"))
 	case "read_context":
 		id := mcpSessionID(args, "sessionId")
 		scope := mcpArgString(args, "scope")
@@ -312,8 +396,10 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			if err != nil {
 				return "", err
 			}
+		case "changes", "file", "background":
+			return s.sessionOutputsForMCP(r.Context(), actor, scope, args)
 		default:
-			return "", &mcpToolError{http.StatusBadRequest, "unknown scope " + scope + ": use summary, events, thread, transcript or subagents"}
+			return "", &mcpToolError{http.StatusBadRequest, "unknown scope " + scope + ": use summary, events, thread, transcript, subagents, changes, file or background"}
 		}
 		raw, _ := json.MarshalIndent(value, "", "  ")
 		if len(raw) > maxBytes {
@@ -321,6 +407,12 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return string(raw), nil
 	case "create_session":
+		// It once passed an undocumented nativeSessionId through, which could
+		// adopt a person's native chat or fork a session the caller cannot
+		// read. No caller sent it; forkSessionId and send_message cover both.
+		if mcpArgString(args, "nativeSessionId") != "" {
+			return "", &mcpToolError{http.StatusBadRequest, "nativeSessionId is not accepted: continue a Foundry session with send_message, start from a copy of its transcript with forkSessionId, or read a native chat with read_context"}
+		}
 		input := store.CreateAgentSessionInput{
 			WorkspaceID:          workspace,
 			Provider:             mcpArgString(args, "provider"),
@@ -335,15 +427,14 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 			ImportedContext:      mcpArgString(args, "importedContext"),
 			Prompt:               mcpArgString(args, "prompt"),
 			IssueID:              mcpArgString(args, "issueId"),
-			NativeSessionID:      mcpArgString(args, "nativeSessionId"),
-			ForkSessionID:        mcpArgString(args, "forkSessionId"),
+			ForkSessionID:        mcpSessionID(args, "forkSessionId"),
 			Verification:         mcpArgBool(args, "verification"),
 			Source:               "chat",
 		}
 		if !actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
 			return "", &mcpToolError{http.StatusBadRequest, "workspaceId is required"}
 		}
-		session, err := s.startMCPSession(r, actor, input, mcpArgBool(args, "wait"), mcpWaitMs(args))
+		session, err := s.startMCPSession(r, actor, input, mcpArgList(args, "attachments"), mcpArgBool(args, "wait"), mcpWaitMs(args))
 		if err != nil {
 			return "", err
 		}
@@ -351,28 +442,31 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	case "handoff_session":
 		// A factual handoff: only the goal, last result and status carry over,
 		// never the contaminated transcript.
-		source, err := store.AgentSessionRecord(r.Context(), s.store, mcpSessionID(args, "fromSessionId"))
+		target, err := s.sessionTarget(r.Context(), actor, mcpArgAlias(args, "sessionId", "fromSessionId"), "hand off")
 		if err != nil {
 			return "", err
 		}
-		if !s.canReadSession(r.Context(), actor, source) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot read this session"}
-		}
-		if actor.Agent() && source.WorkspaceID != workspace {
-			return "", &mcpToolError{http.StatusNotFound, "session not found"}
+		source, err := store.AgentSessionRecord(r.Context(), s.store, target.ID)
+		if err != nil {
+			return "", err
 		}
 		input := store.CreateAgentSessionInput{
-			WorkspaceID: source.WorkspaceID,
+			WorkspaceID: cmp.Or(mcpArgString(args, "workspaceId"), source.WorkspaceID),
 			ProfileID:   mcpArgString(args, "profileId"),
 			IssueID:     mcpArgString(args, "issueId"),
 			Prompt:      handoffPrompt(source, mcpArgString(args, "prompt")),
 			Source:      "chat",
 		}
-		// Without a choice, the replacement runs like the session it continues.
+		// Without a choice, the replacement runs like the session it
+		// continues: its profile on the same device (profiles belong to a
+		// device), elsewhere its runtime.
 		if input.ProfileID == "" {
-			input.ProfileID, input.Provider = source.ProfileID, source.Provider
+			input.Provider = source.Provider
+			if destination, err := s.store.GetWorkspace(r.Context(), input.WorkspaceID); err == nil && destination.DeviceID == source.DeviceID {
+				input.ProfileID = source.ProfileID
+			}
 		}
-		session, err := s.startMCPSession(r, actor, input, false, 0)
+		session, err := s.startMCPSession(r, actor, input, nil, false, 0)
 		if err != nil {
 			return "", err
 		}
@@ -398,18 +492,20 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return "", &mcpToolError{http.StatusNotFound, "unknown profile: " + profileID}
 	case "send_message":
-		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpSessionID(args, "sessionId"))
+		target, err := s.controlledSession(r.Context(), actor, mcpArgString(args, "sessionId"), "message")
 		if err != nil {
 			return "", err
 		}
-		if !s.canControlSession(r.Context(), actor, target) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot send messages to this session"}
+		attachments, err := s.mcpAttachments(r.Context(), actor, target.WorkspaceID, mcpArgList(args, "attachments"))
+		if err != nil {
+			return "", err
 		}
 		session, status, err := s.sendSessionMessage(r.Context(), target.ID, store.SendAgentSessionInput{
-			Prompt:    mcpArgString(args, "message"),
-			ProfileID: mcpArgString(args, "profileId"),
-			Provider:  mcpArgString(args, "provider"),
-			Model:     mcpArgString(args, "model"),
+			Prompt:      mcpArgAlias(args, "prompt", "message"),
+			Attachments: attachments,
+			ProfileID:   mcpArgString(args, "profileId"),
+			Provider:    mcpArgString(args, "provider"),
+			Model:       mcpArgString(args, "model"),
 		})
 		if err != nil {
 			if status != 0 {
@@ -426,12 +522,9 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 	case "ask_person":
 		return s.askPersonForMCP(r, actor, args)
 	case "cancel_session":
-		target, err := s.store.GetAgentSessionSummary(r.Context(), mcpSessionID(args, "sessionId"))
+		target, err := s.controlledSession(r.Context(), actor, mcpArgString(args, "sessionId"), "cancel")
 		if err != nil {
 			return "", err
-		}
-		if !s.canControlSession(r.Context(), actor, target) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot cancel this session"}
 		}
 		session, status, err := s.cancelSession(r.Context(), actor, target.ID)
 		if err != nil {
@@ -442,14 +535,11 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(slimAgentSession(session))
 	case "wait_session":
-		id := mcpSessionID(args, "sessionId")
-		session, err := s.store.GetAgentSessionSummary(r.Context(), id)
+		session, err := s.sessionTarget(r.Context(), actor, mcpArgString(args, "sessionId"), "wait on")
 		if err != nil {
 			return "", err
 		}
-		if !s.canReadSession(r.Context(), actor, session) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot wait on this session"}
-		}
+		id := session.ID
 		timeout := mcpWaitMs(args)
 		var until []string
 		if raw, ok := args["until"]; ok {
@@ -464,22 +554,18 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(waited)
 	case "rename_session":
-		id := mcpSessionID(args, "sessionId")
-		target, err := s.store.GetAgentSessionSummary(r.Context(), id)
+		target, err := s.controlledSession(r.Context(), actor, mcpArgString(args, "sessionId"), "rename")
 		if err != nil {
 			return "", err
 		}
-		if !s.canControlSession(r.Context(), actor, target) {
-			return "", &mcpToolError{http.StatusForbidden, "cannot rename this session"}
-		}
-		updated, err := s.store.RenameChat(r.Context(), id, store.RenameChatInput{
+		updated, err := s.store.RenameChat(r.Context(), target.ID, store.RenameChatInput{
 			WorkspaceID: target.WorkspaceID,
 			Title:       mcpArgString(args, "title"),
 		})
 		if err != nil {
 			return "", err
 		}
-		s.publishChatTitlesChanged(target.WorkspaceID, updated.ChatID)
+		s.chats.announceTitles(target.WorkspaceID, updated.ChatID)
 		return encode(updated)
 	default:
 		return "", &mcpToolError{http.StatusBadRequest, "unknown tool: " + name}
@@ -499,8 +585,9 @@ func handoffPrompt(source store.AgentSession, prompt string) string {
 }
 
 // startMCPSession applies the caller's lineage and defaults, then creates,
-// dispatches and optionally waits for a session.
-func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, wait bool, timeoutMs int) (store.AgentSession, error) {
+// dispatches and optionally waits for a session. attachments name files of
+// the caller's to hand over (mcpAttachments).
+func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string, wait bool, timeoutMs int) (store.AgentSession, error) {
 	if actor.Agent() {
 		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
 			return store.AgentSession{}, &mcpToolError{http.StatusForbidden, err.Error()}
@@ -520,14 +607,14 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 		}
 	}
 	if input.Verification {
-		input.Source = "verification"
+		input.Source = verificationSource
 	}
 	if strings.TrimSpace(input.ForkSessionID) != "" {
 		if status, forkErr := s.applySessionFork(r, &input, actor); forkErr != nil {
 			return store.AgentSession{}, &mcpToolError{status, forkErr.Error()}
 		}
 	}
-	session, err := s.createSessionForMCP(r, actor, input)
+	session, err := s.createSessionForMCP(r, actor, input, attachments)
 	if err != nil || !wait {
 		return session, err
 	}
@@ -558,7 +645,11 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 		if !view.seesDevice(mcpDeviceID(actor, args)) {
 			return &mcpToolError{http.StatusNotFound, "device not found"}
 		}
-	case "list_sessions", "list_group_sessions":
+	case "list_sessions", "list_group_sessions", "list_issues":
+		if name == "list_sessions" && mcpArgString(args, "parentSessionId") != "" && mcpArgString(args, "workspaceId") == "" {
+			// The parent's workspace, which reading the parent checks.
+			return nil
+		}
 		if workspace == "" {
 			return &mcpToolError{http.StatusBadRequest, "workspaceId is required"}
 		}
@@ -571,7 +662,7 @@ func (s *Server) authorizeMCPTool(r *http.Request, actor Actor, name, workspace 
 
 // createSessionForMCP mirrors handleCreateAgentSession's resolution and
 // dispatch without an HTTP body, including post-create group naming.
-func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput) (store.AgentSession, error) {
+func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string) (store.AgentSession, error) {
 	ctx := r.Context()
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
@@ -589,21 +680,17 @@ func (s *Server) createSessionForMCP(r *http.Request, actor Actor, input store.C
 		}
 		return store.AgentSession{}, &mcpToolError{status, err.Error()}
 	}
-	session, err := s.store.CreateAgentSession(ctx, input)
-	if err != nil {
+	if err := s.requireVerifierDevice(ctx, input); err != nil {
 		return store.AgentSession{}, err
 	}
-	s.events.Publish("agent_session_created", session)
-	s.publishCreatedSessionChatList(session)
-	if groupID := strings.TrimSpace(session.CreatedGroupID); groupID != "" {
-		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
+	if input.Attachments, err = s.mcpAttachments(ctx, actor, input.WorkspaceID, attachments); err != nil {
+		return store.AgentSession{}, err
 	}
-	if err := s.hub.DispatchAgentSession(session); err != nil {
-		failed, _ := s.store.FailAgentSession(ctx, session.ID, "local daemon is not connected")
-		s.events.dataChanged(session.WorkspaceID, fieldAgentSessions)
-		return failed, &mcpToolError{http.StatusConflict, "local daemon is not connected"}
+	session, err := s.createAndDispatch(ctx, input, false)
+	if errors.Is(err, ErrLocalDaemonNotConnected) {
+		return session, &mcpToolError{http.StatusConflict, err.Error()}
 	}
-	return session, nil
+	return session, err
 }
 
 func encodeJSON(value any) (string, error) {

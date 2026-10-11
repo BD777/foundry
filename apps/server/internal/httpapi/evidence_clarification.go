@@ -25,7 +25,7 @@ func (s *Server) handleIssueStatusQuestion(w http.ResponseWriter, r *http.Reques
 	defer unlock()
 	issue, err := st.RecordIssueStatusQuestion(r.Context(), r.PathValue("id"), input.Message, r.Header.Get("Idempotency-Key"))
 	if err == nil {
-		s.events.Publish("issue_updated", issue)
+		s.issues.updated(issue)
 	}
 	writeEvidenceMutation(w, issue, err)
 }
@@ -107,7 +107,7 @@ func (s *Server) queueClarification(ctx context.Context, issueID string, queue f
 	if err != nil {
 		return store.Issue{}, http.StatusConflict, err
 	}
-	s.events.Publish("issue_updated", updated)
+	s.issues.updated(updated)
 	// A replayed request may find its input already sent or answered.
 	current, err := s.store.GetAgentSessionSummary(ctx, session.ID)
 	if err == nil && current.Status == "queued" && current.Input.ID == session.Input.ID {

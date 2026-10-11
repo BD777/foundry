@@ -70,6 +70,7 @@ export const conversation: Translation<typeof en> = {
   },
   message: {
     openFile: "打开 {{path}}",
+    openPendingFile: "打开 {{path}}（这次回答结束时尚未写入）",
     showFolder: "查看 {{path}} 中的文件",
     turnFiles_one: "{{count}} 个文件",
     turnFiles_other: "{{count}} 个文件",

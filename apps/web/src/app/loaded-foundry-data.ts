@@ -1,6 +1,12 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import type { AgentSession } from "@bd777/foundry-protocol";
+import { mergeLoadedAgentSession } from "../lib/agent-session-events";
 import { loadFoundryData, type FoundryDataLoadResult } from "../api";
-import type { FoundryData, FoundryDataField } from "../api-types";
+import type {
+  FoundryData,
+  FoundryDataField,
+  FoundryStreamEvent,
+} from "../api-types";
 import {
   chatThreadsFromSessions,
   isChatSession,
@@ -16,10 +22,15 @@ import {
   foundryDataFields,
   foundryDataPageFields,
   mergeLoadedFoundryData,
+  switchesWorkspace,
 } from "./foundry-data-projection";
-import { dataChangeConcerns } from "./use-foundry-live-data";
+import {
+  streamEventReads,
+  streamProjection,
+  type StreamTouches,
+} from "./projections";
 import { parseAppRoute, persistWorkspaceId } from "./navigation";
-import type { StreamTouchLedger, StreamTouches } from "./stream-touches";
+import type { StreamTouchLedger } from "./stream-touches";
 import type { FieldRequest, FieldSelection } from "../lib/single-flight";
 
 // Project a freshly-loaded payload into the chat identities the selection
@@ -129,7 +140,8 @@ export function applyFoundryDataAnswer(
 ): FieldRequest<FoundryDataField> | undefined {
   const { data: loaded, fields } = result;
   const switched =
-    !fields && loaded.workspace.id !== context.shown().workspace.id;
+    switchesWorkspace(fields) &&
+    loaded.workspace.id !== context.shown().workspace.id;
   applyLoadedData(
     context.setData,
     context.setActiveWorkspaceId,
@@ -144,22 +156,63 @@ export function applyFoundryDataAnswer(
     result.requestedAt,
     loaded.workspace.id,
     context.setData,
+    loaded.devices,
   );
   return missed.all || missed.fields.length ? missed : undefined;
 }
 
 /**
+ * The data with the details a view loaded of sessions it shows (their
+ * transcript windows) merged into them; sessions it does not list stay out.
+ */
+export function withSessionDetails(
+  current: FoundryData,
+  workspaceId: string,
+  sessions: readonly AgentSession[],
+): FoundryData {
+  if (current.workspace.id !== workspaceId) return current;
+  const loadedById = new Map(
+    sessions
+      .filter((session) => session.workspaceId === workspaceId)
+      .map((session) => [session.id, session]),
+  );
+  if (loadedById.size === 0) return current;
+  return {
+    ...current,
+    agentSessions: current.agentSessions.map((session) => {
+      const loaded = loadedById.get(session.id);
+      return loaded ? mergeLoadedAgentSession(session, loaded) : session;
+    }),
+  };
+}
+
+/**
+ * Shows what an action's answer says changed as the stream event that
+ * announces it will (`event`): applied to the data shown, and noted in the
+ * ledger, so a read that started before the action does not undo it.
+ */
+export function applyAnsweredEvent(
+  context: Pick<FoundryDataReadContext, "touches" | "setData">,
+  event: FoundryStreamEvent,
+): void {
+  context.touches.record(event);
+  context.setData((current) => applyFoundryStreamEvents(current, [event]));
+}
+
+/**
  * Applies over a read of another workspace the live events that arrived
  * since it was requested (`requestedAt`): shown so far, they did not apply
- * to the workspace it answers. Returns what changes named that only a read
- * can show: `all` when any change (or events the ledger no longer holds)
- * may touch any field.
+ * to the workspace it answers. An event that changes the data is replayed by
+ * applying it; one that only announces a read (it has no `apply`) by that
+ * read, for this workspace. Returns those reads: `all` when any announces
+ * the default set (or events the ledger no longer holds may have).
  */
 export function replayMissedEvents(
   touches: StreamTouchLedger,
   requestedAt: number,
   workspaceId: string,
   setData: Dispatch<SetStateAction<FoundryData>>,
+  devices: FoundryData["devices"],
 ): { all: boolean; fields: FoundryDataField[] } {
   const missed = touches.eventsSince(requestedAt);
   if (!missed) return { all: true, fields: [] };
@@ -170,13 +223,11 @@ export function replayMissedEvents(
   let all = false;
   const fields = new Set<FoundryDataField>();
   for (const event of missed) {
-    if (
-      event.type !== "foundry_data_changed" ||
-      !dataChangeConcerns(event, workspaceId)
-    )
-      continue;
-    if (!event.payload.resources?.length) all = true;
-    event.payload.resources?.forEach((field) => fields.add(field));
+    if (streamProjection(event.type)?.apply) continue;
+    const read = streamEventReads(event, { workspaceId, devices });
+    if (!read) continue;
+    if (!read.fields) all = true;
+    read.fields?.forEach((field) => fields.add(field));
   }
   return { all, fields: [...fields] };
 }

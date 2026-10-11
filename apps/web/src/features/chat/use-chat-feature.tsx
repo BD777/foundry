@@ -80,7 +80,8 @@ export type ChatFeatureEvent =
   | { chatId: string; type: "chat.selected" }
   | { message: string; type: "notice.requested" }
   | { source: string; type: "issue.draft.requested" }
-  | { type: "data.refresh.requested" }
+  /** A session started, continued or stopped, as the server answered. */
+  | { session: AgentSession; type: "session.answered" }
   | {
       sessions: AgentSession[];
       type: "thread.details.loaded";
@@ -373,13 +374,18 @@ export function useChatFeature({
       withOutbox(
         selectedThread
           ? chatMessagesForThread(selectedThread, {
-              suppressedResponseTexts: subagents.responseTexts,
+              suppressedResponseFingerprints: subagents.responseFingerprints,
             })
           : chatMessages(selectedChat),
         outbox.entries,
         selectedThread?.id,
       ),
-    [outbox.entries, selectedChat, selectedThread, subagents.responseTexts],
+    [
+      outbox.entries,
+      selectedChat,
+      selectedThread,
+      subagents.responseFingerprints,
+    ],
   );
   const viewMessages = projection.messages;
   usePruneDeliveredOutbox(outbox, projection.delivered);
@@ -439,6 +445,10 @@ export function useChatFeature({
   const backgroundWork = useMemo(
     () => runningBackgroundWork(contextCard),
     [contextCard],
+  );
+  const schedule = useMemo(
+    () => [...threadSessions].reverse().find((s) => s.scheduled)?.scheduled,
+    [threadSessions],
   );
 
   const addAttachments = useCallback(
@@ -648,7 +658,7 @@ export function useChatFeature({
         );
       }
       try {
-        await emit({ type: "data.refresh.requested" });
+        await emit({ session, type: "session.answered" });
         await emit({
           chatId: session.threadId ?? session.nativeSessionId ?? session.id,
           type: "chat.selected",
@@ -710,7 +720,7 @@ export function useChatFeature({
         prompt: message,
         attachments: steeredAttachments.length ? steeredAttachments : undefined,
       });
-      await emit({ type: "data.refresh.requested" });
+      // The steer reaches the transcript as the device's event.
       await emit({
         message: i18n.t("chat:notices.steered"),
         type: "notice.requested",
@@ -755,7 +765,7 @@ export function useChatFeature({
       const session = await cancelAgentSession(targetSession.id);
       setActiveSessionOverride(undefined);
       setRespondingSessionId("");
-      await emit({ type: "data.refresh.requested" });
+      await emit({ session, type: "session.answered" });
       await emit({
         chatId: session.threadId ?? session.nativeSessionId ?? session.id,
         type: "chat.selected",
@@ -905,7 +915,6 @@ export function useChatFeature({
           setChatDetail(undefined);
           await emit({ chatId: "", type: "chat.selected" });
         }
-        await emit({ type: "data.refresh.requested" });
       }}
       workspaceId={workspaceId}
       agentActive={Boolean(activeSession)}
@@ -926,6 +935,7 @@ export function useChatFeature({
       onContextPanelVisibleChange={setContextPanelVisible}
       onRetrySubagents={subagents.failed ? subagents.retry : undefined}
       backgroundWork={backgroundWork}
+      schedule={schedule}
       claudeEffort={claudeEffort}
       claudePermissionMode={claudePermissionMode}
       codexApprovalPolicy={codexApprovalPolicy}

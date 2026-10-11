@@ -30,7 +30,7 @@ func TestWorkerConnectionReportsAreLoggedAndKept(t *testing.T) {
 	if err := decodeWebSocketPayload(payload, &registration); err != nil {
 		t.Fatalf("registration with connection reports refused: %v", err)
 	}
-	hub := NewDaemonHub(nil, nil, "")
+	hub := NewDaemonHub(nil, daemonNotifiers{}, "")
 	hub.disconnects.serverSide("dev_1", errors.New("read tcp: i/o timeout"), time.Date(2026, 10, 9, 6, 10, 18, 0, time.UTC))
 	var output bytes.Buffer
 	log.SetOutput(&output)

@@ -1,6 +1,7 @@
 package builtinskills
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,19 +41,33 @@ func TestBuiltInSkillsPackageLikeWorkspaceSkills(t *testing.T) {
 }
 
 // The foundry skill makes an agent reach for it when it meets a Foundry id
-// or link, and keeps it to reading.
+// or link, or is asked to work through other sessions; the details load
+// from its references only when needed.
 func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 	skill, ok := Lookup("builtin-claude-foundry")
 	if !ok {
 		t.Fatal("foundry skill missing")
 	}
-	for _, trigger := range []string{"sess_", "native_claude_", "native_codex_", "ws_", "dev_", "/chats/"} {
+	for _, trigger := range []string{"sess_", "native_claude_", "native_codex_", "iss_", "ws_", "dev_", "/chats/"} {
 		if !strings.Contains(skill.Description, trigger) {
 			t.Fatalf("description does not mention %s: %q", trigger, skill.Description)
 		}
 	}
+	for _, trigger := range []string{"what they changed", "Issues", "start, steer, wait on, verify or hand off sessions", "Not for splitting your own task"} {
+		if !strings.Contains(skill.Description, trigger) {
+			t.Fatalf("description does not say %q: %q", trigger, skill.Description)
+		}
+	}
 	index, err := skillarchive.Inspect(skill.Package)
-	if err != nil || len(index.Files) != 1 {
-		t.Fatalf("foundry package = %+v, %v; want its SKILL.md alone", index, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{}
+	for _, file := range index.Files {
+		paths = append(paths, file.Path)
+	}
+	slices.Sort(paths)
+	if want := []string{"SKILL.md", "references/diagnosing.md", "references/orchestration.md"}; !slices.Equal(paths, want) {
+		t.Fatalf("foundry package holds %v, want %v", paths, want)
 	}
 }

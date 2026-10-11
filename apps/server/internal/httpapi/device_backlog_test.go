@@ -15,6 +15,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/testfixture"
 )
@@ -148,29 +150,37 @@ func waitForTest(t *testing.T, what string, done func() bool) {
 	}
 }
 
-// publishedEvents counts what the server streams, by type.
+// publishedEvents counts what the server streams, by type: a session as
+// "type id status", a transcript event as "type id".
 type publishedEvents struct {
-	mu     sync.Mutex
+	t      *testing.T
+	viewer *eventstream.Subscription
 	events []string
 }
 
-func (p *publishedEvents) record(eventType string, payload any) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if event, ok := payload.(store.AgentSessionEvent); ok {
-		p.events = append(p.events, eventType+" "+event.ID)
-		return
+func publishedEventsOf(t *testing.T, server *Server) *publishedEvents {
+	return &publishedEvents{t: t, viewer: subscribeForTest(server.stream)}
+}
+
+// read records what the stream holds: everything published so far.
+func (p *publishedEvents) read() {
+	for _, streamed := range drainForTest(p.t, p.viewer) {
+		switch streamed.kind {
+		case browserevent.AgentSessionEvent:
+			event := payloadForTest[store.AgentSessionEvent](p.t, streamed)
+			p.events = append(p.events, string(streamed.kind)+" "+event.ID)
+		case browserevent.AgentSessionCreated, browserevent.AgentSessionStarted, browserevent.AgentSessionBlocked,
+			browserevent.AgentSessionResumed, browserevent.AgentSessionNativeSessionID, browserevent.AgentSessionCompleted:
+			session := payloadForTest[store.AgentSession](p.t, streamed)
+			p.events = append(p.events, string(streamed.kind)+" "+session.ID+" "+session.Status)
+		default:
+			p.events = append(p.events, string(streamed.kind))
+		}
 	}
-	if session, ok := payload.(store.AgentSession); ok {
-		p.events = append(p.events, eventType+" "+session.ID+" "+session.Status)
-		return
-	}
-	p.events = append(p.events, eventType)
 }
 
 func (p *publishedEvents) count(prefix string) int {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.read()
 	count := 0
 	for _, event := range p.events {
 		if strings.HasPrefix(event, prefix) {
@@ -203,8 +213,7 @@ func TestDaemonEventSentAgainIsOnlyAcknowledged(t *testing.T) {
 	backing := newEmptyTestStore(t)
 	session := startedQueueSession(t, backing)
 	server := NewServer(backing)
-	published := &publishedEvents{}
-	server.events.SubscribeInternal(published.record)
+	published := publishedEventsOf(t, server)
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
 	daemon := connectBacklogDaemon(t, live.URL, []string{session.ID})
@@ -219,7 +228,7 @@ func TestDaemonEventSentAgainIsOnlyAcknowledged(t *testing.T) {
 	if got := published.count("agent_session_event evt_subagent_start"); got != 1 {
 		t.Fatalf("streamed the start %d times, want once", got)
 	}
-	if got := published.count(subagentUpdatedEvent); got != 1 {
+	if got := published.count(string(browserevent.AgentSubagentUpdated)); got != 1 {
 		t.Fatalf("announced the subagent %d times, want once", got)
 	}
 	server.hub.subagents.mu.Lock()
@@ -272,12 +281,12 @@ func TestSubagentListRemembersADeviceThatDidNotAnswer(t *testing.T) {
 	cache := newSubagentListCache()
 	var reads atomic.Int32
 	timeout := &deviceNoAnswerError{device: "byte-dev", wait: subagentListTimeout, cause: context.DeadlineExceeded}
-	fetch := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	fetch := func(context.Context) (subagentList, error) {
 		reads.Add(1)
 		return nil, timeout
 	}
 	for range 5 {
-		if _, err := cache.load(context.Background(), "sess_slow", true, fetch); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "byte-dev did not answer within 15 s") {
+		if _, err := cache.load(context.Background(), "sess_slow", subagentListFull, true, fetch); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "byte-dev did not answer within 15 s") {
 			t.Fatalf("load error = %v", err)
 		}
 		// A subagent ending on the slow device does not bring a new read.
@@ -289,17 +298,17 @@ func TestSubagentListRemembersADeviceThatDidNotAnswer(t *testing.T) {
 	cache.mu.Lock()
 	cache.entries["sess_slow"].failedAt = time.Now().Add(-subagentFailureMemory)
 	cache.mu.Unlock()
-	if _, err := cache.load(context.Background(), "sess_slow", true, fetch); err == nil || reads.Load() != 2 {
+	if _, err := cache.load(context.Background(), "sess_slow", subagentListFull, true, fetch); err == nil || reads.Load() != 2 {
 		t.Fatalf("after the wait: err %v, %d reads", err, reads.Load())
 	}
 
-	refused := func(context.Context) ([]store.AgentSubagentSummary, error) {
+	refused := func(context.Context) (subagentList, error) {
 		reads.Add(1)
 		return nil, errors.New("session is not on this device")
 	}
 	before := reads.Load()
 	for range 2 {
-		if _, err := cache.load(context.Background(), "sess_refused", true, refused); err == nil {
+		if _, err := cache.load(context.Background(), "sess_refused", subagentListFull, true, refused); err == nil {
 			t.Fatal("refusal not reported")
 		}
 	}
@@ -438,8 +447,7 @@ func TestUnstartedSessionSaysWhatItWaitsFor(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(backing)
-	published := &publishedEvents{}
-	server.events.SubscribeInternal(published.record)
+	published := publishedEventsOf(t, server)
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
 	notices := func() []store.AgentSessionEvent {
@@ -506,7 +514,7 @@ func TestHeartbeatsWithoutAnOutboxReport(t *testing.T) {
 // queue of the server's requests to it; a device that floods its answers
 // beyond any reason is disconnected (it then sends again what it misses).
 func TestRepliesToTheDeviceAreNeverDropped(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	connection := trackedConnection(t, hub)
 	for len(connection.send) < cap(connection.send) {
 		connection.send <- wsEnvelope{Type: wsRunSessionType}
@@ -603,7 +611,7 @@ func TestSteerRecordedBeforeItsAnswerIsSent(t *testing.T) {
 // Only a steer handed to the device can have reached it: a request that
 // ended before that leaves nothing maybe sent.
 func TestOnlyASteerHandedToTheDeviceIsMaybeSent(t *testing.T) {
-	hub := NewDaemonHub(newTestStore(t), newBrowserEventHub(), "")
+	hub := NewDaemonHub(newTestStore(t), newNotifiersForTest(nil).daemon(), "")
 	connection := trackedConnection(t, hub)
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()

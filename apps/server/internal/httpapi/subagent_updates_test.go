@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -22,11 +23,8 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	t.Cleanup(func() { subagentEndCoalesce = previous })
 	db := newTestStore(t)
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
-	outsider := &eventSubscription{ch: make(chan []byte, 256), scope: &accessScope{roles: map[string]string{"ws_other": store.WorkspaceRoleViewer}}, ended: make(chan struct{})}
-	server.events.mu.Lock()
-	server.events.subscribers[outsider] = struct{}{}
-	server.events.mu.Unlock()
+	viewer := subscribeForTest(server.stream)
+	outsider := subscribeReachForTest(server.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_other": store.WorkspaceRoleViewer}}})
 	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
 	conn := dialDaemonForTest(t, testServer)
@@ -49,11 +47,11 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	writeWSForTest(t, conn, "session_started", map[string]any{"sessionId": sessionID, "inputId": run.Session.Input.ID})
 	skipToAckForTest(t, conn)
 
-	updates := func(subscription *eventSubscription) []map[string]any {
+	updates := func(subscription *eventstream.Subscription) []map[string]any {
 		var found []map[string]any
-		for len(subscription.ch) > 0 {
-			_, envelope := frameForTest(t, <-subscription.ch)
-			if envelope["type"] == subagentUpdatedEvent {
+		for len(subscription.C) > 0 {
+			_, envelope := frameForTest(t, <-subscription.C)
+			if envelope["type"] == "agent_subagent_updated" {
 				found = append(found, envelope["payload"].(map[string]any))
 			}
 		}
@@ -88,8 +86,9 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 		"taskId": "task_1", "taskType": "local_agent", "toolUseId": "tool_1", "prompt": "List the packages", "subagentType": "Explore",
 	})
 	started := updates(viewer)
+	// As a chat lists it: no prompt, no answers yet.
 	want := map[string]any{"workspaceId": "ws_sub", "sessionId": sessionID, "subagent": map[string]any{
-		"prompt": "List the packages", "responseTexts": []any{}, "sessionId": sessionID, "status": "running",
+		"responseFingerprints": []any{}, "sessionId": sessionID, "status": "running",
 		"subagentType": "Explore", "taskId": "task_1", "title": "Survey the repo", "toolUseId": "tool_1",
 	}}
 	if len(started) != 1 || !reflect.DeepEqual(started[0], want) {
@@ -138,11 +137,12 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	if listRequest.SessionID != sessionID {
 		t.Fatalf("listed session %q, want %q", listRequest.SessionID, sessionID)
 	}
-	writeWSIDForTest(t, conn, listID, "subagents_listed", map[string]any{"sessionId": sessionID, "subagents": []map[string]any{
+	whole := map[string]any{"sessionId": sessionID, "subagents": []map[string]any{
 		{"sessionId": sessionID, "taskId": "task_0", "toolUseId": "tool_0", "title": "Earlier", "status": "completed", "responseTexts": []string{"Earlier answer"}},
 		{"sessionId": sessionID, "taskId": "task_1", "toolUseId": "tool_1", "title": "Survey the repo", "prompt": "List the packages", "subagentType": "Explore", "status": "running", "responseTexts": []string{"Three packages."}},
 		{"sessionId": sessionID, "taskId": "task_2", "toolUseId": "tool_2", "title": "Check the docs", "status": "running", "responseTexts": []string{}},
-	}})
+	}}
+	writeWSIDForTest(t, conn, listID, "subagents_listed", whole)
 	listed := <-read
 	if listed.Code != http.StatusOK {
 		t.Fatalf("list = %d %s", listed.Code, listed.Body.String())
@@ -166,6 +166,46 @@ func TestSubagentUpdatesArePushedOnePerSubagent(t *testing.T) {
 	server.Routes().ServeHTTP(revalidated, request)
 	if revalidated.Code != http.StatusNotModified {
 		t.Fatalf("revalidation = %d, want 304", revalidated.Code)
+	}
+
+	// A chat reads digests, in a view of their own: a worker that answers
+	// with the whole list anyway (before 0.5.7) has it fingerprinted, ended
+	// as the events said.
+	digestRead := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		recorder := httptest.NewRecorder()
+		server.Routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/agent-sessions/"+sessionID+"/subagents?view=digest", nil))
+		digestRead <- recorder
+	}()
+	var digestRequest struct {
+		SessionID string `json:"sessionId"`
+		View      string `json:"view"`
+	}
+	digestID := readWSUntilForTest(t, conn, "list_subagents", &digestRequest)
+	if digestRequest.SessionID != sessionID || digestRequest.View != subagentDigestView {
+		t.Fatalf("digest read asked %+v", digestRequest)
+	}
+	writeWSIDForTest(t, conn, digestID, "subagents_listed", whole)
+	digestList := <-digestRead
+	var digests []map[string]any
+	if err := json.Unmarshal(digestList.Body.Bytes(), &digests); err != nil || digestList.Code != http.StatusOK {
+		t.Fatalf("digest list = %d %s", digestList.Code, digestList.Body.String())
+	}
+	wantDigest := map[string]any{
+		"responseFingerprints": []any{store.SubagentResponseFingerprint("Three packages.")}, "sessionId": sessionID, "status": "completed",
+		"subagentType": "Explore", "taskId": "task_1", "title": "Survey the repo", "toolUseId": "tool_1", "usage": usage,
+	}
+	if len(digests) != 3 || !reflect.DeepEqual(digests[1], wantDigest) || digests[2]["status"] != "failed" ||
+		!reflect.DeepEqual(digests[2]["responseFingerprints"], []any{}) {
+		t.Fatalf("the digest list = %v", digests)
+	}
+	// The whole list is still served from the cache.
+	request = httptest.NewRequest(http.MethodGet, "/api/agent-sessions/"+sessionID+"/subagents", nil)
+	request.Header.Set("If-None-Match", listed.Header().Get("ETag"))
+	revalidated = httptest.NewRecorder()
+	server.Routes().ServeHTTP(revalidated, request)
+	if revalidated.Code != http.StatusNotModified {
+		t.Fatalf("whole list revalidation after the digest read = %d, want 304", revalidated.Code)
 	}
 
 	// Nothing else was asked of the device.

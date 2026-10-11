@@ -9,7 +9,8 @@ import (
 
 // SessionStateStore reads what a chat's side panel derives from a
 // session's events — scheduled tasks, background work, recorded files,
-// subagents, previews and the workspace loaded — among the events older
+// subagents, previews, the workspace loaded, how full the context is and
+// what each turn used — among the events older
 // than a transcript window, so the panel does not depend on which events
 // a reader has loaded.
 type SessionStateStore interface {
@@ -22,14 +23,22 @@ type SessionStateStore interface {
 	AgentSessionStateEvents(ctx context.Context, sessionID string, before string) ([]AgentSessionEvent, error)
 }
 
-// State keys. A kind whose events add up (each recorded file, timer fire
-// or preview) keys each event by its id; a kind whose newest event
-// replaces the older ones (a snapshot, a task's progress) shares a key.
+// State keys. A kind whose events add up (each recorded file, timer fire,
+// preview, turn's usage or compaction) keys each event by its id; a kind
+// whose newest event replaces the older ones (a snapshot, a task's
+// progress, the context's size) shares a key.
 const (
 	sessionStateTimers     = "timers"
 	sessionStateBackground = "background"
 	sessionStateFile       = "file:"
 	sessionStateFire       = "fire:"
+	// SessionStateContext keys a model request's report of the context's
+	// size; older workers report the request's tokens alone.
+	SessionStateContext = "context"
+	// SessionStateCompaction keys the runtime compacting the context.
+	SessionStateCompaction = "compaction:"
+	// SessionStateTurn keys the usage of a turn, on the event that ended it.
+	SessionStateTurn = "turn:"
 	// SessionStatePreview keys a finished run that named a local address.
 	SessionStatePreview = "preview:"
 	// SessionStateSource keys a loaded workspace by its path.
@@ -82,6 +91,14 @@ func SessionStateKey(event AgentSessionEvent) string {
 			return ""
 		case metadata.TaskID != "" && (subtaskProgressLabels[label] || subtaskEndLabels[label]):
 			return SessionStateTask + metadata.TaskID
+		case metadata.ContextUsage != nil && metadata.ContextUsage.Compaction != nil:
+			return SessionStateCompaction + event.ID
+		case metadata.ContextUsage != nil || metadata.RequestUsage != nil:
+			return SessionStateContext
+		// A finished run that names a preview stays one (its usage comes
+		// with it).
+		case metadata.TurnUsage != nil && !isPreview(event, label):
+			return SessionStateTurn + event.ID
 		}
 	}
 	if loadedWorkspaceLabels[label] {
@@ -90,18 +107,23 @@ func SessionStateKey(event AgentSessionEvent) string {
 		}
 		return ""
 	}
-	if event.Level == "info" && runFinishedLabel.MatchString(label) && hasPreviewURL(event.Detail) {
+	if isPreview(event, label) {
 		return SessionStatePreview + event.ID
 	}
 	return ""
 }
 
+func isPreview(event AgentSessionEvent, label string) bool {
+	return event.Level == "info" && runFinishedLabel.MatchString(label) && hasPreviewURL(event.Detail)
+}
+
 // SessionStateLatest reports whether the newest event of the key replaces
 // the older ones. Of the other keys only one event counts: a file's, a
-// fire's, a preview's own, a subagent's start, and the first time a
-// workspace was loaded, which places it among the workspaces.
+// fire's, a preview's, a turn's or a compaction's own, a subagent's start,
+// and the first time a workspace was loaded, which places it among the
+// workspaces.
 func SessionStateLatest(key string) bool {
-	return key == sessionStateTimers || key == sessionStateBackground || strings.HasPrefix(key, SessionStateTask)
+	return key == sessionStateTimers || key == sessionStateBackground || key == SessionStateContext || strings.HasPrefix(key, SessionStateTask)
 }
 
 // hasPreviewURL reports a local web address in a finished run's detail,

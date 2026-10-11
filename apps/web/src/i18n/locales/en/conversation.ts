@@ -71,6 +71,7 @@ export const conversation = {
   },
   message: {
     openFile: "Open {{path}}",
+    openPendingFile: "Open {{path}} (not written yet when this answer ended)",
     showFolder: "Show the files in {{path}}",
     turnFiles_one: "{{count}} file",
     turnFiles_other: "{{count}} files",

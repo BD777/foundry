@@ -17,6 +17,7 @@ import {
   cleanupActiveClaudeRuntimes,
   closeActiveClaudeRuntime,
   handleActiveClaudeMessage,
+  startActiveClaudePump,
 } from "../dist/runner.js";
 import { activeClaudeRuntimes } from "../dist/session-state.js";
 
@@ -579,6 +580,97 @@ test("the idle reaper never reaps a runtime that is busy with a turn or its own 
     assert.equal(turnBusy.pending.rejected, undefined);
     assert.equal(idle.closed, true);
     turnBusy.pending.liveness.close();
+  } finally {
+    activeClaudeRuntimes.clear();
+    for (const [key, runtime] of saved) activeClaudeRuntimes.set(key, runtime);
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+test("a runtime that ends after a newer one took its key leaves the newer one registered and open", async (t) => {
+  const stale = {
+    "an error result": {
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      errors: ["boom"],
+    },
+    "an answer without text": result(""),
+  };
+  for (const [name, message] of Object.entries(stale))
+    await t.test(name, async () => {
+      const saved = new Map(activeClaudeRuntimes);
+      activeClaudeRuntimes.clear();
+      const directory = mkdtempSync(join(tmpdir(), "foundry-liveness-"));
+      try {
+        const newer = fixture(directory);
+        newer.turn.liveness.close();
+        newer.runtime.pending = undefined;
+        activeClaudeRuntimes.set(newer.runtime.key, newer.runtime);
+        // The process the newer one replaced, under the same key.
+        const { runtime } = fixture(directory);
+        await handleActiveClaudeMessage(runtime, message);
+        assert.equal(runtime.closed, true);
+        assert.equal(
+          activeClaudeRuntimes.get(runtime.key),
+          newer.runtime,
+          "the newer runtime is still registered",
+        );
+        assert.equal(newer.runtime.closed, false);
+      } finally {
+        activeClaudeRuntimes.clear();
+        for (const [key, runtime] of saved)
+          activeClaudeRuntimes.set(key, runtime);
+        rmSync(directory, { force: true, recursive: true });
+      }
+    });
+});
+
+test("a reaped process that exits after a newer one took its key leaves the newer one registered and open", async () => {
+  const saved = new Map(activeClaudeRuntimes);
+  activeClaudeRuntimes.clear();
+  const directory = mkdtempSync(join(tmpdir(), "foundry-liveness-"));
+  try {
+    const reaped = fixture(directory);
+    reaped.turn.liveness.close();
+    reaped.runtime.pending = undefined;
+    reaped.runtime.lastUsed = 0;
+    // The SDK stream of a process that ends only when it exits.
+    let exit;
+    let streamEnded = false;
+    const stream = (async function* () {
+      try {
+        await new Promise((resolve) => {
+          exit = resolve;
+        });
+      } finally {
+        streamEnded = true;
+      }
+    })();
+    startActiveClaudePump(reaped.runtime, stream);
+    activeClaudeRuntimes.set(reaped.runtime.key, reaped.runtime);
+    cleanupActiveClaudeRuntimes();
+    assert.equal(reaped.runtime.closed, true);
+    assert.equal(activeClaudeRuntimes.has(reaped.runtime.key), false);
+
+    // A new process for the same key, started before the old one exited.
+    const newer = fixture(directory);
+    newer.turn.liveness.close();
+    newer.runtime.pending = undefined;
+    activeClaudeRuntimes.set(newer.runtime.key, newer.runtime);
+    exit();
+    for (let waited = 0; !streamEnded; waited += 5) {
+      if (waited > 2000) throw new Error("the old process never exited");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    // The pump's finally runs right after the stream ends.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      activeClaudeRuntimes.get(newer.runtime.key),
+      newer.runtime,
+      "the newer runtime is still registered",
+    );
+    assert.equal(newer.runtime.closed, false);
   } finally {
     activeClaudeRuntimes.clear();
     for (const [key, runtime] of saved) activeClaudeRuntimes.set(key, runtime);

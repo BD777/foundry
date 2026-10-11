@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -169,10 +170,10 @@ func dataChangeResourcesForTest(t *testing.T, events []streamedForTest) []string
 	t.Helper()
 	found := []string{}
 	for _, event := range events {
-		if event.kind != foundryDataChangedEvent {
+		if event.kind != browserevent.FoundryDataChanged {
 			continue
 		}
-		var payload foundryDataChange
+		var payload browserevent.FoundryDataChangedPayload
 		if err := json.Unmarshal(event.payload, &payload); err != nil {
 			t.Fatal(err)
 		}
@@ -191,13 +192,13 @@ func TestDataChangesNameTheFieldsTheyTouched(t *testing.T) {
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 100 * time.Millisecond
 	defer func() { foundryDataChangeInterval = interval }()
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 64)
-	hub.dataChanged("ws_a", fieldIssues)
-	hub.dataChanged("ws_a", fieldChats)
-	hub.dataChanged("ws_a", fieldAgentSessions, fieldChats)
-	hub.dataChanged("ws_b", fieldDevices)
-	hub.dataChanged("ws_b")
+	events := newNotifiersForTest(nil)
+	viewer := subscribeForTest(events.stream)
+	events.data.changed("ws_a", fieldIssues)
+	events.data.changed("ws_a", fieldChats)
+	events.data.changed("ws_a", fieldAgentSessions, fieldChats)
+	events.data.changed("ws_b", fieldDevices)
+	events.data.changed("ws_b")
 	if got := dataChangeResourcesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{"ws_a: issues", "ws_b: devices"}) {
 		t.Fatalf("first of the bursts = %v", got)
 	}
@@ -215,10 +216,10 @@ func chatsChangesForTest(t *testing.T, events []streamedForTest) []string {
 	t.Helper()
 	found := []string{}
 	for _, event := range events {
-		if event.kind != chatsChangedEvent {
+		if event.kind != browserevent.ChatsChanged {
 			continue
 		}
-		var payload chatsChange
+		var payload browserevent.ChatsChangedPayload
 		if err := json.Unmarshal(event.payload, &payload); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +243,7 @@ func TestChatSyncPushesTheChangedChats(t *testing.T) {
 	db := newTestStore(t)
 	registerEventsWorkspaceForTest(t, db, "ws_push")
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -277,7 +278,7 @@ func TestChatSyncPushesTheChangedChats(t *testing.T) {
 func TestRegistrationNamesTheFieldsItChanged(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -297,27 +298,6 @@ func TestRegistrationNamesTheFieldsItChanged(t *testing.T) {
 	register("healthy", "Archive", []string{}, "the same registration")
 	register("unavailable", "Archive", []string{": agentProfiles,agents,providerHealth"}, "provider health")
 	register("unavailable", "Renamed", []string{"ws_reg: assets"}, "an asset")
-}
-
-// A stream opened with nowhere to resume from gets a place to resume from
-// at once: a connection that drops before any event resumes.
-func TestFreshStreamStartsWithItsResumePoint(t *testing.T) {
-	hub := newBrowserEventHub()
-	hub.Publish("chat_queue_changed", store.ChatQueue{WorkspaceID: "ws_ready", ChatID: "chat_1"})
-	fresh := &eventSubscription{ch: make(chan []byte, 8), scope: &accessScope{all: true}, ended: make(chan struct{})}
-	backlog, _ := hub.resume(fresh, "")
-	if len(backlog) != 1 {
-		t.Fatalf("a fresh stream starts with %d frames, want its ready message", len(backlog))
-	}
-	id, envelope := frameForTest(t, backlog[0])
-	if envelope["type"] != streamReadyEventType || id != hub.epoch+"-1" {
-		t.Fatalf("ready frame = %s %v, want the newest event's id", id, envelope)
-	}
-	hub.Publish("chat_queue_changed", store.ChatQueue{WorkspaceID: "ws_ready", ChatID: "chat_2"})
-	replay, _ := hub.resume(&eventSubscription{ch: make(chan []byte, 8), scope: &accessScope{all: true}, ended: make(chan struct{})}, id)
-	if len(replay) != 1 {
-		t.Fatalf("resuming from the ready id replays %d events, want the one after it", len(replay))
-	}
 }
 
 // chatsGateStore answers the first chats read as the store has them, then
@@ -352,12 +332,12 @@ func TestChatPushesPublishInTheOrderTheyRead(t *testing.T) {
 	if err := db.SyncChats(ctx, chat(`"recentMessages":[{"role":"user","text":"hi"}]`)); err != nil {
 		t.Fatal(err)
 	}
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 16)
 	gated := &chatsGateStore{Store: db, gate: make(chan struct{})}
+	events := newNotifiersForTest(gated)
+	viewer := subscribeForTest(events.stream)
 	synced := make(chan struct{})
 	go func() {
-		hub.pushChats(ctx, gated, "ws_order", []string{"chat_1"})
+		events.chatList.chatsChanged(ctx, "ws_order", []string{"chat_1"})
 		close(synced)
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -368,7 +348,7 @@ func TestChatPushesPublishInTheOrderTheyRead(t *testing.T) {
 	}
 	removed := make(chan struct{})
 	go func() {
-		hub.pushChats(ctx, gated, "ws_order", []string{"chat_1"})
+		events.chatList.chatsChanged(ctx, "ws_order", []string{"chat_1"})
 		close(removed)
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -401,7 +381,7 @@ func TestDeviceSkillScanAnnouncesTheCatalog(t *testing.T) {
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
-	viewer := subscribeForTest(fixture.server.events, 64)
+	viewer := subscribeForTest(fixture.server.stream)
 	requestForTest(t, fixture.server, http.MethodPost, "/api/device-skills/scan?deviceId="+fixture.deviceID, "", http.StatusOK)
 	if got := dataChangeResourcesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{": deviceTools,devices,promotedSkills"}) {
 		t.Fatalf("a scan announced %v", got)

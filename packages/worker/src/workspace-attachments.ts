@@ -164,24 +164,55 @@ export function readAttachmentImageChunk(input: {
   if (!inside(realpathSync(root), target) || !statSync(target).isFile()) {
     throw new AttachmentError("not_found", "image not found");
   }
+  const chunk = readFileChunk(target, input.offset, input.maxBytes, "image");
+  if (!chunk.mimeType)
+    throw new AttachmentError("unsupported", "not a supported image");
+  return { ...chunk, mimeType: chunk.mimeType };
+}
+
+/**
+ * Reads one chunk of any regular file inside the workspace, after
+ * resolving links: a file one session hands another as an attachment. An
+ * image says its type; other files carry none.
+ */
+export function readWorkspaceFileChunk(input: {
+  workspacePath: string;
+  path: string;
+  offset: number;
+  maxBytes: number;
+}): { size: number; mimeType?: string; data: Buffer } {
+  if (!isAbsolute(input.path) || !existsSync(input.path)) {
+    throw new AttachmentError("not_found", "file not found");
+  }
+  const target = realpathSync(input.path);
+  if (!inside(realpathSync(input.workspacePath), target)) {
+    throw new AttachmentError("invalid_path", "file is outside the workspace");
+  }
+  if (!statSync(target).isFile()) {
+    throw new AttachmentError("not_found", "not a file");
+  }
+  return readFileChunk(target, input.offset, input.maxBytes, "file");
+}
+
+function readFileChunk(
+  target: string,
+  offset: number,
+  maxBytes: number,
+  noun: string,
+): { size: number; mimeType?: string; data: Buffer } {
   const fd = openSync(target, "r");
   try {
     const size = fstatSync(fd).size;
-    if (size > input.maxBytes)
-      throw new AttachmentError("too_large", "image is too large");
+    if (size > maxBytes)
+      throw new AttachmentError("too_large", `${noun} is too large`);
     const head = Buffer.alloc(16);
     readSync(fd, head, 0, head.length, 0);
     const mimeType = imageSignatures.find((item) =>
       item.matches(head),
     )?.mimeType;
-    if (!mimeType)
-      throw new AttachmentError("unsupported", "not a supported image");
-    const length = Math.max(
-      0,
-      Math.min(attachmentChunkBytes, size - input.offset),
-    );
+    const length = Math.max(0, Math.min(attachmentChunkBytes, size - offset));
     const data = Buffer.alloc(length);
-    readSync(fd, data, 0, length, input.offset);
+    readSync(fd, data, 0, length, offset);
     return { size, mimeType, data };
   } finally {
     closeSync(fd);

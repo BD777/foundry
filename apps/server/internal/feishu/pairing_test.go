@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -75,7 +77,7 @@ func TestPairingCodeIsStoredOnlyAsHash(t *testing.T) {
 func TestBoundUserFollowsTheAccountsCurrentPermissions(t *testing.T) {
 	ctx := context.Background()
 	db := openPairingTestStore(t)
-	manager := NewWSManager(db, nil, nil)
+	manager := NewWSManager(db, nil, nil, eventsForTest())
 
 	if userID, refusal := manager.boundUser(ctx, "ws_1"); userID != "" || refusal == "" {
 		t.Fatalf("a workspace without a bot must refuse, got %q %q", userID, refusal)
@@ -121,5 +123,42 @@ func TestBotJSONNeverCarriesThePairingCodeHash(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "hash") || strings.Contains(string(encoded), "user_1") {
 		t.Fatalf("bot JSON leaks pairing state: %s", encoded)
+	}
+}
+
+// Pairing binds the group to the account that made the code and tells the
+// bot's workspace what the bot is now, without the code.
+func TestPairingTellsTheWorkspaceItsBot(t *testing.T) {
+	ctx := context.Background()
+	db := openPairingTestStore(t)
+	alice := addUser(t, db, "alice", store.WorkspaceRoleMember)
+	if _, err := db.SaveWorkspaceFeishuBot(ctx, store.WorkspaceFeishuBot{
+		WorkspaceID: "ws_1", AppID: "cli_x", PairingCode: HashPairingCode("FND-ABCD"), PairingCodeCreatedBy: alice.ID,
+		PairingCodeExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	events := eventsForTest()
+	workspace, _ := events.Subscribe(workspaceReachForTest("ws_1"), "")
+	other, _ := events.Subscribe(workspaceReachForTest("ws_2"), "")
+	manager := NewWSManager(db, nil, nil, events)
+	if err := manager.handlePairCommand(ctx, "ws_1", &fakeBot{}, "om_1", "oc_9", "/pair FND-ABCD"); err != nil {
+		t.Fatal(err)
+	}
+	if len(workspace.C) != 1 || len(other.C) != 0 {
+		t.Fatalf("delivered to the workspace %d, to another %d; want the bot to its workspace only", len(workspace.C), len(other.C))
+	}
+	frame := string(<-workspace.C)
+	_, data, _ := strings.Cut(frame, "data: ")
+	var published struct {
+		Type    browserevent.Type        `json:"type"`
+		Payload store.WorkspaceFeishuBot `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &published); err != nil {
+		t.Fatalf("decode %q: %v", frame, err)
+	}
+	bot := published.Payload
+	if published.Type != browserevent.FeishuBotUpdated || bot.ChatID != "oc_9" || bot.BoundUserID != alice.ID || strings.Contains(frame, "FND-ABCD") || strings.Contains(frame, HashPairingCode("FND-ABCD")) {
+		t.Fatalf("published %s, want the bot bound to the group as alice, without its code", frame)
 	}
 }

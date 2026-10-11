@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatLayout } from "@bd777/foundry-protocol";
+import { deleteChatGroup, getChatLayout, saveChatLayout } from "../../api";
 import {
-  deleteChatGroup,
+  carriedData,
   foundryStreamEpoch,
   foundryStreamOpened,
-  getChatLayout,
-  saveChatLayout,
-  subscribeFoundryEvents,
-} from "../../api";
+  onStreamEvent,
+} from "../../stream";
 import { loadChatGroups } from "./chat-group-state";
 import { emptyChatLayout, mergeLegacyGroups } from "./chat-layout";
 import { ChatLayoutSync, type LayoutChange } from "./chat-layout-sync";
@@ -110,11 +109,10 @@ async function changeLayout(
  */
 export function retainChatLayouts(): () => void {
   if (layoutRetainers++ === 0)
-    stopLayoutEvents = subscribeFoundryEvents((event) => {
-      if (event.type !== "chat_layout_changed") return;
-      const { workspaceId, layout } = event.payload;
-      if (layout) holdLayout(workspaceId, layout, foundryStreamEpoch());
-      else heldLayouts.delete(workspaceId);
+    stopLayoutEvents = onStreamEvent("chat_layout_changed", (payload) => {
+      const layout = carriedData("chat_layout_changed", payload);
+      if (layout) holdLayout(payload.workspaceId, layout, foundryStreamEpoch());
+      else heldLayouts.delete(payload.workspaceId);
     });
   let released = false;
   return () => {
@@ -212,20 +210,16 @@ export function useChatLayout(workspaceId: string, readOnly = false) {
       else if (!waiting) changedWhileLoading = true;
     };
     const unsubscribe = workspaceId
-      ? subscribeFoundryEvents(
-          (event) => {
-            if (
-              event.type !== "chat_layout_changed" ||
-              event.payload.workspaceId !== workspaceId
-            )
-              return;
-            const pushed = event.payload.layout;
+      ? onStreamEvent(
+          "chat_layout_changed",
+          (payload) => {
+            const pushed = carriedData("chat_layout_changed", payload);
             // Before the list started, a pushed layout is held for it.
             if (!pushed) changed();
             else sync?.apply(pushed);
           },
           // What the list holds predates the resync.
-          { onResync: changed },
+          { workspaceId, onResync: changed },
         )
       : undefined;
     if (workspaceId)

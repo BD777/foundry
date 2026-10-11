@@ -8,7 +8,9 @@
  * the icon (a status dot, for tabs too narrow for the title): its turn
  * runs; its finished answer is unseen (it finished while this tab was
  * hidden; seeing it clears the mark); its turn ended but its agent still
- * works in the background. Idle shows neither.
+ * works in the background. Idle shows neither; a chat whose agent only
+ * holds timers is idle too (it waits, often for days): the chat's
+ * "scheduled · next at" note says when it wakes.
  */
 export const appName = "Foundry";
 

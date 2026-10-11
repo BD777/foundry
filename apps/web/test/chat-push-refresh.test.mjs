@@ -229,7 +229,7 @@ test("titles and layout: one read once the stream opens, then pushes apply witho
 });
 
 test("titles and layout: read before a late stream opened, they are read once more after", async (t) => {
-  const { foundryStreamOpenWaitMs } = await import("../src/api.ts");
+  const { foundryStreamOpenWaitMs } = await import("../src/stream/index.ts");
   const server = fakeServer();
   const view = await page(t, server);
   await view.elapse(foundryStreamOpenWaitMs);

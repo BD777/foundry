@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -19,7 +21,7 @@ import (
 func TestRegistrationAnnouncesOnlyRealChanges(t *testing.T) {
 	db := newTestStore(t)
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -45,12 +47,12 @@ func TestDataChangesAreThrottledWithATrailingEdge(t *testing.T) {
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 150 * time.Millisecond
 	defer func() { foundryDataChangeInterval = interval }()
-	hub := newBrowserEventHub()
-	viewer := subscribeForTest(hub, 64)
+	events := newNotifiersForTest(nil)
+	viewer := subscribeForTest(events.stream)
 	for range 20 {
-		hub.dataChanged("ws_burst")
+		events.data.changed("ws_burst")
 	}
-	hub.dataChanged("ws_other")
+	events.data.changed("ws_other")
 	if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{"ws_burst", "ws_other"}) {
 		t.Fatalf("first of the burst = %v", got)
 	}
@@ -62,7 +64,7 @@ func TestDataChangesAreThrottledWithATrailingEdge(t *testing.T) {
 	if got := dataChangesForTest(t, drainForTest(t, viewer)); len(got) != 0 {
 		t.Fatalf("quiet period = %v", got)
 	}
-	hub.dataChanged("ws_burst")
+	events.data.changed("ws_burst")
 	if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{"ws_burst"}) {
 		t.Fatalf("a change after a quiet interval = %v, want it at once", got)
 	}
@@ -75,27 +77,21 @@ func TestDataChangesFollowWorkspaceAccess(t *testing.T) {
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
-	hub := newBrowserEventHub()
-	subscribe := func(subscription *eventSubscription) *eventSubscription {
-		subscription.ch, subscription.ended = make(chan []byte, 8), make(chan struct{})
-		hub.mu.Lock()
-		hub.subscribers[subscription] = struct{}{}
-		hub.mu.Unlock()
-		return subscription
-	}
-	member := subscribe(&eventSubscription{scope: &accessScope{roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}})
-	outsider := subscribe(&eventSubscription{scope: &accessScope{roles: map[string]string{"ws_b": store.WorkspaceRoleViewer}}})
-	hub.dataChanged("ws_a")
-	hub.dataChanged("")
+	events := newNotifiersForTest(nil)
+	member := subscribeReachForTest(events.stream, streamReach{scope: &accessScope{roles: map[string]string{"ws_a": store.WorkspaceRoleViewer}}})
+	outsiderReach := streamReach{scope: &accessScope{roles: map[string]string{"ws_b": store.WorkspaceRoleViewer}}}
+	outsider := subscribeReachForTest(events.stream, outsiderReach)
+	beforeChanges, _ := frameForTest(t, outsider.Backlog()[0])
+	events.data.changed("ws_a")
+	events.data.changed("")
 	if got := dataChangesForTest(t, drainForTest(t, member)); !reflect.DeepEqual(got, []string{"ws_a", ""}) {
 		t.Fatalf("member got %v", got)
 	}
 	if got := dataChangesForTest(t, drainForTest(t, outsider)); !reflect.DeepEqual(got, []string{""}) {
 		t.Fatalf("outsider got %v, want only the global change", got)
 	}
-	late := &eventSubscription{scope: &accessScope{roles: map[string]string{"ws_b": store.WorkspaceRoleViewer}}, ch: make(chan []byte, 8), ended: make(chan struct{})}
-	replay, _ := hub.resume(late, hub.epoch+"-0")
-	if len(replay) != 1 {
+	resumed, _ := events.stream.Subscribe(outsiderReach, beforeChanges)
+	if replay := resumed.Backlog(); len(replay) != 1 {
 		t.Fatalf("replayed %d events to the outsider, want the global change", len(replay))
 	}
 }
@@ -106,7 +102,7 @@ func TestWritesWithoutTheirOwnEventAreAnnounced(t *testing.T) {
 	db := newTestStore(t)
 	registerEventsWorkspaceForTest(t, db, "ws_writes")
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -146,7 +142,7 @@ func TestEvidenceWritesThatChangeTheIssueAreAnnounced(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -217,7 +213,7 @@ func TestDeletingAChatGroupAnnouncesItsSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(db)
-	viewer := subscribeForTest(server.events, 256)
+	viewer := subscribeForTest(server.stream)
 	interval := foundryDataChangeInterval
 	foundryDataChangeInterval = 0
 	defer func() { foundryDataChangeInterval = interval }()
@@ -232,5 +228,86 @@ func TestDeletingAChatGroupAnnouncesItsSessions(t *testing.T) {
 	sessions, err := db.ListAgentSessionSummaries(ctx, "ws_group_delete")
 	if err != nil || len(sessions) != 0 {
 		t.Fatalf("sessions after deleting their group = %d, %v; want none", len(sessions), err)
+	}
+}
+
+// Deleting a workspace announces to every view what changed for it (the
+// workspace list and what derives from the devices it reaches), not that
+// anything may have: each other tab reads those fields, not everything.
+func TestDeletingAWorkspaceAnnouncesWhatChangedForOthers(t *testing.T) {
+	db := newTestStore(t)
+	registerEventsWorkspaceForTest(t, db, "ws_kept")
+	registerEventsWorkspaceForTest(t, db, "ws_gone")
+	server := NewServer(db)
+	viewer := subscribeForTest(server.stream)
+	interval := foundryDataChangeInterval
+	foundryDataChangeInterval = 0
+	defer func() { foundryDataChangeInterval = interval }()
+	requestForTest(t, server, http.MethodDelete, "/api/workspaces/ws_gone", "", http.StatusOK)
+	var announced []browserevent.FoundryDataChangedPayload
+	for _, event := range drainForTest(t, viewer) {
+		if event.kind != browserevent.FoundryDataChanged {
+			continue
+		}
+		var change browserevent.FoundryDataChangedPayload
+		if err := json.Unmarshal(event.payload, &change); err != nil {
+			t.Fatal(err)
+		}
+		announced = append(announced, change)
+	}
+	want := fieldsOf(workspaceRemovalFields).list()
+	if len(announced) != 1 || announced[0].WorkspaceID != "" || !reflect.DeepEqual(announced[0].Resources, want) {
+		t.Fatalf("delete announced %+v, want one global change of %v", announced, want)
+	}
+	for _, field := range []string{fieldWorkspaces, fieldDevices, fieldAgentProfiles} {
+		if !slices.Contains(announced[0].Resources, field) {
+			t.Fatalf("delete announced %v, without %s", announced[0].Resources, field)
+		}
+	}
+}
+
+// A worker update moving on reaches whoever sees the device as the device
+// itself, update and all, so nobody reads; a device on no workspace, which
+// no device event reaches, is announced as a change to devices.
+func TestWorkerUpdateProgressTravelsWithTheDevice(t *testing.T) {
+	db := newTestStore(t)
+	registerEventsWorkspaceForTest(t, db, "ws_update")
+	server := NewServer(db)
+	viewer := subscribeForTest(server.stream)
+	interval := foundryDataChangeInterval
+	foundryDataChangeInterval = 0
+	defer func() { foundryDataChangeInterval = interval }()
+	const deviceID = "dev_ws_update"
+	server.workerUpdates.start(deviceID, store.DeviceWorkerUpdate{StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Version: "0.5.8", Step: "starting"})
+	server.workerUpdateChanged(deviceID)
+	events := drainForTest(t, viewer)
+	if got := dataChangesForTest(t, events); len(got) != 0 {
+		t.Fatalf("an update step announced %v, want no read", got)
+	}
+	var pushed []browserevent.DeviceStatusChangedPayload
+	for _, event := range events {
+		if event.kind != "device_status_changed" {
+			continue
+		}
+		var payload browserevent.DeviceStatusChangedPayload
+		if err := json.Unmarshal(event.payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		pushed = append(pushed, payload)
+	}
+	if len(pushed) != 1 || pushed[0].WorkspaceID != "ws_update" || pushed[0].Status != "connected" ||
+		pushed[0].Device == nil || pushed[0].Device.WorkerUpdate == nil || pushed[0].Device.WorkerUpdate.Step != "starting" ||
+		pushed[0].Device.RuntimeSettings != nil {
+		t.Fatalf("an update step pushed %+v, want the device with its update to the workspace's viewers", pushed)
+	}
+
+	if err := db.RegisterDaemon(context.Background(), store.DaemonRegistration{
+		Device: store.DeviceProjection{ID: "dev_alone", Label: "Alone", Status: "connected", LastSeenLabel: "online"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	server.workerUpdateChanged("dev_alone")
+	if got := dataChangesForTest(t, drainForTest(t, viewer)); !reflect.DeepEqual(got, []string{""}) {
+		t.Fatalf("a device on no workspace announced %v, want the global change to devices", got)
 	}
 }

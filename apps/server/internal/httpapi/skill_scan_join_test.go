@@ -42,7 +42,7 @@ func TestConcurrentSkillScansOfOneDeviceShareOneScan(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			skills, err := hub.ScanDeviceSkills(context.Background(), fixture.deviceID, roots)
+			skills, _, err := hub.ScanDeviceSkills(context.Background(), fixture.deviceID, roots)
 			if err != nil {
 				t.Errorf("scan %d: %v", i, err)
 			}
@@ -64,7 +64,7 @@ func TestConcurrentSkillScansOfOneDeviceShareOneScan(t *testing.T) {
 	// Once it finished, a new scan asks the device again.
 	release = make(chan struct{})
 	close(release)
-	if _, err := hub.ScanDeviceSkills(context.Background(), fixture.deviceID, roots); err != nil {
+	if _, _, err := hub.ScanDeviceSkills(context.Background(), fixture.deviceID, roots); err != nil {
 		t.Fatal(err)
 	}
 	if n := requests.Load(); n != 2 {

@@ -23,7 +23,7 @@ func TestKeepLibraryVersionPublishesNothing(t *testing.T) {
 
 	_, localIndex := versionArchive(t, "alpha", "local edit", zip.Store)
 	local := store.DeviceSkill{DeviceID: "dev_b", Root: "/skills", DirName: "alpha", Name: "alpha", SourceDigest: localIndex.SourceDigest, Manifest: localIndex.Files, DependenciesAnalyzed: true}
-	if err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_b", Skills: []store.DeviceSkill{local}}); err != nil {
+	if _, err := db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_b", Skills: []store.DeviceSkill{local}}); err != nil {
 		t.Fatal(err)
 	}
 	scanned, _ := db.ListDeviceSkills(ctx, "dev_b")

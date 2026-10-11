@@ -17,7 +17,12 @@ import { pathWithin } from "./session-file-references.js";
  * SDK/CLI execution, and session option helpers.
  */
 
-import { spawn } from "node:child_process";
+import {
+  claudeAgentSpawn,
+  codexAgentExecutable,
+  spawnAgentProcess,
+  stopAgentProcess,
+} from "./agent-processes.js";
 import { createHash, randomUUID, type UUID } from "node:crypto";
 import { officialSkills, refreshOfficialSkills } from "./official-skills.js";
 import {
@@ -58,10 +63,13 @@ import {
   AsyncInputQueue,
 } from "./session-state.js";
 import { ClaudeTimerTracker } from "./agent-timers.js";
+import { sessionTimers } from "./session-timers.js";
 import {
   ClaudeBackgroundTaskTracker,
+  backgroundTaskOutputLocation,
   readBackgroundTaskOutput,
 } from "./agent-background-tasks.js";
+import type { FollowedLog } from "./background-output-follow.js";
 import { redactSecrets } from "./secret-redaction.js";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 
@@ -78,6 +86,7 @@ import {
   claudeLaunchMcpServers,
   claudeSessionOptions,
   claudeSettingsFile,
+  sessionDeviceNotes,
   type ClaudeLaunchPlan,
 } from "./session-policy.js";
 import {
@@ -127,20 +136,6 @@ export function codexSessionConfig(
   };
 }
 
-function codexDeviceNotes(
-  workspacePath: string,
-  session: AgentSession,
-): string {
-  return isUtilitySession(session)
-    ? ""
-    : sessionResourceNotes(
-        workspacePath,
-        undefined,
-        usesSessionScratch(session) ? session.id : undefined,
-        session.id,
-      );
-}
-
 import {
   ClaudeAgentTurnError,
   claudeAgentResultError,
@@ -152,7 +147,6 @@ import {
   claudeNativeSessionId,
   claudePartialText,
   claudeProcessEvent,
-  claudeResultOrigin,
   claudeStreamEventText,
   claudeSystemProcessEvent,
   claudeTaskNotificationBookkeeping,
@@ -190,8 +184,12 @@ import {
   type TurnTokenUsage,
 } from "./turn-usage.js";
 import {
+  ClaudeContextTracker,
+  CodexContextFollower,
+  codexHome,
+} from "./context-usage.js";
+import {
   isUtilitySession,
-  killChildProcess,
   sendPrompt,
   resolveClaudeCommand,
   resolveCodexCommand,
@@ -206,13 +204,15 @@ import {
   profileRuntimeEnvironment,
   type AgentProfileLocalConfig,
 } from "./profiles.js";
-import { sessionEnvironment, usesSessionScratch } from "./session-ambient.js";
-import { codexRoleOptions, isClarificationSession } from "./session-roles.js";
-import { readAgentRuntimeSettings } from "./device.js";
+import { sessionEnvironment } from "./session-ambient.js";
 import {
-  knownSessionScratchDirectory,
-  sessionResourceNotes,
-} from "./resource-pool.js";
+  codexRoleOptions,
+  isClarificationSession,
+  isVerificationSession,
+  verificationMaxTurns,
+} from "./session-roles.js";
+import { readAgentRuntimeSettings } from "./device.js";
+import { knownSessionScratchDirectory } from "./resource-pool.js";
 
 export function codexSandboxMode(
   session: AgentSession,
@@ -275,7 +275,8 @@ export function claudePermissionMode(
   if (isUtilitySession(session)) {
     return "plan";
   }
-  if (isClarificationSession(session)) return "dontAsk";
+  if (isClarificationSession(session) || isVerificationSession(session))
+    return "dontAsk";
   return (
     session.claudePermissionMode ??
     profile.claudePermissionMode ??
@@ -345,7 +346,7 @@ export async function runProfileCommandSession(
     stdout: string;
     stderr: string;
   }>((resolveRun, rejectRun) => {
-    const child = spawn("sh", ["-lc", command], {
+    const child = spawnAgentProcess("sh", ["-lc", command], {
       cwd: workspacePath,
       env: {
         ...sessionEnvironment(workspacePath, profile, session),
@@ -358,12 +359,12 @@ export async function runProfileCommandSession(
         (isUtilitySession(session) ? 180000 : 900000),
     );
     const timeout = setTimeout(() => {
-      killChildProcess(child);
+      stopAgentProcess(child);
     }, timeoutMs);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timeout);
       rejectRun(error);
@@ -622,8 +623,14 @@ async function runCodexTurn(
 
     writeFileSync(eventsPath, "");
     writeFileSync(stderrPath, "");
-    const codexPathOverride = resolveCodexCommand();
-    const deviceNotes = codexDeviceNotes(workspacePath, session);
+    const codexCommand = resolveCodexCommand();
+    // In the daemon the CLI leads a process group that dies with the worker.
+    const codexPathOverride = codexAgentExecutable(codexCommand);
+    const deviceNotes = sessionDeviceNotes(
+      workspacePath,
+      session,
+      codexSessionEnvironment(workspacePath, profile, session).TMPDIR,
+    );
     const role = codexRoleOptions(session);
     const threadOptions = {
       approvalPolicy: codexApprovalPolicy(session, profile),
@@ -647,6 +654,9 @@ async function runCodexTurn(
     );
     const activeThread = activeCodexThreads.get(runtimeKey);
     let thread: CodexSDKThread;
+    // This turn's thread: what the turn learns updates it, never a newer
+    // thread that took the key meanwhile.
+    let threadEntry = activeThread;
     // A thread in memory continues only the native session it holds.
     if (
       activeThread &&
@@ -680,16 +690,17 @@ async function runCodexTurn(
           ...role?.config,
         },
       });
-      await emit("Started Codex SDK", `${packageName} · ${codexPathOverride}`);
+      await emit("Started Codex SDK", `${packageName} · ${codexCommand}`);
       thread = requestedNativeSessionId
         ? codex.resumeThread(requestedNativeSessionId, threadOptions)
         : codex.startThread(threadOptions);
-      activeCodexThreads.set(runtimeKey, {
+      threadEntry = {
         key: runtimeKey,
         lastUsed: Date.now(),
         nativeSessionId: requestedNativeSessionId || thread.id || "",
         thread,
-      });
+      };
+      activeCodexThreads.set(runtimeKey, threadEntry);
     }
     let nativeSessionId = requestedNativeSessionId || thread.id || "";
     reportNativeSessionId(nativeSessionId);
@@ -698,6 +709,22 @@ async function runCodexTurn(
     // Codex reports no diffs: its changes are diffed against the work tree
     // as the turn started. Naming and other utility sessions write nothing.
     if (!isUtilitySession(session)) await files.snapshotWorkTree();
+    // How full the thread's context is, from the log Codex keeps of it.
+    const context = new CodexContextFollower([
+      codexHome(codexSessionEnvironment(workspacePath, profile, session)),
+    ]);
+    if (nativeSessionId)
+      await context.follow(nativeSessionId, { resumed: true });
+    const reportContext = async () => {
+      const reports = await context.read().catch(() => []);
+      for (const contextUsage of reports)
+        await emit(
+          processLabels.modelRequestUsage,
+          contextUsage.model ?? "",
+          undefined,
+          { contextUsage },
+        );
+    };
 
     if (typeof thread.runStreamed === "function") {
       const abortController = new AbortController();
@@ -754,7 +781,8 @@ async function runCodexTurn(
           if (eventNativeSessionId) {
             nativeSessionId = eventNativeSessionId;
             reportNativeSessionId(nativeSessionId);
-            const runtime = activeCodexThreads.get(runtimeKey);
+            await context.follow(nativeSessionId, { resumed: false });
+            const runtime = threadEntry;
             if (runtime) {
               runtime.nativeSessionId = nativeSessionId;
               runtime.lastUsed = Date.now();
@@ -772,6 +800,8 @@ async function runCodexTurn(
           }
           for (const write of codexFileWrites(event))
             await files.recordToolWrite(write);
+          if ((event as { type?: unknown } | null)?.type === "item.completed")
+            await reportContext();
           const text = sdkMessageText(event);
           if (text && text !== finalResult) {
             const message = sdkResponseMessage(event, text);
@@ -809,6 +839,18 @@ async function runCodexTurn(
             if (eventType === "turn.completed") {
               usage = codexTurnUsage(event);
               turnCompleted = true;
+              // The log trails the stream a little: its last count is read
+              // before the process stops.
+              for (let wait = 0; ; wait += 1) {
+                await reportContext();
+                if (
+                  !context.found ||
+                  context.turnInputTokens >= (usage?.inputTokens ?? 0) ||
+                  wait >= 10
+                )
+                  break;
+                await new Promise((resolve) => setTimeout(resolve, 100));
+              }
               abortController.abort();
               break;
             }
@@ -822,6 +864,9 @@ async function runCodexTurn(
           void events.return().catch(() => undefined);
         }
       } finally {
+        // The turn's process ends with it: one a failure left running would
+        // write the thread alongside the next turn's.
+        abortController.abort();
         liveness.close();
         unregisterCancel();
       }
@@ -834,7 +879,7 @@ async function runCodexTurn(
       usage = codexTurnUsage(turn);
     }
 
-    const runtime = activeCodexThreads.get(runtimeKey);
+    const runtime = threadEntry;
     if (runtime) {
       runtime.nativeSessionId = nativeSessionId;
       runtime.lastUsed = Date.now();
@@ -986,6 +1031,9 @@ export function resolveActiveClaudeTurn(
   }
   runtime.pending = undefined;
   if (turn.commandId) runtime.lastInputId = turn.commandId;
+  // A timer's prompt this turn answered (the device sent it) is not a turn
+  // Claude runs on its own.
+  runtime.timers?.takeFire();
   turn.liveness.close();
   turn.resolve(result);
 }
@@ -1048,7 +1096,7 @@ export function claudeRuntimeIsBusy(runtime: ActiveClaudeRuntime): boolean {
 export function cleanupActiveClaudeRuntimes(): void {
   const now = Date.now();
   const settings = readAgentRuntimeSettings();
-  for (const [key, runtime] of activeClaudeRuntimes) {
+  for (const runtime of activeClaudeRuntimes.values()) {
     if (
       runtime.closed ||
       (now - runtime.lastUsed > settings.activeRuntimeTtlMs &&
@@ -1058,7 +1106,6 @@ export function cleanupActiveClaudeRuntimes(): void {
         runtime,
         new Error("Claude active runtime expired after being idle."),
       );
-      activeClaudeRuntimes.delete(key);
     }
   }
 }
@@ -1071,10 +1118,8 @@ export function cleanupActiveClaudeRuntimes(): void {
  */
 export function closeAllActiveRuntimes(): void {
   const disconnectError = new Error("WebSocket disconnected");
-  for (const [key, runtime] of activeClaudeRuntimes) {
+  for (const runtime of activeClaudeRuntimes.values())
     closeActiveClaudeRuntime(runtime, disconnectError);
-    activeClaudeRuntimes.delete(key);
-  }
   for (const [key] of activeCodexThreads) {
     // Codex threads don't have a close method — the AbortController is
     // local to the session execution and will be garbage collected.
@@ -1085,6 +1130,65 @@ export function closeAllActiveRuntimes(): void {
   queuedSessionCancelRequests.clear();
 }
 
+/** A worker log line per agent process change: which process served what. */
+function logClaudeRuntime(
+  event: string,
+  runtime: ActiveClaudeRuntime,
+  detail?: unknown,
+): void {
+  const text = detail instanceof Error ? detail.message : String(detail);
+  const note =
+    detail === undefined
+      ? ""
+      : `: ${redactSecrets(text).replace(/\s+/g, " ").slice(0, 300)}`;
+  console.error(
+    `${new Date().toISOString()} [claude-runtime] ${event} pid=${runtime.pid ?? "-"} key=${runtime.key.slice(0, 12)} native=${runtime.nativeSessionId || "-"} session=${runtime.foundrySessionId}${note}`,
+  );
+}
+
+/**
+ * Takes a closed runtime out of the registry. A runtime that ends after a
+ * newer one took its key (it was reaped or replaced, and its process exits
+ * later) leaves the newer one registered: the registry only ever loses
+ * runtimes that were closed.
+ */
+function forgetClaudeRuntime(
+  runtime: ActiveClaudeRuntime,
+  reason: unknown,
+): void {
+  if (activeClaudeRuntimes.get(runtime.key) !== runtime) return;
+  activeClaudeRuntimes.delete(runtime.key);
+  logClaudeRuntime("closed", runtime, reason);
+}
+
+/**
+ * One process writes a native session. Before a turn runs on `keep` (or on
+ * a process about to start), every other runtime of the Foundry session or
+ * holding the native session it writes is closed, whatever its key: an
+ * earlier skill catalog, profile or model, or a process left over. A turn
+ * still open on one ends here: one Claude already answered completes with
+ * that answer (completeInterruptedClaudeTurn); otherwise it fails.
+ */
+function closeOtherClaudeWriters(
+  sessionId: string,
+  nativeSessionId: string,
+  keep: ActiveClaudeRuntime | undefined,
+): void {
+  for (const other of activeClaudeRuntimes.values()) {
+    if (
+      other !== keep &&
+      ((sessionId && other.foundrySessionId === sessionId) ||
+        (nativeSessionId && other.nativeSessionId === nativeSessionId))
+    )
+      closeActiveClaudeRuntime(
+        other,
+        new Error(
+          "A newer Claude process took over this session's native session.",
+        ),
+      );
+  }
+}
+
 export function closeActiveClaudeRuntime(
   runtime: ActiveClaudeRuntime,
   reason: unknown = new Error(
@@ -1092,11 +1196,18 @@ export function closeActiveClaudeRuntime(
   ),
 ): void {
   runtime.closed = true;
+  forgetClaudeRuntime(runtime, reason);
   const turn = runtime.pending;
   runtime.pending = undefined;
-  // Session-scoped timers and background work live in the agent process and
-  // die with it; publish that before tearing down event plumbing.
-  runtime.timers?.close();
+  // Background work lives in the agent process and dies with it; publish
+  // that before tearing down event plumbing. Its timers live in the native
+  // session: the device keeps them until a process resumes it.
+  sessionTimers.detach(
+    runtime.foundrySessionId,
+    runtime.nativeSessionId,
+    runtime.timers?.close() ?? [],
+    runtime,
+  );
   runtime.background?.close();
   runtime.continuation = undefined;
   if (turn) {
@@ -1195,6 +1306,8 @@ export function claudeBackgroundTaskOutput(input: {
   workspacePath: string;
   sessionId: string;
   taskId: string;
+  /** Continue an earlier read (its `lineEnd`). */
+  after?: number;
 }): AgentBackgroundTaskOutput {
   const runtime = claudeRuntimeForSession(input.sessionId);
   const record = runtime?.background?.record(input.taskId);
@@ -1206,7 +1319,27 @@ export function claudeBackgroundTaskOutput(input: {
       ? knownSessionScratchDirectory(input.sessionId)
       : undefined,
     sessionsRoot: executionSessionsRoot(input.workspacePath),
+    after: input.after,
   });
+}
+
+/**
+ * A live background task's log and whether the task still runs, for
+ * following it; a task the live process does not run is not followed.
+ */
+export function claudeBackgroundTaskLog(
+  sessionId: string,
+  taskId: string,
+): FollowedLog {
+  const record = claudeRuntimeForSession(sessionId)?.background?.record(taskId);
+  if (record?.status !== "running") return { running: false };
+  const { path } = backgroundTaskOutputLocation({
+    sessionId,
+    taskId,
+    record,
+    scratchDirectory: knownSessionScratchDirectory(sessionId),
+  });
+  return { path, running: true };
 }
 
 /**
@@ -1335,9 +1468,10 @@ const taskLifecycleSubtypes = new Set([
 ]);
 
 /**
- * Claude's answer to its own follow-up (after a background task ended),
- * published once it is complete: a divider and the answer, like a timer's.
- * Turns a timer started are published by the timer tracker instead.
+ * A turn Claude ran on its own, published once it is complete: a divider
+ * and the answer. Claude ran it for a timer when it submitted the timer's
+ * prompt (ClaudeTimerTracker.takeFire), else as its follow-up after
+ * background work ended.
  */
 async function finishClaudeContinuation(
   runtime: ActiveClaudeRuntime,
@@ -1345,16 +1479,10 @@ async function finishClaudeContinuation(
 ): Promise<void> {
   const continuation = runtime.continuation;
   const notifications = runtime.notifications ?? [];
+  const fire = runtime.timers?.takeFire();
   runtime.continuation = undefined;
   runtime.notifications = [];
   if (runtime.pending) runtime.pending.behindContinuation = false;
-  const origin = claudeResultOrigin(result);
-  if (result && origin !== "task-notification" && notifications.length === 0) {
-    // A timer's turn: its Stop hook published the answer and its files.
-    if (runtime.betweenTurnFiles)
-      await finishClaudeBetweenTurnFiles(runtime, "");
-    return;
-  }
   const error = result ? claudeAgentResultError(result) : undefined;
   const response = (
     continuation?.finalResult || (result ? claudeMessageText(result) : "")
@@ -1363,10 +1491,38 @@ async function finishClaudeContinuation(
     runtime,
     error ? "" : response,
   );
-  if (!response && !error) return;
-  const startedAt = continuation?.startedAt ?? Date.now();
-  const usage = result ? claudeResultUsage(result) : undefined;
+  if (!fire && !response && !error) return;
+  const startedAt = fire
+    ? Date.parse(fire.startedAt)
+    : (continuation?.startedAt ?? Date.now());
+  const usage = result
+    ? claudeResultUsage(result, runtime.context?.costOf(result))
+    : undefined;
   const completedAt = new Date().toISOString();
+  const metadata = {
+    ...turnUsageMetadata(usage, startedAt),
+    ...(fileReferences.length > 0 ? { fileReferences } : {}),
+  };
+  const answer = error ? error.message : response;
+  if (fire) {
+    emitForClaudeRuntime(runtime, {
+      label: processLabels.timerFire,
+      detail: fire.prompt.split(/\r?\n/)[0]?.slice(0, 200) ?? "",
+      level: error ? "error" : "info",
+      metadata: {
+        timerFire: {
+          ...(fire.id ? { id: fire.id } : {}),
+          origin: "scheduled",
+          prompt: fire.prompt,
+          ...(answer ? { response: answer } : {}),
+          startedAt: fire.startedAt,
+          completedAt,
+        },
+        ...metadata,
+      },
+    });
+    return;
+  }
   emitForClaudeRuntime(runtime, {
     label: processLabels.backgroundTurn,
     detail:
@@ -1377,12 +1533,11 @@ async function finishClaudeContinuation(
       timerFire: {
         origin: "background",
         prompt: notifications.join("\n"),
-        response: error ? error.message : response,
+        response: answer,
         startedAt: new Date(startedAt).toISOString(),
         completedAt,
       },
-      ...turnUsageMetadata(usage, startedAt),
-      ...(fileReferences.length > 0 ? { fileReferences } : {}),
+      ...metadata,
     },
   });
 }
@@ -1460,6 +1615,13 @@ export async function handleActiveClaudeMessage(
     appendFileSync(messagesPath, `${JSON.stringify(message ?? null)}\n`);
   // Background work outlives turns: every message is observed.
   runtime.background?.observe(message);
+  const contextUsage = runtime.context?.observe(message);
+  if (contextUsage)
+    emitForClaudeRuntime(runtime, {
+      label: processLabels.modelRequestUsage,
+      detail: contextUsage.model ?? "",
+      metadata: { contextUsage },
+    });
   const lifecycle = claudeCommandLifecycle(message);
   if (lifecycle) {
     runtime.commandLifecycle = true;
@@ -1517,7 +1679,6 @@ export async function handleActiveClaudeMessage(
   const resultError = claudeAgentResultError(message);
   if (resultError) {
     closeActiveClaudeRuntime(runtime, resultError);
-    activeClaudeRuntimes.delete(runtime.key);
     return;
   }
   // A synthetic pre-turn API rejection (401, prompt too long, …) is an error,
@@ -1544,7 +1705,10 @@ export async function handleActiveClaudeMessage(
   if (claudeTaskNotificationBookkeeping(message)) {
     return;
   }
-  const resultUsage = claudeResultUsage(message);
+  const resultUsage = claudeResultUsage(
+    message,
+    runtime.context?.costOf(message),
+  );
   if (resultUsage) turn.usage = addTurnUsage(turn.usage, resultUsage);
   if (
     message &&
@@ -1592,7 +1756,6 @@ export async function handleActiveClaudeMessage(
           "Session completed without a text response; closing runtime to recover.",
         ),
       );
-      activeClaudeRuntimes.delete(runtime.key);
     }
   }
 }
@@ -1617,7 +1780,14 @@ export function startActiveClaudePump(
       closeActiveClaudeRuntime(runtime, error);
     } finally {
       closeActiveClaudeRuntime(runtime);
-      activeClaudeRuntimes.delete(runtime.key);
+      const successor = activeClaudeRuntimes.get(runtime.key);
+      logClaudeRuntime(
+        "ended",
+        runtime,
+        successor
+          ? `its key now serves a newer process (pid ${successor.pid ?? "-"})`
+          : undefined,
+      );
     }
   })();
 }
@@ -1731,19 +1901,13 @@ export async function runClaudeAgentSdkSession(
       !runtime.closed &&
       (!runtime.nativeSessionId ||
         runtime.nativeSessionId === requestedNativeSessionId);
+    if (runtime && !canReuseRuntime) closeActiveClaudeRuntime(runtime);
+    closeOtherClaudeWriters(
+      session.id,
+      requestedNativeSessionId,
+      canReuseRuntime ? runtime : undefined,
+    );
     if (!canReuseRuntime) {
-      if (runtime) {
-        closeActiveClaudeRuntime(runtime);
-        activeClaudeRuntimes.delete(runtimeKey);
-      }
-      // A session's earlier runtime (another skill catalog, profile or
-      // model) holds the same native session: one process writes it.
-      for (const [key, other] of activeClaudeRuntimes) {
-        if (other.foundrySessionId === session.id && !other.pending) {
-          closeActiveClaudeRuntime(other);
-          activeClaudeRuntimes.delete(key);
-        }
-      }
       const options = { ...baseOptions };
       if (start?.kind === "fork") {
         // The SDK copies the source into the id the server already claimed.
@@ -1769,13 +1933,21 @@ export async function runClaudeAgentSdkSession(
       // process lifetime; they are installed once, when the SDK query stream
       // is created. Their events go to the turn the runtime serves, or out of
       // band between turns.
-      runtime.timers = new ClaudeTimerTracker({
-        emit: (event) => emitForClaudeRuntime(owner, event),
-        isActiveTurn: () => owner.pending !== undefined,
-        sessionId: () => owner.foundrySessionId,
-        answerFiles: (response) =>
-          finishClaudeBetweenTurnFiles(owner, response),
-      });
+      // A resumed session's timers come back with it; the device kept them.
+      runtime.timers = new ClaudeTimerTracker(
+        {
+          emit: (event) => emitForClaudeRuntime(owner, event),
+          isActiveTurn: () => owner.pending !== undefined,
+          sessionId: () => owner.foundrySessionId,
+          timersChanged: (tasks) =>
+            sessionTimers.record(
+              owner.foundrySessionId,
+              owner.nativeSessionId,
+              tasks,
+            ),
+        },
+        sessionTimers.attach(session.id, requestedNativeSessionId, owner),
+      );
       runtime.background = new ClaudeBackgroundTaskTracker({
         emit: (event) => emitForClaudeRuntime(owner, event),
         sessionId: () => owner.foundrySessionId,
@@ -1784,6 +1956,9 @@ export async function runClaudeAgentSdkSession(
           knownSessionScratchDirectory(owner.foundrySessionId),
       });
       runtime.background.attach();
+      runtime.context = new ClaudeContextTracker({
+        resumed: Boolean(options.resume),
+      });
       options.hooks = mergeClaudeHooks(
         runtime.timers.hooks(),
         runtime.background.hooks(),
@@ -1795,7 +1970,7 @@ export async function runClaudeAgentSdkSession(
         ),
       );
       // A start-up failure names what the process last said.
-      options.stderr = (data: string) => {
+      const onStderr = (data: string) => {
         owner.stderrTail = `${owner.stderrTail ?? ""}${data}`.slice(-4000);
         try {
           appendFileSync(stderrPath, data);
@@ -1803,7 +1978,21 @@ export async function runClaudeAgentSdkSession(
           // The tail in memory still serves the failure message.
         }
       };
+      options.stderr = onStderr;
+      // In the daemon the CLI leads a process group that dies with the
+      // worker; the SDK then hands stderr to this spawn, not to the option.
+      const spawnAgent = claudeAgentSpawn(onStderr);
+      if (spawnAgent)
+        options.spawnClaudeCodeProcess = (
+          spawnOptions: Parameters<typeof spawnAgent>[0],
+        ) => {
+          const child = spawnAgent(spawnOptions);
+          owner.pid = child.pid;
+          logClaudeRuntime("process started", owner);
+          return child;
+        };
       activeClaudeRuntimes.set(runtimeKey, runtime);
+      logClaudeRuntime("starting", runtime);
       await emitSetup();
       await emit("Started Claude Agent SDK", `${packageName} · ${command}`);
       runtimeStartOptions = options;
@@ -1815,7 +2004,19 @@ export async function runClaudeAgentSdkSession(
       reusableRuntime.lastUsed = Date.now();
       // The long-lived thread may serve continued Foundry sessions; timer
       // events between turns belong to the session currently attached.
+      if (reusableRuntime.foundrySessionId !== session.id)
+        sessionTimers.detach(
+          reusableRuntime.foundrySessionId,
+          reusableRuntime.nativeSessionId,
+          [],
+          reusableRuntime,
+        );
       reusableRuntime.foundrySessionId = session.id;
+      sessionTimers.attach(
+        session.id,
+        reusableRuntime.nativeSessionId,
+        reusableRuntime,
+      );
       reusableRuntime.background?.attach();
       // Each dispatch mints a new session token and revokes the previous
       // one, so the Foundry tools are re-pointed at this turn's identity.
@@ -1912,7 +2113,6 @@ export async function runClaudeAgentSdkSession(
               activeRuntime,
               new AgentSessionCanceledError(),
             );
-            activeClaudeRuntimes.delete(activeRuntime.key);
             return { answered };
           },
         });
@@ -1975,7 +2175,6 @@ export async function runClaudeAgentSdkSession(
                   activeRuntime,
                   claudeTurnLivenessError(failure, activeRuntime.stderrTail),
                 );
-                activeClaudeRuntimes.delete(activeRuntime.key);
               },
             },
             operationBounds,
@@ -2001,7 +2200,6 @@ export async function runClaudeAgentSdkSession(
           }
         } catch (error) {
           closeActiveClaudeRuntime(activeRuntime, error);
-          activeClaudeRuntimes.delete(activeRuntime.key);
         }
       },
     );
@@ -2017,6 +2215,7 @@ export function claudeMaxTurns(session: AgentSession): number | undefined {
   if (isUtilitySession(session)) {
     return 3;
   }
+  if (isVerificationSession(session)) return verificationMaxTurns;
   const configured = process.env.FOUNDRY_CLAUDE_MAX_TURNS?.trim();
   if (
     !configured ||

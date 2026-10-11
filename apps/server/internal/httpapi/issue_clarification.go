@@ -37,7 +37,7 @@ func (h *DaemonHub) settleIssueClarification(ctx context.Context, session store.
 		log.Printf("answer clarification of issue %s from session %s: %v", session.IssueID, session.ID, err)
 		return
 	}
-	h.events.Publish("issue_updated", issue)
+	h.issues.updated(issue)
 }
 
 // clarificationTurn loads what a clarification input needs, refusing a

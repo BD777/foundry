@@ -41,6 +41,8 @@ export const workerModules = {
       "secret-redaction",
       "process-group",
       "process-group-child",
+      "agent-processes",
+      "agent-process-host",
       "state-root",
       "stall-monitor",
       "connection-reports",
@@ -65,7 +67,12 @@ export const workerModules = {
   },
   "candidate-store": {
     dependsOn: ["platform"],
-    files: ["execution-storage", "execution-git", "execution-types"],
+    files: [
+      "execution-storage",
+      "execution-git",
+      "execution-types",
+      "issue-environment-changes",
+    ],
   },
   transport: {
     dependsOn: ["device"],
@@ -147,8 +154,11 @@ export const workerModules = {
       "session-roles",
       "session-state",
       "turn-usage",
+      "context-usage",
       "agent-timers",
+      "session-timers",
       "agent-background-tasks",
+      "background-output-follow",
       "watchdog",
       "subagent-records",
       "subagent-transcript",
@@ -168,11 +178,18 @@ export const workerModules = {
       "session/codex",
       "session/workspace",
       "session/host-child",
+      "session/isolated-environment",
+      "verification-session",
     ],
   },
   "agent-surface": {
     dependsOn: ["session-runtime"],
-    files: ["foundry-cli", "foundry-client", "foundry-mcp"],
+    files: [
+      "foundry-cli",
+      "foundry-cli-commands",
+      "foundry-client",
+      "foundry-mcp",
+    ],
   },
   issue: {
     dependsOn: [
@@ -246,6 +263,9 @@ export const serverPackages = {
   builtinskills: ["skillarchive"],
   skillrepo: ["skillarchive"],
   testfixture: ["store"],
+  eventstream: [],
+  textdiff: [],
+  browserevent: ["store", "eventstream"],
   sqlitestore: [
     "store",
     "secretstore",
@@ -253,7 +273,8 @@ export const serverPackages = {
     "chattitle",
     "accounts",
   ],
-  feishu: ["store", "accounts"],
+  feishu: ["store", "accounts", "browserevent", "eventstream"],
+  externalaccounts: ["store"],
   httpapi: "*",
 };
 

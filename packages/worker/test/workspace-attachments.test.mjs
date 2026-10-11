@@ -14,6 +14,7 @@ import test from "node:test";
 import {
   abortAttachmentUpload,
   readAttachmentImageChunk,
+  readWorkspaceFileChunk,
   writeAttachmentChunk,
 } from "../dist/workspace-attachments.js";
 
@@ -188,4 +189,35 @@ test("only images within the size limit are served", (t) => {
       }),
     /too large/,
   );
+});
+
+// A session hands another any file of its workspace; nothing outside it,
+// whether named directly or reached through a link.
+test("any file inside the workspace is read for an attachment, nothing outside", (t) => {
+  const workspacePath = workspace(t);
+  const outside = workspace(t);
+  mkdirSync(join(workspacePath, "docs"));
+  writeFileSync(join(workspacePath, "docs", "plan.md"), "# Plan\n");
+  writeFileSync(join(workspacePath, "shot.png"), png);
+  writeFileSync(join(outside, "secret.txt"), "secret");
+  symlinkSync(join(outside, "secret.txt"), join(workspacePath, "link.txt"));
+
+  const read = (path, maxBytes = 1024) =>
+    readWorkspaceFileChunk({ workspacePath, path, offset: 0, maxBytes });
+  const plan = read(join(workspacePath, "docs", "plan.md"));
+  assert.equal(plan.data.toString(), "# Plan\n");
+  assert.equal(plan.size, 7);
+  assert.equal(plan.mimeType, undefined);
+  assert.equal(read(join(workspacePath, "shot.png")).mimeType, "image/png");
+  for (const [path, code] of [
+    [join(outside, "secret.txt"), "invalid_path"],
+    [join(workspacePath, "link.txt"), "invalid_path"],
+    [join(workspacePath, "docs", "..", "..", "x"), "not_found"],
+    [join(workspacePath, "docs"), "not_found"],
+    ["docs/plan.md", "not_found"],
+  ])
+    assert.throws(() => read(path), { code }, path);
+  assert.throws(() => read(join(workspacePath, "shot.png"), 10), {
+    code: "too_large",
+  });
 });

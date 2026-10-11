@@ -40,6 +40,6 @@ func (s *Server) handleAbandonIssue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	s.events.Publish("issue_updated", issue)
+	s.issues.updated(issue)
 	writeResult(w, issue, nil)
 }

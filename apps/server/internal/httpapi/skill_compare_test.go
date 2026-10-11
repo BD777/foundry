@@ -49,7 +49,7 @@ func TestSkillComparisonUsesCachedManifestAndReadsOnlySelectedFile(t *testing.T)
 		t.Fatal(err)
 	}
 	source := store.DeviceSkill{Name: "demo", Root: "/skills", DirName: "demo", SourceDigest: next.SourceDigest, Manifest: next.Files, DependenciesAnalyzed: true}
-	if err = db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_compare", Skills: []store.DeviceSkill{source}}); err != nil {
+	if _, err = db.ReplaceDeviceSkills(ctx, store.ReplaceDeviceSkillsInput{DeviceID: "dev_compare", Skills: []store.DeviceSkill{source}}); err != nil {
 		t.Fatal(err)
 	}
 	input := store.SkillComparisonInput{DeviceID: "dev_compare", Root: "/skills", DirName: "demo", SkillID: target.ID, Revision: 1, SourceDigest: next.SourceDigest}

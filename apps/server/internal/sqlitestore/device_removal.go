@@ -199,6 +199,7 @@ func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
 		{"provider health", `DELETE FROM provider_health WHERE json_extract(payload_json, '$.deviceId') = ?`},
 		{"connection assignments", `DELETE FROM device_profiles WHERE device_id = ?`},
 		{"skills", `DELETE FROM device_skills WHERE device_id = ?`},
+		{"skill scans", `DELETE FROM device_skill_scans WHERE device_id = ?`},
 		{"skill roots", `DELETE FROM device_skill_roots WHERE device_id = ?`},
 		{"tools", `DELETE FROM device_tools WHERE device_id = ?`},
 		{"credentials", `DELETE FROM secret_records WHERE substr(id, 1, length('agent-profile:' || ?1 || ':')) = 'agent-profile:' || ?1 || ':'`},

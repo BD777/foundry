@@ -4,10 +4,20 @@
 //
 // Only a path that exists, and that the session may show, becomes a
 // reference: like a terminal's file links, nothing is linked on a guess.
+// A file the answer names before it is written (a background subagent's
+// deliverable) is a pending reference: it links once the file exists.
 
 import { realpathSync, statSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 /** What one turn's answer is checked against. */
 export interface FileReferenceContext {
@@ -15,7 +25,12 @@ export interface FileReferenceContext {
   /** The session's working directory: its workspace. */
   workspacePath: string;
   /** Files the session's tools wrote or earlier answers named. */
-  recorded: Array<{ path: string; realpath?: string; origin: string }>;
+  recorded: Array<{
+    path: string;
+    realpath?: string;
+    origin: string;
+    pending?: boolean;
+  }>;
   /** Epoch ms the turn started; named files outside the workspace are newer. */
   turnStartedAt: number;
   /** Where named files outside the workspace may live. */
@@ -35,6 +50,11 @@ export interface ResolvedFileReference {
   insideWorkspace: boolean;
   bytes?: number;
   mtimeMs?: number;
+  /**
+   * No file there yet: a linked name whose folder exists and may be shown.
+   * `realpath` is where it will resolve: its folder's, plus its name.
+   */
+  pending?: true;
 }
 
 export interface ReferenceToken {
@@ -55,16 +75,32 @@ export const maxReferenceCandidates = 200;
 const mtimeToleranceMs = 2000;
 
 /**
+ * Whether a path is in the workspace's attachments, where the person's
+ * uploads land and where agents save what they want to show the person.
+ */
+export function workspaceAttachmentPath(
+  path: string,
+  workspacePath: string,
+): boolean {
+  return pathWithin(resolve(workspacePath, ".foundry", "attachments"), path);
+}
+
+/**
  * Whether a path is somewhere a session must never show: credentials, agent
- * and Foundry state (the device's and the workspace's own `.foundry`), and
- * Git internals. Checked on the path as named and on the file it resolves to.
+ * and Foundry state (the device's and the workspace's own `.foundry`, except
+ * its attachments), and Git internals. Checked on the path as named and on
+ * the file it resolves to.
  */
 export function privateDevicePath(
   path: string,
   home: string = homedir(),
   workspacePath?: string,
 ): boolean {
-  if (workspacePath && pathWithin(resolve(workspacePath, ".foundry"), path))
+  if (
+    workspacePath &&
+    pathWithin(resolve(workspacePath, ".foundry"), path) &&
+    !workspaceAttachmentPath(path, workspacePath)
+  )
     return true;
   const homeRelative = relative(home, path);
   if (
@@ -226,6 +262,11 @@ function realRoot(path: string): string | undefined {
  * then a unique match among the session's recorded files. A folder counts
  * only when it holds recorded files; a file outside the workspace that no
  * tool wrote must be in a temporary folder and changed during the turn.
+ *
+ * A linked name of a file that is not there yet is pending when it reads as
+ * a location (a folder and a file name with an extension), its folder
+ * exists in the workspace or a temporary folder and may be shown, and the
+ * session never recorded a file there (a file it wrote is gone, not due).
  */
 export function resolveFileReferences(
   context: FileReferenceContext,
@@ -240,6 +281,8 @@ export function resolveFileReferences(
   const recordedTool = new Set<string>();
   const recordedAll: string[] = [];
   for (const entry of context.recorded) {
+    // A pending name is not a file yet: it neither fills a folder nor is due.
+    if (entry.pending) continue;
     for (const path of [entry.path, entry.realpath].filter(Boolean)) {
       recordedAll.push(path!);
       if (entry.origin === "tool") recordedTool.add(path!);
@@ -332,6 +375,50 @@ export function resolveFileReferences(
     };
   };
 
+  const pending = (
+    token: ReferenceToken,
+    located: string | undefined,
+    base?: string,
+  ): ResolvedFileReference | undefined => {
+    if (
+      token.source === "bare" ||
+      !token.path.includes("/") ||
+      !/\.[A-Za-z0-9]{1,12}$/.test(basename(token.path))
+    )
+      return undefined;
+    const candidates = located
+      ? [located]
+      : [base, context.workspacePath]
+          .filter((folder): folder is string => Boolean(folder))
+          .map((folder) => resolve(folder, token.path));
+    for (const path of candidates) {
+      if (statPath(path)) return undefined;
+      const folder = statPath(dirname(path));
+      if (!folder?.stat.isDirectory()) continue;
+      const realpath = join(folder.realpath, basename(path));
+      if (
+        privateDevicePath(path, home, context.workspacePath) ||
+        privateDevicePath(realpath, home, workspace) ||
+        recordedAll.includes(path) ||
+        recordedAll.includes(realpath)
+      )
+        return undefined;
+      const insideWorkspace = pathWithin(workspace, realpath);
+      if (!insideWorkspace && !roots.some((root) => pathWithin(root, realpath)))
+        return undefined;
+      return {
+        text: token.text,
+        linkable: true,
+        path,
+        realpath,
+        kind: "file",
+        insideWorkspace,
+        pending: true,
+      };
+    }
+    return undefined;
+  };
+
   const files: ResolvedFileReference[] = [];
   const folders: Array<{ text: string; linkable: boolean; path: string }> = [];
   let carried: string | undefined;
@@ -355,14 +442,16 @@ export function resolveFileReferences(
       const verified = path
         ? verify(token.text, token.source !== "bare", path)
         : undefined;
-      if (verified) files.push(verified);
+      const found = verified ?? pending(token, path, base);
+      if (found) files.push(found);
     });
     // A paragraph's folder carries into the list after it.
     carried = block.list ? (nearest ?? carried) : nearest;
   }
 
   // Folders link only once their recorded files are known, these included.
-  for (const file of files) recordedAll.push(file.path, file.realpath);
+  for (const file of files)
+    if (!file.pending) recordedAll.push(file.path, file.realpath);
   const references = [...files];
   for (const folder of folders) {
     const verified = verify(folder.text, folder.linkable, folder.path);

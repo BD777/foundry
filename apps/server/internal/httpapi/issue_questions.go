@@ -30,7 +30,7 @@ func (s *Server) askPersonForMCP(r *http.Request, actor Actor, args map[string]j
 	if err != nil {
 		return "", &mcpToolError{http.StatusConflict, err.Error()}
 	}
-	s.events.Publish("issue_updated", issue)
+	s.issues.updated(issue)
 	return "Asked. End this turn now with a short summary of where you are; the Issue waits for the person, and Foundry resumes you in this candidate with their answer.", nil
 }
 
@@ -54,7 +54,7 @@ func (s *Server) handleAnswerIssueQuestion(w http.ResponseWriter, r *http.Reques
 		writeEvidenceMutation(w, nil, err)
 		return
 	}
-	s.events.Publish("issue_updated", issue)
+	s.issues.updated(issue)
 	go s.hub.DispatchReady()
 	writeJSON(w, http.StatusOK, issue)
 }

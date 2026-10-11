@@ -94,13 +94,26 @@ func (s *Server) saveAttachment(ctx context.Context, workspace store.WorkspacePr
 	}
 	defer src.Close()
 
-	name := sanitizeAttachmentName(header.Filename)
-	if name == "" {
-		name = "attachment"
-	}
 	mimeType := header.Header.Get("Content-Type")
 	if mimeType == "" {
-		mimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
+		mimeType = mime.TypeByExtension(strings.ToLower(filepath.Ext(sanitizeAttachmentName(header.Filename))))
+	}
+	return s.storeAttachment(ctx, workspace, now, index, header.Filename, mimeType, header.Size, func(buffer []byte) (int, error) {
+		count, err := io.ReadFull(src, buffer)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return count, errors.New("could not read attachment")
+		}
+		return count, nil
+	})
+}
+
+// storeAttachment writes a file into the workspace's attachments on its
+// device, chunk by chunk as read fills them (each up to the bytes still to
+// come), and names it as a message carries it.
+func (s *Server) storeAttachment(ctx context.Context, workspace store.WorkspaceProjection, now time.Time, index int, filename, mimeType string, size int64, read func(buffer []byte) (int, error)) (store.ChatAttachment, error) {
+	name := sanitizeAttachmentName(filename)
+	if name == "" {
+		name = "attachment"
 	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
@@ -110,14 +123,15 @@ func (s *Server) saveAttachment(ctx context.Context, workspace store.WorkspacePr
 	relativePath := now.Format("20060102") + "/" + id + "_" + name
 
 	var devicePath string
+	var err error
 	buffer := make([]byte, attachmentChunkBytes)
 	for offset := int64(0); ; {
-		count, readErr := io.ReadFull(src, buffer[:min(int64(len(buffer)), header.Size-offset)])
-		if readErr != nil && !errors.Is(readErr, io.EOF) {
+		count, readErr := read(buffer[:min(int64(len(buffer)), size-offset)])
+		if readErr != nil {
 			s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
-			return store.ChatAttachment{}, errors.New("could not read attachment")
+			return store.ChatAttachment{}, readErr
 		}
-		final := offset+int64(count) >= header.Size
+		final := offset+int64(count) >= size
 		devicePath, err = s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, offset, buffer[:count], final)
 		if err != nil {
 			if !errors.Is(err, ErrLocalDaemonNotConnected) {
@@ -140,7 +154,7 @@ func (s *Server) saveAttachment(ctx context.Context, workspace store.WorkspacePr
 		Name:     name,
 		Path:     devicePath,
 		MIMEType: mimeType,
-		Size:     header.Size,
+		Size:     size,
 		Kind:     kind,
 	}, nil
 }

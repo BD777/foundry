@@ -11,6 +11,12 @@ const { shouldDisplayAgentSessionEvent } =
   await import("../src/lib/agent-session-events.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
+/** The sections a card shows below the session's status line. */
+const panelSections = (card) =>
+  Object.entries(card ?? {})
+    .filter(([key, value]) => key !== "status" && value.length > 0)
+    .map(([key]) => key);
+
 function event(id, label, detail, metadata) {
   return {
     at: "2026-09-20T03:52:49.000Z",
@@ -61,8 +67,8 @@ test("projects the latest timer snapshot into the sidecar", () => {
     ]),
   ]);
   // Empty later snapshot means the agent deleted the timer, so the card has
-  // nothing left to show.
-  assert.equal(data, undefined);
+  // nothing left to show but the session's status line.
+  assert.deepEqual(panelSections(data), []);
 
   const live = chatContextCardForSessions([session([snapshotEvent])]);
   assert.equal(live?.timers.length, 1);

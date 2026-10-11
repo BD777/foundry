@@ -269,7 +269,7 @@ func TestAgentInAnIssueStaysInThatIssue(t *testing.T) {
 	if got := call(http.MethodPost, "/api/agent-sessions", `{"issueId":"iss_other","provider":"claude","prompt":"another issue"}`).Code; got != http.StatusForbidden {
 		t.Fatalf("an Issue's agent starts a session in another Issue: %d, want 403", got)
 	}
-	if body := mcp("cancel_session", `{"sessionId":"`+chat.ID+`"}`); !strings.Contains(body, "cannot cancel this session") {
+	if body := mcp("cancel_session", `{"sessionId":"`+chat.ID+`"}`); !strings.Contains(body, "cannot cancel "+chat.ID+": a session working in an Issue controls only that Issue's sessions") {
 		t.Fatalf("an Issue's agent cancels a chat outside its Issue: %s", body)
 	}
 	if current, _ := db.GetAgentSession(ctx, chat.ID); current.Status != "running" {

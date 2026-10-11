@@ -49,6 +49,12 @@ func (s *Store) setupSkillCatalog(ctx context.Context) error {
 			PRIMARY KEY (device_id, root, dir_name)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_device_skills_device ON device_skills (device_id)`,
+		// When each device last scanned, apart from device_skills: a scan
+		// that finds nothing new must not move what clients compare.
+		`CREATE TABLE IF NOT EXISTS device_skill_scans (
+			device_id TEXT PRIMARY KEY,
+			scanned_at TEXT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS promoted_skills (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -180,17 +186,32 @@ func (s *Store) SetDeviceSkillRoots(ctx context.Context, input store.SetDeviceSk
 	})
 }
 
-// ReplaceDeviceSkills stores one scan snapshot, replacing the device's prior
-// snapshot wholesale so removed directories disappear immediately.
-func (s *Store) ReplaceDeviceSkills(ctx context.Context, input store.ReplaceDeviceSkillsInput) error {
+// deviceSkillRow is what a scan stores about one skill folder. A row whose
+// content a scan reports again is left as it is: its updated_at, and with it
+// the device's skillsVersion (see ListDevices), moves only with a change.
+type deviceSkillRow struct {
+	name, description, mtimeLabel, dependencies, dependencyAnalysisError string
+	sourceDigest, manifest                                               string
+	sizeBytes                                                            int64
+	dependenciesAnalyzed                                                 bool
+}
+
+// ReplaceDeviceSkills stores one scan snapshot: folders that are gone are
+// deleted, new and changed ones written, unchanged ones left alone. It
+// reports whether the stored snapshot changed. The time of the scan itself
+// is kept apart (device_skill_scans), so a scan that finds nothing new
+// changes nothing a client compares.
+func (s *Store) ReplaceDeviceSkills(ctx context.Context, input store.ReplaceDeviceSkillsInput) (bool, error) {
 	deviceID := strings.TrimSpace(input.DeviceID)
 	if deviceID == "" {
-		return errors.New("device id is required")
+		return false, errors.New("device id is required")
 	}
 	now := formatTime(time.Now())
-	return s.withTx(ctx, func(tx *Store) error {
-		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_skills WHERE device_id = ?`, deviceID); err != nil {
-			return fmt.Errorf("replace device %s skills: %w", deviceID, err)
+	changed := false
+	err := s.withTx(ctx, func(tx *Store) error {
+		stored, err := tx.deviceSkillRows(ctx, deviceID)
+		if err != nil {
+			return err
 		}
 		seen := map[string]bool{}
 		for _, item := range input.Skills {
@@ -213,17 +234,92 @@ func (s *Store) ReplaceDeviceSkills(ctx context.Context, input store.ReplaceDevi
 			if err != nil {
 				return fmt.Errorf("encode skill dependencies for %s/%s: %w", root, dirName, err)
 			}
+			row := deviceSkillRow{
+				name:                    name,
+				description:             strings.TrimSpace(item.Description),
+				mtimeLabel:              strings.TrimSpace(item.MtimeLabel),
+				dependencies:            string(dependenciesJSON),
+				dependencyAnalysisError: item.DependencyAnalysisError,
+				sourceDigest:            item.SourceDigest,
+				manifest:                string(manifestJSON),
+				sizeBytes:               item.SizeBytes,
+				dependenciesAnalyzed:    item.DependenciesAnalyzed,
+			}
+			if previous, found := stored[key]; found && previous == row {
+				continue
+			}
+			changed = true
 			if _, err := tx.conn().ExecContext(ctx, `
 				INSERT INTO device_skills
 					(device_id, root, dir_name, name, description, size_bytes, mtime_label, dependencies, dependency_analysis_error, dependencies_analyzed, source_digest, manifest_json, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				deviceID, root, dirName, name, strings.TrimSpace(item.Description),
-				item.SizeBytes, strings.TrimSpace(item.MtimeLabel), string(dependenciesJSON), item.DependencyAnalysisError, item.DependenciesAnalyzed, item.SourceDigest, string(manifestJSON), now); err != nil {
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(device_id, root, dir_name) DO UPDATE SET
+					name = excluded.name, description = excluded.description, size_bytes = excluded.size_bytes,
+					mtime_label = excluded.mtime_label, dependencies = excluded.dependencies,
+					dependency_analysis_error = excluded.dependency_analysis_error,
+					dependencies_analyzed = excluded.dependencies_analyzed, source_digest = excluded.source_digest,
+					manifest_json = excluded.manifest_json, updated_at = excluded.updated_at`,
+				deviceID, root, dirName, row.name, row.description,
+				row.sizeBytes, row.mtimeLabel, row.dependencies, row.dependencyAnalysisError, row.dependenciesAnalyzed, row.sourceDigest, row.manifest, now); err != nil {
 				return fmt.Errorf("save scanned skill %s/%s: %w", root, dirName, err)
 			}
 		}
+		for key := range stored {
+			if seen[key] {
+				continue
+			}
+			changed = true
+			root, dirName, _ := strings.Cut(key, "\x00")
+			if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_skills WHERE device_id = ? AND root = ? AND dir_name = ?`,
+				deviceID, root, dirName); err != nil {
+				return fmt.Errorf("remove scanned skill %s/%s: %w", root, dirName, err)
+			}
+		}
+		if _, err := tx.conn().ExecContext(ctx, `
+			INSERT INTO device_skill_scans (device_id, scanned_at) VALUES (?, ?)
+			ON CONFLICT(device_id) DO UPDATE SET scanned_at = excluded.scanned_at`, deviceID, now); err != nil {
+			return fmt.Errorf("record skill scan of device %s: %w", deviceID, err)
+		}
 		return nil
 	})
+	if err != nil {
+		return false, err
+	}
+	return changed, nil
+}
+
+// deviceSkillRows is one device's stored snapshot, keyed by root and folder.
+func (s *Store) deviceSkillRows(ctx context.Context, deviceID string) (map[string]deviceSkillRow, error) {
+	rows, err := s.conn().QueryContext(ctx, `
+		SELECT root, dir_name, name, description, size_bytes, mtime_label, dependencies, dependency_analysis_error, dependencies_analyzed, source_digest, manifest_json
+		FROM device_skills WHERE device_id = ?`, deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("read device %s skills: %w", deviceID, err)
+	}
+	defer rows.Close()
+	stored := map[string]deviceSkillRow{}
+	for rows.Next() {
+		var root, dirName string
+		var row deviceSkillRow
+		if err := rows.Scan(&root, &dirName, &row.name, &row.description, &row.sizeBytes, &row.mtimeLabel,
+			&row.dependencies, &row.dependencyAnalysisError, &row.dependenciesAnalyzed, &row.sourceDigest, &row.manifest); err != nil {
+			return nil, fmt.Errorf("read device %s skill: %w", deviceID, err)
+		}
+		stored[root+"\x00"+dirName] = row
+	}
+	return stored, rows.Err()
+}
+
+// DeviceSkillsScannedAt is when the device's skill folders were last
+// scanned, changed or not; empty before its first scan.
+func (s *Store) DeviceSkillsScannedAt(ctx context.Context, deviceID string) (string, error) {
+	var scannedAt string
+	err := s.reader().QueryRowContext(ctx, `SELECT scanned_at FROM device_skill_scans WHERE device_id = ?`,
+		strings.TrimSpace(deviceID)).Scan(&scannedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return scannedAt, err
 }
 
 // ListDeviceSkills returns scan snapshots for one device, or every device

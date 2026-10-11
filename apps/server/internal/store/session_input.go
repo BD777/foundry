@@ -6,7 +6,8 @@ import (
 )
 
 // SessionInputEvents are the transcript events an input writes: a boundary
-// when the runtime changed, then the user's message.
+// when the runtime changed, then the user's message (a timer's prompt shows
+// as the timer firing).
 func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEvent {
 	var events []AgentSessionEvent
 	if note := strings.TrimSpace(input.ProfileTransitionNote); note != "" {
@@ -15,10 +16,14 @@ func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEven
 			Message: &TranscriptMessage{ID: input.ID + ":transition", At: input.At, Kind: "boundary", Text: note},
 		})
 	}
-	return append(events, AgentSessionEvent{
+	message := AgentSessionEvent{
 		ID: "evt_" + input.ID, SessionID: sessionID, At: input.At, Label: SessionInputEventLabel, Level: "info",
 		Message: &TranscriptMessage{ID: input.ID, At: input.At, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
-	})
+	}
+	if input.TimerFire != nil {
+		message.Metadata = &AgentSessionEventMetadata{TimerFire: input.TimerFire}
+	}
+	return append(events, message)
 }
 
 // NormalizeChatAttachments keeps the attachments a message can carry: each

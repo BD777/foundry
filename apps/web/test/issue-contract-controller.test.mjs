@@ -73,7 +73,7 @@ async function harness(t, fetcher) {
   };
   await render();
   // The Issue's records are read once the tab's stream opened.
-  const { isFoundryStreamOpen } = await import("../src/api.ts");
+  const { isFoundryStreamOpen } = await import("../src/stream/index.ts");
   if (!isFoundryStreamOpen())
     await act(async () => {
       EventSource.last?.onopen?.();
