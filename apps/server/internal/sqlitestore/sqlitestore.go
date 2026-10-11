@@ -193,6 +193,15 @@ func (s *Store) migrate(ctx context.Context) error {
 			label TEXT NOT NULL,
 			removed_at TEXT NOT NULL
 		)`,
+		// A workspace the person deleted from a device: that device's reports
+		// of it are ignored until the person adds the folder there again.
+		`CREATE TABLE IF NOT EXISTS deleted_workspaces (
+			workspace_id TEXT NOT NULL,
+			device_id TEXT NOT NULL,
+			local_path TEXT NOT NULL,
+			deleted_at TEXT NOT NULL,
+			PRIMARY KEY (workspace_id, device_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS workspace_display_names (
 			workspace_id TEXT PRIMARY KEY,
 			name TEXT NOT NULL
@@ -679,6 +688,9 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 		if _, err := tx.ExecContext(ctx, statement.query, id); err != nil {
 			return store.WorkspaceProjection{}, fmt.Errorf("%s: %w", statement.label, err)
 		}
+	}
+	if err := recordWorkspaceDeletion(ctx, tx, workspace, time.Now().UTC()); err != nil {
+		return store.WorkspaceProjection{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return store.WorkspaceProjection{}, fmt.Errorf("delete workspace: %w", err)

@@ -79,6 +79,18 @@ export function writeForgottenWorkspaces(
   writePrivateJSONAtomic(forgottenWorkspacesPath, entries);
 }
 
+/**
+ * Whether the person removed the workspace at this folder from Foundry. The
+ * daemon then neither serves nor reports it, also when it was started with
+ * it (a service installed with a folder passes it on every start).
+ */
+export function isForgottenWorkspaceFolder(workspacePath: string): boolean {
+  const path = resolve(workspacePath);
+  return readForgottenWorkspaces().some(
+    (entry) => entry.path !== "" && resolve(entry.path) === path,
+  );
+}
+
 export function rememberWorkspace(
   entry: Pick<WorkspaceRegistryEntry, "id" | "path">,
 ): void {

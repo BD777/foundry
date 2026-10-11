@@ -226,6 +226,11 @@ type daemonConnection struct {
 	registration        store.DaemonRegistration
 	registrations       map[string]store.DaemonRegistration
 	registrationMu      sync.Mutex
+	// workspaceChoiceMu orders the person adding a folder against telling
+	// the device to forget a deleted workspace (see forgetDeletedWorkspace);
+	// it guards deletedWorkspacesForgotten.
+	workspaceChoiceMu          sync.Mutex
+	deletedWorkspacesForgotten map[string]bool
 	// dispatchedSessions maps a session to the input this connection last
 	// sent, guarding against sending the same input twice; it is
 	// bookkeeping, not request correlation.
@@ -570,20 +575,21 @@ func (h *DaemonHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func newDaemonConnection(hub *DaemonHub, socket *websocket.Conn) *daemonConnection {
 	lifetime, endLifetime := context.WithCancel(context.Background())
 	return &daemonConnection{
-		activeSessions:     make(map[string]bool),
-		connectedAt:        time.Now(),
-		done:               make(chan struct{}),
-		dispatchedSessions: make(map[string]string),
-		endLifetime:        endLifetime,
-		finished:           make(chan struct{}),
-		hub:                hub,
-		lifetime:           lifetime,
-		registrations:      make(map[string]store.DaemonRegistration),
-		rpc:                newDaemonRPC(),
-		send:               make(chan wsEnvelope, 128),
-		replyReady:         make(chan struct{}, 1),
-		socket:             socket,
-		writeFinished:      make(chan struct{}),
+		activeSessions:             make(map[string]bool),
+		connectedAt:                time.Now(),
+		done:                       make(chan struct{}),
+		dispatchedSessions:         make(map[string]string),
+		endLifetime:                endLifetime,
+		finished:                   make(chan struct{}),
+		hub:                        hub,
+		lifetime:                   lifetime,
+		registrations:              make(map[string]store.DaemonRegistration),
+		deletedWorkspacesForgotten: make(map[string]bool),
+		rpc:                        newDaemonRPC(),
+		send:                       make(chan wsEnvelope, 128),
+		replyReady:                 make(chan struct{}, 1),
+		socket:                     socket,
+		writeFinished:              make(chan struct{}),
 	}
 }
 
@@ -798,16 +804,15 @@ func (h *DaemonHub) ForgetWorkspace(ctx context.Context, workspace store.Workspa
 	if connection == nil {
 		return store.ErrNotFound
 	}
-	if err := connection.forgetWorkspace(ctx, workspace.ID, workspace.LocalPath); err != nil {
-		return err
-	}
+	// The workspace is gone whatever the device answers: the connection
+	// must not report it again, not even when it closes.
 	connection.registrationMu.Lock()
 	if connection.registration.Workspace.ID == workspace.ID {
 		connection.registration.Workspace = store.WorkspaceProjection{}
 	}
 	delete(connection.registrations, workspace.ID)
 	connection.registrationMu.Unlock()
-	return nil
+	return connection.forgetWorkspace(ctx, workspace.ID, workspace.LocalPath)
 }
 
 // closeRemovedDevice permanently drops the live connection for a soft-removed
@@ -1036,12 +1041,13 @@ func (h *DaemonHub) syncRegistration(registration store.DaemonRegistration) erro
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
-	return h.registerDaemon(context.Background(), registration)
+	_, err := h.registerDaemon(context.Background(), registration)
+	return err
 }
 
 // registerDaemon stores a device's report and announces what it changed
 // that no other event carries (device_status_changed carries the device).
-func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.DaemonRegistration) error {
+func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.DaemonRegistration) (store.DaemonChanges, error) {
 	changes := store.DaemonChanges{Global: true}
 	if registration.Workspace.ID != "" {
 		changes.Workspaces = []string{registration.Workspace.ID}
@@ -1049,15 +1055,15 @@ func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.Daemo
 	if reporting, ok := h.store.(store.DaemonChangeStore); ok {
 		var err error
 		if changes, err = reporting.RegisterDaemonChanges(ctx, registration); err != nil {
-			return err
+			return store.DaemonChanges{}, err
 		}
 	} else if err := h.store.RegisterDaemon(ctx, registration); err != nil {
-		return err
+		return store.DaemonChanges{}, err
 	}
 	if h.events != nil {
 		h.events.announce(changes)
 	}
-	return nil
+	return changes, nil
 }
 
 // syncChats stores a device's native chats and sends viewers what changed
@@ -1092,9 +1098,8 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	registration.Device.Status = "connected"
 	registration.Device.LastSeenLabel = "online"
 	registration.Device.Capabilities = registration.Capabilities
-	if err := c.hub.registerDaemon(context.Background(), registration); err == nil {
-		c.hub.publishDeviceStatus(registration)
-	} else {
+	changes, err := c.hub.registerDaemon(context.Background(), registration)
+	if err != nil {
 		if errors.Is(err, store.ErrDeviceRemoved) {
 			// Permanent refusal: emit the application close frame so the worker
 			// stops reconnecting and waits for an explicit re-pair.
@@ -1102,6 +1107,14 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		}
 		return err
 	}
+	if changes.DeletedWorkspace != "" {
+		// The person deleted this workspace from the device; the device
+		// still serves its folder. Only the device's news counts, and the
+		// device is told again to forget the folder.
+		go c.forgetDeletedWorkspace(registration.Device.ID, registration.Workspace)
+		registration.Workspace = store.WorkspaceProjection{}
+	}
+	c.hub.publishDeviceStatus(registration)
 	if registration.ActiveSessionIDs != nil {
 		c.replaceActiveSessions(registration.ActiveSessionIDs)
 	}
@@ -1342,7 +1355,7 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	for _, registration := range registrations {
 		registration.Device.Status = "disconnected"
 		registration.Device.LastSeenLabel = "offline"
-		if err := h.registerDaemon(context.Background(), registration); err == nil {
+		if _, err := h.registerDaemon(context.Background(), registration); err == nil {
 			h.publishDeviceStatus(registration)
 		} else {
 			// A soft-removed device is expected to fail the offline upsert;
@@ -1996,6 +2009,9 @@ func (c *daemonConnection) listWorkspaceTree(ctx context.Context, workspaceID st
 }
 
 func (c *daemonConnection) setupWorkspace(ctx context.Context, path string) (store.WorkspaceProjection, error) {
+	if err := c.allowWorkspaceFolder(ctx, path); err != nil {
+		return store.WorkspaceProjection{}, err
+	}
 	payload, err := json.Marshal(wsSetupWorkspacePayload{Path: path})
 	if err != nil {
 		return store.WorkspaceProjection{}, err
@@ -2015,6 +2031,51 @@ func (c *daemonConnection) setupWorkspace(ctx context.Context, path string) (sto
 	}
 	go c.dispatchQueuedAgentSessions(registration.Workspace.ID)
 	return registration.Workspace, nil
+}
+
+// allowWorkspaceFolder takes back the person's deletion of the workspace at
+// folder on this device: they are adding the folder again, so the device's
+// reports of it count again (an answer that comes after the request timed
+// out included).
+func (c *daemonConnection) allowWorkspaceFolder(ctx context.Context, folder string) error {
+	deletions, ok := c.hub.store.(store.WorkspaceDeletionStore)
+	if !ok {
+		return nil
+	}
+	deviceID, _ := c.registrationSnapshot()
+	c.workspaceChoiceMu.Lock()
+	defer c.workspaceChoiceMu.Unlock()
+	return deletions.ClearWorkspaceDeletion(ctx, deviceID, folder)
+}
+
+// forgetDeletedWorkspace tells the device, once per connection, to forget a
+// workspace the person deleted from it that it still reports: it was
+// offline when the person deleted it, or its worker reports the folder it
+// was installed with.
+func (c *daemonConnection) forgetDeletedWorkspace(deviceID string, workspace store.WorkspaceProjection) {
+	deletions, ok := c.hub.store.(store.WorkspaceDeletionStore)
+	if !ok || workspace.ID == "" {
+		return
+	}
+	// Held across the request, so the person adding the folder again
+	// cannot slip in between the check and the forget.
+	c.workspaceChoiceMu.Lock()
+	defer c.workspaceChoiceMu.Unlock()
+	if c.deletedWorkspacesForgotten[workspace.ID] {
+		return
+	}
+	deleted, err := deletions.WorkspaceDeletedFromDevice(c.lifetime, workspace.ID, deviceID)
+	if err != nil || !deleted {
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.lifetime, 10*time.Second)
+	defer cancel()
+	if err := c.forgetWorkspace(ctx, workspace.ID, workspace.LocalPath); err != nil {
+		log.Printf("device %s: forgetting deleted workspace %s failed: %v", deviceID, workspace.ID, err)
+		return
+	}
+	c.deletedWorkspacesForgotten[workspace.ID] = true
+	log.Printf("device %s still served deleted workspace %s (%s); told it to forget the folder", deviceID, workspace.ID, workspace.LocalPath)
 }
 
 func (c *daemonConnection) forgetWorkspace(ctx context.Context, workspaceID string, path string) error {

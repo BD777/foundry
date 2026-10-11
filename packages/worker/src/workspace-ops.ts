@@ -47,6 +47,7 @@ import { deviceSystem, getDevice } from "./device.js";
 import { runningWorker } from "./worker-identity.js";
 import { optionValue, safeID, sizeLabel } from "./utils.js";
 import {
+  isForgottenWorkspaceFolder,
   readRegistry,
   readWorkspace,
   workspaceFilePath,
@@ -525,7 +526,8 @@ export function serverURLFromArgs(args: string[]): string {
  * The workspace a daemon starts with, or "" for a device that has none yet:
  * it connects anyway and gets its workspaces as the person adds them. Only a
  * workspace named on the command line or recorded for this daemon counts;
- * the folder it happens to be started from never does.
+ * the folder it happens to be started from never does, and neither does one
+ * the person removed (a service installed with it still names it).
  */
 export function daemonWorkspacePath(args: string[]): string {
   const path = optionValue(
@@ -533,7 +535,7 @@ export function daemonWorkspacePath(args: string[]): string {
     "--workspace",
     readDaemonConfig()?.workspacePath,
   );
-  return path ? resolve(path) : "";
+  return path && !isForgottenWorkspaceFolder(path) ? resolve(path) : "";
 }
 
 /**

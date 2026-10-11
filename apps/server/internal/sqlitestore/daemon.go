@@ -69,6 +69,17 @@ func (s *Store) RegisterDaemonChanges(ctx context.Context, input store.DaemonReg
 		if err := tx.assertDeviceNotRemoved(ctx, input.Device.ID); err != nil {
 			return err
 		}
+		input := input
+		// A workspace the person deleted from this device stays deleted:
+		// only the device's own news is kept.
+		deleted, err := tx.WorkspaceDeletedFromDevice(ctx, input.Workspace.ID, input.Device.ID)
+		if err != nil {
+			return err
+		}
+		if deleted {
+			changes.DeletedWorkspace = input.Workspace.ID
+			input.Workspace = store.WorkspaceProjection{}
+		}
 		before, err := tx.daemonState(ctx, input.Device.ID, input.Workspace.ID)
 		if err != nil {
 			return err

@@ -901,14 +901,15 @@ function runWebSocketSession(options: {
 
     /**
      * The registration a reply carries: the daemon's first workspace, or the
-     * device alone while it has none.
+     * device alone while it has none. A folder the person removed is never
+     * it, not even the one the daemon was started with.
      */
     function currentRegistration() {
       // A registered folder can vanish (e.g. a test's temp folder); describe
       // the device with one that still exists rather than fail.
-      const workspacePath =
-        options.workspacePath ||
-        knownWorkspacePaths().find((path) => existsSync(path));
+      const workspacePath = knownWorkspacePaths().find((path) =>
+        existsSync(path),
+      );
       return workspacePath
         ? daemonRegistrationWithActiveSessions(
             workspacePath,
@@ -2227,7 +2228,7 @@ function runWebSocketSession(options: {
         try {
           const targetWorkspacePath = payload.profile.workspaceId
             ? workspacePathFor(payload.profile.workspaceId)
-            : options.workspacePath || knownWorkspacePaths()[0] || "";
+            : (knownWorkspacePaths()[0] ?? "");
           const profile = upsertAgentProfileConfig(
             payload.profile,
             targetWorkspacePath,

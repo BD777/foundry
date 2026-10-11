@@ -87,6 +87,36 @@ func workspaceRole(need string, resolve workspaceResolver) accessRule {
 
 var errWorkspaceRequired = errors.New("workspaceId is required")
 
+// workspaceRoleOrDeletedFromDevice is workspaceRole, except that a device may
+// read a workspace the person deleted from it while it stays deleted, which
+// holds nothing. Workers up to 0.5.7-dev.12 read the Issues of the folder
+// their service names on every start, deleted or not, and exit when that
+// read fails; until deletions were remembered, the deleted workspace coming
+// back on the same start hid this.
+func workspaceRoleOrDeletedFromDevice(need string, resolve workspaceResolver) accessRule {
+	rule := workspaceRole(need, resolve)
+	return accessRule{kind: rule.kind + "|deleted-from-device", check: func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.deletedFromRequestingDevice(r, resolve) || rule.check(s, w, r)
+	}}
+}
+
+func (s *Server) deletedFromRequestingDevice(r *http.Request, resolve workspaceResolver) bool {
+	actor := actorFromContext(r.Context())
+	deletions, ok := s.store.(store.WorkspaceDeletionStore)
+	if !ok || actor.Kind != ActorDaemon || actor.DeviceID == "" {
+		return false
+	}
+	workspaceID, err := resolve(s, r)
+	if err != nil || workspaceID == "" {
+		return false
+	}
+	if _, err := s.store.GetWorkspace(r.Context(), workspaceID); !errors.Is(err, store.ErrNotFound) {
+		return false
+	}
+	deleted, err := deletions.WorkspaceDeletedFromDevice(r.Context(), workspaceID, actor.DeviceID)
+	return err == nil && deleted
+}
+
 // issueCreatorOr lets the Issue's creator act with Member access and everyone
 // else only with `need` (confirming the contract and verifying one's own
 // Issue, §2.1).
@@ -377,7 +407,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/chats/{id}/queue/{itemId}/steer", s.handleSteerChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("POST /api/chats/{id}/queue/{itemId}/retry", s.handleRetryChatQueueItem, workspaceRole(member, chatOrSessionWorkspace("id"))),
 
-		fn("GET /api/issues", s.handleListIssues, workspaceRole(viewer, queryWorkspace())),
+		fn("GET /api/issues", s.handleListIssues, workspaceRoleOrDeletedFromDevice(viewer, queryWorkspace())),
 		fn("POST /api/issues", s.handleCreateIssue, inHandler()),
 		fn("GET /api/issues/{id}", s.handleGetIssue, workspaceRole(viewer, issueWorkspace("id"))),
 		fn("GET /api/issues/{id}/contracts", s.handleContracts, workspaceRole(viewer, issueWorkspace("id"))),
