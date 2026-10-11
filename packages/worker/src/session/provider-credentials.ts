@@ -182,7 +182,7 @@ async function renewClaudeLogin(
   options: {
     now?: () => number;
     expiry?: () => number | undefined;
-    run?: (command: string, args: string[], cwd: string) => Promise<void>;
+    run?: (args: string[], cwd: string) => Promise<void>;
     writable?: () => boolean;
   } = {},
 ): Promise<RenewalOutcome> {
@@ -201,7 +201,6 @@ async function renewClaudeLogin(
   const cwd = mkdtempSync(join(tmpdir(), "foundry-claude-login-"));
   try {
     await (options.run ?? runClaude)(
-      resolveClaudeCommand(),
       [
         "--print",
         "Reply with the single word OK.",
@@ -260,13 +259,9 @@ function claudeLoginEnvironment(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runClaude(
-  command: string,
-  args: string[],
-  cwd: string,
-): Promise<void> {
+function runClaude(args: string[], cwd: string): Promise<void> {
   return new Promise((done, fail) => {
-    const child = spawn(command, args, {
+    const child = spawn(resolveClaudeCommand(), args, {
       cwd,
       env: claudeLoginEnvironment(),
       stdio: ["ignore", "ignore", "ignore"],

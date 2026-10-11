@@ -158,7 +158,7 @@ test("a running sandbox's copy follows the device while it runs", async (t) => {
 test("the device's Claude renews its own login only near expiry, where it can keep it", async () => {
   const now = () => 10_000_000;
   const runs = [];
-  const run = async (command, args) => runs.push(args);
+  const run = async (args) => runs.push(args);
   let expiry = now() + 60 * 60 * 1000;
   const options = {
     now,
@@ -172,7 +172,7 @@ test("the device's Claude renews its own login only near expiry, where it can ke
   expiry = now() + 60 * 1000;
   const renewing = {
     ...options,
-    run: async (command, args) => {
+    run: async (args) => {
       runs.push(args);
       expiry = now() + 8 * 60 * 60 * 1000;
     },
