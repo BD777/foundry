@@ -1430,7 +1430,7 @@ func (s *Server) handleDaemonRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "registration device does not match its credential")
 		return
 	}
-	if err := s.hub.registerDaemon(r.Context(), input); err != nil {
+	if _, err := s.hub.registerDaemon(r.Context(), input); err != nil {
 		if errors.Is(err, store.ErrDeviceRemoved) {
 			writeError(w, http.StatusGone, "device_removed")
 			return

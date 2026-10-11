@@ -138,6 +138,7 @@ func (s *Store) ResetDemo(ctx context.Context) error {
 		"provider_health",
 		"devices",
 		"workspaces",
+		"deleted_workspaces",
 	}
 	for _, table := range tables {
 		if _, err := s.conn().ExecContext(ctx, `DELETE FROM `+table); err != nil {

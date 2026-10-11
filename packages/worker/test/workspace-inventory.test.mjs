@@ -5,12 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   daemonCapabilities,
+  daemonWorkspacePath,
   explicitWorkspacePath,
   withServedWorkspaces,
 } from "../dist/workspace-ops.js";
 import {
+  forgetWorkspaceRegistration,
   readRegistry,
   recordExplicitWorkspace,
+  upsertRegistry,
   writeForgottenWorkspaces,
   writeRegistry,
 } from "../dist/workspaces.js";
@@ -89,4 +92,28 @@ test("the current folder is never recorded, nor a removed or non-workspace folde
   t.after(() => rmSync(plain, { recursive: true, force: true }));
   assert.equal(recordExplicitWorkspace(plain), false);
   assert.deepEqual(readRegistry(), []);
+});
+
+test("a daemon started with a folder the person removed starts without it, until the folder is added again", (t) => {
+  writeRegistry([]);
+  const folder = workspaceFolder(t, "ws_removed");
+  // A service installed before devices started without a workspace passes
+  // its folder on every start.
+  const args = ["daemon", "--workspace", folder];
+  assert.equal(daemonWorkspacePath(args), folder);
+  forgetWorkspaceRegistration("ws_removed", folder);
+  assert.equal(daemonWorkspacePath(args), "");
+  assert.equal(
+    daemonWorkspacePath(["daemon", "--workspace", `${folder}/`]),
+    "",
+  );
+  // Adding the folder again (setup_workspace registers it) brings it back.
+  upsertRegistry({
+    id: "ws_removed",
+    name: "foundry",
+    path: folder,
+    baseline: "main",
+    registeredAt: "2026-10-11T00:00:00.000Z",
+  });
+  assert.equal(daemonWorkspacePath(args), folder);
 });

@@ -209,11 +209,12 @@ Tables by file (from the `CREATE TABLE` statements in
 `apps/server/internal/sqlitestore/`):
 
 - `sqlitestore.go`: `devices`, `removed_devices`, `workspaces`,
-  `workspace_display_names`, `provider_health`, `agent_profiles`, `agents`,
-  `workspace_files`, `issues`, `runs`, `run_events`, `agent_sessions`,
-  `agent_session_events`, `agent_session_tokens`, `acceptance_artifacts`,
-  `chat_titles`, `chat_layouts`, `chat_deletions`, `chats`, `assets`,
-  `skills`, `secret_records`, `secret_store_meta`, `evidence_records`,
+  `deleted_workspaces`, `workspace_display_names`, `provider_health`,
+  `agent_profiles`, `agents`, `workspace_files`, `issues`, `runs`,
+  `run_events`, `agent_sessions`, `agent_session_events`,
+  `agent_session_tokens`, `acceptance_artifacts`, `chat_titles`,
+  `chat_layouts`, `chat_deletions`, `chats`, `assets`, `skills`,
+  `secret_records`, `secret_store_meta`, `evidence_records`,
   `evidence_requests`.
 - `accounts.go`: `users`, `user_sessions`, `user_invites`.
 - `ownership.go`: `workspace_members`.

@@ -43,6 +43,9 @@ type DaemonChanges struct {
 	Workspaces []string
 	// Parts says which of those changed, when the store can tell.
 	Parts DaemonChangedParts
+	// DeletedWorkspace is the workspace the report named that the person
+	// deleted from this device; nothing of it was stored.
+	DeletedWorkspace string
 }
 
 // DaemonChangedParts names what a device report changed. Unless Known, any
@@ -60,6 +63,16 @@ type DaemonChangedParts struct {
 type DaemonChangeStore interface {
 	RegisterDaemonChanges(ctx context.Context, input DaemonRegistration) (DaemonChanges, error)
 	SyncChatsChanges(ctx context.Context, input SyncChatsInput) (DaemonChanges, error)
+}
+
+// WorkspaceDeletionStore remembers the workspaces a person deleted from a
+// device, whose later reports by that device change nothing (see
+// DaemonChanges.DeletedWorkspace). Adding the folder again is the way back.
+type WorkspaceDeletionStore interface {
+	WorkspaceDeletedFromDevice(ctx context.Context, workspaceID, deviceID string) (bool, error)
+	// ClearWorkspaceDeletion takes back the deletion of the device's
+	// workspace at folder: the person is adding that folder again.
+	ClearWorkspaceDeletion(ctx context.Context, deviceID, folder string) error
 }
 
 // DeviceSessionStore lists what a device still owes: every queued, running or
