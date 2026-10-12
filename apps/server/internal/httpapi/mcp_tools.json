@@ -1,7 +1,12 @@
 [
   {
     "name": "list_workspaces",
-    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member (a session working in an Issue: only the Issue's workspace); start work in another one only when the person asks for it there or the task needs what only that workspace's device has (list_resources).",
+    "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member (a session working in an Issue: only the Issue's workspace). A session started in a workspace runs on its device, under that device's model logins; the device may be another person's.",
+    "summary": "Lists the workspaces the agent can reach, with each one's device and the agent's access there.",
+    "limits": [
+      "Every workspace of the person who started the session, as at most Member.",
+      "A session working in an Issue reaches only the Issue's workspace."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {}
@@ -13,6 +18,11 @@
   {
     "name": "list_resources",
     "description": "List what each device you can reach offers sessions (installed browsers, macOS screen control), whether it is online, and the workspaces on it where you may start a session. To use a resource on another device, start a session in one of that device's workspaces (create_session with workspaceId). Resources are the device's own software; nothing is installed for you.",
+    "summary": "Shows what each reachable device offers sessions (browsers, macOS screen control), whether it is online and where a session may start on it.",
+    "limits": [
+      "Only devices hosting a workspace the agent reaches.",
+      "Lists the device's own software; nothing is installed for the agent."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -30,6 +40,10 @@
   {
     "name": "list_profiles",
     "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: the calling session's device by default, or another device hosting a workspace you reach (see list_workspaces). A profile belongs to its device.",
+    "summary": "Lists the agent profiles (runtime, model, status) a session can start with on one device.",
+    "limits": [
+      "The calling session's device, or another device hosting a workspace the agent reaches."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -51,6 +65,10 @@
   {
     "name": "list_models",
     "description": "List the models a profile can run (its endpoint's catalog), on your device by default or another device hosting a workspace you reach.",
+    "summary": "Lists the models a profile can run, from its endpoint's catalog.",
+    "limits": [
+      "The calling session's device, or another device hosting a workspace the agent reaches."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -70,7 +88,16 @@
   },
   {
     "name": "create_session",
-    "description": "Create a new Foundry session and deliver it a task. With a session token the new session records you as its parent; in your own workspace (the default) it runs on your device, joins your orchestration group and, without profileId and provider, runs like you. Name workspaceId to start it in another workspace you reach as Member (list_workspaces), on that workspace's device, with your runtime unless you choose a profile there; do that only when the person asked for work there or the task needs a resource only that device has (list_resources). Returns the queued session unless wait=true, which blocks until it settles and returns its response. Parallel sessions writing the same repository race: split independent work and keep one writer per target. To continue an existing session use send_message instead of creating a new one.",
+    "description": "Create a new Foundry session and deliver it a task. With a session token the new session records you as its parent; in your own workspace (the default) it runs on your device, joins your orchestration group and, without profileId and provider, runs like you. Name workspaceId to start it in another workspace you reach as Member (list_workspaces), on that workspace's device, with your runtime unless you choose a profile there, under that device's model logins (list_resources shows what each device offers). Every session takes a slot on its device, spends model usage and adds a chat to the person's list. Returns the queued session unless wait=true, which blocks until it settles and returns its response. Outside an Issue the new session works in the workspace folder itself, not a copy: sessions writing the same files at once race. A session has at most 8 sessions it started queued, running or blocked at once, and sessions that start sessions nest at most 4 levels below the first one; past either limit create_session is refused. send_message continues an existing session with its context.",
+    "summary": "Starts a new session with a task, here or in another workspace, and can wait for its answer or start it as a verifier.",
+    "limits": [
+      "At most 8 sessions it started queued, running or blocked at once.",
+      "Sessions that start sessions nest at most 4 levels below the first one.",
+      "Needs Member in the target workspace; the session runs on that workspace's device, under its logins.",
+      "At most 10 attachments, each at most 25 MB, from the caller's own workspace folder.",
+      "Waiting lasts at most 10 minutes per call.",
+      "A verifier runs in the read-only verification sandbox: the workspace is read-only at the operating-system level, it writes only to its temporary directory, and its Foundry tools only read."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -115,11 +142,11 @@
           "items": {
             "type": "string"
           },
-          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into the .foundry/attachments folder of the workspace the session runs in, on its device, and lists their paths at the top of the message."
+          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into one new folder under .foundry/attachments of the workspace the session runs in, on its device, under their own names, so files sent together can import or include each other. The result's deliveredAttachments and the top of the message list their paths. A session on another device cannot read your workspace: only files handed over here reach it."
         },
         "verification": {
           "type": "boolean",
-          "description": "Start an independent verifier, to check another session's work. It reads the workspace and runs commands that only read (tests, linters, type checks, git status and diff); the device's sandbox keeps the workspace read-only, so anything that would change it fails, and its commands write only to its own temporary directory outside the workspace. It has no file editing tools and, of the Foundry tools, only those that read; Claude stops after 20 turns per message. A verifier on a device whose worker is older is refused: that device needs a worker update."
+          "description": "Start the session as an independent verifier: it runs in the workspace inside a sandbox that keeps the workspace read-only at the operating-system level, for the agent and every command it runs, so tests, linters and git run while anything that would change the workspace fails; it writes only to its own temporary directory outside the workspace, and of the Foundry tools it has only those that read. A device whose worker is older refuses a verifier until its worker is updated."
         },
         "forkSessionId": {
           "type": "string",
@@ -147,7 +174,12 @@
   },
   {
     "name": "handoff_session",
-    "description": "Start a fresh session that continues another one from facts only: its original goal, last recorded result and status, plus your prompt; never its transcript. Use it instead of forkSessionId when the old transcript is misleading or too long. The source is any session you can read. The new session starts in workspaceId if given (one you reach as Member), else in the source's workspace; without profileId it runs like the source (its profile on the same device, else its runtime). With a session token it records you as its parent.",
+    "description": "Start a fresh session that continues another one from facts only: its original goal, last recorded result and status, plus your prompt; never its transcript. Use it instead of forkSessionId when the old transcript is misleading or too long. With a session token the source is a session you control (one your person or their agents started); otherwise any session you can read. The new session starts in workspaceId if given (one you reach as Member), else in the source's workspace; without profileId it runs like the source (its profile on the same device, else its runtime). With a session token it records you as its parent.",
+    "summary": "Starts a fresh session that continues another from its goal, last result and status plus a new prompt, never its transcript.",
+    "limits": [
+      "Only sessions the person or their agents started.",
+      "Needs Member in the target workspace."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -176,6 +208,8 @@
   {
     "name": "list_sessions",
     "description": "List the sessions of one workspace, newest activity first, one line each: id, title, status, runtime, profile, device, workspaceId, parentSessionId, activityAt (and issueId, role, source when set). Yours by default; any workspace you reach with workspaceId. parentSessionId lists the sessions one session started (in that session's workspace unless you name another). Pages of limit sessions; pass the nextCursor a page returns as cursor for the next. Read one session's details with read_context.",
+    "summary": "Lists a workspace's sessions, newest activity first, one line each.",
+    "limits": ["Pages of at most 100 sessions, 30 by default."],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -207,7 +241,9 @@
   },
   {
     "name": "list_group_sessions",
-    "description": "List the sessions of one orchestration group in list order, in the same one-line form as list_sessions (a device's native chat in the group has kind native_chat). read_context's summary names a session's group. A replacement orchestrator uses this to take over a group: control does not depend on who started a session.",
+    "description": "List the sessions of one orchestration group in list order, in the same one-line form as list_sessions (a device's native chat in the group has kind native_chat). read_context's summary names a session's group. A replacement orchestrator finds a group's sessions here; it controls those its person or their agents started.",
+    "summary": "Lists the sessions of one orchestration group in list order.",
+    "limits": ["Only groups in workspaces the agent reaches."],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -228,6 +264,10 @@
   {
     "name": "get_session",
     "description": "The same compact summary as read_context with scope=summary, of any session or synced native chat you can read in any workspace you reach: title, status and error, runtime/profile/model, device (and whether it is online), workspace, group, times, lineage, event counts, the last input (first 300 characters) and answer (first 1000), the last error event with the events just before it, and background tasks still open in its latest turn. Read events with read_context scope=events.",
+    "summary": "Reads one session's or native chat's summary: status, runtime, lineage, last input and answer, last error.",
+    "limits": [
+      "The last input is cut to 300 characters and the answer to 1000."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -244,7 +284,13 @@
   },
   {
     "name": "read_context",
-    "description": "Read a session or native chat you can read, in any workspace you reach, by id or Foundry link. scope=summary (default) is get_session's summary; events lists its events one line each (time | level | label | detail), filtered by levels, labels and query, newest with tail or paged with after/before cursors, within maxBytes; thread (the session's full transcript), transcript (raw native chat) and subagents (the session's native subagents; with taskId, one subagent's transcript) return JSON cut at maxBytes. What a session produced: changes lists the files its own tools wrote and its answers named, one line each with the lines added and removed (with path: that file's diff, the whole session's or one turn's with inputId); file with path reads one of those files as it is now on the session's device; background lists the commands it left running in the background (with taskId: the end of one's output, which needs Member in the session's workspace). Start with summary and events; read thread or transcript only when you need the whole conversation.",
+    "description": "Read a session or native chat you can read, in any workspace you reach, by id or Foundry link. scope=summary (default) is get_session's summary; events lists its events one line each (time | level | label | detail), filtered by levels, labels and query, newest with tail or paged with after/before cursors, within maxBytes; thread (the session's full transcript), transcript (raw native chat) and subagents (the session's native subagents; with taskId, one subagent's transcript) return JSON cut at maxBytes. What a session produced: changes lists the files its own tools wrote and its answers named, one line each with the lines added and removed (with path: that file's diff, the whole session's or one turn's with inputId); file with path reads one of those files as it is now on the session's device; background lists the commands it left running in the background (with taskId: the end of one's output, which needs Member in the session's workspace). A thread or transcript can run to megabytes.",
+    "summary": "Reads a session in depth: its events, transcript, native subagents, the files it changed and the commands it left running.",
+    "limits": [
+      "Output is cut at maxBytes, 12000 by default.",
+      "Pages of at most 500 events, with up to 5 events of context each.",
+      "A background command's output needs Member in the session's workspace."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -330,6 +376,11 @@
   {
     "name": "list_issues",
     "description": "List the Issues of one workspace, most recently updated first, one line each: id, shortId, title, status, contract (its state and confirmed revision), run (the status of its latest execution), question (the kind of question waiting for the person, if any) and verified (required criteria passed of total). Yours by default; any workspace you reach with workspaceId. A session working in an Issue sees only that Issue. Read one with get_issue. Issues are read-only here: the person drives them in Foundry.",
+    "summary": "Lists a workspace's Issues with their status, contract, latest run and verification progress.",
+    "limits": [
+      "Read-only: the person drives Issues in Foundry.",
+      "A session working in an Issue sees only that Issue."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -361,6 +412,11 @@
   {
     "name": "get_issue",
     "description": "Read one Issue you can reach: status (and why it is blocked), the person's request, the confirmed contract (revision, goal, scope, constraints and each criterion with its latest verification verdict) and whether a newer draft waits for confirmation, the question waiting for the person, the verification summary and whether the latest review allows acceptance, and its latest execution run (its session id, which read_context reads, status and error).",
+    "summary": "Reads one Issue: the request, the confirmed contract with each criterion's verdict, the waiting question and the latest run.",
+    "limits": [
+      "Read-only: the person drives Issues in Foundry.",
+      "A session working in an Issue sees only that Issue."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -377,7 +433,15 @@
   },
   {
     "name": "send_message",
-    "description": "Send a message to a session you control: any session in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions), except an Issue's own execution or clarification, which their Issue drives. A running session is steered (Claude adjusts its active turn; Codex queues it for the next one). An idle session takes it as its next input and continues the same native session; profileId/provider/model switch its runtime first (only while it is idle). wait=true blocks until it settles and returns its response.",
+    "description": "Send a message to a session you control: one your person or their agents started, in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions), except an Issue's own execution or clarification, which their Issue drives. A running session is steered (Claude adjusts its active turn; Codex queues it for the next one). An idle session takes it as its next input and continues the same native session; profileId/provider/model switch its runtime first (only while it is idle). wait=true blocks until it settles and returns its response.",
+    "summary": "Messages a session: steers a running one or continues an idle one, and can switch its runtime first.",
+    "limits": [
+      "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
+      "Never an Issue's execution or clarification: their Issue drives them.",
+      "The runtime switches only while the session is idle.",
+      "At most 10 attachments, each at most 25 MB, from the caller's own workspace folder.",
+      "Waiting lasts at most 10 minutes per call."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -394,7 +458,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into the .foundry/attachments folder of the workspace the session runs in, on its device, and lists their paths at the top of the message."
+          "description": "Files to hand over, as a person's attachments arrive: paths of files in your own workspace folder (absolute, or relative to it), or ids (att_…) of attachments your session was given. Foundry copies each, at most 10 files of up to 25 MB each, into one new folder under .foundry/attachments of the workspace the session runs in, on its device, under their own names, so files sent together can import or include each other. The result's deliveredAttachments and the top of the message list their paths. A session on another device cannot read your workspace: only files handed over here reach it."
         },
         "profileId": {
           "type": "string"
@@ -420,7 +484,12 @@
   },
   {
     "name": "cancel_session",
-    "description": "Stop the work a session you control is doing (any session in a workspace you reach as Member; a session working in an Issue: only that Issue's sessions). Cancelling never cascades: sessions it created keep running. The session stays usable: send_message continues it.",
+    "description": "Stop the work a session you control is doing (one your person or their agents started, in a workspace you reach as Member; a session working in an Issue: only that Issue's sessions). Cancelling never cascades: sessions it created keep running. The session stays usable: send_message continues it.",
+    "summary": "Stops the work a session is doing; the session stays usable.",
+    "limits": [
+      "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
+      "Never cascades: the sessions it started keep running."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -434,7 +503,9 @@
   },
   {
     "name": "wait_session",
-    "description": "Block until a session you can read reaches one of the requested statuses (default: completed/failed/canceled) or the timeout elapses, and return it with its response once settled. Prefer this over polling loops.",
+    "description": "Block until a session you can read reaches one of the requested statuses (default: completed/failed/canceled) or the timeout elapses, and return it with its response once settled.",
+    "summary": "Waits until a session reaches the given statuses and returns its answer once it settles.",
+    "limits": ["Waits at most 10 minutes per call."],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -462,7 +533,12 @@
   },
   {
     "name": "rename_session",
-    "description": "Rename a session you control (1-120 characters): any session in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions).",
+    "description": "Rename a session you control (1-120 characters): one your person or their agents started, in a workspace you reach as Member (a session working in an Issue: only that Issue's sessions).",
+    "summary": "Renames a session.",
+    "limits": [
+      "Only sessions the person or their agents started, in workspaces reached as Member; in an Issue, only the Issue's sessions.",
+      "Titles of 1–120 characters."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -480,6 +556,11 @@
   {
     "name": "ask_person",
     "description": "Ask the person something only they can decide (a choice the confirmed contract leaves open) or allow (a side effect outside the candidate, such as deploying or sending a message). Only an Issue's execution has this tool. After calling it, end your turn with a short summary of where you are; the Issue waits for the person and Foundry resumes you in the same candidate with their answer. Ask one question at a time and never about anything you can decide yourself.",
+    "summary": "Asks the person what only they can decide or allow; the Issue waits for the answer and Foundry resumes the session with it.",
+    "limits": [
+      "Only an Issue's execution has it.",
+      "Questions of up to 4000 bytes, with up to 6 suggested answers."
+    ],
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -501,6 +582,57 @@
         }
       },
       "required": ["question"]
+    }
+  },
+  {
+    "name": "feishu_events",
+    "description": "Receive Feishu events (messages, card actions, approvals: whatever the app subscribes to in the Feishu console) of a Feishu app your person connected in Connectors. Call it without subscriptionId to subscribe: it returns a subscriptionId and buffers matching events from then on. Call it again with that subscriptionId to get what arrived since the last call, waiting up to timeoutMs for the first event; events come in order with a cursor each, and the full Feishu payload. Calling again acknowledges what the last call returned; to read an answer you lost, pass the cursor it started from. Unsubscribe when done. You may reply as the bot with feishu-cli; `feishu-cli event consume` receives the same events.",
+    "summary": "Subscribes to a connected Feishu app's events and returns them by cursor, waiting for the next.",
+    "limits": [
+      "Only apps the session's person connected in Connectors.",
+      "At most 8 subscriptions per session, each buffering at most 500 unread events; beyond that the oldest are dropped and counted.",
+      "At most 100 events per call; waits at most 10 minutes per call.",
+      "A subscription nobody calls for 30 minutes ends."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "subscriptionId": {
+          "type": "string",
+          "description": "The subscription to read (fsub_…); omit to subscribe."
+        },
+        "appId": {
+          "type": "string",
+          "description": "When subscribing: the Feishu app id (cli_…) or the Connectors app id (xapp_…). Optional if your person connected exactly one Feishu app."
+        },
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "When subscribing: event types to keep, e.g. [\"im.message.receive_v1\"]; default every type."
+        },
+        "chatId": {
+          "type": "string",
+          "description": "When subscribing: keep only events in this chat (oc_…)."
+        },
+        "cursor": {
+          "type": "number",
+          "description": "Return events after this cursor; default after the last call's answer."
+        },
+        "maxEvents": {
+          "type": "number",
+          "description": "At most this many events, up to 100 (default 50). more: true says others are waiting."
+        },
+        "timeoutMs": {
+          "type": "number",
+          "description": "How long to wait for the first event, at most 600000 (10 minutes); default 0 when subscribing and 60000 when reading. 0 answers at once."
+        },
+        "unsubscribe": {
+          "type": "boolean",
+          "description": "End the subscription named by subscriptionId."
+        }
+      }
     }
   }
 ]

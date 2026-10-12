@@ -152,7 +152,9 @@ export function AgentComposer({
         {runtimeControls && !fixedRuntime ? (
           <AgentRuntimeControls
             {...runtimeControls}
-            showPermissions={showPermissions}
+            showPermissions={
+              showPermissions && runtimeControls.showPermissions !== false
+            }
             side={side}
             disabled={controlsDisabled}
           />

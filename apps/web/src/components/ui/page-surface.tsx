@@ -4,8 +4,8 @@ import { cn } from "../../lib/cn";
 type PageSurfaceVariant =
   | "accounts"
   | "assets"
+  | "connectors"
   | "devices"
-  | "externalAccounts"
   | "library"
   | "members"
   | "profiles"

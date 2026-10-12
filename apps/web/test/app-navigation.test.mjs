@@ -36,6 +36,7 @@ const routes = [
   { view: "chats", selectedChatId: "chat_7" },
   { view: "assets" },
   { view: "skills" },
+  { view: "foundrySkill" },
   { view: "settings" },
   { view: "feishu" },
   { view: "sharing" },
@@ -50,11 +51,27 @@ const routes = [
   { view: "locations", selectedDeviceId: "dev2" },
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
   { view: "profiles" },
+  { view: "connectors", connectorTab: "feishu" },
 ];
 
 test("workspace sections have canonical URLs while legacy links still resolve", () => {
-  assert.deepEqual(parseAppRoute("/profiles"), { view: "profiles" });
-  assert.equal(pathForAppRoute({ view: "profiles" }), "/connections");
+  // Model providers was "Server connections" at /connections (and /profiles).
+  for (const path of ["/model-providers", "/connections", "/profiles"])
+    assert.deepEqual(parseAppRoute(path), { view: "profiles" });
+  assert.equal(pathForAppRoute({ view: "profiles" }), "/model-providers");
+  // Connectors has one tab per service in its path; the bare page and the
+  // old External accounts page open the first tab.
+  for (const path of [
+    "/connectors",
+    "/connectors/feishu",
+    "/connectors/unknown",
+    "/external-accounts",
+  ])
+    assert.deepEqual(parseAppRoute(path), {
+      view: "connectors",
+      connectorTab: "feishu",
+    });
+  assert.equal(pathForAppRoute({ view: "connectors" }), "/connectors/feishu");
   for (const section of ["settings", "assets", "skills", "feishu"]) {
     assert.deepEqual(parseAppRoute(`/${section}`), { view: section });
     assert.deepEqual(parseAppRoute(`/workspace/${section}`), { view: section });
@@ -62,6 +79,14 @@ test("workspace sections have canonical URLs while legacy links still resolve", 
   }
   assert.deepEqual(parseAppRoute("/workspace/sharing"), { view: "sharing" });
   assert.equal(pathForAppRoute({ view: "sharing" }), "/workspace/sharing");
+  // The foundry skill's page sits under the Skills page it opens from.
+  assert.deepEqual(parseAppRoute("/workspace/skills/foundry"), {
+    view: "foundrySkill",
+  });
+  assert.equal(
+    pathForAppRoute({ view: "foundrySkill" }),
+    "/workspace/skills/foundry",
+  );
 });
 
 test("global management routes and error boundaries do not inherit a workspace", () => {

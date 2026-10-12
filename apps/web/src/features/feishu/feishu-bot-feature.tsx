@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
-  FeishuPairingCodeResult,
+  ExternalProviderApp,
+  FeishuBotRoute,
   WorkspaceFeishuBot,
 } from "@bd777/foundry-protocol";
 import {
+  deleteWorkspaceFeishuBot,
   generateFeishuPairingCode,
   getWorkspaceFeishuBot,
   saveWorkspaceFeishuBot,
-  unbindFeishuGroup,
+  unbindFeishuChat,
 } from "../../api";
 import { onStreamEvent } from "../../stream";
 import { useReadOrder } from "../../lib/read-order";
 import { Alert } from "../../components/ui/alert";
-import { FeishuCredentialsPanel } from "./feishu-credentials-panel";
-import { FeishuPairingPanel } from "./feishu-pairing-panel";
+import { FeishuAppPanel } from "./feishu-app-panel";
+import { FeishuChatsPanel } from "./feishu-chats-panel";
+import { errorText } from "./feishu-format";
 
 export interface FeishuBotFeatureProps {
   workspaceId: string;
@@ -22,6 +25,9 @@ export interface FeishuBotFeatureProps {
   readOnlyReason?: string;
   workspaceName?: string;
   onNotice?: (message: string) => void;
+  /** Opens Connectors, where Feishu apps are connected and their secrets
+   * replaced. */
+  onOpenConnectors?: () => void;
 }
 
 export function FeishuBotFeature(props: FeishuBotFeatureProps) {
@@ -33,31 +39,41 @@ export function FeishuBotFeature(props: FeishuBotFeatureProps) {
   );
 }
 
+/**
+ * The workspace's Feishu Bot: the Connectors app it runs on, how the
+ * server's connection to that app stands, and the chats routed here.
+ */
 function FeishuBotSettings({
   workspaceId,
   workspaceName,
   onNotice,
+  onOpenConnectors,
 }: FeishuBotFeatureProps) {
   const { t } = useTranslation("feishu");
   const [bot, setBot] = useState<WorkspaceFeishuBot>();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [pairing, setPairing] = useState(false);
+  const [busyChatId, setBusyChatId] = useState("");
   // The server keeps only a hash, so the plaintext code exists only in the
   // response that generated it.
-  const [issuedCode, setIssuedCode] = useState<FeishuPairingCodeResult>();
+  const [issued, setIssued] = useState<{ code: string; expiresAt: string }>();
   // A read answered after an update (an event, an action's answer) or a
   // later read is older than what is shown.
   const order = useReadOrder();
+  // Events carry no choices (they are the caller's); keep the ones read.
   const showBot = (next: WorkspaceFeishuBot) => {
     order.changed();
-    setBot(next);
+    setBot((current) => ({
+      ...next,
+      choices: next.choices ?? current?.choices,
+    }));
   };
 
   useEffect(() => {
     let active = true;
     /** `quiet` reads again behind what is shown, which stays usable. */
-    async function loadConfig({ quiet = false } = {}) {
+    async function load({ quiet = false } = {}) {
       if (!workspaceId) return;
       const current = order.started();
       if (!quiet) setLoading(true);
@@ -71,12 +87,12 @@ function FeishuBotSettings({
         if (active && !quiet) setLoading(false);
       }
     }
-    setIssuedCode(undefined);
-    void loadConfig();
+    setIssued(undefined);
+    void load();
     const stop = onStreamEvent("feishu_bot_updated", showBot, {
       workspaceId,
       // Changes may have been missed: the bot shown is read again.
-      onResync: () => void loadConfig({ quiet: true }),
+      onResync: () => void load({ quiet: true }),
     });
     return () => {
       active = false;
@@ -84,32 +100,56 @@ function FeishuBotSettings({
     };
   }, [workspaceId]);
 
-  async function handleSaveConfig(appId: string, appSecret: string) {
-    if (!appId.trim()) {
-      onNotice?.(t("notices.appIdRequired"));
-      return;
-    }
-    setSaving(true);
+  // A paired chat spends the code shown.
+  const chatCount = bot?.chats.length ?? 0;
+  useEffect(() => {
+    if (!bot?.pairingCodeExpiresAt) setIssued(undefined);
+  }, [chatCount, bot?.pairingCodeExpiresAt]);
+
+  async function select(app: ExternalProviderApp) {
+    setBusy(true);
     try {
-      const saved = await saveWorkspaceFeishuBot(workspaceId, {
-        appId: appId.trim(),
-        appSecret: appSecret.trim() || undefined,
-      });
-      showBot(saved);
-      onNotice?.(t("notices.saved"));
+      showBot(await saveWorkspaceFeishuBot(workspaceId, { appId: app.id }));
+      setIssued(undefined);
+      onNotice?.(t("notices.saved", { app: app.label }));
     } catch (err) {
       onNotice?.(t("notices.saveFailed", { error: errorText(err) }));
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
-  async function handleGeneratePairCode() {
+  async function remove() {
+    const label = bot?.app?.label ?? "";
+    setBusy(true);
+    try {
+      await deleteWorkspaceFeishuBot(workspaceId);
+      showBot(await getWorkspaceFeishuBot(workspaceId));
+      setIssued(undefined);
+      onNotice?.(t("notices.removed", { app: label }));
+    } catch (err) {
+      onNotice?.(t("notices.removeFailed", { error: errorText(err) }));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function generateCode() {
     setPairing(true);
     try {
-      const res = await generateFeishuPairingCode(workspaceId);
-      setIssuedCode(res);
-      onNotice?.(t("notices.codeIssued", { code: res.pairingCode }));
+      const result = await generateFeishuPairingCode(workspaceId);
+      setIssued({
+        code: result.pairingCode,
+        expiresAt: result.pairingCodeExpiresAt,
+      });
+      setBot(
+        (current) =>
+          current && {
+            ...current,
+            pairingCodeExpiresAt: result.pairingCodeExpiresAt,
+          },
+      );
+      onNotice?.(t("notices.codeIssued", { code: result.pairingCode }));
     } catch (err) {
       onNotice?.(t("notices.codeFailed", { error: errorText(err) }));
     } finally {
@@ -117,39 +157,39 @@ function FeishuBotSettings({
     }
   }
 
-  async function handleUnbind() {
-    if (!confirm(t("notices.unbindConfirm"))) return;
+  async function unbind(chat: FeishuBotRoute) {
+    setBusyChatId(chat.id);
     try {
-      const updated = await unbindFeishuGroup(workspaceId);
-      showBot(updated);
-      onNotice?.(t("notices.unbound"));
+      showBot(await unbindFeishuChat(workspaceId, chat.id));
+      onNotice?.(t("notices.unbound", { chat: chat.chatName || chat.chatId }));
     } catch (err) {
       onNotice?.(t("notices.unbindFailed", { error: errorText(err) }));
+    } finally {
+      setBusyChatId("");
     }
   }
 
   return (
     <div className="fdy-feishu-container">
-      <FeishuCredentialsPanel
+      <FeishuAppPanel
         bot={bot}
+        busy={busy}
         loading={loading}
-        saving={saving}
-        onSave={handleSaveConfig}
+        onOpenConnectors={onOpenConnectors}
+        onRemove={remove}
+        onSelect={select}
       />
-      <FeishuPairingPanel
+      <FeishuChatsPanel
         bot={bot}
-        pairingCode={bot?.chatId ? undefined : issuedCode?.pairingCode}
-        workspaceName={workspaceName}
+        busyChatId={busyChatId}
+        issued={issued}
         loading={loading}
-        pairing={pairing}
-        onGenerateCode={handleGeneratePairCode}
-        onUnbind={handleUnbind}
+        onGenerateCode={generateCode}
         onNotice={onNotice}
+        onUnbind={unbind}
+        pairing={pairing}
+        workspaceName={workspaceName}
       />
     </div>
   );
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

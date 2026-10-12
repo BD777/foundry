@@ -252,12 +252,5 @@ type Store interface {
 	AppendRunEvent(ctx context.Context, event RunEvent) error
 	CompleteIssue(ctx context.Context, issueID string, input CompleteIssueInput) (Issue, error)
 
-	GetWorkspaceFeishuBot(ctx context.Context, workspaceID string) (WorkspaceFeishuBot, error)
-	SaveWorkspaceFeishuBot(ctx context.Context, bot WorkspaceFeishuBot) (WorkspaceFeishuBot, error)
-	DeleteWorkspaceFeishuBot(ctx context.Context, workspaceID string) error
-	ListAllConfiguredFeishuBots(ctx context.Context) ([]WorkspaceFeishuBot, error)
-	FindWorkspaceByPairingCode(ctx context.Context, code string) (WorkspaceFeishuBot, error)
-	FindWorkspaceByChatID(ctx context.Context, chatID string) (WorkspaceFeishuBot, error)
-	GetFeishuChatThread(ctx context.Context, rootMessageID string) (FeishuChatThread, error)
-	SaveFeishuChatThread(ctx context.Context, thread FeishuChatThread) error
+	FeishuBotStore
 }

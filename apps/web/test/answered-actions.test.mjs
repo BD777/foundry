@@ -91,7 +91,7 @@ test("a sent message's session shows from the answer: no read, and a read that s
     resolveLoadedChatSelection(
       {
         chats: merged.chats,
-        chatSessions: merged.agentSessions,
+        sessions: merged.agentSessions,
         chatThreads: merged.agentSessions,
         preferredChatId: "",
       },

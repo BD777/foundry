@@ -175,7 +175,7 @@ export const devices: Translation<typeof en> = {
     localKept:
       "本地文件夹和仓库、Claude/Codex 登录、机器上保存的服务商密钥，以及 Worker 设置都不会被删除。",
     connectionsKept:
-      "服务器 API 连接及其加密保存的密钥对其他设备仍然可用；只撤销这台设备的访问权限。",
+      "模型服务及其加密保存的密钥对其他设备仍然可用；只撤销这台设备的访问权限。",
     online:
       "Worker 当前在线。它会立即断开且不会重连，必须在这台机器上重新设置才能恢复。",
     offline:
@@ -188,14 +188,14 @@ export const devices: Translation<typeof en> = {
   access: {
     title: "这台设备如何连接 AI",
     intro:
-      "开始对话时选择一个账号或 API 连接。两者都在 <strong>{{device}}</strong> 上运行。",
+      "开始对话时选择一个账号或模型服务。两者都在 <strong>{{device}}</strong> 上运行。",
     sources: "AI 访问来源",
     accountsTitle: "官方账号",
     accountsHint: "需在这台设备上单独登录",
-    connectionsTitle: "API 连接 <em>{{total}}</em>",
+    connectionsTitle: "模型服务 <em>{{total}}</em>",
     connectionsHint: "来自服务器，或这台设备自己的配置",
     accountsExplanation:
-      "使用你的 ChatGPT 或 Claude 订阅。凭据保存在这台设备上，不需要服务器连接。",
+      "使用你的 ChatGPT 或 Claude 订阅。凭据保存在这台设备上，不需要模型服务。",
   },
   resources: {
     title: "资源",

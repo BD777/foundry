@@ -3,51 +3,77 @@ package feishu
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/browserevent"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
-	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
-	"github.com/larksuite/oapi-sdk-go/v3/ws"
 )
+
+// A Workspace Feishu Bot is a Connectors Feishu app plus routes
+// (store.FeishuBotRoute): the server holds the app's secret and its one
+// long connection, and dispatches each message to the workspace its chat
+// or thread routes to. One app may serve many workspaces, a chat each.
 
 type SessionDispatcher interface {
 	CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error)
 	SendSessionMessage(ctx context.Context, sessionID, message string) error
 }
 
-// botUpdated tells the workspace's viewers what its bot is now: connected,
-// in error, or bound to a group.
+// botUpdated tells a workspace's viewers what its bot is now: its app, how
+// the app's connection stands, its chats.
 var botUpdated = browserevent.Define[store.WorkspaceFeishuBot](browserevent.FeishuBotUpdated, eventstream.Options{})
 
+// SecretProvider tells which apps hold a sealed secret.
 type SecretProvider interface {
-	GetSecret(ctx context.Context, id string) ([]byte, error)
-	PutSecret(ctx context.Context, id string, plaintext []byte, additionalData string) error
-	DeleteSecret(ctx context.Context, id string) error
 	HasSecret(ctx context.Context, id string) (bool, error)
 }
 
-type activeBot struct {
-	workspaceID string
-	appID       string
-	client      botClient
-	cancel      context.CancelFunc
+// EventSource is the server's one long connection per Feishu app
+// (feishuevents.Hub). The bots hold the connection of every app a workspace
+// routes from; the source hands every event to HandleEvent and says how a
+// connection stands through ConnectionChanged.
+type EventSource interface {
+	Hold(appID, holder string) error
+	Release(appID, holder string)
+	Status(appID string) feishuevents.Status
+}
+
+// botsHolder is the name the bots hold their apps' connections under.
+const botsHolder = "workspace-bots"
+
+// botApp is a Feishu app that at least one workspace's bot runs on.
+type botApp struct {
+	// clientID is Feishu's id of the app (cli_…).
+	clientID string
+	client   botClient
 }
 
 type sessionMetadata struct {
 	workspaceID   string
+	clientID      string
 	cardMessageID string
 	title         string
 	startTime     time.Time
 	currentText   string
 	lastTip       string
+}
+
+// rotationList reads which Connectors apps should have their secret rotated
+// (store.FeishuGatewayStore).
+type rotationList interface {
+	FeishuAppsToRotate(ctx context.Context) (map[string]string, error)
 }
 
 type WSManager struct {
@@ -57,10 +83,25 @@ type WSManager struct {
 	dispatcher   SessionDispatcher
 	events       eventstream.Publisher
 	streamBuffer *StreamBuffer
-	activeBots   map[string]*activeBot
-	sessions     map[string]*sessionMetadata
+	// apps are the running bot apps by Feishu app id; failed says why a
+	// wanted one does not run.
+	apps     map[string]*botApp
+	failed   map[string]string
+	sessions map[string]*sessionMetadata
+	// syncing runs one Sync at a time.
+	syncing sync.Mutex
 	// reporting serializes Issue reports, so one update is posted once.
 	reporting sync.Mutex
+	// Integrations off: no bot connects; each records why. Nil is on.
+	Integrations *integrations.Switch
+	// Events receives the bots' apps' events: one connection per app,
+	// however many workspaces use it.
+	Events EventSource
+	// Credentials reads a bot app's secret where the server holds it (its
+	// Connectors app).
+	Credentials feishuevents.CredentialSource
+	// newClient builds the client a bot replies with; tests swap it.
+	newClient func(appID, appSecret, baseURL string) botClient
 }
 
 // NewWSManager runs the workspaces' bots; what changes about a bot is
@@ -72,384 +113,505 @@ func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher,
 		dispatcher:   disp,
 		events:       events,
 		streamBuffer: NewStreamBuffer(800 * time.Millisecond),
-		activeBots:   make(map[string]*activeBot),
+		apps:         make(map[string]*botApp),
+		failed:       make(map[string]string),
 		sessions:     make(map[string]*sessionMetadata),
+		newClient:    func(appID, appSecret, baseURL string) botClient { return NewClient(appID, appSecret, baseURL) },
 	}
 }
 
-func (m *WSManager) StartAllConfiguredBots(ctx context.Context) {
-	if m == nil || m.store == nil || m.secrets == nil {
+func (m *WSManager) accounts() (store.ExternalAccountStore, bool) {
+	accounts, ok := m.store.(store.ExternalAccountStore)
+	return accounts, ok
+}
+
+// routedApps reads which Feishu apps the bots run on: Feishu app id → the
+// workspaces whose bot runs on it.
+func (m *WSManager) routedApps(ctx context.Context) (map[string][]string, error) {
+	accounts, ok := m.accounts()
+	if !ok {
+		return nil, errors.New("feishu: the server keeps no Connectors apps")
+	}
+	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
+	if err != nil {
+		return nil, err
+	}
+	clientIDs := map[string]string{}
+	wanted := map[string][]string{}
+	for _, route := range routes {
+		if route.Kind != store.FeishuRoutePairing {
+			continue
+		}
+		clientID, known := clientIDs[route.AppID]
+		if !known {
+			app, err := accounts.GetExternalProviderApp(ctx, route.AppID)
+			if err != nil {
+				return nil, err
+			}
+			clientID, clientIDs[route.AppID] = app.ClientID, app.ClientID
+		}
+		wanted[clientID] = append(wanted[clientID], route.WorkspaceID)
+	}
+	return wanted, nil
+}
+
+// Sync runs exactly the apps some workspace's bot runs on, each with the
+// secret its Connectors app holds now, and tells every workspace concerned
+// how its bot stands. Call it after any change to the routes or to a bot
+// app's secret; it is cheap.
+func (m *WSManager) Sync(ctx context.Context) {
+	if m == nil || m.store == nil {
 		return
 	}
 	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[feishu] recovered in StartAllConfiguredBots: %v", r)
+		if recovered := recover(); recovered != nil {
+			log.Printf("[feishu] recovered in Sync: %v", recovered)
 		}
 	}()
-	bots, err := m.store.ListAllConfiguredFeishuBots(ctx)
+	m.syncing.Lock()
+	defer m.syncing.Unlock()
+	wanted, err := m.routedApps(ctx)
 	if err != nil {
-		log.Printf("[feishu] failed to list configured bots: %v", err)
+		log.Printf("[feishu] read the bots' apps: %v", err)
 		return
 	}
-	for _, bot := range bots {
-		if bot.AppID == "" || !bot.HasAppSecret {
-			continue
+	m.mu.Lock()
+	var stale []string
+	for clientID := range m.apps {
+		if _, ok := wanted[clientID]; !ok {
+			stale = append(stale, clientID)
+			delete(m.apps, clientID)
 		}
-		secretBytes, err := m.secrets.GetSecret(ctx, "feishu:app_secret:"+bot.WorkspaceID)
-		if err != nil {
-			log.Printf("[feishu] failed to read secret for workspace %s: %v", bot.WorkspaceID, err)
-			continue
+	}
+	for clientID := range m.failed {
+		if _, ok := wanted[clientID]; !ok {
+			delete(m.failed, clientID)
 		}
-		appSecret := string(secretBytes)
-		if err := m.StartBot(bot.WorkspaceID, bot.AppID, appSecret); err != nil {
-			log.Printf("[feishu] failed to start bot for workspace %s: %v", bot.WorkspaceID, err)
+	}
+	m.mu.Unlock()
+	for _, clientID := range stale {
+		if m.Events != nil {
+			m.Events.Release(clientID, botsHolder)
+		}
+	}
+	clientIDs := make([]string, 0, len(wanted))
+	for clientID := range wanted {
+		clientIDs = append(clientIDs, clientID)
+	}
+	sort.Strings(clientIDs)
+	for _, clientID := range clientIDs {
+		if err := m.startApp(ctx, clientID); err != nil {
+			log.Printf("[feishu] bot app %s does not run: %v", clientID, err)
+		}
+		for _, workspaceID := range wanted[clientID] {
+			m.Publish(ctx, workspaceID)
 		}
 	}
 }
 
-func (m *WSManager) StartBot(workspaceID, appID, appSecret string) error {
-	m.mu.Lock()
-	if existing, ok := m.activeBots[workspaceID]; ok {
-		existing.cancel()
-		delete(m.activeBots, workspaceID)
-	}
-
-	botCtx, cancel := context.WithCancel(context.Background())
-	client := NewClient(appID, appSecret)
-
-	eventDispatcher := dispatcher.NewEventDispatcher("", "").
-		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-			return m.handleMessage(ctx, workspaceID, client, event)
-		})
-
-	wsClient := ws.NewClient(
-		appID,
-		appSecret,
-		ws.WithEventHandler(eventDispatcher),
-		ws.WithAutoReconnect(true),
-		ws.WithOnReady(func() {
-			log.Printf("[feishu] bot connected for workspace %s", workspaceID)
-			bot, err := m.store.GetWorkspaceFeishuBot(context.Background(), workspaceID)
-			if err == nil {
-				bot.Status = store.FeishuBotStatusConnected
-				bot.StatusDetail = ""
-				_, _ = m.store.SaveWorkspaceFeishuBot(context.Background(), bot)
-				m.botChanged(bot)
-			}
-		}),
-		ws.WithOnError(func(err error) {
-			log.Printf("[feishu] bot error for workspace %s: %v", workspaceID, err)
-			bot, storeErr := m.store.GetWorkspaceFeishuBot(context.Background(), workspaceID)
-			if storeErr == nil {
-				bot.Status = store.FeishuBotStatusError
-				bot.StatusDetail = err.Error()
-				_, _ = m.store.SaveWorkspaceFeishuBot(context.Background(), bot)
-				m.botChanged(bot)
-			}
-		}),
-	)
-
-	m.activeBots[workspaceID] = &activeBot{
-		workspaceID: workspaceID,
-		appID:       appID,
-		client:      client,
-		cancel:      cancel,
-	}
-	m.mu.Unlock()
-
-	go func() {
-		if err := wsClient.Start(botCtx); err != nil && botCtx.Err() == nil {
-			log.Printf("[feishu] ws client terminated with error: %v", err)
+// startApp (re)builds the app's reply client from the secret held now and
+// holds its connection; a failure is recorded for the workspaces' status.
+func (m *WSManager) startApp(ctx context.Context, clientID string) error {
+	fail := func(err error) error {
+		m.mu.Lock()
+		delete(m.apps, clientID)
+		m.failed[clientID] = err.Error()
+		m.mu.Unlock()
+		if m.Events != nil {
+			m.Events.Release(clientID, botsHolder)
 		}
-	}()
-
+		return err
+	}
+	if err := m.Integrations.Err(); err != nil {
+		return fail(err)
+	}
+	if m.Events == nil || m.Credentials == nil {
+		return fail(errors.New("the server has no Feishu event connection"))
+	}
+	credentials, err := m.Credentials.AppCredentials(ctx, clientID)
+	if err != nil {
+		return fail(err)
+	}
+	m.mu.Lock()
+	m.apps[clientID] = &botApp{clientID: clientID, client: m.newClient(clientID, credentials.AppSecret, credentials.BaseURL)}
+	delete(m.failed, clientID)
+	m.mu.Unlock()
+	if err := m.Events.Hold(clientID, botsHolder); err != nil {
+		return fail(err)
+	}
 	return nil
 }
 
-func (m *WSManager) StopBot(workspaceID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if bot, ok := m.activeBots[workspaceID]; ok {
-		bot.cancel()
-		delete(m.activeBots, workspaceID)
-	}
-}
+// StartAllConfiguredBots runs the bots at server start.
+func (m *WSManager) StartAllConfiguredBots(ctx context.Context) { m.Sync(ctx) }
 
 func (m *WSManager) StopAll() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	for id, bot := range m.activeBots {
-		bot.cancel()
-		delete(m.activeBots, id)
+	apps := m.apps
+	m.apps = make(map[string]*botApp)
+	m.mu.Unlock()
+	if m.Events == nil {
+		return
+	}
+	for clientID := range apps {
+		m.Events.Release(clientID, botsHolder)
 	}
 }
 
-func (m *WSManager) handleMessage(ctx context.Context, workspaceID string, client botClient, event *larkim.P2MessageReceiveV1) error {
+func (m *WSManager) app(clientID string) *botApp {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.apps[clientID]
+}
+
+// AppStatus is how the bots' use of Feishu app clientID stands: whether
+// its connection is up, why not, and when it last delivered an event.
+func (m *WSManager) AppStatus(clientID string) (store.FeishuBotStatus, string, string) {
+	if err := m.Integrations.Err(); err != nil {
+		return store.FeishuBotStatusError, err.Error(), ""
+	}
+	m.mu.RLock()
+	failed := m.failed[clientID]
+	_, running := m.apps[clientID]
+	m.mu.RUnlock()
+	if failed != "" {
+		return store.FeishuBotStatusError, failed, ""
+	}
+	if !running || m.Events == nil {
+		return store.FeishuBotStatusConnecting, "", ""
+	}
+	status := m.Events.Status(clientID)
+	lastEvent := ""
+	if !status.LastEventAt.IsZero() {
+		lastEvent = status.LastEventAt.UTC().Format(time.RFC3339)
+	}
+	switch {
+	case status.Connected:
+		return store.FeishuBotStatusConnected, "", lastEvent
+	case status.Detail == "" || status.Detail == "connecting":
+		return store.FeishuBotStatusConnecting, "", lastEvent
+	default:
+		return store.FeishuBotStatusError, status.Detail, lastEvent
+	}
+}
+
+// WorkspaceBot is the workspace's bot as its page shows it.
+func (m *WSManager) WorkspaceBot(ctx context.Context, workspaceID string) (store.WorkspaceFeishuBot, error) {
+	view := store.WorkspaceFeishuBot{WorkspaceID: workspaceID, Status: store.FeishuBotStatusUnconfigured, Chats: []store.FeishuBotRoute{}}
+	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{WorkspaceID: workspaceID})
+	if err != nil {
+		return view, err
+	}
+	var pairing *store.FeishuBotRoute
+	for index := range routes {
+		if routes[index].Kind == store.FeishuRoutePairing {
+			pairing = &routes[index]
+		} else {
+			view.Chats = append(view.Chats, routes[index])
+		}
+	}
+	if pairing == nil {
+		return view, nil
+	}
+	if pairing.PairingCode != "" && !pairingExpired(pairing.PairingCodeExpiresAt) {
+		view.PairingCodeExpiresAt = pairing.PairingCodeExpiresAt
+	}
+	accounts, ok := m.accounts()
+	if !ok {
+		return view, errors.New("feishu: the server keeps no Connectors apps")
+	}
+	app, err := accounts.GetExternalProviderApp(ctx, pairing.AppID)
+	if err != nil {
+		return view, err
+	}
+	m.describeApp(ctx, &app)
+	view.App = &app
+	view.Status, view.StatusDetail, view.LastEventAt = m.AppStatus(app.ClientID)
+	if !app.HasSecret {
+		view.Status, view.StatusDetail = store.FeishuBotStatusError, "the app has no secret on this server: paste it in Connectors"
+	}
+	return view, nil
+}
+
+// describeApp fills what a Connectors app's record does not hold: whether
+// its secret is sealed here and whether it should be rotated.
+func (m *WSManager) describeApp(ctx context.Context, app *store.ExternalProviderApp) {
+	if m.secrets != nil {
+		app.HasSecret, _ = m.secrets.HasSecret(ctx, externalaccounts.AppSecretID(app.ID))
+	}
+	if rotation, ok := m.store.(rotationList); ok {
+		if rotate, err := rotation.FeishuAppsToRotate(ctx); err == nil {
+			_, app.RotateSecret = rotate[app.ID]
+		}
+	}
+}
+
+func pairingExpired(expiresAt string) bool {
+	at, err := time.Parse(time.RFC3339, expiresAt)
+	return err == nil && time.Now().After(at)
+}
+
+// Publish tells the workspace's viewers what its bot is now.
+func (m *WSManager) Publish(ctx context.Context, workspaceID string) {
+	view, err := m.WorkspaceBot(ctx, workspaceID)
+	if err != nil {
+		log.Printf("[feishu] read the bot of %s: %v", workspaceID, err)
+		return
+	}
+	botUpdated.Publish(m.events, eventstream.Route{Workspace: workspaceID}, view)
+}
+
+// ConnectionChanged tells every workspace whose bot runs on the app how its
+// connection stands now.
+func (m *WSManager) ConnectionChanged(appID string, status feishuevents.Status) {
+	if status.Connected {
+		log.Printf("[feishu] bot app %s connected", appID)
+	} else {
+		log.Printf("[feishu] bot app %s: %s", appID, status.Detail)
+	}
+	ctx := context.Background()
+	wanted, err := m.routedApps(ctx)
+	if err != nil {
+		return
+	}
+	for _, workspaceID := range wanted[appID] {
+		m.Publish(ctx, workspaceID)
+	}
+}
+
+// HandleEvent is the Workspace Bot route: a message event of a bot app goes
+// to the workspace its thread or chat routes to, and is dropped otherwise.
+func (m *WSManager) HandleEvent(ctx context.Context, event feishuevents.Event) {
+	if event.Type != messageReceived {
+		return
+	}
+	app := m.app(event.AppID)
+	if app == nil {
+		return
+	}
+	var message larkim.P2MessageReceiveV1
+	if err := json.Unmarshal(event.Payload, &message); err != nil {
+		log.Printf("[feishu] unreadable message event %s: %v", event.ID, err)
+		return
+	}
+	if err := m.handleMessage(ctx, app, &message); err != nil {
+		log.Printf("[feishu] message event %s of app %s: %v", event.ID, event.AppID, err)
+	}
+}
+
+const messageReceived = "im.message.receive_v1"
+
+// handleMessage routes one message, first match wins: a reply in a
+// Foundry topic thread steers that topic's session in its workspace; "/pair
+// <code>" binds the chat to the code's workspace; a message in a routed chat
+// (mentioning the bot in a group; any in a direct chat) starts a topic in
+// the chat's workspace. Everything else is dropped.
+func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
 	}
-	// 1. Ignore messages sent by bots to avoid self-reply loops
+	// Ignore messages sent by bots to avoid self-reply loops.
 	if event.Event.Sender != nil && event.Event.Sender.SenderType != nil && *event.Event.Sender.SenderType == "bot" {
 		return nil
 	}
-
 	msg := event.Event.Message
 	if msg.MessageId == nil || msg.ChatId == nil || msg.Content == nil {
 		return nil
 	}
-
-	msgID := *msg.MessageId
-	chatID := *msg.ChatId
-	msgType := ""
-	if msg.MessageType != nil {
-		msgType = *msg.MessageType
+	messageID, chatID, rawContent := *msg.MessageId, *msg.ChatId, *msg.Content
+	chatType, rootID := "", ""
+	if msg.ChatType != nil {
+		chatType = *msg.ChatType
 	}
-	rawContent := *msg.Content
-	log.Printf("[feishu] message received: id=%s, chat=%s, type=%s, content=%s", msgID, chatID, msgType, rawContent)
-
-	cleanText := extractMessageText(rawContent)
-	cleanText = cleanLeadingMentions(cleanText)
-	log.Printf("[feishu] extracted text: %q", cleanText)
-
-	if cleanText == "" {
-		log.Printf("[feishu] empty extracted text, ignoring message %s", msgID)
-		return nil
-	}
-
-	messageID := msgID
-	rootID := ""
 	if msg.RootId != nil {
 		rootID = *msg.RootId
 	}
-
-	// 2. Check for /pair pairing command
+	cleanText := cleanLeadingMentions(extractMessageText(rawContent))
+	if cleanText == "" {
+		return nil
+	}
 	if strings.HasPrefix(cleanText, "/pair") {
-		return m.handlePairCommand(ctx, workspaceID, client, messageID, chatID, cleanText)
+		return m.handlePairCommand(ctx, app, messageID, chatID, chatType, cleanText)
 	}
-
-	// 3. Validate that chat is bound to this workspace
-	bot, err := m.store.GetWorkspaceFeishuBot(ctx, workspaceID)
-	if err != nil || bot.ChatID != chatID {
-		log.Printf("[feishu] message in chat %s ignored: bot not bound to this chat (bound chat: %q)", chatID, bot.ChatID)
-		return nil
-	}
-
-	hasMention := (msg.Mentions != nil && len(msg.Mentions) > 0) || strings.Contains(rawContent, "@_user_")
-
-	// 4. Thread follow-up message: if rootID exists and matches an active Foundry thread, process without requiring @
-	if rootID != "" && rootID != messageID {
-		thread, threadErr := m.store.GetFeishuChatThread(ctx, rootID)
-		if threadErr == nil && thread.WorkspaceID == workspaceID && thread.IssueID != "" {
-			return m.handleIssueReply(ctx, workspaceID, client, messageID, thread, cleanText)
-		}
-		if threadErr == nil && thread.WorkspaceID == workspaceID {
-			log.Printf("[feishu] found active Foundry thread for root %s, processing follow-up", rootID)
-			return m.handleTopicFollowUp(ctx, workspaceID, client, messageID, chatID, thread, cleanText)
-		}
-		// In a non-Foundry thread, only trigger if explicitly mentioned
-		if !hasMention {
-			log.Printf("[feishu] thread %s is not a Foundry thread and bot was not mentioned, ignoring", rootID)
-			return nil
-		}
-		return m.handleNewTopic(ctx, workspaceID, client, messageID, chatID, cleanText)
-	}
-
-	// 5. New topic in chat: only trigger if bot was mentioned
-	if !hasMention {
-		log.Printf("[feishu] new message in chat %s did not mention bot, ignoring", chatID)
-		return nil
-	}
-	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); isIssue && m.issueDesk() != nil {
-		return m.handleNewIssue(ctx, workspaceID, client, messageID, chatID, strings.TrimSpace(goal))
-	}
-
-	return m.handleNewTopic(ctx, workspaceID, client, messageID, chatID, cleanText)
-}
-
-func (m *WSManager) handlePairCommand(ctx context.Context, workspaceID string, client botClient, messageID, chatID, text string) error {
-	log.Printf("[feishu] handling pair command in chat %s for workspace %s, text: %q", chatID, workspaceID, text)
-	fields := strings.Fields(text)
-	if len(fields) < 2 {
-		log.Printf("[feishu] pairing failed: missing code parameter in %q", text)
-		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("配对失败", "请输入有效的配对码，例如：`@机器人 /pair FND-1234`", "参数缺失")); err != nil {
-			log.Printf("[feishu] failed to reply card: %v", err)
-		}
-		return nil
-	}
-	code := strings.TrimSpace(fields[1])
-
-	bot, err := m.store.FindWorkspaceByPairingCode(ctx, HashPairingCode(code))
-	if err != nil || bot.WorkspaceID != workspaceID {
-		log.Printf("[feishu] pairing code %q not found or workspace mismatch (found ws: %q, current ws: %q, err: %v)", code, bot.WorkspaceID, workspaceID, err)
-		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("配对失败", fmt.Sprintf("未找到配对码 `%s` 或与当前机器人不匹配，请在 Foundry 页面重试。", code), "配对码无效")); err != nil {
-			log.Printf("[feishu] failed to reply card: %v", err)
-		}
-		return nil
-	}
-
-	if bot.PairingCodeExpiresAt != "" {
-		if expiresAt, parseErr := time.Parse(time.RFC3339, bot.PairingCodeExpiresAt); parseErr == nil {
-			if time.Now().After(expiresAt) {
-				log.Printf("[feishu] pairing code %q has expired at %s", code, bot.PairingCodeExpiresAt)
-				if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("配对失败", "该配对码已过期，请在 Foundry 重新生成后重试。", "配对码已过期")); err != nil {
-					log.Printf("[feishu] failed to reply card: %v", err)
+	inThread := rootID != "" && rootID != messageID
+	if inThread {
+		if thread, err := m.store.GetFeishuChatThread(ctx, rootID); err == nil && thread.ChatID == chatID {
+			if route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID); err == nil && route.WorkspaceID == thread.WorkspaceID {
+				if thread.IssueID != "" {
+					return m.handleIssueReply(ctx, route, app.client, messageID, thread, cleanText)
 				}
-				return nil
+				return m.handleTopicFollowUp(ctx, route, app, messageID, chatID, thread, cleanText)
 			}
 		}
 	}
-
-	workspace, wsErr := m.store.GetWorkspace(ctx, bot.WorkspaceID)
-	wsName := bot.WorkspaceID
-	if wsErr == nil && workspace.Name != "" {
-		wsName = workspace.Name
-	}
-
-	chatName, _ := client.GetChatInfo(ctx, chatID)
-	if chatName == "" {
-		chatName = "飞书群聊"
-	}
-
-	bot.ChatID = chatID
-	bot.ChatName = chatName
-	bot.Status = store.FeishuBotStatusConnected
-	bot.StatusDetail = ""
-	bot.PairingCode = ""
-	bot.PairingCodeExpiresAt = ""
-	// From now on the group acts as the account that generated the code.
-	bot.BoundUserID = bot.PairingCodeCreatedBy
-	bot.PairingCodeCreatedBy = ""
-
-	if _, err := m.store.SaveWorkspaceFeishuBot(ctx, bot); err != nil {
-		log.Printf("[feishu] failed to save bound workspace bot: %v", err)
-		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("配对失败", "保存绑定信息失败，请稍后重试。", err.Error())); err != nil {
-			log.Printf("[feishu] failed to reply card: %v", err)
-		}
+	route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID)
+	if err != nil {
+		log.Printf("[feishu] message in chat %s of app %s dropped: the chat is not paired with a workspace", chatID, app.clientID)
 		return nil
 	}
+	hasMention := len(msg.Mentions) > 0 || strings.Contains(rawContent, "@_user_")
+	if !hasMention && route.Kind != store.FeishuRouteP2P {
+		return nil
+	}
+	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.issueDesk() != nil {
+		return m.handleNewIssue(ctx, route, app.client, messageID, chatID, strings.TrimSpace(goal))
+	}
+	return m.handleNewTopic(ctx, route, app, messageID, chatID, cleanText)
+}
 
-	log.Printf("[feishu] paired workspace %s (%s) with chat %s (%s)", bot.WorkspaceID, wsName, chatID, chatName)
+func (m *WSManager) replyFailure(ctx context.Context, client botClient, messageID, title, detail, reason string) {
+	if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard(title, detail, reason)); err != nil {
+		log.Printf("[feishu] failed to reply card: %v", err)
+	}
+}
 
-	// Send success confirmation card in thread
-	successCard := BuildPairingSuccessCard(wsName)
-	if _, err := client.ReplyCard(ctx, messageID, successCard); err != nil {
+// handlePairCommand binds the chat to the workspace whose pairing code it
+// sends, on this app; the chat acts as the account that generated the code.
+func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageID, chatID, chatType, text string) error {
+	fields := strings.Fields(text)
+	if len(fields) < 2 {
+		m.replyFailure(ctx, app.client, messageID, "配对失败", "请输入有效的配对码，例如：`@机器人 /pair FND-1234`", "参数缺失")
+		return nil
+	}
+	code := strings.TrimSpace(fields[1])
+	pairing, err := m.store.FindFeishuPairingRoute(ctx, app.clientID, HashPairingCode(code))
+	if err != nil {
+		log.Printf("[feishu] pairing code not found on app %s: %v", app.clientID, err)
+		m.replyFailure(ctx, app.client, messageID, "配对失败", fmt.Sprintf("未找到配对码 `%s` 或与当前机器人不匹配，请在 Foundry 页面重试。", code), "配对码无效")
+		return nil
+	}
+	if pairingExpired(pairing.PairingCodeExpiresAt) {
+		m.replyFailure(ctx, app.client, messageID, "配对失败", "该配对码已过期，请在 Foundry 重新生成后重试。", "配对码已过期")
+		return nil
+	}
+	wsName := pairing.WorkspaceID
+	if workspace, err := m.store.GetWorkspace(ctx, pairing.WorkspaceID); err == nil && workspace.Name != "" {
+		wsName = workspace.Name
+	}
+	chat := store.FeishuBotRoute{Kind: store.FeishuRouteChat, ChatID: chatID, BoundUserID: pairing.PairingCodeCreatedBy}
+	if chatType == "p2p" {
+		chat.Kind = store.FeishuRouteP2P
+	} else {
+		chat.ChatName, _ = app.client.GetChatInfo(ctx, chatID)
+	}
+	previous, _ := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID)
+	if _, err := m.store.BindFeishuChat(ctx, pairing, chat); err != nil {
+		log.Printf("[feishu] failed to bind chat %s to %s: %v", chatID, pairing.WorkspaceID, err)
+		detail := "保存绑定信息失败，请稍后重试。"
+		if errors.Is(err, store.ErrNotFound) {
+			detail = "该配对码已被使用或已更换，请在 Foundry 重新生成后重试。"
+		}
+		m.replyFailure(ctx, app.client, messageID, "配对失败", detail, "配对失败")
+		return nil
+	}
+	log.Printf("[feishu] paired workspace %s (%s) with %s chat %s on app %s", pairing.WorkspaceID, wsName, chat.Kind, chatID, app.clientID)
+	if _, err := app.client.ReplyCard(ctx, messageID, BuildPairingSuccessCard(wsName)); err != nil {
 		log.Printf("[feishu] failed to send pairing success card: %v", err)
 	}
-
-	m.botChanged(bot)
+	m.Publish(ctx, pairing.WorkspaceID)
+	if previous.WorkspaceID != "" && previous.WorkspaceID != pairing.WorkspaceID {
+		m.Publish(ctx, previous.WorkspaceID)
+	}
 	return nil
 }
 
-// botChanged tells the bot's workspace what the bot is now.
-func (m *WSManager) botChanged(bot store.WorkspaceFeishuBot) {
-	botUpdated.Publish(m.events, eventstream.Route{Workspace: bot.WorkspaceID}, bot)
+func topicTitle(prompt string) string {
+	if len([]rune(prompt)) > 28 {
+		return string([]rune(prompt)[:28]) + "..."
+	}
+	return prompt
 }
 
-func (m *WSManager) handleNewTopic(ctx context.Context, workspaceID string, client botClient, messageID, chatID, prompt string) error {
-	title := prompt
-	if len([]rune(title)) > 28 {
-		title = string([]rune(title)[:28]) + "..."
-	}
-
-	// Send initial running card
-	cardJSON := BuildRunningCard(title, "正在理解任务并启动智能体会话...", "启动中")
-	cardMessageID, err := client.ReplyCard(ctx, messageID, cardJSON)
+func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID, prompt string) error {
+	title := topicTitle(prompt)
+	cardMessageID, err := app.client.ReplyCard(ctx, messageID, BuildRunningCard(title, "正在理解任务并启动智能体会话...", "启动中"))
 	if err != nil {
 		log.Printf("[feishu] failed to reply card: %v", err)
 		return nil
 	}
-
-	userID, refusal := m.boundUser(ctx, workspaceID)
+	userID, refusal := m.boundUser(ctx, route)
 	if refusal != "" {
-		_ = client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, refusal, "无权执行"))
+		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, refusal, "无权执行"))
 		return nil
 	}
-
-	// Create AgentSession in Foundry
 	session, err := m.dispatcher.CreateSessionAndDispatch(ctx, store.CreateAgentSessionInput{
-		WorkspaceID:     workspaceID,
+		WorkspaceID:     route.WorkspaceID,
 		Prompt:          prompt,
 		Source:          "chat",
 		CreatedByUserID: userID,
 	})
 	if err != nil {
-		_ = client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "创建智能体执行会话失败", err.Error()))
+		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "创建智能体执行会话失败", err.Error()))
 		return nil
 	}
-
-	// Save thread mapping
 	_ = m.store.SaveFeishuChatThread(ctx, store.FeishuChatThread{
 		RootMessageID:   messageID,
-		WorkspaceID:     workspaceID,
+		WorkspaceID:     route.WorkspaceID,
 		ChatID:          chatID,
 		LatestSessionID: session.ID,
 		CardMessageID:   cardMessageID,
 	})
-
 	m.mu.Lock()
 	m.sessions[session.ID] = &sessionMetadata{
-		workspaceID:   workspaceID,
-		cardMessageID: cardMessageID,
-		title:         title,
-		startTime:     time.Now(),
+		workspaceID: route.WorkspaceID, clientID: app.clientID, cardMessageID: cardMessageID, title: title, startTime: time.Now(),
 	}
 	m.mu.Unlock()
-
 	return nil
 }
 
-func (m *WSManager) handleTopicFollowUp(ctx context.Context, workspaceID string, client botClient, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
-	_, refusal := m.boundUser(ctx, workspaceID)
-	if refusal != "" {
-		if _, err := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", refusal, "无权执行")); err != nil {
-			log.Printf("[feishu] failed to reply card: %v", err)
-		}
+func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
+	if _, refusal := m.boundUser(ctx, route); refusal != "" {
+		m.replyFailure(ctx, app.client, messageID, "无法继续", refusal, "无权执行")
 		return nil
 	}
 	// The topic is one session: a running one is steered, an idle one takes
 	// the message as its next input.
 	session, err := store.AgentSessionRecord(ctx, m.store, thread.LatestSessionID)
 	if err != nil {
-		if _, replyErr := client.ReplyCard(ctx, messageID, BuildFailedCard("无法继续", "找不到该话题的智能体会话", err.Error())); replyErr != nil {
-			log.Printf("[feishu] failed to reply card: %v", replyErr)
-		}
+		m.replyFailure(ctx, app.client, messageID, "无法继续", "找不到该话题的智能体会话", err.Error())
 		return nil
 	}
 	if session.Status == "running" || session.Status == "queued" || session.Status == "blocked" {
 		if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
 			log.Printf("[feishu] failed to steer session %s: %v", session.ID, err)
 		}
-		m.streamBuffer.Update(session.ID, client, thread.CardMessageID, session.Title, session.Response, "收到补充指令: "+prompt)
+		m.streamBuffer.Update(session.ID, app.client, thread.CardMessageID, session.Title, session.Response, "收到补充指令: "+prompt)
 		return nil
 	}
-
-	title := prompt
-	if len([]rune(title)) > 28 {
-		title = string([]rune(title)[:28]) + "..."
-	}
-	cardJSON := BuildRunningCard(title, "继续话题执行中...", "连续执行")
-	cardMessageID, err := client.ReplyCard(ctx, messageID, cardJSON)
+	title := topicTitle(prompt)
+	cardMessageID, err := app.client.ReplyCard(ctx, messageID, BuildRunningCard(title, "继续话题执行中...", "连续执行"))
 	if err != nil {
 		log.Printf("[feishu] failed to reply follow-up card: %v", err)
 		return nil
 	}
 	if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
-		_ = client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "继续会话失败", err.Error()))
+		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "继续会话失败", err.Error()))
 		return nil
 	}
-
 	thread.CardMessageID = cardMessageID
 	_ = m.store.SaveFeishuChatThread(ctx, thread)
-
 	m.mu.Lock()
 	m.sessions[session.ID] = &sessionMetadata{
-		workspaceID:   workspaceID,
-		cardMessageID: cardMessageID,
-		title:         title,
-		startTime:     time.Now(),
+		workspaceID: route.WorkspaceID, clientID: app.clientID, cardMessageID: cardMessageID, title: title, startTime: time.Now(),
 	}
 	m.mu.Unlock()
+	return nil
+}
 
+// threadApp is the running app whose chat the thread is in, while the chat
+// still routes to the thread's workspace.
+func (m *WSManager) threadApp(ctx context.Context, thread store.FeishuChatThread) *botApp {
+	m.mu.RLock()
+	apps := make([]*botApp, 0, len(m.apps))
+	for _, app := range m.apps {
+		apps = append(apps, app)
+	}
+	m.mu.RUnlock()
+	for _, app := range apps {
+		if route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, thread.ChatID); err == nil && route.WorkspaceID == thread.WorkspaceID {
+			return app
+		}
+	}
 	return nil
 }
 
@@ -473,35 +635,33 @@ func (m *WSManager) SessionEventRecorded(event store.AgentSessionEvent) {
 	if !ok {
 		return
 	}
-	bot, botOk := m.activeBots[meta.workspaceID]
-	if !botOk {
+	app, running := m.apps[meta.clientID]
+	if !running {
 		return
 	}
-
-	if event.Label == "Response stream" && event.Detail != "" {
+	switch {
+	case event.Label == "Response stream" && event.Detail != "":
 		meta.currentText = event.Detail
 		tip := meta.lastTip
 		if tip == "" {
 			tip = "正在生成回答..."
 		}
-		m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
-	} else if event.Message != nil {
-		if event.Message.Kind == "assistant" {
-			if event.Message.Text != "" {
-				meta.currentText = event.Message.Text
-			}
-			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, "正在生成回答...")
-		} else if event.Message.Kind == "tool" {
-			tip := "执行工具"
-			if event.Message.Title != "" {
-				tip += ": " + cardProcessLabel(event.Message.Title)
-			}
-			meta.lastTip = tip
-			m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, tip)
+		m.streamBuffer.Update(event.SessionID, app.client, meta.cardMessageID, meta.title, meta.currentText, tip)
+	case event.Message != nil && event.Message.Kind == "assistant":
+		if event.Message.Text != "" {
+			meta.currentText = event.Message.Text
 		}
-	} else if isThinkingLabel(event.Label) {
+		m.streamBuffer.Update(event.SessionID, app.client, meta.cardMessageID, meta.title, meta.currentText, "正在生成回答...")
+	case event.Message != nil && event.Message.Kind == "tool":
+		tip := "执行工具"
+		if event.Message.Title != "" {
+			tip += ": " + cardProcessLabel(event.Message.Title)
+		}
+		meta.lastTip = tip
+		m.streamBuffer.Update(event.SessionID, app.client, meta.cardMessageID, meta.title, meta.currentText, tip)
+	case event.Message == nil && isThinkingLabel(event.Label):
 		meta.lastTip = "正在思考..."
-		m.streamBuffer.Update(event.SessionID, bot.client, meta.cardMessageID, meta.title, meta.currentText, meta.lastTip)
+		m.streamBuffer.Update(event.SessionID, app.client, meta.cardMessageID, meta.title, meta.currentText, meta.lastTip)
 	}
 }
 
@@ -515,17 +675,16 @@ func (m *WSManager) SessionEnded(session store.AgentSession) {
 		return
 	}
 	delete(m.sessions, session.ID)
-	bot, botOk := m.activeBots[meta.workspaceID]
+	app, running := m.apps[meta.clientID]
 	m.mu.Unlock()
-	if !botOk {
+	if !running {
 		return
 	}
-
 	duration := time.Since(meta.startTime)
 	if session.Status == "completed" {
-		m.streamBuffer.Complete(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, duration)
+		m.streamBuffer.Complete(session.ID, app.client, meta.cardMessageID, meta.title, session.Response, duration)
 	} else {
-		m.streamBuffer.Fail(session.ID, bot.client, meta.cardMessageID, meta.title, session.Response, session.Error)
+		m.streamBuffer.Fail(session.ID, app.client, meta.cardMessageID, meta.title, session.Response, session.Error)
 	}
 }
 

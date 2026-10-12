@@ -8,7 +8,11 @@
  */
 export interface LoadedChatSelection {
   chats: Array<{ id: string }>;
-  chatSessions: Array<{ id: string }>;
+  /**
+   * Every session the read lists, whatever started it: a verifier, a child
+   * another session started or one working for an Issue opens by id too.
+   */
+  sessions: Array<{ id: string }>;
   chatThreads: Array<{ id: string }>;
   /** The chat the chat feature prefers when no thread exists. */
   preferredChatId: string;
@@ -31,6 +35,6 @@ export function resolveLoadedChatSelection(
   const stillLoaded =
     loaded.chats.some((chat) => chat.id === current) ||
     loaded.chatThreads.some((thread) => thread.id === current) ||
-    loaded.chatSessions.some((session) => session.id === current);
+    loaded.sessions.some((session) => session.id === current);
   return stillLoaded ? current : firstLoadedChatId(loaded);
 }

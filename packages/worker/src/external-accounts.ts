@@ -1,9 +1,11 @@
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -12,101 +14,118 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentSession,
   ExternalAccountMaterial,
-  ExternalAccountToken,
 } from "@bd777/foundry-protocol";
+import { readDaemonConfig } from "./config.js";
+import {
+  startFeishuGatewayForwarder,
+  type FeishuGatewayForwarder,
+} from "./feishu-gateway-forwarder.js";
+import { findCommand, managedToolsBin } from "./managed-tools.js";
 import { foundryStatePath } from "./state-root.js";
 import { registerKnownSecret } from "./secret-redaction.js";
-import { postJSON } from "./transport.js";
 import { isUtilitySession } from "./utils.js";
 import { isVerificationSession } from "./session-roles.js";
 
 /**
  * External accounts on the device (docs: External accounts design §5.5).
  *
- * run_session carries, for each account a session may act as, a minted
- * access token and the app credentials feishu-cli insists on — never the
- * refresh token, which only the server holds and spends. The worker writes
- * them into a Foundry-managed feishu-cli profile under the session's HOME
- * (`~/.feishu-cli/profiles/foundry-<id>/`, the layout feishu-cli reads:
- * config.yaml with app_id/app_secret/base_url, token.json with
- * access_token/token_type/expires_at/scope/app_id), selects it with
- * FEISHU_PROFILE, asks the server for a new token before the current one
- * expires while a session still uses it, and removes the profile when the
- * last session using it ends. Profiles a crashed worker left behind are
- * listed in a manifest under the state root and reaped at the next start.
- * Nothing here logs a token or a secret; both are registered for transcript
- * redaction.
+ * No Feishu credential ever reaches this device. run_session carries, for
+ * each account a session may act as, the app id and two opaque handles from
+ * the server's Feishu gateway: one in place of the app secret, one in place
+ * of the user access token. The worker writes them into a Foundry-managed
+ * feishu-cli profile of the session's own, through feishu-cli's documented
+ * configuration (`~/.feishu-cli/profiles/<name>/config.yaml` with app_id,
+ * app_secret and base_url; token.json; FEISHU_PROFILE), with base_url on
+ * this worker's loopback forwarder (feishu-gateway-forwarder.ts), which
+ * adds the device credential and sends everything to the gateway. The
+ * gateway swaps the handles for the real tokens and refuses them once the
+ * session ends, so nothing is renewed here. The profile is removed when the
+ * session's run ends; profiles a crashed worker left behind are listed in a
+ * manifest under the state root and reaped at the next start.
  */
 
 const feishuTool = "feishu-cli";
 const profileNamePattern = /^foundry-[A-Za-z0-9_-]{1,56}$/;
-/** Re-mint this long before the access token expires. */
-const defaultRefreshLeadMs = 15 * 60_000;
-/** A failed re-mint is tried again after this long. */
-const retryDelayMs = 60_000;
-const minimumDelayMs = 5_000;
+
+/**
+ * The feishu-cli versions the gateway contract was verified against
+ * (TestFeishuCLIContractThroughTheGateway in
+ * apps/server/internal/httpapi/external_accounts_cli_contract_test.go). Another
+ * version may route a call differently; the session is told.
+ */
+export const verifiedFeishuCliVersions = ["1.41.0"];
 
 export interface ExternalAccountsOptions {
   /** The session's HOME: where feishu-cli looks for its profiles. */
   home?: string;
   /** Lists the profiles this worker wrote, for reaping after a crash. */
   manifestPath?: string;
-  /** Asks the server for a fresh token for a session that still runs. */
-  mint?: (
-    accountId: string,
-    sessionId: string,
-  ) => Promise<ExternalAccountToken>;
-  now?: () => number;
-  refreshLeadMs?: number;
+  /** The Foundry server, which the forwarder sends feishu-cli's calls to. */
+  serverURL?: string;
+  /** The loopback forwarder for a gateway path; started on first use. */
+  forwarder?: (
+    gatewayPath: string,
+  ) => Promise<Pick<FeishuGatewayForwarder, "baseURL">>;
+  /** The installed feishu-cli's version ("1.41.0"); undefined if unknown. */
+  feishuCliVersion?: () => string | undefined;
   log?: (message: string) => void;
 }
 
-interface HeldProfile {
-  directory: string;
-  accountId: string;
-  material: ExternalAccountMaterial;
-  sessions: Set<string>;
-  expiresAt: number;
-  timer?: ReturnType<typeof setTimeout>;
-  stopped: boolean;
-  options: ResolvedOptions;
-}
-
-type ResolvedOptions = Required<
-  Pick<ExternalAccountsOptions, "home" | "manifestPath" | "now" | "log">
-> &
-  Pick<ExternalAccountsOptions, "mint" | "refreshLeadMs">;
-
-const heldProfiles = new Map<string, HeldProfile>();
+const liveProfiles = new Set<string>();
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();
 const notesBySession = new Map<string, string>();
+const forwarders = new Map<string, Promise<FeishuGatewayForwarder>>();
 
-function resolveOptions(options: ExternalAccountsOptions): ResolvedOptions {
-  return {
-    home: options.home ?? homedir(),
-    manifestPath:
-      options.manifestPath ??
-      foundryStatePath("external-account-profiles.json"),
-    now: options.now ?? Date.now,
-    log: options.log ?? ((message) => console.log(message)),
-    mint: options.mint,
-    refreshLeadMs: options.refreshLeadMs,
-  };
+/** One forwarder per server and gateway path for this worker's life. */
+function sharedForwarder(
+  serverURL: string,
+  gatewayPath: string,
+  log: (message: string) => void,
+): Promise<FeishuGatewayForwarder> {
+  const key = `${serverURL}\n${gatewayPath}`;
+  let started = forwarders.get(key);
+  if (!started) {
+    started = startFeishuGatewayForwarder({
+      serverURL,
+      gatewayPath,
+      credential: () => readDaemonConfig()?.deviceCredential?.trim(),
+      log,
+    });
+    started.catch(() => forwarders.delete(key));
+    forwarders.set(key, started);
+  }
+  return started;
 }
 
-/** The server's mint route, authenticated as this device. */
-export function serverMint(
-  serverURL: string,
-): (accountId: string, sessionId: string) => Promise<ExternalAccountToken> {
-  return async (accountId, sessionId) => {
-    const token = await postJSON<ExternalAccountToken>(
-      serverURL,
-      `/api/external-accounts/${encodeURIComponent(accountId)}/mint`,
-      { sessionId },
-    );
-    if (!token?.accessToken) throw new Error("the server minted no token");
-    return token;
-  };
+let cachedVersion:
+  { path: string; modified: number; version?: string } | undefined;
+
+/** The version of the feishu-cli sessions find first on PATH. */
+export function installedFeishuCliVersion(): string | undefined {
+  const managed = join(managedToolsBin(), feishuTool);
+  const path = existsSync(managed) ? managed : findCommand(feishuTool);
+  if (!path) return undefined;
+  let modified = 0;
+  try {
+    modified = statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
+  if (cachedVersion?.path === path && cachedVersion.modified === modified)
+    return cachedVersion.version;
+  let version: string | undefined;
+  try {
+    const output = execFileSync(path, ["--version"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    version = /v?(\d+\.\d+\.\d+)/.exec(output)?.[1];
+  } catch {
+    version = undefined;
+  }
+  cachedVersion = { path, modified, version };
+  return version;
 }
 
 function profilesRoot(home: string): string {
@@ -156,32 +175,33 @@ function yamlString(value: string): string {
   return JSON.stringify(value);
 }
 
-function configYaml(material: ExternalAccountMaterial): string {
+function configYaml(
+  material: ExternalAccountMaterial,
+  appHandle: string,
+  baseURL: string,
+): string {
   return [
-    "# Written by Foundry for one external account; removed when no Foundry session uses it.",
-    "# Do not edit: Foundry rewrites it. Re-authorize in Foundry, not with feishu-cli auth login.",
+    "# Written by Foundry for one session; removed when the session's run ends.",
+    "# app_secret and the token are Foundry stand-ins, not Feishu credentials:",
+    "# calls go through Foundry (base_url), which holds the real ones.",
     `app_id: ${yamlString(material.clientId)}`,
-    `app_secret: ${yamlString(material.clientSecret ?? "")}`,
-    ...(material.baseUrl ? [`base_url: ${yamlString(material.baseUrl)}`] : []),
+    `app_secret: ${yamlString(appHandle)}`,
+    `base_url: ${yamlString(baseURL)}`,
     "",
   ].join("\n");
 }
 
 function tokenJson(
-  material: Pick<ExternalAccountMaterial, "clientId">,
-  token: Pick<
-    ExternalAccountToken,
-    "accessToken" | "tokenType" | "expiresAt" | "scope"
-  >,
+  material: ExternalAccountMaterial,
+  userHandle: string,
 ): string {
-  // No refresh_token: feishu-cli then uses the access token as is and
-  // reports it expired instead of spending a refresh token it lacks.
+  // No refresh_token: the server alone refreshes the login.
   return `${JSON.stringify(
     {
-      access_token: token.accessToken,
-      token_type: token.tokenType || "Bearer",
-      expires_at: localTimestamp(token.expiresAt),
-      scope: token.scope ?? "",
+      access_token: userHandle,
+      token_type: "Bearer",
+      expires_at: localTimestamp(material.expiresAt),
+      scope: material.scope ?? "",
       app_id: material.clientId,
     },
     null,
@@ -235,191 +255,160 @@ function updateManifest(
   writeManifest(path, change(readManifest(path)));
 }
 
-function writeProfile(held: HeldProfile): void {
-  mkdirSync(held.directory, { recursive: true, mode: 0o700 });
-  writePrivateFile(
-    join(held.directory, "config.yaml"),
-    configYaml(held.material),
-  );
-  writePrivateFile(
-    join(held.directory, "token.json"),
-    tokenJson(held.material, held.material),
-  );
-}
-
-function scheduleRefresh(held: HeldProfile): void {
-  if (held.timer) clearTimeout(held.timer);
-  held.timer = undefined;
-  const { mint, now } = held.options;
-  if (!mint || held.stopped || !Number.isFinite(held.expiresAt)) return;
-  const lead = held.options.refreshLeadMs ?? defaultRefreshLeadMs;
-  arm(held, Math.max(minimumDelayMs, held.expiresAt - lead - now()));
-}
-
-function arm(held: HeldProfile, delay: number): void {
-  held.timer = setTimeout(() => void refresh(held), delay);
-  held.timer.unref?.();
-}
-
-async function refresh(held: HeldProfile): Promise<void> {
-  held.timer = undefined;
-  const sessionId = held.sessions.values().next().value as string | undefined;
-  const { mint, log, now } = held.options;
-  if (!sessionId || !mint || heldProfiles.get(held.directory) !== held) return;
-  try {
-    const token = await mint(held.accountId, sessionId);
-    if (heldProfiles.get(held.directory) !== held) return;
-    registerKnownSecret(token.accessToken);
-    held.material = {
-      ...held.material,
-      accessToken: token.accessToken,
-      tokenType: token.tokenType,
-      expiresAt: token.expiresAt,
-      scope: token.scope ?? held.material.scope,
-    };
-    held.expiresAt = Date.parse(token.expiresAt);
-    writePrivateFile(
-      join(held.directory, "token.json"),
-      tokenJson(held.material, token),
-    );
-    log(
-      `External account ${held.accountId}: renewed its feishu-cli token until ${token.expiresAt}.`,
-    );
-    scheduleRefresh(held);
-  } catch (error) {
-    const status = /returned (\d{3})/.exec(
-      error instanceof Error ? error.message : "",
-    )?.[1];
-    // Refused for good (gone, no longer permitted, revoked or needs re-auth):
-    // the session keeps the token it has until it expires.
-    if (status === "403" || status === "404" || status === "409") {
-      held.stopped = true;
-      log(
-        `External account ${held.accountId}: the server no longer renews it (HTTP ${status}); its token lapses at ${held.material.expiresAt}.`,
-      );
-      return;
-    }
-    log(
-      `External account ${held.accountId}: could not renew its token (${status ? `HTTP ${status}` : "no answer"}); trying again.`,
-    );
-    if (now() < held.expiresAt) arm(held, retryDelayMs);
-  }
-}
-
 export interface MaterializedAccounts {
   /** Names of the profiles written for the session. */
   profiles: string[];
   release(): void;
 }
 
+const nothing: MaterializedAccounts = { profiles: [], release: () => {} };
+
+function usableMaterial(material: ExternalAccountMaterial): boolean {
+  const gateway = material.gateway;
+  return (
+    material.tool === feishuTool &&
+    Boolean(material.clientId) &&
+    Boolean(gateway?.path?.startsWith("/")) &&
+    Boolean(gateway?.appHandle) &&
+    Boolean(gateway?.userHandle) &&
+    profileNamePattern.test(material.profileName)
+  );
+}
+
 /**
- * Writes the session's accounts into managed tool profiles and selects the
- * first for its processes. Returns the release to call when the session's
- * run ends, whatever the outcome.
+ * Writes the session's accounts into its own feishu-cli profiles and
+ * selects the first for its processes. Returns the release to call when the
+ * session's run ends, whatever the outcome.
  */
-export function materializeSessionAccounts(
+export async function materializeSessionAccounts(
   session: AgentSession,
   materials: ExternalAccountMaterial[] | undefined,
   options: ExternalAccountsOptions = {},
-): MaterializedAccounts {
-  const usable = (materials ?? []).filter(
-    (material) =>
-      material.tool === feishuTool &&
-      Boolean(material.accessToken) &&
-      profileNamePattern.test(material.profileName),
-  );
+): Promise<MaterializedAccounts> {
+  const usable = (materials ?? []).filter(usableMaterial);
   if (
     !session.id ||
     usable.length === 0 ||
     !sessionTakesExternalAccounts(session)
   )
-    return { profiles: [], release: () => {} };
-  const resolved = resolveOptions(options);
-  const written: HeldProfile[] = [];
+    return nothing;
+  const home = options.home ?? homedir();
+  const manifestPath =
+    options.manifestPath ?? foundryStatePath("external-account-profiles.json");
+  const log = options.log ?? ((message) => console.log(message));
+  const forwarder =
+    options.forwarder ??
+    ((gatewayPath: string) => {
+      if (!options.serverURL)
+        throw new Error("no Foundry server to forward to");
+      return sharedForwarder(options.serverURL, gatewayPath, log);
+    });
+  const written: Array<{
+    directory: string;
+    material: ExternalAccountMaterial;
+  }> = [];
   for (const material of usable) {
-    registerKnownSecret(material.accessToken);
-    registerKnownSecret(material.clientSecret);
-    const directory = managedProfileDirectory(
-      resolved.home,
-      material.profileName,
-    );
+    const gateway = material.gateway!;
+    registerKnownSecret(gateway.appHandle);
+    registerKnownSecret(gateway.userHandle);
+    const directory = managedProfileDirectory(home, material.profileName);
     if (!directory) continue;
-    const existing = heldProfiles.get(directory);
-    const held: HeldProfile = existing ?? {
-      directory,
-      accountId: material.accountId,
-      material,
-      sessions: new Set(),
-      expiresAt: Date.parse(material.expiresAt),
-      stopped: false,
-      options: resolved,
-    };
-    held.material = material;
-    held.expiresAt = Date.parse(material.expiresAt);
-    held.stopped = false;
     try {
-      updateManifest(resolved.manifestPath, (profiles) => [
-        ...profiles,
-        directory,
-      ]);
-      writeProfile(held);
-    } catch (error) {
-      resolved.log(
-        `External account ${material.accountId}: could not write its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
+      const { baseURL } = await forwarder(gateway.path);
+      updateManifest(manifestPath, (profiles) => [...profiles, directory]);
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      writePrivateFile(
+        join(directory, "config.yaml"),
+        configYaml(material, gateway.appHandle, baseURL),
       );
+      writePrivateFile(
+        join(directory, "token.json"),
+        tokenJson(material, gateway.userHandle),
+      );
+    } catch (error) {
+      log(
+        `External account ${material.accountId}: could not set up its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
+      );
+      rmSync(directory, { recursive: true, force: true });
       continue;
     }
-    held.sessions.add(session.id);
-    heldProfiles.set(directory, held);
-    scheduleRefresh(held);
-    written.push(held);
+    liveProfiles.add(directory);
+    written.push({ directory, material });
   }
   const [selected] = written;
-  if (!selected) return { profiles: [], release: () => {} };
+  if (!selected) return nothing;
   environmentBySession.set(session.id, {
     FEISHU_PROFILE: selected.material.profileName,
   });
-  notesBySession.set(session.id, accountNote(written));
+  const version = (options.feishuCliVersion ?? installedFeishuCliVersion)();
+  if (version && !verifiedFeishuCliVersions.includes(version))
+    log(
+      `feishu-cli ${version} on this device is not a version Foundry verified its Feishu gateway with (${verifiedFeishuCliVersions.join(", ")}).`,
+    );
+  notesBySession.set(
+    session.id,
+    accountNote(
+      written.map((entry) => entry.material),
+      version,
+    ),
+  );
   let released = false;
   return {
-    profiles: written.map((held) => held.material.profileName),
+    profiles: written.map((entry) => entry.material.profileName),
     release: () => {
       if (released) return;
       released = true;
       environmentBySession.delete(session.id);
       notesBySession.delete(session.id);
-      for (const held of written) releaseProfile(held, session.id);
+      for (const entry of written)
+        removeProfile(
+          entry.directory,
+          manifestPath,
+          entry.material.accountId,
+          log,
+        );
     },
   };
 }
 
-function releaseProfile(held: HeldProfile, sessionId: string): void {
-  held.sessions.delete(sessionId);
-  if (held.sessions.size > 0 || heldProfiles.get(held.directory) !== held)
-    return;
-  heldProfiles.delete(held.directory);
-  if (held.timer) clearTimeout(held.timer);
-  held.timer = undefined;
+function removeProfile(
+  directory: string,
+  manifestPath: string,
+  accountId: string,
+  log: (message: string) => void,
+): void {
+  liveProfiles.delete(directory);
   try {
-    rmSync(held.directory, { recursive: true, force: true });
-    updateManifest(held.options.manifestPath, (profiles) =>
-      profiles.filter((profile) => profile !== held.directory),
+    rmSync(directory, { recursive: true, force: true });
+    updateManifest(manifestPath, (profiles) =>
+      profiles.filter((profile) => profile !== directory),
     );
   } catch (error) {
-    held.options.log(
-      `External account ${held.accountId}: could not remove its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
+    log(
+      `External account ${accountId}: could not remove its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
     );
   }
 }
 
-function accountNote(held: HeldProfile[]): string {
-  const [selected, ...others] = held.map((entry) => {
-    const who = entry.material.displayName
-      ? `${entry.material.label} (${entry.material.displayName})`
-      : entry.material.label;
-    return `${who}: feishu-cli profile ${entry.material.profileName}`;
+function accountNote(
+  materials: ExternalAccountMaterial[],
+  version: string | undefined,
+): string {
+  const [selected, ...others] = materials.map((material) => {
+    const who = material.displayName
+      ? `${material.label} (${material.displayName})`
+      : material.label;
+    return `${who}: feishu-cli profile ${material.profileName}`;
   });
-  return `- Feishu account Foundry connected for this session: ${selected}, already selected by FEISHU_PROFILE${others.length ? `; also available with --profile: ${others.join("; ")}` : ""}. Use it as is: do not run feishu-cli auth login, auth logout or profile use. If it lacks a scope or has expired, ask the person to re-authorize it in Foundry (External accounts).`;
+  const lines = [
+    `- Feishu account Foundry connected for this session: ${selected}, already selected by FEISHU_PROFILE${others.length ? `; also available with --profile: ${others.join("; ")}` : ""}. feishu-cli reaches Feishu through Foundry, as the person or as the app's bot: this device holds no app secret or token (the profile's app_secret and token are stand-ins that stop working when this session ends). Do not run feishu-cli auth login, auth logout or profile use. If it lacks a scope or the login expired, ask the person to re-authorize it in Foundry (Connectors → Feishu).`,
+    "- Not available through Foundry: `feishu-cli auth token --as bot`, `feishu-cli doctor`'s token check and `feishu-cli markdown fetch --as bot` ask Feishu's accounts server for a bot token directly, which a stand-in cannot pass; use the bot through other commands, or markdown fetch as the user. A call Foundry refuses says why in its message (\"Foundry gateway: …\").",
+  ];
+  if (version && !verifiedFeishuCliVersions.includes(version))
+    lines.push(
+      `- feishu-cli on this device is ${version}; Foundry verified its Feishu gateway with ${verifiedFeishuCliVersions.join(", ")}. If a Feishu command fails in an unexpected way, tell the person.`,
+    );
+  return lines.join("\n");
 }
 
 /** FEISHU_PROFILE for a session that has an account; empty otherwise. */
@@ -429,7 +418,7 @@ export function sessionExternalAccountEnvironment(
   return (sessionId && environmentBySession.get(sessionId)) || {};
 }
 
-/** The device-notes line naming a session's accounts (never a secret). */
+/** The device-notes lines naming a session's accounts (never a handle). */
 export function sessionExternalAccountNote(
   sessionId: string | undefined,
 ): string {
@@ -447,7 +436,7 @@ export function reapExternalAccountProfiles(
   const manifestPath =
     options.manifestPath ?? foundryStatePath("external-account-profiles.json");
   const listed = readManifest(manifestPath).filter(
-    (directory) => !heldProfiles.has(directory),
+    (directory) => !liveProfiles.has(directory),
   );
   const reaped: string[] = [];
   for (const directory of listed) {
@@ -466,7 +455,7 @@ export function reapExternalAccountProfiles(
   if (listed.length > 0)
     try {
       updateManifest(manifestPath, (profiles) =>
-        profiles.filter((profile) => heldProfiles.has(profile)),
+        profiles.filter((profile) => liveProfiles.has(profile)),
       );
     } catch {
       // The next start reads the same list and tries again.

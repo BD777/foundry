@@ -97,20 +97,6 @@ function sessionTranscripts(
   return transcripts;
 }
 
-/**
- * A session's native message records across all of its inputs, oldest
- * first, so a subagent is found whichever input started it.
- */
-async function readSessionRecords(
-  workspacePath: string,
-  sessionId: string,
-): Promise<Record<string, unknown>[]> {
-  const records: Record<string, unknown>[] = [];
-  for (const path of sessionTranscripts(workspacePath, sessionId))
-    records.push(...(await readSubagentRecords(path)));
-  return records;
-}
-
 function taskStatus(
   notification: Record<string, unknown> | undefined,
 ): AgentSubagentSummary["status"] {
@@ -156,16 +142,6 @@ function assistantResponseTexts(record: Record<string, unknown>): string[] {
   });
 }
 
-function isSubagentStart(record: Record<string, unknown>): boolean {
-  return (
-    record.type === "system" &&
-    record.subtype === "task_started" &&
-    stringValue(record.task_type) === "local_agent" &&
-    stringValue(record.task_id) !== "" &&
-    stringValue(record.tool_use_id) !== ""
-  );
-}
-
 function isTaskNotification(record: Record<string, unknown>): boolean {
   return record.type === "system" && record.subtype === "task_notification";
 }
@@ -198,60 +174,20 @@ function subagentHeading(
   };
 }
 
-export async function listAgentSubagents(
-  workspacePath: string,
-  sessionId: string,
-): Promise<AgentSubagentSummary[]> {
-  const records = await readSessionRecords(workspacePath, sessionId);
-  const notifications = new Map<string, Record<string, unknown>>();
-  const responses = new Map<string, string[]>();
-  for (const record of records) {
-    if (isTaskNotification(record))
-      notifications.set(stringValue(record.task_id), record);
-    const parent = stringValue(record.parent_tool_use_id);
-    if (parent) {
-      const texts = assistantResponseTexts(record);
-      if (texts.length)
-        responses.set(parent, [...(responses.get(parent) ?? []), ...texts]);
-    }
-  }
-  return records
-    .filter(isSubagentStart)
-    .map((started): AgentSubagentSummary => {
-      const taskId = stringValue(started.task_id);
-      const toolUseId = stringValue(started.tool_use_id);
-      const notification = notifications.get(taskId);
-      const prompt = stringValue(started.prompt);
-      const heading = subagentHeading(
-        sessionId,
-        {
-          taskId,
-          toolUseId,
-          description: stringValue(started.description),
-          subagentType: stringValue(started.subagent_type),
-        },
-        notification && {
-          status: taskStatus(notification),
-          summary: stringValue(notification.summary),
-          usage: claudeSubagentUsage(notification),
-        },
-      );
-      return {
-        prompt: prompt || undefined,
-        responseTexts: [...new Set(responses.get(toolUseId) ?? [])],
-        ...heading,
-      };
-    });
-}
-
-/** What the digest of a subagent list needs from one transcript line. */
-type DigestPart =
+/**
+ * What a subagent list needs from one transcript line. A digest keeps no
+ * prompt and its answers only as fingerprints; the whole list keeps both.
+ * Every task's start is kept: a subagent's transcript is found by it.
+ */
+type ListPart =
   | {
       kind: "started";
+      taskType: string;
       taskId: string;
       toolUseId: string;
       description: string;
       subagentType: string;
+      prompt?: string;
     }
   | {
       kind: "notification";
@@ -260,15 +196,13 @@ type DigestPart =
       summary: string;
       usage?: SubagentUsage;
     }
-  | { kind: "answers"; toolUseId: string; fingerprints: string[] };
+  | { kind: "answers"; toolUseId: string; answers: string[] };
 
 const assistantType = Buffer.from('"type":"assistant"');
 const taskStartedSubtype = Buffer.from('"subtype":"task_started"');
 const taskNotificationSubtype = Buffer.from('"subtype":"task_notification"');
 
-function digestPart(
-  line: Buffer,
-): { value: DigestPart; bytes: number } | undefined {
+function listPart(line: Buffer, digest: boolean): ListPart | undefined {
   // A subagent's tool results and streamed deltas, most of its bytes, are
   // not needed: only its answers, starts and notifications are decoded.
   if (
@@ -288,86 +222,145 @@ function digestPart(
     return undefined;
   }
   if (!record || typeof record !== "object") return undefined;
-  let value: DigestPart | undefined;
-  if (isSubagentStart(record))
-    value = {
+  if (record.type === "system" && record.subtype === "task_started")
+    return {
       kind: "started",
+      taskType: stringValue(record.task_type),
       taskId: stringValue(record.task_id),
       toolUseId: stringValue(record.tool_use_id),
       description: stringValue(record.description),
       subagentType: stringValue(record.subagent_type),
+      ...(digest ? {} : { prompt: stringValue(record.prompt) }),
     };
-  else if (isTaskNotification(record))
-    value = {
+  if (isTaskNotification(record))
+    return {
       kind: "notification",
       taskId: stringValue(record.task_id),
       status: taskStatus(record),
       summary: stringValue(record.summary),
       usage: claudeSubagentUsage(record),
     };
-  else if (stringValue(record.parent_tool_use_id)) {
-    const fingerprints = assistantResponseTexts(record).map(
-      subagentResponseFingerprint,
-    );
-    if (fingerprints.length)
-      value = {
-        kind: "answers",
-        toolUseId: stringValue(record.parent_tool_use_id),
-        fingerprints,
-      };
-  }
-  return value
-    ? { value, bytes: 64 + JSON.stringify(value).length }
-    : undefined;
+  const toolUseId = stringValue(record.parent_tool_use_id);
+  if (!toolUseId) return undefined;
+  const texts = assistantResponseTexts(record);
+  if (!texts.length) return undefined;
+  return {
+    kind: "answers",
+    toolUseId,
+    answers: digest ? texts.map(subagentResponseFingerprint) : texts,
+  };
 }
 
 /**
- * Only what a digest shows is kept per transcript, so every input of a long
- * session stays cached and a digest reads only what was appended since.
+ * Only what a list shows is kept per transcript, so every input of a long
+ * session stays cached and a list read reads only what was appended since.
+ * Its full records would not fit: they are most of a long session's bytes.
  */
-const subagentDigestParts: TranscriptProjection<DigestPart> = {
-  name: "digest",
-  select: digestPart,
-  budgetBytes: 16 * 1024 * 1024,
-  maxFiles: 4096,
-};
+function listProjection(
+  name: "digest" | "list",
+  budgetBytes: number,
+): TranscriptProjection<ListPart> {
+  const digest = name === "digest";
+  return {
+    name,
+    select: (line) => {
+      const value = listPart(line, digest);
+      return value
+        ? { value, bytes: 64 + JSON.stringify(value).length }
+        : undefined;
+    },
+    budgetBytes,
+    maxFiles: 4096,
+  };
+}
+
+const subagentDigestParts = listProjection("digest", 16 * 1024 * 1024);
+const subagentListParts = listProjection("list", 32 * 1024 * 1024);
+
+async function readListParts(
+  paths: string[],
+  projection: TranscriptProjection<ListPart>,
+): Promise<ListPart[]> {
+  const parts: ListPart[] = [];
+  for (const path of paths)
+    parts.push(...(await readTranscriptProjection(path, projection)));
+  return parts;
+}
+
+/**
+ * The session's subagents in the order they started, across its inputs,
+ * each with its heading and its distinct answers as the projection keeps
+ * them.
+ */
+async function readSubagentList(
+  workspacePath: string,
+  sessionId: string,
+  projection: TranscriptProjection<ListPart>,
+) {
+  const parts = await readListParts(
+    sessionTranscripts(workspacePath, sessionId),
+    projection,
+  );
+  const notifications = new Map<
+    string,
+    Extract<ListPart, { kind: "notification" }>
+  >();
+  const answers = new Map<string, string[]>();
+  for (const part of parts) {
+    if (part.kind === "notification") notifications.set(part.taskId, part);
+    else if (part.kind === "answers") {
+      const held = answers.get(part.toolUseId);
+      if (held) held.push(...part.answers);
+      else answers.set(part.toolUseId, [...part.answers]);
+    }
+  }
+  return parts.flatMap((part) =>
+    part.kind === "started" &&
+    part.taskType === "local_agent" &&
+    part.taskId !== "" &&
+    part.toolUseId !== ""
+      ? [
+          {
+            prompt: part.prompt,
+            heading: subagentHeading(
+              sessionId,
+              part,
+              notifications.get(part.taskId),
+            ),
+            answers: [...new Set(answers.get(part.toolUseId) ?? [])],
+          },
+        ]
+      : [],
+  );
+}
+
+export async function listAgentSubagents(
+  workspacePath: string,
+  sessionId: string,
+): Promise<AgentSubagentSummary[]> {
+  return (
+    await readSubagentList(workspacePath, sessionId, subagentListParts)
+  ).map(({ prompt, heading, answers }) => ({
+    prompt: prompt || undefined,
+    responseTexts: answers,
+    ...heading,
+  }));
+}
 
 /**
  * The session's subagents as a chat lists them (agentSubagentDigest of
- * listAgentSubagents), read from each transcript's cached digest parts.
+ * listAgentSubagents).
  */
 export async function listAgentSubagentDigests(
   workspacePath: string,
   sessionId: string,
 ): Promise<AgentSubagentDigest[]> {
-  const parts: DigestPart[] = [];
-  for (const path of sessionTranscripts(workspacePath, sessionId))
-    parts.push(...(await readTranscriptProjection(path, subagentDigestParts)));
-  const notifications = new Map<
-    string,
-    Extract<DigestPart, { kind: "notification" }>
-  >();
-  const answers = new Map<string, string[]>();
-  for (const part of parts) {
-    if (part.kind === "notification") notifications.set(part.taskId, part);
-    else if (part.kind === "answers")
-      answers.set(part.toolUseId, [
-        ...(answers.get(part.toolUseId) ?? []),
-        ...part.fingerprints,
-      ]);
-  }
-  return parts.flatMap((part) =>
-    part.kind === "started"
-      ? [
-          {
-            ...subagentHeading(sessionId, part, notifications.get(part.taskId)),
-            responseFingerprints: [
-              ...new Set(answers.get(part.toolUseId) ?? []),
-            ],
-          },
-        ]
-      : [],
-  );
+  return (
+    await readSubagentList(workspacePath, sessionId, subagentDigestParts)
+  ).map(({ heading, answers }) => ({
+    ...heading,
+    responseFingerprints: answers,
+  }));
 }
 
 /** The subagent as a chat lists it: answers as fingerprints, no prompt. */
@@ -385,6 +378,48 @@ export function agentSubagentDigest({
   };
 }
 
+const parentToolUseKey = Buffer.from('"parent_tool_use_id":"');
+
+/**
+ * The tool uses a line names as a parent, read from its bytes without
+ * decoding it: at least its record's parent_tool_use_id. An id that would
+ * need unescaping is "*", any.
+ */
+function lineParents(line: Buffer): { value: string; bytes: number }[] {
+  const parents: { value: string; bytes: number }[] = [];
+  let at = line.indexOf(parentToolUseKey);
+  while (at !== -1) {
+    const start = at + parentToolUseKey.length;
+    const end = line.indexOf(0x22, start);
+    if (end === -1) break;
+    const id = line.toString("utf8", start, end);
+    const value = id.includes("\\") ? "*" : id;
+    parents.push({ value, bytes: 64 + value.length });
+    at = line.indexOf(parentToolUseKey, end);
+  }
+  return parents;
+}
+
+/**
+ * The tool uses each transcript's records name as their parent, each once,
+ * so opening a subagent reads only the inputs that hold its records.
+ */
+const subagentParents: TranscriptProjection<string> = {
+  name: "parents",
+  select: (line) => {
+    const parents = lineParents(line);
+    // A line naming several (one quoting another's) is kept whole.
+    return parents.length === 1
+      ? parents[0]
+      : parents.length > 1
+        ? { value: "*", bytes: 65 }
+        : undefined;
+  },
+  budgetBytes: 16 * 1024 * 1024,
+  maxFiles: 4096,
+  distinct: true,
+};
+
 export async function readAgentSubagentTranscript(
   workspacePath: string,
   sessionId: string,
@@ -393,13 +428,28 @@ export async function readAgentSubagentTranscript(
   if (!taskId.trim()) {
     throw new Error("invalid subagent transcript target");
   }
-  const records = await readSessionRecords(workspacePath, sessionId);
-  const started = records.find(
-    (record) =>
-      record.type === "system" &&
-      record.subtype === "task_started" &&
-      stringValue(record.task_id) === taskId,
-  );
+  // The digests a chat read find the input the task started in and how it
+  // ended; only the inputs holding the subagent's records are read whole.
+  const paths = sessionTranscripts(workspacePath, sessionId);
+  let startedIn: string | undefined;
+  let notification: Extract<ListPart, { kind: "notification" }> | undefined;
+  for (const path of paths)
+    for (const part of await readTranscriptProjection(
+      path,
+      subagentDigestParts,
+    )) {
+      if (part.kind === "started" && part.taskId === taskId) startedIn ??= path;
+      else if (part.kind === "notification" && part.taskId === taskId)
+        notification = part;
+    }
+  const started =
+    startedIn &&
+    (await readSubagentRecords(startedIn)).find(
+      (record) =>
+        record.type === "system" &&
+        record.subtype === "task_started" &&
+        stringValue(record.task_id) === taskId,
+    );
   if (!started || stringValue(started.task_type) !== "local_agent") {
     throw new Error("subagent task was not found");
   }
@@ -408,14 +458,12 @@ export async function readAgentSubagentTranscript(
     throw new Error("subagent transcript has no tool identifier");
   }
 
-  const notification = [...records]
-    .reverse()
-    .find(
-      (record) =>
-        record.type === "system" &&
-        record.subtype === "task_notification" &&
-        stringValue(record.task_id) === taskId,
-    );
+  const records: Record<string, unknown>[] = [];
+  for (const path of paths) {
+    const parents = await readTranscriptProjection(path, subagentParents);
+    if (parents.includes(toolUseId) || parents.includes("*"))
+      records.push(...(await readSubagentRecords(path)));
+  }
   const messages: AgentSubagentTranscriptMessage[] = [];
   let characterCount = 0;
   for (const record of records) {
@@ -444,16 +492,12 @@ export async function readAgentSubagentTranscript(
     messages,
     prompt: prompt || undefined,
     sessionId,
-    status: taskStatus(notification),
+    status: notification?.status ?? "running",
     subagentType: stringValue(started.subagent_type) || undefined,
     taskId,
     title:
-      stringValue(started.description) ||
-      stringValue(notification?.summary) ||
-      "Subagent",
+      stringValue(started.description) || notification?.summary || "Subagent",
     toolUseId,
-    ...(notification && claudeSubagentUsage(notification)
-      ? { usage: claudeSubagentUsage(notification) }
-      : {}),
+    ...(notification?.usage ? { usage: notification.usage } : {}),
   };
 }

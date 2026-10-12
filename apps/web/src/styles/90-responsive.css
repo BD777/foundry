@@ -83,8 +83,18 @@
     padding-left: 20px;
   }
 
+  /* A page view grows here and the document scrolls it, so the document
+     reserves the scrollbar's space and the view does not. */
+  html:has(.fdy-foundry-shell[data-scroll-mode="page"]) {
+    scrollbar-gutter: stable;
+  }
+
   body {
     overflow: auto;
+  }
+
+  .fdy-view[data-scroll-mode="page"] {
+    scrollbar-gutter: auto;
   }
 
   .fdy-foundry-shell {

@@ -53,7 +53,7 @@ func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 			t.Fatalf("description does not mention %s: %q", trigger, skill.Description)
 		}
 	}
-	for _, trigger := range []string{"what they changed", "Issues", "start, steer, wait on, verify or hand off sessions", "Not for splitting your own task"} {
+	for _, trigger := range []string{"what they changed", "Issues", "start, steer, wait on, verify or hand off sessions"} {
 		if !strings.Contains(skill.Description, trigger) {
 			t.Fatalf("description does not say %q: %q", trigger, skill.Description)
 		}
@@ -67,7 +67,7 @@ func TestFoundrySkillTriggersOnFoundryIds(t *testing.T) {
 		paths = append(paths, file.Path)
 	}
 	slices.Sort(paths)
-	if want := []string{"SKILL.md", "references/diagnosing.md", "references/orchestration.md"}; !slices.Equal(paths, want) {
+	if want := []string{"SKILL.md", "references/diagnosing.md"}; !slices.Equal(paths, want) {
 		t.Fatalf("foundry package holds %v, want %v", paths, want)
 	}
 }

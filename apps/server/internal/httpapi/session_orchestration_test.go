@@ -162,6 +162,17 @@ func TestLineageForeignParent(t *testing.T) {
 	if count, err := db.CountActiveAgentChildren(ctx, parent.ID); err != nil || count != 1 {
 		t.Fatalf("active children = %d, %v; want the cross-workspace child counted", count, err)
 	}
+	// A verifier an agent starts follows the same rule.
+	verifier, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_other", AgentID: "agent_other", Provider: "claude",
+		Prompt: "verify across workspaces", Source: "verification", ParentSessionID: parent.ID,
+	})
+	if err != nil {
+		t.Fatalf("cross-workspace verifier: %v", err)
+	}
+	if verifier.ParentSessionID != parent.ID || verifier.Source != "verification" || verifier.CreatedGroupID != "" {
+		t.Fatalf("cross-workspace verifier = parent %q source %q group %q", verifier.ParentSessionID, verifier.Source, verifier.CreatedGroupID)
+	}
 	_, err = db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
 		Prompt: "missing parent", Source: "agent", ParentSessionID: "sess_does_not_exist",
@@ -480,9 +491,10 @@ func TestBlockedResumeLifecycle(t *testing.T) {
 	}
 }
 
-// Inside one workspace any agent may read and control any session, whoever
-// created it; lineage grants nothing and other workspaces stay closed.
-func TestAgentsControlAnySessionOfTheirWorkspace(t *testing.T) {
+// Inside one workspace an agent reads any session but controls only those
+// its person started; lineage grants nothing and other workspaces stay
+// closed.
+func TestAgentsControlTheirPersonsSessions(t *testing.T) {
 	db, parent := lineageFixture(t)
 	ctx := context.Background()
 	stranger, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
@@ -495,7 +507,12 @@ func TestAgentsControlAnySessionOfTheirWorkspace(t *testing.T) {
 	server := NewServer(db)
 	agent := Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: parent.ID, WorkspaceID: "ws_lineage", DeviceID: "dev_lineage"}}
 	if !server.canReadSession(ctx, agent, stranger) || !server.canControlSession(ctx, agent, stranger) {
-		t.Fatal("an agent must read and control an unrelated session of its workspace")
+		t.Fatal("an agent must read and control an unrelated session of its workspace that its (absent) person started")
+	}
+	teammates := stranger
+	teammates.CreatedByUserID = "usr_teammate"
+	if !server.canReadSession(ctx, agent, teammates) || server.canControlSession(ctx, agent, teammates) {
+		t.Fatal("an agent reads but must not control a session another person started")
 	}
 	elsewhere := stranger
 	elsewhere.WorkspaceID = "ws_other"

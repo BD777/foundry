@@ -108,9 +108,10 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	current := desk.issue
 	manager := NewWSManager(issueStore{db, &current}, nil, desk, eventsForTest())
 	bot := &fakeBot{}
-	manager.activeBots["ws_1"] = &activeBot{workspaceID: "ws_1", client: bot}
+	app := &botApp{clientID: "cli_x", client: bot}
+	manager.apps["cli_x"] = app
 
-	if err := manager.handleMessage(ctx, "ws_1", bot, groupMessage("om_root", "", "@_user_1 /issue Add usage to the README", true)); err != nil {
+	if err := manager.handleMessage(ctx, app, groupMessage("om_root", "", "@_user_1 /issue Add usage to the README", true)); err != nil {
 		t.Fatal(err)
 	}
 	if desk.issue.SourceInput != "Add usage to the README" || desk.issue.CreatedByUserID != member.ID {
@@ -125,10 +126,10 @@ func TestAGroupThreadFollowsAnIssue(t *testing.T) {
 	}
 
 	// Replies in the thread go to the Issue without another @; /confirm confirms.
-	if err := manager.handleMessage(ctx, "ws_1", bot, groupMessage("om_2", "om_root", "It is for new users", false)); err != nil {
+	if err := manager.handleMessage(ctx, app, groupMessage("om_2", "om_root", "It is for new users", false)); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.handleMessage(ctx, "ws_1", bot, groupMessage("om_3", "om_root", "/confirm", false)); err != nil {
+	if err := manager.handleMessage(ctx, app, groupMessage("om_3", "om_root", "/confirm", false)); err != nil {
 		t.Fatal(err)
 	}
 	if len(desk.messages) != 1 || desk.messages[0] != "iss_1: It is for new users" || desk.confirms != 1 {

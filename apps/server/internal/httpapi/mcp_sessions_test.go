@@ -311,12 +311,13 @@ func TestSessionToolsDoNotDiscloseUnreachableSessions(t *testing.T) {
 	if text, isError := call("wait_session", map[string]any{"sessionId": aliceSession.ID, "timeoutMs": 1000}); isError || !strings.Contains(text, `"status": "completed"`) {
 		t.Fatalf("waiting on a readable session = %q", text)
 	}
-	// A handoff reads its source and starts where the caller may start work.
-	if text, isError := call("handoff_session", map[string]any{"sessionId": aliceSession.ID, "prompt": "continue"}); !isError || text != "workspace not found" {
-		t.Fatalf("a handoff into a workspace it only reads = %q", text)
-	}
-	if text, isError := call("handoff_session", map[string]any{"sessionId": aliceSession.ID, "prompt": "continue", "workspaceId": "ws_bob"}); !isError || text != "local daemon is not connected" {
-		t.Fatalf("a handoff into its own workspace = %q, want it to reach dispatch", text)
+	// A handoff takes its source's work over: an agent hands off only a
+	// session it controls, wherever the replacement would start.
+	for _, workspace := range []string{"", "ws_bob"} {
+		if text, isError := call("handoff_session", map[string]any{"sessionId": aliceSession.ID, "prompt": "continue", "workspaceId": workspace}); !isError ||
+			text != "cannot hand off "+aliceSession.ID+": you reach its workspace as Viewer, and controlling a session needs Member" {
+			t.Fatalf("a handoff of a session it only reads (into %q) = %q", workspace, text)
+		}
 	}
 }
 

@@ -36,6 +36,20 @@ type FakeFeishu struct {
 	RefreshFailCode int
 	// Identity is what user_info answers.
 	Identity Identity
+	// RegistrationApproved: the person confirmed the app to be created.
+	RegistrationApproved bool
+	// RegistrationDenied: the person declined it.
+	RegistrationDenied bool
+	// RegistrationTenantBrand is the tenant_brand registration polls
+	// report ("lark" moves polling to the fake's /lark host).
+	RegistrationTenantBrand string
+	// GrantScopes, when set, is what an approved login grants instead of
+	// everything asked for.
+	GrantScopes []string
+	// API, when set, serves every request the fake's OAuth routes do not
+	// (the open-API calls a test sends through a gateway). Check tokens
+	// with AccessTokenValid and TenantTokenValid.
+	API http.Handler
 
 	clientID, clientSecret string
 	deviceCode, userCode   string
@@ -48,6 +62,10 @@ type FakeFeishu struct {
 	revoked                []string
 	refreshes              int
 	grantedScope           string
+	registrations          int
+	registrationPolls      map[string]int
+	validTenant            map[string]bool
+	tenantIssued           int
 }
 
 // NewFakeFeishu starts the fake for one app.
@@ -56,14 +74,88 @@ func NewFakeFeishu(clientID, clientSecret string) *FakeFeishu {
 		clientID: clientID, clientSecret: clientSecret, RefreshTokenExpiresIn: 7 * 24 * 3600,
 		Identity:    Identity{Subject: "ou_fake", DisplayName: "Fake Person", Tenant: "tenant_fake"},
 		liveRefresh: map[string]bool{}, spentRefresh: map[string]bool{}, validAccess: map[string]bool{},
+		registrationPolls: map[string]int{}, validTenant: map[string]bool{},
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST "+feishuDeviceAuthPath, fake.deviceAuthorization)
-	mux.HandleFunc("POST "+feishuTokenPath, fake.token)
-	mux.HandleFunc("POST "+feishuRevokePath, fake.revoke)
-	mux.HandleFunc("GET "+feishuUserInfoPath, fake.userInfo)
+	// "/lark" stands in for the Lark hosts.
+	for _, prefix := range []string{"", "/lark"} {
+		brand := FeishuBrandFeishu
+		if prefix != "" {
+			brand = FeishuBrandLark
+		}
+		mux.HandleFunc("POST "+prefix+feishuDeviceAuthPath, fake.deviceAuthorization)
+		mux.HandleFunc("POST "+prefix+feishuTokenPath, fake.token)
+		mux.HandleFunc("POST "+prefix+feishuRevokePath, fake.revoke)
+		mux.HandleFunc("GET "+prefix+feishuUserInfoPath, fake.userInfo)
+		mux.HandleFunc("POST "+prefix+feishuAppRegistrationPath, func(w http.ResponseWriter, r *http.Request) { fake.appRegistration(w, r, brand) })
+	}
+	mux.HandleFunc("POST "+FeishuTenantTokenPath, fake.tenantToken)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if fake.API == nil {
+			writeOAuthJSON(w, http.StatusNotFound, map[string]any{"code": 404, "msg": "not served by the fake"})
+			return
+		}
+		fake.API.ServeHTTP(w, r)
+	})
 	fake.Server = httptest.NewServer(mux)
 	return fake
+}
+
+// RegistrationPolls counts registration polls served per brand.
+func (f *FakeFeishu) RegistrationPolls(brand string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.registrationPolls[brand]
+}
+
+// ApproveRegistration lets the pending app registration succeed.
+func (f *FakeFeishu) ApproveRegistration() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.RegistrationApproved = true
+}
+
+// appRegistration serves begin and poll of the PersonalAgent app
+// registration; the app it creates is the fake's own app.
+func (f *FakeFeishu) appRegistration(w http.ResponseWriter, r *http.Request, brand string) {
+	if err := r.ParseForm(); err != nil {
+		writeOAuthJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+		return
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch r.PostForm.Get("action") {
+	case "begin":
+		if r.PostForm.Get("archetype") != "PersonalAgent" || r.PostForm.Get("auth_method") != "client_secret" {
+			writeOAuthJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "error_description": "unexpected archetype or auth_method"})
+			return
+		}
+		f.registrations++
+		writeOAuthJSON(w, http.StatusOK, map[string]any{
+			"device_code": fmt.Sprintf("reg_%d", f.registrations), "user_code": fmt.Sprintf("REG-%04d", f.registrations),
+			"verification_uri": f.Server.URL + "/page/launcher", "expire_in": 600, "interval": 0,
+		})
+	case "poll":
+		f.registrationPolls[brand]++
+		if r.PostForm.Get("device_code") != fmt.Sprintf("reg_%d", f.registrations) {
+			writeOAuthJSON(w, http.StatusOK, map[string]any{"error": "expired_token"})
+			return
+		}
+		userInfo := map[string]any{"open_id": f.Identity.Subject}
+		if f.RegistrationTenantBrand != "" {
+			userInfo["tenant_brand"] = f.RegistrationTenantBrand
+		}
+		switch {
+		case f.RegistrationDenied:
+			writeOAuthJSON(w, http.StatusOK, map[string]any{"error": "access_denied"})
+		case !f.RegistrationApproved:
+			writeOAuthJSON(w, http.StatusOK, map[string]any{"error": "authorization_pending", "user_info": userInfo})
+		default:
+			writeOAuthJSON(w, http.StatusOK, map[string]any{"client_id": f.clientID, "client_secret": f.clientSecret, "user_info": userInfo})
+		}
+	default:
+		writeOAuthJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
+	}
 }
 
 // Close stops the server.
@@ -71,7 +163,21 @@ func (f *FakeFeishu) Close() { f.Server.Close() }
 
 // Adapter is a Feishu provider that talks to this fake for both hosts.
 func (f *FakeFeishu) Adapter() *Feishu {
-	return &Feishu{HTTP: f.Server.Client(), AccountsBase: func(string) string { return f.Server.URL }}
+	return &Feishu{
+		HTTP: f.Server.Client(),
+		AccountsBase: func(baseURL string) string {
+			if strings.HasSuffix(baseURL, "/lark") {
+				return f.Server.URL + "/lark"
+			}
+			return f.Server.URL
+		},
+		RegistrationHosts: func(brand string) (string, string) {
+			if FeishuBrand(brand) == FeishuBrandLark {
+				return f.Server.URL + "/lark", f.Server.URL + "/lark"
+			}
+			return f.Server.URL, f.Server.URL
+		},
+	}
 }
 
 // BaseURL is what an app pointing at the fake has as its base URL.
@@ -125,6 +231,39 @@ func (f *FakeFeishu) AccessTokenValid(token string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.validAccess[token]
+}
+
+// TenantTokenValid reports whether the fake issued token as a tenant token.
+func (f *FakeFeishu) TenantTokenValid(token string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.validTenant[token]
+}
+
+// TenantTokensIssued counts the tenant tokens the fake issued.
+func (f *FakeFeishu) TenantTokensIssued() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.tenantIssued
+}
+
+// tenantToken serves auth/v3/tenant_access_token/internal for the app.
+func (f *FakeFeishu) tenantToken(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		AppID     string `json:"app_id"`
+		AppSecret string `json:"app_secret"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if input.AppID != f.clientID || input.AppSecret != f.clientSecret {
+		writeOAuthJSON(w, http.StatusOK, map[string]any{"code": 10014, "msg": "app secret invalid"})
+		return
+	}
+	f.tenantIssued++
+	token := fmt.Sprintf("t-fake-%d", f.tenantIssued)
+	f.validTenant[token] = true
+	writeOAuthJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "ok", "tenant_access_token": token, "expire": 7200})
 }
 
 func writeOAuthJSON(w http.ResponseWriter, status int, payload any) {
@@ -183,6 +322,9 @@ func (f *FakeFeishu) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.grantedScope = f.requestedScope
+		if len(f.GrantScopes) > 0 {
+			f.grantedScope = strings.Join(f.GrantScopes, " ")
+		}
 		writeOAuthJSON(w, http.StatusOK, f.issueLocked(time.Now(), !f.NoRefreshToken))
 	case "refresh_token":
 		if f.RefreshFailCode != 0 {

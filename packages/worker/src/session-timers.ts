@@ -6,7 +6,8 @@
  * one is due then, has the server send the timer's prompt as the session's
  * next input. That turn resumes the session; Claude Code holds the timers
  * again, each one's last fire set to that moment (it never fires the same
- * time twice), and fires them itself from then on. A timer is sent by the
+ * time twice; from 2.1.291, see claudeTimerResumeVersion), and fires them
+ * itself from then on. A timer is sent by the
  * device only while no process of its own holds it, so it never fires
  * twice.
  */

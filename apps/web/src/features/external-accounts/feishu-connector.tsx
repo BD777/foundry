@@ -5,46 +5,50 @@ import type {
   ExternalAccount,
   ExternalAccountsView,
   ExternalProviderApp,
+  FeishuAppUse,
 } from "@bd777/foundry-protocol";
 import {
   deleteExternalApp,
   disconnectExternalAccount,
   getExternalAccounts,
+  getFeishuAppUses,
   refreshExternalAccount,
   revokeExternalAccount,
   updateExternalAccount,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import { ConfirmButton } from "../../components/ui/confirm-button";
 import { EmptyState } from "../../components/ui/empty-state";
-import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { accountName, errorText } from "./account-format";
 import { AccountRow, type AccountAction } from "./account-row";
+import { AppRow } from "./app-row";
 import { ConnectDialog } from "./connect-dialog";
 
-export interface ExternalAccountsFeatureProps {
+export interface FeishuConnectorProps {
   currentUserId: string;
   isAdmin: boolean;
   onNotice: (message: string) => void;
 }
 
+const provider = "feishu";
+
 /**
- * The External accounts page: a person's own logins at other platforms and
- * the provider apps they connect through. Read on open and after each
- * action; the server publishes no events for accounts.
+ * The Connectors page's Feishu tab: a person's own Feishu logins and the
+ * Feishu apps they connect through. Read on open and after each action; the
+ * server publishes no events for accounts.
  */
-export function ExternalAccountsFeature({
+export function FeishuConnector({
   currentUserId,
   isAdmin,
   onNotice,
-}: ExternalAccountsFeatureProps) {
+}: FeishuConnectorProps) {
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [view, setView] = useState<ExternalAccountsView>();
   const [loadError, setLoadError] = useState("");
   const [busyId, setBusyId] = useState("");
   const [connecting, setConnecting] = useState<{ appId?: string }>();
+  const [uses, setUses] = useState<FeishuAppUse[]>([]);
 
   async function load() {
     try {
@@ -53,6 +57,8 @@ export function ExternalAccountsFeature({
     } catch (cause) {
       setLoadError(errorText(cause));
     }
+    // What uses each app is a detail: the page stands without it.
+    getFeishuAppUses().then(setUses, () => setUses([]));
   }
 
   useEffect(() => {
@@ -144,15 +150,16 @@ export function ExternalAccountsFeature({
     }
   }
 
-  const accounts = view?.accounts ?? [];
-  const apps = view?.apps ?? [];
+  const accounts = (view?.accounts ?? []).filter(
+    (account) => account.provider === provider,
+  );
+  const apps = (view?.apps ?? []).filter((app) => app.provider === provider);
   const canConnect = Boolean(view?.secretsConfigured);
   return (
-    <PageSurface variant="externalAccounts">
-      <header className="fdy-xacc-intro">
+    <div className="fdy-xacc-tab">
+      <div className="fdy-xacc-intro">
         <span>
-          <strong>{t("page.title")}</strong>
-          <p>{t("page.intro")}</p>
+          <p>{t("feishu.intro")}</p>
         </span>
         <Button
           disabled={!canConnect}
@@ -161,9 +168,9 @@ export function ExternalAccountsFeature({
           variant="primary"
         >
           <Plus size={14} />
-          {t("page.connect")}
+          {t("feishu.connect")}
         </Button>
-      </header>
+      </div>
       {loadError ? (
         <Alert title={t("page.loadFailed", { error: loadError })} tone="error">
           <Button onClick={() => void load()} size="sm">
@@ -222,34 +229,31 @@ export function ExternalAccountsFeature({
           ) : (
             <ul className="fdy-xacc-list">
               {apps.map((app) => (
-                <li className="fdy-xacc-app-row" key={app.id}>
-                  <span className="fdy-xacc-identity">
-                    <strong>{app.label}</strong>
-                    <small>
-                      {[
-                        app.visibility === "instance"
-                          ? t("apps.instance")
-                          : t("apps.personal"),
-                        app.clientId,
-                        app.baseUrl,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </small>
-                  </span>
-                  {app.ownerUserId === currentUserId ||
-                  (isAdmin && app.visibility === "instance") ? (
-                    <ConfirmButton
-                      confirmLabel={t("apps.removeConfirm")}
-                      disabled={busyId === app.id}
-                      onConfirm={() => void removeApp(app)}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      {t("apps.remove")}
-                    </ConfirmButton>
-                  ) : null}
-                </li>
+                <AppRow
+                  app={app}
+                  busy={busyId === app.id}
+                  canManage={
+                    app.ownerUserId === currentUserId ||
+                    (isAdmin && app.visibility === "instance")
+                  }
+                  key={app.id}
+                  use={uses.find((use) => use.appId === app.id)}
+                  onRemove={() => void removeApp(app)}
+                  onReplaced={(saved) => {
+                    setView(
+                      (current) =>
+                        current && {
+                          ...current,
+                          apps: current.apps.map((entry) =>
+                            entry.id === saved.id ? saved : entry,
+                          ),
+                        },
+                    );
+                    onNotice(
+                      t("notices.secretReplaced", { name: saved.label }),
+                    );
+                  }}
+                />
               ))}
             </ul>
           )}
@@ -257,12 +261,19 @@ export function ExternalAccountsFeature({
       ) : null}
       <ConnectDialog
         apps={apps}
+        provider={view?.providers.find((entry) => entry.kind === provider)}
         initialAppId={connecting?.appId}
         isAdmin={isAdmin}
         onAppCreated={(app) =>
           setView(
             (current) =>
-              current && { ...current, apps: [...current.apps, app] },
+              current && {
+                ...current,
+                apps: [
+                  ...current.apps.filter((entry) => entry.id !== app.id),
+                  app,
+                ],
+              },
           )
         }
         onConnected={(account) => {
@@ -275,6 +286,6 @@ export function ExternalAccountsFeature({
         }}
         open={Boolean(connecting)}
       />
-    </PageSurface>
+    </div>
   );
 }

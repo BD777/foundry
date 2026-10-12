@@ -1,4 +1,10 @@
-import { ChevronLeft, Clock, LoaderCircle, PanelRight } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  LoaderCircle,
+  PanelRight,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
@@ -9,7 +15,8 @@ import {
 } from "./chat-message-content";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./chat-context-card";
-import { backgroundWorkNote, scheduledNote } from "./chat-context-model";
+import { backgroundWorkNote } from "./chat-context-model";
+import { scheduledNote } from "./chat-schedule-model";
 import { useSharedNow } from "./use-shared-now";
 import { ChatDetailPanel } from "./chat-detail-panel";
 import { ChatDetailSplitPane } from "./chat-detail-split-pane";
@@ -52,7 +59,12 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const { t } = useTranslation("chat");
   const [contextCardOpen, setContextCardOpen] = useState(false);
   // Narrow screens show one pane at a time: the list, or the open chat.
-  const [narrowPane, setNarrowPane] = useState<"list" | "thread">("list");
+  const [narrowPane, setNarrowPane] = useState<"list" | "thread">(
+    props.selectedChatId ? "thread" : "list",
+  );
+  useEffect(() => {
+    if (props.selectedChatId) setNarrowPane("thread");
+  }, [props.selectedChatId]);
   const listChats = useMemo(
     () =>
       chats.map((chat) => ({
@@ -109,7 +121,11 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const revealBackgroundWork = useCallback(() => {
     if (!backgroundWork) return;
     setReveal({
-      ids: [...backgroundWork.taskIds, ...backgroundWork.subagentIds],
+      ids: [
+        ...(backgroundWork.timerRun ? [backgroundWork.timerRun.id] : []),
+        ...backgroundWork.taskIds,
+        ...backgroundWork.subagentIds,
+      ],
     });
     showPanel();
   }, [backgroundWork, showPanel]);
@@ -257,7 +273,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
           detail={
             liveSelection ? (
               <ChatDetailPanel
-                canControl={!props.readOnlyReason}
+                canControl={!props.readOnlyReason && !props.threadNotice}
                 error={contextDetail.error}
                 file={contextDetail.file}
                 loading={contextDetail.loading}
@@ -305,13 +321,39 @@ export function ChatSurface(props: ChatSurfaceProps) {
                   {backgroundNote}
                 </Button>
               ) : schedule ? (
-                <ScheduledNote onClick={revealTimers} schedule={schedule} />
+                <ScheduledNote
+                  onClick={revealTimers}
+                  schedule={schedule}
+                  wakes={props.scheduleWakes}
+                />
               ) : undefined
             }
             readOnly={
               props.readOnlyReason ? (
                 <Alert title={t("thread.readOnly")}>
                   {props.readOnlyReason}
+                </Alert>
+              ) : props.threadNotice ? (
+                <Alert
+                  title={props.threadNotice.title}
+                  tone={props.threadNotice.tone}
+                >
+                  <p>{props.threadNotice.message}</p>
+                  {props.threadNotice.action ? (
+                    <Button
+                      className="fdy-chat-thread-notice-action"
+                      onClick={() => {
+                        const action = props.threadNotice?.action;
+                        if (action?.showsList) setNarrowPane("list");
+                        action?.onSelect();
+                      }}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      {props.threadNotice.action.label}
+                      <ChevronRight aria-hidden="true" size={14} />
+                    </Button>
+                  ) : null}
                 </Alert>
               ) : undefined
             }
@@ -328,6 +370,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
               agentValue: props.selectedAgentId,
               onAgentChange: props.onAgentChange,
               runtimeControls: {
+                // A verifier keeps its sandbox; a message cannot change it.
+                showPermissions: !props.contextCard?.status?.verification,
                 selectedRuntime,
                 claudeEffort: props.claudeEffort,
                 claudePermissionMode: props.claudePermissionMode,
@@ -387,13 +431,20 @@ export function ChatSurface(props: ChatSurfaceProps) {
 function ScheduledNote(props: {
   onClick: () => void;
   schedule: NonNullable<ChatSurfaceProps["schedule"]>;
+  wakes: ChatSurfaceProps["scheduleWakes"];
 }) {
   const { i18n } = useTranslation();
   const minute = Math.floor(useSharedNow(true) / 60_000);
   const note = useMemo(
-    () => scheduledNote(props.schedule, new Date(minute * 60_000)),
+    () =>
+      scheduledNote(
+        props.schedule,
+        new Date(minute * 60_000),
+        props.wakes?.wakes,
+        props.wakes?.busy,
+      ),
     // The note is written in the viewer's language.
-    [props.schedule, minute, i18n.language],
+    [props.schedule, props.wakes, minute, i18n.language],
   );
   return (
     <Button

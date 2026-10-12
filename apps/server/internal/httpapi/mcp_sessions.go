@@ -52,6 +52,8 @@ func (s *Server) controlRefusal(ctx context.Context, actor Actor, target store.A
 		return "a session working in an Issue controls only that Issue's sessions"
 	case !scope.can(target.WorkspaceID, store.WorkspaceRoleMember):
 		return "you reach its workspace as " + roleLabel(scope.role(target.WorkspaceID)) + ", and controlling a session needs Member"
+	case actor.Agent():
+		return "an agent controls only the sessions its person started, and those their agents started"
 	default:
 		return "a Member controls the sessions they started; a Maintainer controls any"
 	}

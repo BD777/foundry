@@ -8,9 +8,10 @@
  * the icon (a status dot, for tabs too narrow for the title): its turn
  * runs; its finished answer is unseen (it finished while this tab was
  * hidden; seeing it clears the mark); its turn ended but its agent still
- * works in the background. Idle shows neither; a chat whose agent only
- * holds timers is idle too (it waits, often for days): the chat's
- * "scheduled · next at" note says when it wakes.
+ * works in the background (a timer's run it started on its own counts).
+ * Idle shows neither; a chat whose agent only holds timers is idle too (it
+ * waits, often for days): the chat's "scheduled · next at" note and its
+ * list row's clock say it will wake.
  */
 export const appName = "Foundry";
 
@@ -41,7 +42,10 @@ export interface DocumentTitleParts {
   running?: boolean;
   /** The open chat's finished answer is unseen. */
   unread?: boolean;
-  /** The open chat's turn ended, but background tasks or subagents run. */
+  /**
+   * The open chat's turn ended, but background tasks, subagents or a
+   * timer's run go on.
+   */
   background?: boolean;
 }
 

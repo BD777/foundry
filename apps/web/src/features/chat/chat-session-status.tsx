@@ -51,6 +51,10 @@ function formatCost(usd: number): string {
 
 function permissionsValue(status: ChatSessionStatus): string {
   const t = i18n.t.bind(i18n);
+  // A verifier's record reads full access (Codex) or dontAsk (Claude): the
+  // sandbox around the whole process is what keeps the workspace read-only.
+  if (status.verification)
+    return t("chat:contextCard.status.verificationSandbox");
   if (status.runtime === "claude")
     return status.claudePermissionMode &&
       status.claudePermissionMode !== "default"

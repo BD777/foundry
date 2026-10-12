@@ -73,3 +73,14 @@ export function chatUpdateTime(
     title: i18n.t("chat:time.unknownTitle"),
   };
 }
+
+/** A clock time, with the date when it is not today's. */
+export function noteTime(at: Date, now: Date): string {
+  const sameDay = at.toDateString() === now.toDateString();
+  return at.toLocaleString(i18n.language, {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(sameDay ? {} : { month: "2-digit", day: "2-digit" }),
+  });
+}

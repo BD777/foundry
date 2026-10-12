@@ -356,7 +356,7 @@ export function sessionResourceNotes(
  * the foundry skill also works through other sessions.
  */
 export function foundrySessionNote(sessionId: string): string {
-  return `- You are Foundry session ${sessionId}. Ids such as sess_…, native_claude_…, native_codex_…, ws_… and dev_…, and Foundry chat links (…/chats/<id>), name Foundry sessions, chats, workspaces and devices; the foundry skill reads them and, when the person asks for work in other sessions or on other devices, starts, steers and waits on those sessions.`;
+  return `- You are Foundry session ${sessionId}. Ids such as sess_…, native_claude_…, native_codex_…, ws_… and dev_…, and Foundry chat links (…/chats/<id>), name Foundry sessions, chats, workspaces and devices; the foundry skill reads them, and starts, steers and waits on sessions on this or other devices.`;
 }
 
 // A session's scratch directory lives as long as the session, not as this

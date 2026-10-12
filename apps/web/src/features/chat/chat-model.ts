@@ -426,8 +426,9 @@ function chatMessagesForSession(
         kind: "process",
         role: "bot",
         streaming: turnLive && isLastSegment,
-        ...(turnLive && isLastSegment && turnStartedAt
-          ? { turnStartedAt }
+        // The group's own start, which its final duration also counts from.
+        ...(turnLive && isLastSegment && !segment.startedAt && turnStartedAt
+          ? { startedAt: turnStartedAt }
           : {}),
         text: segment.text,
         // A group that knows its own duration shows it beside the title.
@@ -470,8 +471,10 @@ function chatMessagesForSession(
   }
   // Until the turn's first shown step, the session can stay silent for a
   // long time (dispatch, a steer waiting on a running tool, only side-panel
-  // events): the input the agent is working on still shows it is.
+  // events): the input the agent is working on still shows it is. It counts
+  // from that input, where the group that replaces it will start too.
   const latest = messages.at(-1);
+  const awaitingFrom = latest?.at ?? turnStartedAt;
   if (
     sessionActive &&
     !terminalError &&
@@ -483,7 +486,7 @@ function chatMessagesForSession(
       kind: "process",
       role: "bot",
       streaming: true,
-      ...(turnStartedAt ? { turnStartedAt } : {}),
+      ...(awaitingFrom ? { startedAt: awaitingFrom } : {}),
       text: "",
       title: i18n.t("chat:transcript.processing"),
     });
@@ -514,7 +517,6 @@ function chatMessagesForSession(
   return messages;
 }
 
-/** When the input the session is working on arrived. */
 /**
  * When the running turn began: the person's message, or a timer or finished
  * background task that woke the agent. A message steered into the running

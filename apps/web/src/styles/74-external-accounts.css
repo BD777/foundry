@@ -1,6 +1,12 @@
-/* External accounts page, its connect dialog and the workspace Accounts tab. */
-.fdy-page-surface-externalAccounts {
+/* Connectors page, its connect dialog and the workspace Accounts tab. */
+.fdy-page-surface-connectors {
   max-width: 920px;
+  gap: 18px;
+}
+
+.fdy-xacc-tab {
+  display: grid;
+  min-width: 0;
   gap: 18px;
 }
 
@@ -90,6 +96,21 @@
 .fdy-xacc-row {
   display: grid;
   gap: 10px;
+}
+
+/* A Feishu app: its line, then its rotation hint or secret form. */
+.fdy-xacc-app-secret {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.fdy-xacc-app {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--fdy-line-soft);
 }
 
 .fdy-xacc-row-main,
@@ -278,31 +299,138 @@
   line-height: 1.5;
 }
 
-.fdy-xacc-code {
+/* A scan step: the QR code beside what to do with it; stacked when narrow. */
+.fdy-xacc-scan {
   display: grid;
-  justify-items: center;
-  gap: 6px;
-  padding: 16px;
-  border: 1px solid var(--fdy-line-soft);
-  border-radius: var(--fdy-panel-radius-md);
-  background: var(--fdy-paper-raised);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
 }
 
-.fdy-xacc-code span {
+@media (max-width: 520px) {
+  .fdy-xacc-scan {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+  }
+
+  .fdy-xacc-scan .fdy-xacc-code-actions {
+    justify-content: center;
+  }
+}
+
+/* Dark modules on a light ground in both themes: phone cameras read that. */
+.fdy-xacc-qr {
+  display: grid;
+  padding: 6px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-qr-surface);
+  line-height: 0;
+}
+
+.fdy-xacc-qr[data-dimmed="true"] {
+  opacity: 0.25;
+}
+
+.fdy-xacc-step {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-xacc-user-code {
   color: var(--fdy-ink-muted);
   font-size: 12px;
 }
 
-.fdy-xacc-code code {
-  overflow-wrap: anywhere;
+.fdy-xacc-user-code code {
   color: var(--fdy-ink-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 24px;
-  font-weight: 700;
+}
+
+.fdy-xacc-scopes,
+.fdy-xacc-advanced {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-xacc-scopes > summary,
+.fdy-xacc-advanced > summary {
+  width: fit-content;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 4px;
+  color: var(--fdy-ink-strong);
+  cursor: pointer;
+}
+
+.fdy-xacc-scopes > summary:hover,
+.fdy-xacc-advanced > summary:hover {
+  background: var(--fdy-brass-soft);
+}
+
+.fdy-xacc-scopes > summary:focus-visible,
+.fdy-xacc-advanced > summary:focus-visible {
+  outline: 1px solid var(--fdy-brass);
+  outline-offset: 2px;
+}
+
+.fdy-xacc-scopes > p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fdy-xacc-scopes > code {
+  display: block;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: var(--fdy-panel-radius-md);
+  background: var(--fdy-paper-raised);
+  color: var(--fdy-ink-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.fdy-xacc-advanced > .fdy-xacc-form {
+  padding-top: 4px;
 }
 
 .fdy-xacc-waiting {
   margin: 0;
   color: var(--fdy-ink-muted);
   font-size: 12px;
+}
+
+/* What uses a Feishu app: workspace bots (each a link to its tab), agent
+   subscriptions, the connection. */
+.fdy-xacc-app-uses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-xacc-app-uses-label {
+  color: var(--fdy-ink-strong);
+  font-weight: 600;
+}
+
+.fdy-xacc-app-uses-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
 }

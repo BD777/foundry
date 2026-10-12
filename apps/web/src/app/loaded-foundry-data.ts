@@ -36,10 +36,11 @@ import type { FieldRequest, FieldSelection } from "../lib/single-flight";
 // Project a freshly-loaded payload into the chat identities the selection
 // policy needs. Thread grouping stays owned by the chat feature.
 export function loadedChatSelection(loaded: FoundryData): LoadedChatSelection {
-  const chatSessions = loaded.agentSessions.filter(isChatSession);
   return {
-    chatSessions,
-    chatThreads: chatThreadsFromSessions(chatSessions),
+    sessions: loaded.agentSessions,
+    chatThreads: chatThreadsFromSessions(
+      loaded.agentSessions.filter(isChatSession),
+    ),
     chats: loaded.chats,
     preferredChatId: preferredChatId(loaded.chats),
   };
@@ -47,19 +48,41 @@ export function loadedChatSelection(loaded: FoundryData): LoadedChatSelection {
 
 // Resolve which chat should stay selected after a data load. Shared by
 // refreshData and the workspace deletion handler. The route check stays here
-// because it reads live browser location.
+// because it reads live browser location. `keepRouteChat`: the chat the
+// address names stays selected though the read does not list it (older
+// than the list, in another workspace, gone); the chat view looks it up and
+// shows it or says why it cannot, never another chat in its place.
 export function resolveChatSelection(
   loaded: FoundryData,
   current: string,
-  options: { respectChatRoute?: boolean } = {},
+  options: { respectChatRoute?: boolean; keepRouteChat?: boolean } = {},
 ): string {
   if (options.respectChatRoute) {
     const chatRoute = parseAppRoute(window.location.pathname);
     if (chatRoute.view === "chats" && !chatRoute.selectedChatId) {
       return "";
     }
+    if (
+      options.keepRouteChat &&
+      chatRoute.view === "chats" &&
+      current &&
+      chatRoute.selectedChatId === current
+    ) {
+      return current;
+    }
   }
   return resolveLoadedChatSelection(loadedChatSelection(loaded), current);
+}
+
+/** The chat selected after a read: kept when the address names it. */
+export function chatSelectionAfterRead(
+  loaded: FoundryData,
+  current: string,
+): string {
+  return resolveChatSelection(loaded, current, {
+    keepRouteChat: true,
+    respectChatRoute: true,
+  });
 }
 
 // Apply a freshly-loaded FoundryData payload: merge it into state, update

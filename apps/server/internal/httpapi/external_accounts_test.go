@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -78,6 +77,8 @@ func newExternalAccountsFixture(t *testing.T) *externalAccountsFixture {
 	service.Logf = t.Logf
 	server.externalAccounts = service
 	server.hub.externalAccounts = service
+	server.feishuGateway = newFeishuGateway(db, service, nil)
+	server.serveGatewayEvents()
 	return f
 }
 
@@ -229,7 +230,7 @@ func TestExternalAccountWorkspaceBindingsAndVisibility(t *testing.T) {
 	}
 }
 
-func TestExternalAccountDispatchAndMintFollowOwnerDeviceRule(t *testing.T) {
+func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	f := newExternalAccountsFixture(t)
 	app := f.createApp(f.alice, "")
 	account := f.connect(f.alice, app)
@@ -245,52 +246,78 @@ func TestExternalAccountDispatchAndMintFollowOwnerDeviceRule(t *testing.T) {
 	}
 	alice, _ := f.server.accounts.GetUser(ctx, f.aliceID)
 	bob, _ := f.server.accounts.GetUser(ctx, f.bobID)
+	aliceDevice := Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}
 
-	// Dispatch: alice's device carries the material; bob's device (were the
-	// session ever there) gets nothing; a sandboxed role gets nothing.
-	materials := f.server.hub.sessionExternalAccounts(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice})
-	if len(materials) != 1 || materials[0].AccountID != account.ID || materials[0].AccessToken == "" || materials[0].ClientSecret != "secret_fake" || materials[0].Tool != "feishu-cli" {
+	// Dispatch: alice's device carries the app id and gateway handles, and
+	// no credential at all; bob's device (were the session ever there)
+	// gets nothing; a sandboxed role gets nothing.
+	materials := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, true)
+	if len(materials) != 1 || materials[0].AccountID != account.ID || materials[0].Tool != "feishu-cli" || materials[0].ClientID != "cli_fake" {
 		t.Fatalf("materials for the owner's device: %+v", materials)
 	}
-	if got := f.server.hub.sessionExternalAccounts(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}); len(got) != 0 {
+	gateway := materials[0].Gateway
+	if gateway == nil || gateway.Path != "/api/feishu-gw" || !strings.HasPrefix(gateway.AppHandle, "fsg_") || !strings.HasPrefix(gateway.UserHandle, "fsu_") {
+		t.Fatalf("material gateway: %+v", gateway)
+	}
+	encoded, _ := json.Marshal(materials)
+	for _, secret := range []string{"secret_fake", f.fake.CurrentRefreshToken()} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("run_session carries a credential: %s", encoded)
+		}
+	}
+	if strings.Contains(string(encoded), "accessToken") || strings.Contains(string(encoded), "clientSecret") {
+		t.Fatalf("run_session still names a token or secret field: %s", encoded)
+	}
+	if got := f.server.hub.sessionExternalAccounts(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, true); len(got) != 0 {
 		t.Fatalf("bob's device received alice's account: %+v", got)
 	}
 	execution := session
 	execution.Role = store.AgentSessionRoleIssueExecution
-	if got := f.server.hub.sessionExternalAccounts(ctx, execution, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}); len(got) != 0 {
+	if got := f.server.hub.sessionExternalAccounts(ctx, execution, aliceDevice, true); len(got) != 0 {
 		t.Fatalf("a sandboxed role received materials: %+v", got)
 	}
 	bobsSession := session
 	bobsSession.CreatedByUserID = f.bobID
-	if got := f.server.hub.sessionExternalAccounts(ctx, bobsSession, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}); len(got) != 0 {
+	if got := f.server.hub.sessionExternalAccounts(ctx, bobsSession, aliceDevice, true); len(got) != 0 {
 		t.Fatalf("another person's session on alice's device received her account: %+v", got)
 	}
 
-	// Re-mint over HTTP: the device that runs the session, for its session.
-	mint := func(credential, sessionID string) *httptest.ResponseRecorder {
-		return doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/external-accounts/"+account.ID+"/mint", `{"sessionId":"`+sessionID+`"}`, credential))
+	// A worker without the gateway gets nothing, and the transcript says
+	// why, once.
+	for range 2 {
+		if got := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, false); len(got) != 0 {
+			t.Fatalf("an old worker received materials: %+v", got)
+		}
 	}
-	minted := mint(f.aliceDevice, session.ID)
-	expectStatus(t, minted, http.StatusOK, "alice's device re-mints")
-	var token store.ExternalAccountToken
-	_ = json.Unmarshal(minted.Body.Bytes(), &token)
-	if token.AccessToken == "" || !f.fake.AccessTokenValid(token.AccessToken) || strings.Contains(minted.Body.String(), f.fake.CurrentRefreshToken()) {
-		t.Fatalf("mint answer: %s", minted.Body.String())
+	detail, err := f.db.GetAgentSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	expectStatus(t, mint(f.bobDevice, session.ID), http.StatusForbidden, "bob's device re-mints alice's session")
-	expectStatus(t, mint(f.aliceDevice, "sess_missing"), http.StatusNotFound, "re-mint for an unknown session")
-	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/external-accounts/"+account.ID+"/mint", `{"sessionId":"`+session.ID+`"}`)),
-		http.StatusUnauthorized, "a person calls the device route")
+	notices := 0
+	for _, event := range detail.Events {
+		if event.Label == "Feishu unavailable" && strings.Contains(event.Detail, "Update the worker") {
+			notices++
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("outdated-worker notices: %d in %+v", notices, detail.Events)
+	}
 
-	// Stop using now: the grant (its refresh token) is revoked at Feishu and
-	// re-mints fail; a token a running session already holds lives until it
-	// expires (design: "Sessions lose access within 2 hours").
+	// The device route that handed out real tokens is gone.
+	gone := doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/external-accounts/"+account.ID+"/mint", `{"sessionId":"`+session.ID+`"}`, f.aliceDevice))
+	if gone.Code != http.StatusNotFound && gone.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("mint route still answers: %d %s", gone.Code, gone.Body.String())
+	}
+
+	// Stop using now, then remove: bindings go with the account.
 	var revoked store.ExternalAccount
 	f.call(f.alice, http.MethodPost, "/api/external-accounts/"+account.ID+"/revoke", "{}", http.StatusOK, "revoke", &revoked)
 	if revoked.Status != store.ExternalAccountRevoked || len(f.fake.Revoked()) != 1 {
 		t.Fatalf("revoke: %+v revoked=%v", revoked, f.fake.Revoked())
 	}
-	expectStatus(t, mint(f.aliceDevice, session.ID), http.StatusConflict, "re-mint after revoke")
+	if got := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, true); len(got) != 0 {
+		t.Fatalf("a revoked account was dispatched: %+v", got)
+	}
 	f.call(f.alice, http.MethodDelete, "/api/external-accounts/"+account.ID, "", http.StatusOK, "disconnect", nil)
 	f.call(f.alice, http.MethodGet, "/api/external-accounts/"+account.ID, "", http.StatusNotFound, "read after disconnect", nil)
 	if bindings, _ := f.db.ListWorkspaceExternalAccounts(ctx, "ws_alice"); len(bindings) != 0 {
@@ -332,4 +359,57 @@ func TestExternalAccountsWithoutSecretStore(t *testing.T) {
 	recorder = doAuthCall(t, handler, authCall{method: http.MethodPost, path: "/api/external-apps", cookie: alice, origin: accountsTestOrigin,
 		body: `{"provider":"feishu","clientId":"cli","clientSecret":"sec"}`})
 	expectStatus(t, recorder, http.StatusPreconditionFailed, "app without a key is refused, not stored in the clear")
+}
+
+func TestExternalAccountSetupCreatesAppAndConnects(t *testing.T) {
+	f := newExternalAccountsFixture(t)
+	f.call(f.alice, http.MethodPost, "/api/external-accounts/setup", `{"provider":"slack"}`, http.StatusBadRequest, "setup an unknown provider", nil)
+
+	var login store.ExternalAccountLogin
+	f.call(f.alice, http.MethodPost, "/api/external-accounts/setup", `{"provider":"feishu"}`, http.StatusAccepted, "setup", &login)
+	if login.Phase != "register" || !strings.Contains(login.VerificationURIComplete, "/page/cli?user_code="+login.UserCode) {
+		t.Fatalf("setup did not start at registration: %+v", login)
+	}
+	// The login is alice's alone.
+	f.call(f.bob, http.MethodGet, "/api/external-accounts/logins/"+login.ID, "", http.StatusNotFound, "bob reads alice's setup", nil)
+
+	f.fake.ApproveRegistration()
+	var current store.ExternalAccountLogin
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		f.call(f.alice, http.MethodGet, "/api/external-accounts/logins/"+login.ID, "", http.StatusOK, "poll setup", &current)
+		if current.Phase == "authorize" || current.Status != "pending" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if current.Phase != "authorize" || current.App == nil || current.App.CreatedVia != "registered" {
+		t.Fatalf("setup did not reach authorization: %+v", current)
+	}
+	if encoded, _ := json.Marshal(current); strings.Contains(string(encoded), "secret_fake") {
+		t.Fatal("the setup view carries the app secret")
+	}
+	f.fake.Approve()
+	for time.Now().Before(deadline.Add(5 * time.Second)) {
+		f.call(f.alice, http.MethodGet, "/api/external-accounts/logins/"+login.ID, "", http.StatusOK, "poll setup", &current)
+		if current.Status != "pending" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if current.Status != "complete" || current.Account == nil || current.Account.AppID != current.App.ID {
+		t.Fatalf("setup did not connect: %+v", current)
+	}
+	var view store.ExternalAccountsView
+	f.call(f.alice, http.MethodGet, "/api/external-accounts", "", http.StatusOK, "alice's view", &view)
+	if len(view.Apps) != 1 || view.Apps[0].CreatedVia != "registered" || len(view.Accounts) != 1 {
+		t.Fatalf("view after setup: %+v", view)
+	}
+	if view.Providers[0].ScopePreset == nil || !view.Providers[0].RegistersApps {
+		t.Fatalf("provider lacks the preset: %+v", view.Providers[0])
+	}
+	f.call(f.bob, http.MethodGet, "/api/external-accounts", "", http.StatusOK, "bob's view", &view)
+	if len(view.Apps) != 0 {
+		t.Fatalf("bob sees alice's registered app: %+v", view.Apps)
+	}
 }

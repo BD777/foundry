@@ -164,3 +164,26 @@ func TestDataLocationRefusesAnEmptyNewDefaultWhileOldDataExists(t *testing.T) {
 		t.Errorf("explicit FOUNDRY_DB_PATH must never be refused: %v", err)
 	}
 }
+
+func TestLoadConfigReadsTheIntegrationsSwitch(t *testing.T) {
+	for value, on := range map[string]bool{"": true, "on": true, "off": false} {
+		cfg := loadConfig(func(key string) string {
+			if key == "FOUNDRY_INTEGRATIONS" {
+				return value
+			}
+			return ""
+		})
+		if cfg.Options.Integrations.On() != on || cfg.IntegrationsErr != nil {
+			t.Fatalf("FOUNDRY_INTEGRATIONS=%q: on %v, err %v; want on %v", value, cfg.Options.Integrations.On(), cfg.IntegrationsErr, on)
+		}
+	}
+	cfg := loadConfig(func(key string) string {
+		if key == "FOUNDRY_INTEGRATIONS" {
+			return "false"
+		}
+		return ""
+	})
+	if err := validateSettings(cfg); err == nil || !strings.Contains(err.Error(), "FOUNDRY_INTEGRATIONS must be on or off") {
+		t.Fatalf("an unknown value must be refused, got %v", err)
+	}
+}

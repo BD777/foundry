@@ -14,7 +14,30 @@ export function navigateToDeviceAgents(deviceId: string): void {
   });
 }
 
-/** Opens a session's transcript in Chats through the same contract. */
-export function navigateToChat(sessionId: string): void {
-  navigateAppRoute({ selectedChatId: sessionId, view: "chats" });
+/**
+ * Opens a session's transcript in Chats through the same contract: in the
+ * workspace shown, or in `workspaceId`.
+ */
+export function navigateToChat(sessionId: string, workspaceId?: string): void {
+  navigateAppRoute({ selectedChatId: sessionId, view: "chats" }, workspaceId);
+}
+
+/** Opens an Issue's page through the same contract. */
+export function navigateToIssue(issueId: string): void {
+  navigateAppRoute({ selectedIssueId: issueId, view: "issue" });
+}
+
+/** Opens a workspace's Feishu Bot tab through the same contract. */
+export function navigateToWorkspaceFeishuBot(workspaceId: string): void {
+  navigateAppRoute({ view: "feishu" }, workspaceId);
+}
+
+/** Opens the workspace's Skills page through the same contract. */
+export function navigateToSkills(): void {
+  navigateAppRoute({ view: "skills" });
+}
+
+/** Opens the page on what the built-in Foundry skill gives agents. */
+export function navigateToFoundrySkill(): void {
+  navigateAppRoute({ view: "foundrySkill" });
 }

@@ -1542,6 +1542,43 @@ type BuiltinSkill struct {
 	Source      string `json:"source"`
 }
 
+// FoundrySkillDetail is what the built-in foundry skill gives agents, for
+// people: the Foundry tools with what each does, its limits and the session
+// roles that get it, the guidance its SKILL.md gives, and that SKILL.md.
+type FoundrySkillDetail struct {
+	Name        string                  `json:"name"`
+	Description string                  `json:"description,omitempty"`
+	Source      string                  `json:"source"`
+	Revisions   []BuiltinSkillRevision  `json:"revisions"`
+	Tools       []FoundryToolCapability `json:"tools"`
+	Guidance    []SkillGuidanceSection  `json:"guidance"`
+	// Manifest is the SKILL.md agents read.
+	Manifest string `json:"manifest"`
+}
+
+// BuiltinSkillRevision is the revision of a built-in skill an agent runtime gets.
+type BuiltinSkillRevision struct {
+	Runtime  string `json:"runtime"`
+	Revision int    `json:"revision"`
+}
+
+// FoundryToolCapability is one Foundry MCP tool. Roles name the sessions
+// that get it: "session" (a chat, the sessions agents start, people at a
+// shell), "issue_execution", "issue_clarification" and "verifier".
+type FoundryToolCapability struct {
+	Name     string   `json:"name"`
+	Summary  string   `json:"summary"`
+	Limits   []string `json:"limits"`
+	ReadOnly bool     `json:"readOnly"`
+	Roles    []string `json:"roles"`
+}
+
+// SkillGuidanceSection is one section of a SKILL.md as points, one line each.
+type SkillGuidanceSection struct {
+	Heading string   `json:"heading"`
+	Points  []string `json:"points"`
+}
+
 type FoundryDataProjection struct {
 	Runs                   []Run                    `json:"runs,omitempty"`
 	Workspace              WorkspaceProjection      `json:"workspace"`

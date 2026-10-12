@@ -101,6 +101,77 @@ func TestAgentReachesItsPersonsWorkspaces(t *testing.T) {
 	}
 }
 
+// D1: an agent controls only the sessions its person started (its own
+// agents' included), even where its person is a Member beside others. It
+// still reads everyone's sessions there.
+func TestAgentControlsOnlyItsPersonsSessions(t *testing.T) {
+	f := newIsolationFixture(t)
+	ctx := context.Background()
+	db := f.server.store
+	for _, register := range []struct{ device, workspace, agent string }{
+		{"dev_alice", "ws_alice", "agent_alice"}, {"dev_bob", "ws_bob", "agent_bob"},
+	} {
+		if err := db.RegisterDaemon(ctx, store.DaemonRegistration{
+			Device:    store.DeviceProjection{ID: register.device, Label: "Device", Status: "connected", LastSeenLabel: "online"},
+			Workspace: store.WorkspaceProjection{ID: register.workspace, Name: "W", LocalPath: "/tmp/w"},
+			Agents: []store.AgentProjection{{
+				ID: register.agent, WorkspaceID: register.workspace, DeviceID: register.device, Provider: "claude", Status: "healthy",
+				AuthMode: "local_config", SecretStored: "local", ConfigScope: "workspace", ConfigLabel: "local", LastSeenLabel: "online",
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/workspaces/ws_alice/members", `{"username":"bob","role":"member"}`)),
+		http.StatusNoContent, "share ws_alice with bob as member")
+	create := func(user, prompt string) store.AgentSession {
+		session, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+			CreatedByUserID: user, WorkspaceID: "ws_alice", AgentID: "agent_alice", Provider: "claude", Prompt: prompt,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	alices, bobs := create(f.aliceID, "alice's chat"), create(f.bobID, "bob's chat")
+	orchestrator := create(f.bobID, "bob's orchestrator")
+	token, err := db.MintAgentSessionToken(ctx, orchestrator.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		WorkspaceID: "ws_alice", AgentID: "agent_alice", Provider: "claude", Prompt: "bob's agent's child",
+		Source: "agent", ParentSessionID: orchestrator.ID,
+	})
+	if err != nil || child.CreatedByUserID != f.bobID {
+		t.Fatalf("child = %+v (%v), want it to inherit bob as its creator", child, err)
+	}
+	mcp := func(tool, arguments string) string {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + arguments + `}}`
+		return doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: body,
+			headers: map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}}).Body.String()
+	}
+	if body := mcp("read_context", `{"sessionId":"`+alices.ID+`"}`); !strings.Contains(body, alices.ID) || strings.Contains(body, `"isError":true`) {
+		t.Fatalf("bob's agent reads alice's session: %s", body)
+	}
+	refusal := "an agent controls only the sessions its person started"
+	for tool, arguments := range map[string]string{
+		"rename_session":  `{"sessionId":"` + alices.ID + `","title":"taken"}`,
+		"cancel_session":  `{"sessionId":"` + alices.ID + `"}`,
+		"send_message":    `{"sessionId":"` + alices.ID + `","prompt":"stop that"}`,
+		"handoff_session": `{"sessionId":"` + alices.ID + `","prompt":"take it over"}`,
+	} {
+		if body := mcp(tool, arguments); !strings.Contains(body, refusal) {
+			t.Fatalf("%s on alice's session: %s, want %q", tool, body, refusal)
+		}
+	}
+	for _, own := range []store.AgentSession{bobs, child} {
+		if body := mcp("rename_session", `{"sessionId":"`+own.ID+`","title":"renamed"}`); strings.Contains(body, `"isError":true`) || !strings.Contains(body, "renamed") {
+			t.Fatalf("bob's agent renames %s, a session of bob's: %s", own.Prompt, body)
+		}
+	}
+}
+
 // The Resource Pool directory follows the agent's reach: its person's
 // devices, plus devices hosting a workspace shared with that person.
 func TestListResourcesFollowsReach(t *testing.T) {
@@ -179,6 +250,35 @@ func TestListResourcesFollowsReach(t *testing.T) {
 	}
 	if names["dev_alice"] != "Microsoft Edge" || names["dev_bob"] != "Google Chrome" {
 		t.Fatalf("after sharing, browsers = %v", names)
+	}
+
+	// A removed device's workspaces leave list_workspaces as its device
+	// leaves list_resources.
+	if _, err := db.SoftRemoveDevice(ctx, "dev_alice"); err != nil {
+		t.Fatal(err)
+	}
+	if devices = list(`{}`); len(devices) != 1 || devices[0].DeviceID != "dev_bob" {
+		t.Fatalf("after removing dev_alice, list_resources = %+v", devices)
+	}
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_workspaces","arguments":{}}}`
+	raw := doAuthCall(t, f.handler, authCall{method: http.MethodPost, path: "/api/mcp", body: body,
+		headers: map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}}).Body.Bytes()
+	var envelope struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	var workspaces []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Result.Content) == 0 ||
+		json.Unmarshal([]byte(envelope.Result.Content[0].Text), &workspaces) != nil {
+		t.Fatalf("list_workspaces: %s", raw)
+	}
+	if len(workspaces) != 1 || workspaces[0].ID != "ws_bob" {
+		t.Fatalf("after removing dev_alice, list_workspaces = %+v, want only ws_bob", workspaces)
 	}
 }
 

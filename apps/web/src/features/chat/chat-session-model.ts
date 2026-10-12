@@ -94,8 +94,49 @@ export function agentSessionHasStreamedResponse(
   );
 }
 
+/**
+ * Whether Chats lists the session: the one rule for what the person finds
+ * there. Everything their agents start is listed, so nothing an agent did
+ * on their behalf is out of sight; what is left out is listed where it
+ * belongs.
+ *
+ * - chat (or none, older rows): the person's own chats, forks they made
+ *   included. A timer's wake or a background continuation is a new input
+ *   of the same session, never another session, so it stays that chat's row.
+ * - agent: a session another session started (create_session, a fork, a
+ *   handoff by an agent). Listed in the starting session's group, and the
+ *   person may open and continue it.
+ * - verification: a verifier an agent started. Listed like any child; it
+ *   stays read-only in its sandbox when the person continues it.
+ * - agent or verification inside an Issue (issueId): it works in the
+ *   Issue's candidate, gets no Chats group and is listed on its Issue.
+ * - issue: an Issue's execution or clarification; listed on its Issue.
+ * - naming, diagnostic: Foundry's own jobs (titles, group names, checks),
+ *   not work anyone asked for.
+ *
+ * Any of them still opens by id (a link, the Issue page), read-only when
+ * not listed.
+ */
 export function isChatSession(session: AgentSession): boolean {
-  return session.source === undefined || session.source === "chat";
+  const source = session.source;
+  switch (source) {
+    case undefined:
+    case "chat":
+      return true;
+    case "agent":
+    case "verification":
+      return !session.issueId;
+    case "issue":
+    case "naming":
+    case "diagnostic":
+      return false;
+    default: {
+      // A new source does not compile until it is decided here.
+      const undecided: never = source;
+      void undecided;
+      return false;
+    }
+  }
 }
 
 function chatThreadId(session: AgentSession): string {
@@ -270,6 +311,39 @@ export function chatThreadsFromSessions(
       const rightLatest = latestThreadSession(right)?.id ?? "";
       return rightLatest.localeCompare(leftLatest);
     });
+}
+
+/**
+ * The list row's note of who started a chat another session started: the
+ * starting chat's title as the list shows it (`titleOf`), or "another
+ * session" when the list does not hold it. Undefined for the person's own.
+ */
+export function chatStartedByLabel(
+  session: AgentSession | undefined,
+  threads: readonly ChatSessionThread[],
+  titleOf: (thread: ChatSessionThread) => string,
+): string | undefined {
+  const parentId = session?.parentSessionId;
+  if (!parentId) return undefined;
+  const parent = threads.find((thread) =>
+    thread.sessions.some((candidate) => candidate.id === parentId),
+  );
+  const title = parent
+    ? titleOf(parent)
+    : i18n.t("chat:listRow.anotherSession");
+  return session.source === "verification"
+    ? i18n.t("chat:listRow.verifierStartedBy", { title })
+    : i18n.t("chat:listRow.startedBy", { title });
+}
+
+/** A session of the list is the chat `id` names, or belongs to it. */
+export function sessionsHoldChat(
+  sessions: readonly AgentSession[],
+  id: string,
+): boolean {
+  return sessions.some(
+    (session) => session.id === id || chatThreadId(session) === id,
+  );
 }
 
 export function selectedChatThread(

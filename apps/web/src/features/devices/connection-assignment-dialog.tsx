@@ -8,7 +8,7 @@ import { Checkbox } from "../../components/ui/field";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 
 export interface ConnectionAssignmentDialogProps {
-  /** All selectable server connections, including ones already assigned. */
+  /** All selectable model providers, including ones already assigned. */
   connections: ProfileDefinition[];
   /**
    * Persisted state on open: the connection ids the device can currently use.
@@ -18,7 +18,7 @@ export interface ConnectionAssignmentDialogProps {
   /** Radix-controlled visibility; closing never writes. */
   onOpenChange: (open: boolean) => void;
   open: boolean;
-  /** Go to the independent Server connections management page. */
+  /** Go to the independent Model providers management page. */
   onManage: () => void;
   /**
    * Persists one device's complete resulting set in a single write. Reject to

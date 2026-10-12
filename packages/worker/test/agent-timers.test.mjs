@@ -142,10 +142,54 @@ test("a prompt Claude submits for a timer starts that timer's turn", async () =>
   assert.equal(fire.prompt, "巡检 20 台容器");
   assert.ok(Date.parse(fire.startedAt) > 0);
   assert.equal(timerTracker.takeFire(), undefined, "a fire is taken once");
+  // Published as it starts, so readers know it fired and runs; the runner
+  // publishes it again with its answer, under the same start time.
+  const started = events.filter((event) => event.metadata.timerFire);
+  assert.equal(started.length, 1);
+  assert.equal(started[0].label, "Scheduled task fired");
+  assert.deepEqual(started[0].metadata.timerFire, {
+    id: "9b17c9d2",
+    origin: "scheduled",
+    prompt: "巡检 20 台容器",
+    startedAt: fire.startedAt,
+    completedAt: "",
+  });
+});
+
+test("a timer turn published as it started is published as ended when it is dropped or its process ends", async () => {
+  const { events, tracker: timerTracker } = makeTracker();
+  const submit = timerTracker.hooks().UserPromptSubmit[0].hooks[0];
+  const fires = () =>
+    events
+      .filter((event) => event.metadata?.timerFire)
+      .map((event) => event.metadata.timerFire);
+
+  // A Foundry turn took the stream before the timer's turn ended.
+  await submit({ prompt: "check the deploy" });
+  timerTracker.dropFire();
+  assert.equal(fires().length, 2);
+  assert.equal(fires()[1].startedAt, fires()[0].startedAt);
+  assert.ok(Date.parse(fires()[1].completedAt) > 0);
+  assert.equal(fires()[1].response, undefined);
+
+  // The process ended while one ran.
+  await submit({ prompt: "check the deploy" });
+  timerTracker.close();
+  assert.equal(fires().length, 4);
+  assert.ok(Date.parse(fires()[3].completedAt) > 0);
+
+  // One a Foundry turn ran was never published, so it has no end either.
+  const second = makeTracker({ isActiveTurn: () => true });
+  await second.tracker.hooks().PostToolUse[0].hooks[0]({
+    tool_name: "CronCreate",
+    tool_input: { cron: "28,58 * * * *", prompt: "巡检", recurring: true },
+    tool_response: { id: "9b17c9d2", recurring: true },
+  });
+  await second.tracker.hooks().UserPromptSubmit[0].hooks[0]({ prompt: "巡检" });
+  second.tracker.dropFire();
   assert.equal(
-    events.filter((event) => event.metadata.timerFire).length,
+    second.events.filter((event) => event.metadata?.timerFire).length,
     0,
-    "the runner publishes the fire with its answer",
   );
 });
 
@@ -167,7 +211,12 @@ test("a Foundry turn's prompt or a task notification starts no timer turn", asyn
   await submit({ prompt: "check the deploy" });
   assert.deepEqual(
     { ...timerTracker.takeFire(), startedAt: undefined },
-    { id: undefined, prompt: "check the deploy", startedAt: undefined },
+    {
+      announced: true,
+      id: undefined,
+      prompt: "check the deploy",
+      startedAt: undefined,
+    },
   );
 });
 

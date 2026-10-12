@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -22,13 +24,14 @@ import (
 //   - a session gets an account only when the account owner started it on
 //     a device the owner owns (externalaccounts.Eligible), the UserFiles
 //     rule of Issues;
-//   - tokens reach devices in run_session and through the mint route; the
-//     refresh token never leaves the server, and no response here carries
-//     a token except the mint answer to the device that runs the session.
+//   - no credential reaches a device: run_session carries gateway handles
+//     that stand in for the app secret and the access token, and feishu-cli
+//     reaches Feishu through the server's gateway
+//     (external_accounts_gateway.go), which holds the real ones.
 
 // newExternalAccountService wires the service over the store when it keeps
 // external accounts; nil otherwise (the routes then answer 503).
-func newExternalAccountService(st store.Store, secrets secretKeeper) *externalaccounts.Service {
+func newExternalAccountService(st store.Store, secrets secretKeeper, sw *integrations.Switch) *externalaccounts.Service {
 	accounts, ok := st.(store.ExternalAccountStore)
 	if !ok {
 		return nil
@@ -37,7 +40,9 @@ func newExternalAccountService(st store.Store, secrets secretKeeper) *externalac
 	if secrets != nil {
 		keeper = secrets
 	}
-	return externalaccounts.NewService(accounts, keeper, nil)
+	service := externalaccounts.NewService(accounts, keeper, nil)
+	service.Integrations = sw
+	return service
 }
 
 // RunExternalAccountKeepAlive refreshes, until ctx ends, the accounts that
@@ -64,7 +69,7 @@ func (s *Server) externalAccountService(w http.ResponseWriter) (*externalaccount
 func personActor(w http.ResponseWriter, r *http.Request) (Actor, bool) {
 	actor := actorFromContext(r.Context())
 	if actor.Kind != ActorAccount || actor.AccountID() == "" {
-		writeForbidden(w, "External accounts are managed by a signed-in person.")
+		writeForbidden(w, "Connectors are managed by a signed-in person.")
 		return Actor{}, false
 	}
 	return actor, true
@@ -97,6 +102,8 @@ func writeExternalAccountError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, externalaccounts.ErrSecretsNotConfigured):
 		writeError(w, http.StatusPreconditionFailed, err.Error())
+	case errors.Is(err, integrations.ErrOff):
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, externalaccounts.ErrAppInUse), errors.Is(err, externalaccounts.ErrAccountUnusable):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, store.ErrExternalAppNotFound), errors.Is(err, store.ErrExternalAccountNotFound):
@@ -201,6 +208,15 @@ func (s *Server) handleDeleteExternalApp(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
 	}
+	routes, err := s.store.ListFeishuBotRoutes(r.Context(), store.FeishuBotRouteFilter{AppID: app.ID})
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if len(routes) > 0 {
+		writeError(w, http.StatusConflict, "workspace Feishu bots run on this app; remove them from those workspaces first")
+		return
+	}
 	if err := service.DeleteApp(r.Context(), app); err != nil {
 		writeExternalAccountError(w, err)
 		return
@@ -232,7 +248,43 @@ func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Req
 	}
 	login, err := service.BeginLogin(r.Context(), actor.AccountID(), app, input)
 	if err != nil {
-		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
+		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) {
+			writeExternalAccountError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, login)
+}
+
+// handleSetupExternalAccount starts a sign-in that first has the provider
+// create an app for the person, then authorizes it; nothing is pasted.
+// The person polls the login route through both phases.
+func (s *Server) handleSetupExternalAccount(w http.ResponseWriter, r *http.Request) {
+	service, ok := s.externalAccountService(w)
+	if !ok {
+		return
+	}
+	actor, ok := personActor(w, r)
+	if !ok {
+		return
+	}
+	var input store.SetupExternalAccountInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	registers := false
+	for _, provider := range service.Providers() {
+		registers = registers || (provider.Kind == strings.TrimSpace(input.Provider) && provider.RegistersApps)
+	}
+	if !registers {
+		writeError(w, http.StatusBadRequest, "that provider cannot create an app during sign-in")
+		return
+	}
+	login, err := service.BeginSetup(r.Context(), actor.AccountID(), input)
+	if err != nil {
+		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) {
 			writeExternalAccountError(w, err)
 			return
 		}
@@ -365,47 +417,52 @@ func (s *Server) handleDisconnectExternalAccount(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "disconnected"})
 }
 
-// handleMintExternalAccountToken hands the device that runs a session a
-// fresh access token for it: the same permission as dispatch, checked
-// again (the session may have ended, the binding may be gone). An account
-// that is revoked or needs re-auth answers 409, not 403.
-func (s *Server) handleMintExternalAccountToken(w http.ResponseWriter, r *http.Request) {
+// handleReplaceExternalAppSecret seals the secret the person rotated at
+// the provider: the app's owner, or an admin for an instance app.
+func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.Request) {
 	service, ok := s.externalAccountService(w)
 	if !ok {
 		return
 	}
-	actor := actorFromContext(r.Context())
+	actor, ok := personActor(w, r)
+	if !ok {
+		return
+	}
 	var input struct {
-		SessionID string `json:"sessionId"`
+		ClientSecret string `json:"clientSecret"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	accounts := s.store.(store.ExternalAccountStore)
-	account, err := accounts.GetExternalAccount(r.Context(), strings.TrimSpace(r.PathValue("id")))
+	app, err := s.store.(store.ExternalAccountStore).GetExternalProviderApp(r.Context(), strings.TrimSpace(r.PathValue("id")))
 	if err != nil {
-		writeError(w, http.StatusNotFound, "external account not found")
+		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
 	}
-	session, err := store.AgentSessionRecord(r.Context(), s.store, strings.TrimSpace(input.SessionID))
+	scope, err := s.requestScope(r)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "session not found")
+		writeError(w, http.StatusInternalServerError, "resolve access")
 		return
 	}
-	if !actor.ActsAsDevice(session.DeviceID) || !activeOrBlocked(session.Status) {
-		writeForbidden(w, "This device does not run that session.")
+	if app.OwnerUserID != actor.AccountID() && !(scope.admin && app.Visibility == store.ExternalAppInstance) {
+		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
 	}
-	if !externalaccounts.Permitted(account, account.WorkspaceIDs, session.WorkspaceID, session.CreatedByUserID, actor.AccountID()) {
-		writeForbidden(w, "This session may not act as that account.")
-		return
-	}
-	token, err := service.Mint(r.Context(), account, externalaccounts.Use{SessionID: session.ID, DeviceID: session.DeviceID, By: "session"})
+	saved, err := service.ReplaceAppSecret(r.Context(), app, input.ClientSecret)
 	if err != nil {
-		writeExternalAccountError(w, err)
+		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
+			writeExternalAccountError(w, err)
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, token)
+	if s.feishuGateway != nil {
+		s.feishuGateway.ForgetApp(app.ID)
+	}
+	// Bots running on the app reply with the new secret.
+	s.feishuBotsChanged(r.Context())
+	writeJSON(w, http.StatusOK, saved)
 }
 
 // handleWorkspaceExternalAccounts is a workspace's Accounts tab: the bound
@@ -532,13 +589,23 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, view)
 }
 
-// sessionExternalAccounts is what run_session carries for a session: a
-// short-lived token per account the session may act as. The device owner is
-// the account behind the daemon socket; the session owner is who started it.
+// sessionExternalAccounts is what run_session carries for a session: per
+// account the session may act as, the gateway handles feishu-cli holds in
+// place of the app secret and the access token. The device owner is the
+// account behind the daemon socket; the session owner is who started it.
 // Sandboxed roles (an Issue's execution, a clarification) get nothing: their
-// private HOME holds no tool profile the worker writes for them.
-func (h *DaemonHub) sessionExternalAccounts(ctx context.Context, session store.AgentSession, device Actor) []store.ExternalAccountMaterial {
+// private HOME holds no tool profile the worker writes for them. A worker
+// without the gateway forwarder (gateway false) gets nothing either, and
+// the session's transcript says why, once.
+func (h *DaemonHub) sessionExternalAccounts(ctx context.Context, session store.AgentSession, device Actor, gateway bool) []store.ExternalAccountMaterial {
 	if h.externalAccounts == nil || session.Role == store.AgentSessionRoleIssueExecution || session.Role == store.AgentSessionRoleIssueClarification {
+		return nil
+	}
+	if !gateway {
+		accounts, err := h.externalAccounts.SessionAccounts(ctx, session.WorkspaceID, session.CreatedByUserID, device.AccountID())
+		if err == nil && len(accounts) > 0 {
+			h.noticeWorkerWithoutGateway(ctx, session)
+		}
 		return nil
 	}
 	materials, err := h.externalAccounts.SessionMaterials(ctx, session.WorkspaceID, session.ID, session.DeviceID, session.CreatedByUserID, device.AccountID())
@@ -547,4 +614,32 @@ func (h *DaemonHub) sessionExternalAccounts(ctx context.Context, session store.A
 		return nil
 	}
 	return materials
+}
+
+// noticeWorkerWithoutGateway tells the session's transcript, once, that its
+// device's worker is too old to use the Feishu accounts bound to the
+// workspace.
+func (h *DaemonHub) noticeWorkerWithoutGateway(ctx context.Context, session store.AgentSession) {
+	event := store.AgentSessionEvent{
+		ID:        "evt_" + session.ID + "_feishu_needs_worker_update",
+		SessionID: session.ID,
+		At:        time.Now().UTC().Format(time.RFC3339Nano),
+		Label:     "Feishu unavailable",
+		Detail:    "This session has no Feishu account: the worker on its device predates Foundry's Feishu gateway, and Foundry no longer sends app secrets or tokens to devices. Update the worker (Devices → this device → Update), then start the session again.",
+		Level:     "warning",
+	}
+	recorder, ok := h.store.(interface {
+		RecordAgentSessionEvent(context.Context, store.AgentSessionEvent) (bool, error)
+	})
+	if !ok {
+		return
+	}
+	stored, err := recorder.RecordAgentSessionEvent(ctx, event)
+	if err != nil {
+		h.externalAccounts.Logf("note the outdated worker on session %s: %v", session.ID, err)
+		return
+	}
+	if stored {
+		h.sessions.recorded(ctx, session.WorkspaceID, event)
+	}
 }

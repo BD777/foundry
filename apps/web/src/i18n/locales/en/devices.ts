@@ -181,7 +181,7 @@ export const devices = {
     localKept:
       "Local folders and repositories, Claude/Codex sign-ins, provider keys stored on the machine, and worker settings are not deleted.",
     connectionsKept:
-      "Server API connections and their sealed keys stay available for every other device; only this device's access is revoked.",
+      "Model providers and their sealed keys stay available for every other device; only this device's access is revoked.",
     online:
       "The worker is online. It will be disconnected now, will not reconnect, and must be set up again on this machine to return.",
     offline:
@@ -194,14 +194,14 @@ export const devices = {
   access: {
     title: "How this device connects to AI",
     intro:
-      "Choose an account or API connection when starting a chat. Both run on <strong>{{device}}</strong>.",
+      "Choose an account or model provider when starting a chat. Both run on <strong>{{device}}</strong>.",
     sources: "AI access sources",
     accountsTitle: "Official accounts",
     accountsHint: "Sign in separately on this device",
-    connectionsTitle: "API connections <em>{{total}}</em>",
+    connectionsTitle: "Model providers <em>{{total}}</em>",
     connectionsHint: "From the server or this device's own configuration",
     accountsExplanation:
-      "Use your ChatGPT or Claude subscription. Credentials stay on this device; no server connection is needed.",
+      "Use your ChatGPT or Claude subscription. Credentials stay on this device; no model provider is needed.",
   },
   resources: {
     title: "Resources",

@@ -126,29 +126,80 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
-.fdy-feishu-error-banner {
+.fdy-feishu-header-title > svg {
+  flex: none;
+}
+
+/* The app the bot runs on: who it is, then when its last event came. */
+.fdy-feishu-app-facts {
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+  min-width: 0;
+}
+
+.fdy-feishu-app-identity,
+.fdy-feishu-chat-identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-feishu-app-identity strong,
+.fdy-feishu-chat-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fdy-feishu-app-identity small,
+.fdy-feishu-chat-identity small,
+.fdy-feishu-app-event,
+.fdy-feishu-hint {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-feishu-rotate {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 6px;
-  background-color: var(--fdy-error-surface);
-  color: var(--fdy-error-text);
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-feishu-rotate small {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-feishu-empty-choice {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.fdy-feishu-empty-choice p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
   font-size: 13px;
 }
 
-.fdy-feishu-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.fdy-feishu-field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.fdy-feishu-pick {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
 }
 
 .fdy-feishu-label {
@@ -157,36 +208,40 @@
   color: var(--fdy-ink-strong);
 }
 
-.fdy-feishu-form-actions {
+.fdy-feishu-pick-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.fdy-feishu-guide-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
+.fdy-feishu-pick-menu {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 420px;
 }
 
-.fdy-feishu-guide-box {
-  margin-top: 10px;
-  padding: 14px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--fdy-line);
-  background-color: var(--fdy-panel-soft);
+.fdy-feishu-panel-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fdy-feishu-guide {
   font-size: 13px;
   line-height: 1.6;
 }
 
-.fdy-feishu-guide-heading {
-  margin: 0 0 8px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.fdy-feishu-guide summary {
+  cursor: pointer;
+  color: var(--fdy-ink-strong);
+  font-weight: 500;
+}
+
+.fdy-feishu-guide-list {
+  margin: 8px 0;
+  padding-left: 20px;
+  list-style: decimal;
 }
 
 .fdy-feishu-external-link {
@@ -197,72 +252,62 @@
   text-decoration: none;
 }
 
-.fdy-feishu-guide-list {
-  padding-left: 20px;
+/* Paired chats: one line each, the unbind action at its end. */
+.fdy-feishu-chat-list {
+  display: grid;
+  min-width: 0;
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.fdy-feishu-content-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.fdy-feishu-group-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--fdy-line);
-  background-color: var(--fdy-panel-soft);
-}
-
-.fdy-feishu-group-row {
+.fdy-feishu-chat {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+  color: var(--fdy-ink-muted);
 }
 
-.fdy-feishu-chat-name {
-  font-size: 16px;
-  font-weight: 600;
+.fdy-feishu-chat:first-child {
+  border-top: 0;
+}
+
+.fdy-feishu-chat-identity {
+  flex: 1;
+}
+
+.fdy-feishu-pairing {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-feishu-pairing h3 {
+  margin: 0;
   color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.fdy-feishu-chat-id {
-  font-size: 12px;
-  color: var(--fdy-ink-muted);
-  margin-top: 4px;
-}
-
-.fdy-feishu-chat-hint {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--fdy-ink-muted);
-}
-
-.fdy-feishu-pairing-guide {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.fdy-feishu-steps-text {
+.fdy-feishu-steps {
+  margin: 0;
+  padding-left: 20px;
+  list-style: decimal;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.fdy-feishu-steps-text ol {
-  padding-left: 20px;
-  margin-top: 4px;
-}
-
 .fdy-feishu-pair-box {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  gap: 12px;
+  padding: 14px 18px;
   border-radius: 8px;
   border: 1px dashed var(--fdy-brass-line);
   background-color: var(--fdy-info-surface);
@@ -274,27 +319,20 @@
 }
 
 .fdy-feishu-pair-code {
-  font-size: 22px;
-  font-weight: 700;
-  font-family: monospace;
-  letter-spacing: 0;
   margin-top: 4px;
+  overflow-wrap: anywhere;
   color: var(--fdy-ink-strong);
+  font-family: monospace;
+  font-size: 20px;
+  font-weight: 700;
 }
 
-.fdy-feishu-pair-actions {
+.fdy-feishu-pair-actions,
+.fdy-feishu-generate {
   display: flex;
-  gap: 8px;
-}
-
-.fdy-feishu-action-btn {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-}
-
-.fdy-feishu-generate-actions {
-  padding-top: 4px;
+  gap: 8px 12px;
 }
 
 .fdy-workspace-hub-content > .fdy-button {

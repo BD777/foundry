@@ -79,6 +79,11 @@ func OpenWithOptions(path string, options Options) (*Store, error) {
 			return nil, err
 		}
 	}
+	// Needs the secret store: the bots' secrets are resealed.
+	if err := s.migrateWorkspaceFeishuBots(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if options.SeedDemo {
 		if err := s.seedDemo(context.Background()); err != nil {
 			_ = db.Close()
@@ -457,6 +462,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		return err
 	}
 	if err := s.setupExternalAccounts(ctx); err != nil {
+		return err
+	}
+	if err := s.setupFeishuGateway(ctx); err != nil {
 		return err
 	}
 	if err := s.backfillWorkspaceScopedRecords(ctx); err != nil {

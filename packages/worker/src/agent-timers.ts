@@ -12,8 +12,9 @@
  * timers today, the headless Codex protocol has no equivalent.
  *
  * A timer's turn runs while no Foundry turn owns the agent process. The
- * tracker marks that turn when Claude submits the timer's prompt; the runner
- * publishes it with its answer when it ends (see takeFire).
+ * tracker marks that turn when Claude submits the timer's prompt and
+ * publishes that it fired; the runner publishes it again with its answer
+ * when it ends (see takeFire). Both carry its start time, which names it.
  */
 
 import { processLabels } from "@bd777/foundry-protocol";
@@ -81,6 +82,33 @@ export interface ClaudeTimerTurn {
   id?: string;
   prompt: string;
   startedAt: string;
+  /**
+   * Published as it started (no Foundry turn ran): its end must be
+   * published too, with its answer or without.
+   */
+  announced?: boolean;
+}
+
+/** A timer turn's fire as events carry it: unfinished, or with its end. */
+export function timerFireEvent(
+  fire: ClaudeTimerTurn,
+  end?: { completedAt: string; response?: string; failed?: boolean },
+): TimerSinkEvent {
+  return {
+    label: timerFireLabel,
+    detail: fire.prompt.split(/\r?\n/)[0]?.slice(0, 200) ?? "",
+    level: end?.failed ? "error" : "info",
+    metadata: {
+      timerFire: {
+        ...(fire.id ? { id: fire.id } : {}),
+        origin: "scheduled",
+        prompt: fire.prompt,
+        ...(end?.response ? { response: end.response } : {}),
+        startedAt: fire.startedAt,
+        completedAt: end?.completedAt ?? "",
+      },
+    },
+  };
 }
 
 // --- Claude tracker -------------------------------------------------------
@@ -198,10 +226,24 @@ export class ClaudeTimerTracker {
   }
 
   /**
+   * The timer turn running, if any, ends unanswered: a Foundry turn took
+   * the stream, or the process ended. One published as it started is
+   * published as ended, so no reader waits on it.
+   */
+  dropFire(): void {
+    const fire = this.takeFire();
+    if (fire?.announced)
+      this.sink.emit(
+        timerFireEvent(fire, { completedAt: new Date().toISOString() }),
+      );
+  }
+
+  /**
    * The agent process is gone. Its timers are not: Claude Code brings them
    * back when the session resumes. Returns them.
    */
   close(): AgentScheduledTask[] {
+    if (!this.closed) this.dropFire();
     this.closed = true;
     this.firing = undefined;
     return this.snapshot();
@@ -222,8 +264,14 @@ export class ClaudeTimerTracker {
     const id = this.matchTimerId(prompt);
     if (!id && this.sink.isActiveTurn()) return undefined;
     this.firing = { id, prompt, startedAt: new Date().toISOString() };
-    // A Foundry turn's dispatch brought a fresh token already.
-    if (!this.sink.isActiveTurn()) await this.sink.timerTurnStarting?.();
+    // A Foundry turn's dispatch brought a fresh token already, and the
+    // session shows that turn running.
+    if (this.sink.isActiveTurn()) return undefined;
+    // Published now, so readers know it fired and runs (a timer's turn may
+    // run for an hour); the runner publishes its end with its answer.
+    this.firing.announced = true;
+    this.sink.emit(timerFireEvent(this.firing));
+    await this.sink.timerTurnStarting?.();
     return undefined;
   }
 

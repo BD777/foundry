@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
-import { ChevronRight } from "lucide-react";
+import { ArrowRight, ChevronRight } from "lucide-react";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
+import { navigateToFoundrySkill } from "../../lib/in-app-navigation";
+import { Button } from "../../components/ui/button";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 
 // i18n-ignore: runtime product names
@@ -9,7 +11,8 @@ const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
 /**
  * The skills each agent always has: the ones Claude Code and Codex ship, as
  * read on the workspace's device, and the ones Foundry adds for that agent.
- * One collapsed row per agent, since they are not chosen here.
+ * One collapsed row per agent, since they are not chosen here. Foundry's
+ * own foundry skill opens a page on what it gives agents.
  */
 export function OfficialSkillsSection({
   providerHealth,
@@ -81,6 +84,20 @@ export function OfficialSkillsSection({
                     ) : null}
                   </strong>
                   {skill.description ? <span>{skill.description}</span> : null}
+                  {skill.source && skill.name === "foundry" ? (
+                    <Button
+                      aria-label={t("foundrySkill.openLabel", {
+                        name: skill.name,
+                      })}
+                      className="fdy-official-skills-open"
+                      size="inline"
+                      variant="link"
+                      onClick={navigateToFoundrySkill}
+                    >
+                      {t("foundrySkill.open")}
+                      <ArrowRight aria-hidden="true" size={13} />
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>

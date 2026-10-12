@@ -8,6 +8,7 @@ const globalViews = new Set<NavView>([
   "account",
   "members",
   "profiles",
+  "connectors",
   "library",
   "locations",
   "devices",

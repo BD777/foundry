@@ -114,22 +114,16 @@ export function verificationNotes(input: {
   workspacePath: string;
   sessionId: string;
   temporaryDirectory?: string;
-  maxTurns?: number;
 }): string {
   const temporary = input.temporaryDirectory
     ? `$TMPDIR (${input.temporaryDirectory})`
     : "$TMPDIR";
   return [
     "Foundry device notes:",
-    `- You are Foundry session ${input.sessionId}, an independent verifier: you check work and report what you found; you never change it, and you start no other sessions.`,
-    `- The workspace (${input.workspacePath}) is read-only at the operating-system level, for you and every command you run. Reading files and running commands that only read work: tests, linters, type checks, git status, git diff and git log. Anything that writes inside the workspace fails; do not look for a way around it.`,
-    `- Commands may write only to ${temporary}, outside the workspace and emptied before each of your turns. Point tools that write there: GOCACHE=$TMPDIR/go-build, CARGO_TARGET_DIR=$TMPDIR/target, a build's output directory, or a copy of the project in $TMPDIR when a check must write next to its files.`,
-    ...(input.maxTurns
-      ? [
-          `- You have ${input.maxTurns} turns per message: run the checks that settle the question first.`,
-        ]
-      : []),
-    "- Report what you checked, with the commands you ran and what they printed, separately from what you could not check and why.",
-    "- Ids such as sess_…, native_claude_… and ws_…, and Foundry chat links, name Foundry sessions and workspaces; the Foundry tools you have read them.",
+    `- You are Foundry session ${input.sessionId}, an independent verifier, started to check work.`,
+    `- The workspace (${input.workspacePath}) is read-only at the operating-system level, for you and every command you run: reading files and commands that only read (tests, linters, type checks, git status, diff and log) work, and anything that writes inside the workspace fails.`,
+    `- You and your commands write only to ${temporary}, outside the workspace and emptied before each of your turns. Tools that write can be pointed there: GOCACHE=$TMPDIR/go-build, CARGO_TARGET_DIR=$TMPDIR/target, a build's output directory, or a copy of the project in $TMPDIR for a check that writes next to its files.`,
+    "- Your Foundry tools are the ones that only read: they cannot start, message or stop sessions.",
+    "- Ids such as sess_…, native_claude_… and ws_…, and Foundry chat links, name Foundry sessions and workspaces; your Foundry tools read them.",
   ].join("\n");
 }

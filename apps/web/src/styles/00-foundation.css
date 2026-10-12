@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 :root {
+  /* QR codes stay dark-on-white in both themes so phones can scan them. */
+  --fdy-qr-surface: #ffffff;
   --fdy-paper: #eef2f5;
   --fdy-paper-side: #eef2f5;
   --fdy-paper-main: #fff;
@@ -98,6 +100,7 @@
 
 :root[data-theme="dark"],
 .fdy-foundry-shell[data-theme="dark"] {
+  --fdy-qr-surface: #ffffff;
   --fdy-paper: #26241f;
   --fdy-paper-side: #26241f;
   --fdy-paper-main: #2f2c25;
@@ -309,6 +312,17 @@ a {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* For screens that fill the view: a moved full-height screen overflows the
+   view while it animates, flashing a scrollbar that shifts the page. */
+@keyframes fdyPageFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -916,9 +930,13 @@ a {
   overflow: hidden;
 }
 
+/* The view is the page's scroller. Reserving the scrollbar's space keeps
+   centered pages still when content grows past the viewport or shrinks back
+   (loading, switching tabs). */
 .fdy-view[data-scroll-mode="page"] {
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .fdy-button {

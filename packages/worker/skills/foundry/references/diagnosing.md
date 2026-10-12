@@ -1,9 +1,7 @@
-# Diagnosing a failed or stuck session
+# Foundry errors and session states
 
-Read the summary first (`read_context {"sessionId": "…"}`), then only the
-events you need.
+What a session's `status`, `error`, `lastError` and events mean.
 
-- Start from `status`, `error` and `lastError.before`.
 - "Claude Agent SDK stopped producing events before the session idle timeout"
   comes from older workers, which failed a turn after 10 minutes without
   events. If "Waiting for background tasks" comes just before it, a background
@@ -20,10 +18,7 @@ events you need.
   is still active and can be steered or stopped.
 - `device.online: false` or "local daemon is not connected": the device's
   worker is offline; `list_resources` shows which devices are online.
-- Compare the gap between the last events and `completedAt`: a long silence
-  is a wait, not work.
+- A long gap between the last events and `completedAt` is a wait, not work.
 - A native chat (`native_claude_…`, `native_codex_…`) is a conversation the
-  person ran in a terminal on their device; Foundry syncs its transcript. Read
-  it with scope `events` or `transcript`; Foundry cannot message or stop it.
-
-Report what the events show, with their times, and say what they do not show.
+  person ran in a terminal on their device; Foundry syncs its transcript, read
+  with scope `events` or `transcript`, and cannot message or stop it.

@@ -214,15 +214,29 @@ export function claudeOneShotFireAt(
   );
 }
 
+/** What a reader knows of a recurring timer's last wake. */
+export interface ClaudeTimerWake {
+  /**
+   * When it last fired, or when a Claude process last resumed its session
+   * (Claude Code 2.1.291 and later bring the timer back as fired then).
+   */
+  firedAt?: Date;
+}
+
 /**
- * The next time Claude Code fires a timer, seen from `now`, without knowing
- * when it last fired: the first of its cron times whose offset time is still
- * ahead. A one-shot timer that is due but has not fired (its session was
- * busy) answers its due time, which may be past.
+ * The next time Claude Code fires a timer, seen from `now`. Claude Code
+ * fires a recurring timer at its first offset time after it last fired,
+ * and only while the session is idle: a time that passed while it was busy
+ * fires once it is idle. So with `wake` the answer may be past (it is due
+ * and fires when the current turn ends). Without, the first of its cron
+ * times whose offset time is still ahead. A one-shot timer that is due but
+ * has not fired (its session was busy) answers its due time, which may be
+ * past.
  */
 export function claudeTimerNextFire(
   timer: { id: string; schedule: string; recurring: boolean },
   now: Date = new Date(),
+  wake: ClaudeTimerWake = {},
 ): Date | undefined {
   if (!timer.recurring) {
     return claudeOneShotFireAt(
@@ -231,6 +245,13 @@ export function claudeTimerNextFire(
       new Date(now.getTime() - 24 * 60 * 60_000),
     );
   }
+  const firedAt = validTime(wake.firedAt);
+  if (firedAt !== undefined)
+    return claudeRecurringFireAfter(
+      timer.schedule,
+      timer.id,
+      new Date(firedAt),
+    );
   // A slot up to the largest offset ago may still be ahead of now.
   let slot = nextCronFire(
     timer.schedule,
@@ -244,6 +265,11 @@ export function claudeTimerNextFire(
     slot = nextCronFire(timer.schedule, slot);
   }
   return undefined;
+}
+
+function validTime(date: Date | undefined): number | undefined {
+  const time = date?.getTime();
+  return time !== undefined && Number.isFinite(time) ? time : undefined;
 }
 
 // --- Humanized schedule ---------------------------------------------------

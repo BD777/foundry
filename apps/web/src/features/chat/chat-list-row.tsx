@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import {
   ChevronRight,
   CircleAlert,
+  Clock,
   GitBranch,
   LoaderCircle,
   PauseCircle,
@@ -83,15 +84,13 @@ export const ChatListRow = memo(function ChatListRow({
               </IconBox>
             )}
             <span className="fdy-chat-row-copy">
-              {chat.spawned ? (
-                <GitBranch
-                  size={12}
-                  className="fdy-chat-row-spawned"
-                  aria-label={t("listRow.spawned")}
-                  role="img"
-                />
-              ) : null}
               <strong title={chat.title}>{chat.title}</strong>
+              {chat.startedBy ? (
+                <span className="fdy-chat-row-origin">
+                  <GitBranch size={10} aria-hidden="true" />
+                  <span title={chat.startedBy}>{chat.startedBy}</span>
+                </span>
+              ) : null}
             </span>
             {chat.updateTime ? (
               <time
@@ -138,6 +137,15 @@ export const ChatListRow = memo(function ChatListRow({
                 aria-label={t("listRow.unread")}
                 title={t("listRow.unread")}
               />
+            ) : chat.scheduled ? (
+              <span
+                className="fdy-chat-row-status"
+                role="img"
+                aria-label={t("listRow.scheduled")}
+                title={t("listRow.scheduled")}
+              >
+                <Clock size={14} />
+              </span>
             ) : null}
           </ActionRow>
         </ContextMenu.Trigger>

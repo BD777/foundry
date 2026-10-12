@@ -29,7 +29,7 @@ export interface WorkspaceAccountsFeatureProps {
   /** Why the caller cannot change bindings (below Maintainer); still shown. */
   readOnlyReason?: string;
   onNotice: (message: string) => void;
-  onOpenExternalAccounts: () => void;
+  onOpenConnectors: () => void;
 }
 
 /**
@@ -42,7 +42,7 @@ export function WorkspaceAccountsFeature({
   currentUserId,
   readOnlyReason,
   onNotice,
-  onOpenExternalAccounts,
+  onOpenConnectors,
 }: WorkspaceAccountsFeatureProps) {
   const { t } = useTranslation("externalAccounts");
   const [view, setView] = useState<WorkspaceExternalAccounts>();
@@ -103,7 +103,7 @@ export function WorkspaceAccountsFeature({
       <Panel className="fdy-xacc-section">
         <div className="fdy-xacc-section-head fdy-xacc-section-head-row">
           <strong>{t("workspace.mine")}</strong>
-          <Button onClick={onOpenExternalAccounts} size="sm" variant="ghost">
+          <Button onClick={onOpenConnectors} size="sm" variant="ghost">
             {mine.length ? t("workspace.manage") : t("workspace.connect")}
             <ChevronRight size={14} />
           </Button>

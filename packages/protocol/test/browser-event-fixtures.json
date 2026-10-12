@@ -378,13 +378,35 @@
     "type": "feishu_bot_updated",
     "payload": {
       "workspaceId": "ws_atlas",
-      "appId": "cli_a1b2c3d4e5f60718",
-      "hasAppSecret": true,
-      "chatId": "oc_5f1e2d3c4b5a69788796a5b4c3d2e1f0",
-      "chatName": "Atlas team",
-      "boundUserId": "usr_alice",
+      "app": {
+        "id": "xapp_atlas_bot",
+        "provider": "feishu",
+        "ownerUserId": "usr_alice",
+        "visibility": "personal",
+        "label": "Atlas bot",
+        "clientId": "cli_a1b2c3d4e5f60718",
+        "hasSecret": true,
+        "createdVia": "migrated_bot",
+        "rotateSecret": true,
+        "createdAt": "2026-10-11T07:50:00Z",
+        "updatedAt": "2026-10-11T07:50:00Z"
+      },
       "status": "connected",
-      "updatedAt": "2026-10-11T07:58:00Z"
+      "lastEventAt": "2026-10-11T07:58:00Z",
+      "chats": [
+        {
+          "id": "fbr_atlas_team",
+          "appId": "xapp_atlas_bot",
+          "workspaceId": "ws_atlas",
+          "kind": "chat",
+          "chatId": "oc_5f1e2d3c4b5a69788796a5b4c3d2e1f0",
+          "chatName": "Atlas team",
+          "boundUserId": "usr_alice",
+          "createdAt": "2026-10-11T07:55:00Z",
+          "updatedAt": "2026-10-11T07:55:00Z"
+        }
+      ],
+      "pairingCodeExpiresAt": "2026-10-11T08:05:00Z"
     }
   },
   {

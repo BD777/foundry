@@ -10,10 +10,11 @@ import (
 )
 
 // Policy for session-scoped actors. An agent reaches the workspaces its
-// scope grants (agentScope, access.go) and may read and control any session
-// there: the user names the target in conversation. Lineage is a record, never
-// a permission. People are judged by their workspace role. All checks live
-// here so handlers stay free of policy.
+// scope grants (agentScope, access.go): it reads any session there and
+// controls the sessions its person started, which include every session
+// their agents started (children inherit their parent's creator). Lineage
+// is a record, never a permission. People are judged by their workspace
+// role. All checks live here so handlers stay free of policy.
 
 // agentRouteAllowed is the exact endpoint surface a session token may touch.
 // Anything else returns 403 even before reaching a handler.
@@ -80,18 +81,21 @@ func (s *Server) canReadSession(ctx context.Context, actor Actor, target store.A
 	return err == nil && scope.can(target.WorkspaceID, store.WorkspaceRoleViewer)
 }
 
-// canControlSession: an agent controls any session of its workspace; people
-// steer and cancel their own sessions as members and anyone's as maintainers.
+// canControlSession: an agent controls its person's sessions where it
+// reaches Member; people steer and cancel their own sessions as members and
+// anyone's as maintainers.
 func (s *Server) canControlSession(ctx context.Context, actor Actor, target store.AgentSession) bool {
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
 		return false
 	}
-	// An agent controls any session of a workspace it reaches as a member;
+	// An agent controls the sessions its person started in a workspace it
+	// reaches as a member, never more than that person could as a Member;
 	// an agent working in an Issue, only that Issue's sessions.
 	if actor.Agent() {
 		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember) &&
-			(scope.issueID == "" || target.IssueID == scope.issueID)
+			(scope.issueID == "" || target.IssueID == scope.issueID) &&
+			target.CreatedByUserID == scope.agentFor
 	}
 	if target.CreatedByUserID != "" && target.CreatedByUserID == scope.userID {
 		return scope.can(target.WorkspaceID, store.WorkspaceRoleMember)

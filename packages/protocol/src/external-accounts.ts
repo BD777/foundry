@@ -22,6 +22,19 @@ export interface ExternalProvider {
   tools: string[];
   defaultBaseUrl?: string;
   alwaysScopes?: string[];
+  /** What a login asks for when it names no scopes. */
+  scopePreset?: ExternalScopePreset;
+  /** The provider can create an app for the person during sign-in. */
+  registersApps?: boolean;
+}
+
+/** A provider's default scope list and where it comes from. */
+export interface ExternalScopePreset {
+  name: string;
+  source: string;
+  scopes: string[];
+  /** Asked for only on request: a tenant administrator may have to approve them. */
+  approvalScopes?: string[];
 }
 
 /** An OAuth client registration; its secret is write-only. */
@@ -35,6 +48,9 @@ export interface ExternalProviderApp {
   baseUrl?: string;
   hasSecret: boolean;
   createdVia: string;
+  /** Devices held this app's secret before sessions went through Foundry's
+   * gateway: rotate it at the provider, then replace it here. */
+  rotateSecret?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,7 +118,20 @@ export interface ExternalAccountUpdate {
 export interface ConnectExternalAccountInput {
   appId: string;
   label?: string;
+  /** Replaces the provider's preset when given. */
   scopes?: string[];
+  includeApprovalScopes?: boolean;
+}
+
+/** Starts a sign-in that first creates an app for the person, then authorizes it. */
+export interface SetupExternalAccountInput {
+  provider: string;
+  /** "feishu" or "lark"; empty is the provider default. */
+  brand?: string;
+  label?: string;
+  /** Replaces the provider's preset when given. */
+  scopes?: string[];
+  includeApprovalScopes?: boolean;
 }
 
 /** A device-flow login in progress; it never carries a token. */
@@ -112,6 +141,8 @@ export interface ExternalAccountLogin {
   appId: string;
   /** pending, complete or failed. */
   status: "pending" | "complete" | "failed";
+  /** A setup's phase: confirm the new app, then authorize it. Empty for a plain login. */
+  phase?: "register" | "authorize";
   verificationUri?: string;
   verificationUriComplete?: string;
   userCode?: string;
@@ -119,22 +150,20 @@ export interface ExternalAccountLogin {
   intervalSeconds?: number;
   requestedScopes?: string[];
   error?: string;
+  /** The app a setup created, once it exists. */
+  app?: ExternalProviderApp;
   account?: ExternalAccount;
-}
-
-/** A short-lived access token minted for a session's device. */
-export interface ExternalAccountToken {
-  accountId: string;
-  accessToken: string;
-  tokenType: string;
-  expiresAt: string;
-  scope?: string;
+  /** Asked for but not granted, once complete. */
+  missingScopes?: string[];
+  /** The provider page to enable missingScopes on the app. */
+  scopeApplyUrl?: string;
 }
 
 /**
- * What run_session carries for one account a session may act as: the
- * tool profile to write, the app credentials the tool insists on and a
- * minted access token. Never the refresh token.
+ * What run_session carries for one account a session may act as: the tool
+ * profile to write, the app id, and the gateway handles that stand in for
+ * the app secret and the access token. Never a secret or a real token: the
+ * tool reaches the provider through the server's gateway.
  */
 export interface ExternalAccountMaterial {
   accountId: string;
@@ -143,14 +172,23 @@ export interface ExternalAccountMaterial {
   tool: string;
   profileName: string;
   clientId: string;
-  clientSecret?: string;
-  baseUrl?: string;
-  accessToken: string;
-  tokenType: string;
+  gateway?: ExternalAccountGateway;
+  /** The handles' expiry for the tool's own checks; the server stops
+   * honouring them when the session ends. */
   expiresAt: string;
   scope?: string;
   subject?: string;
   displayName?: string;
+}
+
+/** A session's way through the server's gateway for one account. */
+export interface ExternalAccountGateway {
+  /** Server path the device's loopback forwarder sends requests under. */
+  path: string;
+  /** Stands in for the app secret. */
+  appHandle: string;
+  /** Stands in for the user access token. */
+  userHandle: string;
 }
 
 export interface WorkspaceExternalAccounts {

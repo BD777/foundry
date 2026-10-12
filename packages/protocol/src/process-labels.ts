@@ -46,6 +46,13 @@ export const processLabels = {
 
 export type ProcessLabelKey = keyof typeof processLabels;
 
+/**
+ * The event a worker records when it starts a Claude process for a session.
+ * A process that resumes a session brings its timers back as fired then
+ * (see claudeTimerNextFire).
+ */
+export const claudeProcessStartedLabel = "Started Claude Agent SDK";
+
 /** What workers before 0.5.2 wrote for the same labels. */
 export const legacyProcessLabels: Partial<
   Record<ProcessLabelKey, readonly string[]>

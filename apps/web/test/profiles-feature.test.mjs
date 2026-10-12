@@ -156,7 +156,7 @@ test("profiles are flat cards and editing uses a modal with write-only credentia
   assert.match(keyInput.placeholder, /leave blank to keep it/);
 
   await view.type('input[aria-label="Profile API key"]', "sk-rotated");
-  await view.clickButton("Save connection");
+  await view.clickButton("Save provider");
   assert.equal(view.events[0].type, "save-profile");
   assert.equal(view.events[0].input.apiKey, "sk-rotated");
   assert.equal(view.query('input[aria-label="Profile API key"]').value, "");
@@ -189,7 +189,7 @@ test("deleting a profile also needs the second click", async () => {
   await view.clickButton("Delete");
   assert.deepEqual(view.events, []);
 
-  await view.clickButton("Delete this connection?");
+  await view.clickButton("Delete this provider?");
   assert.deepEqual(
     view.events.map((event) => event.type),
     ["delete-profile"],
@@ -201,9 +201,9 @@ test("deleting a profile also needs the second click", async () => {
 test("new connections only offer API endpoints, never a global official account", async () => {
   const view = await renderFeature({ profiles: [] });
 
-  assert.match(view.container.textContent, /Add your first model connection/);
+  assert.match(view.container.textContent, /Add your first model provider/);
   assert.equal(view.query('[role="dialog"]'), null);
-  await view.clickButton("New connection");
+  await view.clickButton("New provider");
 
   assert.equal(view.query('[role="dialog"]') !== null, true);
   assert.ok(view.query('input[aria-label="Profile base URL"]'));
@@ -262,7 +262,7 @@ test("a refused catalog reports inside the model picker and leaves the form usab
   // refused catalog must not take the page's error line or block saving.
   assert.match(window.document.body.textContent, /answered 401/);
   assert.equal(view.query(".fdy-profile-modal-error"), null);
-  assert.equal(view.buttonWithText("Save connection").disabled, false);
+  assert.equal(view.buttonWithText("Save provider").disabled, false);
 
   await unmount(view.root);
 });

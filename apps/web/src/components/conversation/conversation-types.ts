@@ -170,12 +170,13 @@ export interface ChatMessageItem {
   attachments?: ChatAttachment[];
   copyAlways?: boolean;
   copyText?: string;
-  /** How long a process group ran, from its first to its last step. */
+  /** How long a process group ran, from its start to its last step. */
   durationMs?: number;
-  /** When a process group's first step happened, for its live timer. */
+  /**
+   * When a process group began: where the segment before it (the input, a
+   * steered message, an answer) ended. Its live timer counts from here.
+   */
   startedAt?: string;
-  /** When the running turn began: a live group's timer counts from it. */
-  turnStartedAt?: string;
   /** Tokens of the model requests behind a process group's steps. */
   stepUsage?: StepUsage;
   editable?: boolean;

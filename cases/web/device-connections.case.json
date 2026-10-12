@@ -1,8 +1,8 @@
 {
   "version": 1,
   "id": "web.device-connections",
-  "title": "Device accounts and reusable connections have independent ownership",
-  "description": "Device browsing never changes workspace implicitly. Official authorization targets one device; server connections use explicit assignments and preserve legacy identities.",
+  "title": "Device accounts and model providers have independent ownership",
+  "description": "Device browsing never changes workspace implicitly. Official authorization targets one device; model providers use explicit assignments and preserve legacy identities.",
   "kind": "unit",
   "area": "web-app",
   "risk": "high",

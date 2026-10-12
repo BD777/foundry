@@ -2,6 +2,8 @@ package externalaccounts
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/google/uuid"
 )
@@ -35,6 +38,29 @@ var ErrAccountUnusable = errors.New("external account cannot issue a token")
 
 // ErrAppInUse: a provider app still has accounts connected through it.
 var ErrAppInUse = errors.New("accounts are still connected through this app; disconnect them first")
+
+// HandleRequest names the session and account a gateway grant is for.
+type HandleRequest struct {
+	SessionID   string
+	DeviceID    string
+	WorkspaceID string
+	UserID      string
+	Account     store.ExternalAccount
+	App         store.ExternalProviderApp
+}
+
+// HandleIssuer is the provider gateway: it issues a session's stand-in
+// handles for one account (feishugateway.Gateway).
+type HandleIssuer interface {
+	IssueHandles(ctx context.Context, request HandleRequest) (store.ExternalAccountGateway, error)
+}
+
+// rotationList is the store's list of apps whose secret devices held
+// before the gateway (store.FeishuGatewayStore).
+type rotationList interface {
+	FeishuAppsToRotate(ctx context.Context) (map[string]string, error)
+	ClearFeishuAppRotation(ctx context.Context, appID string) error
+}
 
 // AppSecretID is the secret record of a provider app's client secret.
 func AppSecretID(appID string) string { return "external-app:" + appID }
@@ -67,6 +93,13 @@ type Service struct {
 	// changed, so a server can announce it.
 	OnChanged func(accountID string)
 	Logf      func(format string, args ...any)
+	// Integrations off: nothing reaches a provider (login, refresh, revoke,
+	// keep-alive); those answer integrations.ErrOff. An access token that
+	// is still fresh is handed out as before. Nil is on.
+	Integrations *integrations.Switch
+	// Handles issues the gateway handles a session's device holds in place
+	// of the app secret and the access token; nil gives sessions nothing.
+	Handles HandleIssuer
 
 	loginsMu sync.Mutex
 	logins   map[string]*pendingLogin
@@ -78,7 +111,6 @@ type pendingLogin struct {
 	mu      sync.Mutex
 	view    store.ExternalAccountLogin
 	owner   string
-	scopes  []string
 	label   string
 	app     store.ExternalProviderApp
 	login   DeviceLogin
@@ -200,6 +232,11 @@ func (s *Service) DeleteApp(ctx context.Context, app store.ExternalProviderApp) 
 	if err := s.store.DeleteExternalProviderApp(ctx, app.ID); err != nil {
 		return err
 	}
+	if rotation, ok := s.store.(rotationList); ok {
+		if err := rotation.ClearFeishuAppRotation(ctx, app.ID); err != nil {
+			s.Logf("external accounts: forget the rotation advice of %s: %v", app.ID, err)
+		}
+	}
 	if s.secrets != nil {
 		if err := s.secrets.DeleteSecret(ctx, AppSecretID(app.ID)); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("delete the app secret: %w", err)
@@ -215,10 +252,48 @@ func (s *Service) ListApps(ctx context.Context, userID string) ([]store.External
 	if err != nil {
 		return nil, err
 	}
+	rotate := map[string]string{}
+	if rotation, ok := s.store.(rotationList); ok {
+		if rotate, err = rotation.FeishuAppsToRotate(ctx); err != nil {
+			return nil, err
+		}
+	}
 	for index := range apps {
 		apps[index].HasSecret = s.hasSecret(ctx, AppSecretID(apps[index].ID))
+		_, apps[index].RotateSecret = rotate[apps[index].ID]
 	}
 	return apps, nil
+}
+
+// ReplaceAppSecret seals a new client secret for app, after the person
+// rotated it at the provider. With integrations on, the provider must
+// accept it first (SecretChecker), so a typo does not break every account
+// connected through the app.
+func (s *Service) ReplaceAppSecret(ctx context.Context, app store.ExternalProviderApp, clientSecret string) (store.ExternalProviderApp, error) {
+	if !s.SecretsConfigured() {
+		return store.ExternalProviderApp{}, ErrSecretsNotConfigured
+	}
+	clientSecret = strings.TrimSpace(clientSecret)
+	if clientSecret == "" {
+		return store.ExternalProviderApp{}, errors.New("clientSecret is required")
+	}
+	if provider, ok := s.registry.Lookup(app.Provider); ok && s.Integrations.On() {
+		if checker, ok := provider.(SecretChecker); ok {
+			if err := checker.CheckAppSecret(ctx, AppCredentials{ClientID: app.ClientID, ClientSecret: clientSecret, BaseURL: app.BaseURL}); err != nil {
+				return store.ExternalProviderApp{}, err
+			}
+		}
+	}
+	if err := s.secrets.PutSecret(ctx, AppSecretID(app.ID), []byte(clientSecret), AppSecretID(app.ID)); err != nil {
+		return store.ExternalProviderApp{}, fmt.Errorf("seal the app secret: %w", err)
+	}
+	if rotation, ok := s.store.(rotationList); ok {
+		if err := rotation.ClearFeishuAppRotation(ctx, app.ID); err != nil {
+			return store.ExternalProviderApp{}, err
+		}
+	}
+	app.HasSecret, app.RotateSecret = true, false
+	return app, nil
 }
 
 func (s *Service) hasSecret(ctx context.Context, id string) bool {
@@ -245,14 +320,39 @@ func (s *Service) AppCredentials(ctx context.Context, app store.ExternalProvider
 	return AppCredentials{ClientID: app.ClientID, ClientSecret: string(secret), BaseURL: app.BaseURL}, nil
 }
 
+// TenantAccessToken is the app's own token (a Feishu app's bot), fetched
+// with the sealed secret; the caller caches it. Integrations off refuse.
+func (s *Service) TenantAccessToken(ctx context.Context, app store.ExternalProviderApp) (string, time.Duration, error) {
+	if err := s.Integrations.Err(); err != nil {
+		return "", 0, err
+	}
+	provider, ok := s.registry.Lookup(app.Provider)
+	if !ok {
+		return "", 0, fmt.Errorf("unknown provider %q", app.Provider)
+	}
+	issuer, ok := provider.(TenantTokenIssuer)
+	if !ok {
+		return "", 0, fmt.Errorf("provider %q has no app token", app.Provider)
+	}
+	credentials, err := s.AppCredentials(ctx, app)
+	if err != nil {
+		return "", 0, err
+	}
+	return issuer.TenantAccessToken(ctx, credentials)
+}
+
 // --- Logins ------------------------------------------------------------------
 
 // BeginLogin starts a device-flow login through app for ownerUserID and
 // polls the provider in the background until the person approves or the
-// code expires. The returned view holds what to show the person.
+// code expires. The returned view holds what to show the person. Without
+// scopes named the login asks for the provider's preset.
 func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.ExternalProviderApp, input store.ConnectExternalAccountInput) (store.ExternalAccountLogin, error) {
 	if !s.SecretsConfigured() {
 		return store.ExternalAccountLogin{}, ErrSecretsNotConfigured
+	}
+	if err := s.Integrations.Err(); err != nil {
+		return store.ExternalAccountLogin{}, err
 	}
 	provider, err := s.serverHeld(app.Provider)
 	if err != nil {
@@ -262,24 +362,160 @@ func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.
 	if err != nil {
 		return store.ExternalAccountLogin{}, err
 	}
-	login, err := provider.BeginDeviceLogin(ctx, credentials, input.Scopes)
+	scopes := input.Scopes
+	if len(scopes) == 0 {
+		scopes = provider.PresetScopes(input.IncludeApprovalScopes)
+	}
+	login, err := provider.BeginDeviceLogin(ctx, credentials, scopes)
 	if err != nil {
 		return store.ExternalAccountLogin{}, err
 	}
 	pending := &pendingLogin{
-		owner: ownerUserID, scopes: input.Scopes, label: strings.TrimSpace(input.Label), app: app, login: login,
+		owner: ownerUserID, label: strings.TrimSpace(input.Label),
+		view: store.ExternalAccountLogin{ID: "xlogin_" + uuid.NewString(), Provider: app.Provider, Status: "pending"},
+	}
+	pending.authorize(s, app, login, "")
+	s.track(pending)
+	go s.pollLogin(pending, provider, credentials)
+	return pending.view, nil
+}
+
+// BeginSetup starts a sign-in that needs no pasted app: the provider first
+// creates an app for whoever confirms the shown page (phase "register"),
+// then the same login asks them to authorize it (phase "authorize"). One
+// login id follows both phases; the app is saved as the person's own.
+func (s *Service) BeginSetup(ctx context.Context, ownerUserID string, input store.SetupExternalAccountInput) (store.ExternalAccountLogin, error) {
+	if !s.SecretsConfigured() {
+		return store.ExternalAccountLogin{}, ErrSecretsNotConfigured
+	}
+	if err := s.Integrations.Err(); err != nil {
+		return store.ExternalAccountLogin{}, err
+	}
+	provider, err := s.serverHeld(strings.TrimSpace(input.Provider))
+	if err != nil {
+		return store.ExternalAccountLogin{}, err
+	}
+	registrar, ok := provider.(AppRegistrar)
+	if !ok {
+		return store.ExternalAccountLogin{}, fmt.Errorf("provider %q cannot create apps; add an app and connect through it", input.Provider)
+	}
+	registration, err := registrar.BeginAppRegistration(ctx, input.Brand)
+	if err != nil {
+		return store.ExternalAccountLogin{}, err
+	}
+	pending := &pendingLogin{
+		owner: ownerUserID, label: strings.TrimSpace(input.Label),
 		view: store.ExternalAccountLogin{
-			ID: "xlogin_" + uuid.NewString(), Provider: app.Provider, AppID: app.ID, Status: "pending",
-			VerificationURI: login.VerificationURI, VerificationURIComplete: login.VerificationURIComplete, UserCode: login.UserCode,
-			ExpiresAt: s.formatTime(login.ExpiresAt), IntervalSeconds: int(login.Interval / time.Second), RequestedScopes: login.RequestedScopes,
+			ID: "xlogin_" + uuid.NewString(), Provider: provider.Describe().Kind, Status: "pending", Phase: "register",
+			VerificationURI: registration.VerificationURL, VerificationURIComplete: registration.VerificationURL, UserCode: registration.UserCode,
+			ExpiresAt: s.formatTime(registration.ExpiresAt), IntervalSeconds: int(registration.Interval / time.Second),
 		},
 	}
+	s.track(pending)
+	scopes := input.Scopes
+	if len(scopes) == 0 {
+		scopes = registrar.PresetScopes(input.IncludeApprovalScopes)
+	}
+	go s.runSetup(pending, registrar, registration, scopes)
+	return pending.view, nil
+}
+
+// runSetup waits for the app, saves it, then authorizes it as a login.
+func (s *Service) runSetup(pending *pendingLogin, registrar AppRegistrar, registration AppRegistration, scopes []string) {
+	ctx, cancel := context.WithTimeout(context.Background(), registration.ExpiresAt.Sub(s.Now())+30*time.Second)
+	defer cancel()
+	registered, err := s.awaitRegistration(ctx, registrar, registration)
+	if err != nil {
+		s.finishLogin(pending, nil, err)
+		return
+	}
+	app, err := s.saveRegisteredApp(ctx, pending.owner, registrar.Describe(), registered)
+	if err != nil {
+		s.finishLogin(pending, nil, err)
+		return
+	}
+	s.Logf("external accounts: %s created %s app %s for %s", app.ID, app.Provider, app.ClientID, pending.owner)
+	credentials := AppCredentials{ClientID: registered.ClientID, ClientSecret: registered.ClientSecret, BaseURL: registered.BaseURL}
+	login, err := registrar.BeginDeviceLogin(ctx, credentials, scopes)
+	if err != nil {
+		// The app exists; the person can authorize it again from the dialog.
+		pending.mu.Lock()
+		pending.view.AppID, pending.view.App = app.ID, &app
+		pending.mu.Unlock()
+		s.finishLogin(pending, nil, err)
+		return
+	}
+	pending.mu.Lock()
+	pending.authorize(s, app, login, "authorize")
+	pending.mu.Unlock()
+	s.pollLogin(pending, registrar, credentials)
+}
+
+func (s *Service) awaitRegistration(ctx context.Context, registrar AppRegistrar, registration AppRegistration) (RegisteredApp, error) {
+	interval := registration.Interval
+	if interval < s.MinPollInterval {
+		interval = s.MinPollInterval
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return RegisteredApp{}, ErrLoginExpired
+		case <-time.After(interval):
+		}
+		if s.Now().After(registration.ExpiresAt) {
+			return RegisteredApp{}, ErrLoginExpired
+		}
+		registered, next, outcome, err := registrar.PollAppRegistration(ctx, registration)
+		registration = next
+		switch outcome {
+		case PollPending:
+			continue
+		case PollSlowDown:
+			interval += 5 * time.Second
+			continue
+		}
+		return registered, err
+	}
+}
+
+// saveRegisteredApp stores the created app as the owner's personal app and
+// seals its secret, like a pasted one.
+func (s *Service) saveRegisteredApp(ctx context.Context, ownerUserID string, provider store.ExternalProvider, registered RegisteredApp) (store.ExternalProviderApp, error) {
+	app, err := s.store.CreateExternalProviderApp(ctx, store.ExternalProviderApp{
+		ID: "xapp_" + uuid.NewString(), Provider: provider.Kind, OwnerUserID: ownerUserID, Visibility: store.ExternalAppPersonal,
+		Label: provider.Label + " app " + registered.ClientID, ClientID: registered.ClientID, BaseURL: registered.BaseURL, CreatedVia: "registered",
+	})
+	if err != nil {
+		return store.ExternalProviderApp{}, err
+	}
+	if err := s.secrets.PutSecret(ctx, AppSecretID(app.ID), []byte(registered.ClientSecret), AppSecretID(app.ID)); err != nil {
+		if rollbackErr := s.store.DeleteExternalProviderApp(ctx, app.ID); rollbackErr != nil {
+			return store.ExternalProviderApp{}, errors.Join(fmt.Errorf("seal the app secret: %w", err), fmt.Errorf("remove the unsealed app %s: %w", app.ID, rollbackErr))
+		}
+		return store.ExternalProviderApp{}, fmt.Errorf("seal the app secret: %w", err)
+	}
+	app.HasSecret = true
+	return app, nil
+}
+
+// authorize points the login at app's device authorization; the caller
+// holds p.mu once the login is shared.
+func (p *pendingLogin) authorize(s *Service, app store.ExternalProviderApp, login DeviceLogin, phase string) {
+	p.app, p.login = app, login
+	p.view.AppID, p.view.Phase = app.ID, phase
+	if phase != "" {
+		p.view.App = &app
+	}
+	p.view.VerificationURI, p.view.VerificationURIComplete, p.view.UserCode = login.VerificationURI, login.VerificationURIComplete, login.UserCode
+	p.view.ExpiresAt, p.view.IntervalSeconds = s.formatTime(login.ExpiresAt), int(login.Interval/time.Second)
+	p.view.RequestedScopes = login.RequestedScopes
+}
+
+func (s *Service) track(pending *pendingLogin) {
 	s.loginsMu.Lock()
 	s.pruneLoginsLocked()
 	s.logins[pending.view.ID] = pending
 	s.loginsMu.Unlock()
-	go s.pollLogin(pending, provider, credentials)
-	return pending.view, nil
 }
 
 // Login reads a login the owner started.
@@ -320,6 +556,22 @@ func (s *Service) finishLogin(pending *pendingLogin, account *store.ExternalAcco
 	pending.view.Account = account
 }
 
+// missingScopes is what was asked for and not granted. offline_access is
+// left out: it shows as the refresh token, not in the granted list.
+func missingScopes(requested, granted []string) []string {
+	have := map[string]bool{"offline_access": true}
+	for _, scope := range granted {
+		have[scope] = true
+	}
+	var missing []string
+	for _, scope := range requested {
+		if !have[scope] {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
+}
+
 func (s *Service) pollLogin(pending *pendingLogin, provider ServerHeldProvider, credentials AppCredentials) {
 	// The deadline follows the service clock, so the provider's expiry and
 	// the server's own clock agree (tests move both).
@@ -356,6 +608,12 @@ func (s *Service) pollLogin(pending *pendingLogin, provider ServerHeldProvider, 
 		if err != nil {
 			s.finishLogin(pending, nil, err)
 			return
+		}
+		if missing := missingScopes(pending.login.RequestedScopes, grant.Scopes()); len(missing) > 0 {
+			pending.mu.Lock()
+			pending.view.MissingScopes = missing
+			pending.view.ScopeApplyURL = provider.ScopeApplyURL(credentials, missing)
+			pending.mu.Unlock()
 		}
 		s.finishLogin(pending, &account, nil)
 		return
@@ -535,13 +793,24 @@ type Use struct {
 // Mint returns an access token for the account: the current one while it
 // has RefreshLead left, else a freshly refreshed one. The server is the
 // only refresher; the per-account lock makes two concurrent mints spend one
-// refresh token once.
+// refresh token once. Each mint is an audit line of the account.
 func (s *Service) Mint(ctx context.Context, account store.ExternalAccount, use Use) (store.ExternalAccountToken, error) {
-	lock := s.lockFor(account.ID)
+	return s.token(ctx, account.ID, use, true)
+}
+
+// AccessToken is Mint for the provider gateway, which calls it on every
+// request it forwards as the account and keeps its own audit: no account
+// event per call, and the last-used time written at most once a minute.
+func (s *Service) AccessToken(ctx context.Context, accountID string, use Use) (store.ExternalAccountToken, error) {
+	return s.token(ctx, accountID, use, false)
+}
+
+func (s *Service) token(ctx context.Context, accountID string, use Use, audit bool) (store.ExternalAccountToken, error) {
+	lock := s.lockFor(accountID)
 	lock.Lock()
 	defer lock.Unlock()
 	// The caller's copy may predate a refresh another mint just made.
-	account, err := s.store.GetExternalAccount(ctx, account.ID)
+	account, err := s.store.GetExternalAccount(ctx, accountID)
 	if err != nil {
 		return store.ExternalAccountToken{}, err
 	}
@@ -556,17 +825,24 @@ func (s *Service) Mint(ctx context.Context, account store.ExternalAccount, use U
 		return store.ExternalAccountToken{}, err
 	}
 	now := s.Now()
+	refreshed := false
 	if grant.AccessExpiresAt.Sub(now) < s.RefreshLead {
 		grant, err = s.refreshLocked(ctx, &account, grant, use)
 		if err != nil {
 			return store.ExternalAccountToken{}, err
 		}
+		refreshed = true
 	}
-	account.LastUsedAt = s.formatTime(now)
-	if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
-		return store.ExternalAccountToken{}, err
+	lastUsed, _ := parseTime(account.LastUsedAt)
+	if audit || refreshed || now.Sub(lastUsed) >= time.Minute {
+		account.LastUsedAt = s.formatTime(now)
+		if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
+			return store.ExternalAccountToken{}, err
+		}
 	}
-	s.event(ctx, store.ExternalAccountEvent{AccountID: account.ID, Kind: "token_issued", SessionID: use.SessionID, DeviceID: use.DeviceID, Detail: s.formatTime(grant.AccessExpiresAt)})
+	if audit {
+		s.event(ctx, store.ExternalAccountEvent{AccountID: account.ID, Kind: "token_issued", SessionID: use.SessionID, DeviceID: use.DeviceID, Detail: s.formatTime(grant.AccessExpiresAt)})
+	}
 	return store.ExternalAccountToken{
 		AccountID: account.ID, AccessToken: grant.AccessToken, TokenType: grant.TokenType,
 		ExpiresAt: s.formatTime(grant.AccessExpiresAt), Scope: grant.Scope,
@@ -603,6 +879,9 @@ func (s *Service) RefreshNow(ctx context.Context, account store.ExternalAccount,
 // updates the account in place (the caller saves it). A terminal failure
 // marks the account needs_reauth so nothing retries a dead token.
 func (s *Service) refreshLocked(ctx context.Context, account *store.ExternalAccount, grant Grant, use Use) (Grant, error) {
+	if err := s.Integrations.Err(); err != nil {
+		return Grant{}, fmt.Errorf("cannot refresh %s: %w", account.ID, err)
+	}
 	app, err := s.store.GetExternalProviderApp(ctx, account.AppID)
 	if err != nil {
 		return Grant{}, err
@@ -660,7 +939,8 @@ func (s *Service) refreshLocked(ctx context.Context, account *store.ExternalAcco
 }
 
 // Revoke is "stop using now": the grant is revoked at the provider and
-// deleted here; the account stays, marked revoked, until disconnected.
+// deleted here; the account stays, marked revoked, until disconnected. The
+// gateway refuses the account's handles from then on.
 func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, actorID string) (store.ExternalAccount, error) {
 	lock := s.lockFor(account.ID)
 	lock.Lock()
@@ -697,6 +977,9 @@ func (s *Service) revokeLocked(ctx context.Context, account store.ExternalAccoun
 	}
 	if err != nil {
 		return err
+	}
+	if err := s.Integrations.Err(); err != nil {
+		return fmt.Errorf("cannot revoke %s at the provider: %w", account.ID, err)
 	}
 	app, err := s.store.GetExternalProviderApp(ctx, account.AppID)
 	if err == nil {
@@ -765,9 +1048,11 @@ func Permitted(account store.ExternalAccount, boundWorkspaces []string, workspac
 	return false
 }
 
-// ProfileName is the tool profile a worker writes for an account:
-// "foundry-<id>", within feishu-cli's [A-Za-z0-9_-]{1,64}.
-func ProfileName(accountID string) string {
+// ProfileName is the tool profile a worker writes for an account in one
+// session: "foundry-<account id>-<session digest>", within feishu-cli's
+// [A-Za-z0-9_-]{1,64}. Each session has its own profile, since its handles
+// die with it.
+func ProfileName(accountID, sessionID string) string {
 	id := strings.TrimPrefix(accountID, "xacc_")
 	var clean strings.Builder
 	for _, r := range id {
@@ -777,35 +1062,29 @@ func ProfileName(accountID string) string {
 		}
 	}
 	name := "foundry-" + clean.String()
-	if len(name) > 64 {
-		name = name[:64]
+	if len(name) > 53 {
+		name = name[:53]
 	}
-	return name
+	digest := sha256.Sum256([]byte(sessionID))
+	return name + "-" + hex.EncodeToString(digest[:])[:10]
 }
 
-// SessionMaterials mints what a session may act with: for every account
-// bound to its workspace that Eligible allows, an access token and the
-// app's credentials for the tool. Accounts whose mint fails are left out
-// and logged; the session still starts.
+// sessionHandleLifetime is the expiry the tool is told its handles have;
+// the gateway refuses them as soon as the session ends, whatever it says.
+const sessionHandleLifetime = 30 * 24 * time.Hour
+
+// SessionMaterials is what a session may act with: for every account bound
+// to its workspace that Eligible allows, the gateway handles standing in for
+// the app secret and the access token. Accounts whose handles cannot be
+// issued are left out and logged; the session still starts.
 func (s *Service) SessionMaterials(ctx context.Context, workspaceID, sessionID, deviceID, sessionOwner, deviceOwner string) ([]store.ExternalAccountMaterial, error) {
-	if !s.SecretsConfigured() || sessionOwner == "" || deviceOwner == "" {
-		return nil, nil
-	}
-	bindings, err := s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
+	accounts, err := s.SessionAccounts(ctx, workspaceID, sessionOwner, deviceOwner)
 	if err != nil {
 		return nil, err
 	}
 	var materials []store.ExternalAccountMaterial
-	for _, binding := range bindings {
-		account, err := s.store.GetExternalAccount(ctx, binding.AccountID)
-		if err != nil {
-			continue
-		}
-		account = s.withComputedStatus(account)
-		if !Eligible(account, account.WorkspaceIDs, workspaceID, sessionOwner, deviceOwner) {
-			continue
-		}
-		material, err := s.material(ctx, account, Use{SessionID: sessionID, DeviceID: deviceID, By: "session"})
+	for _, account := range accounts {
+		material, err := s.material(ctx, account, HandleRequest{SessionID: sessionID, DeviceID: deviceID, WorkspaceID: workspaceID, UserID: sessionOwner, Account: account})
 		if err != nil {
 			s.Logf("external account %s for session %s: %v", account.ID, sessionID, err)
 			continue
@@ -815,16 +1094,40 @@ func (s *Service) SessionMaterials(ctx context.Context, workspaceID, sessionID, 
 	return materials, nil
 }
 
-func (s *Service) material(ctx context.Context, account store.ExternalAccount, use Use) (store.ExternalAccountMaterial, error) {
+// SessionAccounts lists the accounts bound to workspaceID that a session
+// sessionOwner started on a device deviceOwner owns may act as now.
+func (s *Service) SessionAccounts(ctx context.Context, workspaceID, sessionOwner, deviceOwner string) ([]store.ExternalAccount, error) {
+	if !s.SecretsConfigured() || sessionOwner == "" || deviceOwner == "" {
+		return nil, nil
+	}
+	bindings, err := s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	var accounts []store.ExternalAccount
+	for _, binding := range bindings {
+		account, err := s.store.GetExternalAccount(ctx, binding.AccountID)
+		if err != nil {
+			continue
+		}
+		account = s.withComputedStatus(account)
+		if Eligible(account, account.WorkspaceIDs, workspaceID, sessionOwner, deviceOwner) {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
+}
+
+func (s *Service) material(ctx context.Context, account store.ExternalAccount, request HandleRequest) (store.ExternalAccountMaterial, error) {
+	if s.Handles == nil {
+		return store.ExternalAccountMaterial{}, errors.New("this server has no gateway for the account's provider")
+	}
 	app, err := s.store.GetExternalProviderApp(ctx, account.AppID)
 	if err != nil {
 		return store.ExternalAccountMaterial{}, err
 	}
-	credentials, err := s.AppCredentials(ctx, app)
-	if err != nil {
-		return store.ExternalAccountMaterial{}, err
-	}
-	token, err := s.Mint(ctx, account, use)
+	request.App = app
+	gateway, err := s.Handles.IssueHandles(ctx, request)
 	if err != nil {
 		return store.ExternalAccountMaterial{}, err
 	}
@@ -834,17 +1137,20 @@ func (s *Service) material(ctx context.Context, account store.ExternalAccount, u
 		tool = provider.Describe().Tools[0]
 	}
 	return store.ExternalAccountMaterial{
-		AccountID: account.ID, Provider: account.Provider, Label: account.Label, Tool: tool, ProfileName: ProfileName(account.ID),
-		ClientID: credentials.ClientID, ClientSecret: credentials.ClientSecret, BaseURL: app.BaseURL,
-		AccessToken: token.AccessToken, TokenType: token.TokenType, ExpiresAt: token.ExpiresAt, Scope: token.Scope,
-		Subject: account.Subject, DisplayName: account.DisplayName,
+		AccountID: account.ID, Provider: account.Provider, Label: account.Label, Tool: tool, ProfileName: ProfileName(account.ID, request.SessionID),
+		ClientID: app.ClientID, Gateway: &gateway, ExpiresAt: s.formatTime(s.Now().Add(sessionHandleLifetime)),
+		Scope: strings.Join(account.GrantedScopes, " "), Subject: account.Subject, DisplayName: account.DisplayName,
 	}, nil
 }
 
 // --- Keep-alive --------------------------------------------------------------
 
-// RunKeepAlive sweeps every KeepAliveInterval until ctx ends.
+// RunKeepAlive sweeps every KeepAliveInterval until ctx ends; with
+// integrations off it returns at once.
 func (s *Service) RunKeepAlive(ctx context.Context) {
+	if !s.Integrations.On() {
+		return
+	}
 	ticker := time.NewTicker(s.KeepAliveInterval)
 	defer ticker.Stop()
 	for {
@@ -862,7 +1168,7 @@ func (s *Service) RunKeepAlive(ctx context.Context) {
 // account does not die at day 7. Accounts that did not ask are left to
 // expire and show "expiring" instead. It reports how many were refreshed.
 func (s *Service) KeepAliveSweep(ctx context.Context) int {
-	if !s.SecretsConfigured() {
+	if !s.SecretsConfigured() || !s.Integrations.On() {
 		return 0
 	}
 	accounts, err := s.store.ListExternalAccounts(ctx, "")

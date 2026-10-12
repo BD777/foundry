@@ -16,7 +16,6 @@ import type {
   ChatThread,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { chatUpdateTime, latestChatTime } from "./chat-time";
 import { sessionStillActive, toChatSendError } from "./chat-send-error";
 import {
   cancelAgentSession,
@@ -35,26 +34,24 @@ import {
   activeThreadSessionForAgent,
   agentSessionStatusLabel,
   chatComposerChoices,
-  agentSessionTerminalError,
   chatMessageItemId,
   chatMessages,
   chatMessagesForThread,
   chatSortValue,
-  chatThreadsFromSessions,
-  isChatSession,
   isTerminalSession,
   latestCopyableResponseIndex,
   latestThreadSession,
-  selectedChatThread,
 } from "./chat-model";
 import { ChatSurface, type ChatMessageItem } from "./chat-surface";
 import {
   chatContextCardForSessions,
-  liveThreadSchedule,
   runningBackgroundWork,
 } from "./chat-context-model";
+import { liveThreadSchedule, threadScheduleWakes } from "./chat-schedule-model";
 import { chatDetailHydrationId } from "./chat-hydration-policy";
 import { useChatTranscript } from "./use-chat-transcript";
+import { useChatSelection } from "./use-chat-selection";
+import { selectedChatNotices } from "./chat-thread-notice";
 import { ChatTranscriptHistory } from "./chat-transcript-history";
 import { useChatSubagents } from "./use-chat-subagents";
 import { withOutbox } from "./chat-outbox";
@@ -62,10 +59,7 @@ import { useChatOutbox, usePruneDeliveredOutbox } from "./use-chat-outbox";
 import { useStableValue } from "./use-stable-value";
 import { useChatRuntime } from "./use-chat-runtime";
 import { useChatQueue } from "./use-chat-queue";
-import { retainChatLayouts } from "./use-chat-layout";
-import { useChatReadState, useChatTitles } from "./use-chat-list-state";
-import { useUnreadTabMarker } from "./use-chat-list-state";
-import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
+import { useChatListItems } from "./use-chat-list-items";
 import { workspaceDenial } from "../../lib/workspace-access";
 import {
   conversationStorageKey,
@@ -96,12 +90,16 @@ export interface UseChatFeatureInput {
   deviceOnline: boolean;
   onEvent: (event: ChatFeatureEvent) => Promise<void> | void;
   profiles: AgentProfileProjection[];
+  /** Not switching workspace: a chat the list lacks is looked up by id. */
+  ready?: boolean;
   selectedChatId: string;
   sessions: AgentSession[];
   /** The composer "/" menu: workspace skills and each agent's own. */
   slashSkills?: ComposerSlashSkills;
   workspaceId: string;
   workspace?: WorkspaceProjection;
+  /** The workspaces the person may open, to name another one's chat. */
+  workspaces?: readonly WorkspaceProjection[];
 }
 
 /**
@@ -116,11 +114,13 @@ export function useChatFeature({
   deviceOnline,
   onEvent,
   profiles,
+  ready = true,
   selectedChatId,
-  sessions,
+  sessions: listedSessions,
   slashSkills,
   workspaceId,
   workspace,
+  workspaces,
 }: UseChatFeatureInput): ReactElement {
   const { i18n: activeI18n } = useTranslation();
   const onEventRef = useRef(onEvent);
@@ -141,42 +141,24 @@ export function useChatFeature({
   const [submitting, setSubmitting] = useState(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
 
-  const chatSessions = useMemo(
-    () => sessions.filter(isChatSession),
-    [sessions],
-  );
-  const threads = useMemo(
-    () => chatThreadsFromSessions(chatSessions),
-    [chatSessions],
-  );
-  // A session Chats does not list (one working for an Issue, or started
-  // by an agent) still opens by id, read-only, so its transcript is
-  // reachable from wherever it is shown.
-  const selectedThread = useMemo(
-    () =>
-      selectedChatThread(threads, selectedChatId) ??
-      selectedChatThread(
-        chatThreadsFromSessions(
-          sessions.filter(
-            (session) =>
-              !isChatSession(session) && session.id === selectedChatId,
-          ),
-        ),
-        selectedChatId,
-      ),
-    [selectedChatId, sessions, threads],
-  );
-  const unlistedSelection = Boolean(
-    selectedThread && !threads.includes(selectedThread),
-  );
+  const selection = useChatSelection({
+    archivedChats,
+    ready: active && ready,
+    selectedChatId,
+    sessions: listedSessions,
+    workspaceId,
+  });
+  const { selectedThread, sessions, threads, unlistedSelection } = selection;
   const threadSessions = selectedThread?.sessions ?? noSessions;
   const transcript = useChatTranscript({
-    onLoaded: (loaded) =>
+    onLoaded: (loaded) => {
+      selection.mergeLinkedDetails(loaded);
       void emit({
         sessions: loaded,
         type: "thread.details.loaded",
         workspaceId,
-      }),
+      });
+    },
     sessions: threadSessions,
     threadId: selectedThread?.id,
     workspaceId,
@@ -449,6 +431,10 @@ export function useChatFeature({
   );
   const schedule = useMemo(
     () => liveThreadSchedule(threadSessions),
+    [threadSessions],
+  );
+  const scheduleWakes = useMemo(
+    () => threadScheduleWakes(threadSessions),
     [threadSessions],
   );
 
@@ -786,97 +772,20 @@ export function useChatFeature({
     }
   }
 
-  const titleState = useChatTitles(workspaceId, active, notify);
-  // The chat list's layout stays current between its visits: no read then.
-  useEffect(() => retainChatLayouts(), []);
   const selectedId = selectedThread?.id ?? selectedChat?.id ?? "";
   const selectionRef = useRef({ workspaceId, selectedId });
   selectionRef.current = { workspaceId, selectedId };
-  const selectedAnswer = selectedThread
-    ? threadAnswerRevision(selectedThread.sessions)
-    : (selectedChat?.answerRevision ?? "");
-  const readState = useChatReadState(
-    workspaceId,
+  const list = useChatListItems({
     active,
+    archivedChats: sortedArchivedChats,
+    notify,
+    onSelectChat: (chatId) => void emit({ chatId, type: "chat.selected" }),
+    selectedChat,
     selectedId,
-    selectedAnswer,
-  );
-  const menuActions = (id: string) => ({
-    onRename: (title: string) => titleState.rename(id, title),
-    onAutoRename: () => titleState.recap(id),
-    onMarkUnread: () => readState.markUnread(id),
-    onNotify: notify,
-    renaming: ["queued", "running"].includes(
-      titleState.titles[id]?.generationStatus ?? "",
-    ),
+    selectedThread,
+    threads,
+    workspaceId,
   });
-
-  const sessionChats = threads.map((thread) => {
-    const latest = latestThreadSession(thread);
-    const terminalError = latest
-      ? agentSessionTerminalError(latest)
-      : undefined;
-    const answer = threadAnswerRevision(thread.sessions);
-    const unread = readState.unread(thread.id, answer);
-    return {
-      ...menuActions(thread.id),
-      id: thread.id,
-      onSelect: () => {
-        readState.read(thread.id, answer);
-        void emit({ chatId: thread.id, type: "chat.selected" });
-      },
-      runtime: latest?.provider ?? thread.sessions[0]?.provider,
-      selected: thread.id === selectedThread?.id,
-      title: titleState.titles[thread.id]?.title || thread.title,
-      activityAt: latest?.activityAt,
-      updateTime: chatUpdateTime(
-        latest?.activityAt ??
-          latestChatTime([
-            ...thread.sessions.flatMap((session) => [
-              session.startedAt,
-              session.completedAt,
-            ]),
-          ]),
-        latest?.updatedLabel,
-      ),
-      status: chatListStatus(
-        Boolean(activeThreadSession(thread)),
-        Boolean(terminalError || latest?.status === "failed"),
-        unread,
-        latest?.status === "blocked",
-      ),
-      blocked: latest?.status === "blocked",
-      blockedReason: latest?.blockedReason,
-      spawned: Boolean(latest?.parentSessionId),
-      unread,
-      foundrySessionId: latest?.id ?? thread.id,
-      nativeSessionId: latest?.nativeSessionId,
-    };
-  });
-  // The server lists only native chats no Foundry session owns.
-  const archiveChats = sortedArchivedChats.map((chat) => ({
-    ...menuActions(chat.id),
-    id: chat.id,
-    onSelect: () => {
-      readState.read(chat.id, chat.answerRevision ?? "");
-      void emit({ chatId: chat.id, type: "chat.selected" });
-    },
-    runtime: chat.provider,
-    selected: chat.id === selectedChat?.id && !selectedThread,
-    title: titleState.titles[chat.id]?.title || chat.title,
-    activityAt: chat.updatedAt,
-    updateTime: chatUpdateTime(chat.updatedAt, chat.updatedLabel),
-    status: chatListStatus(
-      chat.status === "running" || chat.status === "queued",
-      chat.status === "failed",
-      readState.unread(chat.id, chat.answerRevision ?? ""),
-      chat.status === "blocked",
-    ),
-    blocked: chat.status === "blocked",
-    unread: readState.unread(chat.id, chat.answerRevision ?? ""),
-    foundrySessionId: chat.id,
-    nativeSessionId: chat.nativeSessionId,
-  }));
   const history = useMemo(
     () => (
       <ChatTranscriptHistory
@@ -887,21 +796,20 @@ export function useChatFeature({
     ),
     [transcript.loadEarlier, transcript.retry, transcript.state],
   );
-  // What the list shows rarely changes while a transcript streams; then it
-  // keeps its identity and the list does not render again.
-  const listChats = useStableValue(
-    [...sessionChats, ...archiveChats],
-    threads.map((thread) => threadAnswerRevision(thread.sessions)).join("\n"),
-  );
-  useUnreadTabMarker(listChats, selectedId);
+
+  const notices = selectedChatNotices({
+    ...selection,
+    selectedChat,
+    selectedChatId,
+    showChats: () => void emit({ chatId: "", type: "chat.selected" }),
+    workspaces,
+  });
 
   return (
     <ChatSurface
-      readOnlyReason={
-        unlistedSelection
-          ? i18n.t("chat:thread.workingForIssue")
-          : workspaceDenial(workspace, "member")
-      }
+      readOnlyReason={workspaceDenial(workspace, "member")}
+      selectedChatId={selectedChatId}
+      threadNotice={notices.thread}
       onChatsDeleted={async (ids) => {
         ids.forEach((id) => {
           const key = conversationStorageKey(
@@ -923,20 +831,22 @@ export function useChatFeature({
       agentOptions={agentOptions}
       attachmentUploading={attachmentUploading}
       attachments={attachments}
-      chats={listChats}
+      chats={list.chats}
       chatTitle={
-        titleState.titles[selectedId]?.title ||
+        list.titles[selectedId]?.title ||
         selectedThread?.title ||
         selectedChat?.title ||
+        notices.linked?.title ||
         i18n.t("chat:list.newChat")
       }
-      contextCard={contextCard}
+      contextCard={notices.linked ? undefined : contextCard}
       history={history}
       onReachHistoryStart={transcript.loadEarlier}
       onContextPanelVisibleChange={setContextPanelVisible}
       onRetrySubagents={subagents.failed ? subagents.retry : undefined}
       backgroundWork={backgroundWork}
       schedule={schedule}
+      scheduleWakes={scheduleWakes}
       claudeEffort={claudeEffort}
       claudePermissionMode={claudePermissionMode}
       codexApprovalPolicy={codexApprovalPolicy}

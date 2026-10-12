@@ -1,11 +1,11 @@
 import {
   Columns2,
   FolderOpen,
-  IdCard,
   KeyRound,
   Library,
   MessageSquareText,
   Monitor,
+  Plug,
 } from "lucide-react";
 import type { SidebarNavSection } from "../components/ui/app-shell";
 import type { shell } from "../i18n/locales/en/shell";
@@ -22,11 +22,12 @@ export type NavView =
   | "chats"
   | "assets"
   | "skills"
+  | "foundrySkill"
   | "feishu"
   | "sharing"
   | "settings"
   | "profiles"
-  | "externalAccounts"
+  | "connectors"
   | "accounts"
   | "library"
   | "workspace"
@@ -37,10 +38,19 @@ export type SidebarView = Exclude<NavView, "issue">;
 
 export type DevicePairingMode = "auto" | "offline" | "online";
 
+/** The Connectors page has one tab per kind of external service. */
+export const connectorTabs = ["feishu"] as const;
+export type ConnectorTab = (typeof connectorTabs)[number];
+
+function connectorTabFrom(value: string | undefined): ConnectorTab {
+  return connectorTabs.find((tab) => tab === value) ?? connectorTabs[0];
+}
+
 export interface AppRoute {
   selectedDeviceId?: string;
   deviceSection?:
     "resources" | "agents" | "skills" | "settings" | "diagnostics";
+  connectorTab?: ConnectorTab;
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -108,11 +118,16 @@ export function parseAppRoute(pathname: string): AppRoute {
       return id
         ? { view: "issue", selectedIssueId: decodePathSegment(id) }
         : { view: "issues" };
+    case "model-providers":
+    // Earlier names of the Model providers page.
     case "profiles":
     case "connections":
       return { view: "profiles" };
+    case "connectors":
+      return { view: "connectors", connectorTab: connectorTabFrom(id) };
+    // The page was "External accounts"; its accounts are the Feishu tab now.
     case "external-accounts":
-      return { view: "externalAccounts" };
+      return { view: "connectors", connectorTab: "feishu" };
     case "runs":
       return { view: "issues" };
     case "settings":
@@ -124,6 +139,9 @@ export function parseAppRoute(pathname: string): AppRoute {
     case "feishu":
       return { view: "feishu" };
     case "workspace":
+      // /workspace/skills/foundry: what the built-in foundry skill gives agents.
+      if (id === "skills" && segments[2] === "foundry")
+        return { view: "foundrySkill" };
       if (
         id === "settings" ||
         id === "assets" ||
@@ -166,9 +184,9 @@ export function pathForAppRoute(route: AppRoute): string {
     case "issues":
       return "/issues";
     case "profiles":
-      return "/connections";
-    case "externalAccounts":
-      return "/external-accounts";
+      return "/model-providers";
+    case "connectors":
+      return `/connectors/${route.connectorTab ?? connectorTabs[0]}`;
     case "accounts":
       return "/workspace/accounts";
     case "library":
@@ -177,6 +195,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return "/workspace/settings";
     case "skills":
       return "/workspace/skills";
+    case "foundrySkill":
+      return "/workspace/skills/foundry";
     case "feishu":
       return "/workspace/feishu";
     case "sharing":
@@ -190,10 +210,11 @@ export function pathForAppRoute(route: AppRoute): string {
  * Imperative in-app navigation for surfaces that own no shell state (the
  * composer pickers). Goes through the same history/popstate contract as the
  * back button, so the app shell parses the existing route — no new route.
+ * `workspaceId` opens the route in that workspace instead of the one shown.
  */
-export function navigateAppRoute(route: AppRoute): void {
+export function navigateAppRoute(route: AppRoute, workspaceId?: string): void {
   const path = pathForAppRoute(route);
-  const url = `${path}${searchWithWorkspace(workspaceIdFromLocation())}${window.location.hash}`;
+  const url = `${path}${searchWithWorkspace(workspaceId || workspaceIdFromLocation())}${window.location.hash}`;
   if (
     url ===
     `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -285,6 +306,7 @@ const pageViews = new Set<string>([
   "members",
   "assets",
   "skills",
+  "foundrySkill",
   "settings",
   "feishu",
   "sharing",
@@ -292,7 +314,7 @@ const pageViews = new Set<string>([
   "devices",
   "locations",
   "profiles",
-  "externalAccounts",
+  "connectors",
   "accounts",
   "library",
 ]);
@@ -320,7 +342,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
       { id: "devices", label: "devices", icon: Monitor },
       { id: "library", label: "library", icon: Library },
       { id: "profiles", label: "profiles", icon: KeyRound },
-      { id: "externalAccounts", label: "externalAccounts", icon: IdCard },
+      { id: "connectors", label: "connectors", icon: Plug },
     ],
   },
 ];

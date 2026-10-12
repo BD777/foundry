@@ -113,9 +113,9 @@ func TestTopicCardFollowsItsSession(t *testing.T) {
 	manager := NewWSManager(nil, nil, nil, eventsForTest())
 	manager.streamBuffer = NewStreamBuffer(time.Millisecond)
 	bot := &fakeBot{}
-	manager.activeBots["ws_1"] = &activeBot{workspaceID: "ws_1", client: bot}
-	manager.sessions["sess_1"] = &sessionMetadata{workspaceID: "ws_1", cardMessageID: "card_1", title: "Fix it", startTime: time.Now()}
-	manager.sessions["sess_2"] = &sessionMetadata{workspaceID: "ws_1", cardMessageID: "card_2", title: "Break it", startTime: time.Now()}
+	manager.apps["cli_x"] = &botApp{clientID: "cli_x", client: bot}
+	manager.sessions["sess_1"] = &sessionMetadata{workspaceID: "ws_1", clientID: "cli_x", cardMessageID: "card_1", title: "Fix it", startTime: time.Now()}
+	manager.sessions["sess_2"] = &sessionMetadata{workspaceID: "ws_1", clientID: "cli_x", cardMessageID: "card_2", title: "Break it", startTime: time.Now()}
 
 	manager.SessionEventRecorded(store.AgentSessionEvent{SessionID: "sess_other", Label: "Response stream", Detail: "nobody's answer"})
 	manager.SessionEventRecorded(store.AgentSessionEvent{SessionID: "sess_1", Label: "Response stream", Detail: "half an answer"})

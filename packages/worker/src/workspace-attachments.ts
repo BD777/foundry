@@ -12,6 +12,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  rmdirSync,
   statSync,
   writeSync,
   fsyncSync,
@@ -143,7 +144,17 @@ export function abortAttachmentUpload(
 ): void {
   const root = attachmentsRoot(workspacePath);
   const target = resolve(root, relativePath);
-  if (inside(root, target)) rmSync(`${target}.part`, { force: true });
+  if (!inside(root, target)) return;
+  rmSync(`${target}.part`, { force: true });
+  // A dropped batch's own folder (<date>/<batch>/name) goes once empty; a
+  // date folder other uploads share stays.
+  const folder = dirname(target);
+  if (relative(root, folder).split(sep).length < 2) return;
+  try {
+    rmdirSync(folder);
+  } catch {
+    // Not empty: other files of the batch are still there.
+  }
 }
 
 /**

@@ -108,8 +108,18 @@ test("a timer Claude fires while no turn runs is published as that timer's fire,
     const turn = firstTurn(runtime, directory);
     await replay(runtime, fixture.timerFireWithSubagent);
     assert.equal(turn.resolved.response, "SCHEDULED");
-    const fires = outOfBand.filter((event) => event.metadata?.timerFire);
+    const all = outOfBand.filter((event) => event.metadata?.timerFire);
+    // Each fire is published as it starts, then with its answer.
+    const started = all.filter(
+      (event) => !event.metadata.timerFire.completedAt,
+    );
+    const fires = all.filter((event) => event.metadata.timerFire.completedAt);
     assert.equal(fires.length, 2, "both fires in the capture are published");
+    assert.deepEqual(
+      started.map((event) => event.metadata.timerFire.startedAt),
+      fires.map((event) => event.metadata.timerFire.startedAt),
+      "each start and end name the same fire",
+    );
     for (const fire of fires) {
       assert.equal(fire.label, "Scheduled task fired");
       assert.equal(fire.metadata.timerFire.origin, "scheduled");
@@ -139,7 +149,9 @@ test("a resumed session's timer fires as that timer, known before Claude lists i
       },
     ]);
     await replay(runtime, fixture.resumedTimerFire);
-    const fires = outOfBand.filter((event) => event.metadata?.timerFire);
+    const fires = outOfBand.filter(
+      (event) => event.metadata?.timerFire?.completedAt,
+    );
     assert.ok(fires.length >= 1);
     assert.equal(fires[0].metadata.timerFire.origin, "scheduled");
     assert.equal(fires[0].metadata.timerFire.id, "e9470d6a");

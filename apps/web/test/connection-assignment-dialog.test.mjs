@@ -292,9 +292,9 @@ test("an empty catalog offers the management page and never an enabled save", as
     );
   });
   // Radix renders the dialog in a portal under document.body, not `container`.
-  assert.match(window.document.body.textContent, /No server connections yet/);
+  assert.match(window.document.body.textContent, /No model providers yet/);
   assert.equal(buttonWith("Save").disabled, true);
-  await act(async () => buttonWith("Open Server connections").click());
+  await act(async () => buttonWith("Open Model providers").click());
   assert.equal(manage.length, 1);
   await act(async () => root.unmount());
 });

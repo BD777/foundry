@@ -16,6 +16,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -35,6 +37,7 @@ type Server struct {
 	titles             *chatTitleService
 	hub                *DaemonHub
 	feishu             *feishu.WSManager
+	feishuEvents       *feishuevents.Hub
 	options            ServerOptions
 	startedAt          time.Time
 	store              store.Store
@@ -42,10 +45,13 @@ type Server struct {
 	accounts           store.AccountStore
 	// externalAccounts holds people's third-party logins (external_accounts.go).
 	externalAccounts *externalaccounts.Service
-	loginLimiter     *loginLimiter
-	setupMu          sync.Mutex
-	workerUpdates    workerUpdates
-	setupCode        string
+	// feishuGateway is how sessions reach Feishu with those logins
+	// (external_accounts_gateway.go); nil without external accounts.
+	feishuGateway *feishugateway.Gateway
+	loginLimiter  *loginLimiter
+	setupMu       sync.Mutex
+	workerUpdates workerUpdates
+	setupCode     string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
 	stream      *eventstream.Hub
@@ -58,6 +64,9 @@ type Server struct {
 	// one repository operation at a time.
 	skillRepos skillrepo.Source
 	repoMu     sync.Mutex
+	// skillRepositoryFirstCheck is how long after start the followed
+	// repositories are first checked; tests shorten it.
+	skillRepositoryFirstCheck time.Duration
 	// repoUploads holds the files devices upload for repositories they read.
 	repoUploads deviceUploads
 	// releaseAPI is the GitHub API base used to find a bundle's tool
@@ -121,18 +130,19 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	issues := &issueEvents{stream: stream}
 	chats := newChatListEvents(stream, store, data)
 	server := &Server{
-		stream:       stream,
-		sessions:     sessions,
-		issues:       issues,
-		chats:        chats,
-		dataChanges:  data,
-		options:      options,
-		startedAt:    time.Now().UTC(),
-		store:        store,
-		loginLimiter: newLoginLimiter(),
-		skillRepos:   skillrepo.DefaultSources(),
-		releaseAPI:   "https://api.github.com",
-		pypiAPI:      "https://pypi.org",
+		stream:                    stream,
+		sessions:                  sessions,
+		issues:                    issues,
+		chats:                     chats,
+		dataChanges:               data,
+		options:                   options,
+		startedAt:                 time.Now().UTC(),
+		store:                     store,
+		loginLimiter:              newLoginLimiter(),
+		skillRepos:                skillrepo.DefaultSources(),
+		skillRepositoryFirstCheck: time.Minute,
+		releaseAPI:                "https://api.github.com",
+		pypiAPI:                   "https://pypi.org",
 	}
 	devices := newDeviceEvents(stream, store, data, server)
 	server.devices = devices
@@ -142,8 +152,9 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		server.secrets = keeper
 		server.hub.secrets = keeper
 	}
-	server.externalAccounts = newExternalAccountService(store, server.secrets)
+	server.externalAccounts = newExternalAccountService(store, server.secrets, options.Integrations)
 	server.hub.externalAccounts = server.externalAccounts
+	server.feishuGateway = newFeishuGateway(store, server.externalAccounts, options.Integrations)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
@@ -154,12 +165,13 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
 	}
 	server.feishu = feishu.NewWSManager(store, server.secrets, server, stream)
+	server.feishu.Integrations = options.Integrations
+	server.wireFeishuEvents(store, options.Integrations)
 	// What follows a session's changes, in this order: its Feishu card, the
 	// chat's queued messages, the chat's title; and, once a device that
 	// reported a session ended was answered, naming what it answered.
 	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles)
 	issues.observe(feishuReactions{server.feishu})
-	go server.feishu.StartAllConfiguredBots(context.Background())
 	return server
 }
 
@@ -171,6 +183,9 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.feishu != nil {
 		s.feishu.StopAll()
+	}
+	if s.feishuEvents != nil {
+		s.feishuEvents.Stop()
 	}
 	s.stream.Shutdown()
 	return s.hub.Shutdown(ctx)
@@ -377,9 +392,7 @@ func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	// Other workspaces' views read what changed for them; the workspace's
 	// own viewers have nothing left to read.
 	s.projectionsChanged("", workspaceRemovalFields...)
-	if s.feishu != nil {
-		s.feishu.StopBot(id)
-	}
+	s.feishuBotsChanged(r.Context())
 	if workspace.DeviceID != "" {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
@@ -1127,6 +1140,13 @@ var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
 // it). A session its device does not take comes back failed, with
 // ErrLocalDaemonNotConnected; a refused creation, with the store's error.
 func (s *Server) createAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool) (store.AgentSession, error) {
+	return s.createAndDispatchWith(ctx, input, reconcile, nil)
+}
+
+// createAndDispatchWith runs beforeDispatch, if any, once the store took the
+// session and before its device hears of it; a failure fails the session
+// with its error.
+func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool, beforeDispatch func(context.Context) error) (store.AgentSession, error) {
 	if reconcile && input.WorkspaceID != "" {
 		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
 			s.reconcileAgentSessions(ctx, sessions)
@@ -1147,6 +1167,11 @@ func (s *Server) createAndDispatch(ctx context.Context, input store.CreateAgentS
 		// Best-effort asynchronous AI naming; failures keep the deterministic
 		// placeholder name and never block session dispatch.
 		go s.titles.StartGroupName(context.Background(), session.WorkspaceID, groupID, session.ParentSessionID)
+	}
+	if beforeDispatch != nil {
+		if err := beforeDispatch(ctx); err != nil {
+			return s.failUndelivered(ctx, session, err.Error()), err
+		}
 	}
 	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
 		return failed, ErrLocalDaemonNotConnected
@@ -1240,6 +1265,11 @@ func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAg
 		resolved, resolveErr := s.store.ResolveSessionAgent(ctx, *input)
 		if resolveErr == nil {
 			deviceID = resolved.DeviceID
+			if input.AgentID == "" {
+				input.AgentID, input.Provider = resolved.ID, resolved.Provider
+			}
+		} else if errors.Is(resolveErr, store.ErrProfileRuntimeMismatch) {
+			return http.StatusBadRequest, resolveErr
 		} else if errors.Is(resolveErr, store.ErrDeviceRemoved) {
 			return http.StatusGone, errors.New("device_removed")
 		} else if !errors.Is(resolveErr, store.ErrNotFound) &&
@@ -1318,6 +1348,13 @@ func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message stri
 // running session is steered, an idle one takes the message as its next
 // input and is dispatched again. A non-zero status classifies a refusal.
 func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, int, error) {
+	return s.sendSessionMessageWith(ctx, sessionID, input, nil)
+}
+
+// sendSessionMessageWith runs beforeDelivery, if any, once the message is
+// accepted and before the session's device hears of it: a steer it fails
+// is not sent, a queued input it fails fails the session with its error.
+func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, input store.SendAgentSessionInput, beforeDelivery func(context.Context) error) (store.AgentSession, int, error) {
 	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
 	if err != nil {
 		return store.AgentSession{}, 0, err
@@ -1343,6 +1380,11 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 		}
 		if !s.hub.HasConnection(session.DeviceID) {
 			return store.AgentSession{}, http.StatusConflict, ErrLocalDaemonNotConnected
+		}
+		if beforeDelivery != nil {
+			if err := beforeDelivery(ctx); err != nil {
+				return store.AgentSession{}, http.StatusConflict, err
+			}
 		}
 		steerCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 		defer cancel()
@@ -1370,6 +1412,11 @@ func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input
 	s.sessions.changed(ctx, sessionQueued, session)
 	if !s.hub.HasConnection(session.DeviceID) {
 		return s.failUndelivered(ctx, session, notConnected(nil)), http.StatusConflict, ErrLocalDaemonNotConnected
+	}
+	if beforeDelivery != nil {
+		if err := beforeDelivery(ctx); err != nil {
+			return s.failUndelivered(ctx, session, err.Error()), http.StatusConflict, err
+		}
 	}
 	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
 		return failed, http.StatusConflict, ErrLocalDaemonNotConnected
@@ -1617,6 +1664,10 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 		}
 		if errors.Is(err, store.ErrSessionParentNotFound) {
 			writeError(w, http.StatusBadRequest, store.ErrSessionParentNotFound.Error())
+			return
+		}
+		if errors.Is(err, store.ErrProfileRuntimeMismatch) {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if errors.Is(err, store.ErrSessionParentMismatch) {

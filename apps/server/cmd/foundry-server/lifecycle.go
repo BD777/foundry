@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/httpapi"
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -69,9 +70,12 @@ func run(ctx context.Context, deps dependencies) error {
 	}
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)
 	api.RecoverChatQueues(ctx)
-	go api.CheckSkillRepositories(ctx)
 	go api.ReconcileStaleSessions(ctx)
-	go api.RunExternalAccountKeepAlive(ctx)
+	go api.RunFeishuGatewayMaintenance(ctx)
+	if !cfg.Options.Integrations.On() {
+		deps.logf("integrations are off (%s=off): no Feishu bot connections, Connectors logins, refreshes or keep-alive, or skill repository checks", integrations.Env)
+	}
+	api.StartIntegrations(ctx)
 	httpServer := newHTTPServer(cfg, api.Routes())
 	if code := api.SetupCode(); code != "" {
 		deps.logf("no Foundry account exists yet; create the first owner in the web app with setup code %s (valid until an owner is created or the server restarts)", code)

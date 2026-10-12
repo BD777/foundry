@@ -42,7 +42,7 @@ Object.assign(globalThis, {
 });
 const { createRoot } = await import("react-dom/client");
 await import("../src/i18n/index.ts");
-const { ExternalAccountsFeature, WorkspaceAccountsFeature } =
+const { ConnectorsFeature, WorkspaceAccountsFeature } =
   await import("../src/features/external-accounts/index.ts");
 
 const hour = 3_600_000;
@@ -194,7 +194,9 @@ test("the page shows each account's state and what keeps it alive", async () => 
       },
     ],
   };
-  const page = await render(ExternalAccountsFeature, {
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
     currentUserId: "u_me",
     isAdmin: false,
     onNotice: () => {},
@@ -225,6 +227,123 @@ test("the page shows each account's state and what keeps it alive", async () => 
   await page.unmount();
 });
 
+test("an app whose secret devices held asks, once, to rotate it; its owner replaces the secret", async () => {
+  requests.length = 0;
+  const notices = [];
+  const ownApp = {
+    ...orgApp,
+    id: "xapp_mine",
+    ownerUserId: "u_me",
+    visibility: "personal",
+    label: "My Feishu app",
+    clientId: "cli_mine",
+    rotateSecret: true,
+  };
+  routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [feishu],
+        apps: [ownApp, { ...orgApp, rotateSecret: true }],
+        secretsConfigured: true,
+        accounts: [],
+      },
+    ],
+    "PUT /api/external-apps/xapp_mine/secret": (body) =>
+      body.clientSecret === "new-secret"
+        ? [200, { ...ownApp, rotateSecret: false }]
+        : [
+            400,
+            {
+              error:
+                "feishu tenant token refused (code 10014): app secret invalid",
+            },
+          ],
+  };
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
+    currentUserId: "u_me",
+    isAdmin: false,
+    onNotice: (line) => notices.push(line),
+  });
+  const [mine, org] = [...page.container.querySelectorAll(".fdy-xacc-app")];
+  assert.match(mine.textContent, /Devices held this app's secret/);
+  assert.equal(
+    mine.querySelector("a").getAttribute("href"),
+    "https://open.feishu.cn/app/cli_mine/baseinfo",
+  );
+  // Not this person's to manage: no hint, no action.
+  assert.doesNotMatch(org.textContent, /Devices held/);
+  assert.equal(org.querySelector("button"), null);
+
+  await page.click(page.button("Replace secret", mine));
+  await page.type("New app secret", "typo");
+  await page.click(page.button("Save secret", mine));
+  assert.deepEqual(requests.at(-1), {
+    method: "PUT",
+    path: "/api/external-apps/xapp_mine/secret",
+    body: { clientSecret: "typo" },
+  });
+  assert.match(
+    mine.querySelector("[role=alert]").textContent,
+    /app secret invalid/,
+  );
+  await page.type("New app secret", "new-secret");
+  await page.click(page.button("Save secret", mine));
+  const [after] = [...page.container.querySelectorAll(".fdy-xacc-app")];
+  assert.doesNotMatch(after.textContent, /Devices held this app's secret/);
+  assert.equal(after.querySelector("input"), null);
+  assert.match(notices.at(-1), /My Feishu app uses its new secret/);
+  await page.unmount();
+});
+
+test("the Connectors page has a tab per service and the Feishu tab holds Feishu accounts only", async () => {
+  routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [feishu],
+        apps: [
+          orgApp,
+          { ...orgApp, id: "xapp_gh", provider: "github", label: "GitHub app" },
+        ],
+        secretsConfigured: true,
+        accounts: [
+          account(),
+          account({
+            id: "xacc_gh",
+            provider: "github",
+            label: "Octo",
+            displayName: "Octo",
+          }),
+        ],
+      },
+    ],
+  };
+  const tabs = [];
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: (tab) => tabs.push(tab),
+    currentUserId: "u_me",
+    isAdmin: false,
+    onNotice: () => {},
+  });
+  assert.match(
+    page.container.querySelector("header").textContent,
+    /^Connectors/,
+  );
+  const group = page.container.querySelector('[aria-label="Connector types"]');
+  assert.ok(group, "connector tabs");
+  const tab = page.button("Feishu", group);
+  assert.equal(tab.getAttribute("aria-checked"), "true");
+  assert.equal(page.container.querySelectorAll(".fdy-xacc-row").length, 1);
+  assert.equal(page.container.textContent.includes("Octo"), false);
+  assert.equal(page.container.textContent.includes("GitHub app"), false);
+  assert.equal(page.button("Connect Feishu account").disabled, false);
+  await page.unmount();
+});
+
 test("keep-alive, stop using now and remove each ask the server and show its answer", async () => {
   requests.length = 0;
   const notices = [];
@@ -252,7 +371,9 @@ test("keep-alive, stop using now and remove each ask the server and show its ans
       { status: "disconnected" },
     ],
   };
-  const page = await render(ExternalAccountsFeature, {
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
     currentUserId: "u_me",
     isAdmin: false,
     onNotice: (line) => notices.push(line),
@@ -284,7 +405,7 @@ test("keep-alive, stop using now and remove each ask the server and show its ans
     page.container.querySelector(".fdy-xacc-row").dataset.status,
     "revoked",
   );
-  assert.match(notices.at(-1), /Sessions lose access within 2 hours/);
+  assert.match(notices.at(-1), /Sessions lost access to it/);
 
   await page.click(page.button("Remove"));
   await page.click(page.button("Remove for good?"));
@@ -294,7 +415,57 @@ test("keep-alive, stop using now and remove each ask the server and show its ans
     body: undefined,
   });
   assert.equal(page.container.querySelector(".fdy-xacc-row"), null);
-  assert.match(page.container.textContent, /No external accounts yet/);
+  assert.match(page.container.textContent, /No Feishu accounts yet/);
+  await page.unmount();
+});
+
+test("closing the connect dialog returns focus to the button that opened it", async () => {
+  routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [feishu],
+        apps: [orgApp],
+        accounts: [account({ status: "needs_reauth" })],
+        secretsConfigured: true,
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
+    currentUserId: "u_me",
+    isAdmin: false,
+    onNotice: () => {},
+  });
+  const modal = () => window.document.body.querySelector(".fdy-xacc-modal");
+  // Keyboard activation: the opener holds focus as the dialog opens.
+  const open = async (opener) => {
+    opener.focus();
+    await page.click(opener);
+    assert.ok(modal(), "the dialog opens");
+    assert.ok(modal().contains(window.document.activeElement));
+  };
+
+  const connect = page.button("Connect Feishu account");
+  await open(connect);
+  await page.click(page.button("Cancel", modal()));
+  assert.equal(modal(), null);
+  assert.equal(window.document.activeElement, connect);
+
+  const reconnect = page.button(
+    "Reconnect",
+    page.container.querySelector(".fdy-xacc-row"),
+  );
+  await open(reconnect);
+  await act(async () =>
+    window.document.activeElement.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  await settle();
+  assert.equal(modal(), null);
+  assert.equal(window.document.activeElement, reconnect);
   await page.unmount();
 });
 
@@ -305,13 +476,15 @@ test("without a secret-store key nothing can be connected", async () => {
       { providers: [feishu], apps: [], accounts: [], secretsConfigured: false },
     ],
   };
-  const page = await render(ExternalAccountsFeature, {
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
     currentUserId: "u_me",
     isAdmin: true,
     onNotice: () => {},
   });
   assert.match(page.container.textContent, /no secret-store key/);
-  assert.equal(page.button("Connect account").disabled, true);
+  assert.equal(page.button("Connect Feishu account").disabled, true);
   await page.unmount();
 });
 
@@ -384,12 +557,14 @@ test("connect: paste an app, show the code to approve, finish when the login com
       ];
     },
   };
-  const page = await render(ExternalAccountsFeature, {
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
     currentUserId: "u_me",
     isAdmin: false,
     onNotice: (line) => notices.push(line),
   });
-  await page.click(page.button("Connect account"));
+  await page.click(page.button("Connect Feishu account"));
   const dialog = window.document.body.querySelector(".fdy-xacc-modal");
   assert.ok(dialog, "the dialog opens");
   // No app yet: the person's own app is the choice, its fields shown.
@@ -398,7 +573,7 @@ test("connect: paste an app, show the code to approve, finish when the login com
     dialog.textContent.includes("Offer this app to everyone"),
     false,
   );
-  await page.click(page.button("Start sign-in", dialog));
+  await page.click(page.button("Show QR code", dialog));
   assert.match(dialog.textContent, /Enter the app ID/);
   assert.equal(
     requests.some((request) => request.method === "POST"),
@@ -407,8 +582,8 @@ test("connect: paste an app, show the code to approve, finish when the login com
 
   await page.type("App ID", "cli_mine");
   await page.type("App secret", "s3cret-value");
-  await page.type("Scopes", "docx:document  search:docs:read");
-  await page.click(page.button("Start sign-in", dialog));
+  await page.type("Permissions", "docx:document  search:docs:read");
+  await page.click(page.button("Show QR code", dialog));
   const posts = requests.filter((request) => request.method === "POST");
   assert.deepEqual(posts[0], {
     method: "POST",
@@ -427,10 +602,11 @@ test("connect: paste an app, show the code to approve, finish when the login com
     body: { appId: "xapp_new", scopes: ["docx:document", "search:docs:read"] },
   });
 
-  const code = window.document.body.querySelector(".fdy-xacc-code code");
+  const code = window.document.body.querySelector(".fdy-xacc-user-code code");
   assert.equal(code.textContent, "FAKE-0001");
+  assert.ok(window.document.body.querySelector(".fdy-xacc-qr svg"));
   assert.equal(
-    page.button("Open verification page").getAttribute("href"),
+    page.button("Open link").getAttribute("href"),
     "https://accounts.example/verify?user_code=FAKE-0001",
   );
   assert.match(
@@ -487,24 +663,259 @@ test("connect: a refused login says why and offers to try again", async () => {
     ],
   };
   requests.length = 0;
-  const page = await render(ExternalAccountsFeature, {
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
     currentUserId: "u_me",
     isAdmin: false,
     onNotice: () => {},
   });
-  await page.click(page.button("Connect account"));
+  await page.click(page.button("Connect Feishu account"));
   const dialog = window.document.body.querySelector(".fdy-xacc-modal");
   // An organization app is there: no app fields, the login goes through it.
   assert.equal(dialog.textContent.includes("App secret"), false);
-  await page.click(page.button("Start sign-in", dialog));
-  assert.deepEqual(requests.at(-1).body, { appId: "xapp_org", scopes: [] });
+  await page.click(page.button("Show QR code", dialog));
+  assert.deepEqual(requests.at(-1).body, { appId: "xapp_org" });
   await settle(2100);
   assert.match(
     dialog.textContent,
     /Sign-in failed: access_denied: the person refused/,
   );
   await page.click(page.button("Try again", dialog));
-  assert.ok(page.button("Start sign-in", dialog));
+  assert.ok(page.button("Show QR code", dialog));
+  await page.unmount();
+  window.document.body.innerHTML = "";
+});
+
+test("connect: scan to create an app, then scan to authorize it; a partial grant says what is missing", async () => {
+  requests.length = 0;
+  const notices = [];
+  const registering = {
+    provider: "feishu",
+    ...feishu,
+    registersApps: true,
+    alwaysScopes: ["offline_access", "auth:user.id:read"],
+    scopePreset: {
+      name: "feishu-cli-recommended",
+      source: "feishu-cli v1.41.0 auth login --recommend",
+      scopes: ["docx:document:readonly", "search:docs:read", "im:message"],
+      approvalScopes: ["search:app"],
+    },
+  };
+  const created = {
+    ...orgApp,
+    id: "xapp_reg",
+    visibility: "personal",
+    ownerUserId: "u_me",
+    label: "Feishu app cli_reg",
+    clientId: "cli_reg",
+    createdVia: "registered",
+  };
+  const connected = account({
+    id: "xacc_reg",
+    appId: "xapp_reg",
+    label: "Ada",
+    workspaceIds: [],
+  });
+  let polls = 0;
+  routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [registering],
+        apps: polls >= 1 ? [created] : [],
+        accounts: polls >= 2 ? [connected] : [],
+        secretsConfigured: true,
+      },
+    ],
+    "POST /api/external-accounts/setup": () => [
+      202,
+      {
+        id: "xlogin_reg",
+        provider: "feishu",
+        appId: "",
+        status: "pending",
+        phase: "register",
+        userCode: "REG-0001",
+        verificationUri: "https://open.feishu.cn/page/cli?user_code=REG-0001",
+        verificationUriComplete:
+          "https://open.feishu.cn/page/cli?user_code=REG-0001",
+        expiresAt: iso(600_000),
+        intervalSeconds: 0,
+      },
+    ],
+    "GET /api/external-accounts/logins/xlogin_reg": () => {
+      polls += 1;
+      if (polls === 1)
+        return [
+          200,
+          {
+            id: "xlogin_reg",
+            provider: "feishu",
+            appId: "xapp_reg",
+            status: "pending",
+            phase: "authorize",
+            app: created,
+            userCode: "AUTH-0001",
+            verificationUri: "https://accounts.feishu.cn/verify",
+            verificationUriComplete:
+              "https://accounts.feishu.cn/verify?user_code=AUTH-0001",
+            expiresAt: iso(240_000),
+            requestedScopes: [
+              "docx:document:readonly",
+              "search:docs:read",
+              "im:message",
+              "offline_access",
+              "auth:user.id:read",
+            ],
+          },
+        ];
+      return [
+        200,
+        {
+          id: "xlogin_reg",
+          provider: "feishu",
+          appId: "xapp_reg",
+          status: "complete",
+          phase: "authorize",
+          app: created,
+          account: connected,
+          requestedScopes: [
+            "docx:document:readonly",
+            "search:docs:read",
+            "im:message",
+            "offline_access",
+            "auth:user.id:read",
+          ],
+          missingScopes: ["im:message"],
+          scopeApplyUrl:
+            "https://open.feishu.cn/page/scope-apply?clientID=cli_reg&scopes=im%3Amessage",
+        },
+      ];
+    },
+  };
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
+    currentUserId: "u_me",
+    isAdmin: false,
+    onNotice: (line) => notices.push(line),
+  });
+  await page.click(page.button("Connect Feishu account"));
+  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  // Nothing to fill in: a new app is the choice, the long form is folded away.
+  assert.match(dialog.textContent, /A new Feishu app, created as you scan/);
+  assert.match(dialog.textContent, /Asks for 5 Feishu permissions/);
+  assert.equal(dialog.querySelector(".fdy-xacc-advanced").open, false);
+  assert.equal(dialog.querySelectorAll("input").length > 0, true);
+  await page.click(page.button("Show QR code", dialog));
+  assert.deepEqual(
+    requests.filter((request) => request.method === "POST"),
+    [
+      {
+        method: "POST",
+        path: "/api/external-accounts/setup",
+        body: { provider: "feishu" },
+      },
+    ],
+  );
+  assert.match(dialog.textContent, /Step 1 of 2/);
+  assert.match(dialog.textContent, /Create Foundry's app/);
+  assert.match(dialog.textContent, /Waiting for you to confirm the app/);
+  assert.ok(dialog.querySelector(".fdy-xacc-qr svg"));
+  assert.equal(
+    page.button("Open link", dialog).getAttribute("href"),
+    "https://open.feishu.cn/page/cli?user_code=REG-0001",
+  );
+
+  await settle(2100);
+  assert.equal(polls, 1);
+  assert.match(dialog.textContent, /Step 2 of 2/);
+  assert.match(dialog.textContent, /Authorize Foundry/);
+  assert.equal(
+    page.button("Open link", dialog).getAttribute("href"),
+    "https://accounts.feishu.cn/verify?user_code=AUTH-0001",
+  );
+  // The created app shows in the apps list at once.
+  assert.match(page.container.textContent, /Feishu app cli_reg/);
+
+  await settle(2100);
+  await settle();
+  assert.equal(polls, 2);
+  assert.match(dialog.textContent, /Connected Ada, with 4 of 5 permissions/);
+  assert.equal(
+    page
+      .button("Apply for the missing permissions", dialog)
+      .getAttribute("href"),
+    "https://open.feishu.cn/page/scope-apply?clientID=cli_reg&scopes=im%3Amessage",
+  );
+  assert.match(notices.at(-1), /Connected Ada/);
+  await page.click(page.button("Done", dialog));
+  assert.equal(window.document.body.querySelector(".fdy-xacc-modal"), null);
+  await page.unmount();
+  window.document.body.innerHTML = "";
+});
+
+test("connect: advanced options ask for approval scopes and paste an app", async () => {
+  requests.length = 0;
+  routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [
+          {
+            ...feishu,
+            registersApps: true,
+            alwaysScopes: ["offline_access", "auth:user.id:read"],
+            scopePreset: {
+              name: "p",
+              source: "s",
+              scopes: ["a:b"],
+              approvalScopes: ["search:app", "spark:app:read"],
+            },
+          },
+        ],
+        apps: [],
+        accounts: [],
+        secretsConfigured: true,
+      },
+    ],
+    "POST /api/external-accounts/setup": () => [
+      500,
+      { error: "feishu app registration refused: boom" },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    tab: "feishu",
+    onTabChange: () => {},
+    currentUserId: "u_me",
+    isAdmin: false,
+    onNotice: () => {},
+  });
+  await page.click(page.button("Connect Feishu account"));
+  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  assert.match(dialog.textContent, /Asks for 3 Feishu permissions/);
+  const approval = [...dialog.querySelectorAll("label")].find((row) =>
+    row.textContent.includes("may need admin approval"),
+  );
+  await page.click(approval.querySelector("input"));
+  assert.match(dialog.textContent, /Asks for 5 Feishu permissions/);
+  await page.click(page.button("Show QR code", dialog));
+  assert.deepEqual(requests.at(-1).body, {
+    provider: "feishu",
+    includeApprovalScopes: true,
+  });
+  assert.match(
+    dialog.textContent,
+    /Sign-in failed: feishu app registration refused: boom/,
+  );
+  // Pasting an app replaces the app choice with its fields.
+  const own = [...dialog.querySelectorAll("label")].find((row) =>
+    row.textContent.includes("Use my own app"),
+  );
+  await page.click(own.querySelector("input"));
+  assert.equal(dialog.textContent.includes("Connect through"), false);
+  assert.match(dialog.textContent, /App secret/);
   await page.unmount();
   window.document.body.innerHTML = "";
 });
@@ -578,14 +989,14 @@ test("the workspace tab binds the person's own accounts and shows others' withou
     workspaceId: "ws_1",
     currentUserId: "u_me",
     onNotice: (line) => notices.push(line),
-    onOpenExternalAccounts: () => (opened += 1),
+    onOpenConnectors: () => (opened += 1),
   });
   const text = tab.container.textContent;
   assert.match(text, /Only sessions you start, on devices you own/);
   assert.match(text, /Use Work Feishu in this workspace/);
   assert.match(
     text,
-    /Needs re-authorization: sessions get no token until you reconnect it/,
+    /Needs re-authorization: sessions cannot use it until you reconnect it/,
   );
   assert.match(text, /Bound by other members/);
   assert.match(text, /Feishu account Bob's Feishu/);
@@ -610,7 +1021,7 @@ test("the workspace tab binds the person's own accounts and shows others' withou
     true,
   );
   assert.match(notices.at(-1), /Personal is used in this workspace/);
-  await tab.click(tab.button("Manage external accounts", tab.container));
+  await tab.click(tab.button("Manage connectors", tab.container));
   assert.equal(opened, 1);
   await tab.unmount();
 });
@@ -624,7 +1035,7 @@ test("a viewer sees the bindings but cannot change them", async () => {
     currentUserId: "u_me",
     readOnlyReason: "You are a Viewer here; this needs Maintainer.",
     onNotice: () => {},
-    onOpenExternalAccounts: () => {},
+    onOpenConnectors: () => {},
   });
   assert.match(tab.container.textContent, /You are a Viewer here/);
   for (const box of tab.container.querySelectorAll("input[type=checkbox]"))

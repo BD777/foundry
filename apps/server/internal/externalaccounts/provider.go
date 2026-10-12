@@ -142,6 +142,58 @@ type ServerHeldProvider interface {
 	// Revoke invalidates the grant at the provider, refresh token first.
 	Revoke(ctx context.Context, app AppCredentials, grant Grant) error
 	Identity(ctx context.Context, app AppCredentials, accessToken string) (Identity, error)
+	// PresetScopes is what a login asks for when it names no scopes.
+	PresetScopes(includeApproval bool) []string
+	// ScopeApplyURL is the provider page where the app's owner enables
+	// scopes the app lacks; empty when there is none.
+	ScopeApplyURL(app AppCredentials, scopes []string) string
+}
+
+// TenantTokenIssuer is a provider whose apps also act as themselves (a
+// Feishu app's bot): it exchanges the app's credentials for an app token.
+type TenantTokenIssuer interface {
+	TenantAccessToken(ctx context.Context, app AppCredentials) (token string, expiresIn time.Duration, err error)
+}
+
+// SecretChecker is a provider that can tell whether an app secret is
+// valid before it replaces the sealed one.
+type SecretChecker interface {
+	CheckAppSecret(ctx context.Context, app AppCredentials) error
+}
+
+// AppRegistration is step one of creating an app for the person: the page
+// they open to confirm it, and how to poll for the result.
+type AppRegistration struct {
+	DeviceCode      string
+	UserCode        string
+	VerificationURL string
+	ExpiresAt       time.Time
+	Interval        time.Duration
+	// Brand is the region the registration is polled on; a poll may move
+	// it when the person's tenant turns out to be elsewhere.
+	Brand      string
+	brandMoved bool
+}
+
+// RegisteredApp is the app the provider created for the person.
+type RegisteredApp struct {
+	ClientID     string
+	ClientSecret string
+	// BaseURL is the app's open-API base; empty is the provider default.
+	BaseURL string
+}
+
+// ErrRegistrationDenied: the person declined to create the app.
+var ErrRegistrationDenied = errors.New("the person declined to create the app")
+
+// AppRegistrar is a server-held provider that can create an app for the
+// person during sign-in, so nobody pastes an app ID and secret.
+type AppRegistrar interface {
+	ServerHeldProvider
+	BeginAppRegistration(ctx context.Context, brand string) (AppRegistration, error)
+	// PollAppRegistration asks once whether the person confirmed; the
+	// returned registration replaces the one passed (its brand may move).
+	PollAppRegistration(ctx context.Context, registration AppRegistration) (RegisteredApp, AppRegistration, PollOutcome, error)
 }
 
 // Registry holds the providers by kind.
