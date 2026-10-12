@@ -210,7 +210,6 @@ import {
 import {
   materializeSessionAccounts,
   reapExternalAccountProfiles,
-  serverMint,
 } from "./external-accounts.js";
 import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
 import { issueEnvironmentAction } from "./issue-environment-rpc.js";
@@ -2662,13 +2661,15 @@ function runWebSocketSession(options: {
                   )
                 : undefined;
               if (!clarification)
-                releaseAccounts = materializeSessionAccounts(
-                  payload.session,
-                  payload.externalAccounts,
-                  {
-                    mint: serverMint(options.serverURL),
-                    log: (message) => console.log(message),
-                  },
+                releaseAccounts = (
+                  await materializeSessionAccounts(
+                    payload.session,
+                    payload.externalAccounts,
+                    {
+                      serverURL: options.serverURL,
+                      log: (message) => console.log(message),
+                    },
+                  )
                 ).release;
               await executeAgentSession(
                 options.sessionTransport,

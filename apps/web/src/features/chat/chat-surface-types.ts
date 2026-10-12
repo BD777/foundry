@@ -5,6 +5,7 @@ import type {
   ChatAttachment,
   ClaudeEffort,
   ClaudePermissionMode,
+  ClaudeTimerWake,
   CodexApprovalPolicy,
   CodexReasoningEffort,
   CodexSandboxMode,
@@ -30,9 +31,12 @@ export interface ChatListItem {
   selected?: boolean;
   title: string;
   status: ChatListStatus;
+  /** Its agent holds timers that will wake the idle chat. */
+  scheduled?: boolean;
   blocked?: boolean;
   blockedReason?: string;
-  spawned?: boolean;
+  /** Who started it, when another session did: "Started by <title>". */
+  startedBy?: string;
   unread: boolean;
   foundrySessionId: string;
   nativeSessionId?: string;
@@ -62,11 +66,30 @@ export interface ChatAgentOption {
   value: string;
 }
 
+/**
+ * Why the selected chat takes no message here, shown in place of the
+ * composer, with where to go instead.
+ */
+export interface ChatThreadNotice {
+  title: string;
+  message: string;
+  tone?: "info" | "warning";
+  /** `showsList`: on a narrow screen the action shows the chat list. */
+  action?: { label: string; onSelect: () => void; showsList?: boolean };
+}
+
 export interface ChatSurfaceProps {
   onChatsDeleted?: (chatIds: string[]) => Promise<void>;
   workspaceId: string;
   /** Why the caller may only read this workspace's chats. */
   readOnlyReason?: string;
+  /** Why the selected chat alone cannot be continued here (see ChatThreadNotice). */
+  threadNotice?: ChatThreadNotice;
+  /**
+   * The chat selected, as the address names it: on a narrow screen a chat
+   * opened (by a link, from another view) shows its thread, not the list.
+   */
+  selectedChatId?: string;
   agentActive?: boolean;
   agentActiveSessionId?: string;
   agentOptions: ChatAgentOption[];
@@ -90,6 +113,11 @@ export interface ChatSurfaceProps {
   backgroundWork?: ChatRunningBackgroundWork;
   /** Timers the agent holds: the idle chat wakes when the next is due. */
   schedule?: AgentSessionSchedule;
+  /** What the schedule's session says of its timers' last wakes. */
+  scheduleWakes?: {
+    busy: boolean;
+    wakes: ReadonlyMap<string, ClaudeTimerWake>;
+  };
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;
   codexApprovalPolicy: CodexApprovalPolicy;

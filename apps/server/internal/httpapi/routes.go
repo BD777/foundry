@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -317,8 +318,9 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/workspaces/{id}/feishu", s.handleGetWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/feishu", s.handleSaveWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/feishu/pair-code", s.handleGenerateFeishuPairingCode, workspaceRole(maintainer, pathWorkspace("id"))),
-		fn("POST /api/workspaces/{id}/feishu/unbind", s.handleUnbindFeishuGroup, workspaceRole(maintainer, pathWorkspace("id"))),
+		fn("DELETE /api/workspaces/{id}/feishu/chats/{routeId}", s.handleUnbindFeishuChat, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("DELETE /api/workspaces/{id}/feishu", s.handleDeleteWorkspaceFeishuBot, workspaceRole(maintainer, pathWorkspace("id"))),
+		fn("GET /api/feishu/app-uses", s.handleFeishuAppUses, inHandler()),
 		fn("GET /api/workspaces/{id}/members", s.handleListWorkspaceMembers, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/members", s.handleAddWorkspaceMember, workspaceRole(owner, pathWorkspace("id"))),
 		fn("PATCH /api/workspaces/{id}/members/{userId}", s.handleUpdateWorkspaceMember, workspaceRole(owner, pathWorkspace("id"))),
@@ -358,18 +360,28 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/profiles/{id}/credential/clear", s.handleClearProfileCredential, connectionOwner("id")),
 
 		// External accounts (external_accounts.go): a person's own logins at
-		// third-party platforms; a workspace's bindings; a device's re-mint.
+		// third-party platforms; a workspace's bindings.
 		fn("GET /api/external-accounts", s.handleExternalAccountsView, filtered()),
 		fn("POST /api/external-apps", s.handleCreateExternalApp, inHandler()),
 		fn("DELETE /api/external-apps/{id}", s.handleDeleteExternalApp, inHandler()),
+		fn("PUT /api/external-apps/{id}/secret", s.handleReplaceExternalAppSecret, inHandler()),
 		fn("POST /api/external-accounts/connect", s.handleConnectExternalAccount, inHandler()),
+		fn("POST /api/external-accounts/setup", s.handleSetupExternalAccount, inHandler()),
 		fn("GET /api/external-accounts/logins/{id}", s.handleExternalAccountLogin, inHandler()),
 		fn("GET /api/external-accounts/{id}", s.handleGetExternalAccount, externalAccountOwner("id")),
 		fn("PATCH /api/external-accounts/{id}", s.handleUpdateExternalAccount, externalAccountOwner("id")),
 		fn("DELETE /api/external-accounts/{id}", s.handleDisconnectExternalAccount, externalAccountOwner("id")),
 		fn("POST /api/external-accounts/{id}/refresh", s.handleRefreshExternalAccount, externalAccountOwner("id")),
 		fn("POST /api/external-accounts/{id}/revoke", s.handleRevokeExternalAccount, externalAccountOwner("id")),
-		fn("POST /api/external-accounts/{id}/mint", s.handleMintExternalAccountToken, daemonProtocol()),
+		// The Feishu gateway (external_accounts_gateway.go): what feishu-cli
+		// on a session's device sends through the worker's forwarder, and
+		// its audit, read by the people whose sessions made the calls.
+		fn("GET "+feishugateway.PathPrefix+"/{path...}", s.handleFeishuGateway, daemonProtocol()),
+		fn("POST "+feishugateway.PathPrefix+"/{path...}", s.handleFeishuGateway, daemonProtocol()),
+		fn("PUT "+feishugateway.PathPrefix+"/{path...}", s.handleFeishuGateway, daemonProtocol()),
+		fn("PATCH "+feishugateway.PathPrefix+"/{path...}", s.handleFeishuGateway, daemonProtocol()),
+		fn("DELETE "+feishugateway.PathPrefix+"/{path...}", s.handleFeishuGateway, daemonProtocol()),
+		fn("GET /api/feishu-gateway/requests", s.handleFeishuGatewayRequests, signedIn()),
 		fn("GET /api/workspaces/{id}/external-accounts", s.handleWorkspaceExternalAccounts, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/external-accounts", s.handleSetWorkspaceExternalAccounts, workspaceRole(maintainer, pathWorkspace("id"))),
 
@@ -382,6 +394,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/assets", s.handleListAssets, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/skills", s.handleListSkills, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/skills/catalog", s.handleListPromotedSkills, signedIn()),
+		fn("GET /api/builtin-skills/foundry", s.handleFoundrySkill, signedIn()),
 		fn("POST /api/skills/promote", s.handlePromoteSkill, inHandler()),
 		fn("POST /api/skills/promote-plan", s.handleSkillPromotionPlan, inHandler()),
 		fn("POST /api/skills/compare", s.handleSkillCompare, inHandler()),

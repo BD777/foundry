@@ -96,7 +96,7 @@ async function run(session, profile) {
   }
 }
 
-test("a verifier's Claude runs reading tools and a shell only, for at most 20 turns", async () => {
+test("a verifier's Claude runs its tools without a turn cap, inside the sandbox", async () => {
   calls.length = 0;
   await run(verifier("claude"), {
     id: "claude_local",
@@ -108,17 +108,23 @@ test("a verifier's Claude runs reading tools and a shell only, for at most 20 tu
   const { options } = call;
   assert.equal(options.permissionMode, "dontAsk");
   assert.equal(options.allowDangerouslySkipPermissions, undefined);
-  assert.deepEqual(options.allowedTools, [
+  // The sandbox, not a tool list, keeps the workspace unchanged: writing
+  // tools, subagents and the web are allowed, and no tool is denied.
+  for (const tool of [
     "Read",
-    "Grep",
-    "Glob",
     "Bash",
+    "Write",
+    "Edit",
+    "Task",
+    "Agent",
+    "WebFetch",
+    "WebSearch",
     "Skill",
     "mcp__foundry",
-  ]);
-  for (const tool of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Task"])
-    assert.ok(options.disallowedTools.includes(tool), tool);
-  assert.equal(options.maxTurns, 20);
+  ])
+    assert.ok(options.allowedTools.includes(tool), tool);
+  assert.equal(options.disallowedTools, undefined);
+  assert.equal(options.maxTurns, undefined);
   assert.deepEqual(options.settingSources, ["project"]);
   assert.equal(options.strictMcpConfig, true);
   // Its Foundry tools: the server lists a verifier only those that read.
@@ -128,8 +134,10 @@ test("a verifier's Claude runs reading tools and a shell only, for at most 20 tu
   const notes = options.systemPrompt.append;
   assert.match(notes, /an independent verifier/);
   assert.match(notes, /read-only at the operating-system level/);
-  assert.match(notes, /20 turns per message/);
+  assert.doesNotMatch(notes, /turns per message/);
   assert.doesNotMatch(notes, /\.foundry\/attachments/);
+  // Facts about where it runs, not a persona or a report format.
+  assert.doesNotMatch(notes, /way around it|Report what you checked/);
 });
 
 test("a verifier's Codex leaves its commands to the verifier's sandbox", async () => {

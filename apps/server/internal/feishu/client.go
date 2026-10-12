@@ -22,8 +22,13 @@ type botClient interface {
 	GetChatInfo(ctx context.Context, chatID string) (string, error)
 }
 
-func NewClient(appID, appSecret string) *Client {
-	larkClient := lark.NewClient(appID, appSecret)
+// NewClient is a bot client for the app; baseURL "" is Feishu's.
+func NewClient(appID, appSecret, baseURL string) *Client {
+	var options []lark.ClientOptionFunc
+	if baseURL != "" {
+		options = append(options, lark.WithOpenBaseUrl(baseURL))
+	}
+	larkClient := lark.NewClient(appID, appSecret, options...)
 	return &Client{
 		appID:     appID,
 		appSecret: appSecret,

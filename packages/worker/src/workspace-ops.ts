@@ -447,6 +447,7 @@ export const daemonCapabilities = [
   "workspace_git_setup",
   "verification_sessions",
   "attachment_files",
+  "feishu_gateway",
 ];
 
 /**

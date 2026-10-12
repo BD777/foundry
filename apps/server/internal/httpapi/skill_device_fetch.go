@@ -470,9 +470,9 @@ func declaresNPMTools(repo store.SkillRepository) bool {
 }
 
 // checkWaitingRepositories runs the checks that waited for a device to
-// come back online.
+// come back online, unless integrations are off.
 func (s *Server) checkWaitingRepositories(ctx context.Context, deviceID string, capabilities []string) {
-	if !slices.Contains(capabilities, skillRepositoryFetchCapability) {
+	if !slices.Contains(capabilities, skillRepositoryFetchCapability) || !s.options.Integrations.On() {
 		return
 	}
 	repos, ok := s.store.(skillRepositoryStore)

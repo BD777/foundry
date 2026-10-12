@@ -80,17 +80,25 @@ export function projectTranscript(
 ): ChatViewMessage[] {
   const messages: ChatViewMessage[] = [];
   let pending: TranscriptEntry[] = [];
+  // When the segment before the next group ended: the input, a steered
+  // message or an answer. The group's time runs from there, so its first
+  // step's wait counts and its live timer and final duration agree.
+  let previousAt: string | undefined;
   const flush = () => {
     const first = pending[0];
     if (!first) return;
     const last = pending[pending.length - 1]!;
-    const startedAt = first.at ? Date.parse(first.at) : NaN;
+    const firstStepAt = first.at ? Date.parse(first.at) : NaN;
+    const previousEndedAt = previousAt ? Date.parse(previousAt) : NaN;
+    const begins =
+      previousEndedAt <= firstStepAt ? previousAt : (first.at ?? previousAt);
+    const startedAt = begins ? Date.parse(begins) : NaN;
     const endedAt = last.at ? Date.parse(last.at) : NaN;
     const durationMs = endedAt - startedAt;
     const usage = stepUsage(pending);
     messages.push({
       ...(durationMs > 0 ? { durationMs } : {}),
-      ...(first.at ? { startedAt: first.at } : {}),
+      ...(begins ? { startedAt: begins } : {}),
       ...(usage ? { stepUsage: usage } : {}),
       id: `${first.id}:process`,
       kind: "process",
@@ -123,6 +131,7 @@ export function projectTranscript(
       continue;
     }
     flush();
+    previousAt = entry.at;
     const { kind, callId: _callId, status: _status, ...rest } = entry;
     messages.push({
       ...rest,

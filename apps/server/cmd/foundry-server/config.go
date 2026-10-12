@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/httpapi"
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 )
 
 const (
@@ -42,6 +43,8 @@ type config struct {
 	// RetiredSettings lists environment variables that are set but no longer
 	// supported; startup refuses them rather than silently ignoring intent.
 	RetiredSettings []string
+	// IntegrationsErr refuses a FOUNDRY_INTEGRATIONS value other than on/off.
+	IntegrationsErr error
 }
 
 // Accounts and per-device credentials are always required; these configured
@@ -59,6 +62,8 @@ func loadConfig(getenv func(string) string) config {
 		dbPath = defaultDBPath(getenv)
 		legacyDBPath = filepath.Join(".data", "foundry.db")
 	}
+	// The one place FOUNDRY_INTEGRATIONS is read; the server is handed the switch.
+	integrationsSwitch, integrationsErr := integrations.Parse(getenv(integrations.Env))
 	return config{
 		Addr:         net.JoinHostPort(host, port),
 		DBPath:       dbPath,
@@ -71,10 +76,12 @@ func loadConfig(getenv func(string) string) config {
 			EnableDevReset:    getenv("FOUNDRY_ENABLE_DEV_RESET") == "1",
 			WebDistDir:        getenv("FOUNDRY_WEB_DIST"),
 			WorkerPackagesDir: strings.TrimSpace(getenv("FOUNDRY_WORKER_PACKAGES")),
+			Integrations:      integrationsSwitch,
 		},
 		SeedDemo:        getenv("FOUNDRY_DEMO_SEED") == "1",
 		ShutdownTimeout: shutdownTimeout,
 		RetiredSettings: setSettings(getenv, retiredSettings),
+		IntegrationsErr: integrationsErr,
 	}
 }
 
@@ -92,6 +99,9 @@ func validateSettings(cfg config) error {
 	if len(cfg.RetiredSettings) > 0 {
 		return fmt.Errorf("%s no longer supported: browsers sign in with accounts and workers pair with a one-time token; unset them",
 			strings.Join(cfg.RetiredSettings, " and "))
+	}
+	if cfg.IntegrationsErr != nil {
+		return cfg.IntegrationsErr
 	}
 	return checkDataLocation(cfg, fileExists)
 }

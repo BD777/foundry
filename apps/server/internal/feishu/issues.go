@@ -37,12 +37,12 @@ func (m *WSManager) issueDesk() IssueDesk {
 	return desk
 }
 
-func (m *WSManager) handleNewIssue(ctx context.Context, workspaceID string, client botClient, messageID, chatID, goal string) error {
+func (m *WSManager) handleNewIssue(ctx context.Context, route store.FeishuBotRoute, client botClient, messageID, chatID, goal string) error {
 	desk := m.issueDesk()
 	if desk == nil {
 		return nil
 	}
-	userID, refusal := m.boundUser(ctx, workspaceID)
+	userID, refusal := m.boundUser(ctx, route)
 	if refusal != "" {
 		_, err := client.ReplyCard(ctx, messageID, BuildIssueCard("无法创建 Issue", refusal, "red"))
 		return err
@@ -51,7 +51,7 @@ func (m *WSManager) handleNewIssue(ctx context.Context, workspaceID string, clie
 		_, err := client.ReplyCard(ctx, messageID, BuildIssueCard("Foundry Issue", "在 /issue 后面写下你想做成的事，例如：/issue 给 README 加上用法说明。", "blue"))
 		return err
 	}
-	issue, err := desk.StartIssue(ctx, workspaceID, userID, goal)
+	issue, err := desk.StartIssue(ctx, route.WorkspaceID, userID, goal)
 	if err != nil {
 		_, replyErr := client.ReplyCard(ctx, messageID, BuildIssueCard("无法创建 Issue", err.Error(), "red"))
 		return replyErr
@@ -64,16 +64,16 @@ func (m *WSManager) handleNewIssue(ctx context.Context, workspaceID string, clie
 	}
 	_, marker := issueUpdates(issue, "", "")
 	return m.store.SaveFeishuChatThread(ctx, store.FeishuChatThread{
-		RootMessageID: messageID, WorkspaceID: workspaceID, ChatID: chatID, IssueID: issue.ID, Reported: marker,
+		RootMessageID: messageID, WorkspaceID: route.WorkspaceID, ChatID: chatID, IssueID: issue.ID, Reported: marker,
 	})
 }
 
-func (m *WSManager) handleIssueReply(ctx context.Context, workspaceID string, client botClient, messageID string, thread store.FeishuChatThread, text string) error {
+func (m *WSManager) handleIssueReply(ctx context.Context, route store.FeishuBotRoute, client botClient, messageID string, thread store.FeishuChatThread, text string) error {
 	desk := m.issueDesk()
 	if desk == nil {
 		return nil
 	}
-	userID, refusal := m.boundUser(ctx, workspaceID)
+	userID, refusal := m.boundUser(ctx, route)
 	if refusal != "" {
 		_, err := client.ReplyCard(ctx, messageID, BuildIssueCard("无法继续", refusal, "red"))
 		return err
@@ -111,10 +111,8 @@ func (m *WSManager) reportIssue(ctx context.Context, issueID string) {
 	if err != nil {
 		return
 	}
-	m.mu.RLock()
-	bot, active := m.activeBots[thread.WorkspaceID]
-	m.mu.RUnlock()
-	if !active {
+	bot := m.threadApp(ctx, thread)
+	if bot == nil {
 		return
 	}
 	cards, marker := issueUpdates(issue, thread.Reported, desk.IssueURL(issue))

@@ -983,6 +983,206 @@
   color: var(--fdy-ink-faint);
 }
 
+.fdy-official-skills-agent li .fdy-official-skills-open {
+  justify-self: start;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+/* The foundry skill's page: what it gives agents, as lists. */
+.fdy-foundry-skill-page {
+  max-width: 1120px;
+  gap: 24px;
+}
+
+.fdy-foundry-skill-back {
+  align-self: flex-start;
+}
+
+.fdy-foundry-skill-heading {
+  align-items: flex-start;
+}
+
+.fdy-foundry-skill-heading > div {
+  min-width: 0;
+}
+
+.fdy-foundry-skill-heading > .fdy-button {
+  flex-shrink: 0;
+}
+
+.fdy-foundry-skill-heading .fdy-foundry-skill-revisions,
+.fdy-foundry-skill-note {
+  margin: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+.fdy-foundry-skill-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.fdy-foundry-skill-section-heading h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: 16px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-section-heading h2 span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-section-heading p {
+  max-width: 76ch;
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-page code {
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.fdy-foundry-skill-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 20px;
+  margin: 0;
+}
+
+.fdy-foundry-skill-roles > div {
+  min-width: 0;
+}
+
+.fdy-foundry-skill-roles dt {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-roles dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-foundry-skill-tools {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  list-style: none;
+}
+
+.fdy-foundry-skill-tools > li {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.fdy-foundry-skill-tools > li + li {
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-foundry-skill-tool-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-foundry-skill-tool-name code {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-tools > li > p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fdy-ink);
+}
+
+.fdy-foundry-skill-limits {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fdy-ink-muted);
+  list-style: disc;
+}
+
+.fdy-foundry-skill-tools > li > .fdy-foundry-skill-tool-roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-foundry-skill-guidance {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fdy-foundry-skill-guidance h3 {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-foundry-skill-guidance ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fdy-ink);
+  list-style: disc;
+}
+
+.fdy-foundry-skill-manifest {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 8px;
+  background: var(--fdy-paper-raised);
+  color: var(--fdy-ink);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-foundry-skill-manifest:focus-visible {
+  outline: 2px solid var(--fdy-control-focus);
+  outline-offset: 2px;
+}
+
 /* Skill library repositories. */
 .fdy-skill-repos {
   display: grid;

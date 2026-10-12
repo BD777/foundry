@@ -135,6 +135,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_session_native_ids", "session_id", ownerSession},
 	{"agent_session_usage_backfills", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},
+	{"feishu_gateway_grants", "session_id", ownerSession},
 	{"evidence_requests", sessionRequestOwner, ownerSession},
 	{"evidence_records", "issue_id", ownerIssue},
 	{"acceptance_artifacts", "issue_id", ownerIssue},
@@ -146,7 +147,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_sessions", "workspace_id", ownerWorkspace},
 	{"evidence_records", "workspace_id", ownerWorkspace},
 	{"feishu_chat_threads", "workspace_id", ownerWorkspace},
-	{"workspace_feishu_bots", "workspace_id", ownerWorkspace},
+	{"feishu_bot_routes", "workspace_id", ownerWorkspace},
 	{"chat_queue_items", "workspace_id", ownerWorkspace},
 	{"chat_queue_revisions", "workspace_id", ownerWorkspace},
 	{"chats", "workspace_id", ownerWorkspace},
@@ -163,6 +164,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"assets", "workspace_id", ownerWorkspace},
 	{"skills", "workspace_id", ownerWorkspace},
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
+	{"feishu_gateway_grants", "workspace_id", ownerWorkspace},
 }
 
 // deleteWorkspaceRows deletes every row the workspace owns, but not the

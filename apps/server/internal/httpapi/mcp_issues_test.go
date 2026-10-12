@@ -126,7 +126,7 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verifier.ClaudePermissionMode != "dontAsk" || verifier.CodexSandboxMode != "read-only" {
+	if verifier.ClaudePermissionMode != "dontAsk" || verifier.CodexSandboxMode != "danger-full-access" || verifier.CodexApprovalPolicy != "never" {
 		t.Fatalf("a verifier's runtime = %q / %q", verifier.ClaudePermissionMode, verifier.CodexSandboxMode)
 	}
 	token, err := db.MintAgentSessionToken(ctx, verifier.ID)

@@ -189,7 +189,10 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 		`INSERT INTO workspace_skill_exclusions (workspace_id, skill_id) VALUES ('ws_home', 'skill_excluded')`,
 		`INSERT INTO skill_bundle_selections (scope, owner_id, repository_id)
 			VALUES ('workspace', 'ws_home', 'repo_on'), ('workspace-off', 'ws_home', 'repo_off')`,
-		`INSERT INTO workspace_feishu_bots (workspace_id, app_id, created_at, updated_at) VALUES ('ws_home', 'cli_home', '', '')`,
+		`INSERT INTO external_provider_apps (id, provider, owner_user_id, visibility, label, client_id, created_at, updated_at)
+			VALUES ('xapp_home', 'feishu', '', 'personal', 'Bot', 'cli_home', '', '')`,
+		`INSERT INTO feishu_bot_routes (id, app_id, workspace_id, kind, chat_id, created_at, updated_at)
+			VALUES ('fbr_pair', 'xapp_home', 'ws_home', 'pairing', '', '', ''), ('fbr_chat', 'xapp_home', 'ws_home', 'chat', 'oc_home', '', '')`,
 		`INSERT INTO agent_session_usage_backfills (session_id, backfilled_at) VALUES ('`+session.ID+`', '')`,
 	)
 

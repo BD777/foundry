@@ -5,8 +5,8 @@
 // the workspace's selected skills, and may look up the workspace's sessions,
 // but it never writes, runs commands or starts other work. A verifier (a
 // session started with verification) checks another session's work: it
-// reads and runs commands that only read, inside a sandbox that keeps the
-// workspace read-only (verification-session.ts), and starts nothing.
+// runs inside a sandbox that keeps the workspace read-only for it and every
+// command it runs (verification-session.ts), and its Foundry tools only read.
 
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { codexDisabledFeatures } from "./session/policy.js";
@@ -41,24 +41,17 @@ export function isVerificationSession(session: AgentSession): boolean {
   return session.source === "verification";
 }
 
-/** Turns a verifier's Claude takes per message before it must answer. */
-export const verificationMaxTurns = 20;
-
 /**
- * A verifier's tools: reading and searching files, a shell (the sandbox
- * keeps the workspace read-only), its skills, and the Foundry tools, of
- * which the server lists it only those that change nothing.
+ * A verifier's tools: Claude Code's own, which its sandbox keeps from
+ * changing the workspace (writes land only in its scratch directory), its
+ * skills, and the Foundry tools, of which the server lists it only those
+ * that change nothing.
  */
 const verificationClaudeTools = [
   "Read",
   "Grep",
   "Glob",
   "Bash",
-  "Skill",
-  "mcp__foundry",
-];
-
-const verificationDeniedClaudeTools = [
   "Write",
   "Edit",
   "MultiEdit",
@@ -67,6 +60,9 @@ const verificationDeniedClaudeTools = [
   "Agent",
   "WebFetch",
   "WebSearch",
+  "TodoWrite",
+  "Skill",
+  "mcp__foundry",
 ];
 
 /**
@@ -82,7 +78,6 @@ export function claudeRoleOptions(
       sdk: {
         permissionMode: "dontAsk",
         allowedTools: verificationClaudeTools,
-        disallowedTools: verificationDeniedClaudeTools,
         settingSources: ["project"],
         strictMcpConfig: true,
       },

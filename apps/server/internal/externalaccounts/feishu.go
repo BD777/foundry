@@ -19,12 +19,24 @@ import (
 // oauth.go, revoke.go): device authorization and revoke live on the
 // accounts host, token and user info on the open-API host.
 const (
-	FeishuDefaultBaseURL  = "https://open.feishu.cn"
-	feishuDeviceAuthPath  = "/oauth/v1/device_authorization"
-	feishuRevokePath      = "/oauth/v1/revoke"
-	feishuTokenPath       = "/open-apis/authen/v2/oauth/token"
-	feishuUserInfoPath    = "/open-apis/authen/v1/user_info"
+	FeishuDefaultBaseURL = "https://open.feishu.cn"
+	feishuDeviceAuthPath = "/oauth/v1/device_authorization"
+	feishuRevokePath     = "/oauth/v1/revoke"
+	feishuTokenPath      = "/open-apis/authen/v2/oauth/token"
+	feishuUserInfoPath   = "/open-apis/authen/v1/user_info"
+	// FeishuTenantTokenPath exchanges an app's id and secret for its tenant
+	// access token (the bot's identity), on the open-API host.
+	FeishuTenantTokenPath = "/open-apis/auth/v3/tenant_access_token/internal"
 	feishuDeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	// feishuAppRegistrationPath creates a "PersonalAgent" app for the person
+	// through a device flow, on the accounts host. Not in Feishu's published
+	// docs; the official lark-cli (larksuite/cli internal/auth/
+	// app_registration.go, `config init --new`) and feishu-cli (`config
+	// create-app`) use it the same way.
+	feishuAppRegistrationPath = "/oauth/v1/app/registration"
+	// feishuScopeApplyPath is the open platform's page where an app's owner
+	// applies for scopes (lark-cli internal/errclass ConsoleURL).
+	feishuScopeApplyPath = "/page/scope-apply"
 	// feishuRefreshFallback is how long a refresh token lives when neither
 	// the response nor the token says: Feishu issues 7-day refresh tokens.
 	feishuRefreshFallback = 7 * 24 * time.Hour
@@ -56,6 +68,34 @@ type Feishu struct {
 	// AccountsBase overrides where the accounts host is derived from the
 	// open-API base URL (tests point both at one fake server).
 	AccountsBase func(baseURL string) string
+	// RegistrationHosts overrides the accounts and open-API hosts of a
+	// brand for app registration (tests point both at one fake server).
+	RegistrationHosts func(brand string) (accounts, open string)
+}
+
+// Feishu brands: mainland Feishu and international Lark.
+const (
+	FeishuBrandFeishu = "feishu"
+	FeishuBrandLark   = "lark"
+)
+
+// FeishuBrand reads a brand name; anything but Lark is Feishu.
+func FeishuBrand(brand string) string {
+	switch strings.ToLower(strings.TrimSpace(brand)) {
+	case "lark", "larksuite":
+		return FeishuBrandLark
+	}
+	return FeishuBrandFeishu
+}
+
+func (f *Feishu) registrationHosts(brand string) (string, string) {
+	if f.RegistrationHosts != nil {
+		return f.RegistrationHosts(brand)
+	}
+	if FeishuBrand(brand) == FeishuBrandLark {
+		return "https://accounts.larksuite.com", "https://open.larksuite.com"
+	}
+	return "https://accounts.feishu.cn", FeishuDefaultBaseURL
 }
 
 func (f *Feishu) Describe() store.ExternalProvider {
@@ -67,7 +107,112 @@ func (f *Feishu) Describe() store.ExternalProvider {
 		Tools:          []string{"feishu-cli"},
 		DefaultBaseURL: FeishuDefaultBaseURL,
 		AlwaysScopes:   append([]string(nil), feishuAlwaysScopes...),
+		ScopePreset: &store.ExternalScopePreset{
+			Name: FeishuPresetName, Source: FeishuPresetSource,
+			Scopes: FeishuPresetScopes(false), ApprovalScopes: append([]string(nil), feishuApprovalScopes...),
+		},
+		RegistersApps: true,
 	}
+}
+
+// PresetScopes is the feishu-cli preset (feishu_scopes.go).
+func (f *Feishu) PresetScopes(includeApproval bool) []string {
+	return FeishuPresetScopes(includeApproval)
+}
+
+// ScopeApplyURL opens the open platform's scope application page for the
+// app with scopes preselected.
+func (f *Feishu) ScopeApplyURL(app AppCredentials, scopes []string) string {
+	if app.ClientID == "" {
+		return ""
+	}
+	link := openBase(app.BaseURL) + feishuScopeApplyPath + "?clientID=" + url.QueryEscape(app.ClientID)
+	if len(scopes) > 0 {
+		link += "&scopes=" + url.QueryEscape(strings.Join(scopes, ","))
+	}
+	return link
+}
+
+// BeginAppRegistration asks Feishu to create a PersonalAgent app for
+// whoever confirms the returned page. Registration always starts on
+// Feishu's accounts host (lark-cli does the same); brand picks the host of
+// the page the person opens.
+func (f *Feishu) BeginAppRegistration(ctx context.Context, brand string) (AppRegistration, error) {
+	bootstrapAccounts, _ := f.registrationHosts(FeishuBrandFeishu)
+	_, open := f.registrationHosts(FeishuBrand(brand))
+	form := url.Values{}
+	form.Set("action", "begin")
+	form.Set("archetype", "PersonalAgent")
+	form.Set("auth_method", "client_secret")
+	form.Set("request_user_info", "open_id tenant_brand")
+	raw, status, err := f.postForm(ctx, bootstrapAccounts+feishuAppRegistrationPath, form)
+	if err != nil {
+		return AppRegistration{}, fmt.Errorf("feishu app registration: %w", err)
+	}
+	if oauthErr := stringField(raw, "error"); oauthErr != "" || status >= 400 {
+		return AppRegistration{}, fmt.Errorf("feishu app registration refused: %s", oauthDescription(raw, oauthErr))
+	}
+	deviceCode, userCode := stringField(raw, "device_code"), stringField(raw, "user_code")
+	if deviceCode == "" || userCode == "" {
+		return AppRegistration{}, errors.New("feishu app registration answered without device_code or user_code")
+	}
+	// The protocol field is expire_in; older answers say expires_in.
+	expiresIn := numberField(raw, "expire_in", 0)
+	if expiresIn <= 0 {
+		expiresIn = numberField(raw, "expires_in", 600)
+	}
+	interval := numberField(raw, "interval", 5)
+	return AppRegistration{
+		DeviceCode: deviceCode, UserCode: userCode,
+		VerificationURL: open + "/page/cli?user_code=" + url.QueryEscape(userCode),
+		ExpiresAt:       f.now().Add(time.Duration(expiresIn) * time.Second),
+		Interval:        time.Duration(interval) * time.Second,
+		Brand:           FeishuBrandFeishu,
+	}, nil
+}
+
+// PollAppRegistration asks once whether the person confirmed. A first
+// answer naming a tenant of the other brand moves polling there (once), as
+// lark-cli does: that brand's host issues the credentials.
+func (f *Feishu) PollAppRegistration(ctx context.Context, registration AppRegistration) (RegisteredApp, AppRegistration, PollOutcome, error) {
+	accounts, open := f.registrationHosts(registration.Brand)
+	form := url.Values{}
+	form.Set("action", "poll")
+	form.Set("device_code", registration.DeviceCode)
+	raw, _, err := f.postForm(ctx, accounts+feishuAppRegistrationPath, form)
+	if err != nil {
+		return RegisteredApp{}, registration, PollPending, nil
+	}
+	if !registration.brandMoved {
+		if userInfo, ok := raw["user_info"].(map[string]any); ok {
+			if tenantBrand := stringField(userInfo, "tenant_brand"); tenantBrand != "" && FeishuBrand(tenantBrand) != registration.Brand {
+				registration.Brand = FeishuBrand(tenantBrand)
+				registration.brandMoved = true
+				return RegisteredApp{}, registration, PollPending, nil
+			}
+		}
+	}
+	switch oauthErr := stringField(raw, "error"); oauthErr {
+	case "":
+	case "authorization_pending":
+		return RegisteredApp{}, registration, PollPending, nil
+	case "slow_down":
+		return RegisteredApp{}, registration, PollSlowDown, nil
+	case "access_denied":
+		return RegisteredApp{}, registration, PollDone, ErrRegistrationDenied
+	case "expired_token", "invalid_grant":
+		return RegisteredApp{}, registration, PollDone, ErrLoginExpired
+	default:
+		return RegisteredApp{}, registration, PollDone, fmt.Errorf("feishu app registration failed: %s", oauthDescription(raw, oauthErr))
+	}
+	app := RegisteredApp{ClientID: stringField(raw, "client_id"), ClientSecret: stringField(raw, "client_secret")}
+	if app.ClientID == "" || app.ClientSecret == "" {
+		return RegisteredApp{}, registration, PollPending, nil
+	}
+	if open != FeishuDefaultBaseURL {
+		app.BaseURL = open
+	}
+	return app, registration, PollDone, nil
 }
 
 func (f *Feishu) now() time.Time {
@@ -346,6 +491,38 @@ func (f *Feishu) Revoke(ctx context.Context, app AppCredentials, grant Grant) er
 		return fmt.Errorf("feishu revoke: HTTP %d", status)
 	}
 	return nil
+}
+
+// TenantAccessToken exchanges the app's credentials for its tenant access
+// token (auth/v3/tenant_access_token/internal).
+func (f *Feishu) TenantAccessToken(ctx context.Context, app AppCredentials) (string, time.Duration, error) {
+	if app.ClientID == "" || app.ClientSecret == "" {
+		return "", 0, errors.New("the Feishu app has no client id or secret")
+	}
+	body, _ := json.Marshal(map[string]string{"app_id": app.ClientID, "app_secret": app.ClientSecret})
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, openBase(app.BaseURL)+FeishuTenantTokenPath, strings.NewReader(string(body)))
+	if err != nil {
+		return "", 0, err
+	}
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	raw, status, err := f.do(request)
+	if err != nil {
+		return "", 0, fmt.Errorf("feishu tenant token: %w", err)
+	}
+	if code := int(numberField(raw, "code", 0)); code != 0 {
+		return "", 0, fmt.Errorf("feishu tenant token refused (code %d): %s", code, stringField(raw, "msg"))
+	}
+	token := stringField(raw, "tenant_access_token")
+	if status != http.StatusOK || token == "" {
+		return "", 0, fmt.Errorf("feishu tenant token: HTTP %d without a token", status)
+	}
+	return token, time.Duration(numberField(raw, "expire", 7200)) * time.Second, nil
+}
+
+// CheckAppSecret asks Feishu for the app's tenant token with the secret.
+func (f *Feishu) CheckAppSecret(ctx context.Context, app AppCredentials) error {
+	_, _, err := f.TenantAccessToken(ctx, app)
+	return err
 }
 
 // Identity reads who the token belongs to (authen/v1/user_info).

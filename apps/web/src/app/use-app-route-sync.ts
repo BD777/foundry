@@ -1,10 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  connectorTabs,
   parseAppRoute,
   pathForAppRoute,
   searchWithWorkspace,
   workspaceIdFromLocation,
   type AppRoute,
+  type ConnectorTab,
   type NavView,
 } from "./navigation";
 
@@ -18,6 +20,12 @@ export interface UseAppRouteSyncInput {
   deviceSection?: AppRoute["deviceSection"];
 }
 
+export interface AppRouteSelection {
+  /** The open Connectors tab; only the route reads it. */
+  connectorTab: ConnectorTab;
+  setConnectorTab: (tab: ConnectorTab) => void;
+}
+
 /** Keeps browser history and shell selection in sync across all features. */
 export function useAppRouteSync({
   activeView,
@@ -27,17 +35,20 @@ export function useAppRouteSync({
   selectedIssueId,
   selectedDeviceId,
   deviceSection,
-}: UseAppRouteSyncInput): void {
+}: UseAppRouteSyncInput): AppRouteSelection {
   const routeSyncedRef = useRef(false);
+  const [connectorTab, setConnectorTab] = useState<ConnectorTab>(
+    () =>
+      parseAppRoute(window.location.pathname).connectorTab ?? connectorTabs[0],
+  );
   const onPopStateRef = useRef(onPopState);
   onPopStateRef.current = onPopState;
 
   useEffect(() => {
     const handlePopState = (): void => {
-      onPopStateRef.current(
-        parseAppRoute(window.location.pathname),
-        workspaceIdFromLocation(),
-      );
+      const route = parseAppRoute(window.location.pathname);
+      if (route.connectorTab) setConnectorTab(route.connectorTab);
+      onPopStateRef.current(route, workspaceIdFromLocation());
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -53,7 +64,9 @@ export function useAppRouteSync({
             ? { view: "devices", selectedDeviceId, deviceSection }
             : activeView === "locations"
               ? { view: "locations", selectedDeviceId }
-              : { view: activeView };
+              : activeView === "connectors"
+                ? { view: "connectors", connectorTab }
+                : { view: activeView };
     const nextPath = pathForAppRoute(nextRoute);
     const nextUrl = `${nextPath}${searchWithWorkspace(activeWorkspaceId)}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -74,5 +87,7 @@ export function useAppRouteSync({
     selectedIssueId,
     selectedDeviceId,
     deviceSection,
+    connectorTab,
   ]);
+  return { connectorTab, setConnectorTab };
 }

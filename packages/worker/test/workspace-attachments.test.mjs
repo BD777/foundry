@@ -64,6 +64,54 @@ test("chunks land as one private file under the workspace attachments", (t) => {
   assert.deepEqual(chunk.data, png);
 });
 
+test("a batch is written unpublished, then published or dropped whole", (t) => {
+  const workspacePath = workspace(t);
+  const root = join(workspacePath, ".foundry", "attachments");
+  const source = Buffer.from("def add(a, b):\n    return a + b\n");
+  const staged = writeAttachmentChunk({
+    workspacePath,
+    relativePath: "20261012/att_kept/calc.py",
+    offset: 0,
+    data: source,
+    final: false,
+  });
+  assert.equal(existsSync(staged.path), false, "nothing reads it yet");
+  // Publishing is an empty final chunk after its last byte.
+  const published = writeAttachmentChunk({
+    workspacePath,
+    relativePath: "20261012/att_kept/calc.py",
+    offset: source.length,
+    data: Buffer.alloc(0),
+    final: true,
+  });
+  assert.equal(published.path, join(root, "20261012", "att_kept", "calc.py"));
+  assert.deepEqual(readFileSync(published.path), source);
+
+  for (const name of ["calc.py", "test_calc.py"])
+    writeAttachmentChunk({
+      workspacePath,
+      relativePath: `20261012/att_dropped/${name}`,
+      offset: 0,
+      data: source,
+      final: false,
+    });
+  abortAttachmentUpload(workspacePath, "20261012/att_dropped/calc.py");
+  assert.equal(existsSync(join(root, "20261012", "att_dropped")), true);
+  abortAttachmentUpload(workspacePath, "20261012/att_dropped/test_calc.py");
+  assert.equal(existsSync(join(root, "20261012", "att_dropped")), false);
+  assert.equal(existsSync(published.path), true, "the date folder stays");
+  // A date-level upload's abort leaves the shared date folder.
+  writeAttachmentChunk({
+    workspacePath,
+    relativePath: "20261013/att_1_a.png",
+    offset: 0,
+    data: png,
+    final: false,
+  });
+  abortAttachmentUpload(workspacePath, "20261013/att_1_a.png");
+  assert.equal(existsSync(join(root, "20261013")), true);
+});
+
 test("a chunk out of order is refused and the part discarded", (t) => {
   const workspacePath = workspace(t);
   writeAttachmentChunk({

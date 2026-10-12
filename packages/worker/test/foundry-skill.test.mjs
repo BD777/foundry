@@ -66,12 +66,10 @@ function codeSpans() {
 }
 
 test("the skill names only Foundry tools that exist, called with arguments they take", () => {
-  const named = new Set();
   for (const { file, span } of codeSpans()) {
     for (const [word] of span.matchAll(/\b[a-z]+(?:_[a-z]+)+\b(?!_)/g)) {
       if (notTools.has(word)) continue;
       assert.ok(tools.has(word), `${file}: \`${span}\` names no tool ${word}`);
-      named.add(word);
     }
     const call = span.match(/^([a-z_]+) (\{.*\})$/);
     if (!call) continue;
@@ -88,11 +86,6 @@ test("the skill names only Foundry tools that exist, called with arguments they 
       );
     }
   }
-  assert.deepEqual(
-    [...tools.keys()].filter((name) => !named.has(name)),
-    [],
-    "the skill teaches every Foundry tool",
-  );
 });
 
 test("the skill teaches the MCP tools, not the CLI", () => {

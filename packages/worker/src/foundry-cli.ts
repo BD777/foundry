@@ -9,6 +9,7 @@
  *   foundry mcp                 stdio MCP server for agents outside Foundry
  *   foundry session <verb>      read, start, steer and wait on sessions
  *   foundry issue list|get      Issues, read-only
+ *   foundry feishu subscribe|events  a connected Feishu app's events
  *   foundry workspace list      workspaces this credential reaches
  *   foundry device list         devices, whether online, and what they offer
  *   foundry profile|model list  runnable profiles and their models

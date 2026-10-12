@@ -31,6 +31,7 @@ import type {
   PromotedSkill,
   RepositorySkillFolder,
   SkillRepository,
+  FoundrySkillDetail,
   SkillRepositoryView,
   SkillToolDeclaration,
   WorkspaceSkillBinding,
@@ -45,11 +46,14 @@ import type {
   WorkspaceFileRead,
   WorkspaceFeishuBot,
   FeishuPairingCodeResult,
+  FeishuAppUse,
+  SelectWorkspaceFeishuBotInput,
   ConnectExternalAccountInput,
   ExternalAccount,
   ExternalAccountLogin,
   ExternalAccountUpdate,
   ExternalAccountsView,
+  SetupExternalAccountInput,
   ExternalProviderApp,
   SaveExternalProviderAppInput,
   WorkspaceExternalAccounts,
@@ -313,6 +317,13 @@ export function workspaceNeedsGit(error: unknown): boolean {
     error instanceof ApiError &&
     error.status === 409 &&
     error.code === "workspace_needs_git"
+  );
+}
+
+/** The server has nothing by that id for the caller: none, or not theirs. */
+export function isNotFoundForCaller(error: unknown): boolean {
+  return (
+    error instanceof ApiError && (error.status === 404 || error.status === 403)
   );
 }
 
@@ -1518,6 +1529,13 @@ export function listSkillRepositories(): Promise<SkillRepository[]> {
   return getJSON<SkillRepository[]>("/api/skill-repositories");
 }
 
+/** What the built-in foundry skill gives agents: its tools, guidance and SKILL.md. */
+export function getFoundrySkill(
+  options: RequestOptions = {},
+): Promise<FoundrySkillDetail> {
+  return getJSON<FoundrySkillDetail>("/api/builtin-skills/foundry", options);
+}
+
 export interface SkillRepositoryPreview {
   label: string;
   name: string;
@@ -1721,7 +1739,7 @@ export function getWorkspaceFeishuBot(
 
 export function saveWorkspaceFeishuBot(
   workspaceId: string,
-  input: { appId: string; appSecret?: string },
+  input: SelectWorkspaceFeishuBotInput,
 ): Promise<WorkspaceFeishuBot> {
   return postJSON<WorkspaceFeishuBot>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu`,
@@ -1738,12 +1756,12 @@ export function generateFeishuPairingCode(
   );
 }
 
-export function unbindFeishuGroup(
+export function unbindFeishuChat(
   workspaceId: string,
+  routeId: string,
 ): Promise<WorkspaceFeishuBot> {
-  return postJSON<WorkspaceFeishuBot>(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu/unbind`,
-    {},
+  return deleteJSON<WorkspaceFeishuBot>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu/chats/${encodeURIComponent(routeId)}`,
   );
 }
 
@@ -1753,7 +1771,11 @@ export function deleteWorkspaceFeishuBot(workspaceId: string): Promise<void> {
   );
 }
 
-// --- External accounts ---
+export function getFeishuAppUses(): Promise<FeishuAppUse[]> {
+  return getJSON<FeishuAppUse[]>("/api/feishu/app-uses");
+}
+
+// --- Connectors (external accounts) ---
 
 const externalAccountPath = (id: string) =>
   `/api/external-accounts/${encodeURIComponent(id)}`;
@@ -1773,6 +1795,17 @@ export function deleteExternalApp(appId: string): Promise<unknown> {
   return deleteJSON(`/api/external-apps/${encodeURIComponent(appId)}`);
 }
 
+/** Seals the secret the person rotated at the provider; write-only too. */
+export function replaceExternalAppSecret(
+  appId: string,
+  clientSecret: string,
+): Promise<ExternalProviderApp> {
+  return putJSON<ExternalProviderApp>(
+    `/api/external-apps/${encodeURIComponent(appId)}/secret`,
+    { clientSecret },
+  );
+}
+
 /** Starts a device-flow login; the answer is the code to show. */
 export function connectExternalAccount(
   input: ConnectExternalAccountInput,
@@ -1781,6 +1814,12 @@ export function connectExternalAccount(
     "/api/external-accounts/connect",
     input,
   );
+}
+
+export function setupExternalAccount(
+  input: SetupExternalAccountInput,
+): Promise<ExternalAccountLogin> {
+  return postJSON<ExternalAccountLogin>("/api/external-accounts/setup", input);
 }
 
 export function getExternalAccountLogin(

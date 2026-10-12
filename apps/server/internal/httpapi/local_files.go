@@ -111,6 +111,28 @@ func (s *Server) saveAttachment(ctx context.Context, workspace store.WorkspacePr
 // device, chunk by chunk as read fills them (each up to the bytes still to
 // come), and names it as a message carries it.
 func (s *Server) storeAttachment(ctx context.Context, workspace store.WorkspaceProjection, now time.Time, index int, filename, mimeType string, size int64, read func(buffer []byte) (int, error)) (store.ChatAttachment, error) {
+	name, mimeType := attachmentFileName(filename, mimeType)
+	id := attachmentID(attachmentBatchID(now), index)
+	devicePath, err := s.writeAttachment(ctx, workspace, now.Format("20060102")+"/"+id+"_"+name, size, read, true)
+	if err != nil {
+		return store.ChatAttachment{}, err
+	}
+	return attachmentRecord(id, name, devicePath, mimeType, size), nil
+}
+
+// attachmentBatchID names the files the server stores at once; each file's
+// id adds its index (attachmentID).
+func attachmentBatchID(now time.Time) string {
+	return "att_" + strconv.FormatInt(now.UnixNano(), 36)
+}
+
+func attachmentID(batchID string, index int) string {
+	return batchID + "_" + strconv.FormatInt(int64(index), 36)
+}
+
+// attachmentFileName is the name a file is stored under and the type it is
+// served as.
+func attachmentFileName(filename, mimeType string) (string, string) {
 	name := sanitizeAttachmentName(filename)
 	if name == "" {
 		name = "attachment"
@@ -118,10 +140,22 @@ func (s *Server) storeAttachment(ctx context.Context, workspace store.WorkspaceP
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	name = ensureAttachmentExtension(name, mimeType)
-	id := "att_" + strconv.FormatInt(now.UnixNano(), 36) + "_" + strconv.FormatInt(int64(index), 36)
-	relativePath := now.Format("20060102") + "/" + id + "_" + name
+	return ensureAttachmentExtension(name, mimeType), mimeType
+}
 
+func attachmentRecord(id, name, devicePath, mimeType string, size int64) store.ChatAttachment {
+	kind := "file"
+	if strings.HasPrefix(strings.ToLower(mimeType), "image/") {
+		kind = "image"
+	}
+	return store.ChatAttachment{ID: id, Name: name, Path: devicePath, MIMEType: mimeType, Size: size, Kind: kind}
+}
+
+// writeAttachment streams a file to relativePath under the workspace's
+// attachments and returns its device path. Unpublished, it stays a part
+// file nothing reads until publishAttachment, or AbortAttachmentUpload
+// drops it.
+func (s *Server) writeAttachment(ctx context.Context, workspace store.WorkspaceProjection, relativePath string, size int64, read func(buffer []byte) (int, error), publish bool) (string, error) {
 	var devicePath string
 	var err error
 	buffer := make([]byte, attachmentChunkBytes)
@@ -129,34 +163,29 @@ func (s *Server) storeAttachment(ctx context.Context, workspace store.WorkspaceP
 		count, readErr := read(buffer[:min(int64(len(buffer)), size-offset)])
 		if readErr != nil {
 			s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
-			return store.ChatAttachment{}, readErr
+			return "", readErr
 		}
-		final := offset+int64(count) >= size
-		devicePath, err = s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, offset, buffer[:count], final)
+		last := offset+int64(count) >= size
+		devicePath, err = s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, offset, buffer[:count], last && publish)
 		if err != nil {
 			if !errors.Is(err, ErrLocalDaemonNotConnected) {
 				s.hub.AbortAttachmentUpload(ctx, workspace, relativePath)
 				err = errors.New("could not save attachment on the workspace's device")
 			}
-			return store.ChatAttachment{}, err
+			return "", err
 		}
 		offset += int64(count)
-		if final {
-			break
+		if last {
+			return devicePath, nil
 		}
 	}
-	kind := "file"
-	if strings.HasPrefix(strings.ToLower(mimeType), "image/") {
-		kind = "image"
-	}
-	return store.ChatAttachment{
-		ID:       id,
-		Name:     name,
-		Path:     devicePath,
-		MIMEType: mimeType,
-		Size:     size,
-		Kind:     kind,
-	}, nil
+}
+
+// publishAttachment makes a file writeAttachment left unpublished readable
+// at its path: an empty final chunk after its last byte.
+func (s *Server) publishAttachment(ctx context.Context, workspace store.WorkspaceProjection, relativePath string, size int64) error {
+	_, err := s.hub.WriteAttachmentChunk(ctx, workspace, relativePath, size, nil, true)
+	return err
 }
 
 func ensureAttachmentExtension(name string, mimeType string) string {

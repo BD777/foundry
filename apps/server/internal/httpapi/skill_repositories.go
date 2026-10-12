@@ -370,13 +370,15 @@ func (s *Server) handleDeleteSkillRepository(w http.ResponseWriter, r *http.Requ
 const skillRepositoryCheckInterval = 24 * time.Hour
 
 // CheckSkillRepositories moves every followed repository to the version it
-// follows once a day until ctx ends.
+// follows once a day until ctx ends; with integrations off it returns. A
+// check a person asks for (handleCheckSkillRepository) still runs: it reads
+// a public repository, with no stored credential, because they asked.
 func (s *Server) CheckSkillRepositories(ctx context.Context) {
 	repos, ok := s.store.(skillRepositoryStore)
-	if !ok {
+	if !ok || !s.options.Integrations.On() {
 		return
 	}
-	timer := time.NewTimer(time.Minute)
+	timer := time.NewTimer(s.skillRepositoryFirstCheck)
 	defer timer.Stop()
 	for {
 		select {

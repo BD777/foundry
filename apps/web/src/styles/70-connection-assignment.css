@@ -1,4 +1,4 @@
-/* Multi-select picker for granting a device access to server connections.
+/* Multi-select picker for granting a device access to model providers.
    Owns only fdy-connection-assign* classes; shared fdy-management-row rules
    stay in 68-device-management.css. */
 

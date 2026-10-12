@@ -17,10 +17,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import {
-  claudeTimerNextFire,
-  type AgentBackgroundTask,
-} from "@bd777/foundry-protocol";
+import type { AgentBackgroundTask } from "@bd777/foundry-protocol";
 import {
   memo,
   useEffect,
@@ -44,6 +41,7 @@ import {
 } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "./use-shared-now";
 import { ChatSessionStatusLine } from "./chat-session-status";
+import { timerNextRun } from "./chat-schedule-model";
 import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
@@ -315,20 +313,28 @@ function TimerRow({
   selected: boolean;
 }) {
   const { t } = useTranslation("chat");
-  // Only a timer the server's schedule holds fires. Recompute from the cron
-  // expression on each render: the reported next fire goes stale within a
+  // Only a timer the server's schedule holds fires. Recompute on each
+  // render, from its last wake: the reported next fire goes stale within a
   // cycle.
   const scheduled = item.scheduled;
-  const nextFire = scheduled
-    ? formatNextFireLabel(
-        claudeTimerNextFire(scheduled)?.toISOString() ?? scheduled.nextFireAt,
-      )
+  const next = scheduled
+    ? timerNextRun(scheduled, item.wake, item.busy)
+    : undefined;
+  const nextFire = formatNextFireLabel(
+    next?.at?.toISOString() ?? scheduled?.nextFireAt,
+  );
+  const runningSince = item.running?.startedAt
+    ? formatNextFireLabel(item.running.startedAt)
     : "";
-  const status = scheduled
-    ? nextFire
-      ? t("contextCard.nextFire", { time: nextFire })
-      : ""
-    : t("contextCard.timerInactive");
+  const status = !scheduled
+    ? t("contextCard.timerInactive")
+    : runningSince
+      ? t("contextCard.timerRunning", { time: runningSince })
+      : next?.due
+        ? t(item.busy ? "contextCard.timerDue" : "contextCard.timerDueNow")
+        : nextFire
+          ? t("contextCard.nextFire", { time: nextFire })
+          : "";
   const fireCount = item.fires.length;
   return (
     <Button

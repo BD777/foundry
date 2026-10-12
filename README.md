@@ -59,7 +59,7 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 - [x] [Chats](docs/chat-experience.md)：基于原生 Claude / Codex Harness 的 Web Chat，直接在所选 Workspace 中工作，支持附件、排队输入、steer、中断恢复、分组与检索。
 - [x] [会话编排](docs/session-orchestration-design.md)：Agent 通过 `foundry` CLI / MCP 创建、steer、交接其他会话，支持 worktree 会话、fork 与只读 verifier。
 - [x] Workspace Skills：设备扫描本地 Skill 并推送到服务器目录，Workspace 按版本选择启用，依赖随之启用；Agent 只看到当前 Workspace 启用的 Skill。
-- [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：每个 Workspace 配置自己的 Bot 并配对群，群内话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
+- [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：Workspace 用连接器中的飞书应用运行 Bot（Server 保管密钥，每个应用一条长连接），并配对群或单聊，话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
 - [x] [账号与 Workspace 共享](docs/security.md#accounts)：所有接口要求登录，设备凭证与资源归属，按 Viewer / Member / Maintainer / Owner 共享 Workspace。
 - [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
 - [x] [Issues](docs/issue-workflow.md)：在主聊天里与只读的澄清 Agent 定下完成标准并确认，执行者在候选 Worktree 中实现（可派出协作会话），系统采集证据、程序检查与独立 Agent 判定，人接受后合入 Workspace；Claude 与 Codex 均已按[准出标准](docs/foundry-conversation-release-gate.md)完成真实浏览器闭环；macOS 与 Linux 均可运行。
@@ -155,7 +155,7 @@ pnpm dev:web
 npx -y @bd777/foundry-worker@latest install --server http://127.0.0.1:31982 --token <配对码> --workspace /absolute/path/to/workspace
 ```
 
-Worker 使用这台机器自己的 Claude Code 或 Codex，不另带一份。没装的话，在“设备 → 模型与账户”里点“安装”，Worker 会在这台设备上运行官方安装命令（Claude Code：`curl -fsSL https://claude.ai/install.sh | bash`；Codex：`curl -fsSL https://chatgpt.com/codex/install.sh | sh`），也可以自己运行；装好后用 `claude` 或 `codex login` 登录，再点“重新检查”。版本低于 Foundry 所需（Claude Code 2.1.201、Codex 0.142）时仍可使用，但页面会提示升级命令（Claude Code 用 `claude update`；Codex 按它的安装方式，例如重新运行官方安装脚本或 `npm install -g @openai/codex@latest`）。也可以在“服务器连接”里配置 API 连接。
+Worker 使用这台机器自己的 Claude Code 或 Codex，不另带一份。没装的话，在“设备 → 模型与账户”里点“安装”，Worker 会在这台设备上运行官方安装命令（Claude Code：`curl -fsSL https://claude.ai/install.sh | bash`；Codex：`curl -fsSL https://chatgpt.com/codex/install.sh | sh`），也可以自己运行；装好后用 `claude` 或 `codex login` 登录，再点“重新检查”。版本低于 Foundry 所需（Claude Code 2.1.201、Codex 0.142）时仍可使用，但页面会提示升级命令（Claude Code 用 `claude update`；Codex 按它的安装方式，例如重新运行官方安装脚本或 `npm install -g @openai/codex@latest`）。也可以在“模型服务”里配置 API 或网关。
 
 Worker 以 root 运行时，Issue 照常执行（它在 Foundry 的沙箱里）；对话里 Claude Code 不允许以 root 身份跳过权限确认，请为对话选择其他权限模式，或用普通用户运行 Worker。
 

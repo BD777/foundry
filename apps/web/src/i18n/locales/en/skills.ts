@@ -447,4 +447,46 @@ export const skills = {
     unreadable: "{{name}}: source could not be read",
     needsDependency: "{{name}} needs {{dependency}} ({{status}}): {{evidence}}",
   },
+  foundrySkill: {
+    open: "What it gives agents",
+    openLabel: "What the {{name}} skill gives agents",
+    back: "Skills",
+    title: "The foundry skill",
+    intro:
+      "Every Claude Code and Codex session Foundry runs has this skill. It gives the agent Foundry's tools and tells it how to use them.",
+    revision: "{{agent}} revision {{revision}}",
+    viewManifest: "View SKILL.md",
+    manifestTitle: "SKILL.md",
+    manifestDescription:
+      "The text agents read, revision {{revision}}. Its references load only when the agent needs them.",
+    loading: "Reading the foundry skill…",
+    loadFailed: "The foundry skill could not be read: {{error}}",
+    retry: "Try again",
+    toolsTitle: "Capabilities",
+    toolsIntro:
+      "The Foundry MCP tools ({{prefix}} in Claude Code); people at a shell call the same tools with the {{command}} command. A session gets only the tools its role allows, and every call is checked against what the person who started it can reach.",
+    toolCount_one: "{{count}} tool",
+    toolCount_other: "{{count}} tools",
+    rolesTitle: "Roles",
+    readOnly: "Read-only",
+    availableTo: "Available to",
+    roles: {
+      session: "Sessions",
+      issue_execution: "Issue execution",
+      issue_clarification: "Issue clarification",
+      verifier: "Verifiers",
+    },
+    roleDescriptions: {
+      session:
+        "Chats, the sessions agents start, and people using the foundry command.",
+      issue_execution: "The session that implements an Issue.",
+      issue_clarification:
+        "The session that talks an Issue through with the person.",
+      verifier:
+        "Sessions started to check work, inside the read-only verification sandbox.",
+    },
+    guidanceTitle: "Guidance",
+    guidanceIntro:
+      "What SKILL.md tells agents, one point per paragraph or bullet. View SKILL.md for the full text.",
+  },
 };

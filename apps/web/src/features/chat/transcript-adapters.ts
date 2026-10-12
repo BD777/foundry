@@ -190,11 +190,24 @@ export function sessionTranscriptEntries(
     // A timer's firing, or Claude continuing on its own after background
     // work: a divider, then the answer it gave (with its usage).
     const timerFire = event.metadata?.timerFire;
+    // A run Claude starts on its own for a timer is published as it fires
+    // (for the panel and the chat's status), then with its answer: the
+    // transcript shows it once it ended, where its answer lands.
+    if (
+      timerFire?.origin === "scheduled" &&
+      !timerFire.completedAt &&
+      event.label !== sessionInputEventLabel
+    )
+      continue;
     if (timerFire) {
       flushResponse();
-      // A timer's prompt the device sent to resume the session is an input:
-      // it fired when it was sent.
-      const firedAtText = timerFire.completedAt || timerFire.startedAt;
+      // A timer fired when its run started (a prompt the device sent to
+      // resume the session is an input: when it was sent); Claude continued
+      // after background work when it answered.
+      const firedAtText =
+        timerFire.origin === "scheduled"
+          ? timerFire.startedAt || timerFire.completedAt
+          : timerFire.completedAt || timerFire.startedAt;
       const firedAt = firedAtText ? new Date(firedAtText) : undefined;
       const when =
         firedAt && !Number.isNaN(firedAt.getTime())

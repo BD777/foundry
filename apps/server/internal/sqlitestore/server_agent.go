@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -78,21 +79,35 @@ func (s *Store) resolveProjectedServerAgent(
 	return matches[0], nil
 }
 
-// resolveSessionAgent finds the agent a new session runs, accepting either a
-// daemon-reported row persisted in the agents table or the trusted server
-// projection of a bound server profile.
+// resolveSessionAgent finds the agent a session runs, most specific first:
+// its agent id, else its profile, else the newest agent of its runtime. An
+// agent is a daemon-reported row persisted in the agents table or the trusted
+// server projection of a bound server profile. A named profile is never
+// traded for another agent of the same runtime, and a provider that
+// contradicts it is refused.
 func (s *Store) resolveSessionAgent(
 	ctx context.Context,
 	input store.CreateAgentSessionInput,
 ) (store.AgentProjection, error) {
-	agent, err := s.getAgent(ctx, input.AgentID, input.WorkspaceID, input.Provider)
-	if err == nil {
-		return agent, nil
+	var agent store.AgentProjection
+	var err error
+	switch {
+	case input.AgentID == "" && input.ProfileID != "":
+		agent, err = s.resolveProfileAgent(ctx, input.WorkspaceID, input.ProfileID)
+		if err == nil && input.Provider != "" && agent.Provider != input.Provider {
+			return store.AgentProjection{}, fmt.Errorf("%w: profile %s runs %s, not %s; omit provider or name a %s profile",
+				store.ErrProfileRuntimeMismatch, input.ProfileID, agent.Provider, input.Provider, input.Provider)
+		}
+	default:
+		agent, err = s.getAgent(ctx, input.AgentID, input.WorkspaceID, input.Provider)
+		if err == nil {
+			return agent, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) || input.AgentID == "" || input.WorkspaceID == "" {
+			return store.AgentProjection{}, err
+		}
+		agent, err = s.resolveProjectedServerAgent(ctx, input.AgentID, input.WorkspaceID)
 	}
-	if !errors.Is(err, store.ErrNotFound) || input.AgentID == "" || input.WorkspaceID == "" {
-		return store.AgentProjection{}, err
-	}
-	agent, err = s.resolveProjectedServerAgent(ctx, input.AgentID, input.WorkspaceID)
 	if errors.Is(err, store.ErrNotFound) {
 		// A removed device's agents were purged with it; say why.
 		if workspace, lookup := s.GetWorkspace(ctx, input.WorkspaceID); lookup == nil && workspace.DeviceID != "" {
@@ -102,6 +117,33 @@ func (s *Store) resolveSessionAgent(
 		}
 	}
 	return agent, err
+}
+
+// resolveProfileAgent finds a profile's agent in a workspace: the row its
+// device reported, else the projection of a server profile bound to the
+// workspace's device. Server profiles never have rows (see
+// resolveProjectedServerAgent), so the table alone cannot answer.
+func (s *Store) resolveProfileAgent(ctx context.Context, workspaceID string, profileID string) (store.AgentProjection, error) {
+	if workspaceID == "" {
+		return store.AgentProjection{}, store.ErrNotFound
+	}
+	agents, err := listJSON[store.AgentProjection](ctx, s.conn(), `SELECT payload_json FROM agents WHERE workspace_id = ? ORDER BY updated_at DESC, provider`, workspaceID)
+	if err != nil {
+		return store.AgentProjection{}, err
+	}
+	for _, agent := range agents {
+		if agent.ProfileID == profileID {
+			return agent, nil
+		}
+	}
+	workspace, err := s.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return store.AgentProjection{}, err
+	}
+	if workspace.DeviceID == "" {
+		return store.AgentProjection{}, store.ErrNotFound
+	}
+	return s.resolveProjectedServerAgent(ctx, store.ServerAgentID(workspace.DeviceID, workspaceID, profileID), workspaceID)
 }
 
 // ResolveSessionAgent is the read-only, transaction-free counterpart of the

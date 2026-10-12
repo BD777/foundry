@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  claudeTimerNextFire,
   type AgentScheduledTask,
   type AgentSubagentTranscript,
   type SessionFileDiff,
@@ -43,6 +42,7 @@ import type {
   ChatTimerItem,
 } from "./chat-types";
 import { BackgroundKindIcon, BackgroundStatusIcon } from "./chat-context-card";
+import { timerNextRun } from "./chat-schedule-model";
 import { formatDuration } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "./use-shared-now";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
@@ -483,7 +483,14 @@ function formatTimerDateTime(iso?: string): string {
   return date.toLocaleString(i18n.language, { hour12: false });
 }
 
-function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
+/** Each run by when it fired, with its answer once it ended. */
+function TimerFireHistory({
+  fires,
+  running,
+}: {
+  fires: ChatTimerItem["fires"];
+  running?: ChatTimerItem["running"];
+}) {
   const { t } = useTranslation("chat");
   if (fires.length === 0) {
     return <p className="fdy-chat-detail-note">{t("detail.timer.noFires")}</p>;
@@ -494,12 +501,14 @@ function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
       {fires.map((fire, index) => (
         <details
           className="fdy-chat-timer-fire"
-          key={`${fire.completedAt}-${index}`}
+          key={`${fire.startedAt ?? fire.completedAt}-${index}`}
           open={index === 0}
         >
           <summary>
             <Clock aria-hidden="true" size={13} />
-            {formatTimerDateTime(fire.completedAt)}
+            {t("detail.timer.firedAt", {
+              time: formatTimerDateTime(fire.startedAt || fire.completedAt),
+            })}
           </summary>
           {fire.response ? (
             <div className="fdy-chat-timer-fire-response fdy-markdown">
@@ -507,9 +516,11 @@ function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
             </div>
           ) : (
             <p className="fdy-chat-detail-note">
-              {fire.answerUnloaded
-                ? t("detail.timer.fireTextUnloaded")
-                : t("detail.timer.noFireText")}
+              {fire === running
+                ? t("detail.timer.fireRunning")
+                : fire.answerUnloaded
+                  ? t("detail.timer.fireTextUnloaded")
+                  : t("detail.timer.noFireText")}
             </p>
           )}
         </details>
@@ -518,12 +529,33 @@ function TimerFireHistory({ fires }: { fires: ChatTimerItem["fires"] }) {
   );
 }
 
+function TimerNextRun({ item }: { item: ChatTimerItem }) {
+  const { t } = useTranslation("chat");
+  const scheduled = item.scheduled;
+  if (!scheduled) return <>{t("detail.timer.inactive")}</>;
+  if (item.running) {
+    return (
+      <>
+        {item.running.startedAt
+          ? t("detail.timer.runningSince", {
+              time: formatTimerDateTime(item.running.startedAt),
+            })
+          : t("detail.timer.running")}
+      </>
+    );
+  }
+  // Recomputed on each render, from its last wake: the reported next fire
+  // goes stale within a cycle.
+  const next = timerNextRun(scheduled, item.wake, item.busy);
+  if (next.due)
+    return <>{t(item.busy ? "detail.timer.due" : "detail.timer.dueNow")}</>;
+  return (
+    <>{formatTimerDateTime(next.at?.toISOString() ?? scheduled.nextFireAt)}</>
+  );
+}
+
 function TimerDetail({ item }: { item: ChatTimerItem }) {
   const task: AgentScheduledTask = item.task;
-  const scheduled = item.scheduled;
-  const liveNext = scheduled
-    ? (claudeTimerNextFire(scheduled)?.toISOString() ?? scheduled.nextFireAt)
-    : undefined;
   const { t } = useTranslation("chat");
   return (
     <article className="fdy-chat-meta-detail">
@@ -539,9 +571,7 @@ function TimerDetail({ item }: { item: ChatTimerItem }) {
         <div>
           <dt>{t("detail.timer.nextFire")}</dt>
           <dd>
-            {scheduled
-              ? formatTimerDateTime(liveNext)
-              : t("detail.timer.inactive")}
+            <TimerNextRun item={item} />
           </dd>
         </div>
         <div>
@@ -553,7 +583,7 @@ function TimerDetail({ item }: { item: ChatTimerItem }) {
       </dl>
       <h4>{t("detail.timer.prompt")}</h4>
       <pre className="fdy-chat-meta-pre">{task.prompt}</pre>
-      <TimerFireHistory fires={item.fires} />
+      <TimerFireHistory fires={item.fires} running={item.running} />
     </article>
   );
 }

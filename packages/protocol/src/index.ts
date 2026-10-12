@@ -19,7 +19,7 @@ export {
   nextCronFire,
   parseCron,
 } from "./cron.js";
-export type { CronLanguage, ParsedCron } from "./cron.js";
+export type { ClaudeTimerWake, CronLanguage, ParsedCron } from "./cron.js";
 export {
   sessionScheduleFromSnapshot,
   sessionScheduleNextFire,
@@ -1683,6 +1683,48 @@ export interface BuiltinSkill {
   description?: string;
   /** Where it comes from, e.g. "Anthropic skills". */
   source: string;
+}
+
+/**
+ * What the built-in foundry skill gives agents, for people: the Foundry
+ * tools with what each does, its limits and the session roles that get it,
+ * the guidance its SKILL.md gives, and that SKILL.md.
+ */
+export interface FoundrySkillDetail {
+  name: string;
+  description?: string;
+  source: string;
+  revisions: BuiltinSkillRevision[];
+  tools: FoundryToolCapability[];
+  guidance: SkillGuidanceSection[];
+  /** The SKILL.md agents read. */
+  manifest: string;
+}
+
+export interface BuiltinSkillRevision {
+  runtime: Exclude<WorkerRuntimeId, "mock">;
+  revision: number;
+}
+
+/**
+ * The kinds of session whose Foundry tools differ: "session" is a chat, a
+ * session an agent started, or a person at a shell.
+ */
+export type FoundryToolRole =
+  "session" | "issue_execution" | "issue_clarification" | "verifier";
+
+export interface FoundryToolCapability {
+  name: string;
+  summary: string;
+  limits: string[];
+  readOnly: boolean;
+  roles: FoundryToolRole[];
+}
+
+/** One section of a SKILL.md as points, one line each. */
+export interface SkillGuidanceSection {
+  heading: string;
+  points: string[];
 }
 
 export interface FoundryDataProjection {

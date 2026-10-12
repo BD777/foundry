@@ -13,7 +13,7 @@ P4（治理）尚未实现，文中标注 **（P3）**、**（P4）** 的部分�
 
 资源**归属到人**，并以 Workspace 为单位共享：
 
-- Device、Workspace、Server connection（Profile）、执行记录都有明确的归属人；
+- Device、Workspace、模型服务（Model provider，即 Profile）、执行记录都有明确的归属人；
 - 未被授权的账号看不到、用不了别人的资源；
 - Workspace 可以共享给其他账号，共享 Workspace 即授权在该 Workspace 所在的
   Device 上执行（二者强关联）；
@@ -262,7 +262,7 @@ P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, c
   自行退出；Device owner 始终是 Owner。未注册的人由 Admin 生成带 Workspace 角色的
   邀请（只能授予自己是 Owner 的 Workspace）。
 - **Devices**：我的设备可管理；共享来的设备只读、只显示 Workspaces。
-- **Server connections**：只显示我的连接。
+- **模型服务（Model providers）**：只显示我的模型服务。
 - Workspace 选择器标注共享来的 Workspace 及我的角色。
 - 按角色禁用/隐藏操作并写明"你是 X，需要 Y 及以上"；服务端 403 同样写明当前
   角色与所需角色（遵守 AGENTS.md：不靠颜色/悬停表达状态）。
@@ -280,7 +280,7 @@ P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, c
 
 - 生成配对码需要该 Workspace 的 Maintainer 及以上权限；配对码记录
   `created_by_user_id`，单次使用、短时过期，只存 hash。
-- 群里 `/pair CODE` 成功后，`workspace_feishu_bots` 记录 `bound_user_id =` 生成
+- 群（或单聊）里 `/pair CODE` 成功后，该会话的路由（`feishu_bot_routes`）记录 `bound_user_id =` 生成
   该码的账号。此后该 Bot 在这个群里对这个 Workspace 的**所有操作都以该账号的
   身份执行**：Session 的 `createdByUserId` 是他，权限按他**当前**在该
   Workspace 的角色（至少 Member）逐条判断；执行凭证按 §3.1 以他为发起人解析

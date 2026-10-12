@@ -77,7 +77,7 @@ import {
   applyFoundryDataAnswer,
   loadedChatSelection,
   withSessionDetails,
-  resolveChatSelection,
+  chatSelectionAfterRead,
   readFoundryDataSelection,
   useRemovedChatSelection,
 } from "./app/loaded-foundry-data";
@@ -141,13 +141,11 @@ import {
   type ProfilesFeatureEvent,
   type ProfilesFeatureResult,
 } from "./features/profiles";
-import { SkillsFeature } from "./features/skills";
+import { FoundrySkillPage, SkillsFeature } from "./features/skills";
 import { SkillLibraryFeature } from "./features/skill-library";
 import { FeishuBotFeature } from "./features/feishu";
-import {
-  ExternalAccountsFeature,
-  WorkspaceAccountsFeature,
-} from "./features/external-accounts";
+import { WorkspaceAccountsFeature } from "./features/external-accounts";
+import { ConnectorsView } from "./app/connectors-view";
 import { SharingFeature } from "./features/sharing";
 import {
   WorkspacesFeature,
@@ -341,9 +339,7 @@ export function App() {
           touched(),
           fields,
         );
-        setSelectedChatId((current) =>
-          resolveChatSelection(shown, current, { respectChatRoute: true }),
-        );
+        setSelectedChatId((current) => chatSelectionAfterRead(shown, current));
       }
       return "applied";
     } catch {
@@ -532,7 +528,7 @@ export function App() {
     touches: streamTouches,
     workspaceId: activeWorkspaceId,
   });
-  useAppRouteSync({
+  const { connectorTab, setConnectorTab } = useAppRouteSync({
     activeView,
     activeWorkspaceId,
     onPopState: (route, routeWorkspaceId) => {
@@ -667,11 +663,13 @@ export function App() {
     deviceOnline,
     onEvent: handleChatFeatureEvent,
     profiles: data.agentProfiles,
+    ready: apiState !== "loading",
     selectedChatId,
     sessions: workspaceSessions,
     slashSkills: workspaceComposerSlashSkills,
     workspace: data.workspace,
     workspaceId: data.workspace.id,
+    workspaces: data.workspaces,
   });
 
   const sidebarActiveView: SidebarView =
@@ -980,13 +978,14 @@ export function App() {
             workspaceId={data.workspace.id}
             workspaceName={data.workspace.name}
             onNotice={setNotice}
+            onOpenConnectors={() => setActiveView("connectors")}
           />
         ) : null}
         {section === "accounts" ? (
           <WorkspaceAccountsFeature
             currentUserId={account.user?.id ?? ""}
             onNotice={setNotice}
-            onOpenExternalAccounts={() => setActiveView("externalAccounts")}
+            onOpenConnectors={() => setActiveView("connectors")}
             readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
             workspaceId={data.workspace.id}
           />
@@ -1089,6 +1088,8 @@ export function App() {
         return renderWorkspaceView(activeView);
       case "workspace":
         return renderWorkspaceView();
+      case "foundrySkill":
+        return <FoundrySkillPage />;
       case "devices":
         return renderDevicesView();
       case "locations":
@@ -1103,12 +1104,12 @@ export function App() {
         );
       case "profiles":
         return renderProfilesView();
-      case "externalAccounts":
+      case "connectors":
         return (
-          <ExternalAccountsFeature
-            currentUserId={account.user?.id ?? ""}
-            isAdmin={account.user?.role === "admin"}
+          <ConnectorsView
             onNotice={setNotice}
+            onTabChange={setConnectorTab}
+            tab={connectorTab}
           />
         );
       case "library":

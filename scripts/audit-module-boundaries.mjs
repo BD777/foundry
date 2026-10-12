@@ -183,6 +183,7 @@ export const workerModules = {
       "session/provider-credentials",
       "verification-session",
       "external-accounts",
+      "feishu-gateway-forwarder",
     ],
   },
   "agent-surface": {
@@ -269,6 +270,7 @@ export const serverPackages = {
   testfixture: ["store"],
   eventstream: [],
   textdiff: [],
+  integrations: [],
   browserevent: ["store", "eventstream"],
   sqlitestore: [
     "store",
@@ -277,8 +279,18 @@ export const serverPackages = {
     "chattitle",
     "accounts",
   ],
-  feishu: ["store", "accounts", "browserevent", "eventstream"],
-  externalaccounts: ["store"],
+  externalaccounts: ["store", "integrations"],
+  feishugateway: ["store", "integrations", "externalaccounts"],
+  feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],
+  feishu: [
+    "store",
+    "accounts",
+    "browserevent",
+    "eventstream",
+    "integrations",
+    "externalaccounts",
+    "feishuevents",
+  ],
   httpapi: "*",
 };
 

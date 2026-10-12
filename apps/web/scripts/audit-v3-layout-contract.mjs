@@ -200,6 +200,13 @@ const contracts = [
     },
   },
   {
+    selector: '.fdy-view[data-scroll-mode="page"]',
+    declarations: {
+      "overflow-y": "auto",
+      "scrollbar-gutter": "stable",
+    },
+  },
+  {
     selector: ".fdy-sidebar-brand",
     declarations: {
       display: "flex",
@@ -1126,8 +1133,9 @@ const contracts = [
       height: "100%",
       "overflow-x": "hidden",
       "overflow-y": "auto",
+      "scrollbar-gutter": "stable",
       padding: "40px 30px 60px",
-      animation: "fdyFade 0.25s ease both",
+      animation: "fdyPageFade 0.25s ease both",
     },
   },
   {
@@ -3895,6 +3903,20 @@ const contracts = [
       position: "sticky",
       top: "0",
       "z-index": "10",
+    },
+  },
+  {
+    media: "(max-width: 860px)",
+    selector: 'html:has(.fdy-foundry-shell[data-scroll-mode="page"])',
+    declarations: {
+      "scrollbar-gutter": "stable",
+    },
+  },
+  {
+    media: "(max-width: 860px)",
+    selector: '.fdy-view[data-scroll-mode="page"]',
+    declarations: {
+      "scrollbar-gutter": "auto",
     },
   },
   {

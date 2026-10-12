@@ -21,6 +21,7 @@ import {
   dirname,
   extname,
   isAbsolute,
+  normalize,
   relative,
   resolve,
   sep,
@@ -787,6 +788,33 @@ export function looksBinary(data: Buffer): boolean {
 }
 
 /**
+ * The ledger entry a reader names: by its absolute path, or by the path
+ * relative to the workspace that the session's file list shows beside it.
+ * A relative path two recorded files share names neither.
+ */
+export function sessionFileEntry(
+  files: SessionFileEntry[],
+  workspacePath: string,
+  path: string,
+): SessionFileEntry | undefined {
+  const exact = files.find((file) => file.path === path);
+  if (exact || !path.trim() || isAbsolute(path)) return exact;
+  const relativePath = normalize(path);
+  const absolute = resolve(workspacePath, relativePath);
+  const matches = files.filter(
+    (file) =>
+      (file.workspacePath !== undefined &&
+        normalize(file.workspacePath) === relativePath) ||
+      file.path === absolute,
+  );
+  if (matches.length > 1)
+    throw new Error(
+      `${path} names more than one file this chat recorded; use its absolute path.`,
+    );
+  return matches[0];
+}
+
+/**
  * Reads one of a session's recorded files. Only paths in the session's
  * ledger are served, and only while they still resolve where they did when
  * recorded; private locations are refused whatever the ledger says.
@@ -800,8 +828,10 @@ export function readSessionFile(input: {
 }): SessionFileRead {
   const sessionsRoot =
     input.sessionsRoot ?? resolve(input.workspacePath, ".foundry", "sessions");
-  const entry = readSessionFileLedger(sessionsRoot, input.sessionId).find(
-    (file) => file.path === input.path,
+  const entry = sessionFileEntry(
+    readSessionFileLedger(sessionsRoot, input.sessionId),
+    input.workspacePath,
+    input.path,
   );
   if (!entry)
     throw new Error(
@@ -883,8 +913,10 @@ export async function readSessionFileDiff(input: {
 }): Promise<SessionFileDiff> {
   const sessionsRoot =
     input.sessionsRoot ?? resolve(input.workspacePath, ".foundry", "sessions");
-  const entry = readSessionFileLedger(sessionsRoot, input.sessionId).find(
-    (file) => file.path === input.path,
+  const entry = sessionFileEntry(
+    readSessionFileLedger(sessionsRoot, input.sessionId),
+    input.workspacePath,
+    input.path,
   );
   if (!entry || entry.origin !== "tool")
     throw new Error("This file is not one this chat's tools wrote.");

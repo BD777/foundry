@@ -20,7 +20,7 @@ type Values = Pick<
   | "codexSpeed"
 >;
 
-/** Shared by device accounts and server connection editors. */
+/** Shared by device accounts and model provider editors. */
 export function RuntimeDefaultFields({
   runtime,
   value,

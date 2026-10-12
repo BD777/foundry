@@ -8,6 +8,7 @@ import type {
   AgentTurnUsage,
   ChatAttachment,
   ClaudeEffort,
+  ClaudeTimerWake,
   ClaudePermissionMode,
   CodexApprovalPolicy,
   CodexReasoningEffort,
@@ -42,12 +43,13 @@ export interface ChatViewMessage {
   attachments?: ChatAttachment[];
   copyAlways?: boolean;
   copyText?: string;
-  /** How long a process group ran, from its first to its last step. */
+  /** How long a process group ran, from its start to its last step. */
   durationMs?: number;
-  /** When a process group's first step happened, for its live timer. */
+  /**
+   * When a process group began: where the segment before it (the input, a
+   * steered message, an answer) ended. Its live timer counts from here.
+   */
   startedAt?: string;
-  /** When the running turn began: a live group's timer counts from it. */
-  turnStartedAt?: string;
   /** Tokens of the model requests behind a process group's steps. */
   stepUsage?: StepUsage;
   idea?: string;
@@ -104,6 +106,15 @@ export interface ChatTimerItem {
   detail?: string;
   /** Observed automatic firings, newest first. */
   fires: ChatTimerFire[];
+  /** Its run in progress, when one runs while no Foundry turn does. */
+  running?: ChatTimerFire;
+  /** What the session's events say of its last wake (see timerNextRun). */
+  wake: ClaudeTimerWake;
+  /**
+   * The session was busy when it was read (a turn, a timer's run or
+   * background work): a timer that fell due waits for it.
+   */
+  busy: boolean;
   id: string;
   kind: "timer";
   label: string;
@@ -184,6 +195,11 @@ export interface ChatSessionStatus {
   claudePermissionMode?: ClaudePermissionMode;
   codexSandboxMode?: CodexSandboxMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
+  /**
+   * A verifier: it runs in the read-only verification sandbox whatever its
+   * permission settings say, and messages cannot change them.
+   */
+  verification?: boolean;
   deviceLabel?: string;
   /** The latest model request's whole input against the model's window. */
   context: { usedTokens?: number; contextWindow?: number };
@@ -224,6 +240,8 @@ export interface ChatRunningBackgroundWork {
   taskIds: string[];
   /** Running subagents in the Subagents section. */
   subagentIds: string[];
+  /** A timer's run the agent started on its own, by its row. */
+  timerRun?: { id: string; startedAt?: string };
 }
 
 /** A durable Chat thread assembled from one or more agent sessions. */

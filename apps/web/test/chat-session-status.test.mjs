@@ -334,3 +334,29 @@ test("without reports the line reads unknown, with no meter", async () => {
     },
   );
 });
+
+test("a verifier's permissions read as its read-only sandbox, not full access", async () => {
+  const { statusRows } =
+    await import("../src/features/chat/chat-session-status.tsx");
+  const permissions = (status) =>
+    statusRows(status).find((row) => row.id === "permissions")?.value;
+  const record = {
+    provider: "codex",
+    codexSandboxMode: "danger-full-access",
+    codexApprovalPolicy: "never",
+  };
+  const verifier = chatSessionStatus(
+    session([], { ...record, source: "verification" }),
+    { id: "ws_status" },
+  );
+  assert.equal(verifier.verification, true);
+  assert.equal(permissions(verifier), "Read-only verification sandbox");
+  const claudeVerifier = chatSessionStatus(
+    session([], { claudePermissionMode: "dontAsk", source: "verification" }),
+    { id: "ws_status" },
+  );
+  assert.equal(permissions(claudeVerifier), "Read-only verification sandbox");
+  const chat = chatSessionStatus(session([], record), { id: "ws_status" });
+  assert.equal(chat.verification, undefined);
+  assert.match(permissions(chat), /^Full access/);
+});

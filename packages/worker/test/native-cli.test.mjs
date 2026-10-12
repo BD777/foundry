@@ -59,6 +59,10 @@ test("program versions are read and compared with what Foundry needs", () => {
   assert.equal(isOlderVersion("0.142.0", "0.142.0"), false);
   assert.match(minimumCliVersion("claude"), /^\d+\.\d+\.\d+$/);
   assert.match(minimumCliVersion("codex"), /^\d+\.\d+\.0$/);
+  // Session timers need the Claude Code that brings them back as fired on
+  // resume: 2.1.289 fired a resumed timer at once (a real run, 2026-10-12).
+  assert.equal(isOlderVersion(minimumCliVersion("claude"), "2.1.291"), false);
+  assert.equal(isOlderVersion("2.1.289", minimumCliVersion("claude")), true);
 });
 
 function fakeClaude(t, version) {

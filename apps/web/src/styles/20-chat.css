@@ -235,8 +235,8 @@
   min-width: 0;
   flex: 1;
   display: flex;
-  align-items: center;
-  gap: 5px;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .fdy-chat-row-time {
@@ -3545,6 +3545,10 @@
 }
 
 /* The chat is idle, yet its agent keeps working: one click shows what. */
+.fdy-chat-thread-notice-action {
+  margin-top: 10px;
+}
+
 .fdy-chat-background-note {
   width: fit-content;
   margin: 0 0 4px;
@@ -4533,7 +4537,12 @@
 .fdy-chat-row-status[data-tone="warning"] {
   color: var(--fdy-warning-text);
 }
-.fdy-chat-row-spawned {
+/* Who started a chat another session started, under its title. */
+.fdy-chat-row-copy .fdy-chat-row-origin {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.fdy-chat-row-origin svg {
   flex: none;
-  color: var(--fdy-ink-faint);
 }

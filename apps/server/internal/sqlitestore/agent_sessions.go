@@ -262,11 +262,13 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		source = "chat"
 	}
 	// Lineage: a parent must be a visible session in the same workspace the
-	// request resolves to, except that an agent may start a session in another
-	// workspace its token reaches (authorized before the store is called). The
-	// automatic group placement happens in this same transaction once the child
-	// row exists, and only within one workspace's layout.
-	parent, err := s.ValidateParentSession(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID), source == "agent")
+	// request resolves to, except that an agent may start a session, a
+	// verifier included, in another workspace its token reaches (authorized
+	// before the store is called). The automatic group placement happens in
+	// this same transaction once the child row exists, and only within one
+	// workspace's layout.
+	agentStarted := source == "agent" || source == "verification"
+	parent, err := s.ValidateParentSession(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID), agentStarted)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
@@ -367,14 +369,15 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		UpdatedLabel: "queued",
 		Events:       []store.AgentSessionEvent{},
 	}
-	// Verification sessions are independent read-only judges: force the
-	// read-only runtime knobs server-side, never trusting client input. The
-	// worker runs them in a sandbox that keeps the workspace read-only and
-	// lets them run commands (worker: verification-session.ts); Claude runs
-	// only the tools its role pre-approves.
+	// A verifier's runtime settings are its role's, never the client's, and
+	// the record says what its worker runs (worker: session-roles.ts):
+	// Claude dontAsk with the tools its role pre-approves; Codex with full
+	// access and no approvals, because Codex's own sandbox cannot nest
+	// inside the verifier's. That outer sandbox keeps the workspace
+	// read-only for the whole process (worker: verification-session.ts).
 	if source == "verification" {
 		session.ClaudePermissionMode = "dontAsk"
-		session.CodexSandboxMode = "read-only"
+		session.CodexSandboxMode = "danger-full-access"
 		session.CodexApprovalPolicy = "never"
 	}
 	if err := s.bindNativeSession(ctx, &session, input, now); err != nil {

@@ -69,6 +69,22 @@ type ExternalProvider struct {
 	DefaultBaseURL string `json:"defaultBaseUrl,omitempty"`
 	// AlwaysScopes are added to every login request (offline_access…).
 	AlwaysScopes []string `json:"alwaysScopes,omitempty"`
+	// ScopePreset is what a login asks for when it names no scopes.
+	ScopePreset *ExternalScopePreset `json:"scopePreset,omitempty"`
+	// RegistersApps: the provider can create an app for the person during
+	// sign-in (POST /api/external-accounts/setup), so no app ID or secret
+	// has to be pasted.
+	RegistersApps bool `json:"registersApps,omitempty"`
+}
+
+// ExternalScopePreset is a provider's default scope list and its source.
+type ExternalScopePreset struct {
+	Name   string   `json:"name"`
+	Source string   `json:"source"`
+	Scopes []string `json:"scopes"`
+	// ApprovalScopes are asked for only on request: a tenant administrator
+	// may have to approve them.
+	ApprovalScopes []string `json:"approvalScopes,omitempty"`
 }
 
 // ExternalProviderApp is an OAuth client registration at a provider. The
@@ -84,8 +100,12 @@ type ExternalProviderApp struct {
 	HasSecret   bool                  `json:"hasSecret"`
 	// CreatedVia is how the registration got here: "pasted" today.
 	CreatedVia string `json:"createdVia"`
-	CreatedAt  string `json:"createdAt"`
-	UpdatedAt  string `json:"updatedAt"`
+	// RotateSecret: devices held this app's secret before sessions reached
+	// the provider through the server's gateway; rotate it at the provider
+	// and replace it here. Cleared when the secret is replaced.
+	RotateSecret bool   `json:"rotateSecret,omitempty"`
+	CreatedAt    string `json:"createdAt"`
+	UpdatedAt    string `json:"updatedAt"`
 }
 
 // SaveExternalProviderAppInput creates a provider app. ClientSecret is
@@ -166,9 +186,25 @@ type ExternalAccountUpdate struct {
 
 // ConnectExternalAccountInput starts a login through a provider app.
 type ConnectExternalAccountInput struct {
-	AppID  string   `json:"appId"`
-	Label  string   `json:"label,omitempty"`
+	AppID string `json:"appId"`
+	Label string `json:"label,omitempty"`
+	// Scopes, when given, replace the provider's preset.
 	Scopes []string `json:"scopes,omitempty"`
+	// IncludeApprovalScopes adds the preset's approval scopes.
+	IncludeApprovalScopes bool `json:"includeApprovalScopes,omitempty"`
+}
+
+// SetupExternalAccountInput starts a sign-in that first creates an app for
+// the person at the provider, then authorizes it.
+type SetupExternalAccountInput struct {
+	Provider string `json:"provider"`
+	// Brand picks the provider's region where it has several ("feishu",
+	// "lark"); empty is the provider's default.
+	Brand string `json:"brand,omitempty"`
+	Label string `json:"label,omitempty"`
+	// Scopes, when given, replace the provider's preset.
+	Scopes                []string `json:"scopes,omitempty"`
+	IncludeApprovalScopes bool     `json:"includeApprovalScopes,omitempty"`
 }
 
 // ExternalAccountLogin is a device-flow login in progress: what the person
@@ -178,7 +214,11 @@ type ExternalAccountLogin struct {
 	Provider string `json:"provider"`
 	AppID    string `json:"appId"`
 	// Status: pending, complete, failed.
-	Status                  string   `json:"status"`
+	Status string `json:"status"`
+	// Phase of a pending setup: "register" (the person confirms the new
+	// app) then "authorize" (the person authorizes it). Empty for a plain
+	// login, which only authorizes.
+	Phase                   string   `json:"phase,omitempty"`
 	VerificationURI         string   `json:"verificationUri,omitempty"`
 	VerificationURIComplete string   `json:"verificationUriComplete,omitempty"`
 	UserCode                string   `json:"userCode,omitempty"`
@@ -186,8 +226,15 @@ type ExternalAccountLogin struct {
 	IntervalSeconds         int      `json:"intervalSeconds,omitempty"`
 	RequestedScopes         []string `json:"requestedScopes,omitempty"`
 	Error                   string   `json:"error,omitempty"`
+	// App is the app a setup created, once it exists.
+	App *ExternalProviderApp `json:"app,omitempty"`
 	// Account is the connected account once Status is complete.
 	Account *ExternalAccount `json:"account,omitempty"`
+	// MissingScopes: asked for but not granted, once Status is complete.
+	MissingScopes []string `json:"missingScopes,omitempty"`
+	// ScopeApplyURL opens the provider's page to enable MissingScopes on
+	// the app.
+	ScopeApplyURL string `json:"scopeApplyUrl,omitempty"`
 }
 
 // ExternalAccountToken is a short-lived access token minted for one session
@@ -201,10 +248,12 @@ type ExternalAccountToken struct {
 }
 
 // ExternalAccountMaterial is what a worker needs to let one tool act as an
-// account for one session: the identity and the tool's profile, plus the
-// minted access token and the app credentials the tool insists on. It rides
-// the run_session message and is written into a tool profile the worker
-// removes when the session ends.
+// account for one session: the identity, the tool's profile and the
+// gateway handles that stand in for the app secret and the access token.
+// No secret and no real token ever rides it: the tool reaches the provider
+// through the server's gateway (internal/feishugateway), which swaps the
+// handles for the real credentials. It rides run_session and is written
+// into a tool profile the worker removes when the session ends.
 type ExternalAccountMaterial struct {
 	AccountID string `json:"accountId"`
 	Provider  string `json:"provider"`
@@ -214,16 +263,25 @@ type ExternalAccountMaterial struct {
 	Tool        string `json:"tool"`
 	ProfileName string `json:"profileName"`
 	ClientID    string `json:"clientId"`
-	// ClientSecret is the app secret the tool needs for its own calls; only
-	// an account owner's own devices receive it.
-	ClientSecret string `json:"clientSecret,omitempty"`
-	BaseURL      string `json:"baseUrl,omitempty"`
-	AccessToken  string `json:"accessToken"`
-	TokenType    string `json:"tokenType"`
-	ExpiresAt    string `json:"expiresAt"`
-	Scope        string `json:"scope,omitempty"`
-	Subject      string `json:"subject,omitempty"`
-	DisplayName  string `json:"displayName,omitempty"`
+	// Gateway is how the tool reaches the provider through Foundry.
+	Gateway *ExternalAccountGateway `json:"gateway,omitempty"`
+	// ExpiresAt bounds the handles for the tool's own expiry checks; the
+	// server stops honouring them as soon as the session ends.
+	ExpiresAt   string `json:"expiresAt"`
+	Scope       string `json:"scope,omitempty"`
+	Subject     string `json:"subject,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+}
+
+// ExternalAccountGateway is a session's way through the server's gateway
+// for one account: the server path the device's loopback forwarder sends
+// the tool's requests under, and the opaque handles the tool holds in place
+// of the app secret and the user access token. A handle is useless without
+// the device's credential and dies with the session.
+type ExternalAccountGateway struct {
+	Path       string `json:"path"`
+	AppHandle  string `json:"appHandle"`
+	UserHandle string `json:"userHandle"`
 }
 
 // WorkspaceExternalAccounts is a workspace's accounts tab: the bindings

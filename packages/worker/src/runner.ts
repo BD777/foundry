@@ -1,4 +1,7 @@
-import { processLabels } from "@bd777/foundry-protocol";
+import {
+  claudeProcessStartedLabel,
+  processLabels,
+} from "@bd777/foundry-protocol";
 import type { SessionEventEmitter } from "./session-state.js";
 import {
   claudeFileWriteHooks,
@@ -62,7 +65,7 @@ import {
   type CodexSDKThread,
   AsyncInputQueue,
 } from "./session-state.js";
-import { ClaudeTimerTracker } from "./agent-timers.js";
+import { ClaudeTimerTracker, timerFireEvent } from "./agent-timers.js";
 import { mintTimerTurnToken, sessionTimers } from "./session-timers.js";
 import {
   ClaudeBackgroundTaskTracker,
@@ -209,7 +212,6 @@ import {
   codexRoleOptions,
   isClarificationSession,
   isVerificationSession,
-  verificationMaxTurns,
 } from "./session-roles.js";
 import { readAgentRuntimeSettings } from "./device.js";
 import { knownSessionScratchDirectory } from "./resource-pool.js";
@@ -1041,7 +1043,7 @@ export function resolveActiveClaudeTurn(
   if (turn.commandId) runtime.lastInputId = turn.commandId;
   // A timer's prompt this turn answered (the device sent it) is not a turn
   // Claude runs on its own.
-  runtime.timers?.takeFire();
+  runtime.timers?.dropFire();
   turn.liveness.close();
   turn.resolve(result);
 }
@@ -1513,21 +1515,14 @@ async function finishClaudeContinuation(
   };
   const answer = error ? error.message : response;
   if (fire) {
+    const event = timerFireEvent(fire, {
+      completedAt,
+      response: answer,
+      failed: Boolean(error),
+    });
     emitForClaudeRuntime(runtime, {
-      label: processLabels.timerFire,
-      detail: fire.prompt.split(/\r?\n/)[0]?.slice(0, 200) ?? "",
-      level: error ? "error" : "info",
-      metadata: {
-        timerFire: {
-          ...(fire.id ? { id: fire.id } : {}),
-          origin: "scheduled",
-          prompt: fire.prompt,
-          ...(answer ? { response: answer } : {}),
-          startedAt: fire.startedAt,
-          completedAt,
-        },
-        ...metadata,
-      },
+      ...event,
+      metadata: { ...event.metadata, ...metadata },
     });
     return;
   }
@@ -2003,7 +1998,7 @@ export async function runClaudeAgentSdkSession(
       activeClaudeRuntimes.set(runtimeKey, runtime);
       logClaudeRuntime("starting", runtime);
       await emitSetup();
-      await emit("Started Claude Agent SDK", `${packageName} · ${command}`);
+      await emit(claudeProcessStartedLabel, `${packageName} · ${command}`);
       runtimeStartOptions = options;
     } else {
       const reusableRuntime = runtime;
@@ -2306,7 +2301,6 @@ export function claudeMaxTurns(session: AgentSession): number | undefined {
   if (isUtilitySession(session)) {
     return 3;
   }
-  if (isVerificationSession(session)) return verificationMaxTurns;
   const configured = process.env.FOUNDRY_CLAUDE_MAX_TURNS?.trim();
   if (
     !configured ||

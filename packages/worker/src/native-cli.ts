@@ -56,13 +56,28 @@ function commandPath(command: string): string {
 }
 
 /**
- * The oldest program version the bundled SDK speaks to: the Claude Code
- * version the Agent SDK was released with, and the Codex release line of the
- * Codex SDK. Unknown when the SDK is not installed (the npx bootstrap).
+ * The first Claude Code that brings a session's timers back on resume as
+ * fired then. Before it (2.1.289 and earlier), a resumed process holds them
+ * as due since they were created and fires each at once: a timer the device
+ * sent to resume the session ran twice in a row (session-timers.ts).
+ */
+export const claudeTimerResumeVersion = "2.1.291";
+
+/**
+ * The oldest program version Foundry works with: for Claude Code the later
+ * of the version the Agent SDK was released with and the one session
+ * timers need (claudeTimerResumeVersion); for Codex the release line of
+ * the Codex SDK, unknown when that SDK is not installed (the npx
+ * bootstrap).
  */
 export function minimumCliVersion(runtime: Runtime): string | undefined {
   if (runtime === "claude") {
-    return sdkManifest("@anthropic-ai/claude-agent-sdk")?.claudeCodeVersion;
+    const sdk = sdkManifest(
+      "@anthropic-ai/claude-agent-sdk",
+    )?.claudeCodeVersion;
+    return sdk && isOlderVersion(claudeTimerResumeVersion, sdk)
+      ? sdk
+      : claudeTimerResumeVersion;
   }
   const [major, minor] = (
     sdkManifest("@openai/codex-sdk")?.version ?? ""

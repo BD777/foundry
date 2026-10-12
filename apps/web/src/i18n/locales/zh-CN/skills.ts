@@ -428,4 +428,43 @@ export const skills: Translation<typeof en> = {
     unreadable: "{{name}}：无法读取源文件",
     needsDependency: "{{name}} 需要 {{dependency}}（{{status}}）：{{evidence}}",
   },
+  foundrySkill: {
+    open: "它给了 Agent 什么",
+    openLabel: "{{name}} Skill 给了 Agent 什么",
+    back: "Skills",
+    title: "foundry Skill",
+    intro:
+      "Foundry 运行的每个 Claude Code 和 Codex 会话都带着这个 Skill。它给 Agent 提供 Foundry 的工具，并告诉 Agent 怎么用。",
+    revision: "{{agent}} 第 {{revision}} 版",
+    viewManifest: "查看 SKILL.md",
+    manifestTitle: "SKILL.md",
+    manifestDescription:
+      "Agent 读到的原文，第 {{revision}} 版。其中引用的参考文件只在 Agent 需要时才加载。",
+    loading: "正在读取 foundry Skill…",
+    loadFailed: "无法读取 foundry Skill：{{error}}",
+    retry: "重试",
+    toolsTitle: "能力",
+    toolsIntro:
+      "Foundry 的 MCP 工具（在 Claude Code 中为 {{prefix}}）；在终端里，人可以用 {{command}} 命令调用同样的工具。会话只拿到其角色允许的工具，每次调用还会按启动它的人能访问的范围检查。",
+    toolCount_one: "{{count}} 个工具",
+    toolCount_other: "{{count}} 个工具",
+    rolesTitle: "角色",
+    readOnly: "只读",
+    availableTo: "可用于",
+    roles: {
+      session: "普通会话",
+      issue_execution: "Issue 执行",
+      issue_clarification: "Issue 澄清",
+      verifier: "验证会话",
+    },
+    roleDescriptions: {
+      session: "对话、Agent 启动的会话，以及使用 foundry 命令的人。",
+      issue_execution: "实现 Issue 的会话。",
+      issue_clarification: "和人一起把 Issue 讨论清楚的会话。",
+      verifier: "为检查工作而启动的会话，运行在只读验证沙箱里。",
+    },
+    guidanceTitle: "使用指引",
+    guidanceIntro:
+      "SKILL.md 告诉 Agent 的要点，每段或每条列表取一条（原文为英文）。完整内容请查看 SKILL.md。",
+  },
 };

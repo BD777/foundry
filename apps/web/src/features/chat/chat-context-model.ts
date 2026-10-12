@@ -3,16 +3,8 @@ import type {
   AgentContextUsage,
   AgentSession,
   AgentSessionEvent,
-  AgentSessionSchedule,
-  AgentScheduledTask,
   AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
-import {
-  humanizeCron,
-  sessionScheduleNextFire,
-  sessionScheduledTimerExpired,
-} from "@bd777/foundry-protocol";
-import type { WindowedAgentSession } from "../../api";
 import type {
   ChatBackgroundTaskItem,
   ChatContextCardData,
@@ -21,43 +13,17 @@ import type {
   ChatSessionFileItem,
   ChatSessionStatus,
   ChatSubagentItem,
-  ChatTimerFire,
   ChatTimerItem,
 } from "./chat-types";
 import { i18n } from "../../i18n";
-import { agentEventKey, eventPosition } from "../../lib/agent-event-log";
 import { isProcessLabel } from "../../lib/process-labels";
-
-/** State events a windowed read sent for this panel, cut to what it reads. */
-const panelOnlyEvents = new WeakSet<AgentSessionEvent>();
-
-/**
- * The session's events as the panel reads them: the state events a
- * windowed read sent from before the loaded ones (see WindowedAgentSession),
- * each placed by its time, and the loaded events. One loaded since is read
- * from those.
- */
-function withStateEvents(session: AgentSession): AgentSession {
-  const state = (session as WindowedAgentSession).stateEvents;
-  if (!state?.length) return session;
-  const loaded = session.events ?? [];
-  const older = state.filter(
-    (event) => eventPosition(loaded, agentEventKey(event)) < 0,
-  );
-  if (older.length === 0) return session;
-  older.forEach((event) => panelOnlyEvents.add(event));
-  const events: AgentSessionEvent[] = [];
-  let next = 0;
-  for (const event of loaded) {
-    const at = Date.parse(event.at);
-    while (next < older.length && !(Date.parse(older[next]!.at) > at)) {
-      events.push(older[next++]!);
-    }
-    events.push(event);
-  }
-  events.push(...older.slice(next));
-  return { ...session, events };
-}
+import {
+  latestBackgroundSnapshot,
+  latestTimerSnapshot,
+  withStateEvents,
+} from "./chat-state-events";
+import { projectSessionTimers } from "./chat-schedule-model";
+import { noteTime } from "./chat-time";
 
 // Event labels emitted by workers (protocol values): matched, never shown.
 // "Subtask started" / "Subtask finished" are older English spellings.
@@ -377,90 +343,6 @@ function isWorkspaceSourceEvent(event: AgentSessionEvent): boolean {
   );
 }
 
-/** Latest snapshot wins: it describes the timers still live in the agent. */
-function latestTimerSnapshot(
-  session: AgentSession,
-): { at: string; tasks: AgentScheduledTask[] } | undefined {
-  let snapshot: { at: string; tasks: AgentScheduledTask[] } | undefined;
-  for (const event of session.events ?? []) {
-    if (event.metadata?.timerSnapshot) {
-      snapshot = { at: event.at, tasks: event.metadata.timerSnapshot };
-    }
-  }
-  return snapshot;
-}
-
-/**
- * The schedule in the viewer's language, rebuilt from the cron expression
- * rather than the worker's stored (Chinese) humanSchedule. One-off times are
- * resolved from the snapshot's time, as the worker did when recording it.
- */
-function timerScheduleLabel(task: AgentScheduledTask, snapshotAt: string) {
-  const from = new Date(snapshotAt);
-  return humanizeCron(
-    task.schedule,
-    task.recurring,
-    Number.isNaN(from.getTime()) ? new Date() : from,
-    i18n.language === "zh-CN" ? "zh-CN" : "en",
-  );
-}
-
-/** Timer-triggered turns observed for the session, newest first. */
-function timerFiresForSession(session: AgentSession): ChatTimerFire[] {
-  const fires: ChatTimerFire[] = [];
-  for (const event of session.events ?? []) {
-    const fire = event.metadata?.timerFire;
-    if (fire) {
-      fires.push(
-        panelOnlyEvents.has(event) ? { ...fire, answerUnloaded: true } : fire,
-      );
-    }
-  }
-  return fires.reverse();
-}
-
-function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
-  const snapshot = latestTimerSnapshot(session);
-  if (!snapshot || snapshot.tasks.length === 0) {
-    return [];
-  }
-  const allFires = timerFiresForSession(session);
-  // The server's schedule says which timers the agent still holds.
-  const held = new Map(
-    (session.scheduled?.timers ?? [])
-      .filter((timer) => !sessionScheduledTimerExpired(timer))
-      .map((timer) => [timer.id, timer]),
-  );
-  return snapshot.tasks.map((task) => {
-    const label = timerScheduleLabel(task, snapshot.at);
-    const scheduled = held.get(task.id);
-    return {
-      detail: task.prompt.split(/\r?\n/)[0]?.slice(0, 120) || label,
-      fires: allFires.filter((fire) => fire.id === task.id),
-      id: `${session.id}:timer:${task.id}`,
-      kind: "timer" as const,
-      label,
-      sessionId: session.id,
-      task,
-      ...(scheduled ? { scheduled } : {}),
-      workspaceId: session.workspaceId,
-    };
-  });
-}
-
-/** Latest snapshot wins: it describes the session's background work. */
-function latestBackgroundSnapshot(
-  session: AgentSession,
-): AgentBackgroundTask[] | undefined {
-  let snapshot: AgentBackgroundTask[] | undefined;
-  for (const event of session.events ?? []) {
-    if (event.metadata?.backgroundTaskSnapshot) {
-      snapshot = event.metadata.backgroundTaskSnapshot;
-    }
-  }
-  return snapshot;
-}
-
 function backgroundRecency(task: AgentBackgroundTask): string {
   return task.endedAt ?? task.startedAt;
 }
@@ -514,6 +396,8 @@ export function projectBackgroundTasks(
 export function runningBackgroundWork(
   card: ChatContextCardData | undefined,
 ): ChatRunningBackgroundWork {
+  // A timer's run Claude started on its own works like a turn of its own.
+  const timerRun = card?.timers.find((item) => item.running);
   return {
     taskIds: (card?.background ?? [])
       .filter((item) => item.task.status === "running")
@@ -521,11 +405,42 @@ export function runningBackgroundWork(
     subagentIds: (card?.subagents ?? [])
       .filter((item) => item.status === "running")
       .map((item) => item.id),
+    ...(timerRun
+      ? {
+          timerRun: {
+            id: timerRun.id,
+            ...(timerRun.running?.startedAt
+              ? { startedAt: timerRun.running.startedAt }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
-/** "2 tasks and 1 subagent running in the background"; empty when none run. */
-export function backgroundWorkNote(work: ChatRunningBackgroundWork): string {
+/**
+ * "Scheduled task running since 11:30" and/or "2 tasks and 1 subagent
+ * running in the background"; empty when nothing runs.
+ */
+export function backgroundWorkNote(
+  work: ChatRunningBackgroundWork,
+  now: Date = new Date(),
+): string {
+  const startedAt = work.timerRun?.startedAt
+    ? new Date(work.timerRun.startedAt)
+    : undefined;
+  const timerNote = !work.timerRun
+    ? ""
+    : startedAt && !Number.isNaN(startedAt.getTime())
+      ? i18n.t("chat:contextCard.timerRunningSinceNote", {
+          time: noteTime(startedAt, now),
+        })
+      : i18n.t("chat:contextCard.timerRunningNote");
+  const tasksNote = backgroundTasksNote(work);
+  return [timerNote, tasksNote].filter(Boolean).join(" · ");
+}
+
+function backgroundTasksNote(work: ChatRunningBackgroundWork): string {
   const tasks = work.taskIds.length;
   const subagents = work.subagentIds.length;
   if (tasks > 0 && subagents > 0) {
@@ -545,41 +460,6 @@ export function backgroundWorkNote(work: ChatRunningBackgroundWork): string {
     return i18n.t("chat:contextCard.backgroundRunningNote", { count: tasks });
   }
   return "";
-}
-
-/**
- * The schedule the server keeps for the thread's latest session that has
- * one, cut to its live timers: an expired one wakes nothing.
- */
-export function liveThreadSchedule(
-  sessions: readonly AgentSession[],
-): AgentSessionSchedule | undefined {
-  const scheduled = [...sessions].reverse().find((s) => s.scheduled)?.scheduled;
-  const timers = (scheduled?.timers ?? []).filter(
-    (timer) => !sessionScheduledTimerExpired(timer),
-  );
-  return scheduled && timers.length > 0 ? { ...scheduled, timers } : undefined;
-}
-
-/**
- * "1 scheduled task · next at 07:37": the chat is idle, yet timers its agent
- * holds will wake it. The time is when Claude Code fires the next one.
- */
-export function scheduledNote(
-  schedule: AgentSessionSchedule,
-  now: Date = new Date(),
-): string {
-  const count = schedule.timers.length;
-  const next = sessionScheduleNextFire(schedule, now);
-  if (!next) return i18n.t("chat:contextCard.scheduledNoteNoTime", { count });
-  const sameDay = next.toDateString() === now.toDateString();
-  const time = next.toLocaleString(i18n.language, {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    ...(sameDay ? {} : { month: "2-digit", day: "2-digit" }),
-  });
-  return i18n.t("chat:contextCard.scheduledNote", { count, time });
 }
 
 /**
@@ -660,6 +540,7 @@ export function chatSessionStatus(
     ...(session.provider === "codex" && session.codexApprovalPolicy
       ? { codexApprovalPolicy: session.codexApprovalPolicy }
       : {}),
+    ...(session.source === "verification" ? { verification: true } : {}),
     ...(activeWorkspace?.deviceLabel &&
     activeWorkspace.id === session.workspaceId
       ? { deviceLabel: activeWorkspace.deviceLabel }

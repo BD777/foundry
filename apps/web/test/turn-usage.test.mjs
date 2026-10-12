@@ -80,7 +80,8 @@ test("a turn's usage lands on the answer it ended with", () => {
 
   const messages = projectTranscript(entries);
   const process = messages.find((message) => message.kind === "process");
-  assert.equal(process.durationMs, 7_500);
+  // From the input, through the wait before the first step, to the last.
+  assert.equal(process.durationMs, 9_500);
   assert.deepEqual(messages.find((m) => m.usage)?.usage, usage);
 
   const thread = chatMessagesForThread({

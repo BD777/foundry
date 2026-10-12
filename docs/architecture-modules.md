@@ -271,6 +271,9 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
 工作区，血缘跨工作区记录；`list_profiles` / `list_models` 可按目标设备查询；派发本来就按
 设备路由（`DispatchAgentSession`），无需改传输。
 
+2026-10-12 起（D1）：Agent 仍可读取可达工作区里的任意会话，但只控制（发消息、取消、改名、
+handoff）它代表的人创建的会话，包括这个人的 agent 启动的会话；不再超过这个人作为 Member 的权限。
+
 ## 5. M1 接口草案
 
 ### 5.1 Sandbox

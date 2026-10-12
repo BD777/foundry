@@ -33,7 +33,7 @@ export function DeviceAccess({
           profile.id === binding.profileId && isModelConnection(profile),
       ),
   ).length;
-  // API providers in the device's own configuration are API connections too;
+  // API providers in the device's own configuration are model providers too;
   // only the usable ones count.
   const deviceCount = deviceProviders(ownProfiles).filter(
     (row) => row.status === "healthy",

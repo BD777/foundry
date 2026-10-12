@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 )
 
 const (
@@ -25,6 +27,9 @@ type ServerOptions struct {
 	// their release.json; workers then install and update from this server
 	// instead of npm.
 	WorkerPackagesDir string
+	// Integrations switches off the work the server does at third-party
+	// services (integrations.go); nil is on.
+	Integrations *integrations.Switch
 }
 
 func DefaultServerOptions() ServerOptions {

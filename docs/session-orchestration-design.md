@@ -147,14 +147,14 @@ last_used_at, expires_at`（`session_id` 有索引）；只存 SHA-256，明文�
 Agent 代表启动它的人：可达范围 = 这个人所在的全部 Workspace，角色封顶 Member。
 判定只在 `access.go` 的 `agentScope` 一处；选方案 B 只改这一个函数。
 
-| 操作                                              | 规则                                                                                                      |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `list_workspaces`                                 | 列出可达 Workspace 及角色                                                                                 |
-| `create_session` / `handoff_session`              | 默认 caller 的 workspace（handoff：来源的）；可指定可达 workspace（需 Member），跑在该 workspace 的设备上 |
-| `list_sessions` / `list_group_sessions`           | 默认 caller 的 workspace；可指定可达 workspace（需 Viewer）                                               |
-| `read_context` / `send_message` / `cancel` / 改名 | 可达 Workspace 内的**任意**会话：读需 Viewer，控制需 Member；由用户在对话中指定对象即可                   |
-| `list_profiles` / `list_models`                   | 默认本设备；可指定承载可达 workspace 的设备                                                               |
-| SSE `/api/events`                                 | agent actor 按单个 workspace 过滤（默认自己的，可指定可达的）                                             |
+| 操作                                              | 规则                                                                                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `list_workspaces`                                 | 列出可达 Workspace 及角色                                                                                                     |
+| `create_session` / `handoff_session`              | 默认 caller 的 workspace（handoff：来源的）；可指定可达 workspace（需 Member），跑在该 workspace 的设备上                     |
+| `list_sessions` / `list_group_sessions`           | 默认 caller 的 workspace；可指定可达 workspace（需 Viewer）                                                                   |
+| `read_context` / `send_message` / `cancel` / 改名 | 读：可达 Workspace 内的任意会话（需 Viewer）；控制（含 handoff 的来源）：只限这个人创建的会话（含其 agent 启动的），需 Member |
+| `list_profiles` / `list_models`                   | 默认本设备；可指定承载可达 workspace 的设备                                                                                   |
+| SSE `/api/events`                                 | agent actor 按单个 workspace 过滤（默认自己的，可指定可达的）                                                                 |
 
 跨 workspace 的子会话保留血缘（深度、扇出上限照算），但不进入父会话的编排分组
 （分组布局按 workspace 存）。不可达的 workspace 一律 404，不泄露存在性。
@@ -168,7 +168,10 @@ fork 在来源会话的 workspace 运行并在那里检查 Member。
 血缘只作记录（界面归属、深度与扇出上限），不是权限来源；adopt / 监管机制已删除。
 这样 `handoff_session` 之后的接替者、同一对话的后续输入都能继续管理之前派出的会话。
 人（account / daemon actor）对会话的读取与控制按 Workspace 角色判定：成员可控制
-自己创建的会话，Maintainer 可控制任意会话。
+自己创建的会话，Maintainer 可控制任意会话。Agent 的控制不超过它代表的人作为 Member
+能做的（2026-10-12 起，D1）：只控制这个人创建的会话，子会话继承父会话的创建者，所以
+包括这个人的 agent 启动的全部会话；`handoff_session` 的来源同样要可控制。读取不受影响。
+没有创建者的旧会话的 agent 只控制同样没有创建者的会话。
 
 ## 5. 血缘与自动入组
 
@@ -220,7 +223,8 @@ fork 在来源会话的 workspace 运行并在那里检查 Member。
 `mcp_sessions.go`、`mcp_inspect.go`、`mcp_outputs.go`（会话产出）、`mcp_issues.go`
 （Issue 只读）、`mcp_attachments.go`（交给子会话的文件）、`mcp_verification.go`。
 不改变任何东西的工具在目录里带 MCP 的 `annotations.readOnlyHint`。描述写明可达范围（可达 Workspace，控制需
-Member；Issue 内只限该 Issue）、写者唯一、并行写同一仓库的风险、Codex 活动 turn
+Member 且只限这个人的会话；Issue 内只限该 Issue）、共享目录下并发写的竞争、子会话数与
+深度上限、其他设备读不到调用方的文件、Codex 活动 turn
 不支持 steer（语义为下一轮排队）。
 
 **按角色列出工具**：`tools/list` 只列调用方可调用的工具，`tools/call` 同样拒绝
@@ -240,7 +244,7 @@ Member；Issue 内只限该 Issue）、写者唯一、并行写同一仓库的�
 | `list_profiles`       | 默认调用会话所在设备；可指定承载可达 workspace 的设备                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `list_models`         | 某 profile 的模型目录（兼容端点只读 `/models`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `create_session`      | 默认 caller 的 workspace；可指定可达 workspace（需 Member）；血缘父会话取自身；同 workspace 不指定 profile 与 runtime 时沿用父会话 profile，跨 workspace 只沿用 runtime；可选 `issueId`、`forkSessionId`、`verification`（见下文 verifier）、`attachments`（见下文）、`wait`。不再接受未写入目录的 `nativeSessionId`（无调用方；它可绕过读权限 fork 或接管原生会话）                                                                                                                                                                                                                                                          |
-| `handoff_session`     | 只带事实（原始目标、最后结果、状态）开新会话；来源为任一可读会话；默认在来源的 workspace，可选 `workspaceId`（需 Member）；不指定 profile 时同设备沿用来源 profile，否则只沿用 runtime                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `handoff_session`     | 只带事实（原始目标、最后结果、状态）开新会话；会话令牌调用时来源须是可控制的会话（D1），其他调用方为任一可读会话；默认在来源的 workspace，可选 `workspaceId`（需 Member）；不指定 profile 时同设备沿用来源 profile，否则只沿用 runtime                                                                                                                                                                                                                                                                                                                                                                                        |
 | `list_sessions`       | 一行一个会话的精简摘要（id、title、status、runtime、profile、device、workspaceId、parentSessionId、activityAt 等），按活动时间倒序；`limit`（默认 30，至多 100）+ `cursor` 翻页；`parentOnly`（自己派出的）与 `parentSessionId`（任一可读会话派出的，默认在该会话的 workspace）在 SQL 中先于 limit 过滤；不含 naming 会话                                                                                                                                                                                                                                                                                                     |
 | `list_group_sessions` | 一个编排分组按列表顺序的同样精简摘要（组内原生会话标 `kind: native_chat`）；接手编排用                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `get_session`         | 与 `read_context` scope=summary 相同的紧凑摘要（`mcp_inspect.go`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -274,21 +278,27 @@ worker（能力 `verification_sessions`；旧 worker 所在设备上的 verifier
 进程，workspace 只读挂载，唯一可写的是 workspace 外的私有 scratch（agent 的 HOME、
 原生会话记录和 `$TMPDIR`，`$TMPDIR` 每轮开始清空，一周未用的 verifier 目录删除）；
 用户自己的文件可读（跑项目自己的工具链）。运行时一层的限制叠加其上：Claude 为
-`dontAsk`，只预先放行 Read/Grep/Glob/Bash/Skill 与 foundry 工具，禁用
-Write/Edit/MultiEdit/NotebookEdit/Task 等，每条消息至多 20 轮；Codex 不再套自己的
+`dontAsk`，预先放行 Read/Grep/Glob/Bash/Skill、foundry 工具以及
+Write/Edit、Task/Agent、WebFetch/WebSearch 等（2026-10-12 起，D3：写只会落在 scratch，
+不再禁用写工具与子 agent，也不再限制每条消息的轮数）；Codex 不再套自己的
 沙箱（`danger-full-access`，同 Issue 执行）：它的 `workspace-write` 要在 workspace
 里为 `.git`/`.agents`/`.codex` 建挂载点，在只读 workspace 里建不了，macOS 也不允许
-嵌套沙箱；命令只能写 `$TMPDIR` 由外层沙箱保证。
+嵌套沙箱；命令只能写 `$TMPDIR` 由外层沙箱保证。Server 存下的会话记录就是实际运行的
+设置（2026-10-12 起）：Claude `dontAsk`，Codex `danger-full-access` + `never`，不再把
+Codex 记成 `read-only`。
 Claude Agent SDK 的 `sandbox` 选项只隔离 Bash、Linux 上还依赖 socat，因此没有采用。
-Foundry 工具只有只读的那些，device notes 换成 verifier 自己的说明。
+Foundry 工具只有只读的那些，device notes 换成 verifier 自己的说明（只写事实：workspace
+只读、`$TMPDIR` 可写、只读的 Foundry 工具）。
 
-内置 `foundry` Skill（`builtinskills/foundry/`）随每个派发的会话交付，是唯一入口：
-SKILL.md 讲 Foundry 是什么、会话代表谁、可达范围、工具、读会话与它的产出、读
-Issue、给人展示图片和文件、何时以及如何通过其他会话工作；`references/orchestration.md`
-（编排规则：brief、交文件、verifier 等）与 `references/diagnosing.md`（排查失败或卡住
-的会话）按需读取。Skill 只教 MCP 工具，CLI 只一句话提到是给人用的。
+内置 `foundry` Skill（`builtinskills/foundry/`）随每个派发的会话交付，是唯一入口。
+它只讲能力和事实，不讲流程（2026-10-12 起，revision 4）：SKILL.md 讲会话是谁、代表谁、
+可达范围与可控制的会话、启动会话的代价（设备槽位、模型用量、对话列表、可能是别人的设备；
+是否启动由 agent 自己决定，D2）、工具描述里看不到的事实（共享目录与写竞争、会话只知道
+brief 和附件、其他设备读不到你的文件、8 个活跃子会话与 4 层的上限、cancel 不级联、
+verifier 的只读沙箱）；`references/diagnosing.md` 只解释错误和状态的含义，按需读取。
+每个工具怎么用写在工具描述里，Skill 不再重复。CLI 只一句话提到是给人用的。
 `packages/worker/test/foundry-skill.test.mjs` 保证 Skill 只写存在的工具和参数（枚举值
-也核对）、覆盖全部工具、不写 CLI 命令，并保证 CLI 命令表里每个命令调用的工具、参数都在
+也核对）、不写 CLI 命令，并保证 CLI 命令表里每个命令调用的工具、参数都在
 目录中，且除 `ask_person` 外每个工具都有命令。
 
 ## 7. 端到端流程
@@ -314,8 +324,8 @@ Issue、给人展示图片和文件、何时以及如何通过其他会话工作
 4. 页面/列表刷新后，血缘、分组、消息均保留。
 5. Parent cancel：children 继续运行到终态（孤儿不级联）。
 6. 无 token / 坏 token → 401；血缘不是权限：可达 Workspace（Member）内的任意
-   会话都可 steer/cancel/改名；只读可达（Viewer）的会话可读不可控制（403 并说明
-   原因）；不可达的会话或 workspace 与不存在的一样回答 not found。
+   会话可读；可 steer/cancel/改名的只有同一个人创建的会话（D1，其他人的会话 403
+   并说明原因）；只读可达（Viewer）的会话可读不可控制（403 并说明原因）；不可达的会话或 workspace 与不存在的一样回答 not found。
 7. Session 终态后其 token 立即失效；重新 dispatch 的 queued session 获得新
    token。
 8. `list_profiles` 对 agent actor 只返回本设备 profile。

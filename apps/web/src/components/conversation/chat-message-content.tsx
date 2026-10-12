@@ -748,13 +748,10 @@ export function ProcessDisclosure({
   streaming = false,
   text,
   title,
-  turnStartedAt,
 }: {
   durationMs?: number;
-  /** The first step's time; a running group counts up from it. */
+  /** When the group began; a running group counts up from it. */
   startedAt?: string;
-  /** The running turn's start; counted while no step is in progress. */
-  turnStartedAt?: string;
   stepUsage?: StepUsage;
   items?: ProcessDisplayItem[];
   onImagePreview?: (image: ParsedImageTag) => void;
@@ -771,10 +768,6 @@ export function ProcessDisclosure({
       : i18n.t("conversation:process.processed"),
     streaming,
   );
-  // One start for the whole live turn, so the time never jumps back when a
-  // step begins or ends.
-  const elapsedFrom = turnStartedAt ?? startedAt;
-
   return (
     <section
       className="fdy-chat-process"
@@ -802,8 +795,8 @@ export function ProcessDisclosure({
               {summary.detail}
             </span>
           ) : null}
-          {streaming && elapsedFrom ? (
-            <ProcessElapsed startedAt={elapsedFrom} />
+          {streaming && startedAt ? (
+            <ProcessElapsed startedAt={startedAt} />
           ) : !streaming && (durationMs || stepUsage) ? (
             <span
               className="fdy-chat-process-trigger-detail"

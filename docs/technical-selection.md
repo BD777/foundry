@@ -110,7 +110,7 @@ The server owns:
 - the sealed secret store for remote-endpoint profiles,
 - the promoted skill catalog,
 - the HTTP MCP endpoint for session orchestration,
-- the per-workspace Feishu bot.
+- the workspaces' Feishu bots (Connectors apps plus routes, one connection per app).
 
 The server does not own:
 

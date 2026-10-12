@@ -107,8 +107,8 @@ async function setup({ refreshImpl, putImpl } = {}) {
     workspaces: [{ id: "w1", name: "W", deviceId: "d1", localPath: "/w" }],
   };
   await act(async () => root.render(createElement(DevicesFeature, props)));
-  // Switch to the API connections tab.
-  await act(async () => buttonWith("API connections").click());
+  // Switch to the Model providers tab.
+  await act(async () => buttonWith("Model providers").click());
   return {
     container,
     props,
@@ -146,11 +146,11 @@ const dialogSave = () =>
 const rowFor = (label) =>
   pickerRows().find((element) => element.textContent.includes(label));
 async function openPickerAndToggleGateway() {
-  await act(async () => buttonWith("Add connection").click());
+  await act(async () => buttonWith("Add provider").click());
   await act(async () => rowFor("LLM Gateway").querySelector("input").click());
 }
 
-test("Add connection preselects assigned connections and saves once on Save", async () => {
+test("Add provider preselects assigned providers and saves once on Save", async () => {
   const writes = [];
   intercept((body, url) => {
     writes.push({ url, body });
@@ -158,7 +158,7 @@ test("Add connection preselects assigned connections and saves once on Save", as
   });
   const view = await setup();
   try {
-    await act(async () => buttonWith("Add connection").click());
+    await act(async () => buttonWith("Add provider").click());
     assert.equal(rowFor("Relay").querySelector("input").checked, true);
     assert.equal(rowFor("LLM Gateway").querySelector("input").checked, false);
 
@@ -188,7 +188,7 @@ test("cancelling the picker never writes", async () => {
   });
   const view = await setup();
   try {
-    await act(async () => buttonWith("Add connection").click());
+    await act(async () => buttonWith("Add provider").click());
     await act(async () => rowFor("LLM Gateway").querySelector("input").click());
     await act(async () => buttonWith("Cancel").click());
     assert.deepEqual(writes, []);

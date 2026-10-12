@@ -218,6 +218,27 @@ export const foundryCommands: Record<
     },
     get: { tool: "get_issue", positional: "issueId", flags: {} },
   },
+  feishu: {
+    subscribe: {
+      tool: "feishu_events",
+      flags: {
+        "--app": flag("appId"),
+        "--type": flag("eventTypes", "list"),
+        "--chat": flag("chatId"),
+        "--timeout-ms": flag("timeoutMs", "number"),
+      },
+    },
+    events: {
+      tool: "feishu_events",
+      positional: "subscriptionId",
+      flags: {
+        "--cursor": flag("cursor", "number"),
+        "--max": flag("maxEvents", "number"),
+        "--timeout-ms": flag("timeoutMs", "number"),
+        "--unsubscribe": flag("unsubscribe", "boolean"),
+      },
+    },
+  },
   workspace: { list: { tool: "list_workspaces", flags: {} } },
   device: {
     list: { tool: "list_resources", flags: { "--kind": flag("kind") } },

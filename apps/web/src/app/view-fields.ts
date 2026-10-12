@@ -17,7 +17,7 @@ export const devicesViewFields: readonly FoundryDataField[] = [
   "providerHealth",
 ];
 
-/** The Connections page: server API connections and their devices. */
+/** The Model providers page: server-held providers and their devices. */
 export const profilesViewFields: readonly FoundryDataField[] = [
   "profiles",
   "deviceProfiles",

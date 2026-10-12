@@ -1,44 +1,44 @@
-/** Connections (server and model), device accounts and account inspection. */
+/** Model providers, device accounts and account inspection. */
 export const profiles = {
   page: {
-    title: "Server API connections",
+    title: "Model providers",
     intro:
-      "Reusable API and gateway connections, stored on this server. Assign them to the devices that may use them.",
+      "The model APIs and gateways agents run on, stored on this server. Assign each to the devices that may use it.",
     openDeviceAccounts:
       "Use a ChatGPT or Claude subscription? Open device accounts →",
     requestFailed: "The request failed.",
-    savedMissing: "The server did not return the saved connection.",
-    newConnection: "New connection",
-    editConnection: "Edit connection",
+    savedMissing: "The server did not return the saved provider.",
+    newConnection: "New model provider",
+    editConnection: "Edit model provider",
     modalDescription:
       "Configure an API or gateway. Official logins stay on each device.",
-    closeEditor: "Close connection editor",
+    closeEditor: "Close provider editor",
     catalogDevice: "Catalog device",
     catalogDeviceReady:
       "Model discovery runs on this device; it does not change your active workspace.",
     catalogDeviceUnavailable:
       "The catalog device is unavailable. Select an online device, or enter models and save without discovery.",
     chooseOnlineDevice: "Choose an online device",
-    saveFirst: "Save this connection first, then assign devices here.",
+    saveFirst: "Save this provider first, then assign devices here.",
   },
   list: {
-    title: "Connections",
+    title: "Providers",
     saved: "{{count}} saved on this server",
-    newConnection: "New connection",
-    emptyTitle: "Add your first model connection",
+    newConnection: "New provider",
+    emptyTitle: "Add your first model provider",
     emptyBody:
-      "Connect an API or gateway here. Official Claude and Codex accounts are managed on each device.",
+      "Add a model API or gateway here. Official Claude and Codex accounts are managed on each device.",
     runtimeDefaultModel: "Runtime default model",
   },
   editor: {
     unsaved: "Unsaved",
     noKey: "No key configured",
-    newConnection: "New connection",
-    kind: "API / gateway connection",
+    newConnection: "New provider",
+    kind: "API / gateway",
     updated: "Updated {{time}}",
     name: "Name",
     nameLabel: "Profile name",
-    namePlaceholder: "My model connection",
+    namePlaceholder: "My model provider",
     runtime: "Runtime",
     runtimeLabel: "Profile runtime",
     baseUrl: "Base URL",
@@ -63,14 +63,14 @@ export const profiles = {
       "Every model here is selectable in chat and issue runs; the checked one is the default.",
     runtimeDefaults: "Runtime defaults",
     saveThenAssign: "Save first, then assign devices below.",
-    deleteConfirm: "Delete this connection?",
+    deleteConfirm: "Delete this provider?",
     delete: "Delete",
-    create: "Create connection",
-    save: "Save connection",
+    create: "Create provider",
+    save: "Save provider",
   },
   catalog: {
     asking: "Asking for the catalog…",
-    changed: "Connection changed. Refresh again for its current catalog.",
+    changed: "Provider changed. Refresh again for its current catalog.",
     notAList: "The device did not return a model list.",
     found_one: "{{count}} model from the endpoint.",
     found_other: "{{count}} models from the endpoint.",
@@ -86,8 +86,8 @@ export const profiles = {
   connectionDevices: {
     title: "Device access",
     intro:
-      "Choose which devices may use this connection. The key stays sealed on the server and is sent only for execution or an explicit catalog read.",
-    noDevices: "Connect a device from Devices to assign this connection.",
+      "Choose which devices may use this provider. The key stays sealed on the server and is sent only for execution or an explicit catalog read.",
+    noDevices: "Connect a device from Devices to assign this provider.",
     online: "Online",
     offline: "Offline · assignment applies when it reconnects",
     assigned: "Assigned",
@@ -100,10 +100,10 @@ export const profiles = {
     updateFailed: "Could not update device access.",
   },
   deviceConnections: {
-    title: "Server API connections",
+    title: "Server model providers",
     intro:
-      "API keys and model defaults are saved on the server. Grant this device access to use a connection.",
-    add: "Add connection",
+      "API keys and model defaults are saved on the server. Grant this device access to use a provider.",
+    add: "Add provider",
     savedRefreshing: "Saved · updating the list…",
     saved: "Saved.",
     storedOnServer: "{{detail}} · Stored on server",
@@ -111,8 +111,8 @@ export const profiles = {
     assigned: "Assigned",
     removeConfirm: "Remove {{connection}} from {{device}}?",
     removeAccess: "Remove access",
-    none: "No server connections assigned. Official device accounts work independently.",
-    manage: "Manage server connections →",
+    none: "No model providers assigned. Official device accounts work independently.",
+    manage: "Manage model providers →",
     refreshFailed: "Saved, but the list could not be refreshed.",
     refreshFailedDetail:
       "Saved, but the list could not be refreshed: {{error}}",
@@ -129,7 +129,7 @@ export const profiles = {
     answered: "checked {{time}}",
     onServer: "Copied to server",
     copyToServer: "Copy to server",
-    copyConfirm: "Copy connection and key?",
+    copyConfirm: "Copy provider and key?",
     copying: "Copying…",
     copyFailed: "Could not copy this provider to the server.",
     checking: "Checking that {{names}} answers…",
@@ -137,17 +137,17 @@ export const profiles = {
       "Not offered: {{name}} does not answer ({{reason}}). If you no longer use it, remove it from {{source}}.",
   },
   assignment: {
-    title: "Choose server connections",
+    title: "Choose model providers",
     description:
-      "Checked connections can be used on this device. Changes apply only when you save.",
-    close: "Close connection picker",
-    empty: "No server connections yet.",
-    openConnections: "Open Server connections",
+      "Checked providers can be used on this device. Changes apply only when you save.",
+    close: "Close provider picker",
+    empty: "No model providers yet.",
+    openConnections: "Open Model providers",
     grant: "Grant {{connection}} on this device",
     selected: "Selected for this device",
     notSelected: "Not selected",
-    manage: "Create or edit connections",
-    saveFailed: "Could not update this device's connections. Try again.",
+    manage: "Create or edit providers",
+    saveFailed: "Could not update this device's model providers. Try again.",
   },
   accounts: {
     localLoginDetected: "Local login detected · Online validity not checked",
@@ -209,7 +209,7 @@ export const profiles = {
   detected: {
     title: "Daemon-reported profiles",
     intro:
-      "Profiles the daemon found in local configuration. Remote endpoints can be promoted into server profiles usable from any device.",
+      "Profiles the daemon found in local configuration. Remote endpoints can be promoted into model providers usable from any device.",
     found: "{{count}} found",
     emptyBody:
       "The daemon has not reported any locally configured agent profile.",
@@ -217,7 +217,7 @@ export const profiles = {
     signedInAs: "Signed in as {{account}}",
     promoted: "Promoted",
     promotedBody:
-      "Already a server profile any device can run. Edit it in Profile settings.",
+      "Already a model provider any device can run. Edit it in Model providers.",
     serverHasCredential:
       "The server already holds this credential. Promoting it needs no key from you.",
     keySealed:

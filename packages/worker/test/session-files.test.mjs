@@ -24,6 +24,7 @@ import {
   readSessionFile,
   readSessionFileDiff,
   readSessionFileLedger,
+  sessionFileEntry,
   SessionTurnFiles,
 } from "../dist/session-files.js";
 import { lineChangeCounts } from "../dist/session-file-diffs.js";
@@ -756,6 +757,53 @@ test("a turn's diff runs from before its first write to after its last", async (
     diffOf(f, other, "in_2"),
     /not one this chat's tools wrote/,
   );
+});
+
+test("a recorded file is named by its absolute or its workspace path", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const calc = join(f.workspace, "calc.py");
+  const files = f.turn("in_1");
+  await claudeWrite(files, calc, "def add(a, b):\n    return a + b\n");
+  await files.finish("Wrote calc.py.");
+
+  for (const path of [calc, "calc.py", "./calc.py"]) {
+    const diff = await diffOf(f, path);
+    assert.equal(diff.path, calc, path);
+    assert.equal(diff.after, "def add(a, b):\n    return a + b\n", path);
+    assert.equal(f.read(path).path, calc, path);
+  }
+  await assert.rejects(
+    diffOf(f, "README.md"),
+    /not one this chat's tools wrote/,
+  );
+  await assert.rejects(
+    diffOf(f, "../calc.py"),
+    /not one this chat's tools wrote/,
+  );
+});
+
+test("a workspace path two recorded files share names neither", () => {
+  const entry = (path, workspacePath) => ({
+    path,
+    workspacePath,
+    origin: "tool",
+    op: "modified",
+    inGitRepo: false,
+    inputIds: ["in_1"],
+    agent: "main",
+    realpath: path,
+  });
+  const files = [
+    entry("/w/link/calc.py", "calc.py"),
+    entry("/w/calc.py", "calc.py"),
+  ];
+  assert.equal(sessionFileEntry(files, "/w", "/w/calc.py"), files[1]);
+  assert.throws(
+    () => sessionFileEntry(files, "/w", "calc.py"),
+    /names more than one file/,
+  );
+  assert.equal(sessionFileEntry(files, "/w", "other.py"), undefined);
 });
 
 test("another process editing the same file between writes is labelled", async (t) => {

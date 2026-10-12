@@ -14,6 +14,8 @@ export interface TranscriptProjection<T> {
   /** Weight of all files this projection keeps, and their count. */
   budgetBytes: number;
   maxFiles: number;
+  /** Keep a value only the first time a file selects it. */
+  distinct?: boolean;
 }
 
 type Index<T> = {
@@ -25,6 +27,7 @@ type Index<T> = {
   head: Buffer;
   values: T[];
   bytes: number;
+  seen?: Set<T>;
 };
 const indexes = new Map<string, Map<string, Index<unknown>>>();
 const pending = new Map<string, Promise<unknown[]>>();
@@ -169,9 +172,11 @@ async function updateIndex<T>(
           end = first + (buffer.length - chunk.length);
         do {
           const selected = projection.select(buffer.subarray(start, end));
-          if (selected) {
+          if (selected && !index.seen?.has(selected.value)) {
             index.values.push(selected.value);
             index.bytes += selected.bytes;
+            if (projection.distinct)
+              (index.seen ??= new Set()).add(selected.value);
           }
           start = end + 1;
           if (++lines % 256 === 0) await setImmediate();

@@ -46,6 +46,10 @@ type accessScope struct {
 	// it reaches only the Issue's workspace, controls only the Issue's
 	// sessions, and every session it starts works in the same candidate.
 	issueID string
+	// agentFor is the person an agent acts for: the account that started
+	// its session ("" for a session no person started). An agent controls
+	// only the sessions that person started, its own agents' included.
+	agentFor string
 }
 
 func (a accessScope) role(workspaceID string) string {
@@ -157,6 +161,7 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 	testCreator := s.testFullAccess && s.testActor != nil && s.testActor.Account != nil &&
 		session.CreatedByUserID == s.testActor.Account.ID
 	creator := session.CreatedByUserID
+	scope.agentFor = creator
 	// An agent in an Issue's candidate (its executor, and every session it
 	// starts) acts only within that Issue (architecture-modules.md §6, D6).
 	scope.issueID = strings.TrimSpace(session.IssueID)

@@ -2317,7 +2317,7 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	externalAccounts := c.hub.sessionExternalAccounts(ctx, session, c.actor)
+	externalAccounts := c.hub.sessionExternalAccounts(ctx, session, c.actor, c.hasCapability(store.DaemonCapabilityFeishuGateway))
 	payload, err := json.Marshal(wsRunSessionPayload{Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue, UserFiles: userFiles, Clarification: clarification, ExternalAccounts: externalAccounts})
 	if err != nil {
 		return err

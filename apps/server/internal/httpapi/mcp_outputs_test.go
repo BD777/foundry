@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -221,7 +223,8 @@ func TestReadContextReadsWhatASessionProduced(t *testing.T) {
 // Files a session hands another arrive as a person's attachments do: read
 // from the caller's device inside its workspace, written into the
 // attachments of the workspace the receiving session runs in, on its own
-// device.
+// device. One call's files share a folder under their own names, and are
+// published only once the session they come with is accepted.
 func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 	f := newIsolationFixture(t)
 	ctx := context.Background()
@@ -255,7 +258,7 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 		},
 	})
 	var writes sync.Mutex
-	var written []byte
+	written := map[string][]byte{}
 	bob := connectFakeDevice(t, live, f.bobDevice, hello("dev_bob", "ws_bob", "/work/bob", nil), map[string]fakeAnswer{
 		wsAttachmentWriteType: func(raw json.RawMessage) (string, any) {
 			var request wsAttachmentWritePayload
@@ -263,13 +266,38 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 			data, _ := base64.StdEncoding.DecodeString(request.DataBase64)
 			writes.Lock()
 			defer writes.Unlock()
-			if int(request.Offset) != len(written) {
+			if request.Abort {
+				delete(written, request.RelativePath)
+				return wsAttachmentWrittenType, map[string]any{"size": 0}
+			}
+			if int(request.Offset) != len(written[request.RelativePath]) {
 				return wsAttachmentWrittenType, map[string]any{"error": "out of order"}
 			}
-			written = append(written, data...)
-			return wsAttachmentWrittenType, map[string]any{"path": "/work/bob/.foundry/attachments/" + request.RelativePath, "size": len(written)}
+			written[request.RelativePath] = append(written[request.RelativePath], data...)
+			return wsAttachmentWrittenType, map[string]any{"path": "/work/bob/.foundry/attachments/" + request.RelativePath, "size": len(written[request.RelativePath])}
 		},
 	})
+	// What bob's device was told for each path, in order: "write", "publish"
+	// (the final chunk) or "abort".
+	writeLog := func() map[string][]string {
+		steps := map[string][]string{}
+		for _, raw := range bob.received(wsAttachmentWriteType) {
+			var request wsAttachmentWritePayload
+			_ = json.Unmarshal(raw, &request)
+			step := "write"
+			switch {
+			case request.Abort:
+				step = "abort"
+			case request.Final:
+				step = "publish"
+			}
+			if last := steps[request.RelativePath]; len(last) > 0 && last[len(last)-1] == step {
+				continue
+			}
+			steps[request.RelativePath] = append(steps[request.RelativePath], step)
+		}
+		return steps
+	}
 	session, err := f.server.store.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		AgentID: "agent_ws_alice", WorkspaceID: "ws_alice", Provider: "claude", Prompt: "orchestrate", Source: "chat", CreatedByUserID: f.aliceID,
 	})
@@ -282,22 +310,54 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 	}
 	call := mcpToolCaller(t, f.handler, token)
 
-	created, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "read the plan", "attachments": []string{"docs/plan.md"}})
+	created, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "read the plan", "attachments": []string{"docs/plan.md", "/work/alice/notes/plan.md"}})
 	if isError {
 		t.Fatal(created)
 	}
+	var result struct {
+		DeliveredAttachments []deliveredAttachment `json:"deliveredAttachments"`
+	}
+	if err := json.Unmarshal([]byte(created), &result); err != nil || len(result.DeliveredAttachments) != 2 {
+		t.Fatalf("create_session result names no delivered paths: %s", created)
+	}
+	delivered := result.DeliveredAttachments
+	folder := filepath.Dir(delivered[0].Path)
+	if !strings.HasPrefix(folder, "/work/bob/.foundry/attachments/") || !strings.HasPrefix(filepath.Base(folder), "att_") ||
+		delivered[0].Path != folder+"/plan.md" || delivered[1].Path != folder+"/plan-2.md" || delivered[1].Name != "plan-2.md" {
+		t.Fatalf("delivered = %+v, want plan.md and plan-2.md under their own names in one folder", delivered)
+	}
+	relativePath := strings.TrimPrefix(delivered[0].Path, "/work/bob/.foundry/attachments/")
 	writes.Lock()
-	if string(written) != string(content) {
-		t.Fatalf("bob's device received %d bytes, want %d", len(written), len(content))
+	if string(written[relativePath]) != string(content) {
+		t.Fatalf("bob's device received %d bytes, want %d", len(written[relativePath]), len(content))
 	}
 	writes.Unlock()
+	if steps := writeLog()[relativePath]; !slices.Equal(steps, []string{"write", "publish"}) {
+		t.Fatalf("steps for %s = %v, want written unpublished, then published", relativePath, steps)
+	}
+	publishedAt, dispatchedAt := -1, -1
+	bob.mu.Lock()
+	for index, request := range bob.requests {
+		var write wsAttachmentWritePayload
+		if request.Type == wsAttachmentWriteType && json.Unmarshal(request.Payload, &write) == nil && write.Final {
+			publishedAt = index
+		}
+		if request.Type == wsRunSessionType && dispatchedAt < 0 {
+			dispatchedAt = index
+		}
+	}
+	bob.mu.Unlock()
+	if publishedAt < 0 || dispatchedAt < publishedAt {
+		t.Fatalf("published at request %d, dispatched at %d: files must be published before the session runs", publishedAt, dispatchedAt)
+	}
 	var reads []wsAttachmentReadPayload
 	for _, raw := range alice.received(wsAttachmentReadType) {
 		var request wsAttachmentReadPayload
 		_ = json.Unmarshal(raw, &request)
 		reads = append(reads, request)
 	}
-	if len(reads) != 2 || reads[0].Path != "/work/alice/docs/plan.md" || reads[1].Offset != attachmentChunkBytes || reads[0].MaxBytes != maxMCPAttachmentBytes {
+	if len(reads) != 4 || reads[0].Path != "/work/alice/docs/plan.md" || reads[1].Offset != attachmentChunkBytes || reads[0].MaxBytes != maxMCPAttachmentBytes ||
+		reads[2].Path != "/work/alice/notes/plan.md" {
 		t.Fatalf("reads on alice's device = %+v", reads)
 	}
 	var run struct {
@@ -313,9 +373,52 @@ func TestAttachmentsHandFilesToASessionOnAnotherDevice(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	attachments := run.Session.Input.Attachments
-	if len(attachments) != 1 || attachments[0].Name != "plan.md" || !strings.HasPrefix(attachments[0].Path, "/work/bob/.foundry/attachments/") ||
-		attachments[0].Size != int64(len(content)) || attachments[0].Kind != "file" || attachments[0].MIMEType == "" {
+	if len(attachments) != 2 || attachments[0].Name != "plan.md" || attachments[0].Path != delivered[0].Path ||
+		attachments[0].Size != int64(len(content)) || attachments[0].Kind != "file" || attachments[0].MIMEType == "" ||
+		attachments[0].ID != delivered[0].ID || !strings.HasPrefix(attachments[0].ID, filepath.Base(folder)+"_") {
 		t.Fatalf("the child's input attachments = %+v", attachments)
+	}
+
+	// A create the store refuses after the files were written leaves none
+	// behind: they were never published, and are dropped.
+	if text, isError := call("create_session", map[string]any{"workspaceId": "ws_bob", "prompt": "x", "issueId": "iss_missing", "attachments": []string{"docs/plan.md"}}); !isError {
+		t.Fatalf("create_session in a missing Issue = %q", text)
+	}
+	refused := 0
+	for path, steps := range writeLog() {
+		if path == relativePath || strings.HasSuffix(path, "/plan-2.md") {
+			continue
+		}
+		refused++
+		if !slices.Equal(steps, []string{"write", "abort"}) {
+			t.Fatalf("steps for %s of a refused create = %v, want written, then dropped", path, steps)
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("a refused create wrote %d files, want 1 dropped: %v", refused, writeLog())
+	}
+
+	// A message to an idle session delivers its files the same way.
+	idle, err := f.server.store.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		AgentID: "agent_ws_bob", WorkspaceID: "ws_bob", Provider: "claude", Prompt: "earlier", Source: "agent", ParentSessionID: session.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.server.store.CompleteAgentSession(ctx, idle.ID, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	sent, isError := call("send_message", map[string]any{"sessionId": idle.ID, "prompt": "and this", "attachments": []string{"docs/plan.md"}})
+	result.DeliveredAttachments = nil
+	if isError || json.Unmarshal([]byte(sent), &result) != nil || len(result.DeliveredAttachments) != 1 {
+		t.Fatalf("send_message result names no delivered paths: %s", sent)
+	}
+	again := result.DeliveredAttachments[0]
+	if filepath.Base(again.Path) != "plan.md" || filepath.Dir(again.Path) == folder {
+		t.Fatalf("a message's file = %+v, want plan.md in a folder of its own", again)
+	}
+	if steps := writeLog()[strings.TrimPrefix(again.Path, "/work/bob/.foundry/attachments/")]; !slices.Equal(steps, []string{"write", "publish"}) {
+		t.Fatalf("steps for a message's file = %v, want written, then published", steps)
 	}
 
 	if text, isError := call("send_message", map[string]any{"sessionId": run.Session.ID, "prompt": "and this", "attachments": []string{"/etc/passwd"}}); !isError || !strings.Contains(text, "/etc/passwd: file is outside the workspace") {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -359,6 +360,8 @@ func TestRefreshExpiryFallsBackToTokenClaimNotAnOptimisticDefault(t *testing.T) 
 
 func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 	h := newHarness(t)
+	issuer := &recordingIssuer{}
+	h.service.Handles = issuer
 	account := h.connect()
 	if err := h.store.SetWorkspaceExternalAccounts(h.ctx, "ws_1", "user_owner", []string{account.ID}); err != nil {
 		t.Fatal(err)
@@ -384,29 +387,42 @@ func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 	}
 	materials, _ := h.service.SessionMaterials(h.ctx, "ws_1", "sess_1", "dev_1", "user_owner", "user_owner")
 	material := materials[0]
-	if material.Tool != "feishu-cli" || material.ProfileName != ProfileName(account.ID) || !strings.HasPrefix(material.ProfileName, "foundry-") {
+	if material.Tool != "feishu-cli" || material.ProfileName != ProfileName(account.ID, "sess_1") || !strings.HasPrefix(material.ProfileName, "foundry-") {
 		t.Fatalf("material not for feishu-cli: %+v", material)
 	}
-	if material.ClientID != "cli_fake" || material.ClientSecret != "secret_fake" || material.BaseURL != h.fake.BaseURL() {
-		t.Fatalf("material lacks the app credentials the tool needs: %+v", material)
+	if material.ClientID != "cli_fake" || material.Gateway == nil || material.Gateway.AppHandle != "fsg_test" || material.Gateway.UserHandle != "fsu_test" || material.ExpiresAt == "" {
+		t.Fatalf("material lacks the app id or the gateway handles: %+v", material)
 	}
-	if material.AccessToken == "" || !h.fake.AccessTokenValid(material.AccessToken) || material.ExpiresAt == "" {
-		t.Fatalf("material lacks a live access token: %+v", material)
+	if len(issuer.requests) != 2 || issuer.requests[1].SessionID != "sess_1" || issuer.requests[1].DeviceID != "dev_1" || issuer.requests[1].App.ID != h.app.ID {
+		t.Fatalf("handles issued for: %+v", issuer.requests)
+	}
+	// Neither the app secret nor any token of the account reaches a device.
+	grant, err := h.service.loadGrant(h.ctx, account.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(material)
-	if strings.Contains(string(encoded), h.fake.CurrentRefreshToken()) {
-		t.Fatal("material carries the refresh token")
-	}
-	events, _ := h.store.ListExternalAccountEvents(h.ctx, account.ID, 10)
-	if events[0].Kind != "token_issued" || events[0].SessionID != "sess_1" || events[0].DeviceID != "dev_1" {
-		t.Fatalf("token issue not audited: %+v", events[0])
+	for _, secret := range []string{"secret_fake", grant.AccessToken, grant.RefreshToken} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("material carries a credential: %s", encoded)
+		}
 	}
 }
 
+type recordingIssuer struct{ requests []HandleRequest }
+
+func (r *recordingIssuer) IssueHandles(_ context.Context, request HandleRequest) (store.ExternalAccountGateway, error) {
+	r.requests = append(r.requests, request)
+	return store.ExternalAccountGateway{Path: "/api/feishu-gw", AppHandle: "fsg_test", UserHandle: "fsu_test"}, nil
+}
+
 func TestProfileNameFitsFeishuCLI(t *testing.T) {
-	name := ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc")
-	if !strings.HasPrefix(name, "foundry-") || len(name) > 64 || strings.ContainsAny(name, ". /") {
+	name := ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_7")
+	if !strings.HasPrefix(name, "foundry-") || len(name) > 64 || strings.ContainsAny(name, ". /") || !regexp.MustCompile(`^foundry-[A-Za-z0-9_-]{1,56}$`).MatchString(name) {
 		t.Fatalf("profile name %q", name)
+	}
+	if name == ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_8") {
+		t.Fatal("two sessions share a profile")
 	}
 }
 

@@ -26,6 +26,10 @@ var ErrDeviceBusy = errors.New("device has active work")
 // ErrProfileNotFound means no server profile carries the requested id.
 var ErrProfileNotFound = errors.New("profile not found")
 
+// ErrProfileRuntimeMismatch refuses a request whose provider contradicts the
+// runtime of the profile it names; it is wrapped with both.
+var ErrProfileRuntimeMismatch = errors.New("the profile runs a different runtime than the provider given")
+
 // ErrSkillNotFound means no promoted skill carries the requested id.
 var ErrSkillNotFound = errors.New("skill not found")
 

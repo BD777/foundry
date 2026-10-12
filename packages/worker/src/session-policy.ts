@@ -45,7 +45,6 @@ import {
   clarificationFoundryTools,
   isClarificationSession,
   isVerificationSession,
-  verificationMaxTurns,
 } from "./session-roles.js";
 import { verificationNotes } from "./verification-session.js";
 
@@ -242,8 +241,6 @@ export function sessionDeviceNotes(
       workspacePath,
       sessionId: session.id,
       temporaryDirectory,
-      maxTurns:
-        session.provider === "claude" ? verificationMaxTurns : undefined,
     });
   return [
     sessionResourceNotes(

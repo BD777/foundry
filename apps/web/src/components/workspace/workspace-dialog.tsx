@@ -3,11 +3,16 @@ import { useRef, type ReactNode, type RefObject } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
+import { cn } from "../../lib/cn";
 
-/** Owns its layout classes; Radix owns focus trapping and dismissal. */
+/**
+ * Owns its layout classes; Radix owns focus trapping and dismissal. "wide"
+ * fits reading long text, such as a skill's SKILL.md.
+ */
 export function WorkspaceDialog({
   title,
   description,
+  size = "default",
   busy,
   onClose,
   children,
@@ -16,6 +21,7 @@ export function WorkspaceDialog({
 }: {
   title: string;
   description: string;
+  size?: "default" | "wide";
   busy?: boolean;
   onClose: () => void;
   children: ReactNode;
@@ -34,7 +40,10 @@ export function WorkspaceDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="fdy-location-overlay" />
         <Dialog.Content
-          className="fdy-workspace-dialog"
+          className={cn(
+            "fdy-workspace-dialog",
+            size === "wide" && "fdy-workspace-dialog-wide",
+          )}
           onOpenAutoFocus={(event) => {
             if (initialFocus?.current) {
               event.preventDefault();

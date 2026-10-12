@@ -56,11 +56,23 @@ globalThis.EventSource = class {
   }
 };
 
+const app = {
+  id: "xapp_1",
+  provider: "feishu",
+  ownerUserId: "u_1",
+  visibility: "personal",
+  label: "Team bot",
+  clientId: "cli_app",
+  hasSecret: true,
+  createdVia: "pasted",
+  createdAt: "",
+  updatedAt: "",
+};
 const bot = (status) => ({
   workspaceId: "ws_1",
-  appId: "cli_app",
-  hasAppSecret: true,
+  app,
   status,
+  chats: [],
 });
 const reads = [];
 /** The next read's answer waits for this, when set. */
@@ -70,7 +82,7 @@ globalThis.fetch = async (input, init = {}) => {
   assert.match(String(input), /\/api\/workspaces\/ws_1\/feishu$/);
   reads.push(String(input));
   await gate;
-  return new Response(JSON.stringify(bot("connected")), {
+  return new Response(JSON.stringify({ ...bot("connected"), choices: [app] }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -85,7 +97,7 @@ test("the bot is read again when the stream may have missed a change", async () 
   const root = createRoot(container);
   const flush = () =>
     act(async () => new Promise((settle) => setTimeout(settle, 0)));
-  const appId = () => container.querySelector("input");
+  const appId = () => container.querySelector('[aria-label^="Feishu app"]');
   await act(async () =>
     root.render(createElement(FeishuBotFeature, { workspaceId: "ws_1" })),
   );
@@ -147,9 +159,7 @@ test("a read answered after an update does not put the older bot back", async ()
   );
   await flush();
   const shows = (status) =>
-    container.textContent.includes(
-      i18n.t(`feishu:credentials.status.${status}`),
-    );
+    container.textContent.includes(i18n.t(`feishu:status.${status}`));
   assert.ok(shows("connected"));
 
   // Read again (a resync); the bot changes while that read is answered.

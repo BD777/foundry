@@ -98,6 +98,23 @@ func TestCreateSessionResolvesProjectedServerAgent(t *testing.T) {
 	}
 }
 
+// Over HTTP a profile id alone reaches the server profile's projection too,
+// and a provider that contradicts it is a bad request, not a server error.
+func TestCreateSessionByProfileIDOverHTTP(t *testing.T) {
+	fixture := setupProjectedSessionFixture(t)
+	body := `{"workspaceId":` + jsonString(fixture.workspace.ID) +
+		`,"profileId":` + jsonString(fixture.profile.ID) + `,"prompt":"synthetic","source":"chat"}`
+	if response := postSession(t, fixture.server, body); response.Code != http.StatusConflict {
+		t.Fatalf("by profile id = %d: %s, want the daemon connection conflict after resolution", response.Code, response.Body.String())
+	}
+	body = `{"workspaceId":` + jsonString(fixture.workspace.ID) +
+		`,"provider":"codex","profileId":` + jsonString(fixture.profile.ID) + `,"prompt":"synthetic","source":"chat"}`
+	response := postSession(t, fixture.server, body)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "runs claude, not codex") {
+		t.Fatalf("contradictory provider = %d: %s, want 400 naming both", response.Code, response.Body.String())
+	}
+}
+
 // Store-level positive: even with no agents row, the trusted projection is
 // resolved in the same transaction and the queued session is persisted carrying
 // the server profile identity.
@@ -191,10 +208,25 @@ func TestProjectedServerAgentRejectsForgedAndUnbound(t *testing.T) {
 	otherWorkspace.ProfileID = otherProfile.ID
 	assertSessionRejected(t, fixture.backing, otherWorkspace)
 
-	// Empty agent id must never resolve to a server-owned profile.
-	empty := baseSessionInput(fixture)
-	empty.AgentID = ""
-	assertSessionRejected(t, fixture.backing, empty)
+	// Without an agent id a profile resolves through the same trusted chain:
+	// an unbound one, or one bound only to another device, is refused, and
+	// a provider never trades the named profile for another agent.
+	for _, profileID := range []string{"prof_does_not_exist", otherProfile.ID} {
+		byProfile := baseSessionInput(fixture)
+		byProfile.AgentID, byProfile.ProfileID = "", profileID
+		assertSessionRejected(t, fixture.backing, byProfile)
+	}
+	wrongRuntime := baseSessionInput(fixture)
+	wrongRuntime.AgentID, wrongRuntime.Provider = "", "codex"
+	if _, err := fixture.backing.CreateAgentSession(context.Background(), wrongRuntime); !errors.Is(err, store.ErrProfileRuntimeMismatch) {
+		t.Fatalf("contradictory provider = %v, want ErrProfileRuntimeMismatch", err)
+	}
+	byProfile := baseSessionInput(fixture)
+	byProfile.AgentID = ""
+	session, err := fixture.backing.CreateAgentSession(context.Background(), byProfile)
+	if err != nil || session.AgentID != fixture.agentID || session.ProfileID != fixture.profile.ID {
+		t.Fatalf("session by profile id = %s/%s, %v; want the projected agent %s", session.AgentID, session.ProfileID, err, fixture.agentID)
+	}
 
 	// Unknown workspace.
 	badWS := baseSessionInput(fixture)
