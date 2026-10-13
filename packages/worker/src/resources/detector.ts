@@ -117,7 +117,6 @@ export async function runDetector(
       reject(new Error(`timed out after ${timeoutMs}ms`));
       controller.abort();
     }, timeoutMs);
-    timer.unref();
   });
   try {
     const found = await Promise.race([detector.detect(context), timedOut]);
