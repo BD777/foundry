@@ -1,4 +1,4 @@
-package externalaccounts
+package externalaccounts_test
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts/externalaccountstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -20,8 +22,8 @@ type harness struct {
 	t       *testing.T
 	ctx     context.Context
 	store   *sqlitestore.Store
-	fake    *FakeFeishu
-	service *Service
+	fake    *externalaccountstest.FakeFeishu
+	service *externalaccounts.Service
 	app     store.ExternalProviderApp
 	clock   time.Time
 }
@@ -34,12 +36,12 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	fake := NewFakeFeishu("cli_fake", "secret_fake")
+	fake := externalaccountstest.NewFakeFeishu("cli_fake", "secret_fake")
 	t.Cleanup(fake.Close)
 	h := &harness{t: t, ctx: context.Background(), store: st, fake: fake, clock: time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)}
 	adapter := fake.Adapter()
 	adapter.Now = func() time.Time { return h.clock }
-	h.service = NewService(st, st, NewRegistry(adapter))
+	h.service = externalaccounts.NewService(st, st, externalaccounts.NewRegistry(adapter))
 	h.service.MinPollInterval = 5 * time.Millisecond
 	h.service.Now = func() time.Time { return h.clock }
 	h.service.Logf = t.Logf
@@ -124,7 +126,7 @@ func TestLoginConnectsAccountAndSealsGrantOnly(t *testing.T) {
 	if strings.Contains(string(record), h.fake.CurrentRefreshToken()) || strings.Contains(string(record), "fake-signature") {
 		t.Fatal("account record carries a token")
 	}
-	grant, err := h.service.loadGrant(h.ctx, account.ID)
+	grant, err := h.service.LoadGrant(h.ctx, account.ID)
 	if err != nil {
 		t.Fatalf("load grant: %v", err)
 	}
@@ -165,7 +167,7 @@ func TestLoginDeniedAndUnknownOwner(t *testing.T) {
 	if _, ok := h.service.Login(login.ID, "someone_else"); ok {
 		t.Fatal("another person could read the login")
 	}
-	if result := h.awaitLogin(login.ID); result.Status != "failed" || !errors.Is(ErrLoginDenied, ErrLoginDenied) || !strings.Contains(result.Error, "denied") {
+	if result := h.awaitLogin(login.ID); result.Status != "failed" || !errors.Is(externalaccounts.ErrLoginDenied, externalaccounts.ErrLoginDenied) || !strings.Contains(result.Error, "denied") {
 		t.Fatalf("denied login not reported: %+v", result.ExternalAccountLogin)
 	}
 }
@@ -173,7 +175,7 @@ func TestLoginDeniedAndUnknownOwner(t *testing.T) {
 func TestMintServesAccessTokenAndRefreshesOnceUnderContention(t *testing.T) {
 	h := newHarness(t)
 	account := h.connect()
-	token, err := h.service.Mint(h.ctx, account, Use{SessionID: "sess_1", DeviceID: "dev_1", By: "session"})
+	token, err := h.service.Mint(h.ctx, account, externalaccounts.Use{SessionID: "sess_1", DeviceID: "dev_1", By: "session"})
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -197,7 +199,7 @@ func TestMintServesAccessTokenAndRefreshesOnceUnderContention(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			minted, err := h.service.Mint(h.ctx, account, Use{By: "session"})
+			minted, err := h.service.Mint(h.ctx, account, externalaccounts.Use{By: "session"})
 			tokens[i], errs[i] = minted.AccessToken, err
 		}(i)
 	}
@@ -217,7 +219,7 @@ func TestMintServesAccessTokenAndRefreshesOnceUnderContention(t *testing.T) {
 	if refreshed.LastRefreshBy != "session" || refreshed.Status != store.ExternalAccountReady {
 		t.Fatalf("account not updated by refresh: %+v", refreshed)
 	}
-	grant, _ := h.service.loadGrant(h.ctx, account.ID)
+	grant, _ := h.service.LoadGrant(h.ctx, account.ID)
 	if grant.Generation != 2 || grant.RefreshToken != h.fake.CurrentRefreshToken() {
 		t.Fatalf("rotated grant not sealed: %+v", grant)
 	}
@@ -228,8 +230,8 @@ func TestTerminalRefreshFailureMarksNeedsReauth(t *testing.T) {
 	account := h.connect()
 	h.clock = h.clock.Add(2 * time.Hour)
 	h.fake.RefreshFailCode = 20073
-	_, err := h.service.Mint(h.ctx, account, Use{By: "session"})
-	var refreshErr *RefreshError
+	_, err := h.service.Mint(h.ctx, account, externalaccounts.Use{By: "session"})
+	var refreshErr *externalaccounts.RefreshError
 	if !errors.As(err, &refreshErr) || !refreshErr.Terminal {
 		t.Fatalf("want a terminal refresh error, got %v", err)
 	}
@@ -239,7 +241,7 @@ func TestTerminalRefreshFailureMarksNeedsReauth(t *testing.T) {
 	}
 	// Nothing retries a dead grant.
 	h.fake.RefreshFailCode = 0
-	if _, err := h.service.Mint(h.ctx, after, Use{By: "session"}); !errors.Is(err, ErrAccountUnusable) {
+	if _, err := h.service.Mint(h.ctx, after, externalaccounts.Use{By: "session"}); !errors.Is(err, externalaccounts.ErrAccountUnusable) {
 		t.Fatalf("mint on a needs_reauth account: %v", err)
 	}
 	if h.fake.Refreshes() != 0 {
@@ -252,8 +254,8 @@ func TestTransientRefreshFailureIsRetriedAndNotTerminal(t *testing.T) {
 	account := h.connect()
 	h.clock = h.clock.Add(2 * time.Hour)
 	h.fake.RefreshFailCode = 20050
-	_, err := h.service.Mint(h.ctx, account, Use{By: "session"})
-	var refreshErr *RefreshError
+	_, err := h.service.Mint(h.ctx, account, externalaccounts.Use{By: "session"})
+	var refreshErr *externalaccounts.RefreshError
 	if !errors.As(err, &refreshErr) || refreshErr.Terminal || !refreshErr.Retryable {
 		t.Fatalf("want a retryable error, got %v", err)
 	}
@@ -277,10 +279,10 @@ func TestRevokeStopsUseAndDisconnectRemoves(t *testing.T) {
 	if list := h.fake.Revoked(); len(list) != 1 || list[0] != refreshToken {
 		t.Fatalf("refresh token not revoked at the provider: %v", list)
 	}
-	if stored, _ := h.store.HasSecret(h.ctx, GrantSecretID(account.ID)); stored {
+	if stored, _ := h.store.HasSecret(h.ctx, externalaccounts.GrantSecretID(account.ID)); stored {
 		t.Fatal("grant still sealed after revoke")
 	}
-	if _, err := h.service.Mint(h.ctx, revoked, Use{}); !errors.Is(err, ErrAccountUnusable) {
+	if _, err := h.service.Mint(h.ctx, revoked, externalaccounts.Use{}); !errors.Is(err, externalaccounts.ErrAccountUnusable) {
 		t.Fatalf("mint after revoke: %v", err)
 	}
 	if err := h.service.Disconnect(h.ctx, revoked, "user_owner"); err != nil {
@@ -297,7 +299,7 @@ func TestRevokeStopsUseAndDisconnectRemoves(t *testing.T) {
 func TestDisconnectOfLiveAccountRevokesFirst(t *testing.T) {
 	h := newHarness(t)
 	account := h.connect()
-	if err := h.service.DeleteApp(h.ctx, h.app); !errors.Is(err, ErrAppInUse) {
+	if err := h.service.DeleteApp(h.ctx, h.app); !errors.Is(err, externalaccounts.ErrAppInUse) {
 		t.Fatalf("app deleted while in use: %v", err)
 	}
 	if err := h.service.Disconnect(h.ctx, account, "user_owner"); err != nil {
@@ -329,13 +331,13 @@ func TestKeepAliveRefreshesOnlyOptedInAccountsNearExpiry(t *testing.T) {
 	if keptAfter.LastRefreshBy != "keep_alive" || parseOrZero(keptAfter.RefreshExpiresAt).Sub(h.clock) < 6*24*time.Hour {
 		t.Fatalf("kept account not refreshed: %+v", keptAfter)
 	}
-	looseAfter := h.service.withComputedStatus(mustGet(t, h, loose.ID))
+	looseAfter := h.service.WithComputedStatus(mustGet(t, h, loose.ID))
 	if looseAfter.LastRefreshBy != "login" || looseAfter.Status != store.ExternalAccountExpiring {
 		t.Fatalf("account without keep-alive should be left expiring: %+v", looseAfter)
 	}
 	// Once its refresh token is gone it needs re-authorization.
 	h.clock = h.clock.Add(24 * time.Hour)
-	if gone := h.service.withComputedStatus(mustGet(t, h, loose.ID)); gone.Status != store.ExternalAccountNeedsReauth || gone.StatusDetail != "refresh_token_expired" {
+	if gone := h.service.WithComputedStatus(mustGet(t, h, loose.ID)); gone.Status != store.ExternalAccountNeedsReauth || gone.StatusDetail != "refresh_token_expired" {
 		t.Fatalf("expired account not reported: %+v", gone)
 	}
 }
@@ -353,8 +355,8 @@ func TestRefreshExpiryFallsBackToTokenClaimNotAnOptimisticDefault(t *testing.T) 
 	if until := time.Until(expiry); until > 7*24*time.Hour+time.Minute || until < 6*24*time.Hour {
 		t.Fatalf("refresh expiry %s is not the token's 7 days", expiry)
 	}
-	plain := refreshTokenExpiry(h.clock, 0, "not-a-jwt", feishuRefreshFallback)
-	if plain.Sub(h.clock) != feishuRefreshFallback {
+	plain := externalaccounts.RefreshTokenExpiry(h.clock, 0, "not-a-jwt", externalaccounts.FeishuRefreshFallback)
+	if plain.Sub(h.clock) != externalaccounts.FeishuRefreshFallback {
 		t.Fatalf("opaque token fallback %s, want 7 days", plain.Sub(h.clock))
 	}
 }
@@ -388,7 +390,7 @@ func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 	}
 	materials, _ := h.service.SessionMaterials(h.ctx, "ws_1", "sess_1", "dev_1", "user_owner", "user_owner")
 	material := materials[0]
-	if material.Tool != "feishu-cli" || material.ProfileName != ProfileName(account.ID, "sess_1") || !strings.HasPrefix(material.ProfileName, "foundry-") {
+	if material.Tool != "feishu-cli" || material.ProfileName != externalaccounts.ProfileName(account.ID, "sess_1") || !strings.HasPrefix(material.ProfileName, "foundry-") {
 		t.Fatalf("material not for feishu-cli: %+v", material)
 	}
 	if material.ClientID != "cli_fake" || material.Gateway == nil || material.Gateway.AppHandle != "fsg_test" || material.Gateway.UserHandle != "fsu_test" || material.ExpiresAt == "" {
@@ -398,7 +400,7 @@ func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 		t.Fatalf("handles issued for: %+v", issuer.requests)
 	}
 	// Neither the app secret nor any token of the account reaches a device.
-	grant, err := h.service.loadGrant(h.ctx, account.ID)
+	grant, err := h.service.LoadGrant(h.ctx, account.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,19 +412,21 @@ func TestSessionMaterialsFollowOwnerOnlyRule(t *testing.T) {
 	}
 }
 
-type recordingIssuer struct{ requests []HandleRequest }
+type recordingIssuer struct {
+	requests []externalaccounts.HandleRequest
+}
 
-func (r *recordingIssuer) IssueHandles(_ context.Context, request HandleRequest) (store.ExternalAccountGateway, error) {
+func (r *recordingIssuer) IssueHandles(_ context.Context, request externalaccounts.HandleRequest) (store.ExternalAccountGateway, error) {
 	r.requests = append(r.requests, request)
 	return store.ExternalAccountGateway{Path: "/api/feishu-gw", AppHandle: "fsg_test", UserHandle: "fsu_test"}, nil
 }
 
 func TestProfileNameFitsFeishuCLI(t *testing.T) {
-	name := ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_7")
+	name := externalaccounts.ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_7")
 	if !strings.HasPrefix(name, "foundry-") || len(name) > 64 || strings.ContainsAny(name, ". /") || !regexp.MustCompile(`^foundry-[A-Za-z0-9_-]{1,56}$`).MatchString(name) {
 		t.Fatalf("profile name %q", name)
 	}
-	if name == ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_8") {
+	if name == externalaccounts.ProfileName("xacc_0f3c1a2b-9d8e-4c7b-a6f5-123456789abc", "sess_8") {
 		t.Fatal("two sessions share a profile")
 	}
 }
@@ -434,10 +438,10 @@ func TestServiceWithoutSecretStoreRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	fake := NewFakeFeishu("cli", "sec")
+	fake := externalaccountstest.NewFakeFeishu("cli", "sec")
 	defer fake.Close()
-	service := NewService(st, st, NewRegistry(fake.Adapter()))
-	if _, err := service.CreateApp(context.Background(), "u", store.SaveExternalProviderAppInput{Provider: "feishu", ClientID: "cli", ClientSecret: "sec"}); !errors.Is(err, ErrSecretsNotConfigured) {
+	service := externalaccounts.NewService(st, st, externalaccounts.NewRegistry(fake.Adapter()))
+	if _, err := service.CreateApp(context.Background(), "u", store.SaveExternalProviderAppInput{Provider: "feishu", ClientID: "cli", ClientSecret: "sec"}); !errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
 		t.Fatalf("app created without a secret store: %v", err)
 	}
 }
@@ -450,7 +454,7 @@ func TestFeishuAccountsBaseDerivation(t *testing.T) {
 		"https://gateway.example.com": "https://gateway.example.com",
 	}
 	for in, want := range cases {
-		if got := FeishuAccountsBase(in); got != want {
+		if got := externalaccounts.FeishuAccountsBase(in); got != want {
 			t.Errorf("FeishuAccountsBase(%q) = %q, want %q", in, got, want)
 		}
 	}
@@ -459,7 +463,7 @@ func TestFeishuAccountsBaseDerivation(t *testing.T) {
 func boolPtr(value bool) *bool { return &value }
 
 func parseOrZero(value string) time.Time {
-	parsed, _ := parseTime(value)
+	parsed, _ := externalaccounts.ParseTime(value)
 	return parsed
 }
 
@@ -531,10 +535,10 @@ func TestSignInReadsTheAppAndOrganisationNames(t *testing.T) {
 
 	// Feishu refuses every name: the account works on, the last names stay
 	// and the reason is recorded.
-	h.fake.mu.Lock()
-	h.fake.AppName, h.fake.TenantName = "Renamed Agent", "Renamed Org"
-	h.fake.BotInfoCode, h.fake.AppRecordCode, h.fake.TenantQueryCode = 99991672, 99991672, 99991672
-	h.fake.mu.Unlock()
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.AppName, fake.TenantName = "Renamed Agent", "Renamed Org"
+		fake.BotInfoCode, fake.AppRecordCode, fake.TenantQueryCode = 99991672, 99991672, 99991672
+	})
 	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 0 {
 		t.Fatalf("fresh names were read again: %d", refreshed)
 	}
@@ -553,10 +557,10 @@ func TestSignInReadsTheAppAndOrganisationNames(t *testing.T) {
 
 	// The person grants the organisation scope and refreshes by hand: the
 	// missing name is read at once, not after the hour.
-	h.fake.mu.Lock()
-	h.fake.TenantQueryCode = 0
-	h.fake.mu.Unlock()
-	refreshed, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"})
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.TenantQueryCode = 0
+	})
+	refreshed, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), externalaccounts.Use{By: "manual"})
 	if err != nil || refreshed.TenantName != "Renamed Org" {
 		t.Fatalf("a manual refresh did not retry the missing name: %v %+v", err, refreshed)
 	}
@@ -567,9 +571,9 @@ func TestSignInReadsTheAppAndOrganisationNames(t *testing.T) {
 
 	// Bot info refused, the app's record answers; a failed lookup is retried
 	// within the hour, not the day.
-	h.fake.mu.Lock()
-	h.fake.AppRecordCode, h.fake.TenantQueryCode = 0, 0
-	h.fake.mu.Unlock()
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.AppRecordCode, fake.TenantQueryCode = 0, 0
+	})
 	h.clock = h.clock.Add(61 * time.Minute)
 	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 1 {
 		t.Fatalf("a failed lookup was not retried: %d", refreshed)
@@ -590,10 +594,10 @@ func TestSignInReadsTheAppAndOrganisationNames(t *testing.T) {
 
 func TestOrganisationDomainStandsInForARefusedTenantName(t *testing.T) {
 	h := newHarness(t)
-	h.fake.mu.Lock()
-	h.fake.TenantQueryCode = 99991672
-	h.fake.MailboxEmail = "Ada@Mail.Example.COM"
-	h.fake.mu.Unlock()
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.TenantQueryCode = 99991672
+		fake.MailboxEmail = "Ada@Mail.Example.COM"
+	})
 	account := h.connect()
 	if account.TenantName != "" || account.OrgDomain != "mail.example.com" {
 		t.Fatalf("sign-in did not read the mailbox domain: %+v", account)
@@ -601,9 +605,9 @@ func TestOrganisationDomainStandsInForARefusedTenantName(t *testing.T) {
 
 	// enterprise_email wins over the mailbox, read with a live token of the
 	// account (no refresh, no use recorded).
-	h.fake.mu.Lock()
-	h.fake.EnterpriseEmail = "ada@example.com"
-	h.fake.mu.Unlock()
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.EnterpriseEmail = "ada@example.com"
+	})
 	before := mustGet(t, h, account.ID)
 	h.clock = h.clock.Add(61 * time.Minute)
 	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 1 {
@@ -622,10 +626,10 @@ func TestOrganisationDomainStandsInForARefusedTenantName(t *testing.T) {
 	}
 
 	// Both refused: the last domain stays and the reason is recorded.
-	h.fake.mu.Lock()
-	h.fake.EnterpriseEmail, h.fake.MailboxEmail = "", ""
-	h.fake.mu.Unlock()
-	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"}); err != nil {
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.EnterpriseEmail, fake.MailboxEmail = "", ""
+	})
+	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), externalaccounts.Use{By: "manual"}); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
@@ -634,10 +638,10 @@ func TestOrganisationDomainStandsInForARefusedTenantName(t *testing.T) {
 	}
 
 	// The organisation's name, once readable, is all that is asked for.
-	h.fake.mu.Lock()
-	h.fake.TenantQueryCode = 0
-	h.fake.mu.Unlock()
-	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"}); err != nil {
+	h.fake.Set(func(fake *externalaccountstest.FakeFeishu) {
+		fake.TenantQueryCode = 0
+	})
+	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), externalaccounts.Use{By: "manual"}); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
@@ -650,7 +654,7 @@ func TestEmailDomain(t *testing.T) {
 	for address, want := range map[string]string{
 		"ada@example.com": "example.com", "a@b@Corp.CN ": "corp.cn", "@example.com": "", "ada@localhost": "", "": "",
 	} {
-		if got := emailDomain(address); got != want {
+		if got := externalaccounts.EmailDomain(address); got != want {
 			t.Errorf("emailDomain(%q) = %q, want %q", address, got, want)
 		}
 	}

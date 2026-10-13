@@ -1,8 +1,7 @@
 import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { sessionScratchEnvironment } from "./resource-pool.js";
-import { isUtilitySession } from "./utils.js";
-import { isVerificationSession } from "./session-roles.js";
+import { isUtilitySession, isVerificationSession } from "./session-roles.js";
 import {
   baseProcessEnvironment,
   profileID,

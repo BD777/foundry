@@ -11,14 +11,18 @@ import { resolve } from "node:path";
 import {
   browserEventFailures,
   compareBrowserEvents,
+  compareDaemonPayloads,
   compareDtoFields,
   compareMessageVocabularies,
+  daemonPayloadFailures,
   findGoEventLiterals,
   goDtoPaths,
+  goStructFields,
   parseGoBrowserEvents,
   parseGoMessageTypes,
   parseGoNotices,
   parseGoStructs,
+  parseGoStructsWithEmbeds,
   parseTsBrowserEvents,
   parseTsInterfaces,
   parseTsMessageTypes,
@@ -91,7 +95,7 @@ test("checked-in daemon vocabularies are in set parity", () => {
   );
   const goTypes = parseGoMessageTypes(
     readFileSync(
-      resolve(root, "apps/server/internal/httpapi/daemon_ws.go"),
+      resolve(root, "apps/server/internal/httpapi/daemon_wire.go"),
       "utf8",
     ),
   );
@@ -232,5 +236,80 @@ test("findGoEventLiterals flags names spelled outside their constants", () => {
 test("checked-in browser event vocabularies are in parity", () => {
   const { failures, names } = browserEventFailures();
   assert.ok(names > 0, "expected browser event names to parse");
+  assert.deepEqual(failures, []);
+});
+
+test("goStructFields folds embedded structs into the JSON fields", () => {
+  const structs = parseGoStructsWithEmbeds(`type wsReplyError struct {
+	Error string \`json:"error,omitempty"\`
+}
+
+type wsThingReadPayload struct {
+	store.Thing
+	wsReplyError
+	Extra string \`json:"extra"\`
+	Skipped string \`json:"-"\`
+}
+
+type Thing struct {
+	ID string \`json:"id"\`
+}
+`);
+  assert.deepEqual(goStructFields(structs, "wsThingReadPayload").sort(), [
+    "error",
+    "extra",
+    "id",
+  ]);
+  assert.equal(goStructFields(structs, "wsMissing"), undefined);
+});
+
+test("compareDaemonPayloads maps names and reports new drift only", () => {
+  const goStructs = new Map([
+    ["wsReadThingPayload", { fields: ["id", "goOnly"], embeds: [] }],
+    ["wsRenamed", { fields: ["id"], embeds: [] }],
+  ]);
+  const options = {
+    goNames: { RenamedPayload: "wsRenamed" },
+    builtInline: new Set(["InlinePayload"]),
+    knownDrift: {},
+  };
+  const problems = compareDaemonPayloads(
+    new Map([
+      ["ReadThingPayload", ["id", "tsOnly"]],
+      ["RenamedPayload", ["id"]],
+      ["InlinePayload", ["anything"]],
+      ["UnknownPayload", ["id"]],
+    ]),
+    goStructs,
+    options,
+  ).join(" | ");
+  assert.match(
+    problems,
+    /"ReadThingPayload": fields in TS but not in Go wsReadThingPayload: \[tsOnly\]/,
+  );
+  assert.match(
+    problems,
+    /"ReadThingPayload": fields in Go wsReadThingPayload but not in TS: \[goOnly\]/,
+  );
+  assert.match(problems, /"UnknownPayload" has no Go struct wsUnknownPayload/);
+  assert.doesNotMatch(problems, /RenamedPayload|InlinePayload/);
+  assert.deepEqual(
+    compareDaemonPayloads(
+      new Map([["ReadThingPayload", ["id", "tsOnly"]]]),
+      goStructs,
+      {
+        ...options,
+        knownDrift: {
+          ReadThingPayload: { tsOnly: ["tsOnly"], goOnly: ["goOnly"] },
+        },
+      },
+    ),
+    [],
+  );
+});
+
+test("checked-in daemon request payloads are in field parity", () => {
+  const { failures, compared } = daemonPayloadFailures();
+  assert.ok(compared > 0, "expected daemon payload interfaces to parse");
   assert.deepEqual(failures, []);
 });

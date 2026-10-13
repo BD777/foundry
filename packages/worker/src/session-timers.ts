@@ -22,7 +22,8 @@ import {
 } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "./state-root.js";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
-import { daemonRequestHeaders } from "./transport.js";
+import { daemonRequestHeaders } from "./server-http.js";
+import { errorMessage } from "./utils.js";
 
 /** A timer the device keeps for a session. */
 export interface KeptTimer extends AgentScheduledTask {
@@ -106,7 +107,7 @@ export class SessionTimers {
       stored = JSON.parse(readFileSync(path, "utf8")) as typeof stored;
     } catch (error) {
       console.error(
-        `Could not read the kept session timers: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not read the kept session timers: ${errorMessage(error)}`,
       );
       return;
     }
@@ -339,7 +340,7 @@ export class SessionTimers {
           });
         } catch (error) {
           console.error(
-            `Could not send timer ${timer.id} of session ${session.sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+            `Could not send timer ${timer.id} of session ${session.sessionId}: ${errorMessage(error)}`,
           );
           outcome = "retry";
         }
@@ -380,7 +381,7 @@ export class SessionTimers {
       writeJSON(path, { sessions: [...this.sessions.values()] });
     } catch (error) {
       console.error(
-        `Could not keep the session timers: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not keep the session timers: ${errorMessage(error)}`,
       );
     }
   }

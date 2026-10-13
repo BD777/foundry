@@ -39,11 +39,11 @@ import {
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
 import { sessionExternalAccountNote } from "./external-accounts.js";
-import { isUtilitySession } from "./utils.js";
 import {
-  claudeRoleOptions,
   clarificationFoundryTools,
+  claudeRoleOptions,
   isClarificationSession,
+  isUtilitySession,
   isVerificationSession,
 } from "./session-roles.js";
 import { verificationNotes } from "./verification-session.js";

@@ -736,7 +736,7 @@ func TestServerProfileForSessionEndpointTwin(t *testing.T) {
 		t.Fatalf("credential-less twin resolved = %v, err = %v", resolved, err)
 	}
 
-	if err := server.secrets.PutSecret(ctx, serverProfileSecretID(twin.ID), []byte("twin-key"), ""); err != nil {
+	if err := server.store.PutSecret(ctx, serverProfileSecretID(twin.ID), []byte("twin-key"), ""); err != nil {
 		t.Fatalf("seal twin credential: %v", err)
 	}
 	resolved, err := server.hub.serverProfileForSession(ctx, pinned)
@@ -749,7 +749,7 @@ func TestServerProfileForSessionEndpointTwin(t *testing.T) {
 
 	// A device-held credential wins: a working local configuration is never
 	// swapped onto another account.
-	if err := server.secrets.PutSecret(ctx, agentProfileSecretID("dev_1", "relay_local"), []byte("device-key"), ""); err != nil {
+	if err := server.store.PutSecret(ctx, agentProfileSecretID("dev_1", "relay_local"), []byte("device-key"), ""); err != nil {
 		t.Fatalf("seal device credential: %v", err)
 	}
 	if resolved, err := server.hub.serverProfileForSession(ctx, pinned); err != nil || resolved != nil {
@@ -784,7 +784,7 @@ func TestServerProfileForSessionEndpointTwinGuards(t *testing.T) {
 		if err != nil {
 			t.Fatalf("save twin: %v", err)
 		}
-		if err := server.secrets.PutSecret(ctx, serverProfileSecretID(profile.ID), []byte("key-"+profile.ID), ""); err != nil {
+		if err := server.store.PutSecret(ctx, serverProfileSecretID(profile.ID), []byte("key-"+profile.ID), ""); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return profile

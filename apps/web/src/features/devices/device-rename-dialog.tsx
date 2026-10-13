@@ -4,7 +4,7 @@ import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { renameDevice } from "../../api";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
-import { WorkspaceDialog } from "./workspace-dialog";
+import { Dialog } from "../../components/ui/dialog";
 
 /** Renames a device for everyone who sees it; the hostname stays visible. */
 export function DeviceRenameDialog({
@@ -38,7 +38,7 @@ export function DeviceRenameDialog({
     }
   }
   return (
-    <WorkspaceDialog
+    <Dialog
       initialFocus={field}
       returnFocusTo={returnFocusTo}
       title={t("rename.title")}
@@ -87,6 +87,6 @@ export function DeviceRenameDialog({
           </Button>
         </footer>
       </form>
-    </WorkspaceDialog>
+    </Dialog>
   );
 }

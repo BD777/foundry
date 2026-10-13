@@ -4,17 +4,21 @@ import { cn } from "../../lib/cn";
 
 export type RuntimeKind = "claude" | "codex" | "mock";
 
-export function runtimeMeta(runtime: RuntimeKind): {
+interface RuntimeMeta {
   label: string;
   mark: string;
-} {
-  const meta: Record<RuntimeKind, { label: string; mark: string }> = {
+  /** The agent product's own name, e.g. "Claude Code". */
+  productName: string;
+}
+
+export function runtimeMeta(runtime: RuntimeKind): RuntimeMeta {
+  const meta: Record<RuntimeKind, RuntimeMeta> = {
     // i18n-ignore: runtime brand name
-    claude: { label: "Claude", mark: "C" },
+    claude: { label: "Claude", mark: "C", productName: "Claude Code" },
     // i18n-ignore: runtime brand name
-    codex: { label: "Codex", mark: "Cx" },
+    codex: { label: "Codex", mark: "Cx", productName: "Codex" },
     // i18n-ignore: runtime brand name
-    mock: { label: "Mock", mark: "M" },
+    mock: { label: "Mock", mark: "M", productName: "Mock" },
   };
 
   return meta[runtime];

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import {
   safeWorkspaceFileRead,
   safeWorkspaceTreeListing,
-} from "../dist/session-helpers.js";
+} from "../dist/workspace-files.js";
 import { git } from "../dist/execution-git.js";
 
 test("safeWorkspaceTreeListing lists directories and files correctly", (t) => {

@@ -12,6 +12,7 @@ import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { EvidencePreview } from "./evidence-preview";
 import { useEvidenceUpdates } from "./use-evidence-updates";
+import { isIssueClosed } from "../../lib/issue-meta";
 import {
   downloadMaterial,
   exportCandidateEvidence,
@@ -31,7 +32,7 @@ export function EvidenceMaterials({
   onChange: () => Promise<void>;
 }) {
   const { t } = useTranslation("issueDetail");
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [input, setInput] = useState<VerificationInput>(),
     [candidate, setCandidate] = useState<CandidateSnapshot>(),

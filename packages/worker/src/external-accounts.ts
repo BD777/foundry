@@ -1,16 +1,7 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { randomUUID } from "node:crypto";
 import type {
   AgentSession,
   ExternalAccountMaterial,
@@ -22,9 +13,10 @@ import {
 } from "./feishu-gateway-forwarder.js";
 import { findCommand, managedToolsBin } from "./managed-tools.js";
 import { foundryStatePath } from "./state-root.js";
+import { writeFileAtomic, writePrivateJSONAtomic } from "./storage.js";
 import { registerKnownSecret } from "./secret-redaction.js";
-import { isUtilitySession } from "./utils.js";
-import { isVerificationSession } from "./session-roles.js";
+import { isUtilitySession, isVerificationSession } from "./session-roles.js";
+import { errorMessage } from "./utils.js";
 
 /**
  * External accounts on the device (docs: External accounts design §5.5).
@@ -161,16 +153,8 @@ export function sessionTakesExternalAccounts(session: AgentSession): boolean {
   );
 }
 
-function writePrivateFile(path: string, content: string): void {
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporary, content, { mode: 0o600 });
-    renameSync(temporary, path);
-  } catch (error) {
-    rmSync(temporary, { force: true });
-    throw error;
-  }
-}
+/** Written whenever accounts change: the folders are the person's own. */
+const profileWrite = { hardenParent: false, fsync: false };
 
 function yamlString(value: string): string {
   return JSON.stringify(value);
@@ -245,10 +229,10 @@ function readManifest(path: string): string[] {
 }
 
 function writeManifest(path: string, profiles: string[]): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writePrivateFile(
+  writePrivateJSONAtomic(
     path,
-    `${JSON.stringify({ profiles: [...new Set(profiles)].sort() }, null, 2)}\n`,
+    { profiles: [...new Set(profiles)].sort() },
+    profileWrite,
   );
 }
 
@@ -321,18 +305,19 @@ export async function materializeSessionAccounts(
     try {
       const { baseURL } = await forwarder(gateway.path);
       updateManifest(manifestPath, (profiles) => [...profiles, directory]);
-      mkdirSync(directory, { recursive: true, mode: 0o700 });
-      writePrivateFile(
+      writeFileAtomic(
         join(directory, "config.yaml"),
         configYaml(material, gateway.appHandle, baseURL),
+        profileWrite,
       );
-      writePrivateFile(
+      writeFileAtomic(
         join(directory, "token.json"),
         tokenJson(material, gateway.userHandle, gateway.refreshHandle),
+        profileWrite,
       );
     } catch (error) {
       log(
-        `External account ${material.accountId}: could not set up its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
+        `External account ${material.accountId}: could not set up its feishu-cli profile (${errorMessage(error)}).`,
       );
       rmSync(directory, { recursive: true, force: true });
       continue;
@@ -390,7 +375,7 @@ function removeProfile(
     );
   } catch (error) {
     log(
-      `External account ${accountId}: could not remove its feishu-cli profile (${error instanceof Error ? error.message : String(error)}).`,
+      `External account ${accountId}: could not remove its feishu-cli profile (${errorMessage(error)}).`,
     );
   }
 }
@@ -453,7 +438,7 @@ export function reapExternalAccountProfiles(
       }
     } catch (error) {
       options.log?.(
-        `Could not remove the leftover feishu-cli profile ${directory}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not remove the leftover feishu-cli profile ${directory}: ${errorMessage(error)}`,
       );
     }
   }

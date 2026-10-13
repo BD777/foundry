@@ -1,12 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  fixtureDevice,
-  fixtureWorkspace,
   type AgentSession,
   type AgentSessionEvent,
   type FoundryDataProjection,
 } from "@bd777/foundry-protocol";
+import { fixtureDevice, fixtureWorkspace } from "../src/app/fixtures";
 import "../src/styles.css";
 
 // Full App with HTTP / SSE replaced: an open chat whose turn ended while a

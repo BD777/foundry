@@ -28,17 +28,16 @@ type idempotentRequest struct {
 // Without a key the request runs as before.
 func (s *Server) beginIdempotentRequest(w http.ResponseWriter, r *http.Request, scope string, input any, replayStatus int) (*idempotentRequest, bool) {
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	ledger, ok := s.store.(store.RequestLedger)
-	if key == "" || !ok {
+	if key == "" {
 		return &idempotentRequest{}, false
 	}
 	if len(key) > 200 {
 		writeError(w, http.StatusBadRequest, "Idempotency-Key is too long")
 		return nil, true
 	}
-	request := &idempotentRequest{ledger: ledger, scope: scope, key: key, input: input, unlock: s.lockIdempotencyKey(scope + "\x00" + key)}
+	request := &idempotentRequest{ledger: s.store, scope: scope, key: key, input: input, unlock: s.lockIdempotencyKey(scope + "\x00" + key)}
 	var recorded json.RawMessage
-	replayed, err := ledger.ReplayRequest(r.Context(), scope, key, input, &recorded)
+	replayed, err := s.store.ReplayRequest(r.Context(), scope, key, input, &recorded)
 	if err != nil || replayed {
 		request.release()
 		switch {
@@ -107,11 +106,10 @@ type sentInput struct {
 // answered. The same id in another session, workspace or one the caller
 // cannot read is refused, never shown.
 func (s *Server) replaySentInput(w http.ResponseWriter, r *http.Request, sent sentInput, idempotent *idempotentRequest) bool {
-	inputs, ok := s.store.(store.ChatQueueStore)
-	if sent.id == "" || !ok {
+	if sent.id == "" {
 		return false
 	}
-	sessionID, found, err := inputs.ChatQueueInputSession(r.Context(), sent.id)
+	sessionID, found, err := s.store.ChatQueueInputSession(r.Context(), sent.id)
 	if err != nil {
 		writeResult(w, nil, err)
 		return true

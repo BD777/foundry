@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { TFunction } from "i18next";
 import { Trans, useTranslation } from "react-i18next";
 import { Copy, Link2, MessageCircle, RefreshCw, Users } from "lucide-react";
@@ -10,6 +9,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Panel, PanelHeader } from "../../components/ui/panel";
+import { useCopied } from "../../lib/use-copied";
 import { clockTime } from "./feishu-format";
 
 export interface FeishuChatsPanelProps {
@@ -40,21 +40,18 @@ export function FeishuChatsPanel({
   onNotice,
 }: FeishuChatsPanelProps) {
   const { t } = useTranslation(["feishu", "common"]);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied(2000);
   const chats = bot?.chats ?? [];
   const ready = Boolean(bot?.app);
   // The bot's command syntax, the same in every language.
   const pairCommand = issued ? `/pair ${issued.code}` : "";
 
   async function copyCommand() {
-    try {
-      await navigator.clipboard.writeText(pairCommand);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      onNotice?.(t("notices.commandCopied"));
-    } catch {
-      onNotice?.(t("notices.commandText", { command: pairCommand }));
-    }
+    onNotice?.(
+      (await copy(pairCommand))
+        ? t("notices.commandCopied")
+        : t("notices.commandText", { command: pairCommand }),
+    );
   }
 
   return (
@@ -145,7 +142,7 @@ export function FeishuChatsPanel({
                 <div className="fdy-feishu-pair-actions">
                   <Button onClick={() => void copyCommand()} size="sm">
                     <Copy size={14} aria-hidden />
-                    {copied
+                    {copied()
                       ? t("common:actions.copied")
                       : t("pairing.copyCommand")}
                   </Button>

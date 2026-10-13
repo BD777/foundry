@@ -29,7 +29,6 @@ import type {
   AgentModelOption,
   AgentProfileProjection,
   AgentProjection,
-  AgentRuntimeSettings,
   AgentSession,
   AssetProjection,
   ChatThread,
@@ -47,13 +46,9 @@ import {
   writeDaemonConfig,
   type DaemonConfig,
 } from "./config.js";
-import { getJSON, postJSON } from "./transport.js";
+import { getJSON, postJSON } from "./server-http.js";
 import { providerHealthData } from "./provider-health.js";
-import {
-  agentProfilesForWorkspace,
-  profileFingerprint,
-  type UpsertAgentProfilePayload,
-} from "./profiles.js";
+import { agentProfilesForWorkspace, profileFingerprint } from "./profiles.js";
 import { deviceSystem, getDevice } from "./device.js";
 import { runningWorker } from "./worker-identity.js";
 import { optionValue, safeID, sizeLabel } from "./utils.js";
@@ -67,36 +62,6 @@ import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
-
-interface SetupWorkspacePayload {
-  path: string;
-}
-
-interface ForgetWorkspacePayload {
-  path: string;
-  workspaceId: string;
-}
-
-interface UpsertAgentRuntimeSettingsPayload {
-  settings: AgentRuntimeSettings;
-}
-
-interface ListAgentModelsPayload {
-  profile: UpsertAgentProfilePayload["profile"];
-}
-
-interface RunSessionPayload {
-  session: AgentSession;
-}
-
-interface SteerSessionPayload {
-  message?: string;
-  sessionId?: string;
-}
-
-interface CancelSessionPayload {
-  sessionId?: string;
-}
 
 export function sessionSchedulingKey(session: AgentSession): string {
   const conversationID =

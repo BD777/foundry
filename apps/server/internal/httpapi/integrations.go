@@ -42,7 +42,5 @@ func (s *Server) StartIntegrations(ctx context.Context) {
 }
 
 func (s *Server) startFeishuBots(ctx context.Context) {
-	if s.feishu != nil {
-		s.feishu.StartAllConfiguredBots(ctx)
-	}
+	s.feishu.StartAllConfiguredBots(ctx)
 }

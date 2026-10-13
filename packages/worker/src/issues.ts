@@ -3,7 +3,7 @@
  * preview management, and issue execution.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import {
   closeSync,
@@ -21,10 +21,12 @@ import type {
   RunEvent,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
+import { gitSync } from "./execution-git.js";
+import { signalProcessGroup } from "./process-group.js";
 import { writeJSON } from "./storage.js";
 import { sleep } from "./utils.js";
 import { getDevice } from "./device.js";
-import { getJSON } from "./transport.js";
+import { getJSON } from "./server-http.js";
 import { readWorkspace } from "./workspaces.js";
 export { executeIssue } from "./issue-execution.js";
 
@@ -169,22 +171,6 @@ type RecordRunEvent = (
   level?: RunEvent["level"],
 ) => Promise<void>;
 
-export function runGitCommand(
-  workspacePath: string,
-  args: string[],
-): { ok: boolean; status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync("git", args, {
-    cwd: workspacePath,
-    encoding: "utf8",
-  });
-  return {
-    ok: result.status === 0,
-    status: result.status,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
-}
-
 export function readExecutionRecord(
   workspacePath: string,
   issue: Issue,
@@ -225,15 +211,10 @@ export function cleanupWorktree(
   const worktreeRoot = resolve(workspacePath, ".foundry", "worktrees");
   const executionPath = resolve(execution.executionWorkspacePath);
   if (executionPath.startsWith(worktreeRoot) && existsSync(executionPath)) {
-    runGitCommand(workspacePath, [
-      "worktree",
-      "remove",
-      "--force",
-      executionPath,
-    ]);
+    gitSync(workspacePath, ["worktree", "remove", "--force", executionPath]);
   }
   if (execution.branchName) {
-    runGitCommand(workspacePath, ["branch", "-D", execution.branchName]);
+    gitSync(workspacePath, ["branch", "-D", execution.branchName]);
   }
 }
 
@@ -278,7 +259,7 @@ export function integrateAcceptedIssue(
     return integration;
   }
 
-  const alreadyApplied = runGitCommand(workspacePath, [
+  const alreadyApplied = gitSync(workspacePath, [
     "apply",
     "--reverse",
     "--check",
@@ -297,7 +278,7 @@ export function integrateAcceptedIssue(
     return integration;
   }
 
-  const check = runGitCommand(workspacePath, [
+  const check = gitSync(workspacePath, [
     "apply",
     "--check",
     execution.patchPath,
@@ -314,7 +295,7 @@ export function integrateAcceptedIssue(
     return integration;
   }
 
-  const applied = runGitCommand(workspacePath, ["apply", execution.patchPath]);
+  const applied = gitSync(workspacePath, ["apply", execution.patchPath]);
   integration = {
     detail: applied.ok
       ? "Patch applied to the main workspace."
@@ -477,15 +458,12 @@ export function stopPreviewForIssue(
   if (!preview.pid || preview.stoppedAt) {
     return preview;
   }
-  try {
-    process.kill(-preview.pid, "SIGTERM");
-  } catch {
+  if (!signalProcessGroup(preview.pid, "SIGTERM"))
     try {
       process.kill(preview.pid, "SIGTERM");
     } catch {
       // The preview process may already be gone.
     }
-  }
   preview.stoppedAt = new Date().toISOString();
   writeJSON(previewPath, preview);
   return preview;

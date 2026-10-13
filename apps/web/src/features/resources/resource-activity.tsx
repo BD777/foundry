@@ -10,7 +10,7 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
 import { navigateToChat } from "../../lib/in-app-navigation";
-import { fullWhen, relativeWhen } from "../../lib/relative-time";
+import { fullWhen, relativeWhen } from "../../lib/time-format";
 
 /** "x: 120, y: 48, text: 12": the server's summary of an operation's arguments. */
 function argsText(args: ResourceOperationRecord["args"]): string {

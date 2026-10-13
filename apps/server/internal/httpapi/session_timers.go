@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"time"
-
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // sendSessionTimers sends a device that said hello the timers its sessions
@@ -15,15 +13,11 @@ import (
 // its record was lost) adopts them, one that keeps them already keeps its
 // own.
 func (c *daemonConnection) sendSessionTimers() {
-	timers, ok := c.hub.store.(store.SessionTimerStore)
-	if !ok {
-		return
-	}
 	deviceID, _ := c.registrationSnapshot()
 	if deviceID == "" {
 		return
 	}
-	sessions, err := timers.DeviceSessionTimers(c.lifetime, deviceID, time.Now().UTC())
+	sessions, err := c.hub.store.DeviceSessionTimers(c.lifetime, deviceID, time.Now().UTC())
 	if err != nil {
 		log.Printf("listing the session timers of %s failed: %v", deviceID, err)
 		return

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"cmp"
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -32,5 +33,5 @@ func (s *Server) requireVerifierDevice(ctx context.Context, input store.CreateAg
 		return nil
 	}
 	device := cmp.Or(strings.TrimSpace(workspace.DeviceLabel), "The workspace's device")
-	return &mcpToolError{http.StatusConflict, device + " runs an older worker, which cannot run a verifier's commands in a read-only sandbox. Update its worker from its device page in Foundry, or start the verifier in a workspace on another device."}
+	return &statusError{http.StatusConflict, errors.New(device + " runs an older worker, which cannot run a verifier's commands in a read-only sandbox. Update its worker from its device page in Foundry, or start the verifier in a workspace on another device.")}
 }

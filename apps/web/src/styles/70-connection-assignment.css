@@ -1,61 +1,7 @@
 /* Multi-select picker for granting a device access to model providers.
-   Owns only fdy-connection-assign* classes; shared fdy-management-row rules
+   Owns only the picker's content (fdy-connection-*); its surface is the
+   shared Dialog (components/ui/dialog.css). Shared fdy-management-row rules
    stay in 68-device-management.css. */
-
-.fdy-connection-assign-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: var(--fdy-overlay);
-}
-
-.fdy-connection-assign-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 81;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(560px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 32px));
-  box-sizing: border-box;
-  gap: 14px;
-  padding: 20px;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 14px;
-  background: var(--fdy-paper-main);
-  box-shadow: var(--fdy-shadow-floating);
-  transform: translate(-50%, -50%);
-}
-
-/* The dialog takes focus itself when the focused control inside it goes away
-   (e.g. Install once it succeeds) or when it has nothing focusable. It is a
-   surface, not a control, so it draws no focus ring; its controls keep their
-   own keyboard focus styles. */
-.fdy-connection-assign-dialog:focus-visible {
-  outline: none;
-}
-
-.fdy-connection-assign-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.fdy-connection-assign-header h2 {
-  margin: 0;
-  color: var(--fdy-ink-strong);
-  font-size: 17px;
-  line-height: 1.25;
-}
-
-.fdy-connection-assign-header p {
-  margin: 4px 0 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
 
 .fdy-connection-assign-list {
   display: grid;
@@ -149,12 +95,6 @@
   font-size: 12px;
 }
 
-.fdy-connection-assign-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .fdy-connection-assign-manage {
   margin-right: auto;
 }
@@ -174,12 +114,4 @@
   color: var(--fdy-error-text);
   font-size: 12px;
   line-height: 1.5;
-}
-
-@media (max-width: 560px) {
-  .fdy-connection-assign-dialog {
-    width: calc(100vw - 20px);
-    max-height: calc(100vh - 20px);
-    padding: 16px;
-  }
 }

@@ -3,13 +3,18 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
-  AgentModelOption,
   DeviceProfileBinding,
   DeviceProjection,
   ProfileDefinition,
-  SaveProfileInput,
 } from "@bd777/foundry-protocol";
-import type { CreateAgentProfileInput } from "../../api-types";
+import {
+  clearProfileCredential,
+  createProfile,
+  deleteProfile,
+  listAgentModels,
+  setDeviceProfiles,
+  updateProfile,
+} from "../../api";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SelectMenu } from "../../components/ui/select-menu";
@@ -23,19 +28,14 @@ import { useProfilesState } from "./use-profiles-state";
 import { liveDevices } from "../../lib/devices";
 
 export type ProfilesFeatureEvent =
-  | { type: "save-profile"; input: SaveProfileInput }
-  | { type: "delete-profile"; profileId: string }
-  | { type: "clear-credential"; profileId: string }
-  | { type: "load-models"; profile: CreateAgentProfileInput }
-  | { type: "set-device-profiles"; deviceId: string; profileIds: string[] };
-export type ProfilesFeatureResult =
-  AgentModelOption[] | ProfileDefinition | undefined;
+  /** Resolves once the page shows the providers and device assignments. */
+  { type: "profiles.changed" } | { type: "notice.requested"; message: string };
 
 export interface ProfilesFeatureProps {
   busy?: boolean;
   devices?: DeviceProjection[];
   deviceProfiles?: DeviceProfileBinding[];
-  onEvent: (event: ProfilesFeatureEvent) => Promise<ProfilesFeatureResult>;
+  onEvent: (event: ProfilesFeatureEvent) => Promise<void> | void;
   onOpenDevices?: () => void;
   profiles: ProfileDefinition[];
 }
@@ -65,9 +65,33 @@ export function ProfilesFeature({
   const models = useModelCatalog({
     deviceId: catalogDevice?.id,
     draft: state.draft,
-    onLoad: (profile) => onEvent({ type: "load-models", profile }),
+    onLoad: (profile) => request(() => listAgentModels(profile)),
     updateDraft: state.updateDraft,
   });
+  // A server request the page also hears about when it fails.
+  async function request<T>(send: () => Promise<T>): Promise<T> {
+    try {
+      return await send();
+    } catch (error) {
+      void onEvent({ type: "notice.requested", message: t("page.saveFailed") });
+      throw error;
+    }
+  }
+  // A change is shown once the page has read it, then the page says so.
+  function change(
+    send: () => Promise<ProfileDefinition>,
+    notice: (label: string) => string,
+  ): Promise<ProfileDefinition> {
+    return request(async () => {
+      const profile = await send();
+      await onEvent({ type: "profiles.changed" });
+      void onEvent({
+        type: "notice.requested",
+        message: notice(profile.label),
+      });
+      return profile;
+    });
+  }
   async function run(action: () => Promise<unknown>) {
     setSaving(true);
     setError("");
@@ -157,18 +181,18 @@ export function ProfilesFeature({
                 onChange={state.updateDraft}
                 onClearCredential={() =>
                   void run(() =>
-                    onEvent({
-                      type: "clear-credential",
-                      profileId: state.selectedProfile!.id,
-                    }),
+                    change(
+                      () => clearProfileCredential(state.selectedProfile!.id),
+                      (label) => t("page.credentialCleared", { label }),
+                    ),
                   )
                 }
                 onDelete={() =>
                   void run(async () => {
-                    await onEvent({
-                      type: "delete-profile",
-                      profileId: state.selectedProfile!.id,
-                    });
+                    await change(
+                      () => deleteProfile(state.selectedProfile!.id),
+                      (label) => t("page.profileDeleted", { label }),
+                    );
                     setModalOpen(false);
                   })
                 }
@@ -180,12 +204,14 @@ export function ProfilesFeature({
                 onSave={() =>
                   void run(async () => {
                     if (state.isNew) state.expectCreatedProfile();
-                    const saved = await onEvent({
-                      type: "save-profile",
-                      input: buildSaveProfileInput(state.draft),
-                    });
-                    if (!saved || !("updatedAtLabel" in saved))
-                      throw new Error(t("page.savedMissing"));
+                    const input = buildSaveProfileInput(state.draft);
+                    const saved = await change(
+                      () =>
+                        input.id
+                          ? updateProfile(input.id, input)
+                          : createProfile(input),
+                      (label) => t("page.profileSaved", { label }),
+                    );
                     state.acceptSavedProfile(saved);
                   })
                 }
@@ -221,10 +247,9 @@ export function ProfilesFeature({
                   bindings={deviceProfiles}
                   profile={state.selectedProfile}
                   onSave={(deviceId, profileIds) =>
-                    onEvent({
-                      type: "set-device-profiles",
-                      deviceId,
-                      profileIds,
+                    request(async () => {
+                      await setDeviceProfiles({ deviceId, profileIds });
+                      await onEvent({ type: "profiles.changed" });
                     })
                   }
                 />

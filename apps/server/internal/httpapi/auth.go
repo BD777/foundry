@@ -40,17 +40,9 @@ func isPublicAuthRoute(r *http.Request) bool {
 	return false
 }
 
-// initAccounts binds the account store and prepares the one-time setup code
-// while no account exists. A store without accounts leaves every browser
-// route closed.
+// initAccounts prepares the one-time setup code while no account exists.
 func (s *Server) initAccounts() {
-	accountStore, ok := s.store.(store.AccountStore)
-	if !ok {
-		log.Printf("store does not support accounts; browser API access is disabled")
-		return
-	}
-	s.accounts = accountStore
-	count, err := accountStore.CountUsers(context.Background())
+	count, err := s.store.CountUsers(context.Background())
 	if err != nil {
 		log.Printf("count users: %v", err)
 		return
@@ -78,10 +70,10 @@ func (s *Server) SetupCode() string {
 func (s *Server) setupPending(ctx context.Context) bool {
 	s.setupMu.Lock()
 	defer s.setupMu.Unlock()
-	if s.setupCode == "" || s.accounts == nil {
+	if s.setupCode == "" {
 		return false
 	}
-	if count, err := s.accounts.CountUsers(ctx); err == nil && count > 0 {
+	if count, err := s.store.CountUsers(ctx); err == nil && count > 0 {
 		s.setupCode = ""
 		return false
 	}
@@ -92,11 +84,11 @@ func (s *Server) setupPending(ctx context.Context) bool {
 // after writing a response itself.
 func (s *Server) authenticateAccount(w http.ResponseWriter, r *http.Request) (*store.User, bool) {
 	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil || cookie.Value == "" || s.accounts == nil {
+	if err != nil || cookie.Value == "" {
 		return nil, false
 	}
 	now := time.Now().UTC()
-	user, extended, err := s.accounts.ResolveUserSession(r.Context(), accounts.HashToken(cookie.Value),
+	user, extended, err := s.store.ResolveUserSession(r.Context(), accounts.HashToken(cookie.Value),
 		now, now.Add(sessionRefreshWindow), now.Add(sessionTTL))
 	if err != nil {
 		if !errors.Is(err, store.ErrUserSessionInvalid) {
@@ -156,7 +148,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user store
 		return false
 	}
 	expires := time.Now().UTC().Add(sessionTTL)
-	if err := s.accounts.CreateUserSession(r.Context(), user.ID, accounts.HashToken(token), expires); err != nil {
+	if err := s.store.CreateUserSession(r.Context(), user.ID, accounts.HashToken(token), expires); err != nil {
 		writeError(w, http.StatusInternalServerError, "create login session")
 		return false
 	}

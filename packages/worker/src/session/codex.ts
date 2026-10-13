@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { resolveCodexCommand } from "../utils.js";
+import { resolveCodexCommand } from "../native-cli.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,

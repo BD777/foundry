@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log"
@@ -24,53 +25,43 @@ type chatQueueConflict struct {
 	Queue store.ChatQueue `json:"queue"`
 }
 
-func (s *Server) chatQueues() (store.ChatQueueStore, bool) {
-	queues, ok := s.store.(store.ChatQueueStore)
-	return queues, ok
-}
-
 // chatQueueChat resolves the chat a queue route names: a Foundry chat
 // session (by its thread id) or a device's native chat. Changing the queue
 // takes control of the chat: the session's starter or a maintainer; a
 // native chat belongs to the workspace's members (the route rule).
-func (s *Server) chatQueueChat(w http.ResponseWriter, r *http.Request, change bool) (store.ChatQueueStore, string, string, bool) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "this server keeps no chat queues")
-		return nil, "", "", false
-	}
+func (s *Server) chatQueueChat(w http.ResponseWriter, r *http.Request, change bool) (string, string, bool) {
 	chatID := strings.TrimSpace(r.PathValue("id"))
 	session, err := s.store.GetAgentSessionSummary(r.Context(), chatID)
 	if err == nil {
 		if session.Role != "" || (session.Source != "" && session.Source != "chat") {
 			writeError(w, http.StatusNotFound, "not a chat")
-			return nil, "", "", false
+			return "", "", false
 		}
 		if change && !s.canControlSession(r.Context(), actorFromContext(r.Context()), session) {
 			writeForbidden(w, "you cannot change the queue of this chat")
-			return nil, "", "", false
+			return "", "", false
 		}
 		threadID := session.ThreadID
 		if threadID == "" {
 			threadID = session.ID
 		}
-		return queues, session.WorkspaceID, threadID, true
+		return session.WorkspaceID, threadID, true
 	}
 	if !errors.Is(err, store.ErrNotFound) {
 		writeResult(w, nil, err)
-		return nil, "", "", false
+		return "", "", false
 	}
 	chat, err := s.store.GetChat(r.Context(), chatID)
 	if err != nil {
 		writeResult(w, nil, err)
-		return nil, "", "", false
+		return "", "", false
 	}
-	return queues, chat.WorkspaceID, chat.ID, true
+	return chat.WorkspaceID, chat.ID, true
 }
 
 // writeChatQueueResult answers a queue change: the queue after it, or the
 // refusal with the queue as it is.
-func (s *Server) writeChatQueueResult(w http.ResponseWriter, r *http.Request, queues store.ChatQueueStore, workspaceID, chatID string, queue store.ChatQueue, err error, status int) {
+func (s *Server) writeChatQueueResult(w http.ResponseWriter, r *http.Request, workspaceID, chatID string, queue store.ChatQueue, err error, status int) {
 	if err == nil {
 		s.chats.queueChanged(queue)
 		writeJSON(w, status, queue)
@@ -91,7 +82,7 @@ func (s *Server) writeChatQueueResult(w http.ResponseWriter, r *http.Request, qu
 		writeResult(w, nil, err)
 		return
 	}
-	current, readErr := queues.ChatQueue(r.Context(), workspaceID, chatID)
+	current, readErr := s.store.ChatQueue(r.Context(), workspaceID, chatID)
 	if readErr != nil {
 		writeResult(w, nil, readErr)
 		return
@@ -100,17 +91,17 @@ func (s *Server) writeChatQueueResult(w http.ResponseWriter, r *http.Request, qu
 }
 
 func (s *Server) handleGetChatQueue(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, false)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, false)
 	if !ok {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	queue, err := queues.ChatQueue(r.Context(), workspaceID, chatID)
+	queue, err := s.store.ChatQueue(r.Context(), workspaceID, chatID)
 	writeResult(w, queue, err)
 }
 
 func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
@@ -123,18 +114,18 @@ func (s *Server) handleEnqueueChatMessage(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer idempotent.release()
-	queue, err := queues.EnqueueChatMessage(r.Context(), workspaceID, chatID, actorFromContext(r.Context()).AccountID(), input)
+	queue, err := s.store.EnqueueChatMessage(r.Context(), workspaceID, chatID, actorFromContext(r.Context()).AccountID(), input)
 	if err == nil {
 		idempotent.record(r.Context(), queue)
 	}
-	s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusCreated)
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusCreated)
 	if err == nil {
 		s.kickChatQueue(workspaceID, chatID)
 	}
 }
 
 func (s *Server) handleEditChatQueueItem(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
@@ -146,17 +137,17 @@ func (s *Server) handleEditChatQueueItem(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "expectedRevision is required")
 		return
 	}
-	queue, err := queues.EditChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), input)
-	s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+	queue, err := s.store.EditChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), input)
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 }
 
 func (s *Server) handleDeleteChatQueueItem(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
-	queue, err := queues.DeleteChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"))
-	s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+	queue, err := s.store.DeleteChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"))
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 	if err == nil {
 		// A failed message no longer holds the queue.
 		s.kickChatQueue(workspaceID, chatID)
@@ -164,7 +155,7 @@ func (s *Server) handleDeleteChatQueueItem(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleReorderChatQueue(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
@@ -176,20 +167,20 @@ func (s *Server) handleReorderChatQueue(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "expectedRevision is required")
 		return
 	}
-	queue, err := queues.ReorderChatQueue(r.Context(), workspaceID, chatID, input)
-	s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+	queue, err := s.store.ReorderChatQueue(r.Context(), workspaceID, chatID, input)
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 	if err == nil {
 		s.kickChatQueue(workspaceID, chatID)
 	}
 }
 
 func (s *Server) handleRetryChatQueueItem(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
-	queue, err := queues.RetryChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"))
-	s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+	queue, err := s.store.RetryChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"))
+	s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 	if err == nil {
 		s.kickChatQueue(workspaceID, chatID)
 	}
@@ -198,11 +189,11 @@ func (s *Server) handleRetryChatQueueItem(w http.ResponseWriter, r *http.Request
 // handleSteerChatQueueItem moves a queued message into the turn Claude is
 // running, with its files. Codex takes messages only between turns.
 func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request) {
-	queues, workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
+	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
 		return
 	}
-	session, found, active, err := queues.ChatQueueSession(r.Context(), workspaceID, chatID)
+	session, found, active, err := s.store.ChatQueueSession(r.Context(), workspaceID, chatID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -215,9 +206,9 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, "only Claude takes a message during its turn; this one is sent when the turn ends")
 		return
 	}
-	item, queue, err := queues.ClaimChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), false)
+	item, queue, err := s.store.ClaimChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), false)
 	if err != nil {
-		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 		return
 	}
 	s.chats.queueChanged(queue)
@@ -225,17 +216,17 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 	settleCtx := context.WithoutCancel(r.Context())
 	// Already in a session's transcript (a steer its device applied after
 	// its answer came too late): sent, not steered a second time.
-	if recordedBy, recorded, err := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
-		queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
-		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+	if recordedBy, recorded, err := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
+		queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
+		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 		return
 	}
-	_, status, steerErr := s.sendSessionMessage(r.Context(), session.ID, store.SendAgentSessionInput{
+	_, steerErr := s.sendSessionMessage(r.Context(), session.ID, store.SendAgentSessionInput{
 		Prompt: item.Text, Attachments: item.Attachments, InputID: item.ID,
 	})
 	if steerErr == nil {
-		queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
-		s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+		queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, session.ID, "")
+		s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 		return
 	}
 	var settled store.ChatQueue
@@ -244,9 +235,9 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		// The device was handed the steer and its answer did not come. Its
 		// transcript may already show the message (the event came, the
 		// answer is late): then it was steered.
-		if recordedBy, recorded, err := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
-			queue, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
-			s.writeChatQueueResult(w, r, queues, workspaceID, chatID, queue, err, http.StatusOK)
+		if recordedBy, recorded, err := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recorded {
+			queue, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateSent, recordedBy, "")
+			s.writeChatQueueResult(w, r, workspaceID, chatID, queue, err, http.StatusOK)
 			return
 		}
 		// Otherwise it may still apply it. Queued again, the message would
@@ -254,32 +245,29 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		// marked maybe sent. A worker that knows the steer's id applies it
 		// only once, and its transcript event settles the message
 		// (onSteerRecorded); an older one leaves the decision to the person.
-		settled, err = queues.SettleChatQueueItemUnconfirmed(settleCtx, item.ID, unanswered.summary())
+		settled, err = s.store.SettleChatQueueItemUnconfirmed(settleCtx, item.ID, unanswered.summary())
 		// The event may have landed between the check and the settle.
-		if recordedBy, recorded, recordErr := queues.ChatQueueInputSession(settleCtx, item.ID); err == nil && recordErr == nil && recorded {
-			if confirmed, confirmedNow, confirmErr := queues.SettleRecordedChatQueueItem(settleCtx, item.ID, recordedBy); confirmErr == nil && confirmedNow {
+		if recordedBy, recorded, recordErr := s.store.ChatQueueInputSession(settleCtx, item.ID); err == nil && recordErr == nil && recorded {
+			if confirmed, confirmedNow, confirmErr := s.store.SettleRecordedChatQueueItem(settleCtx, item.ID, recordedBy); confirmErr == nil && confirmedNow {
 				settled = confirmed
 			}
 		}
 	} else {
 		// Refused: the message waits in its place again.
-		settled, err = queues.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateQueued, "", "")
+		settled, err = s.store.SettleChatQueueItem(settleCtx, item.ID, store.ChatQueueStateQueued, "", "")
 	}
 	if err == nil {
 		s.chats.queueChanged(settled)
 	} else {
 		log.Printf("settle steered message %s: %v", item.ID, err)
 	}
-	if status == 0 {
-		status = http.StatusConflict
-	}
-	writeError(w, status, steerErr.Error())
+	writeError(w, cmp.Or(errorStatus(steerErr), http.StatusConflict), steerErr.Error())
 }
 
 // kickChatQueue sends the chat's next queued message, in the background,
 // if its session is idle.
 func (s *Server) kickChatQueue(workspaceID, chatID string) {
-	if _, ok := s.chatQueues(); !ok || workspaceID == "" || chatID == "" {
+	if workspaceID == "" || chatID == "" {
 		return
 	}
 	s.chatQueueKicks.Add(1)
@@ -292,11 +280,7 @@ func (s *Server) kickChatQueue(workspaceID, chatID string) {
 // kickPendingChatQueues looks at every chat with queued messages, e.g. once
 // a device connects again.
 func (s *Server) kickPendingChatQueues(ctx context.Context) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
-	refs, err := queues.PendingChatQueues(ctx)
+	refs, err := s.store.PendingChatQueues(ctx)
 	if err != nil {
 		log.Printf("list pending chat queues: %v", err)
 		return
@@ -337,16 +321,12 @@ func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
 	if event.Label != steeredIntoTurnLabel || !strings.HasPrefix(event.ID, "evt_") {
 		return
 	}
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
 	itemID := strings.TrimPrefix(event.ID, "evt_")
 	s.chatQueueKicks.Add(1)
 	go func() {
 		defer s.chatQueueKicks.Done()
 		ctx := context.Background()
-		queue, settled, err := queues.SettleRecordedChatQueueItem(ctx, itemID, event.SessionID)
+		queue, settled, err := s.store.SettleRecordedChatQueueItem(ctx, itemID, event.SessionID)
 		if err != nil {
 			if !errors.Is(err, store.ErrNotFound) {
 				log.Printf("settle steered message %s: %v", itemID, err)
@@ -363,11 +343,7 @@ func (s *Server) onSteerRecorded(event store.AgentSessionEvent) {
 // RecoverChatQueues settles what a stopped server left mid-send, then sends
 // what waits. Each message goes out once: one a session recorded is sent.
 func (s *Server) RecoverChatQueues(ctx context.Context) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
-	recovered, err := queues.RecoverChatQueueDispatches(ctx)
+	recovered, err := s.store.RecoverChatQueueDispatches(ctx)
 	if err != nil {
 		log.Printf("recover chat queues: %v", err)
 	}
@@ -388,23 +364,19 @@ func (s *Server) lockChatQueues(workspaceID string) func() {
 // Dispatches of one workspace run one at a time (a native chat's queue moves
 // to the session that adopts it); the claim itself is transactional.
 func (s *Server) dispatchChatQueue(ctx context.Context, workspaceID, chatID string) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
 	unlock := s.lockChatQueues(workspaceID)
 	defer unlock()
 	// A queue changed between reading and claiming is read again.
 	for attempt := 0; attempt < 3; attempt++ {
-		if !s.dispatchNextChatQueueItem(ctx, queues, workspaceID, chatID) {
+		if !s.dispatchNextChatQueueItem(ctx, workspaceID, chatID) {
 			return
 		}
 	}
 }
 
 // dispatchNextChatQueueItem reports whether the queue changed under it.
-func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.ChatQueueStore, workspaceID, chatID string) bool {
-	queue, err := queues.ChatQueue(ctx, workspaceID, chatID)
+func (s *Server) dispatchNextChatQueueItem(ctx context.Context, workspaceID, chatID string) bool {
+	queue, err := s.store.ChatQueue(ctx, workspaceID, chatID)
 	if err != nil || len(queue.Items) == 0 {
 		return false
 	}
@@ -413,7 +385,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 		// Being sent, or failed: the queue waits for the person.
 		return false
 	}
-	session, found, active, err := queues.ChatQueueSession(ctx, workspaceID, chatID)
+	session, found, active, err := s.store.ChatQueueSession(ctx, workspaceID, chatID)
 	if err != nil || active {
 		return false
 	}
@@ -421,7 +393,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 		// Sent once the device is back.
 		return false
 	}
-	item, claimed, err := queues.ClaimChatQueueItem(ctx, workspaceID, chatID, next.ID, true)
+	item, claimed, err := s.store.ClaimChatQueueItem(ctx, workspaceID, chatID, next.ID, true)
 	if errors.Is(err, store.ErrChatQueueConflict) {
 		return true
 	}
@@ -429,9 +401,9 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 		return false
 	}
 	s.chats.queueChanged(claimed)
-	sent, _, sendErr := s.sendChatQueueItem(ctx, workspaceID, chatID, session, found, item)
+	sent, sendErr := s.sendChatQueueItem(ctx, workspaceID, chatID, session, found, item)
 	state, sessionID, message := store.ChatQueueStateSent, sent.ID, ""
-	if recordedBy, recorded, err := queues.ChatQueueInputSession(ctx, item.ID); err == nil && recorded {
+	if recordedBy, recorded, err := s.store.ChatQueueInputSession(ctx, item.ID); err == nil && recorded {
 		// A session took it, even if its device then could not.
 		sessionID = recordedBy
 	} else if sendErr == nil {
@@ -442,7 +414,7 @@ func (s *Server) dispatchNextChatQueueItem(ctx context.Context, queues store.Cha
 	} else {
 		state, message = store.ChatQueueStateFailed, sendErr.Error()
 	}
-	settled, err := queues.SettleChatQueueItem(ctx, item.ID, state, sessionID, message)
+	settled, err := s.store.SettleChatQueueItem(ctx, item.ID, state, sessionID, message)
 	if err != nil {
 		log.Printf("settle queued message %s as %s: %v", item.ID, state, err)
 		return false
@@ -458,9 +430,9 @@ func (s *Server) chatQueueDeviceConnected(ctx context.Context, workspaceID strin
 		return s.hub.HasConnection(session.DeviceID)
 	}
 	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, AgentID: settings.AgentID, ProfileID: settings.ProfileID, Provider: settings.Provider}
-	if status, err := s.resolveSessionDevice(ctx, &input); err != nil {
+	if err := s.resolveSessionDevice(ctx, &input); err != nil {
 		// Any other refusal fails the message when it is sent.
-		return status != http.StatusConflict
+		return errorStatus(err) != http.StatusConflict
 	}
 	return true
 }
@@ -468,7 +440,7 @@ func (s *Server) chatQueueDeviceConnected(ctx context.Context, workspaceID strin
 // sendChatQueueItem sends a message the way the composer sends one: the
 // chat's next input, or the first input of a session that adopts a native
 // chat. The message's id becomes the input's id.
-func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID string, session store.AgentSession, found bool, item store.ChatQueueItem) (store.AgentSession, int, error) {
+func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID string, session store.AgentSession, found bool, item store.ChatQueueItem) (store.AgentSession, error) {
 	settings := item.RunSettings
 	note := strings.TrimSpace(settings.ProfileTransitionNote)
 	if found && (settings.AgentID == "" || settings.AgentID == session.AgentID) &&
@@ -499,11 +471,7 @@ func (s *Server) sendChatQueueItem(ctx context.Context, workspaceID, chatID stri
 // dropChatQueueItemsBy removes what an account queued once it may no longer
 // send in the workspace.
 func (s *Server) dropChatQueueItemsBy(ctx context.Context, workspaceID, userID string) {
-	queues, ok := s.chatQueues()
-	if !ok {
-		return
-	}
-	refs, err := queues.DeleteChatQueueItemsBy(ctx, workspaceID, userID)
+	refs, err := s.store.DeleteChatQueueItemsBy(ctx, workspaceID, userID)
 	if err != nil {
 		log.Printf("drop queued messages of %s in %s: %v", userID, workspaceID, err)
 		return

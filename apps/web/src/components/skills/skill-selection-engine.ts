@@ -1,4 +1,3 @@
-import type { SkillDependency } from "@bd777/foundry-protocol";
 import type { NormalizedSkill } from "./skill-models";
 import { i18n } from "../../i18n";
 
@@ -71,17 +70,15 @@ export function resolveSkillSelection(
   }
 
   // 2. Transitive traversal starting from all currently selected skills
-  // Stack contains [skillId, sourceName]
-  const stack: Array<{ skillId: string; sourceSkill: NormalizedSkill }> = [];
+  const stack: string[] = [];
   for (const id of explicitlySelected) {
-    const skill = byId.get(id);
-    if (skill) {
-      stack.push({ skillId: id, sourceSkill: skill });
+    if (byId.has(id)) {
+      stack.push(id);
     }
   }
 
   while (stack.length > 0) {
-    const { skillId, sourceSkill } = stack.pop()!;
+    const skillId = stack.pop()!;
     const skill = byId.get(skillId);
     if (!skill || !skill.dependencies) continue;
 
@@ -117,7 +114,7 @@ export function resolveSkillSelection(
         // If we haven't traversed this required target yet, push to stack
         if (!visitedRequired.has(targetSkill.id)) {
           visitedRequired.add(targetSkill.id);
-          stack.push({ skillId: targetSkill.id, sourceSkill: skill });
+          stack.push(targetSkill.id);
         }
       } else if (dep.strength === "related") {
         if (!targetSkill) continue;
@@ -139,7 +136,7 @@ export function resolveSkillSelection(
           // Also traverse the dependencies of this auto-enabled related skill
           if (!visitedRelated.has(targetSkill.id)) {
             visitedRelated.add(targetSkill.id);
-            stack.push({ skillId: targetSkill.id, sourceSkill: skill });
+            stack.push(targetSkill.id);
           }
         }
       }

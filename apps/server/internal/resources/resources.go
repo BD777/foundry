@@ -7,9 +7,9 @@
 // reached (offline). Instances of a detector that failed keep their last
 // known values, marked stale.
 //
-// Leases (leases.go) decide who holds an instance and let operations on it
-// through; they key on Instance.ID, which stays the same across rescans,
-// reconnects and server restarts.
+// Leases (leases.go, lease_*.go) decide who holds an instance and let
+// operations on it through; they key on Instance.ID, which stays the same
+// across rescans, reconnects and server restarts.
 //
 // Storage is store.ResourceStore (sqlitestore/resources.go); the package
 // decides, the store only keeps what it decided.
@@ -499,18 +499,3 @@ func sameSource(left, right store.ResourceSourceStatus) bool {
 	}
 	return reflect.DeepEqual(left, right)
 }
-
-func clip(text string) string {
-	if len(text) <= maxTextLength {
-		return text
-	}
-	cut := maxTextLength
-	for cut > 0 && !isRuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut]
-}
-
-func isRuneStart(b byte) bool { return b&0xC0 != 0x80 }
-
-func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }

@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import {
   lstatSync,
   mkdirSync,
@@ -17,10 +15,15 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { IssueEnvironment } from "./execution-types.js";
 import { EvidenceStore, digestBytes, digestObject } from "./evidence-store.js";
-import { git } from "./execution-git.js";
+import { git, gitBytes } from "./execution-git.js";
 import { childPath, identifier, within } from "./execution-storage.js";
 
-const exec = promisify(execFile);
+/** Candidate bytes as committed: no system or user Git config applies. */
+const candidateBlobGit = {
+  env: { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" },
+  maxBuffer: 100 * 1024 * 1024,
+  timeout: 0,
+};
 
 export async function sealCandidate(
   environment: IssueEnvironment,
@@ -88,29 +91,11 @@ export async function sealCandidate(
       const bytes =
         type === "commit"
           ? Buffer.from(oid)
-          : (
-              await exec(
-                "git",
-                [
-                  "-c",
-                  "core.hooksPath=/dev/null",
-                  "-C",
-                  repo.worktreePath,
-                  "cat-file",
-                  "blob",
-                  oid,
-                ],
-                {
-                  encoding: "buffer",
-                  maxBuffer: 100 * 1024 * 1024,
-                  env: {
-                    PATH: process.env.PATH,
-                    GIT_CONFIG_NOSYSTEM: "1",
-                    GIT_CONFIG_GLOBAL: "/dev/null",
-                  },
-                },
-              )
-            ).stdout;
+          : await gitBytes(
+              repo.worktreePath,
+              ["cat-file", "blob", oid],
+              candidateBlobGit,
+            );
       manifest.push({
         repoId: repo.repoId,
         path,
@@ -187,33 +172,18 @@ export async function materializeCandidate(
         : childPath(destination, identity.relativePath);
     const target = resolve(root, file.path);
     if (!within(root, target)) throw new Error("unsafe_snapshot_path");
-    const result = await exec(
-      "git",
-      [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-C",
-        repo.worktreePath,
-        "show",
-        `${identity.candidateCommit}:${file.path}`,
-      ],
-      {
-        encoding: "buffer",
-        maxBuffer: 100 * 1024 * 1024,
-        env: {
-          PATH: process.env.PATH,
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-        },
-      },
+    const bytes = await gitBytes(
+      repo.worktreePath,
+      ["show", `${identity.candidateCommit}:${file.path}`],
+      candidateBlobGit,
     );
-    if (digestBytes(result.stdout) !== file.digest)
+    if (digestBytes(bytes) !== file.digest)
       throw new Error("snapshot_blob_corrupt");
     mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
     if (!within(realpathSync(destination), realpathSync(dirname(target))))
       throw new Error("snapshot_symlink_escape");
     if (file.kind === "symlink") {
-      const link = result.stdout.toString();
+      const link = bytes.toString();
       if (
         !within(destination, resolve(dirname(target), link)) ||
         link.startsWith("/")
@@ -222,7 +192,7 @@ export async function materializeCandidate(
       symlinkSync(link, target);
     } else {
       if (lstatSafe(target)) throw new Error("snapshot_path_collision");
-      writeFileSync(target, result.stdout, {
+      writeFileSync(target, bytes, {
         flag: "wx",
         mode: file.mode === "100755" ? 0o500 : 0o400,
       });

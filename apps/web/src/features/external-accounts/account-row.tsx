@@ -13,7 +13,7 @@ import {
   statusLabel,
   statusTone,
 } from "./account-format";
-import { RowMenu, type RowMenuItem } from "./row-menu";
+import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 
 export type AccountAction =
   | "refresh"
@@ -171,7 +171,11 @@ export function AccountRow({
               {t("actions.reconnect")}
             </Button>
           ) : null}
-          <RowMenu disabled={busy} items={items} label={name} />
+          <RowMenu
+            disabled={busy}
+            items={items}
+            label={t("actions.more", { name })}
+          />
         </span>
       </div>
     </li>

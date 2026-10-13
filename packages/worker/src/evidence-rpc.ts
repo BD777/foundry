@@ -1,6 +1,4 @@
 import { arch, platform } from "node:os";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
@@ -18,6 +16,7 @@ import {
   MATERIAL_LIMIT,
   atomicEvidenceFile,
 } from "./evidence-store.js";
+import { gitBytes } from "./execution-git.js";
 import { ExecutionStore, identifier } from "./execution-storage.js";
 import {
   assertSnapshotCurrent,
@@ -402,23 +401,16 @@ async function execute(
       )
         throw new Error("invalid_export_claim");
     }
-    const result = changes
-      ? { stdout: await candidateChangeManifest(snapshot, environment) }
-      : await promisify(execFile)(
-          "git",
-          [
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-C",
-            repo!.worktreePath,
-            "show",
-            `${frozen!.candidateCommit}:${file!.path}`,
-          ],
-          { encoding: "buffer", maxBuffer: MATERIAL_LIMIT },
+    const bytes = changes
+      ? await candidateChangeManifest(snapshot, environment)
+      : await gitBytes(
+          repo!.worktreePath,
+          ["show", `${frozen!.candidateCommit}:${file!.path}`],
+          { maxBuffer: MATERIAL_LIMIT, timeout: 0 },
         );
-    if (!changes && digestBytes(result.stdout) !== file!.digest)
+    if (!changes && digestBytes(bytes) !== file!.digest)
       throw new Error("snapshot_blob_corrupt");
-    const safe = redactEvidence(result.stdout);
+    const safe = redactEvidence(bytes);
     const material = store.sealMaterial(
       changes ? "Candidate changes.json" : file!.path,
       request.carrier,

@@ -3,21 +3,10 @@ import type {
   ModelRequestUsage,
   SubagentUsage,
 } from "@bd777/foundry-protocol";
+import { count, optionalRecord } from "./json-values.js";
 
 /** Token usage without the duration, which the runner measures itself. */
 export type TurnTokenUsage = Omit<AgentTurnUsage, "durationMs">;
-
-function count(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.round(value)
-    : 0;
-}
-
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 
 /**
  * Usage of a Claude Agent SDK `result` message. Claude reports cache reads
@@ -30,9 +19,9 @@ export function claudeResultUsage(
   message: unknown,
   costUsd?: number,
 ): TurnTokenUsage | undefined {
-  const result = record(message);
+  const result = optionalRecord(message);
   if (result?.type !== "result") return undefined;
-  const usage = record(result.usage);
+  const usage = optionalRecord(result.usage);
   if (!usage) return undefined;
   const cacheReadTokens = count(usage.cache_read_input_tokens);
   const cacheWriteTokens = count(usage.cache_creation_input_tokens);
@@ -54,8 +43,8 @@ export function claudeResultUsage(
  * `output_tokens`.
  */
 export function codexTurnUsage(event: unknown): TurnTokenUsage | undefined {
-  const turn = record(event);
-  const usage = record(turn?.usage);
+  const turn = optionalRecord(event);
+  const usage = optionalRecord(turn?.usage);
   if (!usage) return undefined;
   return {
     inputTokens: count(usage.input_tokens),
@@ -159,8 +148,8 @@ export function mergeRequestUsage(
 export function claudeRequestUsage(
   message: unknown,
 ): ModelRequestUsage | undefined {
-  const inner = record(record(message)?.message);
-  const usage = record(inner?.usage);
+  const inner = optionalRecord(optionalRecord(message)?.message);
+  const usage = optionalRecord(inner?.usage);
   const requestId = typeof inner?.id === "string" ? inner.id : "";
   if (!usage || !requestId) return undefined;
   const value = requestUsageOf(requestId, usage);
@@ -178,7 +167,7 @@ export class ClaudeRequestUsageTracker {
   private reported = false;
 
   observe(message: unknown): ModelRequestUsage | undefined {
-    const value = record(message);
+    const value = optionalRecord(message);
     if (!value || value.parent_tool_use_id) return undefined;
     if (value.type === "assistant") {
       const usage = claudeRequestUsage(message);
@@ -187,19 +176,19 @@ export class ClaudeRequestUsageTracker {
       return undefined;
     }
     if (value.type !== "stream_event") return undefined;
-    const event = record(value.event);
+    const event = optionalRecord(value.event);
     if (event?.type === "message_start") {
-      const started = record(event.message);
+      const started = optionalRecord(event.message);
       const requestId = typeof started?.id === "string" ? started.id : "";
       this.current = requestId
-        ? requestUsageOf(requestId, record(started?.usage) ?? {})
+        ? requestUsageOf(requestId, optionalRecord(started?.usage) ?? {})
         : undefined;
       this.reported = false;
       return undefined;
     }
     if (!this.current || this.reported) return undefined;
     if (event?.type === "message_delta") {
-      const delta = record(event.usage);
+      const delta = optionalRecord(event.usage);
       if (delta)
         this.current = mergeRequestUsage(
           this.current,
@@ -230,5 +219,5 @@ export function claudeSubagentUsage(
 }
 
 function usageRecord(value: unknown): Record<string, unknown> | undefined {
-  return record(record(value)?.usage);
+  return optionalRecord(optionalRecord(value)?.usage);
 }

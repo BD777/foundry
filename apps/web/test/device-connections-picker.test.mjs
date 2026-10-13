@@ -217,10 +217,7 @@ test("a failed write keeps the picker open with the draft for one retry", async 
       window.document.querySelector('[role="alert"]').textContent,
       /synthetic write failure/,
     );
-    assert.equal(
-      window.document.querySelectorAll(".fdy-connection-assign-dialog").length,
-      1,
-    );
+    assert.equal(window.document.querySelectorAll("[role=dialog]").length, 1);
     assert.equal(rowFor("LLM Gateway").querySelector("input").checked, true);
     assert.equal(view.refreshes.length, 0);
 
@@ -231,10 +228,7 @@ test("a failed write keeps the picker open with the draft for one retry", async 
       "p1",
       "p2",
     ]);
-    assert.equal(
-      window.document.querySelectorAll(".fdy-connection-assign-dialog").length,
-      0,
-    );
+    assert.equal(window.document.querySelectorAll("[role=dialog]").length, 0);
     assert.equal(view.refreshes.length, 1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -260,10 +254,7 @@ test("a saved write with a failed refresh closes the picker and retries refresh 
 
     // Exactly one write, and the picker closed: the assignment was saved.
     assert.equal(writes.length, 1);
-    assert.equal(
-      window.document.querySelectorAll(".fdy-connection-assign-dialog").length,
-      0,
-    );
+    assert.equal(window.document.querySelectorAll("[role=dialog]").length, 0);
     // There is no save-failure alert inside a dialog; instead the section
     // reports the refresh failure separately, honestly.
     const refreshAlert = [

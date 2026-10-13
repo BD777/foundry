@@ -65,27 +65,3 @@ export function AssetSection({ icon, rows, title }: AssetSectionProps) {
     </section>
   );
 }
-
-export interface CapacityBarsProps {
-  "aria-label": string;
-  total: number;
-  used: number;
-}
-
-export function CapacityBars({
-  "aria-label": ariaLabel,
-  total,
-  used,
-}: CapacityBarsProps) {
-  return (
-    <div aria-label={ariaLabel} className="fdy-capacity-bars">
-      {Array.from({ length: total }, (_, index) => (
-        <span
-          className={cn(index < used && "fdy-capacity-bar-used")}
-          data-state={index < used ? "used" : "available"}
-          key={index}
-        />
-      ))}
-    </div>
-  );
-}

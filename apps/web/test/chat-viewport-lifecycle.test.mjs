@@ -7,9 +7,9 @@ import { createRoot } from "react-dom/client";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { useChatTurnNavigation } =
-  await import("../src/features/chat/use-chat-turn-navigation.ts");
+  await import("../src/components/conversation/use-chat-turn-navigation.ts");
 const { buildChatTurnAnchors } =
-  await import("../src/features/chat/chat-turn-navigation.ts");
+  await import("../src/components/conversation/chat-turn-navigation.ts");
 
 test("virtualizer notifications sample settled geometry once per frame without commit feedback", async () => {
   const window = new Window();

@@ -85,7 +85,7 @@ test("a legacy Chinese transcript renders in English", async () => {
   }
   try {
     const { ProcessDisclosure } =
-      await import("../src/components/conversation/chat-message-content.tsx");
+      await import("../src/components/conversation/process-disclosure.tsx");
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);

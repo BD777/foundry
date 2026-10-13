@@ -1,22 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelActiveSession } from "../dist/session-helpers.js";
 import {
-  dispatchKey,
-  queuedSessionCancelRequests,
-} from "../dist/session-state.js";
+  cancelActiveSession,
+  clearSessionControl,
+  takeQueuedSessionCancel,
+} from "../dist/session-control.js";
 
 test("a cancel that arrives before its input starts stops only that input", async () => {
-  queuedSessionCancelRequests.clear();
+  clearSessionControl();
   await cancelActiveSession("sess_orphan", "input_stale");
   assert.equal(
-    queuedSessionCancelRequests.has(dispatchKey("sess_orphan", "input_stale")),
-    true,
-  );
-  assert.equal(
-    queuedSessionCancelRequests.has(dispatchKey("sess_orphan", "input_next")),
+    takeQueuedSessionCancel("sess_orphan", "input_next"),
     false,
     "the session's next input must still run",
   );
-  queuedSessionCancelRequests.clear();
+  assert.equal(takeQueuedSessionCancel("sess_orphan", "input_stale"), true);
+  assert.equal(
+    takeQueuedSessionCancel("sess_orphan", "input_stale"),
+    false,
+    "a parked cancel stops its input once",
+  );
 });

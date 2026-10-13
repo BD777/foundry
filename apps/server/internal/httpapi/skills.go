@@ -91,7 +91,7 @@ type deviceToolStore interface {
 const maxCheckedTools = 200
 
 // libraryTools is every program some library skill or bundle needs.
-func libraryTools(ctx context.Context, db store.Store) []string {
+func libraryTools(ctx context.Context, db Backend) []string {
 	skills, err := db.ListPromotedSkills(ctx)
 	if err != nil {
 		return nil
@@ -106,14 +106,12 @@ func libraryTools(ctx context.Context, db store.Store) []string {
 			}
 		}
 	}
-	if repos, ok := db.(skillRepositoryStore); ok {
-		if items, err := repos.ListSkillRepositories(ctx); err == nil {
-			for _, repo := range items {
-				for _, tool := range repo.Tools {
-					if !seen[tool.Name] && len(tools) < maxCheckedTools {
-						seen[tool.Name] = true
-						tools = append(tools, tool.Name)
-					}
+	if items, err := db.ListSkillRepositories(ctx); err == nil {
+		for _, repo := range items {
+			for _, tool := range repo.Tools {
+				if !seen[tool.Name] && len(tools) < maxCheckedTools {
+					seen[tool.Name] = true
+					tools = append(tools, tool.Name)
 				}
 			}
 		}
@@ -215,8 +213,8 @@ func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots
 	if err != nil {
 		return nil, false, err
 	}
-	if tools, ok := h.store.(deviceToolStore); ok && value.Tools != nil {
-		toolsChanged, err := tools.ReplaceDeviceTools(ctx, deviceID, value.Tools, value.ToolVersions)
+	if value.Tools != nil {
+		toolsChanged, err := h.store.ReplaceDeviceTools(ctx, deviceID, value.Tools, value.ToolVersions)
 		if err != nil {
 			return nil, false, err
 		}
@@ -328,15 +326,13 @@ func (s *Server) handleListDeviceSkills(w http.ResponseWriter, r *http.Request) 
 	}
 	answer := map[string]any{"roots": roots}
 	// When the device last scanned, whether or not that changed its skills.
-	if scans, ok := s.store.(deviceSkillScanStore); ok {
-		scannedAt, err := scans.DeviceSkillsScannedAt(r.Context(), deviceID)
-		if err != nil {
-			writeResult(w, nil, err)
-			return
-		}
-		if scannedAt != "" {
-			answer["scannedAt"] = scannedAt
-		}
+	scannedAt, err := s.store.DeviceSkillsScannedAt(r.Context(), deviceID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if scannedAt != "" {
+		answer["scannedAt"] = scannedAt
 	}
 	view, err := s.callerVisibility(r)
 	answer["skills"] = view.deviceSkillUsage(skills)
@@ -570,13 +566,8 @@ func (s *Server) handleSetWorkspaceSkillPin(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	pinner, ok := s.store.(skillPinner)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "pinning skills is not supported by this store")
-		return
-	}
 	workspaceID := strings.TrimSpace(r.PathValue("id"))
-	err := pinner.SetWorkspaceSkillPin(r.Context(), workspaceID, strings.TrimSpace(r.PathValue("skillId")), input.Revision)
+	err := s.store.SetWorkspaceSkillPin(r.Context(), workspaceID, strings.TrimSpace(r.PathValue("skillId")), input.Revision)
 	if errors.Is(err, store.ErrSkillNotFound) || errors.Is(err, store.ErrSkillPackageNotFound) {
 		writeError(w, http.StatusNotFound, "the workspace has no such skill or revision")
 		return

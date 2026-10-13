@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /** Named channel whose in-flight request is superseded by the next one. */
-export type RequestChannel = "file-read" | "workspace-load";
+export type RequestChannel = "workspace-load";
 
 export interface RequestChannels {
   /** Aborts the in-flight request on a channel without starting a new one. */

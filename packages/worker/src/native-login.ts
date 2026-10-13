@@ -1,16 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { ProviderHealth } from "@bd777/foundry-protocol";
-import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
-import { nativeLoginEnvironment } from "./native-login-environment.js";
 import {
   clearNativeCliCache,
   nativeCli,
   nativeCliInstallCommands,
   outdatedNote,
+  resolveClaudeCommand,
+  resolveCodexCommand,
 } from "./native-cli.js";
+import { nativeLoginEnvironment } from "./native-login-environment.js";
+import { claudeConfigDir } from "./native-homes.js";
 
 // `claude auth status` reports an account login as "claude.ai" (current CLIs)
 // or "oauth_token"; API keys, key helpers and third-party gateways are not
@@ -57,8 +58,7 @@ export interface ClaudeStoredLogin {
  * macOS, which keeps the login in the keychain).
  */
 export function claudeStoredLogin(
-  configDir: string = process.env.CLAUDE_CONFIG_DIR ||
-    resolve(homedir(), ".claude"),
+  configDir: string = claudeConfigDir(),
 ): ClaudeStoredLogin | undefined {
   let oauth: Record<string, unknown> | undefined;
   try {

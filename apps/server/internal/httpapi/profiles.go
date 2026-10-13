@@ -153,7 +153,7 @@ func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, input store
 		writeError(w, http.StatusBadRequest, "official profiles use the agent CLI login and cannot store an apiKey")
 		return
 	}
-	if credential != "" && !secretsConfigured(s.secrets) {
+	if credential != "" && !secretsConfigured(s.store) {
 		writeError(w, http.StatusBadRequest, "apiKey storage requires the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "local_login, env and custom_command profiles describe machine-local state and cannot be promoted to a server profile")
 		return
 	}
-	if !secretsConfigured(s.secrets) {
+	if !secretsConfigured(s.store) {
 		writeError(w, http.StatusBadRequest, "promoting a profile moves its credential to the server; start the server with FOUNDRY_SECRET_KEY_PATH")
 		return
 	}
@@ -330,21 +330,21 @@ var errDeviceHoldsNoCredential = errors.New(
 // daemon is asked for the key this machine uses, because a server profile
 // without a credential cannot authenticate on any device.
 func (s *Server) adoptPromotedCredential(ctx context.Context, deviceID string, sourceProfileID string, profileID string) error {
-	if !secretsConfigured(s.secrets) {
+	if !secretsConfigured(s.store) {
 		return nil
 	}
 	legacyID := agentProfileSecretID(deviceID, sourceProfileID)
 	targetID := serverProfileSecretID(profileID)
 	if legacyID != targetID {
-		stored, err := s.secrets.HasSecret(ctx, legacyID)
+		stored, err := s.store.HasSecret(ctx, legacyID)
 		if err != nil {
 			return err
 		}
 		if stored {
-			return s.secrets.RenameSecret(ctx, legacyID, targetID)
+			return s.store.RenameSecret(ctx, legacyID, targetID)
 		}
 	}
-	if stored, err := s.secrets.HasSecret(ctx, targetID); err != nil {
+	if stored, err := s.store.HasSecret(ctx, targetID); err != nil {
 		return err
 	} else if stored {
 		return nil
@@ -403,7 +403,7 @@ func (s *Server) overlayProfileCredentials(ctx context.Context, profiles []store
 	if profiles == nil {
 		return []store.ProfileDefinition{}
 	}
-	if !secretsConfigured(s.secrets) {
+	if !secretsConfigured(s.store) {
 		return profiles
 	}
 	for i := range profiles {
@@ -592,8 +592,8 @@ func (h *DaemonHub) endpointTwinProfile(
 	// The device controls its own credential for this connection (key entered
 	// on the device profile). Dispatch keeps using it rather than swapping the
 	// session onto another account.
-	if secretsConfigured(h.secrets) {
-		stored, err := h.secrets.HasSecret(
+	if secretsConfigured(h.store) {
+		stored, err := h.store.HasSecret(
 			ctx,
 			agentProfileSecretID(deviceID, localProfileID),
 		)
@@ -622,10 +622,10 @@ func (h *DaemonHub) endpointTwinProfile(
 			deviceLocalConnectionType(profile.ConnectionType) {
 			continue
 		}
-		if !secretsConfigured(h.secrets) {
+		if !secretsConfigured(h.store) {
 			continue
 		}
-		hasCredential, err := h.secrets.HasSecret(
+		hasCredential, err := h.store.HasSecret(
 			ctx,
 			serverProfileSecretID(profile.ID),
 		)
@@ -738,76 +738,88 @@ func (s *Server) serverProfileProjections(
 	for _, binding := range resolved {
 		device := deviceByID[binding.DeviceID]
 		profile := profileByID[binding.ProfileID]
-		hasCredential := s.profileHasCredential(ctx, profile.ID)
-		status, detail := serverProfileStatus(device, health, profile.Runtime, profile.AuthMode, hasCredential)
-		authMode := profileAuthModeMissing
-		secretPlacement := secretPlacementServer
-		configLabel := serverProfileConfigLabel
-		if profile.AuthMode == "official" {
-			secretPlacement = secretPlacementLocal
-			configLabel = "official agent login on this device"
-			if status == "healthy" {
-				authMode = profileAuthModeConfig
-			}
-		} else {
-			// The server definition itself is the configuration; a sealed key
-			// is optional for custom profiles (keyless internal gateways).
-			authMode = profileAuthModeConfig
-		}
+		row := serverProfileRow(device, profile, health, s.profileHasCredential(ctx, profile.ID))
 		// The device row is kept rather than replaced: the machine really does
 		// carry this configuration, and hiding it made a promoted profile look
 		// like it had vanished from the device.
 		agentProfiles = markPromotedDeviceProfile(agentProfiles, device.ID, profile)
-		agentProfiles = upsertAgentProfileRow(agentProfiles, store.AgentProfileProjection{
-			ID:                   profile.ID,
-			DeviceID:             device.ID,
-			Runtime:              profile.Runtime,
-			Label:                profile.Label,
-			Status:               status,
-			AuthMode:             authMode,
-			SecretStored:         secretPlacement,
-			ServerCredential:     profile.AuthMode != "official" && hasCredential,
-			ConfigScope:          serverProfileConfigScope,
-			ConfigLabel:          configLabel,
-			ConnectionType:       profile.ConnectionType,
-			Model:                profile.Model,
-			Models:               profile.Models,
-			PromptPrefix:         profile.PromptPrefix,
-			ClaudeEffort:         profile.ClaudeEffort,
-			ClaudePermissionMode: profile.ClaudePermissionMode,
-			CodexReasoningEffort: profile.CodexReasoningEffort,
-			CodexSandboxMode:     profile.CodexSandboxMode,
-			CodexApprovalPolicy:  profile.CodexApprovalPolicy,
-			CodexSpeed:           profile.CodexSpeed,
-			BaseURL:              profile.BaseURL,
-			Origin:               profileOriginServer,
-			LastSeenLabel:        device.LastSeenLabel,
-			StatusDetail:         detail,
-		})
+		agentProfiles = upsertAgentProfileRow(agentProfiles, row)
 		// An agent is a profile on the machine that runs this workspace, so a
 		// binding on any other device contributes no selectable agent here.
 		if workspace.ID == "" || device.ID != workspaceDeviceID {
 			continue
 		}
-		agents = upsertAgentRow(agents, store.AgentProjection{
-			ID:             store.ServerAgentID(device.ID, workspace.ID, profile.ID),
-			WorkspaceID:    workspace.ID,
-			DeviceID:       device.ID,
-			DeviceLabel:    device.Label,
-			Provider:       profile.Runtime,
-			ProfileID:      profile.ID,
-			ProfileLabel:   profile.Label,
-			ConnectionType: profile.ConnectionType,
-			Status:         status,
-			AuthMode:       authMode,
-			SecretStored:   secretPlacement,
-			ConfigScope:    serverProfileConfigScope,
-			ConfigLabel:    configLabel,
-			LastSeenLabel:  device.LastSeenLabel,
-			StatusDetail:   detail,
-		})
+		agents = upsertAgentRow(agents, serverAgentRow(workspace, device, row))
 	}
 	return agentProfiles, agents, nil
+}
+
+// serverProfileRow is a server profile as the device it is enabled on runs
+// it, with that device's status for it.
+func serverProfileRow(device store.DeviceProjection, profile store.ProfileDefinition, health []store.ProviderHealth, hasCredential bool) store.AgentProfileProjection {
+	status, detail := serverProfileStatus(device, health, profile.Runtime, profile.AuthMode, hasCredential)
+	authMode := profileAuthModeMissing
+	secretPlacement := secretPlacementServer
+	configLabel := serverProfileConfigLabel
+	if profile.AuthMode == "official" {
+		secretPlacement = secretPlacementLocal
+		configLabel = "official agent login on this device"
+		if status == "healthy" {
+			authMode = profileAuthModeConfig
+		}
+	} else {
+		// The server definition itself is the configuration; a sealed key
+		// is optional for custom profiles (keyless internal gateways).
+		authMode = profileAuthModeConfig
+	}
+	return store.AgentProfileProjection{
+		ID:                   profile.ID,
+		DeviceID:             device.ID,
+		Runtime:              profile.Runtime,
+		Label:                profile.Label,
+		Status:               status,
+		AuthMode:             authMode,
+		SecretStored:         secretPlacement,
+		ServerCredential:     profile.AuthMode != "official" && hasCredential,
+		ConfigScope:          serverProfileConfigScope,
+		ConfigLabel:          configLabel,
+		ConnectionType:       profile.ConnectionType,
+		Model:                profile.Model,
+		Models:               profile.Models,
+		PromptPrefix:         profile.PromptPrefix,
+		ClaudeEffort:         profile.ClaudeEffort,
+		ClaudePermissionMode: profile.ClaudePermissionMode,
+		CodexReasoningEffort: profile.CodexReasoningEffort,
+		CodexSandboxMode:     profile.CodexSandboxMode,
+		CodexApprovalPolicy:  profile.CodexApprovalPolicy,
+		CodexSpeed:           profile.CodexSpeed,
+		BaseURL:              profile.BaseURL,
+		Origin:               profileOriginServer,
+		LastSeenLabel:        device.LastSeenLabel,
+		StatusDetail:         detail,
+	}
+}
+
+// serverAgentRow is a server profile's row as the agent it is in a
+// workspace on the row's device.
+func serverAgentRow(workspace store.WorkspaceProjection, device store.DeviceProjection, row store.AgentProfileProjection) store.AgentProjection {
+	return store.AgentProjection{
+		ID:             store.ServerAgentID(device.ID, workspace.ID, row.ID),
+		WorkspaceID:    workspace.ID,
+		DeviceID:       device.ID,
+		DeviceLabel:    device.Label,
+		Provider:       row.Runtime,
+		ProfileID:      row.ID,
+		ProfileLabel:   row.Label,
+		ConnectionType: row.ConnectionType,
+		Status:         row.Status,
+		AuthMode:       row.AuthMode,
+		SecretStored:   row.SecretStored,
+		ConfigScope:    row.ConfigScope,
+		ConfigLabel:    row.ConfigLabel,
+		LastSeenLabel:  row.LastSeenLabel,
+		StatusDetail:   row.StatusDetail,
+	}
 }
 
 // markPromotedDeviceProfile flags the daemon-reported row that describes the

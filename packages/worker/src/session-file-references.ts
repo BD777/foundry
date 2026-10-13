@@ -18,6 +18,7 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { within } from "./paths.js";
 
 /** What one turn's answer is checked against. */
 export interface FileReferenceContext {
@@ -82,7 +83,7 @@ export function workspaceAttachmentPath(
   path: string,
   workspacePath: string,
 ): boolean {
-  return pathWithin(resolve(workspacePath, ".foundry", "attachments"), path);
+  return within(resolve(workspacePath, ".foundry", "attachments"), path);
 }
 
 /**
@@ -98,7 +99,7 @@ export function privateDevicePath(
 ): boolean {
   if (
     workspacePath &&
-    pathWithin(resolve(workspacePath, ".foundry"), path) &&
+    within(resolve(workspacePath, ".foundry"), path) &&
     !workspaceAttachmentPath(path, workspacePath)
   )
     return true;
@@ -121,17 +122,6 @@ export function privateDevicePath(
   const name = basename(path);
   return (
     name.endsWith(".pem") || name.startsWith("id_") || name.startsWith(".env")
-  );
-}
-
-/** Whether `path` is `root` or inside it. */
-export function pathWithin(root: string, path: string): boolean {
-  const relativePath = relative(root, path);
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith(`..${sep}`) &&
-      relativePath !== ".." &&
-      !isAbsolute(relativePath))
   );
 }
 
@@ -335,14 +325,13 @@ export function resolveFileReferences(
       privateDevicePath(found.realpath, home, workspace)
     )
       return undefined;
-    const insideWorkspace = pathWithin(workspace, found.realpath);
+    const insideWorkspace = within(workspace, found.realpath);
     if (found.stat.isDirectory()) {
       // A temporary root, the workspace, home or a folder above them holds
       // everything; naming it points at no work of the session.
       if (
         broadFolders.some(
-          (folder) =>
-            pathWithin(path, folder) || pathWithin(found.realpath, folder),
+          (folder) => within(path, folder) || within(found.realpath, folder),
         )
       )
         return undefined;
@@ -350,7 +339,7 @@ export function resolveFileReferences(
         (recorded) =>
           recorded !== path &&
           recorded !== found.realpath &&
-          (pathWithin(path, recorded) || pathWithin(found.realpath, recorded)),
+          (within(path, recorded) || within(found.realpath, recorded)),
       );
       return holdsRecorded
         ? {
@@ -370,7 +359,7 @@ export function resolveFileReferences(
       !insideWorkspace &&
       !writtenByTool &&
       (found.stat.mtimeMs < context.turnStartedAt - mtimeToleranceMs ||
-        !roots.some((root) => pathWithin(root, found.realpath)))
+        !roots.some((root) => within(root, found.realpath)))
     )
       return undefined;
     return {
@@ -413,8 +402,8 @@ export function resolveFileReferences(
         recordedAll.includes(realpath)
       )
         return undefined;
-      const insideWorkspace = pathWithin(workspace, realpath);
-      if (!insideWorkspace && !roots.some((root) => pathWithin(root, realpath)))
+      const insideWorkspace = within(workspace, realpath);
+      if (!insideWorkspace && !roots.some((root) => within(root, realpath)))
         return undefined;
       return {
         text: token.text,

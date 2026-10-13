@@ -34,7 +34,8 @@ import {
   statSkillTree,
 } from "./skill-files.js";
 import { foundryStatePath } from "./state-root.js";
-import { writeJSON } from "./storage.js";
+import { tryReadJSONFile, writeJSON } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 interface ScanCacheEntry {
   signature: string;
@@ -50,12 +51,8 @@ type ScanCache = Record<string, ScanCacheEntry>;
 const scanCachePath = () => foundryStatePath("skill-scan-cache.json");
 
 function readScanCache(): ScanCache {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(scanCachePath(), "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as ScanCache) : {};
-  } catch {
-    return {};
-  }
+  const parsed = tryReadJSONFile<unknown>(scanCachePath());
+  return parsed && typeof parsed === "object" ? (parsed as ScanCache) : {};
 }
 
 function writeScanCache(cache: ScanCache): void {
@@ -299,8 +296,7 @@ export function scanSkillRoots(
     } catch (error) {
       for (const i of indices) {
         discovered[i]!.sizeBytes = -1;
-        discovered[i]!.dependencyAnalysisError =
-          error instanceof Error ? error.message : String(error);
+        discovered[i]!.dependencyAnalysisError = errorMessage(error);
       }
     }
   }

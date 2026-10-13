@@ -25,10 +25,11 @@ import { blockerText } from "./issue-language";
 import { ExitRulesList } from "./exit-rules-list";
 import { AlignmentConflict, alignmentConflicts } from "./alignment-conflict";
 import { requestChanges } from "../../api";
+import { isIssueClosed } from "../../lib/issue-meta";
 
 export function IssueEvidencePanel({ issue }: { issue: Issue }) {
   const { t } = useTranslation("issueDetail");
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   const [review, setReview] = useState<ReviewSnapshot>();
   const [contract, setContract] = useState<IssueContract>();
   const [verifications, setVerifications] = useState<Verification[]>([]);

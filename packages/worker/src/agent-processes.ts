@@ -27,17 +27,13 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { signalProcessGroup } from "./process-group.js";
 import { foundryStatePath } from "./state-root.js";
+import { writeFileAtomic, writePrivateJSONAtomic } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 /** A running process as the system reports it. */
 export interface ProcessIdentity {
@@ -137,10 +133,10 @@ export function recordAgentProcess(
     argv,
     owner,
   };
-  mkdirSync(registry, { recursive: true, mode: 0o700 });
-  const path = resolve(registry, `${pid}.json`);
-  writeFileSync(`${path}.tmp`, JSON.stringify(record), { mode: 0o600 });
-  renameSync(`${path}.tmp`, path);
+  writePrivateJSONAtomic(resolve(registry, `${pid}.json`), record, {
+    hardenParent: false,
+    fsync: false,
+  });
 }
 
 export function forgetAgentProcess(registry: string, pid: number): void {
@@ -180,18 +176,8 @@ export function readAgentProcessRecords(
   return records;
 }
 
-/** Signals every process of the group; false when none is left. */
-function signalGroup(pgid: number, signal: NodeJS.Signals | 0): boolean {
-  try {
-    process.kill(-pgid, signal);
-    return true;
-  } catch {
-    return false; // The group is gone.
-  }
-}
-
 function groupExists(pgid: number): boolean {
-  return signalGroup(pgid, 0);
+  return signalProcessGroup(pgid, 0);
 }
 
 /**
@@ -210,7 +196,7 @@ export async function reapLeftoverAgentProcesses(
     const owner = processIdentity(record.owner.pid);
     if (owner?.startTime === record.owner.startTime) continue; // Its worker runs.
     if (stillRuns(record)) {
-      signalGroup(record.pid, "SIGTERM");
+      signalProcessGroup(record.pid, "SIGTERM");
       reaped.push(record.pid);
     }
     forgetAgentProcess(registry, record.pid);
@@ -221,7 +207,7 @@ export async function reapLeftoverAgentProcesses(
     await new Promise((done) => setTimeout(done, 100));
     left = left.filter(groupExists);
   }
-  for (const pid of left) signalGroup(pid, "SIGKILL");
+  for (const pid of left) signalProcessGroup(pid, "SIGKILL");
   return reaped;
 }
 
@@ -269,11 +255,11 @@ function ownAgentProcesses(): number[] {
 /** On exit nothing can wait for a timer: TERM, a short pause, then KILL. */
 function stopOwnAgentProcessesNow(): void {
   const groups = ownAgentProcesses().filter((pid) =>
-    signalGroup(pid, "SIGTERM"),
+    signalProcessGroup(pid, "SIGTERM"),
   );
   if (groups.length === 0) return;
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
-  for (const pid of groups) signalGroup(pid, "SIGKILL");
+  for (const pid of groups) signalProcessGroup(pid, "SIGKILL");
   if (supervisor)
     for (const pid of groups) forgetAgentProcess(supervisor.registry, pid);
 }
@@ -287,16 +273,16 @@ let stopping = false;
  */
 function stopOnSignal(signal: NodeJS.Signals): void {
   if (stopping) {
-    for (const pid of ownAgentProcesses()) signalGroup(pid, "SIGKILL");
+    for (const pid of ownAgentProcesses()) signalProcessGroup(pid, "SIGKILL");
     return;
   }
   stopping = true;
   const groups = ownAgentProcesses().filter((pid) =>
-    signalGroup(pid, "SIGTERM"),
+    signalProcessGroup(pid, "SIGTERM"),
   );
   const deadline = Date.now() + 3000;
   const finish = (): void => {
-    for (const pid of groups) signalGroup(pid, "SIGKILL");
+    for (const pid of groups) signalProcessGroup(pid, "SIGKILL");
     if (supervisor)
       for (const pid of groups) forgetAgentProcess(supervisor.registry, pid);
     if (process.listenerCount(signal) > 1) return;
@@ -337,7 +323,7 @@ export function spawnAgentProcess(
       });
     } catch (error) {
       console.error(
-        `Recording agent process ${pid} failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Recording agent process ${pid} failed: ${errorMessage(error)}`,
       );
     }
     child.once("exit", () => forgetAgentProcess(registry, pid));
@@ -353,7 +339,7 @@ export function stopAgentProcess(child: ChildProcess, graceMs = 5000): void {
   const pid = child.pid;
   const group = pid !== undefined && groupLeaders.has(child);
   const send = (signal: NodeJS.Signals): void => {
-    if (!group || !signalGroup(pid, signal)) child.kill(signal);
+    if (!group || !signalProcessGroup(pid, signal)) child.kill(signal);
   };
   send("SIGTERM");
   const timer = setTimeout(() => {
@@ -420,13 +406,15 @@ export function codexAgentExecutable(command: string): string {
     // Not written yet.
   }
   try {
-    mkdirSync(registry, { recursive: true, mode: 0o700 });
-    writeFileSync(`${launcher}.tmp`, script, { mode: 0o700 });
-    renameSync(`${launcher}.tmp`, launcher);
+    writeFileAtomic(launcher, script, {
+      mode: 0o700,
+      hardenParent: false,
+      fsync: false,
+    });
     return launcher;
   } catch (error) {
     console.error(
-      `Codex runs unsupervised: writing its launcher failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Codex runs unsupervised: writing its launcher failed: ${errorMessage(error)}`,
     );
     return command;
   }

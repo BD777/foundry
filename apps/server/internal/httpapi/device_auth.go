@@ -14,20 +14,10 @@ import (
 // after, so it lives only long enough for that.
 const devicePairingTokenTTL = 15 * time.Minute
 
-func (s *Server) deviceCredentials() (store.DeviceCredentialStore, bool) {
-	credentials, ok := s.store.(store.DeviceCredentialStore)
-	return credentials, ok
-}
-
 // authenticateDevice resolves a device credential to a daemon actor that acts
 // with its owner's account. It writes the error response itself.
 func (s *Server) authenticateDevice(w http.ResponseWriter, r *http.Request, credential string) (Actor, bool) {
-	credentials, ok := s.deviceCredentials()
-	if !ok || s.accounts == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server's store does not support device credentials")
-		return Actor{}, false
-	}
-	identity, err := credentials.ResolveDeviceCredential(r.Context(), accounts.HashToken(credential))
+	identity, err := s.store.ResolveDeviceCredential(r.Context(), accounts.HashToken(credential))
 	if errors.Is(err, store.ErrDeviceCredentialInvalid) {
 		writeError(w, http.StatusUnauthorized, "device credential is invalid or revoked; pair this worker again")
 		return Actor{}, false
@@ -36,7 +26,7 @@ func (s *Server) authenticateDevice(w http.ResponseWriter, r *http.Request, cred
 		writeError(w, http.StatusInternalServerError, "resolve device credential")
 		return Actor{}, false
 	}
-	owner, err := s.accounts.GetUser(r.Context(), identity.OwnerUserID)
+	owner, err := s.store.GetUser(r.Context(), identity.OwnerUserID)
 	if err != nil || !owner.Active() {
 		writeError(w, http.StatusUnauthorized, "device owner is not an active account")
 		return Actor{}, false
@@ -49,18 +39,13 @@ func (s *Server) handleCreateDevicePairingToken(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	credentials, ok := s.deviceCredentials()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "this server's store does not support device credentials")
-		return
-	}
 	token, err := accounts.NewToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create pairing token")
 		return
 	}
 	expiresAt := time.Now().UTC().Add(devicePairingTokenTTL)
-	if err := credentials.CreateDevicePairingToken(r.Context(), accounts.HashToken(token), account.ID, expiresAt); err != nil {
+	if err := s.store.CreateDevicePairingToken(r.Context(), accounts.HashToken(token), account.ID, expiresAt); err != nil {
 		writeError(w, http.StatusInternalServerError, "create pairing token")
 		return
 	}
@@ -72,11 +57,6 @@ func (s *Server) handleCreateDevicePairingToken(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
-	credentials, ok := s.deviceCredentials()
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "this server's store does not support device credentials")
-		return
-	}
 	var input struct {
 		Token              string `json:"token"`
 		MachineFingerprint string `json:"machineFingerprint"`
@@ -99,7 +79,7 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create device credential")
 		return
 	}
-	identity, err := credentials.PairDevice(r.Context(), store.PairDeviceInput{
+	identity, err := s.store.PairDevice(r.Context(), store.PairDeviceInput{
 		TokenHash:          accounts.HashToken(strings.TrimSpace(input.Token)),
 		MachineFingerprint: input.MachineFingerprint,
 		RequestedDeviceID:  input.DeviceID,

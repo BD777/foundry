@@ -92,7 +92,7 @@ test("every private worker path follows the stack root", async (t) => {
     workspaces.forgottenWorkspacesPath,
     device.devicePath,
     device.runtimeSettingsPath,
-    config.daemonConfigPath,
+    config.daemonConfigPath(),
     service.daemonLogDir,
   ])
     assert.equal(

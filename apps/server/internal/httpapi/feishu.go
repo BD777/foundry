@@ -34,12 +34,10 @@ func generatePairingCode() string {
 
 const feishuProviderKind = "feishu"
 
-var errFeishuBotsUnavailable = errors.New("Feishu bots are not available on this server")
-
 // feishuBotChoices are the Feishu apps the caller may run a bot on: their
 // own Connectors apps and the instance-wide ones.
 func (s *Server) feishuBotChoices(ctx context.Context, userID string) ([]store.ExternalProviderApp, error) {
-	if s.externalAccounts == nil || userID == "" {
+	if userID == "" {
 		return []store.ExternalProviderApp{}, nil
 	}
 	apps, err := s.externalAccounts.ListApps(ctx, userID)
@@ -58,10 +56,6 @@ func (s *Server) feishuBotChoices(ctx context.Context, userID string) ([]store.E
 // writeWorkspaceFeishuBot answers with the workspace's bot and the apps
 // the caller may run it on.
 func (s *Server) writeWorkspaceFeishuBot(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	if s.feishu == nil {
-		writeError(w, http.StatusServiceUnavailable, errFeishuBotsUnavailable.Error())
-		return
-	}
 	view, err := s.feishu.WorkspaceBot(r.Context(), workspaceID)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -92,12 +86,7 @@ func (s *Server) handleSaveWorkspaceFeishuBot(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "appId (a Connectors Feishu app) is required")
 		return
 	}
-	accounts, ok := s.store.(store.ExternalAccountStore)
-	if !ok || s.feishu == nil {
-		writeError(w, http.StatusServiceUnavailable, errFeishuBotsUnavailable.Error())
-		return
-	}
-	app, err := accounts.GetExternalProviderApp(r.Context(), appID)
+	app, err := s.store.GetExternalProviderApp(r.Context(), appID)
 	current, _ := s.feishu.WorkspaceBot(r.Context(), workspaceID)
 	runsOn := current.App != nil && current.App.ID == appID
 	if err != nil || app.Provider != feishuProviderKind ||
@@ -142,9 +131,7 @@ func (s *Server) handleUnbindFeishuChat(w http.ResponseWriter, r *http.Request) 
 		writeResult(w, nil, err)
 		return
 	}
-	if s.feishu != nil {
-		s.feishu.Publish(context.WithoutCancel(r.Context()), workspaceID)
-	}
+	s.feishu.Publish(context.WithoutCancel(r.Context()), workspaceID)
 	s.writeWorkspaceFeishuBot(w, r, workspaceID)
 }
 
@@ -152,10 +139,6 @@ func (s *Server) handleUnbindFeishuChat(w http.ResponseWriter, r *http.Request) 
 // failed check keeps the name and is told in the chat's chatNameError.
 func (s *Server) handleRefreshFeishuChatName(w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.PathValue("id")
-	if s.feishu == nil {
-		writeError(w, http.StatusServiceUnavailable, errFeishuBotsUnavailable.Error())
-		return
-	}
 	if err := s.feishu.RefreshChatName(r.Context(), workspaceID, r.PathValue("routeId")); errors.Is(err, store.ErrNotFound) {
 		writeResult(w, nil, err)
 		return
@@ -178,9 +161,6 @@ func (s *Server) handleDeleteWorkspaceFeishuBot(w http.ResponseWriter, r *http.R
 // feishuBotsChanged runs the bots on what the routes say now, and tells the
 // workspaces that no longer have a bot.
 func (s *Server) feishuBotsChanged(ctx context.Context, removed ...string) {
-	if s.feishu == nil {
-		return
-	}
 	ctx = context.WithoutCancel(ctx)
 	s.feishu.Sync(ctx)
 	for _, workspaceID := range removed {
@@ -194,10 +174,6 @@ func (s *Server) feishuBotsChanged(ctx context.Context, removed ...string) {
 func (s *Server) handleFeishuAppUses(w http.ResponseWriter, r *http.Request) {
 	actor, ok := personActor(w, r)
 	if !ok {
-		return
-	}
-	if s.feishu == nil {
-		writeError(w, http.StatusServiceUnavailable, errFeishuBotsUnavailable.Error())
 		return
 	}
 	apps, err := s.feishuBotChoices(r.Context(), actor.AccountID())
@@ -235,12 +211,10 @@ func (s *Server) handleFeishuAppUses(w http.ResponseWriter, r *http.Request) {
 			}
 			use.Workspaces = append(use.Workspaces, store.FeishuAppWorkspaceUse{WorkspaceID: workspaceID, Name: workspace.Name, Chats: chats[workspaceID]})
 		}
-		if s.feishuEvents != nil {
-			use.Subscriptions = s.feishuEvents.Subscriptions(app.ClientID)
-		}
+		use.Subscriptions = s.feishuEvents.Subscriptions(app.ClientID)
 		if len(order) > 0 {
 			use.Status, use.StatusDetail, use.LastEventAt = s.feishu.AppStatus(app.ClientID)
-		} else if s.feishuEvents != nil {
+		} else {
 			status := s.feishuEvents.Status(app.ClientID)
 			use.Status = store.FeishuBotStatusUnconfigured
 			if status.Connected {

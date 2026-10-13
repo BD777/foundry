@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { signalProcessGroup } from "./process-group.js";
 
 const parent = process.ppid;
 const [command, ...args] = process.argv.slice(2);
@@ -6,11 +7,7 @@ if (!command) throw new Error("Execution command is missing");
 const child = spawn(command, args, { stdio: "inherit" });
 const watchdog = setInterval(() => {
   if (process.ppid === parent) return;
-  try {
-    process.kill(-process.pid, "SIGKILL");
-  } catch {
-    process.exit(1);
-  }
+  if (!signalProcessGroup(process.pid, "SIGKILL")) process.exit(1);
 }, 500);
 watchdog.unref();
 child.once("error", (error) => {

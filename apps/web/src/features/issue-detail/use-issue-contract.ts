@@ -18,6 +18,7 @@ import {
 } from "./evidence-api";
 import { useEvidenceUpdates } from "./use-evidence-updates";
 import { i18n } from "../../i18n";
+import { isIssueClosed } from "../../lib/issue-meta";
 
 /** Images up to 25 MiB, PDFs up to 32 MiB (what Claude reads), text 512 KiB. */
 export function referenceSizeLimit(file: { name: string; type: string }) {
@@ -55,7 +56,7 @@ export function useIssueContract(issue: Issue) {
   const confirmed = contracts.find(
     (c) => c.revision === issue.currentContractRevision,
   );
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   // The clarification session answers the person's latest message after the
   // send returns; its state travels with the Issue.
   const replying = issue.clarification?.status === "replying";
@@ -175,6 +176,16 @@ export function useIssueContract(issue: Issue) {
     return "replied" as const;
   };
 
+  // Button actions: the failure shows as `error`; each resolves to whether it succeeded.
+  const settle = (work: Promise<unknown>) =>
+    work.then(
+      () => true,
+      () => false,
+    );
+  const performAction = (action: () => Promise<unknown>) =>
+    settle(perform(action));
+  const startInitial = () => settle(send(issue.sourceInput, [], true));
+
   // Mount/reload is idempotent. Do not auto-run old Issues or confirmed work.
   useEffect(() => {
     if (
@@ -198,7 +209,7 @@ export function useIssueContract(issue: Issue) {
       return;
     }
     initialStarted.current = true;
-    void send(issue.sourceInput, [], true).catch(() => {});
+    void startInitial();
   }, [draft?.id, terminal]);
 
   const addAttachments = async (files: File[]) => {
@@ -267,7 +278,7 @@ export function useIssueContract(issue: Issue) {
     removeAttachment: (id: string) =>
       setAttachments((items) => items.filter((a) => a.id !== id)),
     confirm: (exact: IssueContract) =>
-      perform(() =>
+      performAction(() =>
         confirmContract(
           issue.id,
           exact,
@@ -275,7 +286,7 @@ export function useIssueContract(issue: Issue) {
         ),
       ),
     beginAmendment: () =>
-      perform(async () => {
+      performAction(async () => {
         if (!latest) {
           await importLegacyContract(issue.id, crypto.randomUUID());
           return;
@@ -291,7 +302,7 @@ export function useIssueContract(issue: Issue) {
         );
       }),
     discard: () =>
-      perform(() => {
+      performAction(() => {
         if (!draft)
           throw new Error(
             i18n.t("issueDetail:contractErrors.nothingToDiscard"),
@@ -303,9 +314,9 @@ export function useIssueContract(issue: Issue) {
           `discard-${draft.id}`,
         );
       }),
-    retryInitial: () => send(issue.sourceInput, [], true),
+    retryInitial: startInitial,
     retryReply: () =>
-      perform(() => retryClarification(issue.id, crypto.randomUUID())),
+      performAction(() => retryClarification(issue.id, crypto.randomUUID())),
   };
 }
 

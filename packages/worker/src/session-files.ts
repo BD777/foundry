@@ -45,13 +45,14 @@ import {
   turnDirectory,
   type SessionFileChange,
 } from "./session-file-diffs.js";
+import { within } from "./paths.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import {
-  pathWithin,
   privateDevicePath,
   resolveFileReferences,
   workspaceAttachmentPath,
 } from "./session-file-references.js";
+import { errorMessage } from "./utils.js";
 
 /** One file in a session's ledger. */
 export interface SessionFileEntry {
@@ -257,7 +258,7 @@ export class SessionTurnFiles {
       [this.options.workspacePath, path],
       [this.workspaceRealpath, realpath],
     ] as const) {
-      if (pathWithin(root, target)) {
+      if (within(root, target)) {
         const relativePath = relative(root, target);
         if (relativePath) return relativePath;
       }
@@ -346,7 +347,7 @@ export class SessionTurnFiles {
       })
       .catch((error: unknown) =>
         console.error(
-          `Could not keep a copy of ${write.path}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not keep a copy of ${write.path}: ${errorMessage(error)}`,
         ),
       );
     return this.queue;
@@ -391,9 +392,7 @@ export class SessionTurnFiles {
     this.queue = this.queue
       .then(() => this.recordWrite(write))
       .catch((error: unknown) =>
-        console.error(
-          `Could not record ${write.path}: ${error instanceof Error ? error.message : String(error)}`,
-        ),
+        console.error(`Could not record ${write.path}: ${errorMessage(error)}`),
       );
     return this.queue;
   }
@@ -458,7 +457,7 @@ export class SessionTurnFiles {
         });
       } catch (error) {
         console.error(
-          `Could not count the changes to ${path}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not count the changes to ${path}: ${errorMessage(error)}`,
         );
       }
     }
@@ -844,7 +843,7 @@ export function readSessionFile(input: {
     path: entry.path,
     ...(entry.workspacePath ? { workspacePath: entry.workspacePath } : {}),
     origin: entry.origin,
-    insideWorkspace: pathWithin(workspaceRealpath, entry.realpath),
+    insideWorkspace: within(workspaceRealpath, entry.realpath),
     kind: "missing",
     truncated: false,
     changedSinceRecorded: false,
@@ -871,7 +870,7 @@ export function readSessionFile(input: {
   );
   const file: SessionFileRead = {
     ...base,
-    insideWorkspace: pathWithin(workspaceRealpath, realpath),
+    insideWorkspace: within(workspaceRealpath, realpath),
     bytes: read.size,
     mtime: new Date(read.mtimeMs).toISOString(),
     changedSinceRecorded:
@@ -949,7 +948,7 @@ export async function readSessionFileDiff(input: {
     path: entry.path,
     ...(entry.workspacePath ? { workspacePath: entry.workspacePath } : {}),
     origin: entry.origin,
-    insideWorkspace: pathWithin(workspaceRealpath, realpath ?? entry.realpath),
+    insideWorkspace: within(workspaceRealpath, realpath ?? entry.realpath),
     ...(input.inputId ? { inputId: input.inputId } : {}),
     source: change?.source ?? "hook",
     beforeLabel: "beforeEdits",

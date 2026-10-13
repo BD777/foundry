@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process";
 import type { DeviceResource } from "@bd777/foundry-protocol";
 import type { DetectedInstance, Detector } from "../detector.js";
+import { errorMessage } from "../../utils.js";
 
 const macControlGrantsScript = [
   'ObjC.import("CoreGraphics");',
@@ -64,7 +65,7 @@ export function discoverComputerUse(
     if (missing.length)
       resource.detail = `${missing.join(" and ")} not granted to the Foundry worker (System Settings → Privacy & Security).`;
   } catch (error) {
-    resource.detail = `Could not read the macOS privacy grants: ${error instanceof Error ? error.message : String(error)}`;
+    resource.detail = `Could not read the macOS privacy grants: ${errorMessage(error)}`;
   }
   return [resource];
 }

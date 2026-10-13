@@ -12,10 +12,6 @@ import (
 // Each live Worker connection reconciles pending receipts. Recovery is a
 // read-only RPC and never sends the original external action a second time.
 func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID string) {
-	st, ok := s.store.(store.EvidenceStore)
-	if !ok {
-		return
-	}
 	unlock := s.lockIssueMutation("evidence-recovery/" + workspaceID)
 	defer unlock()
 	ticker := time.NewTicker(15 * time.Second)
@@ -24,7 +20,7 @@ func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID s
 		issues, err := s.store.ListIssues(ctx, workspaceID)
 		if err == nil {
 			for _, issue := range issues {
-				records, err := st.ListEvidenceRecords(ctx, issue.ID, "verification")
+				records, err := s.store.ListEvidenceRecords(ctx, issue.ID, "verification")
 				if err != nil {
 					continue
 				}
@@ -34,12 +30,12 @@ func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID s
 						continue
 					}
 					if v.Status == "queued" {
-						contract, err := currentIssueContract(ctx, st, issue)
+						contract, err := currentIssueContract(ctx, s.store, issue)
 						if err == nil {
 							go s.dispatchVerification(issue, contract, v)
 						}
 					} else if v.Status == "running" {
-						s.recoverEvidenceVerification(ctx, st, issue, v)
+						s.recoverEvidenceVerification(ctx, issue, v)
 					}
 				}
 			}
@@ -52,7 +48,7 @@ func (s *Server) recoverEvidenceVerifications(ctx context.Context, workspaceID s
 	}
 }
 
-func (s *Server) recoverEvidenceVerification(ctx context.Context, st store.EvidenceStore, issue store.Issue, v store.Verification) {
+func (s *Server) recoverEvidenceVerification(ctx context.Context, issue store.Issue, v store.Verification) {
 	reply, err := s.requestEvidenceWorker(ctx, issue, map[string]any{"action": "recover", "taskId": v.ID})
 	if err != nil || reply.Status == "running" || reply.Status == "not_started" {
 		// not_started may be a dispatch whose socket write is still in flight.
@@ -77,12 +73,12 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, st store.Evide
 			err = fmt.Errorf("%s", result.Error)
 		} else {
 			for _, m := range result.Materials {
-				if err = st.RegisterMaterial(ctx, issue.ID, m); err != nil {
+				if err = s.store.RegisterMaterial(ctx, issue.ID, m); err != nil {
 					return
 				}
 			}
 			if result.Verification != nil {
-				if st.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence) == nil {
+				if s.store.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence) == nil {
 					s.issues.evidenceChanged(issue, v.ID, v.Sequence, result.Verification.Status)
 				}
 				return
@@ -98,6 +94,6 @@ func (s *Server) recoverEvidenceVerification(ctx context.Context, st store.Evide
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	v.FinishedAt = &now
 	v.Error = &store.VerificationError{Code: "verification_recovery_error", Message: err.Error(), Retryable: false}
-	_ = st.CompleteVerification(ctx, issue.ID, v, nil)
+	_ = s.store.CompleteVerification(ctx, issue.ID, v, nil)
 	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
 }

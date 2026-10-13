@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  fixtureWorkspace,
   type Issue,
   type Run,
   type IssueContract,
 } from "@bd777/foundry-protocol";
+import { fixtureWorkspace } from "../src/app/fixtures";
 import { IssueDetailView } from "../src/features/issue-detail";
 import { IssuesFeature } from "../src/features/issues";
 import { issueStatuses } from "../src/lib/issue-meta";

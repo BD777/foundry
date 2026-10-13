@@ -162,7 +162,6 @@ export const workspaces: Translation<typeof en> = {
   },
   details: {
     description: "工作区详情 · 查看详情不会切换你的工作位置。",
-    closeLabel: "关闭 {{title}}",
     device: "设备",
     deviceRemoved: "已从 Foundry 移除",
     folder: "文件夹",
@@ -248,9 +247,5 @@ export const workspaces: Translation<typeof en> = {
     label: "工作区文件夹",
     placeholder: "/absolute/path/to/project",
     loading: "正在加载文件夹…",
-  },
-  filePreview: {
-    truncated: "已截断的只读预览",
-    readOnly: "只读的工作区配置",
   },
 };

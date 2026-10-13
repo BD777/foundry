@@ -11,10 +11,8 @@ import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
+import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { WorkspaceDialog } from "../../components/workspace/workspace-dialog";
-
-// i18n-ignore: runtime product names
-const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
 
 const roleOrder: FoundryToolRole[] = [
   "session",
@@ -85,7 +83,7 @@ export function FoundrySkillPage() {
               {detail.revisions
                 .map((row) =>
                   t("foundrySkill.revision", {
-                    agent: agentNames[row.runtime],
+                    agent: runtimeMeta(row.runtime).productName,
                     revision: row.revision,
                   }),
                 )

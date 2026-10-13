@@ -10,6 +10,7 @@ import {
   responseStreamLabel,
   shouldDisplayAgentSessionEvent,
 } from "../../lib/agent-session-events";
+import { isSessionLive } from "../../lib/session-status";
 import { shouldDisplayResponseEvent } from "./subagent-response-filter";
 import { settledFileReferences } from "./pending-file-references";
 import type { ChatViewMessage } from "./chat-types";
@@ -297,8 +298,7 @@ export function sessionTranscriptEntries(
     if (answer) answer.turnFiles = { turnId: id, count: paths.size };
   }
   const last = entries.at(-1);
-  if (last && (session.status === "running" || session.status === "queued"))
-    last.streaming = true;
+  if (last && isSessionLive(session)) last.streaming = true;
   return entries;
 }
 

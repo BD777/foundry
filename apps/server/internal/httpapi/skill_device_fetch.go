@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
+	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/google/uuid"
 )
@@ -35,10 +36,6 @@ const skillRepositoryFetchCapability = "skill_repository_fetch"
 // toolRegistryCapability is declared by workers that install an npm tool
 // from the registry Foundry names, or with the device's own npm settings.
 const toolRegistryCapability = "tool_registry"
-
-// deviceRegistry marks an npm tool that installs with each device's own npm
-// settings.
-const deviceRegistry = "device"
 
 type wsReadRepositoryRefs struct {
 	Remote string `json:"remote"`
@@ -412,7 +409,7 @@ func (s *Server) handleSetSkillRepositorySource(w http.ResponseWriter, r *http.R
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	repos, repo, ok := s.loadSkillRepository(w, r)
+	repo, ok := s.loadSkillRepository(w, r)
 	if !ok {
 		return
 	}
@@ -424,39 +421,32 @@ func (s *Server) handleSetSkillRepositorySource(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "only an npm package or a bundle with npm tools uses an npm registry")
 		return
 	}
-	sourceRepos, ok := s.store.(interface {
-		SetSkillRepositorySource(ctx context.Context, id, deviceID, registry string) error
-	})
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "skill repositories are not supported by this store")
-		return
-	}
-	if err := sourceRepos.SetSkillRepositorySource(r.Context(), repo.ID, choice.FetchDeviceID, choice.Registry); err != nil {
+	if err := s.store.SetSkillRepositorySource(r.Context(), repo.ID, choice.FetchDeviceID, choice.Registry); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	repo.FetchDeviceID, repo.FetchDeviceName, repo.Registry = choice.FetchDeviceID, choice.FetchDeviceName, choice.Registry
 	// npm tools install from where the repository is read now.
-	if bundles, ok := s.store.(bundleStore); ok && len(repo.Tools) > 0 {
+	if len(repo.Tools) > 0 {
 		for i := range repo.Tools {
 			if repo.Tools[i].Source == "npm" {
-				repo.Tools[i].Registry = toolRegistry(repo)
+				repo.Tools[i].Registry = skilltools.Registry(repo)
 			}
 		}
-		if err := bundles.SetBundleTools(r.Context(), repo.ID, repo.Tools); err != nil {
+		if err := s.store.SetBundleTools(r.Context(), repo.ID, repo.Tools); err != nil {
 			writeResult(w, nil, err)
 			return
 		}
 	}
 	if !repo.Paused {
 		s.repoMu.Lock()
-		err := s.checkSkillRepository(r.Context(), repos, repo)
+		err := s.checkSkillRepository(r.Context(), repo)
 		s.repoMu.Unlock()
 		if err != nil && !errors.As(err, &errDeviceOffline{}) {
 			log.Printf("skill repository %s: checking at its new source: %v", repo.Label, err)
 		}
 	}
-	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
+	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, s.withFetchState(updated)[0], err)
 }
 
@@ -475,11 +465,7 @@ func (s *Server) checkWaitingRepositories(ctx context.Context, deviceID string, 
 	if !slices.Contains(capabilities, skillRepositoryFetchCapability) || !s.options.Integrations.On() {
 		return
 	}
-	repos, ok := s.store.(skillRepositoryStore)
-	if !ok {
-		return
-	}
-	items, err := repos.ListSkillRepositories(ctx)
+	items, err := s.store.ListSkillRepositories(ctx)
 	if err != nil {
 		log.Printf("skill repository checks for %s: %v", deviceID, err)
 		return
@@ -489,7 +475,7 @@ func (s *Server) checkWaitingRepositories(ctx context.Context, deviceID string, 
 			continue
 		}
 		s.repoMu.Lock()
-		err := s.checkSkillRepository(ctx, repos, repo)
+		err := s.checkSkillRepository(ctx, repo)
 		s.repoMu.Unlock()
 		if err != nil && ctx.Err() == nil {
 			log.Printf("skill repository check of %s through %s: %v", repo.Label, deviceID, err)

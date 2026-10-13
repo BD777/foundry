@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { redactSecrets } from "../secret-redaction.js";
-import { resolveClaudeCommand } from "../utils.js";
+import { resolveClaudeCommand } from "../native-cli.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,

@@ -8,16 +8,18 @@ symbol name to find the current code.
 
 | Concern                                               | Module                                                                    |
 | ----------------------------------------------------- | ------------------------------------------------------------------------- |
-| Connect loop, socket lifecycle, message dispatch      | `packages/worker/src/daemon-connection.ts`                                |
+| Connect loop, socket lifecycle, dispatch wiring       | `packages/worker/src/daemon-connection.ts`                                |
+| Message handlers, one file per domain                 | `packages/worker/src/daemon/handlers/*.ts`                                |
+| Running a dispatched session                          | `packages/worker/src/daemon/session-execution.ts`                         |
 | Envelope send helpers, acknowledged session transport | `packages/worker/src/transport.ts` (`ReliableSessionTransport`)           |
 | Canonical wire message names                          | `packages/protocol/src/daemon-messages.ts`                                |
 | Envelope shape + validation                           | `packages/protocol/src/validation.ts`                                     |
 | File / subagent / directory replies, session events   | `packages/worker/src/session-helpers.ts`                                  |
-| Provider execution (Claude, Codex, profile commands)  | `packages/worker/src/runner.ts`                                           |
+| Provider execution (Claude, Codex, profile commands)  | `packages/worker/src/runner/` (gathered by `runner.ts`)                   |
 | Turn idle watchdog                                    | `packages/worker/src/watchdog.ts`                                         |
 | Concurrency gate                                      | `packages/worker/src/task-scheduler.ts`                                   |
-| Steer / cancel target registries                      | `packages/worker/src/session-state.ts`                                    |
-| Server side of the socket                             | `apps/server/internal/httpapi/daemon_ws.go`                               |
+| Steer / cancel target registries                      | `packages/worker/src/session-control.ts`                                  |
+| Server side of the socket                             | `apps/server/internal/httpapi/daemon_{hub,conn,inbound}.go`               |
 | Server request/response correlation                   | `apps/server/internal/httpapi/daemon_rpc.go`                              |
 | Evidence / verification worker RPC                    | `packages/worker/src/evidence-rpc.ts`                                     |
 | Native account inspection                             | `packages/worker/src/native-inspection.ts`                                |
@@ -63,7 +65,7 @@ cli.ts main() → dispatch "connect"
 All envelope `type` values live in `daemonMessageTypes`
 (`packages/protocol/src/daemon-messages.ts`). The worker imports that object;
 it does not spell wire literals inline. The Go server keeps matching `ws*Type`
-constants in `daemon_ws.go`.
+constants in `daemon_wire.go`.
 
 `scripts/audit-contract.mjs` compares the two **as sets of names**. It does not
 validate payload types, envelope direction, or handler coverage. Regression
@@ -137,14 +139,14 @@ shutdown provide the applicable limits instead.
 ```
 runSession → taskScheduler.schedule(sessionSchedulingKey(...), …)
   │
-  └─ executeAgentSession(transport, executionPath, session, …)   [daemon-connection.ts]
+  └─ executeAgentSession(transport, executionPath, session, …)   [daemon/session-execution.ts]
        ├─ 0. executionPath = sessionExecutionPath() (worktree-backed sessions)
        ├─    registerSessionAmbientEnv() → session token for `foundry` CLI/MCP
-       ├─ 1. queuedSessionCancelRequests hit → return without starting
+       ├─ 1. takeQueuedSessionCancel() hit → return without starting
        ├─ 2. send sessionStarted
        ├─ 3. dispatch by provider:
-       │       claude → runClaudeWorkspaceSession()   [runner.ts]
-       │       codex  → runCodexWorkspaceSession()    [runner.ts]
+       │       claude → runClaudeWorkspaceSession()   [runner/claude-turn.ts]
+       │       codex  → runCodexWorkspaceSession()    [runner/codex-turn.ts]
        ├─ 4. success → completion marker + sessionCompleted{response}
        ├─ 5. isAgentSessionCanceledError() → emit "Session canceled" (warning)
        ├─ 6. other failure → emit "Session failed" + sessionCompleted{error}
@@ -154,7 +156,7 @@ runSession → taskScheduler.schedule(sessionSchedulingKey(...), …)
 ## 5. Claude execution paths
 
 ```
-runClaudeWorkspaceSession()                       [runner.ts]
+runClaudeWorkspaceSession()                       [runner/claude-turn.ts]
   ├─ buildClaudeLaunchPlan() — fail-closed workspace-skill policy
   ├─ create .foundry/sessions/<id>/
   ├─ profile has a custom command → runProfileCommandSession() (spawn sh -lc)
@@ -177,12 +179,12 @@ runClaudeWorkspaceSession()                       [runner.ts]
 ### Active runtime pump
 
 ```
-startActiveClaudePump(runtime, query)              [runner.ts]
+startActiveClaudePump(runtime, query)              [runner/claude-messages.ts]
   └─ for await (message of query) → handleActiveClaudeMessage()
        stream ends without a result → closeActiveClaudeRuntime(reason)
        always → closeActiveClaudeRuntime() + drop from the runtime map
 
-handleActiveClaudeMessage(runtime, message)        [runner.ts]
+handleActiveClaudeMessage(runtime, message)        [runner/claude-messages.ts]
   ├─ refresh lastUsed, extract nativeSessionId
   ├─ append raw message to messagesPath
   ├─ turn.liveness.observe(): tool calls, model requests, retries and

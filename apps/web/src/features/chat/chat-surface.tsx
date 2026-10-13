@@ -10,17 +10,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
-import {
-  ImagePreviewOverlay,
-  type ParsedImageTag,
-} from "./chat-message-content";
+import { ImagePreviewOverlay } from "../../components/conversation/image-preview-overlay";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./chat-context-card";
 import { backgroundWorkNote } from "./chat-context-model";
 import { scheduledNote } from "./chat-schedule-model";
-import { useSharedNow } from "./use-shared-now";
+import { useSharedNow } from "../../lib/use-shared-now";
 import { ChatDetailPanel } from "./chat-detail-panel";
-import { ChatDetailSplitPane } from "./chat-detail-split-pane";
+import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
 import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
@@ -29,6 +26,7 @@ import { setDocumentChat } from "../../lib/document-title";
 import type {
   ConversationFileActions,
   ConversationFileReference,
+  ParsedImageTag,
 } from "../../components/conversation/conversation-types";
 import { ChatSidebar } from "./chat-thread-view";
 import { useChatContextDetail } from "./use-chat-context-detail";

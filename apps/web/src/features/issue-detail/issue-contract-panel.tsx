@@ -2,6 +2,7 @@ import type { Issue } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
+import { isIssueClosed } from "../../lib/issue-meta";
 import { ContractSummary } from "./contract-summary";
 import type { IssueContractController } from "./use-issue-contract";
 
@@ -16,7 +17,7 @@ export function IssueContractPanel({
 }) {
   const { t } = useTranslation("issueDetail");
   const { latest, busy, confirmed } = controller;
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   return (
     <>
       <p className="fdy-issue-tab-intro">{t("contractPanel.intro")}</p>
@@ -47,10 +48,9 @@ export function IssueContractPanel({
             onClick={() => {
               if (controller.draft) onDiscuss();
               else
-                void controller
-                  .beginAmendment()
-                  .then(onDiscuss)
-                  .catch(() => {});
+                void controller.beginAmendment().then((done) => {
+                  if (done) onDiscuss();
+                });
             }}
           >
             {controller.draft
@@ -61,7 +61,7 @@ export function IssueContractPanel({
             <Button
               variant="ghost"
               disabled={busy}
-              onClick={() => void controller.discard().catch(() => {})}
+              onClick={() => void controller.discard()}
             >
               {t("contractPanel.discard")}
             </Button>

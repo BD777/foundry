@@ -7,7 +7,8 @@ import { readFileSync } from "node:fs";
 import type { ChatThread } from "@bd777/foundry-protocol";
 import { foundryStatePath } from "./state-root.js";
 import { writePrivateJSONAtomic } from "./storage.js";
-import { getJSON } from "./transport.js";
+import { getJSON } from "./server-http.js";
+import { errorMessage } from "./utils.js";
 
 /** Uploads remembered per server and workspace; the oldest go first. */
 const uploadsKept = 5000;
@@ -110,7 +111,7 @@ export function chatUploads(
       } catch (error) {
         // Chats still sync; a restart would only send them once more.
         console.warn(
-          `Could not record the chats uploaded to ${serverURL}: ${error instanceof Error ? error.message : String(error)}`,
+          `Could not record the chats uploaded to ${serverURL}: ${errorMessage(error)}`,
         );
       }
     },

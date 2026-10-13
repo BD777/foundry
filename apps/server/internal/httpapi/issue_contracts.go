@@ -42,20 +42,9 @@ func decodeEvidenceRequest(w http.ResponseWriter, r *http.Request, name string, 
 	}
 	return true
 }
-func (s *Server) evidenceStore(w http.ResponseWriter) (store.EvidenceStore, bool) {
-	value, ok := s.store.(store.EvidenceStore)
-	if !ok {
-		writeError(w, http.StatusServiceUnavailable, "evidence store unavailable")
-	}
-	return value, ok
-}
 func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	if r.Method == http.MethodGet {
-		items, err := st.ListEvidenceRecords(r.Context(), r.PathValue("id"), "contract")
+		items, err := s.store.ListEvidenceRecords(r.Context(), r.PathValue("id"), "contract")
 		writeEvidencePage(w, r, items, err)
 		return
 	}
@@ -71,7 +60,7 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 	if !decodeEvidenceRequest(w, r, "ContractDraftInput", &input) {
 		return
 	}
-	c, err := st.CreateContract(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
+	c, err := s.store.CreateContract(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.issues.evidenceChanged(issue, c.ID, c.Revision, c.Status)
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
@@ -80,10 +69,6 @@ func (s *Server) handleContracts(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleLegacyContractImport(w http.ResponseWriter, r *http.Request) {
 	actor := humanActor(r)
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	var input struct{}
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
@@ -95,7 +80,7 @@ func (s *Server) handleLegacyContractImport(w http.ResponseWriter, r *http.Reque
 	}
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
-	contract, err := st.ImportLegacyContract(r.Context(), issue.ID, actor, r.Header.Get("Idempotency-Key"))
+	contract, err := s.store.ImportLegacyContract(r.Context(), issue.ID, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.issues.evidenceChanged(issue, contract.ID, contract.Revision, "draft")
 		s.projectionsChanged(issue.WorkspaceID, fieldIssues)
@@ -103,10 +88,6 @@ func (s *Server) handleLegacyContractImport(w http.ResponseWriter, r *http.Reque
 	writeEvidenceMutation(w, contract, err)
 }
 func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	actor := humanActor(r)
 	issue, lookupErr := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if lookupErr != nil {
@@ -130,9 +111,9 @@ func (s *Server) handleContractAction(w http.ResponseWriter, r *http.Request) {
 	var c store.IssueContract
 	switch r.PathValue("action") {
 	case "confirm":
-		c, err = st.ConfirmContract(r.Context(), r.PathValue("id"), revision, input.ExpectedContentDigest, actor, r.Header.Get("Idempotency-Key"))
+		c, err = s.store.ConfirmContract(r.Context(), r.PathValue("id"), revision, input.ExpectedContentDigest, actor, r.Header.Get("Idempotency-Key"))
 	case "discard":
-		c, err = st.DiscardContract(r.Context(), r.PathValue("id"), revision, input.Reason, actor, r.Header.Get("Idempotency-Key"))
+		c, err = s.store.DiscardContract(r.Context(), r.PathValue("id"), revision, input.Reason, actor, r.Header.Get("Idempotency-Key"))
 	default:
 		writeError(w, 404, "unknown contract action")
 		return

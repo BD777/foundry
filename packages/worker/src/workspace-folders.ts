@@ -44,6 +44,7 @@ import { findSessionLog } from "./native-usage.js";
 import { claudeHomeCandidates, codexHomeCandidates } from "./native-chat.js";
 import { configuredAgentProfiles } from "./profiles.js";
 import { moveSkillReceipt } from "./skill-isolation.js";
+import { errorMessage } from "./utils.js";
 
 export interface RegistryWorkspaceFolder {
   id: string;
@@ -243,7 +244,7 @@ export async function moveNativeSessions(input: {
         );
       } catch (error) {
         console.error(
-          `Copying Claude session ${id} to ${input.path} failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Copying Claude session ${id} to ${input.path} failed: ${errorMessage(error)}`,
         );
         continue;
       }
@@ -301,7 +302,7 @@ function copyOtherClaudeSessions(
             });
         } catch (error) {
           console.error(
-            `Copying ${join(from, name)} to ${to} failed: ${error instanceof Error ? error.message : String(error)}`,
+            `Copying ${join(from, name)} to ${to} failed: ${errorMessage(error)}`,
           );
         }
       }

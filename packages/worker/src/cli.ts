@@ -12,7 +12,8 @@ import {
 import { initWorkspace, listWorkspaces } from "./workspaces.js";
 import { installService, status, uninstallService } from "./service.js";
 import { doctor, providerHealth } from "./workspace-ops.js";
-import { connect, logs, pair, setup, sync } from "./daemon-connection.js";
+import { connect } from "./daemon-connection.js";
+import { logs, pair, setup, sync } from "./daemon/cli-commands.js";
 import { registerExecutionWorkspace } from "./repository-registry.js";
 import { readWorkspace } from "./workspaces.js";
 import { workspacePathFromArgs } from "./workspace-ops.js";

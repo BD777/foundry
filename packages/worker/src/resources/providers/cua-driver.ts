@@ -28,6 +28,7 @@ import {
   type ResourceProvider,
 } from "../provider.js";
 import { McpError, McpStdioClient, type McpToolResult } from "./mcp-stdio.js";
+import { errorMessage } from "../../utils.js";
 
 /** The longest edge of a screenshot Foundry asks for (and the default). */
 export const maxImageDimension = 1280;
@@ -550,7 +551,7 @@ function failure(
     op,
     ok: false,
     errorCode: "backend_error",
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage(error),
   };
 }
 
@@ -594,7 +595,7 @@ export function createCuaDriverProvider(
         await client.close();
         throw new ProviderError(
           "backend_unavailable",
-          `could not start cua-driver mcp: ${error instanceof Error ? error.message : String(error)}`,
+          `could not start cua-driver mcp: ${errorMessage(error)}`,
         );
       }
       return cuaDriverSession(client, encode, options);

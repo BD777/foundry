@@ -68,7 +68,7 @@
     "status": "manual",
     "runner": "browser",
     "references": [
-      "apps/web/src/features/chat/chat-detail-split-pane.tsx",
+      "apps/web/src/components/conversation/chat-detail-split-pane.tsx",
       "apps/web/src/styles/20-chat.css"
     ]
   },

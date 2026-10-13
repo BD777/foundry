@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // daemonRPC correlates outbound daemon requests with the responses that come
@@ -139,6 +141,36 @@ func daemonRequest[T any](
 		}
 		return value, nil
 	}
+}
+
+// deviceReply is a device's answer to a request, which may refuse it.
+type deviceReply interface{ refusal() error }
+
+// callDevice sends request to the device behind connection and waits for its
+// answer. A nil connection is a device that is not connected
+// (store.ErrNotFound); an answer that refuses the request fails the call.
+func callDevice[Resp deviceReply](
+	ctx context.Context,
+	c *daemonConnection,
+	requestType string,
+	request any,
+) (Resp, error) {
+	var zero Resp
+	if c == nil {
+		return zero, store.ErrNotFound
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return zero, err
+	}
+	value, err := daemonRequest[Resp](ctx, c, requestType, payload)
+	if err != nil {
+		return zero, err
+	}
+	if err := value.refusal(); err != nil {
+		return zero, err
+	}
+	return value, nil
 }
 
 // deliverDaemonResponse validates an inbound response, hands the bytes to the

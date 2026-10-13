@@ -62,18 +62,7 @@ func writeAccountError(w http.ResponseWriter, err error) {
 	}
 }
 
-func (s *Server) requireAccounts(w http.ResponseWriter) bool {
-	if s.accounts == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server's store does not support accounts")
-		return false
-	}
-	return true
-}
-
 func (s *Server) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	var input struct {
 		newAccountRequest
 		SetupCode string `json:"setupCode"`
@@ -103,7 +92,7 @@ func (s *Server) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	user, err := s.accounts.CreateFirstOwner(r.Context(), newUser)
+	user, err := s.store.CreateFirstOwner(r.Context(), newUser)
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -116,9 +105,6 @@ func (s *Server) handleAuthSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	var input struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -132,7 +118,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many failed logins; try again later")
 		return
 	}
-	user, hash, err := s.accounts.GetUserCredentials(r.Context(), input.Username)
+	user, hash, err := s.store.GetUserCredentials(r.Context(), input.Username)
 	switch {
 	case errors.Is(err, store.ErrUserNotFound):
 		accounts.SpendVerifyTime(input.Password)
@@ -152,11 +138,8 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
-		if err := s.accounts.DeleteUserSession(r.Context(), accounts.HashToken(cookie.Value)); err != nil {
+		if err := s.store.DeleteUserSession(r.Context(), accounts.HashToken(cookie.Value)); err != nil {
 			writeError(w, http.StatusInternalServerError, "logout failed")
 			return
 		}
@@ -209,7 +192,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
-	user, err := s.accounts.UpdateUser(r.Context(), account.ID, update)
+	user, err := s.store.UpdateUser(r.Context(), account.ID, update)
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -234,7 +217,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusTooManyRequests, "too many failed attempts; try again later")
 		return
 	}
-	_, hash, err := s.accounts.GetUserCredentials(r.Context(), account.Username)
+	_, hash, err := s.store.GetUserCredentials(r.Context(), account.Username)
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -254,7 +237,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Revokes every session, including this one; issue a fresh cookie.
-	if err := s.accounts.SetUserPassword(r.Context(), account.ID, newHash); err != nil {
+	if err := s.store.SetUserPassword(r.Context(), account.ID, newHash); err != nil {
 		writeAccountError(w, err)
 		return
 	}
@@ -266,10 +249,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
-	users, err := s.accounts.ListUsers(r.Context())
+	users, err := s.store.ListUsers(r.Context())
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -278,9 +258,6 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	var input struct {
 		Role     *string `json:"role"`
 		Disabled *bool   `json:"disabled"`
@@ -292,7 +269,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "role must be admin or member")
 		return
 	}
-	user, err := s.accounts.UpdateUser(r.Context(), r.PathValue("id"), store.UserUpdate{Role: input.Role, Disabled: input.Disabled})
+	user, err := s.store.UpdateUser(r.Context(), r.PathValue("id"), store.UserUpdate{Role: input.Role, Disabled: input.Disabled})
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -305,10 +282,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
-	invites, err := s.accounts.ListInvites(r.Context())
+	invites, err := s.store.ListInvites(r.Context())
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -317,9 +291,6 @@ func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	account, ok := currentAccount(w, r)
 	if !ok {
 		return
@@ -361,7 +332,7 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "create invite")
 		return
 	}
-	invite, err := s.accounts.CreateInvite(r.Context(), accounts.HashToken(token), input.Role, account.ID, time.Now().UTC().Add(ttl), grant)
+	invite, err := s.store.CreateInvite(r.Context(), accounts.HashToken(token), input.Role, account.ID, time.Now().UTC().Add(ttl), grant)
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -374,10 +345,7 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
-	if err := s.accounts.RevokeInvite(r.Context(), r.PathValue("id")); err != nil {
+	if err := s.store.RevokeInvite(r.Context(), r.PathValue("id")); err != nil {
 		writeAccountError(w, err)
 		return
 	}
@@ -385,10 +353,7 @@ func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetInvite(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
-	invite, err := s.accounts.GetPendingInvite(r.Context(), accounts.HashToken(r.PathValue("token")), time.Now().UTC())
+	invite, err := s.store.GetPendingInvite(r.Context(), accounts.HashToken(r.PathValue("token")), time.Now().UTC())
 	if err != nil {
 		writeAccountError(w, err)
 		return
@@ -408,9 +373,6 @@ func (s *Server) handleGetInvite(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAccounts(w) {
-		return
-	}
 	var input newAccountRequest
 	if !decodeJSONRequest(w, r, &input) {
 		return
@@ -419,7 +381,7 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	user, err := s.accounts.RedeemInvite(r.Context(), accounts.HashToken(r.PathValue("token")), time.Now().UTC(), newUser)
+	user, err := s.store.RedeemInvite(r.Context(), accounts.HashToken(r.PathValue("token")), time.Now().UTC(), newUser)
 	if err != nil {
 		writeAccountError(w, err)
 		return

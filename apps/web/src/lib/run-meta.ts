@@ -1,5 +1,6 @@
 import type { Issue, Run } from "@bd777/foundry-protocol";
 import { i18n } from "../i18n";
+import { formatRunDuration } from "./format";
 
 export function runPhase(run: Run): string {
   if (run.status === "running") {
@@ -18,19 +19,6 @@ export function runPhase(run: Run): string {
   return i18n.t("runs:phase.canceled");
 }
 
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes > 0) {
-    return i18n.t("runs:duration.minutes", {
-      minutes,
-      seconds: seconds.toString().padStart(2, "0"),
-    });
-  }
-  return i18n.t("runs:duration.seconds", { seconds });
-}
-
 export function runDuration(run: Run): string {
   const started = run.startedAt ? Date.parse(run.startedAt) : NaN;
   if (Number.isNaN(started)) {
@@ -44,7 +32,7 @@ export function runDuration(run: Run): string {
   if (Number.isNaN(ended) || ended <= started) {
     return "";
   }
-  return formatDuration(ended - started);
+  return formatRunDuration(ended - started);
 }
 
 export function runStatusLabel(status: Run["status"]): string {
@@ -74,8 +62,4 @@ export function preferredRunId(issues: Issue[]): string {
     issues.find((issue) => issue.run)?.run?.id ??
     ""
   );
-}
-
-export function candidateWorktreeLabel(): string {
-  return "worktree";
 }

@@ -17,13 +17,9 @@ func (s *Server) handleIssueStatusQuestion(w http.ResponseWriter, r *http.Reques
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	unlock := s.lockIssueMutation(r.PathValue("id"))
 	defer unlock()
-	issue, err := st.RecordIssueStatusQuestion(r.Context(), r.PathValue("id"), input.Message, r.Header.Get("Idempotency-Key"))
+	issue, err := s.store.RecordIssueStatusQuestion(r.Context(), r.PathValue("id"), input.Message, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.issues.updated(issue)
 	}
@@ -64,48 +60,39 @@ func (s *Server) handleRetryClarification(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) clarify(w http.ResponseWriter, r *http.Request, queue func(store.EvidenceStore) (store.Issue, store.AgentSession, error)) {
-	updated, status, err := s.queueClarification(r.Context(), r.PathValue("id"), queue)
+	updated, err := s.queueClarification(r.Context(), r.PathValue("id"), queue)
 	if err != nil {
-		if status == 0 {
-			writeResult(w, nil, err)
-		} else {
-			writeError(w, status, err.Error())
-		}
+		writeResult(w, nil, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
 }
 
 // queueClarification sends a message to the Issue's clarification session
-// once the workspace's device can run it. A non-zero status is the HTTP
-// status of a refusal.
-func (s *Server) queueClarification(ctx context.Context, issueID string, queue func(store.EvidenceStore) (store.Issue, store.AgentSession, error)) (store.Issue, int, error) {
-	st, ok := s.store.(store.EvidenceStore)
-	if !ok {
-		return store.Issue{}, http.StatusServiceUnavailable, errors.New("evidence store unavailable")
-	}
+// once the workspace's device can run it. A refusal is a statusError.
+func (s *Server) queueClarification(ctx context.Context, issueID string, queue func(store.EvidenceStore) (store.Issue, store.AgentSession, error)) (store.Issue, error) {
 	issue, err := s.store.GetIssue(ctx, issueID)
 	if err != nil {
-		return store.Issue{}, 0, err
+		return store.Issue{}, err
 	}
 	// The workspace's device answers; an older worker would run the session
 	// as an ordinary chat with write access, so it is refused here.
 	workspace, err := s.store.GetWorkspace(ctx, issue.WorkspaceID)
 	if err != nil {
-		return store.Issue{}, 0, err
+		return store.Issue{}, err
 	}
 	connection := s.hub.connectionFor(workspace.DeviceID)
 	if connection == nil {
-		return store.Issue{}, http.StatusConflict, errors.New("worker_offline: the workspace's device is not connected")
+		return store.Issue{}, &statusError{http.StatusConflict, errors.New("worker_offline: the workspace's device is not connected")}
 	}
 	if !connection.hasCapability(store.DaemonCapabilityIssueClarification) {
-		return store.Issue{}, http.StatusConflict, errIssueClarificationUnsupported
+		return store.Issue{}, &statusError{http.StatusConflict, errIssueClarificationUnsupported}
 	}
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
-	updated, session, err := queue(st)
+	updated, session, err := queue(s.store)
 	if err != nil {
-		return store.Issue{}, http.StatusConflict, err
+		return store.Issue{}, &statusError{http.StatusConflict, err}
 	}
 	s.issues.updated(updated)
 	// A replayed request may find its input already sent or answered.
@@ -115,5 +102,5 @@ func (s *Server) queueClarification(ctx context.Context, issueID string, queue f
 			log.Printf("dispatch clarification session %s: %v", session.ID, err)
 		}
 	}
-	return updated, 0, nil
+	return updated, nil
 }

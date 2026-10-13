@@ -41,8 +41,7 @@
 }
 
 .fdy-workspace-overview,
-.fdy-workspace-repositories,
-.fdy-workspace-file-preview {
+.fdy-workspace-repositories {
   display: grid;
   min-width: 0;
   gap: 18px;

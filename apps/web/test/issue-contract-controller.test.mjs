@@ -177,8 +177,9 @@ test("confirmation submits the displayed revision and digest, not a newer loaded
   records = [draft(5)];
   await h.render({ draftContractRevision: 5 });
   await act(async () => {
-    await assert.rejects(h.state.confirm(displayed), /contract_changed/);
+    assert.equal(await h.state.confirm(displayed), false);
   });
+  assert.match(h.state.error, /contract_changed/);
   assert.match(writes[0].url, /contracts\/4\/confirm$/);
   assert.deepEqual(writes[0].body, { expectedContentDigest: "digest-4" });
   assert.equal(h.state.draft.revision, 5);

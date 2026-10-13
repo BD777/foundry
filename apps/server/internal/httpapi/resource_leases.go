@@ -26,14 +26,9 @@ const resourceLeaseSweep = 5 * time.Second
 // installResourceBackendTimeout bounds an official installer's run.
 const installResourceBackendTimeout = 10 * time.Minute
 
-// newResourceLeases builds the leases over the inventory when the store
-// keeps them; nil otherwise.
-func newResourceLeases(st store.Store, inventory *resources.Service, hub *DaemonHub) *resources.Leases {
-	leaseStore, ok := st.(store.ResourceLeaseStore)
-	if inventory == nil || !ok {
-		return nil
-	}
-	leases := resources.NewLeases(inventory, leaseStore)
+// newResourceLeases builds the leases over the inventory.
+func newResourceLeases(st Backend, inventory *resources.Service, hub *DaemonHub) *resources.Leases {
+	leases := resources.NewLeases(inventory, st)
 	leases.HostOnline = hub.HasConnection
 	leases.Router = deviceResourceRouter{hub: hub}
 	leases.Session = func(ctx context.Context, sessionID string) (resources.SessionInfo, error) {
@@ -49,9 +44,6 @@ func newResourceLeases(st store.Store, inventory *resources.Service, hub *Daemon
 // RunResourceLeases recovers the leases kept before a restart, then applies
 // their timers until ctx ends.
 func (s *Server) RunResourceLeases(ctx context.Context) {
-	if s.leases == nil {
-		return
-	}
 	if err := s.leases.Recover(ctx); err != nil {
 		log.Printf("resource leases not recovered: %v", err)
 	}
@@ -90,10 +82,8 @@ func (r deviceResourceRouter) SendReset(sourceID string, request store.ResourceR
 			log.Printf("resource %s reset at generation %d: %v", request.ResourceID, request.Generation, err)
 			return
 		}
-		if leases := r.hub.leases; leases != nil {
-			if err := leases.ResetDone(context.Background(), result.ResourceID, result.Generation, result.Error); err != nil {
-				log.Printf("resource %s reset not recorded: %v", request.ResourceID, err)
-			}
+		if err := r.hub.leases.ResetDone(context.Background(), result.ResourceID, result.Generation, result.Error); err != nil {
+			log.Printf("resource %s reset not recorded: %v", request.ResourceID, err)
 		}
 	}()
 	return true
@@ -117,9 +107,6 @@ type resourceLeaseReactions struct{ server *Server }
 
 func (r resourceLeaseReactions) sessionChanged(ctx context.Context, change sessionChange, session store.AgentSession) {
 	leases := r.server.leases
-	if leases == nil {
-		return
-	}
 	var err error
 	switch change {
 	case sessionQueued, sessionStarted, sessionBlocked, sessionResumed:
@@ -135,13 +122,10 @@ func (r resourceLeaseReactions) sessionChanged(ctx context.Context, change sessi
 // resourceLeasesDeviceConnected fences a reconnected device's worker and
 // marks its sessions' leases attended again.
 func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID string, capabilities []string) {
-	if s.leases == nil {
-		return
-	}
 	if err := s.leases.DeviceConnected(ctx, deviceID, slices.Contains(capabilities, store.DaemonCapabilityResourceOperations)); err != nil {
 		log.Printf("resource leases on %s connecting: %v", deviceID, err)
 	}
-	if slices.Contains(capabilities, store.DaemonCapabilityResourceCompute) && s.resources != nil {
+	if slices.Contains(capabilities, store.DaemonCapabilityResourceCompute) {
 		// Its worker enforces the owner's settings from now on; it keeps
 		// what it was last told only until this arrives.
 		go func() {
@@ -197,10 +181,6 @@ func (s *Server) sendResourceSettings(ctx context.Context, deviceID string, sett
 // resourceForOwner reads the instance a route names, answering 404 unless
 // the caller owns its device.
 func (s *Server) resourceForOwner(w http.ResponseWriter, r *http.Request) (store.ResourceInstance, bool) {
-	if s.resources == nil || s.leases == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server keeps no resource leases")
-		return store.ResourceInstance{}, false
-	}
 	id := strings.TrimSpace(r.PathValue("id"))
 	list, err := s.resources.List(r.Context(), store.ResourceFilter{IncludeGone: true})
 	if err != nil {
@@ -275,10 +255,6 @@ func (s *Server) handleResourceOperations(w http.ResponseWriter, r *http.Request
 // handleStopDeviceResources: the person takes a device back from every
 // session using its resources.
 func (s *Server) handleStopDeviceResources(w http.ResponseWriter, r *http.Request) {
-	if s.leases == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server keeps no resource leases")
-		return
-	}
 	released, err := s.leases.StopSource(r.Context(), r.PathValue("deviceId"), actorFromContext(r.Context()).AccountID())
 	writeResult(w, map[string]int{"released": released}, err)
 }
@@ -289,10 +265,6 @@ func (s *Server) handleStopDeviceResources(w http.ResponseWriter, r *http.Reques
 // credential, never a session. Applied answers whether the device's worker
 // enforces it already; otherwise it gets it when it connects.
 func (s *Server) handleResourceSettings(w http.ResponseWriter, r *http.Request) {
-	if s.resources == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server keeps no resource inventory")
-		return
-	}
 	deviceID := strings.TrimSpace(r.PathValue("deviceId"))
 	actor := actorFromContext(r.Context())
 	scope, err := s.requestScope(r)

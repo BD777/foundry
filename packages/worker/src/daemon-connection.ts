@@ -1,12 +1,15 @@
-import { processLabels } from "@bd777/foundry-protocol";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import type { ServiceHost } from "./service.js";
-import { checkPrograms } from "./skill-requirements.js";
-import { recordActivity, runDiagnostics, runRepair } from "./diagnostics.js";
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import WebSocket from "ws";
+import type { RawData } from "ws";
 import {
-  redactTranscriptText,
-  registerKnownSecret,
-} from "./secret-redaction.js";
+  daemonMessageTypes,
+  parseProtocolEnvelopeJSON,
+  type DeviceProjection,
+  type ProtocolEnvelope,
+} from "@bd777/foundry-protocol";
+import { recordActivity } from "./diagnostics.js";
+import { registerKnownSecret } from "./secret-redaction.js";
 import {
   ConnectionRecorder,
   describeConnectionReport,
@@ -19,380 +22,98 @@ import {
   startStallMonitor,
   withStalls,
 } from "./stall-monitor.js";
-import {
-  installTool,
-  runToolSetup,
-  managedToolVersions,
-  withManagedTools,
-  type ToolSpec,
-} from "./managed-tools.js";
-import { readSessionUsage } from "./session-usage.js";
-import { readSessionFile, readSessionFileDiff } from "./session-files.js";
-import {
-  fetchSkillRepository,
-  readRepositoryRefs,
-  type FetchRepositoryRequest,
-  type RepositoryRefsRequest,
-} from "./skill-repository-fetch.js";
-import {
-  reclaimSessionResources,
-  startSessionScratchSweeps,
-} from "./resource-pool.js";
-import {
-  createComputeProvider,
-  createCuaDriverProvider,
-  installResourceBackend,
-  ProviderRegistry,
-  cuaDriverScreenControlDetector,
-  isCuaDriverSettingsPane,
-  openCuaDriverSettings,
-  requestCuaDriverAccess,
-  requestResourceAccess,
-  resourceSettings,
-  ResourceOperations,
-  ResourceScanner,
-} from "./resources/index.js";
+import { startSessionScratchSweeps } from "./resource-pool.js";
 import { adoptEarlierSessionScratch } from "./session-scratch-adoption.js";
-import { homedir } from "node:os";
-import {
-  existingWorkspaceFolder,
-  requireWorkspaceFolder,
-  workspaceFolderPresent,
-} from "./workspace-registration.js";
-import {
-  findMovedWorkspaceFolders,
-  holdsRegisteredWorkspace,
-  registryWorkspaceFolders,
-  relinkWorkspaceFolder,
-} from "./workspace-folders.js";
-import { resolve } from "node:path";
-import WebSocket from "ws";
-import type { RawData } from "ws";
-import {
-  cuaDriverBackend,
-  daemonMessageTypes,
-  parseProtocolEnvelopeJSON,
-  type ResourceBackendInstallRequest,
-  type ResourceBackendInstallResult,
-  type ResourceOperateRequest,
-  type ResourceOperateResult,
-  type ResourceResetRequest,
-  type ResourceResetResult,
-  type ResourceSourceSettings,
-  type AgentRuntimeSettings,
-  type AgentSession,
-  type AgentSessionEvent,
-  type AgentSessionEventMetadata,
-  type ChatAttachment,
-  type ClarificationTurn,
-  type ExternalAccountMaterial,
-  type DeviceProjection,
-  type FindMovedWorkspacePayload,
-  type Issue,
-  type RelinkWorkspacePayload,
-  type WorkspaceFoldersPayload,
-  type SessionSkillRef,
-  type ProfileDefinition,
-  type ProtocolEnvelope,
-} from "@bd777/foundry-protocol";
+import { workspaceFolderPresent } from "./workspace-registration.js";
 import { readDaemonConfig, writeDaemonConfig } from "./config.js";
+import { daemonRequestHeaders } from "./server-http.js";
 import {
-  daemonRequestHeaders,
-  ensureServerReachable,
-  postJSON,
   ReliableSessionTransport,
   sendWebSocket,
-  serverFeatures,
   trySendWebSocket,
   webSocketURL,
-  SessionRunTransport,
-  issueSessionCompletion,
 } from "./transport.js";
-import {
-  AttachmentError,
-  abortAttachmentUpload,
-  readAttachmentImageChunk,
-  readWorkspaceFileChunk,
-  writeAttachmentChunk,
-} from "./workspace-attachments.js";
 import { ConcurrentTaskScheduler } from "./task-scheduler.js";
 import {
-  activeSessionCancelTargets,
-  activeSessionSteerTargets,
   clearOutOfBandSessionEventSink,
-  dispatchKey,
-  queuedSessionCancelRequests,
   SessionExecutionRegistry,
   setOutOfBandSessionEventSink,
-  type AgentSessionRunResult,
-  type OutOfBandSessionEvent,
 } from "./session-state.js";
-import {
-  configuredAgentProfiles,
-  localProfileCredential,
-  profileConfigForSession,
-  withDispatchCredential,
-  profileID,
-  upsertAgentProfileConfig,
-  type UpsertAgentProfilePayload,
-} from "./profiles.js";
-import {
-  readAgentRuntimeSettings,
-  writeAgentRuntimeSettings,
-  devicePath,
-  getDevice,
-} from "./device.js";
+import { configuredAgentProfiles } from "./profiles.js";
+import { getDevice, readAgentRuntimeSettings } from "./device.js";
 import {
   isDeviceRemovedSignal,
   parkAfterDeviceRemoval,
-  prepareExplicitRepair,
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
 import {
-  claudeBackgroundTaskLog,
-  claudeBackgroundTaskOutput,
   closeAllActiveRuntimes,
   sessionHasRunningBackgroundTasks,
-  stopClaudeBackgroundTask,
-} from "./runner.js";
-import { runWorkspaceSession, type WorkspaceSandbox } from "./session/index.js";
+} from "./runner/active-runtimes.js";
 import { BackgroundOutputFollowers } from "./background-output-follow.js";
 import {
   coalescedIssueEnvironmentChanges,
   onIssueEnvironmentChange,
 } from "./issue-environment-changes.js";
-import { issueSessionExecution } from "./issue-sessions.js";
-import {
-  verificationDirectory,
-  verificationExecution,
-} from "./verification-session.js";
-import { isVerificationSession } from "./session-roles.js";
-import {
-  prepareClarification,
-  recoveredClarificationCompletion,
-} from "./issue-clarification.js";
-import { packageSkillDirectory, readSkillTextFile } from "./skill-scanner.js";
-import { materializeSessionSkills } from "./skill-materializer.js";
-import { installService, serviceLogPaths, status } from "./service.js";
-import {
-  forgetWorkspaceRegistration,
-  initWorkspace,
-  readForgottenWorkspaces,
-  readRegistry,
-  recordExplicitWorkspace,
-  writeRegistry,
-} from "./workspaces.js";
-import {
-  executeIssue,
-  syncReviews,
-  workspaceProjectionForPath,
-} from "./issues.js";
-import { listAgentModelsConfig } from "./models.js";
-import { inspectNativeAccount } from "./native-inspection.js";
-import { checkDueProviders } from "./provider-check.js";
 import { clearClaudeSettingsFiles } from "./session-policy.js";
 import { refreshOfficialSkills } from "./official-skills.js";
-import { scanDeviceSkills } from "./skill-scan-thread.js";
+import { checkDueProviders } from "./provider-check.js";
 import { providerHealthData } from "./provider-health.js";
-import { installNativeCli } from "./native-cli-install.js";
-import { readWorkerUpdateStatus } from "./self-update-status.js";
+import { readRegistry, recordExplicitWorkspace } from "./workspaces.js";
+import { syncReviews } from "./issues.js";
 import {
-  startSelfUpdate,
-  watchSelfUpdateFailure,
-} from "./worker-self-update.js";
-import { clearNativeLoginHealth } from "./native-login.js";
-import {
-  daemonDeviceRegistration,
-  daemonRegistration,
   daemonWorkspacePath,
   explicitWorkspacePath,
   recheckRunningNativeChats,
   registerDaemon,
   serverURLFromArgs,
-  sessionSchedulingKey,
   syncNativeChats,
   withServedWorkspaces,
-  workspacePathFromArgs,
 } from "./workspace-ops.js";
+import { reapExternalAccountProfiles } from "./external-accounts.js";
 import {
-  inputScopedMessage,
-  cancelActiveSession,
-  createResponseStreamEventIDAllocator,
-  createSessionStatusEventFilter,
-  createSubtaskProgressCoalescer,
-  createResponseStreamBatcher,
-  isAgentSessionCanceledError,
-  registerActiveSessionSteerTarget,
-  sendDirectoryListing,
-  sendFileRead,
-  sendSubagentList,
-  sendSubagentTranscript,
-  sendWorkspaceTreeListing,
-  type ListSubagentsPayload,
-  type ListWorkspaceTreePayload,
-  sessionEvent,
-  noteSessionInput,
-  steerActiveSessionOnce,
-  writeAgentSessionCompletionMarker,
-  readAgentSessionCompletionMarker,
-  recoveredSessionCompletion,
-} from "./session-helpers.js";
-import {
-  foundryTokenEnvName,
-  registerSessionAmbientEnv,
-  type SessionAmbientEnv,
-} from "./session-ambient.js";
-import {
-  materializeSessionAccounts,
-  reapExternalAccountProfiles,
-} from "./external-accounts.js";
-import { optionEnabled, optionValue, safeID, sleep } from "./utils.js";
-import { issueEnvironmentAction } from "./issue-environment-rpc.js";
-import { evidenceWorkerAction } from "./evidence-rpc.js";
+  errorMessage,
+  optionEnabled,
+  optionValue,
+  safeID,
+  sleep,
+} from "./utils.js";
 import { stopAllEvidenceHTTPServices } from "./evidence-http-service.js";
-import type {
-  DeviceRepairAction,
-  EvidenceWorkerRequest,
-  SessionTimers,
-} from "@bd777/foundry-protocol";
-import { registerExecutionWorkspace } from "./repository-registry.js";
-import { inspectWorkspace } from "./workspace-inspection.js";
-import { readWorkspace } from "./workspaces.js";
-import {
-  recordedIssueCompletion,
-  recoveredIssueCompletion,
-} from "./issue-recovery.js";
-import { queuePreview, runIssuePreview } from "./issue-preview.js";
 import { foundryStatePath } from "./state-root.js";
-import { acquireDaemonLock, pairDevice } from "./device-pairing.js";
+import { acquireDaemonLock } from "./device-pairing.js";
 import { superviseAgentProcesses } from "./agent-processes.js";
-import { sessionTimers, startSessionTimers } from "./session-timers.js";
-
-interface ReadFilePayload {
-  path: string;
-  workspaceId: string;
-}
-
-interface AttachmentWritePayload {
-  workspaceId: string;
-  relativePath: string;
-  offset: number;
-  dataBase64?: string;
-  final?: boolean;
-  abort?: boolean;
-}
-
-interface AttachmentReadPayload {
-  workspaceId: string;
-  path: string;
-  offset: number;
-  maxBytes: number;
-  /** "workspace": any file of the workspace, not only an image attachment. */
-  scope?: "workspace";
-}
-
-interface ReadSubagentTranscriptPayload {
-  sessionId: string;
-  taskId: string;
-  workspaceId: string;
-}
-
-interface ListDirectoriesPayload {
-  path: string;
-}
-
-interface SetupWorkspacePayload {
-  path: string;
-}
-
-interface ForgetWorkspacePayload {
-  path: string;
-  workspaceId: string;
-}
-
-interface UpsertAgentRuntimeSettingsPayload {
-  settings: AgentRuntimeSettings;
-}
-
-interface ListAgentModelsPayload {
-  profile: UpsertAgentProfilePayload["profile"];
-}
-
-interface ReadProfileCredentialPayload {
-  profileId?: string;
-}
-
-interface RunSessionPayload {
-  session: AgentSession;
-  /** Server-held credential for the session's profile; memory-only. */
-  credential?: string;
-  /** One-time bearer token for the spawned agent's MCP/CLI surface. */
-  sessionToken?: string;
-  /**
-   * Server-owned profile definition for this run. When present it is
-   * authoritative and the local profiles file is not consulted, so a profile
-   * that exists only in the control plane keeps its endpoint and knobs.
-   */
-  profile?: ProfileDefinition;
-  /** The Issue an issue_execution session implements, with its contract. */
-  issue?: Issue;
-  /** Server decision: readable only for Issues the device owner started. */
-  userFiles?: "readable" | "hidden";
-  /** The draft and conversation an issue_clarification input is about. */
-  clarification?: ClarificationTurn;
-  /** Third-party accounts the session may act as: minted tokens, no refresh. */
-  externalAccounts?: ExternalAccountMaterial[];
-}
-
-interface SteerSessionPayload {
-  message?: string;
-  attachments?: ChatAttachment[];
-  sessionId?: string;
-  /**
-   * The message's id (a queued message's): a steer the server sends again
-   * is applied once. Older servers send none.
-   */
-  inputId?: string;
-}
-
-interface CancelSessionPayload {
-  sessionId?: string;
-  inputId?: string;
-}
-
-interface RecoverSessionPayload {
-  sessionId?: string;
-  inputId?: string;
-  workspaceId: string;
-  issueId?: string;
-  role?: AgentSession["role"];
-}
+import { startSessionTimers } from "./session-timers.js";
+import {
+  logTime,
+  socketClosed,
+  socketOpened,
+  type ConnectionState,
+  type DaemonContext,
+  type SessionOutcome,
+} from "./daemon/context.js";
+import { DaemonDispatch } from "./daemon/dispatch.js";
+import { registerAgentHandlers } from "./daemon/handlers/agents.js";
+import { registerConnectionHandlers } from "./daemon/handlers/connection.js";
+import { registerDeviceHandlers } from "./daemon/handlers/device.js";
+import { registerFileHandlers } from "./daemon/handlers/files.js";
+import { registerIssueHandlers } from "./daemon/handlers/issues.js";
+import {
+  registerResourceHandlers,
+  stopServingResources,
+} from "./daemon/handlers/resources.js";
+import { registerSessionHandlers } from "./daemon/handlers/sessions.js";
+import { registerSkillHandlers } from "./daemon/handlers/skills.js";
+import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
+import { outOfBandEventSink } from "./daemon/session-execution.js";
+import {
+  noteMissingFolder,
+  WorkspaceRoster,
+  type WorkspaceRegistration,
+} from "./daemon/workspace-roster.js";
 
 const nativeChatSyncIntervalMs = 10000;
 
-/** Workspace folders found gone: each is logged once, until it is back. */
-const loggedMissingFolders = new Set<string>();
-
-function noteMissingFolder(workspacePath: string): void {
-  if (loggedMissingFolders.has(workspacePath)) return;
-  loggedMissingFolders.add(workspacePath);
-  console.error(
-    `${logTime()} The workspace folder ${workspacePath} no longer exists; its workspace is reported missing until it is back or located.`,
-  );
-}
-
-function sameFolderLists(
-  left: WorkspaceFoldersPayload,
-  right: WorkspaceFoldersPayload,
-): boolean {
-  const same = (a: string[], b: string[]) =>
-    a.length === b.length && a.every((value, index) => value === b[index]);
-  return (
-    same(left.servedWorkspaceIds, right.servedWorkspaceIds) &&
-    same(left.missingWorkspaceIds, right.missingWorkspaceIds)
-  );
-}
 const providerCheckIntervalMs = 10 * 60 * 1000;
 
 /**
@@ -440,7 +161,7 @@ export async function connect(args: string[]): Promise<void> {
     recordExplicitWorkspace(explicitWorkspacePath(args));
   } catch (error) {
     console.error(
-      `Recording the --workspace folder failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Recording the --workspace folder failed: ${errorMessage(error)}`,
     );
   }
   writeDaemonConfig({
@@ -463,11 +184,7 @@ async function registerAtStartup(
   try {
     return await registerDaemon(serverURL, workspacePath);
   } catch (error) {
-    if (
-      isDeviceRemovedSignal(
-        error instanceof Error ? error.message : String(error),
-      )
-    ) {
+    if (isDeviceRemovedSignal(errorMessage(error))) {
       await stopAfterDeviceRemoval(serverURL);
       return undefined;
     }
@@ -556,7 +273,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
       // A refused registration keeps backing off; a session that ran resets it.
       if (outcome !== "refused") backoffMs = 1000;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       console.error(`${logTime()} Daemon connection failed: ${message}`);
       if (once) {
         throw error;
@@ -571,379 +288,6 @@ async function connectWebSocket(args: string[]): Promise<void> {
   }
 }
 
-/**
- * Timestamp for connection lifecycle lines: service managers such as launchd
- * write the daemon's output without one, and a dropped connection is only
- * diagnosable against the server's log by time.
- */
-function logTime(): string {
-  return new Date().toISOString();
-}
-
-/** Where a dispatched session runs and keeps its state. */
-interface SessionExecution {
-  /** Directory the agent works in. */
-  cwd: string;
-  /** Directory that receives Foundry's own session records. */
-  stateRoot: string;
-  sandbox?: WorkspaceSandbox;
-}
-
-// Chats run unsandboxed in the workspace itself; Issue-backed sessions run
-// where and how the Issue decides; a verifier runs in the workspace inside a
-// sandbox that keeps it read-only.
-function sessionExecution(
-  rootPath: string,
-  session: AgentSession,
-  ambient: SessionAmbientEnv,
-): SessionExecution {
-  const issueId = session.issueId?.trim();
-  if (issueId)
-    return issueSessionExecution(
-      session.workspaceId,
-      issueId,
-      session.id,
-      ambient,
-    );
-  if (isVerificationSession(session))
-    return verificationExecution(session, rootPath, ambient);
-  return { cwd: rootPath, stateRoot: rootPath };
-}
-
-/**
- * One per process: a subagent reports progress both inside a turn and,
- * running in the background, between turns (the out-of-band sink).
- */
-const coalesceSubtaskProgress = createSubtaskProgressCoalescer();
-
-async function executeAgentSession(
-  transport: ReliableSessionTransport,
-  execution: SessionExecution,
-  session: AgentSession,
-  dispatchCredential?: string,
-  dispatchProfile?: ProfileDefinition,
-  ambient?: SessionAmbientEnv,
-  /** What the session's role adds to its completion report. */
-  settle?: (result: AgentSessionRunResult) => Record<string, unknown>,
-): Promise<void> {
-  const workspacePath = execution.cwd;
-  const unregisterAmbient = ambient
-    ? registerSessionAmbientEnv(session.id, ambient)
-    : () => {};
-  if (
-    queuedSessionCancelRequests.delete(
-      dispatchKey(session.id, session.input?.id),
-    )
-  ) {
-    transport.send(daemonMessageTypes.sessionCompleted, {
-      sessionId: session.id,
-      inputId: session.input?.id,
-      error: "Session canceled before it started.",
-    });
-    unregisterAmbient();
-    return;
-  }
-  // Response events are named per input: every input of a session has its
-  // own answers, and a later one must never overwrite an earlier one.
-  const responseEventID = createResponseStreamEventIDAllocator(
-    session.input ? `${session.id}_${session.input.id}` : session.id,
-  );
-  const shouldSendEvent = createSessionStatusEventFilter();
-  const sendEvent = (
-    label: string,
-    detail: string,
-    level: AgentSessionEvent["level"],
-    metadata?: AgentSessionEventMetadata,
-    message?: AgentSessionEvent["message"],
-    knownEventID?: string,
-  ): void => {
-    if (!shouldSendEvent({ label, detail, level, metadata })) {
-      return;
-    }
-    const eventID = responseEventID(label, message?.id) ?? knownEventID;
-    coalesceSubtaskProgress(session.id, { label, metadata }, () =>
-      transport.send(daemonMessageTypes.sessionEvent, {
-        event: sessionEvent(
-          session.id,
-          label,
-          detail,
-          level,
-          eventID,
-          metadata,
-          message,
-        ),
-      }),
-    );
-  };
-  const responseStream = createResponseStreamBatcher<{
-    detail: string;
-    level: AgentSessionEvent["level"];
-    metadata?: AgentSessionEventMetadata;
-    message?: AgentSessionEvent["message"];
-  }>((pending) =>
-    sendEvent(
-      "Response stream",
-      pending.detail,
-      pending.level,
-      pending.metadata,
-      pending.message,
-    ),
-  );
-  const flushPendingResponse = responseStream.flush;
-  // A session waiting out a model rate-limit retry is blocked (active but
-  // waiting), not running. Any other progress — including the next response
-  // stream after the retry — clears the marker.
-  let markedBlocked = false;
-  const blockOnRateLimitLabels = new Set<string>([
-    processLabels.rateLimited,
-    processLabels.modelRetry,
-  ]);
-
-  const emit = async (
-    label: string,
-    detail: string,
-    level: AgentSessionEvent["level"] = "info",
-    metadata?: AgentSessionEventMetadata,
-    message?: AgentSessionEvent["message"],
-    eventId?: string,
-  ): Promise<void> => {
-    message = inputScopedMessage(session, message);
-    const retrying = level === "warning" && blockOnRateLimitLabels.has(label);
-    if (retrying && !markedBlocked) {
-      markedBlocked = true;
-      transport.send(daemonMessageTypes.sessionBlocked, {
-        sessionId: session.id,
-        reason: label,
-      });
-    } else if (!retrying && markedBlocked) {
-      markedBlocked = false;
-      transport.send(daemonMessageTypes.sessionResumed, {
-        sessionId: session.id,
-      });
-    }
-    if (label === "Response stream") {
-      responseStream.offer({ detail, level, metadata, message });
-      return;
-    }
-    flushPendingResponse();
-    sendEvent(label, detail, level, metadata, message, eventId);
-  };
-  // Resource Pool lease: browser processes this session started and left
-  // running are closed when its input ends — unless background work the
-  // turn left running may still use them; a later input's end reclaims them.
-  const reclaimResources = async (): Promise<void> => {
-    if (sessionHasRunningBackgroundTasks(session.id)) return;
-    const reclaimed = reclaimSessionResources(session.id);
-    if (reclaimed.length)
-      await emit("Closed leftover browser processes", reclaimed.join(", "));
-  };
-
-  const reportedNativeSessionIds = new Set<string>();
-  const reportNativeSessionId = (nativeSessionId: string): void => {
-    const trimmed = nativeSessionId?.trim();
-    if (!trimmed || reportedNativeSessionIds.has(trimmed)) {
-      return;
-    }
-    reportedNativeSessionIds.add(trimmed);
-    transport.send(daemonMessageTypes.sessionNativeSessionId, {
-      sessionId: session.id,
-      nativeSessionId: trimmed,
-    });
-  };
-
-  transport.send(daemonMessageTypes.sessionStarted, {
-    sessionId: session.id,
-    inputId: session.input?.id,
-  });
-  const unregisterUnsupportedCodexSteer =
-    session.provider === "codex"
-      ? registerActiveSessionSteerTarget(session.id, {
-          provider: "codex",
-          steer: async () => {
-            throw new Error(
-              "Codex SDK does not support steering the active turn yet. Keep it queued for the next turn.",
-            );
-          },
-        })
-      : undefined;
-  try {
-    const profile = withDispatchCredential(
-      profileConfigForSession(workspacePath, session, dispatchProfile),
-      dispatchCredential,
-    );
-    let setupEmitted = false;
-    const emitSetup = async (): Promise<void> => {
-      if (setupEmitted) {
-        return;
-      }
-      setupEmitted = true;
-      await emit("Loaded workspace", workspacePath);
-      await emit(
-        "Selected profile",
-        `${profile.label ?? profileID(profile)} · ${profile.connectionType ?? "local_login"}`,
-      );
-    };
-    // Resolve the workspace-selected skills into a managed runtime tree before
-    // the agent starts. An empty selection materializes an empty allowlist,
-    // which the runner enforces as "expose nothing".
-    const managedSkills = await materializeSessionSkills(
-      session.skillRefs ?? [],
-      ambient?.serverURL ?? "",
-      workspacePath,
-    );
-    if (managedSkills.skills.length > 0) {
-      await emit(
-        "Loaded skills",
-        managedSkills.skills.map((skill) => skill.name).join(", "),
-      );
-    }
-    // Session liveness is carried by the process-scoped execution claim on
-    // the daemon connection. Do not manufacture visible transcript events
-    // when the provider has produced no actual progress or response content.
-    const result = await runWorkspaceSession({
-      cwd: execution.cwd,
-      session,
-      profile,
-      managedSkills,
-      emit,
-      emitSetup,
-      reportNativeSessionId,
-      sandbox: execution.sandbox,
-    });
-    flushPendingResponse();
-    await reclaimResources();
-    const settled = settle?.(result);
-    writeAgentSessionCompletionMarker(execution.stateRoot, session, result);
-    transport.send(daemonMessageTypes.sessionCompleted, {
-      sessionId: session.id,
-      inputId: session.input?.id,
-      nativeSessionId: result.nativeSessionId,
-      response: redactTranscriptText(result.response),
-      ...settled,
-    });
-  } catch (error) {
-    await reclaimResources();
-    if (isAgentSessionCanceledError(error)) {
-      await emit("Session canceled", "Canceled by user.", "warning");
-      return;
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    await emit("Session failed", message, "error");
-    transport.send(daemonMessageTypes.sessionCompleted, {
-      sessionId: session.id,
-      inputId: session.input?.id,
-      error: message,
-    });
-  } finally {
-    flushPendingResponse();
-    unregisterAmbient();
-    unregisterUnsupportedCodexSteer?.();
-    activeSessionSteerTargets.delete(session.id);
-    activeSessionCancelTargets.delete(session.id);
-  }
-}
-
-function daemonRegistrationWithActiveSessions(
-  workspacePath: string,
-  sessionExecutions: SessionExecutionRegistry,
-): ReturnType<typeof daemonRegistration> & { activeSessionIds: string[] } {
-  return {
-    ...daemonRegistration(workspacePath),
-    // This is an execution claim, not device presence. It survives a socket
-    // reconnect because the registry is process-scoped, but it is empty after
-    // a daemon restart so a replacement process cannot keep orphaned work
-    // alive merely by registering the same device ID.
-    activeSessionIds: sessionExecutions.activeSessionIds(),
-  };
-}
-
-/** Round trip of one ping over a control socket, in milliseconds. */
-function socketRoundTrip(socket: WebSocket): Promise<number> {
-  return new Promise((resolvePing, rejectPing) => {
-    if (socket.readyState !== WebSocket.OPEN) {
-      rejectPing(new Error("the control socket is not open"));
-      return;
-    }
-    const started = Date.now();
-    const onPong = () => {
-      clearTimeout(timer);
-      resolvePing(Date.now() - started);
-    };
-    const timer = setTimeout(() => {
-      socket.off("pong", onPong);
-      rejectPing(new Error("no pong from the server in 10s"));
-    }, 10_000);
-    socket.once("pong", onPong);
-    socket.ping();
-  });
-}
-
-/** The open control socket, for diagnostics that measure it. */
-let currentSocket: WebSocket | undefined;
-/**
- * The device's resource inventory; it outlives connections, and reports
- * through whichever one a server that takes it accepted (resources_v1).
- */
-const resourceScanner = new ResourceScanner();
-
-/**
- * Asks the person at this device for access: cua-driver's grant run
- * ("cua-driver"), one of its System Settings panes ("cua-driver:<pane>"),
- * or the worker's own grants. cua-driver's grants are then watched live:
- * each change re-runs only its detector, reported at once. Returns what
- * was opened.
- */
-async function requestAccessOnDevice(requested: string): Promise<string[]> {
-  if (!requested) return [];
-  const recheckCuaDriver = () =>
-    void resourceScanner.scanOne(cuaDriverScreenControlDetector.id);
-  if (requested === cuaDriverBackend)
-    return requestCuaDriverAccess({
-      onDone: recheckCuaDriver,
-      onChange: recheckCuaDriver,
-    });
-  if (requested.startsWith(`${cuaDriverBackend}:`)) {
-    const pane = requested.slice(cuaDriverBackend.length + 1);
-    if (!isCuaDriverSettingsPane(pane))
-      throw new Error(`unknown System Settings pane for cua-driver: ${pane}`);
-    return openCuaDriverSettings(pane, { onChange: recheckCuaDriver });
-  }
-  return requestResourceAccess(requested);
-}
-/**
- * Operations on resources sessions lease (resource_operate): the device
- * side of lease fencing and the open provider sessions. Closed whenever the
- * connection is, so a lease never outlives the server's view of it.
- */
-/**
- * Folders of the workspaces the current connection serves: compute works in
- * one only when the server names it and this worker serves it.
- */
-let servedWorkspacePaths: () => string[] = () => [];
-/**
- * Compute (commands a session of this device's owner runs here, only while
- * the owner allows remote commands): in the environment sessions get,
- * without a Foundry token.
- */
-const computeProvider = createComputeProvider({
-  workspacePaths: () => servedWorkspacePaths(),
-  env: () => {
-    const { [foundryTokenEnvName]: _token, ...env } = process.env;
-    return { ...env, PATH: withManagedTools(env.PATH) };
-  },
-});
-const resourceOperations = new ResourceOperations({
-  providers: new ProviderRegistry([createCuaDriverProvider(), computeProvider]),
-});
-
-/**
- * The server asks for update status: it understands a failure reported
- * unasked too. An older server would answer one with an error.
- */
-let serverReadsWorkerUpdateStatus = false;
-
-type sessionOutcome = "exit" | "reconnect" | "removed" | "refused";
-
 /** How often the worker tells the server it is there (see the heartbeat). */
 const heartbeatIntervalMs = Number(
   process.env.FOUNDRY_HEARTBEAT_INTERVAL_MS || 25_000,
@@ -955,6 +299,18 @@ const outboxSettleMs = 10_000;
 /** Longest the server may stay silent; it pings every 30s. */
 const serverSilenceMs = Number(process.env.FOUNDRY_SERVER_SILENCE_MS || 75_000);
 
+/** Every message type the server sends a daemon, and the daemon's answer. */
+export const daemonDispatch = new DaemonDispatch();
+registerConnectionHandlers(daemonDispatch);
+registerFileHandlers(daemonDispatch);
+registerWorkspaceHandlers(daemonDispatch);
+registerAgentHandlers(daemonDispatch);
+registerDeviceHandlers(daemonDispatch);
+registerSkillHandlers(daemonDispatch);
+registerResourceHandlers(daemonDispatch);
+registerSessionHandlers(daemonDispatch);
+registerIssueHandlers(daemonDispatch);
+
 function runWebSocketSession(options: {
   taskScheduler: ConcurrentTaskScheduler;
   idleTimeoutMs: number;
@@ -963,15 +319,15 @@ function runWebSocketSession(options: {
   sessionTransport: ReliableSessionTransport;
   serverURL: string;
   workspacePath: string;
-}): Promise<sessionOutcome> {
-  return new Promise<sessionOutcome>((resolveSession, rejectSession) => {
+}): Promise<SessionOutcome> {
+  return new Promise<SessionOutcome>((resolveSession, rejectSession) => {
     const socket = new WebSocket(webSocketURL(options.serverURL), {
       headers: daemonRequestHeaders(false),
       maxPayload: 2 * 1024 * 1024,
       handshakeTimeout: 30_000,
     });
     const connection = new ConnectionRecorder();
-    currentSocket = socket;
+    socketOpened(socket);
     socket.on("upgrade", (response) => connection.countBytes(response.socket));
     // Without a single byte from the server for this long the socket is
     // ended and the loop reconnects; otherwise a connection dropped on the
@@ -1004,23 +360,22 @@ function runWebSocketSession(options: {
     socket.on("message", () => connection.serverData());
     const taskScheduler = options.taskScheduler;
     let announcedIssueSlots = 1;
-    let acceptedRun = false;
     let finished = false;
-    let registered = false;
-    let refused = false;
-    let idleTimer: NodeJS.Timeout | undefined;
+    const state: ConnectionState = {
+      registered: false,
+      refused: false,
+      acceptedRun: false,
+    };
     let nativeChatSyncPromise: Promise<void> | undefined;
     let nativeChatSyncTimer: NodeJS.Timeout | undefined;
     let providerCheckTimer: NodeJS.Timeout | undefined;
     // Once per connection and workspace (see recheckRunningNativeChats).
     const runningChatsRechecked = new Set<string>();
-    const workspacePaths = new Map<string, string>();
-    // Workspaces whose registration the server got on this connection.
-    const announcedWorkspaceIds = new Set<string>();
-    // The served and missing lists the server last heard (hello included),
-    // and whether it takes workspace_folders news at all.
-    let reportedFolders: WorkspaceFoldersPayload | undefined;
-    let serverTakesFolders = false;
+    const roster = new WorkspaceRoster(
+      socket,
+      options.workspacePath,
+      options.sessionExecutions,
+    );
     // Background task logs read while they grow (see background-output-follow).
     const outputFollowers = new BackgroundOutputFollowers({
       notify: (sessionId, taskId) =>
@@ -1049,211 +404,17 @@ function runWebSocketSession(options: {
       };
     }
 
-    // Timer-driven background turns arrive while no Foundry turn is active.
-    // They cross the socket as ordinary session_event envelopes, which the
-    // server persists and broadcasts like turn-scoped events.
-    const outOfBandSink = (
-      sessionId: string,
-      partial: OutOfBandSessionEvent,
-    ): void => {
-      coalesceSubtaskProgress(sessionId, partial, () =>
-        options.sessionTransport.send(daemonMessageTypes.sessionEvent, {
-          event: sessionEvent(
-            sessionId,
-            partial.label,
-            partial.detail,
-            partial.level ?? "info",
-            undefined,
-            partial.metadata,
-            partial.message,
-          ),
-        }),
-      );
-    };
+    const outOfBandSink = outOfBandEventSink(options.sessionTransport);
 
-    function registerWorkspacePath(
-      registration: ReturnType<typeof daemonRegistration>,
-    ): void {
-      workspacePaths.set(
-        registration.workspace.id,
-        registration.workspace.localPath,
-      );
-      announcedWorkspaceIds.add(registration.workspace.id);
-      loggedMissingFolders.delete(registration.workspace.localPath);
-    }
-
-    /**
-     * A workspace the device keeps whose folder is gone: it is known here
-     * (an operation on it gets a clear refusal) but not served.
-     */
-    function trackMissingWorkspace(workspaceId: string, path: string): void {
-      if (!workspacePaths.has(workspaceId))
-        workspacePaths.set(workspaceId, path);
-    }
-
-    function unregisterWorkspacePath(
-      workspaceId: string,
-      workspacePath: string,
-    ): void {
-      const normalizedPath = workspacePath ? resolve(workspacePath) : "";
-      if (workspaceId) {
-        workspacePaths.delete(workspaceId);
-      }
-      if (normalizedPath) {
-        for (const [id, path] of [...workspacePaths.entries()]) {
-          if (resolve(path) === normalizedPath) {
-            workspacePaths.delete(id);
-            announcedWorkspaceIds.delete(id);
-          }
-        }
-      }
-      if (workspaceId) announcedWorkspaceIds.delete(workspaceId);
-    }
-
-    function hasWorkspace(
-      registration: object,
-    ): registration is ReturnType<typeof daemonRegistration> {
-      return "workspace" in registration && Boolean(registration.workspace);
-    }
-
-    function deviceRegistrationWithActiveSessions() {
-      return {
-        ...daemonDeviceRegistration(),
-        activeSessionIds: options.sessionExecutions.activeSessionIds(),
-      };
-    }
-
-    /**
-     * The registration a reply carries: the daemon's first workspace, or the
-     * device alone while it has none. A folder the person removed is never
-     * it, not even the one the daemon was started with.
-     */
-    function currentRegistration() {
-      // A registered folder can vanish (e.g. a test's temp folder); describe
-      // the device with one that still exists rather than fail.
-      const workspacePath = knownWorkspacePaths().find((path) =>
-        existsSync(path),
-      );
-      return workspacePath
-        ? daemonRegistrationWithActiveSessions(
-            workspacePath,
-            options.sessionExecutions,
-          )
-        : deviceRegistrationWithActiveSessions();
-    }
-
-    function workspacePathFor(workspaceId: string): string {
-      const workspacePath = workspacePaths.get(workspaceId);
-      if (!workspacePath) {
-        throw new Error(
-          `workspace ${workspaceId} is not registered in this local daemon`,
-        );
-      }
-      return workspacePath;
-    }
-
-    /**
-     * The workspace's folder for an operation that works in it, or the clear
-     * refusal when the folder is gone; the server then hears at once that
-     * the workspace is missing.
-     */
-    function workspaceFolderFor(workspaceId: string): string {
-      const workspacePath = workspacePathFor(workspaceId);
-      try {
-        return requireWorkspaceFolder(workspacePath);
-      } catch (error) {
-        checkWorkspaceFolders();
-        throw error;
-      }
-    }
-
-    /** What the device serves and what it keeps without a folder. */
-    function workspaceFolderLists(): WorkspaceFoldersPayload {
-      const served = new Set<string>();
-      const missing = new Set<string>();
-      for (const [id, path] of workspacePaths) {
-        if (!workspaceFolderPresent(path)) missing.add(id);
-        else if (announcedWorkspaceIds.has(id)) served.add(id);
-      }
-      for (const entry of registryWorkspaceFolders())
-        if (!entry.present && !served.has(entry.id)) missing.add(entry.id);
-      return {
-        servedWorkspaceIds: [...served].sort(),
-        missingWorkspaceIds: [...missing].sort(),
-      };
-    }
-
-    /**
-     * Run every round of the native chat timer (cheap: a stat per
-     * workspace). A registry workspace whose folder came back is registered
-     * again, as at hello; a server that takes it hears whenever the served
-     * or missing lists change.
-     */
-    function checkWorkspaceFolders(): void {
-      if (finished || !reportedFolders) return;
-      for (const entry of registryWorkspaceFolders()) {
-        if (!entry.present) {
-          noteMissingFolder(entry.path);
-          trackMissingWorkspace(entry.id, entry.path);
-          continue;
-        }
-        if (announcedWorkspaceIds.has(entry.id)) continue;
-        if (!holdsRegisteredWorkspace(entry)) continue;
-        try {
-          const registration = daemonRegistrationWithActiveSessions(
-            entry.path,
-            options.sessionExecutions,
-          );
-          registerWorkspacePath(registration);
-          console.log(
-            `${logTime()} The workspace folder ${entry.path} is back; serving ${registration.workspace.name} again.`,
-          );
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceReady,
-            { registration },
-            `workspace_ready_${safeID(registration.workspace.id)}_${Date.now()}`,
-          );
-        } catch (error) {
-          console.error(
-            `Serving the workspace at ${entry.path} again failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-      for (const [, path] of workspacePaths)
-        if (!workspaceFolderPresent(path)) noteMissingFolder(path);
-        else loggedMissingFolders.delete(path);
-      if (!serverTakesFolders) return;
-      const lists = workspaceFolderLists();
-      if (sameFolderLists(lists, reportedFolders)) return;
-      if (trySendWebSocket(socket, daemonMessageTypes.workspaceFolders, lists))
-        reportedFolders = lists;
-    }
-
-    function knownWorkspacePaths(): string[] {
-      const forgotten = readForgottenWorkspaces();
-      const paths = [
-        ...(options.workspacePath ? [resolve(options.workspacePath)] : []),
-        ...readRegistry().map((entry) => resolve(entry.path)),
-      ];
-      return [...new Set(paths)].filter(
-        (workspacePath) =>
-          !forgotten.some(
-            (entry) =>
-              resolve(entry.path) === workspacePath ||
-              (entry.id && workspacePaths.get(entry.id) === workspacePath),
-          ),
-      );
-    }
-
-    function finish(outcome: sessionOutcome): void {
+    function finish(outcome: SessionOutcome): void {
       if (finished) {
         return;
       }
       finished = true;
+      roster.close();
       stopSilenceWatch();
-      if (idleTimer) {
-        clearTimeout(idleTimer);
+      if (state.idleTimer) {
+        clearTimeout(state.idleTimer);
       }
       if (nativeChatSyncTimer) {
         clearInterval(nativeChatSyncTimer);
@@ -1277,101 +438,6 @@ function runWebSocketSession(options: {
       }
     }
 
-    // An Issue execution is a session with the issue_execution role: it
-    // implements the confirmed contract in the Issue's candidate and reports
-    // through the session. A result recorded earlier, whose report was lost,
-    // is sent again instead of running the attempt twice.
-    function runIssueExecution(
-      payload: RunSessionPayload,
-      inputId: string,
-    ): void {
-      const session = payload.session;
-      const issue = payload.issue;
-      const settle = (): void => {
-        options.sessionExecutions.complete(session.id, inputId);
-        if (options.once) finish("exit");
-        else
-          options.sessionTransport.send(daemonMessageTypes.readyForIssue, {});
-      };
-      const fail = (error: string): void => {
-        options.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
-          sessionId: session.id,
-          inputId: inputId || undefined,
-          error,
-        });
-      };
-      if (!issue || issue.id !== session.issueId) {
-        fail("The Issue to execute was not sent with its session.");
-        settle();
-        return;
-      }
-      const recorded = recordedIssueCompletion(
-        session.workspaceId,
-        issue.id,
-        session.id,
-      );
-      if (recorded) {
-        options.sessionTransport.send(
-          daemonMessageTypes.sessionCompleted,
-          issueSessionCompletion(session.id, inputId || undefined, recorded),
-        );
-        settle();
-        return;
-      }
-      void taskScheduler
-        .schedule(`issue:${issue.id}`, async () => {
-          console.log(
-            `Running ${issue.shortId} (${issue.title}) as session ${session.id}`,
-          );
-          try {
-            const workspacePath = workspaceFolderFor(session.workspaceId);
-            const profile =
-              issue.runtime === "mock"
-                ? undefined
-                : withDispatchCredential(
-                    profileConfigForSession(
-                      workspacePath,
-                      session,
-                      payload.profile,
-                    ),
-                    payload.credential,
-                  );
-            await executeIssue(
-              options.serverURL,
-              workspacePath,
-              issue,
-              new SessionRunTransport(
-                options.sessionTransport,
-                session.id,
-                inputId || undefined,
-              ),
-              undefined,
-              session.skillRefs ?? [],
-              payload.userFiles === "readable" ? "readable" : "hidden",
-              session.id,
-              profile,
-              {
-                serverURL: options.serverURL,
-                sessionToken: payload.sessionToken ?? "",
-                workspaceID: session.workspaceId,
-              },
-            );
-            await syncReviews(options.serverURL, workspacePath);
-          } catch (error) {
-            // executeIssue reports its own failures once the run started;
-            // this is a refusal before it did (an unconfirmed contract).
-            fail(error instanceof Error ? error.message : String(error));
-          } finally {
-            settle();
-          }
-        })
-        .catch((error: unknown) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          console.error(`Issue ${issue.shortId} scheduling failed: ${message}`);
-        });
-    }
-
     function syncKnownNativeChats(): void {
       if (nativeChatSyncPromise) {
         return;
@@ -1379,11 +445,12 @@ function runWebSocketSession(options: {
       const syncStarted = Date.now();
       let syncedWorkspaces = 0;
       nativeChatSyncPromise = Promise.all(
-        knownWorkspacePaths()
+        roster
+          .knownPaths()
           .filter((workspacePath) => {
             if (workspaceFolderPresent(workspacePath)) return true;
             // A registered folder that is gone has nothing to sync; it is
-            // logged once (see checkWorkspaceFolders).
+            // logged once (see WorkspaceRoster.checkFolders).
             noteMissingFolder(workspacePath);
             return false;
           })
@@ -1400,13 +467,12 @@ function runWebSocketSession(options: {
                   workspacePath,
                 ).catch((error: unknown) =>
                   console.error(
-                    `Rechecking running native chats failed for ${workspacePath}: ${error instanceof Error ? error.message : String(error)}`,
+                    `Rechecking running native chats failed for ${workspacePath}: ${errorMessage(error)}`,
                   ),
                 );
               }
             } catch (error) {
-              const message =
-                error instanceof Error ? error.message : String(error);
+              const message = errorMessage(error);
               console.error(
                 `Native chat sync failed for ${workspacePath}: ${message}`,
               );
@@ -1425,13 +491,14 @@ function runWebSocketSession(options: {
 
     // Every round: folders gone or back, then the native chats of those there.
     function workspaceRound(): void {
-      checkWorkspaceFolders();
+      roster.checkFolders();
       syncKnownNativeChats();
     }
 
     socket.on("open", () => {
       const endRegistration = beginActivity("registration");
-      const registrations = knownWorkspacePaths()
+      const registrations = roster
+        .knownPaths()
         .filter((workspacePath) => {
           if (workspaceFolderPresent(workspacePath)) return true;
           noteMissingFolder(workspacePath);
@@ -1439,23 +506,16 @@ function runWebSocketSession(options: {
         })
         .map((workspacePath) => {
           try {
-            return daemonRegistrationWithActiveSessions(
-              workspacePath,
-              options.sessionExecutions,
-            );
+            return roster.registration(workspacePath);
           } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
+            const message = errorMessage(error);
             console.error(`Skipping workspace ${workspacePath}: ${message}`);
             return undefined;
           }
         })
         .filter(
-          (
-            registration,
-          ): registration is ReturnType<
-            typeof daemonRegistrationWithActiveSessions
-          > => registration !== undefined,
+          (registration): registration is WorkspaceRegistration =>
+            registration !== undefined,
         );
       const registration =
         registrations.find(
@@ -1466,21 +526,11 @@ function runWebSocketSession(options: {
       endRegistration();
       // Workspaces the device keeps whose folder is gone: named in the hello
       // apart from the served ones, and refused clearly until located.
-      const servedIds = new Set(registrations.map((item) => item.workspace.id));
-      const missingIds = new Set<string>();
-      for (const entry of registryWorkspaceFolders()) {
-        if (entry.present || servedIds.has(entry.id)) continue;
-        trackMissingWorkspace(entry.id, entry.path);
-        missingIds.add(entry.id);
-      }
-      reportedFolders = {
-        servedWorkspaceIds: [...servedIds].sort(),
-        missingWorkspaceIds: [...missingIds].sort(),
-      };
+      const reportedFolders = roster.helloFolders(registrations);
       if (!registration) {
         // A device with no workspace yet connects as itself; the person adds
         // workspaces from the Workspaces page.
-        const device = deviceRegistrationWithActiveSessions();
+        const device = roster.deviceRegistration();
         console.log(
           `${logTime()} Connected daemon ${device.device.label} to ${options.serverURL} (no workspace yet)`,
         );
@@ -1506,7 +556,7 @@ function runWebSocketSession(options: {
         return;
       }
       for (const item of registrations) {
-        registerWorkspacePath(item);
+        roster.register(item);
       }
       console.log(
         `${logTime()} Connected daemon ${registration.device.label} to ${options.serverURL} for ${registration.workspace.name}`,
@@ -1562,14 +612,11 @@ function runWebSocketSession(options: {
     }
 
     function reportEachRegistration(): void {
-      for (const workspacePath of knownWorkspacePaths().filter(
-        workspaceFolderPresent,
-      )) {
-        const registration = daemonRegistrationWithActiveSessions(
-          workspacePath,
-          options.sessionExecutions,
-        );
-        registerWorkspacePath(registration);
+      for (const workspacePath of roster
+        .knownPaths()
+        .filter(workspaceFolderPresent)) {
+        const registration = roster.registration(workspacePath);
+        roster.register(registration);
         sendWebSocket(
           socket,
           daemonMessageTypes.workspaceReady,
@@ -1594,1665 +641,49 @@ function runWebSocketSession(options: {
           reportRegistrations,
         ),
       ).catch((error: unknown) =>
-        console.error(
-          `Checking providers failed: ${error instanceof Error ? error.message : String(error)}`,
-        ),
+        console.error(`Checking providers failed: ${errorMessage(error)}`),
       );
     }
+
+    const ctx: DaemonContext = {
+      socket,
+      serverURL: options.serverURL,
+      workspacePath: options.workspacePath,
+      once: options.once,
+      idleTimeoutMs: options.idleTimeoutMs,
+      taskScheduler,
+      sessionExecutions: options.sessionExecutions,
+      sessionTransport: options.sessionTransport,
+      roster,
+      outputFollowers,
+      state,
+      finish,
+      announceAdditionalIssueCapacity,
+      checkProvidersAndReport,
+      tellEnvironmentChanges,
+      routeOutOfBandEvents: () => setOutOfBandSessionEventSink(outOfBandSink),
+    };
 
     socket.on("message", async (data: RawData) => {
       let envelope: ProtocolEnvelope;
       try {
         envelope = parseProtocolEnvelopeJSON(data.toString("utf8"));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = errorMessage(error);
         console.error(`Invalid server protocol message: ${message}`);
         socket.close(1002, "invalid protocol envelope");
         return;
       }
-      if (envelope.type === daemonMessageTypes.error) {
-        console.error(
-          `Server error: ${envelope.error ?? "unknown websocket error"}`,
-        );
-        // A session message the server could not store goes again later.
-        if (options.sessionTransport.retryAfterError(envelope.id)) return;
-        // A refused registration leaves this socket unable to do anything:
-        // reconnect with backoff rather than sit connected and offline.
-        if (!registered) {
-          refused = true;
-          socket.close(1008, "registration refused");
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.ack) {
-        options.sessionTransport.acknowledge(envelope.id);
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.registered) {
-        registered = true;
-        // A server that takes large envelopes in pieces says so here, and
-        // one that takes news of workspace folders gone or back.
-        const features = serverFeatures(envelope.payload);
-        options.sessionTransport.bind(socket, features);
-        serverTakesFolders = features.workspaceFolders === true;
-        if (serverTakesFolders) checkWorkspaceFolders();
-        servedWorkspacePaths = () => [...new Set(workspacePaths.values())];
-        // A server that keeps the resource inventory hears it now and
-        // whenever it changes.
-        if (features.resources)
-          resourceScanner.attach({
-            send: (report) =>
-              trySendWebSocket(
-                socket,
-                daemonMessageTypes.resourcesReport,
-                report,
-              ),
-            workspacePaths: () => [...new Set(workspacePaths.values())],
-          });
-        // Timer-driven background turns arrive while no Foundry turn is
-        // active; route their events over this socket as ordinary
-        // session_event envelopes the server persists and broadcasts.
-        setOutOfBandSessionEventSink(outOfBandSink);
-        announceAdditionalIssueCapacity();
-        if (options.once && options.idleTimeoutMs > 0) {
-          idleTimer = setTimeout(() => finish("exit"), options.idleTimeoutMs);
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.sessionTimers) {
-        // Timers of a session the server knows: kept here unless this
-        // worker keeps or runs that session's own.
-        if (!options.once)
-          sessionTimers.adopt([envelope.payload as SessionTimers]);
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.attachmentWrite) {
-        const payload = envelope.payload as AttachmentWritePayload;
-        let reply: Record<string, unknown>;
-        try {
-          const workspacePath = workspaceFolderFor(payload.workspaceId);
-          if (payload.abort) {
-            abortAttachmentUpload(workspacePath, payload.relativePath);
-            reply = { size: 0 };
-          } else {
-            reply = writeAttachmentChunk({
-              workspacePath,
-              relativePath: payload.relativePath,
-              offset: payload.offset,
-              data: Buffer.from(payload.dataBase64 ?? "", "base64"),
-              final: payload.final === true,
-            });
-          }
-        } catch (error) {
-          reply = {
-            error: error instanceof Error ? error.message : String(error),
-            code: error instanceof AttachmentError ? error.code : undefined,
-          };
-        }
-        sendWebSocket(
-          socket,
-          daemonMessageTypes.attachmentWritten,
-          reply,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.attachmentRead) {
-        const payload = envelope.payload as AttachmentReadPayload;
-        let reply: Record<string, unknown>;
-        try {
-          const read =
-            payload.scope === "workspace"
-              ? readWorkspaceFileChunk
-              : readAttachmentImageChunk;
-          const chunk = read({
-            workspacePath: workspaceFolderFor(payload.workspaceId),
-            path: payload.path,
-            offset: payload.offset,
-            maxBytes: payload.maxBytes,
-          });
-          reply = {
-            size: chunk.size,
-            mimeType: chunk.mimeType,
-            dataBase64: chunk.data.toString("base64"),
-          };
-        } catch (error) {
-          reply = {
-            error: error instanceof Error ? error.message : String(error),
-            code: error instanceof AttachmentError ? error.code : undefined,
-          };
-        }
-        sendWebSocket(
-          socket,
-          daemonMessageTypes.attachmentChunkRead,
-          reply,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readFile) {
-        const payload = envelope.payload as ReadFilePayload | undefined;
-        if (!payload?.path) {
-          console.error("Received read_file without a path payload.");
-          return;
-        }
-        try {
-          sendFileRead(
-            socket,
-            envelope.id,
-            workspaceFolderFor(payload.workspaceId),
-            payload,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.fileRead,
-            {
-              workspaceId: payload.workspaceId,
-              path: payload.path,
-              content: "",
-              truncated: false,
-              error: message,
-            },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSessionFile) {
-        const payload = (envelope.payload ?? {}) as Partial<{
-          workspaceId: string;
-          sessionId: string;
-          path: string;
-        }>;
-        let reply: Record<string, unknown>;
-        try {
-          reply = {
-            ...readSessionFile({
-              workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
-              sessionId: payload.sessionId ?? "",
-              path: payload.path ?? "",
-            }),
-          };
-        } catch (error) {
-          reply = {
-            sessionId: payload.sessionId ?? "",
-            path: payload.path ?? "",
-            origin: "tool",
-            insideWorkspace: false,
-            kind: "missing",
-            truncated: false,
-            changedSinceRecorded: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.sessionFileRead,
-          reply,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSessionFileDiff) {
-        const payload = (envelope.payload ?? {}) as Partial<{
-          workspaceId: string;
-          sessionId: string;
-          path: string;
-          inputId: string;
-        }>;
-        let reply: Record<string, unknown>;
-        try {
-          reply = {
-            ...(await readSessionFileDiff({
-              workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
-              sessionId: payload.sessionId ?? "",
-              path: payload.path ?? "",
-              inputId: payload.inputId || undefined,
-            })),
-          };
-        } catch (error) {
-          reply = {
-            sessionId: payload.sessionId ?? "",
-            path: payload.path ?? "",
-            origin: "tool",
-            insideWorkspace: false,
-            source: "hook",
-            beforeLabel: "beforeEdits",
-            afterLabel: "afterEdits",
-            mayIncludeOtherEdits: false,
-            changedSince: false,
-            truncated: false,
-            binary: false,
-            tooLarge: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.sessionFileDiffRead,
-          reply,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readBackgroundTaskOutput) {
-        // The request names a task, never a path: the device reads the log
-        // it recorded for that task of that session.
-        // A reader that follows a running task's log is told when it grows
-        // (backgroundTaskOutputChanged) and continues from `after`.
-        const payload = (envelope.payload ?? {}) as Partial<{
-          workspaceId: string;
-          sessionId: string;
-          taskId: string;
-          after: number;
-          follow: boolean;
-        }>;
-        let reply: Record<string, unknown>;
-        try {
-          const sessionId = payload.sessionId ?? "";
-          const taskId = payload.taskId ?? "";
-          const output = claudeBackgroundTaskOutput({
-            workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
-            sessionId,
-            taskId,
-            after: payload.after,
-          });
-          const following =
-            payload.follow === true &&
-            output.kind !== "binary" &&
-            outputFollowers.follow(sessionId, taskId, output.bytes, () =>
-              claudeBackgroundTaskLog(sessionId, taskId),
-            );
-          reply = { ...output, ...(following ? { following } : {}) };
-        } catch (error) {
-          reply = {
-            sessionId: payload.sessionId ?? "",
-            taskId: payload.taskId ?? "",
-            content: "",
-            truncated: false,
-            bytes: 0,
-            kind: "missing",
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.backgroundTaskOutputRead,
-          reply,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.stopBackgroundTask) {
-        const payload = (envelope.payload ?? {}) as Partial<{
-          sessionId: string;
-          taskId: string;
-        }>;
-        const sessionId = payload.sessionId?.trim() ?? "";
-        const taskId = payload.taskId?.trim() ?? "";
-        void stopClaudeBackgroundTask(sessionId, taskId)
-          .then(() =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.backgroundTaskStopped,
-              { sessionId, taskId },
-              envelope.id,
-            ),
-          )
-          .catch((error: unknown) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.backgroundTaskStopped,
-              {
-                sessionId,
-                taskId,
-                error: error instanceof Error ? error.message : String(error),
-              },
-              envelope.id,
-            ),
-          );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSessionUsage) {
-        void duringActivity("session usage", () =>
-          readSessionUsage(envelope.payload),
-        ).then((value) =>
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.sessionUsageRead,
-            value,
-            envelope.id,
-          ),
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSubagentTranscript) {
-        const payload = envelope.payload as
-          ReadSubagentTranscriptPayload | undefined;
-        if (!payload?.workspaceId || !payload.sessionId || !payload.taskId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.subagentTranscriptRead,
-            {
-              sessionId: payload?.sessionId ?? "",
-              taskId: payload?.taskId ?? "",
-              title: "Subagent",
-              toolUseId: "",
-              status: "failed",
-              messages: [],
-              error: "workspaceId, sessionId, and taskId are required",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        let transcriptPath: string;
-        try {
-          transcriptPath = workspaceFolderFor(payload.workspaceId);
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.subagentTranscriptRead,
-            {
-              sessionId: payload.sessionId,
-              taskId: payload.taskId,
-              title: "Subagent",
-              toolUseId: "",
-              status: "failed",
-              messages: [],
-              error: error instanceof Error ? error.message : String(error),
-            },
-            envelope.id,
-          );
-          return;
-        }
-        sendSubagentTranscript(socket, envelope.id, transcriptPath, payload);
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.listSubagents) {
-        const payload = envelope.payload as ListSubagentsPayload | undefined;
-        if (!payload?.workspaceId || !payload.sessionId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.subagentsListed,
-            {
-              sessionId: payload?.sessionId ?? "",
-              subagents: [],
-              error: "workspaceId and sessionId are required",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        let subagentsPath: string;
-        try {
-          subagentsPath = workspaceFolderFor(payload.workspaceId);
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.subagentsListed,
-            {
-              sessionId: payload.sessionId,
-              subagents: [],
-              error: error instanceof Error ? error.message : String(error),
-            },
-            envelope.id,
-          );
-          return;
-        }
-        sendSubagentList(socket, envelope.id, subagentsPath, payload);
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.listDirectories) {
-        const payload = envelope.payload as ListDirectoriesPayload | undefined;
-        if (!payload?.path) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.directoriesListed,
-            {
-              path: "",
-              directories: [],
-              error: "list_directories requires path",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        sendDirectoryListing(socket, envelope.id, payload);
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.listWorkspaceTree) {
-        const payload = envelope.payload as
-          ListWorkspaceTreePayload | undefined;
-        if (!payload?.workspaceId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceTreeListed,
-            {
-              entries: [],
-              error: "list_workspace_tree requires workspaceId",
-              path: payload?.path ?? "",
-              workspaceId: payload?.workspaceId ?? "",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          sendWorkspaceTreeListing(
-            socket,
-            envelope.id,
-            workspaceFolderFor(payload.workspaceId),
-            payload,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceTreeListed,
-            {
-              entries: [],
-              error: message,
-              path: payload.path ?? "",
-              workspaceId: payload.workspaceId,
-            },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.inspectWorkspace) {
-        const payload = envelope.payload as {
-          workspaceId: string;
-          rescan?: boolean;
-        };
-        try {
-          const inspection = await inspectWorkspace(
-            workspaceFolderFor(payload.workspaceId),
-            payload.workspaceId,
-            payload.rescan === true,
-          );
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceInspected,
-            { inspection },
-            envelope.id,
-          );
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceInspected,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.setupWorkspace) {
-        const payload = envelope.payload as SetupWorkspacePayload | undefined;
-        if (!payload?.path) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceReady,
-            { error: "setup_workspace requires path" },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          const workspacePath = existingWorkspaceFolder(payload.path);
-          initWorkspace(workspacePath);
-          // Chats work in the folder as soon as it is registered. Finding its
-          // repositories grows with the folder's size, so it runs after the
-          // reply; Issue preparation waits for it on the same lock. A folder
-          // without Git is left as it is until the person confirms setting
-          // Git up for its first Issue.
-          const workspaceId = readWorkspace(workspacePath).id;
-          void registerExecutionWorkspace(workspacePath, workspaceId).then(
-            (prepared) =>
-              console.log(
-                `Prepared workspace ${workspacePath}: ${prepared.repositories.length} repositories${prepared.errors.length ? `, ${prepared.errors.length} problems (first: ${prepared.errors[0]})` : ""}.`,
-              ),
-            (error: unknown) =>
-              console.error(
-                `Preparing workspace ${workspacePath} for Issues failed: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-          );
-          const registration = daemonRegistrationWithActiveSessions(
-            workspacePath,
-            options.sessionExecutions,
-          );
-          registerWorkspacePath(registration);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceReady,
-            { registration },
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceReady,
-            { error: message },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.forgetWorkspace) {
-        const payload = envelope.payload as ForgetWorkspacePayload | undefined;
-        if (!payload?.workspaceId && !payload?.path) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceForgotten,
-            { error: "forget_workspace requires workspaceId or path" },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          const workspacePath =
-            payload.path || workspacePaths.get(payload.workspaceId) || "";
-          forgetWorkspaceRegistration(payload.workspaceId ?? "", workspacePath);
-          unregisterWorkspacePath(payload.workspaceId ?? "", workspacePath);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceForgotten,
-            { workspaceId: payload.workspaceId ?? "" },
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceForgotten,
-            {
-              workspaceId: payload.workspaceId ?? "",
-              error: message,
-            },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.relinkWorkspace) {
-        const payload = envelope.payload as RelinkWorkspacePayload | undefined;
-        if (!payload?.workspaceId || !payload.path) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceRelinked,
-            { error: "relink_workspace requires workspaceId and path" },
-            envelope.id,
-          );
-          return;
-        }
-        const servedFrom = workspacePaths.get(payload.workspaceId) ?? "";
-        try {
-          const relinked = await relinkWorkspaceFolder({
-            ...payload,
-            previousPath: payload.previousPath || servedFrom,
-          });
-          const workspacePath = relinked.workspace.path;
-          unregisterWorkspacePath(payload.workspaceId, servedFrom);
-          // As for a new folder: its repositories are found again after the
-          // reply (the registration already follows the folder).
-          void registerExecutionWorkspace(
-            workspacePath,
-            payload.workspaceId,
-          ).then(
-            (prepared) =>
-              console.log(
-                `Prepared relinked workspace ${workspacePath}: ${prepared.repositories.length} repositories${prepared.errors.length ? `, ${prepared.errors.length} problems (first: ${prepared.errors[0]})` : ""}.`,
-              ),
-            (error: unknown) =>
-              console.error(
-                `Preparing relinked workspace ${workspacePath} for Issues failed: ${error instanceof Error ? error.message : String(error)}`,
-              ),
-          );
-          const registration = daemonRegistrationWithActiveSessions(
-            workspacePath,
-            options.sessionExecutions,
-          );
-          registerWorkspacePath(registration);
-          console.log(
-            `${logTime()} Workspace ${payload.workspaceId} is served from ${workspacePath} now (was ${payload.previousPath || servedFrom || "unknown"}).`,
-          );
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceRelinked,
-            { registration, nativeSessions: relinked.nativeSessions },
-            envelope.id,
-          );
-          checkWorkspaceFolders();
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.workspaceRelinked,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.findMovedWorkspace) {
-        const payload = envelope.payload as
-          FindMovedWorkspacePayload | undefined;
-        const previousPath =
-          payload?.previousPath ||
-          (payload?.workspaceId ? workspacePaths.get(payload.workspaceId) : "");
-        if (!payload?.workspaceId || !previousPath) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.movedWorkspaceFound,
-            {
-              error:
-                "find_moved_workspace requires workspaceId and previousPath",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.movedWorkspaceFound,
-            {
-              suggestions: findMovedWorkspaceFolders({
-                workspaceId: payload.workspaceId,
-                previousPath,
-              }),
-            },
-            envelope.id,
-          );
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.movedWorkspaceFound,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.inspectNativeAccount) {
-        const input = envelope.payload as { runtime?: string; source?: string };
-        if (input?.runtime !== "claude" && input?.runtime !== "codex") {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.nativeAccountInspected,
-            { error: "Unknown runtime." },
-            envelope.id,
-          );
-          return;
-        }
-        void inspectNativeAccount(input.runtime, input.source)
-          .catch((error: unknown) => {
-            const reason =
-              error instanceof Error ? error.message : String(error);
-            console.error(
-              `Inspecting the ${input.runtime} account failed: ${reason}`,
-            );
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.nativeAccountInspected,
-              { error: `Could not inspect this native account: ${reason}` },
-              envelope.id,
-            );
-            return undefined;
-          })
-          .then((result) => {
-            if (!result) return;
-            // The device's agent list shows the same login: refresh it with
-            // this check instead of a status cached before, say, the CLI
-            // was installed.
-            clearNativeLoginHealth();
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.nativeAccountInspected,
-              {
-                result,
-                registration: currentRegistration(),
-              },
-              envelope.id,
-            );
-          })
-          .catch((error: unknown) => {
-            const reason =
-              error instanceof Error ? error.message : String(error);
-            console.error(`Reporting the account check failed: ${reason}`);
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.nativeAccountInspected,
-              {
-                error: `The account check finished but could not be reported: ${reason}`,
-              },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readWorkerUpdateStatus) {
-        serverReadsWorkerUpdateStatus = true;
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.workerUpdateStatus,
-          readWorkerUpdateStatus(),
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.updateWorker) {
-        try {
-          const started = startSelfUpdate(options.serverURL);
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.workerUpdateStarted,
-            started,
-            envelope.id,
-          );
-          // A failure goes to the server as soon as it is written, on
-          // whichever connection is open then.
-          watchSelfUpdateFailure((status) => {
-            if (serverReadsWorkerUpdateStatus && currentSocket)
-              trySendWebSocket(
-                currentSocket,
-                daemonMessageTypes.workerUpdateStatus,
-                status,
-              );
-          });
-        } catch (error) {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.workerUpdateStarted,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.installNativeCli) {
-        const input = envelope.payload as { runtime?: string };
-        if (input?.runtime !== "claude" && input?.runtime !== "codex") {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.nativeCliInstalled,
-            { error: "Unknown runtime." },
-            envelope.id,
-          );
-          return;
-        }
-        const runtime = input.runtime;
-        void installNativeCli(runtime)
-          .then(async (result) => {
-            // A newly installed program brings its own skills; read them
-            // before reporting the device again.
-            if (result.ok)
-              await refreshOfficialSkills([runtime]).catch(() => false);
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.nativeCliInstalled,
-              {
-                result,
-                registration: currentRegistration(),
-              },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.nativeCliInstalled,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.listAgentModels) {
-        const payload = envelope.payload as ListAgentModelsPayload | undefined;
-        if (!payload?.profile) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentModelsListed,
-            { error: "list_agent_models requires profile" },
-            envelope.id,
-          );
-          return;
-        }
-        void listAgentModelsConfig(payload.profile, options.workspacePath)
-          .then((models) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.agentModelsListed,
-              { models },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.agentModelsListed,
-              { error: message },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readProfileCredential) {
-        const payload = envelope.payload as
-          ReadProfileCredentialPayload | undefined;
-        if (!payload?.profileId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.profileCredentialRead,
-            { error: "read_profile_credential requires profileId" },
-            envelope.id,
-          );
-          return;
-        }
-        // Answers this one request and nothing else: the key goes straight
-        // into the reply envelope for the server's promote flow, and is never
-        // written to a log line or held anywhere else.
-        try {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.profileCredentialRead,
-            { credential: localProfileCredential(payload.profileId) },
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.profileCredentialRead,
-            { error: message },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.runDiagnostics) {
-        void runDiagnostics({
-          serverURL: options.serverURL,
-          socketRoundTrip: () => socketRoundTrip(socket),
-        })
-          .then((report) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.diagnosticsReady,
-              { report },
-              envelope.id,
-            ),
-          )
-          .catch((error: unknown) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.diagnosticsReady,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            ),
-          );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.runRepair) {
-        const payload = envelope.payload as
-          { action?: DeviceRepairAction } | undefined;
-        try {
-          const result = runRepair(
-            payload?.action as DeviceRepairAction,
-            checkProvidersAndReport,
-          );
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.repairDone,
-            { result },
-            envelope.id,
-          );
-        } catch (error) {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.repairDone,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readRepositoryRefs) {
-        void readRepositoryRefs(envelope.payload as RepositoryRefsRequest)
-          .then((refs) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.repositoryRefsRead,
-              refs,
-              envelope.id,
-            ),
-          )
-          .catch((error: unknown) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.repositoryRefsRead,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            ),
-          );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.fetchSkillRepository) {
-        const request = envelope.payload as FetchRepositoryRequest;
-        void fetchSkillRepository(request, (body, contentType) =>
-          uploadRepositoryFiles(
-            options.serverURL,
-            request.uploadPath,
-            body,
-            contentType,
-          ),
-        )
-          .then((fetched) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.skillRepositoryFetched,
-              fetched,
-              envelope.id,
-            ),
-          )
-          .catch((error: unknown) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.skillRepositoryFetched,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            ),
-          );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.installTool) {
-        const payload = envelope.payload as
-          { tool?: ToolSpec; step?: string } | undefined;
-        const tool = payload?.tool;
-        void (
-          !tool
-            ? Promise.reject(new Error("no tool to install"))
-            : payload?.step === "setup"
-              ? runToolSetup(tool)
-              : installTool(tool)
-        )
-          .then((done) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.toolInstalled,
-              {
-                name: done.name,
-                version: done.version,
-                ...("output" in done ? { output: done.output } : {}),
-              },
-              envelope.id,
-            ),
-          )
-          .catch((error: unknown) =>
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.toolInstalled,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            ),
-          );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.scanSkills) {
-        const payload = envelope.payload as
-          { roots?: string[]; tools?: unknown } | undefined;
-        const roots = Array.isArray(payload?.roots)
-          ? payload.roots.filter(
-              (root): root is string => typeof root === "string",
-            )
-          : [];
-        const scanStarted = Date.now();
-        void duringActivity("skill scan", () => scanDeviceSkills(roots))
-          .then((skills) => {
-            recordActivity("skillScan", scanStarted, { count: skills.length });
-            const end = beginActivity("skill scan reply");
-            try {
-              trySendWebSocket(
-                socket,
-                daemonMessageTypes.skillsScanned,
-                {
-                  skills,
-                  tools: checkPrograms(payload?.tools),
-                  toolVersions: managedToolVersions(),
-                },
-                envelope.id,
-              );
-            } finally {
-              end();
-            }
-          })
-          .catch((error: unknown) => {
-            recordActivity("skillScan", scanStarted, { error });
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.skillsScanned,
-              { error: error instanceof Error ? error.message : String(error) },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSkillFile) {
-        const payload = envelope.payload as {
-          root: string;
-          dirName: string;
-          path: string;
-        };
-        try {
-          const value = readSkillTextFile(
-            payload.root,
-            payload.dirName,
-            payload.path,
-          );
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillFileRead,
-            value,
-            envelope.id,
-          );
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillFileRead,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.readSkillContent) {
-        const payload = envelope.payload as
-          { root?: string; dirName?: string } | undefined;
-        if (!payload?.root || !payload?.dirName) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillContentRead,
-            { error: "read_skill_content requires root and dirName" },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          const content = packageSkillDirectory(payload.root, payload.dirName);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillContentRead,
-            content,
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.skillContentRead,
-            { error: message },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.upsertAgentProfile) {
-        const payload = envelope.payload as
-          UpsertAgentProfilePayload | undefined;
-        if (!payload?.profile) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentProfileUpserted,
-            { error: "upsert_agent_profile requires profile" },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          const targetWorkspacePath = payload.profile.workspaceId
-            ? workspaceFolderFor(payload.profile.workspaceId)
-            : (knownWorkspacePaths().find(workspaceFolderPresent) ?? "");
-          const profile = upsertAgentProfileConfig(
-            payload.profile,
-            targetWorkspacePath,
-          );
-          const registration = targetWorkspacePath
-            ? daemonRegistrationWithActiveSessions(
-                targetWorkspacePath,
-                options.sessionExecutions,
-              )
-            : deviceRegistrationWithActiveSessions();
-          if (hasWorkspace(registration)) registerWorkspacePath(registration);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentProfileUpserted,
-            { profile, registration },
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentProfileUpserted,
-            { error: message },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.refreshResources) {
-        const payload = envelope.payload as
-          { requestAccess?: string } | undefined;
-        try {
-          const opened = await requestAccessOnDevice(
-            payload?.requestAccess ?? "",
-          );
-          // The inventory is detected again too; it reports on its own.
-          void resourceScanner.scanAll();
-          const registration = currentRegistration();
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.resourcesRefreshed,
-            {
-              registration,
-              resources: registration.device.resources ?? [],
-              opened,
-            },
-            envelope.id,
-          );
-        } catch (error) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.resourcesRefreshed,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.resourceOperate) {
-        let result: ResourceOperateResult;
-        try {
-          result = await resourceOperations.operate(
-            envelope.payload as ResourceOperateRequest,
-          );
-        } catch (error) {
-          result = {
-            results: [],
-            error: error instanceof Error ? error.message : String(error),
-            errorCode: "backend_error",
-          };
-        }
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.resourceOperated,
-          result,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.resourceReset) {
-        const payload = envelope.payload as ResourceResetRequest;
-        let result: ResourceResetResult;
-        try {
-          result = await resourceOperations.reset(payload);
-        } catch (error) {
-          result = {
-            resourceId: payload?.resourceId ?? "",
-            generation: payload?.generation ?? 0,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.resourceResetDone,
-          result,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.resourceSettings) {
-        const applied = resourceSettings.set(
-          envelope.payload as Partial<ResourceSourceSettings> | undefined,
-        );
-        // Off means off at once, whatever the server does next.
-        if (!applied.allowRemoteCommands) await computeProvider.stopAll();
-        void resourceScanner.scanAll();
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.resourceSettingsApplied,
-          applied,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.installResourceBackend) {
-        const payload = envelope.payload as ResourceBackendInstallRequest;
-        let result: ResourceBackendInstallResult;
-        try {
-          result = await installResourceBackend(payload);
-        } catch (error) {
-          result = {
-            backend: payload?.backend ?? "",
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-        // The inventory is detected again; it reports on its own.
-        void resourceScanner.scanAll();
-        trySendWebSocket(
-          socket,
-          daemonMessageTypes.resourceBackendInstalled,
-          result,
-          envelope.id,
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.upsertAgentRuntimeSettings) {
-        const payload = envelope.payload as
-          UpsertAgentRuntimeSettingsPayload | undefined;
-        if (!payload?.settings) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentRuntimeSettingsUpserted,
-            { error: "upsert_agent_runtime_settings requires settings" },
-            envelope.id,
-          );
-          return;
-        }
-        try {
-          const settings = writeAgentRuntimeSettings(payload.settings);
-          taskScheduler.setMaxConcurrentTasks(settings.maxConcurrentTasks);
-          announceAdditionalIssueCapacity();
-          const registration = currentRegistration();
-          if (hasWorkspace(registration)) registerWorkspacePath(registration);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentRuntimeSettingsUpserted,
-            { registration, settings },
-            envelope.id,
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.agentRuntimeSettingsUpserted,
-            { error: message },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.steerSession) {
-        const payload = envelope.payload as SteerSessionPayload | undefined;
-        const sessionId = payload?.sessionId?.trim();
-        const message = payload?.message?.trim() ?? "";
-        const attachments = payload?.attachments ?? [];
-        if (!sessionId || (!message && attachments.length === 0)) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.sessionSteered,
-            {
-              error: "steer_session requires sessionId and a message or files",
-            },
-            envelope.id,
-          );
-          return;
-        }
-        const inputId = payload?.inputId?.trim() || undefined;
-        void steerActiveSessionOnce(sessionId, inputId, message, attachments)
-          .then(() => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.sessionSteered,
-              { sessionId, inputId },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.sessionSteered,
-              { sessionId, inputId, error: errorMessage },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.cancelSession) {
-        const payload = envelope.payload as CancelSessionPayload | undefined;
-        const sessionId = payload?.sessionId?.trim();
-        if (!sessionId) {
-          sendWebSocket(
-            socket,
-            daemonMessageTypes.sessionCanceled,
-            { error: "cancel_session requires sessionId" },
-            envelope.id,
-          );
-          return;
-        }
-        void cancelActiveSession(sessionId, payload?.inputId?.trim())
-          .then((outcome) => {
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.sessionCanceled,
-              outcome.answered ? { sessionId, answered: true } : { sessionId },
-              envelope.id,
-            );
-          })
-          .catch((error) => {
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.sessionCanceled,
-              { sessionId, error: errorMessage },
-              envelope.id,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.recoverSession) {
-        const payload = envelope.payload as RecoverSessionPayload | undefined;
-        const sessionId = payload?.sessionId?.trim();
-        const inputId = payload?.inputId?.trim() ?? "";
-        // This process runs or just finished the input: its own report is
-        // in the session outbox.
-        if (
-          !payload ||
-          !sessionId ||
-          options.sessionExecutions.handled(sessionId, inputId)
-        ) {
-          return;
-        }
-        if (payload.role === "issue_clarification" && payload.issueId) {
-          console.log(`Reporting orphaned Issue clarification ${sessionId}`);
-          options.sessionTransport.send(
-            daemonMessageTypes.sessionCompleted,
-            recoveredClarificationCompletion(
-              payload.workspaceId,
-              payload.issueId,
-              sessionId,
-              inputId,
-            ),
-          );
-          return;
-        }
-        if (payload.issueId) {
-          console.log(`Reporting orphaned Issue execution ${sessionId}`);
-          const completion = recoveredIssueCompletion(
-            payload.workspaceId,
-            payload.issueId,
-            sessionId,
-          );
-          options.sessionTransport.send(
-            daemonMessageTypes.sessionCompleted,
-            completion
-              ? issueSessionCompletion(sessionId, inputId, completion)
-              : {
-                  sessionId,
-                  inputId: inputId || undefined,
-                  error:
-                    "The worker restarted before this execution started; retry to run it again.",
-                },
-          );
-          return;
-        }
-        let workspacePath: string;
-        try {
-          workspacePath = workspacePathFor(payload.workspaceId);
-        } catch {
-          return;
-        }
-        console.log(`Reporting orphaned session ${sessionId} ${inputId}`);
-        options.sessionTransport.send(
-          daemonMessageTypes.sessionCompleted,
-          recoveredSessionCompletion(workspacePath, sessionId, inputId),
-        );
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.runSession) {
-        if (options.once && acceptedRun) {
-          return;
-        }
-        if (idleTimer) {
-          clearTimeout(idleTimer);
-          idleTimer = undefined;
-        }
-        const payload = envelope.payload as RunSessionPayload | undefined;
-        if (!payload?.session) {
-          console.error("Received run_session without a session payload.");
-          return;
-        }
-        const inputId = payload.session.input?.id ?? "";
-        if (!options.sessionExecutions.claim(payload.session.id, inputId)) {
-          console.log(
-            `Ignoring duplicate run_session for ${payload.session.id} ${inputId}`,
-          );
-          return;
-        }
-        acceptedRun = true;
-        // A steer of the same message arriving late must not add it to
-        // this input's own turn.
-        if (inputId) noteSessionInput(payload.session.id, inputId);
-        if (payload.session.role === "issue_execution") {
-          runIssueExecution(payload, inputId);
-          return;
-        }
-        // An input that already finished here (its report lost with an
-        // earlier process) is reported again rather than run twice.
-        const clarifying = payload.session.role === "issue_clarification";
-        let recorded: Record<string, unknown> | undefined;
-        try {
-          if (clarifying) {
-            const report = recoveredClarificationCompletion(
-              payload.session.workspaceId,
-              payload.session.issueId ?? "",
-              payload.session.id,
-              inputId,
-            );
-            recorded = report.clarificationResult ? report : undefined;
-          } else if (!payload.session.issueId) {
-            const marker = readAgentSessionCompletionMarker(
-              isVerificationSession(payload.session)
-                ? verificationDirectory(
-                    payload.session.workspaceId,
-                    payload.session.id,
-                  )
-                : workspacePathFor(payload.session.workspaceId),
-              payload.session.id,
-              inputId,
-            );
-            recorded = marker && {
-              sessionId: payload.session.id,
-              inputId: inputId || undefined,
-              nativeSessionId: marker.nativeSessionId,
-              response: marker.response,
-            };
-          }
-        } catch {
-          recorded = undefined;
-        }
-        if (recorded) {
-          options.sessionTransport.send(
-            daemonMessageTypes.sessionCompleted,
-            recorded,
-          );
-          options.sessionExecutions.complete(payload.session.id, inputId);
-          if (options.once) finish("exit");
-          return;
-        }
-        void taskScheduler
-          .schedule(sessionSchedulingKey(payload.session), async () => {
-            console.log(
-              `Running ${payload.session.provider} session ${payload.session.id}`,
-            );
-            // Its tool profiles live while this run does; a run that never
-            // returns (a killed worker) leaves them to the next start's reap.
-            let releaseAccounts = () => {};
-            try {
-              const ambient: SessionAmbientEnv = {
-                serverURL: options.serverURL,
-                sessionToken: payload.sessionToken ?? "",
-                workspaceID: payload.session.workspaceId,
-              };
-              const workspacePath = workspaceFolderFor(
-                payload.session.workspaceId,
-              );
-              // An Issue's clarification runs read-only in the workspace with
-              // its turn's draft; its answer becomes the reply on the Issue.
-              const clarification = clarifying
-                ? await prepareClarification(
-                    payload.session,
-                    payload.clarification,
-                    workspacePath,
-                    ambient,
-                  )
-                : undefined;
-              if (!clarification)
-                releaseAccounts = (
-                  await materializeSessionAccounts(
-                    payload.session,
-                    payload.externalAccounts,
-                    {
-                      serverURL: options.serverURL,
-                      log: (message) => console.log(message),
-                    },
-                  )
-                ).release;
-              await executeAgentSession(
-                options.sessionTransport,
-                clarification?.execution ??
-                  sessionExecution(workspacePath, payload.session, ambient),
-                clarification?.session ?? payload.session,
-                payload.credential,
-                payload.profile,
-                ambient,
-                clarification?.settle,
-              );
-            } catch (error) {
-              const message =
-                error instanceof Error ? error.message : String(error);
-              options.sessionTransport.send(
-                daemonMessageTypes.sessionCompleted,
-                {
-                  sessionId: payload.session.id,
-                  inputId: payload.session.input?.id,
-                  error: message,
-                },
-              );
-            } finally {
-              releaseAccounts();
-              options.sessionExecutions.complete(payload.session.id, inputId);
-              if (options.once) {
-                finish("exit");
-              }
-            }
-          })
-          .catch((error: unknown) => {
-            options.sessionExecutions.complete(payload.session.id, inputId);
-            const message =
-              error instanceof Error ? error.message : String(error);
-            console.error(
-              `Session ${payload.session.id} scheduling failed: ${message}`,
-            );
-          });
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.issueEnvironment) {
-        const payload = envelope.payload as {
-          action: string;
-          workspaceId: string;
-          issueId: string;
-          revision: number;
-          notifyChanges?: boolean;
-        };
-        try {
-          const sourcePath = workspaceFolderFor(payload.workspaceId);
-          if (payload.action === "preview_start") {
-            queuePreview(payload.issueId);
-            void taskScheduler
-              .schedule(`issue:${payload.issueId}`, () =>
-                runIssuePreview(payload.workspaceId, payload.issueId),
-              )
-              .catch((error) => console.error(String(error)));
-            trySendWebSocket(
-              socket,
-              daemonMessageTypes.issueEnvironmentResult,
-              { status: "preview_queued", revision: payload.revision },
-              envelope.id,
-            );
-            return;
-          }
-          const result = await issueEnvironmentAction({
-            ...payload,
-            sourcePath,
-          });
-          const notifiesChanges =
-            payload.action === "status" && payload.notifyChanges === true;
-          if (notifiesChanges) tellEnvironmentChanges();
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.issueEnvironmentResult,
-            notifiesChanges ? { ...result, notifiesChanges } : result,
-            envelope.id,
-          );
-        } catch (error) {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.issueEnvironmentResult,
-            { error: error instanceof Error ? error.message : String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
-      if (envelope.type === daemonMessageTypes.evidenceRequest) {
-        const payload = envelope.payload as EvidenceWorkerRequest;
-        try {
-          const result = await evidenceWorkerAction(payload);
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.evidenceResult,
-            result,
-            envelope.id,
-          );
-        } catch (error) {
-          trySendWebSocket(
-            socket,
-            daemonMessageTypes.evidenceResult,
-            { taskId: payload.taskId, error: String(error) },
-            envelope.id,
-          );
-        }
-        return;
-      }
+      await daemonDispatch.dispatch(envelope, ctx);
     });
 
     socket.on("close", (code?: number, reason?: Buffer) => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
-      resourceScanner.detach();
-      void resourceOperations.closeAll();
+      stopServingResources();
       outputFollowers.close();
       stopEnvironmentChanges?.();
       options.sessionTransport.unbind(socket);
-      if (currentSocket === socket) currentSocket = undefined;
+      socketClosed(socket);
       const report = connection.closed(code, reason?.toString());
       console.log(
         `${logTime()} Daemon connection closed: ${describeConnectionReport(report)}.`,
@@ -3263,7 +694,7 @@ function runWebSocketSession(options: {
         finish("removed");
         return;
       }
-      if (refused && !options.once) {
+      if (state.refused && !options.once) {
         finish("refused");
         return;
       }
@@ -3293,170 +724,4 @@ function runWebSocketSession(options: {
       }
     });
   });
-}
-
-/**
- * prepareExplicitPair is the only path that clears a device-removal marker.
- * It is invoked by the user-run pair/setup commands, never by the automatic
- * service. The device identity rotates so the machine registers as a new
- * device instead of colliding with the tombstone.
- */
-function prepareExplicitPair(): void {
-  if (!prepareExplicitRepair()) {
-    return;
-  }
-  rmSync(devicePath, { force: true });
-  console.log(
-    "This machine had been removed from its Foundry server. Registering it as a new device.",
-  );
-}
-
-/**
- * Exchanges --token for this device's credential; an existing credential for
- * the same server is kept otherwise, so re-running setup needs no new token.
- * FOUNDRY_PAIRING_TOKEN (containers) is used only while unpaired: the token
- * is single-use but the variable survives restarts.
- */
-async function pairWithServer(
-  args: string[],
-  serverURL: string,
-  workspacePath: string,
-): Promise<void> {
-  const existing = readDaemonConfig();
-  const paired = Boolean(
-    existing?.deviceCredential && existing.serverURL === serverURL,
-  );
-  const token =
-    optionValue(args, "--token") ??
-    (paired ? undefined : process.env.FOUNDRY_PAIRING_TOKEN?.trim());
-  if (!token) {
-    if (existing && paired) {
-      writeDaemonConfig({ ...existing, workspacePath });
-      return;
-    }
-    throw new Error(
-      "A pairing token is required. In the Foundry web app open Devices → Add device and pass it with --token.",
-    );
-  }
-  const previousDeviceId = getDevice().id;
-  const { deviceId, credential } = await pairDevice(serverURL, token);
-  // A new device starts with no workspaces: registrations this machine kept
-  // for the device it was before belong to that device, not to this one. The
-  // folders themselves are left as they are.
-  if (deviceId !== previousDeviceId) writeRegistry([]);
-  writeDaemonConfig({
-    pairedAt: new Date().toISOString(),
-    deviceCredential: credential,
-    serverURL,
-    workspacePath,
-  });
-  console.log(`Paired this machine as ${deviceId}.`);
-}
-
-export async function pair(args: string[]): Promise<void> {
-  const serverURL = serverURLFromArgs(args);
-  const workspacePath = explicitWorkspacePath(args);
-  prepareExplicitPair();
-  await pairWithServer(args, serverURL, workspacePath);
-  await registerDaemon(serverURL, workspacePath);
-  console.log(
-    workspacePath
-      ? `Paired ${workspacePath} with ${serverURL}`
-      : `Paired this device with ${serverURL}; add workspaces from the Workspaces page.`,
-  );
-  console.log(
-    "Run foundry-worker install-service to start this daemon at login.",
-  );
-}
-
-export async function setup(
-  args: string[],
-  host: ServiceHost = {},
-): Promise<void> {
-  const serverURL = serverURLFromArgs(args);
-  // A device is set up without a workspace unless one is passed; people add
-  // them later from the Workspaces page.
-  const workspacePath = explicitWorkspacePath(args);
-  const noService = optionEnabled(args, "--no-service");
-  const noStart = optionEnabled(args, "--no-start");
-
-  console.log("Setting up Foundry local daemon...");
-  await ensureServerReachable(serverURL);
-  prepareExplicitPair();
-  // Paired first: pairing as a new device clears the workspaces registered
-  // for an earlier one, and must not clear the one passed here.
-  await pairWithServer(args, serverURL, workspacePath);
-  if (workspacePath) {
-    initWorkspace(workspacePath);
-    await registerExecutionWorkspace(
-      workspacePath,
-      readWorkspace(workspacePath).id,
-    );
-  }
-  await registerDaemon(serverURL, workspacePath);
-
-  // Not running is only news when the person asked for it to start.
-  let started = true;
-  if (noService) {
-    console.log("Service installation skipped (--no-service).");
-  } else {
-    started = installService(noStart ? ["--no-start"] : [], host) || noStart;
-  }
-
-  console.log("");
-  status();
-  console.log("");
-  console.log(
-    started
-      ? "Foundry daemon setup complete."
-      : "Foundry is set up, but the worker is not running yet; start it as shown above.",
-  );
-}
-
-export function logs(args: string[]): void {
-  const lines = Number(optionValue(args, "--lines", "80"));
-  const paths = serviceLogPaths();
-  for (const [label, path] of [
-    ["stdout", paths.out],
-    ["stderr", paths.err],
-  ] as const) {
-    console.log(`== ${label}: ${path} ==`);
-    if (!existsSync(path)) {
-      console.log("(no log file)");
-      continue;
-    }
-    const text = readFileSync(path, "utf8").split("\n");
-    console.log(text.slice(Math.max(0, text.length - lines - 1)).join("\n"));
-  }
-}
-
-export async function sync(args: string[]): Promise<void> {
-  const serverURL = serverURLFromArgs(args);
-  const workspacePath = workspacePathFromArgs(args);
-  await syncReviews(serverURL, workspacePath);
-}
-
-/**
- * Posts a repository's files for a fetch the server asked for; the server
- * takes them only from this device, for that fetch.
- */
-async function uploadRepositoryFiles(
-  serverURL: string,
-  uploadPath: string,
-  body: Buffer,
-  contentType: string,
-): Promise<void> {
-  if (
-    !/^\/api\/daemon\/skill-repository-fetches\/[A-Za-z0-9-]+$/.test(uploadPath)
-  )
-    throw new Error("the server named an unexpected upload address");
-  const response = await fetch(`${serverURL}${uploadPath}`, {
-    method: "POST",
-    headers: { ...daemonRequestHeaders(false), "Content-Type": contentType },
-    body: new Uint8Array(body),
-  });
-  if (!response.ok)
-    throw new Error(
-      `uploading the files returned ${response.status}: ${await response.text()}`,
-    );
 }

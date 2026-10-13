@@ -4,29 +4,36 @@ import (
 	"context"
 	"errors"
 	"net"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
+	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 )
 
-// countingStore satisfies store.Store and store.AccountStore through embedded
-// nil interfaces and records Close calls. Only Close and the startup account
-// count are exercised by lifecycle tests.
+// countingStore is a fresh SQLite store that records Close calls.
 type countingStore struct {
-	store.Store
-	store.AccountStore
+	*sqlitestore.Store
 
 	mu     sync.Mutex
 	closes int
+}
+
+func newCountingStore(t *testing.T) *countingStore {
+	t.Helper()
+	backing, err := sqlitestore.Open(filepath.Join(t.TempDir(), "foundry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &countingStore{Store: backing}
 }
 
 func (s *countingStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closes++
-	return nil
+	return s.Store.Close()
 }
 
 // CountUsers reports an existing account so startup logs no setup code.
@@ -63,13 +70,13 @@ func (l *pausedListener) Addr() net.Addr {
 	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 31982}
 }
 
-func newTestDependencies(backing store.Store, listener net.Listener) (dependencies, *[]string) {
+func newTestDependencies(backing serverStore, listener net.Listener) (dependencies, *[]string) {
 	logs := make([]string, 0, 1)
 	deps := dependencies{
 		getenv: func(string) string { return "" },
 		listen: func(context.Context, string) (net.Listener, error) { return listener, nil },
 		logf:   func(format string, args ...any) { logs = append(logs, format) },
-		openStore: func(config) (store.Store, error) {
+		openStore: func(config) (serverStore, error) {
 			return backing, nil
 		},
 	}
@@ -95,7 +102,7 @@ func waitForRun(t *testing.T, done <-chan error) error {
 }
 
 func TestRunShutsDownCleanlyOnContextCancel(t *testing.T) {
-	backing := &countingStore{}
+	backing := newCountingStore(t)
 	listener := newPausedListener()
 	deps, logs := newTestDependencies(backing, listener)
 
@@ -123,14 +130,15 @@ func TestRunShutsDownCleanlyOnContextCancel(t *testing.T) {
 }
 
 func TestRunReturnsWhenContextIsAlreadyCancelled(t *testing.T) {
-	backing := &countingStore{}
+	backing := newCountingStore(t)
 	deps, _ := newTestDependencies(backing, newPausedListener())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := waitForRun(t, runAsync(t, ctx, deps)); err != nil {
-		t.Fatalf("run() error = %v, want nil", err)
+	// The startup chores read the store with ctx, so run stops there.
+	if err := waitForRun(t, runAsync(t, ctx, deps)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("run() error = %v, want %v", err, context.Canceled)
 	}
 	if got := backing.closeCount(); got != 1 {
 		t.Fatalf("store closed %d times, want exactly 1", got)
@@ -151,7 +159,7 @@ func TestRunRefusesRetiredSettings(t *testing.T) {
 			return nil, nil
 		},
 		logf: func(string, ...any) {},
-		openStore: func(config) (store.Store, error) {
+		openStore: func(config) (serverStore, error) {
 			opened = true
 			return nil, nil
 		},
@@ -167,7 +175,7 @@ func TestRunRefusesRetiredSettings(t *testing.T) {
 }
 
 func TestRunClosesStoreWhenListenFails(t *testing.T) {
-	backing := &countingStore{}
+	backing := newCountingStore(t)
 	listenErr := errors.New("listen refused")
 	deps, _ := newTestDependencies(backing, nil)
 	deps.listen = func(context.Context, string) (net.Listener, error) { return nil, listenErr }
@@ -184,7 +192,7 @@ func TestRunClosesStoreWhenListenFails(t *testing.T) {
 func TestRunPropagatesStoreOpenFailure(t *testing.T) {
 	openErr := errors.New("cannot open sqlite")
 	deps, _ := newTestDependencies(nil, newPausedListener())
-	deps.openStore = func(config) (store.Store, error) { return nil, openErr }
+	deps.openStore = func(config) (serverStore, error) { return nil, openErr }
 
 	if err := run(context.Background(), deps); !errors.Is(err, openErr) {
 		t.Fatalf("run() error = %v, want %v", err, openErr)

@@ -106,8 +106,5 @@ func (h *DaemonHub) connectedDevice(deviceID string) (label string, lag time.Dur
 // recordSessionEvent stores a device's session event and reports whether it
 // changed anything: an event sent again unchanged does not.
 func (c *daemonConnection) recordSessionEvent(ctx context.Context, event store.AgentSessionEvent) (bool, error) {
-	if recorder, ok := c.hub.store.(store.SessionEventRecorder); ok {
-		return recorder.RecordAgentSessionEvent(ctx, event)
-	}
-	return true, c.hub.store.AppendAgentSessionEvent(ctx, event)
+	return c.hub.store.RecordAgentSessionEvent(ctx, event)
 }

@@ -37,7 +37,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkerRelease } from "@bd777/foundry-protocol";
 import { readDaemonConfig } from "./config.js";
-import { setup } from "./daemon-connection.js";
+import { setup } from "./daemon/cli-commands.js";
 import { removeWorkerApp } from "./mac-worker-app.js";
 import {
   reinstallService,
@@ -57,7 +57,7 @@ import {
   recordSelfUpdateEnd,
   recordSelfUpdateStep,
 } from "./self-update-status.js";
-import { optionEnabled, optionValue } from "./utils.js";
+import { errorMessage, optionEnabled, optionValue } from "./utils.js";
 import {
   homeRelative,
   ownPackage,
@@ -339,7 +339,7 @@ export async function serverWorkerRelease(
  * reason (DNS, refused, reset, certificate, proxy) is in its cause.
  */
 export function networkFailure(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   const cause =
     error instanceof Error
       ? (error.cause as Error & { code?: string })
@@ -549,7 +549,7 @@ export async function updateCommand(args: string[]): Promise<void> {
     recordSelfUpdateEnd({
       ok: false,
       exitCode: 1,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
     throw error;
   } finally {

@@ -7,7 +7,10 @@ export const profiles = {
     openDeviceAccounts:
       "Use a ChatGPT or Claude subscription? Open device accounts →",
     requestFailed: "The request failed.",
-    savedMissing: "The server did not return the saved provider.",
+    saveFailed: "Could not save this change to the server.",
+    profileSaved: "{{label}} saved.",
+    profileDeleted: "{{label}} deleted.",
+    credentialCleared: "Credential cleared for {{label}}.",
     newConnection: "New model provider",
     editConnection: "Edit model provider",
     modalDescription:
@@ -76,13 +79,6 @@ export const profiles = {
     found_other: "{{count}} models from the endpoint.",
     failed: "The catalog read failed.",
   },
-  connectionTypes: {
-    anthropic_compatible: "Anthropic compatible",
-    custom_command: "Custom command",
-    env: "Environment",
-    local_login: "Local login",
-    openai_compatible: "OpenAI compatible",
-  },
   connectionDevices: {
     title: "Device access",
     intro:
@@ -140,7 +136,6 @@ export const profiles = {
     title: "Choose model providers",
     description:
       "Checked providers can be used on this device. Changes apply only when you save.",
-    close: "Close provider picker",
     empty: "No model providers yet.",
     openConnections: "Open Model providers",
     grant: "Grant {{connection}} on this device",

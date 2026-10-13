@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents/feishueventstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 )
@@ -63,7 +64,7 @@ func (b *recordingBots) ids() []string {
 	return ids
 }
 
-func newTestHub(t *testing.T, fake *FakeSource, secret string) *Hub {
+func newTestHub(t *testing.T, fake *feishueventstest.FakeSource, secret string) *Hub {
 	t.Helper()
 	apps := fixedApps{
 		credentials: map[string]Credentials{testApp: {AppID: testApp, AppSecret: secret}},
@@ -79,9 +80,9 @@ func newTestHub(t *testing.T, fake *FakeSource, secret string) *Hub {
 	return hub
 }
 
-func newFake(t *testing.T) *FakeSource {
+func newFake(t *testing.T) *feishueventstest.FakeSource {
 	t.Helper()
-	fake := NewFakeSource(testApp, testSecret)
+	fake := feishueventstest.NewFakeSource(testApp, testSecret)
 	t.Cleanup(fake.Close)
 	return fake
 }
@@ -156,7 +157,7 @@ func TestEventsAreAckedBeforeTheBotFinishes(t *testing.T) {
 	if !fake.WaitOpen(1, 5*time.Second) {
 		t.Fatal("no connection opened")
 	}
-	if _, err := fake.Push(MessagePayload(testApp, "ev_1", "oc_1", "om_1", "", "hello", true), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload(testApp, "ev_1", "oc_1", "om_1", "", "hello", true), 1); err != nil {
 		t.Fatal(err)
 	}
 	acks := fake.WaitAcks(1, 5*time.Second)
@@ -190,8 +191,8 @@ func TestRedeliveriesAreRoutedOnceAndPartsJoined(t *testing.T) {
 	if !fake.WaitOpen(1, 5*time.Second) {
 		t.Fatal("no connection opened")
 	}
-	first := MessagePayload(testApp, "ev_dup", "oc_1", "om_1", "", "once", false)
-	split := MessagePayload(testApp, "ev_split", "oc_1", "om_2", "", strings.Repeat("long ", 400), false)
+	first := feishueventstest.MessagePayload(testApp, "ev_dup", "oc_1", "om_1", "", "once", false)
+	split := feishueventstest.MessagePayload(testApp, "ev_split", "oc_1", "om_2", "", strings.Repeat("long ", 400), false)
 	for _, push := range []struct {
 		payload []byte
 		parts   int
@@ -236,10 +237,10 @@ func TestTheConnectionComesBack(t *testing.T) {
 		t.Fatal("no connection opened")
 	}
 	fake.DropAll()
-	if !fake.waitFor(5*time.Second, func() bool { return fake.accepted == 2 && len(fake.open) == 1 }) {
+	if !fake.WaitUntil(5*time.Second, func(counts feishueventstest.Counts) bool { return counts.Accepted == 2 && counts.Open == 1 }) {
 		t.Fatalf("not reconnected: %d accepted, %d open", fake.Accepted(), fake.Open())
 	}
-	if _, err := fake.Push(MessagePayload(testApp, "ev_after", "oc_1", "om_1", "", "back", false), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload(testApp, "ev_after", "oc_1", "om_1", "", "back", false), 1); err != nil {
 		t.Fatal(err)
 	}
 	if ids := eventIDs(pollNow(t, hub, alice, subscription.ID, 5*time.Second)); len(ids) != 1 || ids[0] != "ev_after" {
@@ -254,7 +255,7 @@ func TestARefusedConnectionSaysWhy(t *testing.T) {
 	if err := hub.Hold(testApp, "bot:ws_a"); err != nil {
 		t.Fatal(err)
 	}
-	if !fake.waitFor(5*time.Second, func() bool { return fake.endpoints >= 2 }) {
+	if !fake.WaitUntil(5*time.Second, func(counts feishueventstest.Counts) bool { return counts.Endpoints >= 2 }) {
 		t.Fatal("no retry after a refusal")
 	}
 	if status := hub.Status(testApp); status.Connected || !strings.Contains(status.Detail, "app id or secret is wrong") {
@@ -290,9 +291,9 @@ func TestSubscriptionsFilterAndBelongToTheirOwner(t *testing.T) {
 		t.Fatal("no connection opened")
 	}
 	for _, payload := range [][]byte{
-		MessagePayload(testApp, "ev_in_chat", "oc_1", "om_1", "", "hi", false),
-		MessagePayload(testApp, "ev_other_chat", "oc_2", "om_2", "", "hi", false),
-		EventPayload(testApp, "ev_card", "card.action.trigger", map[string]any{"context": map[string]string{"open_chat_id": "oc_1"}}),
+		feishueventstest.MessagePayload(testApp, "ev_in_chat", "oc_1", "om_1", "", "hi", false),
+		feishueventstest.MessagePayload(testApp, "ev_other_chat", "oc_2", "om_2", "", "hi", false),
+		feishueventstest.EventPayload(testApp, "ev_card", "card.action.trigger", map[string]any{"context": map[string]string{"open_chat_id": "oc_1"}}),
 	} {
 		if _, err := fake.Push(payload, 1); err != nil {
 			t.Fatal(err)
@@ -341,7 +342,7 @@ func TestPollingCursorsAndDrops(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		_, _ = fake.Push(MessagePayload(testApp, "ev_waited", "oc_1", "om_1", "", "hi", false), 1)
+		_, _ = fake.Push(feishueventstest.MessagePayload(testApp, "ev_waited", "oc_1", "om_1", "", "hi", false), 1)
 	}()
 	batch := pollNow(t, hub, alice, subscription.ID, 5*time.Second)
 	if ids := eventIDs(batch); len(ids) != 1 || ids[0] != "ev_waited" || batch.Cursor != 1 {
@@ -420,7 +421,7 @@ func (r *memoryReceipts) RecordFeishuEvent(_ context.Context, appID, eventID str
 func TestARedeliveryAfterARestartIsNotRoutedAgain(t *testing.T) {
 	fake := newFake(t)
 	receipts := &memoryReceipts{seen: map[string]time.Time{}}
-	payload := MessagePayload(testApp, "ev_restart", "oc_1", "om_1", "", "once", false)
+	payload := feishueventstest.MessagePayload(testApp, "ev_restart", "oc_1", "om_1", "", "once", false)
 	routed := 0
 	for run := range 2 {
 		hub := newTestHub(t, fake, testSecret)

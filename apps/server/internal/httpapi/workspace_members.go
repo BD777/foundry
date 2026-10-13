@@ -29,22 +29,9 @@ var (
 	errLastWorkspaceOwner    = errors.New("a workspace needs at least one Owner")
 )
 
-func (s *Server) ownershipStore(w http.ResponseWriter) (store.OwnershipStore, bool) {
-	ownership, ok := s.store.(store.OwnershipStore)
-	if !ok || s.accounts == nil {
-		writeError(w, http.StatusServiceUnavailable, errNoOwnershipStore.Error())
-		return nil, false
-	}
-	return ownership, true
-}
-
 func (s *Server) handleListWorkspaceMembers(w http.ResponseWriter, r *http.Request) {
-	ownership, ok := s.ownershipStore(w)
-	if !ok {
-		return
-	}
 	workspaceID := r.PathValue("id")
-	members, err := ownership.ListWorkspaceMembers(r.Context(), workspaceID)
+	members, err := s.store.ListWorkspaceMembers(r.Context(), workspaceID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -56,7 +43,7 @@ func (s *Server) handleListWorkspaceMembers(w http.ResponseWriter, r *http.Reque
 	}
 	views := make([]workspaceMemberView, 0, len(members))
 	for _, member := range members {
-		user, err := s.accounts.GetUser(r.Context(), member.UserID)
+		user, err := s.store.GetUser(r.Context(), member.UserID)
 		if err != nil {
 			continue
 		}
@@ -70,10 +57,6 @@ func (s *Server) handleListWorkspaceMembers(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request) {
-	ownership, ok := s.ownershipStore(w)
-	if !ok {
-		return
-	}
 	var input struct {
 		Username string `json:"username"`
 		Role     string `json:"role"`
@@ -86,13 +69,13 @@ func (s *Server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	username := strings.TrimSpace(input.Username)
-	user, _, err := s.accounts.GetUserCredentials(r.Context(), username)
+	user, _, err := s.store.GetUserCredentials(r.Context(), username)
 	if err != nil || !user.Active() {
 		writeError(w, http.StatusNotFound, "No active account is named "+username+".")
 		return
 	}
 	workspaceID := r.PathValue("id")
-	current, err := s.memberRole(r.Context(), ownership, workspaceID, user.ID)
+	current, err := s.memberRole(r.Context(), workspaceID, user.ID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -102,7 +85,7 @@ func (s *Server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 	actor := actorFromContext(r.Context())
-	if err := ownership.SetWorkspaceMember(r.Context(), workspaceID, user.ID, input.Role, actor.AccountID()); err != nil {
+	if err := s.store.SetWorkspaceMember(r.Context(), workspaceID, user.ID, input.Role, actor.AccountID()); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
@@ -111,10 +94,6 @@ func (s *Server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleUpdateWorkspaceMember(w http.ResponseWriter, r *http.Request) {
-	ownership, ok := s.ownershipStore(w)
-	if !ok {
-		return
-	}
 	var input struct {
 		Role string `json:"role"`
 	}
@@ -126,7 +105,7 @@ func (s *Server) handleUpdateWorkspaceMember(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	workspaceID, userID := r.PathValue("id"), r.PathValue("userId")
-	current, err := s.memberRole(r.Context(), ownership, workspaceID, userID)
+	current, err := s.memberRole(r.Context(), workspaceID, userID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -136,13 +115,13 @@ func (s *Server) handleUpdateWorkspaceMember(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if input.Role != store.WorkspaceRoleOwner {
-		if err := s.checkOwnerCanLeave(r.Context(), ownership, workspaceID, userID, current); err != nil {
+		if err := s.checkOwnerCanLeave(r.Context(), workspaceID, userID, current); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
 	}
 	actor := actorFromContext(r.Context())
-	if err := ownership.SetWorkspaceMember(r.Context(), workspaceID, userID, input.Role, actor.AccountID()); err != nil {
+	if err := s.store.SetWorkspaceMember(r.Context(), workspaceID, userID, input.Role, actor.AccountID()); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
@@ -153,10 +132,6 @@ func (s *Server) handleUpdateWorkspaceMember(w http.ResponseWriter, r *http.Requ
 // handleRemoveWorkspaceMember lets an Owner remove anyone and any member
 // leave on their own.
 func (s *Server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Request) {
-	ownership, ok := s.ownershipStore(w)
-	if !ok {
-		return
-	}
 	workspaceID, userID := r.PathValue("id"), r.PathValue("userId")
 	actor := actorFromContext(r.Context())
 	need := store.WorkspaceRoleOwner
@@ -166,7 +141,7 @@ func (s *Server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Requ
 	if !s.requireWorkspace(w, r, workspaceID, need) {
 		return
 	}
-	current, err := s.memberRole(r.Context(), ownership, workspaceID, userID)
+	current, err := s.memberRole(r.Context(), workspaceID, userID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -175,11 +150,11 @@ func (s *Server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusNotFound, "not a member of this workspace")
 		return
 	}
-	if err := s.checkOwnerCanLeave(r.Context(), ownership, workspaceID, userID, current); err != nil {
+	if err := s.checkOwnerCanLeave(r.Context(), workspaceID, userID, current); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if err := ownership.RemoveWorkspaceMember(r.Context(), workspaceID, userID); err != nil {
+	if err := s.store.RemoveWorkspaceMember(r.Context(), workspaceID, userID); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
@@ -187,8 +162,8 @@ func (s *Server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) memberRole(ctx context.Context, ownership store.OwnershipStore, workspaceID, userID string) (string, error) {
-	roles, err := ownership.WorkspaceRolesForUser(ctx, userID)
+func (s *Server) memberRole(ctx context.Context, workspaceID, userID string) (string, error) {
+	roles, err := s.store.WorkspaceRolesForUser(ctx, userID)
 	if err != nil {
 		return "", err
 	}
@@ -197,7 +172,7 @@ func (s *Server) memberRole(ctx context.Context, ownership store.OwnershipStore,
 
 // checkOwnerCanLeave keeps the ownership invariants when an Owner is demoted
 // or removed: the device owner stays, and one Owner always remains.
-func (s *Server) checkOwnerCanLeave(ctx context.Context, ownership store.OwnershipStore, workspaceID, userID, current string) error {
+func (s *Server) checkOwnerCanLeave(ctx context.Context, workspaceID, userID, current string) error {
 	if current != store.WorkspaceRoleOwner {
 		return nil
 	}
@@ -208,7 +183,7 @@ func (s *Server) checkOwnerCanLeave(ctx context.Context, ownership store.Ownersh
 	if deviceOwner == userID {
 		return errDeviceOwnerStaysOwner
 	}
-	members, err := ownership.ListWorkspaceMembers(ctx, workspaceID)
+	members, err := s.store.ListWorkspaceMembers(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
@@ -225,11 +200,10 @@ func (s *Server) workspaceDeviceOwner(ctx context.Context, workspaceID string) (
 	if err != nil {
 		return "", err
 	}
-	credentials, ok := s.store.(store.DeviceCredentialStore)
-	if !ok || workspace.DeviceID == "" {
+	if workspace.DeviceID == "" {
 		return "", nil
 	}
-	return credentials.DeviceOwner(ctx, workspace.DeviceID)
+	return s.store.DeviceOwner(ctx, workspace.DeviceID)
 }
 
 // workspaceMembersUpdatedEvent says who may use a workspace changed; its
@@ -251,11 +225,7 @@ func (s *Server) afterMembershipChange(ctx context.Context, workspaceID, userID,
 // cancelAllSessionsStartedBy stops a disabled account's running sessions in
 // every workspace it belongs to.
 func (s *Server) cancelAllSessionsStartedBy(ctx context.Context, userID string) {
-	ownership, ok := s.store.(store.OwnershipStore)
-	if !ok {
-		return
-	}
-	roles, err := ownership.WorkspaceRolesForUser(ctx, userID)
+	roles, err := s.store.WorkspaceRolesForUser(ctx, userID)
 	if err != nil {
 		log.Printf("cancel sessions of disabled account %s: %v", userID, err)
 		return

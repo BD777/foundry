@@ -5,6 +5,9 @@ export const ui: Translation<typeof en> = {
   alert: {
     diagnosticDetails: "诊断详情",
   },
+  dialog: {
+    close: "关闭 {{title}}",
+  },
   errorBoundary: {
     title: "{{label}} 暂时无法显示",
     stillAvailable: "Foundry 的其他区域仍可正常使用。",

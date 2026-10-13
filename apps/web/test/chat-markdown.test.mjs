@@ -27,7 +27,7 @@ async function renderMarkdown(props, text, inspect) {
   }
   try {
     const { MarkdownContent } =
-      await import("../src/components/conversation/chat-message-content.tsx");
+      await import("../src/components/conversation/markdown-content.tsx");
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);

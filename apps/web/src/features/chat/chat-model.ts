@@ -10,6 +10,8 @@ import {
   isProcessLabel,
   type ProcessLabelKey,
 } from "../../lib/process-labels";
+import { formatCompactDuration } from "../../lib/format";
+import { isSessionLive } from "../../lib/session-status";
 import {
   agentSessionHasStreamedResponse,
   agentSessionMessageText,
@@ -389,8 +391,7 @@ function chatMessagesForSession(
       text: session.input?.prompt ?? session.prompt,
     });
   }
-  const sessionActive =
-    session.status === "queued" || session.status === "running";
+  const sessionActive = isSessionLive(session);
   // A new input's own event can arrive after the session turns active. Until
   // then the transcript still ends with the previous turn: show the input as
   // sent and keep that turn settled instead of reviving its last step.
@@ -670,14 +671,7 @@ function agentSessionDurationLabel(session: AgentSession): string | undefined {
   if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime)) {
     return undefined;
   }
-  const ms = Math.max(0, lastTime - firstTime);
-  const seconds = Math.max(1, Math.round(ms / 1000));
-  const minutes = Math.floor(seconds / 60);
-  const restSeconds = seconds % 60;
-  if (minutes <= 0) {
-    return `${restSeconds}s`;
-  }
-  return `${minutes}m ${restSeconds}s`;
+  return formatCompactDuration(Math.max(0, lastTime - firstTime));
 }
 
 export {

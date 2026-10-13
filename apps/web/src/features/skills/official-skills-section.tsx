@@ -3,10 +3,7 @@ import { ArrowRight, ChevronRight } from "lucide-react";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { navigateToFoundrySkill } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
-
-// i18n-ignore: runtime product names
-const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
+import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
 
 /**
  * The skills each agent always has: the ones Claude Code and Codex ship, as
@@ -62,7 +59,7 @@ export function OfficialSkillsSection({
                 size={14}
               />
               <RuntimeMark runtime={row.provider} />
-              <strong>{agentNames[row.provider]}</strong>
+              <strong>{runtimeMeta(row.provider).productName}</strong>
               <span className="fdy-official-skills-count">
                 {t("workspace.officialCount", { count: skills.length })}
               </span>

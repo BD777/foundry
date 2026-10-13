@@ -44,7 +44,7 @@ export type EvidenceWorkerRequest =
        * The workspace's selected skill versions from the server catalog. The
        * judge may read them; it never gets skills from the candidate.
        */
-      skillRefs?: import("./index.js").SessionSkillRef[];
+      skillRefs?: import("./skills.js").SessionSkillRef[];
     }
   | {
       action: "check_accept";

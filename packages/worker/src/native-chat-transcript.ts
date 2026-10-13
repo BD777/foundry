@@ -2,7 +2,7 @@ import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { codexTranscriptRecord } from "./transcript-adapters/codex.js";
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
-import { record } from "./transcript-adapters/values.js";
+import { record } from "./json-values.js";
 import { redactTranscriptMessage } from "./secret-redaction.js";
 import { claudeNativeUsage, codexNativeUsage } from "./native-usage.js";
 import { claudeRequestUsage } from "./turn-usage.js";

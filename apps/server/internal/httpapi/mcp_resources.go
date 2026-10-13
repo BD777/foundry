@@ -43,11 +43,8 @@ type resourceToolHolder struct {
 }
 
 func (s *Server) resourceHolder(ctx context.Context, actor Actor) (resourceToolHolder, error) {
-	if s.leases == nil {
-		return resourceToolHolder{}, &mcpToolError{http.StatusConflict, "this server keeps no resource leases"}
-	}
 	if !actor.Agent() {
-		return resourceToolHolder{}, &mcpToolError{http.StatusBadRequest, "resources are leased to sessions: call this tool from a Foundry session"}
+		return resourceToolHolder{}, &statusError{http.StatusBadRequest, errors.New("resources are leased to sessions: call this tool from a Foundry session")}
 	}
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
@@ -55,13 +52,12 @@ func (s *Server) resourceHolder(ctx context.Context, actor Actor) (resourceToolH
 	}
 	holder := resourceToolHolder{sessionID: actor.Identity.SessionID, personID: scope.agentFor, owned: map[string]bool{}, scope: scope}
 	if scope.issueID != "" {
-		return holder, &mcpToolError{http.StatusForbidden, "a session working in an Issue does not lease devices' resources"}
+		return holder, &statusError{http.StatusForbidden, errors.New("a session working in an Issue does not lease devices' resources")}
 	}
-	ownership, ok := s.store.(store.OwnershipStore)
-	if holder.personID == "" || !ok {
+	if holder.personID == "" {
 		return holder, nil
 	}
-	devices, err := ownership.DevicesOwnedBy(ctx, holder.personID)
+	devices, err := s.store.DevicesOwnedBy(ctx, holder.personID)
 	if err != nil {
 		return holder, err
 	}
@@ -83,7 +79,7 @@ func (s *Server) resourceFor(ctx context.Context, holder resourceToolHolder, id 
 			return instance, nil
 		}
 	}
-	return store.ResourceInstance{}, &mcpToolError{http.StatusNotFound, "resource " + id + " not found among your devices' resources (list_resources lists them)"}
+	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("resource " + id + " not found among your devices' resources (list_resources lists them)")}
 }
 
 // leaseToolError turns a lease refusal into what the agent reads.
@@ -99,7 +95,7 @@ func leaseToolError(err error) error {
 	} else {
 		message = refusal.Code + ": " + message
 	}
-	return &mcpToolError{http.StatusConflict, message}
+	return &statusError{http.StatusConflict, errors.New(message)}
 }
 
 type resourceSummary struct {
@@ -222,7 +218,7 @@ func (s *Server) chooseResource(ctx context.Context, holder resourceToolHolder, 
 	if busy != nil {
 		return *busy, nil
 	}
-	return store.ResourceInstance{}, &mcpToolError{http.StatusNotFound, "no " + resourceType + " resource on your devices is ready to lease; list_resources shows each one's readiness and what is missing"}
+	return store.ResourceInstance{}, &statusError{http.StatusNotFound, errors.New("no " + resourceType + " resource on your devices is ready to lease; list_resources shows each one's readiness and what is missing")}
 }
 
 func (s *Server) releaseResourceForMCP(r *http.Request, actor Actor, args map[string]json.RawMessage) (string, error) {
@@ -250,13 +246,13 @@ func (s *Server) resourceStatusForMCP(r *http.Request, actor Actor, args map[str
 	if leaseID := mcpArgString(args, "leaseId"); leaseID != "" {
 		lease, err := s.leases.Lease(ctx, leaseID)
 		if err != nil || lease.HolderSessionID != holder.sessionID {
-			return "", &mcpToolError{http.StatusNotFound, "lease " + leaseID + " not found among this session's leases"}
+			return "", &statusError{http.StatusNotFound, errors.New("lease " + leaseID + " not found among this session's leases")}
 		}
 		view := s.leases.ViewOf(ctx, lease)
 		own, resourceID = &view, lease.ResourceID
 	}
 	if resourceID == "" {
-		return "", &mcpToolError{http.StatusBadRequest, "name resourceId or leaseId"}
+		return "", &statusError{http.StatusBadRequest, errors.New("name resourceId or leaseId")}
 	}
 	instance, err := s.resourceFor(ctx, holder, resourceID)
 	if err != nil {
@@ -325,11 +321,11 @@ func (s *Server) operateResourceForMCP(r *http.Request, actor Actor, args map[st
 	}
 	for _, action := range actions {
 		if _, ok := ticket.Spec.Operation(action.Op); !ok {
-			return refuse(&mcpToolError{http.StatusBadRequest, fmt.Sprintf("%s has no operation %q; it has %s", ticket.Instance.Name, action.Op, strings.Join(ticket.Spec.OperationNames(), ", "))})
+			return refuse(&statusError{http.StatusBadRequest, fmt.Errorf("%s has no operation %q; it has %s", ticket.Instance.Name, action.Op, strings.Join(ticket.Spec.OperationNames(), ", "))})
 		}
 	}
 	if raw, _ := json.Marshal(actions); len(raw) > ticket.Spec.MaxArgsBytes {
-		return refuse(&mcpToolError{http.StatusBadRequest, fmt.Sprintf("the actions' arguments exceed %d KB; send files in pieces (put_files)", ticket.Spec.MaxArgsBytes>>10)})
+		return refuse(&statusError{http.StatusBadRequest, fmt.Errorf("the actions' arguments exceed %d KB; send files in pieces (put_files)", ticket.Spec.MaxArgsBytes>>10)})
 	}
 	if ticket.Spec.RemoteCommands {
 		if err := s.computeWorkspaces(ctx, holder, ticket.Instance, actions); err != nil {
@@ -376,10 +372,10 @@ func (s *Server) operateResourceForMCP(r *http.Request, actor Actor, args map[st
 		return nil, err
 	}
 	if operateErr != nil {
-		return nil, &mcpToolError{http.StatusConflict, "device_error: " + operateErr.Error()}
+		return nil, &statusError{http.StatusConflict, errors.New("device_error: " + operateErr.Error())}
 	}
 	if result.Error != "" {
-		return nil, &mcpToolError{http.StatusConflict, cmpOr(result.ErrorCode, "backend_error") + ": " + result.Error}
+		return nil, &statusError{http.StatusConflict, errors.New(cmpOr(result.ErrorCode, "backend_error") + ": " + result.Error)}
 	}
 	return operateContent(s.leases.ViewOf(ctx, ticket.Lease), result, ticket.Spec.MaxResultText), nil
 }
@@ -436,14 +432,14 @@ func (s *Server) computeWorkspaces(ctx context.Context, holder resourceToolHolde
 			continue
 		}
 		if !holder.scope.can(workspaceID, store.WorkspaceRoleMember) {
-			return &mcpToolError{http.StatusForbidden, "workspace " + workspaceID + " is not one this session may work in (Member)"}
+			return &statusError{http.StatusForbidden, errors.New("workspace " + workspaceID + " is not one this session may work in (Member)")}
 		}
 		workspace, err := s.store.GetWorkspace(ctx, workspaceID)
 		if err != nil {
-			return &mcpToolError{http.StatusNotFound, "workspace " + workspaceID + " not found"}
+			return &statusError{http.StatusNotFound, errors.New("workspace " + workspaceID + " not found")}
 		}
 		if workspace.DeviceID != instance.Source.ID || strings.TrimSpace(workspace.LocalPath) == "" {
-			return &mcpToolError{http.StatusBadRequest, fmt.Sprintf("workspace %s (%s) is not on %s; name a workspace on that device, or use a scratch folder", workspaceID, workspace.Name, instance.Source.Label)}
+			return &statusError{http.StatusBadRequest, fmt.Errorf("workspace %s (%s) is not on %s; name a workspace on that device, or use a scratch folder", workspaceID, workspace.Name, instance.Source.Label)}
 		}
 		action.Args["workspacePath"] = workspace.LocalPath
 	}
@@ -467,20 +463,20 @@ func resourceActions(args map[string]json.RawMessage) ([]store.ResourceAction, e
 	var actions []store.ResourceAction
 	if raw, ok := args["actions"]; ok && len(raw) > 0 && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &actions); err != nil {
-			return nil, &mcpToolError{http.StatusBadRequest, "actions must be a list of {op, args}"}
+			return nil, &statusError{http.StatusBadRequest, errors.New("actions must be a list of {op, args}")}
 		}
 	}
 	if op := mcpArgString(args, "op"); op != "" {
 		action := store.ResourceAction{Op: op}
 		if raw, ok := args["args"]; ok && len(raw) > 0 && string(raw) != "null" {
 			if err := json.Unmarshal(raw, &action.Args); err != nil {
-				return nil, &mcpToolError{http.StatusBadRequest, "args must be an object"}
+				return nil, &statusError{http.StatusBadRequest, errors.New("args must be an object")}
 			}
 		}
 		actions = append([]store.ResourceAction{action}, actions...)
 	}
 	if len(actions) == 0 {
-		return nil, &mcpToolError{http.StatusBadRequest, "name an op (with its args) or actions"}
+		return nil, &statusError{http.StatusBadRequest, errors.New("name an op (with its args) or actions")}
 	}
 	if mcpArgBool(args, "screenshotAfter") {
 		after := store.ResourceAction{Op: "screenshot", Args: map[string]any{}}
@@ -492,7 +488,7 @@ func resourceActions(args map[string]json.RawMessage) ([]store.ResourceAction, e
 		actions = append(actions, after)
 	}
 	if len(actions) > maxResourceActions {
-		return nil, &mcpToolError{http.StatusBadRequest, fmt.Sprintf("at most %d actions in one call", maxResourceActions)}
+		return nil, &statusError{http.StatusBadRequest, fmt.Errorf("at most %d actions in one call", maxResourceActions)}
 	}
 	return actions, nil
 }
@@ -555,7 +551,7 @@ func cmpOr(value, fallback string) string {
 // resourceNoticeContent is what a holder session is told with every
 // Foundry tool result, when there is something to tell.
 func (s *Server) resourceNoticeContent(ctx context.Context, actor Actor) []any {
-	if s.leases == nil || !actor.Agent() {
+	if !actor.Agent() {
 		return nil
 	}
 	notices := s.leases.Notices(ctx, actor.Identity.SessionID)

@@ -232,58 +232,8 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		workspace.AccessRole = view.scope.role(workspace.ID)
 	}
 	data := foundryDataAnswer{FoundryDataProjection: store.FoundryDataProjection{Workspace: workspace, Workspaces: workspaces}}
-	// Agents and agent profiles derive from devices, connections and their
-	// bindings.
-	connections := want.has(fieldAgentProfiles, fieldAgents)
-	if connections || want.has(fieldDevices, fieldDeviceSkillRoots) {
-		timer.mark("ListDevices")
-		allDevices, err := s.store.ListDevices(ctx)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.Devices = s.liveDevices(view.filterDevices(allDevices))
-	}
-	if connections || want.has(fieldProfiles) {
-		timer.mark("ListProfiles")
-		allProfiles, err := s.store.ListProfiles(ctx)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.Profiles = s.overlayProfileCredentials(ctx, view.filterConnections(allProfiles))
-	}
-	if connections || want.has(fieldDeviceProfiles) {
-		timer.mark("ListDeviceProfiles")
-		deviceProfiles, err := s.store.ListDeviceProfiles(ctx, "")
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.DeviceProfiles = filterOwnedDevice(view, deviceProfiles, func(item store.DeviceProfileBinding) string { return item.DeviceID })
-	}
-	if want.has(fieldProviderHealth) {
-		timer.mark("ListProviderHealth")
-		providerHealth, err := s.store.ListProviderHealth(ctx, "")
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.ProviderHealth = workspaceOfficialSkills(filterByDevice(view, providerHealth, func(item store.ProviderHealth) string { return item.DeviceID }), workspace.DeviceID)
-	}
-	var agentProfiles []store.AgentProfileProjection
-	if connections {
-		timer.mark("ListAgentProfiles")
-		listed, err := s.store.ListAgentProfiles(ctx, "")
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		agentProfiles = filterByDevice(view, s.overlayServerCredential(ctx, listed),
-			func(item store.AgentProfileProjection) string { return item.DeviceID })
-	}
-	if want.has(fieldDeviceSkillRoots) {
-		timer.mark("allEffectiveSkillRoots")
-		deviceSkillRoots, err := s.allEffectiveSkillRoots(ctx, data.Devices)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.DeviceSkillRoots = filterOwnedDevice(view, deviceSkillRoots, func(item store.DeviceSkillRoot) string { return item.DeviceID })
+	if err := loadFoundryDataSections(want, timer, s.deviceSections(ctx, view, workspace, &data)); err != nil {
+		return foundryDataAnswer{}, err
 	}
 	// The library's catalog belongs to no workspace: the Skills pages read
 	// it also before there is one.
@@ -297,24 +247,14 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 			data.PromotedSkills = view.skillUsage(slices.Clone(catalog))
 		}
 	}
-	if tools, ok := s.store.(deviceToolStore); ok && want.has(fieldDeviceTools) {
-		all, err := tools.ListDeviceTools(ctx, "")
-		if err != nil {
+	// Server profiles exist before any workspace does, so the settings and
+	// devices views stay accurate on a fresh install.
+	if want.has(agentFields...) {
+		if err := s.agentProjections(ctx, view, workspace, &data, timer); err != nil {
 			return foundryDataAnswer{}, err
 		}
-		data.DeviceTools = filterByDevice(view, all, func(item store.DeviceTool) string { return item.DeviceID })
 	}
 	if workspace.ID == "" {
-		// Server profiles exist before any workspace does, so the settings and
-		// devices views stay accurate on a fresh install.
-		if connections {
-			timer.mark("serverProfileProjections")
-			serverProfiles, _, err := s.serverProfileProjections(ctx, workspace, data.Devices, data.Profiles, data.DeviceProfiles, agentProfiles, []store.AgentProjection{})
-			if err != nil {
-				return foundryDataAnswer{}, err
-			}
-			data.AgentProfiles = serverProfiles
-		}
 		data.Agents = []store.AgentProjection{}
 		data.WorkspaceSkillBindings = []store.WorkspaceSkillBinding{}
 		data.WorkspaceFiles = []store.WorkspaceFileEntry{}
@@ -325,88 +265,176 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		data.Assets = []store.AssetProjection{}
 		return data, nil
 	}
-	if connections {
-		timer.mark("ListAgents")
-		agents, err := s.store.ListAgents(ctx, workspace.ID, strings.TrimSpace(workspace.DeviceID))
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		timer.mark("serverProfileProjections")
-		data.AgentProfiles, data.Agents, err = s.serverProfileProjections(ctx, workspace, data.Devices, data.Profiles, data.DeviceProfiles, agentProfiles, agents)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldWorkspaceFiles) {
-		timer.mark("ListWorkspaceFiles")
-		if data.WorkspaceFiles, err = s.store.ListWorkspaceFiles(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldAgentSessions) {
-		timer.mark("ListAgentSessionSummaries")
-		agentSessions, err := s.store.ListAgentSessionSummaries(ctx, workspace.ID)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.AgentSessions = withoutRepeatedPrompts(summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, agentSessions)))
-	}
-	if want.has(fieldAssets) {
-		timer.mark("ListAssets")
-		if data.Assets, err = s.store.ListAssets(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldSkills) {
-		timer.mark("ListSkills")
-		if data.Skills, err = s.store.ListSkills(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldIssues) {
-		timer.mark("ListIssues")
-		if data.Issues, err = s.store.ListIssues(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldChats) {
-		timer.mark("ListChats")
-		if data.Chats, err = s.store.ListChats(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldRuns) {
-		timer.mark("ListRuns")
-		if data.Runs, err = s.store.ListRuns(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldWorkspaceSkillBindings, fieldWorkspaceSkills) {
-		timer.mark("ListWorkspaceSkillBindings")
-		if data.WorkspaceSkillBindings, err = s.store.ListWorkspaceSkillBindings(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
-	}
-	if want.has(fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills) {
-		skillSources, err := resolveWorkspaceSkills(ctx, s.store, workspace.ID)
-		if err != nil {
-			return foundryDataAnswer{}, err
-		}
-		data.DefaultSkillIDs, data.InheritedSkillIDs, data.OffSkillIDs = skillSources.DefaultIDs, skillSources.InheritedIDs, skillSources.OffIDs
-	}
-	if want.has(fieldWorkspaceSkills) {
-		data.WorkspaceSkills = workspaceSkillSummaries(catalog, data.WorkspaceSkillBindings, data.DefaultSkillIDs)
-	}
-	if want.has(fieldBuiltinSkills) {
-		data.BuiltinSkills = builtinSkillProjections()
-	}
-	if want.has(fieldSkillBundles, fieldWorkspaceBundleIDs, fieldDefaultBundleIDs) {
-		timer.mark("bundleProjection")
-		if data.SkillBundles, data.WorkspaceBundleIDs, data.DefaultBundleIDs, err = s.bundleProjection(ctx, workspace.ID); err != nil {
-			return foundryDataAnswer{}, err
-		}
+	if err := loadFoundryDataSections(want, timer, s.workspaceSections(ctx, workspace.ID, catalog, &data)); err != nil {
+		return foundryDataAnswer{}, err
 	}
 	return data, nil
+}
+
+// agentFields derive from devices, connections and their bindings.
+var agentFields = []string{fieldAgentProfiles, fieldAgents}
+
+// foundryDataSection is one part of an answer, loaded when the selection
+// wants any of its fields; phase names it in the slow-read log.
+type foundryDataSection struct {
+	fields []string
+	phase  string
+	load   func() error
+}
+
+func loadFoundryDataSections(want fieldSet, timer *phaseTimer, sections []foundryDataSection) error {
+	for _, section := range sections {
+		if !want.has(section.fields...) {
+			continue
+		}
+		if section.phase != "" {
+			timer.mark(section.phase)
+		}
+		if err := section.load(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deviceSections are the devices the caller sees and what they report:
+// connections, health, skill roots and tools.
+func (s *Server) deviceSections(ctx context.Context, view visibility, workspace store.WorkspaceProjection, data *foundryDataAnswer) []foundryDataSection {
+	return []foundryDataSection{
+		{append([]string{fieldDevices, fieldDeviceSkillRoots}, agentFields...), "ListDevices", func() error {
+			all, err := s.store.ListDevices(ctx)
+			if err != nil {
+				return err
+			}
+			data.Devices = s.liveDevices(view.filterDevices(all))
+			return nil
+		}},
+		{append([]string{fieldProfiles}, agentFields...), "ListProfiles", func() error {
+			all, err := s.store.ListProfiles(ctx)
+			if err != nil {
+				return err
+			}
+			data.Profiles = s.overlayProfileCredentials(ctx, view.filterConnections(all))
+			return nil
+		}},
+		{append([]string{fieldDeviceProfiles}, agentFields...), "ListDeviceProfiles", func() error {
+			all, err := s.store.ListDeviceProfiles(ctx, "")
+			if err != nil {
+				return err
+			}
+			data.DeviceProfiles = filterOwnedDevice(view, all, func(item store.DeviceProfileBinding) string { return item.DeviceID })
+			return nil
+		}},
+		{[]string{fieldProviderHealth}, "ListProviderHealth", func() error {
+			all, err := s.store.ListProviderHealth(ctx, "")
+			if err != nil {
+				return err
+			}
+			data.ProviderHealth = workspaceOfficialSkills(filterByDevice(view, all, func(item store.ProviderHealth) string { return item.DeviceID }), workspace.DeviceID)
+			return nil
+		}},
+		{[]string{fieldDeviceSkillRoots}, "allEffectiveSkillRoots", func() error {
+			all, err := s.allEffectiveSkillRoots(ctx, data.Devices)
+			if err != nil {
+				return err
+			}
+			data.DeviceSkillRoots = filterOwnedDevice(view, all, func(item store.DeviceSkillRoot) string { return item.DeviceID })
+			return nil
+		}},
+		{[]string{fieldDeviceTools}, "", func() error {
+			all, err := s.store.ListDeviceTools(ctx, "")
+			if err != nil {
+				return err
+			}
+			data.DeviceTools = filterByDevice(view, all, func(item store.DeviceTool) string { return item.DeviceID })
+			return nil
+		}},
+	}
+}
+
+// agentProjections are the agent profiles the caller's devices run and,
+// in a workspace, its agents, server profiles among them.
+func (s *Server) agentProjections(ctx context.Context, view visibility, workspace store.WorkspaceProjection, data *foundryDataAnswer, timer *phaseTimer) error {
+	timer.mark("ListAgentProfiles")
+	listed, err := s.store.ListAgentProfiles(ctx, "")
+	if err != nil {
+		return err
+	}
+	agentProfiles := filterByDevice(view, s.overlayServerCredential(ctx, listed),
+		func(item store.AgentProfileProjection) string { return item.DeviceID })
+	agents := []store.AgentProjection{}
+	if workspace.ID != "" {
+		timer.mark("ListAgents")
+		if agents, err = s.store.ListAgents(ctx, workspace.ID, strings.TrimSpace(workspace.DeviceID)); err != nil {
+			return err
+		}
+	}
+	timer.mark("serverProfileProjections")
+	data.AgentProfiles, data.Agents, err = s.serverProfileProjections(ctx, workspace, data.Devices, data.Profiles, data.DeviceProfiles, agentProfiles, agents)
+	return err
+}
+
+// workspaceSections are the workspace's own records and skill choices, in
+// order: its skill menu derives from the bindings and defaults before it.
+func (s *Server) workspaceSections(ctx context.Context, workspaceID string, catalog []store.PromotedSkill, data *foundryDataAnswer) []foundryDataSection {
+	return []foundryDataSection{
+		{[]string{fieldWorkspaceFiles}, "ListWorkspaceFiles", func() (err error) {
+			data.WorkspaceFiles, err = s.store.ListWorkspaceFiles(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldAgentSessions}, "ListAgentSessionSummaries", func() error {
+			sessions, err := s.store.ListAgentSessionSummaries(ctx, workspaceID)
+			if err != nil {
+				return err
+			}
+			data.AgentSessions = withoutRepeatedPrompts(summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, sessions)))
+			return nil
+		}},
+		{[]string{fieldAssets}, "ListAssets", func() (err error) {
+			data.Assets, err = s.store.ListAssets(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldSkills}, "ListSkills", func() (err error) {
+			data.Skills, err = s.store.ListSkills(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldIssues}, "ListIssues", func() (err error) {
+			data.Issues, err = s.store.ListIssues(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldChats}, "ListChats", func() (err error) {
+			data.Chats, err = s.store.ListChats(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldRuns}, "ListRuns", func() (err error) {
+			data.Runs, err = s.store.ListRuns(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldWorkspaceSkillBindings, fieldWorkspaceSkills}, "ListWorkspaceSkillBindings", func() (err error) {
+			data.WorkspaceSkillBindings, err = s.store.ListWorkspaceSkillBindings(ctx, workspaceID)
+			return err
+		}},
+		{[]string{fieldDefaultSkillIDs, fieldInheritedSkillIDs, fieldOffSkillIDs, fieldWorkspaceSkills}, "", func() error {
+			sources, err := resolveWorkspaceSkills(ctx, s.store, workspaceID)
+			if err != nil {
+				return err
+			}
+			data.DefaultSkillIDs, data.InheritedSkillIDs, data.OffSkillIDs = sources.DefaultIDs, sources.InheritedIDs, sources.OffIDs
+			return nil
+		}},
+		{[]string{fieldWorkspaceSkills}, "", func() error {
+			data.WorkspaceSkills = workspaceSkillSummaries(catalog, data.WorkspaceSkillBindings, data.DefaultSkillIDs)
+			return nil
+		}},
+		{[]string{fieldBuiltinSkills}, "", func() error {
+			data.BuiltinSkills = builtinSkillProjections()
+			return nil
+		}},
+		{[]string{fieldSkillBundles, fieldWorkspaceBundleIDs, fieldDefaultBundleIDs}, "bundleProjection", func() (err error) {
+			data.SkillBundles, data.WorkspaceBundleIDs, data.DefaultBundleIDs, err = s.bundleProjection(ctx, workspaceID)
+			return err
+		}},
+	}
 }
 
 // workspaceOfficialSkills keeps the skills agents ship only on the workspace

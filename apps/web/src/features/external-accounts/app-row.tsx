@@ -11,7 +11,7 @@ import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { appName, errorText, relativeWhen } from "./account-format";
-import { RowMenu, type RowMenuItem } from "./row-menu";
+import { RowMenu, type RowMenuItem } from "../../components/ui/row-menu";
 
 /** The app's credentials page in the Feishu / Lark developer console. */
 function consoleCredentialsURL(app: ExternalProviderApp): string {
@@ -177,6 +177,7 @@ export function AppGroup({
   notes: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useTranslation("externalAccounts");
   const name = appName(app);
   return (
     <Panel className="fdy-xacc-section fdy-xacc-app">
@@ -185,7 +186,11 @@ export function AppGroup({
           <strong>{name}</strong>
           <small>{appPlace(app, label)}</small>
         </span>
-        <RowMenu disabled={busy} items={items} label={name} />
+        <RowMenu
+          disabled={busy}
+          items={items}
+          label={t("actions.more", { name })}
+        />
       </div>
       {notes}
       <ul className="fdy-xacc-list">{children}</ul>
@@ -233,7 +238,11 @@ export function EmptyAppRow({
               {t("apps.authorize")}
             </Button>
           ) : null}
-          <RowMenu disabled={busy} items={items} label={name} />
+          <RowMenu
+            disabled={busy}
+            items={items}
+            label={t("actions.more", { name })}
+          />
         </span>
       </div>
     </li>

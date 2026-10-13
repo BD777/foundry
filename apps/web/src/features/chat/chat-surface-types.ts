@@ -19,7 +19,6 @@ import type {
 } from "./chat-types";
 import type { ChatListStatus } from "./chat-list-state";
 import type { ChatTimerFire } from "./chat-types";
-import type { ProcessDisplayItem } from "./chat-process-display";
 import type { ChatUpdateTime } from "./chat-time";
 
 export interface ChatListItem {

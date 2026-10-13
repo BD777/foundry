@@ -119,11 +119,11 @@
     "status": "manual",
     "runner": "browser",
     "references": [
-      "apps/web/src/features/chat/chat-transcript-stage.tsx",
-      "apps/web/src/features/chat/chat-virtualization.ts",
-      "apps/web/src/features/chat/chat-turn-navigator.tsx",
-      "apps/web/src/features/chat/chat-turn-menu.tsx",
-      "apps/web/src/features/chat/use-chat-turn-navigation.ts",
+      "apps/web/src/components/conversation/chat-transcript-stage.tsx",
+      "apps/web/src/components/conversation/chat-virtualization.ts",
+      "apps/web/src/components/conversation/chat-turn-navigator.tsx",
+      "apps/web/src/components/conversation/chat-turn-menu.tsx",
+      "apps/web/src/components/conversation/use-chat-turn-navigation.ts",
       "apps/web/test/chat-turn-navigation.test.mjs",
       "apps/web/test/chat-virtualization.test.mjs"
     ]

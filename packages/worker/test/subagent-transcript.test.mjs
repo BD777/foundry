@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
-import { sendSubagentList } from "../dist/session-helpers.js";
+import { subagentList } from "../dist/daemon/handlers/files.js";
 import { readSubagentRecords } from "../dist/subagent-records.js";
 import { claudeSubagentUsage } from "../dist/turn-usage.js";
 import {
@@ -175,28 +175,20 @@ test("answers a chat's list read with digests: fingerprints, no prompts", async 
       .map((record) => JSON.stringify(record))
       .join("\n")}\n`,
   );
-  const replies = [];
-  const socket = {
-    readyState: 1,
-    send: (data) => replies.push(JSON.parse(data)),
-  };
   try {
-    await sendSubagentList(socket, "msg_full", workspace, {
-      sessionId,
-      workspaceId: "ws_1",
-    });
-    await sendSubagentList(socket, "msg_digest", workspace, {
+    // As the server reads them: off the wire.
+    const read = async (payload) =>
+      JSON.parse(JSON.stringify(await subagentList(workspace, payload)));
+    const full = await read({ sessionId, workspaceId: "ws_1" });
+    const digest = await read({
       sessionId,
       workspaceId: "ws_1",
       view: "digest",
     });
-    const [full, digest] = replies;
-    assert.equal(full.id, "msg_full");
-    assert.equal(full.payload.view, undefined);
-    assert.equal(full.payload.subagents[0].prompt, "Find the bug");
-    assert.equal(full.payload.subagents[0].responseTexts.length, 3);
-    assert.equal(digest.id, "msg_digest");
-    assert.deepEqual(digest.payload, {
+    assert.equal(full.view, undefined);
+    assert.equal(full.subagents[0].prompt, "Find the bug");
+    assert.equal(full.subagents[0].responseTexts.length, 3);
+    assert.deepEqual(digest, {
       sessionId,
       view: "digest",
       subagents: [

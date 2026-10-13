@@ -41,10 +41,3 @@ export function PageSurface({
     </section>
   );
 }
-
-export function HelperCopy({
-  className,
-  ...props
-}: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={cn("fdy-helper-copy", className)} {...props} />;
-}

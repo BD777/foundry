@@ -1,38 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronRight,
-  FolderOpen,
-  FolderSearch,
-  Monitor,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  RotateCcw,
-  Search,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, Check, Search } from "lucide-react";
 import type {
   DeviceProjection,
   WorkspaceProjection,
-  WorkspaceRelinkResult,
 } from "@bd777/foundry-protocol";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { PageSurface } from "../../components/ui/page-surface";
 import { WorkspaceDetails } from "../../components/workspace/workspace-details";
-import { workspaceRoleLabel } from "../../lib/workspace-access";
 import {
   WorkspaceEditor,
   type WorkspaceEdit,
 } from "../../components/workspace/workspace-editor";
 import { WorkspaceLocateDialog } from "../../components/workspace/workspace-locate-dialog";
 import { isRemovedDevice } from "../../lib/devices";
+import { CompactLocationSwitcher } from "./compact-location-switcher";
+import { useWorkspaceRowActions } from "./use-workspace-row-actions";
+import { WorkspaceDeviceGroup } from "./workspace-device-group";
+import { WorkspaceRow } from "./workspace-row";
 
 interface Props {
   compact?: boolean;
@@ -89,75 +75,24 @@ export function WorkspaceSelectionPanel(props: Props) {
     workspace: WorkspaceProjection;
     device: DeviceProjection;
   }>();
+  // A dialog returns focus to `trigger`; one opened from a row's menu has
+  // none and returns focus to the menu's button.
   const [edit, setEdit] = useState<{
     edit: WorkspaceEdit;
     device: DeviceProjection;
+    trigger: HTMLElement | null;
   }>();
   const [locate, setLocate] = useState<{
     workspace: WorkspaceProjection;
     device: DeviceProjection;
     trigger: HTMLElement | null;
   }>();
-  const [message, setMessage] = useState("");
-  const [changeError, setChangeError] = useState("");
-  const [addingAgainId, setAddingAgainId] = useState("");
-  // Once a folder is added again its button goes; focus moves to its row.
-  const detailsButtons = useRef(new Map<string, HTMLButtonElement>());
-  async function addAgain(
-    workspace: WorkspaceProjection,
-    device: DeviceProjection,
-  ) {
-    if (addingAgainId) return;
-    setAddingAgainId(workspace.id);
-    setMessage("");
-    setChangeError("");
-    try {
-      await props.onAddAgain(workspace, device);
-    } catch (cause) {
-      setChangeError(
-        cause instanceof Error ? cause.message : t("editor.saveFailed"),
-      );
-      setAddingAgainId("");
-      return;
-    }
-    setMessage(
-      t("location.addedAgain", {
-        name: workspace.name,
-        device: device.label,
-      }),
-    );
-    try {
-      await props.onChanged();
-    } catch {
-      setChangeError(t("deviceList.refreshFailed"));
-    } finally {
-      setAddingAgainId("");
-      detailsButtons.current.get(workspace.id)?.focus();
-    }
-  }
-  // What locating did, said on the page once it is done.
-  async function relinked(result: WorkspaceRelinkResult) {
-    setChangeError("");
-    const { copied, notFound } = result.nativeSessions;
-    setMessage(
-      [
-        t("location.located", {
-          name: result.workspace.name,
-          path: result.workspace.localPath,
-        }),
-        copied > 0 ? t("location.chatsResume", { count: copied }) : "",
-        notFound > 0 ? t("location.chatsContinue", { count: notFound }) : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-    try {
-      await props.onChanged();
-    } catch {
-      setChangeError(t("deviceList.refreshFailed"));
-    }
-  }
-  const dialogTrigger = useRef<HTMLElement | null>(null);
+  const actions = useWorkspaceRowActions({
+    activeWorkspaceId: props.activeWorkspaceId,
+    workspaceCount: props.workspaces.length,
+    onAddAgain: props.onAddAgain,
+    onChanged: props.onChanged,
+  });
   const groupRefs = useRef(new Map<string, HTMLElement>());
   const busy = !!props.busyWorkspaceId;
   // A removed device is never a new choice; it stays listed, read-only, only
@@ -180,42 +115,16 @@ export function WorkspaceSelectionPanel(props: Props) {
   }, [focusDeviceId]);
   if (props.compact)
     return (
-      <section className="fdy-location" aria-label={t("location.regionLabel")}>
-        <Button
-          className="fdy-location-trigger fdy-location-entry"
-          variant="ghost"
-          aria-label={t("location.open")}
-          title={t("location.title")}
-          onClick={props.onBrowse}
-        >
-          <span className="fdy-location-entry-rows">
-            <span className="fdy-location-entry-row fdy-location-entry-device">
-              <Monitor size={14} />
-              <span className="fdy-location-trigger-name">
-                {activeDevice?.label ?? t("location.selectDevice")}
-              </span>
-              {activeDevice && activeDevice.status !== "connected" ? (
-                <small className="fdy-location-entry-status">
-                  {isRemovedDevice(activeDevice)
-                    ? t("shared.deviceRemoved")
-                    : t("shared.offline")}
-                </small>
-              ) : null}
-            </span>
-            <span className="fdy-location-entry-row fdy-location-entry-workspace">
-              <FolderOpen size={15} />
-              <span className="fdy-location-trigger-name">
-                {current?.name ?? t("location.selectWorkspace")}
-              </span>
-            </span>
-          </span>
-          <ChevronRight size={13} />
-        </Button>
-      </section>
+      <CompactLocationSwitcher
+        device={activeDevice}
+        workspace={current}
+        onBrowse={props.onBrowse}
+      />
     );
   const needle = query.trim().toLowerCase();
   const matches = (row: WorkspaceProjection) =>
     `${row.name} ${row.localPath}`.toLowerCase().includes(needle);
+  const error = props.error || actions.changeError;
   return (
     <PageSurface variant="devices" className="fdy-location-page">
       {current ? (
@@ -267,304 +176,71 @@ export function WorkspaceSelectionPanel(props: Props) {
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </label>
-      {message ? (
+      {actions.message ? (
         <p className="fdy-workspace-success" role="status">
-          {message}
+          {actions.message}
         </p>
       ) : null}
-      {props.error || changeError ? (
+      {error ? (
         <p className="fdy-location-error" role="alert">
-          {props.error || changeError}
+          {error}
         </p>
       ) : null}
       {groups.map((device) => {
-        const removed = isRemovedDevice(device);
-        const online = device.status === "connected";
-        const addReasonId = `fdy-add-workspace-reason-${device.id}`;
         const rows = props.workspaces.filter(
           (row) => row.deviceId === device.id,
         );
         const visible = rows.filter(matches);
         if (needle && !visible.length) return null;
         return (
-          <section
+          <WorkspaceDeviceGroup
             key={device.id}
-            className="fdy-location-group"
-            aria-label={device.label}
-            data-focused={device.id === focusDeviceId || undefined}
-            ref={(element) => {
+            device={device}
+            workspaceCount={rows.length}
+            focused={device.id === focusDeviceId}
+            busy={busy}
+            groupRef={(element) => {
               if (element) groupRefs.current.set(device.id, element);
               else groupRefs.current.delete(device.id);
             }}
+            onAdd={(trigger) => {
+              actions.clearMessage();
+              setEdit({ edit: { kind: "add" }, device, trigger });
+            }}
+            onOpenDevice={() => props.onOpenDevice(device.id)}
           >
-            <header className="fdy-location-group-heading">
-              <Monitor size={17} />
-              <h2>{device.label}</h2>
-              <small>
-                {removed
-                  ? t("location.removedHistory")
-                  : online
-                    ? t("shared.workspaceCount", { count: rows.length })
-                    : t("location.offlineSummary", {
-                        workspaces: t("shared.workspaceCount", {
-                          count: rows.length,
-                        }),
-                      })}
-              </small>
-              <span className="fdy-location-group-actions">
-                {device.owned && !removed ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy || !online}
-                    aria-describedby={online ? undefined : addReasonId}
-                    onClick={(event) => {
-                      dialogTrigger.current = event.currentTarget;
-                      setMessage("");
-                      setEdit({ edit: { kind: "add" }, device });
-                    }}
-                  >
-                    <Plus size={14} />
-                    {t("location.addWorkspace")}
-                  </Button>
-                ) : null}
-                {!removed ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy}
-                    aria-label={t("location.openDeviceFor", {
-                      device: device.label,
-                    })}
-                    onClick={() => props.onOpenDevice(device.id)}
-                  >
-                    {t("location.openDevice")}
-                    <ArrowRight size={14} />
-                  </Button>
-                ) : null}
-              </span>
-            </header>
-            {device.owned && !removed && !online ? (
-              <p id={addReasonId} className="fdy-location-group-note">
-                {t("deviceList.reconnect")}
-              </p>
-            ) : null}
-            {visible.map((workspace) => {
-              const isCurrent = workspace.id === current?.id;
-              const isBusy = workspace.id === props.busyWorkspaceId;
-              const manageable =
-                device.owned &&
-                !removed &&
-                (!workspace.accessRole || workspace.accessRole === "owner");
-              // The device is connected but no longer serves the folder, or
-              // still has the workspace but its folder is gone.
-              const unavailable = removed
-                ? undefined
-                : workspace.unavailableOnDevice;
-              const folderMissing = unavailable?.reason === "folder_missing";
-              const unserved = !!unavailable && !folderMissing;
-              const unservedNoteId = `fdy-unserved-${workspace.id}`;
-              const addingAgain = addingAgainId === workspace.id;
-              return (
-                <article
-                  key={workspace.id}
-                  className="fdy-location-workspace-row"
-                  data-current={isCurrent}
-                  data-removed-device={removed || undefined}
-                  data-unserved={unserved || undefined}
-                  data-folder-missing={folderMissing || undefined}
-                  onMouseEnter={() => {
-                    if (!removed) props.onPrepare(workspace);
-                  }}
-                  onMouseLeave={props.onPrepareEnd}
-                  onFocus={() => {
-                    if (!removed) props.onPrepare(workspace);
-                  }}
-                  onBlur={props.onPrepareEnd}
-                >
-                  <Button
-                    variant="bare"
-                    className="fdy-location-workspace-details"
-                    disabled={busy}
-                    aria-current={isCurrent ? "location" : undefined}
-                    aria-label={t("shared.viewDetails", {
-                      name: workspace.name,
-                    })}
-                    aria-describedby={unavailable ? unservedNoteId : undefined}
-                    onClick={() => setDetails({ workspace, device })}
-                    ref={(node) => {
-                      if (node) detailsButtons.current.set(workspace.id, node);
-                      else detailsButtons.current.delete(workspace.id);
-                    }}
-                  >
-                    <FolderOpen size={19} />
-                    <span className="fdy-location-copy">
-                      <strong>{workspace.name}</strong>
-                      <small>{workspace.localPath}</small>
-                      {unavailable ? (
-                        <small
-                          id={unservedNoteId}
-                          className="fdy-location-unserved-note"
-                        >
-                          {t(
-                            folderMissing
-                              ? "location.folderMissingNote"
-                              : "location.notServedNote",
-                            { device: device.label },
-                          )}
-                        </small>
-                      ) : null}
-                    </span>
-                    <span className="fdy-workspace-details-label">
-                      {t("shared.details")}
-                      <ChevronRight size={14} />
-                    </span>
-                  </Button>
-                  <div className="fdy-location-workspace-actions">
-                    {workspace.accessRole &&
-                    workspace.accessRole !== "owner" ? (
-                      <Badge tone="neutral">
-                        {t("location.sharedRole", {
-                          role: workspaceRoleLabel(workspace.accessRole),
-                        })}
-                      </Badge>
-                    ) : null}
-                    {unserved && manageable ? (
-                      <span className="fdy-location-add-again">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy || !!addingAgainId || !online}
-                          aria-busy={addingAgain}
-                          aria-label={t("location.addAgainTo", {
-                            name: workspace.name,
-                            device: device.label,
-                          })}
-                          // Offline: the group's note above says why.
-                          aria-describedby={online ? undefined : addReasonId}
-                          onClick={() => void addAgain(workspace, device)}
-                        >
-                          <RotateCcw size={14} />
-                          {addingAgain
-                            ? t("location.addingAgain")
-                            : t("location.addAgain")}
-                        </Button>
-                      </span>
-                    ) : null}
-                    {unavailable && manageable ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy || !!addingAgainId || !online}
-                        aria-label={t("location.locateFor", {
-                          name: workspace.name,
-                          device: device.label,
-                        })}
-                        aria-describedby={online ? undefined : addReasonId}
-                        onClick={(event) => {
-                          setMessage("");
-                          setLocate({
-                            workspace,
-                            device,
-                            trigger: event.currentTarget,
-                          });
-                        }}
-                      >
-                        <FolderSearch size={14} />
-                        {t("location.locate")}
-                      </Button>
-                    ) : null}
-                    {isCurrent ? (
-                      <>
-                        <Badge tone="online">
-                          <Check size={13} />
-                          {t("location.currentBadge")}
-                        </Badge>
-                        {removed ? (
-                          <Badge tone="neutral">
-                            {t("shared.deviceRemoved")}
-                          </Badge>
-                        ) : null}
-                      </>
-                    ) : removed ? (
-                      <Badge tone="neutral">{t("shared.deviceRemoved")}</Badge>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        aria-busy={isBusy}
-                        aria-label={t("location.switchTo", {
-                          name: workspace.name,
-                        })}
-                        onClick={() =>
-                          void props.onSelect(workspace, {
-                            stayOnLocation: true,
-                          })
-                        }
-                      >
-                        {isBusy ? t("shared.switching") : t("location.switch")}
-                        {!isBusy ? <ArrowRight size={14} /> : null}
-                      </Button>
-                    )}
-                    {manageable ? (
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={busy}
-                            aria-label={t("deviceList.actionsFor", {
-                              name: workspace.name,
-                            })}
-                          >
-                            <MoreHorizontal size={17} />
-                          </Button>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            className="fdy-workspace-actions-menu"
-                            align="end"
-                            sideOffset={6}
-                          >
-                            <DropdownMenu.Item
-                              className="fdy-workspace-menu-item"
-                              onSelect={() => {
-                                setMessage("");
-                                setEdit({
-                                  edit: { kind: "rename", workspace },
-                                  device,
-                                });
-                              }}
-                            >
-                              <Pencil size={15} />
-                              {t("deviceList.rename")}
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                              className="fdy-workspace-menu-item"
-                              onSelect={() => {
-                                setMessage("");
-                                setEdit({
-                                  edit: { kind: "remove", workspace },
-                                  device,
-                                });
-                              }}
-                            >
-                              <Trash2 size={15} />
-                              {t("deviceList.remove")}
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
-                    ) : null}
-                  </div>
-                </article>
-              );
-            })}
-            {!rows.length ? (
-              <p className="fdy-location-empty">{t("location.noWorkspaces")}</p>
-            ) : null}
-          </section>
+            {visible.map((workspace) => (
+              <WorkspaceRow
+                key={workspace.id}
+                workspace={workspace}
+                device={device}
+                current={workspace.id === current?.id}
+                busy={busy}
+                switching={workspace.id === props.busyWorkspaceId}
+                addingAgainId={actions.addingAgainId}
+                detailsRef={(node) => {
+                  if (node)
+                    actions.detailsButtons.current.set(workspace.id, node);
+                  else actions.detailsButtons.current.delete(workspace.id);
+                }}
+                onDetails={() => setDetails({ workspace, device })}
+                onAddAgain={() => void actions.addAgain(workspace, device)}
+                onLocate={(trigger) => {
+                  actions.clearMessage();
+                  setLocate({ workspace, device, trigger });
+                }}
+                onSwitch={() =>
+                  void props.onSelect(workspace, { stayOnLocation: true })
+                }
+                onEdit={(next) => {
+                  actions.clearMessage();
+                  setEdit({ edit: next, device, trigger: null });
+                }}
+                onPrepare={() => props.onPrepare(workspace)}
+                onPrepareEnd={props.onPrepareEnd}
+              />
+            ))}
+          </WorkspaceDeviceGroup>
         );
       })}
       {!groups.length ? (
@@ -582,41 +258,19 @@ export function WorkspaceSelectionPanel(props: Props) {
           device={locate.device}
           returnFocusTo={locate.trigger}
           onClose={() => setLocate(undefined)}
-          onDone={relinked}
+          onDone={actions.relinked}
         />
       ) : null}
       {edit ? (
         <WorkspaceEditor
-          returnFocusTo={dialogTrigger.current}
+          returnFocusTo={edit.trigger}
           edit={edit.edit}
           device={edit.device}
           activeWorkspaceId={props.activeWorkspaceId}
           onClose={() => setEdit(undefined)}
-          onSaved={async (kind, workspace) => {
-            setChangeError("");
-            setMessage(
-              t(
-                kind === "add"
-                  ? // With no workspace before, the first one becomes current.
-                    props.activeWorkspaceId || props.workspaces.length
-                    ? "deviceList.added"
-                    : "deviceList.addedFirst"
-                  : kind === "rename"
-                    ? "deviceList.renamed"
-                    : "deviceList.removed",
-                { name: workspace.name },
-              ),
-            );
-            try {
-              await props.onChanged(
-                edit.edit.kind === "remove"
-                  ? { removedWorkspaceId: edit.edit.workspace.id }
-                  : undefined,
-              );
-            } catch {
-              setChangeError(t("deviceList.refreshFailed"));
-            }
-          }}
+          onSaved={(kind, workspace) =>
+            actions.saved(edit.edit, kind, workspace)
+          }
         />
       ) : null}
       {details ? (

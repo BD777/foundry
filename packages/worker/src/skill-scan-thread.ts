@@ -11,6 +11,7 @@ import {
 } from "node:worker_threads";
 import type { DeviceSkill } from "@bd777/foundry-protocol";
 import { scanSkillRoots, toDeviceSkill } from "./skill-scanner.js";
+import { errorMessage } from "./utils.js";
 
 export function scanDeviceSkills(roots: string[]): Promise<DeviceSkill[]> {
   return new Promise((resolve, reject) => {
@@ -41,7 +42,7 @@ if (!isMainThread && parentPort && (workerData as { roots?: unknown })?.roots) {
     });
   } catch (error) {
     parentPort.postMessage({
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
   }
 }

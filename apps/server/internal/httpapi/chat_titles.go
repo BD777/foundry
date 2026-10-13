@@ -43,9 +43,9 @@ func (s *Server) handleRenameChat(w http.ResponseWriter, r *http.Request) {
 	actor := actorFromContext(r.Context())
 	if actor.Agent() {
 		input.WorkspaceID = actor.Identity.WorkspaceID
-		target, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue("id"))
-		if err != nil {
-			writeResult(w, nil, err)
+		target := guardedSession(r)
+		if target.ID == "" {
+			writeResult(w, nil, store.ErrNotFound)
 			return
 		}
 		if !s.canControlSession(r.Context(), actor, target) {

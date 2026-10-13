@@ -9,6 +9,7 @@ import type {
   IssueEnvironment,
   WorkspaceAcceptance,
 } from "./execution-types.js";
+import { errorMessage } from "./utils.js";
 
 function acceptancePath(environment: IssueEnvironment, id: string): string {
   return resolve(
@@ -192,7 +193,7 @@ export async function prepareAcceptance(
       return acceptance;
     } catch (error) {
       acceptance.status = "conflict";
-      acceptance.error = error instanceof Error ? error.message : String(error);
+      acceptance.error = errorMessage(error);
       writeJSON(path, acceptance);
       return acceptance;
     }

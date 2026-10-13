@@ -13,7 +13,7 @@ import { Alert } from "../../components/ui/alert";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
-import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
 import { isModelConnection } from "../../lib/model-connections";
 import { DeviceAccountDefaults } from "./device-account-defaults";
 import { AccountInspection } from "./account-inspection";
@@ -87,8 +87,7 @@ export function DeviceAccounts({
         const status = local?.status ?? nativeHealth?.status;
         const signedIn = !!local && status === "healthy";
         const unavailable = status === "unavailable";
-        // i18n-ignore: runtime product names
-        const name = runtime === "claude" ? "Claude Code" : "Codex";
+        const name = runtimeMeta(runtime).productName;
         const cli = nativeHealth?.cli;
         const missing = cli?.installed === false;
         const online = device.status === "connected";

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -141,7 +142,7 @@ func TestDeleteDeviceDropsConnectedDaemon(t *testing.T) {
 		}
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
-			deleteDone <- &statusError{response.StatusCode}
+			deleteDone <- errors.New(http.StatusText(response.StatusCode))
 		}
 		deleteDone <- nil
 	}()
@@ -162,10 +163,6 @@ func TestDeleteDeviceDropsConnectedDaemon(t *testing.T) {
 		t.Fatalf("delete device: %v", err)
 	}
 }
-
-type statusError struct{ status int }
-
-func (e *statusError) Error() string { return http.StatusText(e.status) }
 
 // TestRemovalRegistrationMapRace is D2: registration commits the store row
 // before inserting itself into hub.connections, while removal commits the

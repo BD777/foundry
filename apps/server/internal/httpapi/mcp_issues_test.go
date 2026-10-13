@@ -21,7 +21,6 @@ func TestIssueToolsReadIssuesWithinReach(t *testing.T) {
 	db, chat := lineageFixture(t)
 	ctx := context.Background()
 	handler := NewServer(db).Routes()
-	evidence := db.(store.EvidenceStore)
 	mint := func(sessionID string) string {
 		t.Helper()
 		token, err := db.MintAgentSessionToken(ctx, sessionID)
@@ -38,8 +37,8 @@ func TestIssueToolsReadIssuesWithinReach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testfixture.ConfirmContract(t, evidence, executed.ID)
-	_, execution, err := db.(store.IssueExecutionStore).ClaimIssueExecution(ctx, "dev_lineage", "ws_lineage")
+	testfixture.ConfirmContract(t, db, executed.ID)
+	_, execution, err := db.ClaimIssueExecution(ctx, "dev_lineage", "ws_lineage")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,12 +5,12 @@ import {
   string,
   contentText,
   json,
-  type RecordValue,
-} from "./values.js";
+  type JSONRecord,
+} from "../json-values.js";
 
 /** Shared by native chat imports and subagent transcript reads. */
 export function claudeTranscriptRecord(
-  envelope: RecordValue,
+  envelope: JSONRecord,
   fallbackId: string,
 ): TranscriptMessage[] {
   const message = record(envelope.message);

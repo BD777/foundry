@@ -1,11 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  fixtureDevice,
-  fixtureWorkspace,
   type AgentSession,
   type FoundryDataProjection,
 } from "@bd777/foundry-protocol";
+import { fixtureDevice, fixtureWorkspace } from "../src/app/fixtures";
 import "../src/styles.css";
 
 // Full App / HTTP / SSE fixture. Only the transport is replaced; sending never

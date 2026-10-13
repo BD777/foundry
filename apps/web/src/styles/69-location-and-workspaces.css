@@ -93,31 +93,6 @@
   color: var(--fdy-ink-muted);
   font-size: 11px;
 }
-.fdy-location-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: var(--fdy-overlay);
-  backdrop-filter: blur(4px);
-}
-.fdy-workspace-dialog {
-  position: fixed;
-  z-index: 101;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100dvh - 40px);
-  min-height: 0;
-  box-sizing: border-box;
-  overflow: hidden;
-  border: 1px solid var(--fdy-brass-line);
-  border-radius: 18px;
-  background: var(--fdy-paper-main);
-  box-shadow: var(--fdy-shadow-floating);
-  color: var(--fdy-ink-strong);
-}
 .fdy-location-popover {
   z-index: 101;
   display: flex;
@@ -148,21 +123,6 @@
   height: 24px;
   border-radius: 5px;
   color: var(--fdy-ink-muted);
-}
-.fdy-location-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 24px;
-  flex: none;
-  border-bottom: 1px solid var(--fdy-line);
-}
-.fdy-location-title {
-  margin: 0;
-  font-size: 19px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 .fdy-location-description {
   margin: 6px 0 0;
@@ -526,48 +486,6 @@
 .fdy-workspace-row-actions {
   flex-wrap: wrap;
 }
-.fdy-workspace-actions-menu {
-  z-index: 110;
-  min-width: 210px;
-  max-width: calc(100vw - 24px);
-  padding: 6px;
-  border: 1px solid var(--fdy-brass-line);
-  border-radius: 10px;
-  background: var(--fdy-paper-main);
-  box-shadow: var(--fdy-shadow-floating);
-  color: var(--fdy-ink-strong);
-}
-.fdy-workspace-menu-item {
-  display: flex;
-  gap: 9px;
-  align-items: center;
-  padding: 12px;
-  font-size: 13px;
-  border-radius: 6px;
-  cursor: pointer;
-  outline: none;
-}
-.fdy-workspace-menu-item[data-highlighted] {
-  background: var(--fdy-brass-soft);
-  color: var(--fdy-brass-dark);
-}
-.fdy-workspace-menu-item[data-disabled] {
-  color: var(--fdy-ink-faint);
-  cursor: default;
-}
-.fdy-workspace-dialog {
-  width: min(570px, calc(100vw - 32px));
-}
-.fdy-workspace-dialog.fdy-workspace-dialog-wide {
-  width: min(840px, calc(100vw - 32px));
-}
-.fdy-workspace-dialog-body {
-  padding: 24px;
-  overflow-y: auto;
-  min-height: 0;
-  display: grid;
-  gap: 16px;
-}
 .fdy-workspace-form,
 .fdy-workspace-field {
   display: grid;
@@ -622,9 +540,6 @@
   line-height: 1.6;
 }
 @media (max-width: 700px) {
-  .fdy-location-header {
-    padding: 18px;
-  }
   .fdy-device-workspace-row {
     flex-direction: column;
     align-items: stretch;
@@ -633,9 +548,6 @@
   .fdy-workspace-row-actions {
     justify-content: space-between;
     padding: 0 10px 6px;
-  }
-  .fdy-workspace-dialog-body {
-    padding: 18px;
   }
   .fdy-workspace-details {
     grid-template-columns: minmax(0, 1fr);

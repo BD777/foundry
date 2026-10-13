@@ -10,8 +10,8 @@ import {
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/field";
 import { Tooltip } from "../ui/tooltip";
-import { AttachmentList, type ParsedImageTag } from "./chat-message-content";
-import type { QueuedDraft } from "./conversation-types";
+import { AttachmentList } from "./attachment-list";
+import type { ParsedImageTag, QueuedDraft } from "./conversation-types";
 import type { useConversationInput } from "./use-conversation-input";
 
 export function ConversationQueue({

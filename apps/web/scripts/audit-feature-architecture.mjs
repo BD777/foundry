@@ -4,6 +4,10 @@ import { dirname, relative, resolve, sep } from "node:path";
 const sourceRoot = resolve("src");
 const featuresRoot = resolve(sourceRoot, "features");
 const failures = [];
+const sharedLayers = [`components${sep}`, `lib${sep}`];
+// Known debt (ARCHITECTURE.md, "Shared layer"): feature navigation reaches the
+// app's route contract through this one wrapper.
+const sharedLayerExceptions = new Set([`lib${sep}in-app-navigation.ts`]);
 
 function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -63,13 +67,14 @@ for (const path of sourceFiles(sourceRoot)) {
         `${relativePath} imports the app layer; feature dependencies must point inward`,
       );
     }
+    const targetLayer = relative(sourceRoot, resolvedTarget).split(sep)[0];
     if (
-      relativePath.startsWith(`components${sep}ui${sep}`) &&
-      (targetFeature ||
-        relative(sourceRoot, resolvedTarget).split(sep)[0] === "app")
+      sharedLayers.some((layer) => relativePath.startsWith(layer)) &&
+      !sharedLayerExceptions.has(relativePath) &&
+      (targetFeature || targetLayer === "app" || targetLayer === "App")
     ) {
       failures.push(
-        `${relativePath} imports an app/feature module; shared UI must stay dependency-free`,
+        `${relativePath} imports an app/feature module; shared code (components/, lib/) must not depend on them`,
       );
     }
   }

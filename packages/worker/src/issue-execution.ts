@@ -8,7 +8,10 @@ import type {
   AcceptanceArtifact,
   SessionSkillRef,
 } from "@bd777/foundry-protocol";
-import { validateEvidenceModel } from "@bd777/foundry-protocol";
+import {
+  daemonMessageTypes,
+  validateEvidenceModel,
+} from "@bd777/foundry-protocol";
 import { ExecutionStore } from "./execution-storage.js";
 import {
   prepareIssueEnvironment,
@@ -18,7 +21,7 @@ import { runIssueExecutor } from "./issue-executor.js";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import { readWorkspace } from "./workspaces.js";
-import type { RunTransport } from "./transport.js";
+import type { ReliableSessionTransport } from "./transport.js";
 import { writeJSON } from "./storage.js";
 import type { IssueEnvironment } from "./execution-types.js";
 import { refreshCandidate } from "./candidate-refresh.js";
@@ -26,6 +29,77 @@ import {
   beginIssueExecution,
   finishIssueExecution,
 } from "./execution-process.js";
+import { errorMessage } from "./utils.js";
+
+export type IssueCompletion = {
+  canceled?: boolean;
+  response?: string;
+  artifact: AcceptanceArtifact;
+  checks: string[];
+  runId: string;
+  environmentId?: string;
+  environmentRevision?: number;
+  executionCwd?: string;
+  error?: string;
+};
+
+export interface RunTransport {
+  appendRunEvent(runId: string, event: RunEvent): Promise<void>;
+  completeIssue(issueId: string, input: IssueCompletion): Promise<void>;
+  startRun(issueId: string, run: Run): Promise<void>;
+}
+
+/**
+ * An Issue execution reports through its session (role issue_execution): the
+ * run starts and ends with the session, run events are session events, and
+ * the Issue result travels with session_completed.
+ */
+export class SessionRunTransport implements RunTransport {
+  constructor(
+    private readonly transport: ReliableSessionTransport,
+    private readonly sessionId: string,
+    private readonly inputId?: string,
+  ) {}
+  async startRun(): Promise<void> {
+    this.transport.send(daemonMessageTypes.sessionStarted, {
+      sessionId: this.sessionId,
+      inputId: this.inputId,
+    });
+  }
+  async appendRunEvent(_runId: string, event: RunEvent): Promise<void> {
+    this.transport.send(daemonMessageTypes.sessionEvent, {
+      event: {
+        id: event.id,
+        sessionId: this.sessionId,
+        at: event.at,
+        label: event.label,
+        detail: event.detail,
+        level: event.level,
+      },
+    });
+  }
+  async completeIssue(_issueId: string, input: IssueCompletion): Promise<void> {
+    this.transport.send(
+      daemonMessageTypes.sessionCompleted,
+      issueSessionCompletion(this.sessionId, this.inputId, input),
+    );
+  }
+}
+
+/** The session_completed message that hands an Issue result to the server. */
+export function issueSessionCompletion(
+  sessionId: string,
+  inputId: string | undefined,
+  completion: IssueCompletion,
+): Record<string, unknown> {
+  return {
+    sessionId,
+    inputId,
+    response: completion.response,
+    error: completion.error,
+    issueResult: completion,
+  };
+}
 
 /**
  * Implement a confirmed Issue in its candidate workspace. `runId` names this
@@ -175,9 +249,7 @@ export async function executeIssue(
       run.status = control.signal.aborted ? "canceled" : "failed";
       run.error = control.signal.aborted
         ? "Issue execution canceled; candidate files are retained"
-        : error instanceof Error
-          ? error.message
-          : String(error);
+        : errorMessage(error);
       if (environment) {
         environment = store.environment(workspace.id, issue.id) ?? environment;
         environment.status = "failed";

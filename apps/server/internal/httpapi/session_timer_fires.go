@@ -71,7 +71,7 @@ func (s *Server) handleDaemonTimerFire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inputID := timerFireInputID(session.ID, fire.TimerID, dueAt)
-	_, status, err := s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{
+	_, err = s.sendSessionMessage(ctx, session.ID, store.SendAgentSessionInput{
 		Prompt: prompt, RequireIdle: true, InputID: inputID,
 		TimerFire: &store.AgentSessionTimerFire{
 			ID: fire.TimerID, Origin: "scheduled", Prompt: prompt, StartedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -89,7 +89,7 @@ func (s *Server) handleDaemonTimerFire(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, ErrLocalDaemonNotConnected):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
-	case status == http.StatusConflict:
+	case errorStatus(err) == http.StatusConflict:
 		// Refused for good (its workspace is not served here, say).
 		writeJSON(w, http.StatusConflict, daemonTimerFireRefusal{Error: err.Error(), Code: "session_refused"})
 	default:

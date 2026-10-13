@@ -1,10 +1,3 @@
-import {
-  FolderOpen,
-  GitBranch,
-  ShieldCheck,
-  Terminal,
-  type LucideIcon,
-} from "lucide-react";
 import type { AssetProjection } from "@bd777/foundry-protocol";
 import type { BadgeProps } from "../components/ui/badge";
 import { i18n } from "../i18n";
@@ -62,17 +55,4 @@ export function assetDetail(asset: AssetProjection): string {
     if (detail.includes(".foundry/assets.yaml")) return i18n.t(key);
   }
   return detail;
-}
-
-export function assetIcon(asset: AssetProjection): LucideIcon {
-  if (asset.kind === "worktree_pool") {
-    return GitBranch;
-  }
-  if (asset.kind === "preview_ports") {
-    return Terminal;
-  }
-  if (asset.kind === "provider_auth") {
-    return ShieldCheck;
-  }
-  return FolderOpen;
 }

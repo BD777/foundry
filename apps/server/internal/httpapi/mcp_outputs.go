@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/textdiff"
@@ -26,35 +25,55 @@ import (
 
 const diffContextLines = 3
 
-func (s *Server) sessionOutputsForMCP(ctx context.Context, actor Actor, scope string, args map[string]json.RawMessage) (string, error) {
-	id := mcpSessionID(args, "sessionId")
-	target, err := s.resolveInspectTarget(ctx, actor, id, true)
+// outputsSession is the Foundry session an outputs scope reads.
+func (s *Server) outputsSession(call mcpCall) (store.AgentSession, error) {
+	id := mcpSessionID(call.args, "sessionId")
+	target, err := s.resolveInspectTarget(call.r.Context(), call.actor, id, true)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if target.session == nil {
+		return store.AgentSession{}, &statusError{http.StatusBadRequest, errors.New(id + " is a native chat: Foundry records no files or background work of its own for it; read it with scope=events or transcript")}
+	}
+	return *target.session, nil
+}
+
+// readChangesForMCP lists the session's files, or with path one file's diff.
+func (s *Server) readChangesForMCP(call mcpCall) (string, error) {
+	session, err := s.outputsSession(call)
 	if err != nil {
 		return "", err
 	}
-	if target.session == nil {
-		return "", &mcpToolError{http.StatusBadRequest, id + " is a native chat: Foundry records no files or background work of its own for it; read it with scope=events or transcript"}
+	path := mcpArgString(call.args, "path")
+	if path == "" {
+		return sessionFileList(session), nil
 	}
-	session := *target.session
-	path := mcpArgString(args, "path")
-	maxBytes := mcpArgNumber(args, "maxBytes", inspectDefaultBytes)
-	switch scope {
-	case "changes":
-		if path == "" {
-			return sessionFileList(session), nil
-		}
-		return s.sessionFileDiffForMCP(ctx, actor, session, path, mcpArgString(args, "inputId"), maxBytes)
-	case "file":
-		if path == "" {
-			return "", &mcpToolError{http.StatusBadRequest, "scope=file needs path: one of the files scope=changes lists"}
-		}
-		return s.sessionFileForMCP(ctx, actor, session, path, maxBytes)
-	default:
-		if taskID := mcpArgString(args, "taskId"); taskID != "" {
-			return s.backgroundOutputForMCP(ctx, actor, session, taskID, maxBytes)
-		}
-		return sessionBackgroundList(session), nil
+	return s.sessionFileDiffForMCP(call.r.Context(), call.actor, session, path, mcpArgString(call.args, "inputId"), mcpArgNumber(call.args, "maxBytes", inspectDefaultBytes))
+}
+
+func (s *Server) readFileForMCP(call mcpCall) (string, error) {
+	session, err := s.outputsSession(call)
+	if err != nil {
+		return "", err
 	}
+	path := mcpArgString(call.args, "path")
+	if path == "" {
+		return "", &statusError{http.StatusBadRequest, errors.New("scope=file needs path: one of the files scope=changes lists")}
+	}
+	return s.sessionFileForMCP(call.r.Context(), call.actor, session, path, mcpArgNumber(call.args, "maxBytes", inspectDefaultBytes))
+}
+
+// readBackgroundForMCP lists the session's background tasks, or with taskId
+// one task's output.
+func (s *Server) readBackgroundForMCP(call mcpCall) (string, error) {
+	session, err := s.outputsSession(call)
+	if err != nil {
+		return "", err
+	}
+	if taskID := mcpArgString(call.args, "taskId"); taskID != "" {
+		return s.backgroundOutputForMCP(call.r.Context(), call.actor, session, taskID, mcpArgNumber(call.args, "maxBytes", inspectDefaultBytes))
+	}
+	return sessionBackgroundList(session), nil
 }
 
 // mcpSessionFile is one file of a session, merged over its turns as the
@@ -224,29 +243,13 @@ func (s *Server) readableSessionFile(ctx context.Context, actor Actor, session s
 	if scope, err := s.contextScope(ctx, actor); err == nil && scope.can(session.WorkspaceID, store.WorkspaceRoleMember) {
 		return nil
 	}
-	return &mcpToolError{http.StatusForbidden, "this file is outside the session's workspace and only its answer named it: reading it needs Member in the workspace"}
+	return &statusError{http.StatusForbidden, errors.New("this file is outside the session's workspace and only its answer named it: reading it needs Member in the workspace")}
 }
 
 // deviceReadError says why the session's device did not hand over a file.
 func (s *Server) deviceReadError(ctx context.Context, session store.AgentSession, err error) error {
-	var fileRefusal sessionFileRefusal
-	var taskRefusal backgroundTaskRefusal
-	device := "the session's device"
-	if workspace, lookup := s.store.GetWorkspace(context.WithoutCancel(ctx), session.WorkspaceID); lookup == nil && workspace.DeviceLabel != "" {
-		device = workspace.DeviceLabel
-	}
-	switch {
-	case errors.As(err, &fileRefusal):
-		return &mcpToolError{http.StatusNotFound, fileRefusal.reason}
-	case errors.As(err, &taskRefusal):
-		return &mcpToolError{http.StatusNotFound, taskRefusal.reason}
-	case errors.Is(err, store.ErrNotFound), errors.Is(err, ErrLocalDaemonNotConnected):
-		return &mcpToolError{http.StatusConflict, device + " is offline; its files can be read once it reconnects (list_resources shows which devices are online)"}
-	case errors.Is(err, context.DeadlineExceeded):
-		return &mcpToolError{http.StatusGatewayTimeout, fmt.Sprintf("%s did not answer within %d seconds; try again", device, int(deviceFileRequestTimeout/time.Second))}
-	default:
-		return err
-	}
+	workspace, _ := s.store.GetWorkspace(context.WithoutCancel(ctx), session.WorkspaceID)
+	return deviceRequestError(workspace, err)
 }
 
 // mcpBackgroundTask is one command a session left running, from its
@@ -287,14 +290,14 @@ func sessionBackgroundList(session store.AgentSession) string {
 
 func (s *Server) backgroundOutputForMCP(ctx context.Context, actor Actor, session store.AgentSession, taskID string, maxBytes int) (string, error) {
 	if !backgroundTaskID.MatchString(taskID) {
-		return "", &mcpToolError{http.StatusBadRequest, "taskId is not a background task id: scope=background lists them"}
+		return "", &statusError{http.StatusBadRequest, errors.New("taskId is not a background task id: scope=background lists them")}
 	}
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
 		return "", err
 	}
 	if !scope.can(session.WorkspaceID, store.WorkspaceRoleMember) {
-		return "", &mcpToolError{http.StatusForbidden, "reading a background task's output needs Member in the session's workspace: its commands and output can carry anything the session worked on"}
+		return "", &statusError{http.StatusForbidden, errors.New("reading a background task's output needs Member in the session's workspace: its commands and output can carry anything the session worked on")}
 	}
 	ctx, cancel := context.WithTimeout(ctx, deviceFileRequestTimeout)
 	defer cancel()

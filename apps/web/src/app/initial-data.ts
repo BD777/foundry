@@ -1,3 +1,5 @@
+import { emptyWorkspace } from "../api";
+import type { FoundryData } from "../api-types";
 import {
   fixtureAssets,
   fixtureChats,
@@ -5,9 +7,7 @@ import {
   fixtureIssues,
   fixtureProviderHealth,
   fixtureWorkspace,
-} from "@bd777/foundry-protocol";
-import { emptyWorkspace } from "../api";
-import type { FoundryData } from "../api-types";
+} from "./fixtures";
 
 /** What the app shows before its first read. */
 export const emptyFoundryData: FoundryData = {

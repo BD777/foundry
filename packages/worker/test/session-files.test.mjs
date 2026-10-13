@@ -34,7 +34,7 @@ import {
   privateDevicePath,
   resolveFileReferences,
 } from "../dist/session-file-references.js";
-import { safeWorkspaceFileRead } from "../dist/session-helpers.js";
+import { safeWorkspaceFileRead } from "../dist/workspace-files.js";
 import { git, commitIdentity } from "../dist/execution-git.js";
 
 const sessionId = "sess_files";

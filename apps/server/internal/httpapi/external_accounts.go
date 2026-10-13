@@ -29,18 +29,9 @@ import (
 //     reaches Feishu through the server's gateway
 //     (external_accounts_gateway.go), which holds the real ones.
 
-// newExternalAccountService wires the service over the store when it keeps
-// external accounts; nil otherwise (the routes then answer 503).
-func newExternalAccountService(st store.Store, secrets secretKeeper, sw *integrations.Switch) *externalaccounts.Service {
-	accounts, ok := st.(store.ExternalAccountStore)
-	if !ok {
-		return nil
-	}
-	var keeper externalaccounts.SecretKeeper
-	if secrets != nil {
-		keeper = secrets
-	}
-	service := externalaccounts.NewService(accounts, keeper, nil)
+// newExternalAccountService wires the service over the backend.
+func newExternalAccountService(st Backend, sw *integrations.Switch) *externalaccounts.Service {
+	service := externalaccounts.NewService(st, st, nil)
 	service.Integrations = sw
 	return service
 }
@@ -48,20 +39,7 @@ func newExternalAccountService(st store.Store, secrets secretKeeper, sw *integra
 // RunExternalAccountKeepAlive refreshes, until ctx ends, the accounts that
 // asked to be kept alive before their refresh tokens expire.
 func (s *Server) RunExternalAccountKeepAlive(ctx context.Context) {
-	if s.externalAccounts == nil {
-		return
-	}
 	s.externalAccounts.RunKeepAlive(ctx)
-}
-
-var errExternalAccountsUnavailable = errors.New("external accounts are not available on this server")
-
-func (s *Server) externalAccountService(w http.ResponseWriter) (*externalaccounts.Service, bool) {
-	if s.externalAccounts == nil {
-		writeError(w, http.StatusServiceUnavailable, errExternalAccountsUnavailable.Error())
-		return nil, false
-	}
-	return s.externalAccounts, true
 }
 
 // personActor is the signed-in person behind a request; devices and agents
@@ -84,13 +62,8 @@ func externalAccountOwner(name string) accessRule {
 }
 
 func (s *Server) requireExternalAccountOwner(w http.ResponseWriter, r *http.Request, accountID string) (store.ExternalAccount, bool) {
-	accounts, ok := s.store.(store.ExternalAccountStore)
-	if !ok || s.externalAccounts == nil {
-		writeError(w, http.StatusServiceUnavailable, errExternalAccountsUnavailable.Error())
-		return store.ExternalAccount{}, false
-	}
 	actor := actorFromContext(r.Context())
-	account, err := accounts.GetExternalAccount(r.Context(), accountID)
+	account, err := s.store.GetExternalAccount(r.Context(), accountID)
 	if err != nil || actor.Kind != ActorAccount || actor.AccountID() == "" || account.OwnerUserID != actor.AccountID() {
 		writeError(w, http.StatusNotFound, "external account not found")
 		return store.ExternalAccount{}, false
@@ -121,36 +94,28 @@ func writeExternalAccountError(w http.ResponseWriter, err error) {
 // handleExternalAccountsView is the External accounts page: the providers,
 // the apps the person may connect through, and their own accounts.
 func (s *Server) handleExternalAccountsView(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
 	}
-	apps, err := service.ListApps(r.Context(), actor.AccountID())
+	apps, err := s.externalAccounts.ListApps(r.Context(), actor.AccountID())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	accounts, err := service.Accounts(r.Context(), actor.AccountID())
+	accounts, err := s.externalAccounts.Accounts(r.Context(), actor.AccountID())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, store.ExternalAccountsView{
-		Providers: service.Providers(), Apps: apps, Accounts: accounts, SecretsConfigured: service.SecretsConfigured(),
+		Providers: s.externalAccounts.Providers(), Apps: apps, Accounts: accounts, SecretsConfigured: s.externalAccounts.SecretsConfigured(),
 	})
 }
 
 // handleCreateExternalApp stores a pasted provider app. An instance-wide
 // app (every account may connect through it) needs the Admin role.
 func (s *Server) handleCreateExternalApp(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
@@ -170,7 +135,7 @@ func (s *Server) handleCreateExternalApp(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	app, err := service.CreateApp(r.Context(), actor.AccountID(), input)
+	app, err := s.externalAccounts.CreateApp(r.Context(), actor.AccountID(), input)
 	if err != nil {
 		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
 			writeExternalAccountError(w, err)
@@ -185,16 +150,11 @@ func (s *Server) handleCreateExternalApp(w http.ResponseWriter, r *http.Request)
 // handleDeleteExternalApp removes an app its owner (or an admin, for an
 // instance app) no longer wants; apps with accounts stay.
 func (s *Server) handleDeleteExternalApp(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
 	}
-	accounts := s.store.(store.ExternalAccountStore)
-	app, err := accounts.GetExternalProviderApp(r.Context(), strings.TrimSpace(r.PathValue("id")))
+	app, err := s.store.GetExternalProviderApp(r.Context(), strings.TrimSpace(r.PathValue("id")))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
@@ -217,7 +177,7 @@ func (s *Server) handleDeleteExternalApp(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusConflict, "workspace Feishu bots run on this app; remove them from those workspaces first")
 		return
 	}
-	if err := service.DeleteApp(r.Context(), app); err != nil {
+	if err := s.externalAccounts.DeleteApp(r.Context(), app); err != nil {
 		writeExternalAccountError(w, err)
 		return
 	}
@@ -228,10 +188,6 @@ func (s *Server) handleDeleteExternalApp(w http.ResponseWriter, r *http.Request)
 // the apps the person may use. The answer is what to show: the link, the
 // code, the expiry; the person polls the login route for the outcome.
 func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
@@ -240,13 +196,12 @@ func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Req
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	accounts := s.store.(store.ExternalAccountStore)
-	app, err := accounts.GetExternalProviderApp(r.Context(), strings.TrimSpace(input.AppID))
+	app, err := s.store.GetExternalProviderApp(r.Context(), strings.TrimSpace(input.AppID))
 	if err != nil || (app.OwnerUserID != actor.AccountID() && app.Visibility != store.ExternalAppInstance) {
 		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
 	}
-	login, err := service.BeginLogin(r.Context(), actor.AccountID(), app, input)
+	login, err := s.externalAccounts.BeginLogin(r.Context(), actor.AccountID(), app, input)
 	if err != nil {
 		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) || errors.Is(err, store.ErrExternalAccountNotFound) {
 			writeExternalAccountError(w, err)
@@ -262,10 +217,6 @@ func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Req
 // create an app for the person, then authorizes it; nothing is pasted.
 // The person polls the login route through both phases.
 func (s *Server) handleSetupExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
@@ -275,14 +226,14 @@ func (s *Server) handleSetupExternalAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	registers := false
-	for _, provider := range service.Providers() {
+	for _, provider := range s.externalAccounts.Providers() {
 		registers = registers || (provider.Kind == strings.TrimSpace(input.Provider) && provider.RegistersApps)
 	}
 	if !registers {
 		writeError(w, http.StatusBadRequest, "that provider cannot create an app during sign-in")
 		return
 	}
-	login, err := service.BeginSetup(r.Context(), actor.AccountID(), input)
+	login, err := s.externalAccounts.BeginSetup(r.Context(), actor.AccountID(), input)
 	if err != nil {
 		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) {
 			writeExternalAccountError(w, err)
@@ -296,15 +247,11 @@ func (s *Server) handleSetupExternalAccount(w http.ResponseWriter, r *http.Reque
 
 // handleExternalAccountLogin reads a login the person started.
 func (s *Server) handleExternalAccountLogin(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
 	}
-	login, found := service.Login(strings.TrimSpace(r.PathValue("id")), actor.AccountID())
+	login, found := s.externalAccounts.Login(strings.TrimSpace(r.PathValue("id")), actor.AccountID())
 	if !found {
 		writeError(w, http.StatusNotFound, "login not found")
 		return
@@ -313,20 +260,16 @@ func (s *Server) handleExternalAccountLogin(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleGetExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {
 		return
 	}
-	events, err := s.store.(store.ExternalAccountStore).ListExternalAccountEvents(r.Context(), account.ID, 30)
+	events, err := s.store.ListExternalAccountEvents(r.Context(), account.ID, 30)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	accounts, err := service.Accounts(r.Context(), account.OwnerUserID)
+	accounts, err := s.externalAccounts.Accounts(r.Context(), account.OwnerUserID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -341,10 +284,6 @@ func (s *Server) handleGetExternalAccount(w http.ResponseWriter, r *http.Request
 
 // handleUpdateExternalAccount renames or switches keep-alive.
 func (s *Server) handleUpdateExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {
 		return
@@ -353,7 +292,7 @@ func (s *Server) handleUpdateExternalAccount(w http.ResponseWriter, r *http.Requ
 	if !decodeJSONRequest(w, r, &update) {
 		return
 	}
-	saved, err := service.Update(r.Context(), account, update, account.OwnerUserID)
+	saved, err := s.externalAccounts.Update(r.Context(), account, update, account.OwnerUserID)
 	if err != nil {
 		writeExternalAccountError(w, err)
 		return
@@ -363,15 +302,11 @@ func (s *Server) handleUpdateExternalAccount(w http.ResponseWriter, r *http.Requ
 
 // handleRefreshExternalAccount refreshes now, visibly, at the owner's request.
 func (s *Server) handleRefreshExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {
 		return
 	}
-	refreshed, err := service.RefreshNow(r.Context(), account, externalaccounts.Use{By: "manual"})
+	refreshed, err := s.externalAccounts.RefreshNow(r.Context(), account, externalaccounts.Use{By: "manual"})
 	if err != nil {
 		writeExternalAccountError(w, err)
 		return
@@ -383,15 +318,11 @@ func (s *Server) handleRefreshExternalAccount(w http.ResponseWriter, r *http.Req
 // the provider and no new token is minted; a token a session already holds
 // lives until it expires (at most 2 hours for Feishu).
 func (s *Server) handleRevokeExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {
 		return
 	}
-	revoked, err := service.Revoke(r.Context(), account, account.OwnerUserID)
+	revoked, err := s.externalAccounts.Revoke(r.Context(), account, account.OwnerUserID)
 	if err != nil {
 		writeExternalAccountError(w, err)
 		return
@@ -402,15 +333,11 @@ func (s *Server) handleRevokeExternalAccount(w http.ResponseWriter, r *http.Requ
 // handleDisconnectExternalAccount revokes what is still held and removes
 // the account with its bindings.
 func (s *Server) handleDisconnectExternalAccount(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {
 		return
 	}
-	if err := service.Disconnect(r.Context(), account, account.OwnerUserID); err != nil {
+	if err := s.externalAccounts.Disconnect(r.Context(), account, account.OwnerUserID); err != nil {
 		writeExternalAccountError(w, err)
 		return
 	}
@@ -420,10 +347,6 @@ func (s *Server) handleDisconnectExternalAccount(w http.ResponseWriter, r *http.
 // handleReplaceExternalAppSecret seals the secret the person rotated at
 // the provider: the app's owner, or an admin for an instance app.
 func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
@@ -434,7 +357,7 @@ func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.R
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	app, err := s.store.(store.ExternalAccountStore).GetExternalProviderApp(r.Context(), strings.TrimSpace(r.PathValue("id")))
+	app, err := s.store.GetExternalProviderApp(r.Context(), strings.TrimSpace(r.PathValue("id")))
 	if err != nil {
 		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
@@ -448,7 +371,7 @@ func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusNotFound, "external provider app not found")
 		return
 	}
-	saved, err := service.ReplaceAppSecret(r.Context(), app, input.ClientSecret)
+	saved, err := s.externalAccounts.ReplaceAppSecret(r.Context(), app, input.ClientSecret)
 	if err != nil {
 		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
 			writeExternalAccountError(w, err)
@@ -457,9 +380,7 @@ func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.feishuGateway != nil {
-		s.feishuGateway.ForgetApp(app.ID)
-	}
+	s.feishuGateway.ForgetApp(app.ID)
 	// Bots running on the app reply with the new secret.
 	s.feishuBotsChanged(r.Context())
 	writeJSON(w, http.StatusOK, saved)
@@ -469,12 +390,8 @@ func (s *Server) handleReplaceExternalAppSecret(w http.ResponseWriter, r *http.R
 // accounts, and the caller's own unbound ones so they can be bound. Other
 // people's accounts show without their provider identity.
 func (s *Server) handleWorkspaceExternalAccounts(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	workspaceID := strings.TrimSpace(r.PathValue("id"))
-	view, err := s.workspaceExternalAccounts(r.Context(), service, workspaceID, actorFromContext(r.Context()).AccountID())
+	view, err := s.workspaceExternalAccounts(r.Context(), workspaceID, actorFromContext(r.Context()).AccountID())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -482,24 +399,23 @@ func (s *Server) handleWorkspaceExternalAccounts(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, view)
 }
 
-func (s *Server) workspaceExternalAccounts(ctx context.Context, service *externalaccounts.Service, workspaceID, viewerID string) (store.WorkspaceExternalAccounts, error) {
-	accounts := s.store.(store.ExternalAccountStore)
-	bindings, err := accounts.ListWorkspaceExternalAccounts(ctx, workspaceID)
+func (s *Server) workspaceExternalAccounts(ctx context.Context, workspaceID, viewerID string) (store.WorkspaceExternalAccounts, error) {
+	bindings, err := s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
 	if err != nil {
 		return store.WorkspaceExternalAccounts{}, err
 	}
 	view := store.WorkspaceExternalAccounts{WorkspaceID: workspaceID, Bindings: bindings, Accounts: []store.ExternalAccount{}}
 	seen := map[string]bool{}
 	for _, binding := range bindings {
-		account, err := accounts.GetExternalAccount(ctx, binding.AccountID)
+		account, err := s.store.GetExternalAccount(ctx, binding.AccountID)
 		if err != nil {
 			continue
 		}
 		seen[account.ID] = true
-		view.Accounts = append(view.Accounts, accountForViewer(service, account, viewerID))
+		view.Accounts = append(view.Accounts, accountForViewer(s.externalAccounts, account, viewerID))
 	}
 	if viewerID != "" {
-		own, err := service.Accounts(ctx, viewerID)
+		own, err := s.externalAccounts.Accounts(ctx, viewerID)
 		if err != nil {
 			return store.WorkspaceExternalAccounts{}, err
 		}
@@ -534,10 +450,6 @@ func accountForViewer(service *externalaccounts.Service, account store.ExternalA
 // handleSetWorkspaceExternalAccounts replaces the caller's bindings in the
 // workspace (a maintainer, by the route; their own accounts, by the store).
 func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *http.Request) {
-	service, ok := s.externalAccountService(w)
-	if !ok {
-		return
-	}
 	actor, ok := personActor(w, r)
 	if !ok {
 		return
@@ -547,13 +459,12 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 		return
 	}
 	workspaceID := strings.TrimSpace(r.PathValue("id"))
-	accounts := s.store.(store.ExternalAccountStore)
-	before, err := accounts.ListWorkspaceExternalAccounts(r.Context(), workspaceID)
+	before, err := s.store.ListWorkspaceExternalAccounts(r.Context(), workspaceID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	if err := accounts.SetWorkspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID(), input.AccountIDs); err != nil {
+	if err := s.store.SetWorkspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID(), input.AccountIDs); err != nil {
 		if errors.Is(err, store.ErrExternalAccountNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -569,19 +480,19 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 	for _, binding := range before {
 		had[binding.AccountID] = true
 		if !wanted[binding.AccountID] && binding.GrantedBy == actor.AccountID() {
-			if err := accounts.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: binding.AccountID, Kind: "unbound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
-				service.Logf("external account binding audit in %s: %v", workspaceID, err)
+			if err := s.store.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: binding.AccountID, Kind: "unbound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
+				s.externalAccounts.Logf("external account binding audit in %s: %v", workspaceID, err)
 			}
 		}
 	}
 	for id := range wanted {
 		if !had[id] {
-			if err := accounts.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: id, Kind: "bound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
-				service.Logf("external account binding audit in %s: %v", workspaceID, err)
+			if err := s.store.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: id, Kind: "bound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
+				s.externalAccounts.Logf("external account binding audit in %s: %v", workspaceID, err)
 			}
 		}
 	}
-	view, err := s.workspaceExternalAccounts(r.Context(), service, workspaceID, actor.AccountID())
+	view, err := s.workspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID())
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -598,7 +509,7 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 // without the gateway forwarder (gateway false) gets nothing either, and
 // the session's transcript says why, once.
 func (h *DaemonHub) sessionExternalAccounts(ctx context.Context, session store.AgentSession, device Actor, gateway bool) []store.ExternalAccountMaterial {
-	if h.externalAccounts == nil || session.Role == store.AgentSessionRoleIssueExecution || session.Role == store.AgentSessionRoleIssueClarification {
+	if session.Role == store.AgentSessionRoleIssueExecution || session.Role == store.AgentSessionRoleIssueClarification {
 		return nil
 	}
 	if !gateway {
@@ -628,13 +539,7 @@ func (h *DaemonHub) noticeWorkerWithoutGateway(ctx context.Context, session stor
 		Detail:    "This session has no Feishu account: the worker on its device predates Foundry's Feishu gateway, and Foundry no longer sends app secrets or tokens to devices. Update the worker (Devices → this device → Update), then start the session again.",
 		Level:     "warning",
 	}
-	recorder, ok := h.store.(interface {
-		RecordAgentSessionEvent(context.Context, store.AgentSessionEvent) (bool, error)
-	})
-	if !ok {
-		return
-	}
-	stored, err := recorder.RecordAgentSessionEvent(ctx, event)
+	stored, err := h.store.RecordAgentSessionEvent(ctx, event)
 	if err != nil {
 		h.externalAccounts.Logf("note the outdated worker on session %s: %v", session.ID, err)
 		return

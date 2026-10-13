@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents/feishueventstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -19,7 +20,7 @@ import (
 func TestFeishuEventsToolServesConnectedApps(t *testing.T) {
 	f := newExternalAccountsFixture(t)
 	f.connect(f.alice, f.createApp(f.alice, ""))
-	source := feishuevents.NewFakeSource("cli_fake", "secret_fake")
+	source := feishueventstest.NewFakeSource("cli_fake", "secret_fake")
 	t.Cleanup(source.Close)
 	f.server.feishuEvents.Domain = source.URL()
 	t.Cleanup(f.server.feishuEvents.Stop)
@@ -61,8 +62,8 @@ func TestFeishuEventsToolServesConnectedApps(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		_, _ = source.Push(feishuevents.MessagePayload("cli_fake", "ev_other_chat", "oc_2", "om_0", "", "not here", false), 1)
-		_, _ = source.Push(feishuevents.MessagePayload("cli_fake", "ev_1", "oc_1", "om_1", "", "deploy please", true), 1)
+		_, _ = source.Push(feishueventstest.MessagePayload("cli_fake", "ev_other_chat", "oc_2", "om_0", "", "not here", false), 1)
+		_, _ = source.Push(feishueventstest.MessagePayload("cli_fake", "ev_1", "oc_1", "om_1", "", "deploy please", true), 1)
 	}()
 	batch := read(call("feishu_events", map[string]any{"subscriptionId": subscribed.SubscriptionID, "timeoutMs": 5000}))
 	if len(batch.Events) != 1 || batch.Events[0].ID != "ev_1" || batch.Events[0].ChatID != "oc_1" || batch.Cursor != 1 ||

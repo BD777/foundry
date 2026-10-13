@@ -67,11 +67,11 @@ func TestBundleDeclaresUvTool(t *testing.T) {
 	f.server.skillRepos = repo
 	noReleases := httptest.NewServer(http.NotFoundHandler())
 	defer noReleases.Close()
-	f.server.releaseAPI = noReleases.URL
+	f.server.toolResolver.ReleaseAPI = noReleases.URL
 	pypi := &pypiFake{latest: "0.13.11", releases: map[string]bool{"0.13.11": true}}
 	pypiServer := httptest.NewServer(pypi)
 	defer pypiServer.Close()
-	f.server.pypiAPI = pypiServer.URL
+	f.server.toolResolver.PyPIAPI = pypiServer.URL
 	call := func(method, path, body string, want int) []byte {
 		t.Helper()
 		recorder := doAuthCall(t, f.handler, f.as(f.alice, method, path, body))

@@ -4,15 +4,12 @@ import { useTranslation } from "react-i18next";
 import { AgentComposer } from "../ui/agent-composer";
 import { Alert } from "../ui/alert";
 import { ChatTranscriptStage } from "./chat-transcript-stage";
-import {
-  AttachmentList,
-  ImagePreviewOverlay,
-  type ParsedImageTag,
-} from "./chat-message-content";
+import { AttachmentList } from "./attachment-list";
+import { ImagePreviewOverlay } from "./image-preview-overlay";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import { useConversationInput } from "./use-conversation-input";
 import { ConversationQueue } from "./conversation-queue";
-import type { ConversationProps } from "./conversation-types";
+import type { ConversationProps, ParsedImageTag } from "./conversation-types";
 
 /** Complete Chat/Issue UI. Hosts provide data and transport callbacks, never input markup. */
 export function Conversation(props: ConversationProps) {

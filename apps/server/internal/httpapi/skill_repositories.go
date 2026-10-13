@@ -12,6 +12,7 @@ import (
 
 	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
+	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -28,14 +29,7 @@ type skillRepositoryStore interface {
 	RecordRepositoryFolders(ctx context.Context, id string, count int) error
 	RecordRepositoryDescription(ctx context.Context, id, description string) error
 	MarkSkillRepositoryWaiting(ctx context.Context, id string) error
-}
-
-func (s *Server) skillRepositories(w http.ResponseWriter) (skillRepositoryStore, bool) {
-	repos, ok := s.store.(skillRepositoryStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "skill repositories are not supported by this store")
-	}
-	return repos, ok
+	SetSkillRepositorySource(ctx context.Context, id, deviceID, registry string) error
 }
 
 // repositoryError answers a failed git operation: the remote's own words,
@@ -72,11 +66,7 @@ func availableSkills(checkout *skillrepo.Checkout, repo store.SkillRepository) (
 }
 
 func (s *Server) handleListSkillRepositories(w http.ResponseWriter, r *http.Request) {
-	repos, ok := s.skillRepositories(w)
-	if !ok {
-		return
-	}
-	items, err := repos.ListSkillRepositories(r.Context())
+	items, err := s.store.ListSkillRepositories(r.Context())
 	writeResult(w, s.withFetchState(items...), err)
 }
 
@@ -119,17 +109,9 @@ func (s *Server) handleAddSkillRepository(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	repos, ok := s.skillRepositories(w)
-	if !ok {
-		return
-	}
-	bundles, ok := s.bundles(w)
-	if !ok {
-		return
-	}
 	remote, label, ref, subpath, err := input.parsed()
 	if err == nil {
-		input.Tools, err = checkToolDeclarations(input.Tools)
+		input.Tools, err = skilltools.CheckDeclarations(input.Tools)
 	}
 	if err == nil && len(input.Tools) > 0 && input.Mode != "bundle" {
 		err = errors.New("only a bundle installs tools; follow the repository as a bundle")
@@ -148,7 +130,7 @@ func (s *Server) handleAddSkillRepository(w http.ResponseWriter, r *http.Request
 	source.Subpath = subpath
 	label = sourceLabel(remote, label, source)
 	if input.Mode == "bundle" {
-		s.addSkillBundle(w, r, repos, bundles, input, source, remote, label, ref, subpath)
+		s.addSkillBundle(w, r, input, source, remote, label, ref, subpath)
 		return
 	}
 	s.repoMu.Lock()
@@ -178,24 +160,24 @@ func (s *Server) handleAddSkillRepository(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	created, err := repos.CreateSkillRepository(r.Context(), repo, accountID(r))
+	created, err := s.store.CreateSkillRepository(r.Context(), repo, accountID(r))
 	if err != nil {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
-	if err := repos.RecordRepositoryFolders(r.Context(), created.ID, len(available)); err != nil {
+	if err := s.store.RecordRepositoryFolders(r.Context(), created.ID, len(available)); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	s.describeRepository(r.Context(), repos, created)
+	s.describeRepository(r.Context(), created)
 	if len(input.Dirs) > 0 {
-		if _, err := s.applyPicked(r.Context(), repos, bundles, created, checkout, version, input.Dirs); err != nil {
+		if _, err := s.applyPicked(r.Context(), created, checkout, version, input.Dirs); err != nil {
 			writeResult(w, nil, err)
 			return
 		}
 		s.projectionsChanged("", skillLibraryFields...)
 	}
-	created, err = repos.GetSkillRepository(r.Context(), created.ID)
+	created, err = s.store.GetSkillRepository(r.Context(), created.ID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -223,27 +205,23 @@ func checkPickedDirs(label string, available []store.RepositorySkillFolder, dirs
 	return nil
 }
 
-func (s *Server) loadSkillRepository(w http.ResponseWriter, r *http.Request) (skillRepositoryStore, store.SkillRepository, bool) {
-	repos, ok := s.skillRepositories(w)
-	if !ok {
-		return nil, store.SkillRepository{}, false
-	}
-	repo, err := repos.GetSkillRepository(r.Context(), r.PathValue("id"))
+func (s *Server) loadSkillRepository(w http.ResponseWriter, r *http.Request) (store.SkillRepository, bool) {
+	repo, err := s.store.GetSkillRepository(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "skill repository not found")
-		return nil, repo, false
+		return repo, false
 	}
 	if err != nil {
 		writeResult(w, nil, err)
-		return nil, repo, false
+		return repo, false
 	}
-	return repos, repo, true
+	return repo, true
 }
 
 // handleListRepositorySkills reads the repository again, at the version it
 // follows, and lists its skills.
 func (s *Server) handleListRepositorySkills(w http.ResponseWriter, r *http.Request) {
-	repos, repo, ok := s.loadSkillRepository(w, r)
+	repo, ok := s.loadSkillRepository(w, r)
 	if !ok {
 		return
 	}
@@ -263,7 +241,7 @@ func (s *Server) handleListRepositorySkills(w http.ResponseWriter, r *http.Reque
 	defer checkout.Close()
 	available, err := availableSkills(checkout, repo)
 	if err == nil {
-		err = repos.RecordRepositoryFolders(r.Context(), repo.ID, len(available))
+		err = s.store.RecordRepositoryFolders(r.Context(), repo.ID, len(available))
 		repo.FoundCount = len(available)
 	}
 	writeResult(w, store.SkillRepositoryView{Repository: repo, Available: available}, err)
@@ -280,11 +258,7 @@ func (s *Server) handleImportRepositorySkills(w http.ResponseWriter, r *http.Req
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	repos, repo, ok := s.loadSkillRepository(w, r)
-	if !ok {
-		return
-	}
-	bundles, ok := s.bundles(w)
+	repo, ok := s.loadSkillRepository(w, r)
 	if !ok {
 		return
 	}
@@ -321,40 +295,36 @@ func (s *Server) handleImportRepositorySkills(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, err := s.applyPicked(r.Context(), repos, bundles, repo, checkout, version, input.Dirs); err != nil {
+	if _, err := s.applyPicked(r.Context(), repo, checkout, version, input.Dirs); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	s.projectionsChanged("", skillLibraryFields...)
-	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
+	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, updated, err)
 }
 
 func (s *Server) handleCheckSkillRepository(w http.ResponseWriter, r *http.Request) {
-	repos, repo, ok := s.loadSkillRepository(w, r)
+	repo, ok := s.loadSkillRepository(w, r)
 	if !ok {
 		return
 	}
 	s.repoMu.Lock()
-	err := s.checkSkillRepository(r.Context(), repos, repo)
+	err := s.checkSkillRepository(r.Context(), repo)
 	s.repoMu.Unlock()
-	s.describeRepository(r.Context(), repos, repo)
+	s.describeRepository(r.Context(), repo)
 	// An offline device is not a failure: the check is marked waiting and
 	// runs when the device is back, which the repository row says.
 	if err != nil && !errors.As(err, &errDeviceOffline{}) {
 		repositoryError(w, err)
 		return
 	}
-	updated, err := repos.GetSkillRepository(r.Context(), repo.ID)
+	updated, err := s.store.GetSkillRepository(r.Context(), repo.ID)
 	writeResult(w, s.withFetchState(updated)[0], err)
 }
 
 func (s *Server) handleDeleteSkillRepository(w http.ResponseWriter, r *http.Request) {
-	repos, ok := s.skillRepositories(w)
-	if !ok {
-		return
-	}
-	err := repos.DeleteSkillRepository(r.Context(), r.PathValue("id"))
+	err := s.store.DeleteSkillRepository(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "skill repository not found")
 		return
@@ -374,8 +344,7 @@ const skillRepositoryCheckInterval = 24 * time.Hour
 // check a person asks for (handleCheckSkillRepository) still runs: it reads
 // a public repository, with no stored credential, because they asked.
 func (s *Server) CheckSkillRepositories(ctx context.Context) {
-	repos, ok := s.store.(skillRepositoryStore)
-	if !ok || !s.options.Integrations.On() {
+	if !s.options.Integrations.On() {
 		return
 	}
 	timer := time.NewTimer(s.skillRepositoryFirstCheck)
@@ -386,18 +355,18 @@ func (s *Server) CheckSkillRepositories(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		items, err := repos.ListSkillRepositories(ctx)
+		items, err := s.store.ListSkillRepositories(ctx)
 		if err != nil {
 			log.Printf("skill repository check: %v", err)
 		}
 		for _, repo := range items {
 			s.repoMu.Lock()
 			// A repository whose device is offline waits for it to return.
-			if err := s.checkSkillRepository(ctx, repos, repo); err != nil && ctx.Err() == nil && !errors.As(err, &errDeviceOffline{}) {
+			if err := s.checkSkillRepository(ctx, repo); err != nil && ctx.Err() == nil && !errors.As(err, &errDeviceOffline{}) {
 				log.Printf("skill repository check of %s: %v", repo.Label, err)
 			}
 			if repo.Description == "" {
-				s.describeRepository(ctx, repos, repo)
+				s.describeRepository(ctx, repo)
 			}
 			s.repoMu.Unlock()
 		}
@@ -409,13 +378,13 @@ func (s *Server) CheckSkillRepositories(ctx context.Context) {
 // It is informational: a host that does not answer (rate limit, offline,
 // not GitHub) leaves the last description in place. A repository a device
 // reads is not described: the server never contacts its host.
-func (s *Server) describeRepository(ctx context.Context, repos skillRepositoryStore, repo store.SkillRepository) {
+func (s *Server) describeRepository(ctx context.Context, repo store.SkillRepository) {
 	description, err := s.sourceFor(repo).Describe(ctx, repo.URL)
 	if err != nil {
 		log.Printf("skill repository %s: reading its description: %v", repo.URL, err)
 		return
 	}
-	if err := repos.RecordRepositoryDescription(ctx, repo.ID, description); err != nil {
+	if err := s.store.RecordRepositoryDescription(ctx, repo.ID, description); err != nil {
 		log.Printf("skill repository %s: saving its description: %v", repo.URL, err)
 	}
 }

@@ -176,7 +176,7 @@ func (s *Store) queueClarificationInput(ctx context.Context, issue store.Issue, 
 	}
 	createdAt := time.Time{}
 	if next.ID == "" {
-		next.ID = fmt.Sprintf("sess_%d", now.UnixNano())
+		next.ID = newSessionID(now)
 		next.ThreadID = next.ID
 		createdAt = now
 	}

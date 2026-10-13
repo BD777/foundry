@@ -36,6 +36,7 @@ import {
   type ToolCommand,
 } from "./foundry-cli-commands.js";
 import { runMcpServer } from "./foundry-mcp.js";
+import { errorMessage } from "./utils.js";
 
 /** How long one wait_session call may wait (the server's limit). */
 const maxWaitPerCallMs = 600_000;
@@ -109,7 +110,7 @@ function toolArguments(
           args[spec.argument] = JSON.parse(readFileSync(path, "utf8"));
         } catch (error) {
           throw new FoundryClientError(
-            `${word} needs a file of JSON: ${error instanceof Error ? error.message : String(error)}`,
+            `${word} needs a file of JSON: ${errorMessage(error)}`,
           );
         }
         break;
@@ -301,7 +302,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   process.stderr.write(`foundry: ${message}\n`);
   process.exitCode = 1;
 });

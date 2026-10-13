@@ -400,36 +400,3 @@ function SidebarNavButton<T extends string>({
     </Button>
   );
 }
-
-export interface TopbarProps {
-  action: ReactNode;
-  actionMobileVisible?: boolean;
-  path: ReactNode;
-  providerChips: ReactNode;
-  title: ReactNode;
-}
-
-export function Topbar({
-  action,
-  actionMobileVisible = true,
-  path,
-  providerChips,
-  title,
-}: TopbarProps) {
-  return (
-    <header className="fdy-topbar">
-      <div className="fdy-topbar-title">
-        <strong>{title}</strong>
-        <code>{path}</code>
-      </div>
-      <div className="fdy-topbar-provider-chips">{providerChips}</div>
-      <span className="fdy-topbar-divider" />
-      <span
-        className="fdy-topbar-action"
-        data-mobile-visible={actionMobileVisible ? "true" : "false"}
-      >
-        {action}
-      </span>
-    </header>
-  );
-}

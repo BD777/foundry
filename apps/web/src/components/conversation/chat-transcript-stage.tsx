@@ -15,11 +15,11 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../ui/button";
-import type { ParsedImageTag } from "./chat-message-content";
 import { ChatMessageRow } from "./chat-message-list";
 import type {
   ChatMessageItem,
   ConversationFileActions,
+  ParsedImageTag,
 } from "./conversation-types";
 import {
   buildChatTurnAnchors,

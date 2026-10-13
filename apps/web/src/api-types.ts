@@ -1,11 +1,9 @@
 import type {
   AgentConfigScope,
   AgentConnectionType,
-  AgentProjection,
   AgentProfileProjection,
   AgentRuntimeSettings,
   AgentSession,
-  AssetProjection,
   BrowserEvent,
   BrowserEventType,
   BrowserNoticeType,
@@ -16,17 +14,9 @@ import type {
   CodexReasoningEffort,
   CodexSandboxMode,
   CodexSpeed,
-  DeviceSkill,
-  DeviceSkillRoot,
   FoundryDataProjection,
-  PromotedSkill,
-  ProviderHealth,
-  SkillPackRef,
   WorkerRuntimeId,
-  WorkspaceFileEntry,
   WorkspaceAccessRole,
-  WorkspaceProjection,
-  WorkspaceSkillBinding,
 } from "@bd777/foundry-protocol";
 
 /** A library skill as the composer's "/" menu offers it. */

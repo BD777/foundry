@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -7,6 +6,7 @@ import type {
   SkillBundleTool,
 } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
 
 /** Workers older than this capability cannot install programs. */
 const toolInstallCapability = "tool_install";
@@ -186,111 +186,101 @@ export function BundleToolStatus({
       >
         {t("library.bundle.manageInstalls")}
       </Button>
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fdy-connection-assign-overlay" />
-          <Dialog.Content
-            className="fdy-connection-assign-dialog"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              trigger.current?.focus();
-            }}
-          >
-            <header className="fdy-connection-assign-header">
-              <div>
-                <Dialog.Title>
-                  {t("library.bundle.installsTitle", {
+      <Dialog
+        description={[
+          description,
+          tool.setup
+            ? t("library.bundle.setupHint", {
+                command: [
+                  tool.setup.command || tool.name,
+                  ...tool.setup.args,
+                ].join(" "),
+              })
+            : "",
+          tool.signIn?.length
+            ? t("library.bundle.signInHint", {
+                command: [tool.name, ...tool.signIn].join(" "),
+              })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        footer={
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            {t("common:actions.close")}
+          </Button>
+        }
+        layout="compact"
+        onClose={() => setOpen(false)}
+        open={open}
+        returnFocusTo={trigger.current}
+        title={t("library.bundle.installsTitle", {
+          name: tool.name,
+          version: tool.version,
+        })}
+      >
+        <ul className="fdy-skill-bundle-installs">
+          {rows.map(({ device, state, version }) => (
+            <li key={device.id}>
+              <span className="fdy-skill-bundle-install-copy">
+                <strong>{device.label}</strong>
+                <small>
+                  {t(`library.bundle.toolState.${state}`, {
                     name: tool.name,
-                    version: tool.version,
+                    version: version ?? "",
                   })}
-                </Dialog.Title>
-                <Dialog.Description>
-                  {description}
-                  {tool.setup
-                    ? ` ${t("library.bundle.setupHint", {
-                        command: [
-                          tool.setup.command || tool.name,
-                          ...tool.setup.args,
-                        ].join(" "),
-                      })}`
-                    : ""}
-                  {tool.signIn?.length
-                    ? ` ${t("library.bundle.signInHint", {
-                        command: [tool.name, ...tool.signIn].join(" "),
-                      })}`
-                    : ""}
-                </Dialog.Description>
-              </div>
-            </header>
-            <ul className="fdy-skill-bundle-installs">
-              {rows.map(({ device, state, version }) => (
-                <li key={device.id}>
-                  <span className="fdy-skill-bundle-install-copy">
-                    <strong>{device.label}</strong>
-                    <small>
-                      {t(`library.bundle.toolState.${state}`, {
-                        name: tool.name,
-                        version: version ?? "",
-                      })}
-                    </small>
-                    {settingUp[device.id] ? (
-                      <small role="status">
-                        {t("library.bundle.setupRunningNote")}
-                      </small>
-                    ) : setupDone[device.id] ? (
-                      <small role="status">
-                        {t("library.bundle.setupFinished", {
-                          output: setupDone[device.id],
-                        })}
-                      </small>
-                    ) : null}
-                    {errors[device.id] ? (
-                      <small className="fdy-skill-error" role="alert">
-                        {errors[device.id]}
-                      </small>
-                    ) : null}
-                  </span>
-                  {state === "missing" ||
-                  state === "older" ||
-                  state === "foreign" ? (
-                    <Button
-                      aria-busy={busy[device.id]}
-                      disabled={busy[device.id]}
-                      onClick={() => void run(device)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {busy[device.id]
-                        ? t("library.bundle.installing")
-                        : state === "older"
-                          ? t("library.bundle.update")
-                          : t("library.bundle.install")}
-                    </Button>
-                  ) : null}
-                  {state === "current" && tool.setup && setup ? (
-                    <Button
-                      aria-busy={settingUp[device.id]}
-                      disabled={settingUp[device.id]}
-                      onClick={() => void runSetup(device)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {settingUp[device.id]
-                        ? t("library.bundle.settingUp")
-                        : t("library.bundle.runSetup")}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            <footer className="fdy-connection-assign-actions fdy-skill-dialog-actions">
-              <Button variant="secondary" onClick={() => setOpen(false)}>
-                {t("common:actions.close")}
-              </Button>
-            </footer>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+                </small>
+                {settingUp[device.id] ? (
+                  <small role="status">
+                    {t("library.bundle.setupRunningNote")}
+                  </small>
+                ) : setupDone[device.id] ? (
+                  <small role="status">
+                    {t("library.bundle.setupFinished", {
+                      output: setupDone[device.id],
+                    })}
+                  </small>
+                ) : null}
+                {errors[device.id] ? (
+                  <small className="fdy-skill-error" role="alert">
+                    {errors[device.id]}
+                  </small>
+                ) : null}
+              </span>
+              {state === "missing" ||
+              state === "older" ||
+              state === "foreign" ? (
+                <Button
+                  aria-busy={busy[device.id]}
+                  disabled={busy[device.id]}
+                  onClick={() => void run(device)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {busy[device.id]
+                    ? t("library.bundle.installing")
+                    : state === "older"
+                      ? t("library.bundle.update")
+                      : t("library.bundle.install")}
+                </Button>
+              ) : null}
+              {state === "current" && tool.setup && setup ? (
+                <Button
+                  aria-busy={settingUp[device.id]}
+                  disabled={settingUp[device.id]}
+                  onClick={() => void runSetup(device)}
+                  size="sm"
+                  variant="secondary"
+                >
+                  {settingUp[device.id]
+                    ? t("library.bundle.settingUp")
+                    : t("library.bundle.runSetup")}
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </Dialog>
     </div>
   );
 }

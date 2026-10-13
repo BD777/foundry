@@ -1,9 +1,39 @@
 import {
   spawn,
+  type ChildProcess,
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+/** Signals every process of the group pgid leads; false when none is left. */
+export function signalProcessGroup(
+  pgid: number,
+  signal: NodeJS.Signals | 0,
+): boolean {
+  try {
+    process.kill(-pgid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Signals the group child leads (spawned detached), else child alone: on
+ * Windows, which has no process groups, or when the group is gone.
+ */
+export function signalChildGroup(
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+): void {
+  if (
+    process.platform === "win32" ||
+    !child.pid ||
+    !signalProcessGroup(child.pid, signal)
+  )
+    child.kill(signal);
+}
 
 /**
  * Run a command as the leader of its own process group, so stopping it stops
@@ -29,12 +59,7 @@ export function spawnProcessGroup(
     { ...options, detached: true, stdio: ["pipe", "pipe", "pipe"] },
   ) as ChildProcessWithoutNullStreams;
   const kill = (kind: NodeJS.Signals): void => {
-    if (child.pid)
-      try {
-        process.kill(-child.pid, kind);
-      } catch {
-        /* Process group already exited. */
-      }
+    if (child.pid) signalProcessGroup(child.pid, kind);
   };
   let force: ReturnType<typeof setTimeout> | undefined;
   const stop = (): void => {

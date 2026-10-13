@@ -161,7 +161,7 @@ test("programs install per user with the official scripts, and update the way th
 });
 
 test("every lookup shares one probe of the device program", async (t) => {
-  const { resolveClaudeCommand } = await import("../dist/utils.js");
+  const { resolveClaudeCommand } = await import("../dist/native-cli.js");
   const dir = mkdtempSync(join(tmpdir(), "counted-claude-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "claude");

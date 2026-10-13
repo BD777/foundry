@@ -10,6 +10,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { codexHome } from "./native-homes.js";
 
 export interface NativeAccount {
   /** Human-readable account identity, e.g. an email address. */
@@ -19,10 +20,7 @@ export interface NativeAccount {
 }
 
 function codexAuthPath(env: NodeJS.ProcessEnv = process.env): string {
-  const home = env.CODEX_HOME?.trim();
-  return home
-    ? resolve(home, "auth.json")
-    : resolve(homedir(), ".codex", "auth.json");
+  return resolve(codexHome(env), "auth.json");
 }
 
 /** Claims of a JWT payload, without verifying the signature: this is display data. */

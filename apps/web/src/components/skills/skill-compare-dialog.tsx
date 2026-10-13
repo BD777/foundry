@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -14,6 +13,7 @@ import {
   downloadSkillComparisonPackage,
 } from "../../api";
 import { Button } from "../ui/button";
+import { Dialog } from "../ui/dialog";
 import { SelectMenu } from "../ui/select-menu";
 import { TextInput } from "../ui/field";
 const FileDiff = lazy(() =>
@@ -32,11 +32,6 @@ export default function SkillCompareDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation(["skills", "common"]);
-  const focus = useRef(
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  );
   const [targetID, setTargetID] = useState(target.id);
   const candidates = skill.serverCandidates?.length
     ? skill.serverCandidates
@@ -162,183 +157,162 @@ export default function SkillCompareDialog({
     }
   }
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <Dialog
+      description={t("compare.body", { revision })}
+      footer={
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setRetry((n) => n + 1)}
+          >
+            {t("common:actions.retry")}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={downloading}
+            onClick={() => void download("server")}
+          >
+            {t("compare.downloadServer")}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={downloading}
+            onClick={() => void download("local")}
+          >
+            {t("compare.downloadLocal")}
+          </Button>
+          <Button size="sm" onClick={onClose}>
+            {t("common:actions.close")}
+          </Button>
+        </>
+      }
+      layout="compact"
+      onClose={onClose}
+      size="large"
+      title={t("compare.title", { name: skill.name })}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-connection-assign-overlay" />
-        <Dialog.Content
-          className="fdy-connection-assign-dialog fdy-skill-compare-dialog"
-          onCloseAutoFocus={(e) => {
-            e.preventDefault();
-            focus.current?.focus();
+      <div className="fdy-skill-promotion-body">
+        <SelectMenu
+          insideDialog
+          ariaLabel={t("compare.targetLabel")}
+          tone="field"
+          value={selected.id}
+          options={candidates.map((c) => ({
+            value: c.id,
+            label: c.name,
+            meta: t("compare.targetMeta", {
+              device: c.originDeviceLabel || t("versionChoice.anotherDevice"),
+              dirName: c.originDirName,
+              root: c.originRoot,
+              revision: c.latestRevision,
+            }),
+          }))}
+          onChange={(id) => {
+            const c = candidates.find((c) => c.id === id)!;
+            setTargetID(id);
+            setRevision(c.latestRevision);
+            setRevisionDraft(String(c.latestRevision));
           }}
-        >
-          <header className="fdy-connection-assign-header">
-            <div>
-              <Dialog.Title>
-                {t("compare.title", { name: skill.name })}
-              </Dialog.Title>
-              <Dialog.Description>
-                {t("compare.body", { revision })}
-              </Dialog.Description>
-            </div>
-          </header>
-          <div className="fdy-skill-promotion-body">
-            <SelectMenu
-              insideDialog
-              ariaLabel={t("compare.targetLabel")}
-              tone="field"
-              value={selected.id}
-              options={candidates.map((c) => ({
-                value: c.id,
-                label: c.name,
-                meta: t("compare.targetMeta", {
-                  device:
-                    c.originDeviceLabel || t("versionChoice.anotherDevice"),
-                  dirName: c.originDirName,
-                  root: c.originRoot,
-                  revision: c.latestRevision,
-                }),
-              }))}
-              onChange={(id) => {
-                const c = candidates.find((c) => c.id === id)!;
-                setTargetID(id);
-                setRevision(c.latestRevision);
-                setRevisionDraft(String(c.latestRevision));
-              }}
+        />
+        <div className="fdy-skill-compare-version">
+          <label>
+            {t("compare.revisionLabel")}{" "}
+            <TextInput
+              aria-label={t("compare.revisionLabel")}
+              tone="boxed"
+              type="number"
+              min={1}
+              max={selected.latestRevision}
+              value={revisionDraft}
+              onChange={(e) => setRevisionDraft(e.target.value)}
             />
-            <div className="fdy-skill-compare-version">
-              <label>
-                {t("compare.revisionLabel")}{" "}
-                <TextInput
-                  aria-label={t("compare.revisionLabel")}
-                  tone="boxed"
-                  type="number"
-                  min={1}
-                  max={selected.latestRevision}
-                  value={revisionDraft}
-                  onChange={(e) => setRevisionDraft(e.target.value)}
-                />
-              </label>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={
-                  !Number.isInteger(Number(revisionDraft)) ||
-                  Number(revisionDraft) < 1 ||
-                  Number(revisionDraft) > selected.latestRevision
-                }
-                onClick={() => setRevision(Number(revisionDraft))}
-              >
-                {t("compare.compareRevision")}
-              </Button>
-            </div>
-            {error && loadedKey === requestKey ? (
-              <p role="alert" className="fdy-skill-error">
-                {error}
-              </p>
-            ) : !comparison || loadedKey !== requestKey ? (
-              <p role="status">{t("compare.loadingIndex")}</p>
-            ) : (
+          </label>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={
+              !Number.isInteger(Number(revisionDraft)) ||
+              Number(revisionDraft) < 1 ||
+              Number(revisionDraft) > selected.latestRevision
+            }
+            onClick={() => setRevision(Number(revisionDraft))}
+          >
+            {t("compare.compareRevision")}
+          </Button>
+        </div>
+        {error && loadedKey === requestKey ? (
+          <p role="alert" className="fdy-skill-error">
+            {error}
+          </p>
+        ) : !comparison || loadedKey !== requestKey ? (
+          <p role="status">{t("compare.loadingIndex")}</p>
+        ) : (
+          <>
+            <p>
+              {t("compare.summary", {
+                count: comparison.files.length,
+                unchanged: comparison.unchanged,
+              })}
+            </p>
+            {comparison.files.length ? (
               <>
-                <p>
-                  {t("compare.summary", {
-                    count: comparison.files.length,
-                    unchanged: comparison.unchanged,
-                  })}
-                </p>
-                {comparison.files.length ? (
-                  <>
-                    <TextInput
-                      aria-label={t("compare.filterLabel")}
-                      tone="boxed"
-                      value={fileFilter}
-                      onChange={(e) => setFileFilter(e.target.value)}
-                      placeholder={t("compare.filterPlaceholder")}
-                    />
-                    {filteredFiles.length > 200 ? (
-                      <p>{t("compare.truncated")}</p>
-                    ) : null}
-                    <SelectMenu
-                      insideDialog
-                      ariaLabel={t("compare.fileLabel")}
-                      tone="field"
-                      value={path}
-                      options={filteredFiles.slice(0, 200).map((f) => ({
-                        value: f.path,
-                        label: f.path,
-                        meta: t(`compare.fileKind.${f.kind}`),
-                      }))}
-                      onChange={setPath}
-                    />
-                    {fileError && loadedFileKey === currentFileKey ? (
-                      <p role="alert" className="fdy-skill-error">
-                        {fileError}
-                      </p>
-                    ) : !file || loadedFileKey !== currentFileKey ? (
-                      <p role="status">{t("compare.loadingFile")}</p>
-                    ) : file.unavailable ? (
-                      <p>{file.unavailable}</p>
-                    ) : (
-                      <Suspense
-                        fallback={
-                          <p role="status">{t("compare.loadingViewer")}</p>
-                        }
-                      >
-                        <FileDiff
-                          before={file.before}
-                          after={file.after}
-                          viewType={layout}
-                          onViewTypeChange={setLayout}
-                        />
-                      </Suspense>
-                    )}
-                  </>
+                <TextInput
+                  aria-label={t("compare.filterLabel")}
+                  tone="boxed"
+                  value={fileFilter}
+                  onChange={(e) => setFileFilter(e.target.value)}
+                  placeholder={t("compare.filterPlaceholder")}
+                />
+                {filteredFiles.length > 200 ? (
+                  <p>{t("compare.truncated")}</p>
+                ) : null}
+                <SelectMenu
+                  insideDialog
+                  ariaLabel={t("compare.fileLabel")}
+                  tone="field"
+                  value={path}
+                  options={filteredFiles.slice(0, 200).map((f) => ({
+                    value: f.path,
+                    label: f.path,
+                    meta: t(`compare.fileKind.${f.kind}`),
+                  }))}
+                  onChange={setPath}
+                />
+                {fileError && loadedFileKey === currentFileKey ? (
+                  <p role="alert" className="fdy-skill-error">
+                    {fileError}
+                  </p>
+                ) : !file || loadedFileKey !== currentFileKey ? (
+                  <p role="status">{t("compare.loadingFile")}</p>
+                ) : file.unavailable ? (
+                  <p>{file.unavailable}</p>
                 ) : (
-                  <p>{t("compare.identical")}</p>
+                  <Suspense
+                    fallback={<p role="status">{t("compare.loadingViewer")}</p>}
+                  >
+                    <FileDiff
+                      before={file.before}
+                      after={file.after}
+                      viewType={layout}
+                      onViewTypeChange={setLayout}
+                    />
+                  </Suspense>
                 )}
               </>
+            ) : (
+              <p>{t("compare.identical")}</p>
             )}
-            {downloadError ? (
-              <p role="alert" className="fdy-skill-error">
-                {downloadError}
-              </p>
-            ) : null}
-          </div>
-          <footer className="fdy-connection-assign-actions fdy-skill-compare-actions fdy-skill-dialog-actions">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setRetry((n) => n + 1)}
-            >
-              {t("common:actions.retry")}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={downloading}
-              onClick={() => void download("server")}
-            >
-              {t("compare.downloadServer")}
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={downloading}
-              onClick={() => void download("local")}
-            >
-              {t("compare.downloadLocal")}
-            </Button>
-            <Button size="sm" onClick={onClose}>
-              {t("common:actions.close")}
-            </Button>
-          </footer>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+          </>
+        )}
+        {downloadError ? (
+          <p role="alert" className="fdy-skill-error">
+            {downloadError}
+          </p>
+        ) : null}
+      </div>
+    </Dialog>
   );
 }

@@ -245,7 +245,6 @@ export const skills: Translation<typeof en> = {
       pickedCount_other: "已添加 {{count}} 个",
       followWhole: "整体跟随这个仓库",
       actionsFor: "{{label}} 的操作",
-      removeMenu: "停止跟随…",
       removeTitle: "停止跟随 {{label}}？",
       removePickedNote:
         "它的 Skill 会以当前版本留在库里，正在使用它们的工作区不受影响；之后不再跟随新版本，也不能再回退。",

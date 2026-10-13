@@ -1,9 +1,9 @@
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
-import { i18n } from "../../i18n";
+import { bytesIn } from "../../lib/format";
 
 const gibibytes = (bytes: number) =>
-  `${(bytes / 1024 ** 3).toLocaleString(i18n.language, { maximumFractionDigits: 1 })} GB`;
+  `${bytesIn(bytes, "GB", { maximumFractionDigits: 1 })} GB`;
 
 /** One line telling devices apart in lists: system, architecture, user. */
 export function deviceSummary(device: DeviceProjection): string | undefined {

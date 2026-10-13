@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
+	"github.com/foundry-dev/foundry/apps/server/internal/skilltools"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
 )
@@ -334,7 +335,7 @@ func TestSkillRepositoryReadThroughDevice(t *testing.T) {
 	}
 	// The daily check skips it the same way, without an error.
 	current, _ := f.server.store.(skillRepositoryStore).GetSkillRepository(context.Background(), bundle.ID)
-	if err := f.server.checkSkillRepository(context.Background(), f.server.store.(skillRepositoryStore), current); err == nil || !strings.Contains(err.Error(), "offline") {
+	if err := f.server.checkSkillRepository(context.Background(), current); err == nil || !strings.Contains(err.Error(), "offline") {
 		t.Fatalf("check while offline: %v", err)
 	}
 
@@ -414,7 +415,7 @@ func TestNPMBundleReadThroughDevice(t *testing.T) {
 	if moved.FetchDeviceID != "dev_alice" || moved.Registry != "" {
 		t.Fatalf("source changed: %+v", moved)
 	}
-	if moved.Tools[0].Registry != deviceRegistry {
+	if moved.Tools[0].Registry != skilltools.DeviceRegistry {
 		t.Fatalf("a device-read package without a registry installs with the device's npm settings: %+v", moved.Tools[0])
 	}
 }

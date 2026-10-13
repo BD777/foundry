@@ -22,15 +22,16 @@ import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import {
-  formatAccountDate,
   inviteLink,
   invitePending,
   roleLabel,
   roleNoun,
 } from "./account-format";
+import { serverErrorText } from "../../lib/errors";
+import { dateOnly } from "../../lib/time-format";
+import { useCopied } from "../../lib/use-copied";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 import { useTranslation } from "react-i18next";
-import { i18n } from "../../i18n";
 
 export interface MembersFeatureProps {
   currentUserId: string;
@@ -51,7 +52,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
   const [busyId, setBusyId] = useState("");
   const [inviteRole, setInviteRole] = useState<AccountRole>("member");
   const [created, setCreated] = useState<CreatedAccountInvite | undefined>();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, reset: resetCopied } = useCopied();
 
   const reload = useCallback(async () => {
     const [nextUsers, nextInvites] = await Promise.all([
@@ -66,7 +67,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
     let cancelled = false;
     reload()
       .catch((reason: unknown) => {
-        if (!cancelled) setError(messageOf(reason));
+        if (!cancelled) setError(serverErrorText(reason));
       })
       .finally(() => {
         if (!cancelled) setLoaded(true);
@@ -86,18 +87,9 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
       await action();
       await reload();
     } catch (reason) {
-      setError(messageOf(reason));
+      setError(serverErrorText(reason));
     } finally {
       setBusyId("");
-    }
-  }
-
-  async function copyLink(link: string): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-    } catch {
-      setCopied(false);
     }
   }
 
@@ -133,7 +125,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
             disabled={busyId === "invite"}
             onClick={() =>
               void run("invite", async () => {
-                setCopied(false);
+                resetCopied();
                 setCreated(await createInvite(inviteRole));
               })
             }
@@ -157,8 +149,8 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                 tone="boxed"
                 value={createdLink}
               />
-              <Button onClick={() => void copyLink(createdLink)}>
-                {copied ? t("common:actions.copied") : t("members.copyLink")}
+              <Button onClick={() => void copy(createdLink)}>
+                {copied() ? t("common:actions.copied") : t("members.copyLink")}
               </Button>
             </div>
           </div>
@@ -180,7 +172,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                         })
                       : ""}
                     {t("members.expires", {
-                      date: formatAccountDate(invite.expiresAt),
+                      date: dateOnly(invite.expiresAt),
                     })}
                   </span>
                 </div>
@@ -231,7 +223,7 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
                     <span>
                       {t("members.joined", {
                         username: user.username,
-                        date: formatAccountDate(user.createdAt),
+                        date: dateOnly(user.createdAt),
                       })}
                     </span>
                   </div>
@@ -292,10 +284,4 @@ export function MembersFeature({ currentUserId }: MembersFeatureProps) {
       </Panel>
     </PageSurface>
   );
-}
-
-function messageOf(reason: unknown): string {
-  return reason instanceof Error && reason.message
-    ? reason.message
-    : i18n.t("common:errors.serverUnreachable");
 }

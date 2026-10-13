@@ -38,22 +38,7 @@ func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http
 	if !windowed {
 		window.limit = maxEventsWindow
 	}
-	// Authorize as the session read does, before any reconciliation.
-	anchor, err := s.sessionSummary(r, r.PathValue("id"))
-	if err != nil {
-		writeResult(w, anchor, err)
-		return
-	}
-	if !s.canReadSession(r.Context(), actorFromContext(r.Context()), anchor) {
-		writeForbidden(w, "session token cannot read this session")
-		return
-	}
-	catchUp, ok := s.store.(store.SessionEventCatchUpStore)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "this server cannot catch up a transcript: read the session without eventsAfter")
-		return
-	}
-	item, err := store.AgentSessionRecord(r.Context(), s.store, anchor.ID)
+	item, err := store.AgentSessionRecord(r.Context(), s.store, guardedSession(r).ID)
 	if err != nil {
 		writeResult(w, item, err)
 		return
@@ -63,7 +48,7 @@ func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http
 		writeResult(w, item, err)
 		return
 	}
-	events, newest, more, err := catchUp.AgentSessionEventsAfter(r.Context(), item.ID, r.URL.Query().Get("eventsAfter"), window.limit)
+	events, newest, more, err := s.store.AgentSessionEventsAfter(r.Context(), item.ID, r.URL.Query().Get("eventsAfter"), window.limit)
 	if errors.Is(err, store.ErrEventsCursorGone) {
 		writeError(w, http.StatusGone, err.Error()+": read the newest window")
 		return

@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Monitor, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Monitor, Pencil, Trash2 } from "lucide-react";
 import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { RowMenu } from "../../components/ui/row-menu";
 import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
 
@@ -68,44 +68,27 @@ export function DeviceList({
           {!row.owned ? (
             <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
           ) : (
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger asChild>
-                <Button
-                  className="fdy-device-removal-menu-trigger"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={t("list.actionsFor", { device: row.label })}
-                  ref={(element) => {
-                    if (element) triggers.set(row.id, element);
-                    else triggers.delete(row.id);
-                  }}
-                >
-                  <MoreHorizontal size={17} />
-                </Button>
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  className="fdy-workspace-actions-menu"
-                  align="end"
-                  sideOffset={6}
-                >
-                  <DropdownMenu.Item
-                    className="fdy-workspace-menu-item"
-                    onSelect={() => onRename(row)}
-                  >
-                    <Pencil size={15} />
-                    {t("rename.action")}
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    className="fdy-workspace-menu-item"
-                    onSelect={() => onRemove(row)}
-                  >
-                    <Trash2 size={15} />
-                    {t("list.removeFromFoundry")}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
+            <RowMenu
+              items={[
+                {
+                  key: "rename",
+                  label: t("rename.action"),
+                  icon: <Pencil size={15} />,
+                  onSelect: () => onRename(row),
+                },
+                {
+                  key: "remove",
+                  label: t("list.removeFromFoundry"),
+                  icon: <Trash2 size={15} />,
+                  onSelect: () => onRemove(row),
+                },
+              ]}
+              label={t("list.actionsFor", { device: row.label })}
+              triggerRef={(element) => {
+                if (element) triggers.set(row.id, element);
+                else triggers.delete(row.id);
+              }}
+            />
           )}
         </div>
       ))}

@@ -31,7 +31,7 @@
       "scripts/audit-contract.mjs",
       "packages/protocol/src",
       "packages/worker/src/daemon-connection.ts",
-      "apps/server/internal/httpapi/daemon_ws.go"
+      "apps/server/internal/httpapi/daemon_wire.go"
     ]
   },
   "evidence": { "capture": ["logs"], "retainOn": "failure" },

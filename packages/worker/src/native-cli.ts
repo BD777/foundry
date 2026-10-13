@@ -1,13 +1,10 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { execFile, spawnSync } from "node:child_process";
+import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { NativeCli } from "@bd777/foundry-protocol";
-import {
-  claudeCommandCandidates,
-  clearDeviceCommands,
-  codexCommandCandidates,
-  resolveDeviceCommand,
-} from "./utils.js";
+import { readJSONFile } from "./storage.js";
 
 type Runtime = "claude" | "codex";
 
@@ -90,8 +87,11 @@ function sdkManifest(
   name: string,
 ): { version?: string; claudeCodeVersion?: string } | undefined {
   for (const dir of requireFromHere.resolve.paths(name) ?? []) {
-    const path = join(dir, name, "package.json");
-    if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8"));
+    const manifest = readJSONFile<{
+      version?: string;
+      claudeCodeVersion?: string;
+    }>(join(dir, name, "package.json"));
+    if (manifest) return manifest;
   }
   return undefined;
 }
@@ -155,4 +155,154 @@ export function outdatedNote(
   if (!cli.outdated) return undefined;
   const name = runtime === "claude" ? "Claude Code" : "Codex";
   return `${name} ${cli.version} is older than the ${cli.minimumVersion} Foundry needs. Update it on this device: ${cli.updateCommand}`;
+}
+
+/**
+ * Candidate Claude Code CLI locations, in priority order. The native
+ * installer puts the CLI in `~/.local/bin/claude`, which launchd-managed
+ * daemons do not inherit through PATH, so it is probed explicitly.
+ */
+export function claudeCommandCandidates(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  return [
+    env.FOUNDRY_CLAUDE_BIN,
+    "claude",
+    resolve(home, ".local/bin/claude"),
+    "/opt/homebrew/bin/claude",
+  ].filter((value): value is string => Boolean(value));
+}
+
+export function resolveClaudeCommand(): string {
+  const found = resolveDeviceCommand(claudeCommandCandidates());
+  if (!found)
+    throw new Error(
+      "Claude Code CLI is not available on PATH or in common install locations",
+    );
+  return found.command;
+}
+
+/**
+ * Candidate Codex CLI locations, in priority order. The ChatGPT desktop app
+ * ships the CLI inside its bundle, which is the only copy on many machines, so
+ * every lookup has to share this list rather than keep its own.
+ */
+export function codexCommandCandidates(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): string[] {
+  return [
+    env.FOUNDRY_CODEX_BIN,
+    env.CODEX_CLI_PATH,
+    "codex",
+    resolve(home, ".local/bin/codex"),
+    "/opt/homebrew/bin/codex",
+    // The ChatGPT desktop app (which hosts Codex) ships its CLI under
+    // Contents/Resources/codex-cli/bin, as seen in ChatGPT.app with
+    // codex-cli 0.160.1; a per-user install lives under ~/Applications.
+    ...["/Applications", resolve(home, "Applications")].flatMap((apps) =>
+      ["ChatGPT.app", "Codex.app"].map((app) =>
+        resolve(apps, app, "Contents/Resources/codex-cli/bin/codex"),
+      ),
+    ),
+  ].filter((value): value is string => Boolean(value));
+}
+
+export function resolveCodexCommand(): string {
+  const found = resolveDeviceCommand(codexCommandCandidates());
+  if (!found)
+    throw new Error(
+      "Codex CLI is not available on PATH or in common install locations",
+    );
+  return found.command;
+}
+
+/** A device program that runs, and what its `--version` printed. */
+export interface DeviceCommand {
+  command: string;
+  versionOutput: string;
+}
+
+const deviceCommands = new Map<
+  string,
+  { until: number; found: DeviceCommand | undefined }
+>();
+
+/**
+ * The first candidate that runs `--version`. Every lookup of the device's
+ * Claude Code and Codex goes through here, so they all agree on which program
+ * Foundry runs; the answer is kept for a minute because each probe starts the
+ * program. Only the first lookup waits for the probe: an older answer is
+ * returned while a fresh one is probed in the background, because a blocking
+ * probe of a slow program at every registration kept the worker from
+ * answering the server.
+ */
+export function resolveDeviceCommand(
+  candidates: string[],
+): DeviceCommand | undefined {
+  const key = JSON.stringify([candidates, process.env.PATH]);
+  const cached = deviceCommands.get(key);
+  if (cached && cached.until > Date.now()) return cached.found;
+  if (cached) {
+    refreshDeviceCommand(key, candidates);
+    return cached.found;
+  }
+  let found: DeviceCommand | undefined;
+  for (const candidate of candidates) {
+    const result = spawnSync(candidate, ["--version"], {
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: 10_000,
+    });
+    if (result.status === 0) {
+      found = {
+        command: candidate,
+        versionOutput: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+      };
+      break;
+    }
+  }
+  deviceCommands.set(key, { until: Date.now() + 60_000, found });
+  return found;
+}
+
+const refreshing = new Set<string>();
+let deviceCommandsGeneration = 0;
+
+function probeVersion(candidate: string): Promise<DeviceCommand | undefined> {
+  return new Promise((resolveProbe) => {
+    execFile(
+      candidate,
+      ["--version"],
+      { encoding: "utf8", timeout: 10_000 },
+      (error, stdout, stderr) =>
+        resolveProbe(
+          error
+            ? undefined
+            : { command: candidate, versionOutput: `${stdout}${stderr}` },
+        ),
+    );
+  });
+}
+
+function refreshDeviceCommand(key: string, candidates: string[]): void {
+  if (refreshing.has(key)) return;
+  refreshing.add(key);
+  const generation = deviceCommandsGeneration;
+  void (async () => {
+    let found: DeviceCommand | undefined;
+    for (const candidate of candidates) {
+      found = await probeVersion(candidate);
+      if (found) break;
+    }
+    // A clear while probing (an install or update) makes this answer stale.
+    if (generation === deviceCommandsGeneration)
+      deviceCommands.set(key, { until: Date.now() + 60_000, found });
+  })().finally(() => refreshing.delete(key));
+}
+
+export function clearDeviceCommands(): void {
+  deviceCommandsGeneration += 1;
+  deviceCommands.clear();
 }

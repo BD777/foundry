@@ -1,4 +1,3 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -8,6 +7,7 @@ import type {
 import { setSkillRepositorySource } from "../../api";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
 import { TextInput } from "../../components/ui/field";
 import {
   SelectMenu,
@@ -176,74 +176,62 @@ export function RepositorySourceDialog({
     }
   };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-connection-assign-overlay" />
-        <Dialog.Content className="fdy-connection-assign-dialog">
-          <header className="fdy-connection-assign-header">
-            <div>
-              <Dialog.Title>
-                {t("library.repo.sourceTitle", { label })}
-              </Dialog.Title>
-              <Dialog.Description>
-                {t("library.repo.sourceDescription")}
-              </Dialog.Description>
-            </div>
-          </header>
-          <form
-            aria-busy={busy}
-            className="fdy-skill-promotion-body fdy-skill-repo-form"
-            id="fdy-skill-repo-source-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
+    <Dialog
+      busy={busy}
+      description={t("library.repo.sourceDescription")}
+      footer={
+        <>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            {t("common:actions.cancel")}
+          </Button>
+          <Button
+            disabled={busy}
+            form="fdy-skill-repo-source-form"
+            type="submit"
+            variant="primary"
           >
-            <RepositorySourceFields
-              deviceId={deviceId}
-              current={
-                repo.fetchDeviceId
-                  ? {
-                      id: repo.fetchDeviceId,
-                      name: repo.fetchDeviceName || repo.fetchDeviceId,
-                    }
-                  : undefined
-              }
-              devices={devices}
-              disabled={busy}
-              onDeviceChange={setDeviceId}
-              onRegistryChange={setRegistry}
-              registry={registry}
-              showRegistry={usesNpmRegistry(repo)}
-            />
-            {busy ? <p role="status">{t("library.repo.workingNote")}</p> : null}
-            {error ? (
-              <p role="alert" className="fdy-skill-error">
-                {error}
-              </p>
-            ) : null}
-          </form>
-          <footer className="fdy-connection-assign-actions fdy-skill-dialog-actions">
-            <Button variant="secondary" disabled={busy} onClick={onClose}>
-              {t("common:actions.cancel")}
-            </Button>
-            <Button
-              disabled={busy}
-              form="fdy-skill-repo-source-form"
-              type="submit"
-              variant="primary"
-            >
-              {t("library.repo.saveSource")}
-            </Button>
-          </footer>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            {t("library.repo.saveSource")}
+          </Button>
+        </>
+      }
+      layout="compact"
+      onClose={onClose}
+      title={t("library.repo.sourceTitle", { label })}
+    >
+      <form
+        aria-busy={busy}
+        className="fdy-skill-promotion-body fdy-skill-repo-form"
+        id="fdy-skill-repo-source-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <RepositorySourceFields
+          deviceId={deviceId}
+          current={
+            repo.fetchDeviceId
+              ? {
+                  id: repo.fetchDeviceId,
+                  name: repo.fetchDeviceName || repo.fetchDeviceId,
+                }
+              : undefined
+          }
+          devices={devices}
+          disabled={busy}
+          onDeviceChange={setDeviceId}
+          onRegistryChange={setRegistry}
+          registry={registry}
+          showRegistry={usesNpmRegistry(repo)}
+        />
+        {busy ? <p role="status">{t("library.repo.workingNote")}</p> : null}
+        {error ? (
+          <p role="alert" className="fdy-skill-error">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </Dialog>
   );
 }
 

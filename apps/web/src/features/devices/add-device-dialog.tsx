@@ -4,22 +4,13 @@ import { createDevicePairingToken, workerServerURL } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TerminalBlock } from "../../components/ui/terminal-block";
-import { i18n } from "../../i18n";
+import { clockTime } from "../../lib/time-format";
+import { useCopied } from "../../lib/use-copied";
 import {
   localWorkerCommand,
   useWorkerRelease,
 } from "../../lib/worker-commands";
-import { WorkspaceDialog } from "./workspace-dialog";
-
-function expiryLabel(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleTimeString(i18n.language, {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-}
+import { Dialog } from "../../components/ui/dialog";
 
 /**
  * Adding a device (a one-time pairing token and the one command that installs
@@ -35,7 +26,7 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation(["devices", "common"]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState<"install" | "switch">();
+  const { copied, copy, reset: resetCopied } = useCopied();
   const worker = useWorkerRelease();
   const switchCommand = worker.update;
 
@@ -47,7 +38,7 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
   async function issue(): Promise<void> {
     setBusy(true);
     setError("");
-    setCopied(undefined);
+    resetCopied();
     try {
       setPairing(await createDevicePairingToken());
     } catch (reason) {
@@ -61,20 +52,8 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function copy(
-    which: "install" | "switch",
-    text: string,
-  ): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(which);
-    } catch {
-      setCopied(undefined);
-    }
-  }
-
   return (
-    <WorkspaceDialog
+    <Dialog
       title={t("add.dialogTitle")}
       description={t("add.dialogIntro")}
       busy={busy}
@@ -93,15 +72,15 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
                 ns="devices"
                 i18nKey="add.tokenNote"
                 values={{
-                  time: expiryLabel(pairing.expiresAt),
+                  time: clockTime(pairing.expiresAt) || pairing.expiresAt,
                   flag: "--workspace <path>",
                 }}
                 components={{ code: <code /> }}
               />
             </p>
             <div className="fdy-add-device-actions">
-              <Button onClick={() => void copy("install", command)}>
-                {copied === "install"
+              <Button onClick={() => void copy(command, "install")}>
+                {copied("install")
                   ? t("common:actions.copied")
                   : t("add.copyCommand")}
               </Button>
@@ -173,8 +152,8 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
               ]}
             />
             <div className="fdy-add-device-actions">
-              <Button onClick={() => void copy("switch", switchCommand)}>
-                {copied === "switch"
+              <Button onClick={() => void copy(switchCommand, "switch")}>
+                {copied("switch")
                   ? t("common:actions.copied")
                   : t("add.copyCommand")}
               </Button>
@@ -191,6 +170,6 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
           </p>
         ) : null}
       </section>
-    </WorkspaceDialog>
+    </Dialog>
   );
 }

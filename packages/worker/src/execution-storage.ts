@@ -1,5 +1,4 @@
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -10,7 +9,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { canonical, within } from "./paths.js";
-import { writeJSON } from "./storage.js";
+import { readJSONFile, writeJSON } from "./storage.js";
 import { foundryStateRoot } from "./state-root.js";
 import { issueEnvironmentChanged } from "./issue-environment-changes.js";
 import type {
@@ -84,11 +83,7 @@ export class ExecutionStore {
   constructor(stateRoot = foundryStateRoot()) {
     this.stateRoot = canonical(stateRoot);
     const configPath = resolve(this.stateRoot, "storage.local.json");
-    const config = existsSync(configPath)
-      ? (JSON.parse(readFileSync(configPath, "utf8")) as {
-          executionRoot?: string;
-        })
-      : {};
+    const config = readJSONFile<{ executionRoot?: string }>(configPath) ?? {};
     if (config.executionRoot && !isAbsolute(config.executionRoot))
       throw new Error("executionRoot must be absolute");
     this.executionRoot = canonical(
@@ -105,9 +100,7 @@ export class ExecutionStore {
   }
   registration(workspaceId: string): WorkspaceRegistration | undefined {
     const path = resolve(this.metadata(workspaceId), "registration.local.json");
-    return existsSync(path)
-      ? JSON.parse(readFileSync(path, "utf8"))
-      : undefined;
+    return readJSONFile(path);
   }
   saveRegistration(registration: WorkspaceRegistration): void {
     writeJSON(
@@ -125,8 +118,8 @@ export class ExecutionStore {
       "environment-locations",
       `${identifier(issueId)}.json`,
     );
-    if (existsSync(pointer))
-      return JSON.parse(readFileSync(pointer, "utf8")).path;
+    const pointed = readJSONFile<{ path: string }>(pointer);
+    if (pointed) return pointed.path;
     return resolve(
       this.executionRoot,
       identifier(workspaceId),
@@ -140,9 +133,7 @@ export class ExecutionStore {
     issueId: string,
   ): IssueEnvironment | undefined {
     const path = this.environmentPath(workspaceId, issueId);
-    return existsSync(path)
-      ? JSON.parse(readFileSync(path, "utf8"))
-      : undefined;
+    return readJSONFile(path);
   }
   saveEnvironment(environment: IssueEnvironment): void {
     environment.updatedAt = new Date().toISOString();

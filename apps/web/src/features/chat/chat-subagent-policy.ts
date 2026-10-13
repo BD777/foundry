@@ -4,6 +4,7 @@ import type {
   AgentSubagentDigest,
 } from "@bd777/foundry-protocol";
 import { isProcessLabel } from "../../lib/process-labels";
+import { isSessionLive } from "../../lib/session-status";
 
 /** The task type of Claude's subagents; devices list only these. */
 const subagentTaskType = "local_agent";
@@ -93,9 +94,7 @@ export function subagentActivity(
     activities.set(session.events, activity);
   }
   if (!activity.revision) return undefined;
-  const sessionActive =
-    session.status === "running" || session.status === "queued";
-  return sessionActive ? activity : { ...activity, running: false };
+  return isSessionLive(session) ? activity : { ...activity, running: false };
 }
 
 /**

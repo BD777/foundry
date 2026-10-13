@@ -9,11 +9,12 @@ import { InfoRow } from "../../components/ui/info-row";
 import { RepositoryList } from "./repository-list";
 import { environmentCounts, environmentLabel } from "./environment-model";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
+import { bytesIn } from "../../lib/format";
 import { useIssueEnvironment } from "./use-issue-environment";
 import "./issue-execution.css";
 
 export function IssueEnvironment({ issue }: { issue: Issue }) {
-  const { t, i18n } = useTranslation("issueDetail");
+  const { t } = useTranslation("issueDetail");
   const [actionError, setActionError] = useState("");
   const [pending, setPending] = useState(false);
   const [reload, setReload] = useState(0);
@@ -57,7 +58,7 @@ export function IssueEnvironment({ issue }: { issue: Issue }) {
               {data.bytes === undefined
                 ? t("environment.notMeasured")
                 : t("environment.size", {
-                    size: (data.bytes / 1048576).toLocaleString(i18n.language, {
+                    size: bytesIn(data.bytes, "MB", {
                       minimumFractionDigits: 1,
                       maximumFractionDigits: 1,
                     }),

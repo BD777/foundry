@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -82,19 +81,13 @@ func (a accessScope) fingerprint() string {
 	return hex.EncodeToString(sum[:8])
 }
 
-var errNoOwnershipStore = errors.New("this server's store does not support ownership")
-
 // scopeFor computes the actor's access. A device credential acts as its
 // owner, limited to the workspaces on that device. An agent acts as the
 // account that started its session, never above member (agentScope).
 func (s *Server) scopeFor(ctx context.Context, actor Actor) (accessScope, error) {
-	ownership, ok := s.store.(store.OwnershipStore)
-	if !ok {
-		return accessScope{}, errNoOwnershipStore
-	}
 	switch actor.Kind {
 	case ActorAgent:
-		return s.agentScope(ctx, ownership, actor)
+		return s.agentScope(ctx, actor)
 	case ActorAccount, ActorDaemon:
 	default:
 		return accessScope{roles: map[string]string{}, owned: map[string]bool{}}, nil
@@ -106,12 +99,12 @@ func (s *Server) scopeFor(ctx context.Context, actor Actor) (accessScope, error)
 		return s.fullScopeForTests(ctx, actor.Account.ID)
 	}
 	scope := accessScope{userID: actor.Account.ID, admin: actor.Account.Role == store.RoleAdmin, owned: map[string]bool{}}
-	roles, err := ownership.WorkspaceRolesForUser(ctx, scope.userID)
+	roles, err := s.store.WorkspaceRolesForUser(ctx, scope.userID)
 	if err != nil {
 		return accessScope{}, err
 	}
 	scope.roles = roles
-	devices, err := ownership.DevicesOwnedBy(ctx, scope.userID)
+	devices, err := s.store.DevicesOwnedBy(ctx, scope.userID)
 	if err != nil {
 		return accessScope{}, err
 	}
@@ -152,7 +145,7 @@ func (s *Server) limitToDevice(ctx context.Context, scope *accessScope, deviceID
 // agent acts for the person who started its session, in every workspace
 // that person belongs to, capped at Member (an agent never administers).
 // Choosing option B would change only this function.
-func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore, actor Actor) (accessScope, error) {
+func (s *Server) agentScope(ctx context.Context, actor Actor) (accessScope, error) {
 	scope := accessScope{roles: map[string]string{}, owned: map[string]bool{}}
 	session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID)
 	if err != nil {
@@ -179,16 +172,14 @@ func (s *Server) agentScope(ctx context.Context, ownership store.OwnershipStore,
 	}
 	scope.userID = creator
 	// A disabled account's agents lose access with it.
-	if s.accounts != nil {
-		if user, err := s.accounts.GetUser(ctx, creator); err != nil || !user.Active() {
-			return scope, nil
-		}
+	if user, err := s.store.GetUser(ctx, creator); err != nil || !user.Active() {
+		return scope, nil
 	}
 	if scope.issueID != "" {
 		scope.roles[actor.Identity.WorkspaceID] = issueRole
 		return scope, nil
 	}
-	roles, err := ownership.WorkspaceRolesForUser(ctx, creator)
+	roles, err := s.store.WorkspaceRolesForUser(ctx, creator)
 	if err != nil {
 		return accessScope{}, err
 	}

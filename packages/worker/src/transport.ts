@@ -1,152 +1,12 @@
-// HTTP/WS transport for talking to the Foundry server. Owns the run
-// transports, JSON helpers, and WebSocket envelope sending. Depends on
-// config only for the pairing code header.
+// WebSocket transport to the Foundry server: envelope sending and the
+// reliable session outbox. Plain HTTP requests are in server-http.ts.
 
 import WebSocket from "ws";
 import {
   daemonMessageTypes,
-  parseProtocolEnvelopeJSON,
   processLabels,
-  type AcceptanceArtifact,
   type ProtocolEnvelope,
-  type Run,
-  type RunEvent,
 } from "@bd777/foundry-protocol";
-import { readDaemonConfig } from "./config.js";
-
-export type IssueCompletion = {
-  canceled?: boolean;
-  response?: string;
-  artifact: AcceptanceArtifact;
-  checks: string[];
-  runId: string;
-  environmentId?: string;
-  environmentRevision?: number;
-  executionCwd?: string;
-  error?: string;
-};
-
-export interface RunTransport {
-  appendRunEvent(runId: string, event: RunEvent): Promise<void>;
-  completeIssue(issueId: string, input: IssueCompletion): Promise<void>;
-  startRun(issueId: string, run: Run): Promise<void>;
-}
-
-export const deviceCredentialHeader = "X-Foundry-Device-Credential";
-
-export function daemonRequestHeaders(
-  includeContentType: boolean,
-): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (includeContentType) {
-    headers["Content-Type"] = "application/json";
-  }
-  const credential = readDaemonConfig()?.deviceCredential?.trim();
-  if (credential) {
-    headers[deviceCredentialHeader] = credential;
-  }
-  return headers;
-}
-
-export async function postJSON<T>(
-  serverURL: string,
-  path: string,
-  body: unknown,
-): Promise<T | undefined> {
-  const response = await fetch(`${serverURL}${path}`, {
-    method: "POST",
-    headers: daemonRequestHeaders(true),
-    body: JSON.stringify(body),
-  });
-  if (response.status === 204) {
-    return undefined;
-  }
-  if (!response.ok) {
-    throw new Error(
-      `${path} returned ${response.status}: ${await response.text()}`,
-    );
-  }
-  return (await response.json()) as T;
-}
-
-export async function getJSON<T>(serverURL: string, path: string): Promise<T> {
-  const response = await fetch(`${serverURL}${path}`, {
-    headers: daemonRequestHeaders(false),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `${path} returned ${response.status}: ${await response.text()}`,
-    );
-  }
-  return (await response.json()) as T;
-}
-
-export async function ensureServerReachable(serverURL: string): Promise<void> {
-  const healthURL = new URL("/healthz", serverURL).toString();
-  try {
-    const response = await fetch(healthURL);
-    if (!response.ok) {
-      throw new Error(`health check returned ${response.status}`);
-    }
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Foundry server is not reachable at ${serverURL}. Start the server first, then rerun setup. (${detail})`,
-    );
-  }
-}
-
-/**
- * An Issue execution reports through its session (role issue_execution): the
- * run starts and ends with the session, run events are session events, and
- * the Issue result travels with session_completed.
- */
-export class SessionRunTransport implements RunTransport {
-  constructor(
-    private readonly transport: ReliableSessionTransport,
-    private readonly sessionId: string,
-    private readonly inputId?: string,
-  ) {}
-  async startRun(): Promise<void> {
-    this.transport.send(daemonMessageTypes.sessionStarted, {
-      sessionId: this.sessionId,
-      inputId: this.inputId,
-    });
-  }
-  async appendRunEvent(_runId: string, event: RunEvent): Promise<void> {
-    this.transport.send(daemonMessageTypes.sessionEvent, {
-      event: {
-        id: event.id,
-        sessionId: this.sessionId,
-        at: event.at,
-        label: event.label,
-        detail: event.detail,
-        level: event.level,
-      },
-    });
-  }
-  async completeIssue(_issueId: string, input: IssueCompletion): Promise<void> {
-    this.transport.send(
-      daemonMessageTypes.sessionCompleted,
-      issueSessionCompletion(this.sessionId, this.inputId, input),
-    );
-  }
-}
-
-/** The session_completed message that hands an Issue result to the server. */
-export function issueSessionCompletion(
-  sessionId: string,
-  inputId: string | undefined,
-  completion: IssueCompletion,
-): Record<string, unknown> {
-  return {
-    sessionId,
-    inputId,
-    response: completion.response,
-    error: completion.error,
-    issueResult: completion,
-  };
-}
 
 interface WebSocketSender {
   readonly readyState: number;
@@ -859,7 +719,3 @@ export function trySendWebSocket(
     return false;
   }
 }
-
-// Re-export for callers that previously imported parseProtocolEnvelopeJSON
-// alongside the transport helpers.
-export { parseProtocolEnvelopeJSON };

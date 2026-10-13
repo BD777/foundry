@@ -10,7 +10,6 @@ import {
   issueSpark,
   issueReadinessMeta,
   issueDisplayStatus,
-  statusMeta,
   blockedReasonMeta,
 } from "../../lib/issue-meta";
 import {

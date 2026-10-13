@@ -379,9 +379,7 @@ func sessionEndsForTest(t *testing.T, events []streamedForTest) []string {
 // announced only as a data change, which nothing on the server reacts to.
 func TestAgentChildSessionAnnouncesLayoutAndInvalidatesOnFailure(t *testing.T) {
 	db, parent := lineageFixture(t)
-	token, err := db.(interface {
-		MintAgentSessionToken(context.Context, string) (string, error)
-	}).MintAgentSessionToken(context.Background(), parent.ID)
+	token, err := db.MintAgentSessionToken(context.Background(), parent.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,6 +26,7 @@ import { discoverResources } from "./resources/index.js";
 import { browserProcessNames } from "./resources/detectors/browser.js";
 import { foundryStatePath } from "./state-root.js";
 import { writePrivateJSONAtomic } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 /**
  * What a workspace session is told about its device: to use what is
@@ -186,7 +187,7 @@ function recordScratchUse(sessionId: string, directory: string): void {
   } catch (error) {
     // The session keeps working; only a restart would not find the directory.
     console.warn(
-      `Could not record the scratch directory of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not record the scratch directory of session ${sessionId}: ${errorMessage(error)}`,
     );
   }
 }
@@ -566,7 +567,7 @@ function clearLeases(scratch: string): void {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT" && code !== "ENOTDIR")
       console.warn(
-        `Could not clear the browser leases in ${scratch}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not clear the browser leases in ${scratch}: ${errorMessage(error)}`,
       );
   }
 }
@@ -694,7 +695,7 @@ export async function sweepSessionScratchDirectories(
       });
     } catch (error) {
       console.warn(
-        `Could not remove the scratch directory ${directory} of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not remove the scratch directory ${directory} of session ${sessionId}: ${errorMessage(error)}`,
       );
     }
   }
@@ -730,7 +731,7 @@ export function startSessionScratchSweeps(
       })
       .catch((error) =>
         console.warn(
-          `Sweeping session scratch directories failed: ${error instanceof Error ? error.message : String(error)}`,
+          `Sweeping session scratch directories failed: ${errorMessage(error)}`,
         ),
       )
       .finally(() => {

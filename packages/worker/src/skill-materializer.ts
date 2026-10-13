@@ -23,7 +23,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import type { SessionSkillRef } from "@bd777/foundry-protocol";
-import { daemonRequestHeaders } from "./transport.js";
+import { daemonRequestHeaders } from "./server-http.js";
 import {
   SKILL_PACKAGE_MAX_BYTES,
   SKILL_PACKAGE_MAX_FILES,

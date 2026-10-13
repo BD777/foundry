@@ -30,7 +30,7 @@ export function ContractConfirmationCard({
       <ContractSummary contract={draft} compact />
       <Button
         disabled={controller.busy || issue.status === "in_progress"}
-        onClick={() => void controller.confirm(draft).catch(() => {})}
+        onClick={() => void controller.confirm(draft)}
       >
         {t("confirmation.confirm")}
       </Button>

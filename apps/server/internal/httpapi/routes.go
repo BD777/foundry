@@ -103,8 +103,7 @@ func workspaceRoleOrDeletedFromDevice(need string, resolve workspaceResolver) ac
 
 func (s *Server) deletedFromRequestingDevice(r *http.Request, resolve workspaceResolver) bool {
 	actor := actorFromContext(r.Context())
-	deletions, ok := s.store.(store.WorkspaceDeletionStore)
-	if !ok || actor.Kind != ActorDaemon || actor.DeviceID == "" {
+	if actor.Kind != ActorDaemon || actor.DeviceID == "" {
 		return false
 	}
 	workspaceID, err := resolve(s, r)
@@ -114,7 +113,7 @@ func (s *Server) deletedFromRequestingDevice(r *http.Request, resolve workspaceR
 	if _, err := s.store.GetWorkspace(r.Context(), workspaceID); !errors.Is(err, store.ErrNotFound) {
 		return false
 	}
-	deleted, err := deletions.WorkspaceDeletedFromDevice(r.Context(), workspaceID, actor.DeviceID)
+	deleted, err := s.store.WorkspaceDeletedFromDevice(r.Context(), workspaceID, actor.DeviceID)
 	return err == nil && deleted
 }
 
@@ -169,10 +168,9 @@ func issueWorkspace(name string) workspaceResolver {
 
 func sessionWorkspace(name string) workspaceResolver {
 	return func(s *Server, r *http.Request) (string, error) {
-		id := r.PathValue(name)
-		session, err := s.store.GetAgentSessionSummary(r.Context(), id)
-		if records := guardedRecordsFrom(r); err == nil && records != nil {
-			records.sessionID, records.session = id, session
+		session, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue(name))
+		if err == nil {
+			guardedRecordsFrom(r).session = session
 		}
 		return session.WorkspaceID, err
 	}
@@ -181,24 +179,23 @@ func sessionWorkspace(name string) workspaceResolver {
 // guardedRecords carries a record a route's access check read to the
 // route's handler, so the handler does not read it again.
 type guardedRecords struct {
-	sessionID string
-	session   store.AgentSession
+	session store.AgentSession
 }
 
 type guardedRecordsKey struct{}
 
+// guardedRecordsFrom is the holder guard puts in every request it checks.
 func guardedRecordsFrom(r *http.Request) *guardedRecords {
-	records, _ := r.Context().Value(guardedRecordsKey{}).(*guardedRecords)
-	return records
+	return r.Context().Value(guardedRecordsKey{}).(*guardedRecords)
 }
 
-// sessionSummary is GetAgentSessionSummary, answered from the read the
-// route's access check made of the same session.
-func (s *Server) sessionSummary(r *http.Request, id string) (store.AgentSession, error) {
-	if records := guardedRecordsFrom(r); records != nil && id != "" && records.sessionID == id {
-		return records.session, nil
-	}
-	return s.store.GetAgentSessionSummary(r.Context(), id)
+// guardedSession is the session (its summary) the route's access check read
+// and allowed: routes guarded by sessionWorkspace hand it to their handlers,
+// which neither read it again nor check that the caller may read it.
+// chatOrSessionWorkspace hands it over when the id is a session's; for a
+// native chat it is the zero session.
+func guardedSession(r *http.Request) store.AgentSession {
+	return guardedRecordsFrom(r).session
 }
 
 // chatOrSessionWorkspace resolves a chat-list id: a native chat, or a
@@ -209,8 +206,7 @@ func chatOrSessionWorkspace(name string) workspaceResolver {
 		if !errors.Is(err, store.ErrNotFound) {
 			return chat.WorkspaceID, err
 		}
-		session, err := s.store.GetAgentSessionSummary(r.Context(), r.PathValue(name))
-		return session.WorkspaceID, err
+		return sessionWorkspace(name)(s, r)
 	}
 }
 
@@ -248,11 +244,7 @@ func (s *Server) requireDeviceOwner(w http.ResponseWriter, r *http.Request, devi
 }
 
 func (s *Server) deviceOwnerOf(r *http.Request, deviceID string) (string, error) {
-	credentials, ok := s.store.(store.DeviceCredentialStore)
-	if !ok {
-		return "", errNoOwnershipStore
-	}
-	return credentials.DeviceOwner(r.Context(), deviceID)
+	return s.store.DeviceOwner(r.Context(), deviceID)
 }
 
 // connectionOwner guards a server connection (profile) by its owner.

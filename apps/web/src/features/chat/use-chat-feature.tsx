@@ -12,37 +12,16 @@ import type {
   AgentProfileProjection,
   AgentProjection,
   AgentSession,
-  ChatAttachment,
   ChatThread,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { sessionStillActive, toChatSendError } from "./chat-send-error";
-import {
-  cancelAgentSession,
-  createAgentSession,
-  getChat,
-  sendAgentSessionMessage,
-  uploadChatAttachments,
-} from "../../api";
-import { runtimeMeta } from "../../components/ui/runtime-mark";
+import { getChat } from "../../api";
 import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
-import type { SlashSuggestion } from "../../components/ui/slash-menu";
 import { shortUnavailableReason } from "../../lib/agent-picker";
-import {
-  activeThreadSession,
-  activeThreadSessionForAgent,
-  agentSessionStatusLabel,
-  chatComposerChoices,
-  chatMessageItemId,
-  chatMessages,
-  chatMessagesForThread,
-  chatSortValue,
-  isTerminalSession,
-  latestCopyableResponseIndex,
-  latestThreadSession,
-} from "./chat-model";
-import { ChatSurface, type ChatMessageItem } from "./chat-surface";
+import { chatComposerChoices, chatSortValue } from "./chat-model";
+import { chatMessageItems, chatViewMessages } from "./chat-message-items";
+import { ChatSurface } from "./chat-surface";
 import {
   chatContextCardForSessions,
   runningBackgroundWork,
@@ -54,20 +33,19 @@ import { useChatSelection } from "./use-chat-selection";
 import { selectedChatNotices } from "./chat-thread-notice";
 import { ChatTranscriptHistory } from "./chat-transcript-history";
 import { useChatSubagents } from "./use-chat-subagents";
-import { withOutbox } from "./chat-outbox";
 import { useChatOutbox, usePruneDeliveredOutbox } from "./use-chat-outbox";
 import { useStableValue } from "./use-stable-value";
 import { useChatRuntime } from "./use-chat-runtime";
 import { useChatQueue } from "./use-chat-queue";
 import { useChatListItems } from "./use-chat-list-items";
+import { useChatAttachments } from "./use-chat-attachments";
+import { useChatSend } from "./use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
 import {
   conversationStorageKey,
   conversationStoragePrefixes,
   forgetConversation,
-  moveRuntimeChoice,
 } from "../../components/conversation/conversation-storage";
-import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
 
 const noSessions: AgentSession[] = [];
 
@@ -131,14 +109,8 @@ export function useChatFeature({
     [],
   );
 
-  const [activeSessionOverride, setActiveSessionOverride] =
-    useState<AgentSession>();
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [attachmentUploading, setAttachmentUploading] = useState(false);
   const [chatDetail, setChatDetail] = useState<ChatThread>();
-  const [respondingSessionId, setRespondingSessionId] = useState("");
   const [contextPanelVisible, setContextPanelVisible] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const previousWorkspaceIdRef = useRef(workspaceId);
 
   const selection = useChatSelection({
@@ -195,21 +167,6 @@ export function useChatFeature({
     return selectedChatSummary;
   }, [chatDetail, selectedChatSummary]);
   const conversationThreadKey = `${workspaceId}:${selectedThread?.id ?? selectedChat?.id ?? "new"}`;
-  const activeSession = useMemo(() => {
-    const liveSession = activeThreadSession(selectedThread);
-    if (liveSession) {
-      return liveSession;
-    }
-    if (!activeSessionOverride || isTerminalSession(activeSessionOverride)) {
-      return undefined;
-    }
-    const selectedThreadId = selectedThread?.id ?? selectedChatId;
-    return activeSessionOverride.threadId === selectedThreadId ||
-      activeSessionOverride.id === selectedThreadId ||
-      activeSessionOverride.nativeSessionId === selectedThreadId
-      ? activeSessionOverride
-      : undefined;
-  }, [activeSessionOverride, selectedChatId, selectedThread]);
 
   const notify = useCallback(
     (message: string): Promise<void> =>
@@ -278,29 +235,32 @@ export function useChatFeature({
         }),
       ),
   });
+  const attachments = useChatAttachments({ notify, workspaceId });
+  const chatSend = useChatSend({
+    attachments,
+    composerChoices,
+    deviceOnline,
+    emit,
+    notify,
+    outbox,
+    selectedAgent,
+    selectedChat,
+    selectedChatId,
+    selectedThread,
+    sessions,
+    threadKey: conversationThreadKey,
+    workspaceId,
+  });
+  const { activeSession } = chatSend;
   useEffect(() => {
     if (previousWorkspaceIdRef.current === workspaceId) {
       return;
     }
     previousWorkspaceIdRef.current = workspaceId;
-    setActiveSessionOverride(undefined);
-    setAttachments([]);
-    setAttachmentUploading(false);
+    chatSend.reset();
+    attachments.reset();
     setChatDetail(undefined);
-    setRespondingSessionId("");
   }, [workspaceId]);
-
-  useEffect(() => {
-    if (!activeSessionOverride) {
-      return;
-    }
-    const projected = sessions.find(
-      (session) => session.id === activeSessionOverride.id,
-    );
-    if (projected && isTerminalSession(projected)) {
-      setActiveSessionOverride(undefined);
-    }
-  }, [activeSessionOverride, sessions]);
 
   useEffect(() => {
     if (!selectedChatSummary) {
@@ -331,38 +291,14 @@ export function useChatFeature({
     };
   }, [chatDetail?.id, selectedChatSummary, selectedThread, workspaceId]);
 
-  useEffect(() => {
-    if (!respondingSessionId) {
-      return;
-    }
-    const session = sessions.find((item) => item.id === respondingSessionId);
-    if (!session || !isTerminalSession(session)) {
-      return;
-    }
-    setRespondingSessionId("");
-    void emit({
-      message:
-        session.status === "failed"
-          ? i18n.t("chat:notices.agentFailed", {
-              agent:
-                session.profileLabel ?? runtimeMeta(session.provider).label,
-            })
-          : "",
-      type: "notice.requested",
-    });
-  }, [emit, respondingSessionId, sessions]);
-
   const projection = useMemo(
     () =>
-      withOutbox(
-        selectedThread
-          ? chatMessagesForThread(selectedThread, {
-              suppressedResponseFingerprints: subagents.responseFingerprints,
-            })
-          : chatMessages(selectedChat),
-        outbox.entries,
-        selectedThread?.id,
-      ),
+      chatViewMessages({
+        chat: selectedChat,
+        outbox: outbox.entries,
+        suppressedResponseFingerprints: subagents.responseFingerprints,
+        thread: selectedThread,
+      }),
     [
       outbox.entries,
       selectedChat,
@@ -372,44 +308,16 @@ export function useChatFeature({
   );
   const viewMessages = projection.messages;
   usePruneDeliveredOutbox(outbox, projection.delivered);
-  const messages = useMemo((): ChatMessageItem[] => {
-    const latestResponseIndex = latestCopyableResponseIndex(viewMessages);
-    let latestEditableUserIndex = -1;
-    if (!activeSession) {
-      for (let index = viewMessages.length - 1; index >= 0; index -= 1) {
-        const message = viewMessages[index];
-        if (
-          message &&
-          message.role === "user" &&
-          (message.kind === undefined || message.kind === "message") &&
-          message.text.trim() !== ""
-        ) {
-          latestEditableUserIndex = index;
-          break;
-        }
-      }
-    }
-    return viewMessages.map((message, index) => ({
-      ...message,
-      copyAlways: index === latestResponseIndex,
-      copyText:
-        typeof message.text === "string" &&
-        (message.kind === undefined || message.kind === "message") &&
-        message.text.trim() !== ""
-          ? message.text
-          : undefined,
-      editable: index === latestEditableUserIndex,
-      editText: index === latestEditableUserIndex ? message.text : undefined,
-      id: chatMessageItemId(message, index),
-      onTurnIntoIssue: message.idea
-        ? () =>
-            void emit({
-              source: message.idea ?? "",
-              type: "issue.draft.requested",
-            })
-        : undefined,
-    }));
-  }, [activeSession, emit, viewMessages]);
+  const agentActive = Boolean(activeSession);
+  const messages = useMemo(
+    () =>
+      chatMessageItems(viewMessages, {
+        agentActive,
+        onTurnIntoIssue: (source) =>
+          void emit({ source, type: "issue.draft.requested" }),
+      }),
+    [agentActive, emit, viewMessages],
+  );
   // The side panel follows the transcript a moment later, and only renders
   // again when what it shows changed.
   const contextSessions = useDeferredValue(threadSessions);
@@ -437,340 +345,6 @@ export function useChatFeature({
     () => threadScheduleWakes(threadSessions),
     [threadSessions],
   );
-
-  const addAttachments = useCallback(
-    async (files: File[]): Promise<void> => {
-      if (files.length === 0) {
-        return;
-      }
-      if (!workspaceId) {
-        await emit({
-          message: i18n.t("chat:notices.attachNeedsWorkspace"),
-          type: "notice.requested",
-        });
-        return;
-      }
-      try {
-        setAttachmentUploading(true);
-        const uploaded = await uploadChatAttachments({ files, workspaceId });
-        setAttachments((current) => [...current, ...uploaded]);
-        const firstUpload = uploaded[0];
-        await emit({
-          message:
-            uploaded.length === 1 && firstUpload
-              ? i18n.t("chat:notices.attachedOne", { name: firstUpload.name })
-              : i18n.t("chat:notices.attachedMany", {
-                  count: uploaded.length,
-                }),
-          type: "notice.requested",
-        });
-      } catch {
-        await emit({
-          message: i18n.t("chat:notices.attachFailed"),
-          type: "notice.requested",
-        });
-      } finally {
-        setAttachmentUploading(false);
-      }
-    },
-    [emit, workspaceId],
-  );
-
-  const removeAttachment = useCallback((id: string): void => {
-    setAttachments((current) =>
-      current.filter((attachment) => attachment.id !== id),
-    );
-  }, []);
-
-  const restoreAttachments = useCallback((restored: ChatAttachment[]): void => {
-    setAttachments((current) => {
-      const existingIds = new Set(current.map((attachment) => attachment.id));
-      const additions = restored.filter(
-        (attachment) => !existingIds.has(attachment.id),
-      );
-      return additions.length > 0 ? [...current, ...additions] : current;
-    });
-  }, []);
-
-  async function send(
-    draft: string,
-    queuedAttachments?: ChatAttachment[],
-    options?: { idempotencyKey?: string },
-  ): Promise<ConversationSendOutcome> {
-    if (!deviceOnline) {
-      await emit({
-        message: i18n.t("chat:notices.offlineSend"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    const prompt = draft.trim();
-    const effectiveAttachments = queuedAttachments ?? attachments;
-    if (!prompt && effectiveAttachments.length === 0) {
-      await emit({
-        message: i18n.t("chat:notices.emptyPrompt"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    if (attachmentUploading) {
-      await emit({
-        message: i18n.t("chat:notices.uploading"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    if (!workspaceId || !selectedAgent) {
-      await emit({
-        message: i18n.t("chat:notices.noAgent"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    if (selectedAgent.status !== "healthy") {
-      await emit({
-        message: i18n.t("chat:notices.agentNotReady", {
-          agent:
-            selectedAgent.profileLabel ??
-            runtimeMeta(selectedAgent.provider).label,
-        }),
-        type: "notice.requested",
-      });
-      return false;
-    }
-
-    try {
-      setSubmitting(true);
-      if (activeSession) {
-        await emit({
-          message: i18n.t("chat:notices.stillResponding", {
-            agent:
-              activeSession.profileLabel ??
-              runtimeMeta(activeSession.provider).label,
-          }),
-          type: "notice.requested",
-        });
-        return false;
-      }
-      const activeSameProfile = activeThreadSessionForAgent(
-        selectedThread,
-        selectedAgent,
-      );
-      if (activeSameProfile) {
-        await emit({
-          message: i18n.t("chat:notices.alreadyResponding", {
-            agent:
-              selectedAgent.profileLabel ??
-              runtimeMeta(selectedAgent.provider).label,
-          }),
-          type: "notice.requested",
-        });
-        return false;
-      }
-      // An open Foundry chat is one session: the message continues it. An
-      // open native chat is adopted by the new session; the server tells
-      // each native session what it has not seen.
-      const continuedSession = selectedThread
-        ? latestThreadSession(selectedThread)
-        : undefined;
-      const chatForSend = selectedThread ? undefined : selectedChat;
-      const submittedAttachmentIds = new Set(
-        effectiveAttachments.map((attachment) => attachment.id),
-      );
-      // One id for this message: its Idempotency-Key, its input id and its
-      // outbox entry, which tells the composer once the transcript shows it.
-      const clientId = options?.idempotencyKey ?? crypto.randomUUID();
-      const message = {
-        ...composerChoices(selectedAgent),
-        attachments: effectiveAttachments,
-        inputId: clientId,
-        prompt,
-      };
-      let session: AgentSession;
-      outbox.add({
-        at: new Date().toISOString(),
-        attachments: effectiveAttachments,
-        id: clientId,
-        sessionId: continuedSession?.id,
-        state: "pending",
-        text: prompt,
-        threadId: selectedThread?.id,
-      });
-      try {
-        session = continuedSession
-          ? await sendAgentSessionMessage(
-              continuedSession.id,
-              // A turn that started meanwhile (a queued message went first)
-              // must not take this one as a steer: it is queued instead.
-              { ...message, requireIdle: true },
-              clientId,
-            )
-          : await createAgentSession(
-              {
-                ...message,
-                chatId: chatForSend?.id,
-                source: "chat",
-                workspaceId,
-              },
-              clientId,
-            );
-      } catch (reason) {
-        outbox.remove(clientId);
-        // The turn started meanwhile: the message waits for it to end.
-        if (continuedSession && sessionStillActive(reason)) return "queue";
-        // Surface a safe, specific cause in the composer Alert. Throwing lets
-        // useConversationInput retain the draft/attachments and require an
-        // explicit retry (no auto-replay); busy protection is in its finally.
-        throw toChatSendError(reason);
-      }
-      // The message is persisted server-side from here on. View-sync failures
-      // must not look like an unsent draft, or the user could replay a session
-      // that was already created.
-      outbox.accept(clientId, {
-        inputId: session.input?.id,
-        sessionId: session.id,
-        threadId: session.threadId || session.nativeSessionId || session.id,
-      });
-      setActiveSessionOverride(session);
-      setRespondingSessionId(session.id);
-      // A new chat or an adopted native chat is now this session's thread;
-      // its unsent draft, queued messages and runtime choice move with it.
-      const sessionThreadKey = `${workspaceId}:${session.threadId || session.nativeSessionId || session.id}`;
-      moveRuntimeChoice(conversationThreadKey, sessionThreadKey);
-      if (!queuedAttachments) {
-        setAttachments((current) =>
-          current.filter(
-            (attachment) => !submittedAttachmentIds.has(attachment.id),
-          ),
-        );
-      }
-      try {
-        await emit({ session, type: "session.answered" });
-        await emit({
-          chatId: session.threadId ?? session.nativeSessionId ?? session.id,
-          type: "chat.selected",
-        });
-        await emit({
-          message: i18n.t("chat:notices.responding", {
-            agent:
-              selectedAgent.profileLabel ??
-              runtimeMeta(selectedAgent.provider).label,
-          }),
-          type: "notice.requested",
-        });
-      } catch {
-        // Already persisted; a later snapshot/refresh projects the session.
-      }
-      return { threadKey: sessionThreadKey };
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function steer(
-    draft: string,
-    sessionId?: string,
-    steeredAttachments: ChatAttachment[] = [],
-  ): Promise<boolean> {
-    if (!deviceOnline) {
-      await emit({
-        message: i18n.t("chat:notices.offlineSteer"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    const message = draft.trim();
-    if (!message && steeredAttachments.length === 0) {
-      await emit({
-        message: i18n.t("chat:notices.emptySteer"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    const targetSession =
-      (sessionId
-        ? sessions.find((session) => session.id === sessionId)
-        : undefined) ??
-      (sessionId === activeSessionOverride?.id
-        ? activeSessionOverride
-        : undefined) ??
-      activeSession;
-    if (!targetSession) {
-      await emit({
-        message: i18n.t("chat:notices.noSteerTarget"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-    try {
-      await sendAgentSessionMessage(targetSession.id, {
-        prompt: message,
-        attachments: steeredAttachments.length ? steeredAttachments : undefined,
-      });
-      // The steer reaches the transcript as the device's event.
-      await emit({
-        message: i18n.t("chat:notices.steered"),
-        type: "notice.requested",
-      });
-      return true;
-    } catch (error) {
-      await emit({
-        message:
-          error instanceof Error
-            ? error.message
-            : i18n.t("chat:notices.steerFailed"),
-        type: "notice.requested",
-      });
-      return false;
-    }
-  }
-
-  async function cancel(sessionId?: string): Promise<void> {
-    const targetSession =
-      (sessionId
-        ? sessions.find((session) => session.id === sessionId)
-        : undefined) ??
-      (sessionId === activeSessionOverride?.id
-        ? activeSessionOverride
-        : undefined) ??
-      activeSession;
-    if (!targetSession) {
-      await emit({
-        message: i18n.t("chat:notices.noStopTarget"),
-        type: "notice.requested",
-      });
-      return;
-    }
-    if (!deviceOnline) {
-      await emit({
-        message: i18n.t("chat:notices.offlineStop"),
-        type: "notice.requested",
-      });
-      return;
-    }
-    try {
-      const session = await cancelAgentSession(targetSession.id);
-      setActiveSessionOverride(undefined);
-      setRespondingSessionId("");
-      await emit({ session, type: "session.answered" });
-      await emit({
-        chatId: session.threadId ?? session.nativeSessionId ?? session.id,
-        type: "chat.selected",
-      });
-      await emit({
-        message: i18n.t("chat:notices.stopped"),
-        type: "notice.requested",
-      });
-    } catch (error) {
-      await emit({
-        message:
-          error instanceof Error
-            ? error.message
-            : i18n.t("chat:notices.stopFailed"),
-        type: "notice.requested",
-      });
-    }
-  }
 
   const selectedId = selectedThread?.id ?? selectedChat?.id ?? "";
   const selectionRef = useRef({ workspaceId, selectedId });
@@ -820,17 +394,17 @@ export function useChatFeature({
         });
         if (selectionRef.current.workspaceId !== workspaceId) return;
         if (ids.includes(selectionRef.current.selectedId)) {
-          setActiveSessionOverride(undefined);
+          chatSend.clearActiveSession();
           setChatDetail(undefined);
           await emit({ chatId: "", type: "chat.selected" });
         }
       }}
       workspaceId={workspaceId}
-      agentActive={Boolean(activeSession)}
+      agentActive={agentActive}
       agentActiveSessionId={activeSession?.id}
       agentOptions={agentOptions}
-      attachmentUploading={attachmentUploading}
-      attachments={attachments}
+      attachmentUploading={attachments.uploading}
+      attachments={attachments.attachments}
       chats={list.chats}
       chatTitle={
         list.titles[selectedId]?.title ||
@@ -860,10 +434,10 @@ export function useChatFeature({
       messages={messages}
       slashSkills={composerSlashItems(slashSkills, selectedAgent?.provider)}
       onAgentChange={selectAgent}
-      onAttachmentsAdd={(files) => void addAttachments(files)}
-      onAttachmentRemove={removeAttachment}
-      onAttachmentsRestore={restoreAttachments}
-      onCancelActive={cancel}
+      onAttachmentsAdd={(files) => void attachments.add(files)}
+      onAttachmentRemove={attachments.remove}
+      onAttachmentsRestore={attachments.restore}
+      onCancelActive={chatSend.cancel}
       onClaudeEffortChange={(value) => updateOverride({ claudeEffort: value })}
       onClaudePermissionModeChange={(value) =>
         updateOverride({ claudePermissionMode: value })
@@ -880,13 +454,13 @@ export function useChatFeature({
       onCodexSpeedChange={(value) => updateOverride({ codexSpeed: value })}
       onModelChange={(value) => updateOverride({ model: value })}
       onNewChat={() => {
-        setAttachments([]);
+        attachments.clear();
         void emit({ chatId: "", type: "chat.selected" });
       }}
       onResetControls={resetOverride}
       onRetryModels={retryModels}
-      onSend={send}
-      onSteer={steer}
+      onSend={chatSend.send}
+      onSteer={chatSend.steer}
       queue={queue}
       selectedAgentId={selectedAgent?.id ?? ""}
       sendDisabled={
@@ -902,7 +476,7 @@ export function useChatFeature({
               )
             : undefined
       }
-      sending={submitting}
+      sending={chatSend.submitting}
       threadKey={conversationThreadKey}
     />
   );

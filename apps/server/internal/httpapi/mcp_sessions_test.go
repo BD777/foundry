@@ -48,6 +48,20 @@ func catalogToolNames(except ...string) []string {
 	return names
 }
 
+// Every tool in the catalog has a handler, and every handler a catalog entry.
+func TestEveryCatalogToolHasAHandler(t *testing.T) {
+	handled := []string{}
+	for name := range mcpToolHandlers {
+		handled = append(handled, name)
+	}
+	catalog := catalogToolNames()
+	slices.Sort(handled)
+	slices.Sort(catalog)
+	if !slices.Equal(handled, catalog) {
+		t.Fatalf("handlers %v, catalog %v", handled, catalog)
+	}
+}
+
 // A session sees exactly the tools its role may call, and a tool outside its
 // list is refused when called anyway.
 func TestToolsListFollowsTheSessionsRole(t *testing.T) {
@@ -75,13 +89,12 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 		t.Fatalf("an unknown tool = %q", text)
 	}
 
-	evidence := db.(store.EvidenceStore)
 	discussed, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_lineage", SourceInput: "make the greeting friendlier", Runtime: "claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft := firstDraft(t, evidence, discussed.ID)
-	_, clarification, err := evidence.AskClarification(ctx, store.AskClarificationInput{IssueID: discussed.ID, Revision: draft.Revision, ContentDigest: draft.ContentDigest,
+	draft := firstDraft(t, db, discussed.ID)
+	_, clarification, err := db.AskClarification(ctx, store.AskClarificationInput{IssueID: discussed.ID, Revision: draft.Revision, ContentDigest: draft.ContentDigest,
 		Message: "Which file holds the greeting?", ChangeReason: "Clarify the target"}, store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}, "clarify-1")
 	if err != nil {
 		t.Fatal(err)
@@ -105,8 +118,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	testfixture.ConfirmContract(t, evidence, executed.ID)
-	_, execution, err := db.(store.IssueExecutionStore).ClaimIssueExecution(ctx, "dev_lineage", "ws_lineage")
+	testfixture.ConfirmContract(t, db, executed.ID)
+	_, execution, err := db.ClaimIssueExecution(ctx, "dev_lineage", "ws_lineage")
 	if err != nil {
 		t.Fatal(err)
 	}

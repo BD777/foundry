@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { ChatThread } from "@bd777/foundry-protocol";
+import { isSessionLive } from "../../lib/session-status";
 import { chatUpdateTime, latestChatTime } from "./chat-time";
 import {
   activeThreadSession,
@@ -130,7 +131,7 @@ export function useChatListItems({
     activityAt: chat.updatedAt,
     updateTime: chatUpdateTime(chat.updatedAt, chat.updatedLabel),
     status: chatListStatus(
-      chat.status === "running" || chat.status === "queued",
+      isSessionLive(chat),
       chat.status === "failed",
       readState.unread(chat.id, chat.answerRevision ?? ""),
       chat.status === "blocked",

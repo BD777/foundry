@@ -1,0 +1,39 @@
+/* Row menu primitive (components/ui/row-menu.tsx): the "…" button and the
+   menu it opens. Consumers pass items, never classes. */
+
+.fdy-row-menu-trigger {
+  flex: none;
+}
+
+.fdy-row-menu {
+  z-index: 110;
+  min-width: 210px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  border: 1px solid var(--fdy-brass-line);
+  border-radius: 10px;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-row-menu-item {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 12px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: none;
+}
+
+.fdy-row-menu-item[data-highlighted] {
+  background: var(--fdy-brass-soft);
+  color: var(--fdy-brass-dark);
+}
+
+.fdy-row-menu-item[data-disabled] {
+  color: var(--fdy-ink-faint);
+  cursor: default;
+}

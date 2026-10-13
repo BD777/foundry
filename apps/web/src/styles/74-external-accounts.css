@@ -219,61 +219,6 @@
   gap: 14px;
 }
 
-/* Connect dialog. */
-.fdy-xacc-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  background: var(--fdy-overlay);
-}
-
-.fdy-xacc-modal {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 81;
-  display: grid;
-  width: min(560px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px);
-  box-sizing: border-box;
-  align-content: start;
-  gap: 16px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 20px;
-  border: 1px solid var(--fdy-line-strong);
-  border-radius: 14px;
-  background: var(--fdy-paper-main);
-  box-shadow: var(--fdy-shadow-floating);
-  transform: translate(-50%, -50%);
-}
-
-/* What a row menu action will do, before it does it. */
-.fdy-xacc-modal.fdy-xacc-confirm {
-  width: min(440px, calc(100vw - 24px));
-}
-
-.fdy-xacc-modal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.fdy-xacc-modal-header h2 {
-  margin: 0;
-  color: var(--fdy-ink-strong);
-  font-size: 17px;
-  line-height: 1.3;
-}
-
-.fdy-xacc-modal-header p {
-  margin: 5px 0 0;
-  color: var(--fdy-ink-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .fdy-xacc-form {
   display: grid;
   min-width: 0;

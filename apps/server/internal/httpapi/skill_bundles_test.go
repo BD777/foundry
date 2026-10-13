@@ -57,7 +57,7 @@ func TestSkillBundleLifecycle(t *testing.T) {
 		}})
 	}))
 	defer release.Close()
-	f.server.releaseAPI = release.URL
+	f.server.toolResolver.ReleaseAPI = release.URL
 	call := func(session, method, path, body string, want int) []byte {
 		t.Helper()
 		recorder := doAuthCall(t, f.handler, f.as(session, method, path, body))

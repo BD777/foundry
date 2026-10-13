@@ -28,7 +28,7 @@ func TestPickedRepositoryBecomesABundle(t *testing.T) {
 	f.server.skillRepos = repo
 	noReleases := httptest.NewServer(http.NotFoundHandler())
 	defer noReleases.Close()
-	f.server.releaseAPI = noReleases.URL
+	f.server.toolResolver.ReleaseAPI = noReleases.URL
 	call := func(session, method, path, body string, want int) []byte {
 		t.Helper()
 		recorder := doAuthCall(t, f.handler, f.as(session, method, path, body))

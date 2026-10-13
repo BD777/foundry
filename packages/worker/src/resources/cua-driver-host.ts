@@ -11,6 +11,7 @@ import {
   isExecutableFile,
   type ExecResult,
 } from "./exec.js";
+import { errorMessage } from "../utils.js";
 
 export const cuaDriverAppPath = "/Applications/CuaDriver.app";
 export const cuaDriverInstallerUrl = "https://cua.ai/driver/install.sh";
@@ -205,7 +206,7 @@ function startGrant(
         state: "finished",
         startedAt,
         code: null,
-        output: error instanceof Error ? error.message : String(error),
+        output: errorMessage(error),
       }),
     )
     .then((outcome) => {
@@ -438,9 +439,7 @@ export function watchCuaDriverPermissions(
         startGrant(host.binary, host.env, host.run, host.now, options.onChange);
         options.onChange();
       } catch (error) {
-        console.warn(
-          `cua-driver permission recheck: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        console.warn(`cua-driver permission recheck: ${errorMessage(error)}`);
       }
     } else if (changed) options.onChange();
     watch.timer = setTimeout(() => void tick(), interval);

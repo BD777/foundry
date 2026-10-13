@@ -15,6 +15,7 @@ import {
 import type { ChatTimerFire, ChatTimerItem } from "./chat-types";
 import { i18n } from "../../i18n";
 import { responseStreamLabel } from "../../lib/agent-session-events";
+import { isSessionLive } from "../../lib/session-status";
 import {
   isPanelOnlyEvent,
   latestBackgroundSnapshot,
@@ -183,8 +184,7 @@ function timerWake(
 
 function sessionBusy(session: AgentSession, runs: SessionTimerRuns): boolean {
   return (
-    session.status === "running" ||
-    session.status === "queued" ||
+    isSessionLive(session) ||
     Boolean(runs.running) ||
     (latestBackgroundSnapshot(session) ?? []).some(
       (task) => task.status === "running",

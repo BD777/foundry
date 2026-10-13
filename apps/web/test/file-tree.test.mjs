@@ -202,7 +202,7 @@ test("a small tree starts open", async () => {
 
 test("only the answer's verified paths become file buttons, and only once it settles", async () => {
   const { MarkdownContent } =
-    await import("../src/components/conversation/chat-message-content.tsx");
+    await import("../src/components/conversation/markdown-content.tsx");
   const opened = [];
   const text = [
     "Reports are in `/tmp/out/`:",

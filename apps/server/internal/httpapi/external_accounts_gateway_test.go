@@ -135,7 +135,7 @@ func (f *gatewayFixture) startSession() (store.AgentSession, store.ExternalAccou
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	alice, _ := f.server.accounts.GetUser(ctx, f.aliceID)
+	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
 	materials := f.server.hub.sessionExternalAccounts(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}, true)
 	if len(materials) != 1 || materials[0].Gateway == nil {
 		f.t.Fatalf("no gateway material: %+v", materials)

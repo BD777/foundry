@@ -855,12 +855,6 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-.fdy-connection-assign-dialog.fdy-skill-compare-dialog {
-  width: min(960px, calc(100vw - 32px));
-  height: min(760px, calc(100vh - 32px));
-  max-height: calc(100vh - 32px);
-}
-.fdy-skill-compare-actions,
 .fdy-skill-compare-version {
   display: flex;
   flex-wrap: wrap;
@@ -1415,12 +1409,6 @@
   color: var(--fdy-error-text);
 }
 
-/* Skill dialogs end with their actions on the right, like other dialogs. */
-.fdy-skill-dialog-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
 .fdy-skill-bundle-default {
   display: flex;
   align-items: center;
@@ -1475,10 +1463,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-}
-
-.fdy-skill-repo-menu-trigger {
-  flex: 0 0 auto;
 }
 
 @media (max-width: 640px) {

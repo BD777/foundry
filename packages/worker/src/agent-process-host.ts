@@ -17,6 +17,8 @@ import {
   processIdentity,
   recordAgentProcess,
 } from "./agent-processes.js";
+import { signalChildGroup, signalProcessGroup } from "./process-group.js";
+import { errorMessage } from "./utils.js";
 
 const [registry, command, ...args] = process.argv.slice(2);
 if (!registry || !command) {
@@ -35,7 +37,7 @@ if (pid && workerIdentity) {
     });
   } catch (error) {
     console.error(
-      `Recording agent process ${pid} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `Recording agent process ${pid} failed: ${errorMessage(error)}`,
     );
   }
 }
@@ -44,23 +46,16 @@ const running = (): boolean =>
   child.exitCode === null && child.signalCode === null;
 const stopSignals = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
 const forward = (signal: NodeJS.Signals): void => {
-  if (!pid || !running()) return;
-  try {
-    process.kill(-pid, signal);
-  } catch {
-    child.kill(signal);
-  }
+  if (running()) signalChildGroup(child, signal);
 };
 for (const signal of stopSignals) process.on(signal, forward);
 
 const watchdog = setInterval(() => {
   if (process.ppid === worker) return;
-  try {
-    if (pid) process.kill(-pid, "SIGKILL");
-  } catch {
-    // The group is gone already.
+  if (pid) {
+    signalProcessGroup(pid, "SIGKILL");
+    forgetAgentProcess(registry, pid);
   }
-  if (pid) forgetAgentProcess(registry, pid);
   process.exit(1);
 }, 500);
 watchdog.unref();
