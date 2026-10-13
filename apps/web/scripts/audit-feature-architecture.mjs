@@ -119,15 +119,17 @@ if (statSync(appPath).isFile()) {
   }
 }
 
+// Keyed by sheet name prefix: an area split into several sheets
+// (10-issues-*.css, 20-chat-*.css) is checked sheet by sheet.
 const styleOwnership = {
-  "10-issues.css": [
+  "10-issues": [
     "fdy-chat-",
     "fdy-runs-",
     "fdy-asset-",
     "fdy-workspace-manager",
     "fdy-local-daemon",
   ],
-  "20-chat.css": [
+  "20-chat": [
     "fdy-issue-",
     "fdy-runs-",
     "fdy-asset-",
@@ -135,7 +137,7 @@ const styleOwnership = {
     "fdy-workspace-manager",
     "fdy-local-daemon",
   ],
-  "30-runs.css": [
+  "30-runs": [
     "fdy-chat-",
     "fdy-issue-",
     "fdy-asset-",
@@ -145,13 +147,26 @@ const styleOwnership = {
   ],
 };
 
-for (const [name, foreignPrefixes] of Object.entries(styleOwnership)) {
-  const source = readFileSync(resolve(sourceRoot, "styles", name), "utf8");
-  for (const prefix of foreignPrefixes) {
-    if (source.includes(`.${prefix}`)) {
-      failures.push(
-        `styles/${name} contains foreign selector ".${prefix}*"; move it to the owning feature style`,
-      );
+const styleSheets = readdirSync(resolve(sourceRoot, "styles")).filter((name) =>
+  name.endsWith(".css"),
+);
+for (const [area, foreignPrefixes] of Object.entries(styleOwnership)) {
+  const sheets = styleSheets.filter(
+    (name) => name === `${area}.css` || name.startsWith(`${area}-`),
+  );
+  if (sheets.length === 0) {
+    failures.push(
+      `styles/${area}*.css is missing; update the style ownership map`,
+    );
+  }
+  for (const name of sheets) {
+    const source = readFileSync(resolve(sourceRoot, "styles", name), "utf8");
+    for (const prefix of foreignPrefixes) {
+      if (source.includes(`.${prefix}`)) {
+        failures.push(
+          `styles/${name} contains foreign selector ".${prefix}*"; move it to the owning feature style`,
+        );
+      }
     }
   }
 }

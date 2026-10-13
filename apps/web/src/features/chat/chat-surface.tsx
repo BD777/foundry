@@ -1,41 +1,21 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  CircleAlert,
-  Clock,
-  LoaderCircle,
-  PanelRight,
-} from "lucide-react";
+import { ChevronLeft, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ImagePreviewOverlay } from "../../components/conversation/image-preview-overlay";
 import type { ChatSurfaceProps } from "./chat-surface-types";
 import { ChatContextCard } from "./chat-context-card";
-import { backgroundWorkNote } from "./chat-context-model";
-import { scheduledNote } from "./chat-schedule-model";
-import { useSharedNow } from "../../lib/use-shared-now";
 import { ChatDetailPanel } from "./chat-detail-panel";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
 import { Conversation } from "../../components/conversation/conversation";
 import { conversationStoragePrefixes } from "../../components/conversation/conversation-storage";
-import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
-import { navigateToDeviceAgents } from "../../lib/in-app-navigation";
-import { setDocumentChat } from "../../lib/document-title";
-import type {
-  ConversationFileActions,
-  ConversationFileReference,
-  ParsedImageTag,
-} from "../../components/conversation/conversation-types";
+import type { ParsedImageTag } from "../../components/conversation/conversation-types";
+import { chatComposer } from "./chat-surface-composer";
 import { ChatSidebar } from "./chat-thread-view";
-import { useChatContextDetail } from "./use-chat-context-detail";
-import { useMediaQuery } from "./use-media-query";
-
-/** Where the context rail sits beside the chat (see 90-responsive.css). */
-const contextRailQuery = "(min-width: 1361px)";
-import type { ChatSessionFileItem } from "./chat-types";
-import { pendingSessionFile } from "./pending-file-references";
+import { ChatReadOnlyNotice, ChatWorkNote } from "./chat-thread-notices";
+import { useChatContextPanel } from "./use-chat-context-panel";
+import { useChatDocumentTitle } from "./use-chat-document-title";
 
 export type {
   ChatAgentOption,
@@ -56,7 +36,6 @@ export function ChatSurface(props: ChatSurfaceProps) {
     threadKey,
   } = props;
   const { t } = useTranslation("chat");
-  const [contextCardOpen, setContextCardOpen] = useState(false);
   // Narrow screens show one pane at a time: the list, or the open chat.
   const [narrowPane, setNarrowPane] = useState<"list" | "thread">(
     props.selectedChatId ? "thread" : "list",
@@ -77,140 +56,18 @@ export function ChatSurface(props: ChatSurfaceProps) {
   );
   const [previewImage, setPreviewImage] = useState<ParsedImageTag>();
   const [draftResetKey, setDraftResetKey] = useState(0);
-  const contextDetail = useChatContextDetail(threadKey);
-  // An answer's "N files" chip shows only its turn's files.
-  const [turnFilter, setTurnFilter] = useState<string>();
-  const [reveal, setReveal] = useState<{ ids: string[] }>();
-  useEffect(() => {
-    setTurnFilter(undefined);
-    setReveal(undefined);
-  }, [threadKey]);
-  const { close: closeDetail, setSelection } = contextDetail;
-  // A background task's row changes as it runs; its panel follows it.
-  const selection = contextDetail.selection;
-  const liveSelection =
-    selection?.kind === "background-task"
-      ? (contextCard?.background.find((item) => item.id === selection.id) ??
-        selection)
-      : selection;
-  // Read at click time: the links stay stable while files stream in.
-  const sessionFiles = useRef<ChatSessionFileItem[]>([]);
-  sessionFiles.current = [
-    ...(contextCard?.changes ?? []),
-    ...(contextCard?.files ?? []),
-  ];
-  // A pending file's panel turns into the file once the session records it.
-  const recordedPending =
-    selection?.kind === "session-file" && selection.pending
-      ? sessionFiles.current.find((item) => item.path === selection.path)
-      : undefined;
-  useEffect(() => {
-    if (recordedPending) setSelection(recordedPending);
-  }, [recordedPending, setSelection]);
-  const showPanel = useCallback(() => {
-    closeDetail();
-    setContextCardOpen(true);
-  }, [closeDetail]);
-  // An idle chat whose agent still works: the note names what keeps running
-  // and opens the panel on those rows.
-  const backgroundWork = props.agentActive ? undefined : props.backgroundWork;
-  const backgroundNote = backgroundWork
-    ? backgroundWorkNote(backgroundWork)
-    : undefined;
-  const revealBackgroundWork = useCallback(() => {
-    if (!backgroundWork) return;
-    setReveal({
-      ids: [
-        ...(backgroundWork.timerRun ? [backgroundWork.timerRun.id] : []),
-        ...backgroundWork.taskIds,
-        ...backgroundWork.subagentIds,
-      ],
-    });
-    showPanel();
-  }, [backgroundWork, showPanel]);
-  // Otherwise timers its agent holds: the note says when it wakes next and
-  // opens the panel on them.
-  const schedule =
-    props.agentActive || backgroundNote ? undefined : props.schedule;
-  const timerIds = useMemo(
-    () => contextCard?.timers.map((item) => item.id) ?? [],
-    [contextCard],
-  );
-  const revealTimers = useCallback(() => {
-    setReveal({ ids: timerIds });
-    showPanel();
-  }, [timerIds, showPanel]);
-  const openFileReference = useCallback(
-    (reference: ConversationFileReference) => {
-      if (reference.kind === "file") {
-        const file = sessionFiles.current.find(
-          (item) => item.path === reference.path,
-        );
-        // Not recorded yet: the session that named it reads it, or says so.
-        if (file) setSelection(file);
-        else if (reference.pending && reference.sessionId)
-          setSelection(
-            pendingSessionFile(reference, reference.sessionId, workspaceId),
-          );
-        return;
-      }
-      const folder = `${reference.path.replace(/\/+$/, "")}/`;
-      setTurnFilter(undefined);
-      setReveal({
-        ids: sessionFiles.current
-          .filter((item) => item.path.startsWith(folder))
-          .map((item) => item.id),
-      });
-      showPanel();
-    },
-    [setSelection, showPanel, workspaceId],
-  );
-  const fileActions = useMemo<ConversationFileActions>(
-    () => ({
-      open: openFileReference,
-      showTurn: (turnId) => {
-        setTurnFilter(turnId);
-        showPanel();
-      },
-    }),
-    [openFileReference, showPanel],
-  );
-  // The tab names the open chat and marks it while it runs, or while the
-  // note above says its agent still works in the background.
-  const chatName =
+  const panel = useChatContextPanel(props);
+  const { detail } = panel;
+  useChatDocumentTitle(
     !threadKey.endsWith(":new") && typeof chatTitle === "string"
       ? chatTitle
-      : "";
-  const chatRunning = Boolean(props.agentActive);
-  const chatBackground = Boolean(backgroundNote);
-  useEffect(() => {
-    setDocumentChat(
-      chatName
-        ? { title: chatName, running: chatRunning, background: chatBackground }
-        : undefined,
-    );
-  }, [chatName, chatRunning, chatBackground]);
-  useEffect(() => () => setDocumentChat(undefined), []);
-  const selectedRuntime =
-    props.agentOptions.find((agent) => agent.value === props.selectedAgentId)
-      ?.runtime ??
-    props.agentOptions[0]?.runtime ??
-    "codex";
-  useEffect(() => setContextCardOpen(false), [threadKey]);
-  // Wide screens show the panel beside the chat; narrow ones on request.
-  const widePanel = useMediaQuery(contextRailQuery);
-  const panelVisible = Boolean(
-    contextCard && !contextDetail.selection && (widePanel || contextCardOpen),
+      : "",
+    Boolean(props.agentActive),
+    Boolean(panel.backgroundNote),
   );
-  const { onContextPanelVisibleChange } = props;
-  useEffect(() => {
-    onContextPanelVisibleChange?.(panelVisible);
-  }, [onContextPanelVisibleChange, panelVisible]);
   // Stable, so the memoized chat list does not render for transcript events.
   const latestCallbacks = useRef({ onChatsDeleted, onNewChat });
   latestCallbacks.current = { onChatsDeleted, onNewChat };
-  const clearTurnFilter = useCallback(() => setTurnFilter(undefined), []);
-  const closeContextCard = useCallback(() => setContextCardOpen(false), []);
   const handleNewChat = useCallback(() => {
     setDraftResetKey((value) => value + 1);
     setNarrowPane("thread");
@@ -221,9 +78,7 @@ export function ChatSurface(props: ChatSurfaceProps) {
       latestCallbacks.current.onChatsDeleted?.(ids) ?? Promise.resolve(),
     [],
   );
-  const disabledAgentDeviceId = props.agentOptions.find(
-    (agent) => agent.disabled,
-  )?.deviceId;
+  const showList = () => setNarrowPane("list");
   return (
     <section className="fdy-chat-screen" data-narrow-pane={narrowPane}>
       <ChatSidebar
@@ -236,57 +91,31 @@ export function ChatSurface(props: ChatSurfaceProps) {
       />
 
       <div className="fdy-chat-thread">
-        <div className="fdy-chat-thread-header">
-          <Button
-            className="fdy-chat-back"
-            onClick={() => setNarrowPane("list")}
-            size="sm"
-            variant="ghost"
-          >
-            <ChevronLeft size={16} />
-            {t("list.title")}
-          </Button>
-          <div className="fdy-chat-thread-title">
-            <strong>{chatTitle}</strong>
-          </div>
-          <div className="fdy-chat-thread-actions">
-            {contextCard ? (
-              <Button
-                aria-label={
-                  contextCardOpen
-                    ? t("contextCard.hide")
-                    : t("contextCard.show")
-                }
-                className="fdy-chat-context-toggle"
-                data-active={contextCardOpen ? "true" : "false"}
-                onClick={() => setContextCardOpen((current) => !current)}
-                size="icon"
-                variant="ghost"
-              >
-                <PanelRight size={16} />
-              </Button>
-            ) : null}
-          </div>
-        </div>
+        <ChatThreadHeader
+          contextOpen={contextCard ? panel.open : undefined}
+          onBack={showList}
+          onToggleContext={panel.toggle}
+          title={chatTitle}
+        />
         <ChatDetailSplitPane
           detail={
-            liveSelection ? (
+            panel.liveSelection ? (
               <ChatDetailPanel
                 canControl={!props.readOnlyReason && !props.threadNotice}
-                error={contextDetail.error}
-                file={contextDetail.file}
-                loading={contextDetail.loading}
-                onClose={contextDetail.close}
+                error={detail.error}
+                file={detail.file}
+                loading={detail.loading}
+                onClose={detail.close}
                 onImagePreview={setPreviewImage}
-                selection={liveSelection}
-                transcript={contextDetail.transcript}
+                selection={panel.liveSelection}
+                transcript={detail.transcript}
               />
             ) : undefined
           }
-          detailLabel={contextDetail.selection?.label ?? t("detail.label")}
+          detailLabel={detail.selection?.label ?? t("detail.label")}
         >
           <Conversation
-            fileActions={contextCard ? fileActions : undefined}
+            fileActions={contextCard ? panel.fileActions : undefined}
             history={props.history}
             onReachHistoryStart={props.onReachHistoryStart}
             threadKey={props.threadKey}
@@ -309,108 +138,42 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onAttachmentsRestore={props.onAttachmentsRestore}
             onImagePreview={setPreviewImage}
             notice={
-              backgroundNote ? (
-                <Button
-                  className="fdy-chat-background-note"
-                  onClick={revealBackgroundWork}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <LoaderCircle aria-hidden="true" size={14} />
-                  {backgroundNote}
-                </Button>
-              ) : schedule ? (
-                <ScheduledNote
-                  onClick={revealTimers}
-                  schedule={schedule}
+              panel.backgroundNote || panel.schedule ? (
+                <ChatWorkNote
+                  backgroundNote={panel.backgroundNote}
+                  onRevealBackgroundWork={panel.revealBackgroundWork}
+                  onRevealTimers={panel.revealTimers}
+                  schedule={panel.schedule}
                   wakes={props.scheduleWakes}
                 />
               ) : undefined
             }
             readOnly={
-              props.readOnlyReason ? (
-                <Alert title={t("thread.readOnly")}>
-                  {props.readOnlyReason}
-                </Alert>
-              ) : props.threadNotice ? (
-                <Alert
-                  title={props.threadNotice.title}
-                  tone={props.threadNotice.tone}
-                >
-                  <p>{props.threadNotice.message}</p>
-                  {props.threadNotice.action ? (
-                    <Button
-                      className="fdy-chat-thread-notice-action"
-                      onClick={() => {
-                        const action = props.threadNotice?.action;
-                        if (action?.showsList) setNarrowPane("list");
-                        action?.onSelect();
-                      }}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {props.threadNotice.action.label}
-                      <ChevronRight aria-hidden="true" size={14} />
-                    </Button>
-                  ) : null}
-                </Alert>
+              props.readOnlyReason || props.threadNotice ? (
+                <ChatReadOnlyNotice
+                  onShowList={showList}
+                  readOnlyReason={props.readOnlyReason}
+                  threadNotice={props.threadNotice}
+                />
               ) : undefined
             }
-            composer={{
-              mode: "selectable",
-              agentOptions: props.agentOptions,
-              slashItems: props.slashSkills,
-              agentPickerFooter: (
-                <AgentPickerFooter
-                  deviceId={disabledAgentDeviceId}
-                  onManage={navigateToDeviceAgents}
-                />
-              ),
-              agentValue: props.selectedAgentId,
-              onAgentChange: props.onAgentChange,
-              runtimeControls: {
-                // A verifier keeps its sandbox; a message cannot change it.
-                showPermissions: !props.contextCard?.status?.verification,
-                selectedRuntime,
-                claudeEffort: props.claudeEffort,
-                claudePermissionMode: props.claudePermissionMode,
-                codexApprovalPolicy: props.codexApprovalPolicy,
-                codexReasoningEffort: props.codexReasoningEffort,
-                codexSandboxMode: props.codexSandboxMode,
-                codexSpeed: props.codexSpeed,
-                modelLoadFailed: props.modelLoadFailed ?? false,
-                modelLoading: props.modelLoading ?? false,
-                modelOptions: props.modelOptions,
-                modelValue: props.modelValue,
-                onClaudeEffortChange: props.onClaudeEffortChange,
-                onClaudePermissionModeChange:
-                  props.onClaudePermissionModeChange,
-                onCodexApprovalPolicyChange: props.onCodexApprovalPolicyChange,
-                onCodexReasoningEffortChange:
-                  props.onCodexReasoningEffortChange,
-                onCodexSandboxModeChange: props.onCodexSandboxModeChange,
-                onCodexSpeedChange: props.onCodexSpeedChange,
-                onModelChange: props.onModelChange,
-                onResetControls: props.onResetControls,
-                onRetryModels: props.onRetryModels,
-              },
-            }}
+            composer={chatComposer(props)}
           />
 
-          {contextCard && !contextDetail.selection ? (
+          {contextCard && !detail.selection ? (
             <div
               className="fdy-chat-context-rail"
-              data-open={contextCardOpen ? "true" : "false"}
+              data-open={panel.open ? "true" : "false"}
             >
               <ChatContextCard
                 chatKey={threadKey}
                 data={contextCard}
-                onClearTurnFilter={clearTurnFilter}
-                onClose={closeContextCard}
+                onClearTurnFilter={panel.clearTurnFilter}
+                onClose={panel.close}
                 onRetrySubagents={props.onRetrySubagents}
-                onSelect={contextDetail.setSelection}
-                reveal={reveal}
-                turnFilter={turnFilter}
+                onSelect={detail.setSelection}
+                reveal={panel.reveal}
+                turnFilter={panel.turnFilter}
               />
             </div>
           ) : null}
@@ -426,39 +189,52 @@ export function ChatSurface(props: ChatSurfaceProps) {
   );
 }
 
-/** The next wake-up of an idle chat's timers, kept current by the minute. */
-function ScheduledNote(props: {
-  onClick: () => void;
-  schedule: NonNullable<ChatSurfaceProps["schedule"]>;
-  wakes: ChatSurfaceProps["scheduleWakes"];
+/**
+ * The open chat's title, the narrow screens' way back to the list, and the
+ * context panel toggle (`contextOpen` undefined: the chat has no panel).
+ */
+function ChatThreadHeader({
+  contextOpen,
+  onBack,
+  onToggleContext,
+  title,
+}: {
+  contextOpen: boolean | undefined;
+  onBack: () => void;
+  onToggleContext: () => void;
+  title: ReactNode;
 }) {
-  const { i18n } = useTranslation();
-  const minute = Math.floor(useSharedNow(true) / 60_000);
-  const note = useMemo(
-    () =>
-      scheduledNote(
-        props.schedule,
-        new Date(minute * 60_000),
-        props.wakes?.wakes,
-        props.wakes?.busy,
-        props.wakes?.failedRun,
-      ),
-    // The note is written in the viewer's language.
-    [props.schedule, props.wakes, minute, i18n.language],
-  );
+  const { t } = useTranslation("chat");
   return (
-    <Button
-      className="fdy-chat-background-note"
-      onClick={props.onClick}
-      size="sm"
-      variant="ghost"
-    >
-      {props.wakes?.failedRun ? (
-        <CircleAlert aria-hidden="true" size={14} />
-      ) : (
-        <Clock aria-hidden="true" size={14} />
-      )}
-      {note}
-    </Button>
+    <div className="fdy-chat-thread-header">
+      <Button
+        className="fdy-chat-back"
+        onClick={onBack}
+        size="sm"
+        variant="ghost"
+      >
+        <ChevronLeft size={16} />
+        {t("list.title")}
+      </Button>
+      <div className="fdy-chat-thread-title">
+        <strong>{title}</strong>
+      </div>
+      <div className="fdy-chat-thread-actions">
+        {contextOpen !== undefined ? (
+          <Button
+            aria-label={
+              contextOpen ? t("contextCard.hide") : t("contextCard.show")
+            }
+            className="fdy-chat-context-toggle"
+            data-active={contextOpen ? "true" : "false"}
+            onClick={onToggleContext}
+            size="icon"
+            variant="ghost"
+          >
+            <PanelRight size={16} />
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -1,0 +1,329 @@
+.fdy-chat-composer {
+  --fdy-chat-turn-gutter: 0px;
+
+  max-width: var(--fdy-chat-content-max);
+  width: calc(
+    100% - var(--fdy-chat-turn-gutter) - 2 * var(--fdy-chat-content-padding)
+  );
+  position: relative;
+  z-index: 2;
+  margin: -16px auto 20px;
+  margin-left: calc(
+    var(--fdy-chat-turn-gutter) +
+      max(
+        var(--fdy-chat-content-padding),
+        (100% - var(--fdy-chat-turn-gutter) - var(--fdy-chat-content-max)) / 2
+      )
+  );
+}
+
+.fdy-chat-composer[data-drag-active="true"] {
+  background: var(--fdy-brass-soft);
+  border-color: var(--fdy-brass-line);
+  box-shadow: var(--fdy-shadow-inset);
+}
+
+.fdy-chat-attachment-stage {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0 9px;
+}
+
+.fdy-chat-queue {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: -2px -2px 9px;
+  overflow: hidden;
+}
+
+/* Grip, message, actions on one row; the message's files sit under its text. */
+.fdy-chat-queue-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 7px 6px 5px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 13px;
+  background: var(--fdy-panel);
+  color: var(--fdy-ink);
+  overflow: hidden;
+  box-shadow: var(--fdy-shadow-inset);
+}
+
+.fdy-chat-queue-item[data-dragging="true"] {
+  opacity: 0.68;
+}
+
+.fdy-chat-queue-grip {
+  display: inline-flex;
+  width: 20px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fdy-ink-faint);
+  cursor: grab;
+}
+
+.fdy-chat-queue-item:active .fdy-chat-queue-grip {
+  cursor: grabbing;
+}
+
+.fdy-chat-queue-grip:disabled {
+  cursor: default;
+}
+
+.fdy-chat-queue-body {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-chat-queue-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 30px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-queue-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fdy-chat-queue-action {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-queue-action:hover:not(:disabled) {
+  color: var(--fdy-ink);
+}
+
+.fdy-chat-queue-notice {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fdy-chat-queue-item[data-state="dispatching"] {
+  opacity: 0.72;
+}
+
+.fdy-chat-queue-item[data-state="failed"] {
+  border-color: var(--fdy-error-border);
+}
+
+.fdy-chat-queue-error {
+  color: var(--fdy-error-text);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-queue-warning {
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.fdy-chat-queue-item[data-maybe-sent="true"] {
+  border-color: var(--fdy-warning-border);
+}
+
+.fdy-chat-queue-editor {
+  min-width: 0;
+  font-size: 13px;
+}
+
+/* An edited message takes the row's width; Save and Cancel sit under it. */
+.fdy-chat-queue-item[data-editing="true"] {
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.fdy-chat-queue-item[data-editing="true"] .fdy-chat-queue-actions {
+  grid-column: 2;
+  justify-content: flex-end;
+}
+
+.fdy-chat-attachments {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fdy-chat-attachment {
+  position: relative;
+  display: grid;
+  width: 176px;
+  min-width: 0;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 13px;
+  background: var(--fdy-panel);
+  color: var(--fdy-ink);
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-chat-attachment[data-kind="image"] {
+  width: 150px;
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+
+.fdy-chat-attachment-thumb {
+  display: block;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--fdy-control-surface-hover);
+  cursor: zoom-in;
+}
+
+.fdy-chat-attachment-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fdy-chat-attachment-file-icon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--fdy-control-surface-hover);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-attachment-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-chat-attachment-copy strong,
+.fdy-chat-attachment-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-attachment-copy strong {
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.fdy-chat-attachment-copy em {
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.fdy-chat-attachment-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fdy-media-surface);
+  color: var(--fdy-media-text);
+  cursor: pointer;
+  box-shadow: var(--fdy-panel-shadow);
+}
+
+.fdy-chat-attachment-remove:hover {
+  background: var(--fdy-media-surface);
+}
+
+.fdy-chat-composer-blocked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 4px 6px;
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fdy-chat-composer-blocked svg {
+  flex: none;
+}
+
+/* The chat is idle, yet its agent keeps working: one click shows what. */
+.fdy-chat-thread-notice-action {
+  margin-top: 10px;
+}
+
+.fdy-chat-background-note {
+  width: fit-content;
+  margin: 0 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-background-note svg {
+  flex: none;
+  animation: fdy-context-spin 1.15s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-chat-background-note svg {
+    animation: none;
+  }
+}
+
+.fdy-chat-attachment-uploading {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.fdy-chat-file-input {
+  display: none;
+}
+
+.fdy-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--fdy-brass);
+  cursor: pointer;
+}

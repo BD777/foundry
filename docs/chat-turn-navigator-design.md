@@ -36,7 +36,7 @@ Conversation                   conversation.tsx (Chat and Issue)
 
 Pure anchor derivation, query normalization, reading-line lookup and density
 sampling are in `chat-turn-navigation.ts`. Styles and container queries are in
-`apps/web/src/styles/20-chat.css`. No server, storage, worker, or protocol
+`apps/web/src/styles/20-chat-transcript.css`. No server, storage, worker, or protocol
 changes are involved.
 
 ## Product behavior

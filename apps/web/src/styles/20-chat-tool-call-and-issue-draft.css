@@ -1,0 +1,145 @@
+.fdy-chat-tool-call {
+  width: min(100%, 720px);
+  margin: -4px 0;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-tool-call-summary {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 2px;
+  border: 0;
+  border-radius: 7px;
+  appearance: none;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+  cursor: pointer;
+  font: inherit;
+  user-select: none;
+  transition: background 0.14s ease;
+}
+
+.fdy-chat-tool-call-summary:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+
+.fdy-chat-tool-call-icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-chat-tool-call-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--fdy-line-strong);
+  border-top-color: var(--fdy-ink-faint);
+  border-radius: 50%;
+  animation: fdy-tool-call-spin 0.8s linear infinite;
+}
+
+@keyframes fdy-tool-call-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fdy-chat-tool-call-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.fdy-chat-tool-call-title strong {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.fdy-chat-tool-call-snippet {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-tool-call-chevron {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  transition: transform 0.14s ease;
+}
+
+.fdy-chat-tool-call[data-open="true"] .fdy-chat-tool-call-chevron {
+  transform: rotate(90deg);
+}
+
+.fdy-chat-tool-call pre {
+  max-height: 260px;
+  margin: 4px 0 0 28px;
+  padding: 10px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-chat-issue-draft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  background-clip: padding-box;
+}
+
+.fdy-chat-issue-draft > span {
+  min-width: 0;
+  flex: 1;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-chat-issue-draft .fdy-button {
+  flex: none;
+  height: 30px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 11.5px;
+}

@@ -1,0 +1,221 @@
+.fdy-setup-screen,
+.fdy-issues-screen {
+  height: 100%;
+  animation: fdyPageFade 0.25s ease both;
+}
+
+.fdy-page-surface {
+  min-height: 100%;
+  animation: fdyPageFade 0.25s ease both;
+}
+
+/* Its own scroller inside a contained view; the reserved scrollbar space
+   keeps the centered steps still. */
+.fdy-setup-screen {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 40px 30px 60px;
+}
+
+.fdy-setup-main {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.fdy-setup-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-setup-kicker span {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--fdy-line-strong);
+}
+
+.fdy-setup-screen h1 {
+  margin: 0 0 8px;
+  color: var(--fdy-ink-strong);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.15;
+}
+
+.fdy-setup-main > p {
+  max-width: 560px;
+  margin: 0 0 26px;
+  color: var(--fdy-ink-muted);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.fdy-setup-main > p em {
+  color: inherit;
+  font-style: italic;
+  font-weight: inherit;
+}
+
+.fdy-setup-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.fdy-setup-action-button.fdy-button {
+  height: 38px;
+  gap: 8px;
+  padding: 0 18px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.fdy-setup-action-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-success-text);
+}
+
+.fdy-setup-actions > span {
+  min-width: 0;
+  max-width: 340px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.fdy-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fdy-setup-step {
+  overflow: hidden;
+  padding: 18px 18px 16px;
+}
+
+.fdy-setup-step[data-state="muted"] {
+  padding: 18px;
+  opacity: 0.62;
+}
+
+.fdy-setup-step-heading {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.fdy-setup-step-heading > span {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fdy-brass);
+  color: var(--fdy-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 24px;
+  text-align: center;
+}
+
+.fdy-setup-step[data-state="muted"] .fdy-setup-step-heading > span {
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-faint);
+}
+
+.fdy-setup-step-heading strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-setup-step-heading em {
+  display: block;
+  flex: none;
+  max-width: min(42%, 220px);
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-setup-terminal {
+  margin: 12px 0 0;
+}
+
+.fdy-terminal-block {
+  max-width: 100%;
+  border-radius: 9px;
+  background: var(--fdy-dark-surface);
+  color: var(--fdy-dark-text);
+  scrollbar-color: var(--fdy-dark-muted) transparent;
+}
+
+.fdy-terminal-block .fdy-scroll-viewport {
+  border-radius: inherit;
+  overflow-y: hidden !important;
+}
+
+.fdy-terminal-block .fdy-scrollbar {
+  --fdy-scroll-thumb: var(--fdy-dark-muted);
+  --fdy-scroll-thumb-hover: var(--fdy-ink-faint);
+}
+
+.fdy-terminal-block .fdy-scrollbar:not(.fdy-scrollbar-horizontal) {
+  display: none;
+}
+
+.fdy-terminal-block pre {
+  min-width: max-content;
+  margin: 0;
+}
+
+.fdy-terminal-block code {
+  display: block;
+  padding: 13px 15px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+.fdy-terminal-prompt {
+  color: var(--fdy-dark-muted);
+}
+
+.fdy-terminal-command {
+  min-width: 0;
+}
+
+.fdy-terminal-line {
+  display: block;
+  min-width: 0;
+}

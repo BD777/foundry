@@ -69,7 +69,7 @@
     "runner": "browser",
     "references": [
       "apps/web/src/components/conversation/chat-detail-split-pane.tsx",
-      "apps/web/src/styles/20-chat.css"
+      "apps/web/src/styles/20-chat-detail.css"
     ]
   },
   "evidence": { "capture": ["console", "screenshot"], "retainOn": "failure" },

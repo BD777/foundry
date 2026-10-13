@@ -133,8 +133,8 @@
    wrapper/trigger classes) whenever the row runs out of room, truncating
    their labels. The text→icon collapse for those controls (permissions
    shield, model/effort chip around the persistent settings icon, agent
-   picker) is owned by the components in 20-chat.css — consumer CSS never
-   reaches into their internal label elements. */
+   picker) is owned by the components in 20-chat-composer-controls.css —
+   consumer CSS never reaches into their internal label elements. */
 .fdy-message-composer .fdy-chat-agent-select,
 .fdy-message-composer .fdy-chat-access-menu,
 .fdy-message-composer .fdy-chat-settings-menu {

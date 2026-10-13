@@ -153,7 +153,10 @@ test("dropdowns inside the profile dialog open modally", () => {
 });
 
 test("a portalled menu stacks above the dialog it opens over", () => {
-  const chat = readFileSync(join(styleDirectory, "20-chat.css"), "utf8");
+  const chat = readFileSync(
+    join(styleDirectory, "20-chat-composer-controls.css"),
+    "utf8",
+  );
   const popover = /\.fdy-select-popover\s*\{([^}]*)\}/.exec(chat);
   assert.ok(popover, ".fdy-select-popover must be styled");
   const layer = /z-index:\s*(\d+)/.exec(popover[1]);

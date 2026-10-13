@@ -1,0 +1,453 @@
+/*
+ * Vertical rhythm follows GitHub's markdown CSS (tight `li + li`, nested lists
+ * flush) on a four-step scale, with Gestalt proximity: a lead-in paragraph
+ * sits close to the list it introduces, unrelated blocks keep the full gap.
+ * Every gap is a margin-top on the later block ("flow"). Top-level blocks get
+ * theirs from Streamdown's stack, which reads --fdy-markdown-flow-space.
+ */
+.fdy-markdown {
+  --fdy-markdown-space-item: 0.25em;
+  --fdy-markdown-space-related: 0.5em;
+  --fdy-markdown-space-block: 1em;
+  --fdy-markdown-space-section: 1.5em;
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-block);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-markdown > :first-child {
+  margin-top: 0;
+}
+
+.fdy-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.fdy-markdown p,
+.fdy-markdown ul,
+.fdy-markdown ol,
+.fdy-markdown li,
+.fdy-markdown blockquote,
+.fdy-markdown pre,
+.fdy-markdown table {
+  margin: 0;
+}
+
+.fdy-markdown p + :is(ul, ol) {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown :is(h1, h2, h3, h4, hr) {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-section);
+}
+
+.fdy-markdown :is(h1, h2, h3, h4) + * {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown hr + * {
+  --fdy-markdown-flow-space: var(--fdy-markdown-space-section);
+}
+
+.fdy-markdown ul,
+.fdy-markdown ol {
+  padding-left: 2em;
+}
+
+.fdy-markdown ul {
+  list-style-type: disc;
+}
+
+.fdy-markdown ol {
+  list-style-type: decimal;
+}
+
+.fdy-markdown :is(ul, ol) ul {
+  list-style-type: circle;
+}
+
+.fdy-markdown :is(ul, ol) ol {
+  list-style-type: lower-roman;
+}
+
+/* GFM task items (GitHub's CSS): the checkbox takes the bullet's place. */
+.fdy-markdown .task-list-item {
+  list-style-type: none;
+}
+
+.fdy-markdown .task-list-item input[type="checkbox"] {
+  margin: 0 0.2em 0.25em -1.4em;
+  vertical-align: middle;
+}
+
+.fdy-markdown li + li,
+.fdy-markdown li > :is(ul, ol) {
+  margin-top: var(--fdy-markdown-space-item);
+}
+
+/* Loose lists (items wrapped in paragraphs) breathe a step more, no further. */
+.fdy-markdown :is(ul, ol):has(> li > p) > li + li,
+.fdy-markdown li > :is(p, pre, blockquote, table, div):not(:first-child) {
+  margin-top: var(--fdy-markdown-space-related);
+}
+
+.fdy-markdown blockquote > :not(:first-child) {
+  margin-top: var(--fdy-markdown-space-block);
+}
+
+.fdy-markdown h1,
+.fdy-markdown h2,
+.fdy-markdown h3,
+.fdy-markdown h4 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.fdy-markdown h1 {
+  font-size: 20px;
+}
+
+.fdy-markdown h2 {
+  font-size: 17px;
+}
+
+.fdy-markdown h3 {
+  font-size: 15px;
+}
+
+.fdy-markdown h4 {
+  font-size: 14px;
+}
+
+.fdy-markdown a {
+  color: var(--fdy-info-text);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fdy-markdown-image {
+  width: fit-content;
+  max-width: min(100%, 520px);
+  margin: 10px 0;
+}
+
+.fdy-markdown-image button,
+.fdy-markdown-image .fdy-button {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
+  cursor: zoom-in;
+  outline-offset: 3px;
+}
+
+.fdy-markdown-image img {
+  display: block;
+  max-width: 100%;
+  max-height: min(420px, 48vh);
+  border: 1px solid var(--fdy-line);
+  border-radius: 14px;
+  background: var(--fdy-panel-soft);
+  box-shadow: var(--fdy-panel-shadow);
+  object-fit: contain;
+}
+
+.fdy-markdown-image figcaption {
+  margin-top: 7px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.fdy-chat-message-card[data-role="user"] .fdy-markdown-image {
+  margin-left: auto;
+}
+
+.fdy-image-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.fdy-image-preview-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: var(--fdy-media-control);
+  backdrop-filter: blur(10px);
+  cursor: zoom-out;
+}
+
+.fdy-image-preview-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  max-width: min(1120px, calc(100vw - 64px));
+  max-height: calc(100vh - 64px);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--fdy-media-border);
+  border-radius: 18px;
+  background: var(--fdy-media-surface);
+  box-shadow: var(--fdy-shadow-floating);
+}
+
+.fdy-image-preview-topbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 10px 10px 16px;
+  color: var(--fdy-media-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fdy-image-preview-topbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-image-preview-close {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fdy-media-control);
+  color: var(--fdy-media-text);
+  cursor: pointer;
+}
+
+.fdy-image-preview-close:hover {
+  background: var(--fdy-media-control-hover);
+}
+
+.fdy-image-preview-panel > img {
+  display: block;
+  max-width: min(1120px, calc(100vw - 64px));
+  max-height: calc(100vh - 118px);
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.fdy-markdown blockquote {
+  padding: 8px 12px;
+  border-left: 3px solid var(--fdy-line-strong);
+  border-radius: 0 8px 8px 0;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-markdown code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-markdown pre {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 12px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-markdown pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-markdown table {
+  width: 100%;
+  max-width: 100%;
+  border-spacing: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: auto;
+}
+
+.fdy-markdown th,
+.fdy-markdown td {
+  padding: 7px 9px;
+  border: 1px solid var(--fdy-line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-markdown th {
+  background: var(--fdy-panel-soft);
+  color: var(--fdy-ink);
+  font-weight: 750;
+}
+
+/*
+ * Streamdown ships code blocks and tables as nested cards. In a chat transcript
+ * those layers duplicate Foundry's own message surface and consume a surprising
+ * amount of room. Keep the useful actions, but render both elements like compact
+ * pieces of the document: one border, no toolbar row, and no double padding.
+ */
+.fdy-markdown [data-streamdown="code-block"],
+.fdy-markdown [data-streamdown="table-wrapper"] {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fdy-markdown [data-streamdown="code-block-header"] {
+  display: none;
+}
+
+.fdy-markdown
+  [data-streamdown="code-block"]
+  > div:has(> [data-streamdown="code-block-actions"]),
+.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child {
+  position: absolute;
+  z-index: 4;
+  top: 4px;
+  right: 4px;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 2px;
+  gap: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--fdy-topbar-bg);
+  box-shadow: none;
+  backdrop-filter: blur(6px);
+}
+
+.fdy-markdown [data-streamdown="code-block-actions"] {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.fdy-markdown [data-streamdown="code-block-actions"] button,
+.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border-radius: 4px;
+}
+
+.fdy-markdown [data-streamdown="code-block-body"] {
+  padding: 9px 12px;
+  border: 1px solid var(--fdy-line);
+  border-radius: 6px;
+  background: var(--fdy-control-ghost-hover);
+  font-size: 12px;
+}
+
+.fdy-markdown [data-streamdown="code-block-body"] pre,
+.fdy-markdown [data-streamdown="code-block-body"] pre code {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fdy-markdown [data-streamdown="code-block-body"] pre {
+  overflow: visible;
+  line-height: 1.5;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] > div:last-child {
+  border: 1px solid var(--fdy-line);
+  border-radius: 6px;
+  background: transparent;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] table {
+  display: table;
+  margin: 0;
+  overflow: visible;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] th,
+.fdy-markdown [data-streamdown="table-wrapper"] td {
+  padding: 5px 8px;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] th:last-child {
+  padding-right: 84px;
+}
+
+.fdy-markdown [data-streamdown="table-wrapper"] > div:first-child > div > div {
+  min-width: 96px;
+  border-color: var(--fdy-line-strong);
+  border-radius: 6px;
+  background: var(--fdy-panel);
+  box-shadow: var(--fdy-panel-shadow-hover);
+}
+
+.fdy-markdown
+  [data-streamdown="table-wrapper"]
+  > div:first-child
+  > div
+  > div
+  button {
+  display: block;
+  width: 100%;
+  height: 28px;
+  padding: 4px 9px;
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 20px;
+}
