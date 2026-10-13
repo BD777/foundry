@@ -87,6 +87,7 @@ function sessionTimerRuns(session: AgentSession): SessionTimerRuns {
         fires.push(record);
         if (key) byStart.set(key, record);
       }
+      if (fire.completedAt && event.level === "error") record.failed = true;
       if (input)
         byInput.set(event.message?.id ?? record.startedAt ?? "", record);
       if (!record.completedAt) {
@@ -122,6 +123,7 @@ function sessionTimerRuns(session: AgentSession): SessionTimerRuns {
     (session.status === "completed" || session.status === "failed")
   ) {
     latest.completedAt ||= session.completedAt ?? "";
+    if (session.status === "failed") latest.failed = true;
     if (!latest.response && session.response?.trim()) {
       latest.response = session.response.trim();
       delete latest.answerUnloaded;
@@ -229,20 +231,45 @@ export function projectSessionTimers(session: AgentSession): ChatTimerItem[] {
 
 /**
  * Each live timer's last wake and whether the thread's session holding the
- * schedule is busy, for when the chat's note says it wakes next.
+ * schedule is busy, for when the chat's note says it wakes next; and the
+ * timers' last ended run when it failed, which the note says too: a session
+ * whose scheduled runs fail (its context full and compaction failing, say)
+ * otherwise looks idle and healthy.
  */
 export function threadScheduleWakes(sessions: readonly AgentSession[]): {
   busy: boolean;
   wakes: Map<string, ClaudeTimerWake>;
+  failedRun?: ChatTimerFire;
 } {
   const session = [...sessions].reverse().find((s) => s.scheduled);
   if (!session) return { busy: false, wakes: new Map() };
   const panel = withStateEvents(session);
   const runs = sessionTimerRuns(panel);
   const wakes = new Map<string, ClaudeTimerWake>();
-  for (const timer of session.scheduled?.timers ?? [])
+  const timers = session.scheduled?.timers ?? [];
+  for (const timer of timers)
     wakes.set(timer.id, timerWake(runs, timer.id, timer.firstSeenAt));
-  return { busy: sessionBusy(panel, runs), wakes };
+  const held = new Set(timers.map((timer) => timer.id));
+  // Newest first: the first ended run of a timer the session holds.
+  const lastRun = runs.fires.find(
+    (fire) => fire.completedAt && (!fire.id || held.has(fire.id)),
+  );
+  return {
+    busy: sessionBusy(panel, runs),
+    wakes,
+    ...(lastRun?.failed ? { failedRun: lastRun } : {}),
+  };
+}
+
+/**
+ * The error a failed run ended with means the context is full and the
+ * agent could not compact it: the next run fails the same way until a
+ * request compacts it, which another model can do.
+ */
+export function timerRunContextFull(fire: ChatTimerFire): boolean {
+  return Boolean(
+    fire.failed && /prompt is too long/i.test(fire.response ?? ""),
+  );
 }
 
 /**
@@ -263,12 +290,30 @@ export function liveThreadSchedule(
  * "1 scheduled task · next at 07:37": the chat is idle, yet timers its agent
  * holds will wake it. The time is when Claude Code fires the next one,
  * from what `wakes` say of each timer's last wake (threadScheduleWakes).
+ * When the last run failed, the note says so ("… · last run failed").
  */
 export function scheduledNote(
   schedule: AgentSessionSchedule,
   now: Date = new Date(),
   wakes: ReadonlyMap<string, ClaudeTimerWake> = new Map(),
   busy = false,
+  failedRun?: ChatTimerFire,
+): string {
+  const note = nextWakeNote(schedule, now, wakes, busy);
+  if (!failedRun) return note;
+  return i18n.t(
+    timerRunContextFull(failedRun)
+      ? "chat:contextCard.scheduledNoteContextFull"
+      : "chat:contextCard.scheduledNoteLastFailed",
+    { note },
+  );
+}
+
+function nextWakeNote(
+  schedule: AgentSessionSchedule,
+  now: Date,
+  wakes: ReadonlyMap<string, ClaudeTimerWake>,
+  busy: boolean,
 ): string {
   const count = schedule.timers.length;
   let next: { at?: Date; due: boolean } | undefined;

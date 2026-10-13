@@ -218,6 +218,10 @@ export interface ReliableSessionTransportOptions {
 export interface ServerFeatures {
   /** Large envelopes may go in pieces (reply_chunk). */
   replyChunks?: boolean;
+  /** It takes workspace_folders news (folders gone or back). */
+  workspaceFolders?: boolean;
+  /** It takes resources_report (the device's resource inventory). */
+  resources?: boolean;
 }
 
 /** The server's registered answer as features; an older server sends none. */
@@ -228,6 +232,9 @@ export function serverFeatures(payload: unknown): ServerFeatures {
       : undefined;
   return {
     replyChunks: Array.isArray(features) && features.includes("reply_chunks"),
+    workspaceFolders:
+      Array.isArray(features) && features.includes("workspace_folders"),
+    resources: Array.isArray(features) && features.includes("resources_v1"),
   };
 }
 

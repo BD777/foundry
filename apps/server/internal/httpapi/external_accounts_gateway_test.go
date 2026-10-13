@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -206,14 +207,16 @@ func TestFeishuGatewaySwapsHandlesForRealTokens(t *testing.T) {
 	// As the bot: the gateway answers the token call with a stand-in and
 	// swaps it for the app's real tenant token, fetched once.
 	tenant := f.tenantHandle(f.material)
+	// Signing in read the app's names with a token of its own.
+	issued := f.fake.TenantTokensIssued()
 	for range 2 {
 		response, data = f.gw(http.MethodPost, "/open-apis/im/v1/messages?receive_id_type=chat_id", f.aliceDevice, strings.NewReader(`{"receive_id":"oc_1","msg_type":"text","content":"{}"}`), f.asUser(tenant))
 		if response.StatusCode != http.StatusOK || !strings.Contains(string(data), "om_1") {
 			t.Fatalf("send as bot: %d %s", response.StatusCode, data)
 		}
 	}
-	if f.fake.TenantTokensIssued() != 1 {
-		t.Fatalf("tenant tokens fetched: %d, want 1 (cached)", f.fake.TenantTokensIssued())
+	if fetched := f.fake.TenantTokensIssued() - issued; fetched != 1 {
+		t.Fatalf("tenant tokens fetched: %d, want 1 (cached)", fetched)
 	}
 	for _, call := range f.upstream.seen() {
 		if call.Auth != "user" && call.Auth != "bot" {
@@ -412,10 +415,10 @@ func TestFeishuGatewayRefusesBlockedAndLocalOnlyCalls(t *testing.T) {
 	if response, _ := f.gw(http.MethodGet, "/open-apis/application/v6/applications/cli_fake", f.aliceDevice, nil, f.asUser(user)); response.StatusCode == http.StatusForbidden {
 		t.Fatal("reading the app was blocked")
 	}
-	// The device cannot refresh the login, log in, register or revoke.
-	response, data := f.gw(http.MethodPost, "/open-apis/authen/v2/oauth/token", f.aliceDevice, strings.NewReader("grant_type=refresh_token"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	// The device cannot log in through the token endpoint, register or revoke.
+	response, data := f.gw(http.MethodPost, "/open-apis/authen/v2/oauth/token", f.aliceDevice, strings.NewReader("grant_type=authorization_code&code=c"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	if response.StatusCode != http.StatusBadRequest || !strings.Contains(string(data), "invalid_grant") {
-		t.Fatalf("refresh through the gateway: %d %s", response.StatusCode, data)
+		t.Fatalf("a login through the gateway: %d %s", response.StatusCode, data)
 	}
 	for _, path := range []string{"/oauth/v1/device_authorization", "/oauth/v1/app/registration", "/oauth/v3/token"} {
 		if response, _ := f.gw(http.MethodPost, path, f.aliceDevice, strings.NewReader(""), nil); response.StatusCode != http.StatusNotFound {
@@ -429,7 +432,7 @@ func TestFeishuGatewayRefusesBlockedAndLocalOnlyCalls(t *testing.T) {
 			blocked++
 		}
 	}
-	if blocked != 8 {
+	if blocked != 7 {
 		t.Fatalf("audited blocked calls: %d (%+v)", blocked, lines)
 	}
 }
@@ -545,5 +548,58 @@ func TestExternalAppSecretReplacement(t *testing.T) {
 	f.call(f.alice, http.MethodPut, "/api/external-apps/"+app.ID+"/secret", `{"clientSecret":"secret_fake"}`, http.StatusOK, "replace the secret", &saved)
 	if !saved.HasSecret || saved.RotateSecret {
 		t.Fatalf("replaced app: %+v", saved)
+	}
+}
+
+// feishu-cli refreshes its user token (POST /open-apis/authen/v2/oauth/token,
+// a form with grant_type, refresh_token, client_id, client_secret) when
+// token.json says it expired: the gateway answers with the session's
+// stand-ins, never a real token, and refuses once the session ends.
+func TestFeishuGatewayAnswersUserRefreshWithStandIns(t *testing.T) {
+	f := newGatewayFixture(t)
+	gateway := f.material.Gateway
+	if !strings.HasPrefix(gateway.RefreshHandle, "fsr_") {
+		t.Fatalf("no refresh stand-in: %+v", gateway)
+	}
+	refresh := func(refreshToken, clientID string) (*http.Response, map[string]any) {
+		form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}, "client_secret": {gateway.AppHandle}}
+		response, data := f.gw(http.MethodPost, "/open-apis/authen/v2/oauth/token", f.aliceDevice, strings.NewReader(form.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+		var answer map[string]any
+		_ = json.Unmarshal(data, &answer)
+		return response, answer
+	}
+	before := len(f.upstream.seen())
+	response, answer := refresh(gateway.RefreshHandle, f.material.ClientID)
+	if response.StatusCode != http.StatusOK || answer["access_token"] != gateway.UserHandle || answer["refresh_token"] != gateway.RefreshHandle ||
+		answer["token_type"] != "Bearer" || answer["expires_in"].(float64) <= 0 {
+		t.Fatalf("refresh: %d %v", response.StatusCode, answer)
+	}
+	if len(f.upstream.seen()) != before {
+		t.Fatal("the refresh reached Feishu")
+	}
+	// The refreshed stand-in still works.
+	if response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(answer["access_token"].(string))); response.StatusCode != http.StatusOK {
+		t.Fatalf("call with the refreshed stand-in: %d", response.StatusCode)
+	}
+	// A refresh stand-in is not a bearer token.
+	if response, _ := f.gw(http.MethodGet, "/open-apis/authen/v1/user_info", f.aliceDevice, nil, f.asUser(gateway.RefreshHandle)); response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("refresh handle as bearer: %d", response.StatusCode)
+	}
+	for _, wrong := range []struct{ token, client string }{{gateway.UserHandle, f.material.ClientID}, {gateway.RefreshHandle, "cli_other"}} {
+		if response, answer := refresh(wrong.token, wrong.client); response.StatusCode != http.StatusBadRequest || answer["error"] != "invalid_grant" {
+			t.Fatalf("wrong refresh %v: %d %v", wrong, response.StatusCode, answer)
+		}
+	}
+	// Another device cannot refresh the session's login.
+	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {gateway.RefreshHandle}, "client_id": {f.material.ClientID}, "client_secret": {gateway.AppHandle}}
+	if response, _ := f.gw(http.MethodPost, "/open-apis/authen/v2/oauth/token", f.bobDevice, strings.NewReader(form.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded"}); response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("refresh from another device: %d", response.StatusCode)
+	}
+	if _, err := f.db.CompleteAgentSession(context.Background(), f.session.ID, "done", "native_1"); err != nil {
+		t.Fatal(err)
+	}
+	if response, answer := refresh(gateway.RefreshHandle, f.material.ClientID); response.StatusCode != http.StatusBadRequest || answer["error"] != "invalid_grant" ||
+		!strings.Contains(answer["error_description"].(string), "has ended") {
+		t.Fatalf("refresh after the session ended: %d %v", response.StatusCode, answer)
 	}
 }

@@ -1,8 +1,8 @@
-/** The Feishu Bot: a Connectors app, its connection and the paired chats. */
+/** The Feishu bot channel: a Connectors app, its connection and the paired
+ * chats. */
 export const feishu = {
-  readOnlyTitle: "Read-only access",
   notices: {
-    loadFailed: "Could not load the Feishu Bot: {{error}}",
+    loadFailed: "Could not load the Feishu bot: {{error}}",
     saved: "The bot now runs on {{app}}.",
     saveFailed: "Could not change the bot's app: {{error}}",
     removed:
@@ -12,6 +12,10 @@ export const feishu = {
     codeFailed: "Could not generate a pairing code: {{error}}",
     unbound: "{{chat}} no longer sends messages here.",
     unbindFailed: "Could not unbind: {{error}}",
+    nameRefreshed: "The chat's name is now {{chat}}.",
+    nameUnchanged: "{{chat}} is still the chat's name in Feishu.",
+    nameRefreshFailed:
+      "Could not read the chat's name from Feishu; it stays {{chat}}. {{error}}",
     commandCopied: "Pairing command copied to the clipboard.",
     commandText: "The command: {{command}}",
   },
@@ -22,9 +26,9 @@ export const feishu = {
     unconfigured: "Not set up",
   },
   app: {
-    title: "Feishu Bot",
+    title: "Feishu bot",
     intro:
-      "The bot is a Feishu app from Connectors. Foundry keeps its secret and its one connection, and sends each paired chat's messages to its workspace.",
+      "People reach this workspace from Feishu through the bot. It runs on a Feishu app from Connectors; Foundry keeps the app's secret and its one connection.",
     pick: "Feishu app",
     pickPlaceholder: "Choose a Feishu app",
     noChoices:
@@ -36,9 +40,11 @@ export const feishu = {
     switchHint:
       "Another Feishu app is a different bot: the chats paired with this one are unbound when you switch.",
     working: "Working…",
+    manage: "Open in Connectors",
     otherOwner: "Managed in Connectors by its owner",
     personal: "Personal app",
     instance: "Organisation app",
+    optionMeta: "{{whose}} · ID …{{id}}",
     lastEvent: "Last event {{when}}",
     noEvent: "No event since the server started",
     remove: "Remove bot",
@@ -75,6 +81,8 @@ export const feishu = {
     defaultDirectName: "Direct chat with the bot",
     unbind: "Unbind",
     unbindConfirm: "Unbind this chat?",
+    refreshName: "Refresh name",
+    shortId: "…{{id}}",
     readyHint:
       "In a group, mention the bot with your request: <code>{{command}}</code>. In a direct chat, just write. The bot replies in a topic, and posts in that topic continue the work.",
     mentionCommand: "@bot <your request>",

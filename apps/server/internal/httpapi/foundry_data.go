@@ -221,7 +221,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 		}
 		workspaces = view.scope.filterWorkspaces(all)
 	}
-	if workspaceID != "" && !view.scope.can(workspaceID, store.WorkspaceRoleViewer) {
+	if workspaceID != "" && workspaceID != noWorkspaceSelected && !view.scope.can(workspaceID, store.WorkspaceRoleViewer) {
 		return foundryDataAnswer{}, store.ErrNotFound
 	}
 	workspace, err := selectWorkspace(ctx, s.store, workspaces, workspaceID)

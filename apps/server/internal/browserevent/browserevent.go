@@ -55,6 +55,11 @@ const (
 	FoundryDataChanged      Type = "foundry_data_changed"
 )
 
+// The resource inventory (GET /api/resources).
+const (
+	ResourcesChanged Type = "resources_changed"
+)
+
 // A workspace's chat list.
 const (
 	ChatsChanged      Type = "chats_changed"
@@ -95,6 +100,7 @@ var payloadTypes = map[Type]reflect.Type{
 	FeishuBotUpdated:            reflect.TypeFor[store.WorkspaceFeishuBot](),
 	WorkspaceMembersUpdated:     reflect.TypeFor[WorkspaceMembersUpdatedPayload](),
 	FoundryDataChanged:          reflect.TypeFor[FoundryDataChangedPayload](),
+	ResourcesChanged:            reflect.TypeFor[ResourcesChangedPayload](),
 	ChatsChanged:                reflect.TypeFor[ChatsChangedPayload](),
 	ChatQueueChanged:            reflect.TypeFor[store.ChatQueue](),
 	ChatTitlesChanged:           reflect.TypeFor[ChatTitlesChangedPayload](),
@@ -109,6 +115,7 @@ var payloadTypes = map[Type]reflect.Type{
 var notices = map[Type]bool{
 	IssueEnvironmentChanged:     true,
 	BackgroundTaskOutputChanged: true,
+	ResourcesChanged:            true,
 }
 
 // Notice reports whether t is a notice (see notices).

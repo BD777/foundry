@@ -117,7 +117,9 @@ type QueuedAgentSessionStore interface {
 // worker serves: the others are marked unavailable on the device, never
 // deleted. It reports whether any workspace changed.
 type WorkspaceAvailabilityStore interface {
-	SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served []string) (bool, error)
+	// SetDeviceServedWorkspaces marks served available, missing
+	// WorkspaceFolderMissing and the device's others WorkspaceNotServed.
+	SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served, missing []string) (bool, error)
 }
 
 // SessionTimerStore lists the timers of a device's sessions.

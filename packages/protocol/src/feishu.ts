@@ -16,6 +16,10 @@ export interface FeishuBotRoute {
   kind: FeishuRouteKind;
   chatId?: string;
   chatName?: string;
+  /** When the name was last asked of Feishu. */
+  chatNameCheckedAt?: string;
+  /** Why that check failed; the name shown is the one before. */
+  chatNameError?: string;
   /** Account the bot acts as in the chat: whoever generated the pairing
    * code the chat used. */
   boundUserId?: string;

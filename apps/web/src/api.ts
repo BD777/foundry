@@ -27,6 +27,12 @@ import type {
   DeviceRepairResult,
   DeviceResource,
   DeviceSkill,
+  ResourceBackendInstallResult,
+  ResourceLease,
+  ResourceList,
+  ResourceOperationList,
+  ResourceSourceSettings,
+  ResourceTypeId,
   DeviceSkillRoot,
   PromotedSkill,
   RepositorySkillFolder,
@@ -59,6 +65,8 @@ import type {
   WorkspaceExternalAccounts,
   WorkspaceAccessRole,
   WorkspaceProjection,
+  WorkspaceRelinkResult,
+  WorkspaceRelinkSuggestion,
   WorkspaceTreeEntry,
   WorkerRelease,
 } from "@bd777/foundry-protocol";
@@ -450,6 +458,7 @@ async function deleteJSON<T>(path: string): Promise<T> {
       response.status,
     );
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -578,6 +587,12 @@ async function sharedGetJSON<T>(
  * (the skill library's catalog); with them, those fields and the workspace.
  * Each selection keeps its own ETag, so an unchanged read costs a 304.
  */
+/**
+ * The workspace id a data read sends when the person has no workspace
+ * selected: the answer shows no workspace instead of picking one.
+ */
+export const noWorkspaceSelected = "none";
+
 export async function loadFoundryData(
   activeWorkspaceId?: string,
   options: RequestOptions & { fields?: readonly FoundryDataField[] } = {},
@@ -595,13 +610,18 @@ export async function loadFoundryData(
       selection,
     );
   } catch (error) {
-    // The workspace is gone: read whatever workspace there is now, whole.
+    // The workspace is gone: read the rest, whole, with no workspace
+    // selected. Another is never picked in its place; Switch picks one.
     if (
       activeWorkspaceId &&
+      activeWorkspaceId !== noWorkspaceSelected &&
       error instanceof ApiError &&
       error.status === 404
     ) {
-      return getFoundryData("/api/foundry-data", options);
+      return getFoundryData(
+        `/api/foundry-data?workspaceId=${noWorkspaceSelected}`,
+        options,
+      );
     }
     throw error;
   }
@@ -834,6 +854,36 @@ export async function renameWorkspace(
   );
   workspacePreloads.clear();
   return workspace;
+}
+
+/**
+ * Points a workspace at its folder's new path on its device: the same
+ * workspace, with its chats, sessions, Issues and settings.
+ */
+export async function relinkWorkspace(
+  workspaceId: string,
+  path: string,
+): Promise<WorkspaceRelinkResult> {
+  const result = await postJSON<WorkspaceRelinkResult>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/relink`,
+    { path },
+  );
+  workspacePreloads.clear();
+  return result;
+}
+
+/** Folders on the workspace's device that look like its moved folder. */
+export async function listWorkspaceRelinkSuggestions(
+  workspaceId: string,
+  options: RequestOptions = {},
+): Promise<WorkspaceRelinkSuggestion[]> {
+  const answer = await getJSON<{
+    suggestions?: WorkspaceRelinkSuggestion[] | null;
+  }>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/relink-suggestions`,
+    options,
+  );
+  return answer.suggestions ?? [];
 }
 
 export function listWorkspaceSubdirectories(
@@ -1427,6 +1477,107 @@ export function refreshDeviceResources(
   );
 }
 
+export interface ResourceListQuery {
+  type?: ResourceTypeId;
+  device?: string;
+  /** Lists instances no longer reported too. */
+  includeGone?: boolean;
+}
+
+/** The resource inventory: instances (by type, source, name) and sources. */
+export function listResources(
+  query: ResourceListQuery = {},
+  options: RequestOptions = {},
+): Promise<ResourceList> {
+  const params = new URLSearchParams();
+  if (query.type) params.set("type", query.type);
+  if (query.device) params.set("device", query.device);
+  if (query.includeGone) params.set("includeGone", "1");
+  const search = params.toString();
+  return getJSON<ResourceList>(
+    `/api/resources${search ? `?${search}` : ""}`,
+    options,
+  );
+}
+
+/** Ends the lease a session holds on an instance; its screen is reset. */
+export function releaseResource(
+  resourceId: string,
+): Promise<{ lease: ResourceLease }> {
+  return postJSON(
+    `/api/resources/${encodeURIComponent(resourceId)}/release`,
+    {},
+  );
+}
+
+/** "Let it finish": postpones once the preemption a waiting session caused. */
+export function extendResourceLease(
+  resourceId: string,
+): Promise<{ lease: ResourceLease }> {
+  return postJSON(
+    `/api/resources/${encodeURIComponent(resourceId)}/extend`,
+    {},
+  );
+}
+
+/** Ends every lease on a device's resources and resets them. */
+export function stopDeviceResources(
+  deviceId: string,
+): Promise<{ released: number }> {
+  return postJSON(
+    `/api/devices/${encodeURIComponent(deviceId)}/resources/stop`,
+    {},
+  );
+}
+
+export interface SavedResourceSourceSettings extends ResourceSourceSettings {
+  /**
+   * The device enforces it already; false while it is offline or its
+   * worker is too old (it gets the setting when it reconnects).
+   */
+  applied: boolean;
+}
+
+/**
+ * Saves what a device's owner allows sessions to do with its resources.
+ * Turning remote commands off ends any lease on its compute resource.
+ */
+export function saveDeviceResourceSettings(
+  deviceId: string,
+  settings: ResourceSourceSettings,
+): Promise<SavedResourceSourceSettings> {
+  return putJSON<SavedResourceSourceSettings>(
+    `/api/devices/${encodeURIComponent(deviceId)}/resources/settings`,
+    settings,
+  );
+}
+
+/** The latest operations sessions ran on an instance, newest first. */
+export function listResourceOperations(
+  resourceId: string,
+  limit = 50,
+  options: RequestOptions = {},
+): Promise<ResourceOperationList> {
+  return getJSON(
+    `/api/resources/${encodeURIComponent(resourceId)}/operations?limit=${limit}`,
+    options,
+  );
+}
+
+/**
+ * Runs a backend's official installer on one device (the person chose it);
+ * it may take minutes.
+ */
+export function installResourceBackend(
+  deviceId: string,
+  backend: string,
+): Promise<ResourceBackendInstallResult> {
+  return postJSON(
+    `/api/devices/${encodeURIComponent(deviceId)}/resources/install`,
+    { backend },
+  );
+}
+
 export function resetDemoData(): Promise<{ status: string }> {
   return postJSON<{ status: string }>("/api/dev/reset-demo", {});
 }
@@ -1752,6 +1903,16 @@ export function generateFeishuPairingCode(
 ): Promise<FeishuPairingCodeResult> {
   return postJSON<FeishuPairingCodeResult>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu/pair-code`,
+    {},
+  );
+}
+
+export function refreshFeishuChatName(
+  workspaceId: string,
+  routeId: string,
+): Promise<WorkspaceFeishuBot> {
+  return postJSON<WorkspaceFeishuBot>(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/feishu/chats/${encodeURIComponent(routeId)}/refresh-name`,
     {},
   );
 }

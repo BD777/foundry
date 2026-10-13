@@ -202,6 +202,11 @@ func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
 		{"skill scans", `DELETE FROM device_skill_scans WHERE device_id = ?`},
 		{"skill roots", `DELETE FROM device_skill_roots WHERE device_id = ?`},
 		{"tools", `DELETE FROM device_tools WHERE device_id = ?`},
+		{"resources", `DELETE FROM resource_instances WHERE source_id = ?`},
+		{"resource source", `DELETE FROM resource_sources WHERE id = ?`},
+		{"resource leases", `DELETE FROM resource_leases WHERE source_id = ?`},
+		{"resource fences", `DELETE FROM resource_fences WHERE source_id = ?`},
+		{"resource settings", `DELETE FROM resource_source_settings WHERE source_id = ?`},
 		{"credentials", `DELETE FROM secret_records WHERE substr(id, 1, length('agent-profile:' || ?1 || ':')) = 'agent-profile:' || ?1 || ':'`},
 	} {
 		if _, err := s.conn().ExecContext(ctx, statement.query, id); err != nil {

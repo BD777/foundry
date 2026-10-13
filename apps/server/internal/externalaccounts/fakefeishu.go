@@ -46,6 +46,19 @@ type FakeFeishu struct {
 	// GrantScopes, when set, is what an approved login grants instead of
 	// everything asked for.
 	GrantScopes []string
+	// AppName and TenantName are what the app's bot info, its record and
+	// the tenant query answer; BotInfoCode, AppRecordCode and TenantQueryCode,
+	// when set, make each refuse with that Feishu code instead (99991672: the
+	// app lacks the scope).
+	AppName         string
+	TenantName      string
+	BotInfoCode     int
+	AppRecordCode   int
+	TenantQueryCode int
+	// EnterpriseEmail is user_info's enterprise_email; MailboxEmail is the
+	// person's mailbox profile address, which refuses when empty.
+	EnterpriseEmail string
+	MailboxEmail    string
 	// API, when set, serves every request the fake's OAuth routes do not
 	// (the open-API calls a test sends through a gateway). Check tokens
 	// with AccessTokenValid and TenantTokenValid.
@@ -72,7 +85,8 @@ type FakeFeishu struct {
 func NewFakeFeishu(clientID, clientSecret string) *FakeFeishu {
 	fake := &FakeFeishu{
 		clientID: clientID, clientSecret: clientSecret, RefreshTokenExpiresIn: 7 * 24 * 3600,
-		Identity:    Identity{Subject: "ou_fake", DisplayName: "Fake Person", Tenant: "tenant_fake"},
+		Identity: Identity{Subject: "ou_fake", DisplayName: "Fake Person", Tenant: "tenant_fake"},
+		AppName:  "Fake Agent", TenantName: "Fake Org",
 		liveRefresh: map[string]bool{}, spentRefresh: map[string]bool{}, validAccess: map[string]bool{},
 		registrationPolls: map[string]int{}, validTenant: map[string]bool{},
 	}
@@ -90,6 +104,10 @@ func NewFakeFeishu(clientID, clientSecret string) *FakeFeishu {
 		mux.HandleFunc("POST "+prefix+feishuAppRegistrationPath, func(w http.ResponseWriter, r *http.Request) { fake.appRegistration(w, r, brand) })
 	}
 	mux.HandleFunc("POST "+FeishuTenantTokenPath, fake.tenantToken)
+	mux.HandleFunc("GET "+feishuBotInfoPath, fake.botInfo)
+	mux.HandleFunc("GET "+feishuApplicationPath+"{app}", fake.appRecord)
+	mux.HandleFunc("GET "+feishuTenantQueryPath, fake.tenantQuery)
+	mux.HandleFunc("GET "+feishuMailboxProfilePath, fake.mailboxProfile)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if fake.API == nil {
 			writeOAuthJSON(w, http.StatusNotFound, map[string]any{"code": 404, "msg": "not served by the fake"})
@@ -266,6 +284,54 @@ func (f *FakeFeishu) tenantToken(w http.ResponseWriter, r *http.Request) {
 	writeOAuthJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "ok", "tenant_access_token": token, "expire": 7200})
 }
 
+// asApp answers a name lookup made with the fake's tenant token. Any other
+// caller (a session's call through a gateway) goes to API when it is set.
+func (f *FakeFeishu) asApp(w http.ResponseWriter, r *http.Request, failCode int, answer func() map[string]any) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	f.mu.Lock()
+	valid, api := f.validTenant[token], f.API
+	f.mu.Unlock()
+	switch {
+	case !valid && api != nil:
+		api.ServeHTTP(w, r)
+	case !valid:
+		writeOAuthJSON(w, http.StatusUnauthorized, map[string]any{"code": 99991663, "msg": "Invalid access token for authorization"})
+	case failCode != 0:
+		writeOAuthJSON(w, http.StatusBadRequest, map[string]any{"code": failCode, "msg": "Access denied. One of the following scopes is required"})
+	default:
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		writeOAuthJSON(w, http.StatusOK, answer())
+	}
+}
+
+func (f *FakeFeishu) botInfo(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	code := f.BotInfoCode
+	f.mu.Unlock()
+	f.asApp(w, r, code, func() map[string]any {
+		return map[string]any{"code": 0, "msg": "ok", "bot": map[string]any{"activate_status": 2, "app_name": f.AppName, "open_id": "ou_fake_bot"}}
+	})
+}
+
+func (f *FakeFeishu) appRecord(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	code := f.AppRecordCode
+	f.mu.Unlock()
+	f.asApp(w, r, code, func() map[string]any {
+		return map[string]any{"code": 0, "msg": "success", "data": map[string]any{"app": map[string]any{"app_id": r.PathValue("app"), "app_name": f.AppName}}}
+	})
+}
+
+func (f *FakeFeishu) tenantQuery(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	code := f.TenantQueryCode
+	f.mu.Unlock()
+	f.asApp(w, r, code, func() map[string]any {
+		return map[string]any{"code": 0, "msg": "success", "data": map[string]any{"tenant": map[string]any{"name": f.TenantName, "tenant_key": f.Identity.Tenant}}}
+	})
+}
+
 func writeOAuthJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -405,7 +471,22 @@ func (f *FakeFeishu) userInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOAuthJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{
 		"open_id": f.Identity.Subject, "name": f.Identity.DisplayName, "tenant_key": f.Identity.Tenant,
+		"enterprise_email": f.EnterpriseEmail,
 	}})
+}
+
+func (f *FakeFeishu) mailboxProfile(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case !f.validAccess[token]:
+		writeOAuthJSON(w, http.StatusUnauthorized, map[string]any{"code": 99991668, "msg": "Invalid access token"})
+	case f.MailboxEmail == "":
+		writeOAuthJSON(w, http.StatusBadRequest, map[string]any{"code": 1234008, "msg": "mailbox not found"})
+	default:
+		writeOAuthJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"primary_email_address": f.MailboxEmail}})
+	}
 }
 
 // fakeJWT encodes claims as an unsigned-looking JWT: header.payload.sig.

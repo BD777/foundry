@@ -235,3 +235,22 @@ export function recordSkillReceipt(nativeID: string, workspace: string): void {
     JSON.stringify({ version: policyVersion, workspace }),
   );
 }
+
+/**
+ * A workspace's folder moved: a native session whose receipt names the old
+ * folder belongs to the new one now, so resuming it there is no conflict.
+ * Returns whether the receipt was moved.
+ */
+export function moveSkillReceipt(
+  nativeID: string,
+  fromWorkspace: string,
+  toWorkspace: string,
+): boolean {
+  const receipt = readReceipt(nativeID);
+  if (!receipt || receipt.workspace !== fromWorkspace) return false;
+  writePrivateTextAtomic(
+    receiptPath(nativeID),
+    JSON.stringify({ ...receipt, workspace: toWorkspace }),
+  );
+  return true;
+}

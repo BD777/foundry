@@ -25,6 +25,7 @@ import { redactTranscriptText } from "../dist/secret-redaction.js";
 
 const appHandle = "fsg_c2Vzc2lvbi1hcHAtaGFuZGxlLTAxMjM0NTY3ODlhYmNkZWY";
 const userHandle = "fsu_c2Vzc2lvbi11c2VyLWhhbmRsZS0wMTIzNDU2Nzg5YWJjZGVm";
+const refreshHandle = "fsr_c2Vzc2lvbi1yZWZyZXNoLWhhbmRsZS0wMTIzNDU2Nzg5YWJj";
 
 function scratch() {
   const root = mkdtempSync(join(tmpdir(), "fdy-xacc-"));
@@ -47,7 +48,7 @@ function material(overrides = {}) {
     tool: "feishu-cli",
     profileName: "foundry-one-0a1b2c3d4e",
     clientId: "cli_app",
-    gateway: { path: "/api/feishu-gw", appHandle, userHandle },
+    gateway: { path: "/api/feishu-gw", appHandle, userHandle, refreshHandle },
     expiresAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
     scope: "docx:document offline_access",
     subject: "ou_1",
@@ -86,7 +87,10 @@ test("an account becomes the session's own feishu-cli profile holding only gatew
   assert.equal(token.app_id, "cli_app");
   assert.equal(token.token_type, "Bearer");
   assert.equal(token.scope, "docx:document offline_access");
-  assert.equal("refresh_token" in token, false);
+  // A stand-in refresh token, without expiry, so `auth status` is healthy
+  // and feishu-cli's refresh goes to the gateway.
+  assert.equal(token.refresh_token, refreshHandle);
+  assert.equal("refresh_expires_at" in token, false);
   const config = readFileSync(join(directory, "config.yaml"), "utf8");
   assert.match(config, /^app_id: "cli_app"$/m);
   assert.match(config, new RegExp(`^app_secret: "${appHandle}"$`, "m"));
@@ -120,7 +124,10 @@ test("an account becomes the session's own feishu-cli profile holding only gatew
   assert.match(note, /auth token --as bot/);
   assert.match(note, /markdown fetch --as bot/);
   assert.doesNotMatch(note, /not a version|verified its Feishu gateway with/);
-  assert.equal(note.includes(appHandle) || note.includes(userHandle), false);
+  assert.equal(
+    [appHandle, userHandle, refreshHandle].some((h) => note.includes(h)),
+    false,
+  );
   assert.deepEqual(
     JSON.parse(readFileSync(paths.manifestPath, "utf8")).profiles,
     [directory],
@@ -134,6 +141,10 @@ test("an account becomes the session's own feishu-cli profile holding only gatew
   );
   assert.equal(
     redactTranscriptText(`secret ${appHandle}`).includes(appHandle),
+    false,
+  );
+  assert.equal(
+    redactTranscriptText(`refresh ${refreshHandle}`).includes(refreshHandle),
     false,
   );
 

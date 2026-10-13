@@ -83,7 +83,7 @@ func TestSessionObserversReactInOrderAfterViewers(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		{"changes", typesForTest(sessions.changeObservers), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService"}},
+		{"changes", typesForTest(sessions.changeObservers), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions"}},
 		{"transcript events", typesForTest(sessions.eventObservers), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions"}},
 		{"reported ends", typesForTest(sessions.endObservers), []string{"*httpapi.chatTitleService"}},
 		{"issue updates", typesForTest(server.issues.(*issueEvents).observers), []string{"httpapi.feishuReactions"}},

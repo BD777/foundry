@@ -10,35 +10,33 @@ import (
 )
 
 // SetDeviceServedWorkspaces marks each of the device's workspaces available
-// when served lists it and unavailable on the device otherwise. Nothing is
-// deleted: sessions and history stay with the workspace.
-func (s *Store) SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served []string) (bool, error) {
-	servedSet := make(map[string]bool, len(served))
+// when served lists it, WorkspaceFolderMissing when missing does (the worker
+// still has it, its folder is gone) and WorkspaceNotServed otherwise.
+// Nothing is deleted: sessions and history stay with the workspace.
+func (s *Store) SetDeviceServedWorkspaces(ctx context.Context, deviceID string, served, missing []string) (bool, error) {
+	reasons := make(map[string]string, len(served)+len(missing))
+	for _, id := range missing {
+		reasons[id] = store.WorkspaceFolderMissing
+	}
 	for _, id := range served {
-		servedSet[id] = true
+		reasons[id] = ""
 	}
-	unavailable, err := json.Marshal(store.WorkspaceUnavailability{
-		Reason: store.WorkspaceNotServed,
-		Since:  formatTime(time.Now().UTC()),
-	})
-	if err != nil {
-		return false, err
-	}
+	since := formatTime(time.Now().UTC())
 	changed := false
-	err = s.withTx(ctx, func(tx *Store) error {
-		rows, err := tx.conn().QueryContext(ctx, `SELECT id, json_extract(payload_json, '$.unavailableOnDevice') IS NOT NULL
+	err := s.withTx(ctx, func(tx *Store) error {
+		rows, err := tx.conn().QueryContext(ctx, `SELECT id, COALESCE(json_extract(payload_json, '$.unavailableOnDevice.reason'), '')
 			FROM workspaces WHERE json_extract(payload_json, '$.deviceId') = ?`, deviceID)
 		if err != nil {
 			return fmt.Errorf("list device workspaces: %w", err)
 		}
 		type row struct {
 			id     string
-			marked bool
+			reason string
 		}
 		var workspaces []row
 		for rows.Next() {
 			var item row
-			if err := rows.Scan(&item.id, &item.marked); err != nil {
+			if err := rows.Scan(&item.id, &item.reason); err != nil {
 				rows.Close()
 				return err
 			}
@@ -48,13 +46,20 @@ func (s *Store) SetDeviceServedWorkspaces(ctx context.Context, deviceID string, 
 			return err
 		}
 		for _, workspace := range workspaces {
-			mark := !servedSet[workspace.id]
-			if mark == workspace.marked {
+			reason, listed := reasons[workspace.id]
+			if !listed {
+				reason = store.WorkspaceNotServed
+			}
+			if reason == workspace.reason {
 				continue
 			}
 			query := `UPDATE workspaces SET payload_json = json_remove(payload_json, '$.unavailableOnDevice') WHERE id = ?`
 			args := []any{workspace.id}
-			if mark {
+			if reason != "" {
+				unavailable, err := json.Marshal(store.WorkspaceUnavailability{Reason: reason, Since: since})
+				if err != nil {
+					return err
+				}
 				query = `UPDATE workspaces SET payload_json = json_set(payload_json, '$.unavailableOnDevice', json(?)) WHERE id = ?`
 				args = []any{string(unavailable), workspace.id}
 			}

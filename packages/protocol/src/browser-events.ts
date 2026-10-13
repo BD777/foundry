@@ -46,6 +46,7 @@ export const browserEventTypes = {
   feishuBotUpdated: "feishu_bot_updated",
   workspaceMembersUpdated: "workspace_members_updated",
   foundryDataChanged: "foundry_data_changed",
+  resourcesChanged: "resources_changed",
   // A workspace's chat list.
   chatsChanged: "chats_changed",
   chatQueueChanged: "chat_queue_changed",
@@ -76,6 +77,7 @@ export type BrowserEventPayloads = {
   feishu_bot_updated: WorkspaceFeishuBot;
   workspace_members_updated: WorkspaceMembersUpdatedPayload;
   foundry_data_changed: FoundryDataChangedPayload;
+  resources_changed: ResourcesChangedPayload;
   chats_changed: ChatsChangedPayload;
   chat_queue_changed: ChatQueue;
   chat_titles_changed: ChatTitlesChangedPayload;
@@ -106,6 +108,7 @@ export function isBrowserEventType(value: string): value is BrowserEventType {
 export const browserNoticeTypes = [
   browserEventTypes.issueEnvironmentChanged,
   browserEventTypes.backgroundTaskOutputChanged,
+  browserEventTypes.resourcesChanged,
 ] as const satisfies readonly BrowserEventType[];
 
 export type BrowserNoticeType = (typeof browserNoticeTypes)[number];
@@ -194,6 +197,14 @@ export interface DeviceStatusChangedPayload {
    * (no `owned`, no `runtimeSettings`). Older servers send status only.
    */
   device?: DeviceProjection;
+}
+
+/**
+ * What GET /api/resources lists changed for a source (a device's report, or
+ * it went offline): readers of the resource inventory read it again.
+ */
+export interface ResourcesChangedPayload {
+  sourceId: string;
 }
 
 /** Who may use the workspace changed. */

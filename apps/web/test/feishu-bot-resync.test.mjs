@@ -61,8 +61,11 @@ const app = {
   provider: "feishu",
   ownerUserId: "u_1",
   visibility: "personal",
-  label: "Team bot",
+  label: "Feishu app cli_app",
   clientId: "cli_app",
+  appName: "Foundry Agent",
+  tenantName: "Acme Org",
+  accountNames: ["Ada"],
   hasSecret: true,
   createdVia: "pasted",
   createdAt: "",
@@ -89,7 +92,7 @@ globalThis.fetch = async (input, init = {}) => {
 };
 
 await import("../src/i18n/index.ts");
-const { FeishuBotFeature } = await import("../src/features/feishu/index.ts");
+const { ChannelsFeature } = await import("../src/features/channels/index.ts");
 
 test("the bot is read again when the stream may have missed a change", async () => {
   const container = window.document.createElement("div");
@@ -99,11 +102,18 @@ test("the bot is read again when the stream may have missed a change", async () 
     act(async () => new Promise((settle) => setTimeout(settle, 0)));
   const appId = () => container.querySelector('[aria-label^="Feishu app"]');
   await act(async () =>
-    root.render(createElement(FeishuBotFeature, { workspaceId: "ws_1" })),
+    root.render(createElement(ChannelsFeature, { workspaceId: "ws_1" })),
   );
   await flush();
   assert.equal(reads.length, 1, "read on mount");
   assert.equal(appId().disabled, false);
+  // The app by its name, organisation and account; never its raw ID.
+  assert.match(appId().textContent, /Foundry Agent · Acme Org · Ada/);
+  assert.match(
+    container.textContent,
+    /Foundry AgentAcme Org · Ada · Personal app/,
+  );
+  assert.equal(container.textContent.includes("cli_app"), false);
 
   // The first connection may postdate that read: read again, behind what
   // is shown, which stays usable meanwhile.
@@ -155,7 +165,7 @@ test("a read answered after an update does not put the older bot back", async ()
   const flush = () =>
     act(async () => new Promise((settle) => setTimeout(settle, 0)));
   await act(async () =>
-    root.render(createElement(FeishuBotFeature, { workspaceId: "ws_1" })),
+    root.render(createElement(ChannelsFeature, { workspaceId: "ws_1" })),
   );
   await flush();
   const shows = (status) =>

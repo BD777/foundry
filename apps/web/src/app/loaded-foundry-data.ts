@@ -29,7 +29,11 @@ import {
   streamProjection,
   type StreamTouches,
 } from "./projections";
-import { parseAppRoute, persistWorkspaceId } from "./navigation";
+import {
+  parseAppRoute,
+  persistWorkspaceId,
+  workspaceToRead,
+} from "./navigation";
 import type { StreamTouchLedger } from "./stream-touches";
 import type { FieldRequest, FieldSelection } from "../lib/single-flight";
 
@@ -102,7 +106,7 @@ export function applyLoadedData(
     mergeLoadedFoundryData(current, loaded, touched?.(), fields),
   );
   setActiveWorkspaceId(loaded.workspace.id);
-  persistWorkspaceId(loaded.workspace.id);
+  persistWorkspaceId(loaded.workspace.id, loaded.workspaces?.length);
   setApiState("connected");
 }
 
@@ -131,7 +135,7 @@ export async function readFoundryDataSelection(
           ]),
         ]
       : undefined;
-  const result = await loadFoundryData(workspaceId, {
+  const result = await loadFoundryData(workspaceToRead(workspaceId), {
     signal,
     fields: request,
   });

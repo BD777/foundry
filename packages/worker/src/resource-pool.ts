@@ -1,12 +1,11 @@
 // Resource Pool: capabilities already present on a device that sessions may
 // use, such as an installed browser or macOS screen control. Foundry never
-// installs a resource. On whatever device the worker runs, it discovers them,
-// lists them for the server with its registration, tells each workspace
-// session what it may use, and reclaims what a session left running when an
-// input ends and its scratch directory once it is idle. See
-// docs/architecture-modules.md §5.6.
+// installs a resource. Discovery lives in the resources module
+// (resources/); this module tells each workspace session what it may use,
+// and reclaims what a session left running when an input ends and its
+// scratch directory once it is idle. See docs/architecture-modules.md §5.6.
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 import { createHash } from "node:crypto";
 import {
@@ -20,294 +19,13 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { basename, delimiter, isAbsolute, join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join } from "node:path";
 import type { DeviceResource } from "@bd777/foundry-protocol";
+import { discoverResources } from "./resources/index.js";
+import { browserProcessNames } from "./resources/detectors/browser.js";
 import { foundryStatePath } from "./state-root.js";
 import { writePrivateJSONAtomic } from "./storage.js";
-
-interface BrowserFamily {
-  id: string;
-  name: string;
-  /** Executables inside an application bundle, under /Applications. */
-  mac: string[];
-  /** Commands looked up on PATH (Linux and other Unix). */
-  commands: string[];
-  /** Fixed Linux install locations outside PATH. */
-  linux: string[];
-  /** Paths under Program Files / LocalAppData. */
-  windows: string[];
-  /** Executable names of its processes, including helpers, by prefix. */
-  processes: string[];
-  /** Also look in Playwright's browser cache (browsers other tools downloaded). */
-  playwright?: boolean;
-}
-
-const browserFamilies: BrowserFamily[] = [
-  {
-    id: "google-chrome",
-    name: "Google Chrome",
-    mac: ["Google Chrome.app/Contents/MacOS/Google Chrome"],
-    commands: ["google-chrome", "google-chrome-stable"],
-    linux: ["/opt/google/chrome/chrome"],
-    windows: ["Google\\Chrome\\Application\\chrome.exe"],
-    processes: ["chrome", "Google Chrome"],
-  },
-  {
-    id: "google-chrome-canary",
-    name: "Google Chrome Canary",
-    mac: ["Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"],
-    commands: [],
-    linux: [],
-    windows: [],
-    processes: ["Google Chrome Canary"],
-  },
-  {
-    id: "chromium",
-    name: "Chromium",
-    mac: ["Chromium.app/Contents/MacOS/Chromium"],
-    commands: ["chromium", "chromium-browser"],
-    linux: ["/snap/bin/chromium"],
-    windows: [],
-    processes: ["chromium", "Chromium"],
-  },
-  {
-    id: "microsoft-edge",
-    name: "Microsoft Edge",
-    mac: ["Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-    commands: ["microsoft-edge", "microsoft-edge-stable"],
-    linux: ["/opt/microsoft/msedge/msedge"],
-    windows: ["Microsoft\\Edge\\Application\\msedge.exe"],
-    processes: ["msedge", "Microsoft Edge"],
-  },
-  {
-    id: "brave",
-    name: "Brave",
-    mac: ["Brave Browser.app/Contents/MacOS/Brave Browser"],
-    commands: ["brave-browser"],
-    linux: ["/opt/brave.com/brave/brave"],
-    windows: ["BraveSoftware\\Brave-Browser\\Application\\brave.exe"],
-    processes: ["brave", "Brave Browser"],
-  },
-  {
-    id: "playwright-chromium",
-    name: "Chromium (Playwright)",
-    mac: [],
-    commands: [],
-    linux: [],
-    windows: [],
-    processes: ["chrome", "Chromium", "Google Chrome for Testing"],
-    playwright: true,
-  },
-  {
-    id: "firefox",
-    name: "Firefox",
-    mac: ["Firefox.app/Contents/MacOS/firefox"],
-    commands: ["firefox"],
-    linux: [],
-    windows: ["Mozilla Firefox\\firefox.exe"],
-    processes: ["firefox"],
-  },
-];
-
-/**
- * Chromium builds in Playwright's browser cache, newest first. Tools on the
- * device (Playwright, agent browsers) may have downloaded them already.
- */
-function playwrightChromiumPaths(
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv,
-): string[] {
-  const home = env.HOME || homedir();
-  const root =
-    env.PLAYWRIGHT_BROWSERS_PATH ||
-    (platform === "darwin"
-      ? join(home, "Library", "Caches", "ms-playwright")
-      : platform === "win32"
-        ? join(env.LOCALAPPDATA ?? home, "ms-playwright")
-        : join(home, ".cache", "ms-playwright"));
-  let builds: string[];
-  try {
-    builds = readdirSync(root)
-      .filter((name) => /^chromium-\d+$/.test(name))
-      .sort((a, b) => Number(b.slice(9)) - Number(a.slice(9)));
-  } catch {
-    return [];
-  }
-  const inside =
-    platform === "darwin"
-      ? [
-          "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
-          "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-          "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-        ]
-      : platform === "win32"
-        ? ["chrome-win/chrome.exe", "chrome-win64/chrome.exe"]
-        : ["chrome-linux64/chrome", "chrome-linux/chrome"];
-  return builds.flatMap((build) =>
-    inside.map((path) => join(root, build, path)),
-  );
-}
-
-function browserPaths(
-  family: BrowserFamily,
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv,
-): string[] {
-  if (family.playwright) return playwrightChromiumPaths(platform, env);
-  if (platform === "darwin")
-    return ["/Applications", join(homedir(), "Applications")].flatMap((root) =>
-      family.mac.map((path) => join(root, path)),
-    );
-  if (platform === "win32")
-    return [env.ProgramFiles, env["ProgramFiles(x86)"], env.LOCALAPPDATA]
-      .filter((root): root is string => Boolean(root))
-      .flatMap((root) => family.windows.map((path) => join(root, path)));
-  const dirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
-  return [
-    ...family.commands.flatMap((command) =>
-      dirs.map((dir) => join(dir, command)),
-    ),
-    ...family.linux,
-  ];
-}
-
-/** Installed browsers, one resource per browser family found. */
-export function discoverBrowsers(
-  platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-): DeviceResource[] {
-  const resources: DeviceResource[] = [];
-  for (const family of browserFamilies) {
-    const path = browserPaths(family, platform, env).find(existsSync);
-    if (!path) continue;
-    resources.push({
-      id: `browser:${family.id}`,
-      kind: "browser",
-      name: family.name,
-      available: true,
-      attributes: { path },
-    });
-  }
-  return resources;
-}
-
-export interface MacControlGrants {
-  screenRecording: boolean;
-  accessibility: boolean;
-}
-
-/**
- * The macOS privacy grants screen control needs, as held by this worker's
- * own process context. Queried without prompting and without touching the
- * screen; being a Mac is never taken as proof of access.
- */
-export function macControlGrants(): MacControlGrants {
-  const script = [
-    'ObjC.import("CoreGraphics");',
-    'ObjC.import("ApplicationServices");',
-    'ObjC.bindFunction("CGPreflightScreenCaptureAccess", ["bool", []]);',
-    'ObjC.bindFunction("AXIsProcessTrusted", ["bool", []]);',
-    "JSON.stringify({screenRecording: $.CGPreflightScreenCaptureAccess(), accessibility: $.AXIsProcessTrusted()})",
-  ].join(" ");
-  const output = execFileSync(
-    "/usr/bin/osascript",
-    ["-l", "JavaScript", "-e", script],
-    { encoding: "utf8", timeout: 5000 },
-  );
-  return JSON.parse(output) as MacControlGrants;
-}
-
-/** Screen control (computer use) on macOS, with its real grant state. */
-export function discoverComputerUse(
-  platform: NodeJS.Platform = process.platform,
-  grants: () => MacControlGrants = macControlGrants,
-): DeviceResource[] {
-  if (platform !== "darwin") return [];
-  const resource: DeviceResource = {
-    id: "computer_use:macos",
-    kind: "computer_use",
-    name: "macOS screen control",
-    available: false,
-  };
-  try {
-    const granted = grants();
-    const missing = [
-      granted.screenRecording ? "" : "Screen Recording",
-      granted.accessibility ? "" : "Accessibility",
-    ].filter(Boolean);
-    resource.available = missing.length === 0;
-    resource.attributes = {
-      screenRecording: granted.screenRecording ? "granted" : "not granted",
-      accessibility: granted.accessibility ? "granted" : "not granted",
-      // macOS grants these to the program that hosts the worker: Foundry
-      // Worker.app when installed with `install`, else the Node binary.
-      grantTo: process.env.FOUNDRY_WORKER_APP?.trim() || process.execPath,
-    };
-    if (missing.length)
-      resource.detail = `${missing.join(" and ")} not granted to the Foundry worker (System Settings → Privacy & Security).`;
-  } catch (error) {
-    resource.detail = `Could not read the macOS privacy grants: ${error instanceof Error ? error.message : String(error)}`;
-  }
-  return [resource];
-}
-
-const macPrivacyPanes = {
-  screenRecording: {
-    name: "Screen Recording",
-    url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-  },
-  accessibility: {
-    name: "Accessibility",
-    url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-  },
-} as const;
-
-/**
- * Ask the person at this device for access to a resource: macOS shows its
- * own permission prompts (which also list the worker in System Settings) and
- * the settings panes for grants still missing are opened. Returns the names
- * of the panes opened. Nothing is granted by Foundry itself.
- */
-export function requestResourceAccess(
-  resourceId: string,
-  grants: () => MacControlGrants = macControlGrants,
-  open: (url: string) => void = (url) =>
-    execFileSync("/usr/bin/open", [url], { timeout: 10000 }),
-  prompt: () => void = promptMacControlGrants,
-): string[] {
-  if (resourceId !== "computer_use:macos" || process.platform !== "darwin")
-    throw new Error(`${resourceId} needs no access on this device`);
-  prompt();
-  const granted = grants();
-  const opened: string[] = [];
-  for (const key of ["screenRecording", "accessibility"] as const) {
-    if (granted[key]) continue;
-    open(macPrivacyPanes[key].url);
-    opened.push(macPrivacyPanes[key].name);
-  }
-  return opened;
-}
-
-/** The system's own prompts for Screen Recording and Accessibility. */
-function promptMacControlGrants(): void {
-  const script = [
-    'ObjC.import("CoreGraphics");',
-    'ObjC.import("ApplicationServices");',
-    'ObjC.bindFunction("CGRequestScreenCaptureAccess", ["bool", []]);',
-    'ObjC.bindFunction("AXIsProcessTrustedWithOptions", ["bool", ["id"]]);',
-    "$.CGRequestScreenCaptureAccess();",
-    "$.AXIsProcessTrustedWithOptions($({AXTrustedCheckOptionPrompt: true}));",
-  ].join(" ");
-  execFileSync("/usr/bin/osascript", ["-l", "JavaScript", "-e", script], {
-    timeout: 10000,
-  });
-}
-
-/** Everything this device offers sessions right now. */
-export function discoverResources(): DeviceResource[] {
-  return [...discoverBrowsers(), ...discoverComputerUse()];
-}
 
 /**
  * What a workspace session is told about its device: to use what is
@@ -769,10 +487,6 @@ function macProcesses(marker: string, scratch?: string): ProcessEntry[] {
   }
   return [...entries.values()];
 }
-
-const browserProcessNames = browserFamilies.flatMap(
-  (family) => family.processes,
-);
 
 function isBrowser(executable: string): boolean {
   const name = basename(executable);

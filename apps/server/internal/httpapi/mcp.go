@@ -201,7 +201,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			s.writeMCPError(w, request.ID, -32602, "invalid params")
 			return
 		}
-		result, err := s.executeMCPTool(r, params.Name, params.Arguments)
+		content, err := s.executeMCPToolContent(r, params.Name, params.Arguments)
+		// A session holding resources hears what happens to them with
+		// whatever tool it calls next.
+		notices := s.resourceNoticeContent(r.Context(), actorFromContext(r.Context()))
 		if err != nil {
 			status, message := http.StatusConflict, err.Error()
 			if mcpErr, ok := err.(*mcpToolError); ok {
@@ -213,15 +216,12 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			}
 			// A failed tool call is a result the agent can read and act on.
 			s.writeMCPResult(w, request.ID, map[string]any{
-				"content": []map[string]string{{"type": "text", "text": message}},
+				"content": append([]any{map[string]any{"type": "text", "text": message}}, notices...),
 				"isError": true,
 			})
 			return
 		}
-		text := result
-		s.writeMCPResult(w, request.ID, map[string]any{
-			"content": []map[string]string{{"type": "text", "text": text}},
-		})
+		s.writeMCPResult(w, request.ID, map[string]any{"content": append(content, notices...)})
 	default:
 		s.writeMCPError(w, request.ID, -32601, "method not found: "+request.Method)
 	}
@@ -295,16 +295,30 @@ func mcpArgNumber(args map[string]json.RawMessage, key string, fallback int) int
 	return int(value)
 }
 
-func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]json.RawMessage) (string, error) {
-	actor := actorFromContext(r.Context())
+// executeMCPToolContent runs a tool and answers its MCP content: one text
+// block, or for operate_resource text and images.
+func (s *Server) executeMCPToolContent(r *http.Request, name string, args map[string]json.RawMessage) ([]any, error) {
+	if name == "operate_resource" {
+		actor := actorFromContext(r.Context())
+		if _, err := s.mcpToolPreflight(r, actor, name, args); err != nil {
+			return nil, err
+		}
+		return s.operateResourceForMCP(r, actor, args)
+	}
+	text, err := s.executeMCPTool(r, name, args)
+	if err != nil {
+		return nil, err
+	}
+	return []any{map[string]any{"type": "text", "text": text}}, nil
+}
+
+// mcpToolPreflight checks that a tool exists, the caller's role may call it
+// and its reach covers what it names; it answers the workspace it acts on.
+func (s *Server) mcpToolPreflight(r *http.Request, actor Actor, name string, args map[string]json.RawMessage) (string, error) {
 	// A tool acts on the workspace it names; an agent's defaults to its own.
 	workspace := mcpArgString(args, "workspaceId")
 	if workspace == "" && actor.Agent() {
 		workspace = actor.Identity.WorkspaceID
-	}
-	encode := func(value any) (string, error) {
-		raw, err := json.MarshalIndent(value, "", "  ")
-		return string(raw), err
 	}
 	if !knownMCPTool(name) {
 		return "", &mcpToolError{http.StatusBadRequest, "unknown tool: " + name}
@@ -313,6 +327,19 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		return "", err
 	}
 	if err := s.authorizeMCPTool(r, actor, name, workspace, args); err != nil {
+		return "", err
+	}
+	return workspace, nil
+}
+
+func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]json.RawMessage) (string, error) {
+	actor := actorFromContext(r.Context())
+	encode := func(value any) (string, error) {
+		raw, err := json.MarshalIndent(value, "", "  ")
+		return string(raw), err
+	}
+	workspace, err := s.mcpToolPreflight(r, actor, name, args)
+	if err != nil {
 		return "", err
 	}
 	switch name {
@@ -356,7 +383,13 @@ func (s *Server) executeMCPTool(r *http.Request, name string, args map[string]js
 		}
 		return encode(workspaces)
 	case "list_resources":
-		return s.listResourcesForMCP(r, actor, mcpArgString(args, "kind"))
+		return s.listResourcesForMCP(r, actor, mcpArgString(args, "kind"), mcpArgString(args, "type"), mcpArgString(args, "deviceId"))
+	case "acquire_resource":
+		return s.acquireResourceForMCP(r, actor, args)
+	case "release_resource":
+		return s.releaseResourceForMCP(r, actor, args)
+	case "resource_status":
+		return s.resourceStatusForMCP(r, actor, args)
 	case "list_profiles":
 		profiles, err := s.store.ListAgentProfiles(r.Context(), mcpDeviceID(actor, args))
 		if err != nil {
@@ -821,10 +854,32 @@ func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSessio
 	return summary, nil
 }
 
+// mcpResourceInstance is one inventory instance as list_resources shows it.
+type mcpResourceInstance struct {
+	ID          string                  `json:"id"`
+	Type        string                  `json:"type"`
+	Platform    string                  `json:"platform"`
+	Name        string                  `json:"name"`
+	State       string                  `json:"state"`
+	StateReason string                  `json:"stateReason,omitempty"`
+	Stale       bool                    `json:"stale,omitempty"`
+	Readiness   store.ResourceReadiness `json:"readiness"`
+	Backends    []string                `json:"backends,omitempty"`
+	Details     map[string]string       `json:"details,omitempty"`
+	LastSeenAt  string                  `json:"lastSeenAt"`
+	// Holder and Queue: who leases it and how many sessions wait for it.
+	Holder *store.ResourceHolder `json:"holder,omitempty"`
+	Queue  int                   `json:"queue,omitempty"`
+	// Operations: what operate_resource runs on it once leased.
+	Operations []string `json:"operations,omitempty"`
+}
+
 // listResourcesForMCP is the Resource Pool directory as an agent sees it:
 // every device it can reach, what each offers, whether it is online, and the
-// workspaces on it where the agent may start a session.
-func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind string) (string, error) {
+// workspaces on it where the agent may start a session. resources is what
+// the device listed at registration (kind narrows it); instances is its
+// inventory with type, platform and readiness (resourceType narrows it).
+func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind, resourceType, deviceID string) (string, error) {
 	view, err := s.visibilityFor(r.Context(), actor)
 	if err != nil {
 		return "", err
@@ -848,16 +903,38 @@ func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind string) 
 		Online      bool                   `json:"online"`
 		Workspaces  []workspaceOnDevice    `json:"workspaces"`
 		Resources   []store.DeviceResource `json:"resources"`
+		Instances   []mcpResourceInstance  `json:"instances"`
+	}
+	instances := map[string][]mcpResourceInstance{}
+	if s.resources != nil {
+		list, err := s.resources.List(r.Context(), store.ResourceFilter{SourceID: deviceID, Type: resourceType})
+		if err != nil {
+			return "", err
+		}
+		for _, instance := range list.Instances {
+			holder, operations := mcpResourceHolder(instance)
+			backends := []string{}
+			for _, backend := range instance.Backends {
+				backends = append(backends, strings.TrimSuffix(backend.ID+"@"+backend.Version, "@"))
+			}
+			instances[instance.Source.ID] = append(instances[instance.Source.ID], mcpResourceInstance{
+				ID: instance.ID, Type: instance.Type, Platform: instance.Platform, Name: instance.Name,
+				State: instance.State, StateReason: instance.StateReason, Stale: instance.Stale,
+				Readiness: instance.Readiness, Backends: backends, Details: instance.Details, LastSeenAt: instance.LastSeenAt,
+				Holder: holder, Queue: instance.Queue, Operations: operations,
+			})
+		}
 	}
 	reachable := view.scope.filterWorkspaces(all)
 	result := []deviceResources{}
 	for _, device := range view.filterDevices(devices) {
-		if device.Status == "removed" {
+		if device.Status == "removed" || (deviceID != "" && device.ID != deviceID) {
 			continue
 		}
 		entry := deviceResources{
 			DeviceID: device.ID, DeviceLabel: device.Label, Online: s.hub.HasConnection(device.ID),
 			Workspaces: []workspaceOnDevice{}, Resources: []store.DeviceResource{},
+			Instances: append([]mcpResourceInstance{}, instances[device.ID]...),
 		}
 		for _, workspace := range reachable {
 			if workspace.DeviceID == device.ID {
@@ -865,7 +942,7 @@ func (s *Server) listResourcesForMCP(r *http.Request, actor Actor, kind string) 
 			}
 		}
 		for _, resource := range device.Resources {
-			if kind == "" || resource.Kind == kind {
+			if (kind == "" || resource.Kind == kind) && (resourceType == "" || resource.Kind == resourceType) {
 				entry.Resources = append(entry.Resources, resource)
 			}
 		}

@@ -85,6 +85,12 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite external accounts: %w", err)
 		}
 	}
+	for _, column := range []string{"app_name", "tenant_name", "names_checked_at", "names_detail", "org_domain"} {
+		if err := s.ensureColumn(ctx, "external_provider_apps", column,
+			`ALTER TABLE external_provider_apps ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -109,12 +115,14 @@ func (s *Store) CreateExternalProviderApp(ctx context.Context, app store.Externa
 	return app, nil
 }
 
-const externalAppColumns = `id, provider, owner_user_id, visibility, label, client_id, base_url, created_via, created_at, updated_at`
+const externalAppColumns = `id, provider, owner_user_id, visibility, label, client_id, base_url, created_via,
+	app_name, tenant_name, org_domain, names_checked_at, names_detail, created_at, updated_at`
 
 func scanExternalApp(row interface{ Scan(dest ...any) error }) (store.ExternalProviderApp, error) {
 	var app store.ExternalProviderApp
 	var visibility string
-	err := row.Scan(&app.ID, &app.Provider, &app.OwnerUserID, &visibility, &app.Label, &app.ClientID, &app.BaseURL, &app.CreatedVia, &app.CreatedAt, &app.UpdatedAt)
+	err := row.Scan(&app.ID, &app.Provider, &app.OwnerUserID, &visibility, &app.Label, &app.ClientID, &app.BaseURL, &app.CreatedVia,
+		&app.AppName, &app.TenantName, &app.OrgDomain, &app.NamesCheckedAt, &app.NamesDetail, &app.CreatedAt, &app.UpdatedAt)
 	app.Visibility = store.ExternalAppVisibility(visibility)
 	return app, err
 }
@@ -146,6 +154,19 @@ func (s *Store) ListExternalProviderApps(ctx context.Context, userID string) ([]
 		apps = append(apps, app)
 	}
 	return apps, rows.Err()
+}
+
+func (s *Store) SetExternalProviderAppNames(ctx context.Context, id string, names store.ExternalAppNames) error {
+	result, err := s.conn().ExecContext(ctx, `UPDATE external_provider_apps
+		SET app_name = ?, tenant_name = ?, org_domain = ?, names_checked_at = ?, names_detail = ? WHERE id = ?`,
+		names.AppName, names.TenantName, names.OrgDomain, names.CheckedAt, names.Detail, id)
+	if err != nil {
+		return fmt.Errorf("record external provider app names: %w", err)
+	}
+	if count, _ := result.RowsAffected(); count == 0 {
+		return store.ErrExternalAppNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteExternalProviderApp(ctx context.Context, id string) error {

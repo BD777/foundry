@@ -144,8 +144,10 @@ file while preserving cascade order and visual audit coverage.
   instead of page JSX living in `App.tsx`. Device sections cover workspaces,
   skills, Models & accounts (official accounts vs server API connections) and
   device settings; workspace CRUD lives under the device, not in a switcher.
-- `accounts`, `sharing`, `feishu`: sign-in and members, workspace role
-  sharing, and the per-workspace Feishu bot (credentials and group pairing).
+- `accounts`, `sharing`, `channels`: sign-in and members, workspace role
+  sharing, and the workspace's Channels tab: how it is reached (web Chats,
+  and per channel type in `channel-types.ts`, today the Feishu bot on a
+  Connectors app with chat pairing).
 - `profiles`: server-owned endpoint profiles, device bindings and the
   selection-only model catalog UI; credential fields are write-only and never
   rendered back.

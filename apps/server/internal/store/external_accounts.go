@@ -103,9 +103,35 @@ type ExternalProviderApp struct {
 	// RotateSecret: devices held this app's secret before sessions reached
 	// the provider through the server's gateway; rotate it at the provider
 	// and replace it here. Cleared when the secret is replaced.
-	RotateSecret bool   `json:"rotateSecret,omitempty"`
-	CreatedAt    string `json:"createdAt"`
-	UpdatedAt    string `json:"updatedAt"`
+	RotateSecret bool `json:"rotateSecret,omitempty"`
+	// AppName and TenantName are the app's own name and its organisation's
+	// at the provider, read with the app's token (ExternalAppNames); empty
+	// until read or when the provider refuses.
+	AppName    string `json:"appName,omitempty"`
+	TenantName string `json:"tenantName,omitempty"`
+	// OrgDomain is the domain of a connected person's enterprise email
+	// ("example.com"), read with their own token: the organisation's label
+	// when TenantName needs an app permission the app lacks.
+	OrgDomain string `json:"orgDomain,omitempty"`
+	// NamesCheckedAt is when the names were last asked for; NamesDetail
+	// says why one could not be read (an error class and code, never a token).
+	NamesCheckedAt string `json:"namesCheckedAt,omitempty"`
+	NamesDetail    string `json:"namesDetail,omitempty"`
+	// AccountNames are the names of the reader's own accounts connected
+	// through the app, filled when listed for that reader (not stored).
+	AccountNames []string `json:"accountNames,omitempty"`
+	CreatedAt    string   `json:"createdAt"`
+	UpdatedAt    string   `json:"updatedAt"`
+}
+
+// ExternalAppNames is what the provider says an app and its organisation
+// are called, as of CheckedAt.
+type ExternalAppNames struct {
+	AppName    string
+	TenantName string
+	OrgDomain  string
+	CheckedAt  string
+	Detail     string
 }
 
 // SaveExternalProviderAppInput creates a provider app. ClientSecret is
@@ -135,6 +161,11 @@ type ExternalAccount struct {
 	Subject     string `json:"subject,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
 	Tenant      string `json:"tenant,omitempty"`
+	// AppName and TenantName are the names of the account's app and its
+	// organisation, copied from the app when the account is read (not stored).
+	AppName    string `json:"appName,omitempty"`
+	TenantName string `json:"tenantName,omitempty"`
+	OrgDomain  string `json:"orgDomain,omitempty"`
 	// GrantedScopes are what the provider granted at the last login.
 	GrantedScopes []string `json:"grantedScopes,omitempty"`
 	// KeepAlive: the server refreshes the grant before its refresh token
@@ -187,7 +218,10 @@ type ExternalAccountUpdate struct {
 // ConnectExternalAccountInput starts a login through a provider app.
 type ConnectExternalAccountInput struct {
 	AppID string `json:"appId"`
-	Label string `json:"label,omitempty"`
+	// AccountID re-authorizes that account in place: same id, bindings and
+	// settings, a new grant. The sign-in must be the same provider user.
+	AccountID string `json:"accountId,omitempty"`
+	Label     string `json:"label,omitempty"`
 	// Scopes, when given, replace the provider's preset.
 	Scopes []string `json:"scopes,omitempty"`
 	// IncludeApprovalScopes adds the preset's approval scopes.
@@ -276,12 +310,13 @@ type ExternalAccountMaterial struct {
 // ExternalAccountGateway is a session's way through the server's gateway
 // for one account: the server path the device's loopback forwarder sends
 // the tool's requests under, and the opaque handles the tool holds in place
-// of the app secret and the user access token. A handle is useless without
+// of the app secret, the user access token and the user refresh token. A handle is useless without
 // the device's credential and dies with the session.
 type ExternalAccountGateway struct {
-	Path       string `json:"path"`
-	AppHandle  string `json:"appHandle"`
-	UserHandle string `json:"userHandle"`
+	Path          string `json:"path"`
+	AppHandle     string `json:"appHandle"`
+	UserHandle    string `json:"userHandle"`
+	RefreshHandle string `json:"refreshHandle,omitempty"`
 }
 
 // WorkspaceExternalAccounts is a workspace's accounts tab: the bindings
@@ -324,6 +359,9 @@ type ExternalAccountStore interface {
 	// their own and every instance-wide one.
 	ListExternalProviderApps(ctx context.Context, userID string) ([]ExternalProviderApp, error)
 	DeleteExternalProviderApp(ctx context.Context, id string) error
+	// SetExternalProviderAppNames records what the provider calls the app
+	// and its organisation.
+	SetExternalProviderAppNames(ctx context.Context, id string, names ExternalAppNames) error
 
 	SaveExternalAccount(ctx context.Context, account ExternalAccount) (ExternalAccount, error)
 	GetExternalAccount(ctx context.Context, id string) (ExternalAccount, error)

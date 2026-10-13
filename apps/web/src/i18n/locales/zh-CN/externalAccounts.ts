@@ -11,19 +11,10 @@ export const externalAccounts: Translation<typeof en> = {
     loadFailed: "无法加载飞书账号：{{error}}",
     secretsMissing:
       "此服务器没有配置密钥存储，无法保存登录。需要管理员先配置，才能连接账号。",
-    actionsNote:
-      "“立即停用”会在平台侧吊销登录，正在运行的会话立即失去访问。“移除”还会删除账号及其工作区绑定。",
   },
   list: {
-    title: "账号",
-    count_one: "{{count}} 个账号",
-    count_other: "{{count}} 个账号",
     emptyTitle: "还没有飞书账号",
     emptyBody: "连接飞书账号后，会话里的 feishu-cli 就能以你的身份工作。",
-    usedBy: "{{provider}} · 供 {{tools}} 使用",
-    identityUnknown: "尚未读取身份",
-    tenant: "租户 {{tenant}}",
-    app: "应用 {{app}}",
     notBound: "未绑定工作区",
     workspaces_one: "已绑定 {{count}} 个工作区",
     workspaces_other: "已绑定 {{count}} 个工作区",
@@ -32,7 +23,8 @@ export const externalAccounts: Translation<typeof en> = {
     feishu: "飞书",
   },
   feishu: {
-    intro: "你的飞书登录。会话里的 feishu-cli 用它以你的身份在飞书中工作。",
+    intro:
+      "你已连接的飞书账号，以及各自所属的组织和登录所用的飞书应用。会话里的 feishu-cli 用它们以你的身份在飞书中工作。",
     connect: "连接飞书账号",
   },
   status: {
@@ -58,14 +50,21 @@ export const externalAccounts: Translation<typeof en> = {
   actions: {
     refresh: "立即刷新",
     revoke: "立即停用",
-    revokeConfirm: "确认吊销？",
+    revokeTitle: "立即停用 {{name}}？",
+    revokeBody:
+      "在飞书侧吊销登录，正在运行的会话立即失去访问。账号仍保留在列表中，直到你移除它；重新连接后可再次使用。",
     remove: "移除",
-    removeConfirm: "确认永久移除？",
+    removeTitle: "移除 {{name}}？",
+    removeBody:
+      "在飞书侧吊销登录，并删除该账号及其工作区绑定。需要时重新连接即可。",
+    more: "{{name}} 的更多操作",
     reconnect: "重新连接",
+    reauthorize: "重新授权",
     working: "处理中…",
   },
   notices: {
     connected: "已连接 {{name}}。",
+    reauthorized: "已重新授权 {{name}}。",
     refreshed: "{{name}} 已刷新。",
     revoked: "{{name}} 已吊销，会话已失去访问。",
     removed: "{{name}} 已移除。",
@@ -76,21 +75,23 @@ export const externalAccounts: Translation<typeof en> = {
     failed: "{{error}}",
   },
   apps: {
-    title: "飞书应用",
-    intro:
-      "一个飞书登录属于一个应用。可以通过管理员配置的组织应用连接，也可以使用你自己的应用。",
     instance: "组织应用",
     personal: "你的应用",
-    empty: "还没有应用。连接账号时会为你创建一个。",
+    defaultName: "飞书应用 {{id}}",
+    authorize: "通过它登录",
+    noAccounts: "没有账号通过这个应用连接。",
     remove: "移除应用",
-    removeConfirm: "确认移除应用？",
-    replaceSecret: "更换密钥",
+    removeTitle: "移除 {{name}}？",
+    removeBody:
+      "Foundry 会删除该应用及其密钥。应用本身仍保留在飞书开发者后台。",
+    replaceSecret: "更换应用密钥",
     rotateHint:
-      "在会话改为经由 Foundry 访问飞书之前，设备上保存过这个应用的密钥。请在飞书开发者后台重置密钥，并立即在这里更换：更换之前 Foundry 无法使用该应用。",
+      "在会话改为经由 Foundry 访问飞书之前，设备上保存过 {{name}} 的密钥。请在飞书开发者后台重置密钥，并立即在这里更换：更换之前 Foundry 无法使用该应用。",
     rotateOpenConsole: "打开应用凭证页",
-    newSecretLabel: "新的 App Secret",
+    showTenantName: "显示完整公司名（需在飞书开通应用权限）",
+    newSecretLabel: "{{name}} 的新 App Secret",
     newSecretHint:
-      "在服务器上加密保存，并先向飞书校验；通过该应用连接的账号不受影响。",
+      "仅在你于飞书开发者后台重置密钥后需要。在服务器上加密保存，并先向飞书校验；通过该应用连接的账号不受影响。",
     saveSecret: "保存密钥",
     uses: {
       label: "用途",
@@ -101,8 +102,7 @@ export const externalAccounts: Translation<typeof en> = {
       otherWorkspaces_other: "另有 {{count}} 个你无权查看的工作区",
       subscriptions_one: "{{count}} 个 Agent 事件订阅",
       subscriptions_other: "{{count}} 个 Agent 事件订阅",
-      unused: "没有工作区机器人或 Agent 事件订阅在使用这个应用。",
-      openBot: "打开 {{name}} 的飞书机器人",
+      openBot: "打开 {{name}} 的渠道",
       connected: "已连接",
       connecting: "正在连接",
       error: "未连接",
@@ -113,13 +113,13 @@ export const externalAccounts: Translation<typeof en> = {
     title: "连接飞书账号",
     description:
       "用飞书扫码（或打开链接），在飞书里确认，此窗口会自动完成。Foundry 不会看到你的密码。",
-    appLabel: "连接方式",
-    newFeishuApp: "扫码时新建一个飞书应用",
-    newLarkApp: "扫码时新建一个 Lark 应用（国际版）",
-    newAppMeta: "无需粘贴任何信息 · 推荐",
-    newAppHint:
-      "在飞书里确认两次：先为 Foundry 创建个人应用，再授权它。应用凭证在服务器上加密保存。",
-    existingAppHint: "在飞书里确认一次：授权这个应用。",
+    switchToLark: "使用 Lark 国际版？改用 Lark 登录页",
+    switchToFeishu: "使用飞书（中国）？改用飞书登录页",
+    brandHint: "扫码后会自动识别你账号所在的版本。",
+    teamApp: "使用团队应用 {{name}}",
+    teamAppMeta: "由管理员共享 · 扫码一次，无需新建应用",
+    newAppInstead: "改为新建应用",
+    restart: "按这些设置重新开始",
     scopesPreset_one: "申请 {{count}} 项飞书权限",
     scopesPreset_other: "申请 {{count}} 项飞书权限，覆盖 Foundry 的飞书技能",
     scopesNamed_one: "申请你列出的 {{count}} 项权限",
@@ -184,20 +184,36 @@ export const externalAccounts: Translation<typeof en> = {
     close: "关闭",
     cancel: "取消",
   },
+  authorize: {
+    reauthorizeTitle: "重新授权 {{name}}",
+    reauthorizeBody:
+      "通过 {{app}} 以同一个飞书用户重新登录。账号的工作区绑定和设置保持不变。",
+    anotherTitle: "通过 {{app}} 登录",
+    anotherBody:
+      "扫码一次：扫码的飞书用户授权这个应用，并作为一个账号连接到这里。",
+  },
   workspace: {
     rule: "只有你本人在自己的设备上发起的会话才会使用你的账号。其他成员能看到绑定了账号，但看不到是谁的账号。",
-    mine: "你的账号",
+    binding: {
+      feishu:
+        "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
+    },
     others: "其他成员绑定的账号",
     use: "在此工作区使用 {{name}}",
-    emptyMine: "你还没有连接任何账号。",
-    connect: "连接账号",
+    empty: "你还没有{{provider}}账号。",
+    connect: "连接{{provider}}账号",
     manage: "管理连接器",
-    otherAccount: "{{provider}} 账号 {{name}}",
     loading: "正在加载账号…",
     loadFailed: "无法加载此工作区的账号：{{error}}",
     saveFailed: "无法修改绑定：{{error}}",
     bound: "此工作区将使用 {{name}}。",
     unbound: "此工作区不再使用 {{name}}。",
     notUsable: "{{status}}：重新连接之前，会话无法使用。",
+  },
+  linkQr: {
+    body: "建议在电脑上完成：打开链接并登录飞书后开通。二维码可在手机上打开该页面，但飞书开发者后台对手机端支持有限。",
+    tenantTitle: "显示完整公司名",
+    tenantDescription:
+      "在飞书开通应用权限 tenant:tenant:readonly，然后在账号上点「立即刷新」。",
   },
 };

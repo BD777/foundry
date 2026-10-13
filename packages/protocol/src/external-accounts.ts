@@ -51,6 +51,17 @@ export interface ExternalProviderApp {
   /** Devices held this app's secret before sessions went through Foundry's
    * gateway: rotate it at the provider, then replace it here. */
   rotateSecret?: boolean;
+  /** The app's own name and its organisation's at the provider; empty until read. */
+  appName?: string;
+  tenantName?: string;
+  /** The domain of a connected person's enterprise email ("example.com"):
+   * the organisation's label when tenantName needs an app permission. */
+  orgDomain?: string;
+  /** When the names were last asked for, and why one could not be read. */
+  namesCheckedAt?: string;
+  namesDetail?: string;
+  /** The reader's own accounts connected through the app, by name. */
+  accountNames?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +87,10 @@ export interface ExternalAccount {
   subject?: string;
   displayName?: string;
   tenant?: string;
+  /** The names of the account's app and its organisation, from the app. */
+  appName?: string;
+  tenantName?: string;
+  orgDomain?: string;
   grantedScopes?: string[];
   keepAlive: boolean;
   authTime?: string;
@@ -117,6 +132,8 @@ export interface ExternalAccountUpdate {
 
 export interface ConnectExternalAccountInput {
   appId: string;
+  /** Re-authorizes this account in place (same id and bindings); the sign-in must be the same user. */
+  accountId?: string;
   label?: string;
   /** Replaces the provider's preset when given. */
   scopes?: string[];
@@ -189,6 +206,8 @@ export interface ExternalAccountGateway {
   appHandle: string;
   /** Stands in for the user access token. */
   userHandle: string;
+  /** Stands in for the user refresh token; the gateway answers its refresh. */
+  refreshHandle?: string;
 }
 
 export interface WorkspaceExternalAccounts {

@@ -36,6 +36,11 @@ Object.assign(globalThis, {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
   IS_REACT_ACT_ENVIRONMENT: true,
 });
+// A device's Resources section follows the inventory on the event stream.
+globalThis.EventSource = class {
+  addEventListener() {}
+  close() {}
+};
 const { createRoot } = await import("react-dom/client");
 const { DevicesFeature } = await import("../src/features/devices/index.ts");
 const devices = [

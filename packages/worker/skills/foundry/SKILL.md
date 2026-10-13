@@ -31,7 +31,9 @@ Every session you start takes a slot on its device, spends the model usage
 of the login it runs under and adds a chat to the person's list. A session in
 another workspace runs on that workspace's device, under that device's
 logins; the device may be another person's. `list_resources` shows what each
-device offers.
+device offers; to run a command on another of your person's devices (a heavy
+test run, say) lease its `compute` with `acquire_resource` instead of starting
+a session there, once its owner allowed remote commands on it.
 
 ## Facts
 

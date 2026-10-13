@@ -27,6 +27,9 @@ export const daemonMessageTypes = {
   error: "error",
   fileRead: "file_read",
   forgetWorkspace: "forget_workspace",
+  /** Server asks: folders near a missing workspace's that look like it. */
+  findMovedWorkspace: "find_moved_workspace",
+  movedWorkspaceFound: "moved_workspace_found",
   heartbeat: "heartbeat",
   hello: "hello",
   issueEnvironment: "issue_environment",
@@ -58,6 +61,42 @@ export const daemonMessageTypes = {
   readyForIssue: "ready_for_issue",
   refreshResources: "refresh_resources",
   resourcesRefreshed: "resources_refreshed",
+  /**
+   * Worker news, unasked: its whole resource inventory (ResourcesReport),
+   * sent only to a server that announced resources_v1.
+   */
+  resourcesReport: "resources_report",
+  /**
+   * One operation on a resource a session holds a lease on
+   * (ResourceOperateRequest), answered with resource_operated
+   * (ResourceOperateResult). Only to a worker that declared
+   * resources_ops_v1.
+   */
+  resourceOperate: "resource_operate",
+  resourceOperated: "resource_operated",
+  /**
+   * Fences a resource at a generation (ResourceResetRequest): operations of
+   * older leases are refused, their provider sessions reset and closed.
+   * Answered with resource_reset_done (ResourceResetResult).
+   */
+  resourceReset: "resource_reset",
+  resourceResetDone: "resource_reset_done",
+  /**
+   * Installs a resource backend the person chose to install on this device
+   * (ResourceBackendInstallRequest), answered with
+   * resource_backend_installed (ResourceBackendInstallResult).
+   */
+  installResourceBackend: "install_resource_backend",
+  resourceBackendInstalled: "resource_backend_installed",
+  /**
+   * The device owner's resource settings for this device
+   * (ResourceSourceSettings): sent when they change and after hello, only
+   * to a worker that declared resources_compute_v1, which keeps them and
+   * enforces them itself. Answered with resource_settings_applied (the
+   * settings the worker now enforces).
+   */
+  resourceSettings: "resource_settings",
+  resourceSettingsApplied: "resource_settings_applied",
   recoverSession: "recover_session",
   registered: "registered",
   /** A piece of a large envelope a worker sends in pieces (reply_chunk). */
@@ -77,6 +116,9 @@ export const daemonMessageTypes = {
   sessionUsageRead: "session_usage_read",
   skillContentRead: "skill_content_read",
   setupWorkspace: "setup_workspace",
+  /** Server asks: serve this workspace (same id) from another folder. */
+  relinkWorkspace: "relink_workspace",
+  workspaceRelinked: "workspace_relinked",
   steerSession: "steer_session",
   subagentTranscriptRead: "subagent_transcript_read",
   subagentsListed: "subagents_listed",
@@ -98,6 +140,11 @@ export const daemonMessageTypes = {
   runRepair: "run_repair",
   repairDone: "repair_done",
   workspaceForgotten: "workspace_forgotten",
+  /**
+   * Worker news, unasked: which of its workspaces it serves and which it
+   * still has but whose folder is gone (WorkspaceFoldersPayload).
+   */
+  workspaceFolders: "workspace_folders",
   workspaceReady: "workspace_ready",
   workspaceTreeListed: "workspace_tree_listed",
 } as const;
@@ -111,4 +158,36 @@ const knownDaemonMessageTypes: ReadonlySet<string> = new Set(
 
 export function isDaemonMessageType(value: string): value is DaemonMessageType {
   return knownDaemonMessageTypes.has(value);
+}
+
+/**
+ * The workspace_folders capability: hello carries missingWorkspaceIds beside
+ * servedWorkspaceIds, the worker sends workspace_folders whenever either
+ * changes, and it answers relink_workspace and find_moved_workspace.
+ */
+export const workspaceFoldersCapability = "workspace_folders";
+
+/** workspace_folders, and the same two lists in hello. */
+export interface WorkspaceFoldersPayload {
+  /** Workspaces the worker serves, their folders present. */
+  servedWorkspaceIds: string[];
+  /** Workspaces the worker still has whose folder no longer exists. */
+  missingWorkspaceIds: string[];
+}
+
+/** relink_workspace: serve workspaceId from path, keeping its identity. */
+export interface RelinkWorkspacePayload {
+  workspaceId: string;
+  /** The existing folder to serve it from (absolute, on the device). */
+  path: string;
+  /** The folder it had (its last known path); may no longer exist. */
+  previousPath: string;
+  /** Its chats' native sessions, to make them resumable in path. */
+  nativeSessions: { provider: "claude" | "codex"; id: string }[];
+}
+
+/** find_moved_workspace: look for the moved folder near previousPath. */
+export interface FindMovedWorkspacePayload {
+  workspaceId: string;
+  previousPath: string;
 }

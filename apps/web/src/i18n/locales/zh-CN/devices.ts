@@ -226,6 +226,22 @@ export const devices: Translation<typeof en> = {
       "要让会话截取和控制这台 Mac，请在“录屏与系统录音”和“辅助功能”中允许运行 Foundry Worker 的程序（<code>{{grantTo}}</code>）。权限请求和系统设置会在 {{device}} 上打开。",
     asking: "正在请求设备…",
     openSettings: "打开系统设置…",
+    summary: {
+      label: "{{device}} 的资源清单",
+      count_one: "{{count}} 个资源",
+      count_other: "{{count}} 个资源",
+      unready_one: "{{count}} 个未就绪",
+      unready_other: "{{count}} 个未就绪",
+      stale_one: "{{count}} 个过期",
+      stale_other: "{{count}} 个过期",
+      open: "在资源页查看",
+      remoteOn: "远程命令：开",
+      remoteOff: "远程命令：关",
+      manageRemote: "管理",
+      manageRemoteLabel: "管理 {{device}} 的远程命令",
+      loading: "正在读取资源清单…",
+      failed: "无法读取资源清单。",
+    },
   },
   diagnostics: {
     report: {

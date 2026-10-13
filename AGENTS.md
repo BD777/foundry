@@ -105,7 +105,10 @@ Pointers, not specs: read the code there first. Paths are from the repo root.
 Working fast:
 
 - Batch independent reads, greps and checks in one turn.
-- Test only what you touched; run the full `pnpm verify` once before release.
+- Before reporting run `scripts/check-changed.sh --files <the files you changed>` once
+  (`--list` shows the plan); `--since "$START"` also catches other agents' edits.
+- Heavy checks on another device: `scripts/remote-check.sh <device> [--files …]` (session token; device's owner allows remote commands).
+- Full `pnpm verify` only for release PRs.
 - Scratch stacks (a shortcut, not a requirement): `scripts/scratch-stack.sh up|shot|down <name>`.
   A server on a DB copy acts on its integrations (a second Feishu bot connection, Connectors
   refreshes rotating the real tokens) unless `FOUNDRY_INTEGRATIONS=off`, which the script sets.

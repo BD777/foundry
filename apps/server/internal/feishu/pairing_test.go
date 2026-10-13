@@ -182,7 +182,7 @@ func TestPairingTellsTheWorkspaceItsBot(t *testing.T) {
 	other, _ := events.Subscribe(workspaceReachForTest("ws_2"), "")
 	manager := NewWSManager(db, allSecrets{}, nil, events)
 	app := &botApp{clientID: "cli_x", client: &fakeBot{}}
-	if err := manager.handlePairCommand(ctx, app, "om_1", "oc_9", "group", "/pair FND-ABCD"); err != nil {
+	if err := manager.handlePairCommand(ctx, app, "om_1", "oc_9", "group", "", "/pair FND-ABCD"); err != nil {
 		t.Fatal(err)
 	}
 	if len(workspace.C) != 1 || len(other.C) != 0 {
@@ -195,7 +195,7 @@ func TestPairingTellsTheWorkspaceItsBot(t *testing.T) {
 		t.Fatalf("published %s, want the bot bound to the group as alice, without its code", frame)
 	}
 	// The spent code binds nothing more.
-	if err := manager.handlePairCommand(ctx, app, "om_2", "oc_10", "group", "/pair FND-ABCD"); err != nil {
+	if err := manager.handlePairCommand(ctx, app, "om_2", "oc_10", "group", "", "/pair FND-ABCD"); err != nil {
 		t.Fatal(err)
 	}
 	if route, err := db.FindFeishuChatRoute(ctx, "cli_x", "oc_10"); err == nil {
@@ -203,7 +203,7 @@ func TestPairingTellsTheWorkspaceItsBot(t *testing.T) {
 	}
 
 	issueCode(t, db, "ws_2", "FND-WS22", alice.ID)
-	if err := manager.handlePairCommand(ctx, app, "om_3", "oc_9", "group", "/pair FND-WS22"); err != nil {
+	if err := manager.handlePairCommand(ctx, app, "om_3", "oc_9", "group", "", "/pair FND-WS22"); err != nil {
 		t.Fatal(err)
 	}
 	if moved := publishedBot(t, string(<-other.C)); len(moved.Chats) != 1 || moved.Chats[0].ChatID != "oc_9" {

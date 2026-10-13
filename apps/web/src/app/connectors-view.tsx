@@ -1,10 +1,10 @@
 import { ConnectorsFeature } from "../features/external-accounts";
 import { useAccountSession } from "./accounts-gate";
-import type { ConnectorTab } from "./navigation";
+import type { ConnectorType } from "../lib/connector-types";
 
 export interface ConnectorsViewProps {
-  tab: ConnectorTab;
-  onTabChange: (tab: ConnectorTab) => void;
+  tab: ConnectorType;
+  onTabChange: (tab: ConnectorType) => void;
   onNotice: (message: string) => void;
 }
 

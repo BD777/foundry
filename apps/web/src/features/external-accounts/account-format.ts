@@ -1,13 +1,45 @@
 import type {
   ExternalAccount,
   ExternalAccountStatus,
+  ExternalProviderApp,
 } from "@bd777/foundry-protocol";
 import type { BadgeProps } from "../../components/ui/badge";
 import { i18n } from "../../i18n";
+import { feishuAppName, organisationLabel } from "../../lib/feishu-app-names";
 
 /** What a person calls the account: their label, else who it is. */
 export function accountName(account: ExternalAccount): string {
   return account.label || account.displayName || account.subject || account.id;
+}
+
+/** What a person calls an app: its name here, else Feishu's, else a short ID. */
+export function appName(app: ExternalProviderApp): string {
+  return feishuAppName(app);
+}
+
+/** Who the account is: the person's name at the provider, else its label. */
+export function personName(account: ExternalAccount): string {
+  return account.displayName || accountName(account);
+}
+
+/** The name the person gave the account, when it is not their own name. */
+export function customLabel(account: ExternalAccount): string {
+  return account.label && account.label !== personName(account)
+    ? account.label
+    : "";
+}
+
+/** Where an account lives: its organisation, then its app ("Acme · Foundry Agent"). */
+export function accountPlace(
+  account: ExternalAccount,
+  app: ExternalProviderApp | undefined,
+): string {
+  return [
+    organisationLabel(app ?? {}) || organisationLabel(account),
+    app ? appName(app) : account.appName,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** A provider's name in the interface ("feishu" → "Feishu"). */
@@ -55,28 +87,7 @@ export function statusDetailText(account: ExternalAccount): string {
   }
 }
 
-const relativeUnits: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-  ["day", 86_400_000],
-  ["hour", 3_600_000],
-  ["minute", 60_000],
-];
-
-/** "3 hours ago", "in 6 days": a timestamp relative to now. */
-export function relativeWhen(
-  iso: string | undefined,
-  now = Date.now(),
-): string {
-  const at = iso ? Date.parse(iso) : Number.NaN;
-  if (!Number.isFinite(at)) return "";
-  const delta = at - now;
-  const format = new Intl.RelativeTimeFormat(i18n.language, {
-    numeric: "auto",
-  });
-  for (const [unit, size] of relativeUnits)
-    if (Math.abs(delta) >= size)
-      return format.format(Math.round(delta / size), unit);
-  return format.format(0, "minute");
-}
+export { relativeWhen } from "../../lib/relative-time";
 
 /** m:ss left until an expiry. */
 export function countdown(iso: string | undefined, now = Date.now()): string {

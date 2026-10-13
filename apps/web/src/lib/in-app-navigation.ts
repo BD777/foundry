@@ -1,4 +1,5 @@
 import { navigateAppRoute } from "../app/navigation";
+import type { ConnectorType } from "./connector-types";
 
 /**
  * Inward navigation surface for feature code: opens the existing
@@ -11,6 +12,23 @@ export function navigateToDeviceAgents(deviceId: string): void {
     deviceSection: "agents",
     selectedDeviceId: deviceId,
     view: "devices",
+  });
+}
+
+/** Opens a device's Resources section through the same contract. */
+export function navigateToDeviceResources(deviceId: string): void {
+  navigateAppRoute({
+    deviceSection: "resources",
+    selectedDeviceId: deviceId,
+    view: "devices",
+  });
+}
+
+/** Opens the Resources page, filtered to one device's resources when given. */
+export function navigateToResources(deviceId = "", type = ""): void {
+  navigateAppRoute({ view: "resources" }, undefined, {
+    device: deviceId,
+    type,
   });
 }
 
@@ -27,9 +45,14 @@ export function navigateToIssue(issueId: string): void {
   navigateAppRoute({ selectedIssueId: issueId, view: "issue" });
 }
 
-/** Opens a workspace's Feishu Bot tab through the same contract. */
-export function navigateToWorkspaceFeishuBot(workspaceId: string): void {
-  navigateAppRoute({ view: "feishu" }, workspaceId);
+/** Opens a workspace's Channels tab through the same contract. */
+export function navigateToWorkspaceChannels(workspaceId: string): void {
+  navigateAppRoute({ view: "channels" }, workspaceId);
+}
+
+/** Opens the Connectors page on one connector type's tab. */
+export function navigateToConnectors(type: ConnectorType): void {
+  navigateAppRoute({ view: "connectors", connectorTab: type });
 }
 
 /** Opens the workspace's Skills page through the same contract. */

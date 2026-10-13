@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
 )
@@ -70,6 +71,10 @@ const (
 	wsWorkspaceReadyType           = "workspace_ready"
 	wsForgetWorkspaceType          = "forget_workspace"
 	wsWorkspaceForgottenType       = "workspace_forgotten"
+	wsRelinkWorkspaceType          = "relink_workspace"
+	wsWorkspaceRelinkedType        = "workspace_relinked"
+	wsFindMovedWorkspaceType       = "find_moved_workspace"
+	wsMovedWorkspaceFoundType      = "moved_workspace_found"
 	wsUpsertAgentProfileType       = "upsert_agent_profile"
 	wsAgentProfileUpsertedType     = "agent_profile_upserted"
 	wsUpsertRuntimeSettingsType    = "upsert_agent_runtime_settings"
@@ -117,8 +122,24 @@ const (
 
 // Changes a device tells on its own; nothing answers them.
 const (
+	// Which of its workspaces a worker serves and which it has lost the
+	// folder of (workspace_availability.go).
+	wsWorkspaceFoldersType            = "workspace_folders"
 	wsBackgroundTaskOutputChangedType = "background_task_output_changed"
 	wsIssueEnvironmentChangedType     = "issue_environment_changed"
+	// A worker's whole resource inventory (resources.go).
+	wsResourcesReportType = "resources_report"
+	// Operating a leased resource on its hosting worker, fencing and
+	// resetting it, installing a backend (resource_leases.go).
+	wsResourceOperateType          = "resource_operate"
+	wsResourceOperatedType         = "resource_operated"
+	wsResourceResetType            = "resource_reset"
+	wsResourceResetDoneType        = "resource_reset_done"
+	wsInstallResourceBackendType   = "install_resource_backend"
+	wsResourceBackendInstalledType = "resource_backend_installed"
+	// The device owner's resource settings, which the worker enforces too.
+	wsResourceSettingsType        = "resource_settings"
+	wsResourceSettingsAppliedType = "resource_settings_applied"
 )
 
 type DaemonHub struct {
@@ -137,6 +158,10 @@ type DaemonHub struct {
 	secrets              secretKeeper
 	// externalAccounts mints what a session may act as (external_accounts.go).
 	externalAccounts *externalaccounts.Service
+	// resources keeps what devices report of their resources (resources.go).
+	resources *resources.Service
+	// leases follow devices going and coming (resource_leases.go).
+	leases *resources.Leases
 	// live tracks every upgraded socket, including ones that never sent
 	// hello and so never landed in connections. Shutdown needs all of them.
 	live         map[*daemonConnection]struct{}
@@ -1093,6 +1118,7 @@ func (h *DaemonHub) RefreshDeviceResources(ctx context.Context, deviceID, reques
 		if err := connection.syncRegistration(value.Registration); err != nil {
 			return wsResourcesRefreshedPayload{}, err
 		}
+		connection.reportLegacyResources(ctx, value.Registration)
 	}
 	return value, nil
 }
@@ -1398,6 +1424,7 @@ func (h *DaemonHub) unregister(connection *daemonConnection) {
 	if current != connection {
 		return
 	}
+	h.resourcesOffline(deviceID)
 
 	connection.registrationMu.Lock()
 	registrations := make([]store.DaemonRegistration, 0, len(connection.registrations))
@@ -1614,6 +1641,7 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		go c.dispatchQueuedAgentSessions("")
 		go c.recoverOrphanedAgentSessions(registration.ActiveSessionIDs != nil)
 		go c.sendSessionTimers()
+		go c.reportLegacyResources(c.lifetime, registration)
 		return nil
 	case wsReplyChunkType:
 		whole, complete, err := c.handleEnvelopePiece(envelope)
@@ -1699,6 +1727,28 @@ func (c *daemonConnection) handleEnvelope(ctx context.Context, envelope wsEnvelo
 		})
 	case wsWorkspaceForgottenType:
 		return deliverDaemonResponse[wsWorkspaceForgottenPayload](c, envelope, nil)
+	case wsWorkspaceRelinkedType:
+		return deliverDaemonResponse[wsWorkspaceRelinkedPayload](c, envelope, nil)
+	case wsMovedWorkspaceFoundType:
+		return deliverDaemonResponse[wsMovedWorkspaceFoundPayload](c, envelope, nil)
+	case wsWorkspaceFoldersType:
+		return c.workspaceFoldersChanged(envelope)
+	case wsResourcesReportType:
+		return c.resourcesReported(ctx, envelope)
+	case wsResourceOperatedType:
+		return deliverDaemonResponse[store.ResourceOperateResult](c, envelope, nil)
+	case wsResourceResetDoneType:
+		return deliverDaemonResponse(c, envelope, func(result store.ResourceResetResult) error {
+			// A confirmation whose request no longer waits still counts.
+			if c.hub.leases != nil {
+				return c.hub.leases.ResetDone(ctx, result.ResourceID, result.Generation, result.Error)
+			}
+			return nil
+		})
+	case wsResourceBackendInstalledType:
+		return deliverDaemonResponse[store.ResourceBackendInstallResult](c, envelope, nil)
+	case wsResourceSettingsAppliedType:
+		return deliverDaemonResponse[store.ResourceSourceSettings](c, envelope, nil)
 	case wsAttachmentWrittenType:
 		return deliverDaemonResponse[wsAttachmentWrittenPayload](c, envelope, nil)
 	case wsAttachmentChunkReadType:

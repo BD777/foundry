@@ -20,8 +20,8 @@ export const workspaces = {
       settings: "Agents & execution",
       assets: "Assets",
       skills: "Skills",
-      feishu: "Feishu Bot",
-      accounts: "Accounts",
+      channels: "Channels",
+      workspaceConnectors: "Connectors",
       sharing: "Sharing",
     },
     notes: {
@@ -31,10 +31,10 @@ export const workspaces = {
         "Assets available to this workspace. Device status and capacity are shared across workspaces.",
       skills:
         "Choose which server-published skills this workspace exposes to its Chats and Issues. A skill on this workspace's device can be added below; skills elsewhere stay unavailable until published to the server.",
-      feishu:
-        "Run a Feishu Bot from a Connectors app and pair chats with this workspace: each topic in a paired chat becomes an agent session here.",
-      accounts:
-        "Choose which of your accounts from Connectors sessions in this workspace may act as. These are personal logins for tools such as feishu-cli; the Feishu Bot tab is the workspace's group bot, which is something else.",
+      channels:
+        "How people reach this workspace. Web Chats is always on; a Feishu bot runs on a Connectors app and pairs chats here, each topic becoming an agent session.",
+      workspaceConnectors:
+        "Personal logins, by connector type, that sessions in this workspace may act as. The Channels tab is how people reach the workspace, which is separate.",
       sharing:
         "Share this workspace with other Foundry accounts. Access covers this workspace only, never the rest of its device.",
     },
@@ -55,6 +55,7 @@ export const workspaces = {
       "All your workspaces, grouped by the device they are on. Switch changes where you work; add, rename or remove workspaces right here.",
     currentLocation: "Current: <strong>{{location}}</strong>",
     noWorkspaceSelected: "No workspace selected",
+    chooseWorkspace: "Choose a workspace below and Switch to it.",
     removedHistory: "Removed · history kept read-only",
     offlineSummary: "Offline · {{workspaces}}",
     noDevices: "No devices yet. Add one under Devices.",
@@ -76,6 +77,32 @@ export const workspaces = {
     addAgainTo: "Add {{name}} again on {{device}}",
     addingAgain: "Adding…",
     addedAgain: "{{name}} is served by {{device}} again.",
+    folderMissingNote:
+      "Folder not found on {{device}} at this path. If it was moved or renamed, locate it; its chats, sessions and Issues are kept. Or remove the workspace from the row menu.",
+    locate: "Locate folder…",
+    locateFor: "Locate the folder of {{name}} on {{device}}",
+    located: "Located “{{name}}” at {{path}}.",
+    chatsResume_one: "{{count}} chat can resume in that folder.",
+    chatsResume_other: "{{count}} chats can resume in that folder.",
+    chatsContinue_one:
+      "{{count}} chat will continue in a new native session with its Foundry conversation.",
+    chatsContinue_other:
+      "{{count}} chats will continue in new native sessions with their Foundry conversation.",
+  },
+  locate: {
+    title: "Locate folder",
+    description:
+      "{{name}} keeps its chats, sessions, Issues and settings. Its last known folder was {{path}} on {{device}}.",
+    looking: "Looking for the folder on {{device}}…",
+    suggestionsLabel: "Folders that look like it",
+    reasons: {
+      same_workspace: "Contains this workspace's Foundry identity",
+      same_git_remote: "Same Git remote",
+    },
+    note: "Choose where the folder is now. Chats whose native session is found there resume in it; the others continue in a new native session with their Foundry conversation.",
+    reconnect: "Reconnect {{device}} to locate the folder.",
+    submit: "Use this folder",
+    locating: "Locating…",
   },
   overview: {
     gitStates: {
@@ -211,6 +238,8 @@ export const workspaces = {
       "Initial setup may also initialize Git in a folder without a repository. Check the device and path before registering.",
     removeNote:
       "Chats, issues and run history in this workspace will be deleted from Foundry. Local files will not be deleted.",
+    removeCurrent:
+      "This is your current workspace. Its folder is missing, so it can be removed; then no workspace is selected until you Switch to one.",
     blocked:
       "This is your current workspace. Switch to another workspace before removing it.",
     folderOn: "Folder on {{device}}",

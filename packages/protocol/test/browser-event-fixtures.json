@@ -334,6 +334,12 @@
     }
   },
   {
+    "type": "resources_changed",
+    "payload": {
+      "sourceId": "dev_4f2a91c0"
+    }
+  },
+  {
     "type": "evidence_updated",
     "payload": {
       "issueId": "iss_2b7f90c3",

@@ -36,6 +36,9 @@ var ErrSecretsNotConfigured = errors.New("server secret store is not configured;
 // re-authorization, revoked, or device-local).
 var ErrAccountUnusable = errors.New("external account cannot issue a token")
 
+// ErrDifferentIdentity: a re-authorization signed in as another provider user.
+var ErrDifferentIdentity = errors.New("signed in as a different user than the account being re-authorized; connect that user as a new account instead")
+
 // ErrAppInUse: a provider app still has accounts connected through it.
 var ErrAppInUse = errors.New("accounts are still connected through this app; disconnect them first")
 
@@ -108,10 +111,12 @@ type Service struct {
 }
 
 type pendingLogin struct {
-	mu      sync.Mutex
-	view    store.ExternalAccountLogin
-	owner   string
-	label   string
+	mu    sync.Mutex
+	view  store.ExternalAccountLogin
+	owner string
+	label string
+	// replace is the account a re-authorization renews; nil connects a new one.
+	replace *store.ExternalAccount
 	app     store.ExternalProviderApp
 	login   DeviceLogin
 	doneAt  time.Time
@@ -258,11 +263,187 @@ func (s *Service) ListApps(ctx context.Context, userID string) ([]store.External
 			return nil, err
 		}
 	}
+	accounts, err := s.store.ListExternalAccounts(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	for index := range apps {
 		apps[index].HasSecret = s.hasSecret(ctx, AppSecretID(apps[index].ID))
 		_, apps[index].RotateSecret = rotate[apps[index].ID]
+		for _, account := range accounts {
+			if account.AppID == apps[index].ID {
+				apps[index].AccountNames = append(apps[index].AccountNames, accountPersonName(account))
+			}
+		}
 	}
 	return apps, nil
+}
+
+// accountPersonName is who the account is: the provider's name for the
+// person, else the label it was given.
+func accountPersonName(account store.ExternalAccount) string {
+	if account.DisplayName != "" {
+		return account.DisplayName
+	}
+	return account.Label
+}
+
+// --- App names ---------------------------------------------------------------
+
+// appNamesTTL is how long read names count as current; a lookup that could
+// not read a name is tried again after appNamesRetry.
+const (
+	appNamesTTL   = 24 * time.Hour
+	appNamesRetry = time.Hour
+)
+
+func (s *Service) appNamesStale(app store.ExternalProviderApp) bool {
+	checked, ok := parseTime(app.NamesCheckedAt)
+	if !ok {
+		return true
+	}
+	age := s.Now().Sub(checked)
+	return age >= appNamesTTL || (app.NamesDetail != "" && age >= appNamesRetry)
+}
+
+// refreshAppNames asks the provider what the app and its organisation are
+// called and records it. A name the provider will not give keeps its last
+// known value, and the reason goes into NamesDetail; the app is returned as
+// recorded. Integrations off, or a provider that cannot say, changes nothing.
+// Without the organisation's name, its email domain is read with userToken,
+// else with a live token of an account connected through the app.
+func (s *Service) refreshAppNames(ctx context.Context, app store.ExternalProviderApp, credentials *AppCredentials, userToken string) store.ExternalProviderApp {
+	if !s.Integrations.On() {
+		return app
+	}
+	provider, ok := s.registry.Lookup(app.Provider)
+	if !ok {
+		return app
+	}
+	reader, ok := provider.(AppNameReader)
+	if !ok {
+		return app
+	}
+	if credentials == nil {
+		unsealed, err := s.AppCredentials(ctx, app)
+		if err != nil {
+			s.Logf("external accounts: names of %s: %v", app.ID, err)
+			return app
+		}
+		credentials = &unsealed
+	}
+	read := reader.ReadAppNames(ctx, *credentials)
+	names := store.ExternalAppNames{AppName: app.AppName, TenantName: app.TenantName, OrgDomain: app.OrgDomain, CheckedAt: s.formatTime(s.Now()), Detail: read.Detail}
+	if read.AppName != "" {
+		names.AppName = read.AppName
+	}
+	if read.TenantName != "" {
+		names.TenantName = read.TenantName
+	}
+	if domainReader, ok := provider.(OrgDomainReader); ok && read.TenantName == "" {
+		if userToken == "" {
+			userToken = s.liveAccessToken(ctx, app.ID)
+		}
+		if userToken != "" {
+			domain, err := domainReader.ReadOrgDomain(ctx, *credentials, userToken)
+			if domain != "" {
+				names.OrgDomain = domain
+			} else {
+				problem := "org domain: " + err.Error()
+				if names.Detail != "" {
+					problem = names.Detail + "; " + problem
+				}
+				names.Detail = problem
+			}
+		}
+	}
+	if err := s.store.SetExternalProviderAppNames(ctx, app.ID, names); err != nil {
+		s.Logf("external accounts: record names of %s: %v", app.ID, err)
+		return app
+	}
+	if names.Detail != "" {
+		s.Logf("external accounts: names of %s (%s): %s", app.ID, app.ClientID, names.Detail)
+	}
+	app.AppName, app.TenantName, app.OrgDomain, app.NamesCheckedAt, app.NamesDetail = names.AppName, names.TenantName, names.OrgDomain, names.CheckedAt, names.Detail
+	return app
+}
+
+// liveAccessToken is the unexpired access token of a ready account
+// connected through the app, read without refreshing it or marking the
+// account used; empty when there is none.
+func (s *Service) liveAccessToken(ctx context.Context, appID string) string {
+	accounts, err := s.store.ListExternalAccounts(ctx, "")
+	if err != nil {
+		return ""
+	}
+	for _, account := range accounts {
+		if account.AppID != appID || account.Mode != store.ExternalCredentialServerHeld || account.Status != store.ExternalAccountReady {
+			continue
+		}
+		if grant, err := s.loadGrant(ctx, account.ID); err == nil && grant.AccessToken != "" && grant.AccessExpiresAt.After(s.Now().Add(time.Minute)) {
+			return grant.AccessToken
+		}
+	}
+	return ""
+}
+
+// RefreshStaleAppNames reads the names of every app accounts connect
+// through, and every organisation-wide app, whose names are missing or
+// older than a day. RunKeepAlive calls it, so existing apps get names on
+// the first sweep.
+func (s *Service) RefreshStaleAppNames(ctx context.Context) int {
+	if !s.SecretsConfigured() || !s.Integrations.On() {
+		return 0
+	}
+	ids := map[string]bool{}
+	accounts, err := s.store.ListExternalAccounts(ctx, "")
+	if err != nil {
+		s.Logf("external accounts names: list accounts: %v", err)
+		return 0
+	}
+	for _, account := range accounts {
+		ids[account.AppID] = true
+	}
+	shared, err := s.store.ListExternalProviderApps(ctx, "")
+	if err != nil {
+		s.Logf("external accounts names: list apps: %v", err)
+		return 0
+	}
+	for _, app := range shared {
+		ids[app.ID] = true
+	}
+	refreshed := 0
+	for id := range ids {
+		if s.refreshStaleAppNames(ctx, id) {
+			refreshed++
+		}
+	}
+	return refreshed
+}
+
+func (s *Service) refreshStaleAppNames(ctx context.Context, appID string) bool {
+	app, err := s.store.GetExternalProviderApp(ctx, appID)
+	if err != nil || !s.appNamesStale(app) {
+		return false
+	}
+	s.refreshAppNames(ctx, app, nil, "")
+	return true
+}
+
+// withAppNames copies each account's app and organisation names from its app.
+func (s *Service) withAppNames(ctx context.Context, accounts []store.ExternalAccount) {
+	apps := map[string]store.ExternalProviderApp{}
+	for index := range accounts {
+		app, ok := apps[accounts[index].AppID]
+		if !ok {
+			var err error
+			if app, err = s.store.GetExternalProviderApp(ctx, accounts[index].AppID); err != nil {
+				continue
+			}
+			apps[app.ID] = app
+		}
+		accounts[index].AppName, accounts[index].TenantName, accounts[index].OrgDomain = app.AppName, app.TenantName, app.OrgDomain
+	}
 }
 
 // ReplaceAppSecret seals a new client secret for app, after the person
@@ -362,6 +543,14 @@ func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.
 	if err != nil {
 		return store.ExternalAccountLogin{}, err
 	}
+	var replace *store.ExternalAccount
+	if accountID := strings.TrimSpace(input.AccountID); accountID != "" {
+		account, err := s.store.GetExternalAccount(ctx, accountID)
+		if err != nil || account.OwnerUserID != ownerUserID || account.AppID != app.ID {
+			return store.ExternalAccountLogin{}, store.ErrExternalAccountNotFound
+		}
+		replace = &account
+	}
 	scopes := input.Scopes
 	if len(scopes) == 0 {
 		scopes = provider.PresetScopes(input.IncludeApprovalScopes)
@@ -371,7 +560,7 @@ func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.
 		return store.ExternalAccountLogin{}, err
 	}
 	pending := &pendingLogin{
-		owner: ownerUserID, label: strings.TrimSpace(input.Label),
+		owner: ownerUserID, label: strings.TrimSpace(input.Label), replace: replace,
 		view: store.ExternalAccountLogin{ID: "xlogin_" + uuid.NewString(), Provider: app.Provider, Status: "pending"},
 	}
 	pending.authorize(s, app, login, "")
@@ -609,6 +798,10 @@ func (s *Service) pollLogin(pending *pendingLogin, provider ServerHeldProvider, 
 			s.finishLogin(pending, nil, err)
 			return
 		}
+		// Every sign-in reads the names afresh: a new app has none yet, and
+		// the app or organisation may have been renamed.
+		app := s.refreshAppNames(ctx, pending.app, &credentials, grant.AccessToken)
+		account.AppName, account.TenantName, account.OrgDomain = app.AppName, app.TenantName, app.OrgDomain
 		if missing := missingScopes(pending.login.RequestedScopes, grant.Scopes()); len(missing) > 0 {
 			pending.mu.Lock()
 			pending.view.MissingScopes = missing
@@ -648,6 +841,9 @@ func (s *Service) completeLogin(ctx context.Context, pending *pendingLogin, prov
 	if identityErr != nil {
 		account.StatusDetail = "identity_unread"
 	}
+	if pending.replace != nil {
+		return s.renewAccount(ctx, pending, account, grant)
+	}
 	saved, err := s.store.SaveExternalAccount(ctx, account)
 	if err != nil {
 		return store.ExternalAccount{}, err
@@ -659,6 +855,37 @@ func (s *Service) completeLogin(ctx context.Context, pending *pendingLogin, prov
 		return store.ExternalAccount{}, err
 	}
 	s.event(ctx, store.ExternalAccountEvent{AccountID: saved.ID, Kind: "connected", Detail: strings.Join(grant.Scopes(), " "), ActorID: pending.owner})
+	s.changed(saved.ID)
+	return saved, nil
+}
+
+// renewAccount writes a re-authorization onto the account it renews: the
+// same id, label, keep-alive and workspace bindings, the new identity
+// fields and grant. A different provider user is refused.
+func (s *Service) renewAccount(ctx context.Context, pending *pendingLogin, fresh store.ExternalAccount, grant Grant) (store.ExternalAccount, error) {
+	previous := *pending.replace
+	if previous.Subject != "" && fresh.Subject != "" && previous.Subject != fresh.Subject {
+		return store.ExternalAccount{}, ErrDifferentIdentity
+	}
+	lock := s.lockFor(previous.ID)
+	lock.Lock()
+	defer lock.Unlock()
+	fresh.ID, fresh.CreatedAt, fresh.KeepAlive, fresh.LastUsedAt = previous.ID, previous.CreatedAt, previous.KeepAlive, previous.LastUsedAt
+	if pending.label == "" {
+		fresh.Label = previous.Label
+	}
+	if fresh.Subject == "" {
+		fresh.Subject, fresh.DisplayName, fresh.Tenant = previous.Subject, previous.DisplayName, previous.Tenant
+	}
+	// The grant first: a row saved as ready must have a grant behind it.
+	if err := s.sealGrant(ctx, fresh.ID, grant); err != nil {
+		return store.ExternalAccount{}, err
+	}
+	saved, err := s.store.SaveExternalAccount(ctx, fresh)
+	if err != nil {
+		return store.ExternalAccount{}, err
+	}
+	s.event(ctx, store.ExternalAccountEvent{AccountID: saved.ID, Kind: "reauthorized", Detail: strings.Join(grant.Scopes(), " "), ActorID: pending.owner})
 	s.changed(saved.ID)
 	return saved, nil
 }
@@ -706,6 +933,7 @@ func (s *Service) Accounts(ctx context.Context, userID string) ([]store.External
 	for index := range accounts {
 		accounts[index] = s.withComputedStatus(accounts[index])
 	}
+	s.withAppNames(ctx, accounts)
 	return accounts, nil
 }
 
@@ -849,8 +1077,25 @@ func (s *Service) token(ctx context.Context, accountID string, use Use, audit bo
 	}, nil
 }
 
-// RefreshNow refreshes regardless of the access token's remaining life.
+// RefreshNow refreshes regardless of the access token's remaining life,
+// then reads the app's names if they are missing or stale.
 func (s *Service) RefreshNow(ctx context.Context, account store.ExternalAccount, use Use) (store.ExternalAccount, error) {
+	refreshed, err := s.refreshNow(ctx, account, use)
+	if err != nil {
+		return refreshed, err
+	}
+	// Outside the account's lock: the lookup must not hold up token mints.
+	// A name that could not be read is asked for again at once: the person
+	// may have just granted the app the scope it lacked.
+	if app, err := s.store.GetExternalProviderApp(ctx, refreshed.AppID); err == nil && (app.NamesDetail != "" || s.appNamesStale(app)) {
+		s.refreshAppNames(ctx, app, nil, "")
+	}
+	named := []store.ExternalAccount{refreshed}
+	s.withAppNames(ctx, named)
+	return named[0], nil
+}
+
+func (s *Service) refreshNow(ctx context.Context, account store.ExternalAccount, use Use) (store.ExternalAccount, error) {
 	lock := s.lockFor(account.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -1145,7 +1390,8 @@ func (s *Service) material(ctx context.Context, account store.ExternalAccount, r
 
 // --- Keep-alive --------------------------------------------------------------
 
-// RunKeepAlive sweeps every KeepAliveInterval until ctx ends; with
+// RunKeepAlive sweeps every KeepAliveInterval until ctx ends, and reads
+// app names that are missing or stale (at once, then with each sweep); with
 // integrations off it returns at once.
 func (s *Service) RunKeepAlive(ctx context.Context) {
 	if !s.Integrations.On() {
@@ -1153,12 +1399,14 @@ func (s *Service) RunKeepAlive(ctx context.Context) {
 	}
 	ticker := time.NewTicker(s.KeepAliveInterval)
 	defer ticker.Stop()
+	s.RefreshStaleAppNames(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			s.KeepAliveSweep(ctx)
+			s.RefreshStaleAppNames(ctx)
 		}
 	}
 }

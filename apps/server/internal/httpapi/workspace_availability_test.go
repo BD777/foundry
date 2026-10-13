@@ -139,7 +139,7 @@ func TestHelloMarksWorkspacesTheWorkerNoLongerServes(t *testing.T) {
 func TestHelloListingAWorkspaceAgainMakesItAvailable(t *testing.T) {
 	db := newTestStore(t)
 	registerMacWorkspaces(t, db)
-	if _, err := db.SetDeviceServedWorkspaces(context.Background(), "dev_mac", []string{"ws_mac_a"}); err != nil {
+	if _, err := db.SetDeviceServedWorkspaces(context.Background(), "dev_mac", []string{"ws_mac_a"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if workspaceAvailability(t, db, "ws_mac_b") == nil {
@@ -195,7 +195,7 @@ func TestMCPToolsRefuseUnservedWorkspace(t *testing.T) {
 	if _, err := db.CompleteAgentSession(ctx, child.ID, "done", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.(store.WorkspaceAvailabilityStore).SetDeviceServedWorkspaces(ctx, "dev_lineage", []string{}); err != nil {
+	if _, err := db.(store.WorkspaceAvailabilityStore).SetDeviceServedWorkspaces(ctx, "dev_lineage", []string{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	token, err := db.MintAgentSessionToken(ctx, parent.ID)

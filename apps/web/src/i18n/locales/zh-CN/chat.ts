@@ -275,6 +275,8 @@ export const chat: Translation<typeof en> = {
     scheduledNoteNoTime_other: "{{count}} 个定时任务",
     scheduledNoteDue_one: "{{count}} 个定时任务 · 即将触发",
     scheduledNoteDue_other: "{{count}} 个定时任务 · 有任务即将触发",
+    scheduledNoteLastFailed: "{{note}} · 上次运行失败",
+    scheduledNoteContextFull: "{{note}} · 上次运行失败：上下文已满，压缩失败",
     timerRunningNote: "定时任务运行中",
     timerRunningSinceNote: "定时任务运行中 · {{time}} 起",
     backgroundTaskCount_one: "{{count}} 个任务",
@@ -442,6 +444,9 @@ export const chat: Translation<typeof en> = {
       running: "正在运行",
       firedAt: "{{time}} 触发",
       fireRunning: "仍在运行，结束后显示结果。",
+      failedAt: "{{time}} 运行失败",
+      contextFullHint:
+        "上下文已满，当前模型压缩上下文失败，之后每次运行都会同样失败。在输入框选择其他模型并发送一条消息：由该模型压缩上下文后，会话即可继续。",
       inactive: "未生效：智能体已不再持有该任务",
       cron: "Cron 表达式",
       prompt: "触发时执行",

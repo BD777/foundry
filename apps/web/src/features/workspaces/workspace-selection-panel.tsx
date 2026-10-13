@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   FolderOpen,
+  FolderSearch,
   Monitor,
   MoreHorizontal,
   Pencil,
@@ -18,6 +19,7 @@ import {
 import type {
   DeviceProjection,
   WorkspaceProjection,
+  WorkspaceRelinkResult,
 } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -29,6 +31,7 @@ import {
   WorkspaceEditor,
   type WorkspaceEdit,
 } from "../../components/workspace/workspace-editor";
+import { WorkspaceLocateDialog } from "../../components/workspace/workspace-locate-dialog";
 import { isRemovedDevice } from "../../lib/devices";
 
 interface Props {
@@ -51,8 +54,11 @@ interface Props {
   onPrepareEnd: () => void;
   /** Opens the device's own page: system, accounts, skills, settings. */
   onOpenDevice: (deviceId: string) => void;
-  /** Reloads data after a folder was added, renamed or removed. */
-  onChanged: () => Promise<void>;
+  /**
+   * Reloads data after a folder was added, renamed, located or removed;
+   * `removedWorkspaceId` names the workspace removed.
+   */
+  onChanged: (change?: { removedWorkspaceId?: string }) => Promise<void>;
   /**
    * Registers a workspace's folder on its device again, after the device
    * stopped serving it.
@@ -86,6 +92,11 @@ export function WorkspaceSelectionPanel(props: Props) {
   const [edit, setEdit] = useState<{
     edit: WorkspaceEdit;
     device: DeviceProjection;
+  }>();
+  const [locate, setLocate] = useState<{
+    workspace: WorkspaceProjection;
+    device: DeviceProjection;
+    trigger: HTMLElement | null;
   }>();
   const [message, setMessage] = useState("");
   const [changeError, setChangeError] = useState("");
@@ -122,6 +133,28 @@ export function WorkspaceSelectionPanel(props: Props) {
     } finally {
       setAddingAgainId("");
       detailsButtons.current.get(workspace.id)?.focus();
+    }
+  }
+  // What locating did, said on the page once it is done.
+  async function relinked(result: WorkspaceRelinkResult) {
+    setChangeError("");
+    const { copied, notFound } = result.nativeSessions;
+    setMessage(
+      [
+        t("location.located", {
+          name: result.workspace.name,
+          path: result.workspace.localPath,
+        }),
+        copied > 0 ? t("location.chatsResume", { count: copied }) : "",
+        notFound > 0 ? t("location.chatsContinue", { count: notFound }) : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    try {
+      await props.onChanged();
+    } catch {
+      setChangeError(t("deviceList.refreshFailed"));
     }
   }
   const dialogTrigger = useRef<HTMLElement | null>(null);
@@ -185,16 +218,18 @@ export function WorkspaceSelectionPanel(props: Props) {
     `${row.name} ${row.localPath}`.toLowerCase().includes(needle);
   return (
     <PageSurface variant="devices" className="fdy-location-page">
-      <Button
-        className="fdy-device-back"
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={props.onReturn}
-      >
-        <ArrowLeft size={14} />
-        {t("location.back")}
-      </Button>
+      {current ? (
+        <Button
+          className="fdy-device-back"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={props.onReturn}
+        >
+          <ArrowLeft size={14} />
+          {t("location.back")}
+        </Button>
+      ) : null}
       <header className="fdy-management-heading">
         <div>
           <h1>{t("location.title")}</h1>
@@ -216,6 +251,11 @@ export function WorkspaceSelectionPanel(props: Props) {
             components={{ strong: <strong /> }}
           />
         </span>
+        {!current && props.workspaces.length ? (
+          <span className="fdy-location-current-prompt">
+            {t("location.chooseWorkspace")}
+          </span>
+        ) : null}
       </div>
       <label className="fdy-location-page-search">
         <Search size={15} />
@@ -316,8 +356,13 @@ export function WorkspaceSelectionPanel(props: Props) {
                 device.owned &&
                 !removed &&
                 (!workspace.accessRole || workspace.accessRole === "owner");
-              // The device is connected but no longer serves the folder.
-              const unserved = !removed && !!workspace.unavailableOnDevice;
+              // The device is connected but no longer serves the folder, or
+              // still has the workspace but its folder is gone.
+              const unavailable = removed
+                ? undefined
+                : workspace.unavailableOnDevice;
+              const folderMissing = unavailable?.reason === "folder_missing";
+              const unserved = !!unavailable && !folderMissing;
               const unservedNoteId = `fdy-unserved-${workspace.id}`;
               const addingAgain = addingAgainId === workspace.id;
               return (
@@ -327,6 +372,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                   data-current={isCurrent}
                   data-removed-device={removed || undefined}
                   data-unserved={unserved || undefined}
+                  data-folder-missing={folderMissing || undefined}
                   onMouseEnter={() => {
                     if (!removed) props.onPrepare(workspace);
                   }}
@@ -344,7 +390,7 @@ export function WorkspaceSelectionPanel(props: Props) {
                     aria-label={t("shared.viewDetails", {
                       name: workspace.name,
                     })}
-                    aria-describedby={unserved ? unservedNoteId : undefined}
+                    aria-describedby={unavailable ? unservedNoteId : undefined}
                     onClick={() => setDetails({ workspace, device })}
                     ref={(node) => {
                       if (node) detailsButtons.current.set(workspace.id, node);
@@ -355,14 +401,17 @@ export function WorkspaceSelectionPanel(props: Props) {
                     <span className="fdy-location-copy">
                       <strong>{workspace.name}</strong>
                       <small>{workspace.localPath}</small>
-                      {unserved ? (
+                      {unavailable ? (
                         <small
                           id={unservedNoteId}
                           className="fdy-location-unserved-note"
                         >
-                          {t("location.notServedNote", {
-                            device: device.label,
-                          })}
+                          {t(
+                            folderMissing
+                              ? "location.folderMissingNote"
+                              : "location.notServedNote",
+                            { device: device.label },
+                          )}
                         </small>
                       ) : null}
                     </span>
@@ -401,6 +450,29 @@ export function WorkspaceSelectionPanel(props: Props) {
                             : t("location.addAgain")}
                         </Button>
                       </span>
+                    ) : null}
+                    {unavailable && manageable ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy || !!addingAgainId || !online}
+                        aria-label={t("location.locateFor", {
+                          name: workspace.name,
+                          device: device.label,
+                        })}
+                        aria-describedby={online ? undefined : addReasonId}
+                        onClick={(event) => {
+                          setMessage("");
+                          setLocate({
+                            workspace,
+                            device,
+                            trigger: event.currentTarget,
+                          });
+                        }}
+                      >
+                        <FolderSearch size={14} />
+                        {t("location.locate")}
+                      </Button>
                     ) : null}
                     {isCurrent ? (
                       <>
@@ -504,6 +576,15 @@ export function WorkspaceSelectionPanel(props: Props) {
         ) ? (
         <p className="fdy-location-empty">{t("location.noMatches")}</p>
       ) : null}
+      {locate ? (
+        <WorkspaceLocateDialog
+          workspace={locate.workspace}
+          device={locate.device}
+          returnFocusTo={locate.trigger}
+          onClose={() => setLocate(undefined)}
+          onDone={relinked}
+        />
+      ) : null}
       {edit ? (
         <WorkspaceEditor
           returnFocusTo={dialogTrigger.current}
@@ -517,7 +598,7 @@ export function WorkspaceSelectionPanel(props: Props) {
               t(
                 kind === "add"
                   ? // With no workspace before, the first one becomes current.
-                    props.activeWorkspaceId
+                    props.activeWorkspaceId || props.workspaces.length
                     ? "deviceList.added"
                     : "deviceList.addedFirst"
                   : kind === "rename"
@@ -527,7 +608,11 @@ export function WorkspaceSelectionPanel(props: Props) {
               ),
             );
             try {
-              await props.onChanged();
+              await props.onChanged(
+                edit.edit.kind === "remove"
+                  ? { removedWorkspaceId: edit.edit.workspace.id }
+                  : undefined,
+              );
             } catch {
               setChangeError(t("deviceList.refreshFailed"));
             }

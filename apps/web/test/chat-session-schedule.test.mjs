@@ -539,3 +539,64 @@ test("a process that resumed the session holds the timer as fired then: one run 
   assert.equal(next.due, false);
   assert.equal(next.at.toISOString(), "2026-10-12T04:24:01.835Z");
 });
+
+test("a scheduled run that failed because the context is full and compaction failed shows on the note and in the history (real sequence)", async () => {
+  await i18n.changeLanguage("en");
+  const { chatContextCardForSessions } =
+    await import("../src/features/chat/chat-context-model.ts");
+  const { scheduledNote, threadScheduleWakes, liveThreadSchedule } =
+    await import("../src/features/chat/chat-schedule-model.ts");
+  // sess_1791532977920187026 on 2026-10-13: Claude Code fired the timer,
+  // the context was full and its gateway failed the compaction request.
+  const response =
+    "Prompt is too long · automatic compaction failed: API Error: 400 User location is not supported for the API use.";
+  const fireFailed = realEvent(
+    "evt_fire_failed",
+    at(11, 32, 30),
+    "Scheduled task fired",
+    {
+      level: "error",
+      metadata: {
+        timerFire: {
+          ...fireStarted.metadata.timerFire,
+          response,
+          completedAt: at(11, 32, 30),
+        },
+      },
+    },
+  );
+  const sessions = [realSession(at(11, 45), [fireStarted, fireFailed])];
+  const { wakes, busy, failedRun } = threadScheduleWakes(sessions);
+  assert.equal(failedRun?.response, response);
+  assert.equal(
+    scheduledNote(
+      liveThreadSchedule(sessions),
+      new Date(at(11, 45)),
+      wakes,
+      busy,
+      failedRun,
+    ),
+    "1 scheduled task · next at 12:07 · last run failed: context full, compaction failed",
+  );
+  const [timer] = chatContextCardForSessions(sessions).timers;
+  assert.deepEqual(
+    timer.fires.map((fire) => Boolean(fire.failed)),
+    [true, false],
+  );
+
+  // A later run that succeeds clears it.
+  const fireOk = realEvent("evt_fire_ok", at(12, 9), "Scheduled task fired", {
+    metadata: {
+      timerFire: {
+        ...fireStarted.metadata.timerFire,
+        startedAt: at(12, 7, 5),
+        response: "巡检完成",
+        completedAt: at(12, 9),
+      },
+    },
+  });
+  const recovered = threadScheduleWakes([
+    realSession(at(12, 10), [fireStarted, fireFailed, fireOk]),
+  ]);
+  assert.equal(recovered.failedRun, undefined);
+});

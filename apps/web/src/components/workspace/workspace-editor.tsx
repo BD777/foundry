@@ -41,8 +41,16 @@ export function WorkspaceEditor({
   const pending = useRef(false);
   const field = useRef<HTMLInputElement>(null);
   const removing = edit.kind === "remove";
-  const blocked = removing && edit.workspace.id === activeWorkspaceId;
-  const offline = device.status !== "connected";
+  const current = removing && edit.workspace.id === activeWorkspaceId;
+  // A workspace whose folder is gone can go though it is the current one:
+  // nothing can run there. Removing it leaves no workspace selected.
+  const folderMissing =
+    edit.kind !== "add" &&
+    edit.workspace.unavailableOnDevice?.reason === "folder_missing";
+  const blocked = current && !folderMissing;
+  // Its device is connected (it reported the folder missing); removing
+  // never touches the folder.
+  const offline = device.status !== "connected" && !folderMissing;
   const title = t(`editor.titles.${edit.kind}`);
   async function submit() {
     if (pending.current || blocked || (edit.kind !== "rename" && offline))
@@ -95,8 +103,13 @@ export function WorkspaceEditor({
             <code className="fdy-workspace-path">
               {edit.workspace.localPath}
             </code>
-            <p className="fdy-location-description">{t("editor.removeNote")}</p>
+            <p className="fdy-location-description">
+              {t("editor.removeNote", { device: device.label })}
+            </p>
             {blocked ? <p role="status">{t("editor.blocked")}</p> : null}
+            {current && !blocked ? (
+              <p role="status">{t("editor.removeCurrent")}</p>
+            ) : null}
           </>
         ) : (
           <label className="fdy-workspace-field">

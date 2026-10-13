@@ -28,6 +28,18 @@ const (
 	// access token (the bot's identity), on the open-API host.
 	FeishuTenantTokenPath = "/open-apis/auth/v3/tenant_access_token/internal"
 	feishuDeviceGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+	// Names, all read with the app's tenant access token. Bot info
+	// (bot/v3/info) needs only the bot capability, which a workspace bot's
+	// app has; the app's own record (application/v6/applications/:app_id)
+	// needs application:application:self_manage and is the fallback; the
+	// organisation (tenant/v2/tenant/query) needs tenant:tenant:readonly.
+	feishuBotInfoPath     = "/open-apis/bot/v3/info"
+	feishuApplicationPath = "/open-apis/application/v6/applications/"
+	feishuTenantQueryPath = "/open-apis/tenant/v2/tenant/query"
+	// The person's mailbox, read with their token: needs
+	// mail:user_mailbox:readonly, which the login preset asks for
+	// (feishu-cli registry meta_data.json, mail/v1 user_mailboxes.profile).
+	feishuMailboxProfilePath = "/open-apis/mail/v1/user_mailboxes/me/profile"
 	// feishuAppRegistrationPath creates a "PersonalAgent" app for the person
 	// through a device flow, on the accounts host. Not in Feishu's published
 	// docs; the official lark-cli (larksuite/cli internal/auth/
@@ -523,6 +535,112 @@ func (f *Feishu) TenantAccessToken(ctx context.Context, app AppCredentials) (str
 func (f *Feishu) CheckAppSecret(ctx context.Context, app AppCredentials) error {
 	_, _, err := f.TenantAccessToken(ctx, app)
 	return err
+}
+
+// ReadAppNames reads the app's name (bot info, else the app's record) and
+// its organisation's name. Each name it cannot read is left empty and named
+// in Detail with Feishu's code; nothing here fails the caller.
+func (f *Feishu) ReadAppNames(ctx context.Context, app AppCredentials) AppNames {
+	token, _, err := f.TenantAccessToken(ctx, app)
+	if err != nil {
+		return AppNames{Detail: "app token: " + err.Error()}
+	}
+	var names AppNames
+	var problems []string
+	base := openBase(app.BaseURL)
+	raw, err := f.getJSON(ctx, base+feishuBotInfoPath, token)
+	if err == nil {
+		bot, _ := raw["bot"].(map[string]any)
+		names.AppName = strings.TrimSpace(stringField(bot, "app_name"))
+	}
+	if names.AppName == "" {
+		raw, appErr := f.getJSON(ctx, base+feishuApplicationPath+url.PathEscape(app.ClientID)+"?lang=zh_cn", token)
+		if appErr == nil {
+			data, _ := raw["data"].(map[string]any)
+			record, _ := data["app"].(map[string]any)
+			names.AppName = strings.TrimSpace(stringField(record, "app_name"))
+		}
+		if names.AppName == "" {
+			problems = append(problems, fmt.Sprintf("app name: bot info: %v; app record: %v", errOrEmpty(err), errOrEmpty(appErr)))
+		}
+	}
+	raw, err = f.getJSON(ctx, base+feishuTenantQueryPath, token)
+	if err == nil {
+		data, _ := raw["data"].(map[string]any)
+		tenant, _ := data["tenant"].(map[string]any)
+		names.TenantName = strings.TrimSpace(stringField(tenant, "name"))
+	}
+	if names.TenantName == "" {
+		problems = append(problems, fmt.Sprintf("tenant name: %v", errOrEmpty(err)))
+	}
+	names.Detail = strings.Join(problems, "; ")
+	return names
+}
+
+// errOrEmpty names a lookup that answered without failing but without a name.
+func errOrEmpty(err error) string {
+	if err == nil {
+		return "answered without a name"
+	}
+	return err.Error()
+}
+
+// getJSON GETs an open-API endpoint with a bearer token and reads its
+// answer; a non-zero Feishu code is an error carrying the code and message.
+func (f *Feishu) getJSON(ctx context.Context, endpoint, token string) (map[string]any, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	raw, status, err := f.do(request)
+	if err != nil {
+		return nil, err
+	}
+	if code := int(numberField(raw, "code", 0)); code != 0 {
+		return nil, fmt.Errorf("code %d: %s", code, stringField(raw, "msg"))
+	}
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", status)
+	}
+	return raw, nil
+}
+
+// ReadOrgDomain reads the domain of the person's enterprise email: user_info's
+// enterprise_email (authen/v1 UserInfo in the Lark Go SDK), else their
+// mailbox's primary address. Both come with the person's token and the
+// login preset's scopes; neither needs an app permission.
+func (f *Feishu) ReadOrgDomain(ctx context.Context, app AppCredentials, accessToken string) (string, error) {
+	base := openBase(app.BaseURL)
+	raw, err := f.getJSON(ctx, base+feishuUserInfoPath, accessToken)
+	if err == nil {
+		data, _ := raw["data"].(map[string]any)
+		if domain := emailDomain(stringField(data, "enterprise_email")); domain != "" {
+			return domain, nil
+		}
+	}
+	raw, mailErr := f.getJSON(ctx, base+feishuMailboxProfilePath, accessToken)
+	if mailErr == nil {
+		data, _ := raw["data"].(map[string]any)
+		if domain := emailDomain(stringField(data, "primary_email_address")); domain != "" {
+			return domain, nil
+		}
+	}
+	return "", fmt.Errorf("user info: %v; mailbox: %v", errOrEmpty(err), errOrEmpty(mailErr))
+}
+
+// emailDomain is the lower-cased part after the last "@", empty for
+// anything that is not an address.
+func emailDomain(address string) string {
+	at := strings.LastIndex(address, "@")
+	if at <= 0 {
+		return ""
+	}
+	domain := strings.ToLower(strings.TrimSpace(address[at+1:]))
+	if !strings.Contains(domain, ".") {
+		return ""
+	}
+	return domain
 }
 
 // Identity reads who the token belongs to (authen/v1/user_info).

@@ -753,6 +753,33 @@
   list-style: none;
 }
 
+/* The inventory's one line on the device, and the way to the Resources page. */
+.fdy-device-resource-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--fdy-line-soft);
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+}
+
+.fdy-device-resource-summary > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-device-resource-summary > .fdy-device-resource-remote {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
 .fdy-device-resource-detail {
   margin: 4px 0 0;
   color: var(--fdy-ink-muted);

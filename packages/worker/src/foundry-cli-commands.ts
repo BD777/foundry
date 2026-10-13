@@ -17,7 +17,11 @@ export type FlagKind =
   /** The next word, split at commas; the flag may repeat. */
   | "list"
   /** The contents of the file the next word names. */
-  | "file";
+  | "file"
+  /** The next word, parsed as JSON. */
+  | "json"
+  /** The contents of the file the next word names, parsed as JSON. */
+  | "jsonFile";
 
 export interface FlagSpec {
   argument: string;
@@ -241,7 +245,43 @@ export const foundryCommands: Record<
   },
   workspace: { list: { tool: "list_workspaces", flags: {} } },
   device: {
-    list: { tool: "list_resources", flags: { "--kind": flag("kind") } },
+    list: {
+      tool: "list_resources",
+      flags: {
+        "--type": flag("type"),
+        "--device": flag("deviceId"),
+        "--kind": flag("kind"),
+      },
+    },
+  },
+  resource: {
+    acquire: {
+      tool: "acquire_resource",
+      flags: {
+        "--resource": flag("resourceIds", "list"),
+        "--type": flag("type"),
+        "--device": flag("deviceId"),
+        "--reason": flag("reason"),
+        "--wait-ms": flag("waitMs", "number"),
+        "--hold-for": flag("holdFor", "number"),
+      },
+    },
+    operate: {
+      tool: "operate_resource",
+      positional: "leaseId",
+      flags: {
+        "--op": flag("op"),
+        "--args": flag("args", "json"),
+        "--args-file": flag("args", "jsonFile"),
+        "--actions": flag("actions", "json"),
+        "--screenshot-after": flag("screenshotAfter", "boolean"),
+      },
+    },
+    release: { tool: "release_resource", positional: "leaseId", flags: {} },
+    status: {
+      tool: "resource_status",
+      flags: { "--resource": flag("resourceId"), "--lease": flag("leaseId") },
+    },
   },
   profile: {
     list: {

@@ -98,19 +98,30 @@
   gap: 10px;
 }
 
-/* A Feishu app: its line, then its rotation hint or secret form. */
+/* A Feishu app's panel: its line and actions, its rotation hint or secret
+   form, then the accounts authorized through it. */
 .fdy-xacc-app-secret {
   display: grid;
   min-width: 0;
   gap: 8px;
 }
 
-.fdy-xacc-app {
-  display: grid;
-  min-width: 0;
-  gap: 10px;
-  padding: 12px 0;
+.fdy-xacc-app > .fdy-xacc-list {
   border-top: 1px solid var(--fdy-line-soft);
+}
+
+/* An app whose secret devices held: the note beside its action. */
+.fdy-xacc-app-rotate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.fdy-xacc-app-rotate > p {
+  min-width: 0;
+  flex: 1 1 320px;
 }
 
 .fdy-xacc-row-main,
@@ -235,6 +246,11 @@
   background: var(--fdy-paper-main);
   box-shadow: var(--fdy-shadow-floating);
   transform: translate(-50%, -50%);
+}
+
+/* What a row menu action will do, before it does it. */
+.fdy-xacc-modal.fdy-xacc-confirm {
+  width: min(440px, calc(100vw - 24px));
 }
 
 .fdy-xacc-modal-header {
@@ -401,6 +417,63 @@
 
 .fdy-xacc-advanced > .fdy-xacc-form {
   padding-top: 4px;
+}
+
+/* Under the QR code: restart a new app's registration on the other brand's login page. */
+.fdy-xacc-brand-switch {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-xacc-brand-switch > small {
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+}
+
+/* In the connect dialog: team apps, a one-scan alternative to a new app. */
+.fdy-xacc-team-apps {
+  display: grid;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--fdy-line-soft);
+  border-radius: 10px;
+}
+
+.fdy-xacc-team-app.fdy-action-row {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.fdy-xacc-team-app:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fdy-xacc-team-app > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-xacc-team-app strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fdy-xacc-team-app small,
+.fdy-xacc-team-app > svg {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-xacc-new-app-instead {
+  justify-self: start;
 }
 
 .fdy-xacc-waiting {

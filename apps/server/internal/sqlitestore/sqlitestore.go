@@ -467,6 +467,15 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.setupFeishuGateway(ctx); err != nil {
 		return err
 	}
+	if err := s.dropRemovedWorkspaces(ctx); err != nil {
+		return err
+	}
+	if err := s.setupResources(ctx); err != nil {
+		return err
+	}
+	if err := s.setupResourceLeases(ctx); err != nil {
+		return err
+	}
 	if err := s.backfillWorkspaceScopedRecords(ctx); err != nil {
 		return err
 	}

@@ -71,6 +71,7 @@ func (s *Server) writeWorkspaceFeishuBot(w http.ResponseWriter, r *http.Request,
 		writeResult(w, nil, err)
 		return
 	}
+	s.feishu.RefreshStaleChatNames(workspaceID, view.Chats)
 	writeJSON(w, http.StatusOK, view)
 }
 
@@ -143,6 +144,21 @@ func (s *Server) handleUnbindFeishuChat(w http.ResponseWriter, r *http.Request) 
 	}
 	if s.feishu != nil {
 		s.feishu.Publish(context.WithoutCancel(r.Context()), workspaceID)
+	}
+	s.writeWorkspaceFeishuBot(w, r, workspaceID)
+}
+
+// handleRefreshFeishuChatName asks Feishu for one chat's name now. A
+// failed check keeps the name and is told in the chat's chatNameError.
+func (s *Server) handleRefreshFeishuChatName(w http.ResponseWriter, r *http.Request) {
+	workspaceID := r.PathValue("id")
+	if s.feishu == nil {
+		writeError(w, http.StatusServiceUnavailable, errFeishuBotsUnavailable.Error())
+		return
+	}
+	if err := s.feishu.RefreshChatName(r.Context(), workspaceID, r.PathValue("routeId")); errors.Is(err, store.ErrNotFound) {
+		writeResult(w, nil, err)
+		return
 	}
 	s.writeWorkspaceFeishuBot(w, r, workspaceID)
 }

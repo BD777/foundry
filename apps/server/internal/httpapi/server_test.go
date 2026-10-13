@@ -1224,7 +1224,10 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 				continue
 			}
 			var event browserEventEnvelope
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Type != browserevent.StreamReady {
+			// The device's inventory news (resources_changed) arrives on its
+			// own time after hello; this test follows the session.
+			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Type != browserevent.StreamReady &&
+				event.Type != browserevent.ResourcesChanged {
 				streamedEvents <- event
 			}
 		}

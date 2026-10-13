@@ -32,6 +32,10 @@ func TestSoftRemoveDevicePurgesLiveStateAndKeepsHistory(t *testing.T) {
 	if err := db.SetDeviceSkillRoots(ctx, store.SetDeviceSkillRootsInput{DeviceID: deviceID, Paths: []string{"/skills"}}); err != nil {
 		t.Fatalf("skill roots: %v", err)
 	}
+	if err := db.ReplaceSourceResources(ctx, store.ResourceSourceStatus{Kind: "device", ID: deviceID, Online: true},
+		[]store.ResourceInstance{{ID: "res_cascade", Key: "gpu/0", Type: "gpu", Platform: "linux", Name: "GPU", State: store.ResourceAvailable}}); err != nil {
+		t.Fatalf("resources: %v", err)
+	}
 	for _, id := range []string{"agent-profile:" + deviceID + ":codex_local", "agent-profile:dev_other:codex_local"} {
 		if _, err := db.conn().ExecContext(ctx, `INSERT INTO secret_records (id, aad, ciphertext, wrapped_dek, dek_nonce, ct_nonce, created_at, updated_at)
 			VALUES (?, '', x'00', x'00', x'00', x'00', '', '')`, id); err != nil {
@@ -55,6 +59,8 @@ func TestSoftRemoveDevicePurgesLiveStateAndKeepsHistory(t *testing.T) {
 		"provider health":  count(`SELECT count(*) FROM provider_health WHERE json_extract(payload_json, '$.deviceId') = ?`, deviceID),
 		"assignments":      count(`SELECT count(*) FROM device_profiles WHERE device_id = ?`, deviceID),
 		"skill roots":      count(`SELECT count(*) FROM device_skill_roots WHERE device_id = ?`, deviceID),
+		"resources":        count(`SELECT count(*) FROM resource_instances WHERE source_id = ?`, deviceID),
+		"resource source":  count(`SELECT count(*) FROM resource_sources WHERE id = ?`, deviceID),
 		"its credentials":  count(`SELECT count(*) FROM secret_records WHERE id = ?`, "agent-profile:"+deviceID+":codex_local"),
 		"other credential": count(`SELECT count(*) FROM secret_records WHERE id = 'agent-profile:dev_other:codex_local'`) - 1,
 	} {

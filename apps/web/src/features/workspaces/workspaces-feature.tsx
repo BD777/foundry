@@ -22,8 +22,12 @@ export type WorkspacesFeatureEvent =
       stayOnLocation?: boolean;
     }
   | { type: "device.open.requested"; deviceId: string }
-  /** A folder was added, renamed or removed; resolves once data reloaded. */
-  | { type: "workspaces.changed" };
+  /**
+   * A folder was added, renamed, located or removed; resolves
+   * once data reloaded. `removedWorkspaceId`: the workspace removed, which
+   * leaves none selected when it was the current one.
+   */
+  | { type: "workspaces.changed"; removedWorkspaceId?: string };
 
 /**
  * How long the pointer (or focus) rests on a workspace before what a switch
@@ -93,8 +97,11 @@ export function WorkspacesFeature(props: WorkspacesFeatureProps) {
       onOpenDevice={(deviceId) =>
         void props.onEvent({ type: "device.open.requested", deviceId })
       }
-      onChanged={async () => {
-        await props.onEvent({ type: "workspaces.changed" });
+      onChanged={async (change) => {
+        await props.onEvent({
+          type: "workspaces.changed",
+          removedWorkspaceId: change?.removedWorkspaceId,
+        });
       }}
       onAddAgain={async (workspace, device) => {
         // The add-folder flow, for the same path on the same device: the

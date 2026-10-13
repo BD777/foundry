@@ -234,6 +234,22 @@ export const devices = {
       "To let sessions capture and control this Mac, allow the program running the Foundry worker (<code>{{grantTo}}</code>) under Screen Recording and Accessibility. The prompts and System Settings open on {{device}}.",
     asking: "Asking the device…",
     openSettings: "Open System Settings…",
+    summary: {
+      label: "Resource inventory of {{device}}",
+      count_one: "{{count}} resource",
+      count_other: "{{count}} resources",
+      unready_one: "{{count}} not ready",
+      unready_other: "{{count}} not ready",
+      stale_one: "{{count}} stale",
+      stale_other: "{{count}} stale",
+      open: "Open in Resources",
+      remoteOn: "Remote commands: on",
+      remoteOff: "Remote commands: off",
+      manageRemote: "Manage",
+      manageRemoteLabel: "Manage remote commands of {{device}}",
+      loading: "Reading the resource inventory…",
+      failed: "Could not read the resource inventory.",
+    },
   },
   diagnostics: {
     report: {

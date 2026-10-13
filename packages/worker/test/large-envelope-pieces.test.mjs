@@ -83,11 +83,23 @@ function scan(size, filler = "x") {
 test("the server's registered answer says whether it takes pieces", () => {
   assert.deepEqual(serverFeatures({ features: ["reply_chunks"] }), {
     replyChunks: true,
+    workspaceFolders: false,
+    resources: false,
   });
-  assert.deepEqual(serverFeatures(undefined), { replyChunks: false });
+  assert.deepEqual(serverFeatures(undefined), {
+    replyChunks: false,
+    workspaceFolders: false,
+    resources: false,
+  });
   assert.deepEqual(serverFeatures({ features: "reply_chunks" }), {
     replyChunks: false,
+    workspaceFolders: false,
+    resources: false,
   });
+  assert.deepEqual(
+    serverFeatures({ features: ["reply_chunks", "resources_v1"] }).resources,
+    true,
+  );
 });
 
 test("a small reply is not stuck behind a large one on a slow uplink", async () => {
