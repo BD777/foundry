@@ -9,20 +9,11 @@ export const externalAccounts = {
     loadFailed: "Could not load Feishu accounts: {{error}}",
     secretsMissing:
       "This server has no secret-store key, so it cannot keep logins. An administrator has to configure one before accounts can be connected.",
-    actionsNote:
-      "Stop using now revokes the login at the platform and cuts off running sessions at once. Remove also deletes the account and its workspace bindings.",
   },
   list: {
-    title: "Accounts",
-    count_one: "{{count}} account",
-    count_other: "{{count}} accounts",
     emptyTitle: "No Feishu accounts yet",
     emptyBody:
       "Connect a Feishu account so feishu-cli in your sessions works as you.",
-    usedBy: "{{provider}} · used by {{tools}}",
-    identityUnknown: "Identity not read",
-    tenant: "tenant {{tenant}}",
-    app: "app {{app}}",
     notBound: "Not bound to a workspace",
     workspaces_one: "Bound to {{count}} workspace",
     workspaces_other: "Bound to {{count}} workspaces",
@@ -32,7 +23,7 @@ export const externalAccounts = {
   },
   feishu: {
     intro:
-      "Your Feishu logins. feishu-cli in your sessions uses them to work in Feishu as you.",
+      "Your connected Feishu accounts, each with its organisation and the Feishu app it signed in through. feishu-cli in your sessions uses them to work in Feishu as you.",
     connect: "Connect Feishu account",
   },
   status: {
@@ -61,14 +52,21 @@ export const externalAccounts = {
   actions: {
     refresh: "Refresh now",
     revoke: "Stop using now",
-    revokeConfirm: "Revoke now?",
+    revokeTitle: "Stop using {{name}} now?",
+    revokeBody:
+      "Revokes the login at Feishu and cuts off running sessions at once. The account stays listed until you remove it; reconnect to use it again.",
     remove: "Remove",
-    removeConfirm: "Remove for good?",
+    removeTitle: "Remove {{name}}?",
+    removeBody:
+      "Revokes the login at Feishu and deletes the account and its workspace bindings. Connect it again to use it.",
+    more: "More actions for {{name}}",
     reconnect: "Reconnect",
+    reauthorize: "Re-authorize",
     working: "Working…",
   },
   notices: {
     connected: "Connected {{name}}.",
+    reauthorized: "Re-authorized {{name}}.",
     refreshed: "{{name}} was refreshed.",
     revoked: "{{name}} is revoked. Sessions lost access to it.",
     removed: "{{name}} was removed.",
@@ -79,21 +77,24 @@ export const externalAccounts = {
     failed: "{{error}}",
   },
   apps: {
-    title: "Feishu apps",
-    intro:
-      "A Feishu login belongs to one app. Connect through the organization app an administrator set up, or through your own app.",
     instance: "Organization app",
     personal: "Your app",
-    empty: "No app yet. Connecting an account creates one for you.",
+    defaultName: "Feishu app {{id}}",
+    authorize: "Sign in through it",
+    noAccounts: "No account connected through this app.",
     remove: "Remove app",
-    removeConfirm: "Remove app?",
-    replaceSecret: "Replace secret",
+    removeTitle: "Remove {{name}}?",
+    removeBody:
+      "Foundry forgets the app and its secret. The app itself stays in Feishu's developer console.",
+    replaceSecret: "Replace app secret",
     rotateHint:
-      "Devices held this app's secret before sessions went through Foundry. Reset it in the Feishu developer console, then replace it here at once: until then Foundry cannot use the app.",
+      "Devices held the secret of {{name}} before sessions went through Foundry. Reset it in the Feishu developer console, then replace it here at once: until then Foundry cannot use the app.",
     rotateOpenConsole: "Open the app's credentials",
-    newSecretLabel: "New app secret",
+    showTenantName:
+      "Show the full company name (needs an app permission in Feishu)",
+    newSecretLabel: "New app secret for {{name}}",
     newSecretHint:
-      "Sealed on the server and checked with Feishu first; accounts connected through the app keep working.",
+      "Needed only after you reset the secret in Feishu's developer console. Sealed on the server and checked with Feishu first; accounts connected through the app keep working.",
     saveSecret: "Save secret",
     uses: {
       label: "Used by",
@@ -104,8 +105,7 @@ export const externalAccounts = {
       otherWorkspaces_other: "{{count}} workspaces you cannot see",
       subscriptions_one: "{{count}} agent event subscription",
       subscriptions_other: "{{count}} agent event subscriptions",
-      unused: "No workspace bot or agent event subscription uses this app.",
-      openBot: "Open the Feishu Bot of {{name}}",
+      openBot: "Open the channels of {{name}}",
       connected: "Connected",
       connecting: "Connecting",
       error: "Not connected",
@@ -116,13 +116,15 @@ export const externalAccounts = {
     title: "Connect a Feishu account",
     description:
       "Scan a QR code with Feishu (or open the link), confirm there, and this dialog finishes by itself. Foundry never sees your password.",
-    appLabel: "Connect through",
-    newFeishuApp: "A new Feishu app, created as you scan",
-    newLarkApp: "A new Lark app (international), created as you scan",
-    newAppMeta: "Nothing to paste · recommended",
-    newAppHint:
-      "Two confirmations in Feishu: create a personal app for Foundry, then authorize it. Foundry keeps the app's credentials sealed on the server.",
-    existingAppHint: "One confirmation in Feishu: authorize this app.",
+    switchToLark:
+      "Using Lark (international)? Open the Lark sign-in page instead",
+    switchToFeishu:
+      "Using Feishu (China)? Open the Feishu sign-in page instead",
+    brandHint: "Your account's region is detected after you scan.",
+    teamApp: "Use your team's app {{name}}",
+    teamAppMeta: "Shared by an administrator · one scan, no new app",
+    newAppInstead: "Create a new app instead",
+    restart: "Restart with these settings",
     scopesPreset_one: "Asks for {{count}} Feishu permission",
     scopesPreset_other:
       "Asks for {{count}} Feishu permissions, covering Foundry's Feishu skills",
@@ -191,20 +193,36 @@ export const externalAccounts = {
     close: "Close",
     cancel: "Cancel",
   },
+  authorize: {
+    reauthorizeTitle: "Re-authorize {{name}}",
+    reauthorizeBody:
+      "Sign in again as the same Feishu user through {{app}}. The account keeps its workspaces and settings.",
+    anotherTitle: "Sign in through {{app}}",
+    anotherBody:
+      "One scan: the Feishu user who scans authorizes this app and is connected as an account here.",
+  },
   workspace: {
     rule: "Only sessions you start, on devices you own, use your accounts. Other members see that an account is bound, not whose it is.",
-    mine: "Your accounts",
+    binding: {
+      feishu:
+        "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
+    },
     others: "Bound by other members",
     use: "Use {{name}} in this workspace",
-    emptyMine: "You have no connected accounts yet.",
-    connect: "Connect an account",
+    empty: "You have no {{provider}} account yet.",
+    connect: "Connect {{provider}} account",
     manage: "Manage connectors",
-    otherAccount: "{{provider}} account {{name}}",
     loading: "Loading accounts…",
     loadFailed: "Could not load this workspace's accounts: {{error}}",
     saveFailed: "Could not change the binding: {{error}}",
     bound: "{{name}} is used in this workspace.",
     unbound: "{{name}} is no longer used in this workspace.",
     notUsable: "{{status}}: sessions cannot use it until you reconnect it.",
+  },
+  linkQr: {
+    body: "Best done on a computer: open the link and sign in to Feishu there. The QR code opens the page on your phone, but Feishu's developer console may not work well on mobile.",
+    tenantTitle: "Show the full company name",
+    tenantDescription:
+      "Enable the app permission tenant:tenant:readonly in Feishu, then choose Refresh now on the account.",
   },
 };

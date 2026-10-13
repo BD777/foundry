@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // A worker sends a large envelope (a skill scan, a 1 MiB file chunk) in
@@ -38,7 +40,7 @@ func registeredEnvelope(id string) wsEnvelope {
 	return wsEnvelope{
 		Type:    wsRegisteredType,
 		ID:      id,
-		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `"]}`),
+		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `"]}`),
 	}
 }
 

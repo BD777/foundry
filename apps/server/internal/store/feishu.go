@@ -44,6 +44,13 @@ type FeishuBotRoute struct {
 	// ChatID is the chat a chat or p2p route matches.
 	ChatID   string `json:"chatId,omitempty"`
 	ChatName string `json:"chatName,omitempty"`
+	// ChatNameCheckedAt is when the name was last asked of Feishu, and
+	// ChatNameError why that failed (the name kept is the one before).
+	ChatNameCheckedAt string `json:"chatNameCheckedAt,omitempty"`
+	ChatNameError     string `json:"chatNameError,omitempty"`
+	// PeerOpenID is the other person of a direct chat (their open_id with
+	// the app), which names the chat.
+	PeerOpenID string `json:"-"`
 	// BoundUserID is the account the bot acts as in the chat: whoever
 	// generated the pairing code the chat used.
 	BoundUserID string `json:"boundUserId,omitempty"`
@@ -162,6 +169,12 @@ type FeishuBotStore interface {
 	// pairing's workspace from now on (replacing where it routed before on
 	// the same Feishu app) and the code is spent.
 	BindFeishuChat(ctx context.Context, pairing FeishuBotRoute, chat FeishuBotRoute) (FeishuBotRoute, error)
+	// RecordFeishuChatName records a check of a chat route's name: name
+	// replaces the stored one unless failure says why the check failed or
+	// name is empty.
+	RecordFeishuChatName(ctx context.Context, routeID, name, failure string, checkedAt time.Time) error
+	// SetFeishuChatPeer records the other person of a direct chat route.
+	SetFeishuChatPeer(ctx context.Context, routeID, openID string) error
 	// DeleteFeishuBotRoute unbinds one chat of the workspace.
 	DeleteFeishuBotRoute(ctx context.Context, workspaceID, routeID string) error
 	// FeishuProviderAppsByClientID lists every Connectors app registered

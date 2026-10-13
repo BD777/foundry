@@ -59,6 +59,14 @@ type DeviceStatusChangedPayload struct {
 	Device *store.DeviceProjection `json:"device,omitempty"`
 }
 
+// ResourcesChangedPayload tells readers of the resource inventory (GET
+// /api/resources) that what it lists for a source changed: a device's
+// report, or the device went offline. It carries no data, so it reaches
+// every stream; readers read the inventory again.
+type ResourcesChangedPayload struct {
+	SourceID string `json:"sourceId"`
+}
+
 // WorkspaceMembersUpdatedPayload says who may use the workspace changed.
 type WorkspaceMembersUpdatedPayload struct {
 	WorkspaceID string `json:"workspaceId"`

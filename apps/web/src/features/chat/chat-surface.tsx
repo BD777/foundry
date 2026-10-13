@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   Clock,
   LoaderCircle,
   PanelRight,
@@ -442,6 +443,7 @@ function ScheduledNote(props: {
         new Date(minute * 60_000),
         props.wakes?.wakes,
         props.wakes?.busy,
+        props.wakes?.failedRun,
       ),
     // The note is written in the viewer's language.
     [props.schedule, props.wakes, minute, i18n.language],
@@ -453,7 +455,11 @@ function ScheduledNote(props: {
       size="sm"
       variant="ghost"
     >
-      <Clock aria-hidden="true" size={14} />
+      {props.wakes?.failedRun ? (
+        <CircleAlert aria-hidden="true" size={14} />
+      ) : (
+        <Clock aria-hidden="true" size={14} />
+      )}
       {note}
     </Button>
   );

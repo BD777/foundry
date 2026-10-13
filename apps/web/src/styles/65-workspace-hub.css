@@ -109,6 +109,50 @@
   }
 }
 
+/* The Channels tab: the always-on web Chats line, then a section per channel. */
+.fdy-channels {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fdy-channels-web {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  color: var(--fdy-ink);
+}
+
+.fdy-channels-web > svg {
+  flex: none;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-channels-web-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.fdy-channels-web-text strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fdy-channels-web-text small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
 .fdy-feishu-container {
   display: flex;
   flex-direction: column;

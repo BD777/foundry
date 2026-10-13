@@ -30,16 +30,17 @@ import { isVerificationSession } from "./session-roles.js";
  * External accounts on the device (docs: External accounts design §5.5).
  *
  * No Feishu credential ever reaches this device. run_session carries, for
- * each account a session may act as, the app id and two opaque handles from
- * the server's Feishu gateway: one in place of the app secret, one in place
- * of the user access token. The worker writes them into a Foundry-managed
+ * each account a session may act as, the app id and opaque handles from
+ * the server's Feishu gateway: in place of the app secret, of the user
+ * access token and of the user refresh token. The worker writes them into a Foundry-managed
  * feishu-cli profile of the session's own, through feishu-cli's documented
  * configuration (`~/.feishu-cli/profiles/<name>/config.yaml` with app_id,
  * app_secret and base_url; token.json; FEISHU_PROFILE), with base_url on
  * this worker's loopback forwarder (feishu-gateway-forwarder.ts), which
  * adds the device credential and sends everything to the gateway. The
- * gateway swaps the handles for the real tokens and refuses them once the
- * session ends, so nothing is renewed here. The profile is removed when the
+ * gateway swaps the handles for the real tokens, answers feishu-cli's
+ * refresh with the same stand-ins (the server alone refreshes the real
+ * login) and refuses them once the session ends. The profile is removed when the
  * session's run ends; profiles a crashed worker left behind are listed in a
  * manifest under the state root and reaped at the next start.
  */
@@ -194,11 +195,14 @@ function configYaml(
 function tokenJson(
   material: ExternalAccountMaterial,
   userHandle: string,
+  refreshHandle: string | undefined,
 ): string {
-  // No refresh_token: the server alone refreshes the login.
+  // The refresh stand-in keeps `auth status` healthy and lets feishu-cli
+  // refresh through the gateway; no expiry: the gateway decides.
   return `${JSON.stringify(
     {
       access_token: userHandle,
+      ...(refreshHandle ? { refresh_token: refreshHandle } : {}),
       token_type: "Bearer",
       expires_at: localTimestamp(material.expiresAt),
       scope: material.scope ?? "",
@@ -311,6 +315,7 @@ export async function materializeSessionAccounts(
     const gateway = material.gateway!;
     registerKnownSecret(gateway.appHandle);
     registerKnownSecret(gateway.userHandle);
+    if (gateway.refreshHandle) registerKnownSecret(gateway.refreshHandle);
     const directory = managedProfileDirectory(home, material.profileName);
     if (!directory) continue;
     try {
@@ -323,7 +328,7 @@ export async function materializeSessionAccounts(
       );
       writePrivateFile(
         join(directory, "token.json"),
-        tokenJson(material, gateway.userHandle),
+        tokenJson(material, gateway.userHandle, gateway.refreshHandle),
       );
     } catch (error) {
       log(

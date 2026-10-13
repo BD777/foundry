@@ -9,6 +9,7 @@ type PageSurfaceVariant =
   | "library"
   | "members"
   | "profiles"
+  | "resources"
   | "runs"
   | "settings"
   | "skills"

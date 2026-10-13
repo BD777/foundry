@@ -3,8 +3,10 @@ package feishu
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -15,11 +17,12 @@ type Client struct {
 }
 
 // botClient is what Foundry asks of a bot: reply to a message with a card,
-// update a card, and read a group's name. Client implements it.
+// update a card, and read a chat's or a person's name. Client implements it.
 type botClient interface {
 	ReplyCard(ctx context.Context, messageID string, cardJSON string) (string, error)
 	PatchCard(ctx context.Context, cardMessageID string, cardJSON string) error
-	GetChatInfo(ctx context.Context, chatID string) (string, error)
+	ChatName(ctx context.Context, chatID string) (string, error)
+	UserName(ctx context.Context, openID string) (string, error)
 }
 
 // NewClient is a bot client for the app; baseURL "" is Feishu's.
@@ -77,12 +80,11 @@ func (c *Client) PatchCard(ctx context.Context, cardMessageID string, cardJSON s
 	return nil
 }
 
-func (c *Client) GetChatInfo(ctx context.Context, chatID string) (string, error) {
-	req := larkim.NewGetChatReqBuilder().
-		ChatId(chatID).
-		Build()
-
-	resp, err := c.lark.Im.V1.Chat.Get(ctx, req)
+// ChatName is the chat's name in Feishu (GET /open-apis/im/v1/chats/:chat_id,
+// with the app's tenant token: scope im:chat, im:chat:read or
+// im:chat:readonly); "" when the chat has none, as a direct chat.
+func (c *Client) ChatName(ctx context.Context, chatID string) (string, error) {
+	resp, err := c.lark.Im.V1.Chat.Get(ctx, larkim.NewGetChatReqBuilder().ChatId(chatID).Build())
 	if err != nil {
 		return "", fmt.Errorf("feishu get chat: %w", err)
 	}
@@ -90,7 +92,24 @@ func (c *Client) GetChatInfo(ctx context.Context, chatID string) (string, error)
 		return "", fmt.Errorf("feishu get chat failed [%d]: %s", resp.Code, resp.Msg)
 	}
 	if resp.Data != nil && resp.Data.Name != nil {
-		return *resp.Data.Name, nil
+		return strings.TrimSpace(*resp.Data.Name), nil
 	}
-	return chatID, nil
+	return "", nil
+}
+
+// UserName is the name of the person with open_id openID (GET
+// /open-apis/contact/v3/users/:user_id, with the app's tenant token: scope
+// contact:user.base:readonly); "" when Feishu does not say.
+func (c *Client) UserName(ctx context.Context, openID string) (string, error) {
+	resp, err := c.lark.Contact.V3.User.Get(ctx, larkcontact.NewGetUserReqBuilder().UserId(openID).UserIdType(larkcontact.UserIdTypeOpenId).Build())
+	if err != nil {
+		return "", fmt.Errorf("feishu get user: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu get user failed [%d]: %s", resp.Code, resp.Msg)
+	}
+	if resp.Data != nil && resp.Data.User != nil && resp.Data.User.Name != nil {
+		return strings.TrimSpace(*resp.Data.User.Name), nil
+	}
+	return "", nil
 }

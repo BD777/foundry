@@ -21,8 +21,8 @@ export const workspaces: Translation<typeof en> = {
       settings: "Agent 与执行",
       assets: "资产",
       skills: "Skills",
-      feishu: "飞书机器人",
-      accounts: "账号",
+      channels: "渠道",
+      workspaceConnectors: "连接器",
       sharing: "共享",
     },
     notes: {
@@ -31,10 +31,10 @@ export const workspaces: Translation<typeof en> = {
       assets: "这个工作区可用的资产。设备状态和容量由各工作区共用。",
       skills:
         "选择这个工作区向其对话和 Issue 开放哪些由服务器发布的 Skill。这个工作区所在设备上的 Skill 可以在下方直接添加；其他地方的 Skill 需要先发布到服务器才能使用。",
-      feishu:
-        "用连接器中的飞书应用运行机器人，并把会话配对到这个工作区：已配对会话中的每个话题都会成为这里的 Agent 会话。",
-      accounts:
-        "选择此工作区的会话可以使用你在“连接器”中连接的哪些账号。这里是供 feishu-cli 等工具使用的个人登录；“飞书机器人”标签页是工作区的群机器人，两者不同。",
+      channels:
+        "成员通过哪些渠道使用此工作区。网页对话始终可用；飞书机器人运行在连接器中的飞书应用上，配对到这里的会话中，每个话题都会成为一个 Agent 会话。",
+      workspaceConnectors:
+        "按连接器类型选择此工作区的会话可以使用的个人登录。“渠道”标签页是成员使用工作区的入口，与此不同。",
       sharing:
         "把这个工作区共享给其他 Foundry 账号。访问权限只涵盖这个工作区，不涉及设备上的其他内容。",
     },
@@ -54,6 +54,7 @@ export const workspaces: Translation<typeof en> = {
       "你的所有工作区，按所在设备分组。点“切换”改变当前工作位置；添加、重命名、移除工作区也都在这里。",
     currentLocation: "当前：<strong>{{location}}</strong>",
     noWorkspaceSelected: "未选择工作区",
+    chooseWorkspace: "在下方选一个工作区，点“切换”进入。",
     removedHistory: "已移除 · 历史记录只读保留",
     offlineSummary: "离线 · {{workspaces}}",
     noDevices: "还没有设备。可在“设备”中添加。",
@@ -75,6 +76,32 @@ export const workspaces: Translation<typeof en> = {
     addAgainTo: "在 {{device}} 上重新添加 {{name}}",
     addingAgain: "正在添加…",
     addedAgain: "{{device}} 已重新提供 {{name}}。",
+    folderMissingNote:
+      "在 {{device}} 上的这个路径找不到文件夹。如果它被移动或改了名，可以重新定位；对话、会话和 Issue 都会保留。也可以在行菜单中移除这个工作区。",
+    locate: "定位文件夹…",
+    locateFor: "在 {{device}} 上定位 {{name}} 的文件夹",
+    located: "已将“{{name}}”定位到 {{path}}。",
+    chatsResume_one: "{{count}} 个对话可以在该文件夹中继续。",
+    chatsResume_other: "{{count}} 个对话可以在该文件夹中继续。",
+    chatsContinue_one:
+      "{{count}} 个对话将在新的原生会话中继续，并带上它在 Foundry 中的对话内容。",
+    chatsContinue_other:
+      "{{count}} 个对话将在新的原生会话中继续，并带上它们在 Foundry 中的对话内容。",
+  },
+  locate: {
+    title: "定位文件夹",
+    description:
+      "{{name}} 会保留它的对话、会话、Issue 和设置。它上次所在的文件夹是 {{device}} 上的 {{path}}。",
+    looking: "正在 {{device}} 上查找这个文件夹…",
+    suggestionsLabel: "看起来像它的文件夹",
+    reasons: {
+      same_workspace: "包含这个工作区的 Foundry 标识",
+      same_git_remote: "Git 远程仓库相同",
+    },
+    note: "选择文件夹现在所在的位置。能在那里找到原生会话的对话会直接继续；其余对话会在新的原生会话中继续，并带上它们在 Foundry 中的对话内容。",
+    reconnect: "重新连接 {{device}} 后才能定位文件夹。",
+    submit: "使用这个文件夹",
+    locating: "正在定位…",
   },
   overview: {
     gitStates: {
@@ -202,6 +229,8 @@ export const workspaces: Translation<typeof en> = {
       "初始设置可能还会在没有仓库的文件夹中初始化 Git。注册前请确认设备和路径。",
     removeNote:
       "这个工作区中的对话、Issue 和运行历史将从 Foundry 删除。本地文件不会被删除。",
+    removeCurrent:
+      "这是你当前的工作区。它的文件夹已找不到，所以可以移除；移除后在你切换到其他工作区之前，不会选中任何工作区。",
     blocked: "这是你当前的工作区。请先切换到其他工作区再移除。",
     folderOn: "{{device}} 上的文件夹",
     displayName: "显示名称",

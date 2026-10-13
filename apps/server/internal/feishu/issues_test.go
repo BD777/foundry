@@ -32,7 +32,8 @@ func (b *fakeBot) PatchCard(_ context.Context, cardMessageID, card string) error
 	b.patches = append(b.patches, struct{ to, card string }{cardMessageID, card})
 	return nil
 }
-func (b *fakeBot) GetChatInfo(context.Context, string) (string, error) { return "Group", nil }
+func (b *fakeBot) ChatName(context.Context, string) (string, error) { return "Group", nil }
+func (b *fakeBot) UserName(context.Context, string) (string, error) { return "Alice", nil }
 func (b *fakeBot) take() []struct{ to, card string } {
 	b.mu.Lock()
 	defer b.mu.Unlock()

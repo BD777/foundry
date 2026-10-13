@@ -293,6 +293,9 @@ export const chat = {
     scheduledNoteNoTime_other: "{{count}} scheduled tasks",
     scheduledNoteDue_one: "{{count}} scheduled task · due now",
     scheduledNoteDue_other: "{{count}} scheduled tasks · one due now",
+    scheduledNoteLastFailed: "{{note}} · last run failed",
+    scheduledNoteContextFull:
+      "{{note}} · last run failed: context full, compaction failed",
     timerRunningNote: "Scheduled task running",
     timerRunningSinceNote: "Scheduled task running since {{time}}",
     backgroundTaskCount_one: "{{count}} task",
@@ -465,6 +468,9 @@ export const chat = {
       running: "Running now",
       firedAt: "Fired {{time}}",
       fireRunning: "Still running; its answer comes when it ends.",
+      failedAt: "Failed {{time}}",
+      contextFullHint:
+        "The context is full and this model could not compact it, so every run fails the same way. Pick another model in the composer and send a message: that model compacts the context and the session continues.",
       inactive: "Not active: the agent no longer holds this task",
       cron: "Cron expression",
       prompt: "Runs this prompt",

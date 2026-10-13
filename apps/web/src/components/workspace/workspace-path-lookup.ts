@@ -49,3 +49,18 @@ export function matchesFolderQuery(name: string, query: string): boolean {
   }
   return found === query.length;
 }
+
+/**
+ * The folder holding `path`, as typed into the path picker ("/a/b" gives
+ * "/a/"), so the picker lists its siblings.
+ */
+export function parentFolderInput(path: string): string {
+  const parent = parentPathFor(path);
+  if (!parent) return path.trim();
+  return parent.endsWith("/") ? parent : `${parent}/`;
+}
+
+/** A folder path as sent to the server: no trailing slash but the root's. */
+export function folderPathForSubmit(input: string): string {
+  return trimTrailingSlash(input.trim());
+}

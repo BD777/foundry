@@ -169,6 +169,36 @@ test("current workspace removal is blocked, with explicit history and local-file
   }
 });
 
+test("the current workspace can be removed once its folder is missing", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    return new Response(JSON.stringify(workspace), { status: 200 });
+  };
+  const missing = {
+    ...workspace,
+    unavailableOnDevice: { reason: "folder_missing", since: "x" },
+  };
+  const view = await setup({ kind: "remove", workspace: missing }, missing.id);
+  try {
+    assert.doesNotMatch(document.body.textContent, /Switch to another/);
+    assert.match(document.body.textContent, /no workspace is selected/);
+    const submitButton = document.querySelector('button[type="submit"]');
+    assert.equal(submitButton.disabled, false);
+    assert.equal(submitButton.textContent, "Remove workspace and history");
+    await submit();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "DELETE");
+    assert.match(calls[0].url, /\/api\/workspaces\/ws-test$/);
+    assert.equal(view.saved[0][0], "remove");
+    assert.equal(view.closed(), 1);
+  } finally {
+    globalThis.fetch = original;
+    await view.cleanup();
+  }
+});
+
 test("inactive removal reports failures, retries explicitly, and returns the removed identity without choosing another workspace", async () => {
   const original = globalThis.fetch;
   let fail = true;

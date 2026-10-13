@@ -18,3 +18,35 @@ export function existingWorkspaceFolder(path: string): string {
     );
   return resolved;
 }
+
+/** Whether a workspace's folder is still there (a directory) on this device. */
+export function workspaceFolderPresent(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** An operation on a workspace whose folder was moved, renamed or deleted. */
+export class WorkspaceFolderMissingError extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super(
+      `The folder ${path} no longer exists on this device. Use "Locate folder…" or "Remove" for this workspace on the Workspaces page.`,
+    );
+    this.name = "WorkspaceFolderMissingError";
+    this.path = path;
+  }
+}
+
+/**
+ * The workspace's folder, or a clear refusal when it is gone: nothing may
+ * run in, read from or write under a folder that is not there (a write would
+ * even create it again).
+ */
+export function requireWorkspaceFolder(path: string): string {
+  if (!workspaceFolderPresent(path))
+    throw new WorkspaceFolderMissingError(path);
+  return path;
+}

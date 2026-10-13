@@ -6,8 +6,11 @@ import {
   MessageSquareText,
   Monitor,
   Plug,
+  Server,
 } from "lucide-react";
 import type { SidebarNavSection } from "../components/ui/app-shell";
+import { connectorTypes, type ConnectorType } from "../lib/connector-types";
+import { noWorkspaceSelected } from "../api";
 import type { shell } from "../i18n/locales/en/shell";
 
 /** A sidebar label: a key of the shell namespace's `nav`. */
@@ -23,34 +26,31 @@ export type NavView =
   | "assets"
   | "skills"
   | "foundrySkill"
-  | "feishu"
+  | "channels"
   | "sharing"
   | "settings"
   | "profiles"
   | "connectors"
-  | "accounts"
+  | "workspaceConnectors"
   | "library"
   | "workspace"
   | "locations"
-  | "devices";
+  | "devices"
+  | "resources";
 
 export type SidebarView = Exclude<NavView, "issue">;
 
 export type DevicePairingMode = "auto" | "offline" | "online";
 
-/** The Connectors page has one tab per kind of external service. */
-export const connectorTabs = ["feishu"] as const;
-export type ConnectorTab = (typeof connectorTabs)[number];
-
-function connectorTabFrom(value: string | undefined): ConnectorTab {
-  return connectorTabs.find((tab) => tab === value) ?? connectorTabs[0];
+function connectorTabFrom(value: string | undefined): ConnectorType {
+  return connectorTypes.find((type) => type === value) ?? connectorTypes[0];
 }
 
 export interface AppRoute {
   selectedDeviceId?: string;
   deviceSection?:
     "resources" | "agents" | "skills" | "settings" | "diagnostics";
-  connectorTab?: ConnectorTab;
+  connectorTab?: ConnectorType;
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -125,6 +125,8 @@ export function parseAppRoute(pathname: string): AppRoute {
       return { view: "profiles" };
     case "connectors":
       return { view: "connectors", connectorTab: connectorTabFrom(id) };
+    case "resources":
+      return { view: "resources" };
     // The page was "External accounts"; its accounts are the Feishu tab now.
     case "external-accounts":
       return { view: "connectors", connectorTab: "feishu" };
@@ -136,8 +138,10 @@ export function parseAppRoute(pathname: string): AppRoute {
       return { view: "library" };
     case "skills":
       return { view: "skills" };
+    // The Channels tab was "Feishu Bot" at /feishu and /workspace/feishu.
+    case "channels":
     case "feishu":
-      return { view: "feishu" };
+      return { view: "channels" };
     case "workspace":
       // /workspace/skills/foundry: what the built-in foundry skill gives agents.
       if (id === "skills" && segments[2] === "foundry")
@@ -146,11 +150,14 @@ export function parseAppRoute(pathname: string): AppRoute {
         id === "settings" ||
         id === "assets" ||
         id === "skills" ||
-        id === "feishu" ||
-        id === "sharing" ||
-        id === "accounts"
+        id === "channels" ||
+        id === "sharing"
       )
         return { view: id };
+      if (id === "feishu") return { view: "channels" };
+      // The tab was "Accounts" at /workspace/accounts.
+      if (id === "connectors" || id === "accounts")
+        return { view: "workspaceConnectors" };
       return { view: "workspace" };
     default:
       return { view: "workspace" };
@@ -186,9 +193,11 @@ export function pathForAppRoute(route: AppRoute): string {
     case "profiles":
       return "/model-providers";
     case "connectors":
-      return `/connectors/${route.connectorTab ?? connectorTabs[0]}`;
-    case "accounts":
-      return "/workspace/accounts";
+      return `/connectors/${route.connectorTab ?? connectorTypes[0]}`;
+    case "resources":
+      return "/resources";
+    case "workspaceConnectors":
+      return "/workspace/connectors";
     case "library":
       return "/skill-library";
     case "settings":
@@ -197,8 +206,8 @@ export function pathForAppRoute(route: AppRoute): string {
       return "/workspace/skills";
     case "foundrySkill":
       return "/workspace/skills/foundry";
-    case "feishu":
-      return "/workspace/feishu";
+    case "channels":
+      return "/workspace/channels";
     case "sharing":
       return "/workspace/sharing";
     case "workspace":
@@ -210,11 +219,16 @@ export function pathForAppRoute(route: AppRoute): string {
  * Imperative in-app navigation for surfaces that own no shell state (the
  * composer pickers). Goes through the same history/popstate contract as the
  * back button, so the app shell parses the existing route — no new route.
- * `workspaceId` opens the route in that workspace instead of the one shown.
+ * `workspaceId` opens the route in that workspace instead of the one shown;
+ * `query` sets the page's own parameters (a filter), "" removing one.
  */
-export function navigateAppRoute(route: AppRoute, workspaceId?: string): void {
+export function navigateAppRoute(
+  route: AppRoute,
+  workspaceId?: string,
+  query?: Record<string, string>,
+): void {
   const path = pathForAppRoute(route);
-  const url = `${path}${searchWithWorkspace(workspaceId || workspaceIdFromLocation())}${window.location.hash}`;
+  const url = `${path}${searchWithWorkspace(workspaceId || workspaceIdFromLocation(), query)}${window.location.hash}`;
   if (
     url ===
     `${window.location.pathname}${window.location.search}${window.location.hash}`
@@ -240,24 +254,74 @@ function storedWorkspaceId(): string {
 }
 
 export function initialWorkspaceId(fallback: string): string {
-  return workspaceIdFromLocation() || storedWorkspaceId() || fallback;
+  const stored = storedWorkspaceId();
+  return (
+    workspaceIdFromLocation() ||
+    (stored === noWorkspaceSelected ? "" : stored) ||
+    fallback
+  );
 }
 
-export function searchWithWorkspace(workspaceId: string): string {
+/**
+ * The workspace a data read asks for: the one shown; with none shown, none
+ * when the person has no workspace selected (it stays so across reloads),
+ * else nothing, and the server shows the first there is (a first visit, the
+ * first folder added).
+ */
+export function workspaceToRead(activeWorkspaceId: string): string {
+  if (activeWorkspaceId) return activeWorkspaceId;
+  return storedWorkspaceId() === noWorkspaceSelected ? noWorkspaceSelected : "";
+}
+
+/**
+ * Remembers that no workspace is selected (the current one was removed):
+ * reads, here and after a reload, show none until Switch picks one.
+ */
+export function clearWorkspaceSelection(): void {
+  try {
+    window.localStorage.setItem(activeWorkspaceStorageKey, noWorkspaceSelected);
+  } catch {
+    return;
+  }
+}
+
+export function searchWithWorkspace(
+  workspaceId: string,
+  query: Record<string, string> = {},
+): string {
   const params = new URLSearchParams(window.location.search);
   if (workspaceId) {
     params.set("workspace", workspaceId);
   } else {
     params.delete("workspace");
   }
+  for (const [name, value] of Object.entries(query)) {
+    if (value) params.set(name, value);
+    else params.delete(name);
+  }
   const value = params.toString();
   return value ? `?${value}` : "";
 }
 
-export function persistWorkspaceId(workspaceId: string): void {
+/**
+ * Remembers the workspace a read showed. A read that showed none while
+ * workspaces exist (`workspaceCount`, when it read the list) leaves none
+ * selected; with none left, the next folder added is shown again.
+ */
+export function persistWorkspaceId(
+  workspaceId: string,
+  workspaceCount?: number,
+): void {
   try {
     if (workspaceId) {
       window.localStorage.setItem(activeWorkspaceStorageKey, workspaceId);
+    } else if (workspaceCount === undefined) {
+      return;
+    } else if (workspaceCount > 0) {
+      window.localStorage.setItem(
+        activeWorkspaceStorageKey,
+        noWorkspaceSelected,
+      );
     } else {
       window.localStorage.removeItem(activeWorkspaceStorageKey);
     }
@@ -308,15 +372,30 @@ const pageViews = new Set<string>([
   "skills",
   "foundrySkill",
   "settings",
-  "feishu",
+  "channels",
   "sharing",
   "workspace",
   "devices",
   "locations",
   "profiles",
   "connectors",
-  "accounts",
+  "resources",
+  "workspaceConnectors",
   "library",
+]);
+
+/** Views that show the selected workspace; they need one to show anything. */
+export const workspaceScopedViews = new Set<NavView>([
+  "workspace",
+  "chats",
+  "issues",
+  "issue",
+  "assets",
+  "skills",
+  "settings",
+  "channels",
+  "workspaceConnectors",
+  "sharing",
 ]);
 
 export function scrollModeForView(view: string): "page" | "contained" {
@@ -340,6 +419,7 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
     label: "manage",
     items: [
       { id: "devices", label: "devices", icon: Monitor },
+      { id: "resources", label: "resources", icon: Server },
       { id: "library", label: "library", icon: Library },
       { id: "profiles", label: "profiles", icon: KeyRound },
       { id: "connectors", label: "connectors", icon: Plug },

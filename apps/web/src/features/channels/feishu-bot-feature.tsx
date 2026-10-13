@@ -9,46 +9,28 @@ import {
   deleteWorkspaceFeishuBot,
   generateFeishuPairingCode,
   getWorkspaceFeishuBot,
+  refreshFeishuChatName,
   saveWorkspaceFeishuBot,
   unbindFeishuChat,
 } from "../../api";
 import { onStreamEvent } from "../../stream";
+import { feishuAppName } from "../../lib/feishu-app-names";
 import { useReadOrder } from "../../lib/read-order";
-import { Alert } from "../../components/ui/alert";
 import { FeishuAppPanel } from "./feishu-app-panel";
-import { FeishuChatsPanel } from "./feishu-chats-panel";
+import { FeishuChatsPanel, chatDisplayName } from "./feishu-chats-panel";
 import { errorText } from "./feishu-format";
-
-export interface FeishuBotFeatureProps {
-  workspaceId: string;
-  /** Why the caller cannot manage this workspace's bot; nothing is loaded. */
-  readOnlyReason?: string;
-  workspaceName?: string;
-  onNotice?: (message: string) => void;
-  /** Opens Connectors, where Feishu apps are connected and their secrets
-   * replaced. */
-  onOpenConnectors?: () => void;
-}
-
-export function FeishuBotFeature(props: FeishuBotFeatureProps) {
-  const { t } = useTranslation("feishu");
-  return props.readOnlyReason ? (
-    <Alert title={t("readOnlyTitle")}>{props.readOnlyReason}</Alert>
-  ) : (
-    <FeishuBotSettings {...props} />
-  );
-}
+import type { ChannelSectionProps } from "./channel-types";
 
 /**
- * The workspace's Feishu Bot: the Connectors app it runs on, how the
+ * The workspace's Feishu bot channel: the Connectors app it runs on, how the
  * server's connection to that app stands, and the chats routed here.
  */
-function FeishuBotSettings({
+export function FeishuBotFeature({
   workspaceId,
   workspaceName,
   onNotice,
   onOpenConnectors,
-}: FeishuBotFeatureProps) {
+}: ChannelSectionProps) {
   const { t } = useTranslation("feishu");
   const [bot, setBot] = useState<WorkspaceFeishuBot>();
   const [loading, setLoading] = useState(true);
@@ -111,7 +93,7 @@ function FeishuBotSettings({
     try {
       showBot(await saveWorkspaceFeishuBot(workspaceId, { appId: app.id }));
       setIssued(undefined);
-      onNotice?.(t("notices.saved", { app: app.label }));
+      onNotice?.(t("notices.saved", { app: feishuAppName(app) }));
     } catch (err) {
       onNotice?.(t("notices.saveFailed", { error: errorText(err) }));
     } finally {
@@ -120,7 +102,7 @@ function FeishuBotSettings({
   }
 
   async function remove() {
-    const label = bot?.app?.label ?? "";
+    const label = bot?.app ? feishuAppName(bot.app) : "";
     setBusy(true);
     try {
       await deleteWorkspaceFeishuBot(workspaceId);
@@ -161,9 +143,38 @@ function FeishuBotSettings({
     setBusyChatId(chat.id);
     try {
       showBot(await unbindFeishuChat(workspaceId, chat.id));
-      onNotice?.(t("notices.unbound", { chat: chat.chatName || chat.chatId }));
+      onNotice?.(t("notices.unbound", { chat: chatDisplayName(chat, t) }));
     } catch (err) {
       onNotice?.(t("notices.unbindFailed", { error: errorText(err) }));
+    } finally {
+      setBusyChatId("");
+    }
+  }
+
+  async function refreshName(chat: FeishuBotRoute) {
+    setBusyChatId(chat.id);
+    try {
+      const next = await refreshFeishuChatName(workspaceId, chat.id);
+      showBot(next);
+      const after = next.chats.find((item) => item.id === chat.id) ?? chat;
+      const name = chatDisplayName(after, t);
+      if (after.chatNameError)
+        onNotice?.(
+          t("notices.nameRefreshFailed", {
+            chat: name,
+            error: after.chatNameError,
+          }),
+        );
+      else if (after.chatName !== chat.chatName)
+        onNotice?.(t("notices.nameRefreshed", { chat: name }));
+      else onNotice?.(t("notices.nameUnchanged", { chat: name }));
+    } catch (err) {
+      onNotice?.(
+        t("notices.nameRefreshFailed", {
+          chat: chatDisplayName(chat, t),
+          error: errorText(err),
+        }),
+      );
     } finally {
       setBusyChatId("");
     }
@@ -186,6 +197,7 @@ function FeishuBotSettings({
         loading={loading}
         onGenerateCode={generateCode}
         onNotice={onNotice}
+        onRefreshName={refreshName}
         onUnbind={unbind}
         pairing={pairing}
         workspaceName={workspaceName}

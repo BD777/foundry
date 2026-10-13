@@ -9,16 +9,16 @@ export type WorkspaceSection =
   | "settings"
   | "assets"
   | "skills"
-  | "feishu"
-  | "accounts"
+  | "channels"
+  | "workspaceConnectors"
   | "sharing";
 const sections: WorkspaceSection[] = [
   "workspace",
   "settings",
   "assets",
   "skills",
-  "feishu",
-  "accounts",
+  "channels",
+  "workspaceConnectors",
   "sharing",
 ];
 

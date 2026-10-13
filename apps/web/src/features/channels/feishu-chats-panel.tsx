@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { TFunction } from "i18next";
 import { Trans, useTranslation } from "react-i18next";
 import { Copy, Link2, MessageCircle, RefreshCw, Users } from "lucide-react";
 import type {
@@ -21,6 +22,7 @@ export interface FeishuChatsPanelProps {
   busyChatId?: string;
   onGenerateCode: () => Promise<void>;
   onUnbind: (chat: FeishuBotRoute) => Promise<void>;
+  onRefreshName: (chat: FeishuBotRoute) => Promise<void>;
   onNotice?: (msg: string) => void;
 }
 
@@ -34,6 +36,7 @@ export function FeishuChatsPanel({
   busyChatId,
   onGenerateCode,
   onUnbind,
+  onRefreshName,
   onNotice,
 }: FeishuChatsPanelProps) {
   const { t } = useTranslation(["feishu", "common"]);
@@ -89,6 +92,7 @@ export function FeishuChatsPanel({
                   busy={busyChatId === chat.id}
                   chat={chat}
                   key={chat.id}
+                  onRefreshName={() => void onRefreshName(chat)}
                   onUnbind={() => void onUnbind(chat)}
                 />
               ))}
@@ -187,29 +191,44 @@ export function FeishuChatsPanel({
 function ChatRow({
   chat,
   busy,
+  onRefreshName,
   onUnbind,
 }: {
   chat: FeishuBotRoute;
   busy: boolean;
+  onRefreshName: () => void;
   onUnbind: () => void;
 }) {
   const { t } = useTranslation("feishu");
   const direct = chat.kind === "p2p";
   const Icon = direct ? MessageCircle : Users;
-  const name =
-    chat.chatName ||
-    (direct ? t("chats.defaultDirectName") : t("chats.defaultGroupName"));
+  const name = chatDisplayName(chat, t);
+  const shortId = chat.chatId ? chat.chatId.slice(-6) : "";
   return (
     <li className="fdy-feishu-chat">
       <Icon size={16} aria-hidden />
       <span className="fdy-feishu-chat-identity">
         <strong>{name}</strong>
         <small>
-          {[direct ? t("chats.direct") : t("chats.group"), chat.chatId]
-            .filter(Boolean)
-            .join(" · ")}
+          {direct ? t("chats.direct") : t("chats.group")}
+          {shortId ? (
+            <span title={chat.chatId}>
+              {" · "}
+              {t("chats.shortId", { id: shortId })}
+            </span>
+          ) : null}
         </small>
       </span>
+      <Button
+        aria-label={`${t("chats.refreshName")} ${name}`}
+        disabled={busy}
+        onClick={onRefreshName}
+        size="sm"
+        title={t("chats.refreshName")}
+        variant="ghost"
+      >
+        <RefreshCw size={14} aria-hidden />
+      </Button>
       <ConfirmButton
         aria-label={`${t("chats.unbind")} ${name}`}
         confirmLabel={t("chats.unbindConfirm")}
@@ -221,5 +240,18 @@ function ChatRow({
         {t("chats.unbind")}
       </ConfirmButton>
     </li>
+  );
+}
+
+/** The chat's name as Feishu last gave it, or what kind of chat it is. */
+export function chatDisplayName(
+  chat: FeishuBotRoute,
+  t: TFunction<"feishu">,
+): string {
+  return (
+    chat.chatName ||
+    (chat.kind === "p2p"
+      ? t("chats.defaultDirectName")
+      : t("chats.defaultGroupName"))
   );
 }

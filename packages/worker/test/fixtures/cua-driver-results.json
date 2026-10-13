@@ -1,0 +1,62 @@
+{
+  "_source": "Result shapes of cua-driver's macOS MCP tools, from github.com/trycua/cua libs/cua-driver/rust/crates/platform-macos/src/tools/{list_windows,list_apps}.rs at 5e638b2 (text summary + structuredContent), as cua-driver 0.34 returns them.",
+  "list_windows": {
+    "content": [{ "type": "text", "text": "Found 2 window(s)." }],
+    "structuredContent": {
+      "windows": [
+        {
+          "window_id": 4121,
+          "pid": 812,
+          "app_name": "Safari",
+          "title": "Foundry",
+          "bounds": { "x": 0, "y": 38, "width": 1512, "height": 944 },
+          "layer": 0,
+          "z_index": 9,
+          "is_on_screen": true,
+          "current_space_id": 1,
+          "on_current_space": true,
+          "space_ids": [1]
+        },
+        {
+          "window_id": 233,
+          "pid": 455,
+          "app_name": "Finder",
+          "title": "",
+          "bounds": { "x": 120, "y": 200, "width": 900, "height": 560 },
+          "layer": 0,
+          "z_index": null,
+          "is_on_screen": false,
+          "current_space_id": 1,
+          "on_current_space": false,
+          "space_ids": [2]
+        }
+      ],
+      "current_space_id": 1
+    }
+  },
+  "list_apps": {
+    "content": [
+      { "type": "text", "text": "Running apps:\n- Safari (pid 812) [active]" }
+    ],
+    "structuredContent": {
+      "apps": [
+        {
+          "pid": 812,
+          "name": "Safari",
+          "bundle_id": "com.apple.Safari",
+          "active": true,
+          "running": true,
+          "launch_path": "/Applications/Safari.app"
+        },
+        {
+          "pid": 0,
+          "name": "TextEdit",
+          "bundle_id": "com.apple.TextEdit",
+          "active": false,
+          "running": false,
+          "kind": "installed"
+        }
+      ]
+    }
+  }
+}

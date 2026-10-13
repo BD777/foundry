@@ -1,0 +1,393 @@
+/* Resources page: the inventory by type, then device. */
+.fdy-page-surface-resources {
+  max-width: 960px;
+  gap: 18px;
+}
+
+.fdy-res-intro {
+  display: grid;
+  max-width: 680px;
+  gap: 6px;
+}
+
+.fdy-res-intro strong {
+  color: var(--fdy-ink-strong);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.fdy-res-intro p,
+.fdy-res-status {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.fdy-res-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.fdy-res-filter {
+  min-width: 180px;
+}
+
+.fdy-res-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fdy-res-problems ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-res-type {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 16px 18px;
+}
+
+.fdy-res-type h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fdy-res-type h2 span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.fdy-res-device {
+  display: grid;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.fdy-res-device + .fdy-res-device {
+  border-top: 1px solid var(--fdy-line);
+}
+
+.fdy-res-device-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.fdy-res-device-head > strong {
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+}
+
+.fdy-res-device-head > span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-res-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-res-row {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-res-list > .fdy-res-row:first-child {
+  border-top: 0;
+}
+
+.fdy-res-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+  min-width: 0;
+}
+
+.fdy-res-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.fdy-res-identity strong {
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fdy-res-identity small,
+.fdy-res-meta {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fdy-res-readiness,
+.fdy-res-note,
+.fdy-res-meta {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fdy-res-readiness {
+  color: var(--fdy-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-readiness[data-ready="false"],
+.fdy-res-note {
+  color: var(--fdy-warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-row[data-state="gone"] .fdy-res-identity strong {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-res-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-details > div {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+}
+
+.fdy-res-details dt::after {
+  content: ":";
+}
+
+.fdy-res-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--fdy-ink);
+}
+
+.fdy-res-device-status {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.fdy-res-lease,
+.fdy-res-setup,
+.fdy-res-compute-access {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-res-holder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-holder time {
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-res-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fdy-res-steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.fdy-res-danger.fdy-button {
+  border-color: var(--fdy-error-border);
+  background: var(--fdy-error-surface);
+  color: var(--fdy-error-text);
+}
+
+.fdy-res-danger.fdy-button:hover:not(:disabled) {
+  border-color: var(--fdy-error-text);
+}
+
+.fdy-res-status,
+.fdy-res-error {
+  overflow-wrap: anywhere;
+}
+
+.fdy-res-error {
+  margin: 0;
+  color: var(--fdy-error-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fdy-res-backends {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-res-backends > li {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fdy-res-backends .fdy-res-meta[data-ready="false"] {
+  color: var(--fdy-warning-text);
+}
+
+.fdy-res-output {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  margin: 0;
+}
+
+.fdy-res-output figcaption {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-res-output pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-res-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.fdy-res-confirm-items {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fdy-ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fdy-res-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.fdy-res-ops {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-res-op {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-res-op:first-child {
+  border-top: 0;
+}
+
+.fdy-res-op-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-res-op-head strong {
+  color: var(--fdy-ink-strong);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.fdy-res-op-status {
+  color: var(--fdy-ink);
+}
+
+.fdy-res-op[data-status="error"] .fdy-res-op-status {
+  color: var(--fdy-error-text);
+}

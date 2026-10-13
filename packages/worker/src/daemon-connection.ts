@@ -23,6 +23,7 @@ import {
   installTool,
   runToolSetup,
   managedToolVersions,
+  withManagedTools,
   type ToolSpec,
 } from "./managed-tools.js";
 import { readSessionUsage } from "./session-usage.js";
@@ -35,18 +36,49 @@ import {
 } from "./skill-repository-fetch.js";
 import {
   reclaimSessionResources,
-  requestResourceAccess,
   startSessionScratchSweeps,
 } from "./resource-pool.js";
+import {
+  createComputeProvider,
+  createCuaDriverProvider,
+  installResourceBackend,
+  ProviderRegistry,
+  cuaDriverScreenControlDetector,
+  isCuaDriverSettingsPane,
+  openCuaDriverSettings,
+  requestCuaDriverAccess,
+  requestResourceAccess,
+  resourceSettings,
+  ResourceOperations,
+  ResourceScanner,
+} from "./resources/index.js";
 import { adoptEarlierSessionScratch } from "./session-scratch-adoption.js";
 import { homedir } from "node:os";
-import { existingWorkspaceFolder } from "./workspace-registration.js";
+import {
+  existingWorkspaceFolder,
+  requireWorkspaceFolder,
+  workspaceFolderPresent,
+} from "./workspace-registration.js";
+import {
+  findMovedWorkspaceFolders,
+  holdsRegisteredWorkspace,
+  registryWorkspaceFolders,
+  relinkWorkspaceFolder,
+} from "./workspace-folders.js";
 import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
 import {
+  cuaDriverBackend,
   daemonMessageTypes,
   parseProtocolEnvelopeJSON,
+  type ResourceBackendInstallRequest,
+  type ResourceBackendInstallResult,
+  type ResourceOperateRequest,
+  type ResourceOperateResult,
+  type ResourceResetRequest,
+  type ResourceResetResult,
+  type ResourceSourceSettings,
   type AgentRuntimeSettings,
   type AgentSession,
   type AgentSessionEvent,
@@ -55,7 +87,10 @@ import {
   type ClarificationTurn,
   type ExternalAccountMaterial,
   type DeviceProjection,
+  type FindMovedWorkspacePayload,
   type Issue,
+  type RelinkWorkspacePayload,
+  type WorkspaceFoldersPayload,
   type SessionSkillRef,
   type ProfileDefinition,
   type ProtocolEnvelope,
@@ -204,6 +239,7 @@ import {
   recoveredSessionCompletion,
 } from "./session-helpers.js";
 import {
+  foundryTokenEnvName,
   registerSessionAmbientEnv,
   type SessionAmbientEnv,
 } from "./session-ambient.js";
@@ -334,6 +370,29 @@ interface RecoverSessionPayload {
 }
 
 const nativeChatSyncIntervalMs = 10000;
+
+/** Workspace folders found gone: each is logged once, until it is back. */
+const loggedMissingFolders = new Set<string>();
+
+function noteMissingFolder(workspacePath: string): void {
+  if (loggedMissingFolders.has(workspacePath)) return;
+  loggedMissingFolders.add(workspacePath);
+  console.error(
+    `${logTime()} The workspace folder ${workspacePath} no longer exists; its workspace is reported missing until it is back or located.`,
+  );
+}
+
+function sameFolderLists(
+  left: WorkspaceFoldersPayload,
+  right: WorkspaceFoldersPayload,
+): boolean {
+  const same = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((value, index) => value === b[index]);
+  return (
+    same(left.servedWorkspaceIds, right.servedWorkspaceIds) &&
+    same(left.missingWorkspaceIds, right.missingWorkspaceIds)
+  );
+}
 const providerCheckIntervalMs = 10 * 60 * 1000;
 
 /**
@@ -442,10 +501,15 @@ async function connectWebSocket(args: string[]): Promise<void> {
   // No Claude process from an earlier worker is left to read these.
   clearClaudeSettingsFiles();
   heartbeatTimer.unref();
-  if (!(await registerAtStartup(serverURL, workspacePath))) return;
+  // The daemon's own folder may be gone (moved or renamed): it starts as
+  // the device and reports that workspace missing.
+  const startupWorkspacePath =
+    workspacePath && workspaceFolderPresent(workspacePath) ? workspacePath : "";
+  if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
+  if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
   // Timers of sessions no process of this worker runs, kept across restarts.
   if (!once) startSessionTimers(serverURL);
-  if (workspacePath) await syncReviews(serverURL, workspacePath);
+  if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
   const sessionTransport = new ReliableSessionTransport();
   const sessionExecutions = new SessionExecutionRegistry();
   // Scratch directories of sessions idle too long, earlier runs' included;
@@ -816,6 +880,61 @@ function socketRoundTrip(socket: WebSocket): Promise<number> {
 
 /** The open control socket, for diagnostics that measure it. */
 let currentSocket: WebSocket | undefined;
+/**
+ * The device's resource inventory; it outlives connections, and reports
+ * through whichever one a server that takes it accepted (resources_v1).
+ */
+const resourceScanner = new ResourceScanner();
+
+/**
+ * Asks the person at this device for access: cua-driver's grant run
+ * ("cua-driver"), one of its System Settings panes ("cua-driver:<pane>"),
+ * or the worker's own grants. cua-driver's grants are then watched live:
+ * each change re-runs only its detector, reported at once. Returns what
+ * was opened.
+ */
+async function requestAccessOnDevice(requested: string): Promise<string[]> {
+  if (!requested) return [];
+  const recheckCuaDriver = () =>
+    void resourceScanner.scanOne(cuaDriverScreenControlDetector.id);
+  if (requested === cuaDriverBackend)
+    return requestCuaDriverAccess({
+      onDone: recheckCuaDriver,
+      onChange: recheckCuaDriver,
+    });
+  if (requested.startsWith(`${cuaDriverBackend}:`)) {
+    const pane = requested.slice(cuaDriverBackend.length + 1);
+    if (!isCuaDriverSettingsPane(pane))
+      throw new Error(`unknown System Settings pane for cua-driver: ${pane}`);
+    return openCuaDriverSettings(pane, { onChange: recheckCuaDriver });
+  }
+  return requestResourceAccess(requested);
+}
+/**
+ * Operations on resources sessions lease (resource_operate): the device
+ * side of lease fencing and the open provider sessions. Closed whenever the
+ * connection is, so a lease never outlives the server's view of it.
+ */
+/**
+ * Folders of the workspaces the current connection serves: compute works in
+ * one only when the server names it and this worker serves it.
+ */
+let servedWorkspacePaths: () => string[] = () => [];
+/**
+ * Compute (commands a session of this device's owner runs here, only while
+ * the owner allows remote commands): in the environment sessions get,
+ * without a Foundry token.
+ */
+const computeProvider = createComputeProvider({
+  workspacePaths: () => servedWorkspacePaths(),
+  env: () => {
+    const { [foundryTokenEnvName]: _token, ...env } = process.env;
+    return { ...env, PATH: withManagedTools(env.PATH) };
+  },
+});
+const resourceOperations = new ResourceOperations({
+  providers: new ProviderRegistry([createCuaDriverProvider(), computeProvider]),
+});
 
 /**
  * The server asks for update status: it understands a failure reported
@@ -896,6 +1015,12 @@ function runWebSocketSession(options: {
     // Once per connection and workspace (see recheckRunningNativeChats).
     const runningChatsRechecked = new Set<string>();
     const workspacePaths = new Map<string, string>();
+    // Workspaces whose registration the server got on this connection.
+    const announcedWorkspaceIds = new Set<string>();
+    // The served and missing lists the server last heard (hello included),
+    // and whether it takes workspace_folders news at all.
+    let reportedFolders: WorkspaceFoldersPayload | undefined;
+    let serverTakesFolders = false;
     // Background task logs read while they grow (see background-output-follow).
     const outputFollowers = new BackgroundOutputFollowers({
       notify: (sessionId, taskId) =>
@@ -953,6 +1078,17 @@ function runWebSocketSession(options: {
         registration.workspace.id,
         registration.workspace.localPath,
       );
+      announcedWorkspaceIds.add(registration.workspace.id);
+      loggedMissingFolders.delete(registration.workspace.localPath);
+    }
+
+    /**
+     * A workspace the device keeps whose folder is gone: it is known here
+     * (an operation on it gets a clear refusal) but not served.
+     */
+    function trackMissingWorkspace(workspaceId: string, path: string): void {
+      if (!workspacePaths.has(workspaceId))
+        workspacePaths.set(workspaceId, path);
     }
 
     function unregisterWorkspacePath(
@@ -967,9 +1103,11 @@ function runWebSocketSession(options: {
         for (const [id, path] of [...workspacePaths.entries()]) {
           if (resolve(path) === normalizedPath) {
             workspacePaths.delete(id);
+            announcedWorkspaceIds.delete(id);
           }
         }
       }
+      if (workspaceId) announcedWorkspaceIds.delete(workspaceId);
     }
 
     function hasWorkspace(
@@ -1012,6 +1150,84 @@ function runWebSocketSession(options: {
         );
       }
       return workspacePath;
+    }
+
+    /**
+     * The workspace's folder for an operation that works in it, or the clear
+     * refusal when the folder is gone; the server then hears at once that
+     * the workspace is missing.
+     */
+    function workspaceFolderFor(workspaceId: string): string {
+      const workspacePath = workspacePathFor(workspaceId);
+      try {
+        return requireWorkspaceFolder(workspacePath);
+      } catch (error) {
+        checkWorkspaceFolders();
+        throw error;
+      }
+    }
+
+    /** What the device serves and what it keeps without a folder. */
+    function workspaceFolderLists(): WorkspaceFoldersPayload {
+      const served = new Set<string>();
+      const missing = new Set<string>();
+      for (const [id, path] of workspacePaths) {
+        if (!workspaceFolderPresent(path)) missing.add(id);
+        else if (announcedWorkspaceIds.has(id)) served.add(id);
+      }
+      for (const entry of registryWorkspaceFolders())
+        if (!entry.present && !served.has(entry.id)) missing.add(entry.id);
+      return {
+        servedWorkspaceIds: [...served].sort(),
+        missingWorkspaceIds: [...missing].sort(),
+      };
+    }
+
+    /**
+     * Run every round of the native chat timer (cheap: a stat per
+     * workspace). A registry workspace whose folder came back is registered
+     * again, as at hello; a server that takes it hears whenever the served
+     * or missing lists change.
+     */
+    function checkWorkspaceFolders(): void {
+      if (finished || !reportedFolders) return;
+      for (const entry of registryWorkspaceFolders()) {
+        if (!entry.present) {
+          noteMissingFolder(entry.path);
+          trackMissingWorkspace(entry.id, entry.path);
+          continue;
+        }
+        if (announcedWorkspaceIds.has(entry.id)) continue;
+        if (!holdsRegisteredWorkspace(entry)) continue;
+        try {
+          const registration = daemonRegistrationWithActiveSessions(
+            entry.path,
+            options.sessionExecutions,
+          );
+          registerWorkspacePath(registration);
+          console.log(
+            `${logTime()} The workspace folder ${entry.path} is back; serving ${registration.workspace.name} again.`,
+          );
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.workspaceReady,
+            { registration },
+            `workspace_ready_${safeID(registration.workspace.id)}_${Date.now()}`,
+          );
+        } catch (error) {
+          console.error(
+            `Serving the workspace at ${entry.path} again failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      for (const [, path] of workspacePaths)
+        if (!workspaceFolderPresent(path)) noteMissingFolder(path);
+        else loggedMissingFolders.delete(path);
+      if (!serverTakesFolders) return;
+      const lists = workspaceFolderLists();
+      if (sameFolderLists(lists, reportedFolders)) return;
+      if (trySendWebSocket(socket, daemonMessageTypes.workspaceFolders, lists))
+        reportedFolders = lists;
     }
 
     function knownWorkspacePaths(): string[] {
@@ -1108,7 +1324,7 @@ function runWebSocketSession(options: {
             `Running ${issue.shortId} (${issue.title}) as session ${session.id}`,
           );
           try {
-            const workspacePath = workspacePathFor(session.workspaceId);
+            const workspacePath = workspaceFolderFor(session.workspaceId);
             const profile =
               issue.runtime === "mock"
                 ? undefined
@@ -1156,7 +1372,6 @@ function runWebSocketSession(options: {
         });
     }
 
-    const missingWorkspacePaths = new Set<string>();
     function syncKnownNativeChats(): void {
       if (nativeChatSyncPromise) {
         return;
@@ -1166,15 +1381,10 @@ function runWebSocketSession(options: {
       nativeChatSyncPromise = Promise.all(
         knownWorkspacePaths()
           .filter((workspacePath) => {
-            if (existsSync(workspacePath)) return true;
-            // A registered folder that is gone (e.g. a test's temp folder)
-            // has nothing to sync; say so once, not every round.
-            if (!missingWorkspacePaths.has(workspacePath)) {
-              missingWorkspacePaths.add(workspacePath);
-              console.error(
-                `Skipping native chat sync for ${workspacePath}: the folder no longer exists.`,
-              );
-            }
+            if (workspaceFolderPresent(workspacePath)) return true;
+            // A registered folder that is gone has nothing to sync; it is
+            // logged once (see checkWorkspaceFolders).
+            noteMissingFolder(workspacePath);
             return false;
           })
           .map(async (workspacePath) => {
@@ -1213,9 +1423,20 @@ function runWebSocketSession(options: {
         });
     }
 
+    // Every round: folders gone or back, then the native chats of those there.
+    function workspaceRound(): void {
+      checkWorkspaceFolders();
+      syncKnownNativeChats();
+    }
+
     socket.on("open", () => {
       const endRegistration = beginActivity("registration");
       const registrations = knownWorkspacePaths()
+        .filter((workspacePath) => {
+          if (workspaceFolderPresent(workspacePath)) return true;
+          noteMissingFolder(workspacePath);
+          return false;
+        })
         .map((workspacePath) => {
           try {
             return daemonRegistrationWithActiveSessions(
@@ -1243,6 +1464,19 @@ function runWebSocketSession(options: {
             item.workspace.localPath === resolve(options.workspacePath),
         ) ?? registrations[0];
       endRegistration();
+      // Workspaces the device keeps whose folder is gone: named in the hello
+      // apart from the served ones, and refused clearly until located.
+      const servedIds = new Set(registrations.map((item) => item.workspace.id));
+      const missingIds = new Set<string>();
+      for (const entry of registryWorkspaceFolders()) {
+        if (entry.present || servedIds.has(entry.id)) continue;
+        trackMissingWorkspace(entry.id, entry.path);
+        missingIds.add(entry.id);
+      }
+      reportedFolders = {
+        servedWorkspaceIds: [...servedIds].sort(),
+        missingWorkspaceIds: [...missingIds].sort(),
+      };
       if (!registration) {
         // A device with no workspace yet connects as itself; the person adds
         // workspaces from the Workspaces page.
@@ -1256,7 +1490,13 @@ function runWebSocketSession(options: {
           withServedWorkspaces(
             withStalls(withConnectionReports(device)),
             registrations,
+            reportedFolders.missingWorkspaceIds,
           ),
+        );
+        // A folder that comes back is served from the next round on.
+        nativeChatSyncTimer = setInterval(
+          workspaceRound,
+          nativeChatSyncIntervalMs,
         );
         checkProvidersAndReport();
         providerCheckTimer = setInterval(
@@ -1280,6 +1520,7 @@ function runWebSocketSession(options: {
         withServedWorkspaces(
           withStalls(withConnectionReports(registration)),
           registrations,
+          reportedFolders.missingWorkspaceIds,
         ),
       );
       for (const item of registrations) {
@@ -1295,7 +1536,7 @@ function runWebSocketSession(options: {
       }
       syncKnownNativeChats();
       nativeChatSyncTimer = setInterval(
-        syncKnownNativeChats,
+        workspaceRound,
         nativeChatSyncIntervalMs,
       );
       checkProvidersAndReport();
@@ -1321,7 +1562,9 @@ function runWebSocketSession(options: {
     }
 
     function reportEachRegistration(): void {
-      for (const workspacePath of knownWorkspacePaths()) {
+      for (const workspacePath of knownWorkspacePaths().filter(
+        workspaceFolderPresent,
+      )) {
         const registration = daemonRegistrationWithActiveSessions(
           workspacePath,
           options.sessionExecutions,
@@ -1387,8 +1630,25 @@ function runWebSocketSession(options: {
       }
       if (envelope.type === daemonMessageTypes.registered) {
         registered = true;
-        // A server that takes large envelopes in pieces says so here.
-        options.sessionTransport.bind(socket, serverFeatures(envelope.payload));
+        // A server that takes large envelopes in pieces says so here, and
+        // one that takes news of workspace folders gone or back.
+        const features = serverFeatures(envelope.payload);
+        options.sessionTransport.bind(socket, features);
+        serverTakesFolders = features.workspaceFolders === true;
+        if (serverTakesFolders) checkWorkspaceFolders();
+        servedWorkspacePaths = () => [...new Set(workspacePaths.values())];
+        // A server that keeps the resource inventory hears it now and
+        // whenever it changes.
+        if (features.resources)
+          resourceScanner.attach({
+            send: (report) =>
+              trySendWebSocket(
+                socket,
+                daemonMessageTypes.resourcesReport,
+                report,
+              ),
+            workspacePaths: () => [...new Set(workspacePaths.values())],
+          });
         // Timer-driven background turns arrive while no Foundry turn is
         // active; route their events over this socket as ordinary
         // session_event envelopes the server persists and broadcasts.
@@ -1410,7 +1670,7 @@ function runWebSocketSession(options: {
         const payload = envelope.payload as AttachmentWritePayload;
         let reply: Record<string, unknown>;
         try {
-          const workspacePath = workspacePathFor(payload.workspaceId);
+          const workspacePath = workspaceFolderFor(payload.workspaceId);
           if (payload.abort) {
             abortAttachmentUpload(workspacePath, payload.relativePath);
             reply = { size: 0 };
@@ -1446,7 +1706,7 @@ function runWebSocketSession(options: {
               ? readWorkspaceFileChunk
               : readAttachmentImageChunk;
           const chunk = read({
-            workspacePath: workspacePathFor(payload.workspaceId),
+            workspacePath: workspaceFolderFor(payload.workspaceId),
             path: payload.path,
             offset: payload.offset,
             maxBytes: payload.maxBytes,
@@ -1480,7 +1740,7 @@ function runWebSocketSession(options: {
           sendFileRead(
             socket,
             envelope.id,
-            workspacePathFor(payload.workspaceId),
+            workspaceFolderFor(payload.workspaceId),
             payload,
           );
         } catch (error) {
@@ -1511,7 +1771,7 @@ function runWebSocketSession(options: {
         try {
           reply = {
             ...readSessionFile({
-              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+              workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
               sessionId: payload.sessionId ?? "",
               path: payload.path ?? "",
             }),
@@ -1547,7 +1807,7 @@ function runWebSocketSession(options: {
         try {
           reply = {
             ...(await readSessionFileDiff({
-              workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+              workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
               sessionId: payload.sessionId ?? "",
               path: payload.path ?? "",
               inputId: payload.inputId || undefined,
@@ -1595,7 +1855,7 @@ function runWebSocketSession(options: {
           const sessionId = payload.sessionId ?? "";
           const taskId = payload.taskId ?? "";
           const output = claudeBackgroundTaskOutput({
-            workspacePath: workspacePathFor(payload.workspaceId ?? ""),
+            workspacePath: workspaceFolderFor(payload.workspaceId ?? ""),
             sessionId,
             taskId,
             after: payload.after,
@@ -1689,12 +1949,27 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        sendSubagentTranscript(
-          socket,
-          envelope.id,
-          workspacePathFor(payload.workspaceId),
-          payload,
-        );
+        let transcriptPath: string;
+        try {
+          transcriptPath = workspaceFolderFor(payload.workspaceId);
+        } catch (error) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.subagentTranscriptRead,
+            {
+              sessionId: payload.sessionId,
+              taskId: payload.taskId,
+              title: "Subagent",
+              toolUseId: "",
+              status: "failed",
+              messages: [],
+              error: error instanceof Error ? error.message : String(error),
+            },
+            envelope.id,
+          );
+          return;
+        }
+        sendSubagentTranscript(socket, envelope.id, transcriptPath, payload);
         return;
       }
       if (envelope.type === daemonMessageTypes.listSubagents) {
@@ -1712,12 +1987,23 @@ function runWebSocketSession(options: {
           );
           return;
         }
-        sendSubagentList(
-          socket,
-          envelope.id,
-          workspacePathFor(payload.workspaceId),
-          payload,
-        );
+        let subagentsPath: string;
+        try {
+          subagentsPath = workspaceFolderFor(payload.workspaceId);
+        } catch (error) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.subagentsListed,
+            {
+              sessionId: payload.sessionId,
+              subagents: [],
+              error: error instanceof Error ? error.message : String(error),
+            },
+            envelope.id,
+          );
+          return;
+        }
+        sendSubagentList(socket, envelope.id, subagentsPath, payload);
         return;
       }
       if (envelope.type === daemonMessageTypes.listDirectories) {
@@ -1759,7 +2045,7 @@ function runWebSocketSession(options: {
           sendWorkspaceTreeListing(
             socket,
             envelope.id,
-            workspacePathFor(payload.workspaceId),
+            workspaceFolderFor(payload.workspaceId),
             payload,
           );
         } catch (error) {
@@ -1786,7 +2072,7 @@ function runWebSocketSession(options: {
         };
         try {
           const inspection = await inspectWorkspace(
-            workspacePathFor(payload.workspaceId),
+            workspaceFolderFor(payload.workspaceId),
             payload.workspaceId,
             payload.rescan === true,
           );
@@ -1800,7 +2086,7 @@ function runWebSocketSession(options: {
           sendWebSocket(
             socket,
             daemonMessageTypes.workspaceInspected,
-            { error: String(error) },
+            { error: error instanceof Error ? error.message : String(error) },
             envelope.id,
           );
         }
@@ -1891,6 +2177,105 @@ function runWebSocketSession(options: {
               workspaceId: payload.workspaceId ?? "",
               error: message,
             },
+            envelope.id,
+          );
+        }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.relinkWorkspace) {
+        const payload = envelope.payload as RelinkWorkspacePayload | undefined;
+        if (!payload?.workspaceId || !payload.path) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.workspaceRelinked,
+            { error: "relink_workspace requires workspaceId and path" },
+            envelope.id,
+          );
+          return;
+        }
+        const servedFrom = workspacePaths.get(payload.workspaceId) ?? "";
+        try {
+          const relinked = await relinkWorkspaceFolder({
+            ...payload,
+            previousPath: payload.previousPath || servedFrom,
+          });
+          const workspacePath = relinked.workspace.path;
+          unregisterWorkspacePath(payload.workspaceId, servedFrom);
+          // As for a new folder: its repositories are found again after the
+          // reply (the registration already follows the folder).
+          void registerExecutionWorkspace(
+            workspacePath,
+            payload.workspaceId,
+          ).then(
+            (prepared) =>
+              console.log(
+                `Prepared relinked workspace ${workspacePath}: ${prepared.repositories.length} repositories${prepared.errors.length ? `, ${prepared.errors.length} problems (first: ${prepared.errors[0]})` : ""}.`,
+              ),
+            (error: unknown) =>
+              console.error(
+                `Preparing relinked workspace ${workspacePath} for Issues failed: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+          );
+          const registration = daemonRegistrationWithActiveSessions(
+            workspacePath,
+            options.sessionExecutions,
+          );
+          registerWorkspacePath(registration);
+          console.log(
+            `${logTime()} Workspace ${payload.workspaceId} is served from ${workspacePath} now (was ${payload.previousPath || servedFrom || "unknown"}).`,
+          );
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.workspaceRelinked,
+            { registration, nativeSessions: relinked.nativeSessions },
+            envelope.id,
+          );
+          checkWorkspaceFolders();
+        } catch (error) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.workspaceRelinked,
+            { error: error instanceof Error ? error.message : String(error) },
+            envelope.id,
+          );
+        }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.findMovedWorkspace) {
+        const payload = envelope.payload as
+          FindMovedWorkspacePayload | undefined;
+        const previousPath =
+          payload?.previousPath ||
+          (payload?.workspaceId ? workspacePaths.get(payload.workspaceId) : "");
+        if (!payload?.workspaceId || !previousPath) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.movedWorkspaceFound,
+            {
+              error:
+                "find_moved_workspace requires workspaceId and previousPath",
+            },
+            envelope.id,
+          );
+          return;
+        }
+        try {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.movedWorkspaceFound,
+            {
+              suggestions: findMovedWorkspaceFolders({
+                workspaceId: payload.workspaceId,
+                previousPath,
+              }),
+            },
+            envelope.id,
+          );
+        } catch (error) {
+          sendWebSocket(
+            socket,
+            daemonMessageTypes.movedWorkspaceFound,
+            { error: error instanceof Error ? error.message : String(error) },
             envelope.id,
           );
         }
@@ -2337,8 +2722,8 @@ function runWebSocketSession(options: {
         }
         try {
           const targetWorkspacePath = payload.profile.workspaceId
-            ? workspacePathFor(payload.profile.workspaceId)
-            : (knownWorkspacePaths()[0] ?? "");
+            ? workspaceFolderFor(payload.profile.workspaceId)
+            : (knownWorkspacePaths().find(workspaceFolderPresent) ?? "");
           const profile = upsertAgentProfileConfig(
             payload.profile,
             targetWorkspacePath,
@@ -2372,9 +2757,11 @@ function runWebSocketSession(options: {
         const payload = envelope.payload as
           { requestAccess?: string } | undefined;
         try {
-          const opened = payload?.requestAccess
-            ? requestResourceAccess(payload.requestAccess)
-            : [];
+          const opened = await requestAccessOnDevice(
+            payload?.requestAccess ?? "",
+          );
+          // The inventory is detected again too; it reports on its own.
+          void resourceScanner.scanAll();
           const registration = currentRegistration();
           sendWebSocket(
             socket,
@@ -2394,6 +2781,84 @@ function runWebSocketSession(options: {
             envelope.id,
           );
         }
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.resourceOperate) {
+        let result: ResourceOperateResult;
+        try {
+          result = await resourceOperations.operate(
+            envelope.payload as ResourceOperateRequest,
+          );
+        } catch (error) {
+          result = {
+            results: [],
+            error: error instanceof Error ? error.message : String(error),
+            errorCode: "backend_error",
+          };
+        }
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.resourceOperated,
+          result,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.resourceReset) {
+        const payload = envelope.payload as ResourceResetRequest;
+        let result: ResourceResetResult;
+        try {
+          result = await resourceOperations.reset(payload);
+        } catch (error) {
+          result = {
+            resourceId: payload?.resourceId ?? "",
+            generation: payload?.generation ?? 0,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.resourceResetDone,
+          result,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.resourceSettings) {
+        const applied = resourceSettings.set(
+          envelope.payload as Partial<ResourceSourceSettings> | undefined,
+        );
+        // Off means off at once, whatever the server does next.
+        if (!applied.allowRemoteCommands) await computeProvider.stopAll();
+        void resourceScanner.scanAll();
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.resourceSettingsApplied,
+          applied,
+          envelope.id,
+        );
+        return;
+      }
+      if (envelope.type === daemonMessageTypes.installResourceBackend) {
+        const payload = envelope.payload as ResourceBackendInstallRequest;
+        let result: ResourceBackendInstallResult;
+        try {
+          result = await installResourceBackend(payload);
+        } catch (error) {
+          result = {
+            backend: payload?.backend ?? "",
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+        // The inventory is detected again; it reports on its own.
+        void resourceScanner.scanAll();
+        trySendWebSocket(
+          socket,
+          daemonMessageTypes.resourceBackendInstalled,
+          result,
+          envelope.id,
+        );
         return;
       }
       if (envelope.type === daemonMessageTypes.upsertAgentRuntimeSettings) {
@@ -2647,7 +3112,7 @@ function runWebSocketSession(options: {
                 sessionToken: payload.sessionToken ?? "",
                 workspaceID: payload.session.workspaceId,
               };
-              const workspacePath = workspacePathFor(
+              const workspacePath = workspaceFolderFor(
                 payload.session.workspaceId,
               );
               // An Issue's clarification runs read-only in the workspace with
@@ -2719,7 +3184,7 @@ function runWebSocketSession(options: {
           notifyChanges?: boolean;
         };
         try {
-          const sourcePath = workspacePathFor(payload.workspaceId);
+          const sourcePath = workspaceFolderFor(payload.workspaceId);
           if (payload.action === "preview_start") {
             queuePreview(payload.issueId);
             void taskScheduler
@@ -2752,7 +3217,7 @@ function runWebSocketSession(options: {
           trySendWebSocket(
             socket,
             daemonMessageTypes.issueEnvironmentResult,
-            { error: String(error) },
+            { error: error instanceof Error ? error.message : String(error) },
             envelope.id,
           );
         }
@@ -2782,6 +3247,8 @@ function runWebSocketSession(options: {
 
     socket.on("close", (code?: number, reason?: Buffer) => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      resourceScanner.detach();
+      void resourceOperations.closeAll();
       outputFollowers.close();
       stopEnvironmentChanges?.();
       options.sessionTransport.unbind(socket);

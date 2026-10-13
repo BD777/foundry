@@ -14,6 +14,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import type { DaemonConfig } from "./config.js";
 import { foundryStatePath } from "./state-root.js";
 
@@ -122,13 +124,13 @@ export class FoundryClient {
    */
   async mcp(message: unknown): Promise<unknown> {
     const url = new URL("/api/mcp", this.config.serverURL);
-    let response: Response;
+    let response: { status: number; text: string };
     try {
-      response = await fetch(url.toString(), {
-        method: "POST",
-        headers: this.headers({ "Content-Type": "application/json" }),
-        body: JSON.stringify(message),
-      });
+      response = await postJSON(
+        url,
+        this.headers({ "Content-Type": "application/json" }),
+        JSON.stringify(message),
+      );
     } catch (error) {
       throw new FoundryClientError(
         `cannot reach Foundry server at ${this.config.serverURL}: ${
@@ -136,7 +138,7 @@ export class FoundryClient {
         }`,
       );
     }
-    const raw = await response.text();
+    const raw = response.text;
     if (response.status === 202 && !raw) return undefined;
     let reply: unknown;
     try {
@@ -176,4 +178,39 @@ export class FoundryClient {
     if (reply?.result?.isError) throw new FoundryClientError(text);
     return text;
   }
+}
+
+/**
+ * POSTs a JSON body and reads the whole answer. Not fetch: its client stops
+ * waiting for an answer's headers after five minutes, and a tool call may
+ * block longer (a compute run, up to 30 minutes; the server bounds each).
+ */
+function postJSON(
+  url: URL,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolveAnswer, reject) => {
+    const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const request = send(
+      url,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Length": Buffer.byteLength(body) },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("error", reject);
+        response.on("end", () =>
+          resolveAnswer({
+            status: response.statusCode ?? 0,
+            text: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    request.on("error", reject);
+    request.end(body);
+  });
 }

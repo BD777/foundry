@@ -9,6 +9,7 @@ import {
 import {
   Bot,
   ChevronLeft,
+  CircleAlert,
   CircleStop,
   Clock,
   ExternalLink,
@@ -42,7 +43,7 @@ import type {
   ChatTimerItem,
 } from "./chat-types";
 import { BackgroundKindIcon, BackgroundStatusIcon } from "./chat-context-card";
-import { timerNextRun } from "./chat-schedule-model";
+import { timerNextRun, timerRunContextFull } from "./chat-schedule-model";
 import { formatDuration } from "../../components/conversation/turn-usage";
 import { useSharedNow } from "./use-shared-now";
 import { useBackgroundTaskOutput } from "./use-background-task-output";
@@ -505,11 +506,20 @@ function TimerFireHistory({
           open={index === 0}
         >
           <summary>
-            <Clock aria-hidden="true" size={13} />
-            {t("detail.timer.firedAt", {
+            {fire.failed ? (
+              <CircleAlert aria-hidden="true" size={13} />
+            ) : (
+              <Clock aria-hidden="true" size={13} />
+            )}
+            {t(fire.failed ? "detail.timer.failedAt" : "detail.timer.firedAt", {
               time: formatTimerDateTime(fire.startedAt || fire.completedAt),
             })}
           </summary>
+          {timerRunContextFull(fire) ? (
+            <p className="fdy-chat-detail-note">
+              {t("detail.timer.contextFullHint")}
+            </p>
+          ) : null}
           {fire.response ? (
             <div className="fdy-chat-timer-fire-response fdy-markdown">
               <MarkdownContent>{fire.response}</MarkdownContent>

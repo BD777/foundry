@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { RefreshCw } from "lucide-react";
+import { ArrowRight, RefreshCw } from "lucide-react";
 import type { DeviceProjection, DeviceResource } from "@bd777/foundry-protocol";
 import { refreshDeviceResources } from "../../api";
 import { Badge } from "../../components/ui/badge";
@@ -8,6 +8,8 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { InfoRow } from "../../components/ui/info-row";
 import { i18n } from "../../i18n";
+import { navigateToResources } from "../../lib/in-app-navigation";
+import { useResourceInventory } from "../../lib/resource-inventory";
 
 function kindLabel(kind: DeviceResource["kind"]): string {
   return kind in kindKeys ? i18n.t(kindKeys[kind]) : kind;
@@ -17,6 +19,78 @@ const kindKeys = {
   browser: "devices:resources.kinds.browser",
   computer_use: "devices:resources.kinds.computer_use",
 } as const;
+
+/**
+ * One line on what the resource inventory lists for the device ("5
+ * resources · 1 not ready") and the way to the Resources page filtered to it.
+ */
+function DeviceResourceSummary({ device }: { device: DeviceProjection }) {
+  const { t } = useTranslation("devices");
+  const { list, error, loading } = useResourceInventory({ device: device.id });
+  const instances = (list?.instances ?? []).filter(
+    (instance) => instance.source.id === device.id,
+  );
+  const unready = instances.filter(
+    (instance) => instance.state === "unready",
+  ).length;
+  const stale = instances.filter((instance) => instance.stale).length;
+  const source = list?.sources.find((item) => item.id === device.id);
+  const summary = list
+    ? [
+        t("resources.summary.count", { count: instances.length }),
+        unready ? t("resources.summary.unready", { count: unready }) : "",
+        stale ? t("resources.summary.stale", { count: stale }) : "",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : t(
+        error && !loading
+          ? "resources.summary.failed"
+          : "resources.summary.loading",
+      );
+  return (
+    <div
+      aria-label={t("resources.summary.label", { device: device.label })}
+      className="fdy-device-resource-summary"
+      role="group"
+    >
+      <span role="status">{summary}</span>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => navigateToResources(device.id)}
+      >
+        {t("resources.summary.open")}
+        <ArrowRight aria-hidden="true" size={14} />
+      </Button>
+      {source ? (
+        <span className="fdy-device-resource-remote">
+          <span>
+            {t(
+              source.allowRemoteCommands
+                ? "resources.summary.remoteOn"
+                : "resources.summary.remoteOff",
+            )}
+          </span>
+          {device.owned ? <span aria-hidden="true">·</span> : null}
+          {device.owned ? (
+            <Button
+              aria-label={t("resources.summary.manageRemoteLabel", {
+                device: device.label,
+              })}
+              size="sm"
+              variant="ghost"
+              onClick={() => navigateToResources(device.id, "compute")}
+            >
+              {t("resources.summary.manageRemote")}
+              <ArrowRight aria-hidden="true" size={14} />
+            </Button>
+          ) : null}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * The Resource Pool directory for one device: what its worker found that
@@ -97,6 +171,7 @@ export function DeviceResources({
           </Button>
         ) : null}
       </header>
+      <DeviceResourceSummary device={device} />
       {resources.length === 0 ? (
         <EmptyState
           title={t("resources.emptyTitle")}

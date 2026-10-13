@@ -155,6 +155,26 @@ type TenantTokenIssuer interface {
 	TenantAccessToken(ctx context.Context, app AppCredentials) (token string, expiresIn time.Duration, err error)
 }
 
+// AppNames is what the provider calls an app and its organisation. A name
+// the provider would not give stays empty and Detail says why.
+type AppNames struct {
+	AppName    string
+	TenantName string
+	Detail     string
+}
+
+// AppNameReader is a provider that can read, with the app's own token, the
+// app's name and its organisation's.
+type AppNameReader interface {
+	ReadAppNames(ctx context.Context, app AppCredentials) AppNames
+}
+
+// OrgDomainReader is a provider that can tell, with a person's own token
+// and no app permission, the domain of their organisation's email.
+type OrgDomainReader interface {
+	ReadOrgDomain(ctx context.Context, app AppCredentials, accessToken string) (string, error)
+}
+
 // SecretChecker is a provider that can tell whether an app secret is
 // valid before it replaces the sealed one.
 type SecretChecker interface {

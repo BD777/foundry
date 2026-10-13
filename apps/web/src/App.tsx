@@ -43,6 +43,7 @@ import {
 } from "./components/ui/app-shell";
 import {
   initialDevicePairingMode,
+  clearWorkspaceSelection,
   initialWorkspaceId,
   parseAppRoute,
   persistSidebarCollapsed,
@@ -54,6 +55,7 @@ import {
   storedSidebarCollapsed,
   storedThemeMode,
   workspaceIdFromLocation,
+  workspaceScopedViews,
   type AppRoute,
   type DevicePairingMode,
   type NavView,
@@ -87,6 +89,7 @@ import {
   currentWorkspaceAgents,
   currentWorkspaceAssets,
   currentWorkspaceItems,
+  needsWorkspaceChoice,
   workspaceActiveSkillIds,
 } from "./app/workspace-selectors";
 import { viewErrorLabel, viewErrorResetKey } from "./app/view-error-policy";
@@ -143,9 +146,10 @@ import {
 } from "./features/profiles";
 import { FoundrySkillPage, SkillsFeature } from "./features/skills";
 import { SkillLibraryFeature } from "./features/skill-library";
-import { FeishuBotFeature } from "./features/feishu";
-import { WorkspaceAccountsFeature } from "./features/external-accounts";
+import { ChannelsFeature } from "./features/channels";
+import { WorkspaceConnectorsFeature } from "./features/external-accounts";
 import { ConnectorsView } from "./app/connectors-view";
+import { ResourcesFeature } from "./features/resources";
 import { SharingFeature } from "./features/sharing";
 import {
   WorkspacesFeature,
@@ -154,7 +158,6 @@ import {
   type WorkspaceSection,
   type WorkspacesFeatureEvent,
 } from "./features/workspaces";
-import { liveDevices } from "./lib/devices";
 import { workspaceDenial } from "./lib/workspace-access";
 import {
   issueDisplayId,
@@ -180,19 +183,6 @@ type BadgeTone = "neutral" | "online" | "brass" | "warn" | "slate" | "error";
 // The skill library's catalog, which only the Skills pages read.
 const catalogFields: readonly FoundryDataField[] = ["promotedSkills"];
 const noFields: readonly FoundryDataField[] = [];
-
-const workspaceScopedViews = new Set<NavView>([
-  "workspace",
-  "chats",
-  "issues",
-  "issue",
-  "assets",
-  "skills",
-  "settings",
-  "feishu",
-  "accounts",
-  "sharing",
-]);
 
 export function App() {
   const account = useAccountSession();
@@ -452,17 +442,13 @@ export function App() {
     }
   }
 
-  // A device starts without a workspace. Until one is added, a workspace's
-  // views have nothing to show; the Workspaces page is where to add one.
-  const needsFirstWorkspace =
-    apiState === "connected" &&
-    !data.workspace.id &&
-    data.workspaces.length === 0 &&
-    liveDevices(data.devices).length > 0;
+  // Until a workspace is added or switched to, a workspace's views have
+  // nothing to show; the Workspaces page is where to choose one.
+  const needsWorkspace = apiState === "connected" && needsWorkspaceChoice(data);
   useEffect(() => {
-    if (needsFirstWorkspace && workspaceScopedViews.has(activeView))
+    if (needsWorkspace && workspaceScopedViews.has(activeView))
       setActiveView("locations");
-  }, [needsFirstWorkspace, activeView]);
+  }, [needsWorkspace, activeView]);
 
   async function handleWorkspaceFeatureEvent(
     event: WorkspacesFeatureEvent,
@@ -483,11 +469,15 @@ export function App() {
       return;
     }
     if (event.type === "workspaces.changed") {
-      // The first workspace becomes the one shown: a whole read switches.
+      // The first workspace becomes the one shown; removing the current one
+      // leaves none selected until Switch: either way a whole read switches.
+      const cleared = event.removedWorkspaceId === activeWorkspaceId;
+      if (cleared) clearWorkspaceSelection();
       await refreshData({
         silent: true,
         throwOnError: true,
-        fields: data.workspace.id ? workspacesViewFields : undefined,
+        fields:
+          data.workspace.id && !cleared ? workspacesViewFields : undefined,
       });
       return;
     }
@@ -971,21 +961,21 @@ export function App() {
             }}
           />
         ) : null}
-        {section === "feishu" ? (
-          <FeishuBotFeature
+        {section === "channels" ? (
+          <ChannelsFeature
             key={data.workspace.id}
             readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
             workspaceId={data.workspace.id}
             workspaceName={data.workspace.name}
             onNotice={setNotice}
+            onOpenChats={() => setActiveView("chats")}
             onOpenConnectors={() => setActiveView("connectors")}
           />
         ) : null}
-        {section === "accounts" ? (
-          <WorkspaceAccountsFeature
+        {section === "workspaceConnectors" ? (
+          <WorkspaceConnectorsFeature
             currentUserId={account.user?.id ?? ""}
             onNotice={setNotice}
-            onOpenConnectors={() => setActiveView("connectors")}
             readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
             workspaceId={data.workspace.id}
           />
@@ -1082,8 +1072,8 @@ export function App() {
       case "assets":
       case "skills":
       case "settings":
-      case "feishu":
-      case "accounts":
+      case "channels":
+      case "workspaceConnectors":
       case "sharing":
         return renderWorkspaceView(activeView);
       case "workspace":
@@ -1110,6 +1100,14 @@ export function App() {
             onNotice={setNotice}
             onTabChange={setConnectorTab}
             tab={connectorTab}
+          />
+        );
+      case "resources":
+        return (
+          <ResourcesFeature
+            ownedDeviceIds={data.devices
+              .filter((device) => device.owned)
+              .map((device) => device.id)}
           />
         );
       case "library":

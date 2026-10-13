@@ -21,6 +21,9 @@ import { readBackgroundTaskOutput } from "../dist/agent-background-tasks.js";
 import {
   discoverBrowsers,
   discoverComputerUse,
+  requestResourceAccess,
+} from "../dist/resources/index.js";
+import {
   reclaimSessionResources,
   sessionResourceNotes,
   sessionBrowserLaunchers,
@@ -333,7 +336,6 @@ test(
 );
 
 test("asking for screen control prompts, then opens only the panes still missing", () => {
-  const { requestResourceAccess } = resourcePool;
   if (process.platform !== "darwin") {
     assert.throws(
       () => requestResourceAccess("computer_use:macos"),

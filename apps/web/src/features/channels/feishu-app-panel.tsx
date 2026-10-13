@@ -11,6 +11,12 @@ import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Panel, PanelHeader } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
+import {
+  feishuAppName,
+  feishuAppSummary,
+  organisationLabel,
+  shortAppId,
+} from "../../lib/feishu-app-names";
 import { relativeWhen, statusTone } from "./feishu-format";
 
 const guideSteps = ["step1", "step2", "step3", "step4"] as const;
@@ -25,7 +31,7 @@ export interface FeishuAppPanelProps {
 }
 
 /**
- * Which Connectors app the workspace's bot runs on, and how the server's
+ * Which Connectors app the workspace's Feishu bot channel runs on, and how the server's
  * connection to it stands. Picking or switching takes an explicit action;
  * switching to another Feishu app, which unbinds the chats, takes two.
  */
@@ -37,12 +43,16 @@ export function FeishuAppPanel({
   onRemove,
   onOpenConnectors,
 }: FeishuAppPanelProps) {
-  const { t } = useTranslation("feishu");
+  const { t } = useTranslation(["feishu", "externalAccounts"]);
   const current = bot?.app;
   const choices = mergeChoices(bot?.choices ?? [], current);
   const [picked, setPicked] = useState(current?.id ?? "");
   useEffect(() => setPicked(current?.id ?? ""), [current?.id]);
   const pickedApp = choices.find((app) => app.id === picked);
+  // The caller's own entry names their accounts through the app.
+  const shown = choices.find((app) => app.id === current?.id) ?? current;
+  const whose = (app: ExternalProviderApp) =>
+    app.visibility === "instance" ? t("app.instance") : t("app.personal");
   const changing = Boolean(pickedApp && pickedApp.id !== current?.id);
   const unbinds =
     changing && current && pickedApp?.clientId !== current.clientId
@@ -68,17 +78,18 @@ export function FeishuAppPanel({
         <Badge tone={statusTone(status)}>{t(`status.${status}`)}</Badge>
       </PanelHeader>
 
-      {current ? (
+      {shown ? (
         <div className="fdy-feishu-app-facts">
           <span className="fdy-feishu-app-identity">
-            <strong>{current.label}</strong>
+            <strong>{feishuAppName(shown)}</strong>
             <small>
               {[
-                current.clientId,
-                current.visibility === "instance"
-                  ? t("app.instance")
-                  : t("app.personal"),
-              ].join(" · ")}
+                organisationLabel(shown),
+                ...(shown.accountNames ?? []),
+                whose(shown),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </small>
           </span>
           <small className="fdy-feishu-app-event">
@@ -86,6 +97,12 @@ export function FeishuAppPanel({
               ? t("app.lastEvent", { when: relativeWhen(bot.lastEventAt) })
               : t("app.noEvent")}
           </small>
+          {onOpenConnectors ? (
+            <Button onClick={onOpenConnectors} size="sm" variant="link">
+              {t("app.manage")}
+              <ArrowRight size={14} aria-hidden />
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -150,8 +167,12 @@ export function FeishuAppPanel({
               onChange={setPicked}
               options={choices.map((app) => ({
                 value: app.id,
-                label: app.label,
-                meta: app.clientId,
+                label: feishuAppSummary(app),
+                meta: t("app.optionMeta", {
+                  whose: whose(app),
+                  id: shortAppId(app.clientId),
+                }),
+                title: app.clientId,
                 detail: app.hasSecret ? undefined : t("app.noSecret"),
               }))}
               placeholder={t("app.pickPlaceholder")}

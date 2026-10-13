@@ -38,8 +38,9 @@ const routes = [
   { view: "skills" },
   { view: "foundrySkill" },
   { view: "settings" },
-  { view: "feishu" },
+  { view: "channels" },
   { view: "sharing" },
+  { view: "workspaceConnectors" },
   { view: "workspace" },
   { view: "locations" },
   { view: "devices" },
@@ -52,6 +53,7 @@ const routes = [
   { view: "devices", selectedDeviceId: "dev2", deviceSection: "resources" },
   { view: "profiles" },
   { view: "connectors", connectorTab: "feishu" },
+  { view: "resources" },
 ];
 
 test("workspace sections have canonical URLs while legacy links still resolve", () => {
@@ -72,11 +74,21 @@ test("workspace sections have canonical URLs while legacy links still resolve", 
       connectorTab: "feishu",
     });
   assert.equal(pathForAppRoute({ view: "connectors" }), "/connectors/feishu");
-  for (const section of ["settings", "assets", "skills", "feishu"]) {
+  for (const section of ["settings", "assets", "skills", "channels"]) {
     assert.deepEqual(parseAppRoute(`/${section}`), { view: section });
     assert.deepEqual(parseAppRoute(`/workspace/${section}`), { view: section });
     assert.equal(pathForAppRoute({ view: section }), `/workspace/${section}`);
   }
+  // Channels was the "Feishu Bot" tab at /feishu and /workspace/feishu.
+  for (const path of ["/feishu", "/workspace/feishu"])
+    assert.deepEqual(parseAppRoute(path), { view: "channels" });
+  // The workspace's Connectors tab was "Accounts" at /workspace/accounts.
+  for (const path of ["/workspace/connectors", "/workspace/accounts"])
+    assert.deepEqual(parseAppRoute(path), { view: "workspaceConnectors" });
+  assert.equal(
+    pathForAppRoute({ view: "workspaceConnectors" }),
+    "/workspace/connectors",
+  );
   assert.deepEqual(parseAppRoute("/workspace/sharing"), { view: "sharing" });
   assert.equal(pathForAppRoute({ view: "sharing" }), "/workspace/sharing");
   // The foundry skill's page sits under the Skills page it opens from.
@@ -112,6 +124,14 @@ test("global management routes and error boundaries do not inherit a workspace",
   assert.notEqual(
     viewErrorResetKey(route),
     viewErrorResetKey({ ...route, selectedDeviceId: "dev3" }),
+  );
+  // The resource inventory spans every device; its filters are query
+  // parameters, not path segments.
+  assert.deepEqual(parseAppRoute("/resources"), { view: "resources" });
+  assert.equal(pathForAppRoute({ view: "resources" }), "/resources");
+  assert.equal(
+    viewErrorResetKey({ view: "resources", workspaceId: "ws1" }),
+    viewErrorResetKey({ view: "resources", workspaceId: "ws2" }),
   );
 });
 

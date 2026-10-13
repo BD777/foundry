@@ -22,14 +22,39 @@ type WorkspaceProjection struct {
 
 // WorkspaceUnavailability says why a workspace cannot run on its device.
 type WorkspaceUnavailability struct {
-	// Reason is WorkspaceNotServed: the device's worker, at its last
-	// registration, did not list the folder among those it serves.
+	// Reason is WorkspaceNotServed or WorkspaceFolderMissing.
 	Reason string `json:"reason"`
 	Since  string `json:"since"`
 }
 
-// WorkspaceNotServed: the device no longer serves the folder.
+// WorkspaceNotServed: the device's worker, at its last report, did not list
+// the folder among those it serves.
 const WorkspaceNotServed = "not_served"
+
+// WorkspaceFolderMissing: the device's worker still has the workspace, but
+// its folder (LocalPath, the last known path) is gone from the device.
+const WorkspaceFolderMissing = "folder_missing"
+
+// WorkspaceNativeSessionsMoved is what relinking did to make the
+// workspace's native sessions resumable in its new folder.
+type WorkspaceNativeSessionsMoved struct {
+	Copied       int `json:"copied"`
+	AlreadyThere int `json:"alreadyThere"`
+	NotFound     int `json:"notFound"`
+}
+
+// WorkspaceRelinkResult answers locating a workspace's folder.
+type WorkspaceRelinkResult struct {
+	Workspace      WorkspaceProjection          `json:"workspace"`
+	NativeSessions WorkspaceNativeSessionsMoved `json:"nativeSessions"`
+}
+
+// WorkspaceRelinkSuggestion is a folder that looks like a missing
+// workspace's, moved: "same_workspace" or "same_git_remote".
+type WorkspaceRelinkSuggestion struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
 
 type DeviceProjection struct {
 	ID              string                `json:"id"`
@@ -892,6 +917,11 @@ const AgentSessionRoleIssueClarification = "issue_clarification"
 // workspace it serves (DaemonRegistration.ServedWorkspaceIDs).
 const DaemonCapabilityWorkspaceInventory = "workspace_inventory"
 
+// DaemonCapabilityWorkspaceFolders: the worker reports workspaces whose
+// folder is gone (hello's MissingWorkspaceIDs and workspace_folders), and
+// answers relink_workspace and find_moved_workspace.
+const DaemonCapabilityWorkspaceFolders = "workspace_folders"
+
 // DaemonCapabilityIssueSessions: the worker runs Issue executions dispatched
 // as run_session with the issue_execution role.
 const DaemonCapabilityIssueSessions = "issue_sessions"
@@ -1460,16 +1490,20 @@ type DaemonRegistration struct {
 	// ServedWorkspaceIDs, sent with hello by a worker declaring
 	// DaemonCapabilityWorkspaceInventory, is every workspace it serves; its
 	// other workspaces on the server are marked unavailable on the device.
-	ServedWorkspaceIDs []string                 `json:"servedWorkspaceIds,omitempty"`
-	Device             DeviceProjection         `json:"device"`
-	Workspace          WorkspaceProjection      `json:"workspace"`
-	ProviderHealth     []ProviderHealth         `json:"providerHealth"`
-	AgentProfiles      []AgentProfileProjection `json:"agentProfiles,omitempty"`
-	Chats              []ChatThread             `json:"chats,omitempty"`
-	Assets             []AssetProjection        `json:"assets"`
-	Agents             []AgentProjection        `json:"agents"`
-	Skills             []SkillPackRef           `json:"skills"`
-	WorkspaceFiles     []WorkspaceFileEntry     `json:"workspaceFiles"`
+	ServedWorkspaceIDs []string `json:"servedWorkspaceIds,omitempty"`
+	// MissingWorkspaceIDs, sent with hello by a worker declaring
+	// DaemonCapabilityWorkspaceFolders, are the workspaces it still has
+	// whose folder is gone; they are marked WorkspaceFolderMissing.
+	MissingWorkspaceIDs []string                 `json:"missingWorkspaceIds,omitempty"`
+	Device              DeviceProjection         `json:"device"`
+	Workspace           WorkspaceProjection      `json:"workspace"`
+	ProviderHealth      []ProviderHealth         `json:"providerHealth"`
+	AgentProfiles       []AgentProfileProjection `json:"agentProfiles,omitempty"`
+	Chats               []ChatThread             `json:"chats,omitempty"`
+	Assets              []AssetProjection        `json:"assets"`
+	Agents              []AgentProjection        `json:"agents"`
+	Skills              []SkillPackRef           `json:"skills"`
+	WorkspaceFiles      []WorkspaceFileEntry     `json:"workspaceFiles"`
 	// Stalls are stretches the worker's event loop was blocked since its
 	// previous registration; the server logs them.
 	Stalls []WorkerStall `json:"stalls,omitempty"`

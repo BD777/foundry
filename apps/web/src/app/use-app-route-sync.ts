@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { connectorTypes, type ConnectorType } from "../lib/connector-types";
 import {
-  connectorTabs,
   parseAppRoute,
   pathForAppRoute,
   searchWithWorkspace,
   workspaceIdFromLocation,
   type AppRoute,
-  type ConnectorTab,
   type NavView,
 } from "./navigation";
 
@@ -22,8 +21,8 @@ export interface UseAppRouteSyncInput {
 
 export interface AppRouteSelection {
   /** The open Connectors tab; only the route reads it. */
-  connectorTab: ConnectorTab;
-  setConnectorTab: (tab: ConnectorTab) => void;
+  connectorTab: ConnectorType;
+  setConnectorTab: (tab: ConnectorType) => void;
 }
 
 /** Keeps browser history and shell selection in sync across all features. */
@@ -37,9 +36,9 @@ export function useAppRouteSync({
   deviceSection,
 }: UseAppRouteSyncInput): AppRouteSelection {
   const routeSyncedRef = useRef(false);
-  const [connectorTab, setConnectorTab] = useState<ConnectorTab>(
+  const [connectorTab, setConnectorTab] = useState<ConnectorType>(
     () =>
-      parseAppRoute(window.location.pathname).connectorTab ?? connectorTabs[0],
+      parseAppRoute(window.location.pathname).connectorTab ?? connectorTypes[0],
   );
   const onPopStateRef = useRef(onPopState);
   onPopStateRef.current = onPopState;

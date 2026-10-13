@@ -13,7 +13,8 @@
 //     account still usable and bound to the session's workspace. Revocation
 //     is therefore immediate: a session that ends, an account stopped or
 //     disconnected, a binding removed, and the next request is refused;
-//   - answers feishu-cli's tenant token call itself, with a stand-in;
+//   - answers feishu-cli's tenant token call and its user token refresh
+//     itself, with stand-ins: the server alone refreshes the real login;
 //   - swaps the stand-ins for the real tokens (the user's from the
 //     externalaccounts service, the single refresher; the app's own fetched
 //     with the sealed secret and cached) and streams the call to Feishu;
@@ -22,9 +23,9 @@
 //   - hands feishu-cli's event connection to EventSubscriptions.
 //
 // Handles: "fsg_" (app secret stand-in) is 32 random bytes; "fsu_" (user
-// token) and "fst_" (tenant token) are derived from it, so the gateway can
-// answer the tenant token call from the app handle alone. Only their
-// SHA-256 hashes are stored.
+// token), "fsr_" (user refresh token) and "fst_" (tenant token) are derived
+// from it, so the gateway can answer the tenant token and refresh calls
+// from the app handle alone. Only their SHA-256 hashes are stored.
 package feishugateway
 
 import (
@@ -61,9 +62,10 @@ const PathPrefix = "/api/feishu-gw"
 const ForwarderHostHeader = "X-Foundry-Forwarder-Host"
 
 const (
-	appHandlePrefix    = "fsg_"
-	userHandlePrefix   = "fsu_"
-	tenantHandlePrefix = "fst_"
+	appHandlePrefix     = "fsg_"
+	userHandlePrefix    = "fsu_"
+	refreshHandlePrefix = "fsr_"
+	tenantHandlePrefix  = "fst_"
 
 	eventEndpointPath = "/callback/ws/endpoint"
 	userRefreshPath   = "/open-apis/authen/v2/oauth/token"
@@ -71,7 +73,10 @@ const (
 	// tenantTokenExpire is the lifetime feishu-cli is told its tenant
 	// stand-in has; it fetches another after, which costs nothing.
 	tenantTokenExpire = 7200
-	maxTokenBody      = 64 << 10
+	// userTokenExpire is the lifetime feishu-cli is told a refreshed user
+	// stand-in has; it refreshes again after, which costs nothing.
+	userTokenExpire = 7200
+	maxTokenBody    = 64 << 10
 )
 
 // Sessions reads the session a grant belongs to.
@@ -165,6 +170,7 @@ func (g *Gateway) IssueHandles(ctx context.Context, request externalaccounts.Han
 	}
 	appHandle := appHandlePrefix + base64.RawURLEncoding.EncodeToString(seed)
 	userHandle, _ := derivedHandle(appHandle, userHandlePrefix)
+	refreshHandle, _ := derivedHandle(appHandle, refreshHandlePrefix)
 	tenantHandle, _ := derivedHandle(appHandle, tenantHandlePrefix)
 	if err := g.store.CreateFeishuGatewayGrant(ctx, store.FeishuGatewayGrant{
 		SessionID: request.SessionID, AccountID: request.Account.ID, AppID: request.App.ID, DeviceID: request.DeviceID,
@@ -173,7 +179,7 @@ func (g *Gateway) IssueHandles(ctx context.Context, request externalaccounts.Han
 	}); err != nil {
 		return store.ExternalAccountGateway{}, err
 	}
-	return store.ExternalAccountGateway{Path: PathPrefix, AppHandle: appHandle, UserHandle: userHandle}, nil
+	return store.ExternalAccountGateway{Path: PathPrefix, AppHandle: appHandle, UserHandle: userHandle, RefreshHandle: refreshHandle}, nil
 }
 
 // --- Authorization -----------------------------------------------------------
@@ -309,11 +315,8 @@ func (g *Gateway) Serve(w http.ResponseWriter, r *http.Request, device Device) {
 		g.serveTenantToken(writer, r, device, line)
 	case r.Method == http.MethodPost && path == eventEndpointPath:
 		g.serveEventEndpoint(writer, r, device, line)
-	case path == userRefreshPath:
-		line.Outcome = "blocked"
-		writeJSON(writer, http.StatusBadRequest, map[string]any{
-			"error": "invalid_grant", "error_description": "Foundry holds this Feishu login and refreshes it on the server; the device cannot. Re-authorize it in Foundry (Connectors → Feishu) if it stopped working.",
-		})
+	case r.Method == http.MethodPost && path == userRefreshPath:
+		g.serveUserRefresh(writer, r, device, line)
 	case strings.HasPrefix(path, "/open-apis/"):
 		g.forward(writer, r, device, path, line)
 	default:
@@ -365,6 +368,50 @@ func (g *Gateway) serveTenantToken(w http.ResponseWriter, r *http.Request, devic
 	tenant, _ := derivedHandle(strings.TrimSpace(input.AppSecret), tenantHandlePrefix)
 	line.Outcome = "local"
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "ok", "tenant_access_token": tenant, "expire": tenantTokenExpire})
+}
+
+// serveUserRefresh answers feishu-cli's user token refresh (OAuth form:
+// grant_type=refresh_token, refresh_token, client_id, client_secret) with
+// the session's stand-ins again, never a real token. The real login is
+// refreshed by the server when a call needs it; the device's refresh only
+// keeps feishu-cli's token.json current and is refused once access ends.
+func (g *Gateway) serveUserRefresh(w http.ResponseWriter, r *http.Request, device Device, line *store.FeishuGatewayRequest) {
+	oauthError := func(status int, code, description string) {
+		line.Outcome = "refused"
+		writeJSON(w, status, map[string]any{"error": code, "error_description": "Foundry gateway: " + description})
+	}
+	if err := r.ParseForm(); err != nil {
+		oauthError(http.StatusBadRequest, "invalid_request", "unreadable token request")
+		return
+	}
+	appHandle := strings.TrimSpace(r.PostForm.Get("client_secret"))
+	if r.PostForm.Get("grant_type") != "refresh_token" || handleKind(appHandle) != store.FeishuHandleApp {
+		oauthError(http.StatusBadRequest, "invalid_grant", "sessions can only refresh the login Foundry set up for them; they cannot log in through Foundry")
+		return
+	}
+	access, err := g.authorize(r.Context(), appHandle, device)
+	if errors.Is(err, errAccessEnded) {
+		oauthError(http.StatusBadRequest, "invalid_grant", err.Error())
+		return
+	}
+	if err != nil {
+		g.logf("feishu gateway: authorize: %v", err)
+		oauthError(http.StatusInternalServerError, "server_error", "could not check this session's access")
+		return
+	}
+	access.fill(line)
+	line.Identity = "user"
+	refresh, _ := derivedHandle(appHandle, refreshHandlePrefix)
+	presented := strings.TrimSpace(r.PostForm.Get("refresh_token"))
+	if r.PostForm.Get("client_id") != access.caller.ClientID || !hmac.Equal([]byte(presented), []byte(refresh)) {
+		oauthError(http.StatusBadRequest, "invalid_grant", "the refresh token or client_id is not this session's; use the Feishu profile Foundry set up (FEISHU_PROFILE)")
+		return
+	}
+	user, _ := derivedHandle(appHandle, userHandlePrefix)
+	line.Outcome = "local"
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code": 0, "access_token": user, "refresh_token": refresh, "token_type": "Bearer", "expires_in": userTokenExpire,
+	})
 }
 
 // serveEventEndpoint answers the SDK's long connection discovery

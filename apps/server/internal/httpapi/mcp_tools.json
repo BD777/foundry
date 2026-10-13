@@ -17,19 +17,233 @@
   },
   {
     "name": "list_resources",
-    "description": "List what each device you can reach offers sessions (installed browsers, macOS screen control), whether it is online, and the workspaces on it where you may start a session. To use a resource on another device, start a session in one of that device's workspaces (create_session with workspaceId). Resources are the device's own software; nothing is installed for you.",
-    "summary": "Shows what each reachable device offers sessions (browsers, macOS screen control), whether it is online and where a session may start on it.",
+    "description": "List what each device you can reach offers sessions, whether it is online, and the workspaces on it where you may start a session. Each device has instances: its resource inventory (browsers, macOS screen control, simulators, phones, GPUs, container runtimes, toolchains, signed-in account names, disk space, and compute: the device's CPUs, memory and load), each with type, platform, state (available, unready, offline, gone), readiness with the reason it is not ready, and when it was last seen; stale means its detector failed on the last scan and the values are the last known. resources is the older per-device list (browsers, macOS screen control). A computer_use instance whose backends include cua-driver (mode remote_ops) can be leased with acquire_resource and operated step by step with operate_resource from any session; holder and queue say who leases it and how many sessions wait; operations lists what operate_resource runs on it. A compute instance (backend foundry-compute) is leased the same way to run commands on that device, once its owner allowed remote commands there (otherwise it reads unready with that reason): use it to offload heavy work such as test runs. For other resources, or to hand a whole GUI task to a session on that device, start a session in one of that device's workspaces (create_session with workspaceId). Resources are the device's own software; nothing is installed for you.",
+    "summary": "Shows what each reachable device offers sessions (browsers, screen control, simulators, GPUs, toolchains and more) with readiness, whether it is online and where a session may start on it.",
     "limits": [
       "Only devices hosting a workspace the agent reaches.",
-      "Lists the device's own software; nothing is installed for the agent."
+      "Lists the device's own software; nothing is installed for the agent.",
+      "Readiness comes from detection on the device, never from a real use."
     ],
     "inputSchema": {
       "type": "object",
       "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "browser",
+            "computer_use",
+            "simulator",
+            "mobile_device",
+            "gpu",
+            "container_runtime",
+            "toolchain",
+            "account",
+            "disk",
+            "compute"
+          ],
+          "description": "Only resources of this type."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Only this device."
+        },
         "kind": {
           "type": "string",
           "enum": ["browser", "computer_use"],
-          "description": "Only resources of this kind."
+          "description": "Older filter of the per-device resources list; prefer type."
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true
+    }
+  },
+  {
+    "name": "acquire_resource",
+    "description": "Lease a resource on one of your person's devices so this session can operate it with operate_resource: a Mac's screen (computer_use) through cua-driver, or a device's compute (compute) to run commands there. Name resourceId (from list_resources), several resourceIds to take all of them or none, or a type (default computer_use) and optionally deviceId to take the first ready one. The lease is yours while your current turn runs and is renewed automatically; when the turn ends it is parked for up to 10 minutes (holdFor keeps it longer, at most 2 hours) and handed at once to another session that asks unless you hold it. When another session waits, every Foundry tool result tells you, and the lease is taken 15 minutes after the wait began (a last warning comes a minute before). Release it with release_resource as soon as you are done. Busy: with waitMs you queue (first come, first served) up to that long; without it you are told who holds it. A session holding a lease cannot wait for another (acquire everything at once instead). Calling it again for a lease you hold returns it and sets holdFor. The person sees the lease on the Resources page and can take it back at any time.",
+    "summary": "Leases a resource on one of the person's devices (today a Mac's screen through cua-driver) to this session, waiting in a queue when it is busy.",
+    "limits": [
+      "Only resources on devices the session's person owns; not from a session working in an Issue.",
+      "compute only on devices whose owner turned on \"Allow remote commands from my sessions\" on the Resources page.",
+      "Waits at most 10 minutes per call; a session holding a lease cannot wait for another.",
+      "At most 8 resources in one call, all or none.",
+      "Kept while the turn runs; afterwards parked at most 10 minutes, or holdFor at most 2 hours; taken 15 minutes after another session starts waiting.",
+      "The person can release any lease at any time."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resourceId": {
+          "type": "string",
+          "description": "The resource (res_…) from list_resources."
+        },
+        "resourceIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Several resources to lease all at once, or none."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["computer_use", "compute"],
+          "description": "Without resourceId: lease the first ready resource of this type (default computer_use)."
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "With type: only on this device."
+        },
+        "reason": {
+          "type": "string",
+          "description": "What it is for, in a few words; the person sees it in the macOS notification and on the Resources page."
+        },
+        "waitMs": {
+          "type": "number",
+          "description": "How long to wait in the queue when it is busy, at most 600000 (10 minutes); 0 (default) answers at once with who holds it."
+        },
+        "holdFor": {
+          "type": "number",
+          "description": "Seconds to keep the lease after your turn ends (at most 7200), when the screen must stay as it is until you come back; 0 removes the hold."
+        }
+      }
+    }
+  },
+  {
+    "name": "operate_resource",
+    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource this session leases (acquire_resource). For a Mac's screen the operations are cua-driver's tools: screenshot (returned as an image: a JPEG at most 1280 px on its long edge), get_ui_tree and find_elements (the accessibility tree, with an element_token per element), list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size and wait. Prefer acting on element_token from get_ui_tree over pixel coordinates; pixel coordinates refer to the window's latest screenshot taken through this lease, so take one first. Input is delivered in the background without moving the person's pointer, except activate_window and drag. screenshotAfter adds a screenshot of the same window after the actions. Each result says ok or an errorCode (stale_lease, lease ended, stale_frame: take a new screenshot; backend_error: what cua-driver said). For a device's compute the operations are run, put_files, get_file, git_sync and cleanup, run by the device's worker as its own user in a scratch folder of Foundry's (scratch names it; the same name finds the same folder in later leases, so a checkout and its installed dependencies stay) or, with workspaceId, in a workspace on that device this session may work in; each result's text is JSON (a run's exitCode, timedOut, durationMs and the tails of stdout and stderr). The lease block of the result says how long you keep it.",
+    "summary": "Operates a leased resource step by step: screenshots, accessibility tree, clicks, typing, keys, scrolling and dragging on a Mac's screen through cua-driver.",
+    "limits": [
+      "Only with a live lease this session holds; refused once it ended or was taken.",
+      "At most 10 actions per call, run in order on the device; at most 120 seconds per call on a screen.",
+      "compute: a run blocks at most timeoutSec (default 600, at most 1800) and answers at most 128 KB of each stream's tail; put_files takes 50 MB in pieces of at most 768 KB of base64; get_file answers at most 25 MB per call; nothing outside the scratch folder or the named workspace.",
+      "Screenshots at most 1280 px on the long edge and 2 MB each, 8 MB per call; none are kept.",
+      "Every operation is audited for the person (typed text as its length only; a command line in full, env as its names, never output)."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "leaseId": {
+          "type": "string",
+          "description": "The lease (lease_…) acquire_resource answered."
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "screenshot",
+            "get_ui_tree",
+            "find_elements",
+            "list_apps",
+            "list_windows",
+            "open_app",
+            "activate_window",
+            "click",
+            "double_click",
+            "right_click",
+            "type_text",
+            "key",
+            "hotkey",
+            "scroll",
+            "drag",
+            "set_value",
+            "screen_size",
+            "wait",
+            "run",
+            "put_files",
+            "get_file",
+            "git_sync",
+            "cleanup"
+          ],
+          "description": "One operation."
+        },
+        "args": {
+          "type": "object",
+          "description": "The operation's arguments, with cua-driver's own names. Windows are addressed by pid and window_id (from list_windows). screenshot {pid?, window_id?, max_image_dimension? (at most 1280)}: one window (with pid and window_id) or the whole display; get_ui_tree {pid, window_id, query?, max_elements?, max_depth?, include_screenshot?}: the accessibility tree with element_token per element; find_elements {pid, window_id, query}; list_apps {}; list_windows {pid?, on_screen_only?}; open_app {bundle_id | name, urls?}; activate_window {pid, window_id?} (brings it to the front, taking focus); click / double_click / right_click {element_token | x, y, pid?, window_id?, button?, count?, modifier?}; type_text {text, element_token?, pid?, window_id?} (does not press Return); key {key, modifiers?, pid?, window_id?}; hotkey {keys: [\"cmd\", \"c\"], pid?, window_id?}; scroll {direction, amount?, by?, element_token? | x, y, pid?, window_id?}; drag {from_x, from_y, to_x, to_y, pid, window_id} (runs in the foreground); set_value {value, element_token?, pid?, window_id?}; screen_size {}; wait {ms} (at most 5000). x and y are pixels in that window's latest screenshot taken through this lease; the backend maps them to the screen. compute (every operation takes scratch? (a folder name, default \"default\") or workspaceId?; paths are relative to it and cannot leave it): run {argv: [\"pnpm\", \"test\"] | command: \"shell line\", cwd?, env? {NAME: value}, timeoutSec? (default 600, at most 1800), tailBytes? (each stream, default 32768, at most 131072), saveOutput? (a file to write the whole output to)}; put_files {upload (a name you choose), offset (bytes already sent), data (base64 of the next piece), done? (true with the last piece), format? (tar | tar.gz | zip | file; default tar), dest? (folder to unpack into, or for file the file's path)}; get_file {path, offset?, length?}; git_sync {url (https), ref? (branch, tag or commit), dir? (default \"repo\")}: clones or fetches and checks out ref, keeping ignored files such as node_modules; cleanup {path?}: deletes the scratch folder, or a path in it."
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "screenshot",
+                  "get_ui_tree",
+                  "find_elements",
+                  "list_apps",
+                  "list_windows",
+                  "open_app",
+                  "activate_window",
+                  "click",
+                  "double_click",
+                  "right_click",
+                  "type_text",
+                  "key",
+                  "hotkey",
+                  "scroll",
+                  "drag",
+                  "set_value",
+                  "screen_size",
+                  "wait",
+                  "run",
+                  "put_files",
+                  "get_file",
+                  "git_sync",
+                  "cleanup"
+                ]
+              },
+              "args": {
+                "type": "object"
+              }
+            },
+            "required": ["op"]
+          },
+          "description": "Several operations run in order, stopping at the first failure (after op, when both are given)."
+        },
+        "screenshotAfter": {
+          "type": "boolean",
+          "description": "Also take a screenshot after the actions (of the window the last action named by pid and window_id, else the whole display)."
+        }
+      },
+      "required": ["leaseId"]
+    }
+  },
+  {
+    "name": "release_resource",
+    "description": "Release a lease this session holds, as soon as it is done with the resource: the device resets it (keys and buttons up, the backend's session closed) and it goes to the next session waiting. Releasing a lease that already ended answers how it ended.",
+    "summary": "Releases a lease this session holds so the next session can use the resource.",
+    "limits": [
+      "Only the session holding the lease; the person releases any lease on the Resources page."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "leaseId": {
+          "type": "string",
+          "description": "The lease (lease_…) to release."
+        }
+      },
+      "required": ["leaseId"]
+    }
+  },
+  {
+    "name": "resource_status",
+    "description": "Read a resource on one of your person's devices: its state, readiness and backends, who leases it (holder) and how many sessions wait (queue), your own lease on it with when it will be parked or taken (yourLease), and its latest audited operations. Name resourceId, or leaseId for one of your leases.",
+    "summary": "Shows a resource's state, holder, queue, the session's own lease on it and its latest operations.",
+    "limits": [
+      "Only resources on devices the session's person owns.",
+      "The latest 10 operations, as audited (typed text as its length only)."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "resourceId": {
+          "type": "string",
+          "description": "The resource (res_…)."
+        },
+        "leaseId": {
+          "type": "string",
+          "description": "One of this session's leases (lease_…)."
         }
       }
     },

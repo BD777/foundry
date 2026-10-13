@@ -248,7 +248,7 @@ func (s *Server) handleConnectExternalAccount(w http.ResponseWriter, r *http.Req
 	}
 	login, err := service.BeginLogin(r.Context(), actor.AccountID(), app, input)
 	if err != nil {
-		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) {
+		if errors.Is(err, externalaccounts.ErrSecretsNotConfigured) || errors.Is(err, integrations.ErrOff) || errors.Is(err, store.ErrExternalAccountNotFound) {
 			writeExternalAccountError(w, err)
 			return
 		}

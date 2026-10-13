@@ -30,7 +30,9 @@ import (
 // ~/.foundry-tools/bin/feishu-cli), configured by the real worker code
 // (packages/worker/dist: the session's profile and the loopback forwarder),
 // reaches a fake Feishu only through the gateway, for a user call, a bot
-// call, a chunked upload, a ranged download and the event connection. The
+// call, a chunked upload, a ranged download and the event connection; its
+// `auth status` reads healthy and its user token refresh is answered by the
+// gateway. The
 // fake accepts only real tokens; feishu-cli's HOME is a scratch folder and
 // any call that tried to leave for the internet hits a dead proxy. Skipped
 // when feishu-cli, node or the built worker is missing. The worker's
@@ -107,6 +109,40 @@ func TestFeishuCLIContractThroughTheGateway(t *testing.T) {
 	}
 
 	expect("user call", "ou_fake", "api", "GET", "/open-apis/authen/v1/user_info", "--as", "user")
+
+	// The profile reads as a healthy login: the refresh token is a stand-in
+	// too, so feishu-cli never tells the agent to log in again.
+	statusOutput, err := run("auth", "status", "-o", "json")
+	var status map[string]any
+	if err != nil || json.Unmarshal([]byte(statusOutput[strings.Index(statusOutput, "{"):]), &status) != nil ||
+		status["health"] != "healthy" || status["refresh_token_present"] != true || status["refresh_token_valid"] != true || status["note"] != nil {
+		t.Fatalf("auth status: %v\n%s", err, statusOutput)
+	}
+	// A refresh round-trip: forced, then implicit on an expired access
+	// token. The gateway answers with the session's stand-ins.
+	tokenPath := filepath.Join(home, ".feishu-cli", "profiles", profile, "token.json")
+	readToken := func() map[string]any {
+		data, err := os.ReadFile(tokenPath)
+		var token map[string]any
+		if err != nil || json.Unmarshal(data, &token) != nil {
+			t.Fatalf("token.json: %v %s", err, data)
+		}
+		return token
+	}
+	expect("auth refresh", `"status": "ok"`, "auth", "refresh", "-o", "json")
+	if token := readToken(); token["access_token"] != f.material.Gateway.UserHandle || token["refresh_token"] != f.material.Gateway.RefreshHandle {
+		t.Fatalf("token.json after refresh: %v", token)
+	}
+	expired := readToken()
+	expired["expires_at"] = time.Now().Add(-time.Hour).Format(time.RFC3339)
+	data, _ := json.Marshal(expired)
+	if err := os.WriteFile(tokenPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expect("user call after the access token expired", "ou_fake", "api", "GET", "/open-apis/authen/v1/user_info", "--as", "user")
+	if at, err := time.Parse(time.RFC3339, readToken()["expires_at"].(string)); err != nil || !at.After(time.Now()) {
+		t.Fatalf("the implicit refresh did not renew token.json: %v %v", at, err)
+	}
 	expect("bot call", "om_contract", "msg", "send", "--receive-id-type", "chat_id", "--receive-id", "oc_contract", "--text", "hello")
 
 	big := make([]byte, 21<<20+123)

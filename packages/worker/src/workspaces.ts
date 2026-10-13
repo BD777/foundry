@@ -217,8 +217,10 @@ export function initWorkspace(inputPath: string | undefined): void {
   const workspacePath = resolve(inputPath);
   const now = new Date().toISOString();
   const existingWorkspacePath = workspaceFilePath(workspacePath);
+  // A file that names another folder (this one was copied, or moved and
+  // added again rather than located) gets this folder's own identity.
   const existing = existsSync(existingWorkspacePath)
-    ? (JSON.parse(readFileSync(existingWorkspacePath, "utf8")) as WorkspaceFile)
+    ? readWorkspace(workspacePath)
     : undefined;
   const workspace: WorkspaceFile = existing ?? {
     id: `ws_${randomUUID()}`,

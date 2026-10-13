@@ -1,18 +1,15 @@
 import { useTranslation } from "react-i18next";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
+import { connectorTypes, type ConnectorType } from "../../lib/connector-types";
 import { FeishuConnector } from "./feishu-connector";
-
-/** One tab per kind of external service; the route names the open one. */
-export const connectorTabs = ["feishu"] as const;
-export type ConnectorTab = (typeof connectorTabs)[number];
 
 export interface ConnectorsFeatureProps {
   currentUserId: string;
   isAdmin: boolean;
   onNotice: (message: string) => void;
-  onTabChange: (tab: ConnectorTab) => void;
-  tab: ConnectorTab;
+  onTabChange: (tab: ConnectorType) => void;
+  tab: ConnectorType;
 }
 
 /**
@@ -36,7 +33,7 @@ export function ConnectorsFeature({
       <SegmentedControl
         aria-label={t("page.tabs")}
         onValueChange={onTabChange}
-        options={connectorTabs.map((value) => ({
+        options={connectorTypes.map((value) => ({
           value,
           label: t(`providers.${value}`),
         }))}

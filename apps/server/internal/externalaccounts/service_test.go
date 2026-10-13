@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -469,4 +470,188 @@ func mustGet(t *testing.T, h *harness, id string) store.ExternalAccount {
 		t.Fatal(err)
 	}
 	return account
+}
+
+func TestReauthorizationRenewsTheAccountInPlace(t *testing.T) {
+	h := newHarness(t)
+	first := h.connect()
+	if _, err := h.service.Update(h.ctx, first, store.ExternalAccountUpdate{KeepAlive: boolPtr(false)}, "user_owner"); err != nil {
+		t.Fatalf("turn keep-alive off: %v", err)
+	}
+	login, err := h.service.BeginLogin(h.ctx, "user_owner", h.app, store.ConnectExternalAccountInput{AppID: h.app.ID, AccountID: first.ID})
+	if err != nil {
+		t.Fatalf("begin re-authorization: %v", err)
+	}
+	h.fake.Approve()
+	renewed := h.awaitLogin(login.ID).Account.deref(t)
+	if renewed.ID != first.ID || renewed.KeepAlive || renewed.Label != first.Label || renewed.CreatedAt != first.CreatedAt {
+		t.Fatalf("re-authorization did not renew the account in place: %+v", renewed)
+	}
+	accounts, _ := h.store.ListExternalAccounts(h.ctx, "user_owner")
+	if len(accounts) != 1 {
+		t.Fatalf("re-authorization added an account: %d", len(accounts))
+	}
+
+	h.fake.Identity.Subject = "ou_someone_else"
+	login, err = h.service.BeginLogin(h.ctx, "user_owner", h.app, store.ConnectExternalAccountInput{AppID: h.app.ID, AccountID: first.ID})
+	if err != nil {
+		t.Fatalf("begin second re-authorization: %v", err)
+	}
+	h.fake.Approve()
+	if result := h.awaitLogin(login.ID); result.Status != "failed" || !strings.Contains(result.Error, "different user") {
+		t.Fatalf("another user's sign-in was accepted: %+v", result.ExternalAccountLogin)
+	}
+
+	if _, err := h.service.BeginLogin(h.ctx, "user_other", h.app, store.ConnectExternalAccountInput{AppID: h.app.ID, AccountID: first.ID}); !errors.Is(err, store.ErrExternalAccountNotFound) {
+		t.Fatalf("someone else's account was re-authorized: %v", err)
+	}
+}
+
+func TestSignInReadsTheAppAndOrganisationNames(t *testing.T) {
+	h := newHarness(t)
+	account := h.connect()
+	if account.AppName != "Fake Agent" || account.TenantName != "Fake Org" {
+		t.Fatalf("the signed-in account carries no names: %+v", account)
+	}
+	app, _ := h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.AppName != "Fake Agent" || app.TenantName != "Fake Org" || app.NamesDetail != "" || app.NamesCheckedAt == "" {
+		t.Fatalf("names not recorded on the app: %+v", app)
+	}
+	apps, _ := h.service.ListApps(h.ctx, "user_owner")
+	if len(apps) != 1 || len(apps[0].AccountNames) != 1 || apps[0].AccountNames[0] != "Fake Person" {
+		t.Fatalf("the app does not name its account for its owner: %+v", apps)
+	}
+	if others, _ := h.service.ListApps(h.ctx, "user_other"); len(others) != 0 {
+		t.Fatalf("another person sees the personal app: %+v", others)
+	}
+	accounts, _ := h.service.Accounts(h.ctx, "user_owner")
+	if accounts[0].AppName != "Fake Agent" || accounts[0].TenantName != "Fake Org" {
+		t.Fatalf("listed account carries no names: %+v", accounts[0])
+	}
+
+	// Feishu refuses every name: the account works on, the last names stay
+	// and the reason is recorded.
+	h.fake.mu.Lock()
+	h.fake.AppName, h.fake.TenantName = "Renamed Agent", "Renamed Org"
+	h.fake.BotInfoCode, h.fake.AppRecordCode, h.fake.TenantQueryCode = 99991672, 99991672, 99991672
+	h.fake.mu.Unlock()
+	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 0 {
+		t.Fatalf("fresh names were read again: %d", refreshed)
+	}
+	h.clock = h.clock.Add(25 * time.Hour)
+	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 1 {
+		t.Fatalf("stale names were not read again: %d", refreshed)
+	}
+	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.AppName != "Fake Agent" || app.TenantName != "Fake Org" ||
+		!strings.Contains(app.NamesDetail, "app name: bot info: code 99991672") || !strings.Contains(app.NamesDetail, "tenant name: code 99991672") {
+		t.Fatalf("a refused lookup lost the names or its reason: %+v", app)
+	}
+	if mustGet(t, h, account.ID).Status != store.ExternalAccountReady {
+		t.Fatal("a refused name lookup touched the account")
+	}
+
+	// The person grants the organisation scope and refreshes by hand: the
+	// missing name is read at once, not after the hour.
+	h.fake.mu.Lock()
+	h.fake.TenantQueryCode = 0
+	h.fake.mu.Unlock()
+	refreshed, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"})
+	if err != nil || refreshed.TenantName != "Renamed Org" {
+		t.Fatalf("a manual refresh did not retry the missing name: %v %+v", err, refreshed)
+	}
+	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if strings.Contains(app.NamesDetail, "tenant name") || !strings.Contains(app.NamesDetail, "app name") {
+		t.Fatalf("the retried lookup recorded the wrong reason: %q", app.NamesDetail)
+	}
+
+	// Bot info refused, the app's record answers; a failed lookup is retried
+	// within the hour, not the day.
+	h.fake.mu.Lock()
+	h.fake.AppRecordCode, h.fake.TenantQueryCode = 0, 0
+	h.fake.mu.Unlock()
+	h.clock = h.clock.Add(61 * time.Minute)
+	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 1 {
+		t.Fatalf("a failed lookup was not retried: %d", refreshed)
+	}
+	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.AppName != "Renamed Agent" || app.TenantName != "Renamed Org" || app.NamesDetail != "" {
+		t.Fatalf("the app record fallback did not name the app: %+v", app)
+	}
+
+	// Integrations off: nothing reaches Feishu.
+	h.service.Integrations = integrations.New(false)
+	h.clock = h.clock.Add(48 * time.Hour)
+	before := h.fake.TenantTokensIssued()
+	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 0 || h.fake.TenantTokensIssued() != before {
+		t.Fatalf("names were read with integrations off: %d", refreshed)
+	}
+}
+
+func TestOrganisationDomainStandsInForARefusedTenantName(t *testing.T) {
+	h := newHarness(t)
+	h.fake.mu.Lock()
+	h.fake.TenantQueryCode = 99991672
+	h.fake.MailboxEmail = "Ada@Mail.Example.COM"
+	h.fake.mu.Unlock()
+	account := h.connect()
+	if account.TenantName != "" || account.OrgDomain != "mail.example.com" {
+		t.Fatalf("sign-in did not read the mailbox domain: %+v", account)
+	}
+
+	// enterprise_email wins over the mailbox, read with a live token of the
+	// account (no refresh, no use recorded).
+	h.fake.mu.Lock()
+	h.fake.EnterpriseEmail = "ada@example.com"
+	h.fake.mu.Unlock()
+	before := mustGet(t, h, account.ID)
+	h.clock = h.clock.Add(61 * time.Minute)
+	if refreshed := h.service.RefreshStaleAppNames(h.ctx); refreshed != 1 {
+		t.Fatalf("names were not read again: %d", refreshed)
+	}
+	app, _ := h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.OrgDomain != "example.com" || app.TenantName != "" {
+		t.Fatalf("enterprise_email did not name the organisation: %+v", app)
+	}
+	if after := mustGet(t, h, account.ID); after.LastUsedAt != before.LastUsedAt || after.LastRefreshedAt != before.LastRefreshedAt {
+		t.Fatalf("reading the domain used or refreshed the account: %+v", after)
+	}
+	accounts, _ := h.service.Accounts(h.ctx, "user_owner")
+	if accounts[0].OrgDomain != "example.com" {
+		t.Fatalf("listed account carries no domain: %+v", accounts[0])
+	}
+
+	// Both refused: the last domain stays and the reason is recorded.
+	h.fake.mu.Lock()
+	h.fake.EnterpriseEmail, h.fake.MailboxEmail = "", ""
+	h.fake.mu.Unlock()
+	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"}); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.OrgDomain != "example.com" || !strings.Contains(app.NamesDetail, "org domain:") {
+		t.Fatalf("a refused domain lookup lost the domain or its reason: %+v", app)
+	}
+
+	// The organisation's name, once readable, is all that is asked for.
+	h.fake.mu.Lock()
+	h.fake.TenantQueryCode = 0
+	h.fake.mu.Unlock()
+	if _, err := h.service.RefreshNow(h.ctx, mustGet(t, h, account.ID), Use{By: "manual"}); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	app, _ = h.store.GetExternalProviderApp(h.ctx, h.app.ID)
+	if app.TenantName != "Fake Org" || app.NamesDetail != "" {
+		t.Fatalf("the tenant name did not take over: %+v", app)
+	}
+}
+
+func TestEmailDomain(t *testing.T) {
+	for address, want := range map[string]string{
+		"ada@example.com": "example.com", "a@b@Corp.CN ": "corp.cn", "@example.com": "", "ada@localhost": "", "": "",
+	} {
+		if got := emailDomain(address); got != want {
+			t.Errorf("emailDomain(%q) = %q, want %q", address, got, want)
+		}
+	}
 }

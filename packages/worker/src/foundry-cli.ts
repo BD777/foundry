@@ -93,6 +93,27 @@ function toolArguments(
       case "file":
         args[spec.argument] = readFileSync(value(), "utf8");
         break;
+      case "json": {
+        const text = value();
+        try {
+          args[spec.argument] = JSON.parse(text);
+        } catch {
+          throw new FoundryClientError(`${word} needs JSON, got ${text}`);
+        }
+        break;
+      }
+      case "jsonFile": {
+        // Large arguments (an upload's piece) exceed a command line's limit.
+        const path = value();
+        try {
+          args[spec.argument] = JSON.parse(readFileSync(path, "utf8"));
+        } catch (error) {
+          throw new FoundryClientError(
+            `${word} needs a file of JSON: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        break;
+      }
       default:
         args[spec.argument] = value();
     }
@@ -232,7 +253,7 @@ function usage(): string {
       const flags = Object.entries(spec.flags).map(([flag, { kind }]) =>
         kind === "boolean"
           ? flag
-          : `${flag} <${kind === "file" ? "path" : kind}>`,
+          : `${flag} <${kind === "file" || kind === "jsonFile" ? "path" : kind}>`,
       );
       lines.push(
         `  ${words.join(" ")}${flags.length ? ` [${flags.join(" ")}]` : ""}   (${spec.tool})`,

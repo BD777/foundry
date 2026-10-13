@@ -38,6 +38,10 @@
 
 **交付目标：** 统一管理多个 Issue 对单机和多 Host 上的浏览器实例、桌面会话、Simulator、端口等共享资源的分配、独占、排队、释放与故障回收，支持异地验证。
 
+> 当前实现状态（2026-10-13）：资源清单已落地，只做发现，不做占用。Worker 的 `resources` 模块（`packages/worker/src/resources/`）按类型 × OS 注册 detector（browser、macOS 屏幕控制、iOS/Android 模拟器、adb/devicectl 设备、GPU、Docker/Podman、git/node/go/python/xcodebuild、gh/AWS/kubectl 账号名、工作区磁盘），每个都被动、限时、失败互相隔离；连接时、按各自间隔和“重新检测”时扫描，变化时经 `resources_report` 上报完整快照。Server 的 `resources` 包按设备对账：稳定 id 由来源 + key 哈希得到，快照里消失的标为 gone（保留 30 天），detector 失败的保留上次结果并标 stale，设备离线时标 offline。数据经 `GET /api/resources`、MCP `list_resources`（新增 `instances`）和全局 Resources 页（Manage 区）提供，变化通过 `resources_changed` 推送。Lease、操作、computer-use 后端选择仍未实现；会话被告知的资源（浏览器、Worker 自身的 macOS 屏幕控制）暂不变。
+
+> compute（2026-10-13）：每台设备上报一个 `compute` 实例（CPU、内存、OS/架构、负载），由设备 owner 在 Resources 页打开“Allow remote commands from my sessions”后（server 存 `resource_source_settings`，经 `resource_settings` 下发，Worker 自己也执行），owner 自己发起的会话才能独占租用它，经 `operate_resource` 执行 `run`/`put_files`/`get_file`/`git_sync`/`cleanup`：以 Worker 用户身份运行，cwd 限于 `~/.foundry/compute/<scratch>/` 或会话有 Member 权限、且在该设备上的工作区；每次操作审计命令行、cwd、退出码、耗时和字节数，不存输出。`scripts/remote-check.sh <device>` 用它把当前改动放到另一台设备上跑 `check-changed.sh`。
+
 实现先从单机做起，再扩展跨 Host；两者属于同一项 Roadmap 能力，异地验证是它的应用场景。单机分配与回收完成后，还需补齐跨机授权、构建传输、版本关联和断线恢复，才能实现可信的异地验证。
 
 **接下来做：** 在已接入的 Browser 或 Simulator 环境上试点统一资源身份、容量与占用记录、分配队列、释放重置、健康检查和故障回收；再扩展到其他已接入资源。各工具的基础操作与证据采集由 Tool Use 提供，本项负责跨 Issue 的竞争与复用。

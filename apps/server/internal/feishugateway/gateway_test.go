@@ -49,8 +49,13 @@ func TestDerivedHandlesBelongToOneAppHandle(t *testing.T) {
 	app := appHandlePrefix + seed
 	user, ok := derivedHandle(app, userHandlePrefix)
 	tenant, ok2 := derivedHandle(app, tenantHandlePrefix)
-	if !ok || !ok2 || !strings.HasPrefix(user, "fsu_") || !strings.HasPrefix(tenant, "fst_") || user[4:] == tenant[4:] {
-		t.Fatalf("derived: %q %q", user, tenant)
+	refresh, ok3 := derivedHandle(app, refreshHandlePrefix)
+	if !ok || !ok2 || !ok3 || !strings.HasPrefix(user, "fsu_") || !strings.HasPrefix(tenant, "fst_") || !strings.HasPrefix(refresh, "fsr_") ||
+		user[4:] == tenant[4:] || refresh[4:] == user[4:] || refresh[4:] == tenant[4:] {
+		t.Fatalf("derived: %q %q %q", user, tenant, refresh)
+	}
+	if handleKind(refresh) != "" {
+		t.Fatal("a refresh handle is accepted as a bearer or app handle")
 	}
 	again, _ := derivedHandle(app, tenantHandlePrefix)
 	if again != tenant {

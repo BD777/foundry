@@ -88,6 +88,8 @@ type WSManager struct {
 	apps     map[string]*botApp
 	failed   map[string]string
 	sessions map[string]*sessionMetadata
+	// naming are the chat routes whose name is being refreshed.
+	naming map[string]bool
 	// syncing runs one Sync at a time.
 	syncing sync.Mutex
 	// reporting serializes Issue reports, so one update is posted once.
@@ -382,6 +384,10 @@ func (m *WSManager) ConnectionChanged(appID string, status feishuevents.Status) 
 // HandleEvent is the Workspace Bot route: a message event of a bot app goes
 // to the workspace its thread or chat routes to, and is dropped otherwise.
 func (m *WSManager) HandleEvent(ctx context.Context, event feishuevents.Event) {
+	if event.Type == chatUpdated {
+		m.handleChatUpdated(ctx, event)
+		return
+	}
 	if event.Type != messageReceived {
 		return
 	}
@@ -431,7 +437,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 		return nil
 	}
 	if strings.HasPrefix(cleanText, "/pair") {
-		return m.handlePairCommand(ctx, app, messageID, chatID, chatType, cleanText)
+		return m.handlePairCommand(ctx, app, messageID, chatID, chatType, senderOpenID(event), cleanText)
 	}
 	inThread := rootID != "" && rootID != messageID
 	if inThread {
@@ -449,6 +455,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 		log.Printf("[feishu] message in chat %s of app %s dropped: the chat is not paired with a workspace", chatID, app.clientID)
 		return nil
 	}
+	m.notePeer(ctx, route, senderOpenID(event))
 	hasMention := len(msg.Mentions) > 0 || strings.Contains(rawContent, "@_user_")
 	if !hasMention && route.Kind != store.FeishuRouteP2P {
 		return nil
@@ -467,7 +474,7 @@ func (m *WSManager) replyFailure(ctx context.Context, client botClient, messageI
 
 // handlePairCommand binds the chat to the workspace whose pairing code it
 // sends, on this app; the chat acts as the account that generated the code.
-func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageID, chatID, chatType, text string) error {
+func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageID, chatID, chatType, sender, text string) error {
 	fields := strings.Fields(text)
 	if len(fields) < 2 {
 		m.replyFailure(ctx, app.client, messageID, "配对失败", "请输入有效的配对码，例如：`@机器人 /pair FND-1234`", "参数缺失")
@@ -489,10 +496,18 @@ func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageI
 		wsName = workspace.Name
 	}
 	chat := store.FeishuBotRoute{Kind: store.FeishuRouteChat, ChatID: chatID, BoundUserID: pairing.PairingCodeCreatedBy}
+	var nameErr error
 	if chatType == "p2p" {
-		chat.Kind = store.FeishuRouteP2P
+		chat.Kind, chat.PeerOpenID = store.FeishuRouteP2P, sender
+		if sender != "" {
+			chat.ChatName, nameErr = app.client.UserName(ctx, sender)
+		}
 	} else {
-		chat.ChatName, _ = app.client.GetChatInfo(ctx, chatID)
+		chat.ChatName, nameErr = app.client.ChatName(ctx, chatID)
+	}
+	chat.ChatNameCheckedAt = time.Now().UTC().Format(time.RFC3339)
+	if nameErr != nil {
+		chat.ChatNameError = nameErr.Error()
 	}
 	previous, _ := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID)
 	if _, err := m.store.BindFeishuChat(ctx, pairing, chat); err != nil {

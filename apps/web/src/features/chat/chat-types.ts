@@ -100,7 +100,11 @@ export interface ChatSubagentItem {
  * A timer's firing. `answerUnloaded`: its turn is older than the events
  * loaded, so its answer is not here yet (it comes with them).
  */
-export type ChatTimerFire = AgentSessionTimerFire & { answerUnloaded?: true };
+export type ChatTimerFire = AgentSessionTimerFire & {
+  answerUnloaded?: true;
+  /** The run ended in an error (its response is the error). */
+  failed?: true;
+};
 
 export interface ChatTimerItem {
   detail?: string;

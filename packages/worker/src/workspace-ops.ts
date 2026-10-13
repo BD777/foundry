@@ -3,7 +3,7 @@
  * and daemon connection helpers.
  */
 
-import { discoverResources } from "./resource-pool.js";
+import { discoverResources } from "./resources/index.js";
 import {
   chatFingerprint,
   chatUploads,
@@ -19,6 +19,12 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import {
+  resourceComputeCapability,
+  resourceOperationsCapability,
+  resourcesCapability,
+  workspaceFoldersCapability,
+} from "@bd777/foundry-protocol";
 import type {
   AgentModelOption,
   AgentProfileProjection,
@@ -448,20 +454,27 @@ export const daemonCapabilities = [
   "verification_sessions",
   "attachment_files",
   "feishu_gateway",
+  workspaceFoldersCapability,
+  resourcesCapability,
+  resourceOperationsCapability,
+  resourceComputeCapability,
 ];
 
 /**
  * A hello that names every workspace the daemon serves (the
  * workspace_inventory capability): the server marks the device's other
- * workspaces unavailable on it.
+ * workspaces unavailable on it. Those it still has but whose folder is gone
+ * are named apart (the workspace_folders capability).
  */
 export function withServedWorkspaces<T extends object>(
   registration: T,
   served: ReadonlyArray<{ workspace: { id: string } }>,
-): T & { servedWorkspaceIds: string[] } {
+  missingWorkspaceIds: readonly string[] = [],
+): T & { servedWorkspaceIds: string[]; missingWorkspaceIds: string[] } {
   return {
     ...registration,
     servedWorkspaceIds: served.map((item) => item.workspace.id),
+    missingWorkspaceIds: [...missingWorkspaceIds],
   };
 }
 

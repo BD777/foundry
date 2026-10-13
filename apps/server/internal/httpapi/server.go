@@ -18,6 +18,7 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
+	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/skillrepo"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -45,6 +46,10 @@ type Server struct {
 	accounts           store.AccountStore
 	// externalAccounts holds people's third-party logins (external_accounts.go).
 	externalAccounts *externalaccounts.Service
+	// resources is the inventory devices report (resources.go).
+	resources *resources.Service
+	// leases decide who holds which instance (resource_leases.go).
+	leases *resources.Leases
 	// feishuGateway is how sessions reach Feishu with those logins
 	// (external_accounts_gateway.go); nil without external accounts.
 	feishuGateway *feishugateway.Gateway
@@ -154,6 +159,10 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 	}
 	server.externalAccounts = newExternalAccountService(store, server.secrets, options.Integrations)
 	server.hub.externalAccounts = server.externalAccounts
+	server.resources = newResourceService(store, server.hub, stream)
+	server.hub.resources = server.resources
+	server.leases = newResourceLeases(store, server.resources, server.hub)
+	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.externalAccounts, options.Integrations)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
@@ -163,14 +172,16 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
 		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
+		server.resourceLeasesDeviceConnected(ctx, deviceID, capabilities)
 	}
 	server.feishu = feishu.NewWSManager(store, server.secrets, server, stream)
 	server.feishu.Integrations = options.Integrations
 	server.wireFeishuEvents(store, options.Integrations)
 	// What follows a session's changes, in this order: its Feishu card, the
-	// chat's queued messages, the chat's title; and, once a device that
-	// reported a session ended was answered, naming what it answered.
-	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles)
+	// chat's queued messages, the chat's title, the resources it leases;
+	// and, once a device that reported a session ended was answered, naming
+	// what it answered.
+	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server})
 	issues.observe(feishuReactions{server.feishu})
 	return server
 }
@@ -251,12 +262,16 @@ func (s *Server) allEffectiveSkillRoots(ctx context.Context, devices []store.Dev
 	return result, nil
 }
 
+// noWorkspaceSelected asks a data read for no workspace: the person removed
+// the one they were in and has not switched to another yet.
+const noWorkspaceSelected = "none"
+
 func selectWorkspace(ctx context.Context, st store.Store, workspaces []store.WorkspaceProjection, workspaceID string) (store.WorkspaceProjection, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID != "" {
+	if workspaceID != "" && workspaceID != noWorkspaceSelected {
 		return st.GetWorkspace(ctx, workspaceID)
 	}
-	if len(workspaces) > 0 {
+	if len(workspaces) > 0 && workspaceID != noWorkspaceSelected {
 		return workspaces[0], nil
 	}
 	return store.WorkspaceProjection{

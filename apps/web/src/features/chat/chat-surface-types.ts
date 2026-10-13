@@ -18,6 +18,7 @@ import type {
   ChatRunningBackgroundWork,
 } from "./chat-types";
 import type { ChatListStatus } from "./chat-list-state";
+import type { ChatTimerFire } from "./chat-types";
 import type { ProcessDisplayItem } from "./chat-process-display";
 import type { ChatUpdateTime } from "./chat-time";
 
@@ -117,6 +118,8 @@ export interface ChatSurfaceProps {
   scheduleWakes?: {
     busy: boolean;
     wakes: ReadonlyMap<string, ClaudeTimerWake>;
+    /** The timers' last ended run, when it failed. */
+    failedRun?: ChatTimerFire;
   };
   claudeEffort: ClaudeEffort | "";
   claudePermissionMode: ClaudePermissionMode;

@@ -66,6 +66,10 @@ test("tab titles name the most specific thing first", () => {
     }),
     "byte-dev · Devices — Foundry",
   );
+  assert.equal(
+    title({ view: "resources", workspaceName: "foundry" }),
+    "Resources — Foundry",
+  );
   assert.equal(title({ view: "chats", workspaceName: "" }), "Chats — Foundry");
   assert.equal(buildDocumentTitle({}), "Foundry");
 });

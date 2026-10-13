@@ -136,6 +136,8 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_session_usage_backfills", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},
 	{"feishu_gateway_grants", "session_id", ownerSession},
+	{"resource_waits", "session_id", ownerSession},
+	{"resource_operations", "session_id", ownerSession},
 	{"evidence_requests", sessionRequestOwner, ownerSession},
 	{"evidence_records", "issue_id", ownerIssue},
 	{"acceptance_artifacts", "issue_id", ownerIssue},

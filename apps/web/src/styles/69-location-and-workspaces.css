@@ -377,12 +377,16 @@
 }
 .fdy-location-current {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   font-size: 12px;
   color: var(--fdy-ink-muted);
 }
 .fdy-location-current strong {
+  color: var(--fdy-ink-strong);
+}
+.fdy-location-current-prompt {
   color: var(--fdy-ink-strong);
 }
 /* Workspaces page: one group per device, no nested surfaces. */
@@ -469,6 +473,19 @@
   align-items: center;
   gap: 8px;
   padding-right: 4px;
+}
+/* Folders that look like a moved workspace's: one flat choice list. */
+.fdy-workspace-locate-suggestions {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.fdy-workspace-locate-suggestions-title {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+.fdy-workspace-locate-suggestion {
+  gap: 10px;
 }
 .fdy-location-add-again {
   display: flex;

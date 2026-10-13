@@ -1,53 +1,60 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-  ExternalAccount,
-  ExternalProvider,
-  ExternalProviderApp,
-} from "@bd777/foundry-protocol";
+import type { ExternalAccount } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Checkbox } from "../../components/ui/field";
 import {
-  accountName,
   accountUsable,
+  customLabel,
+  personName,
   relativeWhen,
   statusDetailText,
   statusLabel,
   statusTone,
 } from "./account-format";
+import { RowMenu, type RowMenuItem } from "./row-menu";
 
 export type AccountAction =
   | "refresh"
   | "revoke"
   | "remove"
   | "reconnect"
+  | "reauthorize"
   | "keep-alive-on"
   | "keep-alive-off";
 
+/**
+ * One connected account: who it is, where (organisation and app, unless the
+ * group it sits in already says), its state, the workspaces bound to it and
+ * whether Foundry keeps it alive. The frequent action is a button; the rest
+ * sit in the row's menu, after app-level items the caller adds.
+ */
 export function AccountRow({
   account,
-  app,
-  provider,
+  place,
+  canReauthorize,
   busy,
   onAction,
+  appItems = [],
+  children,
 }: {
   account: ExternalAccount;
-  app?: ExternalProviderApp;
-  provider?: ExternalProvider;
+  /** Organisation and app, or "" when the surrounding group names them. */
+  place: string;
+  /** The account's app is on the page, so it can sign in again through it. */
+  canReauthorize: boolean;
   busy: boolean;
   onAction: (action: AccountAction) => void;
+  /** Items about the account's app, listed in the row's menu. */
+  appItems?: RowMenuItem[];
+  /** App-level notes and forms shown under the row. */
+  children?: ReactNode;
 }) {
   const { t } = useTranslation("externalAccounts");
   const usable = accountUsable(account);
-  const name = accountName(account);
-  const identity = [
-    account.displayName || t("list.identityUnknown"),
-    account.tenant ? t("list.tenant", { tenant: account.tenant }) : "",
-    app ? t("list.app", { app: app.label }) : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const name = personName(account);
+  const label = customLabel(account);
   const bound = account.workspaceIds?.length ?? 0;
   const lifetime = !usable
     ? account.lastRefreshedAt
@@ -63,26 +70,60 @@ export function AccountRow({
         ? t("keepAlive.off", { when: relativeWhen(account.refreshExpiresAt) })
         : t("keepAlive.offUnknown");
   const detail = statusDetailText(account);
+  const items: RowMenuItem[] = [
+    ...(usable && canReauthorize
+      ? [
+          {
+            key: "reauthorize",
+            label: t("actions.reauthorize"),
+            onSelect: () => onAction("reauthorize"),
+          },
+        ]
+      : []),
+    ...appItems,
+    ...(account.status !== "revoked"
+      ? [
+          {
+            key: "revoke",
+            label: t("actions.revoke"),
+            onSelect: () => onAction("revoke"),
+            confirm: {
+              title: t("actions.revokeTitle", { name }),
+              body: t("actions.revokeBody"),
+              action: t("actions.revoke"),
+            },
+          },
+        ]
+      : []),
+    {
+      key: "remove",
+      label: t("actions.remove"),
+      onSelect: () => onAction("remove"),
+      confirm: {
+        title: t("actions.removeTitle", { name }),
+        body: t("actions.removeBody"),
+        action: t("actions.remove"),
+      },
+    },
+  ];
   return (
     <li className="fdy-xacc-row" data-status={account.status}>
       <div className="fdy-xacc-row-main">
         <div className="fdy-xacc-identity">
           <strong>{name}</strong>
-          <span>{identity}</span>
+          {label || place ? (
+            <span>{[label, place].filter(Boolean).join(" · ")}</span>
+          ) : null}
           <small>
             {[
-              provider
-                ? t("list.usedBy", {
-                    provider: provider.label,
-                    tools: provider.tools.join(", "),
-                  })
-                : account.provider,
               bound
                 ? t("list.workspaces", { count: bound })
                 : t("list.notBound"),
-            ].join(" · ")}
+              lifetime,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </small>
-          {lifetime ? <small>{lifetime}</small> : null}
         </div>
         <Badge tone={statusTone(account.status)}>
           {statusLabel(account.status)}
@@ -93,6 +134,7 @@ export function AccountRow({
           {detail}
         </p>
       ) : null}
+      {children}
       <div className="fdy-xacc-row-actions">
         {usable ? (
           <label className="fdy-xacc-check">
@@ -119,7 +161,7 @@ export function AccountRow({
             >
               {t("actions.refresh")}
             </Button>
-          ) : app ? (
+          ) : canReauthorize ? (
             <Button
               disabled={busy}
               onClick={() => onAction("reconnect")}
@@ -129,25 +171,7 @@ export function AccountRow({
               {t("actions.reconnect")}
             </Button>
           ) : null}
-          {account.status !== "revoked" ? (
-            <ConfirmButton
-              confirmLabel={t("actions.revokeConfirm")}
-              disabled={busy}
-              onConfirm={() => onAction("revoke")}
-              size="sm"
-            >
-              {t("actions.revoke")}
-            </ConfirmButton>
-          ) : null}
-          <ConfirmButton
-            confirmLabel={t("actions.removeConfirm")}
-            disabled={busy}
-            onConfirm={() => onAction("remove")}
-            size="sm"
-            variant="ghost"
-          >
-            {t("actions.remove")}
-          </ConfirmButton>
+          <RowMenu disabled={busy} items={items} label={name} />
         </span>
       </div>
     </li>
