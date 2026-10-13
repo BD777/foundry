@@ -26,6 +26,168 @@ export interface ChatScrollFollowController {
   viewportRef: RefObject<HTMLDivElement | null>;
 }
 
+const scrollKeys = [
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  " ",
+];
+
+function viewportMetrics(viewport: HTMLElement): ChatViewportMetrics {
+  return {
+    clientHeight: viewport.clientHeight,
+    scrollHeight: viewport.scrollHeight,
+    scrollTop: viewport.scrollTop,
+  };
+}
+
+function scrollViewportToLatest(
+  viewport: HTMLElement,
+  behavior: ScrollBehavior,
+): void {
+  const reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  const effectiveBehavior = chatEffectiveScrollBehavior(
+    behavior,
+    viewportMetrics(viewport),
+    reduceMotion,
+  );
+  if (effectiveBehavior === "auto") {
+    viewport.scrollTop = viewport.scrollHeight;
+    return;
+  }
+  viewport.scrollTo({
+    behavior: effectiveBehavior,
+    top: viewport.scrollHeight,
+  });
+}
+
+/** A scroll key meant for the transcript, not for a field or another pane. */
+function keyScrollsViewport(
+  event: KeyboardEvent,
+  viewport: HTMLElement,
+): boolean {
+  if (!scrollKeys.includes(event.key)) {
+    return false;
+  }
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement)
+  ) {
+    return false;
+  }
+  const activeElement = document.activeElement;
+  const scrollRoot = viewport.parentElement;
+  const documentOwnsFocus =
+    target === document.body || target === document.documentElement;
+  return (
+    documentOwnsFocus ||
+    viewport.matches(":hover") ||
+    (activeElement !== null &&
+      (viewport.contains(activeElement) ||
+        Boolean(scrollRoot?.contains(activeElement))))
+  );
+}
+
+interface UserScrollInput {
+  /** When the person last scrolled with wheel, touch, keys or the scrollbar. */
+  at: number;
+  scrollbarHeld: boolean;
+}
+
+/**
+ * Tells the follow mode about the person's scrolling of `viewport`: wheel,
+ * touch, keys and its scrollbar. Returns the cleanup.
+ */
+function watchViewportScrolling(
+  viewport: HTMLElement,
+  input: UserScrollInput,
+  transition: (event: ChatScrollFollowEvent) => ChatScrollFollowMode,
+  personScrolling: () => boolean,
+): () => void {
+  // Scrolls within this window of the person's own input, or while they
+  // hold the scrollbar, are theirs; any other scroll comes from content
+  // resizing and must not resume following.
+  const userInput = (): void => {
+    input.at = performance.now();
+  };
+  const markHistoryReading = (): void => {
+    userInput();
+    transition({ type: "user.scroll-intent" });
+  };
+  const syncFollowFromPosition = (): void => {
+    const byUser = personScrolling();
+    transition({
+      type: byUser ? "user.scrolled" : "viewport.scrolled",
+      viewport: viewportMetrics(viewport),
+    });
+  };
+  const handleWheel = (event: WheelEvent): void => {
+    if (
+      event.deltaY < 0 ||
+      (event.deltaY !== 0 && !chatViewportIsAtLatest(viewportMetrics(viewport)))
+    ) {
+      markHistoryReading();
+    } else if (event.deltaY > 0) {
+      // Scrolling down while already at the bottom moves nothing, so no
+      // scroll event follows; the intent alone resumes following.
+      userInput();
+      transition({
+        type: "user.scrolled",
+        viewport: viewportMetrics(viewport),
+      });
+    }
+  };
+  const handlePointerDown = (event: PointerEvent): void => {
+    const target = event.target;
+    const outside = target instanceof Node && !viewport.contains(target);
+    if (event.button === 1 || outside) {
+      markHistoryReading();
+    }
+    // A press on the viewport itself, not its content, is its scrollbar.
+    if (target === viewport || outside) {
+      input.scrollbarHeld = true;
+    }
+  };
+  const handlePointerUp = (): void => {
+    if (input.scrollbarHeld) userInput();
+    input.scrollbarHeld = false;
+  };
+  const handleKeyDown = (event: KeyboardEvent): void => {
+    if (keyScrollsViewport(event, viewport)) markHistoryReading();
+  };
+  const scrollRoot = viewport.parentElement;
+  viewport.addEventListener("scroll", syncFollowFromPosition, {
+    passive: true,
+  });
+  viewport.addEventListener("wheel", handleWheel, { passive: true });
+  viewport.addEventListener("touchmove", markHistoryReading, {
+    passive: true,
+  });
+  scrollRoot?.addEventListener("pointerdown", handlePointerDown, {
+    passive: true,
+  });
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("pointerup", handlePointerUp, { passive: true });
+  syncFollowFromPosition();
+  return () => {
+    viewport.removeEventListener("scroll", syncFollowFromPosition);
+    viewport.removeEventListener("wheel", handleWheel);
+    viewport.removeEventListener("touchmove", markHistoryReading);
+    scrollRoot?.removeEventListener("pointerdown", handlePointerDown);
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("pointerup", handlePointerUp);
+  };
+}
+
 export function useChatScrollFollow(
   threadKey: string,
 ): ChatScrollFollowController {
@@ -33,7 +195,10 @@ export function useChatScrollFollow(
   const contentRef = useRef<HTMLDivElement | null>(null);
   const modeRef = useRef<ChatScrollFollowMode>("following");
   const scrollFrameRef = useRef<number | null>(null);
-  const userInputRef = useRef({ at: -Infinity, scrollbarHeld: false });
+  const userInputRef = useRef<UserScrollInput>({
+    at: -Infinity,
+    scrollbarHeld: false,
+  });
   const [showScrollToLatest, setShowScrollToLatest] = useState(false);
 
   const transition = useCallback(
@@ -53,29 +218,7 @@ export function useChatScrollFollow(
 
   const scrollToLatest = useCallback((behavior: ScrollBehavior = "auto") => {
     const viewport = viewportRef.current;
-    if (!viewport) {
-      return;
-    }
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const effectiveBehavior = chatEffectiveScrollBehavior(
-      behavior,
-      {
-        clientHeight: viewport.clientHeight,
-        scrollHeight: viewport.scrollHeight,
-        scrollTop: viewport.scrollTop,
-      },
-      reduceMotion,
-    );
-    if (effectiveBehavior === "auto") {
-      viewport.scrollTop = viewport.scrollHeight;
-      return;
-    }
-    viewport.scrollTo({
-      behavior: effectiveBehavior,
-      top: viewport.scrollHeight,
-    });
+    if (viewport) scrollViewportToLatest(viewport, behavior);
   }, []);
 
   const scheduleScrollToLatest = useCallback(
@@ -133,122 +276,12 @@ export function useChatScrollFollow(
     if (!viewport) {
       return undefined;
     }
-    const viewportMetrics = (): ChatViewportMetrics => ({
-      clientHeight: viewport.clientHeight,
-      scrollHeight: viewport.scrollHeight,
-      scrollTop: viewport.scrollTop,
-    });
-    // Scrolls within this window of the person's own input, or while they
-    // hold the scrollbar, are theirs; any other scroll comes from content
-    // resizing and must not resume following.
-    const input = userInputRef.current;
-    const userInput = (): void => {
-      input.at = performance.now();
-    };
-    const markHistoryReading = (): void => {
-      userInput();
-      transition({ type: "user.scroll-intent" });
-    };
-    const syncFollowFromPosition = (): void => {
-      const byUser = personScrolling();
-      transition({
-        type: byUser ? "user.scrolled" : "viewport.scrolled",
-        viewport: viewportMetrics(),
-      });
-    };
-    const handleWheel = (event: WheelEvent): void => {
-      if (
-        event.deltaY < 0 ||
-        (event.deltaY !== 0 && !chatViewportIsAtLatest(viewportMetrics()))
-      ) {
-        markHistoryReading();
-      } else if (event.deltaY > 0) {
-        // Scrolling down while already at the bottom moves nothing, so no
-        // scroll event follows; the intent alone resumes following.
-        userInput();
-        transition({ type: "user.scrolled", viewport: viewportMetrics() });
-      }
-    };
-    const handlePointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (
-        event.button === 1 ||
-        (target instanceof Node && !viewport.contains(target))
-      ) {
-        markHistoryReading();
-      }
-      // A press on the viewport itself, not its content, is its scrollbar.
-      if (
-        target === viewport ||
-        (target instanceof Node && !viewport.contains(target))
-      ) {
-        input.scrollbarHeld = true;
-      }
-    };
-    const handlePointerUp = (): void => {
-      if (input.scrollbarHeld) userInput();
-      input.scrollbarHeld = false;
-    };
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (
-        ![
-          "ArrowDown",
-          "ArrowUp",
-          "End",
-          "Home",
-          "PageDown",
-          "PageUp",
-          " ",
-        ].includes(event.key)
-      ) {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target instanceof HTMLInputElement ||
-          target instanceof HTMLTextAreaElement ||
-          target instanceof HTMLSelectElement)
-      ) {
-        return;
-      }
-      const activeElement = document.activeElement;
-      const scrollRoot = viewport.parentElement;
-      const documentOwnsFocus =
-        target === document.body || target === document.documentElement;
-      if (
-        documentOwnsFocus ||
-        viewport.matches(":hover") ||
-        (activeElement !== null &&
-          (viewport.contains(activeElement) ||
-            Boolean(scrollRoot?.contains(activeElement))))
-      ) {
-        markHistoryReading();
-      }
-    };
-    const scrollRoot = viewport.parentElement;
-    viewport.addEventListener("scroll", syncFollowFromPosition, {
-      passive: true,
-    });
-    viewport.addEventListener("wheel", handleWheel, { passive: true });
-    viewport.addEventListener("touchmove", markHistoryReading, {
-      passive: true,
-    });
-    scrollRoot?.addEventListener("pointerdown", handlePointerDown, {
-      passive: true,
-    });
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("pointerup", handlePointerUp, { passive: true });
-    syncFollowFromPosition();
-    return () => {
-      viewport.removeEventListener("scroll", syncFollowFromPosition);
-      viewport.removeEventListener("wheel", handleWheel);
-      viewport.removeEventListener("touchmove", markHistoryReading);
-      scrollRoot?.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
+    return watchViewportScrolling(
+      viewport,
+      userInputRef.current,
+      transition,
+      personScrolling,
+    );
   }, [personScrolling, threadKey, transition]);
 
   useEffect(() => {

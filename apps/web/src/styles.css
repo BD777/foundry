@@ -1,8 +1,22 @@
 @import "streamdown/styles.css";
 @import "./styles/00-foundation.css";
 @import "./styles/08-composer.css";
-@import "./styles/10-issues.css";
-@import "./styles/20-chat.css";
+/* Import order is cascade order. An area split into several sheets
+   (10-issues-*, 20-chat-*) is listed in cascade order, not by name. */
+@import "./styles/10-issues-setup.css";
+@import "./styles/10-issues-board.css";
+@import "./styles/10-issues-list.css";
+@import "./styles/10-issues-detail.css";
+@import "./styles/10-issues-inspector.css";
+@import "./styles/20-chat-list.css";
+@import "./styles/20-chat-thread-and-context.css";
+@import "./styles/20-chat-detail.css";
+@import "./styles/20-chat-transcript.css";
+@import "./styles/20-chat-process.css";
+@import "./styles/20-chat-markdown.css";
+@import "./styles/20-chat-tool-call-and-issue-draft.css";
+@import "./styles/20-chat-composer.css";
+@import "./styles/20-chat-composer-controls.css";
 @import "./styles/25-page-layouts.css";
 @import "./styles/30-runs.css";
 @import "./styles/40-assets-and-page-surfaces.css";

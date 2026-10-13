@@ -1,0 +1,345 @@
+.fdy-chat-process {
+  position: relative;
+  width: 100%;
+  margin: -4px 0 0;
+}
+
+.fdy-chat-process + .fdy-chat-message-card {
+  margin-top: -10px;
+}
+
+.fdy-chat-process-trigger {
+  display: inline-flex;
+  max-width: min(100%, 720px);
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--fdy-ink-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  outline: none;
+}
+
+.fdy-chat-process-trigger.fdy-button:hover,
+.fdy-chat-process-trigger.fdy-button:focus,
+.fdy-chat-process-trigger.fdy-button:focus-visible,
+.fdy-chat-process-trigger:focus,
+.fdy-chat-process-trigger:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+.fdy-chat-process-trigger-copy {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fdy-chat-process-trigger-copy strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fdy-ink-muted);
+  font-style: normal;
+  font-weight: 650;
+}
+
+.fdy-chat-process-trigger-meta {
+  flex: 0 0 auto;
+  color: var(--fdy-ink-faint);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fdy-chat-process-trigger-detail {
+  min-width: 0;
+  /* The detail gives way first: the step's label stays readable. */
+  flex: 1 1000 auto;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-style: normal;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-process-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 2px solid var(--fdy-line-strong);
+  border-top-color: var(--fdy-brass-dark);
+  border-radius: 50%;
+  animation: fdy-tool-call-spin 0.8s linear infinite;
+}
+
+.fdy-chat-process-trigger svg {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  transition: transform 0.18s ease;
+}
+
+.fdy-chat-process[data-open="true"] .fdy-chat-process-trigger > svg:last-child {
+  transform: rotate(90deg);
+}
+
+.fdy-chat-process-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.22s ease,
+    opacity 0.18s ease;
+}
+
+.fdy-chat-process[data-open="true"] .fdy-chat-process-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.fdy-chat-process-body-inner {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-process[data-open="true"] .fdy-chat-process-body-inner {
+  max-height: min(360px, 50vh);
+  padding: 7px 4px 8px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.fdy-chat-process-body-inner.fdy-markdown {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.fdy-chat-process-items {
+  display: grid;
+  gap: 2px;
+  padding: 1px 0 3px;
+}
+
+.fdy-chat-process-item {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fdy-chat-process-item-trigger {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.fdy-chat-process-item-trigger.fdy-button {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.fdy-chat-process-item-trigger.fdy-button:hover,
+.fdy-chat-process-item-trigger.fdy-button:focus-visible {
+  border-color: transparent;
+  background: var(--fdy-control-ghost-hover);
+  box-shadow: none;
+}
+
+.fdy-chat-process-item-trigger svg {
+  flex: none;
+  color: var(--fdy-ink-faint);
+  stroke-width: 2;
+}
+
+.fdy-chat-process-item-trigger > svg:last-child {
+  margin-left: auto;
+  transition: transform 0.16s ease;
+}
+
+.fdy-chat-process-item[data-open="true"]
+  .fdy-chat-process-item-trigger
+  > svg:last-child {
+  transform: rotate(90deg);
+}
+
+.fdy-chat-process-item-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.fdy-chat-process-item-copy strong {
+  flex: none;
+  color: var(--fdy-ink-muted);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.fdy-chat-process-item-copy span {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-process[data-live="true"] .fdy-chat-process-trigger-copy,
+.fdy-chat-process[data-live="true"]
+  .fdy-chat-process-item[data-active="true"]
+  .fdy-chat-process-item-copy {
+  background: linear-gradient(
+    100deg,
+    var(--fdy-ink-faint) 0%,
+    var(--fdy-ink-faint) 30%,
+    var(--fdy-blue) 44%,
+    var(--fdy-ink-strong) 50%,
+    var(--fdy-blue) 56%,
+    var(--fdy-ink-faint) 70%,
+    var(--fdy-ink-faint) 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  animation: fdy-shimmer-sweep 2.3s linear infinite;
+}
+
+.fdy-chat-process[data-live="true"] .fdy-chat-process-trigger-copy > *,
+.fdy-chat-process[data-live="true"]
+  .fdy-chat-process-item[data-active="true"]
+  .fdy-chat-process-item-copy
+  > * {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fdy-chat-process[data-live="true"] .fdy-chat-process-trigger-copy,
+  .fdy-chat-process[data-live="true"]
+    .fdy-chat-process-item[data-active="true"]
+    .fdy-chat-process-item-copy {
+    animation: none;
+    background: none;
+    color: var(--fdy-ink-muted);
+  }
+
+  .fdy-chat-process-spinner {
+    border-top-color: var(--fdy-line-strong);
+  }
+}
+
+.fdy-chat-process-item-detail {
+  min-width: 0;
+  padding: 3px 4px 10px 25px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-chat-process-item-detail > :last-child {
+  margin-bottom: 0;
+}
+
+.fdy-chat-process-tool-detail {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 10px;
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-chat-process-tool-detail > span {
+  display: block;
+  padding: 8px 42px 2px 12px;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.fdy-chat-process-item-detail .fdy-chat-process-tool-detail pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 7px 40px 11px 12px;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  color: var(--fdy-ink-muted);
+  font-family:
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.fdy-chat-process-tool-copy.fdy-button {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fdy-ink-faint);
+  opacity: 0;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    opacity 0.14s ease;
+}
+
+.fdy-chat-process-tool-detail:hover .fdy-chat-process-tool-copy,
+.fdy-chat-process-tool-copy.fdy-button:focus-visible,
+.fdy-chat-process-tool-copy.fdy-button[data-copied="true"] {
+  opacity: 1;
+}
+
+.fdy-chat-process-tool-copy.fdy-button:hover {
+  background: var(--fdy-control-ghost-hover);
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-chat-process-tool-copy.fdy-button[data-copied="true"] {
+  color: var(--fdy-success-text);
+}

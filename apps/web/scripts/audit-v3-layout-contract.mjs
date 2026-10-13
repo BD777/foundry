@@ -835,23 +835,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-issue-composer-context",
-    declarations: {
-      display: "inline-flex",
-      "min-width": "0",
-      "max-width": "min(320px, 100%)",
-      "align-items": "center",
-      gap: "5px",
-      overflow: "hidden",
-      color: "var(--fdy-ink-faint)",
-      "font-size": "11.5px",
-      "font-weight": "500",
-      "line-height": "1",
-      "text-overflow": "ellipsis",
-      "white-space": "nowrap",
-    },
-  },
-  {
     selector: ".fdy-board-scroll",
     declarations: {
       width: "100%",
@@ -1098,15 +1081,6 @@ const contracts = [
       "font-weight": "600",
       "text-overflow": "ellipsis",
       "white-space": "nowrap",
-    },
-  },
-  {
-    selector: ".fdy-callout",
-    declarations: {
-      display: "flex",
-      gap: "12px",
-      padding: "14px 16px",
-      "border-radius": "12px",
     },
   },
   {
@@ -1947,48 +1921,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-issue-contract-section",
-    declarations: {
-      "margin-bottom": "20px",
-    },
-  },
-  {
-    selector: ".fdy-source-quote",
-    declarations: {
-      position: "relative",
-      "box-sizing": "border-box",
-      "max-width": "100%",
-      margin: "0 0 20px",
-      padding: "12px 15px",
-      border: "0",
-      "border-radius": "0 9px 9px 0",
-      "font-size": "14px",
-      "line-height": "1.55",
-      "overflow-wrap": "anywhere",
-      "text-wrap": "pretty",
-    },
-  },
-  {
-    selector: ".fdy-source-quote-brass",
-    declarations: {
-      "border-left": "3px solid var(--fdy-warning-border)",
-      background: "var(--fdy-panel-soft)",
-      color: "var(--fdy-warning-text)",
-    },
-  },
-  {
-    selector: ".fdy-inferred-task",
-    declarations: {
-      "max-width": "620px",
-      margin: "0 0 20px",
-      color: "var(--fdy-ink-strong)",
-      "font-size": "14px",
-      "line-height": "1.55",
-      "overflow-wrap": "anywhere",
-      "text-wrap": "pretty",
-    },
-  },
-  {
     selector: ".fdy-detail-block",
     declarations: {
       "min-width": "0",
@@ -2305,37 +2237,6 @@ const contracts = [
       "font-size": "11px",
       "line-height": "1.45",
       "overflow-wrap": "anywhere",
-    },
-  },
-  {
-    selector: ".fdy-confidence-meter",
-    declarations: {
-      display: "flex",
-      width: "100%",
-      "min-width": "0",
-      "align-items": "center",
-      gap: "10px",
-    },
-  },
-  {
-    selector: ".fdy-confidence-track",
-    declarations: {
-      "min-width": "0",
-      height: "6px",
-      flex: "1",
-      overflow: "hidden",
-      "border-radius": "999px",
-      background: "var(--fdy-paper-side)",
-    },
-  },
-  {
-    selector: ".fdy-confidence-meter strong",
-    declarations: {
-      flex: "none",
-      color: "var(--fdy-success-text)",
-      "font-size": "12px",
-      "font-weight": "600",
-      "line-height": "1",
     },
   },
   {
@@ -2989,32 +2890,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-callout-warning",
-    declarations: {
-      "margin-bottom": "22px",
-      padding: "15px 17px",
-      border: "1px solid var(--fdy-brass-line)",
-      background: "var(--fdy-panel-soft)",
-      color: "var(--fdy-brass-dark)",
-    },
-  },
-  {
-    selector: ".fdy-callout-warning .fdy-callout-icon",
-    declarations: {
-      width: "30px",
-      height: "30px",
-      background: "var(--fdy-brass-soft)",
-      color: "var(--fdy-brass-dark)",
-    },
-  },
-  {
-    selector: ".fdy-callout-warning strong",
-    declarations: {
-      color: "var(--fdy-brass-dark)",
-      "font-size": "13.5px",
-    },
-  },
-  {
     selector: ".fdy-provider-settings-grid",
     declarations: {
       display: "grid",
@@ -3248,22 +3123,6 @@ const contracts = [
     selector: ".fdy-page-surface-skills .fdy-callout-info p",
     declarations: {
       color: "var(--fdy-ink-muted)",
-    },
-  },
-  {
-    selector: ".fdy-callout-info",
-    declarations: {
-      "margin-bottom": "24px",
-      border: "1px solid var(--fdy-line)",
-      background: "var(--fdy-info-surface)",
-      color: "var(--fdy-info-text)",
-    },
-  },
-  {
-    selector: ".fdy-callout-info .fdy-callout-icon",
-    declarations: {
-      background: "var(--fdy-info-surface)",
-      color: "var(--fdy-info-text)",
     },
   },
   {
@@ -3671,28 +3530,6 @@ const contracts = [
     },
   },
   {
-    selector: ".fdy-chat-boundary-callout.fdy-callout",
-    declarations: {
-      gap: "11px",
-      padding: "13px 15px",
-      "margin-bottom": "4px",
-    },
-  },
-  {
-    selector: ".fdy-chat-boundary-callout .fdy-callout-icon",
-    declarations: {
-      width: "26px",
-      height: "26px",
-      "border-radius": "7px",
-    },
-  },
-  {
-    selector: ".fdy-chat-boundary-callout.fdy-callout strong",
-    declarations: {
-      "font-size": "12.5px",
-    },
-  },
-  {
     selector: '.fdy-chat-message-card[data-role="user"]',
     declarations: {
       width: "fit-content",
@@ -3709,31 +3546,6 @@ const contracts = [
     declarations: {
       "max-width": "100%",
       "margin-bottom": "4px",
-    },
-  },
-  {
-    selector: ".fdy-chat-message-meta",
-    declarations: {
-      display: "flex",
-      "align-items": "center",
-      gap: "8px",
-      "flex-wrap": "wrap",
-      "margin-bottom": "8px",
-    },
-  },
-  {
-    selector: ".fdy-chat-message-meta .fdy-runtime-mark",
-    declarations: {
-      flex: "none",
-    },
-  },
-  {
-    selector: ".fdy-chat-message-meta strong",
-    declarations: {
-      color: "var(--fdy-ink-faint)",
-      "font-size": "11.5px",
-      "font-weight": "600",
-      "line-height": "1",
     },
   },
   {
@@ -3817,20 +3629,6 @@ const contracts = [
       border: "0",
       background: "var(--fdy-control-ghost-hover)",
       color: "var(--fdy-ink-faint)",
-    },
-  },
-  {
-    selector: ".fdy-chat-safety-note",
-    declarations: {
-      display: "inline-flex",
-      "min-width": "0",
-      "align-items": "center",
-      gap: "5px",
-      color: "var(--fdy-ink-faint)",
-      "font-size": "11px",
-      "font-weight": "500",
-      "line-height": "1",
-      "white-space": "nowrap",
     },
   },
   {

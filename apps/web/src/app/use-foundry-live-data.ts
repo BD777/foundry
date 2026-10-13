@@ -5,13 +5,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  foundryStreamEpoch,
-  foundryStreamOpened,
-  foundryStreamQuietMs,
-  onAnyStreamEvent,
-  reconnectFoundryStream,
-} from "../stream";
+import { foundryStreamOpened, onAnyStreamEvent } from "../stream";
 import type {
   FoundryData,
   FoundryDataField,
@@ -20,30 +14,27 @@ import type {
 import {
   applyFoundryStreamEvents,
   compactFoundryStreamEvents,
-  foundryDataPageFields,
 } from "./foundry-data-projection";
 import { streamEventReads } from "./projections";
 import type { StreamTouchLedger } from "./stream-touches";
+import {
+  useLiveDataReads,
+  type FoundryDataRead,
+  type FoundryDataReadOutcome,
+} from "./use-live-data-reads";
+import { useStreamRecovery } from "./use-stream-recovery";
 
-/** While the stream is down, workspace data is read this often instead. */
-export const streamDownRefreshIntervalMs = 5_000;
-/** The longest wait before a read that keeps failing is made again. */
-export const failedReadRetryCapMs = 5 * 60_000;
+export {
+  failedReadRetryCapMs,
+  streamDownRefreshIntervalMs,
+  type FoundryDataRead,
+} from "./use-live-data-reads";
+export { streamSilenceMs } from "./use-stream-recovery";
+
 /** A hidden tab gets no animation frames; its events apply this often. */
 export const hiddenFlushMs = 250;
-/**
- * While something runs, a connection silent this long is opened again,
- * resuming after its last message (it may have died without an error).
- */
-export const streamSilenceMs = 60_000;
 
 const noPageFields: readonly FoundryDataField[] = [];
-
-/** A read of workspace data: the default set (`all`) and named fields. */
-export interface FoundryDataRead {
-  all: boolean;
-  fields: readonly FoundryDataField[];
-}
 
 export interface UseFoundryLiveDataInput {
   /** A session or Issue runs: live events are expected. */
@@ -51,7 +42,6 @@ export interface UseFoundryLiveDataInput {
   /** The devices shown, to tell a device this tab does not list yet. */
   devices: FoundryData["devices"];
   enabled: boolean;
-  /** Reads workspace data (see FoundryDataRead). */
   /**
    * Reads workspace data (see FoundryDataRead); resolves how it went. A
    * read that did not apply (failed, or skipped while a workspace loads)
@@ -59,7 +49,7 @@ export interface UseFoundryLiveDataInput {
    */
   onRefresh: (
     read: FoundryDataRead,
-  ) => Promise<"applied" | "failed" | "skipped" | void> | void;
+  ) => Promise<FoundryDataReadOutcome> | FoundryDataReadOutcome;
   /**
    * Fields only some pages read (the skill library's catalog) that the
    * views shown need: read when they first show and whenever they change
@@ -95,90 +85,15 @@ export function useFoundryLiveData({
   touches,
   workspaceId,
 }: UseFoundryLiveDataInput): ReadonlySet<FoundryDataField> {
-  const refreshRef = useRef(onRefresh);
   const devicesRef = useRef(devices);
   const workspaceIdRef = useRef(workspaceId);
-  const pageFieldsRef = useRef(pageFields);
-  const lastRefreshAtRef = useRef(Date.now());
-  /** The epoch the last whole read started at; undefined before the first. */
-  const readEpochRef = useRef<number | undefined>(undefined);
-  /** Page fields current since the epoch they were read at. */
-  const pageEpochsRef = useRef(new Map<FoundryDataField, number>());
-  const [loadedPageFields, setLoadedPageFields] = useState<
-    ReadonlySet<FoundryDataField>
-  >(() => new Set());
-  const [streamDown, setStreamDown] = useState(false);
-  /** A read that did not apply waits on this timer to be made again. */
-  const retryRef = useRef({
-    timer: null as number | null,
-    whole: false,
-    failures: 0,
-  });
-  const [pageRetries, setPageRetries] = useState(0);
-  refreshRef.current = onRefresh;
   devicesRef.current = devices;
   workspaceIdRef.current = workspaceId;
-  pageFieldsRef.current = pageFields;
-  /**
-   * Reads the default set (`all`) and the given fields, adding the shown
-   * page fields not current at this epoch to a whole read.
-   */
-  const readLatest = useRef(
-    (all: boolean, fields: readonly FoundryDataField[] = []) => {
-      const epoch = foundryStreamEpoch();
-      const page = new Set(
-        fields.filter((field) => foundryDataPageFields.includes(field)),
-      );
-      if (all) {
-        readEpochRef.current = epoch;
-        for (const field of pageFieldsRef.current)
-          if (pageEpochsRef.current.get(field) !== epoch) page.add(field);
-      }
-      page.forEach((field) => pageEpochsRef.current.set(field, epoch));
-      lastRefreshAtRef.current = Date.now();
-      const read = { all, fields: [...new Set([...fields, ...page])] };
-      const done = (outcome: string | void) => {
-        if (outcome === undefined || outcome === "applied") {
-          retryRef.current.failures = 0;
-          // A whole read that applied makes a waiting whole retry needless.
-          if (all) retryRef.current.whole = false;
-          if (page.size > 0)
-            setLoadedPageFields((loaded) =>
-              [...page].every((field) => loaded.has(field))
-                ? loaded
-                : new Set([...loaded, ...page]),
-            );
-          return;
-        }
-        // Not read (failed, or skipped while a workspace loads): not
-        // current, and read again after a wait that grows while reads fail.
-        for (const field of page)
-          if (pageEpochsRef.current.get(field) === epoch)
-            pageEpochsRef.current.delete(field);
-        const retry = retryRef.current;
-        if (all && outcome === "failed") retry.whole = true;
-        if (page.size === 0 && !retry.whole) return;
-        if (retry.timer !== null) return;
-        retry.failures += 1;
-        retry.timer = window.setTimeout(
-          () => {
-            retry.timer = null;
-            if (retry.whole) {
-              retry.whole = false;
-              void readLatest.current(true);
-            } else setPageRetries((count) => count + 1);
-          },
-          Math.min(
-            streamDownRefreshIntervalMs * 3 ** (retry.failures - 1),
-            failedReadRetryCapMs,
-          ),
-        );
-      };
-      return Promise.resolve(refreshRef.current(read)).then(done, () =>
-        done("failed"),
-      );
-    },
-  );
+  const [streamDown, setStreamDown] = useState(false);
+  const { loadedPageFields, pageRetries, reads } = useLiveDataReads({
+    onRefresh,
+    pageFields,
+  });
 
   useEffect(() => {
     if (!enabled) {
@@ -228,15 +143,8 @@ export function useFoundryLiveData({
       fields?: readonly FoundryDataField[],
     ): void => {
       if (!fields) pendingAll = true;
-      for (const field of fields ?? []) {
-        // A page field no view shows is read when one shows it again.
-        if (
-          foundryDataPageFields.includes(field) &&
-          !pageFieldsRef.current.includes(field)
-        )
-          pageEpochsRef.current.delete(field);
-        else pendingFields.add(field);
-      }
+      for (const field of fields ?? [])
+        if (reads.wants(field)) pendingFields.add(field);
       if (!pendingAll && pendingFields.size === 0) return;
       if (changeRefreshTimer !== null) window.clearTimeout(changeRefreshTimer);
       changeRefreshTimer = window.setTimeout(() => {
@@ -245,7 +153,7 @@ export function useFoundryLiveData({
         const fields = [...pendingFields];
         pendingAll = false;
         pendingFields.clear();
-        void readLatest.current(all, fields);
+        void reads.read(all, fields);
       }, delayMs);
     };
     const unsubscribe = onAnyStreamEvent(
@@ -264,22 +172,14 @@ export function useFoundryLiveData({
         onOpen: () => setStreamDown(false),
         // Events may be missing: what was read before the epoch began is
         // read again. Transcripts reload their own recent window.
-        onResync: () => {
-          const read = readEpochRef.current;
-          const epoch = foundryStreamEpoch();
-          for (const [field, at] of pageEpochsRef.current)
-            if (at < epoch && !pageFieldsRef.current.includes(field))
-              pageEpochsRef.current.delete(field);
-          if (read !== undefined && read < epoch) void readLatest.current(true);
-        },
+        onResync: reads.resync,
       },
     );
     // The first read waits for the stream (or its fallback), so it misses
     // no change; a read made before the stream opened is made again on its
     // resync.
     void foundryStreamOpened().then(() => {
-      if (!cancelled && readEpochRef.current === undefined)
-        void readLatest.current(true);
+      if (!cancelled && !reads.started()) void reads.read(true);
     });
     return () => {
       cancelled = true;
@@ -296,81 +196,16 @@ export function useFoundryLiveData({
   // A page field a view now shows is read unless it is current.
   const pageKey = pageFields.join(",");
   useEffect(() => {
-    if (!enabled || readEpochRef.current === undefined) return;
-    const epoch = foundryStreamEpoch();
-    const stale = pageFields.filter(
-      (field) => pageEpochsRef.current.get(field) !== epoch,
-    );
-    if (stale.length) void readLatest.current(false, stale);
+    if (enabled) reads.readStale(pageFields);
   }, [enabled, pageKey, pageRetries]);
-  useEffect(
-    () => () => {
-      const retry = retryRef.current;
-      if (retry.timer !== null) window.clearTimeout(retry.timer);
-      retry.timer = null;
-    },
-    [],
-  );
 
-  // While the stream is down nothing announces changes: read every few
-  // seconds. A hidden tab skips its polls; coming back it catches up only
-  // if one was due.
-  useEffect(() => {
-    if (!enabled || !streamDown) {
-      return undefined;
-    }
-    let canceled = false;
-    let timerId: number | null = null;
-    const schedule = (): void => {
-      timerId = window.setTimeout(async () => {
-        if (document.visibilityState === "visible") {
-          await readLatest.current(true);
-        }
-        if (!canceled) {
-          schedule();
-        }
-      }, streamDownRefreshIntervalMs);
-    };
-    const handleVisibilityChange = (): void => {
-      if (
-        document.visibilityState === "visible" &&
-        Date.now() - lastRefreshAtRef.current >= streamDownRefreshIntervalMs
-      ) {
-        void readLatest.current(true);
-      }
-    };
-    schedule();
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      canceled = true;
-      if (timerId !== null) {
-        window.clearTimeout(timerId);
-      }
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [enabled, streamDown, workspaceId]);
-
-  // The server's keepalives are invisible to a page, so a connection that
-  // died without an error looks open. Back online, or silent while something
-  // runs: open it again. It resumes after its last message (no read).
-  useEffect(() => {
-    if (!enabled) return undefined;
-    window.addEventListener("online", reconnectFoundryStream);
-    const watchdog =
-      activeSession && !streamDown
-        ? window.setInterval(() => {
-            if (
-              document.visibilityState === "visible" &&
-              foundryStreamQuietMs() >= streamSilenceMs
-            )
-              reconnectFoundryStream();
-          }, streamSilenceMs / 4)
-        : null;
-    return () => {
-      window.removeEventListener("online", reconnectFoundryStream);
-      if (watchdog !== null) window.clearInterval(watchdog);
-    };
-  }, [activeSession, enabled, streamDown]);
+  useStreamRecovery({
+    activeSession,
+    enabled,
+    reads,
+    streamDown,
+    workspaceId,
+  });
 
   return loadedPageFields;
 }

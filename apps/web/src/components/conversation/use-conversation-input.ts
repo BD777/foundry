@@ -1,102 +1,76 @@
 import { useEffect, useRef, useState } from "react";
-import { i18n } from "../../i18n";
 import type { ConversationProps, QueuedDraft } from "./conversation-types";
+import { conversationStorageKey } from "./conversation-storage";
 import {
-  claimIsLive,
-  claimQueuedDraft,
-  conversationStorageGeneration,
-  conversationStorageKey,
-  holdDispatchLock,
-  pruneConversationStorage,
-  readConversation,
-  updateConversation,
-  whileSending,
-} from "./conversation-storage";
+  queueControls,
+  sendMessage,
+  steerQueued,
+  stopTurn,
+  submitDraft,
+  type ConversationInputContext,
+} from "./conversation-actions";
+import { useConversationDrafts } from "./use-conversation-drafts";
+import { useLocalQueue } from "./use-local-queue";
+import {
+  useAwaitingExecution,
+  useBusyGate,
+  useComposerFlight,
+} from "./use-send-tracking";
 import { useServerQueue } from "./use-server-queue";
-
-const draftWriteDelayMs = 400;
-/** How long an accepted new chat's message waits for the host to show it. */
-const handoffLimitMs = 5000;
-let storagePruned = false;
-
-function withoutClaim({
-  sending: _sending,
-  ...item
-}: QueuedDraft): QueuedDraft {
-  return item;
-}
 
 /** One input lifecycle for every conversation, independent of its transport. */
 export function useConversationInput(
   props: ConversationProps,
   followLatest: () => void,
 ) {
-  const { threadKey, storageKeyPrefix, draftResetKey } = props;
-  const storageKey = conversationStorageKey(storageKeyPrefix, threadKey);
+  const { threadKey, storageKeyPrefix } = props;
   // A server-kept queue (chats) replaces the browser's queue and dispatcher.
   const serverMode = Boolean(props.serverQueue);
-  const [tab] = useState(() => crypto.randomUUID());
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const draftRef = useRef(drafts);
-  const [queues, setQueues] = useState<Record<string, QueuedDraft[]>>({});
-  const queuesRef = useRef(queues);
-  // Threads whose last write failed: memory is their only complete copy.
-  const unsaved = useRef(new Set<string>());
-  // Pending draft writes, with the storage generation they were typed in.
-  const draftWrites = useRef(
-    new Map<string, { text: string; generation: number }>(),
-  );
-  const draftWriteTimer = useRef<number | undefined>(undefined);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [pausedQueues, setPausedQueues] = useState<Record<string, boolean>>({});
-  const [pending, setPending] = useState(false);
-  const [dispatcher, setDispatcher] = useState(!storageKey);
-  const [awaitingExecution, setAwaitingExecution] = useState<
-    Record<string, string | undefined>
-  >({});
-  const awaitingRef = useRef(awaitingExecution);
-  awaitingRef.current = awaitingExecution;
-  const [steeringId, setSteeringId] = useState<string>();
-  // The conversation whose composer text is on its way to the server: it
-  // stays shown, read-only, until accepted, so it is never in two places.
-  const [sendingKey, setSendingKey] = useState<string>();
-  const sendingKeyRef = useRef<string | undefined>(undefined);
-  // A new chat's accepted message, kept until the host shows its new key.
-  const handoff = useRef<string | undefined>(undefined);
-  // The composer message on its way: let go as soon as the server accepted
-  // it or the transcript shows it, whichever comes first.
-  const inFlight = useRef<
-    | {
-        key: string;
-        clientId: string;
-        attachmentIds: string[];
-        released: boolean;
-      }
-    | undefined
-  >(undefined);
-  const busy = useRef(false);
   const current = useRef(props);
   current.current = props;
-  const previousReset = useRef(draftResetKey);
-  const draft = drafts[threadKey] ?? storedDraft(threadKey);
+  const latest = () => current.current;
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pausedQueues, setPausedQueues] = useState<Record<string, boolean>>({});
+  const busy = useBusyGate();
+  const status: ConversationInputContext["status"] = {
+    report(reason, key) {
+      setErrors((value) => ({
+        ...value,
+        [key]: reason instanceof Error ? reason.message : String(reason),
+      }));
+      setPausedQueues((value) => ({ ...value, [key]: true }));
+    },
+    setError: (key, message) =>
+      setErrors((value) => ({ ...value, [key]: message })),
+    resume: (key) => setPausedQueues((value) => ({ ...value, [key]: false })),
+  };
   const server = useServerQueue({
     server: props.serverQueue,
     threadKey,
-    storageKey,
-    holding: pending || Boolean(props.sending),
+    storageKey: conversationStorageKey(storageKeyPrefix, threadKey),
+    holding: busy.pending || Boolean(props.sending),
     paused: Boolean(pausedQueues[threadKey]),
-    onFailure: (message, key) => report(new Error(message), key),
+    onFailure: (message, key) => status.report(new Error(message), key),
     onKeepText: (text) => {
-      if (!(draftRef.current[threadKey] ?? "").trim()) updateDraft(text);
+      if (!(drafts.typed(threadKey) ?? "").trim()) drafts.update(text);
     },
   });
-  const queue = serverMode ? server.items : (queues[threadKey] ?? []);
+  const drafts = useConversationDrafts(props);
+  const local = useLocalQueue({ storageKeyPrefix, threadKey, serverMode });
+  const flight = useComposerFlight({
+    threadKey,
+    messages: props.messages,
+    drafts,
+    latest,
+  });
+  const awaiting = useAwaitingExecution(props);
+  const queue = serverMode ? server.items : local.items;
   const runtime =
     props.composer.mode === "fixed"
       ? props.composer.runtime
       : props.composer.runtimeControls.selectedRuntime;
   const active = Boolean(
-    props.active || props.sending || pending || threadKey in awaitingExecution,
+    props.active || props.sending || busy.pending || awaiting.waiting,
   );
   const canSteer = Boolean(
     props.active && runtime === "claude" && props.onSteer,
@@ -104,510 +78,40 @@ export function useConversationInput(
   const unavailable = Boolean(
     props.disabled || props.readOnly || props.attachmentUploading,
   );
-
-  function keyFor(key: string) {
-    return conversationStorageKey(current.current.storageKeyPrefix, key);
-  }
-  function storedDraft(key: string): string {
-    const stored = keyFor(key);
-    return stored ? (readConversation(stored)?.draft ?? "") : "";
-  }
-  function storedQueue(key: string): QueuedDraft[] | undefined {
-    const stored = keyFor(key);
-    if (!stored || serverMode || unsaved.current.has(key)) return undefined;
-    return readConversation(stored)?.queue;
-  }
-  function setQueue(key: string, list: QueuedDraft[]) {
-    queuesRef.current = { ...queuesRef.current, [key]: list };
-    setQueues(queuesRef.current);
-  }
-  /** Changes a queue against its stored copy, which other tabs may have changed. */
-  function mutateQueue(
-    key: string,
-    change: (list: QueuedDraft[]) => QueuedDraft[],
-  ) {
-    const next = change(storedQueue(key) ?? queuesRef.current[key] ?? []);
-    const stored = keyFor(key);
-    if (stored) {
-      if (updateConversation(stored, () => ({ queue: next })))
-        unsaved.current.delete(key);
-      else unsaved.current.add(key);
-    }
-    setQueue(key, next);
-  }
-  function syncQueue(key: string) {
-    const stored = storedQueue(key);
-    if (stored) setQueue(key, stored);
-  }
-  function flushDrafts() {
-    window.clearTimeout(draftWriteTimer.current);
-    const writes = [...draftWrites.current];
-    draftWrites.current.clear();
-    // Signing out wiped storage; a draft typed before must not return.
-    for (const [stored, { text, generation }] of writes)
-      if (generation === conversationStorageGeneration())
-        updateConversation(stored, () => ({ draft: text }));
-  }
-
-  function markSending(key: string | undefined) {
-    sendingKeyRef.current = key;
-    setSendingKey(key);
-  }
-  function updateDraft(value: string, key = threadKey) {
-    draftRef.current = { ...draftRef.current, [key]: value };
-    setDrafts(draftRef.current);
-    const stored = keyFor(key);
-    if (!stored) return;
-    draftWrites.current.set(stored, {
-      text: value,
-      generation: conversationStorageGeneration(),
-    });
-    window.clearTimeout(draftWriteTimer.current);
-    draftWriteTimer.current = window.setTimeout(flushDrafts, draftWriteDelayMs);
-  }
-  /** An accepted message moved the conversation to a new key; its input follows. */
-  function moveThread(from: string, to: string, { carryDraft = true } = {}) {
-    flushDrafts();
-    server.moveThread(from, to);
-    const moving = serverMode
-      ? []
-      : (storedQueue(from) ?? queuesRef.current[from] ?? []);
-    if (moving.length) {
-      mutateQueue(from, () => []);
-      mutateQueue(to, (list) => [
-        ...moving,
-        ...list.filter((item) => !moving.some((entry) => entry.id === item.id)),
-      ]);
-    }
-    if (carryDraft) {
-      const movedDraft = draftRef.current[from] ?? storedDraft(from);
-      if (movedDraft && !(draftRef.current[to] ?? storedDraft(to)))
-        updateDraft(movedDraft, to);
-      updateDraft("", from);
-    }
-    flushDrafts();
-    setAwaitingExecution((value) => {
-      const { [from]: _migrated, ...rest } = value;
-      return rest;
-    });
-  }
-
-  useEffect(() => {
-    if (storageKeyPrefix && !storagePruned) {
-      storagePruned = true;
-      pruneConversationStorage();
-    }
-    const flushNow = () => {
-      if (document.visibilityState !== "visible") flushDrafts();
-    };
-    window.addEventListener("pagehide", flushDrafts);
-    document.addEventListener("visibilitychange", flushNow);
-    return () => {
-      window.removeEventListener("pagehide", flushDrafts);
-      document.removeEventListener("visibilitychange", flushNow);
-      flushDrafts();
-    };
-  }, []);
-  // Another tab changed a stored queue (enqueued, sent or removed a message).
-  useEffect(() => {
-    if (!storageKeyPrefix || serverMode) return;
-    const prefix = `${storageKeyPrefix}:`;
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === null) {
-        Object.keys(queuesRef.current).forEach(syncQueue);
-      } else if (event.key.startsWith(prefix)) {
-        const key = event.key.slice(prefix.length);
-        if (key in queuesRef.current) syncQueue(key);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [storageKeyPrefix, serverMode]);
-  useEffect(() => {
-    if (!(threadKey in queuesRef.current)) syncQueue(threadKey);
-    if (!(threadKey in draftRef.current)) {
-      const restored = storedDraft(threadKey);
-      if (restored) {
-        draftRef.current = { ...draftRef.current, [threadKey]: restored };
-        setDrafts(draftRef.current);
-      }
-    }
-  }, [threadKey, storageKeyPrefix]);
-  // One tab drains a stored queue; the others show it and take over on leaving.
-  useEffect(() => {
-    if (!storageKey || serverMode) {
-      setDispatcher(!serverMode);
-      return;
-    }
-    setDispatcher(false);
-    return holdDispatchLock(storageKey, () => setDispatcher(true));
-  }, [storageKey, serverMode]);
-  useEffect(() => {
-    if (handoff.current && handoff.current !== threadKey)
-      releaseHandoff(handoff.current);
-  }, [threadKey]);
-  useEffect(() => {
-    if (previousReset.current !== draftResetKey) updateDraft("");
-    previousReset.current = draftResetKey;
-  }, [draftResetKey]);
-  // An accepted send must not drain the next queued message until the host
-  // has projected the execution it started (HTTP acknowledgement can beat SSE).
-  useEffect(() => {
-    if (!(threadKey in awaitingExecution)) return;
-    if (
-      props.active ||
-      props.sending ||
-      props.activeExecutionId !== awaitingExecution[threadKey]
-    ) {
-      setAwaitingExecution((value) => {
-        const { [threadKey]: _done, ...rest } = value;
-        return rest;
-      });
-    }
-  }, [
+  const ctx: ConversationInputContext = {
+    latest,
     threadKey,
-    props.active,
-    props.sending,
-    props.activeExecutionId,
-    awaitingExecution,
-  ]);
+    serverMode,
+    queue,
+    canSteer,
+    unavailable,
+    drafts,
+    local,
+    server,
+    flight,
+    awaiting,
+    busy,
+    status,
+    followLatest,
+  };
 
-  function remove(id: string, key = threadKey) {
-    if (serverMode) server.removeLocal(id, key);
-    else mutateQueue(key, (list) => list.filter((item) => item.id !== id));
-  }
-  function move(id: string, direction: "before" | "after", targetId: string) {
-    mutateQueue(threadKey, (list) => {
-      const item = list.find((entry) => entry.id === id);
-      if (!item || id === targetId) return list;
-      const rest = list.filter((entry) => entry.id !== id);
-      const target = rest.findIndex((entry) => entry.id === targetId);
-      if (target < 0) return list;
-      rest.splice(target + (direction === "after" ? 1 : 0), 0, item);
-      return rest;
-    });
-  }
-  function report(reason: unknown, key: string) {
-    setErrors((value) => ({
-      ...value,
-      [key]: reason instanceof Error ? reason.message : String(reason),
-    }));
-    setPausedQueues((value) => ({ ...value, [key]: true }));
-  }
-  /**
-   * Claims a queued message in storage so no other tab sends it too. False
-   * when it must not be sent now: already sent, or another tab is sending it.
-   * A claim whose tab closed mid-request may have reached the server, so it
-   * waits for the person unless they asked to send it (`force`).
-   */
-  async function claim(item: QueuedDraft, key: string, force: boolean) {
-    const stored = keyFor(key);
-    if (!stored || unsaved.current.has(key)) return true;
-    let claimed = claimQueuedDraft(stored, item.id, tab);
-    if (claimed.result === "elsewhere") {
-      if (await claimIsLive(claimed.item)) {
-        syncQueue(key);
-        return false;
-      }
-      if (!force) {
-        syncQueue(key);
-        report(new Error(i18n.t("conversation:errors.maybeSent")), key);
-        return false;
-      }
-      claimed = claimQueuedDraft(stored, item.id, tab, true);
-    }
-    if (claimed.result === "gone") {
-      syncQueue(key);
-      return false;
-    }
-    if (claimed.result === "claimed") syncQueue(key);
-    return true;
-  }
-  async function send(item?: QueuedDraft, { force = false } = {}) {
-    const host = current.current;
-    const text =
-      item?.text ??
-      draftRef.current[host.threadKey] ??
-      storedDraft(host.threadKey);
-    const immediate =
-      !item && !host.attachments?.length && host.canSendDuringExecution?.(text);
-    if (
-      busy.current ||
-      (host.active && !immediate) ||
-      host.sending ||
-      host.disabled ||
-      host.readOnly ||
-      host.attachmentUploading ||
-      (host.threadKey in awaitingRef.current && !immediate)
-    )
-      return;
-    const key = host.threadKey;
-    if (
-      !text.trim() &&
-      !(item?.attachments?.length || host.attachments?.length)
-    )
-      return;
-    busy.current = true;
-    setPending(true);
-    const clientId = item ? item.id : crypto.randomUUID();
-    if (!item) {
-      markSending(key);
-      inFlight.current = {
-        key,
-        clientId,
-        attachmentIds: (host.attachments ?? []).map(
-          (attachment) => attachment.id,
-        ),
-        released: false,
-      };
-    }
-    try {
-      if (item && !serverMode && !(await claim(item, key, force))) return;
-      setErrors((value) => ({ ...value, [key]: "" }));
-      followLatest();
-      try {
-        const outcome = item
-          ? await whileSending(item.id, () =>
-              host.onSend(text, item.attachments, {
-                idempotencyKey: item.id,
-              }),
-            )
-          : await host.onSend(text, undefined, { idempotencyKey: clientId });
-        if (!outcome) throw new Error(i18n.t("conversation:errors.notSent"));
-        if (outcome === "queue") {
-          // A turn started meanwhile; the message waits for it to end.
-          if (!item) {
-            const queued: QueuedDraft = {
-              id: crypto.randomUUID(),
-              text: text.trim(),
-              attachments: [...(host.attachments ?? [])],
-            };
-            if (serverMode) server.add(queued, key);
-            else mutateQueue(key, (list) => [...list, queued]);
-            queued.attachments?.forEach((attachment) =>
-              host.onAttachmentRemove?.(attachment.id),
-            );
-            updateDraft("", key);
-          }
-          setPausedQueues((value) => ({ ...value, [key]: false }));
-          return;
-        }
-        if (item) remove(item.id, key);
-        const movedTo =
-          typeof outcome === "object" && outcome.threadKey !== key
-            ? outcome.threadKey
-            : undefined;
-        if (!item && movedTo && current.current.threadKey === key) {
-          // The host shows the new key's transcript a moment later; until
-          // then the message stays here, read-only, so it is always visible.
-          handoff.current = key;
-          moveThread(key, movedTo, { carryDraft: false });
-          window.setTimeout(() => releaseHandoff(key), handoffLimitMs);
-        } else {
-          // Accepted: the transcript shows it now, so the composer lets it
-          // go (before a new chat's key moves, which would carry it along).
-          // Let go earlier, the composer may hold new text by now.
-          if (!item && !inFlight.current?.released) updateDraft("", key);
-          if (movedTo) moveThread(key, movedTo);
-        }
-        const latest = current.current;
-        if (
-          outcome !== "replied" &&
-          latest.threadKey === key &&
-          !latest.active &&
-          !latest.sending &&
-          latest.activeExecutionId === host.activeExecutionId
-        )
-          setAwaitingExecution((value) => ({
-            ...value,
-            [key]: host.activeExecutionId,
-          }));
-        setPausedQueues((value) => ({ ...value, [key]: false }));
-      } catch (reason) {
-        if (item) {
-          if (!serverMode)
-            mutateQueue(key, (list) =>
-              list.map((entry) =>
-                entry.id === item.id ? withoutClaim(entry) : entry,
-              ),
-            );
-        } else if (
-          !inFlight.current?.released &&
-          !(draftRef.current[key] ?? "").trim()
-        )
-          // Not shown anywhere else: the text returns to the composer.
-          updateDraft(text, key);
-        report(reason, key);
-      }
-    } finally {
-      busy.current = false;
-      setPending(false);
-      if (!item) inFlight.current = undefined;
-      if (!item && handoff.current !== key) markSending(undefined);
-    }
-  }
-  // The transcript shows the message before the server's reply arrived:
-  // the composer lets it go now, and stays free while the reply is awaited.
-  useEffect(() => {
-    const flight = inFlight.current;
-    if (!flight || flight.released) return;
-    const messages = props.messages;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index]?.clientId !== flight.clientId) continue;
-      flight.released = true;
-      updateDraft("", flight.key);
-      flight.attachmentIds.forEach((id) =>
-        current.current.onAttachmentRemove?.(id),
-      );
-      if (handoff.current !== flight.key) markSending(undefined);
-      return;
-    }
-  }, [props.messages]);
-  function releaseHandoff(key: string) {
-    if (handoff.current !== key) return;
-    handoff.current = undefined;
-    updateDraft("", key);
-    markSending(undefined);
-  }
-  /** Queues the composer's message on the server; it leaves once accepted. */
-  async function enqueueDraft(item: QueuedDraft, host: ConversationProps) {
-    const key = host.threadKey;
-    markSending(key);
-    setErrors((value) => ({ ...value, [key]: "" }));
-    try {
-      const refused = await server.enqueueNow(item);
-      if (refused) {
-        setErrors((value) => ({ ...value, [key]: refused }));
-        return;
-      }
-      updateDraft("", key);
-      item.attachments?.forEach((attachment) =>
-        host.onAttachmentRemove?.(attachment.id),
-      );
-    } finally {
-      markSending(undefined);
-    }
-  }
-  function submit() {
-    const host = current.current;
-    if (host.disabled || host.readOnly || host.attachmentUploading) return;
-    if (sendingKeyRef.current === host.threadKey) return;
-    const text =
-      draftRef.current[host.threadKey] ?? storedDraft(host.threadKey);
-    if (!text.trim() && !host.attachments?.length) return;
-    if (
-      !host.attachments?.length &&
-      host.canSendDuringExecution?.(text) &&
-      !busy.current &&
-      !host.sending
-    ) {
-      void send();
-      return;
-    }
-    if (
-      host.active ||
-      host.sending ||
-      busy.current ||
-      queue.length ||
-      host.threadKey in awaitingRef.current
-    ) {
-      const item: QueuedDraft = {
-        id: crypto.randomUUID(),
-        text: text.trim(),
-        attachments: [...(host.attachments ?? [])],
-        targetExecutionId: host.activeExecutionId,
-      };
-      if (serverMode && server.canEnqueueNow(host.threadKey)) {
-        void enqueueDraft(item, host);
-        return;
-      }
-      if (serverMode) server.add(item, host.threadKey);
-      else mutateQueue(host.threadKey, (list) => [...list, item]);
-      updateDraft("", host.threadKey);
-      item.attachments?.forEach((attachment) =>
-        host.onAttachmentRemove?.(attachment.id),
-      );
-    } else void send();
-  }
-  async function steer(item: QueuedDraft) {
-    const host = current.current;
-    if (!canSteer || busy.current || unavailable || !host.onSteer) return;
-    if (serverMode && !server.isLocal(item)) {
-      busy.current = true;
-      setPending(true);
-      setSteeringId(item.id);
-      try {
-        await server.steer(item);
-      } finally {
-        busy.current = false;
-        setPending(false);
-        setSteeringId(undefined);
-      }
-      return;
-    }
-    if (
-      item.targetExecutionId &&
-      item.targetExecutionId !== host.activeExecutionId
-    ) {
-      report(
-        new Error(i18n.t("conversation:errors.responseChanged")),
-        host.threadKey,
-      );
-      return;
-    }
-    busy.current = true;
-    setPending(true);
-    setSteeringId(item.id);
-    try {
-      if (
-        !(await host.onSteer(
-          item.text,
-          item.targetExecutionId ?? host.activeExecutionId,
-          item.attachments,
-        ))
-      )
-        throw new Error(i18n.t("conversation:errors.notSteered"));
-      remove(item.id, host.threadKey);
-      setErrors((value) => ({ ...value, [host.threadKey]: "" }));
-      setPausedQueues((value) => ({ ...value, [host.threadKey]: false }));
-    } catch (reason) {
-      report(reason, host.threadKey);
-    } finally {
-      busy.current = false;
-      setPending(false);
-      setSteeringId(undefined);
-    }
-  }
-  async function stop() {
-    const host = current.current;
-    if (busy.current || !host.onStop || !host.active) return;
-    busy.current = true;
-    setPending(true);
-    try {
-      await host.onStop(host.activeExecutionId);
-    } catch (reason) {
-      report(reason, host.threadKey);
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
-  }
+  // This tab drains a browser-kept queue once nothing runs or waits.
   useEffect(() => {
     if (
       serverMode ||
       active ||
       unavailable ||
-      !dispatcher ||
+      !local.dispatcher ||
       !queue.length ||
       pausedQueues[threadKey]
     )
       return;
-    const timer = window.setTimeout(() => void send(queue[0]), 180);
+    const timer = window.setTimeout(() => void sendMessage(ctx, queue[0]), 180);
     return () => window.clearTimeout(timer);
   }, [
     active,
     unavailable,
-    dispatcher,
+    local.dispatcher,
     queue,
     pausedQueues,
     threadKey,
@@ -615,68 +119,36 @@ export function useConversationInput(
     serverMode,
   ]);
 
-  const sending = sendingKey === threadKey;
-  const hasContent = Boolean(draft.trim() || props.attachments?.length);
+  const hasContent = Boolean(drafts.draft.trim() || props.attachments?.length);
   return {
-    draft,
+    draft: drafts.draft,
     queue,
     error: errors[threadKey],
-    pending,
+    pending: busy.pending,
     active,
     /** This conversation's composer text is being sent: shown, not editable. */
-    sending,
+    sending: flight.sending,
     /**
      * The primary button: Stop only for a running agent and an empty
      * composer; text typed meanwhile is sent (queued or steered) instead.
      */
-    action: (sending
+    action: (flight.sending
       ? "sending"
       : props.active && !hasContent
         ? "stop"
         : "send") as "send" | "stop" | "sending",
     canSteer,
     unavailable,
-    steeringId,
+    steeringId: busy.steeringId,
     updateDraft(value: string) {
-      if (sendingKeyRef.current !== threadKey) updateDraft(value);
+      if (flight.sendingKey() !== threadKey) drafts.update(value);
     },
-    submit,
+    submit: () => submitDraft(ctx),
     /** The person chose to send this message now. */
-    sendQueued: (item: QueuedDraft) => send(item, { force: true }),
-    steer,
-    stop,
-    remove(item: QueuedDraft) {
-      if (serverMode) void server.remove(item);
-      else remove(item.id);
-    },
-    move(id: string, direction: "before" | "after", targetId: string) {
-      if (serverMode) server.move(id, direction, targetId);
-      else move(id, direction, targetId);
-    },
-    /** A drag ended. */
-    commitOrder: () => void server.commitOrder(),
-    /** Moves a message one place up (-1) or down (1), e.g. from the keyboard. */
-    shift(item: QueuedDraft, offset: -1 | 1) {
-      if (serverMode) return void server.shift(item, offset);
-      const index = queue.findIndex((entry) => entry.id === item.id);
-      const target = queue[index + offset];
-      if (index < 0 || !target || target.state === "dispatching") return;
-      move(item.id, offset < 0 ? "before" : "after", target.id);
-    },
-    /** Server-kept messages are edited where they wait. */
-    inlineEdit: serverMode,
-    /** Text changes made where the message waits; false when refused. */
-    saveEdit: (item: QueuedDraft, text: string) => server.edit(item, text),
-    /** Moves a queued message back into the composer. */
-    edit(item: QueuedDraft) {
-      if (sendingKeyRef.current === threadKey) return;
-      updateDraft(item.text);
-      if (item.attachments?.length)
-        props.onAttachmentsRestore?.(item.attachments);
-      remove(item.id);
-    },
-    retry: (item: QueuedDraft) => void server.retry(item),
-    isLocal: server.isLocal,
+    sendQueued: (item: QueuedDraft) => sendMessage(ctx, item, { force: true }),
+    steer: (item: QueuedDraft) => steerQueued(ctx, item),
+    stop: () => stopTurn(ctx),
+    ...queueControls(ctx),
     serverMode,
     /** How the last change to a server-kept queue went, when it was refused. */
     queueNotice: server.notice,

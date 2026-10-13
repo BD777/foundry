@@ -1,0 +1,243 @@
+.fdy-issue-list-panel {
+  position: relative;
+  width: calc(100% - 48px);
+  max-width: 1000px;
+  box-sizing: border-box;
+  margin: 18px auto 40px;
+  overflow: hidden;
+}
+
+.fdy-issue-list-panel::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: none;
+  width: 36px;
+  background: linear-gradient(90deg, transparent, var(--fdy-panel) 86%);
+  content: "";
+  pointer-events: none;
+}
+
+.fdy-issue-list-scroll {
+  width: 100%;
+  overflow: hidden;
+}
+
+.fdy-issue-list-scroll .fdy-scroll-viewport > div {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.fdy-issue-list-cards {
+  display: none;
+}
+
+.fdy-issue-list-head,
+.fdy-issue-list-row.fdy-action-row {
+  display: grid;
+  width: 100%;
+  box-sizing: border-box;
+  grid-template-columns: 60px minmax(220px, 1fr) 132px 96px 84px;
+  gap: 12px;
+  align-items: center;
+  min-width: 676px;
+}
+
+.fdy-issue-list-head {
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--fdy-line-soft);
+  color: var(--fdy-ink-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fdy-issue-list-row strong {
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-issue-list-row.fdy-action-row {
+  position: relative;
+  min-height: 45px;
+  padding: 13px 18px;
+  border: 0;
+  border-top: 1px solid var(--fdy-line-soft);
+  background: transparent;
+}
+
+.fdy-issue-list-row.fdy-action-row:hover {
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-issue-list-row.fdy-action-row.fdy-action-row-selected {
+  background: transparent;
+}
+
+.fdy-issue-list-row.fdy-action-row.fdy-action-row-selected:hover {
+  background: var(--fdy-panel-soft);
+}
+
+.fdy-issue-list-row > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-issue-list-row > span:first-child {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fdy-issue-list-row > span:nth-child(4) {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-issue-list-row > span:nth-child(5) {
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.fdy-issue-list-row > span:nth-child(3),
+.fdy-issue-list-card-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  overflow: visible;
+}
+
+.fdy-issue-list-card-status {
+  flex: none;
+}
+
+.fdy-issue-list-row > span:nth-child(3) .fdy-badge,
+.fdy-issue-list-card-status .fdy-badge {
+  min-width: 118px;
+  height: 22px;
+  justify-content: flex-start;
+}
+
+.fdy-issue-list-card.fdy-action-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 0;
+  padding: 14px 16px;
+  border-top: 1px solid var(--fdy-line-soft);
+  border-radius: 0;
+}
+
+.fdy-issue-list-card:first-child {
+  border-top: 0;
+}
+
+.fdy-issue-list-card.fdy-action-row:hover {
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-issue-list-card.fdy-action-row.fdy-action-row-selected {
+  background: transparent;
+}
+
+.fdy-issue-list-card.fdy-action-row.fdy-action-row-selected:hover {
+  background: var(--fdy-paper-raised);
+}
+
+.fdy-issue-list-card-topline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fdy-issue-list-card-topline code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-faint);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-issue-list-card > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fdy-ink-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-issue-list-card-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.fdy-issue-list-card-meta > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.fdy-issue-list-card-meta em,
+.fdy-issue-list-card-meta strong {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-issue-list-card-meta em {
+  color: var(--fdy-ink-faint);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fdy-issue-list-card-meta strong {
+  color: var(--fdy-ink-strong);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+}

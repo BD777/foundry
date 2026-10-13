@@ -306,3 +306,5 @@ export function useWorkspaceData({
     setData,
   };
 }
+
+export type WorkspaceData = ReturnType<typeof useWorkspaceData>;
