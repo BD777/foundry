@@ -1,7 +1,5 @@
 import type { FoundryData } from "../api-types";
-
-// i18n-ignore: runtime product names
-const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
+import { runtimeMeta } from "../components/ui/runtime-mark";
 
 /**
  * What the composer's "/" menu offers in the current workspace: its selected
@@ -25,7 +23,7 @@ export function workspaceComposerSkills(data: FoundryData) {
               value: skill.name,
               label: skill.name,
               description: skill.description,
-              tag: agentNames[row.provider],
+              tag: runtimeMeta(row.provider).productName,
             })),
             builtin: (data.builtinSkills ?? [])
               .filter((skill) => skill.runtime === row.provider)
@@ -33,7 +31,7 @@ export function workspaceComposerSkills(data: FoundryData) {
                 value: skill.name,
                 label: skill.name,
                 description: skill.description,
-                tag: `${agentNames[row.provider]} · Foundry`,
+                tag: `${runtimeMeta(row.provider).productName} · Foundry`,
               })),
           },
         ]),

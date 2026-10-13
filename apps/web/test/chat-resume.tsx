@@ -1,7 +1,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ChatTranscriptStage } from "../src/features/chat/chat-transcript-stage";
-import { useChatScrollFollow } from "../src/features/chat/use-chat-scroll-follow";
+import { ChatTranscriptStage } from "../src/components/conversation/chat-transcript-stage";
+import { useChatScrollFollow } from "../src/components/conversation/use-chat-scroll-follow";
 import type { ChatMessageItem } from "../src/features/chat/chat-surface-types";
 import "../src/styles.css";
 

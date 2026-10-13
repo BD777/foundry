@@ -18,14 +18,9 @@ import (
 
 var resourcesChangedEvent = browserevent.Define[browserevent.ResourcesChangedPayload](browserevent.ResourcesChanged, eventstream.Options{KeepsSnapshot: true})
 
-// newResourceService wires the inventory over the store when it keeps one;
-// nil otherwise (reports are then dropped and the route answers 503).
-func newResourceService(st store.Store, hub *DaemonHub, stream eventstream.Publisher) *resources.Service {
-	inventory, ok := st.(store.ResourceStore)
-	if !ok {
-		return nil
-	}
-	service := resources.NewService(inventory)
+// newResourceService wires the inventory over the backend.
+func newResourceService(st Backend, hub *DaemonHub, stream eventstream.Publisher) *resources.Service {
+	service := resources.NewService(st)
 	service.Online = hub.HasConnection
 	service.Changed = func(sourceID string) {
 		// It carries no data, so it reaches every stream; readers filter.
@@ -37,10 +32,6 @@ func newResourceService(st store.Store, hub *DaemonHub, stream eventstream.Publi
 // handleListResources lists the inventory of the devices the caller sees:
 // ?type= and ?device= narrow it, ?includeGone=1 adds what disappeared.
 func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
-	if s.resources == nil {
-		writeError(w, http.StatusServiceUnavailable, "this server keeps no resource inventory")
-		return
-	}
 	list, err := s.visibleResources(r.Context(), actorFromContext(r.Context()), store.ResourceFilter{
 		SourceID:    strings.TrimSpace(r.URL.Query().Get("device")),
 		Type:        strings.TrimSpace(r.URL.Query().Get("type")),
@@ -85,12 +76,10 @@ func (c *daemonConnection) resourcesReported(ctx context.Context, envelope wsEnv
 	if err := decodeWebSocketPayload(envelope.Payload, &report); err != nil {
 		return err
 	}
-	if c.hub.resources != nil {
-		deviceID, registration := c.registrationSnapshot()
-		source := store.ResourceSource{Kind: "device", ID: deviceID, Label: registration.Device.Label}
-		if _, err := c.hub.resources.Report(ctx, source, report); err != nil {
-			log.Printf("daemon %s: resources report not kept: %v", deviceID, err)
-		}
+	deviceID, registration := c.registrationSnapshot()
+	source := store.ResourceSource{Kind: "device", ID: deviceID, Label: registration.Device.Label}
+	if _, err := c.hub.resources.Report(ctx, source, report); err != nil {
+		log.Printf("daemon %s: resources report not kept: %v", deviceID, err)
 	}
 	c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	return nil
@@ -99,7 +88,7 @@ func (c *daemonConnection) resourcesReported(ctx context.Context, envelope wsEnv
 // reportLegacyResources keeps what a worker before resources_v1 lists in
 // its registration (browsers, macOS screen control) as its inventory.
 func (c *daemonConnection) reportLegacyResources(ctx context.Context, registration store.DaemonRegistration) {
-	if c.hub.resources == nil || registration.Device.ID == "" ||
+	if registration.Device.ID == "" ||
 		slices.Contains(registration.Capabilities, store.DaemonCapabilityResources) {
 		return
 	}
@@ -112,15 +101,10 @@ func (c *daemonConnection) reportLegacyResources(ctx context.Context, registrati
 // resourcesOffline marks a disconnected device's inventory offline and
 // starts the graces of the leases on it and of those its sessions hold.
 func (h *DaemonHub) resourcesOffline(deviceID string) {
-	if h.resources == nil {
-		return
-	}
 	if err := h.resources.SourceOffline(context.Background(), deviceID); err != nil {
 		log.Printf("daemon %s: resources not marked offline: %v", deviceID, err)
 	}
-	if h.leases != nil {
-		if err := h.leases.DeviceDisconnected(context.Background(), deviceID); err != nil {
-			log.Printf("daemon %s: resource leases not told it went away: %v", deviceID, err)
-		}
+	if err := h.leases.DeviceDisconnected(context.Background(), deviceID); err != nil {
+		log.Printf("daemon %s: resource leases not told it went away: %v", deviceID, err)
 	}
 }

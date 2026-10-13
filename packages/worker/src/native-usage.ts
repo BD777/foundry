@@ -13,6 +13,7 @@ import { createReadStream } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { count, optionalRecord } from "./json-values.js";
 import { claudeRequestUsage } from "./turn-usage.js";
 
 /** One native turn: from a person's prompt to the next one. */
@@ -32,18 +33,6 @@ export interface NativeSessionUsage {
   requests: NativeRequestUsage[];
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function count(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? Math.round(value)
-    : 0;
-}
-
 function timestamp(value: unknown): string {
   return typeof value === "string" && Number.isFinite(Date.parse(value))
     ? value
@@ -60,15 +49,15 @@ function claudePrompt(entry: Record<string, unknown>): boolean {
   ) {
     return false;
   }
-  const content = record(entry.message)?.content;
+  const content = optionalRecord(entry.message)?.content;
   if (typeof content === "string") return content.trim() !== "";
   return (
     Array.isArray(content) &&
     content.some((part) => {
-      const type = record(part)?.type;
+      const type = optionalRecord(part)?.type;
       return type === "text" || type === "image";
     }) &&
-    !content.some((part) => record(part)?.type === "tool_result")
+    !content.some((part) => optionalRecord(part)?.type === "tool_result")
   );
 }
 
@@ -141,7 +130,7 @@ export function claudeNativeUsage(entries: unknown[]): NativeSessionUsage {
     );
   };
   for (const value of entries) {
-    const entry = record(value);
+    const entry = optionalRecord(value);
     if (!entry) continue;
     const at = timestamp(entry.timestamp);
     if (claudePrompt(entry)) {
@@ -160,10 +149,10 @@ export function claudeNativeUsage(entries: unknown[]): NativeSessionUsage {
     const usage = claudeRequestUsage(entry);
     if (!usage) continue;
     const existing = requests.get(usage.requestId);
-    const content = record(entry.message)?.content;
+    const content = optionalRecord(entry.message)?.content;
     const toolUseIds = Array.isArray(content)
       ? content
-          .map(record)
+          .map(optionalRecord)
           .filter(
             (part) => part?.type === "tool_use" && typeof part.id === "string",
           )
@@ -189,7 +178,7 @@ interface CodexTotals {
 }
 
 function codexTotals(value: unknown): CodexTotals | undefined {
-  const usage = record(value);
+  const usage = optionalRecord(value);
   if (!usage) return undefined;
   return {
     input: count(usage.input_tokens),
@@ -237,15 +226,15 @@ export function codexNativeUsage(entries: unknown[]): NativeSessionUsage {
     turn = undefined;
   };
   for (const value of entries) {
-    const entry = record(value);
-    const payload = record(entry?.payload);
+    const entry = optionalRecord(value);
+    const payload = optionalRecord(entry?.payload);
     if (!entry || entry.type !== "event_msg" || !payload) continue;
     const at = timestamp(entry.timestamp);
     if (payload.type === "task_started") {
       close("");
       turn = { startedAt: at, endedAt: at, from: total, requests: 0 };
     } else if (payload.type === "token_count") {
-      const next = codexTotals(record(payload.info)?.total_token_usage);
+      const next = codexTotals(optionalRecord(payload.info)?.total_token_usage);
       if (!next || next.input + next.output === total.input + total.output)
         continue;
       total = next;

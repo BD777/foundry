@@ -20,6 +20,7 @@ import {
   type ProviderSession,
 } from "./provider.js";
 import { createCuaDriverProvider } from "./providers/cua-driver.js";
+import { errorMessage } from "../utils.js";
 
 export const defaultDeadlineMs = 30_000;
 export const maxDeadlineMs = 120_000;
@@ -112,7 +113,7 @@ export class ResourceOperations {
     } catch (error) {
       return {
         results: [],
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
         errorCode:
           error instanceof ProviderError ? error.code : "backend_error",
       };
@@ -141,7 +142,7 @@ export class ResourceOperations {
         await this.end(current);
       }
     } catch (error) {
-      result.error = error instanceof Error ? error.message : String(error);
+      result.error = errorMessage(error);
     }
     if (request.notify)
       await this.notify(request.notify).catch(() => undefined);

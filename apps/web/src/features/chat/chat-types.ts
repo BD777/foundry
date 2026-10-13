@@ -17,7 +17,7 @@ import type {
   SubagentUsage,
   WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
-import type { ProcessDisplayItem } from "./chat-process-display";
+import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type {
   ConversationFileReference,
   StepUsage,

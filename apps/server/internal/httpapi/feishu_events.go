@@ -23,12 +23,8 @@ type feishuAppStore interface {
 // (feishuevents.Hub) and hands it to everything that receives events: the
 // workspaces' bots, agents (the feishu_events tool) and the gateway's
 // emulated event socket (feishu-cli event consume).
-func (s *Server) wireFeishuEvents(st store.Store, sw *integrations.Switch) {
-	appStore, ok := st.(feishuAppStore)
-	if !ok {
-		return
-	}
-	apps := feishuevents.ServerApps{Store: appStore, Secrets: s.secrets}
+func (s *Server) wireFeishuEvents(st Backend, sw *integrations.Switch) {
+	apps := feishuevents.ServerApps{Store: st, Secrets: st}
 	hub := feishuevents.NewHub(apps, apps)
 	hub.Integrations = sw
 	hub.Bots = s.feishu
@@ -41,9 +37,7 @@ func (s *Server) wireFeishuEvents(st store.Store, sw *integrations.Switch) {
 // serveGatewayEvents has the gateway serve feishu-cli's event connection
 // from the hub, rechecking each socket's access.
 func (s *Server) serveGatewayEvents() {
-	if s.feishuGateway != nil && s.feishuEvents != nil {
-		s.feishuGateway.Events = feishuevents.GatewayEvents{Hub: s.feishuEvents, Recheck: s.feishuGateway.Authorized}
-	}
+	s.feishuGateway.Events = feishuevents.GatewayEvents{Hub: s.feishuEvents, Recheck: s.feishuGateway.Authorized}
 }
 
 // feishuSubscriber is who an MCP caller receives events for: an agent's
@@ -65,9 +59,6 @@ const feishuPollWait = 60 * time.Second
 // feishuEventsForMCP is the feishu_events tool: subscribe to a connected
 // Feishu app's events, then read them by cursor, waiting for the next.
 func (s *Server) feishuEventsForMCP(r *http.Request, actor Actor, args map[string]json.RawMessage) (string, error) {
-	if s.feishuEvents == nil {
-		return "", &mcpToolError{http.StatusServiceUnavailable, "this server does not receive Feishu events"}
-	}
 	ctx := r.Context()
 	who, err := s.feishuSubscriber(ctx, actor)
 	if err != nil {
@@ -76,10 +67,10 @@ func (s *Server) feishuEventsForMCP(r *http.Request, actor Actor, args map[strin
 	id := mcpArgString(args, "subscriptionId")
 	if mcpArgBool(args, "unsubscribe") {
 		if id == "" {
-			return "", &mcpToolError{http.StatusBadRequest, "name the subscriptionId to unsubscribe"}
+			return "", &statusError{http.StatusBadRequest, errors.New("name the subscriptionId to unsubscribe")}
 		}
 		if err := s.feishuEvents.Unsubscribe(who, id); err != nil {
-			return "", &mcpToolError{http.StatusNotFound, err.Error()}
+			return "", &statusError{http.StatusNotFound, err}
 		}
 		return encodeJSON(map[string]any{"subscriptionId": id, "unsubscribed": true})
 	}
@@ -89,10 +80,10 @@ func (s *Server) feishuEventsForMCP(r *http.Request, actor Actor, args map[strin
 			Who: who, AppID: mcpArgString(args, "appId"), EventTypes: mcpArgList(args, "eventTypes"), ChatID: mcpArgString(args, "chatId"),
 		})
 		if errors.Is(err, integrations.ErrOff) {
-			return "", &mcpToolError{http.StatusServiceUnavailable, err.Error()}
+			return "", &statusError{http.StatusServiceUnavailable, err}
 		}
 		if err != nil {
-			return "", &mcpToolError{http.StatusBadRequest, err.Error()}
+			return "", &statusError{http.StatusBadRequest, err}
 		}
 		id, wait = subscription.ID, 0
 	}
@@ -112,7 +103,7 @@ func (s *Server) feishuEventsForMCP(r *http.Request, actor Actor, args map[strin
 	}
 	batch, err := s.feishuEvents.Poll(ctx, who, id, cursor, mcpArgNumber(args, "maxEvents", 50), wait)
 	if errors.Is(err, feishuevents.ErrUnknownSubscription) {
-		return "", &mcpToolError{http.StatusNotFound, err.Error()}
+		return "", &statusError{http.StatusNotFound, err}
 	}
 	if err != nil {
 		return "", err

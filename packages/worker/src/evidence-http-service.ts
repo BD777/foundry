@@ -10,6 +10,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { childPath } from "./execution-storage.js";
 import { digestObject } from "./evidence-store.js";
+import { signalProcessGroup } from "./process-group.js";
 import {
   sandboxAvailable,
   sandboxLaunch,
@@ -217,11 +218,7 @@ export function evidenceHTTPServiceURL(
 export function stopEvidenceHTTPServices(issueId: string): void {
   for (const [id, service] of services) {
     if (service.issueId !== issueId) continue;
-    try {
-      if (service.child.pid) process.kill(-service.child.pid, "SIGKILL");
-    } catch {
-      /* already gone */
-    }
+    if (service.child.pid) signalProcessGroup(service.child.pid, "SIGKILL");
     services.delete(id);
     release(service);
   }

@@ -622,9 +622,6 @@
     flex-basis: 100%;
   }
 }
-.fdy-device-removal-menu-trigger {
-  flex: 0 0 auto;
-}
 .fdy-device-settings-actions {
   display: flex;
   flex-wrap: wrap;

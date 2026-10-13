@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
   AgentSession,
@@ -21,7 +21,7 @@ import {
 } from "./execution-sandbox.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import type { WorkspaceSandbox } from "./session/index.js";
-import { writePrivateJSONAtomic } from "./storage.js";
+import { readJSONFile, writePrivateJSONAtomic } from "./storage.js";
 import { readAgentSessionCompletionMarker } from "./session-helpers.js";
 import { stageJSONObject } from "./evidence-agent.js";
 
@@ -280,9 +280,7 @@ export function recordedClarificationReply(
   inputId: string,
 ): ClarificationResponse | undefined {
   const path = replyPath(workspaceId, issueId, inputId);
-  return existsSync(path)
-    ? (JSON.parse(readFileSync(path, "utf8")) as ClarificationResponse)
-    : undefined;
+  return readJSONFile<ClarificationResponse>(path);
 }
 
 export function recordClarificationReply(

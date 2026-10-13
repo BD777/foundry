@@ -130,3 +130,16 @@ export function codexRoleOptions(session: AgentSession):
     },
   };
 }
+
+export function isDiagnosticSession(session: AgentSession): boolean {
+  return session.source === "diagnostic";
+}
+
+/**
+ * Sessions Foundry starts for itself (diagnostics, naming): read-only, a few
+ * turns, no tools beyond reading. A verifier is a role of its own
+ * (session-roles.ts).
+ */
+export function isUtilitySession(session: AgentSession): boolean {
+  return isDiagnosticSession(session) || session.source === "naming";
+}

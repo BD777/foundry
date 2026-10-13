@@ -9,17 +9,16 @@ import type {
   NativeAccountInspection,
 } from "@bd777/foundry-protocol";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
-import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
+import { resolveClaudeCommand, resolveCodexCommand } from "./native-cli.js";
 import { claudeAccount } from "./native-account.js";
+import { claudeConfigDir, codexHome } from "./native-homes.js";
 import { claudeRenewalPending, isNativeAccountStatus } from "./native-login.js";
 import { parse as parseTOML } from "smol-toml";
 
 const exec = promisify(execFile);
 export function nativeSources(runtime: "codex" | "claude"): string[] {
   const primary =
-    runtime === "codex"
-      ? resolve(process.env.CODEX_HOME || resolve(homedir(), ".codex"))
-      : resolve(process.env.CLAUDE_CONFIG_DIR || resolve(homedir(), ".claude"));
+    runtime === "codex" ? resolve(codexHome()) : resolve(claudeConfigDir());
   if (runtime === "claude") return [primary];
   // Configuration directories only; never enumerate credential contents.
   const others = readdirSync(homedir(), { withFileTypes: true })

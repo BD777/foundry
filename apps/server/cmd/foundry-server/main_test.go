@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 func TestHelpAndUnknownArgumentsNeverOpenTheDatabase(t *testing.T) {
@@ -26,7 +24,7 @@ func TestHelpAndUnknownArgumentsNeverOpenTheDatabase(t *testing.T) {
 		return nil, errors.New("tests never bind a port")
 	}
 	openStore := deps.openStore
-	deps.openStore = func(cfg config) (store.Store, error) {
+	deps.openStore = func(cfg config) (serverStore, error) {
 		t.Errorf("store opened at %s", cfg.DBPath)
 		return openStore(cfg)
 	}

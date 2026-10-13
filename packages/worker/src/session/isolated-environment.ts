@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { codexHome as deviceCodexHome } from "../native-homes.js";
 import { foundryStatePath } from "../state-root.js";
 import {
   sandboxCredentialCopies,
@@ -29,10 +29,7 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
   // candidate. The sandbox gets the device's access tokens, never a refresh
   // token: providers rotate those, and a refresh in here would sign the
   // device out (provider-credentials.ts). Codex's settings come along.
-  const codexConfig = resolve(
-    process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
-    "config.toml",
-  );
+  const codexConfig = resolve(deviceCodexHome(), "config.toml");
   if (existsSync(codexConfig))
     copyFileSync(codexConfig, resolve(codexHome, "config.toml"));
   writeSandboxCredentials(

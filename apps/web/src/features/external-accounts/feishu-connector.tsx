@@ -32,7 +32,7 @@ import { AppGroup, AppNotes, EmptyAppRow, secretReplaceable } from "./app-row";
 import { AuthorizeDialog, type AuthorizeTarget } from "./authorize-dialog";
 import { ConnectDialog } from "./connect-dialog";
 import { LinkQrDialog, type LinkQrTarget } from "./link-qr-dialog";
-import type { RowMenuItem } from "./row-menu";
+import type { RowMenuItem } from "../../components/ui/row-menu";
 
 export interface FeishuConnectorProps {
   currentUserId: string;

@@ -13,12 +13,12 @@ import {
 } from "../../api";
 import { onStreamEvent } from "../../stream";
 import type { WorkspaceMember } from "../../api-types";
-import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { serverErrorText } from "../../lib/errors";
 import { inviteLink } from "../../lib/invite-link";
 import { useReadOrder } from "../../lib/read-order";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
@@ -67,7 +67,7 @@ export function SharingFeature({
     let cancelled = false;
     const refresh = () =>
       reload().catch((reason: unknown) => {
-        if (!cancelled) setError(messageOf(reason));
+        if (!cancelled) setError(serverErrorText(reason));
       });
     void refresh();
     // Without a workspace (yet) there is nothing to follow.
@@ -93,7 +93,7 @@ export function SharingFeature({
       await reload();
       return true;
     } catch (reason) {
-      setError(messageOf(reason));
+      setError(serverErrorText(reason));
       return false;
     } finally {
       setBusy("");
@@ -116,7 +116,7 @@ export function SharingFeature({
       await removeWorkspaceMember(workspace.id, member.userId);
       onLeft();
     } catch (reason) {
-      setError(messageOf(reason));
+      setError(serverErrorText(reason));
       setBusy("");
     }
   }
@@ -239,10 +239,4 @@ export function SharingFeature({
       </Panel>
     </div>
   );
-}
-
-function messageOf(reason: unknown): string {
-  return reason instanceof Error && reason.message
-    ? reason.message
-    : i18n.t("common:errors.serverUnreachable");
 }

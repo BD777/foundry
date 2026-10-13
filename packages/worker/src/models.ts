@@ -8,13 +8,15 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { promisify } from "node:util";
-import type { AgentModelOption } from "@bd777/foundry-protocol";
+import type {
+  AgentModelOption,
+  UpsertAgentProfilePayload,
+} from "@bd777/foundry-protocol";
 import {
   profileConfigFromInput,
   type AgentProfileLocalConfig,
-  type UpsertAgentProfilePayload,
 } from "./profiles.js";
-import { codexCommandCandidates } from "./utils.js";
+import { codexCommandCandidates } from "./native-cli.js";
 import {
   readClaudeCatalog,
   readOfficialCodexCatalog,

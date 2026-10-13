@@ -11,10 +11,11 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { LanguageSelect } from "../../components/ui/language-select";
-import { applyLocalePreference, i18n, type LocalePreference } from "../../i18n";
+import { applyLocalePreference, type LocalePreference } from "../../i18n";
 import { PageSurface } from "../../components/ui/page-surface";
 import { Panel } from "../../components/ui/panel";
 import { roleLabel } from "./account-format";
+import { serverErrorText } from "../../lib/errors";
 
 export type AccountFeatureEvent =
   | { type: "account.updated"; user: AccountUser }
@@ -48,7 +49,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
       onEvent({ type: "account.updated", user: updated });
       setNameFeedback({ tone: "success", text: t("page.nameSaved") });
     } catch (reason) {
-      setNameFeedback({ tone: "error", text: messageOf(reason) });
+      setNameFeedback({ tone: "error", text: serverErrorText(reason) });
     } finally {
       setNameBusy(false);
     }
@@ -66,7 +67,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
       setNewPassword("");
       setPasswordFeedback({ tone: "success", text: t("page.passwordChanged") });
     } catch (reason) {
-      setPasswordFeedback({ tone: "error", text: messageOf(reason) });
+      setPasswordFeedback({ tone: "error", text: serverErrorText(reason) });
     } finally {
       setPasswordBusy(false);
     }
@@ -81,7 +82,7 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
       await applyLocalePreference(locale);
       onEvent({ type: "account.updated", user: await updateMyLocale(locale) });
     } catch (reason) {
-      setLanguageFeedback({ tone: "error", text: messageOf(reason) });
+      setLanguageFeedback({ tone: "error", text: serverErrorText(reason) });
     } finally {
       setLanguageBusy(false);
     }
@@ -203,10 +204,4 @@ export function AccountFeature({ user, onEvent }: AccountFeatureProps) {
       </Panel>
     </PageSurface>
   );
-}
-
-function messageOf(reason: unknown): string {
-  return reason instanceof Error && reason.message
-    ? reason.message
-    : i18n.t("common:errors.serverUnreachable");
 }

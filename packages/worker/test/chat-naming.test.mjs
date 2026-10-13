@@ -6,7 +6,7 @@ import {
   codexSandboxMode,
   claudeMaxTurns,
 } from "../dist/runner.js";
-import { nativeChatRecap } from "../dist/native-chat.js";
+import { nativeChatRecap } from "../dist/native-chat-records.js";
 
 test("recap cannot reuse the original runtime or inherit a prompt prefix", () => {
   const profile = {

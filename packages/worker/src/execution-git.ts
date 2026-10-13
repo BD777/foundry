@@ -1,28 +1,35 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 
-export async function git(
+export interface GitOptions {
+  /** A failure answers "" instead of throwing. */
+  optional?: boolean;
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Work that grows with the size of the workspace (listing, staging or
+   * committing every file): no time limit and room for long output.
+   */
+  bulk?: boolean;
+  /** Bytes of output accepted; overrides bulk's. */
+  maxBuffer?: number;
+  /** Milliseconds before git is stopped, 0 for none; overrides bulk's. */
+  timeout?: number;
+}
+
+/**
+ * Git as Foundry runs it: no hooks, signing or background maintenance, never
+ * a prompt, and no repository chosen by the inherited environment.
+ */
+function gitInvocation(
   cwd: string,
   args: string[],
-  input?: {
-    optional?: boolean;
-    env?: NodeJS.ProcessEnv;
-    /**
-     * Work that grows with the size of the workspace (listing, staging or
-     * committing every file): no time limit and room for long output.
-     */
-    bulk?: boolean;
-  },
-): Promise<string> {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...input?.env,
-    GIT_TERMINAL_PROMPT: "0",
-  };
+  input: GitOptions = {},
+): { args: string[]; env: NodeJS.ProcessEnv } {
+  const inherited: NodeJS.ProcessEnv = { ...process.env };
   for (const key of [
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -31,33 +38,94 @@ export async function git(
     "GIT_OBJECT_DIRECTORY",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   ])
-    delete env[key];
+    delete inherited[key];
+  return {
+    args: [
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "maintenance.auto=false",
+      "-c",
+      "gc.auto=0",
+      "-C",
+      cwd,
+      ...args,
+    ],
+    env: { ...inherited, ...input.env, GIT_TERMINAL_PROMPT: "0" },
+  };
+}
+
+function execOptions(input: GitOptions, env: NodeJS.ProcessEnv) {
+  return {
+    env,
+    maxBuffer:
+      input.maxBuffer ?? (input.bulk ? 1024 * 1024 * 1024 : 32 * 1024 * 1024),
+    timeout: input.timeout ?? (input.bulk ? 0 : 60_000),
+  };
+}
+
+function gitError(args: string[], error: unknown): Error {
+  const detail = error as Error & { stderr?: unknown; stdout?: unknown };
+  return new Error(
+    `git ${args[0]}: ${String(detail.stderr ?? "").trim() || String(detail.stdout ?? "").trim() || detail.message}`,
+  );
+}
+
+export async function git(
+  cwd: string,
+  args: string[],
+  input: GitOptions = {},
+): Promise<string> {
+  const invocation = gitInvocation(cwd, args, input);
   try {
     const result = await exec(
       "git",
-      [
-        "-c",
-        "core.hooksPath=/dev/null",
-        "-c",
-        "commit.gpgsign=false",
-        "-c",
-        "maintenance.auto=false",
-        "-C",
-        cwd,
-        ...args,
-      ],
-      input?.bulk
-        ? { env, maxBuffer: 1024 * 1024 * 1024, timeout: 0 }
-        : { env, maxBuffer: 32 * 1024 * 1024, timeout: 60_000 },
+      invocation.args,
+      execOptions(input, invocation.env),
     );
     return result.stdout.trimEnd();
   } catch (error) {
-    if (input?.optional) return "";
-    const detail = error as Error & { stderr?: string; stdout?: string };
-    throw new Error(
-      `git ${args[0]}: ${detail.stderr?.trim() || detail.stdout?.trim() || detail.message}`,
-    );
+    if (input.optional) return "";
+    throw gitError(args, error);
   }
+}
+
+/** git for output read as bytes, such as a blob: untrimmed, never optional. */
+export async function gitBytes(
+  cwd: string,
+  args: string[],
+  input: Omit<GitOptions, "optional"> = {},
+): Promise<Buffer> {
+  const invocation = gitInvocation(cwd, args, input);
+  try {
+    const result = await exec("git", invocation.args, {
+      ...execOptions(input, invocation.env),
+      encoding: "buffer",
+    });
+    return result.stdout;
+  } catch (error) {
+    throw gitError(args, error);
+  }
+}
+
+/** git for synchronous callers: the outcome, never thrown. */
+export function gitSync(
+  cwd: string,
+  args: string[],
+): { ok: boolean; status: number | null; stdout: string; stderr: string } {
+  const invocation = gitInvocation(cwd, args);
+  const result = spawnSync("git", invocation.args, {
+    env: invocation.env,
+    encoding: "utf8",
+  });
+  return {
+    ok: result.status === 0,
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 export const commitIdentity = {

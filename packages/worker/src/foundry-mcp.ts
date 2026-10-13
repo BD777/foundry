@@ -11,6 +11,7 @@ import {
   FoundryClientError,
   resolveConfig,
 } from "./foundry-client.js";
+import { errorMessage } from "./utils.js";
 
 interface JsonRpcMessage {
   jsonrpc: "2.0";
@@ -40,10 +41,7 @@ export async function runMcpServer(
         id: message.id,
         error: {
           code: -32000,
-          message:
-            error instanceof FoundryClientError || error instanceof Error
-              ? error.message
-              : String(error),
+          message: errorMessage(error),
         },
       };
     }

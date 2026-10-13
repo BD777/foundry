@@ -18,6 +18,7 @@ import { isStatusQuestion } from "./issue-language";
 import { askIssueStatus } from "./evidence-api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { isIssueClosed } from "../../lib/issue-meta";
 import "./issue-execution.css";
 
 /** Issue transport adapter. Input, queueing and scrolling belong to Conversation. */
@@ -88,7 +89,7 @@ export function IssueConversation({
   const stop = useCallback(async () => {
     await issueEnvironmentAction(issue.id, "cancel");
   }, [issue.id]);
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   const displayed: ChatMessageItem[] = [...messages];
   if (contract?.busy || contract?.replying) {
     if (
@@ -120,7 +121,7 @@ export function IssueConversation({
             <Button
               disabled={contract.busy}
               variant="secondary"
-              onClick={() => void contract.retryReply().catch(() => {})}
+              onClick={() => void contract.retryReply()}
             >
               {t("conversation.retryReply")}
             </Button>
@@ -158,7 +159,7 @@ export function IssueConversation({
             <Button
               disabled={contract.busy}
               variant="secondary"
-              onClick={() => void contract.retryInitial().catch(() => {})}
+              onClick={() => void contract.retryInitial()}
             >
               {t("conversation.retryClarify")}
             </Button>

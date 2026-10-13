@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents/feishueventstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/gorilla/websocket"
@@ -160,9 +161,9 @@ func TestFeishuCLIConsumesEventsThroughTheServer(t *testing.T) {
 		t.Fatalf("the server's connection: %d accepted, %d open", fake.Accepted(), fake.Open())
 	}
 	for _, payload := range [][]byte{
-		MessagePayload(testApp, "ev_cli_1", "oc_1", "om_1", "", "first", true),
-		EventPayload(testApp, "ev_cli_other", "im.chat.updated_v1", map[string]any{"chat_id": "oc_1"}),
-		MessagePayload(testApp, "ev_cli_2", "oc_1", "om_2", "om_1", "second", false),
+		feishueventstest.MessagePayload(testApp, "ev_cli_1", "oc_1", "om_1", "", "first", true),
+		feishueventstest.EventPayload(testApp, "ev_cli_other", "im.chat.updated_v1", map[string]any{"chat_id": "oc_1"}),
+		feishueventstest.MessagePayload(testApp, "ev_cli_2", "oc_1", "om_2", "om_1", "second", false),
 	} {
 		if _, err := fake.Push(payload, 1); err != nil {
 			t.Fatal(err)
@@ -267,7 +268,7 @@ func TestAnEventSocketClosesWhenAccessEnds(t *testing.T) {
 	if !fake.WaitOpen(1, 5*time.Second) {
 		t.Fatal("the socket did not open the app's connection")
 	}
-	if _, err := fake.Push(MessagePayload(testApp, "ev_s1", "oc_1", "om_1", "", "hi", false), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload(testApp, "ev_s1", "oc_1", "om_1", "", "hi", false), 1); err != nil {
 		t.Fatal(err)
 	}
 	_ = socket.SetReadDeadline(time.Now().Add(5 * time.Second))

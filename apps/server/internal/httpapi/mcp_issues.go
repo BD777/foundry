@@ -167,7 +167,7 @@ type mcpIssueRun struct {
 }
 
 func issueNotFound(id string) error {
-	return &mcpToolError{http.StatusNotFound, "no Issue " + id + " that you can read (list_issues lists them)"}
+	return &statusError{http.StatusNotFound, errors.New("no Issue " + id + " that you can read (list_issues lists them)")}
 }
 
 // readableIssue is the Issue the caller names, by id or short id. One it
@@ -175,7 +175,7 @@ func issueNotFound(id string) error {
 func (s *Server) readableIssue(ctx context.Context, actor Actor, raw string) (store.Issue, error) {
 	id := strings.TrimSpace(raw)
 	if id == "" {
-		return store.Issue{}, &mcpToolError{http.StatusBadRequest, "issueId is required: an Issue id (iss_…) or short id"}
+		return store.Issue{}, &statusError{http.StatusBadRequest, errors.New("issueId is required: an Issue id (iss_…) or short id")}
 	}
 	scope, err := s.contextScope(ctx, actor)
 	if err != nil {
@@ -205,12 +205,10 @@ func (s *Server) issueForMCP(ctx context.Context, actor Actor, raw string) (stri
 	if run := issue.Run; run != nil {
 		view.Run = &mcpIssueRun{SessionID: run.ID, Status: run.Status, Error: run.Error, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt}
 	}
-	if evidence, ok := s.store.(store.EvidenceStore); ok {
-		if view.Contract, err = issueContractView(ctx, evidence, issue); err != nil {
-			return "", err
-		}
-		view.Verification = issueVerificationView(ctx, evidence, issue)
+	if view.Contract, err = issueContractView(ctx, s.store, issue); err != nil {
+		return "", err
 	}
+	view.Verification = issueVerificationView(ctx, s.store, issue)
 	if draft := issue.DraftContractRevision; draft != nil && (view.Contract == nil || *draft != view.Contract.Revision) {
 		view.DraftRevision = draft
 	}

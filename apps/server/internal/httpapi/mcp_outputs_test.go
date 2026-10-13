@@ -193,13 +193,12 @@ func TestReadContextReadsWhatASessionProduced(t *testing.T) {
 	// An Issue's clarification reaches the workspace as Viewer: what the
 	// tools wrote, but not a file outside it an answer named, nor
 	// background output.
-	evidence := db.(store.EvidenceStore)
 	discussed, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_lineage", SourceInput: "check the greeting", Runtime: "claude"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft := firstDraft(t, evidence, discussed.ID)
-	_, clarification, err := evidence.AskClarification(ctx, store.AskClarificationInput{IssueID: discussed.ID, Revision: draft.Revision, ContentDigest: draft.ContentDigest,
+	draft := firstDraft(t, db, discussed.ID)
+	_, clarification, err := db.AskClarification(ctx, store.AskClarificationInput{IssueID: discussed.ID, Revision: draft.Revision, ContentDigest: draft.ContentDigest,
 		Message: "What changed?", ChangeReason: "Clarify"}, store.ActorRef{Kind: "local_owner", ID: "owner", DisplayName: "Owner"}, "clarify-outputs")
 	if err != nil {
 		t.Fatal(err)

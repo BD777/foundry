@@ -17,13 +17,10 @@ import {
   type AgentSubagentTranscriptMessage,
   type SubagentUsage,
 } from "@bd777/foundry-protocol";
+import { string } from "./json-values.js";
 
 const maxToolResultCharacters = 6000;
 const maxTranscriptCharacters = 512 * 1024;
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
 
 function truncateToolResult(content: string): string {
   return content.length > maxToolResultCharacters
@@ -100,7 +97,7 @@ function sessionTranscripts(
 function taskStatus(
   notification: Record<string, unknown> | undefined,
 ): AgentSubagentSummary["status"] {
-  const status = notification ? stringValue(notification.status) : "";
+  const status = notification ? string(notification.status) : "";
   return status === "failed"
     ? "failed"
     : status === "completed"
@@ -137,7 +134,7 @@ function assistantResponseTexts(record: Record<string, unknown>): string[] {
       return [];
     }
     const block = item as Record<string, unknown>;
-    const text = block.type === "text" ? stringValue(block.text) : "";
+    const text = block.type === "text" ? string(block.text) : "";
     return text.trim() ? [text] : [];
   });
 }
@@ -225,22 +222,22 @@ function listPart(line: Buffer, digest: boolean): ListPart | undefined {
   if (record.type === "system" && record.subtype === "task_started")
     return {
       kind: "started",
-      taskType: stringValue(record.task_type),
-      taskId: stringValue(record.task_id),
-      toolUseId: stringValue(record.tool_use_id),
-      description: stringValue(record.description),
-      subagentType: stringValue(record.subagent_type),
-      ...(digest ? {} : { prompt: stringValue(record.prompt) }),
+      taskType: string(record.task_type),
+      taskId: string(record.task_id),
+      toolUseId: string(record.tool_use_id),
+      description: string(record.description),
+      subagentType: string(record.subagent_type),
+      ...(digest ? {} : { prompt: string(record.prompt) }),
     };
   if (isTaskNotification(record))
     return {
       kind: "notification",
-      taskId: stringValue(record.task_id),
+      taskId: string(record.task_id),
       status: taskStatus(record),
-      summary: stringValue(record.summary),
+      summary: string(record.summary),
       usage: claudeSubagentUsage(record),
     };
-  const toolUseId = stringValue(record.parent_tool_use_id);
+  const toolUseId = string(record.parent_tool_use_id);
   if (!toolUseId) return undefined;
   const texts = assistantResponseTexts(record);
   if (!texts.length) return undefined;
@@ -448,12 +445,12 @@ export async function readAgentSubagentTranscript(
       (record) =>
         record.type === "system" &&
         record.subtype === "task_started" &&
-        stringValue(record.task_id) === taskId,
+        string(record.task_id) === taskId,
     );
-  if (!started || stringValue(started.task_type) !== "local_agent") {
+  if (!started || string(started.task_type) !== "local_agent") {
     throw new Error("subagent task was not found");
   }
-  const toolUseId = stringValue(started.tool_use_id);
+  const toolUseId = string(started.tool_use_id);
   if (!toolUseId) {
     throw new Error("subagent transcript has no tool identifier");
   }
@@ -467,7 +464,7 @@ export async function readAgentSubagentTranscript(
   const messages: AgentSubagentTranscriptMessage[] = [];
   let characterCount = 0;
   for (const record of records) {
-    if (stringValue(record.parent_tool_use_id) !== toolUseId) {
+    if (string(record.parent_tool_use_id) !== toolUseId) {
       continue;
     }
     characterCount = pushWithinLimit(
@@ -479,7 +476,7 @@ export async function readAgentSubagentTranscript(
       break;
     }
   }
-  const prompt = stringValue(started.prompt);
+  const prompt = string(started.prompt);
   if (
     prompt &&
     !messages.some(
@@ -493,10 +490,9 @@ export async function readAgentSubagentTranscript(
     prompt: prompt || undefined,
     sessionId,
     status: notification?.status ?? "running",
-    subagentType: stringValue(started.subagent_type) || undefined,
+    subagentType: string(started.subagent_type) || undefined,
     taskId,
-    title:
-      stringValue(started.description) || notification?.summary || "Subagent",
+    title: string(started.description) || notification?.summary || "Subagent",
     toolUseId,
     ...(notification?.usage ? { usage: notification.usage } : {}),
   };

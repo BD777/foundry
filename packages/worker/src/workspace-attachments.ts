@@ -19,6 +19,7 @@ import {
   chmodSync,
 } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { relativeInside } from "./paths.js";
 
 /** A refusal the server maps to an HTTP status; `code` is part of the wire. */
 export class AttachmentError extends Error {
@@ -73,13 +74,7 @@ function attachmentsRoot(workspacePath: string): string {
 }
 
 function inside(root: string, target: string): boolean {
-  const path = relative(root, target);
-  return (
-    path !== "" &&
-    !path.startsWith(`..${sep}`) &&
-    path !== ".." &&
-    !isAbsolute(path)
-  );
+  return relativeInside(relative(root, target));
 }
 
 /**

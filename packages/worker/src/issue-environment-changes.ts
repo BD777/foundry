@@ -5,6 +5,8 @@
  * again on a timer; the device connection tells the server.
  */
 
+import { errorMessage } from "./utils.js";
+
 /** One Issue's environment, or (without issueId) every one of a workspace. */
 export interface IssueEnvironmentChange {
   workspaceId?: string;
@@ -26,7 +28,7 @@ export function issueEnvironmentChanged(change: IssueEnvironmentChange): void {
       listener(change);
     } catch (error) {
       console.error(
-        `Telling an Issue environment change failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Telling an Issue environment change failed: ${errorMessage(error)}`,
       );
     }
   }

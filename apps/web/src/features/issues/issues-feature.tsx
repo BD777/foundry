@@ -4,7 +4,6 @@ import type {
   Issue,
   AgentProjection,
   AgentProfileProjection,
-  IssueStatus,
   ProviderHealth,
   WorkerRuntimeId,
   WorkspaceProjection,
@@ -17,7 +16,7 @@ import { IssueCard } from "./issue-board-card";
 import { AgentComposer } from "../../components/ui/agent-composer";
 import { AgentPickerFooter } from "../../components/ui/agent-picker-footer";
 import { IssueBoard, IssueListTable, IssuesScreen } from "./issue-workspace";
-import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
+import { runtimeMeta } from "../../components/ui/runtime-mark";
 import {
   buildPickerAgentOptions,
   canonicalPickerAgents,

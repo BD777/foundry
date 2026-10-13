@@ -6,18 +6,18 @@
  */
 import { createInterface } from "node:readline";
 import type { AgentSession } from "@bd777/foundry-protocol";
+import { signalProcessGroup } from "../process-group.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
-import {
-  closeAllActiveRuntimes,
-  runClaudeWorkspaceSession,
-  runCodexWorkspaceSession,
-} from "../runner.js";
+import { closeAllActiveRuntimes } from "../runner/active-runtimes.js";
+import { runClaudeWorkspaceSession } from "../runner/claude-turn.js";
+import { runCodexWorkspaceSession } from "../runner/codex-turn.js";
 import {
   registerSessionAmbientEnv,
   type SessionAmbientEnv,
 } from "../session-ambient.js";
 import { steerActiveSession } from "../session-helpers.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
+import { errorMessage } from "../utils.js";
 
 const output = (value: unknown): void => {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -28,11 +28,7 @@ const parentWatch = setInterval(() => {
   if (process.ppid === parentPid) return;
   closeAllActiveRuntimes();
   // This host owns its process group; stop tools as well as the SDK host.
-  try {
-    process.kill(-process.pid, "SIGTERM");
-  } catch {
-    process.exit(1);
-  }
+  if (!signalProcessGroup(process.pid, "SIGTERM")) process.exit(1);
 }, 1000);
 parentWatch.unref();
 lines.once("line", async (line) => {
@@ -106,5 +102,5 @@ lines.once("line", async (line) => {
 
 /** The error's message; the parent wraps it in an Error of its own. */
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }

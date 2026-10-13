@@ -4,7 +4,7 @@ import type { ResourceInstance } from "@bd777/foundry-protocol";
 import { extendResourceLease, releaseResource } from "../../api";
 import { Button } from "../../components/ui/button";
 import { navigateToChat } from "../../lib/in-app-navigation";
-import { fullWhen, relativeWhen } from "../../lib/relative-time";
+import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { useResourceAction } from "./resource-action";
 import { ResourceConfirmDialog } from "./resource-confirm-dialog";
 import { clockTime } from "./resource-groups";

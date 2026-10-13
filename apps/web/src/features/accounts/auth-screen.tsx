@@ -11,12 +11,9 @@ import { TextInput } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
 import { LanguageSelect } from "../../components/ui/language-select";
 import { useTranslation } from "react-i18next";
-import {
-  applyLocalePreference,
-  i18n,
-  storedLocalePreference,
-} from "../../i18n";
+import { applyLocalePreference, storedLocalePreference } from "../../i18n";
 import { roleNoun } from "./account-format";
+import { serverErrorText } from "../../lib/errors";
 import { workspaceRoleLabel } from "../../lib/workspace-access";
 
 export type AuthScreenKind = "login" | "setup" | "invite";
@@ -53,7 +50,7 @@ export function AuthScreen({
         if (!cancelled) setInvite(preview);
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setInviteError(errorText(reason));
+        if (!cancelled) setInviteError(serverErrorText(reason));
       });
     return () => {
       cancelled = true;
@@ -81,7 +78,7 @@ export function AuthScreen({
             : await login(username, password);
       onAuthenticated(state);
     } catch (reason) {
-      setError(errorText(reason));
+      setError(serverErrorText(reason));
       setBusy(false);
     }
   }
@@ -203,10 +200,4 @@ export function AuthScreen({
       </div>
     </FoundryShell>
   );
-}
-
-function errorText(reason: unknown): string {
-  return reason instanceof Error && reason.message
-    ? reason.message
-    : i18n.t("common:errors.serverUnreachable");
 }

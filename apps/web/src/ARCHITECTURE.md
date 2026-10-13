@@ -8,6 +8,7 @@ events. The app shell coordinates navigation and data shared across features.
 flowchart TB
   APP["app/* + App.tsx\nroute, live data, shell coordination"]
   FEATURE["features/*\nprivate state + controller + feature UI"]
+  WIDGETS["components/conversation, skills, workspace\nshared domain widgets"]
   SHARED["components/ui + lib\nstateless primitives and shared helpers"]
   API["api.ts\nHTTP transport"]
   STREAM["stream/*\nevent stream: connection, typed dispatch"]
@@ -15,7 +16,10 @@ flowchart TB
 
   APP -->|domain input| FEATURE
   FEATURE -->|semantic event| APP
+  FEATURE --> WIDGETS
   FEATURE --> SHARED
+  WIDGETS --> SHARED
+  WIDGETS --> API
   FEATURE --> API
   FEATURE --> STREAM
   APP --> API
@@ -70,8 +74,19 @@ refs, drag state, loading maps, or component implementation details.
 `components/ui` contains reusable visual primitives and patterns. `lib` contains
 pure shared helpers. Shared code cannot import the app layer or a feature.
 
+`components/conversation`, `components/skills` and `components/workspace` are
+shared domain widgets: UI used by several features (the conversation
+transcript and input, skill compare/promotion, workspace dialogs and pickers).
+They may read data through `api.ts` and use `components/ui` and `lib`, but,
+like all shared code, never import a feature or the app layer.
+
 If a component is useful only inside one feature, keep it private in that
 feature instead of adding it to `components/ui`.
+
+Known exception: `lib/in-app-navigation.ts` imports `app/navigation`'s
+`navigateAppRoute` so features can open another page through the route
+contract. Inverting it (the app registering a navigator, or the URL schema
+moving into `lib`) is open; the architecture audit allows only this file.
 
 ### Transport and protocol
 
@@ -160,7 +175,7 @@ file while preserving cascade order and visual audit coverage.
   projection. The conversation UI itself (transcript stage, virtualization,
   turn navigator, queue, input hook, scroll follow) is shared in
   `components/conversation/` and used by both Chat and Issue detail; the chat
-  feature folder holds projection adapters and re-export shims.
+  feature folder holds the controller and its projection adapters.
 - `app`: browser routing, view scroll reset, live SSE batching/polling, and
   shared server-projection merging are isolated from feature code; the
   per-domain event slices live in `app/projections/`. Workspace
@@ -169,6 +184,6 @@ file while preserving cascade order and visual audit coverage.
   only the state and browser-coupled wiring around them.
 
 `audit-feature-architecture.mjs` prevents cross-feature imports, shared-layer
-back-dependencies, feature deep imports, feature-facade growth (350 lines),
+(`components/**`, `lib/**`) back-dependencies, feature deep imports, feature-facade growth (350 lines),
 feature modules over 1000 lines, and `App.tsx` growth beyond its 1200-line
 shell budget.

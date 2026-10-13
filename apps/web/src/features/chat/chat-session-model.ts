@@ -7,6 +7,7 @@ import {
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
 import { isProcessLabel } from "../../lib/process-labels";
+import { isSessionLive } from "../../lib/session-status";
 import {
   agentSessionIsAwaitingDetails,
   responseStreamLabel,
@@ -19,11 +20,7 @@ export function agentSessionMessageText(
   context: { sessions?: AgentSession[] } = {},
 ): string {
   // While a turn runs, the response is still the previous turn's answer.
-  if (
-    session.response &&
-    session.status !== "running" &&
-    session.status !== "queued"
-  ) {
+  if (session.response && !isSessionLive(session)) {
     return session.response;
   }
   if (session.error) {
@@ -218,8 +215,7 @@ export function activeThreadSessionForAgent(
     .reverse()
     .find(
       (session) =>
-        sessionMatchesAgentProfile(session, agent) &&
-        (session.status === "queued" || session.status === "running"),
+        sessionMatchesAgentProfile(session, agent) && isSessionLive(session),
     );
 }
 
@@ -229,19 +225,7 @@ export function activeThreadSession(
   if (!thread) {
     return undefined;
   }
-  return [...thread.sessions]
-    .reverse()
-    .find(
-      (session) => session.status === "queued" || session.status === "running",
-    );
-}
-
-export function isTerminalSession(session: AgentSession): boolean {
-  return (
-    session.status === "completed" ||
-    session.status === "failed" ||
-    session.status === "canceled"
-  );
+  return [...thread.sessions].reverse().find(isSessionLive);
 }
 
 /**

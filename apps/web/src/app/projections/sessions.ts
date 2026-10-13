@@ -5,6 +5,7 @@ import {
 } from "@bd777/foundry-protocol";
 import type { FoundryData } from "../../api-types";
 import { appendAgentEvents } from "../../lib/agent-event-log";
+import { isSessionLive } from "../../lib/session-status";
 import {
   isMatchingResponseStreamEvent,
   mergeLoadedAgentSession,
@@ -73,10 +74,7 @@ function applyAgentSessionEvents(
       ...session,
       events: appendAgentEvents(session.events, incoming),
       status: session.status === "queued" ? "running" : session.status,
-      updatedLabel:
-        session.status === "queued" || session.status === "running"
-          ? "running"
-          : session.updatedLabel,
+      updatedLabel: isSessionLive(session) ? "running" : session.updatedLabel,
       ...(snapshot
         ? {
             scheduled: sessionScheduleFromSnapshot(

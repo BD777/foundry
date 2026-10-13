@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -24,7 +26,7 @@ func (s *Server) sessionTarget(ctx context.Context, actor Actor, raw, verb strin
 		return store.AgentSession{}, err
 	}
 	if target.session == nil {
-		return store.AgentSession{}, &mcpToolError{http.StatusBadRequest, target.chat.ID + " is a native chat on its device, not a Foundry session: read it with read_context; Foundry cannot " + verb + " it"}
+		return store.AgentSession{}, &statusError{http.StatusBadRequest, errors.New(target.chat.ID + " is a native chat on its device, not a Foundry session: read it with read_context; Foundry cannot " + verb + " it")}
 	}
 	return *target.session, nil
 }
@@ -37,7 +39,7 @@ func (s *Server) controlledSession(ctx context.Context, actor Actor, raw, verb s
 		return store.AgentSession{}, err
 	}
 	if !s.canControlSession(ctx, actor, session) {
-		return store.AgentSession{}, &mcpToolError{http.StatusForbidden, fmt.Sprintf("cannot %s %s: %s", verb, session.ID, s.controlRefusal(ctx, actor, session))}
+		return store.AgentSession{}, &statusError{http.StatusForbidden, fmt.Errorf("cannot %s %s: %s", verb, session.ID, s.controlRefusal(ctx, actor, session))}
 	}
 	return session, nil
 }
@@ -103,27 +105,16 @@ func sessionListItem(item store.SessionListItem, devices map[string]string) mcpS
 	}
 }
 
-func (s *Server) sessionLister() (store.SessionInspectionStore, error) {
-	lister, ok := s.store.(store.SessionInspectionStore)
-	if !ok {
-		return nil, errors.New("this server's store cannot list sessions")
-	}
-	return lister, nil
-}
-
-func (s *Server) listSessionsForMCP(ctx context.Context, actor Actor, workspace string, args map[string]json.RawMessage) (string, error) {
-	lister, err := s.sessionLister()
-	if err != nil {
-		return "", err
-	}
+func (s *Server) listSessionsForMCP(call mcpCall) (string, error) {
+	ctx, actor, args := call.r.Context(), call.actor, call.args
 	query := store.SessionListQuery{
-		WorkspaceID: workspace,
+		WorkspaceID: call.workspace,
 		Cursor:      mcpArgString(args, "cursor"),
 		Limit:       mcpArgNumber(args, "limit", 0),
 	}
 	if mcpArgBool(args, "parentOnly") {
 		if !actor.Agent() {
-			return "", &mcpToolError{http.StatusBadRequest, "parentOnly lists the sessions the calling session created: it needs a session token"}
+			return "", &statusError{http.StatusBadRequest, errors.New("parentOnly lists the sessions the calling session created: it needs a session token")}
 		}
 		query.ParentSessionID = actor.Identity.SessionID
 	}
@@ -139,9 +130,9 @@ func (s *Server) listSessionsForMCP(ctx context.Context, actor Actor, workspace 
 			query.WorkspaceID = parent.WorkspaceID
 		}
 	}
-	page, err := lister.ListSessionPage(ctx, query)
+	page, err := s.store.ListSessionPage(ctx, query)
 	if errors.Is(err, store.ErrSessionListCursor) {
-		return "", &mcpToolError{http.StatusBadRequest, "unknown cursor: pass the nextCursor a previous list_sessions call returned"}
+		return "", &statusError{http.StatusBadRequest, errors.New("unknown cursor: pass the nextCursor a previous list_sessions call returned")}
 	}
 	if err != nil {
 		return "", err
@@ -161,9 +152,10 @@ func (s *Server) listSessionsForMCP(ctx context.Context, actor Actor, workspace 
 
 // listGroupSessionsForMCP lists a group's chats in list order: sessions in
 // the list form, a device's native chats beside them.
-func (s *Server) listGroupSessionsForMCP(ctx context.Context, workspace, groupID string) (string, error) {
+func (s *Server) listGroupSessionsForMCP(call mcpCall) (string, error) {
+	ctx, workspace, groupID := call.r.Context(), call.workspace, mcpArgString(call.args, "groupId")
 	if groupID == "" {
-		return "", &mcpToolError{http.StatusBadRequest, "groupId is required: read_context's summary names a session's group"}
+		return "", &statusError{http.StatusBadRequest, errors.New("groupId is required: read_context's summary names a session's group")}
 	}
 	layout, err := s.store.GetChatLayout(ctx, workspace)
 	if err != nil {
@@ -176,7 +168,7 @@ func (s *Server) listGroupSessionsForMCP(ctx context.Context, workspace, groupID
 		}
 	}
 	if group == nil {
-		return "", &mcpToolError{http.StatusNotFound, "no group " + groupID + " in workspace " + workspace + ": name the group's workspace with workspaceId"}
+		return "", &statusError{http.StatusNotFound, errors.New("no group " + groupID + " in workspace " + workspace + ": name the group's workspace with workspaceId")}
 	}
 	ids, sessionIDs := []string{}, []string{}
 	for _, position := range layout.Positions {
@@ -188,11 +180,7 @@ func (s *Server) listGroupSessionsForMCP(ctx context.Context, workspace, groupID
 			sessionIDs = append(sessionIDs, position.ChatID)
 		}
 	}
-	lister, err := s.sessionLister()
-	if err != nil {
-		return "", err
-	}
-	page, err := lister.ListSessionPage(ctx, store.SessionListQuery{WorkspaceID: workspace, IDs: sessionIDs})
+	page, err := s.store.ListSessionPage(ctx, store.SessionListQuery{WorkspaceID: workspace, IDs: sessionIDs})
 	if err != nil {
 		return "", err
 	}
@@ -218,6 +206,294 @@ func (s *Server) listGroupSessionsForMCP(ctx context.Context, workspace, groupID
 	}
 	head, _ := json.Marshal(group)
 	return "{\n  \"group\": " + string(head) + ",\n  \"sessions\": " + encodeLines(items) + "\n}", nil
+}
+
+// createSessionForMCP starts a session (create_session).
+func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
+	args := call.args
+	// It once passed an undocumented nativeSessionId through, which could
+	// adopt a person's native chat or fork a session the caller cannot
+	// read. No caller sent it; forkSessionId and send_message cover both.
+	if mcpArgString(args, "nativeSessionId") != "" {
+		return "", &statusError{http.StatusBadRequest, errors.New("nativeSessionId is not accepted: continue a Foundry session with send_message, start from a copy of its transcript with forkSessionId, or read a native chat with read_context")}
+	}
+	input := store.CreateAgentSessionInput{
+		WorkspaceID:          call.workspace,
+		Provider:             mcpArgString(args, "provider"),
+		ProfileID:            mcpArgString(args, "profileId"),
+		Model:                mcpArgString(args, "model"),
+		ClaudeEffort:         mcpArgString(args, "claudeEffort"),
+		ClaudePermissionMode: mcpArgString(args, "claudePermissionMode"),
+		CodexReasoningEffort: mcpArgString(args, "codexReasoningEffort"),
+		CodexSandboxMode:     mcpArgString(args, "codexSandboxMode"),
+		CodexApprovalPolicy:  mcpArgString(args, "codexApprovalPolicy"),
+		CodexSpeed:           mcpArgString(args, "codexSpeed"),
+		ImportedContext:      mcpArgString(args, "importedContext"),
+		Prompt:               mcpArgString(args, "prompt"),
+		IssueID:              mcpArgString(args, "issueId"),
+		ForkSessionID:        mcpSessionID(args, "forkSessionId"),
+		Verification:         mcpArgBool(args, "verification"),
+		Source:               "chat",
+	}
+	if !call.actor.Agent() && input.WorkspaceID == "" && input.ForkSessionID == "" {
+		return "", &statusError{http.StatusBadRequest, errors.New("workspaceId is required")}
+	}
+	session, delivered, err := s.startMCPSession(call.r, call.actor, input, mcpArgList(args, "attachments"), mcpArgBool(args, "wait"), mcpWaitMs(args))
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(withDeliveredAttachments(session, delivered))
+}
+
+// handoffSessionForMCP is a factual handoff: only the goal, last result and
+// status carry over, never the contaminated transcript. An agent hands off
+// only a session it controls: the replacement takes that session's work
+// over.
+func (s *Server) handoffSessionForMCP(call mcpCall) (string, error) {
+	ctx, actor, args := call.r.Context(), call.actor, call.args
+	lookup := s.sessionTarget
+	if actor.Agent() {
+		lookup = s.controlledSession
+	}
+	target, err := lookup(ctx, actor, mcpArgAlias(args, "sessionId", "fromSessionId"), "hand off")
+	if err != nil {
+		return "", err
+	}
+	source, err := store.AgentSessionRecord(ctx, s.store, target.ID)
+	if err != nil {
+		return "", err
+	}
+	input := store.CreateAgentSessionInput{
+		WorkspaceID: cmp.Or(mcpArgString(args, "workspaceId"), source.WorkspaceID),
+		ProfileID:   mcpArgString(args, "profileId"),
+		IssueID:     mcpArgString(args, "issueId"),
+		Prompt:      handoffPrompt(source, mcpArgString(args, "prompt")),
+		Source:      "chat",
+	}
+	// Without a choice, the replacement runs like the session it
+	// continues: its profile on the same device (profiles belong to a
+	// device), elsewhere its runtime.
+	if input.ProfileID == "" {
+		input.Provider = source.Provider
+		if destination, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && destination.DeviceID == source.DeviceID {
+			input.ProfileID = source.ProfileID
+		}
+	}
+	session, _, err := s.startMCPSession(call.r, actor, input, nil, false, 0)
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(session)
+}
+
+// handoffPrompt carries a session's facts, not its transcript, into a new one.
+func handoffPrompt(source store.AgentSession, prompt string) string {
+	facts := []string{fmt.Sprintf("Handoff from session %s (\"%s\", status: %s).", source.ID, source.Title, source.Status)}
+	if source.Prompt != "" {
+		facts = append(facts, "Original goal:\n"+source.Prompt)
+	}
+	if source.Response != "" {
+		facts = append(facts, "Last recorded result:\n"+source.Response)
+	}
+	return strings.Join(append(facts, prompt), "\n\n")
+}
+
+// startMCPSession applies the caller's lineage and defaults, then creates,
+// dispatches and optionally waits for a session. attachments name files of
+// the caller's to hand over (mcpAttachments); the ones it delivered come
+// back with the session.
+func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string, wait bool, timeoutMs int) (store.AgentSession, []store.ChatAttachment, error) {
+	if actor.Agent() {
+		if err := s.keepAgentInIssue(r.Context(), actor, &input); err != nil {
+			return store.AgentSession{}, nil, &statusError{http.StatusForbidden, err}
+		}
+		input.ParentSessionID = actor.Identity.SessionID
+		input.Source = "agent"
+		// Without a choice, a child runs like its parent: the same profile in
+		// the same workspace; elsewhere only the same runtime, since profiles
+		// belong to a device.
+		if input.ProfileID == "" && input.Provider == "" {
+			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
+				input.Provider = parent.Provider
+				if input.WorkspaceID == parent.WorkspaceID {
+					input.ProfileID = parent.ProfileID
+				}
+			}
+		}
+	}
+	if input.Verification {
+		input.Source = verificationSource
+	}
+	if strings.TrimSpace(input.ForkSessionID) != "" {
+		if err := s.applySessionFork(r, &input, actor); err != nil {
+			return store.AgentSession{}, nil, err
+		}
+	}
+	session, delivered, err := s.createAndDispatchForMCP(r, actor, input, attachments)
+	if err != nil || !wait {
+		return session, delivered, err
+	}
+	session, err = s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
+	return session, delivered, err
+}
+
+// createAndDispatchForMCP mirrors handleCreateAgentSession's resolution and
+// dispatch without an HTTP body, including post-create group naming. Files
+// it hands over are published only once the store took the session.
+func (s *Server) createAndDispatchForMCP(r *http.Request, actor Actor, input store.CreateAgentSessionInput, attachments []string) (store.AgentSession, []store.ChatAttachment, error) {
+	ctx := r.Context()
+	scope, err := s.contextScope(ctx, actor)
+	if err != nil {
+		return store.AgentSession{}, nil, err
+	}
+	if !scope.can(input.WorkspaceID, store.WorkspaceRoleMember) {
+		return store.AgentSession{}, nil, &statusError{http.StatusNotFound, errors.New("workspace not found")}
+	}
+	if !actor.Agent() {
+		input.CreatedByUserID = actor.AccountID()
+	}
+	if err := s.resolveSessionDevice(ctx, &input); err != nil {
+		return store.AgentSession{}, nil, err
+	}
+	if err := s.requireVerifierDevice(ctx, input); err != nil {
+		return store.AgentSession{}, nil, err
+	}
+	handed, err := s.mcpAttachments(ctx, actor, input.WorkspaceID, attachments)
+	if err != nil {
+		return store.AgentSession{}, nil, err
+	}
+	defer s.discardHandedOver(ctx, handed)
+	input.Attachments = handed.list()
+	session, err := s.createAndDispatchWith(ctx, input, false, s.publishHandedOver(handed))
+	if errors.Is(err, ErrLocalDaemonNotConnected) {
+		return session, handed.list(), &statusError{http.StatusConflict, err}
+	}
+	return session, handed.list(), err
+}
+
+func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
+	ctx, args := call.r.Context(), call.args
+	target, err := s.controlledSession(ctx, call.actor, mcpArgString(args, "sessionId"), "message")
+	if err != nil {
+		return "", err
+	}
+	attachments, err := s.mcpAttachments(ctx, call.actor, target.WorkspaceID, mcpArgList(args, "attachments"))
+	if err != nil {
+		return "", err
+	}
+	defer s.discardHandedOver(ctx, attachments)
+	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
+		Prompt:      mcpArgAlias(args, "prompt", "message"),
+		Attachments: attachments.list(),
+		ProfileID:   mcpArgString(args, "profileId"),
+		Provider:    mcpArgString(args, "provider"),
+		Model:       mcpArgString(args, "model"),
+	}, s.publishHandedOver(attachments))
+	if err != nil {
+		return "", err
+	}
+	if mcpArgBool(args, "wait") {
+		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
+			return "", err
+		}
+	}
+	return encodeJSON(withDeliveredAttachments(slimAgentSession(session), attachments.list()))
+}
+
+func (s *Server) cancelSessionForMCP(call mcpCall) (string, error) {
+	target, err := s.controlledSession(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"), "cancel")
+	if err != nil {
+		return "", err
+	}
+	session, err := s.cancelSession(call.r.Context(), call.actor, target.ID)
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(slimAgentSession(session))
+}
+
+func (s *Server) waitSessionForMCP(call mcpCall) (string, error) {
+	session, err := s.sessionTarget(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"), "wait on")
+	if err != nil {
+		return "", err
+	}
+	var until []string
+	if raw, ok := call.args["until"]; ok {
+		_ = json.Unmarshal(raw, &until)
+	}
+	if len(until) == 0 {
+		until = []string{"completed", "failed", "canceled"}
+	}
+	waited, err := s.waitMCPStatuses(call.r.Context(), session.ID, until, mcpWaitMs(call.args))
+	if err != nil {
+		return "", err
+	}
+	return encodeJSON(waited)
+}
+
+func (s *Server) renameSessionForMCP(call mcpCall) (string, error) {
+	target, err := s.controlledSession(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"), "rename")
+	if err != nil {
+		return "", err
+	}
+	updated, err := s.store.RenameChat(call.r.Context(), target.ID, store.RenameChatInput{
+		WorkspaceID: target.WorkspaceID,
+		Title:       mcpArgString(call.args, "title"),
+	})
+	if err != nil {
+		return "", err
+	}
+	s.chats.announceTitles(target.WorkspaceID, updated.ChatID)
+	return encodeJSON(updated)
+}
+
+func (s *Server) waitMCPTerminal(ctx context.Context, id string, timeoutMs int) (store.AgentSession, error) {
+	return s.waitMCPStatuses(ctx, id, []string{"completed", "failed", "canceled"}, timeoutMs)
+}
+
+func (s *Server) waitMCPStatuses(ctx context.Context, id string, statuses []string, timeoutMs int) (store.AgentSession, error) {
+	wanted := map[string]bool{}
+	for _, status := range statuses {
+		wanted[status] = true
+	}
+	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
+	ticker := time.NewTicker(1500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		session, err := s.store.GetAgentSessionSummary(ctx, id)
+		if err != nil {
+			return store.AgentSession{}, err
+		}
+		if wanted[session.Status] {
+			return s.mcpSessionResult(ctx, session)
+		}
+		if time.Now().After(deadline) {
+			return store.AgentSession{}, &statusError{http.StatusConflict, fmt.Errorf("timed out waiting for %s", id)}
+		}
+		select {
+		case <-ctx.Done():
+			return store.AgentSession{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// mcpSessionResult adds the final response to a settled session, which the
+// summary omits, so waiting on a child returns what it answered. Events stay
+// out; read_context serves the transcript.
+func (s *Server) mcpSessionResult(ctx context.Context, summary store.AgentSession) (store.AgentSession, error) {
+	switch summary.Status {
+	case "completed", "failed", "canceled":
+	default:
+		return summary, nil
+	}
+	full, err := store.AgentSessionRecord(ctx, s.store, summary.ID)
+	if err != nil {
+		return summary, nil
+	}
+	summary.Response = full.Response
+	summary.Error = full.Error
+	return summary, nil
 }
 
 // encodeLines writes a list one item per line: valid JSON that stays cheap

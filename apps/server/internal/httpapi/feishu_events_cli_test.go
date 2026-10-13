@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents/feishueventstest"
 )
 
 // The whole path, as wired: the real feishu-cli, configured by the real
@@ -46,7 +46,7 @@ func TestFeishuCLIEventConsumeThroughTheServer(t *testing.T) {
 	f := &gatewayFixture{externalAccountsFixture: newExternalAccountsFixture(t)}
 	// The fixture rebuilt the gateway around its own Connectors service.
 	f.server.serveGatewayEvents()
-	source := feishuevents.NewFakeSource("cli_fake", "secret_fake")
+	source := feishueventstest.NewFakeSource("cli_fake", "secret_fake")
 	t.Cleanup(source.Close)
 	f.server.feishuEvents.Domain = source.URL()
 	t.Cleanup(f.server.feishuEvents.Stop)
@@ -72,7 +72,7 @@ func TestFeishuCLIEventConsumeThroughTheServer(t *testing.T) {
 		// socket feishu-cli opened asked for.
 		if source.WaitOpen(1, 30*time.Second) {
 			time.Sleep(200 * time.Millisecond)
-			_, _ = source.Push(feishuevents.MessagePayload("cli_fake", "ev_through_server", "oc_1", "om_1", "", "hello agent", true), 1)
+			_, _ = source.Push(feishueventstest.MessagePayload("cli_fake", "ev_through_server", "oc_1", "om_1", "", "hello agent", true), 1)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

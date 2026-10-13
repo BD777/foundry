@@ -7,20 +7,16 @@
 // sides in step, and test/browser-event-fixtures.json holds one example of
 // each message that both sides' tests read.
 
+import type { ChatLayout, ChatQueue, ChatThread, ChatTitle } from "./chat.js";
+import type { DeviceProjection } from "./device.js";
 import type { WorkspaceFeishuBot } from "./feishu.js";
+import type { FoundryDataProjection } from "./foundry-data.js";
+import type { Issue, RunEvent } from "./issue.js";
 import type {
   AgentSession,
   AgentSessionEvent,
   AgentSubagentDigest,
-  ChatLayout,
-  ChatQueue,
-  ChatThread,
-  ChatTitle,
-  DeviceProjection,
-  FoundryDataProjection,
-  Issue,
-  RunEvent,
-} from "./index.js";
+} from "./session.js";
 
 /** The name of every event the stream carries. */
 export const browserEventTypes = {

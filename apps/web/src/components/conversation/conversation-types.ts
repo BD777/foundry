@@ -71,14 +71,18 @@ export interface ConversationProps {
     attachments?: ChatAttachment[],
   ) => Promise<boolean>;
   onStop?: (executionId?: string) => Promise<void> | void;
-  onImagePreview?: (
-    image: import("./chat-message-content").ParsedImageTag,
-  ) => void;
+  onImagePreview?: (image: ParsedImageTag) => void;
   /** Files an answer names and the host can show; see ConversationFileActions. */
   fileActions?: ConversationFileActions;
 }
 
 /** A path an answer names that its device verified; linked in the text. */
+/** An image a message shows (an `<image>` tag or an attachment), as previewed. */
+export interface ParsedImageTag {
+  alt: string;
+  path: string;
+}
+
 export interface ConversationFileReference {
   /** As it appears in the answer: a code span's content or a link target. */
   text: string;

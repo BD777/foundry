@@ -17,6 +17,7 @@ import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { IconBox } from "../../components/ui/icon-box";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
+import { useCopied } from "../../lib/use-copied";
 import type { ChatListItem } from "./chat-surface-types";
 import { ChatGroupMenu, type ChatGroupMenuProps } from "./chat-group-menu";
 
@@ -42,14 +43,13 @@ export const ChatListRow = memo(function ChatListRow({
       : chat.runtime === "claude"
         ? t("listRow.claudeSessionId")
         : t("listRow.rawSessionId");
-  const copy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      chat.onNotify(t("common:actions.copied"));
-    } catch {
-      chat.onNotify(t("listRow.copyFailed"));
-    }
-  };
+  const { copy: copyText } = useCopied();
+  const copy = async (value: string) =>
+    chat.onNotify(
+      (await copyText(value))
+        ? t("common:actions.copied")
+        : t("listRow.copyFailed"),
+    );
   const save = async () => {
     if (saving || !draft.trim()) return;
     setSaving(true);

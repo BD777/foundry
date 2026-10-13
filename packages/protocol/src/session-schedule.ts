@@ -1,9 +1,9 @@
-import { claudeRecurringTimerMaxAgeMs, claudeTimerNextFire } from "./cron.js";
+import { claudeRecurringTimerMaxAgeMs } from "./cron.js";
 import type {
   AgentScheduledTask,
   AgentSessionSchedule,
   AgentSessionScheduledTimer,
-} from "./index.js";
+} from "./session.js";
 
 /**
  * A session's schedule from a timer snapshot its device reported at `at`,
@@ -45,26 +45,4 @@ export function sessionScheduledTimerExpired(
     Number.isFinite(seen) &&
     now.getTime() >= seen + claudeRecurringTimerMaxAgeMs
   );
-}
-
-/**
- * When the session's agent is woken next, seen from `now`: the earliest of
- * its live timers, recomputed from their schedules (the reported times go
- * stale).
- */
-export function sessionScheduleNextFire(
-  schedule: AgentSessionSchedule,
-  now: Date = new Date(),
-): Date | undefined {
-  let earliest: Date | undefined;
-  for (const timer of schedule.timers) {
-    if (sessionScheduledTimerExpired(timer, now)) continue;
-    const reported = timer.nextFireAt ? new Date(timer.nextFireAt) : undefined;
-    const next =
-      claudeTimerNextFire(timer, now) ??
-      (reported && !Number.isNaN(reported.getTime()) ? reported : undefined);
-    if (next && (!earliest || next.getTime() < earliest.getTime()))
-      earliest = next;
-  }
-  return earliest;
 }

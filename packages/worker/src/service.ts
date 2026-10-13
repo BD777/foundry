@@ -506,7 +506,7 @@ export function uninstallService(): void {
 }
 export function status(): void {
   const config = readDaemonConfig();
-  console.log(`Config: ${config ? daemonConfigPath : "not paired"}`);
+  console.log(`Config: ${config ? daemonConfigPath() : "not paired"}`);
   // Set when installed with `install`; a source checkout has no runtime.
   try {
     const version = readlinkSync(foundryStatePath("runtime", "current")).split(

@@ -1,5 +1,4 @@
-import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProjection,
@@ -14,13 +13,12 @@ import {
   type SkillRepositoryPreview,
 } from "../../api";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
 import { TextInput } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
+import { errorText } from "../../lib/errors";
 import { RepositorySkillList } from "./repository-skill-list";
 import { canReadWith, RepositorySourceFields } from "./repository-source";
-
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
 
 type Mode = "bundle" | "pick";
 
@@ -48,6 +46,7 @@ export function AddRepositoryDialog({
   onChanged: () => Promise<void>;
 }) {
   const { t } = useTranslation(["skills", "common"]);
+  const urlField = useRef<HTMLInputElement>(null);
   const [url, setURL] = useState("");
   const [ref, setRef] = useState("");
   const [subpath, setSubpath] = useState("");
@@ -144,178 +143,167 @@ export function AddRepositoryDialog({
   const label = repository?.label ?? preview?.label ?? "";
 
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open && !busy) onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-connection-assign-overlay" />
-        <Dialog.Content className="fdy-connection-assign-dialog">
-          <header className="fdy-connection-assign-header">
-            <div>
-              <Dialog.Title>
-                {choosing
-                  ? t("library.repo.chooseTitle", { label })
-                  : t("library.repo.addTitle")}
-              </Dialog.Title>
-              <Dialog.Description>
-                {choosing
-                  ? t("library.repo.chooseDescription")
-                  : t("library.repo.addDescription")}
-              </Dialog.Description>
-            </div>
-          </header>
-          <form
-            aria-busy={busy}
-            className="fdy-skill-promotion-body fdy-skill-repo-form"
-            id="fdy-skill-repo-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void (choosing ? add() : find());
-            }}
+    <Dialog
+      busy={busy}
+      initialFocus={urlField}
+      description={
+        choosing
+          ? t("library.repo.chooseDescription")
+          : t("library.repo.addDescription")
+      }
+      footer={
+        <>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            {choosing ? t("common:actions.close") : t("common:actions.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={
+              busy || (choosing ? !bundle && chosen.size === 0 : !url.trim())
+            }
+            form="fdy-skill-repo-form"
+            type="submit"
           >
-            {!choosing ? (
-              <>
-                <label className="fdy-skill-repo-field">
-                  {t("library.repo.url")}
-                  <TextInput
-                    autoFocus
-                    disabled={busy}
-                    onChange={(event) => setURL(event.currentTarget.value)}
-                    placeholder={t("library.repo.urlPlaceholder")}
-                    required
-                    tone="boxed"
-                    value={url}
-                  />
-                </label>
-                <div className="fdy-skill-repo-field-row">
-                  <label className="fdy-skill-repo-field">
-                    {t("library.repo.ref")}
-                    <TextInput
-                      disabled={busy}
-                      onChange={(event) => setRef(event.currentTarget.value)}
-                      placeholder={t("library.repo.refPlaceholder")}
-                      tone="boxed"
-                      value={ref}
-                    />
-                  </label>
-                  <label className="fdy-skill-repo-field">
-                    {t("library.repo.subpath")}
-                    <TextInput
-                      disabled={busy}
-                      onChange={(event) =>
-                        setSubpath(event.currentTarget.value)
-                      }
-                      placeholder={t("library.repo.subpathPlaceholder")}
-                      tone="boxed"
-                      value={subpath}
-                    />
-                  </label>
-                </div>
-                <RepositorySourceFields
-                  deviceId={deviceId}
-                  devices={devices}
+            {!choosing
+              ? busy
+                ? t("library.repo.reading")
+                : t("library.repo.find")
+              : bundle
+                ? t("library.repo.addBundle", { count: folders?.length ?? 0 })
+                : t("library.repo.addChosen", { count: chosen.size })}
+          </Button>
+        </>
+      }
+      layout="compact"
+      onClose={onClose}
+      title={
+        choosing
+          ? t("library.repo.chooseTitle", { label })
+          : t("library.repo.addTitle")
+      }
+    >
+      <form
+        aria-busy={busy}
+        className="fdy-skill-promotion-body fdy-skill-repo-form"
+        id="fdy-skill-repo-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void (choosing ? add() : find());
+        }}
+      >
+        {!choosing ? (
+          <>
+            <label className="fdy-skill-repo-field">
+              {t("library.repo.url")}
+              <TextInput
+                disabled={busy}
+                onChange={(event) => setURL(event.currentTarget.value)}
+                placeholder={t("library.repo.urlPlaceholder")}
+                ref={urlField}
+                required
+                tone="boxed"
+                value={url}
+              />
+            </label>
+            <div className="fdy-skill-repo-field-row">
+              <label className="fdy-skill-repo-field">
+                {t("library.repo.ref")}
+                <TextInput
                   disabled={busy}
-                  onDeviceChange={setDeviceId}
-                  onRegistryChange={setRegistry}
-                  registry={registry}
-                  showRegistry={npm}
+                  onChange={(event) => setRef(event.currentTarget.value)}
+                  placeholder={t("library.repo.refPlaceholder")}
+                  tone="boxed"
+                  value={ref}
                 />
-                {busy ? (
-                  <p role="status">
-                    {deviceId
-                      ? t("library.repo.readingOnDevice", {
-                          device:
-                            devices.find((device) => device.id === deviceId)
-                              ?.label ?? "",
-                        })
-                      : t("library.repo.reading")}
-                  </p>
-                ) : null}
-              </>
-            ) : !folders ? (
-              busy ? (
-                <p role="status">{t("library.repo.reading")}</p>
-              ) : null
-            ) : (
-              <>
-                {!repository ? (
-                  <>
-                    <SegmentedControl<Mode>
-                      aria-label={t("library.repo.modeLabel")}
-                      onValueChange={setMode}
-                      options={[
-                        {
-                          value: "bundle",
-                          label: t("library.repo.modeBundle"),
-                        },
-                        { value: "pick", label: t("library.repo.modePick") },
-                      ]}
-                      size="sm"
-                      value={mode}
-                    />
-                    <p className="fdy-skill-repo-mode-note">
-                      {bundle
-                        ? t("library.repo.bundleNote", {
-                            count: folders.length,
-                            version: versionLabel,
-                          })
-                        : t("library.repo.pickNote", {
-                            version: versionLabel,
-                          })}
-                      {preview?.suggestBundle && !bundle
-                        ? ` ${t("library.repo.bundleSuggested")}`
-                        : ""}
-                    </p>
-                  </>
-                ) : null}
-                <RepositorySkillList
-                  chosen={bundle ? undefined : chosen}
+              </label>
+              <label className="fdy-skill-repo-field">
+                {t("library.repo.subpath")}
+                <TextInput
                   disabled={busy}
-                  folders={folders}
-                  onChooseAll={(dirs) => setChosen(new Set(dirs))}
-                  onToggle={toggle}
+                  onChange={(event) => setSubpath(event.currentTarget.value)}
+                  placeholder={t("library.repo.subpathPlaceholder")}
+                  tone="boxed"
+                  value={subpath}
                 />
-              </>
-            )}
-            {error ? (
-              <p role="alert" className="fdy-skill-error">
-                {error}
+              </label>
+            </div>
+            <RepositorySourceFields
+              deviceId={deviceId}
+              devices={devices}
+              disabled={busy}
+              onDeviceChange={setDeviceId}
+              onRegistryChange={setRegistry}
+              registry={registry}
+              showRegistry={npm}
+            />
+            {busy ? (
+              <p role="status">
+                {deviceId
+                  ? t("library.repo.readingOnDevice", {
+                      device:
+                        devices.find((device) => device.id === deviceId)
+                          ?.label ?? "",
+                    })
+                  : t("library.repo.reading")}
               </p>
             ) : null}
-            {suggestDevice ? (
-              <p className="fdy-skill-repo-mode-note">
-                {t("library.repo.serverUnreachableHint")}
-              </p>
+          </>
+        ) : !folders ? (
+          busy ? (
+            <p role="status">{t("library.repo.reading")}</p>
+          ) : null
+        ) : (
+          <>
+            {!repository ? (
+              <>
+                <SegmentedControl<Mode>
+                  aria-label={t("library.repo.modeLabel")}
+                  onValueChange={setMode}
+                  options={[
+                    {
+                      value: "bundle",
+                      label: t("library.repo.modeBundle"),
+                    },
+                    { value: "pick", label: t("library.repo.modePick") },
+                  ]}
+                  size="sm"
+                  value={mode}
+                />
+                <p className="fdy-skill-repo-mode-note">
+                  {bundle
+                    ? t("library.repo.bundleNote", {
+                        count: folders.length,
+                        version: versionLabel,
+                      })
+                    : t("library.repo.pickNote", {
+                        version: versionLabel,
+                      })}
+                  {preview?.suggestBundle && !bundle
+                    ? ` ${t("library.repo.bundleSuggested")}`
+                    : ""}
+                </p>
+              </>
             ) : null}
-          </form>
-          <footer className="fdy-connection-assign-actions fdy-skill-dialog-actions">
-            <Button variant="secondary" disabled={busy} onClick={onClose}>
-              {choosing
-                ? t("common:actions.close")
-                : t("common:actions.cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={
-                busy || (choosing ? !bundle && chosen.size === 0 : !url.trim())
-              }
-              form="fdy-skill-repo-form"
-              type="submit"
-            >
-              {!choosing
-                ? busy
-                  ? t("library.repo.reading")
-                  : t("library.repo.find")
-                : bundle
-                  ? t("library.repo.addBundle", { count: folders?.length ?? 0 })
-                  : t("library.repo.addChosen", { count: chosen.size })}
-            </Button>
-          </footer>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+            <RepositorySkillList
+              chosen={bundle ? undefined : chosen}
+              disabled={busy}
+              folders={folders}
+              onChooseAll={(dirs) => setChosen(new Set(dirs))}
+              onToggle={toggle}
+            />
+          </>
+        )}
+        {error ? (
+          <p role="alert" className="fdy-skill-error">
+            {error}
+          </p>
+        ) : null}
+        {suggestDevice ? (
+          <p className="fdy-skill-repo-mode-note">
+            {t("library.repo.serverUnreachableHint")}
+          </p>
+        ) : null}
+      </form>
+    </Dialog>
   );
 }

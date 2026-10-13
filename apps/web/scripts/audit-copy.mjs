@@ -5,7 +5,9 @@ import { enforceAuditBaseline } from "./audit-baseline.mjs";
 
 // Interface copy lives in src/i18n and reaches components through `t`. This
 // audit finds copy written straight into components and helpers; the tracked
-// debt may only shrink.
+// debt may only shrink. A file that holds sample data rather than interface
+// copy (the demo's fixtures) says so in a line of its own:
+// `// i18n-ignore-file: <reason>`.
 
 const sourceRoot = resolve("src");
 const copyModule = resolve(sourceRoot, "i18n");
@@ -87,9 +89,11 @@ function messageArgument(node) {
 
 const failures = [];
 for (const path of listSourceFiles(sourceRoot)) {
+  const text = readFileSync(path, "utf8");
+  if (/^\/\/ i18n-ignore-file: \S/m.test(text)) continue;
   const source = ts.createSourceFile(
     path,
-    readFileSync(path, "utf8"),
+    text,
     ts.ScriptTarget.Latest,
     true,
     path.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,

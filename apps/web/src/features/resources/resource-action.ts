@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { errorText } from "../../lib/errors";
 
 export interface ResourceAction<K extends string> {
   /** The action running now, if any. */
@@ -18,13 +19,6 @@ export function useResourceAction<K extends string>(): ResourceAction<K> {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const pending = useRef(false);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   const run = async (kind: K, action: () => Promise<string>) => {
     if (pending.current) return;
@@ -33,14 +27,12 @@ export function useResourceAction<K extends string>(): ResourceAction<K> {
     setNotice("");
     setError("");
     try {
-      const said = await action();
-      if (mounted.current) setNotice(said);
+      setNotice(await action());
     } catch (cause) {
-      if (mounted.current)
-        setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     } finally {
       pending.current = false;
-      if (mounted.current) setRunning(undefined);
+      setRunning(undefined);
     }
   };
 

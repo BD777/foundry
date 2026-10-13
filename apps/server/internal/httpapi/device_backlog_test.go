@@ -326,11 +326,11 @@ func TestDeviceTimeoutsAreReadable504s(t *testing.T) {
 	if recorder.Code != http.StatusGatewayTimeout || !strings.Contains(recorder.Body.String(), "byte-dev did not answer within 8 s") || strings.Contains(recorder.Body.String(), "deadline") {
 		t.Fatalf("%d %s", recorder.Code, recorder.Body.String())
 	}
-	if !errors.Is(err, context.DeadlineExceeded) || deviceRequestStatus(err, http.StatusConflict) != http.StatusGatewayTimeout {
+	if !errors.Is(err, context.DeadlineExceeded) || deviceErrorStatus(err) != http.StatusGatewayTimeout {
 		t.Fatal("a device timeout is still a deadline, answered 504")
 	}
-	if deviceRequestStatus(errors.New("refused"), http.StatusConflict) != http.StatusConflict {
-		t.Fatal("a refusal keeps its status")
+	if deviceErrorStatus(errors.New("refused")) != 0 {
+		t.Fatal("a refusal is not a device error")
 	}
 }
 

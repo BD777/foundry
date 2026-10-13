@@ -87,7 +87,8 @@ export function statusDetailText(account: ExternalAccount): string {
   }
 }
 
-export { relativeWhen } from "../../lib/relative-time";
+export { errorText } from "../../lib/errors";
+export { relativeWhen } from "../../lib/time-format";
 
 /** m:ss left until an expiry. */
 export function countdown(iso: string | undefined, now = Date.now()): string {
@@ -96,8 +97,4 @@ export function countdown(iso: string | undefined, now = Date.now()): string {
     Math.floor(((iso ? Date.parse(iso) : now) - now) / 1000),
   );
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-}
-
-export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

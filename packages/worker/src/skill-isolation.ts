@@ -1,10 +1,9 @@
 /** Workspace skill discovery policy, shared by SDK and CLI execution. */
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ManagedSkillRuntime } from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
-import { writePrivateTextAtomic } from "./storage.js";
+import { tryReadJSONFile, writeFileAtomic } from "./storage.js";
 import { withCodexControl } from "./native-inspection.js";
 import { hasProgram, skillToolRequirements } from "./skill-requirements.js";
 import { withManagedTools } from "./managed-tools.js";
@@ -196,11 +195,7 @@ function receiptPath(nativeID: string): string {
 function readReceipt(
   nativeID: string,
 ): { version?: unknown; workspace?: unknown } | undefined {
-  try {
-    return JSON.parse(readFileSync(receiptPath(nativeID), "utf8"));
-  } catch {
-    return undefined;
-  }
+  return tryReadJSONFile(receiptPath(nativeID));
 }
 
 /**
@@ -230,7 +225,7 @@ export function recordSkillReceipt(nativeID: string, workspace: string): void {
   const receipt = readReceipt(nativeID);
   if (receipt?.version === policyVersion && receipt.workspace === workspace)
     return;
-  writePrivateTextAtomic(
+  writeFileAtomic(
     receiptPath(nativeID),
     JSON.stringify({ version: policyVersion, workspace }),
   );
@@ -248,7 +243,7 @@ export function moveSkillReceipt(
 ): boolean {
   const receipt = readReceipt(nativeID);
   if (!receipt || receipt.workspace !== fromWorkspace) return false;
-  writePrivateTextAtomic(
+  writeFileAtomic(
     receiptPath(nativeID),
     JSON.stringify({ ...receipt, workspace: toWorkspace }),
   );

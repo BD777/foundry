@@ -5,15 +5,15 @@
  * otherwise starts over, telling the new native session the Foundry
  * conversation. Both runners use it, so the rules live here once.
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
+import { claudeConfigDir, codexHome } from "./native-homes.js";
 import { findSessionLog } from "./native-usage.js";
 import { foundryToolsEndpoint } from "./session-ambient.js";
 import {
   recordSkillReceipt,
   skillReceiptConflicts,
 } from "./skill-isolation.js";
+import { errorMessage } from "./utils.js";
 
 /** Why a native session that exists cannot be resumed. */
 export type NativeRestartReason =
@@ -72,7 +72,7 @@ export function decideNativeSession(
  * wrote).
  */
 export function nativeResumeRefused(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   return [
     /No conversation found with session ID/i,
     /invalid\W{0,3}signature/i,
@@ -192,9 +192,7 @@ function nativeHome(
   provider: "claude" | "codex",
   env: NodeJS.ProcessEnv,
 ): string {
-  return provider === "claude"
-    ? env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude")
-    : env.CODEX_HOME?.trim() || join(homedir(), ".codex");
+  return provider === "claude" ? claudeConfigDir(env) : codexHome(env);
 }
 
 /**

@@ -8,7 +8,10 @@ export const profiles: Translation<typeof en> = {
       "Agent 运行所用的模型 API 和网关，保存在这台服务器上。把每个模型服务分配给可以使用它的设备。",
     openDeviceAccounts: "想用 ChatGPT 或 Claude 订阅？打开设备账号 →",
     requestFailed: "请求失败。",
-    savedMissing: "服务器没有返回已保存的模型服务。",
+    saveFailed: "这项修改没能保存到服务器。",
+    profileSaved: "{{label}} 已保存。",
+    profileDeleted: "{{label}} 已删除。",
+    credentialCleared: "已清除 {{label}} 的凭据。",
     newConnection: "新建模型服务",
     editConnection: "编辑模型服务",
     modalDescription: "配置 API 或网关。官方登录保留在各自的设备上。",
@@ -74,13 +77,6 @@ export const profiles: Translation<typeof en> = {
     found_other: "从端点获取到 {{count}} 个模型。",
     failed: "读取模型目录失败。",
   },
-  connectionTypes: {
-    anthropic_compatible: "Anthropic 兼容",
-    custom_command: "自定义命令",
-    env: "环境变量",
-    local_login: "本地登录",
-    openai_compatible: "OpenAI 兼容",
-  },
   connectionDevices: {
     title: "设备访问",
     intro:
@@ -136,7 +132,6 @@ export const profiles: Translation<typeof en> = {
   assignment: {
     title: "选择模型服务",
     description: "勾选的模型服务可以在这台设备上使用。保存后改动才会生效。",
-    close: "关闭模型服务选择器",
     empty: "还没有模型服务。",
     openConnections: "打开模型服务",
     grant: "允许这台设备使用 {{connection}}",

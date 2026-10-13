@@ -7,7 +7,11 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { ChatDetailSplitPane } from "../../components/conversation/chat-detail-split-pane";
-import { issueBadgeMeta, issueDisplayId } from "../../lib/issue-meta";
+import {
+  isIssueClosed,
+  issueBadgeMeta,
+  issueDisplayId,
+} from "../../lib/issue-meta";
 import { IssueContractPanel } from "./issue-contract-panel";
 import { IssueEvidencePanel } from "./issue-evidence-panel";
 import { CandidateReview } from "./candidate-review";
@@ -64,7 +68,7 @@ function IssueDetail({
   const contract = useIssueContract(issue);
   const phase = issuePhase(issue);
   const [abandoning, setAbandoning] = useState(false);
-  const terminal = issue.status === "accepted" || issue.status === "abandoned";
+  const terminal = isIssueClosed(issue);
   const abandon = async () => {
     if (abandoning) return;
     setAbandoning(true);

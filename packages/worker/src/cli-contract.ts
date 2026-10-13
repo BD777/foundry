@@ -1,3 +1,5 @@
+import { errorMessage } from "./utils.js";
+
 export type CliOptionType = "bool" | "int" | "string" | "url";
 
 export interface CliOptionContract {
@@ -859,7 +861,7 @@ export function formatCliError(error: CliError): string {
 }
 
 export function genericCliError(error: unknown, args: string[]): CliError {
-  const description = error instanceof Error ? error.message : String(error);
+  const description = errorMessage(error);
   return new CliError({
     code: "E5001",
     description,

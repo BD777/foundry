@@ -30,6 +30,11 @@ export function issueDisplayStatus(issue: Issue): IssueStatus {
   return legacy[issue.status] ?? issue.status;
 }
 
+/** Accepted or abandoned: the Issue takes no further work. */
+export function isIssueClosed(issue: Pick<Issue, "status">): boolean {
+  return issue.status === "accepted" || issue.status === "abandoned";
+}
+
 export function blockedReasonMeta(
   issue: Issue,
 ): { label: string; message: string } | undefined {

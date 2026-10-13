@@ -1,12 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
+import { formatBytes } from "../../lib/format";
 import type { TranscriptLoadState } from "./chat-transcript-loader";
-
-function loadedSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
-}
 
 /**
  * The top of a transcript: how its loading goes (with a retry once it is
@@ -28,7 +23,10 @@ export function ChatTranscriptHistory({
   const progress = state.progress
     ? state.progress.totalBytes
       ? `${Math.min(99, Math.round((state.progress.loadedBytes / state.progress.totalBytes) * 100))}%`
-      : loadedSize(state.progress.loadedBytes)
+      : formatBytes(state.progress.loadedBytes, {
+          atLeastKB: true,
+          mbDigits: "adaptive",
+        })
     : "";
   const status =
     state.loading || state.failed

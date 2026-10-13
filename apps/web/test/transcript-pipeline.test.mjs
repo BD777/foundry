@@ -9,7 +9,7 @@ const { chatMessages, chatMessagesForThread } =
 const { chatMessagesForSubagentTranscript } =
   await import("../src/features/chat/chat-transcript-model.ts");
 const { processDisplayRows } =
-  await import("../src/features/chat/chat-process-display.ts");
+  await import("../src/components/conversation/chat-process-display.ts");
 
 const { compactFoundryStreamEvents } =
   await import("../src/app/foundry-data-projection.ts");

@@ -12,7 +12,7 @@ import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
 import { navigateToDeviceResources } from "../../lib/in-app-navigation";
 import { readPageQuery, replacePageQuery } from "../../lib/page-query";
-import { relativeWhen } from "../../lib/relative-time";
+import { relativeWhen } from "../../lib/time-format";
 import { useResourceInventory } from "../../lib/resource-inventory";
 import {
   detectionProblems,

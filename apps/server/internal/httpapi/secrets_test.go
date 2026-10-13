@@ -33,8 +33,8 @@ func newSecretTestStore(t *testing.T) *sqlitestore.Store {
 func TestServerCredentialLifecycleSealOverlayDispatch(t *testing.T) {
 	backing := newSecretTestStore(t)
 	server := NewServer(backing)
-	if server.secrets == nil {
-		t.Fatal("store with a secret key path did not expose the secretKeeper capability")
+	if !secretsConfigured(server.store) {
+		t.Fatal("store with a secret key path has no key loaded")
 	}
 
 	ctx := context.Background()
@@ -73,7 +73,7 @@ func TestModelListCredentialFindsDeviceAndServerProfiles(t *testing.T) {
 	if err := server.sealProfileCredential(ctx, "dev_1", "prof_device", "device-key"); err != nil {
 		t.Fatalf("seal device credential: %v", err)
 	}
-	if err := server.secrets.PutSecret(ctx, serverProfileSecretID("prof_server"), []byte("server-key"), ""); err != nil {
+	if err := server.store.PutSecret(ctx, serverProfileSecretID("prof_server"), []byte("server-key"), ""); err != nil {
 		t.Fatalf("seal server credential: %v", err)
 	}
 
@@ -241,10 +241,6 @@ func TestServerProfileCredentialLifecycle(t *testing.T) {
 		t.Fatalf("absent credential = %q, %v", missing, err)
 	}
 
-	value, err := server.serverProfileCredentialValue(ctx, "prof_relay")
-	if err != nil || value != "relay-key" {
-		t.Fatalf("model-listing credential = %q, %v", value, err)
-	}
 	if err := server.deleteServerProfileCredential(ctx, "prof_relay"); err != nil {
 		t.Fatalf("delete server credential: %v", err)
 	}

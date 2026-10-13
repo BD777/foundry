@@ -24,14 +24,11 @@ import {
   constants,
   fstatSync,
   lstatSync,
-  mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   readSync,
   realpathSync,
-  renameSync,
-  writeFileSync,
 } from "node:fs";
 import {
   basename,
@@ -42,7 +39,9 @@ import {
   resolve,
 } from "node:path";
 import { redactSecrets, secretSeparatorLine } from "./secret-redaction.js";
+import { writePrivateJSONAtomic } from "./storage.js";
 import type { TimerSinkEvent } from "./agent-timers.js";
+import { errorMessage } from "./utils.js";
 
 export interface AgentBackgroundTasksCapability {
   readonly provider: "claude" | "codex";
@@ -689,15 +688,13 @@ export class ClaudeBackgroundTaskTracker {
       tasks: retainedBackgroundTasks(this.tasks.values()),
     };
     try {
-      mkdirSync(dirname(path), { recursive: true });
-      const temporary = `${path}.${process.pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-        mode: 0o600,
+      writePrivateJSONAtomic(path, value, {
+        hardenParent: false,
+        fsync: false,
       });
-      renameSync(temporary, path);
     } catch (error) {
       console.warn(
-        `Could not record background tasks for ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not record background tasks for ${sessionId}: ${errorMessage(error)}`,
       );
     }
   }

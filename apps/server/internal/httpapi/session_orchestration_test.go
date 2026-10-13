@@ -12,10 +12,11 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-func lineageFixture(t *testing.T) (store.Store, store.AgentSession) {
+func lineageFixture(t *testing.T) (*sqlitestore.Store, store.AgentSession) {
 	t.Helper()
 	db := newTestStore(t)
 	ctx := context.Background()
@@ -876,15 +877,15 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 	server := NewServer(db)
 	input := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}
 	// No daemon is connected, so success stops at the connection check.
-	if status, err := server.resolveSessionDevice(ctx, &input); status != http.StatusConflict {
-		t.Fatalf("profile-only resolution = %d %v, want it to reach the connection check", status, err)
+	if err := server.resolveSessionDevice(ctx, &input); errorStatus(err) != http.StatusConflict {
+		t.Fatalf("profile-only resolution = %v, want it to reach the connection check", err)
 	}
 	if input.Provider != "codex" {
 		t.Fatalf("provider = %q, want the profile's runtime", input.Provider)
 	}
 	unknown := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "missing"}
-	if status, _ := server.resolveSessionDevice(ctx, &unknown); status != http.StatusBadRequest {
-		t.Fatalf("unknown profile = %d, want 400", status)
+	if err := server.resolveSessionDevice(ctx, &unknown); errorStatus(err) != http.StatusBadRequest {
+		t.Fatalf("unknown profile = %v, want 400", err)
 	}
 }
 

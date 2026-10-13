@@ -190,7 +190,6 @@ export const externalAccounts = {
     missingList_other: "{{count}} permissions not granted",
     applyScopes: "Apply for the missing permissions",
     done: "Done",
-    close: "Close",
     cancel: "Cancel",
   },
   authorize: {

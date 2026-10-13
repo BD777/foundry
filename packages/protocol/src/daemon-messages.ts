@@ -3,9 +3,27 @@
 // TypeScript worker never spells a wire literal by hand.
 //
 // The Go side keeps its own `ws*Type` constants in
-// apps/server/internal/httpapi/daemon_ws.go. `scripts/audit-contract.mjs`
+// apps/server/internal/httpapi/daemon_wire.go. `scripts/audit-contract.mjs`
 // mechanically compares the two sets; it checks the vocabulary, not payload
 // shapes or direction.
+//
+// The payload interfaces below are the requests the server sends a worker.
+// The same audit compares each one's JSON field names with its Go struct:
+// `ws<Name>` in apps/server/internal/httpapi, unless its name map says
+// otherwise. Keep them flat (no inline object types, no `extends`) so the
+// audit can read them.
+
+import type { ChatAttachment } from "./chat.js";
+import type { AgentRuntimeSettings, DeviceRepairAction } from "./device.js";
+import type { ExternalAccountMaterial } from "./external-accounts.js";
+import type { ClarificationTurn, Issue } from "./issue.js";
+import type {
+  AgentConfigScope,
+  AgentConnectionType,
+  AgentProfileProjection,
+  ProfileDefinition,
+} from "./profiles.js";
+import type { AgentSession } from "./session.js";
 
 export const daemonMessageTypes = {
   ack: "ack",
@@ -175,6 +193,12 @@ export interface WorkspaceFoldersPayload {
   missingWorkspaceIds: string[];
 }
 
+/** A chat's native session, as relink_workspace names it. */
+export interface NativeSessionRef {
+  provider: "claude" | "codex";
+  id: string;
+}
+
 /** relink_workspace: serve workspaceId from path, keeping its identity. */
 export interface RelinkWorkspacePayload {
   workspaceId: string;
@@ -183,11 +207,241 @@ export interface RelinkWorkspacePayload {
   /** The folder it had (its last known path); may no longer exist. */
   previousPath: string;
   /** Its chats' native sessions, to make them resumable in path. */
-  nativeSessions: { provider: "claude" | "codex"; id: string }[];
+  nativeSessions: NativeSessionRef[];
 }
 
 /** find_moved_workspace: look for the moved folder near previousPath. */
 export interface FindMovedWorkspacePayload {
   workspaceId: string;
   previousPath: string;
+}
+
+/** read_file */
+export interface ReadFilePayload {
+  path: string;
+  workspaceId: string;
+}
+
+/** read_subagent_transcript */
+export interface ReadSubagentTranscriptPayload {
+  sessionId: string;
+  taskId: string;
+  workspaceId: string;
+}
+
+/** read_session_file */
+export interface ReadSessionFilePayload {
+  workspaceId: string;
+  sessionId: string;
+  path: string;
+}
+
+/** read_session_file_diff */
+export interface ReadSessionFileDiffPayload {
+  workspaceId: string;
+  sessionId: string;
+  path: string;
+  inputId?: string;
+}
+
+/**
+ * read_background_task_output and stop_background_task. The request names a
+ * task, never a path. A read that follows a running task's log continues
+ * from `after`; stop reads only sessionId and taskId.
+ */
+export interface BackgroundTaskRequestPayload {
+  workspaceId: string;
+  sessionId: string;
+  taskId: string;
+  after?: number;
+  follow?: boolean;
+}
+
+/** list_subagents */
+export interface ListSubagentsPayload {
+  sessionId: string;
+  workspaceId: string;
+  /**
+   * "digest": the list as a chat shows it (AgentSubagentDigest), which the
+   * reply names; else the whole list, prompts and answers.
+   */
+  view?: string;
+}
+
+/** The view of a subagent list a chat reads (see ListSubagentsPayload). */
+export const subagentDigestView = "digest";
+
+/** list_directories */
+export interface ListDirectoriesPayload {
+  path: string;
+}
+
+/** list_workspace_tree */
+export interface ListWorkspaceTreePayload {
+  path?: string;
+  workspaceId: string;
+}
+
+/** attachment_write: one chunk of an upload, or its abort. */
+export interface AttachmentWritePayload {
+  workspaceId: string;
+  relativePath: string;
+  offset: number;
+  dataBase64?: string;
+  final?: boolean;
+  abort?: boolean;
+}
+
+/** attachment_read: one chunk of an attachment image or workspace file. */
+export interface AttachmentReadPayload {
+  workspaceId: string;
+  path: string;
+  offset: number;
+  maxBytes: number;
+  /** "workspace": any file of the workspace, not only an image attachment. */
+  scope?: "workspace";
+}
+
+/** setup_workspace */
+export interface SetupWorkspacePayload {
+  path: string;
+}
+
+/** forget_workspace */
+export interface ForgetWorkspacePayload {
+  path: string;
+  workspaceId: string;
+}
+
+/** The profile upsert_agent_profile and list_agent_models carry. */
+export interface DaemonAgentProfileInput {
+  /**
+   * Write-only: supplied for a catalog read so the endpoint can be asked with
+   * the same key a run would use. Never persisted by this payload.
+   */
+  apiKey?: string;
+  baseUrl?: string;
+  claudeEffort?: AgentProfileProjection["claudeEffort"];
+  claudePermissionMode?: AgentProfileProjection["claudePermissionMode"];
+  codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];
+  codexReasoningEffort?: AgentProfileProjection["codexReasoningEffort"];
+  codexSandboxMode?: AgentProfileProjection["codexSandboxMode"];
+  codexSpeed?: AgentProfileProjection["codexSpeed"];
+  configScope?: AgentConfigScope;
+  connectionType?: AgentConnectionType;
+  deviceId?: string;
+  id?: string;
+  label: string;
+  model?: string;
+  promptPrefix?: string;
+  runtime: string;
+  workspaceId?: string;
+}
+
+/** upsert_agent_profile */
+export interface UpsertAgentProfilePayload {
+  profile: DaemonAgentProfileInput;
+}
+
+/** list_agent_models */
+export interface ListAgentModelsPayload {
+  profile: DaemonAgentProfileInput;
+}
+
+/** upsert_agent_runtime_settings */
+export interface UpsertAgentRuntimeSettingsPayload {
+  settings: AgentRuntimeSettings;
+}
+
+/** read_profile_credential */
+export interface ReadProfileCredentialPayload {
+  profileId?: string;
+}
+
+/** run_session */
+export interface RunSessionPayload {
+  session: AgentSession;
+  /** Server-held credential for the session's profile; memory-only. */
+  credential?: string;
+  /** One-time bearer token for the spawned agent's MCP/CLI surface. */
+  sessionToken?: string;
+  /**
+   * Server-owned profile definition for this run. When present it is
+   * authoritative and the local profiles file is not consulted, so a profile
+   * that exists only in the control plane keeps its endpoint and knobs.
+   */
+  profile?: ProfileDefinition;
+  /** The Issue an issue_execution session implements, with its contract. */
+  issue?: Issue;
+  /** Server decision: readable only for Issues the device owner started. */
+  userFiles?: "readable" | "hidden";
+  /** The draft and conversation an issue_clarification input is about. */
+  clarification?: ClarificationTurn;
+  /** Third-party accounts the session may act as: minted tokens, no refresh. */
+  externalAccounts?: ExternalAccountMaterial[];
+}
+
+/** steer_session */
+export interface SteerSessionPayload {
+  message?: string;
+  attachments?: ChatAttachment[];
+  sessionId?: string;
+  /**
+   * The message's id (a queued message's): a steer the server sends again
+   * is applied once. Older servers send none.
+   */
+  inputId?: string;
+}
+
+/** cancel_session */
+export interface CancelSessionPayload {
+  sessionId?: string;
+  inputId?: string;
+}
+
+/** recover_session: answered with session_completed. */
+export interface RecoverSessionPayload {
+  sessionId?: string;
+  inputId?: string;
+  workspaceId: string;
+  issueId?: string;
+  role?: AgentSession["role"];
+}
+
+/** read_repository_refs */
+export interface ReadRepositoryRefsPayload {
+  remote: string;
+  /** Every tag (git). */
+  tags?: boolean;
+  /** HEAD, refs/heads/<name>, refs/tags/<name> and its peeled ref (git). */
+  patterns?: string[];
+  /** npm registry (https); absent uses this device's npm settings. */
+  registry?: string;
+}
+
+/** fetch_skill_repository */
+export interface FetchSkillRepositoryPayload {
+  remote: string;
+  ref?: string;
+  subpath?: string;
+  registry?: string;
+  uploadPath: string;
+}
+
+/** scan_skills */
+export interface ScanSkillsPayload {
+  roots?: string[];
+  /** Programs library skills need; the reply says which the device has. */
+  tools?: unknown;
+}
+
+/** read_skill_content */
+export interface ReadSkillContentPayload {
+  root?: string;
+  dirName?: string;
+}
+
+/** run_repair */
+export interface RunRepairPayload {
+  action?: DeviceRepairAction;
 }

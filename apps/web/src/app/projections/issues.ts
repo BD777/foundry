@@ -1,5 +1,6 @@
 import type { Issue, Run, RunEvent } from "@bd777/foundry-protocol";
 import type { FoundryData } from "../../api-types";
+import { isIssueClosed } from "../../lib/issue-meta";
 import {
   eachPayload,
   keepStreamed,
@@ -24,9 +25,8 @@ export function mergeIssueRun(current: Run | undefined, incoming: Run): Run {
 }
 
 export function mergeIssue(current: Issue | undefined, incoming: Issue): Issue {
-  const terminal = (issue: Issue) =>
-    issue.status === "accepted" || issue.status === "abandoned";
-  if (current && terminal(current) && !terminal(incoming)) return current;
+  if (current && isIssueClosed(current) && !isIssueClosed(incoming))
+    return current;
   if (!current?.run) return incoming;
   if (!incoming.run) return current;
   if (current.run.id !== incoming.run.id) {

@@ -6,11 +6,11 @@ import {
   string,
   contentText,
   json,
-  type RecordValue,
-} from "./values.js";
+  type JSONRecord,
+} from "../json-values.js";
 
 export function codexTranscriptRecord(
-  envelope: RecordValue,
+  envelope: JSONRecord,
   fallbackId: string,
 ): TranscriptMessage[] {
   const payload = record(envelope.payload);

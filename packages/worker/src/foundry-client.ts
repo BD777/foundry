@@ -13,11 +13,11 @@
  * token their commands do not see.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import type { DaemonConfig } from "./config.js";
-import { foundryStatePath } from "./state-root.js";
+import { daemonConfigPath, type DaemonConfig } from "./config.js";
+import { tryReadJSONFile } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 export interface FoundryClientConfig {
   serverURL: string;
@@ -46,15 +46,9 @@ function env(name: string): string | undefined {
 export function resolveConfig(
   overrides: Partial<FoundryClientConfig> = {},
 ): FoundryClientConfig {
-  const configPath = foundryStatePath("daemon-config.json");
-  let daemonConfig: DaemonConfig | undefined;
-  if (existsSync(configPath)) {
-    try {
-      daemonConfig = JSON.parse(readFileSync(configPath, "utf8"));
-    } catch {
-      daemonConfig = undefined;
-    }
-  }
+  // Best effort, and never changes the file: without a readable config the
+  // environment alone decides.
+  const daemonConfig = tryReadJSONFile<DaemonConfig>(daemonConfigPath());
   return {
     serverURL:
       overrides.serverURL ??
@@ -133,9 +127,9 @@ export class FoundryClient {
       );
     } catch (error) {
       throw new FoundryClientError(
-        `cannot reach Foundry server at ${this.config.serverURL}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `cannot reach Foundry server at ${this.config.serverURL}: ${errorMessage(
+          error,
+        )}`,
       );
     }
     const raw = response.text;

@@ -5,20 +5,11 @@
  * the daemon restarting midway.
  */
 
-import {
-  closeSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readSync,
-  renameSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname } from "node:path";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
 import type { WorkerUpdateStep } from "@bd777/foundry-protocol";
 import { redactSecrets } from "./secret-redaction.js";
 import { foundryStatePath } from "./state-root.js";
+import { tryReadJSONFile, writePrivateJSONAtomic } from "./storage.js";
 
 export type SelfUpdateStep = WorkerUpdateStep;
 
@@ -75,21 +66,14 @@ export const selfUpdateLogMarker = "=== Update requested by the server at ";
 export function readSelfUpdateRecord(
   path = selfUpdateStatusPath(),
 ): SelfUpdateRecord | undefined {
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as SelfUpdateRecord;
-  } catch {
-    return undefined;
-  }
+  return tryReadJSONFile<SelfUpdateRecord>(path);
 }
 
 export function writeSelfUpdateRecord(
   record: SelfUpdateRecord,
   path = selfUpdateStatusPath(),
 ): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const next = `${path}.${process.pid}`;
-  writeFileSync(next, JSON.stringify(record));
-  renameSync(next, path);
+  writePrivateJSONAtomic(path, record, { hardenParent: false });
 }
 
 /** The update command records a step, when a daemon asked for the update. */

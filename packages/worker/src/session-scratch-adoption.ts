@@ -16,6 +16,7 @@ import {
   unrecordedScratchDirectories,
 } from "./resource-pool.js";
 import { sessionArtifactDirectories } from "./session-artifacts.js";
+import { errorMessage } from "./utils.js";
 
 export interface AdoptedSessionScratch {
   sessionId: string;
@@ -169,7 +170,7 @@ export function adoptEarlierSessionScratch(
       if (directory) adopted.push({ sessionId, directory, adopted: own });
     } catch (error) {
       console.warn(
-        `Could not adopt the earlier scratch directories of session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Could not adopt the earlier scratch directories of session ${sessionId}: ${errorMessage(error)}`,
       );
     }
   }

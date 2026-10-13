@@ -77,15 +77,8 @@ type windowedAgentSession struct {
 	StateEvents []store.AgentSessionEvent `json:"stateEvents,omitempty"`
 }
 
-func windowSessionEvents(ctx context.Context, windows store.SessionEventWindowStore, session store.AgentSession, window eventWindow) (windowedAgentSession, error) {
-	var events []store.AgentSessionEvent
-	var before, newest string
-	var err error
-	if spans, ok := windows.(store.SessionEventCatchUpStore); ok {
-		events, before, newest, err = spans.AgentSessionEventWindowSpan(ctx, session.ID, window.before, window.limit)
-	} else {
-		events, before, err = windows.AgentSessionEventWindow(ctx, session.ID, window.before, window.limit)
-	}
+func windowSessionEvents(ctx context.Context, db Backend, session store.AgentSession, window eventWindow) (windowedAgentSession, error) {
+	events, before, newest, err := db.AgentSessionEventWindowSpan(ctx, session.ID, window.before, window.limit)
 	if err != nil {
 		return windowedAgentSession{}, err
 	}
@@ -94,8 +87,8 @@ func windowSessionEvents(ctx context.Context, windows store.SessionEventWindowSt
 	if window.before == "" {
 		page.EventsAfter = newest
 	}
-	if states, ok := windows.(store.SessionStateStore); ok && window.before == "" && before != "" {
-		older, err := states.AgentSessionStateEvents(ctx, session.ID, before)
+	if window.before == "" && before != "" {
+		older, err := db.AgentSessionStateEvents(ctx, session.ID, before)
 		if err != nil {
 			return windowedAgentSession{}, err
 		}

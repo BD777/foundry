@@ -32,8 +32,7 @@ import {
   sandboxCommand,
   executorEnvironment,
 } from "../dist/execution-sandbox.js";
-import { executeIssue } from "../dist/issue-execution.js";
-import { SessionRunTransport } from "../dist/transport.js";
+import { executeIssue, SessionRunTransport } from "../dist/issue-execution.js";
 import {
   recordedIssueCompletion,
   recoveredIssueCompletion,

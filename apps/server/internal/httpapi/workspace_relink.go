@@ -222,12 +222,10 @@ func (s *Server) handleRelinkWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	var refs []store.NativeSessionRef
-	if lister, ok := s.store.(workspaceNativeSessionLister); ok {
-		if refs, err = lister.WorkspaceNativeSessions(r.Context(), workspace.ID); err != nil {
-			writeResult(w, nil, err)
-			return
-		}
+	refs, err := s.store.WorkspaceNativeSessions(r.Context(), workspace.ID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()

@@ -431,8 +431,10 @@ test("opening a chat asks only the agent its runtime restores to for the model c
 test("a model catalog is asked for once per page, unless refreshed", async () => {
   const originalFetch = globalThis.fetch;
   const answers = [];
-  globalThis.fetch = () =>
-    new Promise((resolve, reject) => answers.push({ resolve, reject }));
+  globalThis.fetch = (_url, init) =>
+    new Promise((resolve, reject) =>
+      answers.push({ resolve, reject, body: JSON.parse(init.body) }),
+    );
   const { listAgentModels } = await import("../src/api.ts");
   const profile = { id: "p_catalog", deviceId: "a", runtime: "claude" };
   const reply = (index, body) =>
@@ -449,9 +451,21 @@ test("a model catalog is asked for once per page, unless refreshed", async () =>
       { id: "m1" },
     ]);
     assert.equal(answers.length, 1, "a read catalog answers again");
+    // Views asking about the same profile with their own run settings
+    // (issues add the workspace, chats the prompt prefix) share it.
+    assert.deepEqual(
+      await listAgentModels(
+        { ...profile, workspaceId: "w1", promptPrefix: "Be brief." },
+        { reuse: true },
+      ),
+      [{ id: "m1" }],
+    );
+    assert.equal(answers.length, 1, "one read per profile");
+    assert.equal(answers[0].body.refresh, undefined, "the server may reuse");
     // A refresh asks again and keeps the new answer.
     const refreshed = listAgentModels(profile);
     assert.equal(answers.length, 2);
+    assert.equal(answers[1].body.refresh, true, "the server asks the device");
     reply(1, [{ id: "m2" }]);
     assert.deepEqual(await refreshed, [{ id: "m2" }]);
     assert.deepEqual(await listAgentModels(profile, { reuse: true }), [

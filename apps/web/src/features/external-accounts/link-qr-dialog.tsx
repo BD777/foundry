@@ -1,8 +1,8 @@
 import { ExternalLink } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
+import { useCopied } from "../../lib/use-copied";
 import { SignInModal } from "./sign-in";
 
 export interface LinkQrTarget {
@@ -23,21 +23,13 @@ export function LinkQrDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation(["externalAccounts", "common"]);
-  const [copied, setCopied] = useState(false);
-  async function copy(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  }
+  const { copied, copy, reset } = useCopied();
   return (
     <SignInModal
       description={target?.description ?? ""}
       onOpenChange={(open) => {
         if (!open) {
-          setCopied(false);
+          reset();
           onClose();
         }
       }}
@@ -72,7 +64,9 @@ export function LinkQrDialog({
                   size="sm"
                   variant="ghost"
                 >
-                  {copied ? t("common:actions.copied") : t("connect.copyLink")}
+                  {copied()
+                    ? t("common:actions.copied")
+                    : t("connect.copyLink")}
                 </Button>
               </div>
             </div>

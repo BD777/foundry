@@ -13,7 +13,7 @@ import {
   claudeCommandCandidates,
   codexCommandCandidates,
   resolveClaudeCommand,
-} from "../dist/utils.js";
+} from "../dist/native-cli.js";
 
 function fakeClaudeInstall(root, name = "claude") {
   const binDir = resolve(root, ".local/bin");

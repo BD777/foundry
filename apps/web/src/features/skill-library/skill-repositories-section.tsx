@@ -6,25 +6,12 @@ import type {
   DeviceTool,
   SkillRepository,
 } from "@bd777/foundry-protocol";
-import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
+import { errorText } from "../../lib/errors";
+import { dateTime } from "../../lib/time-format";
 import { SkillBundleRow } from "./skill-bundle-row";
 import { SkillPickRow } from "./skill-pick-row";
 import { RecommendedBundles } from "./recommended-bundles";
-
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
-
-function checkedLabel(at?: string): string {
-  if (!at) return "";
-  const date = new Date(at);
-  return Number.isNaN(date.getTime())
-    ? at
-    : date.toLocaleString(i18n.language, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
-}
 
 /**
  * The git repositories and npm packages the library follows, each checked
@@ -108,7 +95,7 @@ export function SkillRepositoriesSection({
                   checkedLabel={
                     repo.checkedAt
                       ? t("library.repo.checkedAt", {
-                          time: checkedLabel(repo.checkedAt),
+                          time: dateTime(repo.checkedAt),
                         })
                       : ""
                   }
@@ -131,7 +118,7 @@ export function SkillRepositoriesSection({
                 checkedLabel={
                   repo.checkedAt
                     ? t("library.repo.checkedAt", {
-                        time: checkedLabel(repo.checkedAt),
+                        time: dateTime(repo.checkedAt),
                       })
                     : ""
                 }

@@ -59,11 +59,7 @@ func (s *Server) ReconcileStaleSessions(ctx context.Context) {
 }
 
 func (s *Server) reconcileStaleSessions(ctx context.Context) error {
-	active, ok := s.store.(store.ActiveAgentSessionStore)
-	if !ok {
-		return nil
-	}
-	sessions, err := active.ActiveAgentSessions(ctx)
+	sessions, err := s.store.ActiveAgentSessions(ctx)
 	if err != nil {
 		return err
 	}

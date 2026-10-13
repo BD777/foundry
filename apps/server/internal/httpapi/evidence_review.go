@@ -13,10 +13,6 @@ import (
 )
 
 func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
@@ -25,7 +21,7 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
 	if issue.Status == "accepted" {
-		decisions, readErr := st.ListEvidenceRecords(r.Context(), issue.ID, "decision")
+		decisions, readErr := s.store.ListEvidenceRecords(r.Context(), issue.ID, "decision")
 		if readErr != nil {
 			writeResult(w, nil, readErr)
 			return
@@ -33,13 +29,13 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 		for _, raw := range decisions {
 			var decision store.AcceptanceDecision
 			if json.Unmarshal(raw, &decision) == nil && decision.Status == "integrated" {
-				review, readErr := st.GetEvidenceRecord(r.Context(), issue.ID, "review", decision.ReviewSnapshotID)
+				review, readErr := s.store.GetEvidenceRecord(r.Context(), issue.ID, "review", decision.ReviewSnapshotID)
 				writeResult(w, review, readErr)
 				return
 			}
 		}
 	}
-	materials, err := st.ListEvidenceRecords(r.Context(), issue.ID, "material")
+	materials, err := s.store.ListEvidenceRecords(r.Context(), issue.ID, "material")
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -54,7 +50,7 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, material := range inventory.Materials {
 			seen[material.ID] = true
-			if err = st.RegisterMaterial(r.Context(), issue.ID, material); err != nil {
+			if err = s.store.RegisterMaterial(r.Context(), issue.ID, material); err != nil {
 				writeResult(w, nil, err)
 				return
 			}
@@ -71,19 +67,19 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 		if inventoryErr != nil {
 			if material.Availability == "available" {
 				material.Availability = "offline"
-				_ = st.RegisterMaterial(r.Context(), issue.ID, material)
+				_ = s.store.RegisterMaterial(r.Context(), issue.ID, material)
 			}
 		} else if !seen[material.ID] && material.Availability != "deleted" {
 			material.Availability = "missing"
 			material.AvailabilityCheckedAt = time.Now().UTC().Format(time.RFC3339Nano)
-			_ = st.RegisterMaterial(r.Context(), issue.ID, material)
+			_ = s.store.RegisterMaterial(r.Context(), issue.ID, material)
 		}
 	}
-	review, err := st.CurrentReview(r.Context(), r.PathValue("id"))
+	review, err := s.store.CurrentReview(r.Context(), r.PathValue("id"))
 	if err == nil && review.CandidateSnapshotID != "" && !reviewHasPendingJudgment(review) {
 		blockers := []store.ReviewBlocker{}
 		var candidate store.CandidateSnapshot
-		raw, readErr := st.GetEvidenceRecord(r.Context(), issue.ID, "candidate", review.CandidateSnapshotID)
+		raw, readErr := s.store.GetEvidenceRecord(r.Context(), issue.ID, "candidate", review.CandidateSnapshotID)
 		if readErr == nil {
 			readErr = json.Unmarshal(raw, &candidate)
 		}
@@ -100,9 +96,9 @@ func (s *Server) handleEvidenceReview(w http.ResponseWriter, r *http.Request) {
 			}
 			blockers = append(blockers, store.ReviewBlocker{Code: code, Message: readErr.Error()})
 		}
-		err = st.RecordReviewObservation(r.Context(), issue.ID, review.CandidateSnapshotID, blockers)
+		err = s.store.RecordReviewObservation(r.Context(), issue.ID, review.CandidateSnapshotID, blockers)
 		if err == nil {
-			review, err = st.CurrentReview(r.Context(), issue.ID)
+			review, err = s.store.CurrentReview(r.Context(), issue.ID)
 		}
 	}
 	// A review that changed became the Issue's current one, with its
@@ -140,10 +136,6 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	actor := humanActor(r)
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
@@ -156,14 +148,14 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	review, err := st.CurrentReview(r.Context(), issue.ID)
+	review, err := s.store.CurrentReview(r.Context(), issue.ID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
 	// Re-delivering a completed Accept is read-only. Never start a new integration.
 	if issue.Status == "accepted" {
-		decision, replayErr := st.ApproveReview(r.Context(), issue.ID, input.ReviewSnapshotID, input.ReviewDigest, actor, r.Header.Get("Idempotency-Key"), input.Rationale)
+		decision, replayErr := s.store.ApproveReview(r.Context(), issue.ID, input.ReviewSnapshotID, input.ReviewDigest, actor, r.Header.Get("Idempotency-Key"), input.Rationale)
 		if replayErr != nil {
 			writeEvidenceMutation(w, nil, replayErr)
 			return
@@ -178,7 +170,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 	// A recoverable journal remains tied to the approved immutable review, even
 	// when live observations now see one of its already-applied repository heads.
 	var existing *store.AcceptanceDecision
-	records, err := st.ListEvidenceRecords(r.Context(), issue.ID, "decision")
+	records, err := s.store.ListEvidenceRecords(r.Context(), issue.ID, "decision")
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -192,7 +184,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing != nil {
 		latestReview := review
-		raw, readErr := st.GetEvidenceRecord(r.Context(), issue.ID, "review", existing.ReviewSnapshotID)
+		raw, readErr := s.store.GetEvidenceRecord(r.Context(), issue.ID, "review", existing.ReviewSnapshotID)
 		if readErr == nil {
 			readErr = json.Unmarshal(raw, &review)
 		}
@@ -201,12 +193,12 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if issue.ContractState != "confirmed" || issue.CurrentContractRevision == nil || *issue.CurrentContractRevision != review.ContractRevision || issue.CurrentCandidateSnapshotID == nil || *issue.CurrentCandidateSnapshotID != review.CandidateSnapshotID {
-			_, _ = st.FinishAcceptance(r.Context(), issue.ID, existing.ID, "", "acceptance_input_changed")
+			_, _ = s.store.FinishAcceptance(r.Context(), issue.ID, existing.ID, "", "acceptance_input_changed")
 			writeError(w, 409, "acceptance_input_changed")
 			return
 		}
 		if !store.SameReviewJudgments(latestReview, review) {
-			_, _ = st.FinishAcceptance(r.Context(), issue.ID, existing.ID, "", "verification_selection_changed")
+			_, _ = s.store.FinishAcceptance(r.Context(), issue.ID, existing.ID, "", "verification_selection_changed")
 			writeError(w, 409, "verification_selection_changed")
 			return
 		}
@@ -215,7 +207,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "review_not_eligible_or_changed", "review": review})
 		return
 	}
-	raw, err := st.GetEvidenceRecord(r.Context(), issue.ID, "candidate", review.CandidateSnapshotID)
+	raw, err := s.store.GetEvidenceRecord(r.Context(), issue.ID, "candidate", review.CandidateSnapshotID)
 	var candidate store.CandidateSnapshot
 	if err == nil {
 		err = json.Unmarshal(raw, &candidate)
@@ -224,7 +216,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		writeResult(w, nil, err)
 		return
 	}
-	materialIDs, err := reviewMaterialIDs(r.Context(), st, issue, review, candidate)
+	materialIDs, err := reviewMaterialIDs(r.Context(), s.store, issue, review, candidate)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -238,12 +230,12 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		if existing != nil && (strings.Contains(err.Error(), "baseline_changed") || strings.Contains(err.Error(), "candidate_changed") || strings.Contains(err.Error(), "material_")) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, _ = st.FinishAcceptance(ctx, issue.ID, existing.ID, "", err.Error())
+			_, _ = s.store.FinishAcceptance(ctx, issue.ID, existing.ID, "", err.Error())
 		}
 		writeEvidenceMutation(w, nil, err)
 		return
 	}
-	decision, err := st.ApproveReview(r.Context(), issue.ID, input.ReviewSnapshotID, input.ReviewDigest, actor, r.Header.Get("Idempotency-Key"), input.Rationale)
+	decision, err := s.store.ApproveReview(r.Context(), issue.ID, input.ReviewSnapshotID, input.ReviewDigest, actor, r.Header.Get("Idempotency-Key"), input.Rationale)
 	if err != nil {
 		writeEvidenceMutation(w, nil, err)
 		return
@@ -253,7 +245,7 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "baseline_changed") || strings.Contains(err.Error(), "candidate_changed") || strings.Contains(err.Error(), "material_") {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_, _ = st.FinishAcceptance(ctx, issue.ID, decision.ID, "", err.Error())
+			_, _ = s.store.FinishAcceptance(ctx, issue.ID, decision.ID, "", err.Error())
 		}
 		writeEvidenceMutation(w, nil, err)
 		return
@@ -267,11 +259,11 @@ func (s *Server) handleEvidenceAccept(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "integration_receipt_mismatch")
 		return
 	}
-	if err = st.RegisterIntegrationSnapshot(r.Context(), issue.ID, decision.ID, *integration); err != nil {
+	if err = s.store.RegisterIntegrationSnapshot(r.Context(), issue.ID, decision.ID, *integration); err != nil {
 		writeEvidenceMutation(w, nil, err)
 		return
 	}
-	if _, err = st.FinishAcceptance(r.Context(), issue.ID, decision.ID, result.IntegrationID, ""); err != nil {
+	if _, err = s.store.FinishAcceptance(r.Context(), issue.ID, decision.ID, result.IntegrationID, ""); err != nil {
 		writeEvidenceMutation(w, nil, err)
 		return
 	}

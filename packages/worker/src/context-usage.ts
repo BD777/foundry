@@ -6,16 +6,11 @@
  */
 import type { AgentContextUsage } from "@bd777/foundry-protocol";
 import { open, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { optionalRecord } from "./json-values.js";
 import { findSessionLog } from "./native-usage.js";
 import { ClaudeRequestUsageTracker } from "./turn-usage.js";
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
+export { codexHome } from "./native-homes.js";
 
 function count(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0
@@ -63,12 +58,12 @@ export class ClaudeContextTracker {
 
   /** The context to report after this message, if it changed it. */
   observe(message: unknown): AgentContextUsage | undefined {
-    const value = record(message);
+    const value = optionalRecord(message);
     if (!value) return undefined;
     if (value.type === "stream_event" && !value.parent_tool_use_id) {
-      const event = record(value.event);
+      const event = optionalRecord(value.event);
       if (event?.type === "message_start")
-        this.model = text(record(event.message)?.model) ?? this.model;
+        this.model = text(optionalRecord(event.message)?.model) ?? this.model;
     }
     const request = this.requests.observe(message);
     if (request)
@@ -77,7 +72,7 @@ export class ClaudeContextTracker {
         ...this.window(),
       });
     if (value.type === "system" && value.subtype === "compact_boundary") {
-      const metadata = record(value.compact_metadata);
+      const metadata = optionalRecord(value.compact_metadata);
       const post = count(metadata?.post_tokens);
       const pre = count(metadata?.pre_tokens);
       return this.report({
@@ -91,9 +86,9 @@ export class ClaudeContextTracker {
     }
     if (value.type !== "result") return undefined;
     this.observeCost(value);
-    const usage = record(value.modelUsage);
+    const usage = optionalRecord(value.modelUsage);
     for (const [model, entry] of Object.entries(usage ?? {})) {
-      const window = count(record(entry)?.contextWindow);
+      const window = count(optionalRecord(entry)?.contextWindow);
       if (window) claudeContextWindows.set(model, window);
     }
     // The first result tells the window of a request already reported.
@@ -105,7 +100,7 @@ export class ClaudeContextTracker {
 
   /** What a result observed earlier cost, when known. */
   costOf(message: unknown): number | undefined {
-    const value = record(message);
+    const value = optionalRecord(message);
     return value ? this.costs.get(value) : undefined;
   }
 
@@ -136,13 +131,6 @@ export class ClaudeContextTracker {
     this.reported = context;
     return context;
   }
-}
-
-/** Where Codex keeps its sessions for a process with this environment. */
-export function codexHome(env: NodeJS.ProcessEnv): string {
-  return (
-    env.CODEX_HOME?.trim() || resolve(env.HOME?.trim() || homedir(), ".codex")
-  );
 }
 
 /** Rollout paths found, by Codex thread id. */
@@ -233,11 +221,11 @@ export class CodexContextFollower {
       return undefined;
     let entry: Record<string, unknown> | undefined;
     try {
-      entry = record(JSON.parse(line));
+      entry = optionalRecord(JSON.parse(line));
     } catch {
       return undefined;
     }
-    const payload = record(entry?.payload);
+    const payload = optionalRecord(entry?.payload);
     if (!entry || !payload) return undefined;
     if (entry.type === "turn_context") {
       this.model = text(payload.model) ?? this.model;
@@ -253,9 +241,9 @@ export class CodexContextFollower {
       });
     if (entry.type !== "event_msg" || payload.type !== "token_count")
       return undefined;
-    const info = record(payload.info);
-    const total = record(info?.total_token_usage);
-    const last = record(info?.last_token_usage);
+    const info = optionalRecord(payload.info);
+    const total = optionalRecord(info?.total_token_usage);
+    const last = optionalRecord(info?.last_token_usage);
     const input = count(last?.input_tokens);
     if (!info || !input) return undefined;
     // Codex repeats a request's count when only its rate limits change.

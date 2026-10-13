@@ -11,6 +11,7 @@ import {
 } from "@bd777/foundry-protocol";
 import type { BadgeProps } from "../../components/ui/badge";
 import { i18n } from "../../i18n";
+import { clockTime as timeOfDay } from "../../lib/time-format";
 
 export interface ResourceFilter {
   /** "" for every type. */
@@ -233,12 +234,5 @@ export function computeDetailsText(details: Record<string, string>): string {
 
 /** "15:42" today; with the date on another day. */
 export function clockTime(iso: string | undefined, now = new Date()): string {
-  const at = iso ? new Date(iso) : undefined;
-  if (!at || !Number.isFinite(at.getTime())) return "";
-  const sameDay = at.toDateString() === now.toDateString();
-  return at.toLocaleString(i18n.language, {
-    ...(sameDay ? {} : { month: "short", day: "numeric" }),
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return timeOfDay(iso, { date: "short", now });
 }

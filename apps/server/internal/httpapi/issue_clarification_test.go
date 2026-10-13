@@ -118,7 +118,7 @@ func TestClarificationTokenOnlyReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope, err := server.agentScope(ctx, db, Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: session.ID, WorkspaceID: "ws_read"}})
+	scope, err := server.agentScope(ctx, Actor{Kind: ActorAgent, Identity: store.SessionTokenIdentity{SessionID: session.ID, WorkspaceID: "ws_read"}})
 	if err != nil {
 		t.Fatal(err)
 	}

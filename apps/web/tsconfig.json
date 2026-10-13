@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
+    "noUnusedLocals": true,
     "types": ["vite/client"]
   },
   "include": ["src", "test/**/*.tsx", "vite.config.ts", "tailwind.config.ts"]

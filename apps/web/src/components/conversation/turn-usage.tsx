@@ -2,19 +2,11 @@ import type { AgentTurnUsage, SubagentUsage } from "@bd777/foundry-protocol";
 import type { StepUsage } from "./conversation-types";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
+import { formatDuration } from "../../lib/format";
 import { Button } from "../ui/button";
 import { Popover } from "../ui/popover";
 
-export function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(1, Math.round(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return i18n.t("conversation:usage.hours", { hours, minutes });
-  if (minutes > 0)
-    return i18n.t("conversation:usage.minutes", { minutes, seconds });
-  return i18n.t("conversation:usage.seconds", { seconds });
-}
+export { formatDuration };
 
 export function formatTokenCount(count: number): string {
   return new Intl.NumberFormat(i18n.language, {

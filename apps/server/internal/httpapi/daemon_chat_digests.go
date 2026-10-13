@@ -3,8 +3,6 @@ package httpapi
 import (
 	"net/http"
 	"strings"
-
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // handleDaemonChatDigests tells a worker which of its workspace's native
@@ -21,12 +19,7 @@ func (s *Server) handleDaemonChatDigests(w http.ResponseWriter, r *http.Request)
 	if !s.requireDeviceWorkspace(w, r, workspaceID) {
 		return
 	}
-	digests, ok := s.store.(store.ChatDigestStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "chat digests are not supported by this store")
-		return
-	}
-	chats, err := digests.ChatDigests(r.Context(), workspaceID)
+	chats, err := s.store.ChatDigests(r.Context(), workspaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

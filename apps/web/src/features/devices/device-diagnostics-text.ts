@@ -4,7 +4,9 @@ import type {
   DiagnosticCheck,
   WorkerConnectionReport,
 } from "@bd777/foundry-protocol";
+import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
+import { dateTime } from "../../lib/time-format";
 
 type Values = NonNullable<DiagnosticCheck["values"]>;
 
@@ -20,15 +22,7 @@ const translate = i18n.t as unknown as (key: string, values: Values) => string;
 const t = (key: string, values?: Values) =>
   translate(`devices:diagnostics.${key}`, values ?? {});
 
-export const time = (value: unknown) => {
-  const date = new Date(String(value));
-  return Number.isNaN(date.getTime())
-    ? String(value ?? "")
-    : date.toLocaleString(i18n.language, {
-        dateStyle: "medium",
-        timeStyle: "medium",
-      });
-};
+export const time = (value: unknown) => dateTime(String(value ?? ""), "medium");
 
 function loginLabel(values: Values): string {
   if (values.loginError) return t("login.error", values);
@@ -120,7 +114,9 @@ export function checkText(check: DiagnosticCheck): CheckText {
       };
     case "agents.claude":
     case "agents.codex": {
-      const name = check.id === "agents.claude" ? "Claude Code" : "Codex";
+      const name = runtimeMeta(
+        check.id === "agents.claude" ? "claude" : "codex",
+      ).productName;
       const detail = !values.installed
         ? t("agent.notInstalled")
         : [

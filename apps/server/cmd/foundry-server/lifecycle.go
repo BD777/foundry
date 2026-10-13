@@ -12,7 +12,6 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/httpapi"
 	"github.com/foundry-dev/foundry/apps/server/internal/integrations"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
-	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
 // dependencies are the seams the entry point resolves at runtime. Tests
@@ -22,7 +21,15 @@ type dependencies struct {
 	getenv    func(key string) string
 	listen    func(ctx context.Context, addr string) (net.Listener, error)
 	logf      func(format string, args ...any)
-	openStore func(cfg config) (store.Store, error)
+	openStore func(cfg config) (serverStore, error)
+}
+
+// serverStore is what the server runs on: the API's backend and the
+// presence chores done before it serves.
+type serverStore interface {
+	httpapi.Backend
+	MarkAllDevicesOffline(ctx context.Context) error
+	PurgeRemovedDevicesState(ctx context.Context) error
 }
 
 // run resolves configuration, opens the store, and serves until ctx is
@@ -38,35 +45,22 @@ func run(ctx context.Context, deps dependencies) error {
 		return err
 	}
 	defer backing.Close()
-	if fingerprinter, ok := backing.(interface{ SecretKEKFingerprint() string }); ok {
-		if fingerprint := fingerprinter.SecretKEKFingerprint(); fingerprint != "" {
-			deps.logf("secret store ready with key fingerprint sha256:%s", fingerprint)
-		}
+	if fingerprint := backing.SecretKEKFingerprint(); fingerprint != "" {
+		deps.logf("secret store ready with key fingerprint sha256:%s", fingerprint)
 	}
 	listener, err := deps.listen(ctx, cfg.Addr)
 	if err != nil {
 		return err
 	}
 
-	if _, ok := backing.(store.AccountStore); !ok {
-		return errors.New("the configured store does not support accounts")
-	}
 	// A starting server holds no connections: presence recorded before a
 	// crash or restart is stale until each worker reconnects.
-	if presence, ok := backing.(interface {
-		MarkAllDevicesOffline(context.Context) error
-	}); ok {
-		if err := presence.MarkAllDevicesOffline(ctx); err != nil {
-			return err
-		}
+	if err := backing.MarkAllDevicesOffline(ctx); err != nil {
+		return err
 	}
 	// Devices removed before removal cascaded still hold live state.
-	if purger, ok := backing.(interface {
-		PurgeRemovedDevicesState(context.Context) error
-	}); ok {
-		if err := purger.PurgeRemovedDevicesState(ctx); err != nil {
-			return err
-		}
+	if err := backing.PurgeRemovedDevicesState(ctx); err != nil {
+		return err
 	}
 	api := httpapi.NewServerWithOptions(backing, cfg.Options)
 	api.RecoverChatQueues(ctx)
@@ -144,7 +138,7 @@ func defaultDependencies() dependencies {
 			return listenConfig.Listen(ctx, "tcp", addr)
 		},
 		logf: log.Printf,
-		openStore: func(cfg config) (store.Store, error) {
+		openStore: func(cfg config) (serverStore, error) {
 			return sqlitestore.OpenWithOptions(cfg.DBPath, sqlitestore.Options{
 				SeedDemo:      cfg.SeedDemo,
 				SecretKeyPath: cfg.SecretKeyPath,

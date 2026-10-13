@@ -28,9 +28,8 @@ var backgroundTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // for a short while each read renews; the answer says whether it will.
 func (s *Server) handleReadBackgroundTaskOutput(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	sessionID := strings.TrimSpace(r.PathValue("id"))
 	taskID := strings.TrimSpace(r.PathValue("taskId"))
-	if sessionID == "" || !backgroundTaskID.MatchString(taskID) {
+	if !backgroundTaskID.MatchString(taskID) {
 		writeError(w, http.StatusBadRequest, "a session id and a background task id are required")
 		return
 	}
@@ -39,15 +38,7 @@ func (s *Server) handleReadBackgroundTaskOutput(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	session, err := s.store.GetAgentSessionSummary(r.Context(), sessionID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	if !s.canReadSession(r.Context(), actorFromContext(r.Context()), session) {
-		writeForbidden(w, "session token cannot read this session's background work")
-		return
-	}
+	session := guardedSession(r)
 	workspace, err := s.store.GetWorkspace(r.Context(), session.WorkspaceID)
 	if err != nil {
 		writeResult(w, nil, err)
@@ -56,32 +47,19 @@ func (s *Server) handleReadBackgroundTaskOutput(w http.ResponseWriter, r *http.R
 	ctx, cancel := context.WithTimeout(r.Context(), deviceFileRequestTimeout)
 	defer cancel()
 	output, err := s.hub.ReadBackgroundTaskOutput(ctx, session, taskID, read)
-	if writeDeviceRequestError(w, workspace, err) {
-		return
-	}
-	var refusal backgroundTaskRefusal
-	if errors.As(err, &refusal) {
-		writeError(w, http.StatusNotFound, refusal.reason)
-		return
-	}
-	writeResult(w, output, err)
+	writeResult(w, output, deviceRequestError(workspace, err))
 }
 
 // handleStopBackgroundTask asks the session's agent to stop one of its
 // background tasks (Claude's own stopTask; the device never kills process
 // ids). Like cancel: members control their own sessions, maintainers any.
 func (s *Server) handleStopBackgroundTask(w http.ResponseWriter, r *http.Request) {
-	sessionID := strings.TrimSpace(r.PathValue("id"))
 	taskID := strings.TrimSpace(r.PathValue("taskId"))
-	if sessionID == "" || !backgroundTaskID.MatchString(taskID) {
+	if !backgroundTaskID.MatchString(taskID) {
 		writeError(w, http.StatusBadRequest, "a session id and a background task id are required")
 		return
 	}
-	session, err := s.store.GetAgentSessionSummary(r.Context(), sessionID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
+	session := guardedSession(r)
 	if !s.canControlSession(r.Context(), actorFromContext(r.Context()), session) {
 		writeForbidden(w, "you cannot stop this session's background work")
 		return
@@ -96,7 +74,7 @@ func (s *Server) handleStopBackgroundTask(w http.ResponseWriter, r *http.Request
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	err = s.hub.StopBackgroundTask(ctx, session, taskID)
+	err := s.hub.StopBackgroundTask(ctx, session, taskID)
 	var refusal backgroundTaskRefusal
 	if errors.As(err, &refusal) {
 		writeError(w, http.StatusConflict, refusal.reason)

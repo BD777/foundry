@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProviderHealth } from "@bd777/foundry-protocol";
 import { writeJSON } from "./storage.js";
-import { resolveClaudeCommand, resolveCodexCommand } from "./utils.js";
+import { resolveClaudeCommand, resolveCodexCommand } from "./native-cli.js";
 import {
   profileID,
   profileRuntimeEnvironment,
@@ -25,15 +25,19 @@ import {
   readProviderChecks,
   type ProviderCheck,
 } from "./provider-check-state.js";
-import { codexProfileConfig, codexSessionEnvironment } from "./runner.js";
+import {
+  codexProfileConfig,
+  codexSessionEnvironment,
+} from "./runner/codex-options.js";
 import { sessionEnvironment } from "./session-ambient.js";
 import { claudeSettingsFile } from "./session-policy.js";
+import { errorMessage } from "./utils.js";
 
 const checkTimeoutMs = 120_000;
 const prompt = "Reply with the single word OK.";
 
-function errorMessage(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
+function checkErrorMessage(error: unknown): string {
+  const text = errorMessage(error);
   return text.trim().slice(0, 500) || "The agent did not answer.";
 }
 
@@ -166,7 +170,7 @@ export async function checkProvider(
       message:
         timeout.aborted && !String(error).includes("Last error")
           ? "The agent did not answer within two minutes."
-          : errorMessage(error),
+          : checkErrorMessage(error),
       fingerprint: providerCheckFingerprint(profile, health),
     };
   } finally {

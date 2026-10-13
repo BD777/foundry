@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts/externalaccountstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -23,7 +24,7 @@ type externalAccountsFixture struct {
 	server         *Server
 	handler        http.Handler
 	db             *sqlitestore.Store
-	fake           *externalaccounts.FakeFeishu
+	fake           *externalaccountstest.FakeFeishu
 	alice, bob     string
 	aliceID, bobID string
 	aliceDevice    string
@@ -70,7 +71,7 @@ func newExternalAccountsFixture(t *testing.T) *externalAccountsFixture {
 			f.bobID = user.ID
 		}
 	}
-	f.fake = externalaccounts.NewFakeFeishu("cli_fake", "secret_fake")
+	f.fake = externalaccountstest.NewFakeFeishu("cli_fake", "secret_fake")
 	t.Cleanup(f.fake.Close)
 	service := externalaccounts.NewService(db, db, externalaccounts.NewRegistry(f.fake.Adapter()))
 	service.MinPollInterval = 5 * time.Millisecond
@@ -244,8 +245,8 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	alice, _ := f.server.accounts.GetUser(ctx, f.aliceID)
-	bob, _ := f.server.accounts.GetUser(ctx, f.bobID)
+	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
+	bob, _ := f.server.store.GetUser(ctx, f.bobID)
 	aliceDevice := Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}
 
 	// Dispatch: alice's device carries the app id and gateway handles, and

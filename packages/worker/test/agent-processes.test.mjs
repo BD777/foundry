@@ -259,3 +259,35 @@ test("startup reaping stops only recorded processes that are still the ones reco
     assert.ok(running(kept.agent) && running(kept.tool), `${kept.argv[2]}`);
   assert.deepEqual(readdirSync(registry), [`${liveWorkers.agent}.json`]);
 });
+
+test("a child whose prompt cannot be sent is killed when it ignores TERM", async (t) => {
+  const { sendPrompt } = await import(dist + "/utils.js");
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      'process.on("SIGTERM", () => {}); process.stdout.write("ready\\n"); setInterval(() => {}, 1000);',
+    ],
+    { stdio: ["pipe", "pipe", "ignore"] },
+  );
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise((ready) => child.stdout.once("data", ready));
+  const exited = new Promise((done) =>
+    child.once("exit", (_code, signal) => done(signal)),
+  );
+
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  sendPrompt(child, "prompt");
+  child.stdin.emit(
+    "error",
+    Object.assign(new Error("stdin failed"), { code: "EIO" }),
+  );
+  t.mock.timers.tick(5000);
+  t.mock.timers.reset();
+
+  const outcome = await Promise.race([
+    exited,
+    new Promise((done) => setTimeout(() => done("still running"), 3000)),
+  ]);
+  assert.equal(outcome, "SIGKILL");
+});

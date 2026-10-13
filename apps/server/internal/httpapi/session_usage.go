@@ -224,10 +224,6 @@ const sessionUsageWait = 4 * time.Second
 // device. It runs when a chat is opened, never on its own. It returns the
 // sessions with any usage it stored.
 func (s *Server) backfillSessionUsage(ctx context.Context, sessions []store.AgentSession) []store.AgentSession {
-	usageStore, ok := s.store.(sessionUsageStore)
-	if !ok {
-		return sessions
-	}
 	for i, session := range sessions {
 		if !missingSessionUsage(session) {
 			continue
@@ -236,7 +232,7 @@ func (s *Server) backfillSessionUsage(ctx context.Context, sessions []store.Agen
 		if connection == nil || !connection.hasCapability(sessionUsageCapability) {
 			continue
 		}
-		if done, err := usageStore.SessionUsageBackfilled(ctx, session.ID); err != nil || done {
+		if done, err := s.store.SessionUsageBackfilled(ctx, session.ID); err != nil || done {
 			continue
 		}
 		finished := make(chan struct{})
@@ -246,7 +242,7 @@ func (s *Server) backfillSessionUsage(ctx context.Context, sessions []store.Agen
 		go func(session store.AgentSession) {
 			defer sessionUsageBackfills.Delete(session.ID)
 			defer close(finished)
-			s.runSessionUsageBackfill(usageStore, connection, session)
+			s.runSessionUsageBackfill(connection, session)
 		}(session)
 		select {
 		case <-finished:
@@ -287,11 +283,11 @@ func readOwnedSessionUsage(owned []store.NativeSessionRef, read func(provider st
 	return usage, nil
 }
 
-func (s *Server) runSessionUsageBackfill(usageStore sessionUsageStore, connection *daemonConnection, session store.AgentSession) {
+func (s *Server) runSessionUsageBackfill(connection *daemonConnection, session store.AgentSession) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	// Every native session the session owns, on whichever runtime it ran.
-	owned, err := usageStore.AgentSessionNativeSessions(ctx, session.ID)
+	owned, err := s.store.AgentSessionNativeSessions(ctx, session.ID)
 	if err != nil {
 		log.Printf("usage backfill of %s: %v", session.ID, err)
 		return
@@ -309,7 +305,7 @@ func (s *Server) runSessionUsageBackfill(usageStore sessionUsageStore, connectio
 	turns, requests := matchSessionUsage(session.Events, usage)
 	// Usage lives on transcript events, which foundry-data does not carry:
 	// a thread read shows it, so there is nothing to announce.
-	if err := usageStore.BackfillAgentSessionUsage(ctx, session.ID, turns, requests); err != nil {
+	if err := s.store.BackfillAgentSessionUsage(ctx, session.ID, turns, requests); err != nil {
 		log.Printf("usage backfill of %s: %v", session.ID, strings.TrimSpace(err.Error()))
 	}
 }

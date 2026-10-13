@@ -6,17 +6,14 @@ import { Button } from "../ui/button";
 import { Alert } from "../ui/alert";
 import { i18n } from "../../i18n";
 import { diagnosticSummary } from "../../lib/diagnostic-summary";
-import {
-  AttachmentList,
-  CopyButton,
-  MarkdownContent,
-  ProcessDisclosure,
-  ToolCallItem,
-  type ParsedImageTag,
-} from "./chat-message-content";
+import { CopyButton } from "../ui/copy-button";
+import { AttachmentList } from "./attachment-list";
+import { MarkdownContent } from "./markdown-content";
+import { ProcessDisclosure, ToolCallItem } from "./process-disclosure";
 import type {
   ChatMessageItem,
   ConversationFileActions,
+  ParsedImageTag,
   StepUsage,
 } from "./conversation-types";
 import { displayProcessLabel } from "../../lib/process-labels";
@@ -136,7 +133,7 @@ export const ChatMessageRow = memo(
     onEditMessage?: (text: string) => void;
     onImagePreview?: (image: ParsedImageTag) => void;
   }) {
-    const { t } = useTranslation("conversation");
+    const { t } = useTranslation(["conversation", "common"]);
     const messageTime = message.at ? new Date(message.at) : undefined;
     const validMessageTime =
       messageTime && !Number.isNaN(messageTime.getTime());
@@ -232,7 +229,14 @@ export const ChatMessageRow = memo(
           ) : null}
         </div>
         {message.copyText ? (
-          <CopyButton always={message.copyAlways} text={message.copyText} />
+          <CopyButton
+            className="fdy-chat-copy-button"
+            copiedLabel={t("common:actions.copied")}
+            data-always={message.copyAlways ? "true" : "false"}
+            label={t("message.copyMessage")}
+            showCheck={false}
+            text={message.copyText}
+          />
         ) : null}
         {validMessageTime || message.usage ? (
           <span className="fdy-chat-message-stamp">

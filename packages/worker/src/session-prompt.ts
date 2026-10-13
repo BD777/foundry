@@ -8,7 +8,7 @@ import type {
   SessionInput,
 } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
-import { isUtilitySession } from "./utils.js";
+import { isUtilitySession } from "./session-roles.js";
 
 /**
  * The input this dispatch runs. Sessions built inside the worker (Issue

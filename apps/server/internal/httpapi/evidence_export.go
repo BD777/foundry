@@ -28,10 +28,6 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "candidate_changes_requires_data_without_file_path")
 		return
 	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
@@ -43,12 +39,12 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 409, "contract_changed")
 		return
 	}
-	contract, err := currentIssueContract(r.Context(), st, issue)
+	contract, err := currentIssueContract(r.Context(), s.store, issue)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	raw, err := st.GetEvidenceRecord(r.Context(), issue.ID, "input", input.VerificationInputID)
+	raw, err := s.store.GetEvidenceRecord(r.Context(), issue.ID, "input", input.VerificationInputID)
 	var bound store.VerificationInput
 	if err == nil {
 		err = json.Unmarshal(raw, &bound)
@@ -60,7 +56,7 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 	result, err := s.requestEvidenceWorker(r.Context(), issue, map[string]any{"action": "file_export", "sourceKind": input.SourceKind, "taskId": evidenceTaskID(issue.ID, r.Header.Get("Idempotency-Key"), "export"), "contract": contract, "input": bound, "repoId": input.RepoID, "relativePath": input.RelativePath, "claims": input.Claims, "carrier": input.Carrier})
 	if err == nil {
 		for _, m := range result.Materials {
-			if err = st.RegisterMaterial(r.Context(), issue.ID, m); err != nil {
+			if err = s.store.RegisterMaterial(r.Context(), issue.ID, m); err != nil {
 				break
 			}
 		}
@@ -69,7 +65,7 @@ func (s *Server) handleEvidenceExport(w http.ResponseWriter, r *http.Request) {
 		err = fmt.Errorf("worker_export_missing")
 	}
 	if err == nil {
-		err = st.RegisterExportEvidence(r.Context(), issue.ID, result.Evidence[0])
+		err = s.store.RegisterExportEvidence(r.Context(), issue.ID, result.Evidence[0])
 	}
 	if err == nil {
 		s.issues.evidenceChanged(issue, result.Evidence[0].ID, input.ExpectedContractRevision, "registered")

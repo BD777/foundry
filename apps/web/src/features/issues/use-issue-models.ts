@@ -163,7 +163,6 @@ export function useIssueModels(
         delete next[key];
         return next;
       });
-      setRetry((value) => value + 1);
     },
     onRetryModels: () => setRetry((value) => value + 1),
     onClaudePermissionModeChange: () => {},

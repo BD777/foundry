@@ -4,6 +4,7 @@ import {
   readNativeSessionUsage,
   type NativeSessionUsage,
 } from "./native-usage.js";
+import { errorMessage } from "./utils.js";
 
 export async function readSessionUsage(
   payload: unknown,
@@ -38,7 +39,7 @@ export async function readSessionUsage(
   } catch (error) {
     return {
       ...result,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     };
   }
   return result;

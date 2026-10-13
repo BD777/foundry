@@ -3,6 +3,9 @@ export const ui = {
   alert: {
     diagnosticDetails: "Diagnostic details",
   },
+  dialog: {
+    close: "Close {{title}}",
+  },
   errorBoundary: {
     title: "{{label}} could not be displayed",
     stillAvailable: "Other areas of Foundry are still available.",

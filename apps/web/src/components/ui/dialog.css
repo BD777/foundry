@@ -1,0 +1,179 @@
+/* Dialog primitive (components/ui/dialog.tsx). Consumers style only their
+   own content; the surface, header, body and footer belong here. */
+
+.fdy-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--fdy-overlay);
+}
+
+.fdy-dialog-overlay[data-layout="sectioned"] {
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.fdy-dialog-overlay[data-layout="compact"] {
+  z-index: 80;
+}
+
+.fdy-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  box-sizing: border-box;
+  background: var(--fdy-paper-main);
+  box-shadow: var(--fdy-shadow-floating);
+  transform: translate(-50%, -50%);
+}
+
+/* The dialog takes focus itself when the focused control inside it goes away
+   (e.g. Install once it succeeds). It is a surface, not a control, so it
+   draws no focus ring; its controls keep their own focus styles. */
+.fdy-dialog:focus-visible {
+  outline: none;
+}
+
+.fdy-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.fdy-dialog-title {
+  margin: 0;
+}
+
+.fdy-dialog-description {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-dialog-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Sectioned: a divided header above a padded body that scrolls. */
+.fdy-dialog[data-layout="sectioned"] {
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  width: min(570px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--fdy-brass-line);
+  border-radius: 18px;
+  color: var(--fdy-ink-strong);
+}
+
+.fdy-dialog[data-layout="sectioned"] .fdy-dialog-header {
+  flex: none;
+  gap: 16px;
+  padding: 24px;
+  border-bottom: 1px solid var(--fdy-line);
+}
+
+.fdy-dialog[data-layout="sectioned"] .fdy-dialog-title {
+  font-size: 19px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.fdy-dialog[data-layout="sectioned"] .fdy-dialog-description {
+  margin: 6px 0 0;
+  line-height: 1.65;
+}
+
+.fdy-dialog[data-layout="sectioned"] .fdy-dialog-body {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.fdy-dialog[data-layout="sectioned"] .fdy-dialog-footer {
+  flex: none;
+  padding: 0 24px 24px;
+}
+
+/* Compact: one padded surface. The body's first child takes the flexible
+   row, so a list or form that scrolls itself fills it; anything taller
+   scrolls the body, whose padding keeps its controls' focus rings visible. */
+.fdy-dialog[data-layout="compact"] {
+  --fdy-dialog-padding: 20px;
+  z-index: 81;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  gap: 14px;
+  padding: var(--fdy-dialog-padding);
+  border: 1px solid var(--fdy-line-strong);
+  border-radius: 14px;
+}
+
+.fdy-dialog[data-layout="compact"] .fdy-dialog-header {
+  gap: 12px;
+}
+
+.fdy-dialog[data-layout="compact"] .fdy-dialog-title {
+  color: var(--fdy-ink-strong);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.fdy-dialog[data-layout="compact"] .fdy-dialog-description {
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+
+.fdy-dialog[data-layout="compact"] .fdy-dialog-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  margin: -4px calc(-1 * var(--fdy-dialog-padding));
+  padding: 4px var(--fdy-dialog-padding);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fdy-dialog[data-size="wide"] {
+  width: min(840px, calc(100vw - 32px));
+}
+
+/* Room for a side-by-side comparison, whatever its content's height. */
+.fdy-dialog[data-size="large"] {
+  width: min(960px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+@media (max-width: 700px) {
+  .fdy-dialog[data-layout="sectioned"] .fdy-dialog-header,
+  .fdy-dialog[data-layout="sectioned"] .fdy-dialog-body {
+    padding: 18px;
+  }
+
+  .fdy-dialog[data-layout="sectioned"] .fdy-dialog-footer {
+    padding: 0 18px 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .fdy-dialog[data-layout="compact"] {
+    --fdy-dialog-padding: 16px;
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .fdy-dialog[data-layout="compact"][data-size="large"] {
+    width: min(960px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+  }
+}

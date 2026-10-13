@@ -23,11 +23,7 @@ const waitingForDeviceLabel = "Waiting for device"
 // only says so: the session stays queued, nothing is failed or sent again
 // (a device that reconnects is sent its queued sessions as always).
 func (s *Server) noticeUnstartedSessions(ctx context.Context) error {
-	queued, ok := s.store.(store.QueuedAgentSessionStore)
-	if !ok {
-		return nil
-	}
-	sessions, err := queued.QueuedAgentSessions(ctx)
+	sessions, err := s.store.QueuedAgentSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -44,7 +40,7 @@ func (s *Server) noticeUnstartedSessions(ctx context.Context) error {
 			continue
 		}
 		event := unstartedSessionNotice(session, device, lag, now)
-		added, err := queued.AddQueuedSessionNotice(ctx, event, session.Input.ID)
+		added, err := s.store.AddQueuedSessionNotice(ctx, event, session.Input.ID)
 		if err != nil {
 			log.Printf("notice unstarted session %s: %v", session.ID, err)
 			continue

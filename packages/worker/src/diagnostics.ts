@@ -26,14 +26,18 @@ import {
   recentConnectionReports,
 } from "./connection-reports.js";
 import { inspectNativeAccount } from "./native-inspection.js";
-import { clearNativeCliCache, nativeCli } from "./native-cli.js";
+import {
+  clearDeviceCommands,
+  clearNativeCliCache,
+  nativeCli,
+} from "./native-cli.js";
 import { clearNativeLoginHealth } from "./native-login.js";
 import { serviceLogPaths } from "./service.js";
 import { eventLoopDelay, recentStalls } from "./stall-monitor.js";
 import { foundryStatePath, foundryStateRoot } from "./state-root.js";
-import { clearDeviceCommands } from "./utils.js";
 import { runningWorker } from "./worker-identity.js";
 import { forgetWorkspaceRegistration, readRegistry } from "./workspaces.js";
+import { errorMessage } from "./utils.js";
 
 type Values = NonNullable<DiagnosticCheck["values"]>;
 
@@ -61,10 +65,7 @@ export function recordActivity(
     ...(outcome.count !== undefined ? { count: outcome.count } : {}),
     ...(outcome.error !== undefined
       ? {
-          error:
-            outcome.error instanceof Error
-              ? outcome.error.message
-              : String(outcome.error),
+          error: errorMessage(outcome.error),
         }
       : {}),
   });
@@ -180,7 +181,7 @@ async function connectionChecks(
     checks.push(
       check("connection.server", "error", {
         url: input.serverURL,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       }),
     );
   }
@@ -190,7 +191,7 @@ async function connectionChecks(
   } catch (error) {
     checks.push(
       check("connection.socket", "error", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       }),
     );
   }
@@ -251,7 +252,7 @@ async function runtimeChecks(): Promise<DiagnosticCheck[]> {
   } catch (error) {
     checks.push(
       check("runtime.disk", "warn", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       }),
     );
   }
@@ -285,8 +286,7 @@ async function agentChecks(
           values,
         );
       } catch (error) {
-        values.loginError =
-          error instanceof Error ? error.message : String(error);
+        values.loginError = errorMessage(error);
         return check(id, "warn", values);
       }
     }),
@@ -364,9 +364,7 @@ export async function runDiagnostics(
   try {
     logTail = workerLogTail();
   } catch (error) {
-    logTail = [
-      `Reading the worker log failed: ${error instanceof Error ? error.message : String(error)}`,
-    ];
+    logTail = [`Reading the worker log failed: ${errorMessage(error)}`];
   }
   return {
     generatedAt: new Date().toISOString(),

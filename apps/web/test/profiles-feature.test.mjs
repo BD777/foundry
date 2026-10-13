@@ -71,30 +71,37 @@ const connectedDevice = {
   lastSeenLabel: "just now",
 };
 
-async function renderFeature(overrides = {}) {
+const realFetch = globalThis.fetch;
+
+/** The server's answers: a saved provider echoes its input. */
+function serveProfiles({ path, body }) {
+  if (path.endsWith("/models")) return Response.json([{ id: "gpt-5.6" }]);
+  if (path.startsWith("/api/profiles") && body)
+    return Response.json({
+      ...profile,
+      ...body,
+      id: body.id ?? "created-profile",
+    });
+  return Response.json(profile);
+}
+
+async function renderFeature(overrides = {}, serve = serveProfiles) {
   const container = window.document.createElement("div");
   window.document.body.append(container);
   const root = createRoot(container);
   const events = [];
+  const requests = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const request = {
+      method: init.method ?? "GET",
+      path: new URL(String(input)).pathname,
+      body: init.body ? JSON.parse(init.body) : undefined,
+    };
+    requests.push(request);
+    return serve(request);
+  };
   const onEvent = async (event) => {
     events.push(event);
-    if (event.type === "save-profile")
-      return {
-        ...profile,
-        ...event.input,
-        id: event.input.id ?? "created-profile",
-      };
-    if (event.type === "start-authorization")
-      return {
-        id: "auth-1",
-        profileId: event.profileId,
-        runtime: "codex",
-        status: "waiting_for_user",
-        url: "https://auth.openai.com/codex/device",
-        code: "ABCD-EFGHJ",
-      };
-    if (event.type === "load-models") return [{ id: "gpt-5.6" }];
-    return profile;
   };
   await act(async () => {
     root.render(
@@ -134,13 +141,26 @@ async function renderFeature(overrides = {}) {
     });
   };
 
-  return { buttonWithText, clickButton, container, events, query, root, type };
+  return {
+    buttonWithText,
+    clickButton,
+    container,
+    events,
+    query,
+    requests,
+    root,
+    type,
+  };
 }
 
 async function unmount(root) {
   await act(async () => root.unmount());
   window.document.body.replaceChildren();
+  globalThis.fetch = realFetch;
 }
+
+const sent = (view) =>
+  view.requests.map((request) => `${request.method} ${request.path}`);
 
 test("profiles are flat cards and editing uses a modal with write-only credentials", async () => {
   const view = await renderFeature();
@@ -157,8 +177,12 @@ test("profiles are flat cards and editing uses a modal with write-only credentia
 
   await view.type('input[aria-label="Profile API key"]', "sk-rotated");
   await view.clickButton("Save provider");
-  assert.equal(view.events[0].type, "save-profile");
-  assert.equal(view.events[0].input.apiKey, "sk-rotated");
+  assert.deepEqual(sent(view), ["PUT /api/profiles/p1"]);
+  assert.equal(view.requests[0].body.apiKey, "sk-rotated");
+  assert.deepEqual(view.events, [
+    { type: "profiles.changed" },
+    { type: "notice.requested", message: "Relay saved." },
+  ]);
   assert.equal(view.query('input[aria-label="Profile API key"]').value, "");
   assert.ok(!view.container.textContent.includes("sk-rotated"));
 
@@ -170,14 +194,11 @@ test("clearing a sealed credential takes a deliberate second click", async () =>
   await view.clickButton("Relay");
 
   await view.clickButton("Clear credential");
-  assert.deepEqual(view.events, []);
+  assert.deepEqual(view.requests, []);
   assert.ok(view.buttonWithText("Clear it for good?"));
 
   await view.clickButton("Clear it for good?");
-  assert.deepEqual(
-    view.events.map((event) => event.type),
-    ["clear-credential"],
-  );
+  assert.deepEqual(sent(view), ["POST /api/profiles/p1/credential/clear"]);
 
   await unmount(view.root);
 });
@@ -187,13 +208,10 @@ test("deleting a profile also needs the second click", async () => {
   await view.clickButton("Relay");
 
   await view.clickButton("Delete");
-  assert.deepEqual(view.events, []);
+  assert.deepEqual(view.requests, []);
 
   await view.clickButton("Delete this provider?");
-  assert.deepEqual(
-    view.events.map((event) => event.type),
-    ["delete-profile"],
-  );
+  assert.deepEqual(sent(view), ["DELETE /api/profiles/p1"]);
 
   await unmount(view.root);
 });
@@ -238,13 +256,14 @@ test("legacy official profiles are retained as data but absent from global conne
 });
 
 test("a refused catalog reports inside the model picker and leaves the form usable", async () => {
-  const view = await renderFeature({
-    onEvent: async (event) => {
-      if (event.type === "load-models")
-        throw new Error("relay.test answered 401. Type the model instead.");
-      return { ...profile, ...event.input };
-    },
-  });
+  const view = await renderFeature({}, (request) =>
+    request.path.endsWith("/models")
+      ? Response.json(
+          { error: "relay.test answered 401. Type the model instead." },
+          { status: 502 },
+        )
+      : serveProfiles(request),
+  );
   await view.clickButton("Relay");
 
   await act(async () => {

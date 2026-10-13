@@ -1,8 +1,9 @@
-import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { Button } from "../../components/ui/button";
+import { CopyButton } from "../../components/ui/copy-button";
 import { Tooltip } from "../../components/ui/tooltip";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import {
@@ -181,32 +182,6 @@ export function statusRows(
   );
 }
 
-function CopyValueButton({ label, value }: { label: string; value: string }) {
-  const { t } = useTranslation("chat");
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      aria-label={copied ? t("contextCard.status.copied") : label}
-      className="fdy-chat-status-copy"
-      data-copied={copied ? "true" : "false"}
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value);
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1200);
-        } catch {
-          setCopied(false);
-        }
-      }}
-      size="icon"
-      title={label}
-      variant="ghost"
-    >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
-    </Button>
-  );
-}
-
 /**
  * The open session's status line: how full its context is, always shown,
  * and its model, account, device, permissions, usage and ids folded below.
@@ -289,7 +264,13 @@ export function ChatSessionStatusLine({
                 {row.copy ? <code>{row.value}</code> : row.value}
               </dd>
               {row.copy ? (
-                <CopyValueButton label={row.copy} value={row.value} />
+                <CopyButton
+                  className="fdy-chat-status-copy"
+                  copiedLabel={t("contextCard.status.copied")}
+                  label={row.copy}
+                  text={row.value}
+                  title={row.copy}
+                />
               ) : null}
             </div>
           ))}

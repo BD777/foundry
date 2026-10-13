@@ -7,10 +7,8 @@
  */
 
 import type {
-  AgentSession,
   AgentSessionEvent,
   AgentSessionEventMetadata,
-  ChatAttachment,
   TranscriptMessage,
 } from "@bd777/foundry-protocol";
 import type { ClaudeTurnLiveness } from "./watchdog.js";
@@ -217,47 +215,6 @@ export interface ActiveCodexThread {
 }
 
 export const activeCodexThreads = new Map<string, ActiveCodexThread>();
-
-// --- Session steer/cancel targets ---
-
-export interface ActiveSessionSteerTarget {
-  provider: AgentSession["provider"];
-  /**
-   * Injects a message, and the files that came with it, into the turn.
-   * steerId, the server's id for the message, names its transcript event
-   * (evt_<steerId>, as the input event of a sent message is named).
-   */
-  steer: (
-    message: string,
-    attachments?: ChatAttachment[],
-    steerId?: string,
-  ) => Promise<void>;
-}
-
-/**
- * What a stop did. answered: the turn had already answered, so the stop ended
- * only the background work it waited for and the turn completes with that
- * answer.
- */
-export interface SessionCancelOutcome {
-  answered?: boolean;
-}
-
-export interface ActiveSessionCancelTarget {
-  provider: AgentSession["provider"];
-  cancel: () =>
-    Promise<SessionCancelOutcome | void> | SessionCancelOutcome | void;
-}
-
-export const activeSessionSteerTargets = new Map<
-  string,
-  ActiveSessionSteerTarget
->();
-export const activeSessionCancelTargets = new Map<
-  string,
-  ActiveSessionCancelTarget
->();
-export const queuedSessionCancelRequests = new Set<string>();
 
 // --- Out-of-band session events ---
 

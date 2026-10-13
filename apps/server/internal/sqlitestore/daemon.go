@@ -272,7 +272,7 @@ func (s *Store) ClaimIssueExecution(ctx context.Context, deviceID string, worksp
 
 func (s *Store) createIssueExecutionSession(ctx context.Context, issue store.Issue, deviceID string) (store.AgentSession, error) {
 	now := time.Now().UTC()
-	id := fmt.Sprintf("sess_%d", now.UnixNano())
+	id := newSessionID(now)
 	prompt := fmt.Sprintf("Implement %s under its confirmed contract (revision %d).", issue.ShortID, *issue.CurrentContractRevision)
 	session := store.AgentSession{
 		CreatedByUserID:      issue.CreatedByUserID,

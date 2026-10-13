@@ -15,6 +15,7 @@ import type {
   ProfileOrigin,
   ProviderHealth,
   SecretPlacement,
+  UpsertAgentProfilePayload,
 } from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { readOptionalText, safeID } from "./utils.js";
@@ -76,32 +77,6 @@ export interface AgentProfileLocalConfig {
 
 export interface AgentProfilesLocalFile {
   profiles?: AgentProfileLocalConfig[];
-}
-
-export interface UpsertAgentProfilePayload {
-  profile: {
-    /**
-     * Write-only: supplied for a catalog read so the endpoint can be asked with
-     * the same key a run would use. Never persisted by this payload.
-     */
-    apiKey?: string;
-    baseUrl?: string;
-    claudeEffort?: AgentProfileProjection["claudeEffort"];
-    claudePermissionMode?: AgentProfileProjection["claudePermissionMode"];
-    codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];
-    codexReasoningEffort?: AgentProfileProjection["codexReasoningEffort"];
-    codexSandboxMode?: AgentProfileProjection["codexSandboxMode"];
-    codexSpeed?: AgentProfileProjection["codexSpeed"];
-    configScope?: AgentConfigScope;
-    connectionType?: AgentConnectionType;
-    deviceId?: string;
-    id?: string;
-    label: string;
-    model?: string;
-    promptPrefix?: string;
-    runtime: string;
-    workspaceId?: string;
-  };
 }
 
 // --- Constants ---

@@ -11,6 +11,8 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { TerminalBlock } from "../../components/ui/terminal-block";
+import { errorText } from "../../lib/errors";
+import { useCopied } from "../../lib/use-copied";
 import {
   checkText,
   disconnectLine,
@@ -33,9 +35,6 @@ const tones = {
   error: "error",
 } as const;
 
-const errorText = (cause: unknown) =>
-  cause instanceof Error ? cause.message : String(cause);
-
 /**
  * The device's own account of its health: the last drop, a report the worker
  * makes on request, and repairs a person may run. Nothing here runs by itself.
@@ -51,14 +50,14 @@ export function DeviceDiagnostics({
   const [report, setReport] = useState<DiagnosticsReport>();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, reset: resetCopied } = useCopied();
   const [repairing, setRepairing] = useState<DeviceRepairAction>();
   const [repairNote, setRepairNote] = useState("");
 
   const run = async () => {
     setRunning(true);
     setError("");
-    setCopied(false);
+    resetCopied();
     try {
       setReport(await runDeviceDiagnostics(device.id));
     } catch (cause) {
@@ -107,14 +106,9 @@ export function DeviceDiagnostics({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(reportText(device.label, report))
-                  .then(() => setCopied(true))
-                  .catch(() => setCopied(false));
-              }}
+              onClick={() => void copy(reportText(device.label, report))}
             >
-              {copied ? t("common:actions.copied") : t("diagnostics.copy")}
+              {copied() ? t("common:actions.copied") : t("diagnostics.copy")}
             </Button>
           ) : null}
           <Button

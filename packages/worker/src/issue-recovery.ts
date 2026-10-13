@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { ExecutionStore } from "./execution-storage.js";
-import type { IssueCompletion } from "./transport.js";
-import { writeJSON } from "./storage.js";
+import type { IssueCompletion } from "./issue-execution.js";
+import { readJSONFile, writeJSON } from "./storage.js";
 
 /**
  * The result of an Issue execution this process no longer runs, for the
@@ -19,8 +19,8 @@ export function recoveredIssueCompletion(
   const runDir = issueRunDirectory(workspaceId, issueId, runId, store);
   if (!runDir) return undefined;
   const completionPath = resolve(runDir, "completion.json");
-  if (existsSync(completionPath))
-    return JSON.parse(readFileSync(completionPath, "utf8")) as IssueCompletion;
+  const recorded = readJSONFile<IssueCompletion>(completionPath);
+  if (recorded) return recorded;
   const environment = store.environment(workspaceId, issueId);
   const error =
     "Worker process stopped. Candidate files and the native session are retained; retry to resume.";
@@ -56,8 +56,8 @@ export function recordedIssueCompletion(
 ): IssueCompletion | undefined {
   const runDir = issueRunDirectory(workspaceId, issueId, runId, store);
   const completionPath = runDir && resolve(runDir, "completion.json");
-  return completionPath && existsSync(completionPath)
-    ? (JSON.parse(readFileSync(completionPath, "utf8")) as IssueCompletion)
+  return completionPath
+    ? readJSONFile<IssueCompletion>(completionPath)
     : undefined;
 }
 

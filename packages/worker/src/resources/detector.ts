@@ -16,6 +16,7 @@ import type {
   ResourceTypeId,
 } from "@bd777/foundry-protocol";
 import { execBounded, type ExecOptions, type ExecResult } from "./exec.js";
+import { errorMessage } from "../utils.js";
 
 /** An instance as a detector reports it; the scanner adds `detector`. */
 export type DetectedInstance = Omit<DetectedResource, "detector">;
@@ -127,7 +128,7 @@ export async function runDetector(
   } catch (error) {
     return {
       instances: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     };
   } finally {
     clearTimeout(timer);

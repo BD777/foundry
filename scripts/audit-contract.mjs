@@ -8,7 +8,7 @@
 //
 //   2. Daemon message vocabulary set parity — the string values in
 //      packages/protocol/src/daemon-messages.ts must be exactly the set of
-//      `ws*Type` constant values in apps/server/internal/httpapi/daemon_ws.go.
+//      `ws*Type` constant values in apps/server/internal/httpapi/daemon_wire.go.
 //
 //   3. Browser event vocabulary (GET /api/events) — the `Type` constants of
 //      apps/server/internal/browserevent and the names in
@@ -18,6 +18,15 @@
 //      (browserNoticeTypes) are exactly the ones package browserevent declares
 //      (its notices set); and no other Go source spells an event name as a
 //      string literal instead of using its constant.
+//
+//   4. Daemon request payload parity — every interface in
+//      packages/protocol/src/daemon-messages.ts has a Go struct in
+//      apps/server/internal/httpapi (`ws<Name>`, or the name in
+//      daemonPayloadGoNames) with the same JSON field names, embedded structs
+//      (wsReplyError, store.X) included. Payloads Go builds inline, with no
+//      named struct, are listed in daemonPayloadsBuiltInline; fields one side
+//      knows and the other deliberately does not are listed in
+//      daemonPayloadKnownDrift, so any new drift still fails.
 //
 // The checks compare names, literal sets and JSON field names only. They do
 // not validate field types, envelope direction, or handler coverage; the
@@ -32,14 +41,32 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
 export const tsDtoPaths = [
-  "packages/protocol/src/index.ts",
+  "packages/protocol/src/chat.ts",
+  "packages/protocol/src/device.ts",
+  "packages/protocol/src/foundry-data.ts",
+  "packages/protocol/src/issue.ts",
+  "packages/protocol/src/profiles.ts",
+  "packages/protocol/src/session.ts",
+  "packages/protocol/src/skills.ts",
+  "packages/protocol/src/workspace.ts",
   "packages/protocol/src/feishu.ts",
   "packages/protocol/src/external-accounts.ts",
   "packages/protocol/src/browser-events.ts",
   "packages/protocol/src/resources.ts",
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
-  "apps/server/internal/store/models.go",
+  "apps/server/internal/store/workspaces.go",
+  "apps/server/internal/store/devices.go",
+  "apps/server/internal/store/profiles.go",
+  "apps/server/internal/store/skills.go",
+  "apps/server/internal/store/skill_repositories.go",
+  "apps/server/internal/store/sessions.go",
+  "apps/server/internal/store/session_files.go",
+  "apps/server/internal/store/session_timers.go",
+  "apps/server/internal/store/session_activity.go",
+  "apps/server/internal/store/chats.go",
+  "apps/server/internal/store/issues.go",
+  "apps/server/internal/store/projections.go",
   "apps/server/internal/store/feishu.go",
   "apps/server/internal/store/external_accounts.go",
   "apps/server/internal/browserevent/payloads.go",
@@ -51,8 +78,35 @@ const tsMessagesPath = resolve(
 );
 const goMessagesPath = resolve(
   root,
-  "apps/server/internal/httpapi/daemon_ws.go",
+  "apps/server/internal/httpapi/daemon_wire.go",
 );
+const goWireDir = resolve(root, "apps/server/internal/httpapi");
+const goStoreDir = resolve(root, "apps/server/internal/store");
+
+/** daemon-messages.ts interface -> its Go struct, where not `ws<Name>`. */
+export const daemonPayloadGoNames = {
+  DaemonAgentProfileInput: "CreateAgentProfileInput",
+  FetchSkillRepositoryPayload: "wsFetchSkillRepository",
+  ReadRepositoryRefsPayload: "wsReadRepositoryRefs",
+  RunRepairPayload: "wsRunRepair",
+};
+
+/** Payloads Go marshals from an anonymous struct or map: nothing to compare. */
+export const daemonPayloadsBuiltInline = new Set([
+  // workspace_availability.go decodes it into an anonymous struct.
+  "WorkspaceFoldersPayload",
+]);
+
+/**
+ * Field names one side has on purpose. `goOnly`: the server sends them, the
+ * worker does not read them. Listed so the audit still fails on new drift.
+ */
+export const daemonPayloadKnownDrift = {
+  // The server's profile input also carries a models list, a command and an
+  // env; the worker's profile upsert and catalog read take neither.
+  DaemonAgentProfileInput: { goOnly: ["command", "env", "models"] },
+};
+
 const tsBrowserEventsPath = resolve(
   root,
   "packages/protocol/src/browser-events.ts",
@@ -153,12 +207,12 @@ export function compareMessageVocabularies(tsTypes, goTypes) {
   const missingInTs = [...goTypes].filter((t) => !tsTypes.has(t)).sort();
   if (missingInGo.length > 0) {
     problems.push(
-      `daemon message types declared in TS but not in Go daemon_ws.go: ${missingInGo.join(", ")}`,
+      `daemon message types declared in TS but not in Go daemon_wire.go: ${missingInGo.join(", ")}`,
     );
   }
   if (missingInTs.length > 0) {
     problems.push(
-      `daemon message types declared in Go daemon_ws.go but not in TS: ${missingInTs.join(", ")}`,
+      `daemon message types declared in Go daemon_wire.go but not in TS: ${missingInTs.join(", ")}`,
     );
   }
   return problems;
@@ -371,6 +425,133 @@ export function compareDtoFields(tsInterfaces, goStructs) {
   return problems;
 }
 
+// --- Daemon request payloads --------------------------------------------
+
+/**
+ * Go structs with their embedded structs (a field line with no name and no
+ * json tag, such as `wsReplyError` or `store.AgentSubagentTranscript`).
+ * @returns {Map<string, { fields: string[], embeds: string[] }>}
+ */
+export function parseGoStructsWithEmbeds(source) {
+  const structs = new Map();
+  const re = /^type\s+(\w+)\s+struct\s*\{([^}]*)\}/gm;
+  for (const [, name, body] of source.matchAll(re)) {
+    const fields = [];
+    const embeds = [];
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("//")) continue;
+      const tagMatch = trimmed.match(/`json:"([^",]+)/);
+      if (tagMatch) {
+        if (tagMatch[1] !== "-") fields.push(tagMatch[1]);
+        continue;
+      }
+      const embedMatch = trimmed.match(/^\*?(?:\w+\.)?(\w+)\s*(?:\/\/.*)?$/);
+      if (embedMatch) embeds.push(embedMatch[1]);
+    }
+    structs.set(name, { fields, embeds });
+  }
+  return structs;
+}
+
+/**
+ * A struct's JSON field names with its embedded structs' fields folded in.
+ * @returns {string[] | undefined} undefined when the struct is unknown
+ */
+export function goStructFields(structs, name, seen = new Set()) {
+  const struct = structs.get(name);
+  if (!struct || seen.has(name)) return undefined;
+  seen.add(name);
+  const fields = [...struct.fields];
+  for (const embed of struct.embeds)
+    fields.push(...(goStructFields(structs, embed, seen) ?? []));
+  return fields;
+}
+
+/**
+ * Compares the daemon request payload interfaces with their Go structs.
+ * @returns {string[]} failure descriptions, empty when they match
+ */
+export function compareDaemonPayloads(
+  tsInterfaces,
+  goStructs,
+  {
+    goNames = daemonPayloadGoNames,
+    builtInline = daemonPayloadsBuiltInline,
+    knownDrift = daemonPayloadKnownDrift,
+  } = {},
+) {
+  const problems = [];
+  for (const [name, tsFields] of tsInterfaces) {
+    if (builtInline.has(name)) continue;
+    const goName = goNames[name] ?? `ws${name}`;
+    const goFields = goStructFields(goStructs, goName);
+    if (!goFields) {
+      problems.push(
+        `daemon payload "${name}" has no Go struct ${goName} (map it in daemonPayloadGoNames, or list it in daemonPayloadsBuiltInline)`,
+      );
+      continue;
+    }
+    const drift = knownDrift[name] ?? {};
+    const tsSet = new Set(tsFields);
+    const goSet = new Set(goFields);
+    const tsOnly = [...tsSet].filter((f) => !goSet.has(f)).sort();
+    const goOnly = [...goSet].filter((f) => !tsSet.has(f)).sort();
+    const expectTsOnly = [...(drift.tsOnly ?? [])].sort();
+    const expectGoOnly = [...(drift.goOnly ?? [])].sort();
+    if (tsOnly.join() !== expectTsOnly.join())
+      problems.push(
+        `daemon payload "${name}": fields in TS but not in Go ${goName}: [${tsOnly.join(", ")}]` +
+          (expectTsOnly.length ? ` (known: [${expectTsOnly.join(", ")}])` : ""),
+      );
+    if (goOnly.join() !== expectGoOnly.join())
+      problems.push(
+        `daemon payload "${name}": fields in Go ${goName} but not in TS: [${goOnly.join(", ")}]` +
+          (expectGoOnly.length ? ` (known: [${expectGoOnly.join(", ")}])` : ""),
+      );
+  }
+  return problems;
+}
+
+/**
+ * Checks the checked-in daemon request payloads (check 4).
+ * @returns {{ failures: string[], compared: number }}
+ */
+export function daemonPayloadFailures() {
+  const source = readFileSync(tsMessagesPath, "utf8");
+  const tsInterfaces = parseTsInterfaces(source);
+  const failures = [];
+  const declared = [...source.matchAll(/export\s+interface\s+(\w+)/g)].map(
+    ([, name]) => name,
+  );
+  const unread = declared.filter((name) => !tsInterfaces.has(name));
+  if (unread.length > 0)
+    failures.push(
+      `daemon-messages.ts interfaces the audit cannot read (keep them flat, no extends): ${unread.join(", ")}`,
+    );
+  const goStructs = new Map();
+  for (const dir of [goStoreDir, goWireDir])
+    for (const { source: goSource } of goSources(dir, () => true))
+      for (const [name, struct] of parseGoStructsWithEmbeds(goSource))
+        goStructs.set(name, struct);
+  for (const name of [
+    ...Object.keys(daemonPayloadGoNames),
+    ...daemonPayloadsBuiltInline,
+    ...Object.keys(daemonPayloadKnownDrift),
+  ])
+    if (!tsInterfaces.has(name))
+      failures.push(
+        `audit-contract.mjs names daemon payload "${name}", which daemon-messages.ts no longer declares`,
+      );
+  failures.push(...compareDaemonPayloads(tsInterfaces, goStructs));
+  return {
+    failures,
+    compared: [...tsInterfaces.keys()].filter(
+      (name) => !daemonPayloadsBuiltInline.has(name),
+    ).length,
+  };
+}
+
 export function readMerged(paths, parse) {
   const merged = new Map();
   for (const path of paths)
@@ -427,12 +608,14 @@ function main() {
   }
   if (goMessageTypes.size === 0) {
     failures.push(
-      "no ws*Type constants parsed from apps/server/internal/httpapi/daemon_ws.go",
+      "no ws*Type constants parsed from apps/server/internal/httpapi/daemon_wire.go",
     );
   }
   failures.push(...compareMessageVocabularies(tsMessageTypes, goMessageTypes));
   const browserEvents = browserEventFailures();
   failures.push(...browserEvents.failures);
+  const daemonPayloads = daemonPayloadFailures();
+  failures.push(...daemonPayloads.failures);
 
   if (failures.length > 0) {
     console.error("Contract guard failed:\n");
@@ -446,8 +629,9 @@ function main() {
 
   console.log(
     `Contract guard passed: ${tsInterfaces.size} TS interfaces match their Go structs; ` +
-      `${tsMessageTypes.size} daemon message type names match the Go daemon_ws constants; ` +
-      `${browserEvents.names} browser event names, their payload types and notices match package browserevent ` +
+      `${tsMessageTypes.size} daemon message type names match the Go daemon_wire constants; ` +
+      `${browserEvents.names} browser event names, their payload types and notices match package browserevent; ` +
+      `${daemonPayloads.compared} daemon request payloads match their Go structs ` +
       `(names, sets and JSON field names only, not field types).`,
   );
 }

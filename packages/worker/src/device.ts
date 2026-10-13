@@ -12,7 +12,7 @@ import type {
   DeviceProjection,
   DeviceSystem,
 } from "@bd777/foundry-protocol";
-import { hardenPrivateFile, writeJSON } from "./storage.js";
+import { hardenPrivateFile, readJSONFile, writeJSON } from "./storage.js";
 import { normalizeMaxConcurrentTasks } from "./task-scheduler.js";
 import { foundryStatePath } from "./state-root.js";
 
@@ -85,9 +85,7 @@ export function getDevice(): DeviceProjection {
   if (existsSync(devicePath)) {
     hardenPrivateFile(devicePath);
   }
-  const stored = existsSync(devicePath)
-    ? (JSON.parse(readFileSync(devicePath, "utf8")) as DeviceProjection)
-    : undefined;
+  const stored = readJSONFile<DeviceProjection>(devicePath);
   const device: DeviceProjection = stored ?? {
     id: `dev_${randomUUID()}`,
     label: defaultDeviceLabel(),

@@ -11,27 +11,22 @@
 // `<sessions>/<id>/inputs/<inputId>/baselines/`, beside a `changes.json`
 // manifest; files over 1 MB and binaries are recorded by state only.
 
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
+import { git, gitBytes } from "./execution-git.js";
 import { sessionArtifactDirectories } from "./session-artifacts.js";
-import { writePrivateJSONAtomic } from "./storage.js";
-
-const execFileAsync = promisify(execFile);
+import { writeFileAtomic, writePrivateJSONAtomic } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 /** Files larger than this keep no copy: their diff shows as too large. */
 export const maxBaselineBytes = 1024 * 1024;
@@ -152,15 +147,8 @@ export function captureFile(
   const sha256 = createHash("sha256").update(data).digest("hex");
   if (directory) {
     const blob = blobPath(directory, sha256);
-    if (!existsSync(blob)) {
-      mkdirSync(resolve(directory, "baselines"), {
-        recursive: true,
-        mode: 0o700,
-      });
-      const temporary = `${blob}.${process.pid}.tmp`;
-      writeFileSync(temporary, data, { mode: 0o600 });
-      renameSync(temporary, blob);
-    }
+    if (!existsSync(blob))
+      writeFileAtomic(blob, data, { hardenParent: false, fsync: false });
   }
   return { kind: "text", sha256, bytes: data.length };
 }
@@ -262,47 +250,8 @@ export class TurnFileChanges {
   }
 }
 
-async function gitOutput(
-  cwd: string,
-  args: string[],
-  env?: NodeJS.ProcessEnv,
-  timeout = 30_000,
-): Promise<string> {
-  const childEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    GIT_TERMINAL_PROMPT: "0",
-  };
-  for (const key of [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_COMMON_DIR",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  ])
-    delete childEnv[key];
-  const result = await execFileAsync(
-    "git",
-    [
-      "-c",
-      "core.hooksPath=/dev/null",
-      "-c",
-      "maintenance.auto=false",
-      "-c",
-      "gc.auto=0",
-      "-C",
-      cwd,
-      ...args,
-    ],
-    {
-      env: { ...childEnv, ...env },
-      maxBuffer: 4 * maxBaselineBytes,
-      timeout,
-      encoding: "buffer",
-    },
-  );
-  return result.stdout.toString("utf8");
-}
+/** Snapshot reads: bounded by the largest copy kept, never long. */
+const snapshotGit = { maxBuffer: 4 * maxBaselineBytes, timeout: 30_000 };
 
 /**
  * Writes the work tree as a Git tree object without touching the user's
@@ -317,9 +266,11 @@ export async function gitWorkTreeSnapshot(
 ): Promise<{ repoRoot: string; tree: string } | undefined> {
   let repoRoot: string;
   try {
-    repoRoot = (
-      await gitOutput(workspacePath, ["rev-parse", "--show-toplevel"])
-    ).trim();
+    repoRoot = await git(
+      workspacePath,
+      ["rev-parse", "--show-toplevel"],
+      snapshotGit,
+    );
   } catch {
     return undefined;
   }
@@ -341,16 +292,19 @@ export async function gitWorkTreeSnapshot(
   try {
     const realIndex = resolve(
       repoRoot,
-      (await gitOutput(repoRoot, ["rev-parse", "--git-path", "index"])).trim(),
+      await git(repoRoot, ["rev-parse", "--git-path", "index"], snapshotGit),
     );
     if (existsSync(realIndex)) copyFileSync(realIndex, temporaryIndex);
-    const env = { GIT_INDEX_FILE: temporaryIndex };
-    await gitOutput(repoRoot, ["add", "-A", "--", ".", ...excluded], env);
-    const tree = (await gitOutput(repoRoot, ["write-tree"], env)).trim();
+    const withIndex = {
+      ...snapshotGit,
+      env: { GIT_INDEX_FILE: temporaryIndex },
+    };
+    await git(repoRoot, ["add", "-A", "--", ".", ...excluded], withIndex);
+    const tree = await git(repoRoot, ["write-tree"], withIndex);
     return /^[0-9a-f]{40,64}$/.test(tree) ? { repoRoot, tree } : undefined;
   } catch (error) {
     console.error(
-      `Could not snapshot ${repoRoot} for diffs: ${error instanceof Error ? error.message : String(error)}`,
+      `Could not snapshot ${repoRoot} for diffs: ${errorMessage(error)}`,
     );
     return undefined;
   } finally {
@@ -374,17 +328,15 @@ export async function gitSnapshotFile(
   let bytes: number;
   try {
     bytes = Number(
-      (await gitOutput(snapshot.repoRoot, ["cat-file", "-s", object])).trim(),
+      await git(snapshot.repoRoot, ["cat-file", "-s", object], snapshotGit),
     );
   } catch {
     // Not in the tree: the file did not exist, unless Git ignores it.
-    const ignored = await gitOutput(snapshot.repoRoot, [
-      "check-ignore",
-      "-q",
-      "--no-index",
-      "--",
-      relativePath,
-    ]).then(
+    const ignored = await git(
+      snapshot.repoRoot,
+      ["check-ignore", "-q", "--no-index", "--", relativePath],
+      snapshotGit,
+    ).then(
       () => true,
       () => false,
     );
@@ -395,12 +347,10 @@ export async function gitSnapshotFile(
   if (!Number.isFinite(bytes)) return { snapshot: { kind: "unknown" } };
   if (bytes > maxBaselineBytes)
     return { snapshot: { kind: "tooLarge", bytes } };
-  const result = await execFileAsync(
-    "git",
-    ["-C", snapshot.repoRoot, "cat-file", "blob", object],
-    { encoding: "buffer", maxBuffer: 2 * maxBaselineBytes, timeout: 30_000 },
-  );
-  const data = result.stdout;
+  const data = await gitBytes(snapshot.repoRoot, ["cat-file", "blob", object], {
+    maxBuffer: 2 * maxBaselineBytes,
+    timeout: 30_000,
+  });
   if (binaryBytes(data)) return { snapshot: { kind: "binary", bytes } };
   return {
     snapshot: {

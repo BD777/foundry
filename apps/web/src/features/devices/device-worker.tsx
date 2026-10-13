@@ -12,6 +12,7 @@ import { i18n } from "../../i18n";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { TerminalBlock } from "../../components/ui/terminal-block";
+import { useCopied } from "../../lib/use-copied";
 import { useWorkerRelease } from "../../lib/worker-commands";
 
 /**
@@ -224,7 +225,7 @@ export function DeviceWorker({
   const { t } = useTranslation(["devices", "common"]);
   const { t: tDevices } = useTranslation("devices");
   const { release, update } = useWorkerRelease();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [updating, setUpdating] = useState<"starting" | "started">();
   const [updateError, setUpdateError] = useState("");
   const behind = workerBehind(device, release);
@@ -423,18 +424,8 @@ export function DeviceWorker({
             lines={[{ id: "update", prompt: "$", value: command }]}
           />
           <div className="fdy-device-worker-actions">
-            <Button
-              size="sm"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(command);
-                  setCopied(true);
-                } catch {
-                  setCopied(false);
-                }
-              }}
-            >
-              {copied ? t("common:actions.copied") : t("add.copyCommand")}
+            <Button size="sm" onClick={() => void copy(command)}>
+              {copied() ? t("common:actions.copied") : t("add.copyCommand")}
             </Button>
           </div>
         </>

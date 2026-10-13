@@ -25,14 +25,13 @@ func TestDeviceRequestErrorsNameTheDevice(t *testing.T) {
 		{store.ErrNotFound, http.StatusConflict, "byte-dev is offline"},
 	} {
 		recorder := httptest.NewRecorder()
-		if !writeDeviceRequestError(recorder, workspace, tc.err) {
-			t.Fatalf("%v was not answered", tc.err)
-		}
+		writeResult(recorder, nil, deviceRequestError(workspace, tc.err))
 		if recorder.Code != tc.status || !strings.Contains(recorder.Body.String(), tc.says) {
 			t.Fatalf("%v: %d %s", tc.err, recorder.Code, recorder.Body.String())
 		}
 	}
-	if writeDeviceRequestError(httptest.NewRecorder(), workspace, errors.New("requested file is outside the paired workspace")) {
+	refused := errors.New("requested file is outside the paired workspace")
+	if deviceRequestError(workspace, refused) != refused {
 		t.Fatal("the device's own refusal must reach the person unchanged")
 	}
 }

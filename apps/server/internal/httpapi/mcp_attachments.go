@@ -116,10 +116,10 @@ func (s *Server) mcpAttachments(ctx context.Context, actor Actor, targetWorkspac
 		return nil, nil
 	}
 	if !actor.Agent() {
-		return nil, &mcpToolError{http.StatusBadRequest, "attachments hand over files of the calling session's workspace: they need a session token"}
+		return nil, &statusError{http.StatusBadRequest, errors.New("attachments hand over files of the calling session's workspace: they need a session token")}
 	}
 	if len(refs) > maxMCPAttachments {
-		return nil, &mcpToolError{http.StatusBadRequest, fmt.Sprintf("at most %d attachments per message", maxMCPAttachments)}
+		return nil, &statusError{http.StatusBadRequest, fmt.Errorf("at most %d attachments per message", maxMCPAttachments)}
 	}
 	caller, err := s.store.GetAgentSession(ctx, actor.Identity.SessionID)
 	if err != nil {
@@ -148,7 +148,7 @@ func (s *Server) mcpAttachments(ctx context.Context, actor Actor, targetWorkspac
 			path, name = attachment.Path, attachment.Name
 		} else if strings.HasPrefix(ref, "att_") {
 			s.discardHandedOver(ctx, batch)
-			return nil, &mcpToolError{http.StatusNotFound, "no attachment " + ref + " among those your session was given"}
+			return nil, &statusError{http.StatusNotFound, errors.New("no attachment " + ref + " among those your session was given")}
 		} else if !filepath.IsAbs(path) {
 			path = filepath.Join(source.LocalPath, path)
 		}
@@ -182,10 +182,10 @@ func (s *Server) requireAttachmentDevice(source store.WorkspaceProjection) error
 	device := cmp.Or(strings.TrimSpace(source.DeviceLabel), "your session's device")
 	connection := s.hub.connectionFor(source.DeviceID)
 	if connection == nil {
-		return &mcpToolError{http.StatusConflict, device + " is offline, so its files cannot be handed over"}
+		return &statusError{http.StatusConflict, errors.New(device + " is offline, so its files cannot be handed over")}
 	}
 	if !connection.hasCapability(store.DaemonCapabilityAttachmentFiles) {
-		return &mcpToolError{http.StatusConflict, device + " runs an older worker, which cannot hand files over; update its worker from its device page in Foundry"}
+		return &statusError{http.StatusConflict, errors.New(device + " runs an older worker, which cannot hand files over; update its worker from its device page in Foundry")}
 	}
 	return nil
 }
@@ -242,17 +242,17 @@ func (s *Server) copyAttachment(ctx context.Context, source, target store.Worksp
 			chunk = &next
 		}
 		if chunk.Size != first.Size {
-			return 0, &mcpToolError{http.StatusConflict, path + " changed while it was copied; try again"}
+			return 0, &statusError{http.StatusConflict, errors.New(path + " changed while it was copied; try again")}
 		}
 		if len(buffer) > 0 && len(chunk.Data) == 0 {
-			return 0, &mcpToolError{http.StatusConflict, "the device stopped sending " + path}
+			return 0, &statusError{http.StatusConflict, errors.New("the device stopped sending " + path)}
 		}
 		count := copy(buffer, chunk.Data)
 		offset += int64(count)
 		return count, nil
 	}, false)
 	if errors.Is(err, ErrLocalDaemonNotConnected) {
-		return store.ChatAttachment{}, "", &mcpToolError{http.StatusConflict, cmp.Or(strings.TrimSpace(target.DeviceLabel), "the receiving session's device") + " is offline, so the files cannot be delivered"}
+		return store.ChatAttachment{}, "", &statusError{http.StatusConflict, errors.New(cmp.Or(strings.TrimSpace(target.DeviceLabel), "the receiving session's device") + " is offline, so the files cannot be delivered")}
 	}
 	if err != nil {
 		return store.ChatAttachment{}, "", err
@@ -266,13 +266,13 @@ func attachmentSourceError(path string, err error) error {
 	var refusal attachmentRefusal
 	switch {
 	case errors.As(err, &refusal) && refusal.code == "too_large":
-		return &mcpToolError{http.StatusRequestEntityTooLarge, fmt.Sprintf("%s is larger than %d MB, the most one attachment may hold", path, maxMCPAttachmentBytes>>20)}
+		return &statusError{http.StatusRequestEntityTooLarge, fmt.Errorf("%s is larger than %d MB, the most one attachment may hold", path, maxMCPAttachmentBytes>>20)}
 	case errors.As(err, &refusal) && slices.Contains([]string{"not_found", "invalid_path", "unsupported"}, refusal.code):
-		return &mcpToolError{http.StatusNotFound, path + ": " + refusal.message + " (attachments are files inside your own workspace folder, or ids of attachments your session was given)"}
+		return &statusError{http.StatusNotFound, errors.New(path + ": " + refusal.message + " (attachments are files inside your own workspace folder, or ids of attachments your session was given)")}
 	case errors.As(err, &refusal):
-		return &mcpToolError{http.StatusConflict, path + ": " + refusal.message}
+		return &statusError{http.StatusConflict, errors.New(path + ": " + refusal.message)}
 	case errors.Is(err, ErrLocalDaemonNotConnected):
-		return &mcpToolError{http.StatusConflict, "your session's device went offline while " + path + " was read"}
+		return &statusError{http.StatusConflict, errors.New("your session's device went offline while " + path + " was read")}
 	default:
 		return err
 	}

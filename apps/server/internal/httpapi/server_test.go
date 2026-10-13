@@ -1051,14 +1051,14 @@ func TestIssueExecutionSessionIsControlledThroughItsIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, status, err := server.sendSessionMessage(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}); status != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
-		t.Fatalf("a message to an Issue execution must be refused, got %d %v", status, err)
+	if _, err := server.sendSessionMessage(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "run it again"}); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+		t.Fatalf("a message to an Issue execution must be refused, got %v", err)
 	}
 	if _, err := db.StartAgentSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, status, err := server.cancelSession(ctx, Actor{}, session.ID); status != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
-		t.Fatalf("canceling an Issue execution as a session must be refused, got %d %v", status, err)
+	if _, err := server.cancelSession(ctx, Actor{}, session.ID); errorStatus(err) != http.StatusConflict || !errors.Is(err, storepkg.ErrSessionControlledByIssue) {
+		t.Fatalf("canceling an Issue execution as a session must be refused, got %v", err)
 	}
 	if _, err := db.SendAgentSessionInput(ctx, session.ID, storepkg.SendAgentSessionInput{Prompt: "x"}); err == nil {
 		t.Fatal("the store accepted input for an Issue execution")

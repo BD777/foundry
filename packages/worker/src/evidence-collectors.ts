@@ -13,6 +13,7 @@ import type {
 import { validateEvidenceModel } from "@bd777/foundry-protocol";
 import { EvidenceStore, digestObject } from "./evidence-store.js";
 import { childPath, identifier } from "./execution-storage.js";
+import { signalChildGroup } from "./process-group.js";
 import {
   assertNonsecretDeclarations,
   redactEvidence,
@@ -61,15 +62,7 @@ export async function captureProcess(
       complete = true,
       outcome: CommandOutput["outcome"] = "completed",
       error: string | undefined;
-    const stop = () => {
-      try {
-        if (child.pid && process.platform !== "win32")
-          process.kill(-child.pid, "SIGKILL");
-        else child.kill("SIGKILL");
-      } catch {
-        /* Already exited. */
-      }
-    };
+    const stop = () => signalChildGroup(child, "SIGKILL");
     const timer = setTimeout(() => {
       outcome = "timed_out";
       stop();

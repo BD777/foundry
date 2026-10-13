@@ -5,6 +5,7 @@ import type {
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../i18n";
+import { formatBytes } from "../../lib/format";
 
 export interface NormalizedSkill {
   id: string;
@@ -22,11 +23,8 @@ export interface NormalizedSkill {
   promotedSkill?: PromotedSkill;
 }
 
-function formatBytes(bytes?: number): string {
-  if (bytes === undefined || bytes <= 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function sizeLabel(bytes?: number): string {
+  return bytes === undefined || bytes <= 0 ? "—" : formatBytes(bytes);
 }
 
 /**
@@ -61,7 +59,7 @@ export function toNormalizedDeviceSkill(
     id: key,
     name: skill.name,
     description: skill.description,
-    subtitle: `${dirPath} · ${formatBytes(skill.sizeBytes)}`,
+    subtitle: `${dirPath} · ${sizeLabel(skill.sizeBytes)}`,
     path: skill.root,
     sizeBytes: skill.sizeBytes,
     dependencies: skill.dependencies,

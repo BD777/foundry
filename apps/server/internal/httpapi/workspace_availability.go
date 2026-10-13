@@ -47,15 +47,11 @@ func (c *daemonConnection) applyServedWorkspaces(registration store.DaemonRegist
 		!slices.Contains(registration.Capabilities, store.DaemonCapabilityWorkspaceInventory) {
 		return
 	}
-	availability, ok := c.hub.store.(store.WorkspaceAvailabilityStore)
-	if !ok {
-		return
-	}
 	var missing []string
 	if slices.Contains(registration.Capabilities, store.DaemonCapabilityWorkspaceFolders) {
 		missing = registration.MissingWorkspaceIDs
 	}
-	if c.recordWorkspaceFolders(availability, registration.Device.ID, registration.ServedWorkspaceIDs, missing) {
+	if c.recordWorkspaceFolders(registration.Device.ID, registration.ServedWorkspaceIDs, missing) {
 		c.hub.devices.registrationChanged(registration)
 	}
 }
@@ -63,8 +59,8 @@ func (c *daemonConnection) applyServedWorkspaces(registration store.DaemonRegist
 // recordWorkspaceFolders stores which of the device's workspaces it serves
 // and which it has lost the folder of, and tells every view when that
 // changed.
-func (c *daemonConnection) recordWorkspaceFolders(availability store.WorkspaceAvailabilityStore, deviceID string, served, missing []string) bool {
-	changed, err := availability.SetDeviceServedWorkspaces(context.Background(), deviceID, served, missing)
+func (c *daemonConnection) recordWorkspaceFolders(deviceID string, served, missing []string) bool {
+	changed, err := c.hub.store.SetDeviceServedWorkspaces(context.Background(), deviceID, served, missing)
 	if err != nil {
 		log.Printf("device %s: recording its served workspaces failed: %v", deviceID, err)
 		return false
@@ -89,9 +85,8 @@ func (c *daemonConnection) workspaceFoldersChanged(envelope wsEnvelope) error {
 		return err
 	}
 	deviceID, _ := c.registrationSnapshot()
-	availability, ok := c.hub.store.(store.WorkspaceAvailabilityStore)
-	if ok && deviceID != "" && payload.ServedWorkspaceIDs != nil {
-		c.recordWorkspaceFolders(availability, deviceID, payload.ServedWorkspaceIDs, payload.MissingWorkspaceIDs)
+	if deviceID != "" && payload.ServedWorkspaceIDs != nil {
+		c.recordWorkspaceFolders(deviceID, payload.ServedWorkspaceIDs, payload.MissingWorkspaceIDs)
 	}
 	c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
 	return nil

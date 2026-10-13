@@ -8,16 +8,16 @@
  * session commands that disappear when its bundled skills are disabled. The
  * result is kept per program version, since it changes only with the program.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OfficialSkill } from "@bd777/foundry-protocol";
 import { withCodexControl } from "./native-inspection.js";
-import { nativeCli } from "./native-cli.js";
+import { nativeCli, resolveClaudeCommand } from "./native-cli.js";
 import { claudeRenewalPending } from "./native-login.js";
 import { foundryStatePath } from "./state-root.js";
-import { writeJSON } from "./storage.js";
-import { resolveClaudeCommand } from "./utils.js";
+import { tryReadJSONFile, writeJSON } from "./storage.js";
+import { errorMessage } from "./utils.js";
 
 type Runtime = "claude" | "codex";
 
@@ -39,14 +39,10 @@ const cachePath = () => foundryStatePath("official-skills.json");
 let unsaved: OfficialSkillCache = {};
 
 function readCache(): OfficialSkillCache {
-  try {
-    return {
-      ...(JSON.parse(readFileSync(cachePath(), "utf8")) as OfficialSkillCache),
-      ...unsaved,
-    };
-  } catch {
-    return { ...unsaved };
-  }
+  return {
+    ...tryReadJSONFile<OfficialSkillCache>(cachePath()),
+    ...unsaved,
+  };
 }
 
 function programVersion(runtime: Runtime): string | undefined {
@@ -179,7 +175,7 @@ export async function refreshOfficialSkills(
       changed = true;
     } catch (error) {
       console.error(
-        `Reading ${runtime}'s official skills failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Reading ${runtime}'s official skills failed: ${errorMessage(error)}`,
       );
     }
   }

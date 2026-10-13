@@ -15,6 +15,7 @@ import { listWorkspaceTree } from "../../api";
 import { Button } from "../../components/ui/button";
 import { TextInput } from "../../components/ui/field";
 import { fileIconForName } from "../../components/ui/file-tree";
+import { formatBytes } from "../../lib/format";
 
 export interface WorkspaceDirectoryBrowserProps {
   workspaceId: string;
@@ -25,9 +26,7 @@ export interface WorkspaceDirectoryBrowserProps {
 
 function formatSize(bytes?: number): string {
   if (bytes === undefined || bytes === null || isNaN(bytes)) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return formatBytes(bytes, { kbDigits: 1 });
 }
 
 function HighlightMatch({ text, query }: { text: string; query: string }) {

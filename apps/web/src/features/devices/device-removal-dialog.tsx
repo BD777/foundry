@@ -6,7 +6,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { removeDevice } from "../../api";
 import { Button } from "../../components/ui/button";
-import { WorkspaceDialog } from "./workspace-dialog";
+import { Dialog } from "../../components/ui/dialog";
 
 function errorStatus(cause: unknown): number | undefined {
   if (typeof cause === "object" && cause !== null && "status" in cause) {
@@ -68,7 +68,7 @@ export function DeviceRemovalDialog({
   }
 
   return (
-    <WorkspaceDialog
+    <Dialog
       title={t("removal.title")}
       description={t("removal.description")}
       busy={busy}
@@ -115,6 +115,6 @@ export function DeviceRemovalDialog({
           </Button>
         </footer>
       </form>
-    </WorkspaceDialog>
+    </Dialog>
   );
 }

@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 const base = new URL("../dist/", import.meta.url).href;
 const runner = await import(base + "runner.js");
-const { resolveClaudeCommand } = await import(base + "utils.js");
+const { resolveClaudeCommand } = await import(base + "native-cli.js");
 const { activeClaudeRuntimes } = await import(base + "session-state.js");
 const { prepareCodexSkillIsolation, validateWorkspaceSkillPrompt } =
   await import(base + "skill-isolation.js");

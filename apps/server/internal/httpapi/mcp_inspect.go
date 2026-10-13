@@ -56,35 +56,6 @@ func inspectedID(raw string) string {
 	return value
 }
 
-// mcpSessionID reads a session argument given as an id or a Foundry link.
-func mcpSessionID(args map[string]json.RawMessage, key string) string {
-	return inspectedID(mcpArgString(args, key))
-}
-
-// mcpArgList reads a list argument sent as an array or a comma-separated
-// string.
-func mcpArgList(args map[string]json.RawMessage, key string) []string {
-	raw, ok := args[key]
-	if !ok {
-		return nil
-	}
-	var values []string
-	if json.Unmarshal(raw, &values) != nil {
-		var text string
-		if json.Unmarshal(raw, &text) != nil {
-			return nil
-		}
-		values = strings.Split(text, ",")
-	}
-	out := []string{}
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
 // inspectTarget is what an id names: a Foundry session or a native chat a
 // device synced.
 type inspectTarget struct {
@@ -93,7 +64,7 @@ type inspectTarget struct {
 }
 
 func inspectNotFound(id string) error {
-	return &mcpToolError{http.StatusNotFound, "no session or chat " + id + " that you can read (ids look like sess_…, native_claude_…, native_codex_…)"}
+	return &statusError{http.StatusNotFound, errors.New("no session or chat " + id + " that you can read (ids look like sess_…, native_claude_…, native_codex_…)")}
 }
 
 // resolveInspectTarget finds a session or native chat the actor may read.
@@ -102,7 +73,7 @@ func inspectNotFound(id string) error {
 func (s *Server) resolveInspectTarget(ctx context.Context, actor Actor, raw string, withEvents bool) (inspectTarget, error) {
 	id := inspectedID(raw)
 	if id == "" {
-		return inspectTarget{}, &mcpToolError{http.StatusBadRequest, "sessionId is required: a session id (sess_…), a native chat id (native_claude_…, native_codex_…) or a Foundry chat link"}
+		return inspectTarget{}, &statusError{http.StatusBadRequest, errors.New("sessionId is required: a session id (sess_…), a native chat id (native_claude_…, native_codex_…) or a Foundry chat link")}
 	}
 	if strings.HasPrefix(id, "native_") {
 		chat, err := s.store.GetChat(ctx, id)
@@ -116,12 +87,10 @@ func (s *Server) resolveInspectTarget(ctx context.Context, actor Actor, raw stri
 			return inspectTarget{}, err
 		}
 		// A native chat a Foundry session took over is read as that session.
-		owner := ""
-		if inspection, ok := s.store.(store.SessionInspectionStore); ok {
-			provider, nativeID, _ := strings.Cut(strings.TrimPrefix(id, "native_"), "_")
-			if owner, err = inspection.NativeSessionOwner(ctx, provider, nativeID); err != nil {
-				return inspectTarget{}, err
-			}
+		provider, nativeID, _ := strings.Cut(strings.TrimPrefix(id, "native_"), "_")
+		owner, err := s.store.NativeSessionOwner(ctx, provider, nativeID)
+		if err != nil {
+			return inspectTarget{}, err
 		}
 		if owner == "" {
 			return inspectTarget{}, inspectNotFound(id)
@@ -291,9 +260,7 @@ func (s *Server) sessionDigestForMCP(ctx context.Context, actor Actor, raw strin
 	if err != nil {
 		return "", err
 	}
-	digest := s.digest(ctx, target)
-	encoded, err := json.MarshalIndent(digest, "", "  ")
-	return string(encoded), err
+	return encodeJSON(s.digest(ctx, target))
 }
 
 func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest {
@@ -301,48 +268,65 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 	digest := sessionDigest{ID: target.id(), More: inspectMoreHint}
 	var workspaceID, deviceID string
 	if chat := target.chat; chat != nil {
-		digest.Kind = "native_chat"
-		digest.Title, digest.Status = chat.Title, chat.Status
-		digest.Runtime, digest.Profile, digest.NativeSessionID = chat.Provider, chat.ProfileLabel, chat.NativeSessionID
-		digest.LastActivityAt = chat.UpdatedAt
+		digest.describeChat(*chat, events)
 		workspaceID = chat.WorkspaceID
-		for index := len(events) - 1; index >= 0; index-- {
-			kind, _, _ := strings.Cut(events[index].label, ":")
-			if kind == "assistant" && digest.LastAnswer == "" {
-				digest.LastAnswer = excerpt(events[index].detail, inspectAnswerLimit)
-			}
-			if kind == "user" && digest.LastInput == "" {
-				digest.LastInput = excerpt(events[index].detail, inspectInputLimit)
-			}
-		}
 	} else {
-		session := target.session
-		digest.Kind = "session"
-		digest.Title, digest.Status, digest.Error = session.Title, session.Status, session.Error
-		digest.Runtime, digest.Profile, digest.Model = session.Provider, session.ProfileLabel, session.Model
-		digest.Source, digest.Role, digest.IssueID = session.Source, session.Role, session.IssueID
-		digest.ParentSessionID, digest.NativeSessionID = session.ParentSessionID, session.NativeSessionID
-		digest.StartedAt, digest.CompletedAt, digest.LastActivityAt = session.StartedAt, session.CompletedAt, session.LastActivityAt
-		digest.LastInput = excerpt(session.Input.Prompt, inspectInputLimit)
-		digest.LastAnswer = excerpt(session.Response, inspectAnswerLimit)
-		if digest.LastAnswer == "" {
-			// A turn that did not complete keeps what it streamed.
-			for index := len(events) - 1; index >= 0; index-- {
-				if event := events[index]; event.label == "Response stream" {
-					digest.LastAnswer = excerpt(cmp.Or(event.message, event.detail), inspectAnswerLimit)
-					break
-				}
-			}
+		s.describeSession(ctx, &digest, *target.session, events)
+		workspaceID, deviceID = target.session.WorkspaceID, target.session.DeviceID
+	}
+	digest.countEvents(events)
+	s.placeDigest(ctx, &digest, workspaceID, deviceID)
+	return digest
+}
+
+// describeChat fills in a native chat: its last question and answer come
+// from its transcript.
+func (digest *sessionDigest) describeChat(chat store.ChatThread, events []inspectEvent) {
+	digest.Kind = "native_chat"
+	digest.Title, digest.Status = chat.Title, chat.Status
+	digest.Runtime, digest.Profile, digest.NativeSessionID = chat.Provider, chat.ProfileLabel, chat.NativeSessionID
+	digest.LastActivityAt = chat.UpdatedAt
+	for index := len(events) - 1; index >= 0; index-- {
+		kind, _, _ := strings.Cut(events[index].label, ":")
+		if kind == "assistant" && digest.LastAnswer == "" {
+			digest.LastAnswer = excerpt(events[index].detail, inspectAnswerLimit)
 		}
-		if inspection, ok := s.store.(store.SessionInspectionStore); ok {
-			digest.CreatedAt, _ = inspection.AgentSessionCreatedAt(ctx, session.ID)
-		}
-		digest.OpenBackgroundTasks = openBackgroundTasks(session.Events, parseInspectTime(session.StartedAt))
-		workspaceID, deviceID = session.WorkspaceID, session.DeviceID
-		if layout, err := s.store.GetChatLayout(ctx, workspaceID); err == nil {
-			digest.Group = layoutGroup(layout, session.ID)
+		if kind == "user" && digest.LastInput == "" {
+			digest.LastInput = excerpt(events[index].detail, inspectInputLimit)
 		}
 	}
+}
+
+// describeSession fills in a Foundry session from its record, events and
+// place in the chat list.
+func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, session store.AgentSession, events []inspectEvent) {
+	digest.Kind = "session"
+	digest.Title, digest.Status, digest.Error = session.Title, session.Status, session.Error
+	digest.Runtime, digest.Profile, digest.Model = session.Provider, session.ProfileLabel, session.Model
+	digest.Source, digest.Role, digest.IssueID = session.Source, session.Role, session.IssueID
+	digest.ParentSessionID, digest.NativeSessionID = session.ParentSessionID, session.NativeSessionID
+	digest.StartedAt, digest.CompletedAt, digest.LastActivityAt = session.StartedAt, session.CompletedAt, session.LastActivityAt
+	digest.LastInput = excerpt(session.Input.Prompt, inspectInputLimit)
+	digest.LastAnswer = excerpt(session.Response, inspectAnswerLimit)
+	if digest.LastAnswer == "" {
+		// A turn that did not complete keeps what it streamed.
+		for index := len(events) - 1; index >= 0; index-- {
+			if event := events[index]; event.label == "Response stream" {
+				digest.LastAnswer = excerpt(cmp.Or(event.message, event.detail), inspectAnswerLimit)
+				break
+			}
+		}
+	}
+	digest.CreatedAt, _ = s.store.AgentSessionCreatedAt(ctx, session.ID)
+	digest.OpenBackgroundTasks = openBackgroundTasks(session.Events, parseInspectTime(session.StartedAt))
+	if layout, err := s.store.GetChatLayout(ctx, session.WorkspaceID); err == nil {
+		digest.Group = layoutGroup(layout, session.ID)
+	}
+}
+
+// countEvents counts errors and warnings and keeps the last error with the
+// events that led up to it.
+func (digest *sessionDigest) countEvents(events []inspectEvent) {
 	digest.Events.Total = len(events)
 	for index, event := range events {
 		switch event.level {
@@ -357,6 +341,11 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 			digest.Events.Warnings++
 		}
 	}
+}
+
+// placeDigest names the workspace and device a digest runs in, with the
+// title the person sees. A chat's device is its workspace's.
+func (s *Server) placeDigest(ctx context.Context, digest *sessionDigest, workspaceID, deviceID string) {
 	if workspaceID != "" {
 		// The title the person sees: a rename or an AI title wins.
 		if titles, err := s.store.ListChatTitles(ctx, workspaceID); err == nil {
@@ -385,7 +374,6 @@ func (s *Server) digest(ctx context.Context, target inspectTarget) sessionDigest
 			}
 		}
 	}
-	return digest
 }
 
 func layoutGroup(layout store.ChatLayout, chatID string) *inspectPlace {
@@ -536,7 +524,7 @@ func cursorIndex(events []inspectEvent, cursor string) (int, error) {
 	}
 	at := parseInspectTime(cursor)
 	if at.IsZero() {
-		return 0, &mcpToolError{http.StatusBadRequest, "unknown cursor " + cursor + ": use an event id this tool printed or a time such as 2026-10-09T20:40:00Z"}
+		return 0, &statusError{http.StatusBadRequest, errors.New("unknown cursor " + cursor + ": use an event id this tool printed or a time such as 2026-10-09T20:40:00Z")}
 	}
 	for index, event := range events {
 		if event.when.After(at) {
@@ -546,56 +534,59 @@ func cursorIndex(events []inspectEvent, cursor string) (int, error) {
 	return len(events), nil
 }
 
-// readEvents renders the events a query selects, one line each, within its
-// byte budget, with the cursors that continue the read.
-func readEvents(id string, events []inspectEvent, query eventQuery) (string, error) {
-	start, end := 0, len(events)
-	var err error
+// window is the range of events between the query's cursors.
+func (query eventQuery) window(events []inspectEvent) (start, end int, err error) {
+	start, end = 0, len(events)
 	if query.after != "" {
 		if start, err = cursorIndex(events, query.after); err != nil {
-			return "", err
+			return 0, 0, err
 		}
 	}
 	if query.before != "" {
 		if end, err = cursorIndex(events, query.before); err != nil {
-			return "", err
+			return 0, 0, err
 		}
 		// An event-id cursor excludes the event itself.
 		if end > 0 && events[end-1].id == query.before {
 			end--
 		}
 	}
-	matches := []int{}
+	return start, end, nil
+}
+
+// selectEvents answers the indexes of the events in [start, end) the query
+// matches, and of the ones it shows: the tail or first page of the matches,
+// each with its context before it.
+func (query eventQuery) selectEvents(events []inspectEvent, start, end int) (matches, shown []int) {
+	matches = []int{}
 	for index := start; index < end; index++ {
 		if query.keeps(events[index]) {
 			matches = append(matches, index)
 		}
 	}
-	tailMode := query.tail > 0
 	selected := matches
-	if tailMode && len(selected) > query.tail {
+	if query.tail > 0 && len(selected) > query.tail {
 		selected = selected[len(selected)-query.tail:]
-	} else if !tailMode && len(selected) > query.limit {
+	} else if query.tail <= 0 && len(selected) > query.limit {
 		selected = selected[:query.limit]
 	}
-	shown := map[int]bool{}
+	included := map[int]bool{}
 	for _, index := range selected {
-		shown[index] = true
+		included[index] = true
 		for previous := max(start, index-query.context); previous < index; previous++ {
-			shown[previous] = true
+			included[previous] = true
 		}
 	}
-	indexes := sortedIndexes(shown)
-	lines := make([]string, len(indexes))
-	for position, index := range indexes {
-		lines[position] = events[index].line(inspectDetailLimit)
-	}
-	// Keep the newest lines of a tail and the oldest of a page.
-	budget := max(query.maxBytes, 1000)
+	return matches, sortedIndexes(included)
+}
+
+// linesWithin counts the lines that fit a byte budget, from the end of a
+// tail and the start of a page.
+func linesWithin(lines []string, budget int, fromEnd bool) int {
 	used, kept := 0, 0
 	for kept < len(lines) {
 		line := lines[kept]
-		if tailMode {
+		if fromEnd {
 			line = lines[len(lines)-1-kept]
 		}
 		if used+len(line)+1 > budget {
@@ -604,6 +595,25 @@ func readEvents(id string, events []inspectEvent, query eventQuery) (string, err
 		used += len(line) + 1
 		kept++
 	}
+	return kept
+}
+
+// readEvents renders the events a query selects, one line each, within its
+// byte budget, with the cursors that continue the read.
+func readEvents(id string, events []inspectEvent, query eventQuery) (string, error) {
+	start, end, err := query.window(events)
+	if err != nil {
+		return "", err
+	}
+	matches, indexes := query.selectEvents(events, start, end)
+	lines := make([]string, len(indexes))
+	for position, index := range indexes {
+		lines[position] = events[index].line(inspectDetailLimit)
+	}
+	// Keep the newest lines of a tail and the oldest of a page.
+	tailMode := query.tail > 0
+	budget := max(query.maxBytes, 1000)
+	kept := linesWithin(lines, budget, tailMode)
 	omitted := len(lines) - kept
 	if tailMode {
 		indexes, lines = indexes[omitted:], lines[omitted:]
@@ -637,12 +647,101 @@ func readEvents(id string, events []inspectEvent, query eventQuery) (string, err
 	return out.String(), nil
 }
 
-func (s *Server) sessionEventsForMCP(ctx context.Context, actor Actor, args map[string]json.RawMessage) (string, error) {
-	target, err := s.resolveInspectTarget(ctx, actor, mcpArgString(args, "sessionId"), true)
+// readContextScopes are what read_context reads of a session or native
+// chat, by scope.
+var readContextScopes = map[string]func(s *Server, call mcpCall) (string, error){
+	"":           (*Server).readSummaryForMCP,
+	"summary":    (*Server).readSummaryForMCP,
+	"events":     (*Server).sessionEventsForMCP,
+	"thread":     (*Server).readThreadForMCP,
+	"transcript": (*Server).readTranscriptForMCP,
+	"subagents":  (*Server).readSubagentsForMCP,
+	"changes":    (*Server).readChangesForMCP,
+	"file":       (*Server).readFileForMCP,
+	"background": (*Server).readBackgroundForMCP,
+}
+
+func (s *Server) readContextForMCP(call mcpCall) (string, error) {
+	scope := mcpArgString(call.args, "scope")
+	read, ok := readContextScopes[scope]
+	if !ok {
+		return "", &statusError{http.StatusBadRequest, errors.New("unknown scope " + scope + ": use summary, events, thread, transcript, subagents, changes, file or background")}
+	}
+	return read(s, call)
+}
+
+func (s *Server) readSummaryForMCP(call mcpCall) (string, error) {
+	return s.sessionDigestForMCP(call.r.Context(), call.actor, mcpSessionID(call.args, "sessionId"))
+}
+
+func (s *Server) sessionEventsForMCP(call mcpCall) (string, error) {
+	target, err := s.resolveInspectTarget(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"), true)
 	if err != nil {
 		return "", err
 	}
-	return readEvents(target.id(), target.events(), eventQueryFromArgs(args))
+	return readEvents(target.id(), target.events(), eventQueryFromArgs(call.args))
+}
+
+func (s *Server) readThreadForMCP(call mcpCall) (string, error) {
+	id := mcpSessionID(call.args, "sessionId")
+	anchor, err := s.resolveInspectTarget(call.r.Context(), call.actor, id, false)
+	if err != nil {
+		return "", err
+	}
+	if anchor.session == nil {
+		return "", &statusError{http.StatusBadRequest, errors.New(id + " is a native chat: read it with scope=transcript or events")}
+	}
+	items, err := s.store.ListAgentSessionThread(call.r.Context(), anchor.session.WorkspaceID, anchor.session.ID)
+	if err != nil {
+		return "", err
+	}
+	return clippedJSON(items, call.args), nil
+}
+
+func (s *Server) readTranscriptForMCP(call mcpCall) (string, error) {
+	ctx, id := call.r.Context(), mcpSessionID(call.args, "sessionId")
+	chat, err := s.store.GetChat(ctx, id)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && !s.canReadNativeChat(ctx, call.actor, chat.WorkspaceID, chat.ID)) {
+		return "", inspectNotFound(id)
+	}
+	if err != nil {
+		return "", err
+	}
+	return clippedJSON(chat, call.args), nil
+}
+
+func (s *Server) readSubagentsForMCP(call mcpCall) (string, error) {
+	id := mcpSessionID(call.args, "sessionId")
+	target, err := s.resolveInspectTarget(call.r.Context(), call.actor, id, false)
+	if err != nil {
+		return "", err
+	}
+	if target.session == nil {
+		return "", &statusError{http.StatusBadRequest, errors.New(id + " is a native chat: it has no Foundry subagent records")}
+	}
+	session := *target.session
+	ctx, cancel := context.WithTimeout(call.r.Context(), 15*time.Second)
+	defer cancel()
+	var value any
+	if taskID := mcpArgString(call.args, "taskId"); taskID != "" {
+		value, err = s.hub.ReadAgentSubagentTranscript(ctx, session, taskID)
+	} else {
+		value, err = s.hub.ListAgentSubagents(ctx, session)
+	}
+	if err != nil {
+		return "", err
+	}
+	return clippedJSON(value, call.args), nil
+}
+
+// clippedJSON is a record read_context prints whole, cut at maxBytes.
+func clippedJSON(value any, args map[string]json.RawMessage) string {
+	maxBytes := mcpArgNumber(args, "maxBytes", inspectDefaultBytes)
+	text, _ := encodeJSON(value)
+	if len(text) > maxBytes {
+		text = text[:maxBytes] + fmt.Sprintf("\n…[truncated at maxBytes %d; scope=events reads events filtered and paged]", maxBytes)
+	}
+	return text
 }
 
 func sortedKeys(values map[string]bool) []string {

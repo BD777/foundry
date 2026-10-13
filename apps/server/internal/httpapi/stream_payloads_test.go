@@ -48,7 +48,7 @@ type notifiersForTest struct {
 	devices  *deviceEvents
 }
 
-func newNotifiersForTest(db store.Store) *notifiersForTest {
+func newNotifiersForTest(db Backend) *notifiersForTest {
 	stream := newBrowserStream()
 	data := newDataChanges(stream)
 	return &notifiersForTest{

@@ -181,7 +181,6 @@ export const externalAccounts: Translation<typeof en> = {
     missingList_other: "{{count}} 项权限未授予",
     applyScopes: "申请缺少的权限",
     done: "完成",
-    close: "关闭",
     cancel: "取消",
   },
   authorize: {

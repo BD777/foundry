@@ -447,7 +447,7 @@ test("keep-alive, stop using now and remove each ask the server and show its ans
     requests.some((request) => request.path.endsWith("/revoke")),
     false,
   );
-  const confirm = () => window.document.body.querySelector(".fdy-xacc-confirm");
+  const confirm = () => window.document.body.querySelector("[role=dialog]");
   assert.match(confirm().textContent, /Stop using Ada now\?/);
   assert.match(confirm().textContent, /cuts off running sessions at once/);
   await page.click(page.button("Stop using now", confirm()));
@@ -494,7 +494,7 @@ test("closing the connect dialog returns focus to the button that opened it", as
     isAdmin: false,
     onNotice: () => {},
   });
-  const modal = () => window.document.body.querySelector(".fdy-xacc-modal");
+  const modal = () => window.document.body.querySelector("[role=dialog]");
   // Keyboard activation: the opener holds focus as the dialog opens.
   const open = async (opener) => {
     opener.focus();
@@ -621,7 +621,7 @@ test("connect: paste an app, show the code to approve, finish when the login com
     onNotice: (line) => notices.push(line),
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   assert.ok(dialog, "the dialog opens");
   // No app and no way to create one: pasting an app is the only path, its
   // fields shown and nothing started.
@@ -676,11 +676,11 @@ test("connect: paste an app, show the code to approve, finish when the login com
 
   await settle(2100);
   assert.equal(polls, 1);
-  assert.ok(window.document.body.querySelector(".fdy-xacc-modal"));
+  assert.ok(window.document.body.querySelector("[role=dialog]"));
   await settle(2100);
   await settle();
   assert.equal(polls, 2);
-  assert.equal(window.document.body.querySelector(".fdy-xacc-modal"), null);
+  assert.equal(window.document.body.querySelector("[role=dialog]"), null);
   assert.match(notices.at(-1), /Connected Mine/);
   assert.match(page.container.textContent, /Mine/);
   await page.unmount();
@@ -729,7 +729,7 @@ test("connect: a refused login says why and offers to try again", async () => {
     onNotice: () => {},
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   // A team app is there: no app fields, one scan through it.
   assert.equal(dialog.textContent.includes("App secret"), false);
   await page.click(
@@ -875,7 +875,7 @@ test("connect: scan to create an app, then scan to authorize it; a partial grant
     onNotice: (line) => notices.push(line),
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   // Nothing to choose or fill in: the new app's QR code shows at once, the
   // long form folded away.
   assert.equal(dialog.textContent.includes("Connect through"), false);
@@ -923,7 +923,7 @@ test("connect: scan to create an app, then scan to authorize it; a partial grant
   );
   assert.match(notices.at(-1), /Connected Ada/);
   await page.click(page.button("Done", dialog));
-  assert.equal(window.document.body.querySelector(".fdy-xacc-modal"), null);
+  assert.equal(window.document.body.querySelector("[role=dialog]"), null);
   await page.unmount();
   window.document.body.innerHTML = "";
 });
@@ -968,7 +968,7 @@ test("connect: a new app's QR code switches between the Feishu and Lark login pa
     onNotice: () => {},
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   assert.equal(dialog.textContent.includes("Lark app"), false);
   assert.equal(
     page.button("Open link", dialog).getAttribute("href"),
@@ -1040,7 +1040,7 @@ test("connect: advanced options ask for approval scopes and paste an app", async
     onNotice: () => {},
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   assert.match(
     dialog.textContent,
     /Sign-in failed: feishu app registration refused: boom/,
@@ -1103,7 +1103,7 @@ test("connect: a team app the person has not used is a one-scan choice above the
     onNotice: () => {},
   });
   await page.click(page.button("Connect Feishu account"));
-  const dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  const dialog = window.document.body.querySelector("[role=dialog]");
   assert.equal(dialog.querySelector("[role=combobox]"), null);
   assert.equal(
     page.button("Open link", dialog).getAttribute("href"),
@@ -1237,17 +1237,17 @@ test("one row per account names the person, their organisation and app; it re-au
     ),
   );
   await page.click(page.button("Sign in through it", empty));
-  let dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  let dialog = window.document.body.querySelector("[role=dialog]");
   assert.match(
     dialog.querySelector("h2").textContent,
     /Sign in through Feishu app 123456/,
   );
   assert.deepEqual(requests.at(-1).body, { appId: "xapp_unnamed" });
   await page.click(page.button("Cancel", dialog));
-  assert.equal(window.document.body.querySelector(".fdy-xacc-modal"), null);
+  assert.equal(window.document.body.querySelector("[role=dialog]"), null);
 
   await page.click(page.button("Reconnect", row()));
-  dialog = window.document.body.querySelector(".fdy-xacc-modal");
+  dialog = window.document.body.querySelector("[role=dialog]");
   assert.match(dialog.querySelector("h2").textContent, /Re-authorize Ada/);
   assert.equal(dialog.textContent.includes("Use my own app"), false);
   assert.deepEqual(requests.at(-1).body, {
@@ -1256,7 +1256,7 @@ test("one row per account names the person, their organisation and app; it re-au
   });
   await settle(2100);
   await settle();
-  assert.equal(window.document.body.querySelector(".fdy-xacc-modal"), null);
+  assert.equal(window.document.body.querySelector("[role=dialog]"), null);
   assert.match(notices.at(-1), /Re-authorized Ada/);
   assert.equal(row().dataset.status, "ready");
   assert.ok(page.button("Refresh now", row()));
@@ -1348,13 +1348,13 @@ test("without the organisation name the email domain labels it, enabling the nam
   );
   const url =
     "https://open.feishu.cn/app/cli_aa4786d5f1f89cff/auth?q=tenant:tenant:readonly&op_from=openapi&token_type=tenant";
-  const dialog = document.querySelector(".fdy-xacc-modal");
+  const dialog = document.querySelector("[role=dialog]");
   assert.ok(dialog.querySelector(".fdy-xacc-qr svg"), "a QR code is shown");
   assert.equal(
     dialog.querySelector("a[target=_blank]").getAttribute("href"),
     url,
   );
-  await page.click(dialog.querySelector("button[aria-label=Close]"));
+  await page.click(dialog.querySelector("button[aria-label^=Close]"));
   await page.click(page.button("Refresh now", row));
   const after = page.container.querySelector(".fdy-xacc-row");
   assert.match(after.textContent, /Acme Org/);

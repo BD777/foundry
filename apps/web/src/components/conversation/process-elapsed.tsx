@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSharedNow } from "../../lib/use-shared-now";
 import { formatDuration } from "./turn-usage";
 
 /**
@@ -7,12 +7,7 @@ import { formatDuration } from "./turn-usage";
  */
 export function ProcessElapsed({ startedAt }: { startedAt: string }) {
   const started = Date.parse(startedAt);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (Number.isNaN(started)) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [started]);
+  const now = useSharedNow(!Number.isNaN(started));
   if (Number.isNaN(started)) return null;
   return (
     <span className="fdy-chat-process-trigger-meta">

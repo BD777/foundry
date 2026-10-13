@@ -28,11 +28,7 @@ func (h *DaemonHub) settleIssueSession(ctx context.Context, session store.AgentS
 // that it failed, on the Issue. A reply the device recorded still counts when
 // the server had already given up on the session.
 func (h *DaemonHub) settleIssueClarification(ctx context.Context, session store.AgentSession, reply *store.ClarificationResponse) {
-	clarifications, ok := h.store.(store.EvidenceStore)
-	if !ok {
-		return
-	}
-	issue, err := clarifications.AnswerClarification(ctx, session, reply)
+	issue, err := h.store.AnswerClarification(ctx, session, reply)
 	if err != nil {
 		log.Printf("answer clarification of issue %s from session %s: %v", session.IssueID, session.ID, err)
 		return
@@ -46,11 +42,7 @@ func (c *daemonConnection) clarificationTurn(ctx context.Context, session store.
 	if !c.hasCapability(store.DaemonCapabilityIssueClarification) {
 		return nil, errIssueClarificationUnsupported
 	}
-	clarifications, ok := c.hub.store.(store.EvidenceStore)
-	if !ok {
-		return nil, errIssueClarificationUnsupported
-	}
-	turn, err := clarifications.ClarificationTurn(ctx, session.IssueID)
+	turn, err := c.hub.store.ClarificationTurn(ctx, session.IssueID)
 	if err != nil {
 		return nil, err
 	}

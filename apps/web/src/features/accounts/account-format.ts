@@ -10,17 +10,6 @@ export function roleNoun(role: AccountRole): string {
   return i18n.t(`common:roleNouns.${role}`);
 }
 
-export function formatAccountDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString(i18n.language, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-}
-
 export function invitePending(
   invite: AccountInvite,
   now = Date.now(),

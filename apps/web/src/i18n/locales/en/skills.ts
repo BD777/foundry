@@ -251,7 +251,6 @@ export const skills = {
       pickedCount_other: "{{count}} added",
       followWhole: "Follow the whole repository",
       actionsFor: "Actions for {{label}}",
-      removeMenu: "Stop following…",
       removeTitle: "Stop following {{label}}?",
       removePickedNote:
         "Its skills stay in the library at the revisions they have, and in the workspaces that use them. They no longer move to new releases, and they can no longer be rolled back.",

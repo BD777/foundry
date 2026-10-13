@@ -4,13 +4,13 @@ import {
   constants,
   mkdtempSync,
   readFileSync,
-  renameSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { resolveClaudeCommand } from "../utils.js";
+import { claudeConfigDir, codexHome } from "../native-homes.js";
+import { writeFileAtomic } from "../storage.js";
+import { resolveClaudeCommand } from "../native-cli.js";
 
 /**
  * The provider logins a sandboxed agent (an Issue's execution, clarification,
@@ -33,17 +33,11 @@ interface CredentialCopy {
 }
 
 function deviceClaudeCredentials(): string {
-  return resolve(
-    process.env.CLAUDE_CONFIG_DIR ?? resolve(homedir(), ".claude"),
-    ".credentials.json",
-  );
+  return resolve(claudeConfigDir(), ".credentials.json");
 }
 
 function deviceCodexAuth(): string {
-  return resolve(
-    process.env.CODEX_HOME ?? resolve(homedir(), ".codex"),
-    "auth.json",
-  );
+  return resolve(codexHome(), "auth.json");
 }
 
 function parse(text: string): Record<string, unknown> | undefined {
@@ -136,9 +130,10 @@ export function writeSandboxCredentials(copies: CredentialCopy[]): void {
       continue;
     }
     if (readText(copy.sandbox) === projected) continue;
-    const next = `${copy.sandbox}.${process.pid}.next`;
-    writeFileSync(next, projected, { mode: 0o600 });
-    renameSync(next, copy.sandbox);
+    writeFileAtomic(copy.sandbox, projected, {
+      hardenParent: false,
+      fsync: false,
+    });
   }
 }
 

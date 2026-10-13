@@ -1,9 +1,9 @@
-import * as Dialog from "@radix-ui/react-dialog";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProfileDefinition } from "@bd777/foundry-protocol";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
 import { Checkbox } from "../../components/ui/field";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 
@@ -15,7 +15,7 @@ export interface ConnectionAssignmentDialogProps {
    * Cancelling must leave this set exactly as it was.
    */
   initialSelectedIds: string[];
-  /** Radix-controlled visibility; closing never writes. */
+  /** Controlled visibility; closing never writes. */
   onOpenChange: (open: boolean) => void;
   open: boolean;
   /** Go to the independent Model providers management page. */
@@ -96,118 +96,96 @@ export function ConnectionAssignmentDialog({
   }
 
   return (
-    <Dialog.Root
+    <Dialog
+      busy={busy}
+      description={t("assignment.description")}
+      footer={
+        <>
+          <Button
+            className="fdy-connection-assign-manage"
+            disabled={busy}
+            onClick={onManage}
+            size="sm"
+            variant="ghost"
+          >
+            <ExternalLink size={14} />
+            {t("assignment.manage")}
+          </Button>
+          <Button
+            disabled={busy}
+            onClick={() => onOpenChange(false)}
+            size="sm"
+            variant="secondary"
+          >
+            {t("common:actions.cancel")}
+          </Button>
+          <Button
+            disabled={busy || !changed || connections.length === 0}
+            onClick={() => void save()}
+            size="sm"
+            variant="primary"
+          >
+            {busy ? t("common:actions.saving") : t("common:actions.save")}
+          </Button>
+        </>
+      }
+      layout="compact"
+      onClose={() => onOpenChange(false)}
       open={open}
-      onOpenChange={(next) => {
-        if (!busy) onOpenChange(next);
-      }}
+      title={t("assignment.title")}
     >
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-connection-assign-overlay" />
-        <Dialog.Content
-          className="fdy-connection-assign-dialog"
-          aria-describedby="connection-assign-description"
-        >
-          <header className="fdy-connection-assign-header">
-            <div>
-              <Dialog.Title>{t("assignment.title")}</Dialog.Title>
-              <Dialog.Description id="connection-assign-description">
-                {t("assignment.description")}
-              </Dialog.Description>
-            </div>
-            <Dialog.Close asChild>
-              <Button
-                aria-label={t("assignment.close")}
-                disabled={busy}
-                size="icon"
-                variant="ghost"
+      {connections.length === 0 ? (
+        <div className="fdy-connection-assign-empty">
+          <p>{t("assignment.empty")}</p>
+          <Button onClick={onManage} size="sm" variant="secondary">
+            <ExternalLink size={14} />
+            {t("assignment.openConnections")}
+          </Button>
+        </div>
+      ) : (
+        <div className="fdy-connection-assign-list">
+          {connections.map((connection) => {
+            const checked = draft.has(connection.id);
+            return (
+              <label
+                className={
+                  checked
+                    ? "fdy-connection-assign-row is-selected"
+                    : "fdy-connection-assign-row"
+                }
+                key={connection.id}
+                data-selected={checked ? "true" : "false"}
               >
-                <X size={17} />
-              </Button>
-            </Dialog.Close>
-          </header>
-
-          {connections.length === 0 ? (
-            <div className="fdy-connection-assign-empty">
-              <p>{t("assignment.empty")}</p>
-              <Button onClick={onManage} size="sm" variant="secondary">
-                <ExternalLink size={14} />
-                {t("assignment.openConnections")}
-              </Button>
-            </div>
-          ) : (
-            <div className="fdy-connection-assign-list">
-              {connections.map((connection) => {
-                const checked = draft.has(connection.id);
-                return (
-                  <label
-                    className={
-                      checked
-                        ? "fdy-connection-assign-row is-selected"
-                        : "fdy-connection-assign-row"
-                    }
-                    key={connection.id}
-                    data-selected={checked ? "true" : "false"}
-                  >
-                    <Checkbox
-                      aria-checked={checked}
-                      aria-label={t("assignment.grant", {
-                        connection: connection.label,
-                      })}
-                      checked={checked}
-                      className="fdy-connection-assign-check"
-                      disabled={busy}
-                      onChange={() => toggle(connection.id)}
-                    />
-                    <RuntimeMark runtime={connection.runtime} />
-                    <span className="fdy-connection-assign-copy">
-                      <strong>{connection.label}</strong>
-                      <small>
-                        {connection.model || connection.baseUrl} ·{" "}
-                        {checked
-                          ? t("assignment.selected")
-                          : t("assignment.notSelected")}
-                      </small>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-
-          {error ? (
-            <p className="fdy-connection-assign-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <footer className="fdy-connection-assign-actions">
-            <Button
-              className="fdy-connection-assign-manage"
-              disabled={busy}
-              onClick={onManage}
-              size="sm"
-              variant="ghost"
-            >
-              <ExternalLink size={14} />
-              {t("assignment.manage")}
-            </Button>
-            <Dialog.Close asChild>
-              <Button disabled={busy} size="sm" variant="secondary">
-                {t("common:actions.cancel")}
-              </Button>
-            </Dialog.Close>
-            <Button
-              disabled={busy || !changed || connections.length === 0}
-              onClick={() => void save()}
-              size="sm"
-              variant="primary"
-            >
-              {busy ? t("common:actions.saving") : t("common:actions.save")}
-            </Button>
-          </footer>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+                <Checkbox
+                  aria-checked={checked}
+                  aria-label={t("assignment.grant", {
+                    connection: connection.label,
+                  })}
+                  checked={checked}
+                  className="fdy-connection-assign-check"
+                  disabled={busy}
+                  onChange={() => toggle(connection.id)}
+                />
+                <RuntimeMark runtime={connection.runtime} />
+                <span className="fdy-connection-assign-copy">
+                  <strong>{connection.label}</strong>
+                  <small>
+                    {connection.model || connection.baseUrl} ·{" "}
+                    {checked
+                      ? t("assignment.selected")
+                      : t("assignment.notSelected")}
+                  </small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {error ? (
+        <p className="fdy-connection-assign-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </Dialog>
   );
 }

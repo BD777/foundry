@@ -11,8 +11,8 @@ import {
   turnLivenessNoticeText,
   turnLivenessSettings,
 } from "../dist/watchdog.js";
+import { AgentSessionCanceledError } from "../dist/session-control.js";
 import {
-  AgentSessionCanceledError,
   claudeTurnLivenessError,
   cleanupActiveClaudeRuntimes,
   closeActiveClaudeRuntime,

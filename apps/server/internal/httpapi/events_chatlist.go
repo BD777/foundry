@@ -31,7 +31,7 @@ var (
 // each list answers the same to everyone who may view the workspace.
 type chatListEvents struct {
 	stream eventstream.Publisher
-	store  store.Store
+	store  Backend
 	data   *dataChanges
 	// pushes remembers how each chat was last sent (see chatPushes).
 	pushes chatPushes
@@ -40,7 +40,7 @@ type chatListEvents struct {
 	announcing sync.Mutex
 }
 
-func newChatListEvents(stream eventstream.Publisher, db store.Store, data *dataChanges) *chatListEvents {
+func newChatListEvents(stream eventstream.Publisher, db Backend, data *dataChanges) *chatListEvents {
 	return &chatListEvents{stream: stream, store: db, data: data}
 }
 
@@ -110,11 +110,10 @@ func (p *chatPushes) changes(workspaceID string, ids []string, listed []store.Ch
 // list shows them, or their removal (chats_changed), so they apply the
 // change instead of reading the list: a device's chat sync runs every few
 // seconds while a native chat grows, and each used to cost every viewer a
-// read of all of foundry-data. False when the store cannot read them so;
-// the caller announces a change to read instead.
+// read of all of foundry-data. False when they could not be read so; the
+// caller announces a change to read instead.
 func (e *chatListEvents) chatsChanged(ctx context.Context, workspaceID string, ids []string) bool {
-	lister, ok := e.store.(chatsByIDStore)
-	if !ok || workspaceID == "" {
+	if workspaceID == "" {
 		return false
 	}
 	ids = uniqueStrings(ids)
@@ -123,7 +122,7 @@ func (e *chatListEvents) chatsChanged(ctx context.Context, workspaceID string, i
 	}
 	e.pushes.publishing.Lock()
 	defer e.pushes.publishing.Unlock()
-	listed, err := lister.ListChatsByID(ctx, workspaceID, ids)
+	listed, err := e.store.ListChatsByID(ctx, workspaceID, ids)
 	if err != nil {
 		log.Printf("read synced chats of %s: %v", workspaceID, err)
 		return false
@@ -267,11 +266,7 @@ func (e *chatListEvents) queueChanged(queue store.ChatQueue) {
 
 // announceQueue carries a chat's queue as it reads now.
 func (e *chatListEvents) announceQueue(ctx context.Context, workspaceID, chatID string) {
-	queues, ok := e.store.(store.ChatQueueStore)
-	if !ok {
-		return
-	}
-	queue, err := queues.ChatQueue(ctx, workspaceID, chatID)
+	queue, err := e.store.ChatQueue(ctx, workspaceID, chatID)
 	if err != nil {
 		log.Printf("read chat queue %s: %v", chatID, err)
 		return

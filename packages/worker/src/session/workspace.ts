@@ -7,11 +7,8 @@ import type { AgentSession } from "@bd777/foundry-protocol";
 import { readAgentRuntimeSettings } from "../device.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { spawnProcessGroup } from "../process-group.js";
-import {
-  AgentSessionCanceledError,
-  runClaudeWorkspaceSession,
-  runCodexWorkspaceSession,
-} from "../runner.js";
+import { runClaudeWorkspaceSession } from "../runner/claude-turn.js";
+import { runCodexWorkspaceSession } from "../runner/codex-turn.js";
 import { sandboxLaunch, type WritableTreeProfile } from "../sandbox/index.js";
 import {
   ensureFreshClaudeLogin,
@@ -21,15 +18,18 @@ import {
 } from "./provider-credentials.js";
 import type { SessionAmbientEnv } from "../session-ambient.js";
 import {
-  activeSessionCancelTargets,
-  activeSessionSteerTargets,
+  AgentSessionCanceledError,
+  registerActiveSessionCancelTarget,
+  registerActiveSessionSteerTarget,
   type ActiveSessionCancelTarget,
   type ActiveSessionSteerTarget,
-  type AgentSessionRunResult,
-  type SessionEventEmitter,
+} from "../session-control.js";
+import type {
+  AgentSessionRunResult,
+  SessionEventEmitter,
 } from "../session-state.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
-import { resolveClaudeCommand, resolveCodexCommand } from "../utils.js";
+import { resolveClaudeCommand, resolveCodexCommand } from "../native-cli.js";
 
 /** Where and how a sandboxed workspace session runs. */
 export interface WorkspaceSandbox {
@@ -179,9 +179,14 @@ async function runSandboxed(
   };
   // Codex cannot steer an active turn; whoever owns the session keeps its
   // own answer for that.
-  if (session.provider !== "codex")
-    activeSessionSteerTargets.set(session.id, steerTarget);
-  activeSessionCancelTargets.set(session.id, cancelTarget);
+  const unregisterSteer =
+    session.provider !== "codex"
+      ? registerActiveSessionSteerTarget(session.id, steerTarget)
+      : () => {};
+  const unregisterCancel = registerActiveSessionCancelTarget(
+    session.id,
+    cancelTarget,
+  );
   const stopCredentials = keepSandboxCredentialsCurrent(credentials, {
     renewClaude: deviceClaudeLogin ? undefined : async () => undefined,
   });
@@ -266,10 +271,8 @@ async function runSandboxed(
     });
   } finally {
     stopCredentials();
-    if (activeSessionSteerTargets.get(session.id) === steerTarget)
-      activeSessionSteerTargets.delete(session.id);
-    if (activeSessionCancelTargets.get(session.id) === cancelTarget)
-      activeSessionCancelTargets.delete(session.id);
+    unregisterSteer();
+    unregisterCancel();
   }
 }
 

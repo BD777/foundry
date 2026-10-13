@@ -1,10 +1,10 @@
-import { i18n } from "../../i18n";
 import type {
   DeviceSkill,
   SkillPromotionResolution,
   PromotedSkill,
 } from "@bd777/foundry-protocol";
 import { useTranslation } from "react-i18next";
+import { dateTime } from "../../lib/time-format";
 import { Button } from "../ui/button";
 import { TextInput } from "../ui/field";
 import { SegmentedControl } from "../ui/segmented-control";
@@ -24,14 +24,7 @@ import {
  */
 /** Local date and time for a timestamp label; other labels show as they are. */
 function readableTime(label: string | undefined): string {
-  if (!label) return "—";
-  const time = new Date(label);
-  return Number.isNaN(time.getTime())
-    ? label
-    : time.toLocaleString(i18n.language, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      });
+  return label ? dateTime(label) : "—";
 }
 
 export function SkillVersionChoice({

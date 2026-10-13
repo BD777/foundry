@@ -31,7 +31,7 @@
       "apps/server/internal/httpapi/shutdown_test.go",
       "apps/server/cmd/foundry-server/lifecycle_test.go",
       "apps/server/internal/httpapi/server.go",
-      "apps/server/internal/httpapi/daemon_ws.go"
+      "apps/server/internal/httpapi/daemon_hub.go"
     ]
   },
   "evidence": { "capture": ["logs"], "retainOn": "failure" },

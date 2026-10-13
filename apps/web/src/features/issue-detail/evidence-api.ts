@@ -1,7 +1,6 @@
 import type {
   CandidateSnapshot,
   ContractDraftInput,
-  Evidence,
   EvidenceClaim,
   HumanAssessment,
   Issue,
@@ -11,40 +10,12 @@ import type {
   Verification,
   VerificationInput,
 } from "@bd777/foundry-protocol";
-import { apiFetch } from "../../api";
+import { request, send } from "../../api";
 import { i18n } from "../../i18n";
 
-const base = import.meta.env?.VITE_API_BASE_URL ?? "http://127.0.0.1:31982";
-async function request<T>(
-  path: string,
-  body?: unknown,
-  key?: string,
-): Promise<T> {
-  const response = await apiFetch(`${base}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    headers: {
-      ...(body === undefined
-        ? {}
-        : {
-            "Content-Type": "application/json",
-            "Idempotency-Key": key ?? crypto.randomUUID(),
-          }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    let message = detail;
-    try {
-      message = (JSON.parse(detail) as { error?: string }).error || detail;
-    } catch {
-      // Not JSON: the body is the message.
-    }
-    throw new Error(message.replace(/^Error: /, ""));
-  }
-  return response.json() as Promise<T>;
-}
 const path = (id: string) => `/api/issues/${encodeURIComponent(id)}`;
+const materialContentPath = (id: string, material: Material) =>
+  `${path(id)}/materials/${encodeURIComponent(material.id)}/content`;
 async function listRecords<T extends { id: string }>(
   url: string,
 ): Promise<{ items: T[] }> {
@@ -52,6 +23,7 @@ async function listRecords<T extends { id: string }>(
   let total = 0;
   for (let page = 1; page === 1 || (page - 1) * 100 < total; page++) {
     const result = await request<{ items: T[]; total: number }>(
+      "GET",
       `${url}?page=${page}&pageSize=100`,
     );
     if (page === 1) total = result.total;
@@ -64,17 +36,26 @@ export function listContracts(id: string) {
   return listRecords<IssueContract>(`${path(id)}/contracts`);
 }
 export function askIssueStatus(id: string, message: string, key: string) {
-  return request(`${path(id)}/conversation/status`, { message }, key);
+  return request("POST", `${path(id)}/conversation/status`, {
+    body: { message },
+    idempotencyKey: key,
+  });
 }
 export function importLegacyContract(id: string, key: string) {
-  return request<IssueContract>(`${path(id)}/contracts/import-legacy`, {}, key);
+  return request<IssueContract>("POST", `${path(id)}/contracts/import-legacy`, {
+    body: {},
+    idempotencyKey: key,
+  });
 }
 export function saveContract(
   id: string,
   input: ContractDraftInput,
   key: string,
 ) {
-  return request<IssueContract>(`${path(id)}/contracts`, input, key);
+  return request<IssueContract>("POST", `${path(id)}/contracts`, {
+    body: input,
+    idempotencyKey: key,
+  });
 }
 /** Sends a message to the Issue's clarification session; the reply arrives with the Issue. */
 export function clarifyContract(
@@ -84,26 +65,28 @@ export function clarifyContract(
   changeReason: string,
   key: string,
 ) {
-  return request<Issue>(
-    `${path(id)}/clarify`,
-    {
+  return request<Issue>("POST", `${path(id)}/clarify`, {
+    body: {
       expectedRevision: draft.revision,
       expectedContentDigest: draft.contentDigest,
       message,
       changeReason,
     },
-    key,
-  );
+    idempotencyKey: key,
+  });
 }
 /** Asks the clarification session again after it failed to answer. */
 export function retryClarification(id: string, key: string) {
-  return request<Issue>(`${path(id)}/clarify/retry`, {}, key);
+  return request<Issue>("POST", `${path(id)}/clarify/retry`, {
+    body: {},
+    idempotencyKey: key,
+  });
 }
 export function confirmContract(id: string, c: IssueContract, key: string) {
   return request<IssueContract>(
+    "POST",
     `${path(id)}/contracts/${c.revision}/confirm`,
-    { expectedContentDigest: c.contentDigest },
-    key,
+    { body: { expectedContentDigest: c.contentDigest }, idempotencyKey: key },
   );
 }
 export function discardContract(
@@ -113,22 +96,19 @@ export function discardContract(
   key: string,
 ) {
   return request<IssueContract>(
+    "POST",
     `${path(id)}/contracts/${c.revision}/discard`,
-    { reason },
-    key,
+    { body: { reason }, idempotencyKey: key },
   );
 }
 export function getEvidenceReview(id: string) {
-  return request<ReviewSnapshot>(`${path(id)}/review`);
+  return request<ReviewSnapshot>("GET", `${path(id)}/review`);
 }
 export function listVerifications(id: string) {
   return listRecords<Verification>(`${path(id)}/verifications`);
 }
 export function listHumanAssessments(id: string) {
   return listRecords<HumanAssessment>(`${path(id)}/human-assessments`);
-}
-export function listEvidence(id: string) {
-  return listRecords<Evidence>(`${path(id)}/evidence`);
 }
 export function listMaterials(id: string) {
   return listRecords<Material>(`${path(id)}/materials`);
@@ -141,6 +121,7 @@ export function listCandidates(id: string) {
 }
 export function getMaterial(id: string, materialId: string) {
   return request<Material>(
+    "GET",
     `${path(id)}/materials/${encodeURIComponent(materialId)}`,
   );
 }
@@ -159,10 +140,7 @@ export async function readPreviewMaterial(
       (isImage ? 25 * 1024 * 1024 : isPdf ? 32 * 1024 * 1024 : 2 * 1024 * 1024)
   )
     throw new Error(i18n.t("issueDetail:preview.unavailable"));
-  const response = await apiFetch(
-    `${base}${path(id)}/materials/${encodeURIComponent(material.id)}/content`,
-  );
-  if (!response.ok) throw new Error(await response.text());
+  const response = await send("GET", materialContentPath(id, material));
   const bytes = await response.arrayBuffer();
   const digest = [
     ...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
@@ -187,9 +165,8 @@ export function registerHumanEvidence(
   parameters: Material,
   key: string,
 ) {
-  return request(
-    `${path(id)}/evidence`,
-    {
+  return request("POST", `${path(id)}/evidence`, {
+    body: {
       expectedContractRevision: input.contractRevision,
       verificationInputId: input.id,
       title: material.name,
@@ -199,8 +176,8 @@ export function registerHumanEvidence(
       attestation,
       collectionInputMaterialId: parameters.id,
     },
-    key,
-  );
+    idempotencyKey: key,
+  });
 }
 export function exportCandidateEvidence(
   id: string,
@@ -212,9 +189,8 @@ export function exportCandidateEvidence(
   carrier: Material["carrier"] = "document",
   sourceKind: "candidate_file" | "candidate_changes" = "candidate_file",
 ) {
-  return request(
-    `${path(id)}/evidence/export`,
-    {
+  return request("POST", `${path(id)}/evidence/export`, {
+    body: {
       expectedContractRevision: input.contractRevision,
       verificationInputId: input.id,
       repoId,
@@ -223,17 +199,14 @@ export function exportCandidateEvidence(
       carrier,
       sourceKind,
     },
-    key,
-  );
+    idempotencyKey: key,
+  });
 }
 export async function downloadMaterial(
   id: string,
   material: Material,
 ): Promise<void> {
-  const response = await apiFetch(
-    `${base}${path(id)}/materials/${encodeURIComponent(material.id)}/content`,
-  );
-  if (!response.ok) throw new Error(await response.text());
+  const response = await send("GET", materialContentPath(id, material));
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -250,9 +223,16 @@ export function sealCandidate(
   alignFromSnapshotId?: string,
 ) {
   return request<{ candidate: { id: string } }>(
+    "POST",
     `${path(id)}/candidate-snapshots`,
-    { expectedContractRevision: revision, httpTargets, alignFromSnapshotId },
-    key,
+    {
+      body: {
+        expectedContractRevision: revision,
+        httpTargets,
+        alignFromSnapshotId,
+      },
+      idempotencyKey: key,
+    },
   );
 }
 export function verifyCriteria(
@@ -262,15 +242,14 @@ export function verifyCriteria(
   criterionIds: string[],
   key: string,
 ) {
-  return request(
-    `${path(id)}/verify`,
-    {
+  return request("POST", `${path(id)}/verify`, {
+    body: {
       expectedContractRevision: revision,
       expectedCandidateSnapshotId: snapshotId,
       criterionIds,
     },
-    key,
-  );
+    idempotencyKey: key,
+  });
 }
 export function assessVerification(
   id: string,
@@ -279,28 +258,26 @@ export function assessVerification(
   reason: string,
   key: string,
 ) {
-  return request(
-    `${path(id)}/human-assessments`,
-    {
+  return request("POST", `${path(id)}/human-assessments`, {
+    body: {
       verificationId: v.id,
       verdict,
       rationale: { text: reason, media: [] },
       evidenceCitations:
         v.result?.findings.flatMap((f) => f.evidenceCitations) ?? [],
     },
-    key,
-  );
+    idempotencyKey: key,
+  });
 }
 export function acceptReviewedCandidate(
   id: string,
   review: ReviewSnapshot,
   key: string,
 ) {
-  return request(
-    `${path(id)}/accept`,
-    { reviewSnapshotId: review.id, reviewDigest: review.digest },
-    key,
-  );
+  return request("POST", `${path(id)}/accept`, {
+    body: { reviewSnapshotId: review.id, reviewDigest: review.digest },
+    idempotencyKey: key,
+  });
 }
 export async function uploadMaterial(
   id: string,
@@ -308,16 +285,9 @@ export async function uploadMaterial(
   carrier: Material["carrier"],
   key: string,
 ): Promise<Material> {
-  const response = await apiFetch(
-    `${base}${path(id)}/materials?${new URLSearchParams({ name: file.name, carrier })}`,
-    {
-      method: "POST",
-      headers: {
-        "Idempotency-Key": key,
-      },
-      body: file,
-    },
+  return request(
+    "POST",
+    `${path(id)}/materials?${new URLSearchParams({ name: file.name, carrier })}`,
+    { body: file, idempotencyKey: key },
   );
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
 }

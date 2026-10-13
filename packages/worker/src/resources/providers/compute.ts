@@ -36,6 +36,7 @@ import {
   type ResourceActionResult,
   type ResourceSourceSettings,
 } from "@bd777/foundry-protocol";
+import { signalChildGroup } from "../../process-group.js";
 import { foundryStatePath } from "../../state-root.js";
 import { ArchiveError, unpackArchive, type ArchiveFormat } from "../archive.js";
 import { resourceSettings } from "../compute-settings.js";
@@ -46,6 +47,7 @@ import {
   type ProviderSession,
   type ResourceProvider,
 } from "../provider.js";
+import { errorMessage } from "../../utils.js";
 
 export const defaultRunSeconds = 600;
 export const maxRunSeconds = 1800;
@@ -188,7 +190,7 @@ class ComputeSession implements ProviderSession {
 
   /** Stops this lease's commands and drops its unfinished uploads. */
   async stop(): Promise<void> {
-    for (const child of this.started) killTree(child, "SIGKILL");
+    for (const child of this.started) signalChildGroup(child, "SIGKILL");
     this.started.clear();
     await Promise.all(
       [...this.uploads].map((path) => rm(path, { force: true })),
@@ -261,8 +263,8 @@ class ComputeSession implements ProviderSession {
     let stopped: ProviderError | undefined;
     const timer = setTimeout(() => {
       timedOut = true;
-      killTree(child, "SIGTERM");
-      setTimeout(() => killTree(child, "SIGKILL"), killGraceMs).unref();
+      signalChildGroup(child, "SIGTERM");
+      setTimeout(() => signalChildGroup(child, "SIGKILL"), killGraceMs).unref();
     }, timeoutSec * 1000);
     timer.unref();
     const onAbort = (): void => {
@@ -270,7 +272,7 @@ class ComputeSession implements ProviderSession {
         signal.reason instanceof ProviderError
           ? signal.reason
           : new ProviderError("aborted", "the run was stopped");
-      killTree(child, "SIGKILL");
+      signalChildGroup(child, "SIGKILL");
     };
     signal.addEventListener("abort", onAbort, { once: true });
     const exit = await new Promise<
@@ -822,16 +824,6 @@ async function moveFile(from: string, to: string): Promise<void> {
   }
 }
 
-function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  try {
-    if (process.platform !== "win32" && child.pid)
-      process.kill(-child.pid, signal);
-    else child.kill(signal);
-  } catch {
-    // Already gone.
-  }
-}
-
 function failure(op: string, error: unknown): ResourceActionResult {
   if (error instanceof ProviderError)
     return { op, ok: false, errorCode: error.code, error: error.message };
@@ -839,7 +831,7 @@ function failure(op: string, error: unknown): ResourceActionResult {
     op,
     ok: false,
     errorCode: "compute_error",
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage(error),
   };
 }
 

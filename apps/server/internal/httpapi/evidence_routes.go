@@ -21,10 +21,6 @@ func evidenceTaskID(issueID, key, action string) string {
 	return "task_" + hex.EncodeToString(h[:])
 }
 func (s *Server) handleEvidenceList(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	kind := r.PathValue("collection")
 	switch kind {
 	case "evidence":
@@ -43,11 +39,11 @@ func (s *Server) handleEvidenceList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id := r.PathValue("recordId"); id != "" {
-		item, err := st.GetEvidenceRecord(r.Context(), r.PathValue("id"), kind, id)
+		item, err := s.store.GetEvidenceRecord(r.Context(), r.PathValue("id"), kind, id)
 		writeResult(w, item, err)
 		return
 	}
-	items, err := st.ListEvidenceRecords(r.Context(), r.PathValue("id"), kind)
+	items, err := s.store.ListEvidenceRecords(r.Context(), r.PathValue("id"), kind)
 	writeEvidencePage(w, r, items, err)
 }
 func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -60,10 +56,6 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 		} `json:"httpTargets,omitempty"`
 	}
 	if !decodeEvidenceRequest(w, r, "", &input) {
-		return
-	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
 		return
 	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
@@ -82,7 +74,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 409, "contract_revision_conflict")
 		return
 	}
-	contract, err := currentIssueContract(r.Context(), st, issue)
+	contract, err := currentIssueContract(r.Context(), s.store, issue)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -93,7 +85,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 			writeError(w, 409, "alignment_input_changed")
 			return
 		}
-		if _, err = st.GetEvidenceRecord(r.Context(), issue.ID, "candidate", input.AlignFromSnapshotID); err != nil {
+		if _, err = s.store.GetEvidenceRecord(r.Context(), issue.ID, "candidate", input.AlignFromSnapshotID); err != nil {
 			writeEvidenceMutation(w, nil, err)
 			return
 		}
@@ -105,7 +97,7 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 	result, err := s.requestEvidenceWorker(r.Context(), issue, request)
 	if err == nil {
 		for _, m := range result.Materials {
-			if err = st.RegisterMaterial(r.Context(), issue.ID, m); err != nil {
+			if err = s.store.RegisterMaterial(r.Context(), issue.ID, m); err != nil {
 				break
 			}
 		}
@@ -115,9 +107,9 @@ func (s *Server) handleEvidenceSnapshot(w http.ResponseWriter, r *http.Request) 
 	}
 	if err == nil {
 		if input.AlignFromSnapshotID == "" {
-			err = st.RegisterCandidate(r.Context(), issue.ID, *result.Candidate, *result.Input)
+			err = s.store.RegisterCandidate(r.Context(), issue.ID, *result.Candidate, *result.Input)
 		} else {
-			err = st.RegisterAlignedCandidate(r.Context(), issue.ID, input.AlignFromSnapshotID, *result.Candidate, *result.Input)
+			err = s.store.RegisterAlignedCandidate(r.Context(), issue.ID, input.AlignFromSnapshotID, *result.Candidate, *result.Input)
 		}
 	}
 	if err == nil {
@@ -159,10 +151,6 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "criterionIds must contain 1–100 criteria")
 		return
 	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
@@ -188,7 +176,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusGone, "device_removed")
 		return
 	}
-	contract, err := currentIssueContract(r.Context(), st, issue)
+	contract, err := currentIssueContract(r.Context(), s.store, issue)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -199,7 +187,7 @@ func (s *Server) handleVerifyEvidence(w http.ResponseWriter, r *http.Request) {
 	}
 	results := []store.Verification{}
 	for _, id := range input.CriterionIDs {
-		v, err := st.RequestVerification(r.Context(), issue.ID, input.ExpectedContractRevision, input.ExpectedCandidateSnapshotID, id, actor, r.Header.Get("Idempotency-Key"))
+		v, err := s.store.RequestVerification(r.Context(), issue.ID, input.ExpectedContractRevision, input.ExpectedCandidateSnapshotID, id, actor, r.Header.Get("Idempotency-Key"))
 		if err != nil {
 			writeEvidenceMutation(w, nil, err)
 			return
@@ -220,13 +208,9 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	defer unlockIssueDispatch()
 	unlockDispatch := s.lockIssueMutation("verification-dispatch/" + v.ID)
 	defer unlockDispatch()
-	st, ok := s.store.(store.EvidenceStore)
-	if !ok {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	current, err := st.StartVerification(ctx, issue.ID, v.ID)
+	current, err := s.store.StartVerification(ctx, issue.ID, v.ID)
 	if err != nil {
 		return
 	}
@@ -236,7 +220,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	}
 	v = current
 	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
-	raw, err := st.GetEvidenceRecord(ctx, issue.ID, "input", v.VerificationInputID)
+	raw, err := s.store.GetEvidenceRecord(ctx, issue.ID, "input", v.VerificationInputID)
 	var input store.VerificationInput
 	if err == nil {
 		err = json.Unmarshal(raw, &input)
@@ -249,7 +233,7 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 			action = "assess"
 			evidence := []store.Evidence{}
 			for _, id := range v.EvidenceIDs {
-				raw, readErr := st.GetEvidenceRecord(ctx, issue.ID, "evidence", id)
+				raw, readErr := s.store.GetEvidenceRecord(ctx, issue.ID, "evidence", id)
 				if readErr != nil {
 					err = readErr
 					break
@@ -274,23 +258,23 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 			if err != nil && result.Error == "" {
 				finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer finishCancel()
-				_ = st.MarkVerificationInterrupted(finishCtx, issue.ID, v.ID)
+				_ = s.store.MarkVerificationInterrupted(finishCtx, issue.ID, v.ID)
 				return
 			}
 		}
 	}
 	if err == nil {
 		for _, m := range result.Materials {
-			if err = st.RegisterMaterial(ctx, issue.ID, m); err != nil {
+			if err = s.store.RegisterMaterial(ctx, issue.ID, m); err != nil {
 				break
 			}
 		}
 	}
 	if err == nil && result.Verification != nil {
 		unlock := s.lockIssueMutation(issue.ID)
-		err = st.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence)
+		err = s.store.CompleteVerification(ctx, issue.ID, *result.Verification, result.Evidence)
 		if err == nil {
-			s.refreshIssueReview(ctx, st, issue)
+			s.refreshIssueReview(ctx, issue)
 		}
 		unlock()
 		if err == nil {
@@ -310,8 +294,8 @@ func (s *Server) dispatchVerification(issue store.Issue, contract store.IssueCon
 	defer finishCancel()
 	unlock := s.lockIssueMutation(issue.ID)
 	defer unlock()
-	if st.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
-		s.refreshIssueReview(finishCtx, st, issue)
+	if s.store.CompleteVerification(finishCtx, issue.ID, v, nil) == nil {
+		s.refreshIssueReview(finishCtx, issue)
 	}
 	s.issues.evidenceChanged(issue, v.ID, v.Sequence, v.Status)
 }
@@ -323,11 +307,7 @@ func (s *Server) handleHumanAssessment(w http.ResponseWriter, r *http.Request) {
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
-	value, err := st.CreateHumanAssessment(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
+	value, err := s.store.CreateHumanAssessment(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, value.ContractRevision, value.Verdict)
 	}
@@ -341,11 +321,7 @@ func (s *Server) handleHumanEvidence(w http.ResponseWriter, r *http.Request) {
 	if !decodeEvidenceRequest(w, r, "", &input) {
 		return
 	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
-	value, err := st.RegisterHumanEvidence(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
+	value, err := s.store.RegisterHumanEvidence(r.Context(), r.PathValue("id"), input, actor, r.Header.Get("Idempotency-Key"))
 	if err == nil {
 		s.issues.evidenceChanged(store.Issue{ID: value.IssueID, WorkspaceID: value.WorkspaceID}, value.ID, input.ExpectedContractRevision, "registered")
 	}
@@ -357,10 +333,6 @@ func (s *Server) handleMaterialUpload(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if key == "" || len(key) > 200 {
 		writeError(w, 400, "idempotency_key_required")
-		return
-	}
-	st, ok := s.evidenceStore(w)
-	if !ok {
 		return
 	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
@@ -407,7 +379,7 @@ func (s *Server) handleMaterialUpload(w http.ResponseWriter, r *http.Request) {
 	result, err := s.requestEvidenceWorker(r.Context(), issue, map[string]any{"action": "upload_seal", "taskId": taskID, "name": name, "carrier": carrier, "byteSize": offset, "actor": actor})
 	if err == nil {
 		for _, material := range result.Materials {
-			if err = st.RegisterMaterial(r.Context(), issue.ID, material); err != nil {
+			if err = s.store.RegisterMaterial(r.Context(), issue.ID, material); err != nil {
 				break
 			}
 		}
@@ -424,16 +396,12 @@ func (s *Server) handleMaterialUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, result.Materials[0])
 }
 func (s *Server) handleMaterialContent(w http.ResponseWriter, r *http.Request) {
-	st, ok := s.evidenceStore(w)
-	if !ok {
-		return
-	}
 	issue, err := s.store.GetIssue(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	raw, err := st.GetEvidenceRecord(r.Context(), issue.ID, "material", r.PathValue("materialId"))
+	raw, err := s.store.GetEvidenceRecord(r.Context(), issue.ID, "material", r.PathValue("materialId"))
 	if err != nil {
 		writeResult(w, nil, err)
 		return

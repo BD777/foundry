@@ -1,7 +1,6 @@
-import * as Dialog from "@radix-ui/react-dialog";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ExternalAccountLogin,
@@ -11,7 +10,9 @@ import type {
 import { getExternalAccountLogin } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { Dialog } from "../../components/ui/dialog";
 import { Checkbox, TextInput } from "../../components/ui/field";
+import { useCopied } from "../../lib/use-copied";
 import { accountName, countdown, errorText } from "./account-format";
 
 /** Which login page a new app's QR code opens; the tenant's brand is detected after the scan. */
@@ -24,11 +25,7 @@ export interface SignInExtra {
   includeApprovalScopes?: boolean;
 }
 
-/**
- * The modal every Feishu sign-in opens in. Opened by a button, not a
- * Dialog.Trigger, so Radix knows no element to return focus to: closing
- * returns it to the one focused as it opened.
- */
+/** The modal every Feishu sign-in opens in; its content mounts only while open. */
 export function SignInModal({
   open,
   onOpenChange,
@@ -42,45 +39,16 @@ export function SignInModal({
   description: string;
   children: ReactNode;
 }) {
-  const { t } = useTranslation("externalAccounts");
-  const opener = useRef<HTMLElement | null>(null);
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fdy-xacc-modal-overlay" />
-        <Dialog.Content
-          className="fdy-xacc-modal"
-          onOpenAutoFocus={() => {
-            opener.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
-          }}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            opener.current?.focus();
-            opener.current = null;
-          }}
-        >
-          <header className="fdy-xacc-modal-header">
-            <div>
-              <Dialog.Title>{title}</Dialog.Title>
-              <Dialog.Description>{description}</Dialog.Description>
-            </div>
-            <Dialog.Close asChild>
-              <Button
-                aria-label={t("connect.close")}
-                size="icon"
-                variant="ghost"
-              >
-                <X size={16} />
-              </Button>
-            </Dialog.Close>
-          </header>
-          {open ? children : null}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog
+      description={description}
+      layout="compact"
+      onClose={() => onOpenChange(false)}
+      open={open}
+      title={title}
+    >
+      {open ? children : null}
+    </Dialog>
   );
 }
 
@@ -188,7 +156,7 @@ export function ScanStep({
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [login, setLogin] = useState(started);
   const [now, setNow] = useState(Date.now());
-  const [copied, setCopied] = useState("");
+  const { copied, copy, reset: resetCopied } = useCopied();
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
   const expired =
@@ -240,7 +208,7 @@ export function ScanStep({
     };
   }, [started.id]);
 
-  useEffect(() => setCopied(""), [login.phase]);
+  useEffect(() => resetCopied(), [login.phase]);
 
   async function switchBrand(next: SignInBrand) {
     setSwitching(true);
@@ -250,15 +218,6 @@ export function ScanStep({
     } catch (cause) {
       setSwitchError(errorText(cause));
       setSwitching(false);
-    }
-  }
-
-  async function copy(kind: string, text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(kind);
-    } catch {
-      setCopied("");
     }
   }
 
@@ -304,14 +263,8 @@ export function ScanStep({
                 {t("connect.openPage")}
               </a>
             </Button>
-            <Button
-              onClick={() => void copy("link", link)}
-              size="sm"
-              variant="ghost"
-            >
-              {copied === "link"
-                ? t("common:actions.copied")
-                : t("connect.copyLink")}
+            <Button onClick={() => void copy(link)} size="sm" variant="ghost">
+              {copied() ? t("common:actions.copied") : t("connect.copyLink")}
             </Button>
           </div>
           {login.userCode ? (

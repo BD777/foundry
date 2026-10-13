@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
+	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents/feishueventstest"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -73,7 +74,7 @@ func TestTwoWorkspacesShareOneAppConnection(t *testing.T) {
 		bindChat(t, db, workspace, "cli_shared", chat, store.FeishuRouteChat, member.ID)
 	}
 
-	fake := feishuevents.NewFakeSource("cli_shared", "secret_shared")
+	fake := feishueventstest.NewFakeSource("cli_shared", "secret_shared")
 	t.Cleanup(fake.Close)
 	hub := feishuevents.NewHub(sharedAppSecret{}, nil)
 	hub.Domain = fake.URL()
@@ -97,7 +98,7 @@ func TestTwoWorkspacesShareOneAppConnection(t *testing.T) {
 			text := fmt.Sprintf("task %d for %s", index, workspace)
 			want[workspace] = append(want[workspace], text)
 			id := fmt.Sprintf("%s_%d", chat, index)
-			payload := feishuevents.MessagePayload("cli_shared", "ev_"+id, chat, "om_"+id, "", text, true)
+			payload := feishueventstest.MessagePayload("cli_shared", "ev_"+id, chat, "om_"+id, "", text, true)
 			if _, err := fake.Push(payload, 1); err != nil {
 				t.Fatal(err)
 			}
@@ -110,7 +111,7 @@ func TestTwoWorkspacesShareOneAppConnection(t *testing.T) {
 		}
 	}
 	// A group neither workspace is bound to.
-	if _, err := fake.Push(feishuevents.MessagePayload("cli_shared", "ev_stray", "oc_3", "om_stray", "", "anyone?", true), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload("cli_shared", "ev_stray", "oc_3", "om_stray", "", "anyone?", true), 1); err != nil {
 		t.Fatal(err)
 	}
 	fake.WaitAcks(2*each+3, 5*time.Second)
@@ -139,12 +140,12 @@ func TestTwoWorkspacesShareOneAppConnection(t *testing.T) {
 
 	// A reply in a topic goes to the workspace that started the topic,
 	// without a mention.
-	if _, err := fake.Push(feishuevents.MessagePayload("cli_shared", "ev_reply", "oc_2", "om_reply", "om_oc_2_1", "and also this", false), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload("cli_shared", "ev_reply", "oc_2", "om_reply", "om_oc_2_1", "and also this", false), 1); err != nil {
 		t.Fatal(err)
 	}
 	// A new group pairs with the workspace whose code it sends.
 	issueCode(t, db, "ws_2", "FND-WS22", member.ID)
-	if _, err := fake.Push(feishuevents.MessagePayload("cli_shared", "ev_pair", "oc_new", "om_pair", "", "/pair FND-WS22", true), 1); err != nil {
+	if _, err := fake.Push(feishueventstest.MessagePayload("cli_shared", "ev_pair", "oc_new", "om_pair", "", "/pair FND-WS22", true), 1); err != nil {
 		t.Fatal(err)
 	}
 	var paired store.FeishuBotRoute

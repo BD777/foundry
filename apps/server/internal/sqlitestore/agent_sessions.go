@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
@@ -238,115 +239,202 @@ func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentS
 }
 
 func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
+	start, err := s.checkSessionStart(ctx, input)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	now := time.Now().UTC()
+	inputID, err := s.sessionInputID(ctx, input.InputID, now)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	session := start.record(newSessionID(now), inputID, now)
+	if err := s.bindNativeSession(ctx, &session, input, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
+		return store.AgentSession{}, err
+	}
+	// A session working inside an Issue belongs to that Issue and is listed
+	// there; it gets no Chats group, which would only ever stay empty.
+	if start.parent.ID != "" && start.parent.WorkspaceID == session.WorkspaceID && session.IssueID == "" {
+		createdGroupID, created, err := s.PlaceChildWithParent(ctx, start.parent, session.ID)
+		if err != nil {
+			return store.AgentSession{}, err
+		}
+		if created {
+			session.CreatedGroupID = createdGroupID
+			if err := s.saveAgentSession(ctx, session, now, now); err != nil {
+				return store.AgentSession{}, err
+			}
+		}
+	}
+	return session, nil
+}
+
+// sessionStart is a new session's request once checked: what its record is
+// built from.
+type sessionStart struct {
+	input       store.CreateAgentSessionInput
+	prompt      string
+	attachments []store.ChatAttachment
+	agent       store.AgentProjection
+	source      string
+	parent      store.AgentSession
+	issueID     string
+}
+
+// checkSessionStart resolves the agent a new session runs on and checks
+// the request against the store: the agent's device, the parent's lineage,
+// the chat it continues and the Issue it works in.
+func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSessionInput) (sessionStart, error) {
 	prompt := strings.TrimSpace(input.Prompt)
 	attachments := store.NormalizeChatAttachments(input.Attachments)
 	if prompt == "" && len(attachments) == 0 {
-		return store.AgentSession{}, errors.New("agent session prompt is required")
+		return sessionStart{}, errors.New("agent session prompt is required")
 	}
 	agent, err := s.resolveSessionAgent(ctx, input)
 	if err != nil {
-		return store.AgentSession{}, err
+		return sessionStart{}, err
 	}
 	// A request's provider must match the identity the server resolved; it is
 	// never allowed to route a claude prompt onto a codex profile (or vice
 	// versa). Persisted daemon agents already carry their provider the same
 	// way, so this is identity confirmation, not client-trusted input.
 	if input.Provider != "" && agent.Provider != input.Provider {
-		return store.AgentSession{}, store.ErrNotFound
+		return sessionStart{}, store.ErrNotFound
 	}
 	if err := s.assertDeviceNotRemoved(ctx, agent.DeviceID); err != nil {
-		return store.AgentSession{}, err
+		return sessionStart{}, err
 	}
-	source := strings.TrimSpace(input.Source)
-	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
-		source = "chat"
-	}
-	// Lineage: a parent must be a visible session in the same workspace the
-	// request resolves to, except that an agent may start a session, a
-	// verifier included, in another workspace its token reaches (authorized
-	// before the store is called). The automatic group placement happens in
-	// this same transaction once the child row exists, and only within one
-	// workspace's layout.
-	agentStarted := source == "agent" || source == "verification"
-	parent, err := s.ValidateParentSession(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID), agentStarted)
+	source := agentSessionSource(input.Source)
+	parent, err := s.sessionParent(ctx, agent.WorkspaceID, strings.TrimSpace(input.ParentSessionID), source)
 	if err != nil {
-		return store.AgentSession{}, err
+		return sessionStart{}, err
 	}
-	if parent.ID != "" {
-		depth, err := s.SessionLineageDepth(ctx, parent.ID)
-		if err != nil {
-			return store.AgentSession{}, err
-		}
-		if depth >= maxAgentSessionLineageDepth {
-			return store.AgentSession{}, store.ErrAgentLineageTooDeep
-		}
-		activeChildren, err := s.CountActiveAgentChildren(ctx, parent.ID)
-		if err != nil {
-			return store.AgentSession{}, err
-		}
-		if activeChildren >= maxActiveAgentChildrenPerParent {
-			return store.AgentSession{}, store.ErrAgentFanOutLimit
-		}
-	}
-	now := time.Now().UTC()
 	if source == "naming" && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
-		return store.AgentSession{}, errors.New("naming must start an independent session without inherited context")
+		return sessionStart{}, errors.New("naming must start an independent session without inherited context")
 	}
 	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
 	if err != nil {
-		return store.AgentSession{}, err
+		return sessionStart{}, err
 	}
 	if deleted {
-		return store.AgentSession{}, store.ErrNotFound
+		return sessionStart{}, store.ErrNotFound
 	}
-	// A worktree-backed session requires a live candidate environment: the
-	// Issue must belong to the same workspace and be past contract start.
 	issueID := strings.TrimSpace(input.IssueID)
-	if issueID != "" {
-		issue, err := s.GetIssue(ctx, issueID)
-		if err != nil {
-			return store.AgentSession{}, store.ErrIssueEnvironmentUnavailable
-		}
-		if issue.WorkspaceID != agent.WorkspaceID {
-			return store.AgentSession{}, store.ErrIssueEnvironmentUnavailable
-		}
-		switch issue.Status {
-		case "in_progress", "blocked", "verifying":
-		default:
-			return store.AgentSession{}, store.ErrIssueEnvironmentUnavailable
-		}
+	if err := s.checkSessionIssue(ctx, issueID, agent.WorkspaceID); err != nil {
+		return sessionStart{}, err
 	}
+	return sessionStart{
+		input:       input,
+		prompt:      prompt,
+		attachments: attachments,
+		agent:       agent,
+		source:      source,
+		parent:      parent,
+		issueID:     issueID,
+	}, nil
+}
 
-	inputID, err := s.sessionInputID(ctx, input.InputID, now)
+// agentSessionSource is the source a session records; anything unknown is
+// a chat.
+func agentSessionSource(requested string) string {
+	source := strings.TrimSpace(requested)
+	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
+		return "chat"
+	}
+	return source
+}
+
+// sessionParent is the parent a new session names, if any, checked for
+// lineage depth and fan-out.
+//
+// Lineage: a parent must be a visible session in the same workspace the
+// request resolves to, except that an agent may start a session, a
+// verifier included, in another workspace its token reaches (authorized
+// before the store is called). The automatic group placement happens in
+// this same transaction once the child row exists, and only within one
+// workspace's layout.
+func (s *Store) sessionParent(ctx context.Context, workspaceID string, parentID string, source string) (store.AgentSession, error) {
+	agentStarted := source == "agent" || source == "verification"
+	parent, err := s.ValidateParentSession(ctx, workspaceID, parentID, agentStarted)
 	if err != nil {
 		return store.AgentSession{}, err
 	}
-	titleInput := prompt
-	if titleInput == "" && len(attachments) > 0 {
-		titleInput = attachments[0].Name
-		if len(attachments) > 1 {
-			titleInput = fmt.Sprintf("%s + %d files", titleInput, len(attachments)-1)
+	if parent.ID == "" {
+		return parent, nil
+	}
+	depth, err := s.SessionLineageDepth(ctx, parent.ID)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if depth >= maxAgentSessionLineageDepth {
+		return store.AgentSession{}, store.ErrAgentLineageTooDeep
+	}
+	activeChildren, err := s.CountActiveAgentChildren(ctx, parent.ID)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if activeChildren >= maxActiveAgentChildrenPerParent {
+		return store.AgentSession{}, store.ErrAgentFanOutLimit
+	}
+	return parent, nil
+}
+
+// checkSessionIssue: a worktree-backed session requires a live candidate
+// environment: the Issue must belong to the same workspace and be past
+// contract start.
+func (s *Store) checkSessionIssue(ctx context.Context, issueID string, workspaceID string) error {
+	if issueID == "" {
+		return nil
+	}
+	issue, err := s.GetIssue(ctx, issueID)
+	if err != nil {
+		return store.ErrIssueEnvironmentUnavailable
+	}
+	if issue.WorkspaceID != workspaceID {
+		return store.ErrIssueEnvironmentUnavailable
+	}
+	switch issue.Status {
+	case "in_progress", "blocked", "verifying":
+		return nil
+	default:
+		return store.ErrIssueEnvironmentUnavailable
+	}
+}
+
+// record is the new session's row, queued with its first input.
+func (start sessionStart) record(id string, inputID string, now time.Time) store.AgentSession {
+	input := start.input
+	titleInput := start.prompt
+	if titleInput == "" && len(start.attachments) > 0 {
+		titleInput = start.attachments[0].Name
+		if len(start.attachments) > 1 {
+			titleInput = fmt.Sprintf("%s + %d files", titleInput, len(start.attachments)-1)
 		}
 	}
 	createdBy := input.CreatedByUserID
 	if createdBy == "" {
-		createdBy = parent.CreatedByUserID
+		createdBy = start.parent.CreatedByUserID
 	}
-	id := fmt.Sprintf("sess_%d", now.UnixNano())
 	session := store.AgentSession{
 		CreatedByUserID:      createdBy,
 		ID:                   id,
 		ThreadID:             id,
-		WorkspaceID:          agent.WorkspaceID,
-		AgentID:              agent.ID,
-		DeviceID:             agent.DeviceID,
-		Provider:             agent.Provider,
-		ProfileID:            agent.ProfileID,
-		ProfileFingerprint:   agent.ProfileFingerprint,
-		ProfileLabel:         agent.ProfileLabel,
-		Source:               source,
-		ParentSessionID:      parent.ID,
-		IssueID:              issueID,
+		WorkspaceID:          start.agent.WorkspaceID,
+		AgentID:              start.agent.ID,
+		DeviceID:             start.agent.DeviceID,
+		Provider:             start.agent.Provider,
+		ProfileID:            start.agent.ProfileID,
+		ProfileFingerprint:   start.agent.ProfileFingerprint,
+		ProfileLabel:         start.agent.ProfileLabel,
+		Source:               start.source,
+		ParentSessionID:      start.parent.ID,
+		IssueID:              start.issueID,
 		Model:                strings.TrimSpace(input.Model),
 		ClaudeEffort:         strings.TrimSpace(input.ClaudeEffort),
 		ClaudePermissionMode: strings.TrimSpace(input.ClaudePermissionMode),
@@ -356,12 +444,12 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 		CodexSpeed:           strings.TrimSpace(input.CodexSpeed),
 		Status:               "queued",
 		Title:                titleFromInput(titleInput),
-		Prompt:               prompt,
+		Prompt:               start.prompt,
 		Input: store.SessionInput{
 			ID:                    inputID,
 			At:                    formatTime(now),
-			Prompt:                prompt,
-			Attachments:           attachments,
+			Prompt:                start.prompt,
+			Attachments:           start.attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			ImportedContext:       strings.TrimSpace(input.ImportedContext),
 		},
@@ -375,35 +463,28 @@ func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentS
 	// access and no approvals, because Codex's own sandbox cannot nest
 	// inside the verifier's. That outer sandbox keeps the workspace
 	// read-only for the whole process (worker: verification-session.ts).
-	if source == "verification" {
+	if start.source == "verification" {
 		session.ClaudePermissionMode = "dontAsk"
 		session.CodexSandboxMode = "danger-full-access"
 		session.CodexApprovalPolicy = "never"
 	}
-	if err := s.bindNativeSession(ctx, &session, input, now); err != nil {
-		return store.AgentSession{}, err
-	}
-	if err := s.saveAgentSession(ctx, session, now, now); err != nil {
-		return store.AgentSession{}, err
-	}
-	if err := s.recordSessionInput(ctx, session.ID, session.Input, now); err != nil {
-		return store.AgentSession{}, err
-	}
-	// A session working inside an Issue belongs to that Issue and is listed
-	// there; it gets no Chats group, which would only ever stay empty.
-	if parent.ID != "" && parent.WorkspaceID == session.WorkspaceID && session.IssueID == "" {
-		createdGroupID, created, err := s.PlaceChildWithParent(ctx, parent, session.ID)
-		if err != nil {
-			return store.AgentSession{}, err
-		}
-		if created {
-			session.CreatedGroupID = createdGroupID
-			if err := s.saveAgentSession(ctx, session, now, now); err != nil {
-				return store.AgentSession{}, err
-			}
+	return session
+}
+
+// lastSessionIDNanos is the number in the last session id handed out.
+var lastSessionIDNanos atomic.Int64
+
+// newSessionID is sess_<now in Unix nanoseconds>, moved past the last id
+// handed out, so sessions created within one clock tick get distinct ids
+// that still sort by creation.
+func newSessionID(now time.Time) string {
+	for {
+		last := lastSessionIDNanos.Load()
+		next := max(now.UnixNano(), last+1)
+		if lastSessionIDNanos.CompareAndSwap(last, next) {
+			return fmt.Sprintf("sess_%d", next)
 		}
 	}
-	return session, nil
 }
 
 // newSessionInputID is a UUIDv7: Claude accepts it as the native user

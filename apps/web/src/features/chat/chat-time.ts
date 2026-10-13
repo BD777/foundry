@@ -1,4 +1,5 @@
 import { i18n } from "../../i18n";
+import { clockTime } from "../../lib/time-format";
 
 /** Ignore missing/invalid legacy dates and keep the most recent known activity. */
 export function latestChatTime(
@@ -76,11 +77,5 @@ export function chatUpdateTime(
 
 /** A clock time, with the date when it is not today's. */
 export function noteTime(at: Date, now: Date): string {
-  const sameDay = at.toDateString() === now.toDateString();
-  return at.toLocaleString(i18n.language, {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    ...(sameDay ? {} : { month: "2-digit", day: "2-digit" }),
-  });
+  return clockTime(at, { date: "2-digit", now, hour12: false });
 }

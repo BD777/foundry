@@ -10,7 +10,6 @@ import type {
   ProfileDefinition,
   SaveProfileInput,
 } from "@bd777/foundry-protocol";
-import { i18n } from "../../i18n";
 
 /** Runtimes a server profile can target. `mock` is a test-only daemon runtime. */
 export type ProfileRuntime = ProfileDefinition["runtime"];
@@ -57,10 +56,6 @@ export function profileConnectionType(
 export function defaultProfileLabel(runtime: ProfileRuntime): string {
   // i18n-ignore: saved as the connection's name and compared on runtime switch
   return runtime === "codex" ? "Codex Provider" : "Claude Provider";
-}
-
-export function connectionLabel(connectionType: AgentConnectionType): string {
-  return i18n.t(`profiles:connectionTypes.${connectionType}`);
 }
 
 export function defaultProfileDraft(
@@ -156,18 +151,6 @@ export function draftForRuntime(
         : defaults.promptPrefix,
     runtime,
   };
-}
-
-/**
- * Switching authentication keeps every field. The save payload already decides
- * what each mode sends, so nothing has to be destroyed here — a mis-click on
- * the segmented control must not cost the endpoint and key just typed.
- */
-export function draftForAuthMode(
-  draft: ProfileDraft,
-  authMode: ProfileAuthMode,
-): ProfileDraft {
-  return { ...draft, authMode };
 }
 
 /**

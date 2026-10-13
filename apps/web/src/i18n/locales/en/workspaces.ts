@@ -166,7 +166,6 @@ export const workspaces = {
   details: {
     description:
       "Workspace details · Viewing details does not switch your working location.",
-    closeLabel: "Close {{title}}",
     device: "Device",
     deviceRemoved: "Removed from Foundry",
     folder: "Folder",
@@ -258,9 +257,5 @@ export const workspaces = {
     label: "Workspace folder",
     placeholder: "/absolute/path/to/project",
     loading: "Loading folders…",
-  },
-  filePreview: {
-    truncated: "Truncated read-only preview",
-    readOnly: "Read-only workspace configuration",
   },
 };

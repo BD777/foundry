@@ -26,6 +26,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
+import { signalChildGroup } from "./process-group.js";
+import type {
+  FetchSkillRepositoryPayload,
+  ReadRepositoryRefsPayload,
+} from "@bd777/foundry-protocol";
 import { foundryStatePath } from "./state-root.js";
 import {
   findCommand,
@@ -34,29 +39,11 @@ import {
 } from "./managed-tools.js";
 import { packZip, type ZipEntry } from "./skill-zip.js";
 
-export interface RepositoryRefsRequest {
-  remote: string;
-  /** Every tag (git). */
-  tags?: boolean;
-  /** HEAD, refs/heads/<name>, refs/tags/<name>[^{}] (git). */
-  patterns?: string[];
-  /** npm registry (https); absent uses this device's npm settings. */
-  registry?: string;
-}
-
 export interface RepositoryRefs {
   /** `git ls-remote` output. */
   refs?: string;
   distTags?: Record<string, string>;
   versions?: string[];
-}
-
-export interface FetchRepositoryRequest {
-  remote: string;
-  ref?: string;
-  subpath?: string;
-  registry?: string;
-  uploadPath: string;
 }
 
 const npmPrefix = "npm:";
@@ -140,11 +127,7 @@ function runCommand(
     let failure: Error | undefined;
     const stop = (reason: Error) => {
       failure ??= reason;
-      try {
-        if (child.pid) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
+      signalChildGroup(child, "SIGKILL");
     };
     const timer = setTimeout(
       () => stop(new Error(`${command} ${args[0]} took too long`)),
@@ -199,7 +182,7 @@ function registryArgs(pkg: string, registry: string | undefined): string[] {
 
 /** Refs of a git remote or the versions of an npm package. */
 export async function readRepositoryRefs(
-  request: RepositoryRefsRequest,
+  request: ReadRepositoryRefsPayload,
 ): Promise<RepositoryRefs> {
   checkRemote(request.remote);
   if (request.remote.startsWith(npmPrefix)) {
@@ -406,7 +389,7 @@ export function collectSkillTree(root: string, subpath: string): ZipEntry[] {
  * `upload`; returns the commit (git) or version (npm) they are from.
  */
 export async function fetchSkillRepository(
-  request: FetchRepositoryRequest,
+  request: FetchSkillRepositoryPayload,
   upload: (body: Buffer, contentType: string) => Promise<void>,
 ): Promise<{ commit: string }> {
   checkRemote(request.remote);

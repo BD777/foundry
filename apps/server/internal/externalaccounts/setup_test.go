@@ -1,4 +1,4 @@
-package externalaccounts
+package externalaccounts_test
 
 import (
 	"errors"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -59,7 +60,7 @@ func TestSetupCreatesAppThenAuthorizesItWithThePreset(t *testing.T) {
 		t.Fatalf("registered app not saved: %v", err)
 	}
 	if app.OwnerUserID != "user_owner" || app.Visibility != store.ExternalAppPersonal || app.CreatedVia != "registered" ||
-		app.ClientID != "cli_fake" || app.BaseURL != h.fake.BaseURL() || !h.service.hasSecret(h.ctx, AppSecretID(app.ID)) {
+		app.ClientID != "cli_fake" || app.BaseURL != h.fake.BaseURL() || !h.service.HasSecret(h.ctx, externalaccounts.AppSecretID(app.ID)) {
 		t.Fatalf("registered app saved wrongly: %+v", app)
 	}
 	asked := requested(h.fake.RequestedScope())
@@ -68,7 +69,7 @@ func TestSetupCreatesAppThenAuthorizesItWithThePreset(t *testing.T) {
 			t.Fatalf("authorization did not ask for %s: %q", want, h.fake.RequestedScope())
 		}
 	}
-	for _, approval := range feishuApprovalScopes {
+	for _, approval := range externalaccounts.FeishuApprovalScopes {
 		if asked[approval] {
 			t.Fatalf("authorization asked for approval scope %s without opt-in", approval)
 		}
@@ -97,9 +98,9 @@ func TestSetupFollowsALarkTenant(t *testing.T) {
 	if authorizing.App == nil || authorizing.App.BaseURL != h.fake.BaseURL()+"/lark" {
 		t.Fatalf("Lark app should keep the Lark base URL: %+v", authorizing)
 	}
-	if h.fake.RegistrationPolls(FeishuBrandFeishu) == 0 || h.fake.RegistrationPolls(FeishuBrandLark) == 0 {
+	if h.fake.RegistrationPolls(externalaccounts.FeishuBrandFeishu) == 0 || h.fake.RegistrationPolls(externalaccounts.FeishuBrandLark) == 0 {
 		t.Fatalf("polling should start on Feishu and move to Lark: feishu=%d lark=%d",
-			h.fake.RegistrationPolls(FeishuBrandFeishu), h.fake.RegistrationPolls(FeishuBrandLark))
+			h.fake.RegistrationPolls(externalaccounts.FeishuBrandFeishu), h.fake.RegistrationPolls(externalaccounts.FeishuBrandLark))
 	}
 	h.fake.Approve()
 	if done := h.awaitLogin(login.ID); done.Status != "complete" {
@@ -115,7 +116,7 @@ func TestSetupDeclinedCreatesNoApp(t *testing.T) {
 		t.Fatalf("begin setup: %v", err)
 	}
 	done := h.awaitLogin(login.ID)
-	if done.Status != "failed" || done.Error != ErrRegistrationDenied.Error() || done.App != nil {
+	if done.Status != "failed" || done.Error != externalaccounts.ErrRegistrationDenied.Error() || done.App != nil {
 		t.Fatalf("a declined setup should fail without an app: %+v", done.ExternalAccountLogin)
 	}
 	apps, err := h.service.ListApps(h.ctx, "user_owner")
@@ -126,8 +127,8 @@ func TestSetupDeclinedCreatesNoApp(t *testing.T) {
 
 func TestSetupNeedsTheSecretStoreAndIntegrations(t *testing.T) {
 	h := newHarness(t)
-	h.service.secrets = nil
-	if _, err := h.service.BeginSetup(h.ctx, "user_owner", store.SetupExternalAccountInput{Provider: "feishu"}); !errors.Is(err, ErrSecretsNotConfigured) {
+	withoutSecrets := externalaccounts.NewService(h.store, nil, externalaccounts.NewRegistry(h.fake.Adapter()))
+	if _, err := withoutSecrets.BeginSetup(h.ctx, "user_owner", store.SetupExternalAccountInput{Provider: "feishu"}); !errors.Is(err, externalaccounts.ErrSecretsNotConfigured) {
 		t.Fatalf("setup without a secret store: %v", err)
 	}
 }
@@ -139,7 +140,7 @@ func TestLoginWithoutScopesAsksForThePresetAndOptInApprovalScopes(t *testing.T) 
 		t.Fatalf("begin login: %v", err)
 	}
 	asked := requested(h.fake.RequestedScope())
-	for _, want := range append(FeishuPresetScopes(true), feishuAlwaysScopes...) {
+	for _, want := range append(externalaccounts.FeishuPresetScopes(true), externalaccounts.FeishuAlwaysScopes...) {
 		if !asked[want] {
 			t.Fatalf("login did not ask for %s", want)
 		}
@@ -171,15 +172,15 @@ func TestLoginReportsScopesFeishuDidNotGrant(t *testing.T) {
 
 func TestFeishuPresetIsDistinctAndDescribed(t *testing.T) {
 	seen := map[string]bool{}
-	for _, scope := range FeishuPresetScopes(true) {
+	for _, scope := range externalaccounts.FeishuPresetScopes(true) {
 		if seen[scope] || strings.TrimSpace(scope) != scope || scope == "" {
 			t.Fatalf("preset scope %q repeated or malformed", scope)
 		}
 		seen[scope] = true
 	}
-	described := (&Feishu{}).Describe()
-	if !described.RegistersApps || described.ScopePreset == nil || len(described.ScopePreset.Scopes) != len(FeishuPresetScopes(false)) ||
-		len(described.ScopePreset.ApprovalScopes) != len(feishuApprovalScopes) || described.ScopePreset.Source == "" {
+	described := (&externalaccounts.Feishu{}).Describe()
+	if !described.RegistersApps || described.ScopePreset == nil || len(described.ScopePreset.Scopes) != len(externalaccounts.FeishuPresetScopes(false)) ||
+		len(described.ScopePreset.ApprovalScopes) != len(externalaccounts.FeishuApprovalScopes) || described.ScopePreset.Source == "" {
 		t.Fatalf("provider description lacks the preset: %+v", described)
 	}
 }

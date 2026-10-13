@@ -3,7 +3,7 @@ import { lstat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { canonical, ExecutionStore, within } from "./execution-storage.js";
 import { commitIdentity, git, gitCommit } from "./execution-git.js";
-import { writeJSON } from "./storage.js";
+import { readJSONFile, writeJSON } from "./storage.js";
 import type { WorkspaceRegistration } from "./execution-types.js";
 
 /**
@@ -60,12 +60,9 @@ export async function bootstrapWorkspace(
     store.metadata(registration.workspaceId),
     "bootstrap.json",
   );
-  const previous = existsSync(journalPath)
-    ? (JSON.parse(readFileSync(journalPath, "utf8")) as {
-        status: string;
-        files: string[];
-      })
-    : undefined;
+  const previous = readJSONFile<{ status: string; files: string[] }>(
+    journalPath,
+  );
   if (await git(source, ["rev-parse", "--verify", "HEAD"], { optional: true }))
     return false;
   const staged = (

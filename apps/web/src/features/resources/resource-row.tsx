@@ -4,7 +4,7 @@ import { History } from "lucide-react";
 import type { ResourceInstance } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { fullWhen, relativeWhen } from "../../lib/relative-time";
+import { fullWhen, relativeWhen } from "../../lib/time-format";
 import { ResourceActivityDialog } from "./resource-activity";
 import {
   cuaDriverCheckDetailKeys,

@@ -1,9 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { BuiltinSkill, ProviderHealth } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
-
-// i18n-ignore: runtime product names
-const agentNames = { claude: "Claude Code", codex: "Codex" } as const;
+import { runtimeMeta } from "../../components/ui/runtime-mark";
 
 /**
  * Marks a workspace skill that shares its name with one of Foundry's built-in
@@ -25,7 +23,7 @@ export function BuiltinShadowBadge({
   return (
     <Badge tone="warn">
       {t("workspace.shadowedByBuiltin", {
-        agent: agentNames[builtin.runtime],
+        agent: runtimeMeta(builtin.runtime).productName,
         name: builtin.name,
       })}
     </Badge>
@@ -50,7 +48,7 @@ export function ReplacesOfficialBadge({
         (skill) => skill.name.toLowerCase() === name.toLowerCase(),
       ),
     )
-    .map((row) => agentNames[row.provider]);
+    .map((row) => runtimeMeta(row.provider).productName);
   if (!agents.length) return null;
   return (
     <Badge tone="neutral">

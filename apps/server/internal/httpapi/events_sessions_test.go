@@ -124,9 +124,9 @@ func TestUndeliveredSessionsEndTheSameWayOnEveryPath(t *testing.T) {
 	ctx := context.Background()
 	input := store.CreateAgentSessionInput{WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude", Prompt: "hello", Source: "chat"}
 
-	started, status, err := server.startAgentSession(ctx, input)
-	if status != http.StatusConflict || !errors.Is(err, ErrLocalDaemonNotConnected) {
-		t.Fatalf("a person's session = %d %v, want the conflict", status, err)
+	started, err := server.startAgentSession(ctx, input)
+	if errorStatus(err) != http.StatusConflict || !errors.Is(err, ErrLocalDaemonNotConnected) {
+		t.Fatalf("a person's session = %v, want the conflict", err)
 	}
 	fromFeishu, err := server.CreateSessionAndDispatch(ctx, input)
 	if !errors.Is(err, ErrLocalDaemonNotConnected) {
