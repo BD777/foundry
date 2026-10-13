@@ -13,8 +13,8 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// A session runs commands on its person's other device only after the
-// person allowed remote commands there; the server names the workspace
+// A session runs commands on its person's other device unless the person
+// turned remote commands off there (they are on by default); the server names the workspace
 // folder (never the caller), the audit keeps the command and its outcome,
 // and turning the permission off ends the lease.
 func TestSessionRunsCommandsOnAnotherDevicesCompute(t *testing.T) {
@@ -74,9 +74,11 @@ func TestSessionRunsCommandsOnAnotherDevicesCompute(t *testing.T) {
 	compute := resources.InstanceID("dev_alice", "compute")
 	settingsPath := "/api/devices/dev_alice/resources/settings"
 
+	// On by default; an explicit off keeps the session out.
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, settingsPath, `{"allowRemoteCommands":false}`)), http.StatusOK, "alice turns it off first")
 	content, isError := mcpContentCall(t, f.handler, alice, "acquire_resource", map[string]any{"type": "compute", "deviceId": "dev_alice"})
 	if !isError || !strings.Contains(content[0]["text"].(string), "Allow remote commands") {
-		t.Fatalf("acquiring before the owner allowed it = %v", content)
+		t.Fatalf("acquiring after the owner turned it off = %v", content)
 	}
 	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodPut, settingsPath, `{"allowRemoteCommands":true}`)), http.StatusNotFound, "bob allows commands on alice's Mac")
 	expectStatus(t, doAuthCall(t, f.handler, authCall{method: http.MethodPut, path: settingsPath, body: `{"allowRemoteCommands":true}`,

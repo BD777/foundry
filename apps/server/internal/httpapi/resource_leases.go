@@ -150,7 +150,15 @@ func (s *Server) resourceLeasesDeviceConnected(ctx context.Context, deviceID str
 				log.Printf("resource settings of %s not read: %v", deviceID, err)
 				return
 			}
-			s.sendResourceSettings(context.Background(), deviceID, settings)
+			// A device that just connected may drop and reconnect while
+			// this is on its way (seen on 2026-10-13 after a restart): try
+			// again on its current connection until one applies it.
+			for attempt, wait := 0, time.Second; attempt < 6; attempt, wait = attempt+1, wait*2 {
+				if s.sendResourceSettings(context.Background(), deviceID, settings) {
+					return
+				}
+				time.Sleep(wait)
+			}
 		}()
 	}
 }
@@ -163,6 +171,7 @@ const resourceSettingsTimeout = 15 * time.Second
 func (s *Server) sendResourceSettings(ctx context.Context, deviceID string, settings store.ResourceSourceSettings) bool {
 	connection := s.hub.connectionFor(deviceID)
 	if connection == nil || !connection.hasCapability(store.DaemonCapabilityResourceCompute) {
+		log.Printf("resource settings for %s not sent: no connection with %s", deviceID, store.DaemonCapabilityResourceCompute)
 		return false
 	}
 	payload, err := json.Marshal(settings)
@@ -176,7 +185,11 @@ func (s *Server) sendResourceSettings(ctx context.Context, deviceID string, sett
 		log.Printf("resource settings not applied on %s: %v", deviceID, err)
 		return false
 	}
-	return applied == settings
+	if applied != settings {
+		log.Printf("resource settings on %s: sent %+v, worker applied %+v", deviceID, settings, applied)
+		return false
+	}
+	return true
 }
 
 // --- the person's routes ----------------------------------------------

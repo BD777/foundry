@@ -38,16 +38,27 @@ func TestComputeNeedsTheOwnersPermission(t *testing.T) {
 	f := newLeaseFixture(t)
 	compute := f.reportCompute(true)
 
-	// Ready on the device is not enough: the server keeps the owner's word.
+	// On by default: a device whose owner never chose allows them.
+	if settings, err := f.service.Settings(f.ctx, "dev_mac"); err != nil || !settings.AllowRemoteCommands {
+		t.Fatalf("default settings = %+v, %v", settings, err)
+	}
+	list, err := f.service.List(f.ctx, store.ResourceFilter{})
+	if err != nil || len(list.Sources) != 1 || !list.Sources[0].AllowRemoteCommands {
+		t.Fatalf("default sources = %+v, %v", list.Sources, err)
+	}
+
+	// Ready on the device is not enough: the server keeps the owner's
+	// explicit off.
+	f.allowRemoteCommands(false)
 	if _, err := f.acquire("sess_a", 0, compute); !resources.IsLeaseError(err, resources.CodeUnready) ||
 		!strings.Contains(err.Error(), "Allow remote commands") {
 		t.Fatalf("acquire without permission: %v", err)
 	}
-	f.allowRemoteCommands(true)
-	list, err := f.service.List(f.ctx, store.ResourceFilter{})
-	if err != nil || len(list.Sources) != 1 || !list.Sources[0].AllowRemoteCommands {
-		t.Fatalf("sources = %+v, %v", list.Sources, err)
+	list, err = f.service.List(f.ctx, store.ResourceFilter{})
+	if err != nil || len(list.Sources) != 1 || list.Sources[0].AllowRemoteCommands {
+		t.Fatalf("sources after turning off = %+v, %v", list.Sources, err)
 	}
+	f.allowRemoteCommands(true)
 	lease := f.mustAcquire("sess_a", compute)
 	f.confirm()
 	if _, err := f.leases.Begin(f.ctx, lease.ID, "sess_a"); err != nil {

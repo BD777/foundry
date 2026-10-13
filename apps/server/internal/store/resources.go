@@ -137,7 +137,8 @@ type ResourceSourceStatus struct {
 // worker (resource_settings), which enforces it too.
 type ResourceSourceSettings struct {
 	// AllowRemoteCommands: sessions the owner started may lease the
-	// device's compute instance and run commands with it. Off by default.
+	// device's compute instance and run commands with it. On by default:
+	// a device whose owner never chose allows them; an explicit off stays.
 	AllowRemoteCommands bool `json:"allowRemoteCommands"`
 }
 

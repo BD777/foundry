@@ -138,6 +138,7 @@ export const resources: Translation<typeof en> = {
   },
   access: {
     action: "请求授权",
+    retryAction: "重试",
     requesting: "正在请求 {{device}}…",
     requested:
       "{{device}} 正在为 CuaDriver.app 请求辅助功能、屏幕录制和屏幕捕获权限。请在 Mac 上逐一同意；同意后这里的就绪状态会更新。",
@@ -163,7 +164,8 @@ export const resources: Translation<typeof en> = {
       verified: "cua-driver 已确认 {{device}} 上 CuaDriver 的权限。",
       failed: "cua-driver 未能确认 {{device}} 上 CuaDriver 的权限",
       timedOut: "{{device}} 上的权限检查在 CuaDriver 获得允许前已停止等待",
-      retry: "请先在上方的设置中打开 CuaDriver，再点一次请求授权。",
+      retry:
+        "重试会重启 {{device}} 上的 CuaDriver 并再次请求；在系统设置中打开的权限要在重启后才生效。",
       output: "cua-driver 最后的输出",
     },
   },
@@ -173,7 +175,7 @@ export const resources: Translation<typeof en> = {
     memory: "{{gib}} GiB",
     load: "负载 {{load}}",
     allow: "允许我的会话在此设备上运行命令",
-    hint: "命令以 Worker 的用户身份，在 Foundry 的临时目录或会话可使用的此设备上的工作区中运行。每次运行都会记录审计。默认关闭。",
+    hint: "命令以 Worker 的用户身份，在 Foundry 的临时目录或会话可使用的此设备上的工作区中运行。每次运行都会记录审计。默认开启；关闭后，你在其他设备上的会话将不能在这里运行命令。",
     saving: "正在保存…",
     notApplied: "已保存。{{device}} 的 Worker 在线且为新版本后生效。",
     offTitle: "停止在 {{device}} 上运行命令？",

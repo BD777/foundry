@@ -510,26 +510,29 @@ test("the compute instance is ready only while remote commands are allowed", asy
   assert.equal(on.instances[0].readiness.ready, true);
 });
 
-test("the settings a worker was sent persist, off by default", () => {
+test("the settings a worker was sent persist, on by default", () => {
   const folder = mkdtempSync(join(tmpdir(), "settings-"));
   const path = join(folder, "resources", "settings.json");
+  assert.deepEqual(new ResourceSettingsStore(path).get(), {
+    allowRemoteCommands: true,
+  });
+  assert.deepEqual(
+    new ResourceSettingsStore(path).set({ allowRemoteCommands: false }),
+    { allowRemoteCommands: false },
+  );
   assert.deepEqual(new ResourceSettingsStore(path).get(), {
     allowRemoteCommands: false,
   });
   assert.deepEqual(
     new ResourceSettingsStore(path).set({ allowRemoteCommands: true }),
-    {
-      allowRemoteCommands: true,
-    },
+    { allowRemoteCommands: true },
   );
   assert.deepEqual(new ResourceSettingsStore(path).get(), {
     allowRemoteCommands: true,
   });
   assert.deepEqual(
     new ResourceSettingsStore(path).set({ allowRemoteCommands: "yes" }),
-    {
-      allowRemoteCommands: false,
-    },
+    { allowRemoteCommands: false },
   );
 });
 

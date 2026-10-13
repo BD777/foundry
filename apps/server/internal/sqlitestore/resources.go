@@ -48,9 +48,11 @@ func (s *Store) setupResources(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_resource_instances_gone ON resource_instances (gone_at) WHERE gone_at <> ''`,
 		// The owner's settings outlive the source's reports (and precede
 		// its first one), so they are not a column of resource_sources.
+		// A row exists only once the owner chose; without one remote
+		// commands are on.
 		`CREATE TABLE IF NOT EXISTS resource_source_settings (
 			source_id TEXT PRIMARY KEY,
-			allow_remote_commands INTEGER NOT NULL DEFAULT 0,
+			allow_remote_commands INTEGER NOT NULL DEFAULT 1,
 			updated_by TEXT NOT NULL DEFAULT '',
 			updated_at TEXT NOT NULL DEFAULT ''
 		)`,
@@ -133,7 +135,7 @@ func scanResourceInstance(rows *sql.Rows) (store.ResourceInstance, error) {
 func (s *Store) ListResourceSources(ctx context.Context) ([]store.ResourceSourceStatus, error) {
 	sources := []store.ResourceSourceStatus{}
 	err := scanRows(ctx, s.reader(), `SELECT s.id, s.kind, `+resourceSourceLabel+`, s.online, s.scanner_version, s.detector_errors_json,
-		s.last_report_at, COALESCE(t.allow_remote_commands, 0)
+		s.last_report_at, COALESCE(t.allow_remote_commands, 1)
 		FROM resource_sources s LEFT JOIN resource_source_settings t ON t.source_id = s.id
 		LEFT JOIN devices d ON d.id = s.id
 		ORDER BY `+resourceSourceLabel+`, s.id`, func(rows *sql.Rows) error {
@@ -222,7 +224,7 @@ func (s *Store) ResourceSourceSettings(ctx context.Context, sourceID string) (st
 	err := s.reader().QueryRowContext(ctx, `SELECT allow_remote_commands FROM resource_source_settings WHERE source_id = ?`,
 		sourceID).Scan(&remote)
 	if errors.Is(err, sql.ErrNoRows) {
-		return store.ResourceSourceSettings{}, nil
+		return store.ResourceSourceSettings{AllowRemoteCommands: true}, nil
 	}
 	if err != nil {
 		return store.ResourceSourceSettings{}, fmt.Errorf("read resource settings: %w", err)

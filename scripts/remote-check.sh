@@ -11,7 +11,7 @@
 # there at this worktree's base commit (dependencies installed once, again only
 # when the lockfiles change), applies the uncommitted diff and untracked files,
 # and runs check-changed.sh there with the arguments given. The device's owner
-# must have allowed remote commands on it (Resources page).
+# must not have turned remote commands off on it (on by default; Resources page).
 #
 # Environment: FOUNDRY_CLI (default: foundry on PATH, else this repo's built
 # packages/worker/dist/foundry-cli.js), REMOTE_CHECK_SCRATCH (default foundry),
@@ -156,7 +156,7 @@ listing="$("${cli[@]}" device list --type compute)"
 resource="$(DEVICE="$device" json '(v.find(d=>d.deviceId===process.env.DEVICE||d.deviceLabel.toLowerCase()===process.env.DEVICE.toLowerCase())?.instances??[]).find(i=>i.type==="compute")?.id' <<<"$listing")"
 [ -n "$resource" ] || die "no compute resource on $device (foundry device list --type compute; its worker may need an update)"
 acquired="$("${cli[@]}" resource acquire --resource "$resource" --reason "remote-check of $(basename "$root")" --wait-ms 600000)" ||
-  die "could not lease $device's compute (its owner turns on remote commands on the Resources page)"
+  die "could not lease $device's compute (is it online, and are remote commands on in its Resources page?)"
 lease="$(json 'v.lease.id' <<<"$acquired")"
 log "leased $device's compute ($lease)"
 

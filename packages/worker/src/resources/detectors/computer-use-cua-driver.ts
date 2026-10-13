@@ -29,8 +29,6 @@ export interface CuaDriverPermissions {
   grants?: CuaDriverGrants;
   /** status "unknown": cua-driver cannot read its real grants yet. */
   unknown?: boolean;
-  /** cua-driver's own words for an unknown status. */
-  reason?: string;
 }
 
 /**
@@ -57,13 +55,7 @@ export function parseCuaDriverPermissions(
   if (!parsed || typeof parsed !== "object") return { running: false };
   const record = parsed as Record<string, unknown>;
   if (record.status === "unknown")
-    return {
-      running: record.daemon_running === true,
-      unknown: true,
-      ...(typeof record.reason === "string" && record.reason.trim()
-        ? { reason: record.reason.trim() }
-        : {}),
-    };
+    return { running: record.daemon_running === true, unknown: true };
   if (
     typeof record.accessibility === "boolean" &&
     typeof record.screen_recording === "boolean"
@@ -160,7 +152,14 @@ export function createCuaDriverDetector(
         if (version) details.version = version;
         const run = grantRun();
         readiness = await readGrants(context, binary, env, run);
-        Object.assign(details, grantRunDetails(run));
+        // Once both grants are confirmed, an earlier run that gave up is moot.
+        const runDetails = grantRunDetails(run);
+        if (
+          !readiness.ready ||
+          runDetails.grantRun === "waiting" ||
+          runDetails.grantRun === "verified"
+        )
+          Object.assign(details, runDetails);
         if (watching() && !readiness.ready) details.permissionCheck = "live";
       }
       const instance: DetectedInstance = {
@@ -253,14 +252,16 @@ async function readGrants(
       ),
       missing: ["cua_driver_not_running"],
     };
+  // A daemon that answers "unknown" is still in its own permission check,
+  // or that check gave up (after 10 minutes, see cuaDriverGateWindowMs in cua-driver-host.ts) and it
+  // stays stuck until restarted; `cua-driver diagnose` then says "daemon
+  // unavailable". Its grants are not known either way.
   if (!status.grants)
     return {
       ready: false,
       level: "configured",
       reason: withProblem(
-        status.reason
-          ? `CuaDriver has not confirmed its macOS permissions yet. cua-driver says: "${status.reason}" Request access runs that check; or turn CuaDriver on in System Settings.`
-          : "CuaDriver is running but has not confirmed its macOS permissions yet. Request access asks for them; or turn CuaDriver on in System Settings.",
+        "CuaDriver is running but has not confirmed its macOS permissions. It stops checking 10 minutes after it starts, so permissions turned on later count only after a restart: Request access restarts it and asks again.",
       ),
       missing: ["tcc_accessibility", "tcc_screen_recording"],
     };

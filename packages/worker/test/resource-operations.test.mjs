@@ -649,7 +649,8 @@ test("the cua-driver detector reports the Request access run", async () => {
   let lastDetails;
   const idle = await detect(undefined);
   assert.equal(idle.level, "configured");
-  assert.match(idle.reason, /real TCC status is not yet available/);
+  assert.match(idle.reason, /stops checking 10 minutes after it starts/);
+  assert.match(idle.reason, /Request access restarts it/);
   assert.deepEqual(idle.missing, ["tcc_accessibility", "tcc_screen_recording"]);
 
   const waiting = await detect({ state: "running", startedAt: 1 });
@@ -697,6 +698,21 @@ test("the cua-driver detector reports the Request access run", async () => {
   assert.deepEqual(granted, { ready: true, level: "permitted" });
   assert.equal(lastDetails.grantRun, "verified");
   assert.equal(lastDetails.permissionCheck, undefined, "ready: no live check");
+
+  // Granted after the run gave up (System Settings' Quit & Reopen restarted
+  // CuaDriver): the old failure is not shown next to a ready resource.
+  const grantedLater = await detect(
+    { state: "finished", startedAt: 1, code: 1, output: "Timed out" },
+    {
+      ...unknown,
+      "permissions status --json": {
+        stdout: JSON.stringify({ accessibility: true, screen_recording: true }),
+      },
+    },
+  );
+  assert.deepEqual(grantedLater, { ready: true, level: "permitted" });
+  assert.equal(lastDetails.grantRun, undefined);
+  assert.equal(lastDetails.grantOutput, undefined);
 });
 
 test("permission status is read as cua-driver prints it, else loosely", () => {
@@ -710,12 +726,7 @@ test("permission status is read as cua-driver prints it, else loosely", () => {
         status: "unknown",
       }),
     ),
-    {
-      running: true,
-      unknown: true,
-      reason:
-        "CuaDriver daemon is listening, but its real TCC status is not yet available.",
-    },
+    { running: true, unknown: true },
   );
   assert.deepEqual(
     parseCuaDriverPermissions(
@@ -818,7 +829,7 @@ test("a grant waiting for the person is tracked and not started twice", async ()
   let finish;
   const run = async (command, args) => {
     runs.push([command, ...args]);
-    if (args[0] === "permissions")
+    if (args[1] === "grant")
       return new Promise((resolve) => {
         finish = resolve;
       });
@@ -833,7 +844,7 @@ test("a grant waiting for the person is tracked and not started twice", async ()
   await requestCuaDriverAccess(options);
   assert.deepEqual(cuaDriverGrantRun(), { state: "running", startedAt: 42 });
   await requestCuaDriverAccess(options);
-  assert.equal(runs.length, 2, "the waiting grant is not started again");
+  assert.equal(runs.length, 3, "the waiting grant is not started again");
   finish({
     code: 1,
     stdout: "Launching CuaDriver\n\n⚠️  Timed out waiting on: Accessibility.\n",
@@ -877,6 +888,7 @@ test("requesting access starts CuaDriver and asks for its grants", async () => {
   for (let i = 0; i < 3; i += 1)
     await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(runs, [
+    ["/Users/p/.local/bin/cua-driver", "permissions", "status", "--json"],
     ["/usr/bin/open", "-n", "-g", "-a", "CuaDriver", "--args", "serve"],
     ["/Users/p/.local/bin/cua-driver", "permissions", "grant"],
   ]);
@@ -891,6 +903,170 @@ test("requesting access starts CuaDriver and asks for its grants", async () => {
     requestCuaDriverAccess({ platform: "linux" }),
     /macOS only/,
   );
+});
+
+/** A fake cua-driver: `permissions status --json` prints status(). */
+function fakeCuaDriver(status) {
+  const runs = [];
+  const run = async (command, args) => {
+    runs.push([command, ...args].join(" "));
+    const stdout =
+      args[0] === "permissions" && args[1] === "status"
+        ? JSON.stringify(status())
+        : "";
+    return { code: 0, stdout, stderr: "", timedOut: false, missing: false };
+  };
+  return { runs, run };
+}
+
+const settle = async () => {
+  for (let i = 0; i < 5; i += 1)
+    await new Promise((resolve) => setImmediate(resolve));
+};
+
+test("requesting access restarts a CuaDriver daemon stuck without confirmed grants", async () => {
+  // The Mac mini: a daemon whose permission check gave up answers
+  // "unknown" forever; only a fresh one asks macOS again and sees grants.
+  resetCuaDriverGrantRun();
+  const bin = "/Users/p/.local/bin/cua-driver";
+  const { runs, run } = fakeCuaDriver(() => ({
+    daemon_running: true,
+    status: "unknown",
+    reason:
+      "CuaDriver daemon is listening, but its real TCC status is not yet available.",
+  }));
+  await requestCuaDriverAccess({ platform: "darwin", binary: bin, run });
+  await settle();
+  assert.deepEqual(runs, [
+    `${bin} permissions status --json`,
+    `${bin} stop`,
+    "/usr/bin/open -n -g -a CuaDriver --args serve",
+    `${bin} permissions grant`,
+  ]);
+  resetCuaDriverGrantRun();
+});
+
+test("requesting access leaves a daemon with confirmed grants running and verifies", async () => {
+  resetCuaDriverGrantRun();
+  const bin = "/Users/p/.local/bin/cua-driver";
+  const { runs, run } = fakeCuaDriver(() => ({
+    accessibility: true,
+    screen_recording: true,
+    source: { attribution: "driver-daemon" },
+  }));
+  await requestCuaDriverAccess({ platform: "darwin", binary: bin, run });
+  await settle();
+  assert.deepEqual(runs, [
+    `${bin} permissions status --json`,
+    `${bin} permissions grant`,
+  ]);
+  resetCuaDriverGrantRun();
+});
+
+test("a daemon that will not stop fails Request access with cua-driver's words", async () => {
+  resetCuaDriverGrantRun();
+  const runs = [];
+  await assert.rejects(
+    requestCuaDriverAccess({
+      platform: "darwin",
+      binary: "/Users/p/.local/bin/cua-driver",
+      run: async (command, args) => {
+        runs.push(args.join(" "));
+        if (args[0] === "stop")
+          return {
+            code: 1,
+            stdout: "",
+            stderr: "Cua Driver daemon did not release socket within 2s\n",
+            timedOut: false,
+            missing: false,
+          };
+        return {
+          code: 0,
+          stdout: JSON.stringify({ daemon_running: true, status: "unknown" }),
+          stderr: "",
+          timedOut: false,
+          missing: false,
+        };
+      },
+    }),
+    /could not restart CuaDriver: Cua Driver daemon did not release socket within 2s/,
+  );
+  assert.equal(
+    cuaDriverGrantRun(),
+    undefined,
+    "no grant against a stuck daemon",
+  );
+  resetCuaDriverGrantRun();
+});
+
+test("the live watch restarts a daemon it did not start recently, once, and verifies a late grant", async () => {
+  resetCuaDriverGrantRun();
+  stopCuaDriverPermissionWatch();
+  const bin = "/Users/p/.local/bin/cua-driver";
+  let granted = false;
+  let grants = 0;
+  const runs = [];
+  let clock = 1_000_000;
+  const run = async (command, args) => {
+    runs.push([command, ...args].join(" "));
+    const result = (code, stdout = "") => ({
+      code,
+      stdout,
+      stderr: "",
+      timedOut: false,
+      missing: false,
+    });
+    if (args[1] === "grant") {
+      grants += 1;
+      // The first run gives up; the person then allows CuaDriver.
+      if (grants === 1) {
+        granted = true;
+        return result(1, "⚠️  Timed out waiting on: Screen Recording.");
+      }
+      return result(0);
+    }
+    if (args[1] === "status")
+      return result(
+        0,
+        JSON.stringify(
+          granted
+            ? { accessibility: true, screen_recording: true }
+            : { daemon_running: true, status: "unknown" },
+        ),
+      );
+    return result(0);
+  };
+  const until = async (check) => {
+    for (let i = 0; i < 300 && !check(); i += 1)
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    assert.ok(check());
+  };
+  await openCuaDriverSettings("screen-recording", {
+    platform: "darwin",
+    binary: bin,
+    run,
+    intervalMs: 1,
+    now: () => (clock += 20_000),
+    onChange: () => {},
+  });
+  await until(() => !cuaDriverPermissionWatchActive());
+  await until(() => grants === 2 && cuaDriverGrantRun()?.state === "finished");
+  assert.equal(
+    runs.filter((line) => line === `${bin} stop`).length,
+    1,
+    "the stale daemon is restarted once",
+  );
+  assert.ok(
+    runs.indexOf(`${bin} stop`) <
+      runs.indexOf("/usr/bin/open -n -g -a CuaDriver --args serve"),
+  );
+  assert.deepEqual(cuaDriverGrantRun(), {
+    state: "finished",
+    startedAt: cuaDriverGrantRun().startedAt,
+    code: 0,
+    output: "",
+  });
+  resetCuaDriverGrantRun();
 });
 
 test("a System Settings pane opens and the grants are rechecked live until confirmed", async () => {

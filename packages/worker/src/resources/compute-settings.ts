@@ -42,15 +42,18 @@ export class ResourceSettingsStore {
   }
 }
 
-/** Unreadable or missing settings are the defaults: everything off. */
+/**
+ * Missing or unreadable settings are the defaults, as on the server: remote
+ * commands on until the owner turns them off. Only an explicit false is off.
+ */
 function readSettings(path: string): ResourceSourceSettings {
   try {
     const value = JSON.parse(
       readFileSync(path, "utf8"),
     ) as Partial<ResourceSourceSettings> | null;
-    return { allowRemoteCommands: value?.allowRemoteCommands === true };
+    return { allowRemoteCommands: value?.allowRemoteCommands !== false };
   } catch {
-    return { allowRemoteCommands: false };
+    return { allowRemoteCommands: true };
   }
 }
 
