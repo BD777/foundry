@@ -278,6 +278,7 @@ func TestChatTitleJobEventsAnnounceTitles(t *testing.T) {
 	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_group", WorkspaceID: "ws_names", Source: "naming", GroupNameTarget: "g"})
 	server.sessions.changed(ctx, sessionCompleted, store.AgentSession{ID: "sess_chat", WorkspaceID: "ws_names", Source: "chat"})
 	server.sessions.recorded(ctx, "ws_names", store.AgentSessionEvent{ID: "evt", SessionID: "sess_naming"})
+	server.chatQueueKicks.Wait()
 	got := chatListEventsForTest(t, drainForTest(t, viewer))
 	want := []string{"chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names", "chat_titles_changed ws_names"}
 	if !reflect.DeepEqual(got, want) {
