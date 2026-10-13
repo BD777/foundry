@@ -33,7 +33,7 @@ another workspace runs on that workspace's device, under that device's
 logins; the device may be another person's. `list_resources` shows what each
 device offers; to run a command on another of your person's devices (a heavy
 test run, say) lease its `compute` with `acquire_resource` instead of starting
-a session there, once its owner allowed remote commands on it.
+a session there, unless its owner turned remote commands off on it.
 
 ## Facts
 

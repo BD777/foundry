@@ -845,6 +845,10 @@ test("each missing grant opens its System Settings pane; the check's outcome sho
     outcome.querySelector("pre").textContent,
     /Timed out waiting on: Accessibility/,
   );
+  assert.match(outcome.textContent, /Try again restarts CuaDriver on Studio/);
+  assert.equal(buttonIn(screen, "Request access"), undefined);
+  await click(buttonIn(screen, "Try again"));
+  assert.deepEqual(calls.at(-1).body, { requestAccess: "cua-driver" });
   assert.doesNotMatch(
     screen.querySelector(".fdy-res-details")?.textContent ?? "",
     /grantRun|permissionCheck/,
@@ -1041,7 +1045,7 @@ test("the remote-commands switch shows on the owner's compute instance only", as
   assert.equal(control.checked, false, "off by default");
   assert.match(
     row(page.container, "Studio compute").textContent,
-    /run as the worker's user in Foundry's scratch folder.*audited.*Off by default/,
+    /run as the worker's user in Foundry's scratch folder.*audited.*On by default; turn off to stop your sessions on other devices/,
   );
   assert.equal(allowSwitch(row(page.container, "Laptop compute")), undefined);
   // Other types never get it.

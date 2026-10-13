@@ -143,6 +143,7 @@ export const resources = {
   },
   access: {
     action: "Request access",
+    retryAction: "Try again",
     requesting: "Asking {{device}}…",
     requested:
       "{{device}} is asking for Accessibility, Screen Recording and screen capture for CuaDriver.app. Approve each prompt on the Mac; readiness here updates once it does.",
@@ -171,7 +172,7 @@ export const resources = {
       timedOut:
         "The permission check on {{device}} stopped waiting before CuaDriver was allowed",
       retry:
-        "Turn CuaDriver on in the settings above, then Request access again.",
+        "Try again restarts CuaDriver on {{device}} and asks again; a permission turned on in System Settings counts after that restart.",
       output: "cua-driver's last lines",
     },
   },
@@ -181,7 +182,7 @@ export const resources = {
     memory: "{{gib}} GiB",
     load: "load {{load}}",
     allow: "Allow remote commands from my sessions",
-    hint: "Commands run as the worker's user in Foundry's scratch folder, or in a workspace on this device the session may work in. Every run is audited. Off by default.",
+    hint: "Commands run as the worker's user in Foundry's scratch folder, or in a workspace on this device the session may work in. Every run is audited. On by default; turn off to stop your sessions on other devices from running commands here.",
     saving: "Saving…",
     notApplied:
       "Saved. It takes effect once {{device}}'s worker is online and up to date.",

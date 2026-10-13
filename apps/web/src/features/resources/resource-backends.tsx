@@ -188,7 +188,9 @@ function CuaDriverSetup({
               <KeyRound aria-hidden="true" size={14} />
               {action.running === "access"
                 ? t("access.requesting", { device: device.label })
-                : t("access.action")}
+                : check?.tone === "error"
+                  ? t("access.retryAction")
+                  : t("access.action")}
             </Button>
           ) : null}
           {panes.map(({ pane }) => (
@@ -230,7 +232,7 @@ function CuaDriverSetup({
             title={t(check.key, { device: device.label })}
             tone="error"
           >
-            <p>{t("access.check.retry")}</p>
+            <p>{t("access.check.retry", { device: device.label })}</p>
           </Alert>
         ) : (
           <p className="fdy-res-status" role="status">

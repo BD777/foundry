@@ -171,7 +171,8 @@ func NewServerWithOptions(store store.Store, options ServerOptions) *Server {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
 		// Messages queued while the device was away go out now.
 		server.kickPendingChatQueues(ctx)
-		server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
+		// Rescans skills until the device goes; it must not hold up the rest.
+		go server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
 		server.resourceLeasesDeviceConnected(ctx, deviceID, capabilities)
 	}
 	server.feishu = feishu.NewWSManager(store, server.secrets, server, stream)

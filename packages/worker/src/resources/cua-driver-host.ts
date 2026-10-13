@@ -98,10 +98,25 @@ function finishedRun(startedAt: number, result: ExecResult): CuaDriverGrantRun {
       };
 }
 
+/**
+ * cua-driver's permission check on `serve` (its "permissions gate") waits
+ * this long for the grants (GateOpts deadline, 10 minutes, in
+ * libs/cua-driver/rust/crates/platform-macos/src/permissions/gate.rs,
+ * github.com/trycua/cua). When it gives up, the daemon keeps running but
+ * answers every request, its permission status included, with
+ * "permissions_pending" until it is restarted (cua-driver/src/main.rs:
+ * "grant ... then restart the daemon"): grants given later never count.
+ */
+const cuaDriverGateWindowMs = 10 * 60_000;
+
+/** When this worker last started CuaDriver's daemon. */
+let daemonStartedAt: number | undefined;
+
 /** Starts CuaDriver's daemon in the background (`open -a CuaDriver`). */
 async function startCuaDriverDaemon(
   run: CommandRunner,
   env: NodeJS.ProcessEnv,
+  now: () => number,
 ): Promise<void> {
   const started = await run(
     "/usr/bin/open",
@@ -112,6 +127,55 @@ async function startCuaDriverDaemon(
     throw new Error(
       `could not start CuaDriver: ${started.stderr.trim() || `exit ${started.code}`}`,
     );
+  daemonStartedAt = now();
+}
+
+/** Stops CuaDriver's daemon (`cua-driver stop`, which waits for it). */
+async function stopCuaDriverDaemon(
+  binary: string,
+  run: CommandRunner,
+  env: NodeJS.ProcessEnv,
+): Promise<void> {
+  const stopped = await run(binary, ["stop"], { env, timeoutMs: 10_000 });
+  if (stopped.code !== 0 && !/not running/i.test(stopped.stderr))
+    throw new Error(
+      `could not restart CuaDriver: ${stopped.stderr.trim() || `exit ${stopped.code}`}`,
+    );
+}
+
+async function readPermissionStatus(host: Host): Promise<string> {
+  const status = await host
+    .run(host.binary, ["permissions", "status", "--json"], {
+      env: host.env,
+      timeoutMs: 3000,
+      maxOutputBytes: 64 * 1024,
+    })
+    .catch(() => undefined);
+  return status?.code === 0 ? status.stdout.trim() : "";
+}
+
+/**
+ * Leaves CuaDriver's daemon with a live permission check before a grant
+ * runs: starts it when none answers; restarts one that has not confirmed
+ * its grants - always ("unconfirmed": the person asked again), or only
+ * when this worker did not start it within the gate window ("stale": its
+ * check may have given up). A fresh daemon asks macOS again and sees
+ * grants given since. One with both grants confirmed is left alone.
+ */
+async function prepareCuaDriverDaemon(
+  host: Host,
+  status: string,
+  restart: "unconfirmed" | "stale",
+): Promise<void> {
+  if (bothGranted(status)) return;
+  if (status && !daemonDown(status)) {
+    const fresh =
+      daemonStartedAt !== undefined &&
+      host.now() - daemonStartedAt < cuaDriverGateWindowMs;
+    if (restart === "stale" && fresh) return;
+    await stopCuaDriverDaemon(host.binary, host.run, host.env);
+  }
+  await startCuaDriverDaemon(host.run, host.env, host.now);
 }
 
 /**
@@ -158,7 +222,14 @@ interface HostOptions {
   now?: () => number;
 }
 
-function hostFor(options: HostOptions) {
+interface Host {
+  env: NodeJS.ProcessEnv;
+  binary: string;
+  run: CommandRunner;
+  now: () => number;
+}
+
+function hostFor(options: HostOptions): Host {
   const platform = options.platform ?? process.platform;
   if (platform !== "darwin") throw new Error("cua-driver runs on macOS only");
   const env = cuaDriverEnv(options.env ?? process.env);
@@ -176,13 +247,15 @@ function hostFor(options: HostOptions) {
 }
 
 /**
- * Asks the person at this Mac for CuaDriver's grants: starts its daemon
- * and runs `cua-driver permissions grant`, which raises macOS's prompts
- * naming CuaDriver and waits (up to about 3 minutes) for them. The wait
- * runs in the background and is tracked (cuaDriverGrantRun); onDone
- * follows it (a rescan). A grant already waiting is not started again.
- * With onChange, the grants are then watched live
- * (watchCuaDriverPermissions). Returns what was opened.
+ * Asks the person at this Mac for CuaDriver's grants: (re)starts its
+ * daemon unless it already confirmed both grants (a daemon whose check
+ * gave up, or that predates a grant, never reports it), then runs
+ * `cua-driver permissions grant`, which raises macOS's prompts naming
+ * CuaDriver, waits (up to about 3 minutes) for them and verifies screen
+ * capture. The wait runs in the background and is tracked
+ * (cuaDriverGrantRun); onDone follows it (a rescan). A grant already
+ * waiting is not started again. With onChange, the grants are then
+ * watched live (watchCuaDriverPermissions). Returns what was opened.
  */
 export async function requestCuaDriverAccess(
   options: HostOptions & {
@@ -192,7 +265,11 @@ export async function requestCuaDriverAccess(
 ): Promise<string[]> {
   const host = hostFor(options);
   if (lastGrantRun?.state !== "running") {
-    await startCuaDriverDaemon(host.run, host.env);
+    await prepareCuaDriverDaemon(
+      host,
+      await readPermissionStatus(host),
+      "unconfirmed",
+    );
     startGrant(host.binary, host.env, host.run, host.now, options.onDone);
   }
   if (options.onChange)
@@ -256,6 +333,8 @@ interface PermissionWatch {
   until: number;
   lastStatus?: string;
   lastGrantAt: number;
+  /** A grant was run to verify grants confirmed after one that did not. */
+  verifying?: boolean;
   timer?: NodeJS.Timeout;
 }
 
@@ -294,12 +373,22 @@ function daemonDown(output: string): boolean {
   }
 }
 
+function grantUnverified(run: CuaDriverGrantRun | undefined): boolean {
+  return (
+    run !== undefined &&
+    run.state !== "running" &&
+    !(run.state === "finished" && run.code === 0)
+  );
+}
+
 /**
  * Re-reads `cua-driver permissions status --json` every 3 s for 3 minutes
  * (extended by each new call) and calls onChange as soon as it changes or
- * a grant run ends; stops once both grants are confirmed. cua-driver keeps
- * its status "unknown" until a `permissions grant` verified it, so while it
- * is unknown and no grant runs, the watch runs one (at most every 15 s).
+ * a grant run ends; stops once both grants are confirmed (after one grant
+ * run that verifies them, when the last run did not). cua-driver reports
+ * "unknown" while no daemon answers or its permission check is still
+ * pending, so then, with no grant running, the watch runs one (at most
+ * every 15 s), first restarting a daemon whose check may have given up.
  */
 export function watchCuaDriverPermissions(
   options: HostOptions & {
@@ -325,18 +414,19 @@ export function watchCuaDriverPermissions(
   const tick = async () => {
     if (permissionWatch !== watch) return;
     if (host.now() > watch.until) return stop();
-    const status = await host
-      .run(host.binary, ["permissions", "status", "--json"], {
-        env: host.env,
-        timeoutMs: 3000,
-        maxOutputBytes: 64 * 1024,
-      })
-      .catch(() => undefined);
+    const output = await readPermissionStatus(host);
     if (permissionWatch !== watch) return;
-    const output = status?.code === 0 ? status.stdout.trim() : "";
     const changed = output !== watch.lastStatus;
     watch.lastStatus = output;
-    if (bothGranted(output)) return stop();
+    if (bothGranted(output)) {
+      // Granted after a run gave up (in System Settings, say): one more run
+      // verifies it, so the page says so instead of the old failure.
+      if (!watch.verifying && grantUnverified(lastGrantRun)) {
+        watch.verifying = true;
+        startGrant(host.binary, host.env, host.run, host.now, options.onChange);
+      }
+      return stop();
+    }
     if (
       lastGrantRun?.state !== "running" &&
       statusUnknown(output) &&
@@ -344,8 +434,7 @@ export function watchCuaDriverPermissions(
     ) {
       watch.lastGrantAt = host.now();
       try {
-        if (!output || daemonDown(output))
-          await startCuaDriverDaemon(host.run, host.env);
+        await prepareCuaDriverDaemon(host, output, "stale");
         startGrant(host.binary, host.env, host.run, host.now, options.onChange);
         options.onChange();
       } catch (error) {
@@ -369,7 +458,8 @@ export function stopCuaDriverPermissionWatch(): void {
   permissionWatch = undefined;
 }
 
-/** Forgets the last grant run (tests). */
+/** Forgets the last grant run and daemon start (tests). */
 export function resetCuaDriverGrantRun(): void {
   lastGrantRun = undefined;
+  daemonStartedAt = undefined;
 }
