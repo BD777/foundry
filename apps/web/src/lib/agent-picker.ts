@@ -78,7 +78,9 @@ function promotedLinks(
         candidate.provider === agent.provider &&
         candidate.profileId === promotedProfileId,
     );
-    if (!serverAgent) {
+    // A promotion that kept the device profile's id projects one agent row,
+    // which the server definition already replaced: nothing to collapse.
+    if (!serverAgent || serverAgent.id === agent.id) {
       continue;
     }
     legacyToServer.set(agent.id, serverAgent.id);

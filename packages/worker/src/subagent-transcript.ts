@@ -18,6 +18,7 @@ import {
   type SubagentUsage,
 } from "@bd777/foundry-protocol";
 import { string } from "./json-values.js";
+import { claudeProcessRunsSubagent } from "./runner/active-runtimes.js";
 
 const maxToolResultCharacters = 6000;
 const maxTranscriptCharacters = 512 * 1024;
@@ -107,6 +108,20 @@ function taskStatus(
         : "running";
 }
 
+/**
+ * How a subagent stands: as its end notification says; without one it runs
+ * only while the Claude process that started it does.
+ */
+function subagentStatus(
+  taskId: string,
+  notification: { status: AgentSubagentSummary["status"] } | undefined,
+): AgentSubagentSummary["status"] {
+  const status = notification?.status ?? "running";
+  return status === "running" && !claudeProcessRunsSubagent(taskId)
+    ? "failed"
+    : status;
+}
+
 function assistantResponseTexts(record: Record<string, unknown>): string[] {
   if (record.type !== "assistant") {
     return [];
@@ -162,7 +177,7 @@ function subagentHeading(
 ): Omit<AgentSubagentSummary, "prompt" | "responseTexts"> {
   return {
     sessionId,
-    status: notification?.status ?? "running",
+    status: subagentStatus(started.taskId, notification),
     subagentType: started.subagentType || undefined,
     taskId: started.taskId,
     title: started.description || notification?.summary || "Subagent",
@@ -489,7 +504,7 @@ export async function readAgentSubagentTranscript(
     messages,
     prompt: prompt || undefined,
     sessionId,
-    status: notification?.status ?? "running",
+    status: subagentStatus(taskId, notification),
     subagentType: string(started.subagent_type) || undefined,
     taskId,
     title: string(started.description) || notification?.summary || "Subagent",

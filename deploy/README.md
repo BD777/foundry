@@ -21,8 +21,8 @@ NAS；其他机器（macOS / Linux）可以作为额外 worker 接入。
 ```
 
 两个容器把**同一个宿主机目录**挂到**同一个容器内路径** `/workspace`，
-所以 worker 注册的工作区路径与服务端视角一致。服务端会直接读写工作区下的
-`.foundry/attachments`，附件上传、图片预览等文件功能依赖这一点。
+所以 worker 注册的工作区路径在两个容器里一致。附件上传、图片预览经设备通道由
+worker 读写，服务端不直接读写工作区文件。
 
 相关文件：
 
@@ -211,9 +211,8 @@ node packages/worker/dist/cli.js setup \
 `--no-service` 只做前台配置。管理命令：
 `foundry-worker status|logs|uninstall-service`。
 
-**已知边界**：这类 worker 注册的路径在它自己的机器上，服务端读不到这些
-文件，因此这些工作区的附件上传、图片预览不可用；需要文件功能时，把仓库放在
-服务端也能以相同路径访问的目录中，交给容器内 worker 处理。
+这类 worker 注册的路径在它自己的机器上；附件上传、图片预览经服务端转发到这台
+worker 读写，与容器内 worker 一样可用。
 
 ---
 

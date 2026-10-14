@@ -10,12 +10,18 @@ import (
 
 // DeviceDisconnected: the device's instances are away (revoked after
 // HostOfflineGrace) and the leases its sessions hold are unattended
-// (parked after HolderDisconnectGrace).
+// (parked after HolderDisconnectGrace). Its agents' own turns are forgotten:
+// its worker tells those still running when it connects again.
 func (l *Leases) DeviceDisconnected(ctx context.Context, deviceID string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.Now().UTC()
 	l.hostOffline[deviceID] = now
+	for sessionID, device := range l.agentTurns {
+		if device == deviceID {
+			delete(l.agentTurns, sessionID)
+		}
+	}
 	state, err := l.load(ctx)
 	if err != nil {
 		return err
@@ -247,7 +253,7 @@ func (l *Leases) Recover(ctx context.Context) error {
 		case info.Status == "failed" || info.Status == "canceled":
 			l.end(state, lease, store.LeaseReleased, "its session's turn ended ("+info.Status+") while the server was down", "foundry", now)
 			continue
-		case !turnRunning(info.Status) && lease.State == store.LeaseActive:
+		case !l.inTurn(lease.HolderSessionID, info.Status) && lease.State == store.LeaseActive:
 			lease.State = store.LeaseParked
 			lease.ParkUntil = l.parkUntil(state, lease, now)
 		}

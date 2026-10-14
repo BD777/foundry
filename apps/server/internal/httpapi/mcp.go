@@ -12,12 +12,15 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
-// Remote MCP surface (P2): the same orchestration tools as the stdio `foundry
-// mcp`, served over Streamable HTTP so an agent outside the device can drive a
-// public Foundry deployment behind TLS. Authentication is the existing Bearer
-// chain (session token or browser control token); OAuth 2.1 arrives with the
-// accounts system. Responses are plain JSON-RPC over HTTP — sufficient for the
-// request/response tool set; long waits are bounded server-side polls.
+// The Foundry tools over MCP's Streamable HTTP (POST /api/mcp): one catalog
+// (mcp_tools.json) and one policy for every caller, whether the stdio bridge
+// `foundry mcp` and the `foundry` CLI on a device (packages/worker
+// foundry-mcp.ts, foundry-client.ts) or a remote MCP client. Callers
+// authenticate as on any route: a session token acts as the account that
+// started its session, its role narrowing the tools (mcpToolAvailability);
+// a device credential or a signed-in person acts as that account. Each tool
+// checks the caller's reach itself. Responses are plain JSON-RPC over HTTP;
+// long waits are server-side polls bounded by maxMCPWaitMs.
 
 const mcpProtocolVersion = "2025-06-18"
 
@@ -152,9 +155,8 @@ func readOnlyMCPTool(name string) bool {
 }
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
-	// The session-token endpoint surface restriction does not apply to the
-	// /api/mcp path itself; the tools below enforce the same policy using the
-	// actor. Browser control tokens retain full access.
+	// Session tokens reach this route (agentRouteAllowed); each tool checks
+	// the actor's reach itself.
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "POST required")
 		return

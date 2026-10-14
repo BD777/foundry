@@ -28,6 +28,7 @@ import {
 import {
   activeClaudeRuntimes,
   activeCodexThreads,
+  reportClaudeOwnTurn,
   type ActiveClaudeRuntime,
   type ActiveClaudeTurn,
 } from "../session-state.js";
@@ -248,6 +249,7 @@ export function closeActiveClaudeRuntime(
   );
   runtime.background?.close();
   runtime.continuation = undefined;
+  reportClaudeOwnTurn(runtime);
   if (turn) {
     turn.liveness.close();
     if (turn.deliveredResponse !== undefined)
@@ -309,6 +311,18 @@ function claudeRuntimeForSession(
     if (runtime.foundrySessionId === sessionId && !runtime.closed)
       return runtime;
   return undefined;
+}
+
+/**
+ * Whether a live Claude process of this worker runs the subagent. One that
+ * ended (closed, crashed, replaced, or gone with an earlier worker) took its
+ * subagents along, whether or not they reported their end.
+ */
+export function claudeProcessRunsSubagent(taskId: string): boolean {
+  for (const runtime of activeClaudeRuntimes.values())
+    if (!runtime.closed && runtime.background?.runsSubagent(taskId))
+      return true;
+  return false;
 }
 
 /** Whether a session's agent process still runs background work. */

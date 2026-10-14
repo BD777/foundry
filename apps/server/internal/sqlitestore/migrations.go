@@ -23,6 +23,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.backfillAgentSessionThreadIDs,
 		s.indexAgentSessionThreads,
 		s.setupProfiles,
+		s.addProfileContextWindowsColumn,
 		s.setupSkillCatalog,
 		s.migrateSessionUsageBackfills,
 		s.migrateNativeSessions,
@@ -41,6 +42,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// is not handed out again.
 		s.raiseIssueSequence,
 		s.pruneOrphanedRows,
+		s.setupProfilePromotions,
 	}
 	for _, step := range steps {
 		if err := step(ctx); err != nil {

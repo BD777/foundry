@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -67,12 +68,44 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 	}
 	input.ConnectionType = profileConnectionType(input.Runtime, input.AuthMode)
 	if input.AuthMode == "official" {
+		// An official login runs with the CLI's own windows.
 		input.BaseURL = ""
+		input.ContextWindows = nil
 		return ""
+	}
+	if message := normalizeContextWindows(input); message != "" {
+		return message
 	}
 	if input.BaseURL == "" {
 		return "baseUrl is required for custom profiles"
 	}
+	return ""
+}
+
+// Bounds of a context window a person may set (protocol model-context.ts).
+const (
+	minProfileContextWindow = 1_000
+	maxProfileContextWindow = 10_000_000
+)
+
+// normalizeContextWindows trims the model ids of the per-model windows and
+// rejects a window outside the bounds.
+func normalizeContextWindows(input *store.SaveProfileInput) string {
+	if input.ContextWindows == nil {
+		return ""
+	}
+	cleaned := make(map[string]int64, len(input.ContextWindows))
+	for model, tokens := range input.ContextWindows {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return "contextWindows needs a model id for every window"
+		}
+		if tokens < minProfileContextWindow || tokens > maxProfileContextWindow {
+			return fmt.Sprintf("contextWindows: %s must be between %d and %d tokens", model, minProfileContextWindow, maxProfileContextWindow)
+		}
+		cleaned[model] = tokens
+	}
+	input.ContextWindows = cleaned
 	return ""
 }
 
@@ -132,9 +165,13 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if _, err := s.store.GetProfile(r.Context(), id); err != nil {
+	current, err := s.store.GetProfile(r.Context(), id)
+	if err != nil {
 		writeProfileResult(w, store.ProfileDefinition{}, err)
 		return
+	}
+	if input.ContextWindows == nil {
+		input.ContextWindows = current.ContextWindows
 	}
 	input.ID = id
 	s.saveProfile(w, r, input, http.StatusOK)
@@ -227,25 +264,27 @@ func (s *Server) handleClearProfileCredential(w http.ResponseWriter, r *http.Req
 	writeResult(w, profile, nil)
 }
 
-// handlePromoteProfile lifts a daemon-discovered profile into a server profile.
-// A credential the server already holds moves with it untouched: the record is
-// renamed under the server-scoped id, so no one has to retype a key that the
-// server can already unseal.
+// handlePromoteProfile copies an API provider from a device's own Claude Code
+// or Codex configuration into a server profile, or updates the profile it was
+// promoted into before. The device's configuration is never modified. The key
+// is copied only with the person's explicit confirmation (input.CopyKey), and
+// only the one the provider's configuration names.
 func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 	var input store.PromoteProfileInput
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
-		return
-	}
 	deviceID := strings.TrimSpace(input.DeviceID)
-	profileID := strings.TrimSpace(input.ProfileID)
-	if deviceID == "" || profileID == "" {
+	sourceID := strings.TrimSpace(input.ProfileID)
+	if deviceID == "" || sourceID == "" {
 		writeError(w, http.StatusBadRequest, "deviceId and profileId are required")
 		return
 	}
-	source, err := s.deviceProfileProjection(r.Context(), deviceID, profileID)
+	if !s.requireDeviceOwner(w, r, deviceID) {
+		return
+	}
+	ctx := r.Context()
+	source, err := s.deviceProfileProjection(ctx, deviceID, sourceID)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -254,115 +293,191 @@ func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "local_login, env and custom_command profiles describe machine-local state and cannot be promoted to a server profile")
 		return
 	}
-	if !secretsConfigured(s.store) {
-		writeError(w, http.StatusBadRequest, "promoting a profile moves its credential to the server; start the server with FOUNDRY_SECRET_KEY_PATH")
+	if input.CopyKey && !secretsConfigured(s.store) {
+		writeError(w, http.StatusBadRequest, "copying the key needs the server secret store; start the server with FOUNDRY_SECRET_KEY_PATH")
 		return
 	}
-	saveInput := store.SaveProfileInput{
-		OwnerUserID:          actorFromContext(r.Context()).AccountID(),
-		ID:                   profileID,
-		Runtime:              source.Runtime,
-		Label:                source.Label,
-		ConnectionType:       source.ConnectionType,
-		BaseURL:              source.BaseURL,
-		Model:                source.Model,
-		Models:               source.Models,
-		PromptPrefix:         source.PromptPrefix,
-		ClaudeEffort:         source.ClaudeEffort,
-		ClaudePermissionMode: source.ClaudePermissionMode,
-		CodexReasoningEffort: source.CodexReasoningEffort,
-		CodexSandboxMode:     source.CodexSandboxMode,
-		CodexApprovalPolicy:  source.CodexApprovalPolicy,
-		CodexSpeed:           source.CodexSpeed,
+	saveInput, existing, err := s.promotionSaveInput(ctx, deviceID, source)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
 	}
+	saveInput.OwnerUserID = actorFromContext(ctx).AccountID()
 	if message := normalizeProfileInput(&saveInput); message != "" {
 		writeError(w, http.StatusBadRequest, message)
 		return
 	}
-	// Two devices can report unrelated profiles under the same local id, so an
-	// id already taken by a different profile mints a fresh one instead of
-	// overwriting someone else's configuration.
-	if _, err := s.store.GetProfile(r.Context(), profileID); err == nil {
-		saveInput.ID = ""
-	} else if !errors.Is(err, store.ErrProfileNotFound) {
-		writeResult(w, nil, err)
-		return
+	// The key is read before anything is written, so a key that cannot be read
+	// leaves no half-promoted profile behind.
+	var key promotionKey
+	if input.CopyKey {
+		key, err = s.readPromotionKey(ctx, deviceID, sourceID)
+		if err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, errPromotionKeyUnavailable) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, err.Error())
+			return
+		}
 	}
-	profile, err := s.store.SaveProfile(r.Context(), saveInput)
+	profile, err := s.store.SaveProfile(ctx, saveInput)
 	if err != nil {
 		writeProfileResult(w, store.ProfileDefinition{}, err)
 		return
 	}
-	if err := s.adoptPromotedCredential(r.Context(), deviceID, profileID, profile.ID); err != nil {
-		// A promoted profile with no credential authenticates nowhere, so the
-		// half-finished record is removed instead of being left behind for
-		// someone to debug later.
-		_ = s.store.DeleteProfile(r.Context(), profile.ID)
-		status := http.StatusBadGateway
-		if errors.Is(err, errDeviceHoldsNoCredential) {
-			status = http.StatusBadRequest
+	if input.CopyKey {
+		if err := s.storePromotionKey(ctx, key, profile.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
-		writeError(w, status, err.Error())
-		return
 	}
-	// The user is promoting a profile they already run on this machine, so the
-	// device keeps it: without a binding the promoted profile would vanish from
-	// every view until someone hunted down a checkbox.
-	if err := s.enableProfileOnDevice(r.Context(), deviceID, profile.ID); err != nil {
+	if err := s.store.SaveProfilePromotion(ctx, store.ProfilePromotion{
+		ProfileID:       profile.ID,
+		DeviceID:        deviceID,
+		SourceProfileID: sourceID,
+	}); err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	profile.HasCredential = s.profileHasCredential(r.Context(), profile.ID)
+	// The person runs this provider on the device already, so the device keeps
+	// it: without a binding the promoted profile would vanish from its views.
+	if err := s.enableProfileOnDevice(ctx, deviceID, profile.ID); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
+	if profile, err = s.store.GetProfile(ctx, profile.ID); err != nil {
+		writeProfileResult(w, store.ProfileDefinition{}, err)
+		return
+	}
+	profile.HasCredential = s.profileHasCredential(ctx, profile.ID)
 	s.projectionsChanged("", connectionFields...)
-	writeResultWithStatus(w, http.StatusCreated, profile, nil)
+	status := http.StatusCreated
+	if existing {
+		status = http.StatusOK
+	}
+	writeResultWithStatus(w, status, profile, nil)
 }
 
-// errDeviceHoldsNoCredential reports a device that cannot hand over a key for
-// the profile being promoted, which makes the promotion pointless rather than
-// broken infrastructure.
-var errDeviceHoldsNoCredential = errors.New(
-	"this device holds no API key for the profile, so promoting it would create a profile that cannot authenticate anywhere",
-)
+// promotionSaveInput shapes what promotion writes. A provider promoted before
+// updates its profile: the copied fields follow the device, while what the
+// person set on the server since (efforts, permissions, added models) stays.
+// A first promotion keeps the device's id when it is free; two devices can
+// report unrelated providers under one id, so a taken id mints a fresh one.
+func (s *Server) promotionSaveInput(ctx context.Context, deviceID string, source store.AgentProfileProjection) (store.SaveProfileInput, bool, error) {
+	copied := store.SaveProfileInput{
+		Runtime:        source.Runtime,
+		Label:          source.Label,
+		ConnectionType: source.ConnectionType,
+		BaseURL:        source.BaseURL,
+		Model:          source.Model,
+		Models:         source.Models,
+	}
+	profileID, err := s.store.ProfilePromotionFor(ctx, deviceID, source.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		copied.ID = source.ID
+		copied.PromptPrefix = source.PromptPrefix
+		copied.ClaudeEffort = source.ClaudeEffort
+		copied.ClaudePermissionMode = source.ClaudePermissionMode
+		copied.CodexReasoningEffort = source.CodexReasoningEffort
+		copied.CodexSandboxMode = source.CodexSandboxMode
+		copied.CodexApprovalPolicy = source.CodexApprovalPolicy
+		copied.CodexSpeed = source.CodexSpeed
+		if _, err := s.store.GetProfile(ctx, source.ID); err == nil {
+			copied.ID = ""
+		} else if !errors.Is(err, store.ErrProfileNotFound) {
+			return store.SaveProfileInput{}, false, err
+		}
+		return copied, false, nil
+	}
+	if err != nil {
+		return store.SaveProfileInput{}, false, err
+	}
+	current, err := s.store.GetProfile(ctx, profileID)
+	if err != nil {
+		return store.SaveProfileInput{}, false, err
+	}
+	updated := profileSaveInput(current)
+	updated.Runtime = copied.Runtime
+	updated.Label = copied.Label
+	updated.ConnectionType = copied.ConnectionType
+	updated.BaseURL = copied.BaseURL
+	if copied.Model != "" {
+		updated.Model = copied.Model
+	}
+	updated.Models = append(append([]string{}, copied.Models...), current.Models...)
+	return updated, true, nil
+}
 
-// adoptPromotedCredential moves the device profile's credential onto the new
-// server profile. Renaming an already sealed record needs no user input: the
-// server unseals with its own key and reseals under the new id. Otherwise the
-// daemon is asked for the key this machine uses, because a server profile
-// without a credential cannot authenticate on any device.
-func (s *Server) adoptPromotedCredential(ctx context.Context, deviceID string, sourceProfileID string, profileID string) error {
-	if !secretsConfigured(s.store) {
-		return nil
+// profileSaveInput is a stored profile as the input that saves it unchanged.
+func profileSaveInput(profile store.ProfileDefinition) store.SaveProfileInput {
+	return store.SaveProfileInput{
+		ID:                   profile.ID,
+		Runtime:              profile.Runtime,
+		Label:                profile.Label,
+		AuthMode:             profile.AuthMode,
+		ConnectionType:       profile.ConnectionType,
+		BaseURL:              profile.BaseURL,
+		Model:                profile.Model,
+		Models:               profile.Models,
+		ContextWindows:       profile.ContextWindows,
+		PromptPrefix:         profile.PromptPrefix,
+		ClaudeEffort:         profile.ClaudeEffort,
+		ClaudePermissionMode: profile.ClaudePermissionMode,
+		CodexReasoningEffort: profile.CodexReasoningEffort,
+		CodexSandboxMode:     profile.CodexSandboxMode,
+		CodexApprovalPolicy:  profile.CodexApprovalPolicy,
+		CodexSpeed:           profile.CodexSpeed,
+		OwnerUserID:          profile.OwnerUserID,
 	}
-	legacyID := agentProfileSecretID(deviceID, sourceProfileID)
-	targetID := serverProfileSecretID(profileID)
-	if legacyID != targetID {
-		stored, err := s.store.HasSecret(ctx, legacyID)
-		if err != nil {
-			return err
-		}
-		if stored {
-			return s.store.RenameSecret(ctx, legacyID, targetID)
-		}
-	}
-	if stored, err := s.store.HasSecret(ctx, targetID); err != nil {
-		return err
+}
+
+// errPromotionKeyUnavailable reports a key the provider's configuration does
+// not name or the device does not have: the person's setup, not a fault.
+var errPromotionKeyUnavailable = errors.New("no key to copy")
+
+// promotionKey is the credential promotion seals: either a key the server
+// already holds for the device provider (moved, never re-read) or the value
+// the device read.
+type promotionKey struct {
+	sealedID string
+	value    string
+}
+
+// readPromotionKey gets the provider's key for sealing. A key the server
+// already holds for this device provider is moved as it is. Otherwise the
+// device reads the one key the provider's configuration names; the request
+// names the provider, never a variable, so no other value can be asked for.
+func (s *Server) readPromotionKey(ctx context.Context, deviceID string, sourceID string) (promotionKey, error) {
+	sealedID := agentProfileSecretID(deviceID, sourceID)
+	if stored, err := s.store.HasSecret(ctx, sealedID); err != nil {
+		return promotionKey{}, err
 	} else if stored {
-		return nil
+		return promotionKey{sealedID: sealedID}, nil
 	}
-
 	requestCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	credential, err := s.hub.ReadProfileCredential(requestCtx, deviceID, sourceProfileID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return errors.New("local daemon is not connected")
-		}
-		return err
+	keySource, credential, err := s.hub.ReadProviderKey(requestCtx, deviceID, sourceID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return promotionKey{}, errors.New("the device is not connected, so its key cannot be read")
+	case errors.Is(err, context.DeadlineExceeded):
+		return promotionKey{}, errors.New("the device did not answer the key request; update its worker and try again")
+	case err != nil:
+		return promotionKey{}, err
+	case keySource == "":
+		return promotionKey{}, fmt.Errorf("%w: this provider's configuration names no key", errPromotionKeyUnavailable)
+	case strings.TrimSpace(credential) == "":
+		return promotionKey{}, fmt.Errorf("%w: %s has no value on the device", errPromotionKeyUnavailable, keySource)
 	}
-	if strings.TrimSpace(credential) == "" {
-		return errDeviceHoldsNoCredential
+	return promotionKey{value: strings.TrimSpace(credential)}, nil
+}
+
+func (s *Server) storePromotionKey(ctx context.Context, key promotionKey, profileID string) error {
+	if key.sealedID != "" {
+		return s.store.RenameSecret(ctx, key.sealedID, serverProfileSecretID(profileID))
 	}
-	return s.sealServerProfileCredential(ctx, profileID, credential)
+	return s.sealServerProfileCredential(ctx, profileID, key.value)
 }
 
 func (s *Server) handleSetDeviceProfiles(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +491,13 @@ func (s *Server) handleSetDeviceProfiles(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	input.DeviceID = deviceID
+	if message, err := s.deviceBoundConflict(r.Context(), deviceID, input.ProfileIDs); err != nil {
+		writeResult(w, nil, err)
+		return
+	} else if message != "" {
+		writeError(w, http.StatusBadRequest, message)
+		return
+	}
 	if err := s.store.SetDeviceProfiles(r.Context(), input); err != nil {
 		writeProfileResult(w, store.ProfileDefinition{}, err)
 		return
@@ -387,6 +509,38 @@ func (s *Server) handleSetDeviceProfiles(w http.ResponseWriter, r *http.Request)
 	}
 	s.projectionsChanged("", connectionFields...)
 	writeResult(w, bindings, nil)
+}
+
+// deviceBoundConflict refuses to newly enable, on another device, a profile
+// promoted from a provider at its device's own loopback address: no other
+// device reaches that address. A binding that already exists is left alone,
+// so one stale row never blocks every later change to the device's set.
+func (s *Server) deviceBoundConflict(ctx context.Context, deviceID string, profileIDs []string) (string, error) {
+	current, err := s.store.ListDeviceProfiles(ctx, deviceID)
+	if err != nil {
+		return "", err
+	}
+	enabled := map[string]bool{}
+	for _, binding := range current {
+		enabled[binding.ProfileID] = binding.Enabled
+	}
+	for _, profileID := range profileIDs {
+		profileID = strings.TrimSpace(profileID)
+		if profileID == "" || enabled[profileID] {
+			continue
+		}
+		profile, err := s.store.GetProfile(ctx, profileID)
+		if errors.Is(err, store.ErrProfileNotFound) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if from := profile.PromotedFrom; from != nil && from.DeviceBound && from.DeviceID != deviceID {
+			return profile.Label + " calls " + profile.BaseURL + ", the loopback address of the device it was promoted from, so it can run only on that device", nil
+		}
+	}
+	return "", nil
 }
 
 // writeProfileResult maps a missing profile onto 404; everything else follows
@@ -823,9 +977,9 @@ func serverAgentRow(workspace store.WorkspaceProjection, device store.DeviceProj
 }
 
 // markPromotedDeviceProfile flags the daemon-reported row that describes the
-// same endpoint as a server profile. Matching is by id or by endpoint, because
-// promotion reuses the daemon's id while a profile discovered later only
-// matches on runtime and base URL.
+// same endpoint as a server profile. Matching is by the recorded promotion
+// source, by id or by endpoint: promotion reuses the daemon's id when it is
+// free, while a profile discovered later only matches on runtime and base URL.
 func markPromotedDeviceProfile(rows []store.AgentProfileProjection, deviceID string, profile store.ProfileDefinition) []store.AgentProfileProjection {
 	for i := range rows {
 		row := rows[i]
@@ -835,7 +989,10 @@ func markPromotedDeviceProfile(rows []store.AgentProfileProjection, deviceID str
 		sameEndpoint := row.Runtime == profile.Runtime &&
 			row.BaseURL != "" &&
 			row.BaseURL == profile.BaseURL
-		if row.ID == profile.ID || sameEndpoint {
+		promotedFrom := profile.PromotedFrom != nil &&
+			profile.PromotedFrom.DeviceID == deviceID &&
+			profile.PromotedFrom.ProfileID == row.ID
+		if row.ID == profile.ID || sameEndpoint || promotedFrom {
 			rows[i].PromotedProfileID = profile.ID
 		}
 	}

@@ -69,6 +69,26 @@ export const profiles: Translation<typeof en> = {
     create: "创建模型服务",
     save: "保存模型服务",
   },
+  contextWindows: {
+    title: "上下文窗口",
+    intro:
+      "每个模型按这里设置的窗口运行。留空时，优先用端点模型列表报告的窗口；名称是 Claude 或 GPT 模型时用官方窗口；否则用 1M。",
+    noModels: "先在上方添加模型，再设置它的上下文窗口。",
+    catalogUnread: "还没有读取端点自己报告的窗口。",
+    catalogUnavailable:
+      "连接一台设备后才能读取端点自己报告的窗口；在此之前显示官方窗口和默认窗口。",
+    readCatalog: "读取端点窗口",
+    automatic: "自动：{{tokens}} · {{source}}",
+    source: {
+      setting: "你的设置",
+      endpoint: "端点模型列表",
+      official: "官方模型",
+      default: "默认",
+    },
+    inputLabel: "{{model}} 的上下文窗口",
+    placeholder: "自动",
+    invalid: "请输入 token 数，例如 200000、200K 或 1M（1K 到 10M）。",
+  },
   catalog: {
     asking: "正在请求模型目录…",
     changed: "模型服务已改动。请重新刷新以获取当前目录。",
@@ -92,6 +112,8 @@ export const profiles: Translation<typeof en> = {
     assignLabel: "把 {{connection}} 分配给 {{device}}",
     assign: "分配",
     updateFailed: "无法更新设备访问。",
+    deviceBound:
+      "只在 {{device}} 上运行：{{address}} 是那台设备自己的地址，其他设备无法访问。",
   },
   deviceConnections: {
     title: "服务器上的模型服务",
@@ -120,14 +142,47 @@ export const profiles: Translation<typeof en> = {
     ready: "可直接使用",
     from: "来自 {{source}}",
     answered: "{{time}} 验证",
-    onServer: "已复制到服务器",
-    copyToServer: "复制到服务器",
-    copyConfirm: "复制模型服务和密钥？",
-    copying: "复制中…",
-    copyFailed: "无法把这个 Provider 复制到服务器。",
+    actions: "{{name}} 的操作",
+    promote: "提升为模型服务…",
+    updatePromotion: "更新到模型服务…",
+    promoted: "已提升为模型服务",
+    openPromoted: "在模型服务中打开 {{name}}",
     checking: "正在验证 {{names}} 能否正常回复…",
     notAnswering:
       "未提供：{{name}} 无法回复（{{reason}}）。如果不再使用，可以从 {{source}} 中删除。",
+  },
+  promotion: {
+    title: "把 {{name}} 提升为模型服务",
+    updateTitle: "更新模型服务中的 {{name}}",
+    description:
+      "把这个 Provider 从 {{device}} 的配置复制为服务器上的模型服务，之后聊天使用服务器上的这份。{{source}} 不会被修改。",
+    updateDescription:
+      "把这个 Provider 再次复制到之前提升成的模型服务，而不是新增一个。之后在那里改过的设置会保留。{{source}} 不会被修改。",
+    copied: "复制的内容",
+    name: "名称",
+    agent: "Agent",
+    baseUrl: "Base URL",
+    api: "API",
+    claudeApi: "Anthropic Messages API",
+    codexApi: "OpenAI Responses API",
+    defaultModel: "默认模型",
+    agentDefault: "Agent 的默认模型",
+    models: "模型",
+    key: "API 密钥",
+    copyKey: "同时复制 {{source}} 中的密钥",
+    copyKeyHint:
+      "{{device}} 只读取这一个值，由服务器加密保存，绝不会显示在浏览器中。",
+    keyKept: "不勾选时，模型服务已有的密钥保持不变。",
+    noKey: "这个 Provider 的配置没有指定 API 密钥，因此不会复制密钥。",
+    keyOffline: "{{device}} 当前离线，暂时无法读取它的密钥。",
+    devices: "设备",
+    loopback:
+      "{{address}} 是 {{device}} 自己的地址，其他设备无法访问，因此这个模型服务只在 {{device}} 上运行。",
+    shareable: "它会在 {{device}} 上启用。你可以在“模型服务”中为其他设备启用。",
+    promote: "提升",
+    update: "更新",
+    promoting: "正在提升…",
+    failed: "无法提升这个 Provider。",
   },
   assignment: {
     title: "选择模型服务",

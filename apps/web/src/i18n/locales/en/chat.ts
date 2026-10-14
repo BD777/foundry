@@ -339,6 +339,16 @@ export const chat = {
       full: "Context full; the agent compacts it or the next request may fail.",
       model: "Model",
       modelValue: "{{model}} · {{effort}}",
+      window: "Context window",
+      windowValue: "{{window}} · {{source}}",
+      windowAdjusted:
+        "{{window}} · the runtime's own (set {{configured}}, {{source}})",
+      windowSource: {
+        setting: "your setting",
+        endpoint: "endpoint model list",
+        official: "official model",
+        default: "default",
+      },
       defaultModel: "Connection default",
       account: "Account",
       device: "Device",

@@ -64,3 +64,8 @@ export function navigateToSkills(): void {
 export function navigateToFoundrySkill(): void {
   navigateAppRoute({ view: "foundrySkill" });
 }
+
+/** Opens Model providers with one provider's editor open. */
+export function navigateToModelProvider(profileId: string): void {
+  navigateAppRoute({ view: "profiles" }, undefined, { provider: profileId });
+}

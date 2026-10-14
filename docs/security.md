@@ -97,12 +97,11 @@ configuration. Without a secret-store key, custom credentials are rejected
 rather than degraded to plaintext storage.
 
 Official account profiles use the native agent CLI login instead of moving an
-OAuth credential through Foundry. Claude authorization runs `claude auth login`;
-Codex authorization runs `codex login --device-auth`. The CLI owns its keychain
-or local credential file. A server profile stores only the official/custom mode
-and runtime defaults, so each device must authorize its own official login.
-Foundry relays only the authorization URL, one-time device code, completion
-status, and an optional callback code supplied by the user; it never reads or
+OAuth credential through Foundry. The person signs in on the device itself
+(`claude`, then `/login`; or `codex login`); Foundry starts no login and relays
+no authorization code. The CLI owns its keychain or local credential file. A
+server profile stores only the official/custom mode and runtime defaults, so
+each device must authorize its own official login. Foundry never reads or
 stores the resulting OAuth tokens.
 
 Model catalogs are the one provider HTTP call Foundry makes: a profile's configured endpoint is asked for `/models` with the key
@@ -130,20 +129,33 @@ promoted to server profiles. A native local-login profile may be represented by 
 profile, but its authorization remains device-local and must be repeated on
 each enabled device.
 
-`POST /api/profiles/promote` converts a device profile into a server profile.
-Only the device owner may call it, and the server needs a secret-store key.
-Two credential paths exist:
+`POST /api/profiles/promote` copies an API provider from a device's own
+Claude Code / Codex configuration into a server profile (label, runtime, base
+URL, models) or, for a provider promoted before, updates that profile; the
+source is recorded as device id + the provider's id there
+(`profile_promotions`). The device's configuration is never modified. Only the
+device owner (or an admin, for an unowned device) may call it. A key is copied
+only when the request carries `copyKey`, which the web sends only after the
+person ticks it in the confirmation dialog:
 
 - the credential is already sealed server-side under the legacy device-scoped
   id `agent-profile:<deviceID>:<profileID>`. The server unseals with its own
-  KEK and reseals under `agent-profile:<profileID>`. No plaintext leaves the
-  machine that did not already leave it, so this path needs no consent.
-- the credential exists only in the daemon's local file. Promotion is then the
-  explicit act that moves it to the server: the server requests it over the
-  daemon socket (`read_profile_credential` / `profile_credential_read`), seals
-  it on arrival, and never logs or echoes it. A device that holds no key for
-  the profile fails the promotion instead of creating a profile that cannot
-  authenticate.
+  KEK and reseals under `agent-profile:<profileID>`.
+- otherwise the server asks the device over the daemon socket
+  (`read_provider_key` / `provider_key_read`) for the key that provider's own
+  configuration names (Codex `env_key`, a bearer token or Authorization header
+  in config.toml, `env.ANTHROPIC_AUTH_TOKEN`/`_API_KEY` in Claude's settings,
+  or the key in Foundry's profiles file). The request names the provider,
+  never a variable, and nothing else in the daemon's environment stands in
+  for it. The value is sealed on arrival and never logged, echoed or returned
+  to the browser; the device list reports only the key's name (`keySource`).
+  A provider that names no key, or whose key is empty, fails a confirmed copy
+  before anything is written. Without `copyKey` no key is read, and a key the
+  profile already holds stays.
+
+A provider whose base URL is a loopback address (localhost, 127.0.0.0/8,
+::1) stays bound to the device it was promoted from: the server refuses to
+enable it on any other device.
 
 ## Secret Store
 
@@ -188,7 +200,12 @@ Uploaded attachments are stored under a registered workspace's `.foundry/attachm
 - cap served images at 25 MiB;
 - disable browser caching.
 
-Multipart attachment uploads are capped at 100 MiB per request.
+Multipart attachment uploads are capped at 100 MiB per request. Files a
+Workspace Bot receives in Feishu messages (images, files, voice, video, images
+and videos inside rich text) are downloaded by the server with the bot app's own token and
+stored the same way, within the same 100 MiB per message
+(`apps/server/internal/feishu/message_files.go`); types it cannot carry, such
+as stickers, reach the session as a short marker like `[sticker]`.
 
 A session's files are read only through its ledger,
 `<workspace>/.foundry/sessions/<id>/files.json` (owner-only, like other
@@ -249,6 +266,85 @@ chosen:
   keychain or a root/other-user-owned helper the worker talks to, so the
   agent's user cannot read it directly. Does not protect other processes'
   environments without isolation.
+
+## External Accounts (Connectors)
+
+A person's logins at third-party platforms (today Feishu, used through
+feishu-cli) live on the server, never on a device
+(`apps/server/internal/externalaccounts`, routes in
+`httpapi/external_accounts.go`).
+
+- Apps: a pasted Feishu app, or one Foundry registers for the person, is
+  theirs; only an Admin creates an instance-wide app. Its secret is sealed under
+  `external-app:<appID>` right after the row exists and is never returned by
+  any API; only the app's owner (or an Admin, for an instance app) replaces
+  it. Apps whose secret older workers received are flagged for rotation.
+- Logins: the server runs the OAuth device flow itself; the person approves
+  in Feishu. A login always asks for `offline_access`, and a grant without a
+  refresh token is refused. The grant is sealed under
+  `external-account:<accountID>`; the server is its only refresher (Feishu
+  refresh tokens are single-use), and keep-alive (on by default) renews it
+  before it lapses.
+- Ownership: only an account's owner sees, refreshes, revokes or disconnects
+  it. Workspace bindings are read by Viewers and set by Maintainers, and a
+  person binds only their own accounts; bindings and their changes are
+  audited (`external_account_events`).
+- Lending to sessions: a session may act as an account only while
+  `externalaccounts.Eligible` holds: the session was started by the account's
+  owner, on a device that owner owns, in a workspace the account is bound to,
+  and the account is ready or expiring. Issue executions and clarifications
+  (sandboxed HOME) get no account, nor does a worker without the gateway
+  forwarder. The session receives only gateway stand-ins (below), written into
+  a feishu-cli profile of its own that the worker removes when the run ends
+  (`packages/worker/src/external-accounts.ts`).
+- Revoke ("stop using now") revokes the grant at Feishu and deletes it here;
+  disconnect also removes the account and its bindings. Either way the
+  gateway refuses the account's stand-ins from the next call on.
+
+## Feishu Gateway
+
+Sessions reach Feishu only through `/api/feishu-gw`
+(`apps/server/internal/feishugateway`, wired in
+`httpapi/external_accounts_gateway.go`), so no app secret or Feishu token is
+ever sent to a device.
+
+- Stand-ins: per session and account the server issues an app-secret handle
+  `fsg_` (32 random bytes) and derives the user-token (`fsu_`), refresh
+  (`fsr_`) and tenant-token (`fst_`) handles from it by HMAC. Only their
+  SHA-256 hashes are stored. feishu-cli holds them in place of the real
+  values, with its base URL on the worker's loopback forwarder
+  (`packages/worker/src/feishu-gateway-forwarder.ts`, `127.0.0.1` only),
+  which adds the device credential and pipes each request to the gateway.
+- Every request is authorized afresh: the route accepts only a device
+  credential; the handle must name a live grant for that same device; the
+  session must still be queued, running or blocked on it, started by the
+  account's owner; and the account must still be `Eligible`. An ended session,
+  a revoked or disconnected account, or a removed binding is refused on the
+  next request, whatever expiry feishu-cli was told (30 days).
+- The gateway answers feishu-cli's tenant-token call and its user-token
+  refresh itself, with the same stand-ins; it never returns a real token.
+  Forwarded calls get the real token swapped in (the user's from the
+  externalaccounts service, the app's tenant token fetched with the sealed
+  secret and cached), with the device credential, cookies and forwarder
+  header stripped.
+- Scope: calls pass within what Feishu grants the account's login or the app;
+  the gateway does not widen or narrow scopes. It refuses only
+  (`feishugateway/policy.go`): `auth/` and `authen/` (except
+  `authen/v1/user_info`), writes under `application/`, `admin/`, `passport/`
+  and `security_and_compliance/`, and every path outside `/open-apis/` but
+  its event endpoints, so sessions cannot log in, mint tokens, register apps
+  or reconfigure the tenant.
+- Limits and audit: per session 20 calls/s (burst 60), per app 50 calls/s
+  (burst 150), before Feishu's own limits. One audit line per request (method, path
+  with ids replaced by `:id`, identity, outcome, bytes, duration; never
+  bodies), kept 30 days; people read their own sessions' lines, an Admin
+  everyone's. Grants of ended sessions are pruned hourly.
+- Events: `feishu-cli event consume` connects to an emulated long-connection
+  endpoint fed by the server's single connection per app
+  (`apps/server/internal/feishuevents/socket.go`), with a single-use ticket
+  valid for a minute; the socket is re-checked and closes when access ends.
+- With integrations off (`FOUNDRY_INTEGRATIONS=off`) nothing is forwarded to
+  Feishu.
 
 ## Protocol Validation
 

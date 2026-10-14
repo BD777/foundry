@@ -109,17 +109,41 @@ test("compatible Codex routing pins the chosen endpoint and native credential va
     apiKey: "fixture-key",
     baseUrl: "https://gateway.invalid/v1",
   };
-  assert.deepEqual(codexProfileConfig(profile), {
-    model_provider: "openai",
-    openai_base_url: "https://gateway.invalid/v1",
+  const env = codexSessionEnvironment("/tmp", profile);
+  assert.equal(env.CODEX_API_KEY, "fixture-key");
+  // Its own provider, not the built-in openai one that tries the Responses
+  // WebSocket first.
+  assert.deepEqual(codexProfileConfig({ ...profile, id: "gw.1" }, env), {
+    model_provider: "foundry_gw_1",
+    model_providers: {
+      foundry_gw_1: {
+        name: "foundry_gw_1",
+        base_url: "https://gateway.invalid/v1",
+        wire_api: "responses",
+        env_key: "CODEX_API_KEY",
+        supports_websockets: false,
+      },
+    },
   });
-  assert.equal(
-    codexSessionEnvironment("/tmp", profile).CODEX_API_KEY,
-    "fixture-key",
+  // A keyless endpoint names no env_key: Codex refuses an unset one.
+  assert.deepEqual(codexProfileConfig({ ...profile, label: "Gateway" }, {}), {
+    model_provider: "foundry",
+    model_providers: {
+      foundry: {
+        name: "Gateway",
+        base_url: "https://gateway.invalid/v1",
+        wire_api: "responses",
+        supports_websockets: false,
+      },
+    },
+  });
+  assert.deepEqual(
+    codexProfileConfig({ ...profile, connectionType: "local_login" }, env),
+    { model_provider: "openai" },
   );
   assert.deepEqual(
-    codexProfileConfig({ ...profile, connectionType: "local_login" }),
-    { model_provider: "openai" },
+    codexProfileConfig({ ...profile, codexModelProvider: "relay" }, env),
+    { model_provider: "relay" },
   );
   assert.equal(
     codexSessionEnvironment("/tmp", {

@@ -25,10 +25,18 @@ func (sharedAppSecret) AppCredentials(_ context.Context, appID string) (feishuev
 	return feishuevents.Credentials{AppID: appID, AppSecret: "secret_shared"}, nil
 }
 
-// recordingDispatcher records the sessions topics start.
+// recordingDispatcher records the sessions topics start, the messages they
+// take and the files it stores.
 type recordingDispatcher struct {
 	mu      sync.Mutex
 	started []store.CreateAgentSessionInput
+	sent    []sentMessage
+	saved   []MessageFile
+}
+
+type sentMessage struct {
+	sessionID, text string
+	attachments     []store.ChatAttachment
 }
 
 func (d *recordingDispatcher) CreateSessionAndDispatch(_ context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
@@ -38,7 +46,24 @@ func (d *recordingDispatcher) CreateSessionAndDispatch(_ context.Context, input 
 	return store.AgentSession{ID: fmt.Sprintf("sess_%d", len(d.started)), WorkspaceID: input.WorkspaceID}, nil
 }
 
-func (d *recordingDispatcher) SendSessionMessage(context.Context, string, string) error { return nil }
+func (d *recordingDispatcher) SendSessionMessage(_ context.Context, sessionID, text string, attachments []store.ChatAttachment) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.sent = append(d.sent, sentMessage{sessionID, text, attachments})
+	return nil
+}
+
+func (d *recordingDispatcher) SaveAttachments(_ context.Context, workspaceID string, files []MessageFile) ([]store.ChatAttachment, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var attachments []store.ChatAttachment
+	for _, file := range files {
+		d.saved = append(d.saved, file)
+		id := fmt.Sprintf("att_%d", len(d.saved))
+		attachments = append(attachments, store.ChatAttachment{ID: id, Name: file.Name, Path: "/" + workspaceID + "/.foundry/attachments/" + id + "_" + file.Name, MIMEType: file.MIMEType, Size: int64(len(file.Data))})
+	}
+	return attachments, nil
+}
 
 func (d *recordingDispatcher) byWorkspace() map[string][]string {
 	d.mu.Lock()

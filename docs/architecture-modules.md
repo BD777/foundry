@@ -1,9 +1,10 @@
 # 模块化架构与开发切分
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md) · [当前状态](current-status.md)
+[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
 
-状态：设计，2026-09-25 确定方向。本文同时是**系统框架的模块划分**和**开发进度的切分依据**：
-每个 milestone 交付一个模块的协议，并用一个真实使用方场景验收。现状描述基于 `0649fe7`
+状态：设计，2026-09-25 确定方向。本文是**系统框架的代码模块划分**与依赖规则，并保留内核优先
+阶段按 milestone 切分开发的记录（§4–§6，该阶段已于 2026-10-04 结束）。此后 Roadmap 按
+产品模块组织、不再编号，产品模块与本文代码模块的对应见 §3.2。现状描述基于 `0649fe7`
 的源码阅读（code-evidence，路径已附），未重新运行服务。
 
 ## 1. 为什么要切
@@ -43,7 +44,7 @@ worker / protocol），不按领域分。每个功能都要纵穿四层，并经
 
 ```mermaid
 flowchart TB
-    L4["L4 入口<br/>Web · 飞书 Adapter"]
+    L4["L4 入口<br/>Web · 飞书 Bot"]
     L3["L3 Workflow<br/>Chat · Issue Loop"]
     L2["L2 Agent 能力面<br/>Foundry MCP / CLI · Skills"]
     L1["L1 执行原语<br/>Session Runtime · Sandbox · Resource Pool · Material Store"]
@@ -72,12 +73,13 @@ flowchart TB
 | L0  | Device & Transport | 配对、daemon 通道、RPC 关联、按设备路由                               | 消息的业务含义         | `daemon_{hub,conn,wire,inbound,requests}.go`、`daemon_rpc.go`、`daemon-connection.ts`、`transport.ts`                                 |
 | L0  | Workspace Registry | Workspace 身份、所在设备、仓库清单、登记与移除                        | 候选、Issue            | `workspace-*.ts`、`repository-registry.ts`                                                                                            |
 | L1  | 候选存储与 Git     | 执行根目录布局、锁、worktree 与 Git 操作                              | Issue 的状态与流程     | `execution-storage.ts`、`execution-git.ts`、`execution-types.ts`（现以 Issue 命名，实为共享底层）                                     |
-| L1  | Harness Profiles   | Claude / Codex profile、原生登录与账号检查、模型目录                  | 会话如何启动与运行     | `profiles.ts`、`native-*.ts`（除 `native-chat*`）、`models.ts`、`provider-health.ts`                                                  |
+| L1  | Harness Profiles   | Claude / Codex profile、原生登录与账号检查、模型目录                  | 会话如何启动与运行     | `profiles.ts`、`native-*.ts`（除 `native-chat*`、`native-session.ts`、`native-usage.ts`）、`models.ts`、`provider-health.ts`          |
 | L1  | Skills             | Skill 扫描、下载、物化、按 Workspace 隔离                             | 哪个会话在用           | `skill-*.ts`、`internal/skillarchive`、`internal/skillrepo`、`internal/skilltools`、`internal/builtinskills`、`sqlitestore/skill*.go` |
 | L1  | Sandbox            | 按隔离 profile 包装进程；平台后端；探测与 fail closed                 | 谁在用、为什么用       | 见 §1 四处实现                                                                                                                        |
 | L1  | Session Runtime    | 以统一规格启动 Claude/Codex，事件流、steer、cancel、恢复、transcript  | Issue、Chat 的流程语义 | `runner.ts`、`sdk-messages.ts`、`session-*.ts`、`evidence-agent.ts` 中的启动部分                                                      |
 | L1  | Material Store     | 按内容寻址的材料存储、摘要校验、归属与可用性                          | 判定规则               | `evidence-store.ts`、`evidence-uploads.ts`                                                                                            |
-| L1  | Resource Pool      | 发现 → 登记 → 使用 → 回收；资源身份与占用（独占与排队待 M4）          | 由哪个 Workflow 使用   | `resource-pool.ts`、MCP `list_resources`                                                                                              |
+| L1  | Resource Pool      | 发现 → 登记 → 租用 → 回收；资源身份与占用                             | 由哪个 Workflow 使用   | `internal/resources`、`resource-pool.ts`、`packages/worker/src/resources/`、MCP `list_resources` 等资源工具                           |
+| L1  | 连接器             | 外部应用凭据与个人外部账号；经 Server 网关供 Agent 使用               | 哪个会话、哪个入口在用 | `internal/feishugateway`、`internal/externalaccounts`、`internal/integrations`                                                        |
 | L2  | Agent 能力面       | Agent 唯一的对外 API（MCP / CLI），capability 注册，统一经 policy     | 调用它的 Workflow      | `foundry-cli.ts`、`foundry-mcp.ts`、`foundry-client.ts`、`httpapi/mcp.go`                                                             |
 | L3  | Chat               | 会话列表、分组、对话 UI 所需的投影                                    | 沙箱与启动细节         | `sqlitestore/chat_*.go`、`apps/web/src/features/chat`                                                                                 |
 | L3  | Issue Loop         | 契约、候选、采集、判定、准出规则、Accept、合入；loop graph 与信号入口 | 沙箱与启动细节         | `issue-*.ts`、`evidence-*.ts`（除启动与沙箱部分）、`sqlitestore/issue*.go`、`evidence*.go`                                            |
@@ -159,7 +161,33 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 组装层（composition root）不是模块：`cli.ts`、`daemon-connection.ts` 中的装配部分、
 `workspace-ops.ts` 这类请求处理可以依赖任何模块，但任何模块都不能依赖它。
 
-## 4. Milestone 切分
+## 3.2 产品模块与代码模块
+
+README Roadmap 与[模块图](assets/architecture.svg)按产品模块组织，每个产品模块有一份主文档
+（见[文档索引](README.md#modules)）。它们与上表代码模块的对应：
+
+| 产品模块         | 代码模块                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| 渠道             | 入口中的飞书 Bot（`internal/feishu`；事件分发 `internal/feishuevents` 与连接器共用） |
+| Chats            | Chat                                                                                 |
+| Issues           | Issue Loop、Material Store；候选存储与 Git 目前主要服务于它                          |
+| Agent 能力面     | Agent 能力面                                                                         |
+| 执行内核         | Session Runtime、Sandbox                                                             |
+| Resources        | Resource Pool                                                                        |
+| Skills           | Skills                                                                               |
+| 模型与账号       | Harness Profiles                                                                     |
+| 连接器           | 连接器                                                                               |
+| 设备与 Workspace | Device & Transport、Workspace Registry                                               |
+| 身份与共享       | Identity & Access                                                                    |
+
+平台基础与 Web 不对应单独的产品模块。
+
+## 4. Milestone 切分（历史：内核优先阶段）
+
+> 这一阶段从 2026-09-26 持续到 2026-10-04：M1–M4 完成；M5（Issue 流程扩展）除"飞书中的
+> Issue"待真实群验收外完成，包括 loop graph 与准出规则、人工介入（Blocked）、证据与验证、
+> 接受与合入、开源首发。之后 Roadmap 改为按产品模块组织、不再编号，未完成项归入各模块的
+> "下一步"。以下保留当时的切分与决定。
 
 每个 milestone：一个模块的协议 + 迁移现有调用方 + 删除重复实现 + 一个端到端使用场景。
 模块自身的契约测试通过但场景未跑通，不算完成。
@@ -168,8 +196,8 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 | ---------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------ | -------------- |
 | **M1 执行内核** ✅     | Sandbox + Session Runtime      | 见 §5.5：模块测试与依赖审计为零；Chat 真实浏览器回归；执行内核真实模型端到端                                 | —              |
 | **M2 Agent 能力面** ✅ | Foundry MCP / CLI              | Chat 中的 Agent 经 MCP 派出、观察、steer 子会话与只读 verifier，按角色授权                                   | M1             |
-| **M3 资源与跨设备**    | Resource Pool + Transport 路由 | Chat 中的 Agent 用设备上已有的浏览器截图给人看，用完回收；按资源选设备，经 Server 中转在另一台设备上启动会话 | M1、M2         |
-| **M4 Issue Loop**      | Issue Loop                     | 开始前按 §6 重新审视内核缺口；Issue 内编排、loop graph 与准出规则、外部信号、Issue Web 体验的真实浏览器闭环  | M1–M3          |
+| **M3 资源与跨设备** ✅ | Resource Pool + Transport 路由 | Chat 中的 Agent 用设备上已有的浏览器截图给人看，用完回收；按资源选设备，经 Server 中转在另一台设备上启动会话 | M1、M2         |
+| **M4 Issue Loop** ✅   | Issue Loop                     | 开始前按 §6 重新审视内核缺口；Issue 内编排、loop graph 与准出规则、外部信号、Issue Web 体验的真实浏览器闭环  | M1–M3          |
 | 并行轨道               | Identity & Access              | 账号 P3 / P4（个人连接授权、飞书身份绑定、审计、所有权转移）                                                 | 与主线无强依赖 |
 
 **内核不依赖 Issue（2026-09-26 定）。** Issue 是建在内核之上的编排层，放在内核之后做。
@@ -206,7 +234,7 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
   编排血缘、令牌、恢复和列表问题，是 L4 Session Runtime 的内核改动。
 - HTTP MCP 的 OAuth 2.1 只在出现 Foundry 之外的远程 Agent 时再做。
 
-**M3 资源与跨设备**（进行中）。起点：工作区在设备上，但 Server 里有几处直接读写**自己的
+**M3 资源与跨设备**（已完成，2026-09-28）。起点：工作区在设备上，但 Server 里有几处直接读写**自己的
 磁盘**上的 `workspace.LocalPath`，只在 Server 与设备同机时成立；设备通过公网连上时，Chat
 附件上传直接失败（实测：Mac 连 dev.foundryapp.app，上传返回 500）。
 
@@ -280,6 +308,10 @@ Policy、血缘、分组）都已具备，但**会话从未拿到 Foundry 工具
 handoff）它代表的人创建的会话，包括这个人的 agent 启动的会话；不再超过这个人作为 Member 的权限。
 
 ## 5. M1 接口草案
+
+> M1 开始前写的接口草案，保留作记录；最终实现有出入（例如 Chat 不带 sandbox 字段、
+> `SessionRole` 只剩 `verification`、编排 verifier 也在沙箱中运行）。现状以
+> [执行内核](execution-kernel.md)的实现边界为准。
 
 ### 5.1 Sandbox
 

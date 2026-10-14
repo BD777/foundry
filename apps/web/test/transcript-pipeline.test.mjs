@@ -337,3 +337,77 @@ test("bookkeeping after an answer never forms a process row of its own", () => {
   assert.equal(answer.usage?.durationMs, 28000);
   assert.deepEqual(answer.turnFiles, { turnId: "in_1", count: 2 });
 });
+
+// Trimmed from sess_1791538912480523679: a message steered in while a tool
+// runs puts that call's start and its result in two groups. Rows are keyed by
+// id, and a repeated key left stale copies of the row and blank space.
+test("a tool call split by a steered message gives each group its own row id", () => {
+  const turn = "b4342dd2-a503-4bc3-bb43-6b022dc476e4";
+  const call = (id, at, label, status) => ({
+    id: `evt_${id}`,
+    at,
+    label,
+    detail: "Bash",
+    level: "info",
+    message: {
+      id: `${turn}/call_144`,
+      kind: "tool",
+      text: "Bash",
+      title: label,
+      callId: "call_144",
+      status,
+    },
+  });
+  const plain = (id, at, label, detail) => ({
+    id: `evt_${id}`,
+    at,
+    label,
+    detail,
+    level: "info",
+  });
+  const messages = chatMessagesForThread({
+    id: "thread",
+    sessions: [
+      {
+        id: "s",
+        provider: "claude",
+        prompt: "Look at the meego tools",
+        status: "running",
+        events: [
+          plain(
+            "answer_21",
+            "2026-10-14T08:21:02Z",
+            "Response stream",
+            "Another way.",
+          ),
+          call("i236", "2026-10-14T08:21:02Z", "Using tool", "running"),
+          call("iuv1", "2026-10-14T08:21:04Z", "Using tool", "running"),
+          plain(
+            "steer",
+            "2026-10-14T08:21:54Z",
+            "Steered into active turn",
+            "I'm here now",
+          ),
+          call("7tjj", "2026-10-14T08:22:04Z", "Tool failed", "failed"),
+          plain(
+            "xx4v",
+            "2026-10-14T08:22:05Z",
+            "Requesting model",
+            "Claude is generating a response.",
+          ),
+          plain(
+            "answer_22",
+            "2026-10-14T08:22:30Z",
+            "Response stream",
+            "Here is the link.",
+          ),
+        ],
+      },
+    ],
+  });
+  const ids = messages.map((message) => message.id);
+  assert.equal(new Set(ids).size, ids.length, ids.join("\n"));
+  const steer = ids.indexOf("agent-session:s:evt_steer");
+  assert.equal(messages[steer - 1].kind, "process");
+  assert.equal(messages[steer + 1].kind, "process");
+});

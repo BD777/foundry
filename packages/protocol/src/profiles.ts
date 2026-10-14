@@ -38,6 +38,8 @@ export type CodexSpeed = "standard" | "fast";
 export interface AgentModelOption {
   id: string;
   label?: string;
+  /** The window the endpoint's own `/models` catalog reports for it. */
+  contextWindow?: number;
 }
 
 export interface ProviderHealth {
@@ -137,10 +139,12 @@ export interface AgentProfileProjection {
    */
   check?: AgentProfileCheck;
   /**
-   * It carries its own key and calls an endpoint other machines can reach,
-   * so copying it to the server makes it usable elsewhere.
+   * The key this provider's own configuration names, by name only: a Codex
+   * `env_key` such as `$LLM_GATEWAY_KEY`, or `env.ANTHROPIC_AUTH_TOKEN` in a
+   * Claude settings file. Absent when it sends no key, or authenticates with
+   * a login or a command, neither of which can be copied.
    */
-  shareable?: boolean;
+  keySource?: string;
   connectionType: AgentConnectionType;
   model?: string;
   /** Models offered for this profile wherever a run is configured. */
@@ -188,6 +192,12 @@ export interface ProfileDefinition {
    * can enumerate, and anything the user adds stays.
    */
   models?: string[];
+  /**
+   * The person's own context window per model id, in tokens. A model without
+   * one runs with the window its endpoint reports, else the official model's,
+   * else 1M (model-context.ts).
+   */
+  contextWindows?: Record<string, number>;
   promptPrefix?: string;
   claudeEffort?: ClaudeEffort;
   claudePermissionMode?: ClaudePermissionMode;
@@ -199,7 +209,24 @@ export interface ProfileDefinition {
   hasCredential: boolean;
   /** Account that owns this connection; empty only before an admin exists. */
   ownerUserId?: string;
+  /** Set when it was promoted from a provider in a device's own configuration. */
+  promotedFrom?: ProfilePromotionSource;
   updatedAtLabel: string;
+}
+
+/**
+ * The device provider a server profile was promoted from. Promoting the same
+ * provider again updates this profile instead of adding another.
+ */
+export interface ProfilePromotionSource {
+  deviceId: string;
+  /** The provider's id on that device, e.g. `codex_provider_gateway`. */
+  profileId: string;
+  /**
+   * Its base URL is the device's own loopback address, which no other device
+   * can reach, so it may run only on that device.
+   */
+  deviceBound?: boolean;
 }
 
 /** Which server profiles a device is allowed to run. */
@@ -230,6 +257,8 @@ export interface SaveProfileInput {
   codexApprovalPolicy?: CodexApprovalPolicy;
   codexSpeed?: CodexSpeed;
   models?: string[];
+  /** Replaces the stored per-model windows; omitted keeps them. */
+  contextWindows?: Record<string, number>;
   apiKey?: string;
 }
 
@@ -240,13 +269,20 @@ export interface SetDeviceProfilesInput {
 }
 
 /**
- * Promote a daemon-discovered device profile into a server profile. The key
- * this machine holds always moves with it: a promoted profile without a
- * credential is unusable on every device, including the one it came from.
+ * Promote an API provider from a device's own configuration into a server
+ * profile, or update the one it was promoted into before. The device's
+ * configuration is never modified.
  */
 export interface PromoteProfileInput {
   deviceId: string;
   profileId: string;
+  /**
+   * Also copy the key the provider's configuration names (`keySource`): the
+   * device reads that one value and the server seals it. It is never sent to
+   * the browser. Without it no key is copied, and a key already sealed for
+   * the profile stays.
+   */
+  copyKey?: boolean;
 }
 
 export interface AgentProjection {

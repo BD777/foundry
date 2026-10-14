@@ -268,9 +268,7 @@ export async function inspectNativeAccount(
     if (runtime === "claude") {
       const pending = claudeRenewalPending();
       if (pending) {
-        const account = claudeAccount(
-          process.env.CLAUDE_CONFIG_DIR || homedir(),
-        )?.label;
+        const account = claudeAccount()?.label;
         return {
           ...base,
           ...(account ? { accountLabel: account } : {}),

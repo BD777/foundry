@@ -310,3 +310,22 @@ test("the picker offers usable agents; unavailable ones only when chosen or when
     [["codex_local", true]],
   );
 });
+
+test("a promotion that kept the device profile's id stays offered once", () => {
+  // The server row replaced the device agent in place: one agent, one id.
+  const agents = [
+    serverAgent({ id: "agent_gateway", profileId: "codex_provider_gateway" }),
+  ];
+  const profiles = [
+    deviceProfile({
+      id: "codex_provider_gateway",
+      promotedProfileId: "codex_provider_gateway",
+    }),
+    serverProfileRow("codex_provider_gateway", "LLM Gateway"),
+  ];
+  assert.deepEqual(
+    canonicalPickerAgents(agents, profiles).map((agent) => agent.id),
+    ["agent_gateway"],
+  );
+  assert.equal(promotedLegacyAgentIds(agents, profiles).size, 0);
+});

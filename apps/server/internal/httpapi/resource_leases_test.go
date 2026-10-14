@@ -171,3 +171,71 @@ func TestSessionLeasesAndOperatesAScreen(t *testing.T) {
 		t.Fatalf("status = %s", text)
 	}
 }
+
+// A model turn the agent runs on its own (Claude's follow-up after
+// background work, a timer's) leaves the session "completed"; its worker
+// tells it (session_turn) to a server that takes it, and the leases follow
+// it: acquired in it, a screen is active; once it ended, parked.
+func TestAgentTurnKeepsLeaseActive(t *testing.T) {
+	if !strings.Contains(string(registeredEnvelope("r").Payload), `"`+sessionTurnsFeature+`"`) {
+		t.Fatal("the registered answer does not say the server takes session_turn")
+	}
+	f := newReachFixture(t)
+	ctx := context.Background()
+	live := httptest.NewServer(f.handler)
+	defer live.Close()
+	created, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
+		CreatedByUserID: f.aliceID, WorkspaceID: "ws_alice", AgentID: "agent_alice", Provider: "claude", Prompt: "wait for the build",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.StartAgentSession(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.CompleteAgentSession(ctx, created.ID, "started the build", ""); err != nil {
+		t.Fatal(err)
+	}
+	token, err := f.db.MintAgentSessionToken(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := connectFakeDevice(t, live, f.aliceDevice, map[string]any{
+		"capabilities":     []string{store.DaemonCapabilityResources, store.DaemonCapabilityResourceOperations},
+		"activeSessionIds": []string{},
+		"device":           map[string]any{"id": "dev_alice", "label": "Alice's Mac", "status": "connected"},
+		"workspace":        map[string]any{"id": "ws_alice", "name": "W", "localPath": "/tmp/ws_alice"},
+	}, map[string]fakeAnswer{
+		wsResourceResetType: func(payload json.RawMessage) (string, any) {
+			var request store.ResourceResetRequest
+			_ = json.Unmarshal(payload, &request)
+			return wsResourceResetDoneType, store.ResourceResetResult{ResourceID: request.ResourceID, Generation: request.Generation}
+		},
+	})
+	ready := store.ResourceReadiness{Ready: true, Level: "permitted"}
+	if _, err := f.server.resources.Report(ctx, store.ResourceSource{Kind: "device", ID: "dev_alice", Label: "Alice's Mac"}, store.ResourcesReport{
+		Instances: []store.DetectedResource{{Key: "computer_use/macos/console:501", Type: "computer_use", Platform: "macos", Name: "macOS screen control",
+			Detector: "computer_use.macos.cua-driver@1", Readiness: ready,
+			Backends: []store.ResourceBackend{{ID: "cua-driver", Version: "0.34.1", Mode: "remote_ops", Readiness: ready}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	screen := resources.InstanceID("dev_alice", "computer_use/macos/console:501")
+
+	device.tell(t, wsSessionTurnType, map[string]any{"sessionId": created.ID, "running": true})
+	content, isError := mcpContentCall(t, f.handler, token, "acquire_resource", map[string]any{"resourceId": screen, "reason": "check the build window"})
+	if isError {
+		t.Fatalf("acquire = %v", content)
+	}
+	var acquired struct {
+		Lease resources.View `json:"lease"`
+	}
+	if err := json.Unmarshal([]byte(content[0]["text"].(string)), &acquired); err != nil || acquired.Lease.State != store.LeaseActive {
+		t.Fatalf("acquired in the agent's own turn = %+v (%v)", acquired, err)
+	}
+	device.tell(t, wsSessionTurnType, map[string]any{"sessionId": created.ID, "running": false})
+	lease, err := f.server.leases.Lease(ctx, acquired.Lease.ID)
+	if err != nil || lease.State != store.LeaseParked {
+		t.Fatalf("after the agent's own turn = %+v (%v)", lease, err)
+	}
+}

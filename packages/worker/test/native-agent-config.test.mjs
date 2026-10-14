@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -7,6 +7,7 @@ import {
   claudeSettingsProfiles,
   codexConfigProfiles,
   environmentProfiles,
+  nativeAgentProfiles,
 } from "../dist/native-agent-config.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "foundry-native-"));
@@ -218,4 +219,52 @@ test("endpoints inherited only through the environment are discovered", () => {
 
 test("an empty environment discovers nothing", () => {
   assert.deepEqual(environmentProfiles({}), []);
+});
+
+test("the configuration is read where CLAUDE_CONFIG_DIR and CODEX_HOME put it, as the CLIs do", () => {
+  const home = join(scratch, "moved-home");
+  const claudeDir = join(scratch, "claude-elsewhere");
+  const codexDir = join(scratch, "codex-elsewhere");
+  for (const dir of [
+    join(home, ".claude"),
+    join(home, ".codex"),
+    claudeDir,
+    codexDir,
+  ])
+    mkdirSync(dir, { recursive: true });
+  const claudeRelay = (host) =>
+    JSON.stringify({ env: { ANTHROPIC_BASE_URL: `https://${host}` } });
+  const codexRelay = (host) =>
+    [
+      'model_provider = "relay"',
+      "[model_providers.relay]",
+      `base_url = "https://${host}/v1"`,
+      "requires_openai_auth = true",
+      "",
+    ].join("\n");
+  writeFileSync(
+    join(home, ".claude", "settings.json"),
+    claudeRelay("home-claude"),
+  );
+  writeFileSync(join(home, ".codex", "config.toml"), codexRelay("home-codex"));
+  writeFileSync(
+    join(claudeDir, "settings.local.json"),
+    claudeRelay("moved-claude"),
+  );
+  writeFileSync(join(codexDir, "config.toml"), codexRelay("moved-codex"));
+  const endpoints = (env) =>
+    nativeAgentProfiles(env).map((profile) => profile.baseUrl);
+
+  assert.deepEqual(endpoints({ HOME: home }), [
+    "https://home-claude",
+    "https://home-codex/v1",
+  ]);
+  assert.deepEqual(
+    endpoints({
+      HOME: home,
+      CLAUDE_CONFIG_DIR: claudeDir,
+      CODEX_HOME: codexDir,
+    }),
+    ["https://moved-claude", "https://moved-codex/v1"],
+  );
 });

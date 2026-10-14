@@ -36,7 +36,7 @@ type chatTitleAnnouncer interface {
 
 func (s *chatTitleService) Start(ctx context.Context, workspaceID, chatID string, automatic bool) (store.AgentSession, error) {
 	sessions, err := s.store.ListAgentSessionThread(ctx, workspaceID, chatID)
-	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, Source: "naming", CodexSandboxMode: "read-only", CodexApprovalPolicy: "never", ClaudePermissionMode: "plan"}
+	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, Source: "naming", CodexSandboxMode: "read-only", CodexApprovalPolicy: "never", ClaudePermissionMode: "dontAsk"}
 	messages := []chattitle.Message{}
 	profileID, deviceID := "", ""
 	if err == nil && len(sessions) > 0 {
@@ -227,7 +227,7 @@ func (s *chatTitleService) StartGroupName(ctx context.Context, workspaceID, grou
 		CodexReasoningEffort: latest.CodexReasoningEffort,
 		CodexSandboxMode:     "read-only",
 		CodexApprovalPolicy:  "never",
-		ClaudePermissionMode: "plan",
+		ClaudePermissionMode: "dontAsk",
 		Prompt:               prompt,
 	}
 	job, err := s.store.CreateGroupNameJob(ctx, input, groupID)

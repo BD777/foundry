@@ -1,7 +1,7 @@
 import {
   daemonMessageTypes,
   type ListAgentModelsPayload,
-  type ReadProfileCredentialPayload,
+  type ReadProviderKeyPayload,
   type UpsertAgentProfilePayload,
   type UpsertAgentRuntimeSettingsPayload,
 } from "@bd777/foundry-protocol";
@@ -12,7 +12,7 @@ import { inspectNativeAccount } from "../../native-inspection.js";
 import { clearNativeLoginHealth } from "../../native-login.js";
 import { refreshOfficialSkills } from "../../official-skills.js";
 import {
-  localProfileCredential,
+  configuredProviderKey,
   upsertAgentProfileConfig,
 } from "../../profiles.js";
 import { sendWebSocket, trySendWebSocket } from "../../transport.js";
@@ -133,15 +133,14 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         }),
       );
     })
-    .on(daemonMessageTypes.readProfileCredential, (envelope, ctx) => {
-      const payload = envelope.payload as
-        ReadProfileCredentialPayload | undefined;
+    .on(daemonMessageTypes.readProviderKey, (envelope, ctx) => {
+      const payload = envelope.payload as ReadProviderKeyPayload | undefined;
       const profileId = payload?.profileId;
       if (!profileId) {
         sendWebSocket(
           ctx.socket,
-          daemonMessageTypes.profileCredentialRead,
-          { error: "read_profile_credential requires profileId" },
+          daemonMessageTypes.providerKeyRead,
+          { error: "read_provider_key requires profileId" },
           envelope.id,
         );
         return;
@@ -149,11 +148,8 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
       // Answers this one request and nothing else: the key goes straight
       // into the reply envelope for the server's promote flow, and is never
       // written to a log line or held anywhere else.
-      return reply(
-        ctx,
-        envelope,
-        daemonMessageTypes.profileCredentialRead,
-        () => ({ credential: localProfileCredential(profileId) }),
+      return reply(ctx, envelope, daemonMessageTypes.providerKeyRead, () =>
+        configuredProviderKey(profileId),
       );
     })
     .on(daemonMessageTypes.upsertAgentProfile, (envelope, ctx) => {

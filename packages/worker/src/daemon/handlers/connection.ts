@@ -1,7 +1,9 @@
 import {
   daemonMessageTypes,
   type SessionTimers,
+  type SessionTurnPayload,
 } from "@bd777/foundry-protocol";
+import { setSessionTurnSink } from "../../session-state.js";
 import { sessionTimers } from "../../session-timers.js";
 import { serverFeatures } from "../../transport.js";
 import type { DaemonDispatch } from "../dispatch.js";
@@ -39,6 +41,18 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       // active; route their events over this socket as ordinary
       // session_event envelopes the server persists and broadcasts.
       ctx.routeOutOfBandEvents();
+      // The turns Claude runs on its own, to a server that follows them;
+      // those running now are told again (the server forgets them when
+      // the device goes).
+      setSessionTurnSink(
+        features.sessionTurns
+          ? (sessionId, running) =>
+              ctx.sessionTransport.send(daemonMessageTypes.sessionTurn, {
+                sessionId,
+                running,
+              } satisfies SessionTurnPayload)
+          : undefined,
+      );
       ctx.announceAdditionalIssueCapacity();
       if (ctx.once && ctx.idleTimeoutMs > 0) {
         ctx.state.idleTimer = setTimeout(

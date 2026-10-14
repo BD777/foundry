@@ -74,32 +74,32 @@ tests for the parsers live in
 
 Inbound handlers in `runWebSocketSession`, keyed by `daemonMessageTypes`:
 
-| Inbound                              | Handling                                                                | Reply                                      |
-| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------ |
-| `error`                              | log server error                                                        | —                                          |
-| `ack`                                | `sessionTransport.acknowledge()` [transport]                            | —                                          |
-| `registered`                         | bind session transport, `announceAdditionalIssueCapacity()`             | `readyForIssue` × free slots               |
-| `readFile`                           | `sendFileRead()` [session-helpers]                                      | `fileRead`                                 |
-| `readSubagentTranscript`             | `sendSubagentTranscript()`                                              | `subagentTranscriptRead`                   |
-| `readSessionFile`                    | `readSessionFile()`: a ledger-listed file, bounded [session-files]      | `sessionFileRead`                          |
-| `listSubagents`                      | `sendSubagentList()`                                                    | `subagentsListed`                          |
-| `listDirectories`                    | `sendDirectoryListing()`                                                | `directoriesListed`                        |
-| `inspectWorkspace`                   | workspace inspection handler [workspace-inspection]                     | `workspaceInspected`                       |
-| `inspectNativeAccount`               | `inspectNativeAccount()` [native-inspection]                            | `nativeAccountInspected`                   |
-| `setupWorkspace`                     | `initWorkspace()` [workspaces]                                          | `workspaceReady`                           |
-| `forgetWorkspace`                    | `forgetWorkspaceRegistration()`                                         | `workspaceForgotten`                       |
-| `listAgentModels`                    | `listAgentModelsConfig()` [models]                                      | `agentModelsListed`                        |
-| `upsertAgentProfile`                 | `upsertAgentProfileConfig()` [profiles]                                 | `agentProfileUpserted`                     |
-| `upsertAgentRuntimeSettings`         | `writeAgentRuntimeSettings()` + `taskScheduler.setMaxConcurrentTasks()` | `agentRuntimeSettingsUpserted`             |
-| `readProfileCredential`              | read sealed credential for one dispatch [profiles]                      | `profileCredentialRead`                    |
-| `scanSkills`                         | `scanSkillRoots()` over the requested roots                             | `skillsScanned`                            |
-| `readSkillFile` / `readSkillContent` | read one skill file / `packageSkillDirectory()` for promotion           | `skillFileRead` / `skillContentRead`       |
-| `issueEnvironment`                   | prepare/inspect/cleanup Issue environments [issue-environments]         | `issueEnvironmentResult`                   |
-| `evidenceRequest`                    | seal/collect/assess/accept/recover RPC [evidence-rpc]                   | `evidenceResult`                           |
-| `steerSession`                       | active steer target [session-state]                                     | `sessionSteered`                           |
-| `cancelSession`                      | `cancelActiveSession()`                                                 | `sessionCanceled`                          |
-| `runSession`                         | claim, `taskScheduler.schedule()` → `executeAgentSession()`             | `sessionStarted` … `sessionCompleted`      |
-| `runIssue`                           | `taskScheduler.schedule()` → `executeIssue()` [issue-execution]         | `runStarted`, `runEvent`, `issueCompleted` |
+| Inbound                              | Handling                                                                        | Reply                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------ |
+| `error`                              | log server error                                                                | —                                          |
+| `ack`                                | `sessionTransport.acknowledge()` [transport]                                    | —                                          |
+| `registered`                         | bind session transport, `announceAdditionalIssueCapacity()`                     | `readyForIssue` × free slots               |
+| `readFile`                           | `sendFileRead()` [session-helpers]                                              | `fileRead`                                 |
+| `readSubagentTranscript`             | `sendSubagentTranscript()`                                                      | `subagentTranscriptRead`                   |
+| `readSessionFile`                    | `readSessionFile()`: a ledger-listed file, bounded [session-files]              | `sessionFileRead`                          |
+| `listSubagents`                      | `sendSubagentList()`                                                            | `subagentsListed`                          |
+| `listDirectories`                    | `sendDirectoryListing()`                                                        | `directoriesListed`                        |
+| `inspectWorkspace`                   | workspace inspection handler [workspace-inspection]                             | `workspaceInspected`                       |
+| `inspectNativeAccount`               | `inspectNativeAccount()` [native-inspection]                                    | `nativeAccountInspected`                   |
+| `setupWorkspace`                     | `initWorkspace()` [workspaces]                                                  | `workspaceReady`                           |
+| `forgetWorkspace`                    | `forgetWorkspaceRegistration()`                                                 | `workspaceForgotten`                       |
+| `listAgentModels`                    | `listAgentModelsConfig()` [models]                                              | `agentModelsListed`                        |
+| `upsertAgentProfile`                 | `upsertAgentProfileConfig()` [profiles]                                         | `agentProfileUpserted`                     |
+| `upsertAgentRuntimeSettings`         | `writeAgentRuntimeSettings()` + `taskScheduler.setMaxConcurrentTasks()`         | `agentRuntimeSettingsUpserted`             |
+| `readProviderKey`                    | `configuredProviderKey()`: the key one provider names, for promotion [profiles] | `providerKeyRead`                          |
+| `scanSkills`                         | `scanSkillRoots()` over the requested roots                                     | `skillsScanned`                            |
+| `readSkillFile` / `readSkillContent` | read one skill file / `packageSkillDirectory()` for promotion                   | `skillFileRead` / `skillContentRead`       |
+| `issueEnvironment`                   | prepare/inspect/cleanup Issue environments [issue-environments]                 | `issueEnvironmentResult`                   |
+| `evidenceRequest`                    | seal/collect/assess/accept/recover RPC [evidence-rpc]                           | `evidenceResult`                           |
+| `steerSession`                       | active steer target [session-state]                                             | `sessionSteered`                           |
+| `cancelSession`                      | `cancelActiveSession()`                                                         | `sessionCanceled`                          |
+| `runSession`                         | claim, `taskScheduler.schedule()` → `executeAgentSession()`                     | `sessionStarted` … `sessionCompleted`      |
+| `runIssue`                           | `taskScheduler.schedule()` → `executeIssue()` [issue-execution]                 | `runStarted`, `runEvent`, `issueCompleted` |
 
 ### Server-side RPC correlation
 
@@ -161,7 +161,7 @@ runClaudeWorkspaceSession()                       [runner/claude-turn.ts]
   ├─ create .foundry/sessions/<id>/
   ├─ profile has a custom command → runProfileCommandSession() (spawn sh -lc)
   └─ otherwise → runClaudeAgentSdkSession()
-       │    SDK import/start failure → runClaudeCliSession() fallback
+       │    (no CLI fallback: an SDK error is the session's error)
        ├─ import @anthropic-ai/claude-agent-sdk, build base options
        └─ active runtime reuse:
             ├─ cleanupActiveClaudeRuntimes()  ← evicts idle entries older

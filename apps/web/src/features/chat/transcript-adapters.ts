@@ -274,7 +274,12 @@ export function sessionTranscriptEntries(
       continue;
     }
     if (event.message) {
-      entries.push({ ...event.message, id, at: event.message.at ?? event.at });
+      entries.push({
+        ...event.message,
+        id,
+        stepId: `agent-session:${session.id}:${event.id}`,
+        at: event.message.at ?? event.at,
+      });
     } else if (event.detail.trim()) {
       entries.push({
         id,

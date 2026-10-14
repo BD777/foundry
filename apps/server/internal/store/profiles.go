@@ -1,5 +1,12 @@
 package store
 
+import (
+	"context"
+	"net"
+	"net/url"
+	"strings"
+)
+
 type ProviderHealth struct {
 	DeviceID     string     `json:"deviceId,omitempty"`
 	Provider     string     `json:"provider"`
@@ -81,7 +88,7 @@ type AgentProfileProjection struct {
 	ConfigLabel          string             `json:"configLabel"`
 	ConfigSection        string             `json:"configSection,omitempty"`
 	Check                *AgentProfileCheck `json:"check,omitempty"`
-	Shareable            bool               `json:"shareable,omitempty"`
+	KeySource            string             `json:"keySource,omitempty"`
 	ConnectionType       string             `json:"connectionType"`
 	Model                string             `json:"model,omitempty"`
 	Models               []string           `json:"models,omitempty"`
@@ -103,24 +110,73 @@ type AgentProfileProjection struct {
 // ProfileDefinition is a control-plane owned profile. It carries no DeviceID
 // and no status: reachability belongs to the device that runs it.
 type ProfileDefinition struct {
-	ID                   string   `json:"id"`
-	Runtime              string   `json:"runtime"`
-	Label                string   `json:"label"`
-	AuthMode             string   `json:"authMode"`
-	ConnectionType       string   `json:"connectionType"`
-	BaseURL              string   `json:"baseUrl,omitempty"`
-	Model                string   `json:"model,omitempty"`
-	Models               []string `json:"models,omitempty"`
-	PromptPrefix         string   `json:"promptPrefix,omitempty"`
-	ClaudeEffort         string   `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string   `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string   `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string   `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string   `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string   `json:"codexSpeed,omitempty"`
-	HasCredential        bool     `json:"hasCredential"`
-	OwnerUserID          string   `json:"ownerUserId,omitempty"`
-	UpdatedAtLabel       string   `json:"updatedAtLabel"`
+	ID             string   `json:"id"`
+	Runtime        string   `json:"runtime"`
+	Label          string   `json:"label"`
+	AuthMode       string   `json:"authMode"`
+	ConnectionType string   `json:"connectionType"`
+	BaseURL        string   `json:"baseUrl,omitempty"`
+	Model          string   `json:"model,omitempty"`
+	Models         []string `json:"models,omitempty"`
+	// ContextWindows is the person's own context window per model id, in
+	// tokens. A model without one runs with the window its endpoint reports,
+	// else the official model's, else 1M (decided by the worker).
+	ContextWindows       map[string]int64 `json:"contextWindows,omitempty"`
+	PromptPrefix         string           `json:"promptPrefix,omitempty"`
+	ClaudeEffort         string           `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode string           `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort string           `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode     string           `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy  string           `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed           string           `json:"codexSpeed,omitempty"`
+	HasCredential        bool             `json:"hasCredential"`
+	OwnerUserID          string           `json:"ownerUserId,omitempty"`
+	// PromotedFrom is set when the profile was promoted from a provider in a
+	// device's own configuration.
+	PromotedFrom   *ProfilePromotionSource `json:"promotedFrom,omitempty"`
+	UpdatedAtLabel string                  `json:"updatedAtLabel"`
+}
+
+// ProfilePromotionSource is the device provider a server profile was promoted
+// from. Promoting the same provider again updates that profile.
+type ProfilePromotionSource struct {
+	DeviceID  string `json:"deviceId"`
+	ProfileID string `json:"profileId"`
+	// DeviceBound: the base URL is the device's own loopback address, which no
+	// other device can reach, so the profile may run only on that device.
+	DeviceBound bool `json:"deviceBound,omitempty"`
+}
+
+// ProfilePromotion records which server profile a device provider was
+// promoted into.
+type ProfilePromotion struct {
+	ProfileID       string
+	DeviceID        string
+	SourceProfileID string
+}
+
+// ProfilePromotionStore remembers which server profile each promoted device
+// provider became, so promoting it again updates that profile.
+type ProfilePromotionStore interface {
+	// ProfilePromotionFor names the server profile a device provider was
+	// promoted into, or reports ErrNotFound.
+	ProfilePromotionFor(ctx context.Context, deviceID string, sourceProfileID string) (string, error)
+	SaveProfilePromotion(ctx context.Context, promotion ProfilePromotion) error
+}
+
+// LoopbackBaseURL reports a base URL whose host is the machine itself
+// (localhost, 127.0.0.0/8, ::1): only the device that configured it reaches it.
+func LoopbackBaseURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // DeviceProfileBinding records which server profiles a device may run.
@@ -148,7 +204,9 @@ type SaveProfileInput struct {
 	CodexSandboxMode     string   `json:"codexSandboxMode,omitempty"`
 	CodexApprovalPolicy  string   `json:"codexApprovalPolicy,omitempty"`
 	CodexSpeed           string   `json:"codexSpeed,omitempty"`
-	APIKey               string   `json:"apiKey,omitempty"`
+	// ContextWindows replaces the stored per-model windows; nil keeps them.
+	ContextWindows map[string]int64 `json:"contextWindows,omitempty"`
+	APIKey         string           `json:"apiKey,omitempty"`
 	// OwnerUserID is set by the server from the caller on create and never
 	// changed by an update; clients cannot supply it.
 	OwnerUserID string `json:"-"`
@@ -160,14 +218,15 @@ type SetDeviceProfilesInput struct {
 	ProfileIDs []string `json:"profileIds"`
 }
 
-// PromoteProfileInput lifts a daemon-discovered device profile into a server
-// profile. The credential the device holds always moves with it: a promoted
-// profile without a credential cannot authenticate anywhere, including on the
-// device it came from, because a dispatched server definition never consults
-// the local profiles file.
+// PromoteProfileInput promotes an API provider from a device's own
+// configuration into a server profile, or updates the profile it was promoted
+// into before. CopyKey is the person's explicit confirmation that the key the
+// provider's configuration names may be read on the device and sealed on the
+// server; without it no key is copied.
 type PromoteProfileInput struct {
 	DeviceID  string `json:"deviceId"`
 	ProfileID string `json:"profileId"`
+	CopyKey   bool   `json:"copyKey,omitempty"`
 }
 
 type AgentProjection struct {
@@ -215,6 +274,8 @@ type CreateAgentProfileInput struct {
 type AgentModelOption struct {
 	ID    string `json:"id"`
 	Label string `json:"label,omitempty"`
+	// ContextWindow is the window the endpoint's own catalog reports.
+	ContextWindow int64 `json:"contextWindow,omitempty"`
 }
 
 type ListAgentModelsInput struct {

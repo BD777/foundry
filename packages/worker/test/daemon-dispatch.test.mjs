@@ -32,7 +32,7 @@ const serverMessages = [
   "updateWorker",
   "installNativeCli",
   "listAgentModels",
-  "readProfileCredential",
+  "readProviderKey",
   "runDiagnostics",
   "runRepair",
   "readRepositoryRefs",

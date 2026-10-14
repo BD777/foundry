@@ -52,71 +52,36 @@ Blocked 必须带具体原因，例如 Needs input、Needs permission、System e
 
 ## Roadmap
 
-目标形态见 [Workspace 与 Sandbox 总纲](docs/workspace-sandbox-overview.md)：人提出 Issue，Agent 在 Sandbox 中完成并拿出证据，经人接受后合入 Workspace。开发按[模块化架构](docs/architecture-modules.md)的依赖顺序切分为 Milestone：每个 Milestone 交付一个模块的协议，并用一个端到端场景验收。每项链接到设计与完成标准；已实现的边界与已知缺口见[当前状态](docs/current-status.md)。
+目标形态见 [Workspace 与 Sandbox 总纲](docs/workspace-sandbox-overview.md)。Roadmap 按模块组织：每个模块写现在能做什么、下一步做什么，设计与实现边界见各模块链接的文档。
 
-### 已可用
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Foundry 模块分层：入口、Personal Agent（未开始）、工作流、Agent 能力面、执行内核、能力供给、基础" width="900" />
+</p>
 
-- [x] [Chats](docs/chat-experience.md)：基于原生 Claude / Codex Harness 的 Web Chat，直接在所选 Workspace 中工作，支持附件、排队输入、steer、中断恢复、分组与检索。
-- [x] [会话编排](docs/session-orchestration-design.md)：Agent 通过 `foundry` CLI / MCP 创建、steer、交接其他会话，支持 worktree 会话、fork 与只读 verifier。
-- [x] Workspace Skills：设备扫描本地 Skill 并推送到服务器目录，Workspace 按版本选择启用，依赖随之启用；Agent 只看到当前 Workspace 启用的 Skill。
-- [x] [飞书 Bot](docs/platform-extensions.md#im-integration)：Workspace 用连接器中的飞书应用运行 Bot（Server 保管密钥，每个应用一条长连接），并配对群或单聊，话题对应会话，回复以流式卡片更新；群以生成配对码的账号身份和权限执行。
-- [x] [账号与 Workspace 共享](docs/security.md#accounts)：所有接口要求登录，设备凭证与资源归属，按 Viewer / Member / Maintainer / Owner 共享 Workspace。
-- [x] [设备与部署](docs/development.md)：Daemon 主动连接 Server，多设备、多 Workspace，macOS / Linux 进程隔离；支持 [Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。
-- [x] [Issues](docs/issue-workflow.md)：在主聊天里与只读的澄清 Agent 定下完成标准并确认，执行者在候选 Worktree 中实现（可派出协作会话），系统采集证据、程序检查与独立 Agent 判定，人接受后合入 Workspace；Claude 与 Codex 均已按[准出标准](docs/foundry-conversation-release-gate.md)完成真实浏览器闭环；macOS 与 Linux 均可运行。
+上层依赖下层，下层不知道上层。橙色虚线是还没开始的部分。Chats 直接在 Workspace 中工作，不经 Sandbox；外部 Agent 经 `foundry` CLI / MCP 直接使用 Agent 能力面。图的源文件是 [architecture.mmd](docs/assets/architecture.mmd)。
 
-### M1 执行内核（已完成）
+| 模块                                                 | 现在能做                                                                                                                                                                                                                                                                                               | 下一步                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [渠道](docs/channels.md)                             | 飞书 Bot：群或单聊配对到 Workspace，话题对应会话，回复以流式卡片更新，消息里的图片和文件作为会话附件；群以生成配对码的账号身份和权限执行。                                                                                                                                                             | 飞书中的 Issue：已实现并以模拟事件测试，待真实群验收。探索：抽出通用 IM Adapter，接入飞书以外的 IM。                                        |
+| [Chats](docs/chat-experience.md)                     | 一个会话就是一个原生 Claude Code / Codex 会话，直接在所选 Workspace 中工作；附件、Server 侧排队、steer、中断恢复、会话产出与 diff、后台任务、分组与检索。                                                                                                                                              | —                                                                                                                                           |
+| [Issues](docs/issue-workflow.md)                     | 与只读澄清 Agent 定下准出条件并确认；执行者在候选 Worktree 中实现，可派出协作会话、经 `ask_person` 进入 Blocked；系统采集证据、程序检查与独立 Agent 判定；人接受后对齐并合入。Claude 与 Codex 都已按[准出标准](docs/foundry-conversation-release-gate.md)完成真实浏览器闭环，macOS 与 Linux 均可运行。 | 暂停新功能，等真实使用的反馈。探索：CI 结果作为反馈来源；同一 Issue 的不同步骤交给不同 Agent；Workflow 插件化。                             |
+| [Agent 能力面](docs/session-orchestration-design.md) | Claude 与 Codex 会话注入同一套 Foundry MCP，工具只在 Server 实现一次：派出、观察、steer、交接会话，读其他会话及其产出，租用资源，使用外部账号。`foundry` CLI 调用同一套工具，供人和外部 Agent 使用。                                                                                                   | CLI 在真实的外部 Agent 中验证。HTTP MCP 的 OAuth 2.1 等出现 Foundry 之外的远程 Agent 时再做。                                               |
+| [执行内核](docs/execution-kernel.md)                 | Session Runtime 统一启动原生会话；Sandbox 在 macOS（Seatbelt）与 Linux（bubblewrap）实现同一接口，只负责写边界与 Foundry 治理状态，其他系统 fail closed。                                                                                                                                              | Docker 容器隔离；凭据不以明文交给 Agent；部署、发消息等外部副作用按次授权。                                                                 |
+| [Resources](docs/resources.md)                       | 设备上的资源被发现、登记并列出；可租用的资源经 Server 由会话独占租用、排队与回收，可跨设备使用，目前是 Computer Use（macOS）与远程命令；浏览器由会话在本机按需启动、用完回收。                                                                                                                         | 模拟器、真机等资源接入同一生命周期。探索：多台机器共享执行与验证资源，支持异地验证。                                                        |
+| [Skills](docs/skills.md)                             | Skill 库：设备扫描与 git 仓库跟随，按不可变版本入库并带依赖；Workspace 选用并可固定版本，个人默认 Skill 覆盖本人设备上的 Workspace；Skill 所需程序在各设备上检测，Skill 包声明的工具可在设备上一键安装；私有来源可由本人的设备读取。                                                                   | 从 Skill 推断出的所需程序也能从 Foundry 安装（目前只检测并告知会话）；Server 直接读取私有来源，不依赖设备在线。探索：自动提炼与推荐 Skill。 |
+| [模型与账号](docs/models-and-accounts.md)            | 使用设备自己的 Claude Code / Codex 登录，缺失时按官方方式安装；模型服务配置 API 或网关，可按模型设上下文窗口，设备配置里的端点可提升为模型服务；模型目录经原生 SDK 读取并缓存。                                                                                                                        | —                                                                                                                                           |
+| [连接器](docs/connectors.md)                         | 飞书应用由 Server 保管密钥、经网关提供；个人外部账号可绑定到 Workspace，Agent 经 `feishu-cli` 以本人或 Bot 身份使用，设备上不留密钥。                                                                                                                                                                  | —                                                                                                                                           |
+| [设备与 Workspace](docs/devices-and-workspaces.md)   | Daemon 主动连接 Server，多设备、多 Workspace；配对、登录时启动、由 Server 下发 Worker 更新；跨设备启动会话；[Docker 部署](deploy/README.md)与[并行开发栈](docs/dev-stacks.md)。                                                                                                                        | 探索：[云端 Workspace](docs/devices-and-workspaces.md#cloud-workspace)，托管项目文件与持久状态，不同执行端按权限访问同一个逻辑 Workspace。  |
+| [身份与共享](docs/accounts-permissions-design.md)    | 所有接口要求登录；邀请、设备凭证与资源归属；按 Viewer / Member / Maintainer / Owner 共享 Workspace，撤销立即生效。                                                                                                                                                                                     | 飞书身份登录并按发送者本人授权；审计与所有权转移；设备密钥对认证。                                                                          |
 
-一套沙箱、一种启动 Agent 的方式，按模块边界解耦。Chat 直接在 Workspace 中工作，不经沙箱。验收不依赖 Issue 产品：模块测试与依赖审计、Chat 真实浏览器回归、执行内核的真实模型端到端（见[模块化架构 §5.5](docs/architecture-modules.md#55-m1-验收)）。
+### Personal Agent（未开始）
 
-- [x] [统一执行内核](docs/architecture-modules.md#51-sandbox)：一个 Sandbox 模块（macOS Seatbelt 与 Linux bubblewrap 实现同一接口），沙箱只负责写边界与 Foundry 治理状态；Session Runtime 统一启动会话。
-- [x] [Linux 执行内核](docs/architecture-modules.md#51-sandbox)：Linux 上执行、澄清、判定与合入可用（受控 HTTP 目标除外），并修复域名解析、Server 数据可读等问题。
-- [x] [编排子会话隔离](docs/architecture-modules.md#54-迁移顺序)：带 Issue 的编排子会话在候选中、与 Issue 执行同一沙箱运行，保留编排能力。
-- [x] [模块边界审计](docs/architecture-modules.md#31-依赖图)：`pnpm audit:modules` 检查跨模块依赖，违例只减不增，当前为零。
+现在由人建立和维护 Workspace，再在 Workspace 里工作：上下文边界清楚，Agent 才能把事做对，这是基础。在此之上加一层 Personal Agent：人只用自然语言提出要做的事，由它判断落到哪个已有 Workspace，或用已有的知识新建一个，再进入该 Workspace 工作。
 
-### M2 Agent 能力面（已完成）
-
-内核功能以 Chat 与编排子会话为验收场景，不依赖 Issue；验收用例见[实机回归](docs/live-regression.md)。
-
-- [x] [Foundry MCP / CLI](docs/session-orchestration-design.md)：Claude 与 Codex 会话都注入同一套 `foundry` 工具，工具只在 Server 实现一次，stdio `foundry mcp` 只做转发；Agent 可派出、观察、steer、取消、继续、交接会话与只读 verifier。
-- [x] [会话模型](docs/session-model.md)：一个会话就是一个原生会话，续聊是追加输入；同一 Workspace 内的 Agent 可操作任意会话，血缘只作记录。
-- 推迟：HTTP MCP 的 OAuth 2.1，等出现 Foundry 之外的远程 Agent 时再做。
-
-### M3 资源与跨设备（已完成）
-
-- [x] [Resource Pool](docs/tool-use-and-resources.md#basic-tool-use)：设备上的浏览器被发现、列出（MCP `list_resources` 与设备页）、按会话租用并回收；以 Chat 中的 Agent 申请浏览器并截图验收。桌面、模拟器、真机等其他资源以后接入同一生命周期。
-- [x] [跨设备会话](docs/architecture-modules.md#3-模块清单)：经 Server 中转，在另一台设备上启动会话、使用其资源；凭据留在所在设备。
-
-### M4 Issue Loop（已完成）
-
-按[模块化架构 §6 的决定 D1](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)，M4 交付[对话式准出标准](docs/foundry-conversation-release-gate.md) G1–G5 的真实浏览器闭环与 Issue 内编排；其余各项移到 M5。
-
-- [x] [Issue 内编排与统一会话记录](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)：执行与澄清都是 Issue 的会话；执行者只能在本 Issue 内派出协作会话；Issue 页列出参与的全部会话与派出关系，点开可查看记录。
-- [x] [澄清与判定的角色策略](docs/architecture-modules.md#6-m4-计划2026-09-28-确认)：澄清是续接上下文的只读会话（项目指令、选定 Skills、只读 foundry 工具）；判定是全新只读会话，可用选定 Skills，无 MCP、无令牌。
-- [x] [准出条件](docs/issue-workflow.md#issues)：Agent 结合 Workspace 起草，人确认准确版本；修改须写明理由并重新确认。
-- [x] [Issue Web 体验](docs/issue-workflow.md#issues)：Issues 入口重新开放；Board、详情与 Issue 对话按准出标准用真实 Claude 与 Codex 完成闭环验收。
-
-### M5 Issue 流程扩展
-
-- [x] [Loop graph 与准出规则](docs/issue-workflow.md#issues)：Issue 的状态流转是一份显式定义（拒绝表外流转，文档与代码由测试保持一致）；准出规则 R1–R6 带版本写入审阅快照，在“最终接受”逐条显示。
-- [x] [人工介入（Blocked）](docs/issue-conversation-design.md)：执行者经 `ask_person` 向人提问或请求许可，Issue 进入 Blocked；人回答后在同一候选中继续。
-- [ ] [飞书中的 Issue](docs/platform-extensions.md#im-integration)：在飞书话题里发起、跟进并回应 Blocked，消息带来源记录回到 Issue，复杂审阅回到 Web。已实现并以模拟事件测试，待真实群验收。
-- [x] [证据与验证](docs/issue-workflow.md#evidence-and-verify)：Codex 图像判定、PDF 参考材料与证据及预览；判定只看封存候选的干净副本；检查按已提交的锁文件离线准备依赖（pnpm、npm、Go）。视频、音频与图像标注暂不计划，见 [v1 §9](docs/evidence-and-verify-v1.md)。
-- [x] [接受与合入](docs/issue-workflow.md#accept-and-integration)：基线前移后对齐若有冲突，在候选里由执行者解决，再重新检查并接受；旧判断与批准不复用。
-- [x] [开源首发](docs/issue-workflow.md#open-source-release)：用代表性真实任务跑通完整闭环，在干净环境中复现安装。干净环境安装已复现（0.5.1）；在本仓库上（Linux，#87）和 Mac 真机上各用 Foundry 完成并接受了真实 Issue。
-
-### 并行轨道
-
-- [ ] [账号与权限后续阶段](docs/accounts-permissions-design.md)：飞书身份登录并按发送者本人授权、个人连接授权给 Workspace、审计与所有权转移、设备密钥对认证。
-- [ ] [Sandbox 隔离补全](docs/workspace-sandbox-overview.md)：Docker 容器隔离；凭据不以明文交给 Agent；部署、发消息等外部副作用按次授权。
-
-### 探索（未排期）
-
-- [ ] [CI 作为 Issue 反馈来源](docs/platform-extensions.md#im-integration)：候选在 CI 上的结果带来源记录回到 Issue。待 Issue 在真实使用中的反馈再定。
-- [ ] [Workflow 插件化](docs/platform-extensions.md#workflow-plugins)：Issue 作为内置 Workflow，开放侧边栏 Tab、Workflow 定义等扩展接口，让用户按自己的方式组织工作。
-- [ ] [Issue 多 Agent 协作](docs/issue-workflow.md#issue-multi-agent)：同一 Issue 的不同步骤交给不同 Agent 或 Harness，对用户仍是一段对话。
-- [ ] [跨 Host 资源调度](docs/tool-use-and-resources.md#shared-resource-scheduling)：多台机器共享执行与验证资源，支持异地验证。
-- [ ] [通用 IM 接入](docs/platform-extensions.md#im-integration)：抽出 Bot Adapter，接入飞书以外的 IM。
-- [ ] [云端 Workspace](docs/platform-extensions.md#cloud-workspace)：托管项目文件与持久状态，不同执行端按权限访问同一个逻辑 Workspace。
+- **它本身是一个 Workspace。** 里面放其他 Workspace 的索引，按渐进式披露组织：先看概要，需要时再读具体 Workspace。不另建一个真相源，它的知识同样经验证与接受积累。
+- **只做两件事**：Dispatch（判断落到哪里、是否新建），以及与人交互时的快速响应。具体工作仍在各自 Workspace 中完成。
+- **分发要可确认。** 先给出"放到哪个 Workspace"的建议由人确认，新建 Workspace 作为一次需要人接受的变更；建议足够准确后再自动分发。
+- **需要下层补齐**：不绑定 Workspace 的入口；每个 Workspace 可供分发判断的简介；Agent 可调用的新建与登记 Workspace 工具；个人层与 Workspace 层记忆的边界。
 
 ## 快速开始
 
@@ -187,7 +152,6 @@ cases/             产品回归场景与验证要求
 | [文档索引](docs/README.md)                 | 全部文档的分类入口                      |
 | [开发指南](docs/development.md)            | 安装、运行、Worker 配置与验证           |
 | [并行开发栈](docs/dev-stacks.md)           | 多套 Foundry 同时开发的隔离栈与体检工具 |
-| [当前状态](docs/current-status.md)         | 已有能力与已知缺口                      |
 | [产品理念](docs/philosophy.md)             | 项目目标与工作闭环                      |
 | [技术架构](docs/technical-selection.md)    | 组件职责与技术选型                      |
 | [总纲](docs/workspace-sandbox-overview.md) | Workspace、Sandbox 与 Issue 的整体设计  |

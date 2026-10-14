@@ -5,12 +5,14 @@ import { ClaudeBackgroundTaskTracker } from "../agent-background-tasks.js";
 import { claudeAgentSpawn } from "../agent-processes.js";
 import { ClaudeTimerTracker } from "../agent-timers.js";
 import { ClaudeContextTracker } from "../context-usage.js";
+import { configuredWindow } from "../context-window.js";
 import { knownSessionScratchDirectory } from "../resource-pool.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { claudeFileWriteHooks, mergeClaudeHooks } from "../session-files.js";
 import {
   activeClaudeRuntimes,
   AsyncInputQueue,
+  reportClaudeOwnTurn,
   type ActiveClaudeRuntime,
   type ClaudeSDKQuery,
 } from "../session-state.js";
@@ -117,7 +119,10 @@ function installClaudeRuntimeObservers(
           runtime.nativeSessionId,
           tasks,
         ),
-      timerTurnStarting: () => refreshClaudeFoundryTools(runtime),
+      timerTurnStarting: async () => {
+        reportClaudeOwnTurn(runtime);
+        await refreshClaudeFoundryTools(runtime);
+      },
     },
     sessionTimers.attach(run.session.id, run.requestedNativeSessionId, runtime),
   );
@@ -131,6 +136,7 @@ function installClaudeRuntimeObservers(
   runtime.background.attach();
   runtime.context = new ClaudeContextTracker({
     resumed: Boolean(options.resume),
+    configured: configuredWindow(run.profile.contextWindow),
   });
   options.hooks = mergeClaudeHooks(
     runtime.timers.hooks(),

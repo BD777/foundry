@@ -60,10 +60,9 @@ async function runCodexTurn(
   const env = codexSessionEnvironment(directory, profile);
   const codex = new sdk.Codex({
     codexPathOverride: resolveCodexCommand(),
-    baseUrl: profile.codexModelProvider ? undefined : profile.baseUrl,
     apiKey: profile.codexModelProvider ? undefined : env.CODEX_API_KEY,
     env,
-    config: codexProfileConfig(profile),
+    config: codexProfileConfig(profile, env),
   });
   const thread = codex.startThread({
     workingDirectory: directory,

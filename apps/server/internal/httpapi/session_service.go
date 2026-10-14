@@ -1,15 +1,20 @@
 package httpapi
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -231,9 +236,43 @@ func (s *Server) pickSessionDevice(ctx context.Context, input *store.CreateAgent
 
 // SendSessionMessage delivers a follow-up to a session on behalf of an
 // integration (Feishu) that acts with the workspace owner's authority.
-func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message string) error {
-	_, err := s.sendSessionMessage(ctx, sessionID, store.SendAgentSessionInput{Prompt: message})
+func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message string, attachments []store.ChatAttachment) error {
+	_, err := s.sendSessionMessage(ctx, sessionID, store.SendAgentSessionInput{Prompt: message, Attachments: attachments})
 	return err
+}
+
+// SaveAttachments stores the files an integration (Feishu) received with
+// one message in the workspace's attachments on its device, as a person's
+// upload is and within the same limit.
+func (s *Server) SaveAttachments(ctx context.Context, workspaceID string, files []feishu.MessageFile) ([]store.ChatAttachment, error) {
+	total := 0
+	for _, file := range files {
+		total += len(file.Data)
+	}
+	if total > maxAttachmentUploadBytes {
+		return nil, fmt.Errorf("the files hold more than %d MB, the most one message may bring", maxAttachmentUploadBytes>>20)
+	}
+	workspace, err := s.store.GetWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	attachments := make([]store.ChatAttachment, 0, len(files))
+	for index, file := range files {
+		mimeType := file.MIMEType
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			mimeType = cmp.Or(mime.TypeByExtension(strings.ToLower(filepath.Ext(sanitizeAttachmentName(file.Name)))), mimeType)
+		}
+		data := bytes.NewReader(file.Data)
+		attachment, err := s.storeAttachment(ctx, workspace, now, index, file.Name, mimeType, int64(len(file.Data)), func(buffer []byte) (int, error) {
+			return io.ReadFull(data, buffer)
+		})
+		if err != nil {
+			return nil, err
+		}
+		attachments = append(attachments, attachment)
+	}
+	return attachments, nil
 }
 
 // sendSessionMessage is the one way to talk to an existing session: a

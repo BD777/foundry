@@ -105,6 +105,33 @@ export class WorkspaceRoster {
   }
 
   /**
+   * Tells the server the device changed (its profiles, provider health or
+   * runtimes). The server keeps those per device, so the device's own
+   * registration goes whether or not it has a workspace; each served
+   * workspace's follows, as its agents are made from the device's profiles.
+   */
+  reportDevice(): void {
+    sendWebSocket(
+      this.socket,
+      daemonMessageTypes.workspaceReady,
+      { registration: this.deviceRegistration() },
+      `registration_device_${Date.now()}`,
+    );
+    for (const workspacePath of this.knownPaths().filter(
+      workspaceFolderPresent,
+    )) {
+      const registration = this.registration(workspacePath);
+      this.register(registration);
+      sendWebSocket(
+        this.socket,
+        daemonMessageTypes.workspaceReady,
+        { registration },
+        `registration_${safeID(registration.workspace.id)}_${Date.now()}`,
+      );
+    }
+  }
+
+  /**
    * The registration a reply carries: the daemon's first workspace, or the
    * device alone while it has none. A folder the person removed is never
    * it, not even the one the daemon was started with.

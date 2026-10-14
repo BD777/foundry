@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowRight } from "lucide-react";
 import type {
   AgentProfileProjection,
   DeviceProjection,
+  ProfileDefinition,
 } from "@bd777/foundry-protocol";
-import { promoteProfile } from "../../api";
 import { Badge } from "../../components/ui/badge";
-import { ConfirmButton } from "../../components/ui/confirm-button";
+import { Button } from "../../components/ui/button";
+import { RowMenu } from "../../components/ui/row-menu";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
+import { navigateToModelProvider } from "../../lib/in-app-navigation";
+import { PromoteProviderDialog } from "./promote-provider-dialog";
 
 /** Host and path, which is what tells two providers on one gateway apart. */
 function endpointLabel(baseUrl?: string): string {
@@ -37,20 +41,23 @@ export function deviceProviders(
  * API providers in the device's own Claude Code / Codex configuration, each
  * once. Those that answered a turn through their agent's SDK are ready to
  * choose in a chat, with nothing to set up; ones still being checked, or not
- * answering, are a line of explanation rather than a row.
+ * answering, are a line of explanation rather than a row. A ready one can be
+ * promoted to a Model provider on the server; once it is, chats use that
+ * copy and the row links to it.
  */
 export function DeviceProviders({
   device,
   profiles,
+  serverProfiles,
   onRefresh,
 }: {
   device: DeviceProjection;
   profiles: AgentProfileProjection[];
+  serverProfiles: ProfileDefinition[];
   onRefresh: () => Promise<void>;
 }) {
   const { t } = useTranslation("profiles");
-  const [copying, setCopying] = useState<string>();
-  const [error, setError] = useState("");
+  const [promoting, setPromoting] = useState<AgentProfileProjection>();
   const rows = deviceProviders(profiles);
   const usable = rows.filter((row) => row.status === "healthy");
   const pending = rows.filter((row) => row.check?.status === "pending");
@@ -58,20 +65,15 @@ export function DeviceProviders({
     (row) => row.status !== "healthy" && row.check?.status !== "pending",
   );
   if (!rows.length) return null;
-  const copy = async (row: AgentProfileProjection) => {
-    setCopying(row.id);
-    setError("");
-    try {
-      await promoteProfile({ deviceId: device.id, profileId: row.id });
-      await onRefresh();
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : t("providers.copyFailed"),
-      );
-    } finally {
-      setCopying(undefined);
-    }
-  };
+  // The Model provider this row was promoted into, by its recorded source.
+  // Promoting again updates that one; a server profile that only shares the
+  // endpoint (promotedProfileId) is linked but not updated.
+  const promotedTo = (row: AgentProfileProjection) =>
+    serverProfiles.find(
+      (profile) =>
+        profile.promotedFrom?.deviceId === device.id &&
+        profile.promotedFrom.profileId === row.id,
+    );
   return (
     <section className="fdy-device-section">
       <header className="fdy-management-heading">
@@ -82,53 +84,66 @@ export function DeviceProviders({
       </header>
       {usable.length ? (
         <div className="fdy-management-list">
-          {usable.map((row) => (
-            <div className="fdy-management-row" key={row.id}>
-              <RuntimeMark runtime={row.runtime} />
-              <span>
-                <strong>{row.label}</strong>
-                <small>
-                  {[
-                    endpointLabel(row.baseUrl),
-                    t("providers.from", { source: row.configLabel }),
-                    row.check?.checkedAt
-                      ? t("providers.answered", {
-                          time: new Date(row.check.checkedAt).toLocaleString(
-                            i18n.language,
-                            {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          ),
-                        })
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </small>
-              </span>
-              <Badge tone="online">{t("providers.ready")}</Badge>
-              {row.promotedProfileId ? (
-                <Badge tone="neutral">{t("providers.onServer")}</Badge>
-              ) : row.shareable ? (
-                <ConfirmButton
-                  size="sm"
-                  variant="secondary"
-                  disabled={
-                    copying !== undefined || device.status !== "connected"
-                  }
-                  confirmLabel={t("providers.copyConfirm")}
-                  onConfirm={() => void copy(row)}
-                >
-                  {copying === row.id
-                    ? t("providers.copying")
-                    : t("providers.copyToServer")}
-                </ConfirmButton>
-              ) : null}
-            </div>
-          ))}
+          {usable.map((row) => {
+            const promoted = promotedTo(row);
+            const linkedId = promoted?.id ?? row.promotedProfileId;
+            return (
+              <div className="fdy-management-row" key={row.id}>
+                <RuntimeMark runtime={row.runtime} />
+                <span>
+                  <strong>{row.label}</strong>
+                  <small>
+                    {[
+                      endpointLabel(row.baseUrl),
+                      t("providers.from", { source: row.configLabel }),
+                      row.check?.checkedAt
+                        ? t("providers.answered", {
+                            time: new Date(row.check.checkedAt).toLocaleString(
+                              i18n.language,
+                              {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            ),
+                          })
+                        : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                </span>
+                {linkedId ? (
+                  <Button
+                    aria-label={t("providers.openPromoted", {
+                      name: promoted?.label ?? row.label,
+                    })}
+                    onClick={() => navigateToModelProvider(linkedId)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    {t("providers.promoted")}
+                    <ArrowRight size={14} />
+                  </Button>
+                ) : (
+                  <Badge tone="online">{t("providers.ready")}</Badge>
+                )}
+                <RowMenu
+                  label={t("providers.actions", { name: row.label })}
+                  items={[
+                    {
+                      key: "promote",
+                      label: promoted
+                        ? t("providers.updatePromotion")
+                        : t("providers.promote"),
+                      onSelect: () => setPromoting(row),
+                    },
+                  ]}
+                />
+              </div>
+            );
+          })}
         </div>
       ) : null}
       {pending.length ? (
@@ -147,10 +162,17 @@ export function DeviceProviders({
           })}
         </p>
       ))}
-      {error ? (
-        <p className="fdy-location-error" role="alert">
-          {error}
-        </p>
+      {promoting ? (
+        <PromoteProviderDialog
+          device={device}
+          row={promoting}
+          promoted={promotedTo(promoting)}
+          onClose={() => setPromoting(undefined)}
+          onPromoted={async () => {
+            await onRefresh();
+            setPromoting(undefined);
+          }}
+        />
       ) : null}
     </section>
   );

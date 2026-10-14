@@ -20,6 +20,11 @@ import type {
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { readOptionalText, safeID } from "./utils.js";
 import { getDevice } from "./device.js";
+import {
+  claudeContextWindowEnvironment,
+  claudeRunModel,
+  type SessionContextWindow,
+} from "./context-window.js";
 import { nativeAgentProfiles } from "./native-agent-config.js";
 import { nativeLoginHealth } from "./native-login.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
@@ -66,6 +71,10 @@ export interface AgentProfileLocalConfig {
   model?: string;
   /** Models offered for this profile; `model` is the default. */
   models?: string[];
+  /** A server profile's per-model windows the person set. */
+  contextWindows?: Record<string, number>;
+  /** The window this run's model was resolved to (context-window.ts). */
+  contextWindow?: SessionContextWindow;
   /**
    * `server` marks a definition that came from the control plane for this run
    * only — it is never written to the local profiles file.
@@ -438,28 +447,9 @@ export function agentProfilesForWorkspace(
       runtime: profile.runtime,
       secretStored: profileSecretPlacement(profile),
       ...discoveredProviderStatus(id, profile, health),
-      shareable: shareableProfile(profile) || undefined,
+      keySource: providerKey(profile).keySource,
     };
   });
-}
-
-function shareableProfile(profile: AgentProfileLocalConfig): boolean {
-  if (
-    profile.origin === "server" ||
-    (profile.connectionType !== "openai_compatible" &&
-      profile.connectionType !== "anthropic_compatible") ||
-    !profile.apiKey?.trim() ||
-    !profile.baseUrl?.trim()
-  )
-    return false;
-  try {
-    const host = new URL(profile.baseUrl).hostname;
-    return !["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"].includes(
-      host,
-    );
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -521,6 +511,7 @@ export function profileConfigFromDefinition(
     label: definition.label,
     model: definition.model?.trim() || undefined,
     models: definition.models,
+    contextWindows: definition.contextWindows,
     origin: "server",
     promptPrefix: definition.promptPrefix?.trim() || undefined,
     runtime: definition.runtime,
@@ -586,18 +577,54 @@ function credentialEnvNames(runtime: AgentProfileLocalConfig["runtime"]) {
 }
 
 /**
- * The api key this machine actually authenticates with for one profile, for
- * the server's promote flow. The profiles file is only the first source: a
- * profile can leave `apiKey` empty and rely on its own env block or on the
- * daemon's environment, and that key is the one its runs really use, so
- * promotion has to carry it too. An empty string means the profile has no key
- * at all — the normal case for local login and command profiles — which is not
- * an error here. The value is returned to the caller and never logged.
+ * The key an API provider's own configuration names, and its value on this
+ * machine. Only that one source is read: Codex's `env_key`, a bearer token or
+ * Authorization header in config.toml, `env.ANTHROPIC_AUTH_TOKEN` (or
+ * `_API_KEY`) in Claude's settings, or the key in Foundry's profiles file and
+ * that profile's own env block. Nothing else in the daemon's environment
+ * stands in for it. A provider that names no key, authenticates with a login
+ * or a command, or whose named key is empty here yields none.
  */
-export function localProfileCredential(profileId: string): string {
+function providerKey(profile: AgentProfileLocalConfig): {
+  keySource?: string;
+  credential?: string;
+} {
+  if (
+    profile.origin === "server" ||
+    (profile.connectionType !== "openai_compatible" &&
+      profile.connectionType !== "anthropic_compatible")
+  )
+    return {};
+  if (profile.discovered) {
+    const credential = profile.apiKey?.trim();
+    return credential &&
+      profile.keySource &&
+      profile.keySource !== "none" &&
+      profile.keyCheckable !== false
+      ? { keySource: profile.keySource, credential }
+      : {};
+  }
+  const fromFile = profile.apiKey?.trim();
+  if (fromFile) return { keySource: "apiKey", credential: fromFile };
+  for (const name of credentialEnvNames(profile.runtime)) {
+    const credential = profile.env?.[name]?.trim();
+    if (credential) return { keySource: `env.${name}`, credential };
+  }
+  return {};
+}
+
+/**
+ * The key one configured API provider names, for the server's promote flow,
+ * which asks only after the person confirmed copying it. The value goes to
+ * the caller and is never logged.
+ */
+export function configuredProviderKey(profileId: string): {
+  keySource?: string;
+  credential?: string;
+} {
   const id = profileId.trim();
   if (!id) {
-    throw new Error("read_profile_credential requires profileId");
+    throw new Error("read_provider_key requires profileId");
   }
   const profile = configuredAgentProfiles("").find(
     (item) => profileID(item) === id,
@@ -605,18 +632,7 @@ export function localProfileCredential(profileId: string): string {
   if (!profile) {
     throw new Error(`Agent profile "${id}" is not configured on this device.`);
   }
-  const fromFile = profile.apiKey?.trim();
-  if (fromFile) {
-    return fromFile;
-  }
-  const env = profile.env ?? {};
-  for (const name of credentialEnvNames(profile.runtime)) {
-    const value = env[name]?.trim() || process.env[name]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-  return "";
+  return providerKey(profile);
 }
 
 export function profileRuntimeEnvironment(
@@ -653,7 +669,8 @@ export function profileRuntimeEnvironment(
   if (model) {
     env.FOUNDRY_AGENT_MODEL = model;
     if (profile.runtime === "claude") {
-      env.ANTHROPIC_MODEL = model;
+      const runModel = claudeRunModel(profile, model);
+      env.ANTHROPIC_MODEL = runModel;
       // A compatible endpoint's env may carry stale defaults (a different
       // model for Haiku/Sonnet/Opus), and operations like context compaction
       // use them — a mismatch causes unrecognized_model errors, so pin them to
@@ -661,16 +678,22 @@ export function profileRuntimeEnvironment(
       // offers CLI aliases such as "default" or "opus[1m]", and pinning the
       // defaults to an alias makes the CLI resolve names like "default[1m]".
       if (profile.connectionType !== "local_login") {
-        env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
-        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
-        env.CLAUDE_CODE_SUBAGENT_MODEL = model;
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL = runModel;
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = runModel;
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = runModel;
+        env.CLAUDE_CODE_SUBAGENT_MODEL = runModel;
       }
     } else {
       env.OPENAI_MODEL = model;
       env.CODEX_MODEL = model;
     }
   }
+  if (
+    profile.runtime === "claude" &&
+    profile.contextWindow &&
+    profile.contextWindow.model === model
+  )
+    Object.assign(env, claudeContextWindowEnvironment(profile.contextWindow));
   return env;
 }
 

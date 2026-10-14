@@ -185,6 +185,6 @@ server 二进制和工作区注册表。默认栈不加 `--stack` 即可。
 
 ## 后续（roadmap）
 
-这套「验证用的本机资源」将来要变成 Foundry 产品里的[资源池](tool-use-and-resources.md#shared-resource-scheduling)：按需申请一套
+这套「验证用的本机资源」将来要变成 Foundry 产品里的[资源池](resources.md)：按需申请一套
 隔离环境、用完回收，而不是靠开发者手工建栈。当前脚本是那条路的最小可用形态，
 接口（名字、端口基址、状态根、服务标签）刻意保持显式，方便之后交给产品托管。

@@ -158,6 +158,15 @@ func (c *subagentListCache) invalidate(sessionID string) {
 	}
 }
 
+// invalidateAll marks every list read out of date.
+func (c *subagentListCache) invalidateAll() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, entry := range c.entries {
+		entry.revision++
+	}
+}
+
 // progressed marks what was read of the session's subagents as behind a
 // progress report: still served until subagentProgressInterval old.
 func (c *subagentListCache) progressed(sessionID string) {

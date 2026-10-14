@@ -42,6 +42,30 @@ export function contextSummary(context: ChatSessionStatus["context"]): string {
   });
 }
 
+/**
+ * For a window Foundry set (compatible endpoints): the window the runtime runs
+ * with and where it came from. A runtime may run with another window than the
+ * one set (Claude Code keeps its own for a model it knows; Codex caps at the
+ * model's maximum and counts 95% usable), and then both are named.
+ */
+function windowValue(
+  context: ChatSessionStatus["context"],
+): string | undefined {
+  const { contextWindow, configured } = context;
+  if (!contextWindow || !configured) return undefined;
+  const window = formatTokenCount(contextWindow);
+  const source = i18n.t(
+    `chat:contextCard.status.windowSource.${configured.source}`,
+  );
+  return configured.tokens === contextWindow
+    ? i18n.t("chat:contextCard.status.windowValue", { window, source })
+    : i18n.t("chat:contextCard.status.windowAdjusted", {
+        window,
+        configured: formatTokenCount(configured.tokens),
+        source,
+      });
+}
+
 function formatCost(usd: number): string {
   return new Intl.NumberFormat(i18n.language, {
     currency: "USD",
@@ -95,6 +119,11 @@ export function statusRows(
             effort: t(`agents:effort.${status.effort}`),
           })
         : model,
+    },
+    {
+      id: "window",
+      label: t("chat:contextCard.status.window"),
+      value: windowValue(status.context),
     },
     {
       id: "account",

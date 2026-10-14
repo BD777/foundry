@@ -34,9 +34,10 @@ export function DeviceAccess({
       ),
   ).length;
   // API providers in the device's own configuration are model providers too;
-  // only the usable ones count.
+  // only the usable ones count, and a promoted one already counts as its
+  // server copy.
   const deviceCount = deviceProviders(ownProfiles).filter(
-    (row) => row.status === "healthy",
+    (row) => row.status === "healthy" && !row.promotedProfileId,
   ).length;
   return (
     <section className="fdy-device-access">
@@ -154,6 +155,7 @@ export function DeviceAccess({
             <DeviceProviders
               device={device}
               profiles={ownProfiles}
+              serverProfiles={props.profiles}
               onRefresh={props.onRefresh}
             />
           </>

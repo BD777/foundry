@@ -10,7 +10,7 @@ Workspace 是持续演化的主体，包含代码、Rules、Docs、Know-how 与�
 
 需要支持多个独立 Issue 在 Worker 容量内并行，每个 Issue 可涉及根仓库与多个任意深度子仓库。候选结果经过 Workspace Accept 后纳入已接受状态。已有 submodule 关系保留并识别，不能当作互不关联的独立仓库随意处理。
 
-采用 Git worktree，不实现通用 OverlayFS/AgentFS，也不承诺候选 CWD 对所有未准备仓库提供透明目录映射。仓库范围由 Agent 在只读探索中逐步确定，不要求用户预先填写。Browser/Computer 工具、自动拆分和依赖 DAG 不在本方案范围内（见 [Tool Use](tool-use-and-resources.md)）。
+采用 Git worktree，不实现通用 OverlayFS/AgentFS，也不承诺候选 CWD 对所有未准备仓库提供透明目录映射。仓库范围由 Agent 在只读探索中逐步确定，不要求用户预先填写。Browser/Computer 工具、自动拆分和依赖 DAG 不在本方案范围内（见 [Tool Use](resources.md)）。
 
 ## 2. worktree 放在哪里
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -28,7 +27,10 @@ import (
 
 type SessionDispatcher interface {
 	CreateSessionAndDispatch(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error)
-	SendSessionMessage(ctx context.Context, sessionID, message string) error
+	SendSessionMessage(ctx context.Context, sessionID, message string, attachments []store.ChatAttachment) error
+	// SaveAttachments stores the files a message brought in the workspace's
+	// attachments, as a person's upload is and within its limit.
+	SaveAttachments(ctx context.Context, workspaceID string, files []MessageFile) ([]store.ChatAttachment, error)
 }
 
 // botUpdated tells a workspace's viewers what its bot is now: its app, how
@@ -425,17 +427,22 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 		return nil
 	}
 	messageID, chatID, rawContent := *msg.MessageId, *msg.ChatId, *msg.Content
-	chatType, rootID := "", ""
+	chatType, rootID, messageType := "", "", ""
 	if msg.ChatType != nil {
 		chatType = *msg.ChatType
 	}
 	if msg.RootId != nil {
 		rootID = *msg.RootId
 	}
-	cleanText := cleanLeadingMentions(extractMessageText(rawContent))
+	if msg.MessageType != nil {
+		messageType = *msg.MessageType
+	}
+	incoming := parseMessage(messageType, rawContent)
+	cleanText := cleanLeadingMentions(incoming.text)
 	if cleanText == "" {
 		return nil
 	}
+	incoming.text = cleanText
 	if strings.HasPrefix(cleanText, "/pair") {
 		return m.handlePairCommand(ctx, app, messageID, chatID, chatType, senderOpenID(event), cleanText)
 	}
@@ -446,7 +453,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 				if thread.IssueID != "" {
 					return m.handleIssueReply(ctx, route, app.client, messageID, thread, cleanText)
 				}
-				return m.handleTopicFollowUp(ctx, route, app, messageID, chatID, thread, cleanText)
+				return m.handleTopicFollowUp(ctx, route, app, messageID, thread, incoming)
 			}
 		}
 	}
@@ -463,7 +470,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.issueDesk() != nil {
 		return m.handleNewIssue(ctx, route, app.client, messageID, chatID, strings.TrimSpace(goal))
 	}
-	return m.handleNewTopic(ctx, route, app, messageID, chatID, cleanText)
+	return m.handleNewTopic(ctx, route, app, messageID, chatID, incoming)
 }
 
 func (m *WSManager) replyFailure(ctx context.Context, client botClient, messageID, title, detail, reason string) {
@@ -537,8 +544,8 @@ func topicTitle(prompt string) string {
 	return prompt
 }
 
-func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID, prompt string) error {
-	title := topicTitle(prompt)
+func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID string, message incomingMessage) error {
+	title := topicTitle(message.text)
 	cardMessageID, err := app.client.ReplyCard(ctx, messageID, BuildRunningCard(title, "正在理解任务并启动智能体会话...", "启动中"))
 	if err != nil {
 		log.Printf("[feishu] failed to reply card: %v", err)
@@ -549,9 +556,11 @@ func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRou
 		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, refusal, "无权执行"))
 		return nil
 	}
+	prompt, attachments := m.bringFiles(ctx, app.client, route.WorkspaceID, messageID, message)
 	session, err := m.dispatcher.CreateSessionAndDispatch(ctx, store.CreateAgentSessionInput{
 		WorkspaceID:     route.WorkspaceID,
 		Prompt:          prompt,
+		Attachments:     attachments,
 		Source:          "chat",
 		CreatedByUserID: userID,
 	})
@@ -574,7 +583,7 @@ func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRou
 	return nil
 }
 
-func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID string, thread store.FeishuChatThread, prompt string) error {
+func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID string, thread store.FeishuChatThread, message incomingMessage) error {
 	if _, refusal := m.boundUser(ctx, route); refusal != "" {
 		m.replyFailure(ctx, app.client, messageID, "无法继续", refusal, "无权执行")
 		return nil
@@ -586,20 +595,21 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuB
 		m.replyFailure(ctx, app.client, messageID, "无法继续", "找不到该话题的智能体会话", err.Error())
 		return nil
 	}
+	prompt, attachments := m.bringFiles(ctx, app.client, route.WorkspaceID, messageID, message)
 	if session.Status == "running" || session.Status == "queued" || session.Status == "blocked" {
-		if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
+		if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt, attachments); err != nil {
 			log.Printf("[feishu] failed to steer session %s: %v", session.ID, err)
 		}
-		m.streamBuffer.Update(session.ID, app.client, thread.CardMessageID, session.Title, session.Response, "收到补充指令: "+prompt)
+		m.streamBuffer.Update(session.ID, app.client, thread.CardMessageID, session.Title, session.Response, "收到补充指令: "+message.text)
 		return nil
 	}
-	title := topicTitle(prompt)
+	title := topicTitle(message.text)
 	cardMessageID, err := app.client.ReplyCard(ctx, messageID, BuildRunningCard(title, "继续话题执行中...", "连续执行"))
 	if err != nil {
 		log.Printf("[feishu] failed to reply follow-up card: %v", err)
 		return nil
 	}
-	if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt); err != nil {
+	if err := m.dispatcher.SendSessionMessage(ctx, session.ID, prompt, attachments); err != nil {
 		_ = app.client.PatchCard(ctx, cardMessageID, BuildFailedCard(title, "继续会话失败", err.Error()))
 		return nil
 	}
@@ -701,87 +711,4 @@ func (m *WSManager) SessionEnded(session store.AgentSession) {
 	} else {
 		m.streamBuffer.Fail(session.ID, app.client, meta.cardMessageID, meta.title, session.Response, session.Error)
 	}
-}
-
-type postElement struct {
-	Tag      string `json:"tag"`
-	Text     string `json:"text"`
-	Href     string `json:"href"`
-	UserID   string `json:"user_id"`
-	UserName string `json:"user_name"`
-}
-
-type postBody struct {
-	Title   string          `json:"title"`
-	Content [][]postElement `json:"content"`
-}
-
-func extractPostContent(post postBody) string {
-	var lines []string
-	if post.Title != "" {
-		lines = append(lines, post.Title)
-	}
-	for _, paragraph := range post.Content {
-		var line strings.Builder
-		for _, el := range paragraph {
-			switch el.Tag {
-			case "text", "a", "code_block":
-				line.WriteString(el.Text)
-			case "at":
-				// Skip mention elements (e.g. @bot)
-				continue
-			}
-		}
-		trimmed := strings.TrimSpace(line.String())
-		if trimmed != "" {
-			lines = append(lines, trimmed)
-		}
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-func cleanLeadingMentions(text string) string {
-	text = strings.TrimSpace(text)
-	for strings.HasPrefix(text, "@") {
-		idx := strings.IndexAny(text, " \t\n\r")
-		if idx == -1 {
-			return ""
-		}
-		text = strings.TrimSpace(text[idx:])
-	}
-	return text
-}
-
-func extractMessageText(contentJSON string) string {
-	// 1. Try plain text message format: {"text": "..."}
-	var textBody struct {
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(contentJSON), &textBody); err == nil && textBody.Text != "" {
-		re := regexp.MustCompile(`@_user_\d+|@_all`)
-		cleaned := re.ReplaceAllString(textBody.Text, "")
-		return strings.TrimSpace(cleaned)
-	}
-
-	// 2. Try direct post format: {"title": "...", "content": [[...]]}
-	var directPost postBody
-	if err := json.Unmarshal([]byte(contentJSON), &directPost); err == nil && (directPost.Title != "" || len(directPost.Content) > 0) {
-		extracted := extractPostContent(directPost)
-		if extracted != "" {
-			return extracted
-		}
-	}
-
-	// 3. Try localized post format: {"zh_cn": {"title": "...", "content": [[...]]}}
-	var localizedPost map[string]postBody
-	if err := json.Unmarshal([]byte(contentJSON), &localizedPost); err == nil {
-		for _, post := range localizedPost {
-			extracted := extractPostContent(post)
-			if extracted != "" {
-				return extracted
-			}
-		}
-	}
-
-	return strings.TrimSpace(contentJSON)
 }

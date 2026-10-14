@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { CodexContextFollower, codexHome } from "../context-usage.js";
+import { configuredWindow } from "../context-window.js";
 import { runOnNativeSession } from "../native-session.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
@@ -131,7 +132,10 @@ async function runCodexTurn(
       files,
       eventsPath,
       thread,
-      context: new CodexContextFollower([codexHome(env)]),
+      context: new CodexContextFollower(
+        [codexHome(env)],
+        configuredWindow(profile.contextWindow),
+      ),
       nativeSessionId:
         session.nativeSessionId?.trim() || thread.thread.id || "",
       finalResult: "",

@@ -14,7 +14,7 @@ import (
 )
 
 // profileColumns lists the projected columns in scanProfile's order.
-const profileColumns = `id, runtime, label, auth_mode, connection_type, base_url, model, models, prompt_prefix,
+const profileColumns = `id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
 	claude_effort, claude_permission_mode,
 	codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed,
 	owner_user_id, updated_at`
@@ -71,6 +71,12 @@ func (s *Store) setupProfiles(ctx context.Context) error {
 	return nil
 }
 
+// addProfileContextWindowsColumn adds the per-model context windows a person
+// sets on a server profile, stored as a JSON object of model id to tokens.
+func (s *Store) addProfileContextWindowsColumn(ctx context.Context) error {
+	return s.ensureColumn(ctx, "profiles", "context_windows", `ALTER TABLE profiles ADD COLUMN context_windows TEXT NOT NULL DEFAULT '{}'`)
+}
+
 // ListProfiles returns every server profile. HasCredential stays false: the
 // secret store is the HTTP layer's concern, and this layer never reads it.
 func (s *Store) ListProfiles(ctx context.Context) ([]store.ProfileDefinition, error) {
@@ -90,6 +96,9 @@ func (s *Store) ListProfiles(ctx context.Context) ([]store.ProfileDefinition, er
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list profiles: %w", err)
 	}
+	if err := attachProfilePromotions(ctx, s.reader(), result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -104,7 +113,11 @@ func (s *Store) GetProfile(ctx context.Context, id string) (store.ProfileDefinit
 	if err != nil {
 		return store.ProfileDefinition{}, fmt.Errorf("load profile %s: %w", id, err)
 	}
-	return profile, nil
+	profiles := []store.ProfileDefinition{profile}
+	if err := attachProfilePromotions(ctx, s.conn(), profiles); err != nil {
+		return store.ProfileDefinition{}, err
+	}
+	return profiles[0], nil
 }
 
 // SaveProfile is an upsert primitive: an empty input.ID mints prof_<uuid>, and
@@ -123,11 +136,11 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 		}
 		_, err := tx.conn().ExecContext(ctx, `
 			INSERT INTO profiles (
-				id, runtime, label, auth_mode, connection_type, base_url, model, models, prompt_prefix,
+				id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
 				claude_effort, claude_permission_mode,
 				codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed,
 				owner_user_id, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				runtime = excluded.runtime,
 				label = excluded.label,
@@ -136,6 +149,7 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 				base_url = excluded.base_url,
 				model = excluded.model,
 				models = excluded.models,
+				context_windows = excluded.context_windows,
 				prompt_prefix = excluded.prompt_prefix,
 				claude_effort = excluded.claude_effort,
 				claude_permission_mode = excluded.claude_permission_mode,
@@ -144,7 +158,7 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 				codex_approval_policy = excluded.codex_approval_policy,
 				codex_speed = excluded.codex_speed,
 				updated_at = excluded.updated_at`,
-			id, input.Runtime, input.Label, input.AuthMode, input.ConnectionType, input.BaseURL, input.Model, encodeModelList(input.Models), input.PromptPrefix,
+			id, input.Runtime, input.Label, input.AuthMode, input.ConnectionType, input.BaseURL, input.Model, encodeModelList(input.Models), encodeContextWindows(input.ContextWindows), input.PromptPrefix,
 			input.ClaudeEffort, input.ClaudePermissionMode,
 			input.CodexReasoningEffort, input.CodexSandboxMode, input.CodexApprovalPolicy, input.CodexSpeed,
 			input.OwnerUserID, now, now)
@@ -272,6 +286,30 @@ func encodeModelList(models []string) string {
 	return string(encoded)
 }
 
+// encodeContextWindows stores the per-model windows as a JSON object; models
+// with no positive window are dropped.
+func encodeContextWindows(windows map[string]int64) string {
+	cleaned := map[string]int64{}
+	for model, tokens := range windows {
+		if trimmed := strings.TrimSpace(model); trimmed != "" && tokens > 0 {
+			cleaned[trimmed] = tokens
+		}
+	}
+	encoded, err := json.Marshal(cleaned)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+func decodeContextWindows(raw string) map[string]int64 {
+	var windows map[string]int64
+	if err := json.Unmarshal([]byte(raw), &windows); err != nil || len(windows) == 0 {
+		return nil
+	}
+	return windows
+}
+
 func decodeModelList(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
 		return nil
@@ -285,7 +323,7 @@ func decodeModelList(raw string) []string {
 
 func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinition, error) {
 	var profile store.ProfileDefinition
-	var models string
+	var models, contextWindows string
 	err := row.Scan(
 		&profile.ID,
 		&profile.Runtime,
@@ -295,6 +333,7 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 		&profile.BaseURL,
 		&profile.Model,
 		&models,
+		&contextWindows,
 		&profile.PromptPrefix,
 		&profile.ClaudeEffort,
 		&profile.ClaudePermissionMode,
@@ -309,5 +348,6 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 		return store.ProfileDefinition{}, err
 	}
 	profile.Models = decodeModelList(models)
+	profile.ContextWindows = decodeContextWindows(contextWindows)
 	return profile, nil
 }

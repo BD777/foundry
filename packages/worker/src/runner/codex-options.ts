@@ -2,6 +2,7 @@ import type {
   AgentProfileProjection,
   AgentSession,
 } from "@bd777/foundry-protocol";
+import { codexContextWindowConfig } from "../context-window.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { sessionEnvironment } from "../session-ambient.js";
 import { currentInput } from "../session-prompt.js";
@@ -63,7 +64,8 @@ export function codexApprovalPolicy(
   session: AgentSession,
   profile: AgentProfileLocalConfig,
 ): NonNullable<AgentProfileProjection["codexApprovalPolicy"]> {
-  if (isClarificationSession(session)) return "never";
+  if (isUtilitySession(session) || isClarificationSession(session))
+    return "never";
   return session.codexApprovalPolicy ?? profile.codexApprovalPolicy ?? "never";
 }
 
@@ -81,19 +83,52 @@ export function codexSpeed(
   return session.codexSpeed ?? profile.codexSpeed;
 }
 
+/**
+ * A compatible endpoint declared to Codex as its own
+ * `[model_providers.<id>]`, not as the built-in `openai` provider with
+ * `openai_base_url`: the built-in one opens the Responses WebSocket first,
+ * which a compatible endpoint rejects (five reconnects, then the HTTPS
+ * fallback); a declared provider speaks HTTPS only. The key is read from
+ * CODEX_API_KEY; a keyless endpoint names none, since Codex refuses to start
+ * when `env_key` names an unset variable.
+ */
+export function codexEndpointConfig(
+  profile: AgentProfileLocalConfig,
+  baseUrl: string,
+  hasKey: boolean,
+): Record<string, unknown> {
+  const profileId = (profile.id ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
+  const id = profileId ? `foundry_${profileId}` : "foundry";
+  return {
+    model_provider: id,
+    model_providers: {
+      [id]: {
+        name: profile.label?.trim() || id,
+        base_url: baseUrl,
+        wire_api: "responses",
+        ...(hasKey ? { env_key: "CODEX_API_KEY" } : {}),
+        supports_websockets: false,
+      },
+    },
+  };
+}
+
 export function codexProfileConfig(
   profile: AgentProfileLocalConfig,
+  env: NodeJS.ProcessEnv,
 ): Record<string, unknown> {
   if (profile.connectionType === "local_login")
     return { model_provider: "openai" };
   if (profile.codexModelProvider)
     return { model_provider: profile.codexModelProvider };
-  if (profile.baseUrl?.trim())
-    return {
-      model_provider: "openai",
-      openai_base_url: profile.baseUrl.trim(),
-    };
-  return {};
+  const baseUrl = profile.baseUrl?.trim();
+  if (!baseUrl) return {};
+  return {
+    ...codexEndpointConfig(profile, baseUrl, Boolean(env.CODEX_API_KEY)),
+    ...(profile.contextWindow
+      ? codexContextWindowConfig(profile.contextWindow)
+      : {}),
+  };
 }
 
 export function codexSessionEnvironment(

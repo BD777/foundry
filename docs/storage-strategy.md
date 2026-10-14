@@ -221,10 +221,16 @@ Tables by file (from the `CREATE TABLE` statements in
 - `device_credentials.go`: `device_identities`, `device_pairing_tokens`.
 - `profiles.go`: `profiles`, `device_profiles`.
 - `skills_catalog.go`: `device_skill_roots`, `device_skills`,
-  `promoted_skills`, `promoted_skill_revisions`, `workspace_skill_bindings`.
+  `device_skill_scans`, `promoted_skills`, `promoted_skill_revisions`,
+  `workspace_skill_bindings`, `workspace_skill_exclusions`,
+  `user_default_skills`.
+- `skill_repositories.go`: `skill_repositories`, `skill_repository_skills`,
+  `skill_bundle_versions`, `skill_bundle_selections`.
 - `skill_versions.go`: `skill_sources`, `skill_revision_index`,
   `skill_version_migrations`.
-- `feishu.go`: `workspace_feishu_bots`, `feishu_chat_threads`.
+- `feishu.go`: `feishu_bot_routes`, `feishu_chat_threads`, `feishu_event_receipts`.
+- `feishu_gateway.go`: `feishu_gateway_grants`, `feishu_gateway_requests`,
+  `feishu_gateway_rotate_apps`.
 
 ## Authority Rules
 
@@ -251,10 +257,11 @@ Tables by file (from the `CREATE TABLE` statements in
 
 Worktree allocation and preview port selection are handled locally without a
 lease table: worktrees live in the execution store and preview state is held by
-the daemon for the running Issue. A generalized lease record for simulators,
-devices or deploy targets is not built (see
-[tool use and resources](tool-use-and-resources.md)); there is no background
-reaper, and upload-cache cleanup is lazy.
+the daemon for the running Issue. Device resources that can be leased
+(`computer_use`, `compute`) have server-side lease records in
+`resource_leases`, swept every few seconds by the server (see
+[Resources](resources.md)); simulators, devices and deploy targets are not
+leasable yet, and upload-cache cleanup is lazy.
 
 ## Why SQLite, Not PostgreSQL
 

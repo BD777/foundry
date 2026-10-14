@@ -15,8 +15,10 @@ import {
 import { ClaudeTimerTracker } from "../dist/agent-timers.js";
 import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
 import {
+  activeClaudeRuntimes,
   clearOutOfBandSessionEventSink,
   setOutOfBandSessionEventSink,
+  setSessionTurnSink,
 } from "../dist/session-state.js";
 
 const fixture = JSON.parse(
@@ -176,4 +178,88 @@ test("Claude's follow-up to a finished background command stays a background tur
     assert.equal(continued[0].metadata.timerFire.origin, "background");
     assert.equal(continued[0].metadata.timerFire.response, "FINISHED");
   });
+});
+
+/**
+ * What the server is told of the turns Claude runs on its own, each with
+ * the published events it came after.
+ */
+async function withSessionTurns(run) {
+  const told = [];
+  await withOutOfBand(async (directory, outOfBand) => {
+    setSessionTurnSink((sessionId, running) =>
+      told.push({
+        sessionId,
+        running,
+        after: outOfBand
+          .filter((event) => event.metadata?.timerFire)
+          .map((event) =>
+            event.metadata.timerFire.completedAt ? "end" : "start",
+          ),
+      }),
+    );
+    try {
+      await run(directory, told);
+    } finally {
+      setSessionTurnSink(undefined);
+    }
+  });
+  return told;
+}
+
+test("Claude's follow-up to background work is told to the server as a turn from its first message to its answer", async () => {
+  let resolvedBefore;
+  const told = await withSessionTurns(async (directory, turns) => {
+    const runtime = runtimeFor(directory);
+    const turn = firstTurn(runtime, directory);
+    const hooks = runtime.timers.hooks();
+    for (const { kind, data } of fixture.backgroundFollowUp) {
+      if (kind === "msg") await handleActiveClaudeMessage(runtime, data);
+      else if (kind.startsWith("hook:") && hooks[kind.slice(5)])
+        await hooks[kind.slice(5)][0].hooks[0](data);
+      if (turns.length === 1 && resolvedBefore === undefined)
+        resolvedBefore = Boolean(turn.resolved);
+    }
+    assert.equal(runtime.ownTurnSessionId, undefined);
+  });
+  assert.deepEqual(
+    told.map(({ sessionId, running }) => [sessionId, running]),
+    [
+      ["sess_timer", true],
+      ["sess_timer", false],
+    ],
+  );
+  assert.equal(resolvedBefore, true, "it starts after the person's turn ended");
+  assert.deepEqual(told[0].after, [], "before its answer is published");
+  assert.deepEqual(told[1].after, ["end"], "it ends with its answer");
+});
+
+test("each timer Claude fires while no turn runs is told as a turn of its own", async () => {
+  const told = await withSessionTurns(async (directory) => {
+    const runtime = runtimeFor(directory);
+    firstTurn(runtime, directory);
+    await replay(runtime, fixture.timerFireWithSubagent);
+  });
+  assert.deepEqual(
+    told.map(({ running }) => running),
+    [true, false, true, false],
+  );
+  assert.deepEqual(
+    told.map(({ after }) => after.at(-1)),
+    ["start", "end", "start", "end"],
+    "each runs from its fire's start to its end",
+  );
+});
+
+test("a server that registers the worker is told the turns Claude runs on its own now", () => {
+  const runtime = { closed: false, ownTurnSessionId: "sess_running" };
+  activeClaudeRuntimes.set("runtime_own_turn", runtime);
+  const told = [];
+  try {
+    setSessionTurnSink((sessionId, running) => told.push([sessionId, running]));
+  } finally {
+    setSessionTurnSink(undefined);
+    activeClaudeRuntimes.delete("runtime_own_turn");
+  }
+  assert.deepEqual(told, [["sess_running", true]]);
 });

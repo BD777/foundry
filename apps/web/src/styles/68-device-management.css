@@ -816,3 +816,63 @@
 .fdy-device-update-all > p {
   margin: 0;
 }
+
+/* Promoting a device's API provider: what is copied, the key, the devices. */
+.fdy-provider-promotion {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+  font-size: 13px;
+}
+.fdy-provider-promotion section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.fdy-provider-promotion h3 {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+}
+.fdy-provider-promotion p {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  line-height: 1.6;
+}
+.fdy-provider-promotion-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.fdy-provider-promotion-fields dt {
+  color: var(--fdy-ink-muted);
+}
+.fdy-provider-promotion-fields dd {
+  margin: 0;
+  color: var(--fdy-ink-strong);
+  overflow-wrap: anywhere;
+}
+.fdy-provider-promotion-key {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--fdy-line);
+  border-radius: var(--fdy-panel-radius-md);
+  cursor: pointer;
+}
+.fdy-provider-promotion-key > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.fdy-provider-promotion-key strong {
+  overflow-wrap: anywhere;
+}
+.fdy-provider-promotion-key small {
+  color: var(--fdy-ink-muted);
+  line-height: 1.5;
+}

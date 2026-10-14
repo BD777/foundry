@@ -59,9 +59,10 @@ export const daemonMessageTypes = {
   listDirectories: "list_directories",
   listSubagents: "list_subagents",
   listWorkspaceTree: "list_workspace_tree",
-  profileCredentialRead: "profile_credential_read",
   readFile: "read_file",
-  readProfileCredential: "read_profile_credential",
+  /** Server asks: the key one provider's own configuration names. */
+  readProviderKey: "read_provider_key",
+  providerKeyRead: "provider_key_read",
   readSkillFile: "read_skill_file",
   skillFileRead: "skill_file_read",
   readSkillContent: "read_skill_content",
@@ -130,6 +131,13 @@ export const daemonMessageTypes = {
   sessionStarted: "session_started",
   /** A session's timers the server knows, sent on hello (SessionTimers). */
   sessionTimers: "session_timers",
+  /**
+   * Worker news (SessionTurnPayload): a session's agent started or ended a
+   * model turn of its own, one the session's status does not show (a
+   * timer's, or its follow-up after background work). Sent only to a server
+   * that lists sessionTurnsFeature.
+   */
+  sessionTurn: "session_turn",
   sessionSteered: "session_steered",
   sessionUsageRead: "session_usage_read",
   skillContentRead: "skill_content_read",
@@ -191,6 +199,15 @@ export interface WorkspaceFoldersPayload {
   servedWorkspaceIds: string[];
   /** Workspaces the worker still has whose folder no longer exists. */
   missingWorkspaceIds: string[];
+}
+
+/** The server takes session_turn (in its registered answer's features). */
+export const sessionTurnsFeature = "session_turns";
+
+/** session_turn: whether the session's agent runs a turn of its own. */
+export interface SessionTurnPayload {
+  sessionId: string;
+  running: boolean;
 }
 
 /** A chat's native session, as relink_workspace names it. */
@@ -353,8 +370,12 @@ export interface UpsertAgentRuntimeSettingsPayload {
   settings: AgentRuntimeSettings;
 }
 
-/** read_profile_credential */
-export interface ReadProfileCredentialPayload {
+/**
+ * read_provider_key: the key one API provider's own configuration names
+ * (its `keySource`), for promoting it to a server profile. The server names
+ * the provider, never a variable; a provider that names no key yields none.
+ */
+export interface ReadProviderKeyPayload {
   profileId?: string;
 }
 

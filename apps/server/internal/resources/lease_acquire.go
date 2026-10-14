@@ -463,7 +463,7 @@ func (l *Leases) grant(ctx context.Context, state *leaseState, wait *store.Resou
 		state.wake = append(state.wake, wait.ID)
 		return
 	}
-	turn := turnRunning(info.Status)
+	turn := l.inTurn(wait.SessionID, info.Status)
 	for _, id := range wait.ResourceIDs {
 		if lease := state.live[id]; lease != nil && lease.HolderSessionID == wait.SessionID {
 			continue

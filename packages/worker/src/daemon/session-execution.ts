@@ -12,6 +12,7 @@ import {
   profileID,
   withDispatchCredential,
 } from "../profiles.js";
+import { withSessionContextWindow } from "../context-window.js";
 import { reclaimSessionResources } from "../resource-pool.js";
 import { sessionHasRunningBackgroundTasks } from "../runner/active-runtimes.js";
 import { redactTranscriptText } from "../secret-redaction.js";
@@ -255,9 +256,12 @@ export async function executeAgentSession(
         })
       : undefined;
   try {
-    const profile = withDispatchCredential(
-      profileConfigForSession(workspacePath, session, dispatchProfile),
-      dispatchCredential,
+    const profile = await withSessionContextWindow(
+      withDispatchCredential(
+        profileConfigForSession(workspacePath, session, dispatchProfile),
+        dispatchCredential,
+      ),
+      session,
     );
     let setupEmitted = false;
     const emitSetup = async (): Promise<void> => {
