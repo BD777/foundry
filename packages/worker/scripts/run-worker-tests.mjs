@@ -39,6 +39,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir, homedir, platform } from "node:os";
+import { pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -529,6 +530,11 @@ function runTests() {
     if (NATIVE_SANDBOX_TESTS.has(base)) nativeFiles.push(file);
     else protectedFiles.push(file);
   }
+  // Each file's process gets its own state root (per-file-state-root.mjs).
+  const perFileStateRoot = [
+    "--import",
+    pathToFileURL(join(workerRoot, "scripts", "per-file-state-root.mjs")).href,
+  ];
   const resolveFile = (file) =>
     file.endsWith(".test.mjs") && !file.includes("/")
       ? join(workerRoot, "test", file)
@@ -544,7 +550,7 @@ function runTests() {
   // Mode B: outer OS write-allowlist seatbelt enforces real-state rejection.
   function runProtected(files) {
     if (!files.length) return { status: 0 };
-    const args = ["--test", ...files.map(resolveFile)];
+    const args = ["--test", ...perFileStateRoot, ...files.map(resolveFile)];
     return runSandboxed(
       scratch,
       [process.execPath, ...args],
@@ -557,7 +563,7 @@ function runTests() {
   if (nativeFiles.length) {
     const r = spawnSync(
       process.execPath,
-      ["--test", ...nativeFiles.map(resolveFile)],
+      ["--test", ...perFileStateRoot, ...nativeFiles.map(resolveFile)],
       { stdio: "inherit", env: childEnvironment(scratchTmp, scratchState) },
     );
     const s = typeof r.status === "number" ? r.status : 1;
