@@ -320,6 +320,16 @@ export const chat: Translation<typeof en> = {
       full: "上下文已满，agent 会压缩上下文，否则下一次请求可能失败。",
       model: "模型",
       modelValue: "{{model}} · {{effort}}",
+      window: "上下文窗口",
+      windowValue: "{{window}} · {{source}}",
+      windowAdjusted:
+        "{{window}} · 运行时自己的窗口（设置为 {{configured}}，{{source}}）",
+      windowSource: {
+        setting: "你的设置",
+        endpoint: "端点模型列表",
+        official: "官方模型",
+        default: "默认",
+      },
       defaultModel: "连接默认",
       account: "账号",
       device: "设备",

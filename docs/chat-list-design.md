@@ -96,7 +96,9 @@ automatic attempt prevents automatic re-execution. Explicit recap remains availa
 
 Naming keeps the selected agent/profile and model, uses a fresh runtime identity,
 and rejects resume IDs, imported context and attachments. Utility execution is
-read-only; Claude SDK naming disables tools. Naming-native sessions are hidden
+read-only; Claude SDK naming disables tools and runs in `dontAsk` mode, never
+plan mode, whose system prompt makes the model write a plan file instead of
+answering (diagnostic sessions likewise). Naming-native sessions are hidden
 from normal import discovery. Completed naming jobs do not displace regular
 sessions in the bounded session-summary list.
 

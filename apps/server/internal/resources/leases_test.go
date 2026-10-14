@@ -314,6 +314,90 @@ func TestTurnsParkAndReactivate(t *testing.T) {
 	}
 }
 
+// A turn the agent runs on its own (a timer's, or its follow-up after
+// background work) is a turn: a lease acquired in it is active, it parks
+// when that turn ends, and a waiter gets it only then. The session's
+// status says "completed" throughout.
+func TestAgentTurnKeepsLeasesActive(t *testing.T) {
+	f := newLeaseFixture(t)
+	f.setStatus("sess_a", "completed")
+	if err := f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", true); err != nil {
+		t.Fatal(err)
+	}
+	lease := f.mustAcquire("sess_a", f.screen)
+	if lease.State != store.LeaseActive || lease.ParkUntil != "" {
+		t.Fatalf("acquired in the agent's own turn = %+v", lease)
+	}
+	f.confirm()
+	done := f.acquireAsync("sess_b", time.Minute, f.screen)
+	f.waitsFor(1)
+	f.sweep()
+	select {
+	case result := <-done:
+		t.Fatalf("a waiter got a lease in use: %+v %v", result.leases, result.err)
+	default:
+	}
+	if got := f.lease(lease.ID); got.State != store.LeaseActive || got.HolderSessionID != "sess_a" {
+		t.Fatalf("with a waiter during the turn = %+v", got)
+	}
+	if err := f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.lease(lease.ID); got.State != store.LeaseYielded {
+		t.Fatalf("once the turn ended, with a waiter = %+v", got)
+	}
+	f.confirm()
+	result := receive(t, done)
+	if result.err != nil || result.leases[0].HolderSessionID != "sess_b" {
+		t.Fatalf("the waiter got = %+v %v", result.leases, result.err)
+	}
+}
+
+// Its leases park when the agent's own turn ends, and are active again
+// when the next one starts. A turn the session's input runs is not ended
+// by it, and an input that completes while the agent's own turn runs does
+// not park them.
+func TestAgentTurnParksWhenItEnds(t *testing.T) {
+	f := newLeaseFixture(t)
+	f.setStatus("sess_a", "completed")
+	_ = f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", true)
+	lease := f.mustAcquire("sess_a", f.screen)
+	_ = f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", false)
+	parked := f.lease(lease.ID)
+	if parked.State != store.LeaseParked || parked.ParkUntil != f.clock().Add(10*time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("after the agent's own turn = %+v", parked)
+	}
+	_ = f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", true)
+	if got := f.lease(lease.ID); got.State != store.LeaseActive || got.ParkUntil != "" {
+		t.Fatalf("in its next turn = %+v", got)
+	}
+	// Told after the session's input completed: it still runs.
+	if err := f.leases.TurnEnded(f.ctx, "sess_a", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.lease(lease.ID); got.State != store.LeaseActive {
+		t.Fatalf("an input completing during the agent's own turn = %+v", got)
+	}
+	// Its input runs when the agent's own turn ends: the input's turn keeps it.
+	f.setStatus("sess_a", "running")
+	_ = f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", false)
+	if got := f.lease(lease.ID); got.State != store.LeaseActive {
+		t.Fatalf("the agent's own turn ended while the input runs = %+v", got)
+	}
+	f.setStatus("sess_a", "completed")
+	_ = f.leases.TurnEnded(f.ctx, "sess_a", "completed")
+	if got := f.lease(lease.ID); got.State != store.LeaseParked {
+		t.Fatalf("after the input = %+v", got)
+	}
+	// The device going takes the agent's own turns with it.
+	_ = f.leases.AgentTurn(f.ctx, "sess_a", "dev_linux", true)
+	_ = f.leases.DeviceDisconnected(f.ctx, "dev_linux")
+	_ = f.leases.TurnEnded(f.ctx, "sess_a", "completed")
+	if got := f.lease(lease.ID); got.State != store.LeaseParked {
+		t.Fatalf("after its device went = %+v", got)
+	}
+}
+
 // A parked lease expires after ParkTTL; operating it outside a turn (a
 // background continuation) keeps it longer; holdFor keeps it to the hold.
 func TestParkedLeasesExpireUnlessUsedOrHeld(t *testing.T) {

@@ -19,7 +19,8 @@ import { isUtilitySession, isVerificationSession } from "./session-roles.js";
 import { errorMessage } from "./utils.js";
 
 /**
- * External accounts on the device (docs: External accounts design §5.5).
+ * External accounts on the device (docs/security.md, External Accounts and
+ * Feishu Gateway).
  *
  * No Feishu credential ever reaches this device. run_session carries, for
  * each account a session may act as, the app id and opaque handles from

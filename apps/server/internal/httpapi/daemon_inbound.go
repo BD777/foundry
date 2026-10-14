@@ -55,6 +55,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsSessionResumedType:         (*daemonConnection).onSessionResumed,
 	wsSessionNativeSessionIDType: (*daemonConnection).onSessionNativeID,
 	wsSessionCompleteType:        (*daemonConnection).onSessionCompleted,
+	wsSessionTurnType:            (*daemonConnection).onSessionTurn,
 
 	// Answers to the server's requests.
 	wsFileReadType:                 answer[wsFileReadPayload],
@@ -87,7 +88,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsAttachmentWrittenType:        answer[wsAttachmentWrittenPayload],
 	wsAttachmentChunkReadType:      answer[wsAttachmentChunkReadPayload],
 	wsAgentModelsListedType:        refusable[wsAgentModelsListedPayload],
-	wsProfileCredentialReadType:    refusable[wsProfileCredentialReadPayload],
+	wsProviderKeyReadType:          refusable[wsProviderKeyReadPayload],
 	wsResourcesRefreshedType:       refusable[wsResourcesRefreshedPayload],
 	wsSessionSteeredType:           refusable[wsSessionSteeredPayload],
 	wsSkillsScannedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
@@ -177,6 +178,9 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 		return err
 	}
 	c.applyServedWorkspaces(registration)
+	// A worker that connects again may have restarted: lists read from it
+	// before may name subagents that ended with its old processes.
+	c.hub.subagents.invalidateAll()
 	c.reply(registeredEnvelope(envelope.ID))
 	if c.hub.onDeviceConnected != nil {
 		go c.hub.onDeviceConnected(c.lifetime, registration.Device.ID, registration.Capabilities)
@@ -221,7 +225,8 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 	}
 	switch envelope.Type {
 	case wsSessionSteeredType, wsSessionCanceledType, wsSessionStartedType, wsSessionEventType,
-		wsSessionBlockedType, wsSessionResumedType, wsSessionNativeSessionIDType, wsSessionCompleteType:
+		wsSessionBlockedType, wsSessionResumedType, wsSessionNativeSessionIDType, wsSessionCompleteType,
+		wsSessionTurnType:
 	default:
 		return nil
 	}
@@ -247,6 +252,7 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 var sessionLifecycleTypes = map[string]bool{
 	wsSessionStartedType: true, wsSessionEventType: true, wsSessionBlockedType: true,
 	wsSessionResumedType: true, wsSessionNativeSessionIDType: true, wsSessionCompleteType: true,
+	wsSessionTurnType: true,
 }
 
 // refusedForGood reports a session message refused for a reason no retry

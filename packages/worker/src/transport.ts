@@ -5,6 +5,7 @@ import WebSocket from "ws";
 import {
   daemonMessageTypes,
   processLabels,
+  sessionTurnsFeature,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 
@@ -82,6 +83,8 @@ export interface ServerFeatures {
   workspaceFolders?: boolean;
   /** It takes resources_report (the device's resource inventory). */
   resources?: boolean;
+  /** It takes session_turn (the turns an agent runs on its own). */
+  sessionTurns?: boolean;
 }
 
 /** The server's registered answer as features; an older server sends none. */
@@ -95,6 +98,8 @@ export function serverFeatures(payload: unknown): ServerFeatures {
     workspaceFolders:
       Array.isArray(features) && features.includes("workspace_folders"),
     resources: Array.isArray(features) && features.includes("resources_v1"),
+    sessionTurns:
+      Array.isArray(features) && features.includes(sessionTurnsFeature),
   };
 }
 
@@ -115,6 +120,10 @@ interface PiecedEnvelope {
  */
 const urgentSessionMessageTypes = new Set<string>([
   daemonMessageTypes.sessionStarted,
+  // A turn Claude runs on its own keeps its session's resource leases
+  // active from when it starts; the server takes it in any order with the
+  // session's input (a completed input leaves the leases of a running one).
+  daemonMessageTypes.sessionTurn,
 ]);
 
 // At 10 KB/s (a slow uplink) 64 KB is ~6 s ahead of any reply.

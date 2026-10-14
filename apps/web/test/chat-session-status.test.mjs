@@ -360,3 +360,33 @@ test("a verifier's permissions read as its read-only sandbox, not full access", 
   assert.equal(chat.verification, undefined);
   assert.match(permissions(chat), /^Full access/);
 });
+
+test("a window Foundry set shows with its source, and the runtime's own when it differs", async () => {
+  const { statusRows } =
+    await import("../src/features/chat/chat-session-status.tsx");
+  const windowRow = (status) =>
+    statusRows(status).find((row) => row.id === "window")?.value;
+  const endpoint = { tokens: 1_000_000, source: "endpoint" };
+  // Before the runtime names a window, the configured one stands in.
+  const pending = statusOf([
+    context("evt_c1", 1, 1000, { configuredWindow: endpoint }),
+  ]);
+  assert.equal(pending.context.contextWindow, 1_000_000);
+  assert.equal(windowRow(pending), "1M · endpoint model list");
+  // Codex counts 95% of the window it was given as usable.
+  const adjusted = statusOf([
+    context("evt_c1", 1, 1000, {
+      contextWindow: 950_000,
+      configuredWindow: endpoint,
+    }),
+  ]);
+  assert.equal(
+    windowRow(adjusted),
+    "950K · the runtime's own (set 1M, endpoint model list)",
+  );
+  // A login runs with the CLI's own window and gets no row.
+  const login = statusOf([
+    context("evt_c1", 1, 1000, { contextWindow: 200_000 }),
+  ]);
+  assert.equal(windowRow(login), undefined);
+});

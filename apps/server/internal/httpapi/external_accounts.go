@@ -14,15 +14,16 @@ import (
 
 // External accounts: a person's logins at third-party platforms (Feishu
 // through feishu-cli), connected and refreshed by the server, bound to
-// workspaces, and handed to sessions as short-lived access tokens. The
-// rules a request must pass:
+// workspaces, and acted as by sessions through the server's Feishu gateway.
+// The rules a request must pass:
 //
 //   - an account is personal: only its owner sees, changes, binds or
 //     disconnects it (externalAccountOwner);
 //   - a workspace's bindings are read by viewers and set by maintainers,
 //     and a person binds only their own accounts;
 //   - a session gets an account only when the account owner started it on
-//     a device the owner owns (externalaccounts.Eligible), the UserFiles
+//     a device the owner owns, the account is bound to the session's
+//     workspace and still usable (externalaccounts.Eligible), the UserFiles
 //     rule of Issues;
 //   - no credential reaches a device: run_session carries gateway handles
 //     that stand in for the app secret and the access token, and feishu-cli
@@ -315,8 +316,8 @@ func (s *Server) handleRefreshExternalAccount(w http.ResponseWriter, r *http.Req
 }
 
 // handleRevokeExternalAccount is "stop using now": the grant is revoked at
-// the provider and no new token is minted; a token a session already holds
-// lives until it expires (at most 2 hours for Feishu).
+// the provider and deleted here. Sessions hold only gateway stand-ins, which
+// the gateway refuses from their next call on.
 func (s *Server) handleRevokeExternalAccount(w http.ResponseWriter, r *http.Request) {
 	account, ok := s.requireExternalAccountOwner(w, r, strings.TrimSpace(r.PathValue("id")))
 	if !ok {

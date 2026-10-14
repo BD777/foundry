@@ -1,11 +1,12 @@
 package resources
 
 // Leases: which session holds which instance, how long, and who waits.
-// The rules are docs resource-lease-liveness.md (approved as the default):
+// The rules (docs/resources.md):
 //
-//   - A lease lives with its holder session's turn. While the turn runs
-//     (queued, running, blocked) the lease is active and never expires; the
-//     session's own status events are its keep-alive.
+//   - A lease lives with its holder session's turns: an input that is
+//     queued, running or blocked, and a turn the agent runs on its own (a
+//     timer, a background task's continuation; lease_turns.go). While one
+//     runs the lease is active and never expires.
 //   - When the turn completes the lease is parked: kept for ParkTTL (longer
 //     with holdFor, at most MaxHoldFor), handed over at once when another
 //     session asks and it holds no holdFor. A failed or canceled turn
@@ -59,7 +60,7 @@ type LeaseConfig struct {
 	MaxResources int
 }
 
-// DefaultLeaseConfig is resource-lease-liveness.md §6.
+// DefaultLeaseConfig holds the default timings (docs/resources.md).
 func DefaultLeaseConfig() LeaseConfig {
 	return LeaseConfig{
 		HolderDisconnectGrace: 2 * time.Minute,
@@ -161,6 +162,9 @@ type Leases struct {
 	inflight    map[string]int
 	notices     map[string][]string
 	hostOffline map[string]time.Time
+	// agentTurns: the sessions whose agent runs a turn of its own, by
+	// session, with the device that runs it (see AgentTurn).
+	agentTurns  map[string]string
 	lastCleanup time.Time
 }
 
@@ -175,6 +179,7 @@ func NewLeases(inventory *Service, st store.ResourceLeaseStore) *Leases {
 		inflight:    map[string]int{},
 		notices:     map[string][]string{},
 		hostOffline: map[string]time.Time{},
+		agentTurns:  map[string]string{},
 	}
 	inventory.leases = leases
 	return leases

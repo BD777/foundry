@@ -1,8 +1,8 @@
 # Foundry Technical Architecture
 
 This page records the architecture and technology choices Foundry is built on.
-What is and is not implemented today is tracked in
-[current status](current-status.md); the target shape is described in the
+What is and is not implemented today is in each module document's implementation
+boundary ([index](README.md#modules)); the target shape is described in the
 [Workspace and Sandbox overview](workspace-sandbox-overview.md).
 
 ## 1. Architecture
@@ -261,5 +261,5 @@ hand-written Go structs kept in step with the protocol package.
 - How much historical run event data should be mirrored to the server.
 - How permission requests and generalized retries should be represented
   uniformly across Claude and Codex.
-- Which resource leases beyond worktrees and preview ports are required (see
-  [tool use and resources](tool-use-and-resources.md)).
+- Which resource types beyond `computer_use` and `compute` need server-side
+  leases (see [Resources](resources.md)).

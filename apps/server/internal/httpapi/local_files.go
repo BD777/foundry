@@ -192,6 +192,10 @@ func ensureAttachmentExtension(name string, mimeType string) string {
 	if filepath.Ext(name) != "" || !strings.HasPrefix(strings.ToLower(mimeType), "image/") {
 		return name
 	}
+	// The table lists .jfif and .jpe before .jpg.
+	if strings.EqualFold(mimeType, "image/jpeg") {
+		return name + ".jpg"
+	}
 	extensions, err := mime.ExtensionsByType(mimeType)
 	if err != nil || len(extensions) == 0 {
 		return name

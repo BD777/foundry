@@ -176,6 +176,11 @@ export interface ActiveClaudeRuntime {
   /** How full the process's context is, and what its results cost. */
   context?: ClaudeContextTracker;
   continuation?: ActiveClaudeContinuation;
+  /**
+   * The session told it runs a turn of Claude's own (a timer's, or a
+   * follow-up after background work); see reportClaudeOwnTurn.
+   */
+  ownTurnSessionId?: string;
   /** Summaries of background tasks that ended since the last answer. */
   notifications?: string[];
   /** The CLI reports command lifecycle, so turns own exactly their stream. */
@@ -256,6 +261,44 @@ export function emitOutOfBandSessionEvent(
   event: OutOfBandSessionEvent,
 ): void {
   outOfBandSessionEventSink?.(sessionId, event);
+}
+
+/**
+ * Sink for session_turn: the server follows the turns Claude runs on its own
+ * (its resource leases stay active only while a turn runs). Set once a
+ * server that takes them registered this worker; it goes through the
+ * session outbox, which keeps it across reconnects.
+ */
+let sessionTurnSink:
+  ((sessionId: string, running: boolean) => void) | undefined;
+
+/** Sets the sink, and tells it the turns Claude runs on its own now. */
+export function setSessionTurnSink(
+  sink: ((sessionId: string, running: boolean) => void) | undefined,
+): void {
+  sessionTurnSink = sink;
+  if (!sink) return;
+  for (const runtime of activeClaudeRuntimes.values())
+    if (runtime.ownTurnSessionId) sink(runtime.ownTurnSessionId, true);
+}
+
+/**
+ * Tells the server when Claude starts or ends a model turn of its own: one
+ * no Foundry turn owns (a timer's announced prompt, or a follow-up after
+ * background work), which the session's status does not show. Call it
+ * whenever either may have changed; it reports only the changes.
+ */
+export function reportClaudeOwnTurn(runtime: ActiveClaudeRuntime): void {
+  const running =
+    !runtime.closed &&
+    (runtime.continuation !== undefined ||
+      Boolean(runtime.timers?.announcedFire()));
+  const sessionId = running ? runtime.foundrySessionId : undefined;
+  if (runtime.ownTurnSessionId === sessionId) return;
+  if (runtime.ownTurnSessionId)
+    sessionTurnSink?.(runtime.ownTurnSessionId, false);
+  runtime.ownTurnSessionId = sessionId;
+  if (sessionId) sessionTurnSink?.(sessionId, true);
 }
 
 /**

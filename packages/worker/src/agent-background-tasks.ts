@@ -230,6 +230,8 @@ export class ClaudeBackgroundTaskTracker {
   private readonly foreground = new Map<string, BackgroundTaskRecord>();
   private readonly toolUses = new Map<string, ToolUse>();
   private readonly stopRequests = new Set<string>();
+  /** Subagents this process started that have not reported their end. */
+  private readonly openSubagents = new Map<string, string | undefined>();
   private lastSignature = "";
   private closed = false;
   private loadedFor = "";
@@ -278,6 +280,11 @@ export class ClaudeBackgroundTaskTracker {
     );
   }
 
+  /** Whether this process runs the subagent: it started here, not ended. */
+  runsSubagent(taskId: string): boolean {
+    return !this.closed && this.openSubagents.has(taskId);
+  }
+
   /** A stop Foundry asked for; its notification then reads "stopped by you". */
   requestStop(taskId: string): void {
     this.stopRequests.add(taskId);
@@ -323,6 +330,19 @@ export class ClaudeBackgroundTaskTracker {
       task.endedAt = this.iso();
     }
     this.changed();
+    // Its subagents that never reported an end ended with it.
+    for (const [taskId, toolUseId] of this.openSubagents)
+      this.sink.emit({
+        label: processLabels.subtaskFailed,
+        detail: "Ended with the Claude process that ran it.",
+        level: "warning",
+        metadata: {
+          taskId,
+          taskType: "local_agent",
+          ...(toolUseId ? { toolUseId } : {}),
+        },
+      });
+    this.openSubagents.clear();
     this.closed = true;
   }
 
@@ -446,6 +466,7 @@ export class ClaudeBackgroundTaskTracker {
     if (!id) return;
     const taskType = text(record.task_type);
     const toolUseId = text(record.tool_use_id) || undefined;
+    if (taskType === "local_agent") this.openSubagents.set(id, toolUseId);
     const use = toolUseId ? this.toolUses.get(toolUseId) : undefined;
     const kind = kindFor(taskType, use?.name);
     const known = this.find(id);
@@ -537,6 +558,7 @@ export class ClaudeBackgroundTaskTracker {
   private notified(record: Record<string, unknown>): void {
     const id = text(record.task_id);
     if (!id) return;
+    this.openSubagents.delete(id);
     const task = this.tasks.get(id);
     if (!task) {
       // A foreground tool finished: it was never background work.

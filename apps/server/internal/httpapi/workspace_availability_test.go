@@ -250,3 +250,44 @@ func TestMCPToolsRefuseUnservedWorkspace(t *testing.T) {
 		t.Fatalf("send_message = %q (error %v), want %q", text, isError, want)
 	}
 }
+
+// A device with no workspace reports provider check results as a device
+// registration; the server keeps them for the device.
+func TestDeviceReportWithoutWorkspaceUpdatesItsProviders(t *testing.T) {
+	db := newTestStore(t)
+	httpServer := httptest.NewServer(NewServer(db).Routes())
+	defer httpServer.Close()
+	conn := dialDaemonForTest(t, httpServer)
+	device := map[string]any{"id": "dev_bare", "label": "bare", "status": "connected"}
+	profile := func(status string) []map[string]any {
+		return []map[string]any{{
+			"id": "relay", "deviceId": "dev_bare", "runtime": "claude", "label": "Relay", "status": status,
+			"authMode": "api_key", "secretStored": "local", "configScope": "device", "configLabel": "~/.claude/settings.json",
+		}}
+	}
+	writeWSForTest(t, conn, "hello", map[string]any{
+		"capabilities": []string{}, "activeSessionIds": []string{}, "device": device, "agentProfiles": profile("checking"),
+	})
+	readWSTypeForTest(t, conn, "registered")
+
+	writeWSForTest(t, conn, "workspace_ready", map[string]any{"registration": map[string]any{
+		"capabilities": []string{}, "device": device, "agentProfiles": profile("healthy"),
+		"providerHealth": []map[string]any{{"provider": "claude", "status": "healthy", "authMode": "local_config", "secretStored": "local"}},
+	}})
+	readWSTypeForTest(t, conn, "registered")
+
+	profiles, err := db.ListAgentProfiles(context.Background(), "dev_bare")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || profiles[0].Status != "healthy" {
+		t.Fatalf("device profiles after its report = %+v", profiles)
+	}
+	health, err := db.ListProviderHealth(context.Background(), "dev_bare")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(health) != 1 || health[0].DeviceID != "dev_bare" || health[0].Status != "healthy" {
+		t.Fatalf("device provider health after its report = %+v", health)
+	}
+}

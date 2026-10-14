@@ -16,6 +16,7 @@ import type {
   CodexSpeed,
   SubagentUsage,
   WorkerRuntimeId,
+  ConfiguredContextWindow,
 } from "@bd777/foundry-protocol";
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type {
@@ -206,7 +207,12 @@ export interface ChatSessionStatus {
   verification?: boolean;
   deviceLabel?: string;
   /** The latest model request's whole input against the model's window. */
-  context: { usedTokens?: number; contextWindow?: number };
+  context: {
+    usedTokens?: number;
+    contextWindow?: number;
+    /** The window Foundry set for the model, and where it came from. */
+    configured?: ConfiguredContextWindow;
+  };
   /** Turns that reported usage, and what they used together. */
   turns: number;
   totals: {

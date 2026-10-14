@@ -239,15 +239,15 @@ func (h *DaemonHub) ListAgentModels(ctx context.Context, input store.CreateAgent
 	return value.Models, err
 }
 
-// ReadProfileCredential asks the device that owns a local profile for its
-// credential, so promotion can seal it server-side. It targets one device
-// explicitly: a credential is machine-local state and no other daemon can
+// ReadProviderKey asks the device for the key one of its API providers'
+// configuration names, so promotion can seal it server-side. It targets one
+// device explicitly: the key is machine-local state and no other daemon can
 // answer for it. The value is returned to the caller for sealing and never
 // logged, echoed in an error, or persisted anywhere but the secret store.
-func (h *DaemonHub) ReadProfileCredential(ctx context.Context, deviceID string, profileID string) (string, error) {
-	value, err := callDevice[wsProfileCredentialReadPayload](ctx, h.connectionFor(deviceID), wsReadProfileCredentialType,
-		wsReadProfileCredentialPayload{ProfileID: profileID})
-	return value.Credential, err
+func (h *DaemonHub) ReadProviderKey(ctx context.Context, deviceID string, profileID string) (keySource string, credential string, err error) {
+	value, err := callDevice[wsProviderKeyReadPayload](ctx, h.connectionFor(deviceID), wsReadProviderKeyType,
+		wsReadProviderKeyPayload{ProfileID: profileID})
+	return value.KeySource, value.Credential, err
 }
 
 // RefreshDeviceResources has a device detect its resources again, after

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/sqlitestore"
@@ -223,11 +224,13 @@ func registerPromotionDaemon(t *testing.T, backing *sqlitestore.Store, profile s
 	}
 }
 
-// answerCredentialReads attaches a socket-less daemon connection for dev_1 and
-// answers every read_profile_credential request with the given key, which is
-// how a real device hands its key over during promotion.
-func answerCredentialReads(t *testing.T, server *Server, credential string) {
+// answerProviderKeyReads attaches a socket-less daemon connection for dev_1
+// that answers every read_provider_key request as a device whose provider
+// names keySource holding credential. It returns the profile ids asked for.
+func answerProviderKeyReads(t *testing.T, server *Server, keySource string, credential string) *[]string {
 	t.Helper()
+	asked := &[]string{}
+	var mu sync.Mutex
 	connection := newDaemonConnection(server.hub, nil)
 	server.hub.mu.Lock()
 	server.hub.connections["dev_1"] = connection
@@ -243,21 +246,27 @@ func answerCredentialReads(t *testing.T, server *Server, credential string) {
 			case <-connection.done:
 				return
 			case envelope := <-connection.send:
-				if envelope.Type != wsReadProfileCredentialType {
+				if envelope.Type != wsReadProviderKeyType {
 					continue
 				}
-				payload, err := json.Marshal(wsProfileCredentialReadPayload{Credential: credential})
+				var request wsReadProviderKeyPayload
+				_ = json.Unmarshal(envelope.Payload, &request)
+				mu.Lock()
+				*asked = append(*asked, request.ProfileID)
+				mu.Unlock()
+				payload, err := json.Marshal(wsProviderKeyReadPayload{KeySource: keySource, Credential: credential})
 				if err != nil {
 					return
 				}
-				_ = deliverDaemonResponse[wsProfileCredentialReadPayload](connection, wsEnvelope{
+				_ = deliverDaemonResponse[wsProviderKeyReadPayload](connection, wsEnvelope{
 					ID:      envelope.ID,
-					Type:    wsReadProfileCredentialType,
+					Type:    wsProviderKeyReadType,
 					Payload: payload,
 				}, nil)
 			}
 		}
 	}()
+	return asked
 }
 
 // Promotion of a credential the server already holds must cost the user
@@ -293,7 +302,7 @@ func TestPromoteProfileAdoptsSealedCredential(t *testing.T) {
 		t.Fatalf("bind existing profile: %v", err)
 	}
 
-	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"relay_local"}`, http.StatusCreated)
+	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"relay_local","copyKey":true}`, http.StatusCreated)
 	if strings.Contains(response.Body.String(), "relay-key-0123456789") {
 		t.Fatalf("promote leaked the credential: %s", response.Body.String())
 	}
@@ -339,61 +348,165 @@ func TestPromoteProfileAdoptsSealedCredential(t *testing.T) {
 	}
 }
 
-// A device that hands over no key cannot produce a usable server profile, so
-// the promotion fails and leaves nothing behind.
-func TestPromoteProfileWithoutCredentialIsRejected(t *testing.T) {
+// The key is copied only with the person's confirmation: without it the
+// device is never asked, and the profile is promoted without one.
+func TestPromoteWithoutConfirmationCopiesNoKey(t *testing.T) {
 	backing := newSecretTestStore(t)
 	server := NewServer(backing)
-	registerPromotionDaemon(t, backing, store.AgentProfileProjection{
-		ID:             "relay_local",
-		DeviceID:       "dev_1",
-		Runtime:        "codex",
-		Label:          "Relay local",
-		ConfigScope:    "device",
-		ConnectionType: "openai_compatible",
-		BaseURL:        "https://relay.internal/v1",
-	})
-	answerCredentialReads(t, server, "")
+	registerPromotionDaemon(t, backing, gatewayProvider("https://relay.internal/v1"))
+	asked := answerProviderKeyReads(t, server, "$GATEWAY_KEY", "device-key-0123456789")
 
-	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"relay_local"}`, http.StatusBadRequest)
-	if !strings.Contains(response.Body.String(), "cannot authenticate anywhere") {
-		t.Fatalf("rejection did not explain why: %s", response.Body.String())
+	promoted := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway"}`, http.StatusCreated))
+	if len(*asked) != 0 {
+		t.Fatalf("the device was asked for its key without confirmation: %v", *asked)
 	}
-	profiles, err := backing.ListProfiles(context.Background())
-	if err != nil {
-		t.Fatalf("list profiles: %v", err)
+	if promoted.HasCredential {
+		t.Fatal("a key was stored without confirmation")
 	}
-	if len(profiles) != 0 {
-		t.Fatalf("failed promotion left %d profile(s) behind", len(profiles))
+	if promoted.Label != "LLM Gateway" || promoted.Runtime != "codex" || promoted.ConnectionType != "openai_compatible" ||
+		promoted.BaseURL != "https://relay.internal/v1" || promoted.Model != "gpt-5" || strings.Join(promoted.Models, ",") != "gpt-5,gpt-5-mini" {
+		t.Fatalf("promotion did not copy the provider: %+v", promoted)
+	}
+	if promoted.PromotedFrom == nil || promoted.PromotedFrom.DeviceID != "dev_1" || promoted.PromotedFrom.ProfileID != "codex_provider_gateway" {
+		t.Fatalf("promotion did not record its source: %+v", promoted.PromotedFrom)
 	}
 }
 
-// Promotion always carries the device key, so the promoted profile can
-// authenticate from any device without the user retyping anything.
-func TestPromoteProfileUploadsTheDeviceKey(t *testing.T) {
+// With confirmation the device reads the key the provider names, for that
+// provider only, and the server seals it without echoing it.
+func TestPromoteWithConfirmationSealsTheNamedKey(t *testing.T) {
 	backing := newSecretTestStore(t)
 	server := NewServer(backing)
-	registerPromotionDaemon(t, backing, store.AgentProfileProjection{
-		ID:             "relay_local",
-		DeviceID:       "dev_1",
-		Runtime:        "codex",
-		Label:          "Relay local",
-		ConfigScope:    "device",
-		ConnectionType: "openai_compatible",
-		BaseURL:        "https://relay.internal/v1",
-	})
-	answerCredentialReads(t, server, "device-key-0123456789")
+	registerPromotionDaemon(t, backing, gatewayProvider("https://relay.internal/v1"))
+	asked := answerProviderKeyReads(t, server, "$GATEWAY_KEY", "device-key-0123456789")
 
-	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"relay_local"}`, http.StatusCreated)
+	response := requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway","copyKey":true}`, http.StatusCreated)
 	if strings.Contains(response.Body.String(), "device-key-0123456789") {
 		t.Fatalf("promote echoed the credential: %s", response.Body.String())
 	}
-	promoted := decodeProfileForTest(t, response)
-	if !promoted.HasCredential {
-		t.Fatal("promoted profile did not adopt the device key")
+	if strings.Join(*asked, ",") != "codex_provider_gateway" {
+		t.Fatalf("the device was asked for %v, not the promoted provider's key", *asked)
 	}
-	if stored, err := backing.HasSecret(context.Background(), "agent-profile:"+promoted.ID); err != nil || !stored {
-		t.Fatalf("credential was not sealed server-side: %v %v", stored, err)
+	promoted := decodeProfileForTest(t, response)
+	sealed, err := backing.GetSecret(context.Background(), "agent-profile:"+promoted.ID)
+	if err != nil || string(sealed) != "device-key-0123456789" {
+		t.Fatalf("the named key was not sealed: %q %v", string(sealed), err)
+	}
+}
+
+// A provider that names no key, or whose key is empty on the device, has
+// nothing to copy: a confirmed copy fails and leaves nothing behind.
+func TestPromoteKeyThatCannotBeReadLeavesNothing(t *testing.T) {
+	for name, reply := range map[string][2]string{
+		"names no key": {"", ""},
+		"empty value":  {"$GATEWAY_KEY", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			backing := newSecretTestStore(t)
+			server := NewServer(backing)
+			registerPromotionDaemon(t, backing, gatewayProvider("https://relay.internal/v1"))
+			answerProviderKeyReads(t, server, reply[0], reply[1])
+
+			requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway","copyKey":true}`, http.StatusBadRequest)
+			profiles, err := backing.ListProfiles(context.Background())
+			if err != nil {
+				t.Fatalf("list profiles: %v", err)
+			}
+			if len(profiles) != 0 {
+				t.Fatalf("failed promotion left %d profile(s) behind", len(profiles))
+			}
+		})
+	}
+}
+
+// Promoting the same provider again updates its profile: the copied fields
+// follow the device, what was set on the server stays, and the key stays
+// when the person does not copy it again.
+func TestPromoteAgainUpdatesTheProfile(t *testing.T) {
+	backing := newSecretTestStore(t)
+	server := NewServer(backing)
+	ctx := context.Background()
+	registerPromotionDaemon(t, backing, gatewayProvider("https://relay.internal/v1"))
+	answerProviderKeyReads(t, server, "$GATEWAY_KEY", "device-key-0123456789")
+	first := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway","copyKey":true}`, http.StatusCreated))
+	edited := profileSaveInput(first)
+	edited.CodexReasoningEffort = "high"
+	edited.Models = append(edited.Models, "server-added")
+	if _, err := backing.SaveProfile(ctx, edited); err != nil {
+		t.Fatalf("edit promoted profile: %v", err)
+	}
+
+	changed := gatewayProvider("https://relay.internal/v2")
+	changed.Label = "LLM Gateway v2"
+	registerPromotionDaemon(t, backing, changed)
+	second := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway"}`, http.StatusOK))
+
+	profiles, err := backing.ListProfiles(ctx)
+	if err != nil {
+		t.Fatalf("list profiles: %v", err)
+	}
+	if len(profiles) != 1 || second.ID != first.ID {
+		t.Fatalf("promoting again duplicated the profile: %+v", profiles)
+	}
+	if second.Label != "LLM Gateway v2" || second.BaseURL != "https://relay.internal/v2" {
+		t.Fatalf("promoting again did not update the copied fields: %+v", second)
+	}
+	if second.CodexReasoningEffort != "high" || !strings.Contains(strings.Join(second.Models, ","), "server-added") {
+		t.Fatalf("promoting again dropped what was set on the server: %+v", second)
+	}
+	if !second.HasCredential {
+		t.Fatal("promoting again without copying the key dropped the stored one")
+	}
+}
+
+// A provider at the device's own loopback address reaches nothing from other
+// devices, so its profile stays bound to the device it came from.
+func TestLoopbackPromotionStaysOnItsDevice(t *testing.T) {
+	backing := newSecretTestStore(t)
+	server := NewServer(backing)
+	ctx := context.Background()
+	registerPromotionDaemon(t, backing, gatewayProvider("http://127.0.0.1:8787/v1"))
+	if err := backing.RegisterDaemon(ctx, store.DaemonRegistration{
+		Device:    store.DeviceProjection{ID: "dev_2", Label: "Laptop", Status: "connected"},
+		Workspace: store.WorkspaceProjection{ID: "ws_2", Name: "Other", LocalPath: t.TempDir()},
+	}); err != nil {
+		t.Fatalf("register second device: %v", err)
+	}
+
+	promoted := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_gateway"}`, http.StatusCreated))
+	if promoted.PromotedFrom == nil || !promoted.PromotedFrom.DeviceBound {
+		t.Fatalf("a loopback provider was not bound to its device: %+v", promoted.PromotedFrom)
+	}
+	response := requestForTest(t, server, http.MethodPut, "/api/devices/dev_2/profiles", `{"profileIds":["`+promoted.ID+`"]}`, http.StatusBadRequest)
+	if !strings.Contains(response.Body.String(), "loopback") {
+		t.Fatalf("refusal did not explain why: %s", response.Body.String())
+	}
+	// The source device keeps it, and its own set can still change.
+	requestForTest(t, server, http.MethodPut, "/api/devices/dev_1/profiles", `{"profileIds":["`+promoted.ID+`"]}`, http.StatusOK)
+
+	remote := gatewayProvider("https://relay.internal/v1")
+	remote.ID = "codex_provider_remote"
+	registerPromotionDaemon(t, backing, remote)
+	shared := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles/promote", `{"deviceId":"dev_1","profileId":"codex_provider_remote"}`, http.StatusCreated))
+	if shared.PromotedFrom == nil || shared.PromotedFrom.DeviceBound {
+		t.Fatalf("a remote provider was bound to its device: %+v", shared.PromotedFrom)
+	}
+	requestForTest(t, server, http.MethodPut, "/api/devices/dev_2/profiles", `{"profileIds":["`+shared.ID+`"]}`, http.StatusOK)
+}
+
+func gatewayProvider(baseURL string) store.AgentProfileProjection {
+	return store.AgentProfileProjection{
+		ID:             "codex_provider_gateway",
+		DeviceID:       "dev_1",
+		Runtime:        "codex",
+		Label:          "LLM Gateway",
+		Status:         "healthy",
+		ConfigScope:    "device",
+		ConnectionType: "openai_compatible",
+		BaseURL:        baseURL,
+		Model:          "gpt-5",
+		Models:         []string{"gpt-5", "gpt-5-mini"},
+		KeySource:      "$GATEWAY_KEY",
 	}
 }
 
@@ -816,5 +929,62 @@ func TestServerProfileForSessionEndpointTwinGuards(t *testing.T) {
 	}
 	if resolved, err := server.hub.serverProfileForSession(ctx, unboundServer); err != nil || resolved != nil {
 		t.Fatalf("unbound server id was bypassed: %v, err = %v", resolved, err)
+	}
+}
+
+func TestProfileContextWindowsPerModel(t *testing.T) {
+	server := NewServer(newSecretTestStore(t))
+	created := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles", `{
+		"runtime":"claude",
+		"label":"Relay",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal",
+		"models":["ark/60b-0614c","auto_model/alwaysday1_max"],
+		"contextWindows":{" ark/60b-0614c ":150000}
+	}`, http.StatusCreated))
+	if got := created.ContextWindows["ark/60b-0614c"]; got != 150000 || len(created.ContextWindows) != 1 {
+		t.Fatalf("created windows = %v", created.ContextWindows)
+	}
+
+	// An update that does not name the windows keeps them.
+	kept := decodeProfileForTest(t, requestForTest(t, server, http.MethodPut, "/api/profiles/"+created.ID, `{
+		"runtime":"claude",
+		"label":"Relay renamed",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal"
+	}`, http.StatusOK))
+	if kept.ContextWindows["ark/60b-0614c"] != 150000 {
+		t.Fatalf("update without windows dropped them: %v", kept.ContextWindows)
+	}
+
+	// An explicit empty set clears them.
+	cleared := decodeProfileForTest(t, requestForTest(t, server, http.MethodPut, "/api/profiles/"+created.ID, `{
+		"runtime":"claude",
+		"label":"Relay renamed",
+		"connectionType":"anthropic_compatible",
+		"baseUrl":"https://relay.internal",
+		"contextWindows":{}
+	}`, http.StatusOK))
+	if len(cleared.ContextWindows) != 0 {
+		t.Fatalf("empty windows did not clear: %v", cleared.ContextWindows)
+	}
+
+	for _, body := range []string{
+		`{"runtime":"claude","label":"R","baseUrl":"https://r.internal","contextWindows":{"m":12}}`,
+		`{"runtime":"claude","label":"R","baseUrl":"https://r.internal","contextWindows":{"m":20000000}}`,
+		`{"runtime":"claude","label":"R","baseUrl":"https://r.internal","contextWindows":{" ":200000}}`,
+	} {
+		requestForTest(t, server, http.MethodPost, "/api/profiles", body, http.StatusBadRequest)
+	}
+
+	// Official logins run with the CLI's own windows.
+	official := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles", `{
+		"runtime":"claude",
+		"label":"Claude subscription",
+		"authMode":"official",
+		"contextWindows":{"opus":500000}
+	}`, http.StatusCreated))
+	if len(official.ContextWindows) != 0 {
+		t.Fatalf("official profile kept windows: %v", official.ContextWindows)
 	}
 }

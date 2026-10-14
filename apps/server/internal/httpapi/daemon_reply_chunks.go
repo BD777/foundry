@@ -17,6 +17,10 @@ import (
 // lists the feature, so a newer worker sends it whole.
 const replyChunksFeature = "reply_chunks"
 
+// sessionTurnsFeature: this server takes session_turn, the model turns a
+// session's agent runs on its own.
+const sessionTurnsFeature = "session_turns"
+
 // maxPiecedEnvelopeBytes bounds one envelope sent in pieces as the read
 // limit bounds one sent whole.
 const maxPiecedEnvelopeBytes = 96 << 20
@@ -40,7 +44,7 @@ func registeredEnvelope(id string) wsEnvelope {
 	return wsEnvelope{
 		Type:    wsRegisteredType,
 		ID:      id,
-		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `"]}`),
+		Payload: json.RawMessage(`{"features":["` + replyChunksFeature + `","` + store.DaemonCapabilityWorkspaceFolders + `","` + store.DaemonCapabilityResources + `","` + sessionTurnsFeature + `"]}`),
 	}
 }
 

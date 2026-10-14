@@ -1,13 +1,13 @@
 # 账号与权限：资源归属到人与 Workspace 共享
 
 [项目 Roadmap](../README.md#roadmap) · [文档索引](README.md) ·
-上游需求：[账号与权限体系](platform-extensions.md#accounts-and-permissions) ·
+上游需求：[Roadmap · 身份与共享](../README.md#roadmap) ·
 [0908 Plan §20](archive/workspace-ai-product-plan-2026-09-08.md) ·
 当前行为：[安全边界 · Accounts](security.md#accounts)
 
 **状态**：P1（身份与隔离）与 P2（Workspace 共享）已实现，现行行为以
 [安全边界 · Accounts](security.md#accounts) 和代码为准；P3（凭证与生态）与
-P4（治理）尚未实现，文中标注 **（P3）**、**（P4）** 的部分是设计。分期见 §9。
+P4（治理）尚未实现，文中标注 **（P3）**、**（P4）** 的部分是设计。分期见 §9，已实现的范围与验证情况见[实现边界](#实现边界)。
 
 ## 1. 目标
 
@@ -23,16 +23,18 @@ P4（治理）尚未实现，文中标注 **（P3）**、**（P4）** 的部分�
 
 需求来源：0908 Plan §20.1「权限至少分开考虑：查看、创建与沟通、控制执行、使用
 资源与凭证、确认准出条件、接受、放弃、管理 Workspace」「团队成员不能天然都拥有
-接受权」；platform-extensions「未授权账号不能读取受限内容、使用执行资源或接受
-变更」；IM「群成员身份不会自动授予 Workspace 或 Accept 权限」。
+接受权」；IM「群成员身份不会自动授予 Workspace 或 Accept 权限」。整体完成标准：
+各入口（Web、IM 及后续托管服务）对同一账号执行一致的授权判断；成员或权限变更后
+访问按新授权生效；未授权账号不能读取受限内容、使用执行资源或接受变更；关键操作
+可追溯；仅具备聊天或创建 Issue 权限不意味着具备 Accept 权限。
 
 ### 1.0 两种配对码（易混淆）
 
-|      | 飞书配对码                                                   | 设备配对 token                                                         |
-| ---- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| 产生 | Web 账号在某 Workspace 的飞书设置里生成（每 Workspace 一个） | Web **Devices → Add device** 或 `foundry-server devices pairing-token` |
-| 用途 | 群里 `@bot /pair CODE`，把该群绑定到该 Workspace             | `foundry-worker pair/setup --token` 换取归属到人的设备凭证             |
-| 身份 | Bot 在该群沿用**生成配对码的账号**的权限（§8）               | 设备归属于生成 token 的账号（§4.1）                                    |
+|      | 飞书配对码                                                       | 设备配对 token                                                         |
+| ---- | ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 产生 | Web 账号在某 Workspace 的「渠道」标签页生成（每 Workspace 一个） | Web **Devices → Add device** 或 `foundry-server devices pairing-token` |
+| 用途 | 群里 `@bot /pair CODE`，把该群绑定到该 Workspace                 | `foundry-worker pair/setup --token` 换取归属到人的设备凭证             |
+| 身份 | Bot 在该群沿用**生成配对码的账号**的权限（§8）                   | 设备归属于生成 token 的账号（§4.1）                                    |
 
 ## 2. 核心模型
 
@@ -234,15 +236,16 @@ Issue 与 Session 记录 `createdByUserId`（Agent 创建的继承发起人，�
 
 已实现：
 
-| 表 / 列                                                          | 内容                                                                    |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `device_identities`                                              | device id、归属账号、机器指纹、凭证 hash；`UNIQUE (owner, fingerprint)` |
-| `device_pairing_tokens`                                          | 一次性设备配对 token（只存 hash）                                       |
-| `workspace_members`                                              | `(workspace_id, user_id)` → `owner/maintainer/member/viewer`            |
-| `workspaces.device_id`                                           | 从 payload 提升为真实列                                                 |
-| `profiles.owner_user_id`                                         | 连接归属                                                                |
-| `workspace_feishu_bots.bound_user_id`、`pairing_code_created_by` | 飞书群绑定的账号；`pairing_code` 只存 hash                              |
-| Issue / Session `createdByUserId`                                | 发起人                                                                  |
+| 表 / 列                                                                     | 内容                                                                                  |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `device_identities`                                                         | device id、归属账号、机器指纹、凭证 hash；`UNIQUE (owner, fingerprint)`               |
+| `device_pairing_tokens`                                                     | 一次性设备配对 token（只存 hash）                                                     |
+| `workspace_members`                                                         | `(workspace_id, user_id)` → `owner/maintainer/member/viewer`                          |
+| `workspaces.device_id`                                                      | 从 payload 提升为真实列                                                               |
+| `profiles.owner_user_id`                                                    | 连接归属                                                                              |
+| `feishu_bot_routes.bound_user_id`、`pairing_code_created_by`                | 飞书群绑定的账号；`pairing_code` 只存 hash（旧表 `workspace_feishu_bots` 启动时迁移） |
+| `external_accounts`、`external_account_bindings`、`external_account_events` | 个人外部账号、绑定到的 Workspace、账号审计行（见[实现边界](#实现边界)）               |
+| Issue / Session `createdByUserId`                                           | 发起人                                                                                |
 
 P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, created_at)`，
 `source` 为 `profile:<id>` 或 `device-login:<runtime>`。
@@ -275,7 +278,7 @@ P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, c
 
 ## 8. 飞书：Bot 沿用配对人的权限
 
-飞书配对码由某个 Web 账号在 Workspace 的飞书设置里生成，所以绑定关系天然有
+飞书配对码由某个 Web 账号在 Workspace 的「渠道」标签页生成，所以绑定关系天然有
 一个 Foundry 身份：
 
 - 生成配对码需要该 Workspace 的 Maintainer 及以上权限；配对码记录
@@ -314,3 +317,30 @@ P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, c
 7. 飞书 Bot 沿用生成配对码的账号的权限（§8）；按发送者身份授权后续再做。
 8. 设备唯一性用 OS 机器 ID 的哈希，一台机器一个账号下一个 Device；认证用设备
    凭证；同一 Device 同时只允许一个在线（§4.1）。
+
+## 实现边界
+
+截至 2026-10-14（`3092162`）。路径相对 `apps/server/internal/`，另有说明的除外。
+
+**已实现（P1–P2）：**
+
+- 每个浏览器 API 都要求登录，首个 Admin 用启动码初始化，另有邀请（`httpapi/auth.go`、`httpapi/auth_handlers.go`、`accounts/`）；路由规则表在 `httpapi/routes.go`，`httpapi/auth_coverage_test.go` 保证每条非公开路由对无凭证请求返回 401。
+- 设备凭证与设备归属（`httpapi/device_auth.go`、`sqlitestore/device_credentials.go`）；资源归属，读取按调用者过滤（`httpapi/access.go`、`httpapi/visibility.go`、`httpapi/foundry_data.go`）。
+- Workspace 角色 Viewer / Member / Maintainer / Owner，撤销立即生效（`httpapi/workspace_members.go`）；Agent 令牌按发起人当前角色计算，封顶 Member（`httpapi/policy.go`，见[会话编排 §4](session-orchestration-design.md#4-鉴权与授权)）。
+- 飞书群沿用生成配对码的账号的身份，每条消息重新校验（§8，`feishu/pairing.go`）。
+
+**外部账号（2026-10-12 起，#123；Server 网关 #124）：** 个人在「外部账号」页用飞书设备码登录（也可以先由飞书为本人创建应用再授权）。Server 在密封的密钥存储中保管授权，并且是唯一的刷新方（`externalaccounts/`）。Workspace 的 Maintainer 把账号绑定到 Workspace（`PUT /api/workspaces/{id}/external-accounts`）。只有账号主人在自己的设备上、在已绑定的 Workspace 里启动的会话可以使用它（`externalaccounts/sessions.go` `Permitted`）。会话拿到的是网关签发的替身句柄：`feishu-cli` 的请求经 Worker 转发到 Server 网关，在那里换成真实 token，设备上不留密钥（`feishugateway/`、`packages/worker/src/external-accounts.ts`、`packages/worker/src/feishu-gateway-forwarder.ts`）。每次签发 token 都在账号上写一条审计，网关对每个请求也写一条审计，发起调用的人可以读（`GET /api/feishu-gateway/requests`）。
+
+**相对 P3、P4 的差距：** 外部账号做到的是“个人的飞书账号授权给 Workspace，供本人的会话使用”。它与 P3 的“个人连接授权给 Workspace”形状相同，但对象是第三方平台账号而不是模型连接（Profile），也不给协作者使用。以下仍未实现：
+
+- 模型连接授权给 Workspace 供协作者使用（计划中的 `workspace_connection_grants`、§7 的“可用连接”）；
+- §3.1 执行凭证按发起人解析并记录来源，现在仍用设备的原生登录或设备绑定的连接；
+- 技能目录按人归属；
+- 飞书用户与 Foundry 账号绑定并按发送者本人授权：外部账号记录了这个人的飞书身份，但飞书 Bot 仍以生成配对码的账号执行，不用它判断发送者（`feishu/`）；
+- 外部账号的设备本地模式：模型里有这个名字，但没有实现任何 provider（`externalaccounts/provider.go`）；
+- P4：成员与授权变更的审计视图（现有审计只覆盖外部账号的使用）、所有权转移、Admin 处置被禁用账号的资源、设备密钥对认证（§4.1）。
+
+**验证情况：**
+
+- P1–P2 有代码与测试（`httpapi/auth_coverage_test.go`、`access_test.go`、`workspace_members_test.go`、`device_auth_test.go`）。2026-09-23 的状态记录依据的是提交与源码路径，不是一次新的端到端运行；仓库中找不到 §9 P1 完成标准里“真实浏览器”检查的日期记录。实机回归中，C11（所有者只看到自己的设备与 Workspace）与 C18（跨 Workspace 的 Agent 可达范围）最近一次通过是 2026-09-29（[实机回归](live-regression.md)）。
+- 外部账号：单元测试使用模拟的飞书服务；真实的 `feishu-cli` 1.41.0 经真实的 Worker 转发器与网关对模拟飞书做了契约测试（2026-10-12，#124）；2026-10-13 在 dev 上真实使用，一个会话经网关使用两个飞书账号，每个任务用对了账号，设备上只有替身句柄，审计记录一致（#125）。

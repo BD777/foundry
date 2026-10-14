@@ -155,6 +155,21 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 	return err
 }
 
+// onSessionTurn follows a model turn the session's agent runs on its own:
+// the session's status does not show it, its resource leases follow it.
+func (c *daemonConnection) onSessionTurn(ctx context.Context, envelope wsEnvelope) error {
+	var payload wsSessionTurnPayload
+	if err := decodeWebSocketPayload(envelope.Payload, &payload); err != nil {
+		return err
+	}
+	deviceID, _ := c.registrationSnapshot()
+	if err := c.hub.leases.AgentTurn(ctx, payload.SessionID, deviceID, payload.Running); err != nil {
+		return err
+	}
+	c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+	return nil
+}
+
 // staleSessionInput reports a lifecycle message about an input the session
 // has already moved past.
 func staleSessionInput(session store.AgentSession, inputID string) bool {

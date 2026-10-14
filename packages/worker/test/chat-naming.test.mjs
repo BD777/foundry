@@ -5,6 +5,8 @@ import {
   sessionPrompt,
   codexSandboxMode,
   claudeMaxTurns,
+  claudePermissionMode,
+  codexApprovalPolicy,
 } from "../dist/runner.js";
 import { nativeChatRecap } from "../dist/native-chat-records.js";
 
@@ -36,6 +38,41 @@ test("recap cannot reuse the original runtime or inherit a prompt prefix", () =>
   assert.equal(sessionPrompt(naming, profile), "recap data");
   assert.equal(codexSandboxMode(naming, profile), "read-only");
   assert.equal(claudeMaxTurns(naming), 3);
+});
+
+/**
+ * sess_1791953123332185876: a naming job ran in plan mode, so the model
+ * wrote a plan file instead of the JSON title. Whatever the record, the
+ * profile or the person's own defaults say, utility sessions never plan and
+ * never ask.
+ */
+test("utility sessions run dontAsk, never plan mode, and Codex never asks", () => {
+  const profile = {
+    id: "p",
+    runtime: "claude",
+    claudePermissionMode: "plan",
+    codexApprovalPolicy: "on-request",
+  };
+  for (const source of ["naming", "diagnostic"]) {
+    const utility = {
+      id: `${source}-1`,
+      workspaceId: "ws",
+      provider: "claude",
+      source,
+      prompt: "recap data",
+      claudePermissionMode: "plan",
+      codexApprovalPolicy: "on-request",
+    };
+    assert.equal(claudePermissionMode(utility, profile), "dontAsk", source);
+    assert.equal(codexApprovalPolicy(utility, profile), "never", source);
+  }
+  const chat = {
+    id: "chat-1",
+    workspaceId: "ws",
+    provider: "claude",
+    source: "chat",
+  };
+  assert.equal(claudePermissionMode(chat, profile), "plan");
 });
 
 /**

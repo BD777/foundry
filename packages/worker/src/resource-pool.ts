@@ -28,6 +28,10 @@ import { foundryStatePath } from "./state-root.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import { errorMessage } from "./utils.js";
 
+// What tells the browsers apart, so the session picks the one a task needs.
+const browserChoiceNote =
+  "Pick the browser per task: a Playwright or Chrome for Testing build is isolated and never updates itself, so prefer it for headless work; an everyday browser (Google Chrome, Edge) may try to update itself when it starts, which macOS can block with an App Management notice. A fresh --user-data-dir has none of the person's sign-ins: when a task needs their signed-in browser, use their running browser through screen control where it is available, or ask them.";
+
 /**
  * What a workspace session is told about its device: to use what is
  * installed, which resources it may use, how an image reaches the person,
@@ -54,8 +58,8 @@ export function sessionResourceNotes(
     "- This session runs on the person's own device. Use the software installed here when a task needs it; do not download or install a tool the device already has.",
     browsers.length
       ? Object.keys(launchers).length
-        ? `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name}: start it with ${launchers[browser.id]} (Foundry's launcher for ${browser.attributes?.path}; it takes the browser's own arguments)`).join("; ")}. The launcher reserves the browser for this session and it is closed when your reply ends. Run headless when no window is needed, each run with its own --user-data-dir under $TMPDIR so the person's own browser profile is left untouched.`
-        : `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name} (${browser.attributes?.path})`).join("; ")}. Run them directly (headless when no window is needed), each run with its own --user-data-dir in a temporary directory so the person's own browser profile is left untouched. Browser processes this session leaves running are closed when your reply ends.`
+        ? `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name}: start it with ${launchers[browser.id]} (Foundry's launcher for ${browser.attributes?.path}; it takes the browser's own arguments)`).join("; ")}. The launcher reserves the browser for this session and it is closed when your reply ends. Run headless when no window is needed, each run with its own --user-data-dir under $TMPDIR so the person's own browser profile is left untouched. ${browserChoiceNote}`
+        : `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name} (${browser.attributes?.path})`).join("; ")}. Run them directly (headless when no window is needed), each run with its own --user-data-dir in a temporary directory so the person's own browser profile is left untouched. Browser processes this session leaves running are closed when your reply ends. ${browserChoiceNote}`
       : "- No browser was found on this device.",
     ...(control
       ? [

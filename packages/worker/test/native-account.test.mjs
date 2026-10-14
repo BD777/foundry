@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { claudeAccount, codexAccount } from "../dist/native-account.js";
+import {
+  claudeConfigDir,
+  claudeGlobalConfigDir,
+} from "../dist/native-homes.js";
 
 const scratch = mkdtempSync(join(tmpdir(), "foundry-account-"));
 
@@ -89,4 +93,12 @@ test("the Claude account comes from the profile beside its keychain entry", () =
     mode: "login",
   });
   assert.equal(claudeAccount(join(scratch, "absent")), undefined);
+});
+
+test(".claude.json sits in the home, or inside CLAUDE_CONFIG_DIR when that is set", () => {
+  assert.equal(claudeGlobalConfigDir({ HOME: "/h" }), "/h");
+  assert.equal(claudeConfigDir({ HOME: "/h" }), "/h/.claude");
+  const moved = { HOME: "/h", CLAUDE_CONFIG_DIR: "/elsewhere" };
+  assert.equal(claudeGlobalConfigDir(moved), "/elsewhere");
+  assert.equal(claudeConfigDir(moved), "/elsewhere");
 });

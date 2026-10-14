@@ -72,8 +72,8 @@ const (
 	wsAttachmentReadType           = "attachment_read"
 	wsAttachmentChunkReadType      = "attachment_chunk_read"
 	wsAgentModelsListedType        = "agent_models_listed"
-	wsReadProfileCredentialType    = "read_profile_credential"
-	wsProfileCredentialReadType    = "profile_credential_read"
+	wsReadProviderKeyType          = "read_provider_key"
+	wsProviderKeyReadType          = "provider_key_read"
 	wsScanSkillsType               = "scan_skills"
 	wsSkillsScannedType            = "skills_scanned"
 	wsReadSkillContentType         = "read_skill_content"
@@ -101,6 +101,10 @@ const (
 	// A session's timers the server knows, sent to its device on hello
 	// (session_timers.go); older workers ignore it.
 	wsSessionTimersType = "session_timers"
+	// A model turn a session's agent started or ended on its own (a
+	// timer's, or its follow-up after background work); sent only to a
+	// server whose registered answer lists sessionTurnsFeature.
+	wsSessionTurnType = "session_turn"
 	// A piece of a large envelope; see daemon_reply_chunks.go.
 	wsReplyChunkType = "reply_chunk"
 )
@@ -286,14 +290,18 @@ type wsAgentModelsListedPayload struct {
 	wsReplyError
 }
 
-// wsReadProfileCredentialPayload asks the daemon for a credential that has so
-// far never left the machine, so promotion can seal it server-side. The value
-// comes back in wsProfileCredentialReadPayload and is never logged.
-type wsReadProfileCredentialPayload struct {
+// wsReadProviderKeyPayload asks the daemon for the key one provider's own
+// configuration names, so promotion can seal it server-side. It names the
+// provider, never a variable. The value comes back in wsProviderKeyReadPayload
+// and is never logged.
+type wsReadProviderKeyPayload struct {
 	ProfileID string `json:"profileId"`
 }
 
-type wsProfileCredentialReadPayload struct {
+type wsProviderKeyReadPayload struct {
+	// KeySource names where the key was read, e.g. "$LLM_GATEWAY_KEY"; empty
+	// when the provider's configuration names none.
+	KeySource  string `json:"keySource,omitempty"`
 	Credential string `json:"credential,omitempty"`
 	wsReplyError
 }
@@ -364,6 +372,13 @@ type wsSessionStartedPayload struct {
 	// InputID names the input this lifecycle message belongs to; a message
 	// about an earlier input of the session is stale and ignored.
 	InputID string `json:"inputId,omitempty"`
+}
+
+// wsSessionTurnPayload: the session's agent runs a turn of its own
+// (running) or no longer does.
+type wsSessionTurnPayload struct {
+	SessionID string `json:"sessionId"`
+	Running   bool   `json:"running"`
 }
 
 type wsSessionEventPayload struct {

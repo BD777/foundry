@@ -81,21 +81,3 @@ func TestNormalizeFeishuMarkdown(t *testing.T) {
 		t.Errorf("expected empty line and space for heading, got:\n%s", got)
 	}
 }
-
-func TestExtractMessageText(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{`{"text":"@_user_1 /pair FND-1234"}`, `/pair FND-1234`},
-		{`{"text":"@_user_1 @_user_2 hello world"}`, `hello world`},
-		{`{"text":"plain text"}`, `plain text`},
-		{`raw text`, `raw text`},
-	}
-	for _, tc := range cases {
-		actual := extractMessageText(tc.input)
-		if actual != tc.expected {
-			t.Errorf("input %s: expected %q, got %q", tc.input, tc.expected, actual)
-		}
-	}
-}

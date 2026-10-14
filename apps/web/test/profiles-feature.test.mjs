@@ -333,3 +333,67 @@ test("a keyless connection is described neutrally, never as a warning", async ()
 
   await unmount(view.root);
 });
+
+test("each model's context window shows where it comes from and saves the person's own", async () => {
+  const relay = {
+    ...profile,
+    model: "auto_model/alwaysday1_max",
+    models: ["auto_model/alwaysday1_max", "gpt-5.5", "ark/60b-0614c"],
+    contextWindows: { "ark/60b-0614c": 150_000 },
+  };
+  const view = await renderFeature({ profiles: [relay] }, (request) =>
+    request.path.endsWith("/models")
+      ? Response.json([
+          { id: "auto_model/alwaysday1_max", contextWindow: 1_000_000 },
+          { id: "ark/60b-0614c", contextWindow: 200_000 },
+        ])
+      : serveProfiles(request),
+  );
+  await view.clickButton("Relay");
+  const section = [...window.document.querySelectorAll("details")].find(
+    (details) =>
+      details.querySelector("summary").textContent === "Context windows",
+  );
+  assert.ok(section, "missing the context windows section");
+  // Opening the section reads the endpoint's windows from the server's copy.
+  await act(async () => {
+    section.open = true;
+    section.dispatchEvent(new window.Event("toggle"));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  const models = view.requests.filter((request) =>
+    request.path.endsWith("/models"),
+  );
+  assert.equal(models.length, 1);
+  assert.equal(models[0].body.refresh, undefined);
+  const rows = Object.fromEntries(
+    [...section.querySelectorAll(".fdy-context-window-row")].map((row) => [
+      row.querySelector("label").textContent,
+      [
+        row.querySelector(".fdy-context-window-auto").textContent,
+        row.querySelector("input").value,
+      ],
+    ]),
+  );
+  assert.deepEqual(rows, {
+    "auto_model/alwaysday1_max": ["Automatic: 1M · endpoint model list", ""],
+    "gpt-5.5": ["Automatic: 272K · official model", ""],
+    "ark/60b-0614c": ["Automatic: 200K · endpoint model list", "150K"],
+  });
+
+  // A typed window that is not one blocks saving until it is fixed.
+  const input = '[aria-label="Context window for gpt-5.5"]';
+  await view.type(input, "lots");
+  assert.ok(view.query(".fdy-context-window-error"));
+  assert.equal(view.buttonWithText("Save provider").disabled, true);
+  await view.type(input, "400k");
+  assert.equal(view.query(".fdy-context-window-error"), null);
+  await view.clickButton("Save provider");
+  const saved = view.requests.find((request) => request.method === "PUT");
+  assert.deepEqual(saved.body.contextWindows, {
+    "gpt-5.5": 400_000,
+    "ark/60b-0614c": 150_000,
+  });
+
+  await unmount(view.root);
+});

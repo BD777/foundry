@@ -4,7 +4,11 @@
  * the model's context window. Claude names the window in its results;
  * Codex in the `token_count` records of its rollout log.
  */
-import type { AgentContextUsage } from "@bd777/foundry-protocol";
+import {
+  withoutOneMillionSuffix,
+  type AgentContextUsage,
+  type ConfiguredContextWindow,
+} from "@bd777/foundry-protocol";
 import { open, stat } from "node:fs/promises";
 import { optionalRecord } from "./json-values.js";
 import { findSessionLog } from "./native-usage.js";
@@ -20,6 +24,11 @@ function count(value: unknown): number | undefined {
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** A model as Foundry shows it: without Claude Code's `[1m]` opt-in. */
+function modelName(model: string | undefined): string | undefined {
+  return model === undefined ? undefined : withoutOneMillionSuffix(model);
 }
 
 function sameContext(
@@ -51,9 +60,15 @@ export class ClaudeContextTracker {
   private reported?: AgentContextUsage;
   private costTotal?: number;
   private readonly costs = new WeakMap<object, number>();
+  private readonly configured?: ConfiguredContextWindow;
 
-  constructor(options: { resumed: boolean }) {
+  constructor(options: {
+    resumed: boolean;
+    /** The window Foundry set for the session's model, if it set one. */
+    configured?: ConfiguredContextWindow;
+  }) {
     this.costTotal = options.resumed ? undefined : 0;
+    this.configured = options.configured;
   }
 
   /** The context to report after this message, if it changed it. */
@@ -63,7 +78,8 @@ export class ClaudeContextTracker {
     if (value.type === "stream_event" && !value.parent_tool_use_id) {
       const event = optionalRecord(value.event);
       if (event?.type === "message_start")
-        this.model = text(optionalRecord(event.message)?.model) ?? this.model;
+        this.model =
+          modelName(text(optionalRecord(event.message)?.model)) ?? this.model;
     }
     const request = this.requests.observe(message);
     if (request)
@@ -89,7 +105,9 @@ export class ClaudeContextTracker {
     const usage = optionalRecord(value.modelUsage);
     for (const [model, entry] of Object.entries(usage ?? {})) {
       const window = count(optionalRecord(entry)?.contextWindow);
-      if (window) claudeContextWindows.set(model, window);
+      // A model run as `<model>[1m]` is reported under that name.
+      if (window)
+        claudeContextWindows.set(withoutOneMillionSuffix(model), window);
     }
     // The first result tells the window of a request already reported.
     const last = this.reported;
@@ -129,8 +147,15 @@ export class ClaudeContextTracker {
   private report(context: AgentContextUsage): AgentContextUsage | undefined {
     if (sameContext(this.reported, context)) return undefined;
     this.reported = context;
-    return context;
+    return withConfigured(context, this.configured);
   }
+}
+
+function withConfigured(
+  context: AgentContextUsage,
+  configured: ConfiguredContextWindow | undefined,
+): AgentContextUsage {
+  return configured ? { ...context, configuredWindow: configured } : context;
 }
 
 /** Rollout paths found, by Codex thread id. */
@@ -153,7 +178,11 @@ export class CodexContextFollower {
   /** Input tokens the turn's requests read so far, as Codex totals them. */
   turnInputTokens = 0;
 
-  constructor(private readonly homes: string[]) {}
+  constructor(
+    private readonly homes: string[],
+    /** The window Foundry set for the session's model, if it set one. */
+    private readonly configured?: ConfiguredContextWindow,
+  ) {}
 
   /** Whether the thread's log was found. */
   get found(): boolean {
@@ -263,7 +292,7 @@ export class CodexContextFollower {
   private report(context: AgentContextUsage): AgentContextUsage | undefined {
     if (sameContext(this.reported, context)) return undefined;
     this.reported = context;
-    return context;
+    return withConfigured(context, this.configured);
   }
 
   private async logPath(): Promise<string | undefined> {

@@ -16,7 +16,14 @@ export type TranscriptEntry = TranscriptMessage &
     | "usage"
     | "fileReferences"
     | "turnFiles"
-  >;
+  > & {
+    /**
+     * This step's own identity where `id` is shared: `id` names the provider
+     * item a step reports on, and a tool call's start and its result are
+     * steps of one item, which a steered message can put in two groups.
+     */
+    stepId?: string;
+  };
 
 const processKinds = new Set<TranscriptMessage["kind"]>([
   "reasoning",
@@ -100,7 +107,8 @@ export function projectTranscript(
       ...(durationMs > 0 ? { durationMs } : {}),
       ...(begins ? { startedAt: begins } : {}),
       ...(usage ? { stepUsage: usage } : {}),
-      id: `${first.id}:process`,
+      // Named by its first step, not that step's item: unique per row.
+      id: `${first.stepId ?? first.id}:process`,
       kind: "process",
       role: "bot",
       streaming: last.streaming,
@@ -132,7 +140,13 @@ export function projectTranscript(
     }
     flush();
     previousAt = entry.at;
-    const { kind, callId: _callId, status: _status, ...rest } = entry;
+    const {
+      kind,
+      callId: _callId,
+      status: _status,
+      stepId: _stepId,
+      ...rest
+    } = entry;
     messages.push({
       ...rest,
       role: kind === "user" ? "user" : "bot",

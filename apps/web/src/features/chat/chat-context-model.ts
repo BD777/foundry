@@ -474,6 +474,7 @@ export function chatSessionStatus(
 ): ChatSessionStatus {
   let context: AgentContextUsage | undefined;
   let window: { tokens: number; model?: string } | undefined;
+  let configured: AgentContextUsage["configuredWindow"];
   let requestTokens: number | undefined;
   let compactions = 0;
   let turns = 0;
@@ -491,6 +492,7 @@ export function chatSessionStatus(
     if (metadata.contextUsage) {
       context = metadata.contextUsage;
       if (context.compaction) compactions += 1;
+      configured = context.configuredWindow ?? configured;
       if (context.contextWindow)
         window = { tokens: context.contextWindow, model: context.model };
     } else if (metadata.requestUsage) {
@@ -512,11 +514,13 @@ export function chatSessionStatus(
   }
   // A report made before its model's window was known takes the one a
   // later report of the same model named.
+  // Before the runtime names a window, the one Foundry set stands in.
   const contextWindow =
     context?.contextWindow ??
     (window && (!context?.model || window.model === context.model)
       ? window.tokens
-      : undefined);
+      : undefined) ??
+    configured?.tokens;
   const model = context?.model || session.model?.trim() || undefined;
   const effort =
     session.provider === "claude"
@@ -550,6 +554,7 @@ export function chatSessionStatus(
         ? { usedTokens: context ? context.inputTokens : requestTokens }
         : {}),
       ...(contextWindow ? { contextWindow } : {}),
+      ...(configured ? { configured } : {}),
     },
     turns,
     totals,

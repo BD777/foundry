@@ -50,6 +50,16 @@ type AgentContextUsage struct {
 	ContextWindow *int64                  `json:"contextWindow,omitempty"`
 	Model         string                  `json:"model,omitempty"`
 	Compaction    *AgentContextCompaction `json:"compaction,omitempty"`
+	// ConfiguredWindow is the window Foundry set for a compatible endpoint's
+	// model and where it came from; the runtime may report another.
+	ConfiguredWindow *ConfiguredContextWindow `json:"configuredWindow,omitempty"`
+}
+
+// ConfiguredContextWindow is a window Foundry set: the person's setting, the
+// endpoint catalog, the official model, or the 1M default.
+type ConfiguredContextWindow struct {
+	Tokens int64  `json:"tokens"`
+	Source string `json:"source"`
 }
 
 // AgentContextCompaction marks the runtime compacting the context.

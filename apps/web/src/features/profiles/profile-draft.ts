@@ -1,14 +1,15 @@
-import type {
-  AgentConnectionType,
-  ClaudeEffort,
-  ClaudePermissionMode,
-  CodexApprovalPolicy,
-  CodexReasoningEffort,
-  CodexSandboxMode,
-  CodexSpeed,
-  ProfileAuthMode,
-  ProfileDefinition,
-  SaveProfileInput,
+import {
+  parseContextWindow,
+  type AgentConnectionType,
+  type ClaudeEffort,
+  type ClaudePermissionMode,
+  type CodexApprovalPolicy,
+  type CodexReasoningEffort,
+  type CodexSandboxMode,
+  type CodexSpeed,
+  type ProfileAuthMode,
+  type ProfileDefinition,
+  type SaveProfileInput,
 } from "@bd777/foundry-protocol";
 
 /** Runtimes a server profile can target. `mock` is a test-only daemon runtime. */
@@ -30,6 +31,8 @@ export interface ProfileDraft {
   model: string;
   /** Selectable models for this profile; `model` is the default. */
   models: string[];
+  /** The person's window per model, as typed (`200k`, `1M`); blank is automatic. */
+  contextWindows: Record<string, string>;
   promptPrefix: string;
   runtime: ProfileRuntime;
 }
@@ -74,9 +77,36 @@ export function defaultProfileDraft(
     label: defaultProfileLabel(runtime),
     model: "",
     models: [],
+    contextWindows: {},
     promptPrefix: "",
     runtime,
   };
+}
+
+/** A stored window as the field shows it: `1M`, `200K`, or the plain count. */
+export function contextWindowText(tokens: number): string {
+  // i18n-ignore: token units, read back by parseContextWindow
+  if (tokens % 1_000_000 === 0) return `${tokens / 1_000_000}M`;
+  // i18n-ignore: token units, read back by parseContextWindow
+  if (tokens % 1_000 === 0) return `${tokens / 1_000}K`;
+  return String(tokens);
+}
+
+/** Models whose typed window is not a window. */
+export function invalidContextWindows(draft: ProfileDraft): string[] {
+  return draft.models.filter((model) => {
+    const text = draft.contextWindows[model]?.trim();
+    return !!text && parseContextWindow(text) === undefined;
+  });
+}
+
+function contextWindowsInput(draft: ProfileDraft): Record<string, number> {
+  const windows: Record<string, number> = {};
+  for (const model of draft.models) {
+    const tokens = parseContextWindow(draft.contextWindows[model] ?? "");
+    if (tokens !== undefined) windows[model] = tokens;
+  }
+  return windows;
 }
 
 export function draftFromProfile(profile?: ProfileDefinition): ProfileDraft {
@@ -109,6 +139,12 @@ export function draftFromProfile(profile?: ProfileDefinition): ProfileDraft {
       : profile.model
         ? [profile.model]
         : [],
+    contextWindows: Object.fromEntries(
+      Object.entries(profile.contextWindows ?? {}).map(([model, tokens]) => [
+        model,
+        contextWindowText(tokens),
+      ]),
+    ),
     /* Kept so a saved value survives a round trip, but nothing injects it any
        more and no field offers it. */
     promptPrefix: profile.promptPrefix ?? "",
@@ -182,6 +218,8 @@ export function buildSaveProfileInput(draft: ProfileDraft): SaveProfileInput {
     label: draft.label.trim(),
     model: draft.model.trim() || undefined,
     models: draft.models,
+    contextWindows:
+      draft.authMode === "custom" ? contextWindowsInput(draft) : undefined,
     promptPrefix:
       draft.runtime === "claude"
         ? draft.promptPrefix.trim() || undefined

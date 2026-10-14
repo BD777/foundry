@@ -9,7 +9,9 @@ import { ModelCombobox } from "../../components/ui/model-combobox";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { RuntimeDefaultFields } from "../../components/ui/runtime-default-fields";
+import { ContextWindowFields } from "./context-window-fields";
 import {
+  invalidContextWindows,
   runtimeOptions,
   type ProfileDraft,
   type ProfileRuntime,
@@ -17,6 +19,8 @@ import {
 
 export interface ProfileEditorProps {
   busy: boolean;
+  /** Windows the endpoint's catalog reported, by model; undefined until read. */
+  catalogWindows?: Record<string, number>;
   draft: ProfileDraft;
   isNew: boolean;
   /** True only while the model catalog is being fetched. */
@@ -27,6 +31,8 @@ export interface ProfileEditorProps {
   onClearCredential: () => void;
   onDelete: () => void;
   onLoadModels?: () => void;
+  /** Reads the catalog's windows only; absent when no device can ask. */
+  onReadCatalogWindows?: () => void;
   onRuntimeChange: (runtime: ProfileRuntime) => void;
   onSave: () => void;
   profile?: ProfileDefinition;
@@ -34,6 +40,7 @@ export interface ProfileEditorProps {
 
 export function ProfileEditor({
   busy,
+  catalogWindows,
   draft,
   isNew,
   modelsBusy,
@@ -42,6 +49,7 @@ export function ProfileEditor({
   onClearCredential,
   onDelete,
   onLoadModels,
+  onReadCatalogWindows,
   onRuntimeChange,
   onSave,
   profile,
@@ -53,6 +61,11 @@ export function ProfileEditor({
   // login, and any configured endpoint for its `/models` catalog. Only a Claude
   // login has neither.
   const canDiscoverModels = !!onLoadModels && draft.baseUrl.trim() !== "";
+  const canReadWindows =
+    !!onReadCatalogWindows && draft.baseUrl.trim() !== ""
+      ? onReadCatalogWindows
+      : undefined;
+  const windowsInvalid = invalidContextWindows(draft).length > 0;
 
   // An unsaved profile has nothing to report yet; a saved one reports how
   // usable it is, from the same resolver the Device page and the list use.
@@ -184,6 +197,25 @@ export function ProfileEditor({
         </div>
       </div>
 
+      <details
+        className="fdy-profile-defaults"
+        onToggle={(event) => {
+          // Opening the section reads the windows the endpoint reports.
+          if (event.currentTarget.open && catalogWindows === undefined)
+            canReadWindows?.();
+        }}
+      >
+        <summary>{t("contextWindows.title")}</summary>
+        <ContextWindowFields
+          busy={busy || modelsBusy}
+          catalogWindows={catalogWindows}
+          models={draft.models}
+          onChange={(contextWindows) => onChange({ contextWindows })}
+          onReadCatalog={canReadWindows}
+          values={draft.contextWindows}
+        />
+      </details>
+
       <details className="fdy-profile-defaults">
         <summary>{t("editor.runtimeDefaults")}</summary>
         <RuntimeDefaultFields
@@ -209,7 +241,12 @@ export function ProfileEditor({
           </ConfirmButton>
         ) : null}
         <Button
-          disabled={busy || !draft.label.trim() || !draft.baseUrl.trim()}
+          disabled={
+            busy ||
+            windowsInvalid ||
+            !draft.label.trim() ||
+            !draft.baseUrl.trim()
+          }
           onClick={onSave}
           size="sm"
           variant="primary"

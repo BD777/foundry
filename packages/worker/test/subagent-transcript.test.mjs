@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { subagentResponseFingerprint } from "@bd777/foundry-protocol";
+import { ClaudeBackgroundTaskTracker } from "../dist/agent-background-tasks.js";
 import { subagentList } from "../dist/daemon/handlers/files.js";
+import { closeOtherClaudeWriters } from "../dist/runner/active-runtimes.js";
+import { activeClaudeRuntimes } from "../dist/session-state.js";
 import { readSubagentRecords } from "../dist/subagent-records.js";
 import { claudeSubagentUsage } from "../dist/turn-usage.js";
 import {
@@ -19,6 +22,29 @@ import {
   listAgentSubagents,
   readAgentSubagentTranscript,
 } from "../dist/subagent-transcript.js";
+
+/**
+ * A live Claude process of this worker serving the session, registered
+ * under key, that streamed the records; what it emits lands in events.
+ */
+function liveClaudeProcess(key, sessionId, records = []) {
+  const events = [];
+  const runtime = {
+    closed: false,
+    foundrySessionId: sessionId,
+    input: { close() {} },
+    key,
+    lastUsed: Date.now(),
+    nativeSessionId: "",
+    background: new ClaudeBackgroundTaskTracker({
+      emit: (event) => events.push(event),
+      sessionId: () => sessionId,
+    }),
+  };
+  for (const record of records) runtime.background.observe(record);
+  activeClaudeRuntimes.set(key, runtime);
+  return { runtime, events };
+}
 
 test("reads only the selected local agent conversation", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "foundry-subagent-"));
@@ -175,6 +201,16 @@ test("answers a chat's list read with digests: fingerprints, no prompts", async 
       .map((record) => JSON.stringify(record))
       .join("\n")}\n`,
   );
+  // The process that started the subagent still runs it.
+  liveClaudeProcess("digest", sessionId, [
+    {
+      type: "system",
+      subtype: "task_started",
+      task_id: "task_agent",
+      task_type: "local_agent",
+      tool_use_id: "tool_agent",
+    },
+  ]);
   try {
     // As the server reads them: off the wire.
     const read = async (payload) =>
@@ -206,6 +242,7 @@ test("answers a chat's list read with digests: fingerprints, no prompts", async 
       ],
     });
   } finally {
+    activeClaudeRuntimes.delete("digest");
     rmSync(workspace, { recursive: true, force: true });
   }
 });
@@ -342,10 +379,11 @@ async function recordsList(workspace, sessionId, paths) {
           : [],
     );
   };
+  // No live process runs these: one without an end ended with its process.
   const status = (notification) =>
     ({ failed: "failed", completed: "completed", stopped: "failed" })[
       text(notification?.status)
-    ] ?? "running";
+    ] ?? "failed";
   return records
     .filter(
       (record) =>
@@ -632,4 +670,93 @@ test("a subagent's transcript read from the inputs holding it is the one read fr
     ["do target", "Reading", "file body", "Found it"],
   );
   assert.match(await read(split, "task_bash"), /subagent task was not found/);
+});
+
+test("a replaced Claude process's subagents without an end no longer run", async (t) => {
+  const workspace = mkdtempSync(join(tmpdir(), "foundry-subagent-"));
+  const sessionId = "sess_replaced";
+  t.after(() => {
+    activeClaudeRuntimes.delete("first");
+    activeClaudeRuntimes.delete("second");
+    rmSync(workspace, { recursive: true, force: true });
+  });
+  const started = (id) => ({
+    type: "system",
+    subtype: "task_started",
+    task_id: `task_${id}`,
+    task_type: "local_agent",
+    tool_use_id: `tool_${id}`,
+    description: `Research ${id}`,
+    is_backgrounded: true,
+  });
+  const done = {
+    type: "system",
+    subtype: "task_notification",
+    task_id: "task_a",
+    status: "completed",
+    summary: "Researched a",
+  };
+  const input = (id, records) => {
+    const directory = join(
+      workspace,
+      ".foundry",
+      "sessions",
+      sessionId,
+      "inputs",
+      id,
+    );
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "claude-sdk.messages.jsonl"),
+      records.map((record) => `${JSON.stringify(record)}\n`).join(""),
+    );
+  };
+  const statuses = async () =>
+    Object.fromEntries(
+      (await listAgentSubagentDigests(workspace, sessionId)).map(
+        ({ taskId, status }) => [taskId, status],
+      ),
+    );
+
+  // The first process launches three subagents; one reports its end.
+  const firstRecords = [started("a"), started("b"), started("c"), done];
+  input("01_first", firstRecords);
+  const first = liveClaudeProcess("first", sessionId, firstRecords);
+  assert.deepEqual(await statuses(), {
+    task_a: "completed",
+    task_b: "running",
+    task_c: "running",
+  });
+
+  // A new process takes over the session: the old one and its subagents end.
+  input("02_second", [started("d")]);
+  const second = liveClaudeProcess("second", sessionId, [started("d")]);
+  closeOtherClaudeWriters(sessionId, "", second.runtime);
+  assert.equal(first.runtime.closed, true);
+  assert.deepEqual(await statuses(), {
+    task_a: "completed",
+    task_b: "failed",
+    task_c: "failed",
+    task_d: "running",
+  });
+  const transcript = await readAgentSubagentTranscript(
+    workspace,
+    sessionId,
+    "task_b",
+  );
+  assert.equal(transcript.status, "failed");
+  // Viewers learn it from the closing process, as from Claude's own end.
+  assert.deepEqual(
+    first.events
+      .filter((event) => event.label === "Subtask failed")
+      .map((event) => event.metadata),
+    [
+      { taskId: "task_b", taskType: "local_agent", toolUseId: "tool_b" },
+      { taskId: "task_c", taskType: "local_agent", toolUseId: "tool_c" },
+    ],
+  );
+
+  // Without a live process (an earlier worker ran it), nothing runs.
+  activeClaudeRuntimes.delete("second");
+  assert.equal((await statuses()).task_d, "failed");
 });

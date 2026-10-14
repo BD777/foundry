@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceProfileBinding,
@@ -26,6 +26,7 @@ import { ConnectionDevices } from "./connection-devices";
 import { useModelCatalog } from "./use-model-catalog";
 import { useProfilesState } from "./use-profiles-state";
 import { liveDevices } from "../../lib/devices";
+import { readPageQuery, replacePageQuery } from "../../lib/page-query";
 
 export type ProfilesFeatureEvent =
   /** Resolves once the page shows the providers and device assignments. */
@@ -65,7 +66,8 @@ export function ProfilesFeature({
   const models = useModelCatalog({
     deviceId: catalogDevice?.id,
     draft: state.draft,
-    onLoad: (profile) => request(() => listAgentModels(profile)),
+    onLoad: (profile, reuse) =>
+      request(() => listAgentModels(profile, { reuse })),
     updateDraft: state.updateDraft,
   });
   // A server request the page also hears about when it fails.
@@ -112,6 +114,16 @@ export function ProfilesFeature({
     models.reset();
     setModalOpen(true);
   }
+  // A link to one provider (?provider=<id>, e.g. from a device's promoted
+  // provider) opens its editor once the list has it. The URL is read once.
+  const requestedProfile = useRef(readPageQuery("provider"));
+  useEffect(() => {
+    const profileId = requestedProfile.current;
+    if (!profileId || !connections.some((row) => row.id === profileId)) return;
+    requestedProfile.current = "";
+    replacePageQuery({ provider: "" });
+    open(profileId);
+  });
   return (
     <PageSurface variant="profiles">
       <div className="fdy-profile-intro">
@@ -174,6 +186,7 @@ export function ProfilesFeature({
             <div className="fdy-connection-editor-scroll">
               <ProfileEditor
                 busy={busy || saving}
+                catalogWindows={models.windows}
                 draft={state.draft}
                 isNew={state.isNew}
                 modelsBusy={models.busy}
@@ -198,6 +211,9 @@ export function ProfilesFeature({
                 }
                 onLoadModels={
                   catalogDevice ? () => void models.load() : undefined
+                }
+                onReadCatalogWindows={
+                  catalogDevice ? () => void models.readWindows() : undefined
                 }
                 onRuntimeChange={state.updateRuntime}
                 profile={state.selectedProfile}

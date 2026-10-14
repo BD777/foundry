@@ -19,7 +19,6 @@
  */
 
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -36,6 +35,7 @@ import {
   type ToolCommand,
 } from "./foundry-cli-commands.js";
 import { runMcpServer } from "./foundry-mcp.js";
+import { claudeConfigDir } from "./native-homes.js";
 import { errorMessage } from "./utils.js";
 
 /** How long one wait_session call may wait (the server's limit). */
@@ -228,7 +228,7 @@ function runSkillCommand(args: string[]): void {
     const root =
       dir >= 0 && args[dir + 1]
         ? args[dir + 1]!
-        : join(homedir(), ".claude", "skills");
+        : join(claudeConfigDir(), "skills");
     const target = join(root, name);
     copySkillFiles(source, target);
     console.log(`installed ${name} at ${join(target, "SKILL.md")}`);

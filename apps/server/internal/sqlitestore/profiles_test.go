@@ -389,3 +389,29 @@ func TestProfileTablesSurviveReopen(t *testing.T) {
 		t.Fatalf("bindings did not survive reopen: %#v", bindings)
 	}
 }
+
+func TestProfileContextWindowsRoundTrip(t *testing.T) {
+	db := newTestStore(t)
+	ctx := context.Background()
+	saved, err := db.SaveProfile(ctx, store.SaveProfileInput{
+		Runtime:        "codex",
+		Label:          "Gateway",
+		ConnectionType: "openai_compatible",
+		BaseURL:        "https://gw.example/v1",
+		ContextWindows: map[string]int64{"flux/gpt-6-astra": 400000, " ": 1, "zero": 0},
+	})
+	if err != nil {
+		t.Fatalf("save profile: %v", err)
+	}
+	loaded, err := db.GetProfile(ctx, saved.ID)
+	if err != nil {
+		t.Fatalf("get profile: %v", err)
+	}
+	if !reflect.DeepEqual(loaded.ContextWindows, map[string]int64{"flux/gpt-6-astra": 400000}) {
+		t.Fatalf("windows = %v", loaded.ContextWindows)
+	}
+	plain := saveTestProfile(t, db, "Plain")
+	if plain.ContextWindows != nil {
+		t.Fatalf("a profile without windows reads %v", plain.ContextWindows)
+	}
+}

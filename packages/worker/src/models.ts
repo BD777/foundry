@@ -8,9 +8,10 @@ import { execFile } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { promisify } from "node:util";
-import type {
-  AgentModelOption,
-  UpsertAgentProfilePayload,
+import {
+  validContextWindow,
+  type AgentModelOption,
+  type UpsertAgentProfilePayload,
 } from "@bd777/foundry-protocol";
 import {
   profileConfigFromInput,
@@ -67,9 +68,10 @@ export async function listAgentModelsConfig(
  * CLI. The key comes from the same place a run would take it, and neither the
  * key nor the response is logged.
  */
-async function listEndpointModels(
+export async function listEndpointModels(
   profile: AgentProfileLocalConfig,
   baseUrl: string,
+  timeoutMs = 15000,
 ): Promise<AgentModelOption[]> {
   const anthropic = profile.connectionType === "anthropic_compatible";
   const key =
@@ -92,7 +94,7 @@ async function listEndpointModels(
   for (const url of catalogURLs(baseUrl)) {
     const response = await fetch(url, {
       headers,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       lastRefusal = `answered ${response.status}`;
@@ -132,7 +134,7 @@ function catalogURLs(baseUrl: string): string[] {
 }
 
 /** OpenAI and Anthropic both wrap their catalog in `data`. */
-function modelsFromResponse(body: unknown): AgentModelOption[] {
+export function modelsFromResponse(body: unknown): AgentModelOption[] {
   const rows = catalogRows(body);
   const options: AgentModelOption[] = [];
   const seen = new Set<string>();
@@ -142,7 +144,12 @@ function modelsFromResponse(body: unknown): AgentModelOption[] {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const label = catalogLabel(row);
-    options.push(label ? { id, label } : { id });
+    const contextWindow = catalogContextWindow(row);
+    options.push({
+      id,
+      ...(label ? { label } : {}),
+      ...(contextWindow ? { contextWindow } : {}),
+    });
   }
   return options;
 }
@@ -154,6 +161,41 @@ function catalogRows(body: unknown): unknown[] {
     if (Array.isArray(data)) return data;
   }
   return [];
+}
+
+/**
+ * The window a catalog row reports, under the names compatible endpoints use:
+ * `context_length` (OpenRouter; super-relay answers with it),
+ * `context_window`, `max_context_length`, `max_input_tokens` (Anthropic's
+ * catalog, LiteLLM model info), `max_model_len` (vLLM) and OpenRouter's
+ * `top_provider.context_length`. LiteLLM's bare `max_tokens` is left out: it
+ * often means the output limit.
+ */
+function catalogContextWindow(row: object): number | undefined {
+  const value = row as Record<string, unknown>;
+  const nested = (key: string, field: string) => {
+    const inner = value[key];
+    return inner && typeof inner === "object"
+      ? (inner as Record<string, unknown>)[field]
+      : undefined;
+  };
+  const candidates = [
+    value.context_length,
+    value.context_window,
+    value.max_context_length,
+    value.max_input_tokens,
+    value.max_model_len,
+    nested("top_provider", "context_length"),
+    nested("model_info", "max_input_tokens"),
+  ];
+  for (const candidate of candidates) {
+    const tokens =
+      typeof candidate === "string" && /^\d+$/.test(candidate.trim())
+        ? Number(candidate.trim())
+        : candidate;
+    if (validContextWindow(tokens)) return tokens;
+  }
+  return undefined;
 }
 
 function catalogLabel(row: object): string | undefined {

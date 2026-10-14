@@ -21,8 +21,10 @@ export function claudeEffort(
  * headless: nobody is there to answer a permission prompt, so an unanswered
  * prompt only blocks the device's own software. Unless the profile or session
  * chooses otherwise, it runs as the person's terminal agent would with
- * permissions granted. Utility sessions (titles, naming) stay read-only, and
- * an Issue's clarification runs only the tools its role allows.
+ * permissions granted. Utility sessions (titles, naming, diagnostics) run
+ * dontAsk: never plan mode, whose system prompt makes the model write a plan
+ * file instead of answering. An Issue's clarification runs only the tools its
+ * role allows.
  */
 export const defaultClaudePermissionMode = "bypassPermissions";
 
@@ -30,10 +32,11 @@ export function claudePermissionMode(
   session: AgentSession,
   profile: AgentProfileLocalConfig,
 ): NonNullable<AgentProfileProjection["claudePermissionMode"]> {
-  if (isUtilitySession(session)) {
-    return "plan";
-  }
-  if (isClarificationSession(session) || isVerificationSession(session))
+  if (
+    isUtilitySession(session) ||
+    isClarificationSession(session) ||
+    isVerificationSession(session)
+  )
     return "dontAsk";
   return (
     session.claudePermissionMode ??

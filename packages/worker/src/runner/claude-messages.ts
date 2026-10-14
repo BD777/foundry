@@ -25,6 +25,7 @@ import {
 import {
   activeClaudeRuntimes,
   emitOutOfBandSessionEvent,
+  reportClaudeOwnTurn,
   type ActiveClaudeContinuation,
   type ActiveClaudeRuntime,
   type ActiveClaudeTurn,
@@ -320,6 +321,15 @@ async function handleClaudeContinuationMessage(
 }
 
 export async function handleActiveClaudeMessage(
+  runtime: ActiveClaudeRuntime,
+  message: unknown,
+): Promise<void> {
+  await routeActiveClaudeMessage(runtime, message);
+  // The message may have started or ended a turn Claude runs on its own.
+  reportClaudeOwnTurn(runtime);
+}
+
+async function routeActiveClaudeMessage(
   runtime: ActiveClaudeRuntime,
   message: unknown,
 ): Promise<void> {

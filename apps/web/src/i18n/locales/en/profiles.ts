@@ -71,6 +71,26 @@ export const profiles = {
     create: "Create provider",
     save: "Save provider",
   },
+  contextWindows: {
+    title: "Context windows",
+    intro:
+      "Each model runs with the window you set here. Left blank, it uses the window the endpoint's model list reports, else the official window when the name is a Claude or GPT model, else 1M.",
+    noModels: "Add a model above to set its context window.",
+    catalogUnread: "The endpoint's own windows have not been read yet.",
+    catalogUnavailable:
+      "Connect a device to read the endpoint's own windows; until then official and default windows are shown.",
+    readCatalog: "Read endpoint windows",
+    automatic: "Automatic: {{tokens}} · {{source}}",
+    source: {
+      setting: "your setting",
+      endpoint: "endpoint model list",
+      official: "official model",
+      default: "default",
+    },
+    inputLabel: "Context window for {{model}}",
+    placeholder: "Automatic",
+    invalid: "Enter tokens such as 200000, 200K or 1M (1K to 10M).",
+  },
   catalog: {
     asking: "Asking for the catalog…",
     changed: "Provider changed. Refresh again for its current catalog.",
@@ -94,6 +114,8 @@ export const profiles = {
     assignLabel: "Assign {{connection}} to {{device}}",
     assign: "Assign",
     updateFailed: "Could not update device access.",
+    deviceBound:
+      "Runs only on {{device}}: {{address}} is that device's own address, which other devices cannot reach.",
   },
   deviceConnections: {
     title: "Server model providers",
@@ -123,14 +145,49 @@ export const profiles = {
     ready: "Ready to use",
     from: "from {{source}}",
     answered: "checked {{time}}",
-    onServer: "Copied to server",
-    copyToServer: "Copy to server",
-    copyConfirm: "Copy provider and key?",
-    copying: "Copying…",
-    copyFailed: "Could not copy this provider to the server.",
+    actions: "Actions for {{name}}",
+    promote: "Promote to Model providers…",
+    updatePromotion: "Update in Model providers…",
+    promoted: "Promoted to Model providers",
+    openPromoted: "Open {{name}} in Model providers",
     checking: "Checking that {{names}} answers…",
     notAnswering:
       "Not offered: {{name}} does not answer ({{reason}}). If you no longer use it, remove it from {{source}}.",
+  },
+  promotion: {
+    title: "Promote {{name}} to Model providers",
+    updateTitle: "Update {{name}} in Model providers",
+    description:
+      "Copies this provider from {{device}}'s configuration into a Model provider on the server. Chats then use the server copy. {{source}} is not changed.",
+    updateDescription:
+      "Copies this provider again into the Model provider it was promoted to, instead of adding another. Settings changed there since stay. {{source}} is not changed.",
+    copied: "What is copied",
+    name: "Name",
+    agent: "Agent",
+    baseUrl: "Base URL",
+    api: "API",
+    claudeApi: "Anthropic Messages API",
+    codexApi: "OpenAI Responses API",
+    defaultModel: "Default model",
+    agentDefault: "The agent's default",
+    models: "Models",
+    key: "API key",
+    copyKey: "Also copy the key from {{source}}",
+    copyKeyHint:
+      "{{device}} reads this one value and the server seals it. It is never shown in the browser.",
+    keyKept: "Without it, the key the Model provider already has stays.",
+    noKey:
+      "This provider's configuration names no API key, so no key is copied.",
+    keyOffline: "{{device}} is offline, so its key cannot be read now.",
+    devices: "Devices",
+    loopback:
+      "{{address}} is {{device}}'s own address, which other devices cannot reach, so this Model provider runs only on {{device}}.",
+    shareable:
+      "It is enabled on {{device}}. You can enable it on other devices in Model providers.",
+    promote: "Promote",
+    update: "Update",
+    promoting: "Promoting…",
+    failed: "Could not promote this provider.",
   },
   assignment: {
     title: "Choose model providers",

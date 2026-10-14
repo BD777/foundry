@@ -17,3 +17,13 @@ export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env): string {
 export function codexHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.CODEX_HOME?.trim() || resolve(home(env), ".codex");
 }
+
+/**
+ * Where Claude Code keeps `.claude.json` (its account and per-project state):
+ * in `CLAUDE_CONFIG_DIR` when set, else the home itself, not `~/.claude`.
+ */
+export function claudeGlobalConfigDir(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return env.CLAUDE_CONFIG_DIR?.trim() || home(env);
+}

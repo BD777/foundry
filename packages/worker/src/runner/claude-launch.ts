@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { claudeRunModel } from "../context-window.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import type { NativeSessionStart } from "../native-session.js";
 import {
@@ -153,7 +154,7 @@ function claudeTurnOptions(
     ...(plan?.sdk ?? claudeSessionOptions(managedSkills)),
   };
   if (maxTurns !== undefined) baseOptions.maxTurns = maxTurns;
-  if (model) baseOptions.model = model;
+  if (model) baseOptions.model = claudeRunModel(profile, model);
   if (effort) baseOptions.effort = effort;
   if (permissionMode === "bypassPermissions") {
     baseOptions.allowDangerouslySkipPermissions = true;

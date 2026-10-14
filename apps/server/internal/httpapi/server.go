@@ -40,6 +40,7 @@ type Backend interface {
 	store.SessionTimerStore
 	store.ChatQueueStore
 	store.ChatDigestStore
+	store.ProfilePromotionStore
 	store.IssueExecutionStore
 	store.EvidenceStore
 	store.ResourceStore

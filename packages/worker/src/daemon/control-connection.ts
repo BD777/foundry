@@ -388,39 +388,27 @@ class ControlConnection {
     // catches a program installed or updated outside Foundry.
     void duringActivity("official skills", () => refreshOfficialSkills()).then(
       (changed) => {
-        if (changed) this.reportRegistrations();
+        if (changed) this.reportDevice();
       },
     );
     // Providers found in the device's configuration are offered once a turn
-    // through their SDK answered; a changed result re-reports every
-    // workspace's registration, which carries the device's profiles.
+    // through their SDK answered; a changed result is reported for the
+    // device, with or without a workspace.
     void duringActivity("provider check", () =>
       checkDueProviders(configuredAgentProfiles(""), providerHealthData(), () =>
-        this.reportRegistrations(),
+        this.reportDevice(),
       ),
     ).catch((error: unknown) =>
       console.error(`Checking providers failed: ${errorMessage(error)}`),
     );
   }
 
-  // Re-sends every workspace's registration, which carries the device's
-  // profiles and runtimes, after something about them changed.
-  private reportRegistrations(): void {
+  // The device's profiles, provider health or runtimes changed.
+  private reportDevice(): void {
     if (this.finished || this.socket.readyState !== WebSocket.OPEN) return;
     const end = beginActivity("registration");
     try {
-      for (const workspacePath of this.roster
-        .knownPaths()
-        .filter(workspaceFolderPresent)) {
-        const registration = this.roster.registration(workspacePath);
-        this.roster.register(registration);
-        sendWebSocket(
-          this.socket,
-          daemonMessageTypes.workspaceReady,
-          { registration },
-          `registration_${safeID(registration.workspace.id)}_${Date.now()}`,
-        );
-      }
+      this.roster.reportDevice();
     } finally {
       end();
     }

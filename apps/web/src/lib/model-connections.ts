@@ -72,3 +72,25 @@ export function connectionUsage(
     ? i18n.t("agents:connections.devices", { key, count })
     : i18n.t("agents:connections.notAssigned", { key });
 }
+
+/**
+ * The host of a base URL at the machine's own loopback address (localhost,
+ * 127.0.0.0/8, ::1), which only the device that configured it reaches; the
+ * server applies the same rule to promoted providers.
+ */
+export function loopbackHost(baseUrl?: string): string | undefined {
+  if (!baseUrl) return undefined;
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return undefined;
+  }
+  const host = url.hostname.toLowerCase();
+  const loopback =
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    /^127(\.\d{1,3}){3}$/.test(host);
+  return loopback ? url.host : undefined;
+}

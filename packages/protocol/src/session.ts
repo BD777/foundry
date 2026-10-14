@@ -12,6 +12,7 @@ import type {
   CodexSpeed,
   WorkerRuntimeId,
 } from "./profiles.js";
+import type { ContextWindowSource } from "./model-context.js";
 import type { SessionSkillRef } from "./skills.js";
 
 /**
@@ -316,10 +317,22 @@ export interface AgentContextUsage {
   inputTokens?: number;
   /** The model's context window, once the runtime has reported it. */
   contextWindow?: number;
+  /**
+   * The window Foundry set for a compatible endpoint's model, and where it
+   * came from. The runtime may still report another window: Claude Code keeps
+   * its own for models it knows, Codex caps at the model's maximum and
+   * reports 95% of it as usable.
+   */
+  configuredWindow?: ConfiguredContextWindow;
   /** The model that served the request. */
   model?: string;
   /** Present when the runtime compacted the context. */
   compaction?: AgentContextCompaction;
+}
+
+export interface ConfiguredContextWindow {
+  tokens: number;
+  source: ContextWindowSource;
 }
 
 export interface AgentContextCompaction {

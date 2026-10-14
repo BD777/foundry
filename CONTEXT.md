@@ -5,132 +5,54 @@ the single source of truth; agents work concurrently in candidate environments,
 and verified, human-accepted results improve both the project and its reusable
 working methods. Local deployment is the first implementation shape.
 
-Reviewed checkout: `main` at `18cd558` (2026-09-23, documentation review; no
-services or models were run). Always inspect the current working tree
-and `git log` before editing; this note is a pointer, not the code. Preserve
-unrelated work.
-
-Updated: 2026-09-23
+This note is a pointer, not a status report: what is built lives in each module
+document's implementation boundary. Always inspect the current working tree and
+`git log` before editing, and preserve unrelated work.
 
 ## Read in this order
 
 1. [AGENTS.md](AGENTS.md) for binding workspace rules (UI principles, the
-   conversation release-gate protocol, native-only provider access).
+   conversation release-gate protocol, native-only provider access) and where
+   code lives.
 2. [Workspace and Sandbox overview](docs/workspace-sandbox-overview.md) for the
-   target shape and module outline the roadmap follows.
-3. [README Roadmap](README.md#roadmap) for the sole maintained capability
-   checklist; [English](docs/README.en.md#roadmap) mirrors it.
-4. [Current status](docs/current-status.md) for the 2026-09-23 implementation
-   boundary and explicit non-goals.
-5. [Issue workflow](docs/issue-workflow.md),
-   [Evidence / Verify v1](docs/evidence-and-verify-v1.md) and
-   [tools/resources](docs/tool-use-and-resources.md) for the implemented
-   contract and remaining design scope.
-6. [Module architecture](docs/architecture-modules.md) for the layer rules,
-   module boundaries and milestone order that new work follows.
-7. [0908 Plan](docs/archive/workspace-ai-product-plan-2026-09-08.md) for full
-   reasoning (archived); explicit later decisions in the topic docs take
-   precedence.
+   target shape.
+3. [README Roadmap](README.md#roadmap) for the module diagram and each module's
+   current capability and next steps; [English](docs/README.en.md#roadmap)
+   mirrors it.
+4. The [documentation index](docs/README.md#modules) for the owning document of
+   the module you are changing; read its implementation boundary first.
+5. [Module architecture](docs/architecture-modules.md) for layer rules and
+   code-module boundaries.
 
-## Current implementation snapshot
-
-The full Issue chain is on main:
-
-- Issue creation stores only the raw goal as a draft contract; an Agent
-  clarification session proposes revisions, and a human confirms an exact
-  `revision + contentDigest`. No inferred task, no fixed three criteria.
-- Claims require a confirmed contract (`sqlitestore/daemon.go`); before a run
-  starts, the worker independently re-validates the confirmed revision and
-  content digest in `packages/worker/src/issue-execution.ts`.
-- Execution happens in per-Issue git worktrees outside the source workspace
-  (`~/.foundry/workspaces/<ws>/environments/<issue>/workspace/` by default),
-  constrained by macOS sandbox-exec or Linux bubblewrap.
-- Candidates are sealed as `CandidateSnapshot`; materials persist under the
-  evidence store; verification uses deterministic collectors
-  (`command` / `project_command` / controlled local HTTP / candidate export /
-  candidate changes) or a separate read-only Agent session; review snapshots
-  are immutable and Accept binds their id + digest.
-- Acceptance re-checks trees and baselines under lock, integrates each
-  repository `--ff-only`, and requires alignment + reverification + a new
-  Accept when the baseline moved.
-- End-to-end loops with real Claude sessions were recorded on 2026-09-12
-  and at the 2026-09-18 merge; they are dated evidence, not a standing claim
-  that everything currently passes. A real Codex image judgment has not been
-  completed.
-
-Main entry points:
-
-- Server: `apps/server/cmd/foundry-server` (default port 31982, SQLite at
-  `~/.foundry/server/foundry.db`, outside the checkout); routes in
-  `apps/server/internal/httpapi/server.go` with one access rule per route in
-  `routes.go`; schema in `internal/sqlitestore/*.go`; Feishu bot in
-  `internal/feishu`.
-- Worker: `packages/worker/src/cli.ts` (`foundry-worker`: setup, pairing,
-  service install, status, doctor, workspace scan) and `foundry-cli.ts`
-  (`foundry`: session orchestration commands and the stdio MCP server);
-  execution in `issue-executor.ts`, evidence in `evidence-*.ts`, skills in
-  `skill-*.ts`, native accounts in `native-inspection.ts`.
-- Web: `apps/web` (Vite 31983); feature-first architecture documented beside
-  the code in [apps/web/src/ARCHITECTURE.md](apps/web/src/ARCHITECTURE.md);
-  the working-location page is `/locations`, workspace CRUD is under devices.
-- Dev tooling: `scripts/dev-stack.mjs` (parallel isolated stacks,
-  [docs/dev-stacks.md](docs/dev-stacks.md)); gate is `pnpm verify`.
-
-Known boundaries to respect in any new work:
+## Boundaries to respect in any new work
 
 - Worker isolation goes through the Sandbox module
-  (`packages/worker/src/sandbox`, [design](docs/architecture-modules.md#51-sandbox));
-  never spawn `sandbox-exec` / `bwrap` or branch on the platform elsewhere. The
-  sandbox enforces write boundaries and hides Foundry governance state; separation
-  of duties is enforced by identity and process (agent tokens cannot confirm,
-  verify or Accept). Issues the device owner started may read the owner's files
-  (`userFiles`). Linux supports every Issue stage except controlled HTTP targets.
-  Chats are not sandboxed.
+  (`packages/worker/src/sandbox`, [execution kernel](docs/execution-kernel.md));
+  never spawn `sandbox-exec` / `bwrap` or branch on the platform elsewhere.
+  Separation of duties is enforced by identity and process (agent tokens cannot
+  confirm, verify or Accept). Chats are not sandboxed.
 - Every browser API call requires an account (no anonymous mode); workspaces
-  are shared by role (Viewer / Member / Maintainer / Owner). Per-sender
-  Feishu identity, personal connection grants and audit are not built yet (see
-  [accounts permissions v2](docs/accounts-permissions-design.md) P3–P4).
-- The Issues web entry is hidden until its experience is polished; the Issue
-  engine stays on main and remains the product's main line.
+  are shared by role (Viewer / Member / Maintainer / Owner).
 - No direct provider inference HTTP; `/models` catalog reads are the sole
   exception (approved 2026-09-16). A cached/local login is not online validity.
-- No browser automation, general IM adapter, cloud workspace, multi-host
-  scheduling, multi-agent-per-Issue or workflow plugins exist in code — these
-  stay roadmap items. The Feishu bot maps threads to Chat sessions, not Issues.
 
 ## Product decisions to preserve
 
-- README lists capabilities, not infrastructure components or individual coding
-  tasks. There is no separate `docs/roadmap.md`; topic docs hold design,
-  dependencies and acceptance expectations without duplicate checklists.
-- Chats is checked for core conversation capability, broadly approaching the
-  Codex App experience; complete Tool Use interaction is not implied. Reuse
-  native Claude/Codex harnesses; Web handles UI, Daemon execution and Worker
-  Pool capacity are foundations.
+- The README Roadmap is organized by module without milestone numbers; it is
+  the only roadmap. Module documents hold design, implementation boundary and
+  next steps without duplicate checklists elsewhere.
+- Chats reuse the native Claude Code / Codex harnesses; one Foundry session is
+  one native session.
 - Users work with Issues; internal Runs, attempts, sessions and evidence
-  records remain, but users do not manage Runs as separate objects.
-- Issue statuses: pending / in_progress / blocked / verifying / accepted /
-  abandoned. Blocked carries a typed reason (needs_input, needs_permission,
-  system_error) with a specific message. Temporary retries and capacity waits
-  remain progress; an execution that cannot continue is Blocked. Resume the
-  same Issue; only the user accepts or abandons it.
-  See [Issue conversation and status](docs/issue-conversation-design.md).
-- Basic Tool Use covers the operations and evidence capture needed for the
-  selected scenario. Minimal environment identity, isolation, permissions,
-  occupancy protection and cleanup are part of first integration.
-- Shared resource scheduling covers single-host and multi-host allocation,
-  reuse and recovery; cross-host verification is a scenario within it.
-- IM started with a Feishu-specific bot; a common Bot Adapter is later work.
-  A paired group acts as the account that generated its code; per-sender
-  identities mapping to Foundry accounts come later.
-- Cloud Workspace hosts project files and persistent state as one logical
-  filesystem; it does not require hosted agents or supplied execution machines.
+  records remain, but users do not manage Runs as separate objects. Issue
+  statuses: pending / in_progress / blocked / verifying / accepted / abandoned;
+  Blocked carries a typed reason with a specific message
+  ([Issue conversation and status](docs/issue-conversation-design.md)).
 - Workspace capability accumulation is a property of the Issue loop, not an
-  independent feature. Workspace skills (promote, select, isolate) are
-  shipped; automatic skill extraction and advanced storage stay unscheduled.
-- Issues is the agreed main line. Workflows may later become plugins with
-  Issues as the built-in one; that is exploration, not a reason to change
-  Issue semantics.
+  independent feature.
+- A Personal Agent layer, when built, is itself a workspace holding an index of
+  the other workspaces; it dispatches and responds, and never becomes a second
+  source of truth.
 
 ## Trust Boundary
 

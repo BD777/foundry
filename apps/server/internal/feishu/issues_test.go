@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -15,9 +16,11 @@ import (
 
 // fakeBot records the cards a bot would send and the patches it would make.
 type fakeBot struct {
-	mu      sync.Mutex
-	replies []struct{ to, card string }
-	patches []struct{ to, card string }
+	mu        sync.Mutex
+	replies   []struct{ to, card string }
+	patches   []struct{ to, card string }
+	files     map[string]MessageFile
+	downloads []string
 }
 
 func (b *fakeBot) ReplyCard(_ context.Context, messageID, card string) (string, error) {
@@ -34,6 +37,18 @@ func (b *fakeBot) PatchCard(_ context.Context, cardMessageID, card string) error
 }
 func (b *fakeBot) ChatName(context.Context, string) (string, error) { return "Group", nil }
 func (b *fakeBot) UserName(context.Context, string) (string, error) { return "Alice", nil }
+
+// MessageResource serves the files the bot's test put in files, by key.
+func (b *fakeBot) MessageResource(_ context.Context, messageID, fileKey, resourceType string) (MessageFile, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.downloads = append(b.downloads, messageID+"/"+fileKey+"?type="+resourceType)
+	file, ok := b.files[fileKey]
+	if !ok {
+		return MessageFile{}, errors.New("feishu get message resource failed [234003]: File not in msg.")
+	}
+	return file, nil
+}
 func (b *fakeBot) take() []struct{ to, card string } {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -59,7 +74,12 @@ type fakeDesk struct {
 func (d *fakeDesk) CreateSessionAndDispatch(context.Context, store.CreateAgentSessionInput) (store.AgentSession, error) {
 	return store.AgentSession{}, nil
 }
-func (d *fakeDesk) SendSessionMessage(context.Context, string, string) error { return nil }
+func (d *fakeDesk) SendSessionMessage(context.Context, string, string, []store.ChatAttachment) error {
+	return nil
+}
+func (d *fakeDesk) SaveAttachments(context.Context, string, []MessageFile) ([]store.ChatAttachment, error) {
+	return nil, nil
+}
 func (d *fakeDesk) StartIssue(_ context.Context, workspaceID, userID, goal string) (store.Issue, error) {
 	d.issue.WorkspaceID, d.issue.SourceInput, d.issue.CreatedByUserID = workspaceID, goal, userID
 	return d.issue, nil

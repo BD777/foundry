@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveCodexCommand } from "../native-cli.js";
+import { codexEndpointConfig } from "../runner/codex-options.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,
@@ -81,12 +82,17 @@ export const codexHarness: HarnessAdapter = {
         };
       };
     };
+    const baseUrl = profile.baseUrl?.trim();
     const codex = new sdk.Codex({
       codexPathOverride: sandboxedExecutable(resolveCodexCommand()),
-      baseUrl: profile.baseUrl,
       apiKey: profile.apiKey,
       env,
-      config: stage.overrides,
+      config: {
+        ...stage.overrides,
+        ...(baseUrl && profile.connectionType !== "local_login"
+          ? codexEndpointConfig(profile, baseUrl, Boolean(profile.apiKey))
+          : {}),
+      },
     });
     const thread = codex.startThread({
       workingDirectory: workspace?.path ?? home,

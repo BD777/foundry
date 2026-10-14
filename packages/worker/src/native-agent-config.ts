@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { parse as parseTOML } from "smol-toml";
+import { claudeConfigDir, codexHome } from "./native-homes.js";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 
 export interface DiscoveredProfile extends AgentProfileLocalConfig {
@@ -17,11 +18,18 @@ export interface DiscoveredProfile extends AgentProfileLocalConfig {
   configLabel: string;
 }
 
-const claudeSettingsPaths = [
-  resolve(homedir(), ".claude", "settings.json"),
-  resolve(homedir(), ".claude", "settings.local.json"),
-];
-const codexConfigPath = resolve(homedir(), ".codex", "config.toml");
+// Where the CLIs themselves read them: CLAUDE_CONFIG_DIR and CODEX_HOME
+// move them (native-homes.ts).
+function claudeSettingsPaths(env: NodeJS.ProcessEnv): string[] {
+  return [
+    resolve(claudeConfigDir(env), "settings.json"),
+    resolve(claudeConfigDir(env), "settings.local.json"),
+  ];
+}
+
+function codexConfigPath(env: NodeJS.ProcessEnv): string {
+  return resolve(codexHome(env), "config.toml");
+}
 
 function readJSONObject(path: string): Record<string, unknown> | undefined {
   if (!existsSync(path)) return undefined;
@@ -48,7 +56,7 @@ function stringField(
  * relay lives there rather than in any provider list.
  */
 export function claudeSettingsProfiles(
-  paths: string[] = claudeSettingsPaths,
+  paths: string[] = claudeSettingsPaths(process.env),
 ): DiscoveredProfile[] {
   const discovered: DiscoveredProfile[] = [];
   for (const path of paths) {
@@ -172,7 +180,7 @@ function referencedCodexProviders(
  * provider, however many names point at it.
  */
 export function codexConfigProfiles(
-  path: string = codexConfigPath,
+  path: string = codexConfigPath(process.env),
   env: NodeJS.ProcessEnv = process.env,
 ): DiscoveredProfile[] {
   if (!existsSync(path)) return [];
@@ -266,12 +274,14 @@ export function environmentProfiles(
  * provider, and the first source wins so a config file outranks an inherited
  * variable.
  */
-export function nativeAgentProfiles(): DiscoveredProfile[] {
+export function nativeAgentProfiles(
+  env: NodeJS.ProcessEnv = process.env,
+): DiscoveredProfile[] {
   const byEndpoint = new Map<string, DiscoveredProfile>();
   for (const profile of [
-    ...claudeSettingsProfiles(),
-    ...codexConfigProfiles(),
-    ...environmentProfiles(),
+    ...claudeSettingsProfiles(claudeSettingsPaths(env)),
+    ...codexConfigProfiles(codexConfigPath(env), env),
+    ...environmentProfiles(env),
   ]) {
     const key = `${profile.runtime}:${profile.baseUrl}`;
     if (!byEndpoint.has(key)) byEndpoint.set(key, profile);

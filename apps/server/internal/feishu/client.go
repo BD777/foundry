@@ -3,6 +3,8 @@ package feishu
 import (
 	"context"
 	"fmt"
+	"io"
+	"mime"
 	"strings"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -17,12 +19,14 @@ type Client struct {
 }
 
 // botClient is what Foundry asks of a bot: reply to a message with a card,
-// update a card, and read a chat's or a person's name. Client implements it.
+// update a card, read a chat's or a person's name, and download a file a
+// message carries. Client implements it.
 type botClient interface {
 	ReplyCard(ctx context.Context, messageID string, cardJSON string) (string, error)
 	PatchCard(ctx context.Context, cardMessageID string, cardJSON string) error
 	ChatName(ctx context.Context, chatID string) (string, error)
 	UserName(ctx context.Context, openID string) (string, error)
+	MessageResource(ctx context.Context, messageID, fileKey, resourceType string) (MessageFile, error)
 }
 
 // NewClient is a bot client for the app; baseURL "" is Feishu's.
@@ -112,4 +116,28 @@ func (c *Client) UserName(ctx context.Context, openID string) (string, error) {
 		return strings.TrimSpace(*resp.Data.User.Name), nil
 	}
 	return "", nil
+}
+
+// MessageResource downloads a file message messageID carries (GET
+// /open-apis/im/v1/messages/:message_id/resources/:file_key?type=image|file,
+// with the app's tenant token): resourceType "image" for an image key,
+// "file" for a file, voice or video key. Feishu serves no stickers this way.
+func (c *Client) MessageResource(ctx context.Context, messageID, fileKey, resourceType string) (MessageFile, error) {
+	resp, err := c.lark.Im.V1.MessageResource.Get(ctx, larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).FileKey(fileKey).Type(resourceType).Build())
+	if err != nil {
+		return MessageFile{}, fmt.Errorf("feishu get message resource: %w", err)
+	}
+	if !resp.Success() || resp.File == nil {
+		return MessageFile{}, fmt.Errorf("feishu get message resource failed [%d]: %s", resp.Code, resp.Msg)
+	}
+	data, err := io.ReadAll(resp.File)
+	if err != nil {
+		return MessageFile{}, fmt.Errorf("feishu get message resource: %w", err)
+	}
+	mimeType := ""
+	if resp.ApiResp != nil {
+		mimeType, _, _ = mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	}
+	return MessageFile{Name: strings.TrimSpace(resp.FileName), MIMEType: mimeType, Data: data}, nil
 }

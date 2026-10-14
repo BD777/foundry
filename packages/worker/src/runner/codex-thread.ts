@@ -113,11 +113,10 @@ export async function openCodexThread(
     profile.connectionType === "local_login" || profile.codexModelProvider;
   const codex = new Codex({
     codexPathOverride,
-    baseUrl: ownEndpoint ? undefined : profile.baseUrl,
     apiKey: ownEndpoint ? undefined : env.CODEX_API_KEY,
     env,
     config: {
-      ...codexProfileConfig(profile),
+      ...codexProfileConfig(profile, env),
       ...sessionConfig,
       ...codexFoundryTools(session)?.config,
       ...secrets,

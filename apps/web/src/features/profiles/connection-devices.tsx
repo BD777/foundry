@@ -8,7 +8,7 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { ConfirmButton } from "../../components/ui/confirm-button";
-import { connectionSelection } from "../../lib/model-connections";
+import { connectionSelection, loopbackHost } from "../../lib/model-connections";
 
 export function ConnectionDevices({
   devices,
@@ -24,10 +24,24 @@ export function ConnectionDevices({
   const { t } = useTranslation("profiles");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Promoted from a provider at its device's own loopback address: no other
+  // device reaches it, so it is offered only there (the server refuses too).
+  const boundTo = profile.promotedFrom?.deviceBound
+    ? profile.promotedFrom.deviceId
+    : undefined;
   return (
     <section className="fdy-connection-devices">
       <strong>{t("connectionDevices.title")}</strong>
       <p>{t("connectionDevices.intro")}</p>
+      {boundTo ? (
+        <p>
+          {t("connectionDevices.deviceBound", {
+            device:
+              devices.find((device) => device.id === boundTo)?.label ?? boundTo,
+            address: loopbackHost(profile.baseUrl) ?? profile.baseUrl,
+          })}
+        </p>
+      ) : null}
       {!devices.length ? <p>{t("connectionDevices.noDevices")}</p> : null}
       {devices.map((device) => {
         const assigned = bindings.some(
@@ -36,6 +50,7 @@ export function ConnectionDevices({
             row.profileId === profile.id &&
             row.enabled,
         );
+        const unreachable = Boolean(boundTo) && device.id !== boundTo;
         return (
           <div className="fdy-management-row" key={device.id}>
             <span>
@@ -92,7 +107,7 @@ export function ConnectionDevices({
               >
                 {t("connectionDevices.removeAccess")}
               </ConfirmButton>
-            ) : (
+            ) : unreachable ? null : (
               <Button
                 disabled={busy}
                 size="sm"

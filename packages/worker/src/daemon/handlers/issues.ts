@@ -12,6 +12,7 @@ import {
   profileConfigForSession,
   withDispatchCredential,
 } from "../../profiles.js";
+import { withSessionContextWindow } from "../../context-window.js";
 import {
   issueSessionCompletion,
   SessionRunTransport,
@@ -71,13 +72,16 @@ export function runIssueExecution(
         const profile =
           issue.runtime === "mock"
             ? undefined
-            : withDispatchCredential(
-                profileConfigForSession(
-                  workspacePath,
-                  session,
-                  payload.profile,
+            : await withSessionContextWindow(
+                withDispatchCredential(
+                  profileConfigForSession(
+                    workspacePath,
+                    session,
+                    payload.profile,
+                  ),
+                  payload.credential,
                 ),
-                payload.credential,
+                session,
               );
         await executeIssue(
           ctx.serverURL,

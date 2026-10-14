@@ -45,6 +45,12 @@ Environment:
                       foundry-secret.key is copied too)
   SCRATCH_ROOT        instances' parent (default ${TMPDIR:-/tmp}/foundry-scratch)
   SCRATCH_SERVER_MEM  server memory cap (default 1G)
+  SCRATCH_ENV         NAME=VALUE pairs (space-separated) the scratch server
+                      and worker get, e.g. a test's own FOUNDRY_* settings:
+                      SCRATCH_ENV="FOUNDRY_HEARTBEAT_INTERVAL_MS=5000" ... worker x start.
+                      Inherited FOUNDRY_* are always dropped (see below), and
+                      the isolating variables set here (state root, DB, stack,
+                      integrations, proxy) override any pair.
   SCRATCH_CHROME, SCRATCH_PLAYWRIGHT_CORE   browser / playwright-core for shot
                       (default: discovered, see scripts/scratch-stack/shot.mjs)
 EOF
@@ -59,9 +65,16 @@ SERVER_MEM=${SCRATCH_SERVER_MEM:-1G}
 BUILD=$ROOT/.build/$(printf %s "$SRC" | sha1sum | cut -c1-10)
 ADMIN=scratch-admin
 
-# A Foundry session exports FOUNDRY_* pointing at its own (live) stack; none
-# of that may reach a scratch server or worker.
+# A Foundry session exports FOUNDRY_* pointing at its own (live) stack (its
+# server, token, workspace, session, and whatever its worker inherited); none
+# of that may reach a scratch server or worker. The set grows with Foundry, so
+# every inherited one is dropped; what a test means to pass goes explicitly
+# through SCRATCH_ENV.
 for v in $(env | grep -oE '^(FOUNDRY_[A-Z_]+|CLAUDE_CODE_USE_FOUNDRY)=' | tr -d =); do unset "$v"; done
+read -ra EXTRA_ENV <<<"${SCRATCH_ENV:-}"
+for pair in "${EXTRA_ENV[@]}"; do
+  [[ $pair =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || { echo "scratch-stack: SCRATCH_ENV entry is not NAME=VALUE: '$pair'" >&2; exit 2; }
+done
 
 die() { echo "scratch-stack: $*" >&2; exit 1; }
 now() { date +%s.%N; }
@@ -99,7 +112,7 @@ server_env() {
     proxy=(HTTP_PROXY=$dead HTTPS_PROXY=$dead ALL_PROXY=$dead http_proxy=$dead https_proxy=$dead all_proxy=$dead
       NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost)
   fi
-  SENV=("${proxy[@]}"
+  SENV=("${EXTRA_ENV[@]}" "${proxy[@]}"
     FOUNDRY_DB_PATH="$db" FOUNDRY_SECRET_KEY_PATH="$DIR/data/foundry-secret.key"
     FOUNDRY_STATE_ROOT="$DIR/state" FOUNDRY_INTEGRATIONS=off
     FOUNDRY_HOST=127.0.0.1 PORT="$PORT" FOUNDRY_WEB_ORIGIN="$URL" FOUNDRY_WEB_DIST="$DIR/web")
@@ -298,7 +311,7 @@ cmd_worker() {
   load
   local cli=$SRC/packages/worker/dist/cli.js
   [ -f "$cli" ] || die "no worker build at $cli (pnpm --filter @bd777/foundry-worker build)"
-  local wenv=(FOUNDRY_STATE_ROOT="$DIR/state" FOUNDRY_STACK="scratch-$NAME")
+  local wenv=("${EXTRA_ENV[@]}" FOUNDRY_STATE_ROOT="$DIR/state" FOUNDRY_STACK="scratch-$NAME")
   case ${1:-} in
     pair)
       local jar token

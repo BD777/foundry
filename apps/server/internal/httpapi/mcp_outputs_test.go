@@ -23,6 +23,8 @@ import (
 type fakeDevice struct {
 	mu       sync.Mutex
 	requests []fakeDeviceRequest
+	conn     *websocket.Conn
+	writeMu  sync.Mutex
 }
 
 type fakeDeviceRequest struct {
@@ -46,7 +48,7 @@ func connectFakeDevice(t *testing.T, live *httptest.Server, credential string, h
 	t.Cleanup(func() { conn.Close() })
 	writeWSForTest(t, conn, "hello", hello)
 	readWSTypeForTest(t, conn, "registered")
-	device := &fakeDevice{}
+	device := &fakeDevice{conn: conn}
 	go func() {
 		for {
 			var envelope struct {
@@ -65,12 +67,35 @@ func connectFakeDevice(t *testing.T, live *httptest.Server, credential string, h
 				continue
 			}
 			replyType, reply := answer(envelope.Payload)
-			if conn.WriteJSON(map[string]any{"id": envelope.ID, "type": replyType, "payload": reply}) != nil {
+			if device.write(map[string]any{"id": envelope.ID, "type": replyType, "payload": reply}) != nil {
 				return
 			}
 		}
 	}()
 	return device
+}
+
+func (d *fakeDevice) write(envelope map[string]any) error {
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
+	return d.conn.WriteJSON(envelope)
+}
+
+// tell sends a message of the worker's own and waits until the server
+// acknowledged it.
+func (d *fakeDevice) tell(t *testing.T, messageType string, payload any) {
+	t.Helper()
+	acks := len(d.received(wsAckType))
+	if err := d.write(map[string]any{"id": "tell_" + messageType, "type": messageType, "payload": payload}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(d.received(wsAckType)) == acks {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s was never acknowledged", messageType)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func (d *fakeDevice) received(requestType string) []json.RawMessage {

@@ -5,6 +5,7 @@ import {
   connectionUsage,
   deviceConnectionSelection,
   isModelConnection,
+  loopbackHost,
 } from "../src/lib/model-connections.ts";
 
 test("assignment preserves all other connections and historical official bindings", () => {
@@ -78,4 +79,14 @@ test("dialog save preserves bindings outside the selectable set", () => {
     deviceConnectionSelection(bindings, "a", ["conn-1", "conn-2"], []),
     ["legacy-official"],
   );
+});
+
+test("a provider at the device's own loopback address is recognized", () => {
+  assert.equal(loopbackHost("http://127.0.0.1:8787/v1"), "127.0.0.1:8787");
+  assert.equal(loopbackHost("http://localhost:4000"), "localhost:4000");
+  assert.equal(loopbackHost("http://[::1]:9000/v1"), "[::1]:9000");
+  assert.equal(loopbackHost("https://gateway.internal/v1"), undefined);
+  assert.equal(loopbackHost("http://10.0.0.5:8787/v1"), undefined);
+  assert.equal(loopbackHost("not a url"), undefined);
+  assert.equal(loopbackHost(undefined), undefined);
 });

@@ -225,6 +225,11 @@ export class ClaudeTimerTracker {
     return fire;
   }
 
+  /** A timer turn runs that was published as it started: Claude's own. */
+  announcedFire(): boolean {
+    return Boolean(this.firing?.announced);
+  }
+
   /**
    * The timer turn running, if any, ends unanswered: a Foundry turn took
    * the stream, or the process ended. One published as it started is

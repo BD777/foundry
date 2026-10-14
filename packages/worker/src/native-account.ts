@@ -8,9 +8,8 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { codexHome } from "./native-homes.js";
+import { claudeGlobalConfigDir, codexHome } from "./native-homes.js";
 
 export interface NativeAccount {
   /** Human-readable account identity, e.g. an email address. */
@@ -96,9 +95,9 @@ export function codexAccount(
  * guessing from disk would only invent a second, wrong answer.
  */
 export function claudeAccount(
-  home: string = homedir(),
+  configDir: string = claudeGlobalConfigDir(),
 ): NativeAccount | undefined {
-  const path = resolve(home, ".claude.json");
+  const path = resolve(configDir, ".claude.json");
   if (!existsSync(path)) return undefined;
   try {
     const decoded: unknown = JSON.parse(readFileSync(path, "utf8"));
