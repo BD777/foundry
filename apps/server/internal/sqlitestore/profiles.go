@@ -16,7 +16,7 @@ import (
 // profileColumns lists the projected columns in scanProfile's order.
 const profileColumns = `id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
 	claude_effort, claude_permission_mode,
-	codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed,
+	codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed, codex_transport,
 	owner_user_id, updated_at`
 
 // setupProfiles creates the control-plane profile tables. Profiles are
@@ -99,6 +99,9 @@ func (s *Store) ListProfiles(ctx context.Context) ([]store.ProfileDefinition, er
 	if err := attachProfilePromotions(ctx, s.reader(), result); err != nil {
 		return nil, err
 	}
+	if err := attachCodexTransports(ctx, s.reader(), result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -117,6 +120,9 @@ func (s *Store) GetProfile(ctx context.Context, id string) (store.ProfileDefinit
 	if err := attachProfilePromotions(ctx, s.conn(), profiles); err != nil {
 		return store.ProfileDefinition{}, err
 	}
+	if err := attachCodexTransports(ctx, s.conn(), profiles); err != nil {
+		return store.ProfileDefinition{}, err
+	}
 	return profiles[0], nil
 }
 
@@ -125,7 +131,8 @@ func (s *Store) GetProfile(ctx context.Context, id string) (store.ProfileDefinit
 // on the original row while updated_at moves. Deciding whether a given id may
 // be claimed is policy and belongs to the caller. The write-only input.APIKey
 // is deliberately ignored: credential material belongs to the sealed secret
-// store, never to this table.
+// store, never to this table. Saving forgets the endpoint's learned Codex
+// transport: an edited provider is learned again.
 func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (store.ProfileDefinition, error) {
 	var result store.ProfileDefinition
 	now := formatTime(time.Now())
@@ -138,9 +145,9 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 			INSERT INTO profiles (
 				id, runtime, label, auth_mode, connection_type, base_url, model, models, context_windows, prompt_prefix,
 				claude_effort, claude_permission_mode,
-				codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed,
+				codex_reasoning_effort, codex_sandbox_mode, codex_approval_policy, codex_speed, codex_transport,
 				owner_user_id, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				runtime = excluded.runtime,
 				label = excluded.label,
@@ -157,13 +164,17 @@ func (s *Store) SaveProfile(ctx context.Context, input store.SaveProfileInput) (
 				codex_sandbox_mode = excluded.codex_sandbox_mode,
 				codex_approval_policy = excluded.codex_approval_policy,
 				codex_speed = excluded.codex_speed,
+				codex_transport = excluded.codex_transport,
 				updated_at = excluded.updated_at`,
 			id, input.Runtime, input.Label, input.AuthMode, input.ConnectionType, input.BaseURL, input.Model, encodeModelList(input.Models), encodeContextWindows(input.ContextWindows), input.PromptPrefix,
 			input.ClaudeEffort, input.ClaudePermissionMode,
-			input.CodexReasoningEffort, input.CodexSandboxMode, input.CodexApprovalPolicy, input.CodexSpeed,
+			input.CodexReasoningEffort, input.CodexSandboxMode, input.CodexApprovalPolicy, input.CodexSpeed, input.CodexTransport,
 			input.OwnerUserID, now, now)
 		if err != nil {
 			return fmt.Errorf("save profile %s: %w", id, err)
+		}
+		if err := forgetCodexTransports(ctx, tx.conn(), id); err != nil {
+			return err
 		}
 		saved, err := tx.GetProfile(ctx, id)
 		if err != nil {
@@ -196,7 +207,7 @@ func (s *Store) DeleteProfile(ctx context.Context, id string) error {
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_profiles WHERE profile_id = ?`, id); err != nil {
 			return fmt.Errorf("delete profile %s bindings: %w", id, err)
 		}
-		return nil
+		return forgetCodexTransports(ctx, tx.conn(), id)
 	})
 }
 
@@ -323,7 +334,7 @@ func decodeModelList(raw string) []string {
 
 func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinition, error) {
 	var profile store.ProfileDefinition
-	var models, contextWindows string
+	var models, contextWindows, codexTransport string
 	err := row.Scan(
 		&profile.ID,
 		&profile.Runtime,
@@ -341,6 +352,7 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 		&profile.CodexSandboxMode,
 		&profile.CodexApprovalPolicy,
 		&profile.CodexSpeed,
+		&codexTransport,
 		&profile.OwnerUserID,
 		&profile.UpdatedAtLabel,
 	)
@@ -349,5 +361,6 @@ func scanProfile(row interface{ Scan(dest ...any) error }) (store.ProfileDefinit
 	}
 	profile.Models = decodeModelList(models)
 	profile.ContextWindows = decodeContextWindows(contextWindows)
+	profile.CodexTransport = codexTransportMode(profile, codexTransport)
 	return profile, nil
 }

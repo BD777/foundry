@@ -41,6 +41,7 @@ type Backend interface {
 	store.ChatQueueStore
 	store.ChatDigestStore
 	store.ProfilePromotionStore
+	store.CodexTransportStore
 	store.IssueExecutionStore
 	store.EvidenceStore
 	store.ResourceStore

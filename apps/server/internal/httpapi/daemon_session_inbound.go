@@ -53,6 +53,7 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 			subagents := c.hub.subagents.observe(payload.Event)
 			c.hub.sessions.recorded(ctx, target.workspaceID, payload.Event)
 			c.hub.sessions.subagentChanged(target.workspaceID, payload.Event, subagents)
+			c.learnCodexTransport(ctx, payload.Event)
 		}
 		// Also for one sent again: the attempt that stored it in the
 		// session may have failed to add it to the Issue's run.

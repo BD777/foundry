@@ -35,6 +35,36 @@ export type CodexApprovalPolicy =
   "untrusted" | "on-failure" | "on-request" | "never";
 export type CodexSpeed = "standard" | "fast";
 
+/** How Codex reaches a compatible endpoint's Responses API. */
+export type CodexTransport = "websocket" | "https";
+
+/**
+ * The person's choice for a compatible Codex endpoint: `auto` follows what
+ * Codex's own sessions showed about the endpoint, the others are fixed.
+ */
+export type CodexTransportMode = "auto" | CodexTransport;
+
+export const codexTransportModes: readonly CodexTransportMode[] = [
+  "auto",
+  "websocket",
+  "https",
+];
+
+/**
+ * What a Codex session showed about an endpoint's Responses WebSocket: it
+ * fell back to HTTPS (`https`, `detail` is Codex's reason), or a turn
+ * completed with WebSocket enabled and no fallback (`websocket`). Foundry
+ * never probes the endpoint itself.
+ */
+export interface CodexTransportObservation {
+  transport: CodexTransport;
+  detail?: string;
+  learnedAt: string;
+}
+
+/** Days an observation stands before a session tries the WebSocket again. */
+export const codexTransportObservationDays = 7;
+
 export interface AgentModelOption {
   id: string;
   label?: string;
@@ -198,6 +228,16 @@ export interface ProfileDefinition {
    * else 1M (model-context.ts).
    */
   contextWindows?: Record<string, number>;
+  /**
+   * Set on a compatible Codex endpoint by a server that learns its
+   * transport; absent, the worker keeps HTTPS.
+   */
+  codexTransport?: CodexTransportMode;
+  /**
+   * The current observation for this endpoint (its base URL, at most
+   * codexTransportObservationDays old). The override wins over it.
+   */
+  codexTransportLearned?: CodexTransportObservation;
   promptPrefix?: string;
   claudeEffort?: ClaudeEffort;
   claudePermissionMode?: ClaudePermissionMode;
@@ -259,6 +299,8 @@ export interface SaveProfileInput {
   models?: string[];
   /** Replaces the stored per-model windows; omitted keeps them. */
   contextWindows?: Record<string, number>;
+  /** Codex compatible endpoints only; omitted is `auto`. */
+  codexTransport?: CodexTransportMode;
   apiKey?: string;
 }
 

@@ -67,6 +67,9 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 		return "authMode must be official or custom"
 	}
 	input.ConnectionType = profileConnectionType(input.Runtime, input.AuthMode)
+	if message := normalizeCodexTransport(input); message != "" {
+		return message
+	}
 	if input.AuthMode == "official" {
 		// An official login runs with the CLI's own windows.
 		input.BaseURL = ""
@@ -78,6 +81,24 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 	}
 	if input.BaseURL == "" {
 		return "baseUrl is required for custom profiles"
+	}
+	return ""
+}
+
+// normalizeCodexTransport keeps the Responses transport choice on a
+// compatible Codex endpoint only; empty there is auto.
+func normalizeCodexTransport(input *store.SaveProfileInput) string {
+	input.CodexTransport = strings.TrimSpace(input.CodexTransport)
+	if input.ConnectionType != "openai_compatible" {
+		input.CodexTransport = ""
+		return ""
+	}
+	switch input.CodexTransport {
+	case "":
+		input.CodexTransport = store.CodexTransportAuto
+	case store.CodexTransportAuto, store.CodexTransportWebSocket, store.CodexTransportHTTPS:
+	default:
+		return "codexTransport must be auto, websocket or https"
 	}
 	return ""
 }
@@ -172,6 +193,9 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.ContextWindows == nil {
 		input.ContextWindows = current.ContextWindows
+	}
+	if strings.TrimSpace(input.CodexTransport) == "" {
+		input.CodexTransport = current.CodexTransport
 	}
 	input.ID = id
 	s.saveProfile(w, r, input, http.StatusOK)
@@ -428,6 +452,7 @@ func profileSaveInput(profile store.ProfileDefinition) store.SaveProfileInput {
 		CodexSandboxMode:     profile.CodexSandboxMode,
 		CodexApprovalPolicy:  profile.CodexApprovalPolicy,
 		CodexSpeed:           profile.CodexSpeed,
+		CodexTransport:       profile.CodexTransport,
 		OwnerUserID:          profile.OwnerUserID,
 	}
 }

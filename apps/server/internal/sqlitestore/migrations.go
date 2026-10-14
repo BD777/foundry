@@ -43,6 +43,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.raiseIssueSequence,
 		s.pruneOrphanedRows,
 		s.setupProfilePromotions,
+		s.setupProfileCodexTransports,
 	}
 	for _, step := range steps {
 		if err := step(ctx); err != nil {

@@ -3,6 +3,10 @@ import type {
   AgentSession,
 } from "@bd777/foundry-protocol";
 import { codexContextWindowConfig } from "../context-window.js";
+import {
+  codexTransportPlan,
+  codexWebsocketConnectTimeoutMs,
+} from "./codex-transport.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { sessionEnvironment } from "../session-ambient.js";
 import { currentInput } from "../session-prompt.js";
@@ -86,16 +90,18 @@ export function codexSpeed(
 /**
  * A compatible endpoint declared to Codex as its own
  * `[model_providers.<id>]`, not as the built-in `openai` provider with
- * `openai_base_url`: the built-in one opens the Responses WebSocket first,
- * which a compatible endpoint rejects (five reconnects, then the HTTPS
- * fallback); a declared provider speaks HTTPS only. The key is read from
- * CODEX_API_KEY; a keyless endpoint names none, since Codex refuses to start
- * when `env_key` names an unset variable.
+ * `openai_base_url`: the built-in one always opens the Responses WebSocket
+ * first, which many compatible endpoints reject (five reconnects, then the
+ * HTTPS fallback). Whether this one may is `websockets`, decided per
+ * endpoint (codex-transport.ts); with it each handshake is bounded. The key
+ * is read from CODEX_API_KEY; a keyless endpoint names none, since Codex
+ * refuses to start when `env_key` names an unset variable.
  */
 export function codexEndpointConfig(
   profile: AgentProfileLocalConfig,
   baseUrl: string,
   hasKey: boolean,
+  websockets = false,
 ): Record<string, unknown> {
   const profileId = (profile.id ?? "").replace(/[^A-Za-z0-9_-]/g, "_");
   const id = profileId ? `foundry_${profileId}` : "foundry";
@@ -107,7 +113,10 @@ export function codexEndpointConfig(
         base_url: baseUrl,
         wire_api: "responses",
         ...(hasKey ? { env_key: "CODEX_API_KEY" } : {}),
-        supports_websockets: false,
+        supports_websockets: websockets,
+        ...(websockets
+          ? { websocket_connect_timeout_ms: codexWebsocketConnectTimeoutMs }
+          : {}),
       },
     },
   };
@@ -124,7 +133,12 @@ export function codexProfileConfig(
   const baseUrl = profile.baseUrl?.trim();
   if (!baseUrl) return {};
   return {
-    ...codexEndpointConfig(profile, baseUrl, Boolean(env.CODEX_API_KEY)),
+    ...codexEndpointConfig(
+      profile,
+      baseUrl,
+      Boolean(env.CODEX_API_KEY),
+      codexTransportPlan(profile).websockets,
+    ),
     ...(profile.contextWindow
       ? codexContextWindowConfig(profile.contextWindow)
       : {}),

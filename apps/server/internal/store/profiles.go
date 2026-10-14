@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type ProviderHealth struct {
@@ -129,12 +130,54 @@ type ProfileDefinition struct {
 	CodexSandboxMode     string           `json:"codexSandboxMode,omitempty"`
 	CodexApprovalPolicy  string           `json:"codexApprovalPolicy,omitempty"`
 	CodexSpeed           string           `json:"codexSpeed,omitempty"`
-	HasCredential        bool             `json:"hasCredential"`
-	OwnerUserID          string           `json:"ownerUserId,omitempty"`
+	// CodexTransport is set on every compatible Codex endpoint (auto,
+	// websocket or https): its presence tells the worker this server learns
+	// the transport. CodexTransportLearned is the current observation.
+	CodexTransport        string                     `json:"codexTransport,omitempty"`
+	CodexTransportLearned *CodexTransportObservation `json:"codexTransportLearned,omitempty"`
+	HasCredential         bool                       `json:"hasCredential"`
+	OwnerUserID           string                     `json:"ownerUserId,omitempty"`
 	// PromotedFrom is set when the profile was promoted from a provider in a
 	// device's own configuration.
 	PromotedFrom   *ProfilePromotionSource `json:"promotedFrom,omitempty"`
 	UpdatedAtLabel string                  `json:"updatedAtLabel"`
+}
+
+// Responses transports of a compatible Codex endpoint, and the person's
+// choice between them (CodexTransportAuto learns it).
+const (
+	CodexTransportAuto      = "auto"
+	CodexTransportWebSocket = "websocket"
+	CodexTransportHTTPS     = "https"
+)
+
+// CodexTransportObservationTTL is how long an observation stands before a
+// session tries the WebSocket again (protocol codexTransportObservationDays).
+const CodexTransportObservationTTL = 7 * 24 * time.Hour
+
+// CodexTransportObservation is what a Codex session showed about its
+// endpoint's Responses WebSocket: it fell back to HTTPS (Detail is Codex's
+// reason), or a turn completed with the WebSocket on and no fallback.
+type CodexTransportObservation struct {
+	Transport string `json:"transport"`
+	Detail    string `json:"detail,omitempty"`
+	LearnedAt string `json:"learnedAt"`
+}
+
+// CodexTransportReport is a session's observation, for the profile and base
+// URL it ran (session event metadata codexTransport).
+type CodexTransportReport struct {
+	ProfileID string `json:"profileId"`
+	BaseURL   string `json:"baseUrl"`
+	Transport string `json:"transport"`
+	Detail    string `json:"detail,omitempty"`
+}
+
+// CodexTransportStore keeps the observations per profile and base URL. A
+// profile lists only the one for its current base URL within the TTL;
+// saving or deleting the profile forgets them.
+type CodexTransportStore interface {
+	RecordCodexTransport(ctx context.Context, profileID string, baseURL string, observation CodexTransportObservation) error
 }
 
 // ProfilePromotionSource is the device provider a server profile was promoted
@@ -204,6 +247,9 @@ type SaveProfileInput struct {
 	CodexSandboxMode     string   `json:"codexSandboxMode,omitempty"`
 	CodexApprovalPolicy  string   `json:"codexApprovalPolicy,omitempty"`
 	CodexSpeed           string   `json:"codexSpeed,omitempty"`
+	// CodexTransport: auto (also when empty), websocket or https; compatible
+	// Codex endpoints only.
+	CodexTransport string `json:"codexTransport,omitempty"`
 	// ContextWindows replaces the stored per-model windows; nil keeps them.
 	ContextWindows map[string]int64 `json:"contextWindows,omitempty"`
 	APIKey         string           `json:"apiKey,omitempty"`

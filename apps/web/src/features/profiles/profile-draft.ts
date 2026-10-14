@@ -7,6 +7,7 @@ import {
   type CodexReasoningEffort,
   type CodexSandboxMode,
   type CodexSpeed,
+  type CodexTransportMode,
   type ProfileAuthMode,
   type ProfileDefinition,
   type SaveProfileInput,
@@ -26,6 +27,8 @@ export interface ProfileDraft {
   codexReasoningEffort: CodexReasoningEffort;
   codexSandboxMode: CodexSandboxMode;
   codexSpeed: CodexSpeed;
+  /** Responses transport of a compatible Codex endpoint; `auto` learns it. */
+  codexTransport: CodexTransportMode;
   id?: string;
   label: string;
   model: string;
@@ -74,6 +77,7 @@ export function defaultProfileDraft(
     codexReasoningEffort: "high",
     codexSandboxMode: "danger-full-access",
     codexSpeed: "standard",
+    codexTransport: "auto",
     label: defaultProfileLabel(runtime),
     model: "",
     models: [],
@@ -129,6 +133,7 @@ export function draftFromProfile(profile?: ProfileDefinition): ProfileDraft {
     codexReasoningEffort: profile.codexReasoningEffort ?? "high",
     codexSandboxMode: profile.codexSandboxMode ?? "danger-full-access",
     codexSpeed: profile.codexSpeed ?? "standard",
+    codexTransport: profile.codexTransport ?? "auto",
     id: profile.id,
     label: profile.label || defaultProfileLabel(profile.runtime),
     model: profile.model ?? "",
@@ -213,6 +218,10 @@ export function buildSaveProfileInput(draft: ProfileDraft): SaveProfileInput {
     codexSandboxMode:
       draft.runtime === "codex" ? draft.codexSandboxMode : undefined,
     codexSpeed: draft.runtime === "codex" ? draft.codexSpeed : undefined,
+    codexTransport:
+      draft.runtime === "codex" && draft.authMode === "custom"
+        ? draft.codexTransport
+        : undefined,
     connectionType: profileConnectionType(draft.runtime, draft.authMode),
     id: draft.id,
     label: draft.label.trim(),

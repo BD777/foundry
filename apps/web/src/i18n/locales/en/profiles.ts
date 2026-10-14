@@ -71,6 +71,24 @@ export const profiles = {
     create: "Create provider",
     save: "Save provider",
   },
+  codexTransport: {
+    title: "Responses transport",
+    label: "Codex Responses transport",
+    auto: "Auto",
+    websocket: "WebSocket",
+    https: "HTTPS",
+    hint: "Auto lets Codex try the Responses WebSocket itself and remembers what happened for this base URL for 7 days. Saving the provider learns it again.",
+    learned: "Transport: {{transport}} (learned {{date}}: {{reason}})",
+    chosen: "Transport: {{transport}} (set here)",
+    unknown:
+      "Transport: not learned yet. The next session tries the WebSocket; Codex falls back to HTTPS if the endpoint refuses it.",
+    fellBack: "Codex fell back to HTTPS",
+    fellBackDetail: "Codex fell back to HTTPS: {{detail}}",
+    streamed: "a turn streamed over the WebSocket",
+    cardLearned: "Transport: {{transport}} · learned {{date}}",
+    cardChosen: "Transport: {{transport}} · set here",
+    cardUnknown: "Transport: learned on the next session",
+  },
   contextWindows: {
     title: "Context windows",
     intro:

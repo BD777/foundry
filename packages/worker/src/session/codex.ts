@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveCodexCommand } from "../native-cli.js";
 import { codexEndpointConfig } from "../runner/codex-options.js";
+import { codexTransportPlan } from "../runner/codex-transport.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
   sandboxCredentialCopies,
@@ -83,6 +84,9 @@ export const codexHarness: HarnessAdapter = {
       };
     };
     const baseUrl = profile.baseUrl?.trim();
+    // A stage session learns nothing: it takes the WebSocket only where the
+    // endpoint's transport is already known to allow it.
+    const transport = codexTransportPlan(profile);
     const codex = new sdk.Codex({
       codexPathOverride: sandboxedExecutable(resolveCodexCommand()),
       apiKey: profile.apiKey,
@@ -90,7 +94,12 @@ export const codexHarness: HarnessAdapter = {
       config: {
         ...stage.overrides,
         ...(baseUrl && profile.connectionType !== "local_login"
-          ? codexEndpointConfig(profile, baseUrl, Boolean(profile.apiKey))
+          ? codexEndpointConfig(
+              profile,
+              baseUrl,
+              Boolean(profile.apiKey),
+              transport.websockets && transport.learn !== "outcome",
+            )
           : {}),
       },
     });

@@ -397,3 +397,52 @@ test("each model's context window shows where it comes from and saves the person
 
   await unmount(view.root);
 });
+
+test("a compatible Codex endpoint shows its learned transport and saves an override", async () => {
+  const relay = {
+    ...profile,
+    codexTransport: "auto",
+    codexTransportLearned: {
+      transport: "https",
+      detail: "unexpected status 404 Not Found",
+      learnedAt: "2026-10-14T08:00:00Z",
+    },
+  };
+  const view = await renderFeature({ profiles: [relay] });
+  const card = view.query(".fdy-profile-card").textContent;
+  assert.match(card, /Transport: HTTPS · learned Oct 14, 2026/);
+  await view.clickButton("Relay");
+  const status = view.query('.fdy-profile-editor [role="status"]').textContent;
+  assert.equal(
+    status,
+    "Transport: HTTPS (learned Oct 14, 2026: Codex fell back to HTTPS: unexpected status 404 Not Found)",
+  );
+  const group = view.query('[aria-label="Codex Responses transport"]');
+  const websocket = [...group.querySelectorAll("button")].find(
+    (button) => button.textContent === "WebSocket",
+  );
+  await act(async () => websocket.click());
+  assert.equal(
+    view.query('.fdy-profile-editor [role="status"]').textContent,
+    "Transport: WebSocket (set here)",
+  );
+  await view.clickButton("Save provider");
+  const saved = view.requests.find((request) => request.method === "PUT");
+  assert.equal(saved.body.codexTransport, "websocket");
+  await unmount(view.root);
+});
+
+test("a Claude endpoint has no Codex transport", async () => {
+  const claude = {
+    ...profile,
+    runtime: "claude",
+    connectionType: "anthropic_compatible",
+  };
+  const view = await renderFeature({ profiles: [claude] });
+  await view.clickButton("Relay");
+  assert.equal(view.query('[aria-label="Codex Responses transport"]'), null);
+  await view.clickButton("Save provider");
+  const saved = view.requests.find((request) => request.method === "PUT");
+  assert.equal(saved.body.codexTransport, undefined);
+  await unmount(view.root);
+});

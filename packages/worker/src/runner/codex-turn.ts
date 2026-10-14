@@ -28,6 +28,10 @@ import {
   type CodexTurnState,
 } from "./codex-stream.js";
 import { loadCodexSdk, openCodexThread } from "./codex-thread.js";
+import {
+  CodexTransportLearner,
+  codexTransportPlan,
+} from "./codex-transport.js";
 import { runProfileCommandSession } from "./profile-command.js";
 import { prepareTurnDirectory } from "./turn-directory.js";
 
@@ -139,6 +143,11 @@ async function runCodexTurn(
       nativeSessionId:
         session.nativeSessionId?.trim() || thread.thread.id || "",
       finalResult: "",
+      transport: new CodexTransportLearner(
+        codexTransportPlan(profile),
+        profile,
+        emit,
+      ),
     };
     reportNativeSessionId(state.nativeSessionId);
     const input = codexSessionInput(session, sessionPrompt(session, profile));

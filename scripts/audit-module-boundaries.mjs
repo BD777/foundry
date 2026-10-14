@@ -185,6 +185,7 @@ export const workerModules = {
       "runner/claude-turn-controls",
       "runner/codex-options",
       "runner/codex-stream",
+      "runner/codex-transport",
       "runner/codex-thread",
       "runner/codex-turn",
       "runner/foundry-tools",
