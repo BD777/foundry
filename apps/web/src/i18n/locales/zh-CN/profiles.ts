@@ -69,6 +69,24 @@ export const profiles: Translation<typeof en> = {
     create: "创建模型服务",
     save: "保存模型服务",
   },
+  codexTransport: {
+    title: "Responses 传输方式",
+    label: "Codex Responses 传输方式",
+    auto: "自动",
+    websocket: "WebSocket",
+    https: "HTTPS",
+    hint: "自动：由 Codex 自己尝试 Responses WebSocket，并按这个 base URL 记住结果 7 天。保存模型服务后会重新学习。",
+    learned: "传输方式：{{transport}}（{{date}} 学到：{{reason}}）",
+    chosen: "传输方式：{{transport}}（在此指定）",
+    unknown:
+      "传输方式：尚未学到。下一个会话会尝试 WebSocket；端点不接受时 Codex 回退到 HTTPS。",
+    fellBack: "Codex 回退到了 HTTPS",
+    fellBackDetail: "Codex 回退到了 HTTPS：{{detail}}",
+    streamed: "一轮对话经 WebSocket 完成",
+    cardLearned: "传输方式：{{transport}} · {{date}} 学到",
+    cardChosen: "传输方式：{{transport}} · 在此指定",
+    cardUnknown: "传输方式：下一个会话学习",
+  },
   contextWindows: {
     title: "上下文窗口",
     intro:

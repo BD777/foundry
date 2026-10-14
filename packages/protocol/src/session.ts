@@ -9,6 +9,7 @@ import type {
   CodexApprovalPolicy,
   CodexReasoningEffort,
   CodexSandboxMode,
+  CodexTransport,
   CodexSpeed,
   WorkerRuntimeId,
 } from "./profiles.js";
@@ -305,6 +306,19 @@ export interface AgentSessionEventMetadata {
    * a compaction (latest wins), on "Model request usage" events.
    */
   contextUsage?: AgentContextUsage;
+  /**
+   * What this Codex session showed about its compatible endpoint's Responses
+   * WebSocket; the server keeps it for the profile and base URL.
+   */
+  codexTransport?: CodexTransportReport;
+}
+
+/** A Codex session's transport observation, for the profile it ran. */
+export interface CodexTransportReport {
+  profileId: string;
+  baseUrl: string;
+  transport: CodexTransport;
+  detail?: string;
 }
 
 /**

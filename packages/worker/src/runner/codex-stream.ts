@@ -17,6 +17,7 @@ import type {
   SessionEventEmitter,
 } from "../session-state.js";
 import { codexTurnUsage, type TurnTokenUsage } from "../turn-usage.js";
+import type { CodexTransportLearner } from "./codex-transport.js";
 import {
   CodexTurnLiveness,
   livenessDuration,
@@ -40,6 +41,8 @@ export interface CodexTurnState {
   nativeSessionId: string;
   finalResult: string;
   usage?: TurnTokenUsage;
+  /** What the turn shows about the endpoint's Responses WebSocket. */
+  transport?: CodexTransportLearner;
 }
 
 type StreamedCodexThread = CodexSDKThread &
@@ -168,6 +171,7 @@ async function handleCodexEvent(
       : undefined;
   if (eventType === "item.completed") await reportCodexContext(state);
   await emitCodexText(state, event);
+  await state.transport?.observe(event, eventType === "turn.completed");
   if (eventType === "turn.failed") throw codexTurnFailure(event);
   if (eventType !== "turn.completed") return false;
   state.usage = codexTurnUsage(event);

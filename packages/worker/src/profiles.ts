@@ -75,6 +75,9 @@ export interface AgentProfileLocalConfig {
   contextWindows?: Record<string, number>;
   /** The window this run's model was resolved to (context-window.ts). */
   contextWindow?: SessionContextWindow;
+  /** A server profile's Responses transport choice (codex-transport.ts). */
+  codexTransport?: ProfileDefinition["codexTransport"];
+  codexTransportLearned?: ProfileDefinition["codexTransportLearned"];
   /**
    * `server` marks a definition that came from the control plane for this run
    * only — it is never written to the local profiles file.
@@ -512,6 +515,8 @@ export function profileConfigFromDefinition(
     model: definition.model?.trim() || undefined,
     models: definition.models,
     contextWindows: definition.contextWindows,
+    codexTransport: definition.codexTransport,
+    codexTransportLearned: definition.codexTransportLearned,
     origin: "server",
     promptPrefix: definition.promptPrefix?.trim() || undefined,
     runtime: definition.runtime,

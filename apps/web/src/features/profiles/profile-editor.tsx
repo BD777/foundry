@@ -10,6 +10,7 @@ import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { RuntimeDefaultFields } from "../../components/ui/runtime-default-fields";
 import { ContextWindowFields } from "./context-window-fields";
+import { codexTransportOptions, codexTransportStatus } from "./codex-transport";
 import {
   invalidContextWindows,
   runtimeOptions,
@@ -173,6 +174,27 @@ export function ProfileEditor({
             ) : null}
           </div>
         </>
+
+        {draft.runtime === "codex" && draft.authMode === "custom" ? (
+          <div className="fdy-profile-field fdy-profile-field-wide">
+            <span>{t("codexTransport.title")}</span>
+            <SegmentedControl
+              aria-label={t("codexTransport.label")}
+              onValueChange={(codexTransport) => onChange({ codexTransport })}
+              options={codexTransportOptions(t)}
+              size="sm"
+              value={draft.codexTransport}
+            />
+            <small role="status">
+              {codexTransportStatus(
+                t,
+                draft.codexTransport,
+                profile?.codexTransportLearned,
+              )}
+            </small>
+            <small>{t("codexTransport.hint")}</small>
+          </div>
+        ) : null}
 
         <div className="fdy-profile-field fdy-profile-field-wide">
           <span>{t("editor.model")}</span>

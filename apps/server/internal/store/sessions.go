@@ -47,6 +47,9 @@ type AgentSessionEventMetadata struct {
 	// ContextUsage is how full the session's context is after a main-agent
 	// model request or a compaction; the newest counts.
 	ContextUsage *AgentContextUsage `json:"contextUsage,omitempty"`
+	// CodexTransport is what a Codex session showed about its compatible
+	// endpoint's Responses WebSocket; the server keeps it for the profile.
+	CodexTransport *CodexTransportReport `json:"codexTransport,omitempty"`
 }
 
 // SessionInputEventLabel marks the transcript event each session input

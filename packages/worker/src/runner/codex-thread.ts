@@ -27,6 +27,7 @@ import {
   codexSessionConfig,
   codexSpeed,
 } from "./codex-options.js";
+import { codexTransportPlan } from "./codex-transport.js";
 
 const codexSdkPackage = "@openai/codex-sdk";
 
@@ -89,7 +90,12 @@ export async function openCodexThread(
     workspacePath,
     session,
     profile,
-    { ...threadOptions, ...sessionConfig },
+    // A transport learned since the thread started starts a new Codex.
+    {
+      ...threadOptions,
+      ...sessionConfig,
+      transport: codexTransportPlan(profile),
+    },
   );
   const activeThread = activeCodexThreads.get(runtimeKey);
   // A thread in memory continues only the native session it holds.

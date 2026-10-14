@@ -692,6 +692,10 @@ function sdkProcessEventDetail(event: unknown): ClaudeProcessEvent | undefined {
   if (eventType === "turn.failed" || eventType === "error") {
     const detail =
       sdkString(record.error) || sdkString(record.message) || "Turn failed.";
+    // Codex retrying its stream (e.g. a WebSocket the endpoint refuses,
+    // before it falls back to HTTPS) is not the turn failing.
+    if (eventType === "error" && detail.startsWith("Reconnecting..."))
+      return { label: processLabels.notice, detail, level: "warning" };
     return { label: processLabels.sessionFailed, detail, level: "error" };
   }
   if (!eventType.startsWith("item.")) {

@@ -9,6 +9,7 @@ import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { RuntimeMark, runtimeMeta } from "../../components/ui/runtime-mark";
 import { connectionUsage } from "../../lib/model-connections";
+import { codexTransportStatus } from "./codex-transport";
 
 export function ProfileList({
   busy,
@@ -54,6 +55,16 @@ export function ProfileList({
                   {runtimeMeta(profile.runtime).label} · {profile.baseUrl}
                 </em>
                 <small>{profile.model || t("list.runtimeDefaultModel")}</small>
+                {profile.codexTransport ? (
+                  <small>
+                    {codexTransportStatus(
+                      t,
+                      profile.codexTransport,
+                      profile.codexTransportLearned,
+                      true,
+                    )}
+                  </small>
+                ) : null}
               </span>
               <Badge tone={profile.hasCredential ? "neutral" : "slate"}>
                 {connectionUsage(profile, deviceProfiles)}

@@ -12,6 +12,7 @@ export * from "./runner/claude-messages.js";
 export * from "./runner/claude-options.js";
 export * from "./runner/claude-turn.js";
 export * from "./runner/codex-options.js";
+export * from "./runner/codex-transport.js";
 export * from "./runner/codex-turn.js";
 export * from "./runner/foundry-tools.js";
 export * from "./runner/profile-command.js";
