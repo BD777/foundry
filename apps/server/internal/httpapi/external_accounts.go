@@ -455,41 +455,7 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	workspaceID := strings.TrimSpace(r.PathValue("id"))
-	before, err := s.store.ListWorkspaceExternalAccounts(r.Context(), workspaceID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	if err := s.store.SetWorkspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID(), input.AccountIDs); err != nil {
-		if errors.Is(err, store.ErrExternalAccountNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
-			return
-		}
-		writeResult(w, nil, err)
-		return
-	}
-	wanted := map[string]bool{}
-	for _, id := range input.AccountIDs {
-		wanted[id] = true
-	}
-	had := map[string]bool{}
-	for _, binding := range before {
-		had[binding.AccountID] = true
-		if !wanted[binding.AccountID] && binding.GrantedBy == actor.AccountID() {
-			if err := s.store.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: binding.AccountID, Kind: "unbound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
-				s.connectors.ServerHeld.Logf("external account binding audit in %s: %v", workspaceID, err)
-			}
-		}
-	}
-	for id := range wanted {
-		if !had[id] {
-			if err := s.store.AppendExternalAccountEvent(r.Context(), store.ExternalAccountEvent{AccountID: id, Kind: "bound", Detail: workspaceID, ActorID: actor.AccountID()}); err != nil {
-				s.connectors.ServerHeld.Logf("external account binding audit in %s: %v", workspaceID, err)
-			}
-		}
-	}
-	view, err := s.workspaceExternalAccounts(r.Context(), workspaceID, actor.AccountID())
+	view, err := s.SetWorkspaceConnectors(r.Context(), WorkspaceActor{UserID: actor.AccountID()}, r.PathValue("id"), input.AccountIDs)
 	if err != nil {
 		writeResult(w, nil, err)
 		return

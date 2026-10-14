@@ -21,6 +21,17 @@ var ownerColumns = []string{"workspace_id", "issue_id", "run_id", "session_id"}
 var unownedOwnerColumns = map[string]string{
 	"deleted_workspaces.workspace_id": "the deletion outlives the workspace",
 	"user_invites.workspace_id":       "an invite's grant; it lapses once its inviter no longer owns the workspace",
+	"workspace_digests.workspace_id":  "a person's digest belongs to their membership, deleted with it (ON DELETE CASCADE)",
+	// The person's assistant outlives any one workspace: moving it gives it
+	// a new one, and the stop switch, not deleting, turns it off.
+	"personal_agents.workspace_id": "the person's assistant; its workspace cannot be deleted",
+	// The person's records of what the assistant did and decided: kept for
+	// their retention (pa_actions 90 days) and the routing evals, naming
+	// workspaces and sessions that may be gone.
+	"pa_actions.workspace_id":           "the person's audit trail, kept 90 days",
+	"pa_actions.session_id":             "the person's audit trail, kept 90 days",
+	"pa_routing_decisions.workspace_id": "the person's routing history, for evals",
+	"pa_routing_decisions.session_id":   "the person's routing history, for evals",
 }
 
 // tableColumns lists every table with its columns.
@@ -194,6 +205,10 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 		`INSERT INTO feishu_bot_routes (id, app_id, workspace_id, kind, chat_id, created_at, updated_at)
 			VALUES ('fbr_pair', 'xapp_home', 'ws_home', 'pairing', '', '', ''), ('fbr_chat', 'xapp_home', 'ws_home', 'chat', 'oc_home', '', '')`,
 		`INSERT INTO agent_session_usage_backfills (session_id, backfilled_at) VALUES ('`+session.ID+`', '')`,
+		`INSERT INTO pa_tasks (id, user_id, conversation_session_id, session_id, workspace_id, title, status, created_at, updated_at)
+			VALUES ('task_home', '`+member.ID+`', 'sess_conversation', '`+session.ID+`', 'ws_home', 'work', 'running', '', '')`,
+		`INSERT INTO pa_proposals (id, user_id, session_id, kind, workspace_id, spec_json, summary, status, created_at, expires_at)
+			VALUES ('prop_home', '`+member.ID+`', 'sess_conversation', 'archive_workspace', 'ws_home', '{}', 'archive', 'pending', '', '')`,
 	)
 
 	if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {

@@ -3,6 +3,7 @@ package feishu
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ type fakeBot struct {
 	mu        sync.Mutex
 	replies   []struct{ to, card string }
 	patches   []struct{ to, card string }
+	sent      []struct{ to, card string }
 	files     map[string]MessageFile
 	downloads []string
 }
@@ -28,6 +30,12 @@ func (b *fakeBot) ReplyCard(_ context.Context, messageID, card string) (string, 
 	defer b.mu.Unlock()
 	b.replies = append(b.replies, struct{ to, card string }{messageID, card})
 	return "card_" + messageID, nil
+}
+func (b *fakeBot) SendCard(_ context.Context, chatID, card string) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sent = append(b.sent, struct{ to, card string }{chatID, card})
+	return fmt.Sprintf("card_sent_%d", len(b.sent)), nil
 }
 func (b *fakeBot) PatchCard(_ context.Context, cardMessageID, card string) error {
 	b.mu.Lock()

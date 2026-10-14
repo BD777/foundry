@@ -488,14 +488,23 @@ export interface AgentSession {
   profileId?: string;
   profileFingerprint?: string;
   profileLabel?: string;
+  /** "digest": a Personal Agent digest summary session (read-only). */
   source?:
-    "chat" | "diagnostic" | "naming" | "verification" | "agent" | "issue";
+    | "chat"
+    | "diagnostic"
+    | "naming"
+    | "verification"
+    | "agent"
+    | "issue"
+    | "digest";
   /**
    * The job the session does for Foundry; absent for a chat. An
    * issue_execution session implements its Issue; an issue_clarification
-   * session talks the Issue through with the person, read-only.
+   * session talks the Issue through with the person, read-only; a
+   * personal_agent session is the person's assistant, started by the person
+   * in their Personal Agent Workspace.
    */
-  role?: "issue_execution" | "issue_clarification";
+  role?: "issue_execution" | "issue_clarification" | "personal_agent";
   /** Orchestration lineage: the session that created this one. A record, not a permission. */
   parentSessionId?: string;
   /** When set, the session executes inside an Issue candidate worktree. */

@@ -83,6 +83,14 @@ export const feishu: Translation<typeof en> = {
     readyHint:
       "在群里 @ 机器人并写下需求：<code>{{command}}</code>；在单聊中直接发送即可。机器人会在话题中回复，话题内的跟帖会继续这项工作。",
     mentionCommand: "@机器人 <需求>",
+    assistantBadge: "助理",
+    movedToYourAssistant:
+      "这个会话现在由你的助理回答。在助理设置里关掉后，消息会重新发到这里。",
+    movedToAssistant: "这个会话现在由配对它的人的助理回答。",
+    movedHere:
+      "配对在“{{workspace}}”，由你的助理回答。解除绑定或改名请到那里。",
+    otherWorkspace: "另一个工作区",
+    assistantSettings: "助理设置",
   },
   pairing: {
     title: "配对会话",

@@ -8,7 +8,7 @@ import type {
   SessionInput,
 } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
-import { isUtilitySession } from "./session-roles.js";
+import { isPromptOnlySession, isUtilitySession } from "./session-roles.js";
 
 /**
  * The input this dispatch runs. Sessions built inside the worker (Issue
@@ -23,7 +23,7 @@ export function sessionPrompt(
   profile?: AgentProfileLocalConfig,
 ): string {
   const input = currentInput(session);
-  if (session.source === "naming") return input.prompt.trim();
+  if (isPromptOnlySession(session)) return input.prompt.trim();
   const importedContext = !isUtilitySession(session)
     ? input.importedContext?.trim()
     : "";

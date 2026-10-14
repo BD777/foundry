@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "personal-agent.a02-follow-up-same-project",
+  "title": "A2: a follow-up lands in the project A1 created, without creating another",
+  "description": "Right after A1, in the same conversation, the person says “加个导出 Excel”. The assistant treats it as a continuation: it continues the helper or starts one in the A1 project, and creates nothing new.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "routing", "continuation", "real-model"],
+  "preconditions": [
+    "personal-agent.a01-only-assistant-workspace passed in the same run."
+  ],
+  "steps": [
+    {
+      "id": "run-scenario",
+      "action": "run",
+      "target": "node scripts/pa-eval-run.mjs --no-routing --scenario a1a2"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-scenario",
+      "type": "json-shape",
+      "target": "report.scenario.checks",
+      "expected": "A2: went to the A1 project; created nothing new — both PASS"
+    }
+  ],
+  "automation": {
+    "status": "planned",
+    "runner": "repo-script",
+    "command": "node scripts/pa-eval-run.mjs --no-routing --scenario a1a2",
+    "references": ["scripts/pa-eval-run.mjs"]
+  },
+  "evidence": {
+    "capture": ["response", "logs"],
+    "retainOn": "always"
+  },
+  "cleanup": ["scripts/scratch-stack.sh down pa-eval"]
+}

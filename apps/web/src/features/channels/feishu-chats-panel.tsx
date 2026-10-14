@@ -1,6 +1,13 @@
 import type { TFunction } from "i18next";
 import { Trans, useTranslation } from "react-i18next";
-import { Copy, Link2, MessageCircle, RefreshCw, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Copy,
+  Link2,
+  MessageCircle,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 import type {
   FeishuBotRoute,
   WorkspaceFeishuBot,
@@ -9,6 +16,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
 import { Panel, PanelHeader } from "../../components/ui/panel";
+import { navigateToAssistantSettings } from "../../lib/in-app-navigation";
 import { useCopied } from "../../lib/use-copied";
 import { clockTime } from "./feishu-format";
 
@@ -17,6 +25,9 @@ export interface FeishuChatsPanelProps {
   /** Plaintext code and expiry from this page's last generate call. */
   issued?: { code: string; expiresAt: string };
   workspaceName?: string;
+  /** Names the workspace a chat moved here was paired with. */
+  workspaceNameOf?: (workspaceId: string) => string | undefined;
+  currentUserId?: string;
   loading: boolean;
   pairing: boolean;
   busyChatId?: string;
@@ -31,6 +42,8 @@ export function FeishuChatsPanel({
   bot,
   issued,
   workspaceName,
+  workspaceNameOf,
+  currentUserId,
   loading,
   pairing,
   busyChatId,
@@ -76,25 +89,36 @@ export function FeishuChatsPanel({
         </Badge>
       </PanelHeader>
 
+      {chats.length === 0 ? (
+        ready ? (
+          <p className="fdy-feishu-hint">{t("chats.empty")}</p>
+        ) : null
+      ) : (
+        <ul className="fdy-feishu-chat-list">
+          {chats.map((chat) => (
+            <ChatRow
+              busy={busyChatId === chat.id}
+              chat={chat}
+              key={chat.id}
+              ownChat={Boolean(
+                currentUserId && chat.boundUserId === currentUserId,
+              )}
+              pairedIn={
+                chat.workspaceId !== bot?.workspaceId
+                  ? (workspaceNameOf?.(chat.workspaceId) ??
+                    t("chats.otherWorkspace"))
+                  : undefined
+              }
+              onRefreshName={() => void onRefreshName(chat)}
+              onUnbind={() => void onUnbind(chat)}
+            />
+          ))}
+        </ul>
+      )}
       {!ready ? (
         <p className="fdy-feishu-hint">{t("chats.needsApp")}</p>
       ) : (
         <>
-          {chats.length === 0 ? (
-            <p className="fdy-feishu-hint">{t("chats.empty")}</p>
-          ) : (
-            <ul className="fdy-feishu-chat-list">
-              {chats.map((chat) => (
-                <ChatRow
-                  busy={busyChatId === chat.id}
-                  chat={chat}
-                  key={chat.id}
-                  onRefreshName={() => void onRefreshName(chat)}
-                  onUnbind={() => void onUnbind(chat)}
-                />
-              ))}
-            </ul>
-          )}
           {chats.length > 0 ? (
             <p className="fdy-feishu-hint">
               <Trans
@@ -185,14 +209,26 @@ export function FeishuChatsPanel({
   );
 }
 
+/**
+ * One chat. A direct chat its person's assistant takes says so: under the
+ * workspace it was paired with ("answered by the assistant") and under the
+ * assistant's, where it is listed too (`pairedIn`) and is managed where it
+ * was paired, so it has no actions of its own here.
+ */
 function ChatRow({
   chat,
   busy,
+  ownChat,
+  pairedIn,
   onRefreshName,
   onUnbind,
 }: {
   chat: FeishuBotRoute;
   busy: boolean;
+  /** The signed-in account paired it: the assistant is theirs. */
+  ownChat: boolean;
+  /** The workspace it was paired with, when that is not this one. */
+  pairedIn?: string;
   onRefreshName: () => void;
   onUnbind: () => void;
 }) {
@@ -201,6 +237,7 @@ function ChatRow({
   const Icon = direct ? MessageCircle : Users;
   const name = chatDisplayName(chat, t);
   const shortId = chat.chatId ? chat.chatId.slice(-6) : "";
+  const toAssistant = Boolean(chat.assistantWorkspaceId);
   return (
     <li className="fdy-feishu-chat">
       <Icon size={16} aria-hidden />
@@ -215,27 +252,55 @@ function ChatRow({
             </span>
           ) : null}
         </small>
+        {pairedIn !== undefined ? (
+          <small>{t("chats.movedHere", { workspace: pairedIn })}</small>
+        ) : toAssistant ? (
+          <small>
+            {ownChat
+              ? t("chats.movedToYourAssistant")
+              : t("chats.movedToAssistant")}
+          </small>
+        ) : null}
       </span>
-      <Button
-        aria-label={`${t("chats.refreshName")} ${name}`}
-        disabled={busy}
-        onClick={onRefreshName}
-        size="sm"
-        title={t("chats.refreshName")}
-        variant="ghost"
-      >
-        <RefreshCw size={14} aria-hidden />
-      </Button>
-      <ConfirmButton
-        aria-label={`${t("chats.unbind")} ${name}`}
-        confirmLabel={t("chats.unbindConfirm")}
-        disabled={busy}
-        onConfirm={onUnbind}
-        size="sm"
-        variant="ghost"
-      >
-        {t("chats.unbind")}
-      </ConfirmButton>
+      {toAssistant ? (
+        <Badge dot={false} tone="neutral">
+          {t("chats.assistantBadge")}
+        </Badge>
+      ) : null}
+      {toAssistant && ownChat ? (
+        <Button
+          onClick={() => navigateToAssistantSettings("entry")}
+          size="sm"
+          variant="link"
+        >
+          {t("chats.assistantSettings")}
+          <ArrowRight size={14} aria-hidden />
+        </Button>
+      ) : null}
+      {pairedIn === undefined ? (
+        <>
+          <Button
+            aria-label={`${t("chats.refreshName")} ${name}`}
+            disabled={busy}
+            onClick={onRefreshName}
+            size="sm"
+            title={t("chats.refreshName")}
+            variant="ghost"
+          >
+            <RefreshCw size={14} aria-hidden />
+          </Button>
+          <ConfirmButton
+            aria-label={`${t("chats.unbind")} ${name}`}
+            confirmLabel={t("chats.unbindConfirm")}
+            disabled={busy}
+            onConfirm={onUnbind}
+            size="sm"
+            variant="ghost"
+          >
+            {t("chats.unbind")}
+          </ConfirmButton>
+        </>
+      ) : null}
     </li>
   );
 }

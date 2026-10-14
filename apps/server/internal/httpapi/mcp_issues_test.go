@@ -134,7 +134,7 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 	}
 	want := []string{}
 	for _, tool := range remoteMCPTools {
-		if tool.readOnly {
+		if tool.readOnly && !personalAgentMCPTools[tool.name] {
 			want = append(want, tool.name)
 		}
 	}

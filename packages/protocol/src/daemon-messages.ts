@@ -352,7 +352,41 @@ export interface AttachmentReadPayload {
 /** setup_workspace */
 export interface SetupWorkspacePayload {
   path: string;
+  /**
+   * Make the folder first (Personal Agent, docs/personal-agent.md §4): only
+   * to a worker that declared workspaceCreateCapability. The worker refuses
+   * a path that, resolved, is outside its managed roots or already exists.
+   */
+  create?: SetupWorkspaceCreate;
 }
+
+/** setup_workspace's create: an empty folder or a clone. */
+export interface SetupWorkspaceCreate {
+  kind: "empty" | "clone";
+  /** The repository to clone; required for "clone". */
+  url?: string;
+  /** Run `git init` in the new empty folder; a clone is already one. */
+  gitInit: boolean;
+  /**
+   * Files to write into the new empty folder (the Personal Agent's
+   * AGENTS.md): never for a clone, never over an existing file.
+   */
+  files?: SetupWorkspaceFile[];
+}
+
+/** One file setup_workspace's create writes into the new folder. */
+export interface SetupWorkspaceFile {
+  /** Relative to the folder, "/"-separated; never absolute, never "..". */
+  path: string;
+  /** UTF-8 text. */
+  content: string;
+}
+
+/**
+ * The worker takes setup_workspace's create and reports its managed roots
+ * (DeviceProjection.managedRoots).
+ */
+export const workspaceCreateCapability = "workspace_create";
 
 /** forget_workspace */
 export interface ForgetWorkspacePayload {
@@ -432,6 +466,13 @@ export interface RunSessionPayload {
   externalAccounts?: ExternalAccountMaterial[];
   /** Device-held connectors on the session's device and what it may do with each. */
   deviceConnectors?: DeviceConnectorUse[];
+  /**
+   * A personal_agent session's appended system prompt (docs/personal-agent.md
+   * §12): the prompt, the person's requests and the snapshot of what the
+   * assistant knows, in that order. Claude takes it as systemPrompt.append,
+   * Codex as developer_instructions.
+   */
+  personalAgentInstructions?: string;
 }
 
 /** steer_session */

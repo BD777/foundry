@@ -127,14 +127,14 @@ func (h *DaemonHub) SetupWorkspace(ctx context.Context, deviceID string, path st
 	if connection == nil {
 		return store.WorkspaceProjection{}, store.ErrNotFound
 	}
-	return connection.setupWorkspace(ctx, path)
+	return connection.setupWorkspace(ctx, wsSetupWorkspacePayload{Path: path})
 }
 
-func (c *daemonConnection) setupWorkspace(ctx context.Context, path string) (store.WorkspaceProjection, error) {
-	if err := c.allowWorkspaceFolder(ctx, path); err != nil {
+func (c *daemonConnection) setupWorkspace(ctx context.Context, payload wsSetupWorkspacePayload) (store.WorkspaceProjection, error) {
+	if err := c.allowWorkspaceFolder(ctx, payload.Path); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
-	value, err := callDevice[wsWorkspaceReadyPayload](ctx, c, wsSetupWorkspaceType, wsSetupWorkspacePayload{Path: path})
+	value, err := callDevice[wsWorkspaceReadyPayload](ctx, c, wsSetupWorkspaceType, payload)
 	if err != nil {
 		return store.WorkspaceProjection{}, err
 	}

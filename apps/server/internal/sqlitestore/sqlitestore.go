@@ -175,15 +175,13 @@ func (s *Store) workspaceIDForDevice(ctx context.Context, deviceID string) strin
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context) ([]store.WorkspaceProjection, error) {
-	return listJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT
-		CASE WHEN d.name IS NULL THEN w.payload_json ELSE json_set(w.payload_json, '$.name', d.name) END
+	return listJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT `+workspaceProjectionSQL+`
 		FROM workspaces w LEFT JOIN workspace_display_names d ON d.workspace_id = w.id
 		ORDER BY w.updated_at DESC, w.name`)
 }
 
 func (s *Store) GetWorkspace(ctx context.Context, id string) (store.WorkspaceProjection, error) {
-	return getJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT
-		CASE WHEN d.name IS NULL THEN w.payload_json ELSE json_set(w.payload_json, '$.name', d.name) END
+	return getJSON[store.WorkspaceProjection](ctx, s.reader(), `SELECT `+workspaceProjectionSQL+`
 		FROM workspaces w LEFT JOIN workspace_display_names d ON d.workspace_id = w.id WHERE w.id = ?`, id)
 }
 

@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "id": "personal-agent.a06-stop-before-model",
+  "title": "A6: “停” in the Feishu direct chat stops everything without the model",
+  "description": "With three handed-off tasks running, the person sends exactly “停” in the paired Feishu direct chat. The channel layer handles it before any model turn: the assistant state becomes stopped, its session and every pa_tasks session are cancelled, pending proposals expire, and the fixed text reports how many were stopped. “继续” resumes and the assistant lists the stopped work, restarting nothing by itself.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "critical",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "stop-switch", "feishu"],
+  "preconditions": [
+    "Assistant set up with its Feishu direct chat paired; three tasks it handed off are running."
+  ],
+  "steps": [
+    {
+      "id": "stop",
+      "action": "type",
+      "target": "Feishu direct chat with the assistant",
+      "value": "停"
+    },
+    {
+      "id": "inspect",
+      "action": "request",
+      "target": "GET /api/personal-agent and the task sessions"
+    },
+    {
+      "id": "resume",
+      "action": "type",
+      "target": "Feishu direct chat with the assistant",
+      "value": "继续"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "stop",
+      "type": "text",
+      "target": "reply",
+      "expected": "已全部停下，停了 3 件正在做的事。说『继续』或点按钮恢复。"
+    },
+    {
+      "afterStep": "inspect",
+      "type": "json-shape",
+      "target": "assistant and tasks",
+      "expected": "state stopped; no model turn after the message; all task sessions canceled"
+    },
+    {
+      "afterStep": "resume",
+      "type": "text",
+      "target": "reply",
+      "expected": "lists the three stopped tasks and asks whether to continue them"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": ["docs/personal-agent.md#8-停止开关绕过模型"]
+  },
+  "evidence": {
+    "capture": ["response", "logs"],
+    "retainOn": "always"
+  },
+  "cleanup": ["Cancel or finish the resumed tasks."]
+}

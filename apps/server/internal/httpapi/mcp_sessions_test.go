@@ -78,12 +78,15 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	}
 
 	chatToken := mint(chat.ID)
-	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames("ask_person")) {
-		t.Fatalf("a chat sees %v, want every tool but ask_person", names)
+	if names := mcpToolNames(t, handler, chatToken); !slices.Equal(names, catalogToolNames(append(personalAgentToolNames(), "ask_person")...)) {
+		t.Fatalf("a chat sees %v, want every tool but ask_person and the assistant's", names)
 	}
 	call := mcpToolCaller(t, handler, chatToken)
 	if text, isError := call("ask_person", map[string]any{"question": "Deploy?"}); !isError || !strings.Contains(text, "only an Issue's execution can ask the person") {
 		t.Fatalf("a chat calling ask_person = %q", text)
+	}
+	if text, isError := call("find_workspace", map[string]any{"query": "budget"}); !isError || !strings.Contains(text, "only available to the person's assistant") {
+		t.Fatalf("a chat calling find_workspace = %q", text)
 	}
 	if text, isError := call("delete_everything", map[string]any{}); !isError || text != "unknown tool: delete_everything" {
 		t.Fatalf("an unknown tool = %q", text)
@@ -123,8 +126,8 @@ func TestToolsListFollowsTheSessionsRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames()) {
-		t.Fatalf("an Issue's execution sees %v, want every tool", names)
+	if names := mcpToolNames(t, handler, mint(execution.ID)); !slices.Equal(names, catalogToolNames(personalAgentToolNames()...)) {
+		t.Fatalf("an Issue's execution sees %v, want every tool but the assistant's", names)
 	}
 }
 

@@ -86,6 +86,15 @@ export const feishu = {
     readyHint:
       "In a group, mention the bot with your request: <code>{{command}}</code>. In a direct chat, just write. The bot replies in a topic, and posts in that topic continue the work.",
     mentionCommand: "@bot <your request>",
+    assistantBadge: "Assistant",
+    movedToYourAssistant:
+      "Your assistant answers this chat now. Turn that off in its settings to send it here again.",
+    movedToAssistant:
+      "The assistant of the person who paired it answers this chat now.",
+    movedHere:
+      "Paired with “{{workspace}}”; your assistant answers it. Unbind or rename it there.",
+    otherWorkspace: "another workspace",
+    assistantSettings: "Assistant settings",
   },
   pairing: {
     title: "Pair a chat",

@@ -19,10 +19,11 @@ type Client struct {
 }
 
 // botClient is what Foundry asks of a bot: reply to a message with a card,
-// update a card, read a chat's or a person's name, and download a file a
-// message carries. Client implements it.
+// send a card to a chat, update a card, read a chat's or a person's name,
+// and download a file a message carries. Client implements it.
 type botClient interface {
 	ReplyCard(ctx context.Context, messageID string, cardJSON string) (string, error)
+	SendCard(ctx context.Context, chatID string, cardJSON string) (string, error)
 	PatchCard(ctx context.Context, cardMessageID string, cardJSON string) error
 	ChatName(ctx context.Context, chatID string) (string, error)
 	UserName(ctx context.Context, openID string) (string, error)
@@ -62,6 +63,29 @@ func (c *Client) ReplyCard(ctx context.Context, messageID string, cardJSON strin
 	}
 	if resp.Data == nil || resp.Data.MessageId == nil {
 		return "", fmt.Errorf("feishu reply card: missing message id in response")
+	}
+	return *resp.Data.MessageId, nil
+}
+
+// SendCard posts a card to the chat, outside any thread.
+func (c *Client) SendCard(ctx context.Context, chatID string, cardJSON string) (string, error) {
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.CreateMessageV1ReceiveIDTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(chatID).
+			MsgType(larkim.MsgTypeInteractive).
+			Content(cardJSON).
+			Build()).
+		Build()
+	resp, err := c.lark.Im.V1.Message.Create(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("feishu send card: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu send card failed [%d]: %s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", fmt.Errorf("feishu send card: missing message id in response")
 	}
 	return *resp.Data.MessageId, nil
 }

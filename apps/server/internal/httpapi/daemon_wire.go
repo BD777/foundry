@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -233,11 +234,42 @@ type wsWorkspaceTreeListedPayload struct {
 
 type wsSetupWorkspacePayload struct {
 	Path string `json:"path"`
+	// Create makes the folder first; sent only to a worker declaring
+	// store.DaemonCapabilityWorkspaceCreate, which refuses a path outside its
+	// managed roots or one that exists.
+	Create *wsSetupWorkspaceCreate `json:"create,omitempty"`
+}
+
+// wsSetupWorkspaceCreate is an empty folder (Kind "empty", GitInit to run
+// git init) or a clone of URL (Kind "clone").
+type wsSetupWorkspaceCreate struct {
+	Kind    string `json:"kind"`
+	URL     string `json:"url,omitempty"`
+	GitInit bool   `json:"gitInit"`
+	// Files are written into the new empty folder (the assistant's
+	// AGENTS.md).
+	Files []wsSetupWorkspaceFile `json:"files,omitempty"`
+}
+
+// wsSetupWorkspaceFile is one file of a new folder, Path relative to it.
+type wsSetupWorkspaceFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type wsWorkspaceReadyPayload struct {
 	Registration store.DaemonRegistration `json:"registration"`
 	wsReplyError
+}
+
+// A device refusing to set a folder up (not inside its managed roots,
+// already there, not a folder) is a conflict the person can resolve, not a
+// server failure.
+func (p wsWorkspaceReadyPayload) refusal() error {
+	if p.Error == "" {
+		return nil
+	}
+	return &statusError{http.StatusConflict, errors.New(p.Error)}
 }
 
 type wsForgetWorkspacePayload struct {
@@ -338,6 +370,10 @@ type wsRunSessionPayload struct {
 	// DeviceConnectors are the device-held connectors on the session's
 	// device and what the session may do with each (connectors.DeviceHeld).
 	DeviceConnectors []store.DeviceConnectorUse `json:"deviceConnectors,omitempty"`
+	// PersonalAgentInstructions is a personal_agent session's appended system
+	// prompt: the prompt, the person's requests, then the assistant's
+	// snapshot (docs/personal-agent.md §12).
+	PersonalAgentInstructions string `json:"personalAgentInstructions,omitempty"`
 }
 
 type wsSteerSessionPayload struct {

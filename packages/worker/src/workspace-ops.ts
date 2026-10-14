@@ -24,6 +24,7 @@ import {
   resourceComputeCapability,
   resourceOperationsCapability,
   resourcesCapability,
+  workspaceCreateCapability,
   workspaceFoldersCapability,
 } from "@bd777/foundry-protocol";
 import type {
@@ -51,6 +52,7 @@ import { getJSON, postJSON } from "./server-http.js";
 import { providerHealthData } from "./provider-health.js";
 import { agentProfilesForWorkspace, profileFingerprint } from "./profiles.js";
 import { deviceSystem, getDevice } from "./device.js";
+import { managedRoots } from "./personal-agent-settings.js";
 import { runningWorker } from "./worker-identity.js";
 import { optionValue, safeID, sizeLabel } from "./utils.js";
 import {
@@ -422,6 +424,7 @@ export const daemonCapabilities = [
   "feishu_gateway",
   deviceConnectorsCapability,
   workspaceFoldersCapability,
+  workspaceCreateCapability,
   resourcesCapability,
   resourceOperationsCapability,
   resourceComputeCapability,
@@ -478,6 +481,7 @@ export function daemonRegistration(workspacePath: string): {
       resources: discoverResources(),
       worker: runningWorker(),
       system: deviceSystem(),
+      managedRoots: managedRoots(),
     },
     providerHealth,
     // Workspace skills come from the server's Skill library; the field stays
@@ -511,6 +515,7 @@ export function daemonDeviceRegistration(): Omit<
       resources: discoverResources(),
       worker: runningWorker(),
       system: deviceSystem(),
+      managedRoots: managedRoots(),
     },
     providerHealth: providerHealthData(),
     skills: [],

@@ -127,7 +127,7 @@ func (s *Server) replaySentInput(w http.ResponseWriter, r *http.Request, sent se
 		writeError(w, http.StatusConflict, store.ErrSessionInputExists.Error())
 		return true
 	}
-	session = slimAgentSession(session)
+	session = s.presentSession(r.Context(), slimAgentSession(session))
 	idempotent.record(r.Context(), session)
 	writeJSON(w, sent.status, session)
 	return true

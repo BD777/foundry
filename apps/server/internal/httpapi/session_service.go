@@ -67,9 +67,19 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 			s.reconcileAgentSessions(ctx, sessions)
 		}
 	}
+	if refusal := archivedWorkspace(ctx, s.store, input.WorkspaceID); refusal != nil {
+		return store.AgentSession{}, refusal
+	}
+	assistant, delegating, err := s.admitAssistantSession(ctx, input)
+	if err != nil {
+		return store.AgentSession{}, err
+	}
 	session, err := s.store.CreateAgentSession(ctx, input)
 	if err != nil {
 		return store.AgentSession{}, err
+	}
+	if delegating {
+		s.recordAssistantTask(ctx, assistant, input.ParentSessionID, session)
 	}
 	s.sessions.changed(ctx, sessionCreated, session)
 	s.chats.sessionCreated(session)
@@ -295,6 +305,9 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 	}
 	if session.Role != "" {
 		return store.AgentSession{}, &statusError{http.StatusConflict, store.ErrSessionControlledByIssue}
+	}
+	if err := s.admitAssistantTurn(ctx, session); err != nil {
+		return store.AgentSession{}, err
 	}
 	message := strings.TrimSpace(input.Prompt)
 	if activeOrBlocked(session.Status) {

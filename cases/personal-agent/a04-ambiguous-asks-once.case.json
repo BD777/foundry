@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "id": "personal-agent.a04-ambiguous-asks-once",
+  "title": "A4: two projects fit equally — one question, two or three options, a recommendation",
+  "description": "For a request two projects match about equally (e.g. “帮我看看那个网关是不是挂了” with an LLM gateway and a trading gateway), the assistant does not start work; it asks one short question naming two or three options by what they are, plus “something new”, recommends one, and uses no jargon.",
+  "kind": "browser-interaction",
+  "area": "personal-agent",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "routing", "ambiguity", "real-model"],
+  "preconditions": [
+    "Signed in as a person with at least two projects matching the request; assistant set up."
+  ],
+  "environment": {
+    "route": "/assistant"
+  },
+  "steps": [
+    {
+      "id": "open",
+      "action": "navigate",
+      "target": "/assistant"
+    },
+    {
+      "id": "ask",
+      "action": "type",
+      "target": "message box labelled for the assistant",
+      "value": "帮我看看那个网关是不是挂了"
+    },
+    {
+      "id": "send",
+      "action": "click",
+      "target": "button named Send"
+    },
+    {
+      "id": "wait",
+      "action": "wait",
+      "target": "the assistant's reply"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "wait",
+      "type": "text",
+      "target": "the assistant's reply",
+      "expected": "exactly one question; two or three options described by what they are; one recommended"
+    },
+    {
+      "afterStep": "wait",
+      "type": "hidden",
+      "target": "any started work in “正在做的事”"
+    },
+    {
+      "afterStep": "wait",
+      "type": "no-console-errors",
+      "target": "assistant page"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": ["scripts/pa-eval-run.mjs", "scripts/pa-eval-build.mjs"]
+  },
+  "evidence": {
+    "capture": ["screenshot", "response"],
+    "retainOn": "always"
+  },
+  "cleanup": []
+}

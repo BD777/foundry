@@ -26,6 +26,8 @@ export function viewErrorResetKey({
           ? (selectedDeviceId ?? "")
           : "";
   return [
+    view === "assistant" ||
+    view === "assistantSettings" ||
     view === "devices" ||
     view === "profiles" ||
     view === "connectors" ||

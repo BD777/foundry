@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "personal-agent.a01-only-assistant-workspace",
+  "title": "A1: with only the assistant's own project, a request creates a project, starts work and reports a link",
+  "description": "An account with one computer and no project but the assistant's own says “帮我做一个记家庭开销的小网页”. The assistant creates a project itself (policy auto), starts a helper there with a full brief, answers without jargon, and once the helper is done reports the result with a link the person can open. Guards principle 5: the assistant is complete even when the person has nothing else.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "critical",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "routing", "workspace-lifecycle", "real-model"],
+  "preconditions": [
+    "Scratch stack on a copy of the dev database (scripts/scratch-stack.sh); the server includes WP-S1, WP-S2, WP-S3, WP-W and WP-P.",
+    "The machine running the eval has a native Claude (or Codex) login the scratch worker can use."
+  ],
+  "steps": [
+    {
+      "id": "run-scenario",
+      "action": "run",
+      "target": "node scripts/pa-eval-run.mjs --no-routing --scenario a1a2",
+      "value": "fresh account pa-eval-fresh, its own worker, the assistant set up on it"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "run-scenario",
+      "type": "json-shape",
+      "target": "report.scenario.checks",
+      "expected": "A1: only the assistant's project before; created one project; started work there; replies without banned words; reported the result with a link — all PASS"
+    },
+    {
+      "afterStep": "run-scenario",
+      "type": "command-exit-zero",
+      "target": "pa-eval-run exit status"
+    }
+  ],
+  "automation": {
+    "status": "planned",
+    "runner": "repo-script",
+    "command": "node scripts/pa-eval-run.mjs --no-routing --scenario a1a2",
+    "references": ["scripts/pa-eval-run.mjs", "docs/personal-agent.md#13-评测"]
+  },
+  "evidence": {
+    "capture": ["response", "logs"],
+    "retainOn": "always"
+  },
+  "cleanup": [
+    "scripts/scratch-stack.sh down pa-eval (the runner does this unless --keep)"
+  ]
+}

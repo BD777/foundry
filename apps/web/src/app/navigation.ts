@@ -7,8 +7,15 @@ import {
   Monitor,
   Plug,
   Server,
+  SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import type { SidebarNavSection } from "../components/ui/app-shell";
+import {
+  assistantSettingsSectionFrom,
+  type AssistantSettingsSection,
+  type InterfaceMode,
+} from "../lib/assistant-settings-sections";
 import { connectorTypes, type ConnectorType } from "../lib/connector-types";
 import { noWorkspaceSelected } from "../api";
 import type { shell } from "../i18n/locales/en/shell";
@@ -18,6 +25,8 @@ export type NavLabel = keyof typeof shell.nav;
 import type { FoundryThemeMode } from "../components/ui/app-shell";
 
 export type NavView =
+  | "assistant"
+  | "assistantSettings"
   | "account"
   | "members"
   | "issues"
@@ -51,6 +60,8 @@ export interface AppRoute {
   deviceSection?:
     "resources" | "agents" | "skills" | "settings" | "diagnostics";
   connectorTab?: ConnectorType;
+  /** The open section of the assistant's settings. */
+  assistantSection?: AssistantSettingsSection;
   selectedChatId?: string;
   selectedIssueId?: string;
   view: NavView;
@@ -58,6 +69,7 @@ export interface AppRoute {
 
 const activeWorkspaceStorageKey = "foundry.activeWorkspaceId";
 const themeStorageKey = "foundry.themeMode";
+const interfaceModeStorageKey = "foundry.interfaceMode";
 const sidebarCollapsedStorageKey = "foundry.sidebarCollapsed";
 
 export function initialDevicePairingMode(): DevicePairingMode {
@@ -84,6 +96,17 @@ export function parseAppRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean);
   const [section, id] = segments;
   switch (section) {
+    // Opening Foundry lands on the assistant (docs/personal-agent.md §10);
+    // the shell turns back to the workspace when the person chose so.
+    case undefined:
+      return { view: "assistant" };
+    case "assistant":
+      return id === "settings"
+        ? {
+            view: "assistantSettings",
+            assistantSection: assistantSettingsSectionFrom(segments[2]),
+          }
+        : { view: "assistant" };
     case "locations":
       // /locations/<device> brings that device's workspaces into view.
       return id
@@ -166,6 +189,10 @@ export function parseAppRoute(pathname: string): AppRoute {
 
 export function pathForAppRoute(route: AppRoute): string {
   switch (route.view) {
+    case "assistant":
+      return "/assistant";
+    case "assistantSettings":
+      return `/assistant/settings/${route.assistantSection ?? assistantSettingsSectionFrom(undefined)}`;
     case "locations":
       return route.selectedDeviceId
         ? `/locations/${encodePathSegment(route.selectedDeviceId)}`
@@ -330,6 +357,32 @@ export function persistWorkspaceId(
   }
 }
 
+/** Where opening Foundry lands: the assistant, unless the person turned it off. */
+export function isLandingPath(pathname: string): boolean {
+  return pathname.split("/").filter(Boolean).length === 0;
+}
+
+/**
+ * The interface this browser chose before the choice moved to the
+ * assistant's settings (simpleInterface); read once to carry it over.
+ */
+export function storedInterfaceMode(): InterfaceMode | undefined {
+  try {
+    const value = window.localStorage.getItem(interfaceModeStorageKey);
+    return value === "simple" || value === "full" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function forgetStoredInterfaceMode(): void {
+  try {
+    window.localStorage.removeItem(interfaceModeStorageKey);
+  } catch {
+    return;
+  }
+}
+
 export function storedThemeMode(): FoundryThemeMode {
   try {
     return window.localStorage.getItem(themeStorageKey) === "dark"
@@ -366,6 +419,7 @@ export function persistSidebarCollapsed(collapsed: boolean): void {
 
 /** Pages that scroll as a whole; the others (chats, Issues) scroll their parts. */
 const pageViews = new Set<string>([
+  "assistantSettings",
   "account",
   "members",
   "assets",
@@ -402,11 +456,25 @@ export function scrollModeForView(view: string): "page" | "contained" {
   return pageViews.has(view) ? "page" : "contained";
 }
 
+const assistantNavSection: SidebarNavSection<SidebarView> = {
+  label: "assistantSection",
+  items: [
+    { id: "assistant", label: "assistant", icon: Sparkles },
+    {
+      id: "assistantSettings",
+      label: "assistantSettings",
+      icon: SlidersHorizontal,
+    },
+  ],
+};
+
 /**
- * The sidebar: what a person works on, then what they manage. Labels are
- * keys of the shell namespace's `nav`; the shell translates them.
+ * The sidebar: the assistant, what a person works on, then what they
+ * manage. Labels are keys of the shell namespace's `nav`; the shell
+ * translates them.
  */
 export const navSections: Array<SidebarNavSection<SidebarView>> = [
+  assistantNavSection,
   {
     label: "workspace",
     items: [
@@ -425,4 +493,13 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
       { id: "connectors", label: "connectors", icon: Plug },
     ],
   },
+];
+
+/**
+ * The simple interface's sidebar: the assistant and its settings; the
+ * account entries join the empty "manage" section (withAccountNav).
+ */
+export const simpleNavSections: Array<SidebarNavSection<SidebarView>> = [
+  assistantNavSection,
+  { label: "manage", items: [] },
 ];

@@ -22,6 +22,7 @@ var foundryToolRoles = []struct {
 	{"issue_execution", store.AgentSessionRoleIssueExecution, false},
 	{"issue_clarification", store.AgentSessionRoleIssueClarification, false},
 	{"verifier", "", true},
+	{"personal_agent", store.AgentSessionRolePersonalAgent, false},
 }
 
 // foundrySkillDetail shows what the foundry skill gives agents, read from

@@ -18,6 +18,7 @@ export * from "./api/devices";
 export * from "./api/feishu";
 export * from "./api/foundry-data";
 export * from "./api/issues";
+export * from "./api/personal-agent";
 export * from "./api/profiles";
 export * from "./api/resources";
 export * from "./api/sessions";

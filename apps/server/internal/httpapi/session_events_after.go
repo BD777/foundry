@@ -61,5 +61,6 @@ func (s *Server) handleGetAgentSessionEventsAfter(w http.ResponseWriter, r *http
 		events = []store.AgentSessionEvent{}
 	}
 	item.Events = nil
+	item = s.presentSession(r.Context(), item)
 	writeResult(w, caughtUpAgentSession{AgentSession: item, Events: events, EventsAfter: newest, EventsMore: more}, nil)
 }

@@ -19,8 +19,12 @@ type DaemonHub struct {
 	// What the hub tells browsers of what devices report.
 	daemonNotifiers
 	onEvidenceConnected func(context.Context, string)
-	skillScans          map[string]*skillScan
-	skillScansMu        sync.Mutex
+	// assistantRun is what a run of the session needs as the person's
+	// assistant (personal_agent_instructions.go); ok is false for any other
+	// session.
+	assistantRun func(ctx context.Context, session store.AgentSession) (run assistantRun, ok bool, err error)
+	skillScans   map[string]*skillScan
+	skillScansMu sync.Mutex
 	// skillScanAnswers keeps each device's last scan answer (skills.go).
 	skillScanAnswers keptSkillScans
 	// onDeviceConnected runs once per daemon hello, until that socket closes.
@@ -265,7 +269,7 @@ func (h *DaemonHub) registerDaemon(ctx context.Context, registration store.Daemo
 	if err != nil {
 		return store.DaemonChanges{}, err
 	}
-	h.devices.reported(changes)
+	h.devices.reported(ctx, registration.Device.ID, changes)
 	return changes, nil
 }
 

@@ -221,6 +221,57 @@ func TestMembershipChangesEndTheAccountsEventStream(t *testing.T) {
 	}
 }
 
+// A workspace new on bob's device (one his assistant created, or a folder he
+// added) makes him its owner: his open stream ends so his browser reconnects
+// with a reach that includes it; a device reporting a workspace it already
+// had leaves the stream alone.
+func TestNewWorkspaceOnADeviceEndsItsOwnersEventStream(t *testing.T) {
+	f := newIsolationFixture(t)
+	live := httptest.NewServer(f.handler)
+	t.Cleanup(live.Close) // after the streams below close
+	open := func() chan struct{} {
+		request, _ := http.NewRequest(http.MethodGet, live.URL+"/api/events", nil)
+		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: f.bob})
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { response.Body.Close() })
+		reader := bufio.NewReader(response.Body)
+		if line, _ := reader.ReadString('\n'); !strings.HasPrefix(line, ": connected") {
+			t.Fatalf("stream did not open: %q", line)
+		}
+		ended := make(chan struct{})
+		go func() {
+			for {
+				if _, err := reader.ReadString('\n'); err != nil {
+					close(ended)
+					return
+				}
+			}
+		}()
+		return ended
+	}
+	register := func(workspaceID string) {
+		expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register",
+			registrationBody("dev_bob", workspaceID), f.bobDevice)), http.StatusOK, "register "+workspaceID)
+	}
+
+	ended := open()
+	register("ws_bob")
+	select {
+	case <-ended:
+		t.Fatal("a report of a workspace bob already had ended his stream")
+	case <-time.After(300 * time.Millisecond):
+	}
+	register("ws_bob_new")
+	select {
+	case <-ended:
+	case <-time.After(3 * time.Second):
+		t.Fatal("bob's event stream kept its old reach after a workspace was added to his device")
+	}
+}
+
 // Added to a workspace, bob's browser reconnects from the last event its old
 // stream delivered and is told to resync, so it reads the workspace it can
 // now see instead of resuming with its old view.

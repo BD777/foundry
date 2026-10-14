@@ -10,6 +10,7 @@ import { externalAccounts as enExternalAccounts } from "./locales/en/externalAcc
 import { feishu as enFeishu } from "./locales/en/feishu";
 import { issueDetail as enIssueDetail } from "./locales/en/issueDetail";
 import { issues as enIssues } from "./locales/en/issues";
+import { personalAgent as enPersonalAgent } from "./locales/en/personalAgent";
 import { profiles as enProfiles } from "./locales/en/profiles";
 import { resources as enResources } from "./locales/en/resources";
 import { runs as enRuns } from "./locales/en/runs";
@@ -30,6 +31,7 @@ import { externalAccounts as zhExternalAccounts } from "./locales/zh-CN/external
 import { feishu as zhFeishu } from "./locales/zh-CN/feishu";
 import { issueDetail as zhIssueDetail } from "./locales/zh-CN/issueDetail";
 import { issues as zhIssues } from "./locales/zh-CN/issues";
+import { personalAgent as zhPersonalAgent } from "./locales/zh-CN/personalAgent";
 import { profiles as zhProfiles } from "./locales/zh-CN/profiles";
 import { resources as zhResources } from "./locales/zh-CN/resources";
 import { runs as zhRuns } from "./locales/zh-CN/runs";
@@ -57,6 +59,7 @@ export const en = {
   feishu: enFeishu,
   issueDetail: enIssueDetail,
   issues: enIssues,
+  personalAgent: enPersonalAgent,
   profiles: enProfiles,
   resources: enResources,
   runs: enRuns,
@@ -82,6 +85,7 @@ export const resources = {
     feishu: zhFeishu,
     issueDetail: zhIssueDetail,
     issues: zhIssues,
+    personalAgent: zhPersonalAgent,
     profiles: zhProfiles,
     resources: zhResources,
     runs: zhRuns,

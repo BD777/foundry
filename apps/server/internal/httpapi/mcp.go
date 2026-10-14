@@ -104,7 +104,7 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 	role, verifier := "", false
 	if actor.Agent() {
 		if session, err := store.AgentSessionRecord(ctx, s.store, actor.Identity.SessionID); err == nil {
-			role, verifier = session.Role, session.Source == verificationSource
+			role, verifier = s.sessionRole(ctx, session), session.Source == verificationSource
 		}
 	}
 	return func(name string) error { return mcpToolAllowed(role, verifier, name) }
@@ -121,6 +121,12 @@ func mcpToolAllowed(role string, verifier bool, name string) error {
 	}
 	if name == "ask_person" && role != store.AgentSessionRoleIssueExecution {
 		return &statusError{http.StatusForbidden, errors.New("only an Issue's execution can ask the person; say what you need in your reply to whoever started you")}
+	}
+	if personalAgentMCPTools[name] && role != store.AgentSessionRolePersonalAgent {
+		return &statusError{http.StatusForbidden, errors.New(name + " is only available to the person's assistant")}
+	}
+	if assistantWithheldMCPTools[name] && role == store.AgentSessionRolePersonalAgent {
+		return &statusError{http.StatusForbidden, errors.New(name + " is not available to the person's assistant: hand work that needs a device's resources or Feishu events to a session in a project there")}
 	}
 	return nil
 }
@@ -284,6 +290,15 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"rename_session": mcpTextTool((*Server).renameSessionForMCP),
 	"ask_person":     mcpRequestTool((*Server).askPersonForMCP),
 	"feishu_events":  mcpRequestTool((*Server).feishuEventsForMCP),
+	// The Personal Agent's tools (mcp_personal_agent.go).
+	"find_workspace":    mcpTextTool((*Server).findWorkspaceForMCP),
+	"get_workspace":     mcpTextTool((*Server).getWorkspaceForMCP),
+	"create_workspace":  mcpTextTool((*Server).createWorkspaceForMCP),
+	"update_workspace":  mcpTextTool((*Server).updateWorkspaceForMCP),
+	"archive_workspace": mcpTextTool((*Server).archiveWorkspaceForMCP),
+	"remember":          mcpTextTool((*Server).rememberForMCP),
+	"update_rules":      mcpTextTool((*Server).updateRulesForMCP),
+	"list_tasks":        mcpTextTool((*Server).listTasksForMCP),
 }
 
 // executeMCPToolContent runs a tool and answers its MCP content: one text

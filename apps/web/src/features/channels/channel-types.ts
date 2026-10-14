@@ -13,6 +13,10 @@ export type ChannelType = (typeof channelTypes)[number];
 export interface ChannelSectionProps {
   workspaceId: string;
   workspaceName?: string;
+  /** Names other workspaces: where a chat moved here was paired. */
+  workspaceNameOf?: (workspaceId: string) => string | undefined;
+  /** The signed-in account: a direct chat it paired is its own. */
+  currentUserId?: string;
   onNotice?: (message: string) => void;
   /** Opens Connectors, where the apps channels run on are managed. */
   onOpenConnectors?: () => void;

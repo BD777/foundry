@@ -19,6 +19,7 @@ const roleOrder: FoundryToolRole[] = [
   "issue_execution",
   "issue_clarification",
   "verifier",
+  "personal_agent",
 ];
 
 /** SKILL.md text with its `inline code` set as code. */

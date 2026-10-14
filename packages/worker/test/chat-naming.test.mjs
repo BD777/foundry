@@ -9,6 +9,11 @@ import {
   codexApprovalPolicy,
 } from "../dist/runner.js";
 import { nativeChatRecap } from "../dist/native-chat-records.js";
+import {
+  isPromptOnlySession,
+  isUtilitySession,
+} from "../dist/session-roles.js";
+import { foundryToolsEndpoint } from "../dist/session-ambient.js";
 
 test("recap cannot reuse the original runtime or inherit a prompt prefix", () => {
   const profile = {
@@ -40,6 +45,29 @@ test("recap cannot reuse the original runtime or inherit a prompt prefix", () =>
   assert.equal(claudeMaxTurns(naming), 3);
 });
 
+/** A Personal Agent digest summary reads its prompt only, read-only, without Foundry's tools. */
+test("a digest summary session is prompt-only and read-only", () => {
+  const profile = {
+    id: "p",
+    runtime: "codex",
+    codexSandboxMode: "danger-full-access",
+  };
+  const digest = {
+    id: "digest-1",
+    workspaceId: "ws",
+    provider: "codex",
+    source: "digest",
+    prompt: "summary data",
+    codexSandboxMode: "danger-full-access",
+  };
+  assert.equal(isUtilitySession(digest), true);
+  assert.equal(isPromptOnlySession(digest), true);
+  assert.equal(foundryToolsEndpoint(digest), undefined);
+  assert.equal(sessionPrompt(digest, profile), "summary data");
+  assert.equal(codexSandboxMode(digest, profile), "read-only");
+  assert.equal(claudeMaxTurns(digest), 3);
+});
+
 /**
  * sess_1791953123332185876: a naming job ran in plan mode, so the model
  * wrote a plan file instead of the JSON title. Whatever the record, the
@@ -53,7 +81,7 @@ test("utility sessions run dontAsk, never plan mode, and Codex never asks", () =
     claudePermissionMode: "plan",
     codexApprovalPolicy: "on-request",
   };
-  for (const source of ["naming", "diagnostic"]) {
+  for (const source of ["naming", "diagnostic", "digest"]) {
     const utility = {
       id: `${source}-1`,
       workspaceId: "ws",

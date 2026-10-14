@@ -13,6 +13,7 @@ import {
 } from "../../issue-clarification.js";
 import { recoveredIssueCompletion } from "../../issue-recovery.js";
 import type { SessionAmbientEnv } from "../../session-ambient.js";
+import { keepPersonalAgentInstructions } from "../../session-policy.js";
 import {
   cancelActiveSession,
   noteSessionInput,
@@ -307,6 +308,10 @@ async function runAgentSession(
           log: (message) => console.log(message),
         },
       );
+  keepPersonalAgentInstructions(
+    payload.session,
+    payload.personalAgentInstructions,
+  );
   try {
     await executeAgentSession(
       ctx.sessionTransport,

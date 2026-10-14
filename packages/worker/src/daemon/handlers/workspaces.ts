@@ -6,13 +6,17 @@ import {
   type SetupWorkspacePayload,
 } from "@bd777/foundry-protocol";
 import { registerExecutionWorkspace } from "../../repository-registry.js";
+import { forgetPersonalAgentInstructions } from "../../session-policy.js";
 import { sendWebSocket } from "../../transport.js";
 import {
   findMovedWorkspaceFolders,
   relinkWorkspaceFolder,
 } from "../../workspace-folders.js";
 import { inspectWorkspace } from "../../workspace-inspection.js";
-import { existingWorkspaceFolder } from "../../workspace-registration.js";
+import {
+  createWorkspaceFolder,
+  existingWorkspaceFolder,
+} from "../../workspace-registration.js";
 import {
   forgetWorkspaceRegistration,
   initWorkspace,
@@ -75,21 +79,29 @@ export function registerWorkspaceHandlers(dispatch: DaemonDispatch): void {
         );
         return;
       }
-      return reply(ctx, envelope, daemonMessageTypes.workspaceReady, () => {
-        const workspacePath = existingWorkspaceFolder(payload.path);
-        initWorkspace(workspacePath);
-        // Chats work in the folder as soon as it is registered. A folder
-        // without Git is left as it is until the person confirms setting Git
-        // up for its first Issue.
-        prepareForIssues(
-          workspacePath,
-          readWorkspace(workspacePath).id,
-          "workspace",
-        );
-        const registration = ctx.roster.registration(workspacePath);
-        ctx.roster.register(registration);
-        return { registration };
-      });
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.workspaceReady,
+        async () => {
+          // A new project's folder is made first, only inside a managed root.
+          const workspacePath = payload.create
+            ? await createWorkspaceFolder(payload.path, payload.create)
+            : existingWorkspaceFolder(payload.path);
+          initWorkspace(workspacePath);
+          // Chats work in the folder as soon as it is registered. A folder
+          // without Git is left as it is until the person confirms setting Git
+          // up for its first Issue.
+          prepareForIssues(
+            workspacePath,
+            readWorkspace(workspacePath).id,
+            "workspace",
+          );
+          const registration = ctx.roster.registration(workspacePath);
+          ctx.roster.register(registration);
+          return { registration };
+        },
+      );
     })
     .on(daemonMessageTypes.forgetWorkspace, (envelope, ctx) => {
       const payload = envelope.payload as ForgetWorkspacePayload | undefined;
@@ -110,6 +122,8 @@ export function registerWorkspaceHandlers(dispatch: DaemonDispatch): void {
           const workspacePath =
             payload.path || ctx.roster.knownPath(payload.workspaceId) || "";
           forgetWorkspaceRegistration(payload.workspaceId ?? "", workspacePath);
+          if (payload.workspaceId)
+            forgetPersonalAgentInstructions(payload.workspaceId);
           ctx.roster.unregister(payload.workspaceId ?? "", workspacePath);
           return { workspaceId: payload.workspaceId ?? "" };
         },

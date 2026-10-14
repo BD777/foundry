@@ -45,6 +45,11 @@ export interface AgentComposerProps extends PanelProps {
   onAgentChange?: (value: string) => void;
   runtimeControls?: AgentRuntimeControlsProps;
   fixedRuntime?: { runtime: RuntimeKind; model?: string };
+  /**
+   * A conversation whose agent the person neither picks nor sees (the
+   * assistant): no agent pill, picker or runtime controls.
+   */
+  hideAgent?: boolean;
   showPermissions?: boolean;
   side?: "top" | "bottom";
   controlsDisabled?: boolean;
@@ -70,6 +75,7 @@ export function AgentComposer({
   onAgentChange,
   runtimeControls,
   fixedRuntime,
+  hideAgent = false,
   showPermissions = true,
   side = "top",
   controlsDisabled = false,
@@ -104,7 +110,7 @@ export function AgentComposer({
             <Plus size={18} />
           </Button>
         ) : null}
-        {fixedRuntime ? (
+        {hideAgent ? null : fixedRuntime ? (
           <MetaPill
             className="fdy-chat-fixed-runtime"
             mono
@@ -149,7 +155,7 @@ export function AgentComposer({
             {t("composer.noAgent")}
           </MetaPill>
         )}
-        {runtimeControls && !fixedRuntime ? (
+        {runtimeControls && !fixedRuntime && !hideAgent ? (
           <AgentRuntimeControls
             {...runtimeControls}
             showPermissions={

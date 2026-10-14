@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "id": "personal-agent.a11-tighten-now-loosen-confirm",
+  "title": "A11: “ask me before renaming” applies at once; loosening it again needs confirming",
+  "description": "“以后改名前问我” makes update_rules set rename_workspace to ask immediately, so the next rename shows a proposal card. In the settings panel, moving it back to auto needs a second confirmation; from the assistant, loosening becomes a proposal.",
+  "kind": "security",
+  "area": "personal-agent",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "policy", "proposals"],
+  "preconditions": [
+    "Assistant set up with the default policy (rename_workspace auto)."
+  ],
+  "steps": [
+    {
+      "id": "tighten",
+      "action": "type",
+      "target": "assistant message box",
+      "value": "以后改名前问我"
+    },
+    {
+      "id": "rename",
+      "action": "type",
+      "target": "assistant message box",
+      "value": "把『家庭记账』改名叫『家里的账本』"
+    },
+    {
+      "id": "loosen",
+      "action": "select",
+      "target": "rename row in 什么时候先问我",
+      "value": "自动做"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "tighten",
+      "type": "json-shape",
+      "target": "GET /api/personal-agent",
+      "expected": "settings.policy.rename_workspace = ask"
+    },
+    {
+      "afterStep": "rename",
+      "type": "visible",
+      "target": "proposal card for the rename"
+    },
+    {
+      "afterStep": "loosen",
+      "type": "visible",
+      "target": "a second confirmation before saving"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": [
+      "docs/personal-agent.md#4-workspace-生命周期由助理驱动",
+      "scripts/pa-eval-build.mjs",
+      "scripts/pa-eval-run.mjs"
+    ]
+  },
+  "evidence": {
+    "capture": ["screenshot", "response"],
+    "retainOn": "always"
+  },
+  "cleanup": ["Reset the policy to the default preset."]
+}

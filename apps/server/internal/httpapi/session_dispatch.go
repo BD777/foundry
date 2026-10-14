@@ -101,6 +101,11 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		issue = &loaded
 		userFiles = issueUserFiles(loaded, c.actor)
 	}
+	// A digest summary reads its prompt only: without a token it has no
+	// Foundry tools, and it acts as nobody elsewhere (workspace_digests.go).
+	if session.Source == store.DigestSessionSource {
+		return wsRunSessionPayload{Session: session, Profile: profile, Credential: credential}, nil
+	}
 	// Mint a session token per dispatch; earlier ones stay valid. Failure does
 	// not block a run (the web UI needs no token); the agent-facing surface
 	// simply stays unavailable for this process until the next one. A token
@@ -111,10 +116,23 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		sessionToken = ""
 	}
 	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor, c.hasCapability)
+	// The person's assistant runs as one, with its instructions and the
+	// turn's context, every run.
+	var assistantInstructions string
+	if c.hub.assistantRun != nil {
+		run, assistant, err := c.hub.assistantRun(ctx, session)
+		if err != nil {
+			return wsRunSessionPayload{}, fmt.Errorf("prepare the assistant's instructions: %w", err)
+		}
+		if assistant {
+			session.Role, assistantInstructions = store.AgentSessionRolePersonalAgent, run.Instructions
+			session.Input = withTurnContext(session.Input, run.TurnContext)
+		}
+	}
 	return wsRunSessionPayload{
 		Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue,
 		UserFiles: userFiles, Clarification: clarification, ExternalAccounts: connectorUses.ExternalAccounts,
-		DeviceConnectors: connectorUses.DeviceConnectors,
+		DeviceConnectors: connectorUses.DeviceConnectors, PersonalAgentInstructions: assistantInstructions,
 	}, nil
 }
 

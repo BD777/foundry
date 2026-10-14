@@ -29,6 +29,7 @@ type Backend interface {
 	store.DaemonChangeStore
 	store.WorkspaceDeletionStore
 	store.WorkspaceAvailabilityStore
+	store.WorkspaceLifecycleStore
 	store.DeviceSessionStore
 	store.ActiveAgentSessionStore
 	store.QueuedAgentSessionStore
@@ -48,6 +49,8 @@ type Backend interface {
 	store.ResourceLeaseStore
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
+	store.PersonalAgentStore
+	store.WorkspaceDigestStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -79,6 +82,13 @@ type Server struct {
 	store              Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
+	// assistantNotices gathers the events of the assistant's tasks for its
+	// conversations (personal_agent_supervision.go).
+	assistantNotices assistantNotices
+	// assistantDeviceWaits keeps what the assistant could not do while a
+	// computer was offline, for when it is back
+	// (personal_agent_device_back.go).
+	assistantDeviceWaits assistantDeviceWaits
 	// connectors is the Connectors module: people's third-party logins
 	// held here, device-held connectors' metadata, the catalog
 	// (connectors.go, external_accounts.go).
@@ -183,6 +193,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		toolResolver:              skilltools.Resolver{ReleaseAPI: "https://api.github.com", PyPIAPI: "https://pypi.org"},
 	}
 	devices := newDeviceEvents(stream, store, data, server)
+	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessions, issues: issues, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
 	server.initAccounts()
@@ -195,6 +206,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
+	server.hub.assistantRun = server.assistantRunFor
+	sessions.presented = server.presentSession
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus
 	server.hub.onDeviceConnected = func(ctx context.Context, deviceID string, capabilities []string) {
 		go server.checkWaitingRepositories(ctx, deviceID, capabilities)
@@ -203,16 +216,20 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		// Rescans skills until the device goes; it must not hold up the rest.
 		go server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
 		server.resourceLeasesDeviceConnected(ctx, deviceID, capabilities)
+		// The assistant hears what waited for the computer.
+		server.assistantDeviceBack(ctx, deviceID)
 	}
 	server.feishu = feishu.NewWSManager(store, store, server, stream)
 	server.feishu.Integrations = options.Integrations
+	server.feishu.PersonalAgents = personalAgentDesk{server}
 	server.wireFeishuEvents(store, options.Integrations)
 	// What follows a session's changes, in this order: its Feishu card, the
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server})
+	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server})
 	issues.observe(feishuReactions{server.feishu})
+	server.observeWorkspaceDigests(sessions, issues)
 	return server
 }
 

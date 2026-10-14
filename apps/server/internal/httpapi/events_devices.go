@@ -20,6 +20,10 @@ type deviceEvents struct {
 	store   store.Store
 	data    *dataChanges
 	devices deviceProjector
+	// reauthorizeOwner ends the streams of a device's owner, which reconnect
+	// with the owner's reach as it is now (streamReach is fixed when one
+	// opens).
+	reauthorizeOwner func(ctx context.Context, deviceID string)
 }
 
 // deviceProjector is the device as its event carries it (see
@@ -77,8 +81,14 @@ func (e *deviceEvents) changed(ctx context.Context, deviceID string) bool {
 }
 
 // reported announces what a device's report changed that its status event
-// does not carry.
-func (e *deviceEvents) reported(changes store.DaemonChanges) {
+// does not carry. A workspace new on the device makes its owner an owner of
+// it (ensureDeviceOwnerMembership): their streams reconnect to receive it,
+// or a workspace created behind their back, such as one their assistant
+// made, would never show its sessions until they reload.
+func (e *deviceEvents) reported(ctx context.Context, deviceID string, changes store.DaemonChanges) {
+	if changes.Parts.NewWorkspace && e.reauthorizeOwner != nil {
+		e.reauthorizeOwner(ctx, deviceID)
+	}
 	global, workspace := daemonChangeFields(changes.Parts)
 	if changes.Global {
 		e.data.changed("", global...)
@@ -116,4 +126,12 @@ func daemonChangeFields(parts store.DaemonChangedParts) (global, workspace []str
 	add(&workspace, parts.WorkspaceFiles, fieldWorkspaceFiles)
 	add(&workspace, parts.Chats, fieldChats)
 	return global, workspace
+}
+
+// reauthorizeDeviceOwner ends the event streams of the device's owner (see
+// deviceEvents.reauthorizeOwner).
+func (s *Server) reauthorizeDeviceOwner(ctx context.Context, deviceID string) {
+	if owner, err := s.store.DeviceOwner(ctx, deviceID); err == nil {
+		s.stream.Reauthorize(owner)
+	}
 }

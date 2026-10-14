@@ -35,7 +35,7 @@ export function Conversation(props: ConversationProps) {
     input.action === "sending"
       ? t("composer.sending")
       : input.action === "stop"
-        ? t("composer.stop")
+        ? (props.stopLabel ?? t("composer.stop"))
         : (props.sendLabel ?? t("composer.send"));
   return (
     <div className="fdy-chat-conversation">
@@ -102,6 +102,7 @@ export function Conversation(props: ConversationProps) {
           fixedRuntime={
             props.composer.mode === "fixed" ? props.composer : undefined
           }
+          hideAgent={props.composer.mode === "plain"}
           fileInput={
             props.onAttachmentsAdd
               ? {

@@ -122,9 +122,9 @@ func (s *Store) listAgentSessions(ctx context.Context, workspaceID string) ([]st
 	var sessions []store.AgentSession
 	var err error
 	if workspaceID != "" {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE workspace_id = ? AND (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`, workspaceID)
 	} else {
-		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') <> 'naming' OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
+		sessions, err = listJSON[store.AgentSession](ctx, s.reader(), `SELECT json_set(json_remove(payload_json, '$.events'), '$.lastActivityAt', updated_at) FROM agent_sessions WHERE (COALESCE(json_extract(payload_json, '$.source'), '') NOT IN ('naming', 'digest') OR status IN ('queued','running')) AND `+visibleAgentSessionSQL+` ORDER BY activity_at DESC, id DESC LIMIT 80`)
 	}
 	if err != nil {
 		return nil, err
@@ -315,8 +315,8 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 	if err != nil {
 		return sessionStart{}, err
 	}
-	if source == "naming" && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
-		return sessionStart{}, errors.New("naming must start an independent session without inherited context")
+	if (source == "naming" || source == store.DigestSessionSource) && (input.NativeSessionID != "" || input.ChatID != "" || input.ForkSessionID != "" || input.ImportedContext != "" || input.ProfileTransitionNote != "" || len(input.Attachments) > 0) {
+		return sessionStart{}, errors.New("naming and digest sessions must start independent, without inherited context")
 	}
 	deleted, err := s.chatDeleted(ctx, agent.WorkspaceID, "", agent.Provider, strings.TrimSpace(input.NativeSessionID))
 	if err != nil {
@@ -344,7 +344,7 @@ func (s *Store) checkSessionStart(ctx context.Context, input store.CreateAgentSe
 // a chat.
 func agentSessionSource(requested string) string {
 	source := strings.TrimSpace(requested)
-	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" {
+	if source != "diagnostic" && source != "naming" && source != "agent" && source != "verification" && source != store.DigestSessionSource {
 		return "chat"
 	}
 	return source
@@ -411,6 +411,9 @@ func (s *Store) checkSessionIssue(ctx context.Context, issueID string, workspace
 func (start sessionStart) record(id string, inputID string, now time.Time) store.AgentSession {
 	input := start.input
 	titleInput := start.prompt
+	if title := strings.TrimSpace(input.Title); title != "" {
+		titleInput = title
+	}
 	if titleInput == "" && len(start.attachments) > 0 {
 		titleInput = start.attachments[0].Name
 		if len(start.attachments) > 1 {
@@ -656,7 +659,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		if isActiveAgentSession(session.Status) {
 			return store.ErrAgentSessionActive
 		}
-		if session.Source == "naming" || session.Source == "diagnostic" {
+		if session.Source == "naming" || session.Source == "diagnostic" || session.Source == store.DigestSessionSource {
 			return errors.New("utility sessions take no further input")
 		}
 		if session.Role != "" {

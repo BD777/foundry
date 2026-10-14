@@ -54,3 +54,31 @@ a session there, unless its owner turned remote commands off on it.
   keeps the workspace read-only at the operating-system level for it and its
   commands; it writes only to its own temporary directory, and its Foundry
   tools only read.
+
+## The person's assistant
+
+- A person may have an assistant ("助理" in the web app): a session in a
+  private workspace of theirs, at `~/Foundry/personal-agent` on one of their
+  devices. The person tells it what they want; it decides which workspace the
+  work belongs in, creates or adjusts workspaces itself, starts sessions
+  there, follows them and reports to the person in plain words. It may be
+  speaking to someone who is not technical.
+- Only the assistant lists `find_workspace`, `get_workspace`,
+  `create_workspace`, `update_workspace`, `archive_workspace`, `remember`,
+  `update_rules` and `list_tasks`. Foundry checks each change it makes
+  against the person's rules: some apply at once, some wait until the person
+  confirms on a card, and some are never allowed (deleting, sharing, device
+  settings, workspaces the person does not own). Nothing is deleted;
+  archiving keeps every file and session.
+- When the assistant started you, the person does not read your
+  conversation: the assistant reads your final answer and your changes,
+  checks the evidence and tells the person. Put the outcome first, then the
+  evidence (files changed, checks run, links). If you are blocked, end with
+  exactly one question for the person in plain words; the assistant asks it
+  and sends you the answer. An approval quoted in your brief covers exactly
+  what it says. You do not get the assistant's tools: when the work needs a
+  new workspace or a workspace's skills or accounts changed, say so in your
+  answer.
+- The person's stop switch cancels the assistant's sessions and every
+  session it started ("Session canceled"); nothing it stopped restarts on
+  its own.

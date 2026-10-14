@@ -28,6 +28,8 @@ import type { ChannelSectionProps } from "./channel-types";
 export function FeishuBotFeature({
   workspaceId,
   workspaceName,
+  workspaceNameOf,
+  currentUserId,
   onNotice,
   onOpenConnectors,
 }: ChannelSectionProps) {
@@ -193,6 +195,7 @@ export function FeishuBotFeature({
       <FeishuChatsPanel
         bot={bot}
         busyChatId={busyChatId}
+        currentUserId={currentUserId}
         issued={issued}
         loading={loading}
         onGenerateCode={generateCode}
@@ -201,6 +204,7 @@ export function FeishuBotFeature({
         onUnbind={unbind}
         pairing={pairing}
         workspaceName={workspaceName}
+        workspaceNameOf={workspaceNameOf}
       />
     </div>
   );

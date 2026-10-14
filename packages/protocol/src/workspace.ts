@@ -17,7 +17,17 @@ export interface WorkspaceProjection {
    * history stay; adding the folder on the device again clears it.
    */
   unavailableOnDevice?: WorkspaceUnavailability;
+  /** Absent means "project". */
+  kind?: WorkspaceKind;
+  /**
+   * Set while archived: hidden in an "Archived" group, starts no sessions,
+   * everything kept. Restoring clears it.
+   */
+  archivedAt?: string;
 }
+
+/** Every workspace is a project except each person's Personal Agent Workspace. */
+export type WorkspaceKind = "project" | "personal_agent";
 
 /** Why a workspace cannot run on its device. */
 export interface WorkspaceUnavailability {

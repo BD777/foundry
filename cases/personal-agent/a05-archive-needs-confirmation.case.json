@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "id": "personal-agent.a05-archive-needs-confirmation",
+  "title": "A5: archiving a project the assistant did not create needs the person's yes; a session token cannot give it",
+  "description": "Asked to archive a project it did not create, the assistant's archive_workspace returns needs_confirmation and a card appears. Allowed path: the person's cookie accepts and the project is archived with its files and records intact. Rejected path: POST /api/personal-agent/proposals/{id}/accept with the assistant session's token (and with a device credential) is refused.",
+  "kind": "security",
+  "area": "personal-agent",
+  "risk": "critical",
+  "cadence": ["release", "manual"],
+  "tags": [
+    "personal-agent",
+    "proposals",
+    "authorization",
+    "separation-of-duties"
+  ],
+  "preconditions": [
+    "Assistant set up; a project the person owns that the assistant did not create."
+  ],
+  "steps": [
+    {
+      "id": "request",
+      "action": "type",
+      "target": "assistant message box",
+      "value": "把『旧博客』收起来吧，不用了"
+    },
+    {
+      "id": "token-accept",
+      "action": "request",
+      "target": "POST /api/personal-agent/proposals/{id}/accept with the assistant session's bearer token"
+    },
+    {
+      "id": "device-accept",
+      "action": "request",
+      "target": "POST /api/personal-agent/proposals/{id}/accept with the device credential"
+    },
+    {
+      "id": "person-accept",
+      "action": "click",
+      "target": "button named 好的 on the proposal card"
+    },
+    {
+      "id": "inspect",
+      "action": "inspect",
+      "target": "the project's folder and its chats"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "request",
+      "type": "visible",
+      "target": "proposal card asking to put the project away, with 好的 and 不用了"
+    },
+    {
+      "afterStep": "token-accept",
+      "type": "status",
+      "target": "accept with a session token",
+      "expected": 403
+    },
+    {
+      "afterStep": "device-accept",
+      "type": "status",
+      "target": "accept with a device credential",
+      "expected": 403
+    },
+    {
+      "afterStep": "person-accept",
+      "type": "json-shape",
+      "target": "GET /api/workspaces/{id}",
+      "expected": "archivedAt set"
+    },
+    {
+      "afterStep": "inspect",
+      "type": "text",
+      "target": "folder and chats",
+      "expected": "unchanged"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": [
+      "docs/personal-agent.md#4-workspace-生命周期由助理驱动",
+      "packages/protocol/src/personal-agent.ts"
+    ]
+  },
+  "evidence": {
+    "capture": ["screenshot", "response", "network"],
+    "retainOn": "always"
+  },
+  "cleanup": [
+    "Restore the project (restore is automatic for the assistant, or the Workspaces page)."
+  ]
+}

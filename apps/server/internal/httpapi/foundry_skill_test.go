@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/builtinskills"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -63,6 +64,12 @@ func TestFoundryToolLimitsNameTheEnforcedNumbers(t *testing.T) {
 			fmt.Sprintf("cut to %d characters", inspectInputLimit),
 			fmt.Sprintf("the answer to %d", inspectAnswerLimit),
 		},
+		"find_workspace": {fmt.Sprintf("At most %d candidates", personalagent.FindWorkspaceLimit)},
+		"get_workspace":  {fmt.Sprintf("at most %d KiB", personalagent.DigestSourceBytes>>10)},
+		"remember":       {fmt.Sprintf("at most %d characters", personalagent.MemoryItemMaxChars)},
+		"create_workspace": {fmt.Sprintf("At most %d new projects a day and %d a week by default (at most %d and %d)",
+			personalagent.DefaultLimits.DailyWorkspaces, personalagent.DefaultLimits.WeeklyWorkspaces,
+			personalagent.LimitCaps.DailyWorkspaces, personalagent.LimitCaps.WeeklyWorkspaces)},
 	} {
 		for _, phrase := range want {
 			if !strings.Contains(limits[tool], phrase) {
@@ -103,10 +110,13 @@ func TestFoundrySkillShowsWhatAgentsGet(t *testing.T) {
 		}
 	}
 	for tool, want := range map[string][]string{
-		"read_context":   {"session", "issue_execution", "issue_clarification", "verifier"},
-		"get_issue":      {"session", "issue_execution", "verifier"},
-		"create_session": {"session", "issue_execution"},
-		"ask_person":     {"issue_execution"},
+		"read_context":     {"session", "issue_execution", "issue_clarification", "verifier", "personal_agent"},
+		"get_issue":        {"session", "issue_execution", "verifier", "personal_agent"},
+		"create_session":   {"session", "issue_execution", "personal_agent"},
+		"ask_person":       {"issue_execution"},
+		"acquire_resource": {"session", "issue_execution"},
+		"feishu_events":    {"session", "issue_execution"},
+		"remember":         {"personal_agent"},
 	} {
 		if !slices.Equal(roles[tool], want) {
 			t.Errorf("%s roles = %v, want %v", tool, roles[tool], want)

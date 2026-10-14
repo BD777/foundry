@@ -104,6 +104,14 @@ type WSManager struct {
 	// Credentials reads a bot app's secret where the server holds it (its
 	// Connectors app).
 	Credentials feishuevents.CredentialSource
+	// PersonalAgents is the person's assistant as their direct chat reaches
+	// it (personal_agent.go); nil: direct chats go where their route points.
+	PersonalAgents PersonalAgentDesk
+	// assistantTopics are the assistant conversations started or continued
+	// in Feishu, by session; proposalCards the proposal cards posted, by
+	// proposal. Both live in memory only, as the cards a topic follows do.
+	assistantTopics map[string]assistantTopic
+	proposalCards   map[string]proposalCard
 	// newClient builds the client a bot replies with; tests swap it.
 	newClient func(appID, appSecret, baseURL string) botClient
 }
@@ -121,6 +129,9 @@ func NewWSManager(s store.Store, secrets SecretProvider, disp SessionDispatcher,
 		failed:       make(map[string]string),
 		sessions:     make(map[string]*sessionMetadata),
 		newClient:    func(appID, appSecret, baseURL string) botClient { return NewClient(appID, appSecret, baseURL) },
+
+		assistantTopics: make(map[string]assistantTopic),
+		proposalCards:   make(map[string]proposalCard),
 	}
 }
 
@@ -311,9 +322,14 @@ func (m *WSManager) WorkspaceBot(ctx context.Context, workspaceID string) (store
 		if routes[index].Kind == store.FeishuRoutePairing {
 			pairing = &routes[index]
 		} else {
-			view.Chats = append(view.Chats, routes[index])
+			view.Chats = append(view.Chats, m.withAssistant(ctx, routes[index]))
 		}
 	}
+	assistantChats, err := m.assistantChatsOf(ctx, workspaceID)
+	if err != nil {
+		return view, err
+	}
+	view.Chats = append(view.Chats, assistantChats...)
 	if pairing == nil {
 		return view, nil
 	}
@@ -335,6 +351,36 @@ func (m *WSManager) WorkspaceBot(ctx context.Context, workspaceID string) (store
 		view.Status, view.StatusDetail = store.FeishuBotStatusError, "the app has no secret on this server: paste it in Connectors"
 	}
 	return view, nil
+}
+
+// withAssistant marks a direct chat its person's assistant takes.
+func (m *WSManager) withAssistant(ctx context.Context, route store.FeishuBotRoute) store.FeishuBotRoute {
+	if assistant := m.assistantFor(ctx, route); assistant != nil {
+		route.AssistantWorkspaceID = assistant.route.WorkspaceID
+	}
+	return route
+}
+
+// assistantChatsOf are the direct chats paired with other workspaces that
+// go to workspaceID because it is their person's assistant's.
+func (m *WSManager) assistantChatsOf(ctx context.Context, workspaceID string) ([]store.FeishuBotRoute, error) {
+	if m.PersonalAgents == nil {
+		return nil, nil
+	}
+	routes, err := m.store.ListFeishuBotRoutes(ctx, store.FeishuBotRouteFilter{})
+	if err != nil {
+		return nil, err
+	}
+	chats := []store.FeishuBotRoute{}
+	for _, route := range routes {
+		if route.Kind != store.FeishuRouteP2P || route.WorkspaceID == workspaceID {
+			continue
+		}
+		if route = m.withAssistant(ctx, route); route.AssistantWorkspaceID == workspaceID {
+			chats = append(chats, route)
+		}
+	}
+	return chats, nil
 }
 
 // describeApp fills what a Connectors app's record does not hold: whether
@@ -390,6 +436,10 @@ func (m *WSManager) HandleEvent(ctx context.Context, event feishuevents.Event) {
 		m.handleChatUpdated(ctx, event)
 		return
 	}
+	if event.Type == cardActionTriggered {
+		m.handleCardAction(ctx, event)
+		return
+	}
 	if event.Type != messageReceived {
 		return
 	}
@@ -413,7 +463,9 @@ const messageReceived = "im.message.receive_v1"
 // Foundry topic thread steers that topic's session in its workspace; "/pair
 // <code>" binds the chat to the code's workspace; a message in a routed chat
 // (mentioning the bot in a group; any in a direct chat) starts a topic in
-// the chat's workspace. Everything else is dropped.
+// the chat's workspace. Everything else is dropped. A direct chat the
+// person's assistant takes goes to the assistant's workspace, and its fixed
+// words are handled before any of that reaches the model.
 func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larkim.P2MessageReceiveV1) error {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return nil
@@ -447,30 +499,36 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 		return m.handlePairCommand(ctx, app, messageID, chatID, chatType, senderOpenID(event), cleanText)
 	}
 	inThread := rootID != "" && rootID != messageID
-	if inThread {
-		if thread, err := m.store.GetFeishuChatThread(ctx, rootID); err == nil && thread.ChatID == chatID {
-			if route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID); err == nil && route.WorkspaceID == thread.WorkspaceID {
-				if thread.IssueID != "" {
-					return m.handleIssueReply(ctx, route, app.client, messageID, thread, cleanText)
-				}
-				return m.handleTopicFollowUp(ctx, route, app, messageID, thread, incoming)
+	sender := senderOpenID(event)
+	chat, routeErr := m.chatRoute(ctx, app, chatID)
+	route := chat.FeishuBotRoute
+	if inThread && routeErr == nil {
+		if thread, err := m.store.GetFeishuChatThread(ctx, rootID); err == nil && thread.ChatID == chatID && route.WorkspaceID == thread.WorkspaceID {
+			if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, thread.LatestSessionID, sender, cleanText) {
+				return nil
 			}
+			if thread.IssueID != "" {
+				return m.handleIssueReply(ctx, route, app.client, messageID, thread, cleanText)
+			}
+			return m.handleTopicFollowUp(ctx, route, app, messageID, thread, incoming, chat.assistant != nil)
 		}
 	}
-	route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, chatID)
-	if err != nil {
+	if routeErr != nil {
 		log.Printf("[feishu] message in chat %s of app %s dropped: the chat is not paired with a workspace", chatID, app.clientID)
 		return nil
 	}
-	m.notePeer(ctx, route, senderOpenID(event))
+	m.notePeer(ctx, chat.stored, sender)
 	hasMention := len(msg.Mentions) > 0 || strings.Contains(rawContent, "@_user_")
 	if !hasMention && route.Kind != store.FeishuRouteP2P {
+		return nil
+	}
+	if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, "", sender, cleanText) {
 		return nil
 	}
 	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.issueDesk() != nil {
 		return m.handleNewIssue(ctx, route, app.client, messageID, chatID, strings.TrimSpace(goal))
 	}
-	return m.handleNewTopic(ctx, route, app, messageID, chatID, incoming)
+	return m.handleNewTopic(ctx, route, app, messageID, chatID, incoming, chat.assistant != nil)
 }
 
 func (m *WSManager) replyFailure(ctx context.Context, client botClient, messageID, title, detail, reason string) {
@@ -499,8 +557,15 @@ func (m *WSManager) handlePairCommand(ctx context.Context, app *botApp, messageI
 		return nil
 	}
 	wsName := pairing.WorkspaceID
-	if workspace, err := m.store.GetWorkspace(ctx, pairing.WorkspaceID); err == nil && workspace.Name != "" {
+	workspace, err := m.store.GetWorkspace(ctx, pairing.WorkspaceID)
+	if err == nil && workspace.Name != "" {
 		wsName = workspace.Name
+	}
+	// The assistant answers only its person's direct chat: no group context
+	// reaches it, and what it knows about the person reaches no group.
+	if err == nil && workspace.Kind == store.WorkspaceKindPersonalAgent && chatType != "p2p" {
+		m.replyFailure(ctx, app.client, messageID, "配对失败", "助理只在单聊里回答，不能绑定到群。请在和机器人的单聊里发送这个配对码。", "不支持群聊")
+		return nil
 	}
 	chat := store.FeishuBotRoute{Kind: store.FeishuRouteChat, ChatID: chatID, BoundUserID: pairing.PairingCodeCreatedBy}
 	var nameErr error
@@ -544,7 +609,9 @@ func topicTitle(prompt string) string {
 	return prompt
 }
 
-func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID string, message incomingMessage) error {
+// handleNewTopic starts a session for the message, in a topic of its own;
+// assistant marks the person's assistant's conversation.
+func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID, chatID string, message incomingMessage, assistant bool) error {
 	title := topicTitle(message.text)
 	cardMessageID, err := app.client.ReplyCard(ctx, messageID, BuildRunningCard(title, "正在理解任务并启动智能体会话...", "启动中"))
 	if err != nil {
@@ -575,15 +642,24 @@ func (m *WSManager) handleNewTopic(ctx context.Context, route store.FeishuBotRou
 		LatestSessionID: session.ID,
 		CardMessageID:   cardMessageID,
 	})
-	m.mu.Lock()
-	m.sessions[session.ID] = &sessionMetadata{
+	m.follow(session.ID, &sessionMetadata{
 		workspaceID: route.WorkspaceID, clientID: app.clientID, cardMessageID: cardMessageID, title: title, startTime: time.Now(),
-	}
-	m.mu.Unlock()
+	}, assistant, chatID, messageID)
 	return nil
 }
 
-func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID string, thread store.FeishuChatThread, message incomingMessage) error {
+// follow has the card follow the session's turn; the assistant's
+// conversation is remembered with its topic, for the turns that follow.
+func (m *WSManager) follow(sessionID string, meta *sessionMetadata, assistant bool, chatID, rootMessageID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions[sessionID] = meta
+	if assistant {
+		m.assistantTopics[sessionID] = assistantTopic{clientID: meta.clientID, chatID: chatID, rootMessageID: rootMessageID, title: meta.title}
+	}
+}
+
+func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuBotRoute, app *botApp, messageID string, thread store.FeishuChatThread, message incomingMessage, assistant bool) error {
 	if _, refusal := m.boundUser(ctx, route); refusal != "" {
 		m.replyFailure(ctx, app.client, messageID, "无法继续", refusal, "无权执行")
 		return nil
@@ -615,11 +691,9 @@ func (m *WSManager) handleTopicFollowUp(ctx context.Context, route store.FeishuB
 	}
 	thread.CardMessageID = cardMessageID
 	_ = m.store.SaveFeishuChatThread(ctx, thread)
-	m.mu.Lock()
-	m.sessions[session.ID] = &sessionMetadata{
+	m.follow(session.ID, &sessionMetadata{
 		workspaceID: route.WorkspaceID, clientID: app.clientID, cardMessageID: cardMessageID, title: title, startTime: time.Now(),
-	}
-	m.mu.Unlock()
+	}, assistant, thread.ChatID, thread.RootMessageID)
 	return nil
 }
 
@@ -633,7 +707,7 @@ func (m *WSManager) threadApp(ctx context.Context, thread store.FeishuChatThread
 	}
 	m.mu.RUnlock()
 	for _, app := range apps {
-		if route, err := m.store.FindFeishuChatRoute(ctx, app.clientID, thread.ChatID); err == nil && route.WorkspaceID == thread.WorkspaceID {
+		if chat, err := m.chatRoute(ctx, app, thread.ChatID); err == nil && chat.WorkspaceID == thread.WorkspaceID {
 			return app
 		}
 	}
@@ -691,12 +765,19 @@ func (m *WSManager) SessionEventRecorded(event store.AgentSessionEvent) {
 }
 
 // SessionEnded settles the card of the topic that started the session with
-// its answer, or why it failed; the topic's card follows it no longer.
+// its answer, or why it failed; the topic's card follows it no longer. A
+// turn of the assistant's conversation that Feishu did not start (the
+// answer to a task's event or to an accepted proposal) is told in its
+// topic's thread.
 func (m *WSManager) SessionEnded(session store.AgentSession) {
 	m.mu.Lock()
 	meta, ok := m.sessions[session.ID]
 	if !ok {
+		topic, isAssistant := m.assistantTopics[session.ID]
 		m.mu.Unlock()
+		if isAssistant {
+			m.tellAssistantTurn(context.Background(), topic, session)
+		}
 		return
 	}
 	delete(m.sessions, session.ID)

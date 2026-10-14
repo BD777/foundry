@@ -136,10 +136,18 @@ export function isDiagnosticSession(session: AgentSession): boolean {
 }
 
 /**
- * Sessions Foundry starts for itself (diagnostics, naming): read-only, a few
- * turns, no tools beyond reading. A verifier is a role of its own
- * (session-roles.ts).
+ * Sessions Foundry starts for itself (diagnostics, naming, the Personal
+ * Agent's digest summaries): read-only, a few turns, no tools beyond reading
+ * and no Foundry tools. A verifier is a role of its own (session-roles.ts).
  */
 export function isUtilitySession(session: AgentSession): boolean {
-  return isDiagnosticSession(session) || session.source === "naming";
+  return isDiagnosticSession(session) || isPromptOnlySession(session);
+}
+
+/**
+ * Naming and digest sessions read only their prompt, which carries all
+ * their data: no tools at all, nothing added to the prompt.
+ */
+export function isPromptOnlySession(session: AgentSession): boolean {
+  return session.source === "naming" || session.source === "digest";
 }

@@ -224,7 +224,7 @@ func (s *Server) foundryData(ctx context.Context, workspaceID string, view visib
 	if workspaceID != "" && workspaceID != noWorkspaceSelected && !view.scope.can(workspaceID, store.WorkspaceRoleViewer) {
 		return foundryDataAnswer{}, store.ErrNotFound
 	}
-	workspace, err := selectWorkspace(ctx, s.store, workspaces, workspaceID)
+	workspace, err := selectWorkspace(ctx, s.store, s.defaultWorkspacesFirst(ctx, view.scope.userID, workspaces), workspaceID)
 	if err != nil {
 		return foundryDataAnswer{}, err
 	}
@@ -387,7 +387,7 @@ func (s *Server) workspaceSections(ctx context.Context, workspaceID string, cata
 			if err != nil {
 				return err
 			}
-			data.AgentSessions = withoutRepeatedPrompts(summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, sessions)))
+			data.AgentSessions = s.presentSessions(ctx, withoutRepeatedPrompts(summarizeAgentSessionsForList(s.reconcileAgentSessions(ctx, sessions))))
 			return nil
 		}},
 		{[]string{fieldAssets}, "ListAssets", func() (err error) {

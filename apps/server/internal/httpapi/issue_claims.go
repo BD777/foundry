@@ -44,6 +44,11 @@ func (c *daemonConnection) claimAndSend() {
 		ids = append(ids, registration.Workspace.ID)
 	}
 	sort.Strings(ids)
+	// An archived workspace starts no work, its Issues' included.
+	ids = slices.DeleteFunc(ids, func(id string) bool { return archivedWorkspace(context.Background(), c.hub.store, id) != nil })
+	if len(ids) == 0 {
+		return
+	}
 	capacity := 4
 	if registration.Device.RuntimeSettings != nil && registration.Device.RuntimeSettings.MaxConcurrentTasks > 0 {
 		capacity = registration.Device.RuntimeSettings.MaxConcurrentTasks

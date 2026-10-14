@@ -3,8 +3,12 @@ import { register } from "node:module";
 import test from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
-const { chatStartedByLabel, chatThreadsFromSessions, isChatSession } =
-  await import("../src/features/chat/chat-session-model.ts");
+const {
+  chatHasQueue,
+  chatStartedByLabel,
+  chatThreadsFromSessions,
+  isChatSession,
+} = await import("../src/features/chat/chat-session-model.ts");
 const { i18n } = await import("../src/i18n/index.ts");
 
 function session(id, extra = {}) {
@@ -138,4 +142,20 @@ test("a chat whose starter the list does not hold names another session", () => 
       title: i18n.t("chat:listRow.anotherSession"),
     }),
   );
+});
+
+test("only a person's own chat or a native chat has a server queue", () => {
+  assert.equal(chatHasQueue("sess_parent", [parent]), true);
+  assert.equal(chatHasQueue("sess_old", [session("sess_old")]), true);
+  assert.equal(chatHasQueue("native_1", []), true);
+  const helper = session("sess_helper", {
+    source: "agent",
+    parentSessionId: "sess_parent",
+  });
+  assert.equal(chatHasQueue("sess_helper", [helper]), false);
+  const assistant = session("sess_pa", {
+    source: "chat",
+    role: "personal_agent",
+  });
+  assert.equal(chatHasQueue("sess_pa", [assistant]), false);
 });
