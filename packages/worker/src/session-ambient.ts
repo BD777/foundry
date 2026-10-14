@@ -10,7 +10,7 @@ import {
 } from "./profiles.js";
 import { currentInput } from "./session-prompt.js";
 import { registerKnownSecret } from "./secret-redaction.js";
-import { sessionExternalAccountEnvironment } from "./external-accounts.js";
+import { sessionConnectorEnvironment } from "./connectors/index.js";
 
 /**
  * Per-session ambient environment (CHAT-01).
@@ -112,7 +112,7 @@ export function sessionEnvironment(
     PATH: withManagedTools(base.PATH),
     ...profileRuntimeEnvironment(profile, session),
     ...sessionAmbientEnvironment(session?.id),
-    ...sessionExternalAccountEnvironment(session?.id),
+    ...sessionConnectorEnvironment(session?.id),
     FOUNDRY_ATTACHMENTS_JSON: JSON.stringify(
       session ? (currentInput(session).attachments ?? []) : [],
     ),

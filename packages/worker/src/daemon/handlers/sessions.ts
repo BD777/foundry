@@ -6,7 +6,7 @@ import {
   type RunSessionPayload,
   type SteerSessionPayload,
 } from "@bd777/foundry-protocol";
-import { materializeSessionAccounts } from "../../external-accounts.js";
+import { prepareSessionConnectors } from "../../connectors/index.js";
 import {
   prepareClarification,
   recoveredClarificationCompletion,
@@ -292,13 +292,16 @@ async function runAgentSession(
           ambient,
         )
       : undefined;
-  // Its tool profiles live while this run does; a run that never
-  // returns (a killed worker) leaves them to the next start's reap.
+  // Its connectors' tool profiles live while this run does; a run that
+  // never returns (a killed worker) leaves them to the next start's reap.
   const accounts = clarification
     ? undefined
-    : await materializeSessionAccounts(
+    : await prepareSessionConnectors(
         payload.session,
-        payload.externalAccounts,
+        {
+          externalAccounts: payload.externalAccounts,
+          deviceConnectors: payload.deviceConnectors,
+        },
         {
           serverURL: ctx.serverURL,
           log: (message) => console.log(message),

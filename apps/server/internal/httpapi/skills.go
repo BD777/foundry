@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/builtinskills"
@@ -66,6 +67,9 @@ type wsScanSkillsPayload struct {
 	Roots []string `json:"roots"`
 	// Tools are programs library skills need; the daemon says which it has.
 	Tools []string `json:"tools,omitempty"`
+	// KnownDigest is the digest of the device's last answer the server
+	// keeps (see keptSkillScans); the same answer comes back as Unchanged.
+	KnownDigest string `json:"knownDigest,omitempty"`
 }
 
 // wsSkillsScannedPayload is the daemon's scan result. Device id is stamped by
@@ -77,6 +81,63 @@ type wsSkillsScannedPayload struct {
 	Tools map[string]bool `json:"tools,omitempty"`
 	// ToolVersions are the tool versions Foundry installed on the device.
 	ToolVersions map[string]string `json:"toolVersions,omitempty"`
+	// Digest is the device's digest of its answer; older daemons leave it
+	// out. Unchanged: the answer is the one the request's KnownDigest names,
+	// and only the digest came.
+	Digest    string `json:"digest,omitempty"`
+	Unchanged bool   `json:"unchanged,omitempty"`
+}
+
+// keptSkillScans keeps each device's last skill scan answer, as JSON, by
+// the digest the device gave it, while the server runs. A device whose
+// skills did not change (the scan on every reconnect, the half-hourly one)
+// answers "unchanged" instead of sending them all again: byte-dev's answer
+// was ~620 KB over a 5-20 KB/s uplink. The kept answer is then stored
+// exactly as if it had come again.
+type keptSkillScans struct {
+	mu      sync.Mutex
+	answers map[string]keptSkillScan
+}
+
+type keptSkillScan struct {
+	digest string
+	data   []byte
+}
+
+func (k *keptSkillScans) known(deviceID string) keptSkillScan {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.answers[deviceID]
+}
+
+func (k *keptSkillScans) keep(deviceID string, answer wsSkillsScannedPayload) {
+	if answer.Digest == "" || answer.Unchanged {
+		return
+	}
+	data, err := json.Marshal(answer)
+	if err != nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.answers == nil {
+		k.answers = map[string]keptSkillScan{}
+	}
+	k.answers[deviceID] = keptSkillScan{digest: answer.Digest, data: data}
+}
+
+// scanAnswer is the device's answer to a scan, the kept one when the device
+// said it is unchanged.
+func scanAnswer(answer wsSkillsScannedPayload, kept keptSkillScan) (wsSkillsScannedPayload, error) {
+	if !answer.Unchanged {
+		return answer, nil
+	}
+	if kept.digest == "" || answer.Digest != kept.digest {
+		return wsSkillsScannedPayload{}, errors.New("the device answered the skill scan with an answer the server does not have")
+	}
+	var whole wsSkillsScannedPayload
+	err := json.Unmarshal(kept.data, &whole)
+	return whole, err
 }
 
 // deviceToolStore records which programs skills need a device has.
@@ -191,16 +252,21 @@ func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots
 	if connection == nil {
 		return nil, false, store.ErrNotFound
 	}
-	request, err := json.Marshal(wsScanSkillsPayload{Roots: roots, Tools: libraryTools(ctx, h.store)})
+	kept := h.skillScanAnswers.known(deviceID)
+	request, err := json.Marshal(wsScanSkillsPayload{Roots: roots, Tools: libraryTools(ctx, h.store), KnownDigest: kept.digest})
 	if err != nil {
 		return nil, false, err
 	}
-	value, err := daemonRequest[wsSkillsScannedPayload](ctx, connection, wsScanSkillsType, request)
+	answer, err := daemonRequest[wsSkillsScannedPayload](ctx, connection, wsScanSkillsType, request)
 	if err != nil {
 		return nil, false, err
 	}
-	if value.Error != "" {
-		return nil, false, errors.New(value.Error)
+	if answer.Error != "" {
+		return nil, false, errors.New(answer.Error)
+	}
+	value, err := scanAnswer(answer, kept)
+	if err != nil {
+		return nil, false, err
 	}
 	skills := value.Skills
 	for i := range skills {
@@ -220,6 +286,7 @@ func (h *DaemonHub) scanDeviceSkills(ctx context.Context, deviceID string, roots
 		}
 		changed = changed || toolsChanged
 	}
+	h.skillScanAnswers.keep(deviceID, value)
 	listed, err := h.store.ListDeviceSkills(ctx, deviceID)
 	return listed, changed, err
 }

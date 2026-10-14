@@ -38,7 +38,7 @@ import {
 } from "./skill-isolation.js";
 import { currentInput, sessionPrompt } from "./session-prompt.js";
 import { sessionResourceNotes } from "./resource-pool.js";
-import { sessionExternalAccountNote } from "./external-accounts.js";
+import { sessionConnectorNote } from "./connectors/index.js";
 import {
   clarificationFoundryTools,
   claudeRoleOptions,
@@ -249,7 +249,7 @@ export function sessionDeviceNotes(
       usesSessionScratch(session) ? session.id : undefined,
       session.id,
     ),
-    sessionExternalAccountNote(session.id),
+    sessionConnectorNote(session.id),
   ]
     .filter(Boolean)
     .join("\n");

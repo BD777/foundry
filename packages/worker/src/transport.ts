@@ -8,6 +8,7 @@ import {
   sessionTurnsFeature,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
+import { socketMeter } from "./send-meter.js";
 
 interface WebSocketSender {
   readonly readyState: number;
@@ -17,6 +18,7 @@ interface WebSocketSender {
 }
 
 interface PendingSessionEnvelope {
+  type: string;
   coalesceKey?: string;
   /** The envelope as written: serialized once, however often it is sent. */
   data: string;
@@ -30,6 +32,8 @@ interface PendingSessionEnvelope {
   writtenAt?: number;
   /** Written again on this socket because no answer came (see checkAnswers). */
   resent: boolean;
+  /** Unacknowledged when the socket it goes on was bound (see send-meter). */
+  replay: boolean;
 }
 
 /** What the outbox holds, as the worker's heartbeat reports it. */
@@ -254,6 +258,7 @@ export class ReliableSessionTransport {
       entry.failures = 0;
       entry.writtenAt = undefined;
       entry.resent = false;
+      entry.replay = true;
       (entry.urgent ? this.urgent : this.queued).add(id);
     }
     this.pump();
@@ -286,11 +291,13 @@ export class ReliableSessionTransport {
       this.coalescedEnvelopeIds.set(coalesceKey, id);
     }
     const entry: PendingSessionEnvelope = {
+      type,
       coalesceKey,
       data: JSON.stringify(envelope),
       failures: 0,
       queuedAt: this.now(),
       resent: false,
+      replay: false,
       urgent: urgentSessionMessageTypes.has(type),
     };
     this.pending.set(id, entry);
@@ -351,6 +358,11 @@ export class ReliableSessionTransport {
 
   pendingCount(): number {
     return this.pending.size;
+  }
+
+  /** Messages waiting to be written to the socket. */
+  queuedCount(): number {
+    return this.urgent.size + this.queued.size;
   }
 
   /**
@@ -503,8 +515,12 @@ export class ReliableSessionTransport {
         data: envelope.data.slice(envelope.sent, end),
       },
     };
+    const meter = socketMeter(socket);
     try {
-      socket.send(JSON.stringify(piece), () => this.pumpSoon());
+      socket.send(JSON.stringify(piece), () => {
+        meter?.progress();
+        this.pumpSoon();
+      });
     } catch {
       return false;
     }
@@ -520,9 +536,15 @@ export class ReliableSessionTransport {
     if (!entry) {
       return true;
     }
+    const meter = socketMeter(socket);
     try {
       // The socket took it once the callback runs: room for the next.
-      socket.send(entry.data, () => this.pumpSoon());
+      socket.send(entry.data, () => {
+        meter?.progress();
+        this.pumpSoon();
+      });
+      meter?.sent(entry.type, Buffer.byteLength(entry.data), entry.replay);
+      entry.replay = false;
       entry.writtenAt = this.now();
       this.scheduleAnswerCheck();
       return true;
@@ -706,10 +728,13 @@ export function sendWebSocket(
     id ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   const envelope: ProtocolEnvelope = { id: envelopeId, payload, type };
   const data = JSON.stringify(envelope);
+  const meter = socketMeter(socket);
+  meter?.sent(type, Buffer.byteLength(data));
   if (piecingOutboxes.get(socket)?.sendInPieces(socket, envelopeId, data)) {
     return;
   }
-  socket.send(data);
+  if (meter) socket.send(data, () => meter.progress());
+  else socket.send(data);
 }
 
 export function trySendWebSocket(

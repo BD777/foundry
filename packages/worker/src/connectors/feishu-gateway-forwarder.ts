@@ -8,7 +8,7 @@ import {
 } from "node:http";
 import { request as httpsRequest } from "node:https";
 import type { AddressInfo, Socket } from "node:net";
-import { deviceCredentialHeader } from "./server-http.js";
+import { deviceCredentialHeader } from "../server-http.js";
 
 /**
  * The loopback forwarder between feishu-cli and Foundry's Feishu gateway.

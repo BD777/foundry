@@ -76,8 +76,7 @@ func newExternalAccountsFixture(t *testing.T) *externalAccountsFixture {
 	service := externalaccounts.NewService(db, db, externalaccounts.NewRegistry(f.fake.Adapter()))
 	service.MinPollInterval = 5 * time.Millisecond
 	service.Logf = t.Logf
-	server.externalAccounts = service
-	server.hub.externalAccounts = service
+	server.connectors.ServerHeld = service
 	server.feishuGateway = newFeishuGateway(db, service, nil)
 	server.serveGatewayEvents()
 	return f
@@ -252,7 +251,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	// Dispatch: alice's device carries the app id and gateway handles, and
 	// no credential at all; bob's device (were the session ever there)
 	// gets nothing; a sandboxed role gets nothing.
-	materials := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, true)
+	materials := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts
 	if len(materials) != 1 || materials[0].AccountID != account.ID || materials[0].Tool != "feishu-cli" || materials[0].ClientID != "cli_fake" {
 		t.Fatalf("materials for the owner's device: %+v", materials)
 	}
@@ -269,24 +268,24 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if strings.Contains(string(encoded), "accessToken") || strings.Contains(string(encoded), "clientSecret") {
 		t.Fatalf("run_session still names a token or secret field: %s", encoded)
 	}
-	if got := f.server.hub.sessionExternalAccounts(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, true); len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, Actor{Kind: ActorDaemon, DeviceID: "dev_bob", Account: &bob}, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("bob's device received alice's account: %+v", got)
 	}
 	execution := session
 	execution.Role = store.AgentSessionRoleIssueExecution
-	if got := f.server.hub.sessionExternalAccounts(ctx, execution, aliceDevice, true); len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, execution, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a sandboxed role received materials: %+v", got)
 	}
 	bobsSession := session
 	bobsSession.CreatedByUserID = f.bobID
-	if got := f.server.hub.sessionExternalAccounts(ctx, bobsSession, aliceDevice, true); len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, bobsSession, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("another person's session on alice's device received her account: %+v", got)
 	}
 
 	// A worker without the gateway gets nothing, and the transcript says
 	// why, once.
 	for range 2 {
-		if got := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, false); len(got) != 0 {
+		if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).ExternalAccounts; len(got) != 0 {
 			t.Fatalf("an old worker received materials: %+v", got)
 		}
 	}
@@ -316,7 +315,7 @@ func TestExternalAccountDispatchCarriesGatewayHandlesOnly(t *testing.T) {
 	if revoked.Status != store.ExternalAccountRevoked || len(f.fake.Revoked()) != 1 {
 		t.Fatalf("revoke: %+v revoked=%v", revoked, f.fake.Revoked())
 	}
-	if got := f.server.hub.sessionExternalAccounts(ctx, session, aliceDevice, true); len(got) != 0 {
+	if got := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityFeishuGateway)).ExternalAccounts; len(got) != 0 {
 		t.Fatalf("a revoked account was dispatched: %+v", got)
 	}
 	f.call(f.alice, http.MethodDelete, "/api/external-accounts/"+account.ID, "", http.StatusOK, "disconnect", nil)
@@ -412,5 +411,17 @@ func TestExternalAccountSetupCreatesAppAndConnects(t *testing.T) {
 	f.call(f.bob, http.MethodGet, "/api/external-accounts", "", http.StatusOK, "bob's view", &view)
 	if len(view.Apps) != 0 {
 		t.Fatalf("bob sees alice's registered app: %+v", view.Apps)
+	}
+}
+
+// declares is a worker's capability list as the dispatcher reads it.
+func declares(capabilities ...string) func(string) bool {
+	return func(capability string) bool {
+		for _, declared := range capabilities {
+			if declared == capability {
+				return true
+			}
+		}
+		return false
 	}
 }

@@ -33,6 +33,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupOwnership,
 		s.setupExternalAccounts,
 		s.setupFeishuGateway,
+		// Before the prune, which walks its bindings.
+		s.setupDeviceConnectors,
 		s.dropRemovedWorkspaces,
 		s.setupResources,
 		s.setupResourceLeases,

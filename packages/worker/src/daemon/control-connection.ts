@@ -2,8 +2,10 @@ import { resolve } from "node:path";
 import WebSocket from "ws";
 import type { RawData } from "ws";
 import {
+  daemonFeaturesHeader,
   daemonMessageTypes,
   parseProtocolEnvelopeJSON,
+  registrationSectionsFeature,
   type ProtocolEnvelope,
 } from "@bd777/foundry-protocol";
 import { BackgroundOutputFollowers } from "../background-output-follow.js";
@@ -16,6 +18,7 @@ import {
 import { readAgentRuntimeSettings } from "../device.js";
 import { isDeviceRemovedSignal } from "../device-removal.js";
 import { recordActivity } from "../diagnostics.js";
+import { meterSocket } from "../send-meter.js";
 import { stopAllEvidenceHTTPServices } from "../evidence-http-service.js";
 import {
   coalescedIssueEnvironmentChanges,
@@ -73,8 +76,26 @@ const heartbeatIntervalMs = Number(
   process.env.FOUNDRY_HEARTBEAT_INTERVAL_MS || 25_000,
 );
 
+/** How often the socket and outbox are looked at for the connection report. */
+const sendSampleMs = 1000;
+
 /** Longest a closing connection waits for the server to take the outbox. */
 const outboxSettleMs = 10_000;
+
+/**
+ * permessage-deflate for what the worker sends: registrations, scans and
+ * session events are JSON that shrinks several times, and the uplink can be
+ * slow and lossy. Messages under the threshold go as they are. No context
+ * is kept between messages (the Go server supports no other mode), so the
+ * connection holds one deflate and one inflate stream at most; zlib's
+ * default window and memory level bound them to a few hundred KB. A server
+ * that does not negotiate it gets plain frames.
+ */
+const perMessageDeflate = {
+  clientNoContextTakeover: true,
+  serverNoContextTakeover: true,
+  threshold: 1024,
+};
 
 /** Longest the server may stay silent; it pings every 30s. */
 const serverSilenceMs = Number(process.env.FOUNDRY_SERVER_SILENCE_MS || 75_000);
@@ -172,6 +193,7 @@ class ControlConnection {
   private finished = false;
   private announcedIssueSlots = 1;
   private heartbeatTimer: NodeJS.Timeout | undefined;
+  private sendSampleTimer: NodeJS.Timeout | undefined;
   private workspaceRoundTimer: NodeJS.Timeout | undefined;
   private providerCheckTimer: NodeJS.Timeout | undefined;
   private nativeChatSyncPromise: Promise<void> | undefined;
@@ -189,6 +211,7 @@ class ControlConnection {
       headers: daemonRequestHeaders(false),
       maxPayload: 2 * 1024 * 1024,
       handshakeTimeout: 30_000,
+      perMessageDeflate,
     });
     this.socket = socket;
     socketOpened(socket);
@@ -205,7 +228,22 @@ class ControlConnection {
       this.connection.workerGaveUp();
       socket.terminate();
     });
-    socket.on("open", () => this.startHeartbeat());
+    meterSocket(socket, this.connection.sends);
+    socket.on("open", () => {
+      this.connection.sends.opened();
+      if (socket.extensions.includes("permessage-deflate"))
+        this.connection.compressing();
+      this.startHeartbeat();
+      this.sendSampleTimer = setInterval(
+        () =>
+          this.connection.sends.sample(
+            socket.bufferedAmount,
+            options.sessionTransport.queuedCount(),
+          ),
+        sendSampleMs,
+      );
+      this.sendSampleTimer.unref();
+    });
     socket.on("ping", () => this.connection.serverPing());
     socket.on("message", () => this.connection.serverData());
     this.roster = new WorkspaceRoster(
@@ -221,6 +259,15 @@ class ControlConnection {
           daemonMessageTypes.backgroundTaskOutputChanged,
           { sessionId, taskId },
         ),
+    });
+    socket.on("upgrade", (response) => {
+      const features = String(
+        response.headers[daemonFeaturesHeader.toLowerCase()] ?? "",
+      );
+      this.roster.serverKeepsSections = features
+        .split(",")
+        .map((feature) => feature.trim())
+        .includes(registrationSectionsFeature);
     });
     this.outOfBandSink = outOfBandEventSink(options.sessionTransport);
     this.ctx = this.context();
@@ -308,23 +355,22 @@ class ControlConnection {
         ? `${logTime()} Connected daemon ${primary.device.label} to ${options.serverURL} for ${primary.workspace.name}`
         : `${logTime()} Connected daemon ${registration.device.label} to ${options.serverURL} (no workspace yet)`,
     );
-    sendWebSocket(
-      socket,
+    roster.sendRegistration(
       daemonMessageTypes.hello,
       withServedWorkspaces(
         withStalls(withConnectionReports(registration)),
         registrations,
         reportedFolders.missingWorkspaceIds,
       ),
+      `hello_${Date.now()}`,
     );
     for (const item of registrations) {
       if (item.workspace.id === primary?.workspace.id) {
         continue;
       }
-      sendWebSocket(
-        socket,
+      roster.sendRegistration(
         daemonMessageTypes.workspaceReady,
-        { registration: item },
+        item,
         `workspace_ready_${safeID(item.workspace.id)}`,
       );
     }
@@ -456,6 +502,7 @@ class ControlConnection {
   private closed(code?: number, reason?: Buffer): void {
     const { options } = this;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.sendSampleTimer) clearInterval(this.sendSampleTimer);
     stopServingResources();
     this.outputFollowers.close();
     this.stopEnvironmentChanges?.();

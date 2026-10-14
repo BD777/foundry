@@ -16,6 +16,7 @@
 import type { ChatAttachment } from "./chat.js";
 import type { AgentRuntimeSettings, DeviceRepairAction } from "./device.js";
 import type { ExternalAccountMaterial } from "./external-accounts.js";
+import type { DeviceConnectorUse } from "./connectors.js";
 import type { ClarificationTurn, Issue } from "./issue.js";
 import type {
   AgentConfigScope,
@@ -118,6 +119,12 @@ export const daemonMessageTypes = {
   resourceSettingsApplied: "resource_settings_applied",
   recoverSession: "recover_session",
   registered: "registered",
+  /**
+   * The server's answer to a registration (hello or workspace_ready) that
+   * left out sections it does not have (RegistrationNeededPayload): the
+   * registration was not taken; send it again in full.
+   */
+  registrationNeeded: "registration_needed",
   /** A piece of a large envelope a worker sends in pieces (reply_chunk). */
   replyChunk: "reply_chunk",
   runSession: "run_session",
@@ -157,6 +164,9 @@ export const daemonMessageTypes = {
   workerUpdateStatus: "worker_update_status",
   installTool: "install_tool",
   toolInstalled: "tool_installed",
+  /** Server asks: one action on a device-held connector (connectors.ts). */
+  connectorRequest: "connector_request",
+  connectorReply: "connector_reply",
   readRepositoryRefs: "read_repository_refs",
   repositoryRefsRead: "repository_refs_read",
   fetchSkillRepository: "fetch_skill_repository",
@@ -199,6 +209,26 @@ export interface WorkspaceFoldersPayload {
   servedWorkspaceIds: string[];
   /** Workspaces the worker still has whose folder no longer exists. */
   missingWorkspaceIds: string[];
+}
+
+/**
+ * The response header of the daemon socket's upgrade naming what the server
+ * takes before anything is sent on it (comma-separated); an older server
+ * sends none.
+ */
+export const daemonFeaturesHeader = "Foundry-Daemon-Features";
+
+/**
+ * The server keeps the sections of a device's registrations it was sent, by
+ * digest, while it runs: a registration may leave out a section the server
+ * has (omittedSections) and name each section's digest (sections). One it
+ * does not have is answered with registration_needed.
+ */
+export const registrationSectionsFeature = "registration_sections";
+
+/** registration_needed: the sections, by name, the server does not have. */
+export interface RegistrationNeededPayload {
+  sections: string[];
 }
 
 /** The server takes session_turn (in its registered answer's features). */
@@ -400,6 +430,8 @@ export interface RunSessionPayload {
   clarification?: ClarificationTurn;
   /** Third-party accounts the session may act as: minted tokens, no refresh. */
   externalAccounts?: ExternalAccountMaterial[];
+  /** Device-held connectors on the session's device and what it may do with each. */
+  deviceConnectors?: DeviceConnectorUse[];
 }
 
 /** steer_session */
@@ -454,6 +486,12 @@ export interface ScanSkillsPayload {
   roots?: string[];
   /** Programs library skills need; the reply says which the device has. */
   tools?: unknown;
+  /**
+   * The digest of the device's last scan answer the server keeps. An answer
+   * with that digest goes as only "unchanged" and the digest; every answer
+   * carries its digest. An older server sends none.
+   */
+  knownDigest?: string;
 }
 
 /** read_skill_content */

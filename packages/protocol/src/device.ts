@@ -108,6 +108,39 @@ export interface WorkerConnectionReport {
   proxy?: string;
   /** Worst event-loop delay during the connection, in milliseconds. */
   maxLagMs?: number;
+  /**
+   * What the worker sent in the first windowMs after the connection opened,
+   * by message type, largest first (bytes of the uncompressed JSON; a large
+   * message sent in pieces counts under its own type).
+   */
+  sentAfterOpen?: WorkerSentAfterOpen;
+  /** Session outbox messages carried over from an earlier connection. */
+  replayed?: WorkerSentCount;
+  /** Most messages waiting in the session outbox, most bytes on the socket. */
+  outboxPeak?: WorkerOutboxPeak;
+  /** Longest the socket held bytes while the network took none of them. */
+  longestSendStallMs?: number;
+  /** Whether the connection compressed its messages (permessage-deflate). */
+  compressed?: boolean;
+}
+
+/** A connection's first messages, by type (see sentAfterOpen). */
+export interface WorkerSentAfterOpen {
+  windowMs: number;
+  types: WorkerSentCount[];
+}
+
+/** How many messages (of type) went, and their bytes. */
+export interface WorkerSentCount {
+  type?: string;
+  count: number;
+  bytes: number;
+}
+
+/** The fullest a worker's session outbox and socket got. */
+export interface WorkerOutboxPeak {
+  queued: number;
+  bufferedBytes: number;
 }
 
 /** How a diagnostic check came out; "info" only reports a fact. */

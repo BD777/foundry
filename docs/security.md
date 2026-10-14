@@ -269,8 +269,8 @@ chosen:
 
 ## External Accounts (Connectors)
 
-A person's logins at third-party platforms (today Feishu, used through
-feishu-cli) live on the server, never on a device
+A person's server-held logins at third-party platforms (today Feishu, used
+through feishu-cli) live on the server, never on a device
 (`apps/server/internal/externalaccounts`, routes in
 `httpapi/external_accounts.go`).
 
@@ -296,10 +296,40 @@ feishu-cli) live on the server, never on a device
   (sandboxed HOME) get no account, nor does a worker without the gateway
   forwarder. The session receives only gateway stand-ins (below), written into
   a feishu-cli profile of its own that the worker removes when the run ends
-  (`packages/worker/src/external-accounts.ts`).
+  (`packages/worker/src/connectors/feishu.ts`).
 - Revoke ("stop using now") revokes the grant at Feishu and deletes it here;
   disconnect also removes the account and its bindings. Either way the
   gateway refuses the account's stand-ins from the next call on.
+
+## Device-held Connectors
+
+A device-held connector's login (today bytedcli's ByteCloud Auth sign-in)
+is kept by its CLI on the device and never leaves it
+(`apps/server/internal/connectors`, routes in `httpapi/connectors.go`,
+worker `packages/worker/src/connectors/device-held.ts`).
+
+- The server stores only what the device read: installed or not, version,
+  signed in or not, the user name the CLI shows (never an email; the server
+  also cuts anything after an `@`), the sites and when the login ends. It
+  never receives a token, the sign-in's complete token or a QR image; a
+  sign-in relays only the verification page's https address.
+- Only the device's owner reads, installs, signs in or signs out a
+  connector on that device; an Admin acting on an ownerless device is
+  refused. Install goes through the managed-tools path (npm, no install
+  scripts, the device's own npm settings); sign-out runs only on the
+  owner's confirmed request.
+- Lending to sessions: a session may use the device's login only while
+  `connectors.DeviceEligible` holds: the session runs on that device, the
+  device's owner bound that device's login to the session's workspace, and
+  the session was started by the device's owner or the binding explicitly
+  allows other members' sessions. Issue executions and clarifications get
+  nothing. A session someone else started on the device, when not allowed,
+  gets the connector's isolation (`BYTEDCLI_PROFILE` on an empty profile),
+  which prevents accidental use only: an unsandboxed session runs as the
+  device's user (see the device-credential risk above).
+- Foundry's own runs of the CLI set `BYTEDCLI_NO_AUTO_UPGRADE=1` and drop
+  an inherited `BYTEDCLI_PROFILE`, so reading the status neither upgrades
+  the person's CLI nor reads another profile.
 
 ## Feishu Gateway
 
@@ -313,7 +343,7 @@ ever sent to a device.
   (`fsr_`) and tenant-token (`fst_`) handles from it by HMAC. Only their
   SHA-256 hashes are stored. feishu-cli holds them in place of the real
   values, with its base URL on the worker's loopback forwarder
-  (`packages/worker/src/feishu-gateway-forwarder.ts`, `127.0.0.1` only),
+  (`packages/worker/src/connectors/feishu-gateway-forwarder.ts`, `127.0.0.1` only),
   which adds the device credential and pipes each request to the gateway.
 - Every request is authorized afresh: the route accepts only a device
   credential; the handle must name a live grant for that same device; the

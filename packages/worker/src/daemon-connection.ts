@@ -26,7 +26,7 @@ import {
   registerDaemon,
   serverURLFromArgs,
 } from "./workspace-ops.js";
-import { reapExternalAccountProfiles } from "./external-accounts.js";
+import { reapConnectorLeftovers } from "./connectors/index.js";
 import { errorMessage, optionEnabled, optionValue, sleep } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock } from "./device-pairing.js";
@@ -43,6 +43,7 @@ import { registerIssueHandlers } from "./daemon/handlers/issues.js";
 import { registerResourceHandlers } from "./daemon/handlers/resources.js";
 import { registerSessionHandlers } from "./daemon/handlers/sessions.js";
 import { registerSkillHandlers } from "./daemon/handlers/skills.js";
+import { registerConnectorHandlers } from "./daemon/handlers/connectors.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 
@@ -84,8 +85,8 @@ export async function connect(args: string[]): Promise<void> {
   // Agent processes die with this worker; those a previous one left
   // running stop before any work starts here.
   await superviseAgentProcesses();
-  // External-account profiles a previous process wrote for its sessions.
-  reapExternalAccountProfiles({ log: (message) => console.error(message) });
+  // Connector profiles a previous process wrote for its sessions.
+  reapConnectorLeftovers((message) => console.error(message));
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -229,6 +230,7 @@ registerWorkspaceHandlers(daemonDispatch);
 registerAgentHandlers(daemonDispatch);
 registerDeviceHandlers(daemonDispatch);
 registerSkillHandlers(daemonDispatch);
+registerConnectorHandlers(daemonDispatch);
 registerResourceHandlers(daemonDispatch);
 registerSessionHandlers(daemonDispatch);
 registerIssueHandlers(daemonDispatch);

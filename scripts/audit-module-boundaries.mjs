@@ -14,6 +14,12 @@
 //   5. The monolithic `store.Store` interface does not grow; new storage goes
 //      into module-scoped interfaces.
 //
+// Sealed modules (docs/connectors.md, "模块边界"):
+//   6. Worker: files outside a sealed folder import only its entry file.
+//   7. Server: a sealed module's inner packages are imported, inside
+//      httpapi, only by the files that serve that module (and the
+//      composition files server.go and routes.go).
+//
 // Existing violations are tracked in module-boundaries-baseline.json and may
 // only shrink. Run with FOUNDRY_AUDIT_UPDATE=1 after removing a violation to
 // rewrite the baseline; the update refuses to record new violations.
@@ -46,6 +52,7 @@ export const workerModules = {
       "state-root",
       "stall-monitor",
       "connection-reports",
+      "send-meter",
       "storage",
       "json-values",
       "utils",
@@ -77,7 +84,7 @@ export const workerModules = {
   },
   transport: {
     dependsOn: ["device"],
-    files: ["transport", "server-http"],
+    files: ["transport", "server-http", "registration-sections"],
   },
   "workspace-registry": {
     dependsOn: ["candidate-store", "device"],
@@ -233,8 +240,11 @@ export const workerModules = {
       "session/isolated-environment",
       "session/provider-credentials",
       "verification-session",
-      "external-accounts",
-      "feishu-gateway-forwarder",
+      "connectors/index",
+      "connectors/feishu",
+      "connectors/feishu-gateway-forwarder",
+      "connectors/device-held",
+      "connectors/bytedcli",
     ],
   },
   "agent-surface": {
@@ -298,6 +308,7 @@ export const workerModules = {
       "daemon/session-execution",
       "daemon/cli-commands",
       "daemon/handlers/agents",
+      "daemon/handlers/connectors",
       "daemon/handlers/connection",
       "daemon/handlers/device",
       "daemon/handlers/files",
@@ -321,6 +332,9 @@ export const workerModules = {
   },
 };
 
+/** Worker folders whose files only their entry file exposes (rule 6). */
+export const sealedWorkerFolders = { connectors: "connectors/index" };
+
 const harnessModules = new Set(["session-runtime", "harness-profiles"]);
 const harnessPackages = ["@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"];
 const sandboxTokens = ["sandbox-exec", "bwrap"];
@@ -342,6 +356,7 @@ export const serverPackages = {
   browserevent: ["store", "eventstream"],
   sqlitestore: ["store", "secretstore", "skillarchive", "chattitle"],
   externalaccounts: ["store", "integrations"],
+  connectors: ["store", "integrations", "externalaccounts"],
   resources: ["store"],
   feishugateway: ["store", "integrations", "externalaccounts"],
   feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],
@@ -356,6 +371,19 @@ export const serverPackages = {
   ],
   httpapi: "*",
 };
+
+/**
+ * Server packages inside a sealed module and the httpapi files that may
+ * import them (rule 7). The Connectors module's face is internal/connectors;
+ * its server-held engine, the Feishu gateway and the event connections are
+ * used by the connector HTTP files only.
+ */
+export const sealedServerPackages = {
+  externalaccounts: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
+  feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
+  feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
+};
+const httpapiCompositionFiles = new Set(["server.go", "routes.go"]);
 
 export function dependencyClosure(modules) {
   const closure = new Map();
@@ -431,6 +459,15 @@ export function auditWorker(
         /\.js$/,
         "",
       );
+      for (const [folder, entry] of Object.entries(sealedWorkerFolders))
+        if (
+          target.startsWith(`${folder}/`) &&
+          target !== entry &&
+          !file.startsWith(`${folder}/`)
+        )
+          violations.push(
+            `worker: ${file} imports ${target} inside ${folder}/; use ${entry}`,
+          );
       const to = owner.get(target);
       if (!to || to === from) continue;
       const allowed =
@@ -480,6 +517,27 @@ export function auditServerPackages(
   return violations;
 }
 
+export function auditSealedServerPackages(
+  sealed = sealedServerPackages,
+  internal = serverInternal,
+) {
+  const violations = [];
+  const prefix = "github.com/foundry-dev/foundry/apps/server/internal/";
+  const httpapi = join(internal, "httpapi");
+  for (const path of sourceFiles(httpapi, ".go")) {
+    const file = relative(httpapi, path);
+    if (file.endsWith("_test.go") || httpapiCompositionFiles.has(file))
+      continue;
+    const source = readFileSync(path, "utf8");
+    for (const [name, allowed] of Object.entries(sealed))
+      if (source.includes(`"${prefix}${name}"`) && !allowed.test(file))
+        violations.push(
+          `server: httpapi/${file} imports ${name}, which only the module's own HTTP files use`,
+        );
+  }
+  return violations;
+}
+
 export function storeInterfaceMethods(internal = serverInternal) {
   const source = readFileSync(join(internal, "store/store.go"), "utf8");
   const body = source.match(/type Store interface \{([\s\S]*?)\n\}/);
@@ -489,7 +547,11 @@ export function storeInterfaceMethods(internal = serverInternal) {
 }
 
 function main() {
-  const violations = [...auditWorker(), ...auditServerPackages()].sort();
+  const violations = [
+    ...auditWorker(),
+    ...auditServerPackages(),
+    ...auditSealedServerPackages(),
+  ].sort();
   const methods = storeInterfaceMethods();
   const current = { storeInterfaceMethods: methods, violations };
   const baseline = existsSync(baselinePath)

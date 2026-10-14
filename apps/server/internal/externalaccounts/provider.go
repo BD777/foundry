@@ -5,9 +5,10 @@
 // the platform's login itself (OAuth device flow), keeps the grant sealed in
 // the secret store, is the only party that refreshes it (Feishu refresh
 // tokens are single-use and rotate), and hands sessions short-lived access
-// tokens. A device-local provider would leave the login to the platform's
-// CLI on each device; the model names that mode, but no such provider is
-// implemented yet.
+// tokens. This package is the server-held kind of the Connectors module;
+// the rest of the server reaches it through internal/connectors, and
+// device-held connectors (whose CLI keeps the login on the device, such as
+// bytedcli) live there, not here.
 package externalaccounts
 
 import (

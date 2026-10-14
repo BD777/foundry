@@ -1,0 +1,31 @@
+[
+  {
+    "kind": "feishu",
+    "label": "Feishu",
+    "holding": "server_held",
+    "adapter": "feishu",
+    "tool": { "command": "feishu-cli" }
+  },
+  {
+    "kind": "bytedcli",
+    "label": "bytedcli",
+    "holding": "device_held",
+    "adapter": "bytedcli",
+    "tool": {
+      "command": "bytedcli",
+      "source": "npm",
+      "package": "@bytedance-dev/bytedcli",
+      "registry": "device"
+    },
+    "requires": [
+      {
+        "kind": "tcp_reachable",
+        "host": "cloud.bytedance.net",
+        "port": 443,
+        "label": "ByteDance network"
+      }
+    ],
+    "expiryReminderDays": 3,
+    "isolationEnv": { "BYTEDCLI_PROFILE": "foundry-no-login" }
+  }
+]

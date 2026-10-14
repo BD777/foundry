@@ -20,6 +20,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
+  deviceConnectorsCapability,
   resourceComputeCapability,
   resourceOperationsCapability,
   resourcesCapability,
@@ -419,6 +420,7 @@ export const daemonCapabilities = [
   "verification_sessions",
   "attachment_files",
   "feishu_gateway",
+  deviceConnectorsCapability,
   workspaceFoldersCapability,
   resourcesCapability,
   resourceOperationsCapability,

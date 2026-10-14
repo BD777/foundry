@@ -110,10 +110,11 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		log.Printf("mint session token for %s: %v", session.ID, tokenErr)
 		sessionToken = ""
 	}
-	externalAccounts := c.hub.sessionExternalAccounts(ctx, session, c.actor, c.hasCapability(store.DaemonCapabilityFeishuGateway))
+	connectorUses := c.hub.sessionConnectors(ctx, session, c.actor, c.hasCapability)
 	return wsRunSessionPayload{
 		Session: session, Profile: profile, Credential: credential, SessionToken: sessionToken, Issue: issue,
-		UserFiles: userFiles, Clarification: clarification, ExternalAccounts: externalAccounts,
+		UserFiles: userFiles, Clarification: clarification, ExternalAccounts: connectorUses.ExternalAccounts,
+		DeviceConnectors: connectorUses.DeviceConnectors,
 	}, nil
 }
 

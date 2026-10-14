@@ -104,7 +104,44 @@ func describeConnectionReport(report store.WorkerConnectionReport) string {
 	if report.MaxLagMs != 0 {
 		parts = append(parts, fmt.Sprintf("max event-loop delay %dms", report.MaxLagMs))
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(append(parts, describeWorkerSends(report)...), ", ")
+}
+
+func kilobytes(bytes int64) string {
+	if bytes < 1024 {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	return fmt.Sprintf("%dKB", (bytes+512)/1024)
+}
+
+// describeWorkerSends words what the connection sent and how its socket kept
+// up, as the worker measured it: what follows a reconnect on a slow uplink.
+func describeWorkerSends(report store.WorkerConnectionReport) []string {
+	var parts []string
+	if report.Compressed {
+		parts = append(parts, "compressed")
+	}
+	if sent := report.SentAfterOpen; sent != nil && len(sent.Types) > 0 {
+		types := make([]string, 0, len(sent.Types))
+		for _, entry := range sent.Types {
+			count := ""
+			if entry.Count > 1 {
+				count = fmt.Sprintf("%dx ", entry.Count)
+			}
+			types = append(types, fmt.Sprintf("%s %s%s", entry.Type, count, kilobytes(entry.Bytes)))
+		}
+		parts = append(parts, fmt.Sprintf("first %ds sent [%s]", (sent.WindowMs+500)/1000, strings.Join(types, " ")))
+	}
+	if replayed := report.Replayed; replayed != nil {
+		parts = append(parts, fmt.Sprintf("replayed %d outbox messages %s", replayed.Count, kilobytes(replayed.Bytes)))
+	}
+	if peak := report.OutboxPeak; peak != nil {
+		parts = append(parts, fmt.Sprintf("outbox peak %d queued %s on socket", peak.Queued, kilobytes(peak.BufferedBytes)))
+	}
+	if report.LongestSendStallMs != 0 {
+		parts = append(parts, fmt.Sprintf("longest send stall %ds", (report.LongestSendStallMs+500)/1000))
+	}
+	return parts
 }
 
 // logWorkerConnections writes the worker's accounts of its previous

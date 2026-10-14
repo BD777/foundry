@@ -47,6 +47,8 @@ const (
 	wsRunRepairType                = "run_repair"
 	wsRepairDoneType               = "repair_done"
 	wsToolInstalledType            = "tool_installed"
+	wsConnectorRequestType         = "connector_request"
+	wsConnectorReplyType           = "connector_reply"
 	wsReadRepositoryRefsType       = "read_repository_refs"
 	wsRepositoryRefsReadType       = "repository_refs_read"
 	wsFetchSkillRepositoryType     = "fetch_skill_repository"
@@ -81,6 +83,7 @@ const (
 	wsSkillFileReadType            = "skill_file_read"
 	wsSkillContentReadType         = "skill_content_read"
 	wsRegisteredType               = "registered"
+	wsRegistrationNeededType       = "registration_needed"
 	wsIssueEnvironmentType         = "issue_environment"
 	wsIssueEnvironmentResultType   = "issue_environment_result"
 	wsEvidenceRequestType          = "evidence_request"
@@ -332,6 +335,9 @@ type wsRunSessionPayload struct {
 	// each with a short-lived access token (never a refresh token); only an
 	// account owner's own session on their own device gets them.
 	ExternalAccounts []store.ExternalAccountMaterial `json:"externalAccounts,omitempty"`
+	// DeviceConnectors are the device-held connectors on the session's
+	// device and what the session may do with each (connectors.DeviceHeld).
+	DeviceConnectors []store.DeviceConnectorUse `json:"deviceConnectors,omitempty"`
 }
 
 type wsSteerSessionPayload struct {

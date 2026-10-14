@@ -329,7 +329,7 @@ P3 计划新增 `workspace_connection_grants(workspace_id, source, granted_by, c
 - Workspace 角色 Viewer / Member / Maintainer / Owner，撤销立即生效（`httpapi/workspace_members.go`）；Agent 令牌按发起人当前角色计算，封顶 Member（`httpapi/policy.go`，见[会话编排 §4](session-orchestration-design.md#4-鉴权与授权)）。
 - 飞书群沿用生成配对码的账号的身份，每条消息重新校验（§8，`feishu/pairing.go`）。
 
-**外部账号（2026-10-12 起，#123；Server 网关 #124）：** 个人在「外部账号」页用飞书设备码登录（也可以先由飞书为本人创建应用再授权）。Server 在密封的密钥存储中保管授权，并且是唯一的刷新方（`externalaccounts/`）。Workspace 的 Maintainer 把账号绑定到 Workspace（`PUT /api/workspaces/{id}/external-accounts`）。只有账号主人在自己的设备上、在已绑定的 Workspace 里启动的会话可以使用它（`externalaccounts/sessions.go` `Permitted`）。会话拿到的是网关签发的替身句柄：`feishu-cli` 的请求经 Worker 转发到 Server 网关，在那里换成真实 token，设备上不留密钥（`feishugateway/`、`packages/worker/src/external-accounts.ts`、`packages/worker/src/feishu-gateway-forwarder.ts`）。每次签发 token 都在账号上写一条审计，网关对每个请求也写一条审计，发起调用的人可以读（`GET /api/feishu-gateway/requests`）。
+**外部账号（2026-10-12 起，#123；Server 网关 #124）：** 个人在「外部账号」页用飞书设备码登录（也可以先由飞书为本人创建应用再授权）。Server 在密封的密钥存储中保管授权，并且是唯一的刷新方（`externalaccounts/`）。Workspace 的 Maintainer 把账号绑定到 Workspace（`PUT /api/workspaces/{id}/external-accounts`）。只有账号主人在自己的设备上、在已绑定的 Workspace 里启动的会话可以使用它（`externalaccounts/sessions.go` `Permitted`）。会话拿到的是网关签发的替身句柄：`feishu-cli` 的请求经 Worker 转发到 Server 网关，在那里换成真实 token，设备上不留密钥（`feishugateway/`、`packages/worker/src/connectors/feishu.ts`、`packages/worker/src/connectors/feishu-gateway-forwarder.ts`）。每次签发 token 都在账号上写一条审计，网关对每个请求也写一条审计，发起调用的人可以读（`GET /api/feishu-gateway/requests`）。
 
 **相对 P3、P4 的差距：** 外部账号做到的是“个人的飞书账号授权给 Workspace，供本人的会话使用”。它与 P3 的“个人连接授权给 Workspace”形状相同，但对象是第三方平台账号而不是模型连接（Profile），也不给协作者使用。以下仍未实现：
 

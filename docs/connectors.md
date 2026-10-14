@@ -2,9 +2,37 @@
 
 [项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里使用的外部应用和账号：Server 保管外部应用的密钥和个人登录，账号绑定到 Workspace 后，会话经 Server 的网关以本人或应用 Bot 的身份调用外部服务，设备上不留任何真实凭据。目前只接了飞书：Agent 用 `feishu-cli`，配合 Workspace 的 `feishu-cli-*` Skill。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于“模型与账号”）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、会话所在设备）；被 Agent 能力面（`feishu_events` 工具，以及会话启动时下发的账号）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/feishu`，每种连接器一个 Tab，目前只有飞书）管理自己的应用和账号；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号，并显示其他成员绑定的账号。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。连接器分两种：**Server 持有型**（目前是飞书：Server 保管外部应用的密钥和个人登录，会话经 Server 的网关调用，设备上不留真实凭据；Agent 用 `feishu-cli`，配合 Workspace 的 `feishu-cli-*` Skill）和**设备持有型**（目前是 bytedcli：登录由 CLI 自己保存在那台设备上，从不离开设备；Foundry 只负责检测、安装与升级、经 Foundry 登录、状态与到期提醒，以及哪些会话可以使用）。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于“模型与账号”）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab：飞书管理应用和账号，bytedcli 按设备列出状态与登录）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的 bytedcli 登录，并显示其他成员的绑定。
 
 ## 设计
+
+### 模块边界
+
+连接器是一个封闭模块：Foundry 其他部分只经下面几处入口使用它，不直接调用飞书或 bytedcli 的代码。
+
+| 层     | 入口（其他模块只用这些）                                                                                                                                                                                                          | 内部（只在模块内）                                                                                                                            |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server | `internal/connectors`：`Module`（目录 `Catalog`、会话派发时的 `SessionConnectors`、设备持有型服务 `Devices`、Server 持有型服务 `ServerHeld`）；HTTP 只在 `httpapi/connectors*.go`、`external_accounts*.go`、`feishu_events.go` 中 | `internal/externalaccounts`（Server 持有型引擎与飞书适配器）、`internal/feishugateway`、`internal/feishuevents`                               |
+| Worker | `packages/worker/src/connectors/index.ts`：会话准备与释放（`prepareSessionConnectors`）、会话环境与说明、启动时回收、设备持有型请求（`handleConnectorRequest`）                                                                   | `connectors/feishu.ts` 与 `feishu-gateway-forwarder.ts`（飞书 profile 与本机转发器）、`device-held.ts`（检测、安装、要求检查）、`bytedcli.ts` |
+| Web    | `features/external-accounts` 的 `ConnectorsFeature`、`WorkspaceConnectorsFeature`                                                                                                                                                 | 每种连接器自己的组件（`feishu-connector.tsx`、`bytedcli-connector.tsx`）                                                                      |
+
+`scripts/audit-module-boundaries.mjs` 检查这条边界：Server 上只有连接器自己的包、渠道（`internal/feishu`，Bot 运行在飞书应用上）和上表中的 HTTP 文件可以引用内部包；Worker 上只有 `connectors/` 自己引用飞书与 bytedcli 的实现。
+
+### 连接器如何声明自己
+
+每种连接器先是一条**描述数据**（`internal/connectors/catalog.json`，经 API 发给 Web，经请求发给 Worker）：`kind`、名称、持有方式（`server_held` / `device_held`）、会话使用的工具（命令名，设备持有型还有 npm 包与来源 registry）、可用条件（`requires`）、到期提醒提前天数、会话隔离方式。标准的部分只靠数据；平台差异用小的代码适配器处理，按 `adapter` 名选择：Server 持有型在 `externalaccounts.Provider`（飞书的设备流、刷新、网关），设备持有型在 Worker 的 `DeviceHeldAdapter`（读状态、发起与完成登录、登出各自的命令与输出解析）。不用 Go plugin 或动态加载代码：新连接器是一次代码改动加一条目录数据。
+
+- **可用条件**：连接器可以声明要求，例如 bytedcli 的 `tcp_reachable cloud.bytedance.net:443`（ByteDance 内网）。Worker 每次读状态时检查（3 秒超时、缓存 5 分钟），不满足的设备上不提供登录与安装，只显示原因。
+
+### 两种持有方式
+
+- **Server 持有型（飞书）**：行为不变，见下文“对象”到“账号生命周期”。
+- **设备持有型（bytedcli）**：凭据只在设备上（bytedcli 的数据目录，ByteCloud Auth 设备码登录，约 30 天，按站点）。理由：Server 在内网之外用不了它；多台设备共用一份登录会互相抢刷新；把公司 SSO 凭据导出到外部 Server 有合规风险。Foundry 做的事：
+  - **检测**：Worker 找到会话 PATH 上的 `bytedcli`（Foundry 管理的工具目录优先），读版本和来源（Foundry 安装 / 设备自带）。
+  - **安装与升级**：设备所有者点击后经已有的 managed-tools 路径安装 npm 包 `@bytedance-dev/bytedcli`，来源用设备自己的 npm 设置（内网 registry），不运行 install 脚本；最新版本由 Worker 用设备的 npm 查询。设备自带的 bytedcli 由它自己更新，Foundry 只显示版本。
+  - **登录**：设备所有者在 Connectors 页点击登录，Worker 运行 `bytedcli --json auth login --begin --no-terminal-qr --qr-image <临时文件>`，只把验证链接回传，Web 自己画二维码；Web 每隔几秒请求一次，Worker 运行 `auth login --complete`（不带 token，续用同一个挑战）直到成功、过期或被拒。complete token 和登录凭据都不离开设备。登出只在本人确认后运行 `auth logout`。
+  - **状态**：`bytedcli --json auth status`，只取已登录与否、CLI 显示的用户名（不取邮箱）、站点、登录到期时间；从不读取或发送 token。Server 只存这些元数据（设备、连接器、身份标签、站点、到期、检查时间、版本），以及到期提醒状态（进入提醒窗口的时间，重新登录后清除）。
+  - **哪些会话能用**：Workspace 的 Maintainer 把**自己设备**上的登录绑定到 Workspace（`device_connector_bindings`：Workspace、连接器、设备）。会话能用的条件与外部账号相同：会话在那台设备上、由设备所有者发起、绑定存在、不是沙箱角色；绑定可以显式允许其他成员在这台设备上的会话也使用。能用的会话收到会话说明（用设备的默认登录，不要运行 `auth login` / `logout` / `clear` / `export` / `import`，过期时请本人在 Connectors 重新登录）；不能用、且不是设备所有者发起的会话，Worker 用 CLI 公开的隔离方式（`BYTEDCLI_PROFILE` 指向一个空 profile）让它看不到设备所有者的登录。这是防误用，不是安全边界：未沙箱的会话以设备用户运行，能自己去掉这个变量（与[设备凭证的已知风险](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)相同）。
 
 ### 对象
 
@@ -44,10 +72,11 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - **2026-10-11 Server 持有登录、集中刷新**（#122 Server 端，#123 页面与 Worker）。原因是 refresh token 一次性使用，设备之间无法共享一份登录。
 - **2026-10-12 网关取代下发 token**（#124）。#123 时设备还会拿到应用密钥和短期 access token；改为设备只持有 App ID 和可撤销的替身。同时决定：一次切换，旧 Worker 在更新前拿不到飞书账号；在已授予的 scope 内透传加黑名单，不做逐接口白名单；Agent 默认可以以应用 Bot 身份调用，不设开关；事件同时提供 MCP 工具和 `event consume`。迁移把以前存在设备上的密钥标为需要轮换，Connectors 和 Channels 页会提示本人在飞书重置密钥后粘贴到这里。
 - **2026-10-13 “外部账号”改名为 Connectors，Workspace 的“账号”页改名为 Connectors**（#125），旧 URL 重定向。
+- **2026-10-15 连接器成为封闭模块，分 Server 持有型与设备持有型；bytedcli 是第一个设备持有型**（本人批准）。bytedcli 的登录不放 Server：Server 在 ByteDance 内网之外用不了；多台设备共用一份登录会互相抢刷新；公司 SSO 凭据导出到外部 Server 有合规风险。同时决定：连接器用描述数据声明、平台差异用小的代码适配器，不用 Go plugin 或动态加载；登录经 CLI 自己的非阻塞设备码流程（`--begin` / `--complete`）由 Web 中转验证页面，complete token 不离开设备；Foundry 自己运行 bytedcli 时设 `BYTEDCLI_NO_AUTO_UPGRADE=1`（读状态不顺带升级本人的 CLI）；不能使用设备登录的他人会话用 `BYTEDCLI_PROFILE` 指向空 profile，只防误用。
 
 ## 实现边界
 
-截至 2026-10-14（`3092162`）。
+截至 2026-10-15（`3e3cb2b` 加未提交的工作区改动：模块边界与 bytedcli）。
 
 **已实现**
 
@@ -58,10 +87,17 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - Worker：`packages/worker/src/external-accounts.ts`（profile 生成与回收、会话说明），`feishu-gateway-forwarder.ts`。
 - Web：`apps/web/src/features/external-accounts`（Connectors 页、Workspace 的 Connectors 页、连接与授权对话框）。每个应用的行会列出运行在它上面的 Workspace Bot、打开的 Agent 订阅和连接状态（`GET /api/feishu/app-uses`）。
 - `FOUNDRY_INTEGRATIONS=off` 时登录、刷新、吊销、保持登录和网关转发都不出站（`internal/integrations`）。
+- 模块入口（未提交，2026-10-15）：`apps/server/internal/connectors`（`catalog.json` 与 `catalog.go` 目录，`module.go` 的 `Module` 与 `SessionConnectors`，`deviceheld.go` 设备持有型服务与 `DeviceEligible`）；会话派发只调用 `httpapi/external_accounts.go` 的 `sessionConnectors`。Worker `packages/worker/src/connectors/index.ts`；Web 每种连接器一个 Tab，`connector-types.ts` 标明持有方式。边界由 `scripts/audit-module-boundaries.mjs` 规则 6、7 检查。
+- bytedcli（未提交，2026-10-15）：Worker `connectors/device-held.ts`（检测：Foundry 管理的副本优先，再找 PATH 与常见安装目录；可用条件 TCP 检查；经 managed-tools 安装 npm 包，来源用设备的 npm 设置，版本由设备的 `npm view` 决定；动作逐连接器串行）、`connectors/bytedcli.ts`（`auth status` / `auth login --begin|--complete` / `auth logout` 的输出解析与会话说明），daemon 消息 `connector_request` / `connector_reply`（Worker 声明 `device_connectors` 能力）。Server `httpapi/connectors.go`：`GET /api/connectors/devices[?refresh=1]`（只列本人设备，读取超过 2 分钟的在线设备），`POST /api/devices/{deviceId}/connectors/{kind}/check|install|sign-in|sign-in/poll|sign-out`（只限设备所有者；同一登录 2 秒内的轮询共用一次答复），`GET|PUT /api/workspaces/{id}/device-connectors`；存储 `sqlitestore/device_connectors.go`（表 `device_connector_states`、`device_connector_bindings`，删除 Workspace 或移除设备时一并删除）。到期提醒：登录进入提醒窗口（3 天）的首次检查时间记为 `expiringSince`，重新登录后清除；Connectors 页在列表上方提醒。Web `features/external-accounts/device-held-connector.tsx`、`device-sign-in-dialog.tsx`、`workspace-device-connectors.tsx`。
 
 **未实现 / 已知缺口**
 
-- 只有飞书一个提供方。存储里有 `device_local` 凭据模式，但目前没有提供方使用。
+- Server 持有型只有飞书。存储里旧的 `device_local` 凭据模式仍无人使用；设备持有型不走 `external_accounts`，而是 `internal/connectors`。
+- bytedcli 只读默认站点（`BYTEDCLI_CLOUD_SITE` 或 cn）的登录，其他站点（i18n-*、us-ttp、eu-ttp）的登录 Foundry 不显示，也不提供按站点登录；`--session` 浏览器会话类登录也不经 Foundry。
+- 设备持有型的“不能用”只防误用：未沙箱的会话以设备用户身份运行，能自己去掉 `BYTEDCLI_PROFILE` 读到设备所有者的登录（与设备凭证的已知风险相同）；旧 Worker 不认识 `device_connectors`，它上面的他人会话不受隔离。
+- 设备绑定的增删没有审计记录（飞书账号的绑定有）；没有后台定时检查，状态只在打开页面、手动检查或操作后更新，到期提醒只在 Connectors 页显示。
+- 页面在 2 分钟内不会重新读同一台设备：设备网络刚变化时要点“重新检查”。
+- Foundry 安装的 bytedcli 约 400 MB（npm 依赖），不运行 install 脚本，`--version` 与 `auth status` 在 0.170.0 上实测可用；设备自带的副本由 CLI 自己更新，Foundry 不提供升级。
 - 网关经替身无法完成的命令：`feishu-cli auth token --as bot`、`doctor` 的 token 检查、`markdown fetch --as bot`。它们直接向飞书账号服务器要 Bot token，替身过不了（会话说明里写明了）。只针对 `feishu-cli` 1.41.0 验证过；其他版本会提示会话。
 - 以 Bot 身份调用时，不限于路由到该 Workspace 的群。设计稿里的“只能发到本 Workspace 的群”没有实现。
 - 网关审计只有 API，Web 上没有查看入口。
@@ -69,7 +105,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 **与[账号与权限设计](accounts-permissions-design.md) P3 的关系**
 
-- 已经交付的（只覆盖飞书外部账号）：个人连接归属到人，本人把它绑定到 Workspace；会话按“本人发起、本人设备、已绑定”使用；每次网关调用都记录账号和身份。
+- 已经交付的：个人连接归属到人，本人把它绑定到 Workspace；会话按“本人发起、本人设备、已绑定”使用；每次网关调用都记录账号和身份。设备持有型的绑定可以显式允许其他成员在那台设备上的会话使用设备所有者的登录（默认关闭）。
 - 仍属于 P3、未做的：把自己的连接授权给其他成员的会话使用（协作者执行时按 §3.1 的顺序解析凭证，并把来源记入 Session）；Claude / Codex 等模型连接的 Workspace 授权；飞书用户与 Foundry 账号的身份绑定（见[渠道](channels.md#后续)）。
 
 **验证情况**
@@ -78,23 +114,27 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 2026-10-12：用真实 `feishu-cli` 1.41.0，经过真实的 Worker 转发器和网关，对假飞书跑合同测试，覆盖用户调用、Bot 调用、21 MiB 分片上传、Range 下载和 `event consume`；假飞书只见到真实 token（`httpapi/external_accounts_cli_contract_test.go`，没有 `feishu-cli` 或 node 时跳过）。
 - 网关鉴权、吊销、黑名单、限流、审计：`httpapi/external_accounts_gateway_test.go`、`feishugateway/gateway_test.go`；服务层：`externalaccounts/service_test.go`；Worker：`packages/worker/test/external-accounts.test.mjs`。
 - 扫码新建应用在真实飞书上的检查：到 2026-10-13 仍列为待本人确认，这次整理没有找到运行记录。
+- 模块重构后（2026-10-15）飞书的既有测试不改断言全部通过，包括用真实 `feishu-cli` 跑的合同测试（只改了被移动文件的路径与会话派发的调用方式）。
+- bytedcli（2026-10-15）：状态与登录输出的形状取自 MacBook 上真实的 bytedcli 0.170.0（经计算租约只读运行 `auth status --json`；一次性 `--profile foundry-test-1` 上的 `--begin`，未完成，用后删除），整理为 `packages/worker/test/fixtures/bytedcli-outputs.json`（姓名与邮箱已替换）；用假 bytedcli 测试 Worker 的状态、登录、拒绝、过期、登出、安装与会话说明（`connectors-device-held.test.mjs`），Server 测试经假 Worker 的整条链路与权限（`httpapi/connectors_test.go`）、目录与资格规则（`connectors/connectors_test.go`），Web 测试 `device-held-connectors.test.mjs`。在 scratch stack 上用假 bytedcli 实测：网络不通的设备显示“不提供”；用只换掉 `/etc/hosts` 的 bwrap 让 Worker 的网络检查通过后，Connectors 页键盘发起登录、二维码与链接、批准后完成，亮色、暗色、窄屏都检查过；Workspace 绑定后真实 Claude 会话的说明里出现 bytedcli 那一行。真实 bytedcli 的完整登录没有经 Foundry 跑过（规定不在本人的默认 profile 上登录）。
 
 ## 后续
 
 Roadmap 没有为连接器列出下一步。已知可做的方向，都还没有排期：
 
-- 第二种提供方，需要时再按 `externalaccounts.Provider` 接入；设备绑定型的 CLI 走 `device_local` 模式。
+- 新的 Server 持有型连接器按 `externalaccounts.Provider` 接入；新的设备持有型连接器加一条 `catalog.json` 数据和一个 Worker 适配器。
+- bytedcli 多站点登录；设备绑定变更的审计；后台检查到期并经渠道提醒本人。
 - 把账号授权给协作者的会话使用（P3）。
 - 在 Web 上查看网关审计。
 
 ## 代码位置
 
-- 服务与提供方：`apps/server/internal/externalaccounts/`
+- 模块入口与设备持有型：`apps/server/internal/connectors/`（`catalog.json`、`catalog.go`、`module.go`、`deviceheld.go`）
+- Server 持有型服务与提供方：`apps/server/internal/externalaccounts/`
 - 网关：`apps/server/internal/feishugateway/`
 - 事件订阅与应用凭据读取：`apps/server/internal/feishuevents/`（与[渠道](channels.md)共用）
 - 集成开关：`apps/server/internal/integrations/`
-- HTTP：`apps/server/internal/httpapi/external_accounts.go`、`external_accounts_gateway.go`、`feishu_events.go`；访问规则 `routes.go`；MCP 工具定义 `httpapi/mcp_tools.json`（`feishu_events`）
-- 存储：`apps/server/internal/store/external_accounts.go`、`feishu_gateway.go`；`apps/server/internal/sqlitestore/external_accounts.go`、`feishu_gateway.go`
-- 协议类型：`packages/protocol/src/external-accounts.ts`
-- Worker：`packages/worker/src/external-accounts.ts`、`feishu-gateway-forwarder.ts`
+- HTTP：`apps/server/internal/httpapi/connectors.go`、`external_accounts.go`、`external_accounts_gateway.go`、`feishu_events.go`；访问规则 `routes.go`；MCP 工具定义 `httpapi/mcp_tools.json`（`feishu_events`）
+- 存储：`apps/server/internal/store/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`；`apps/server/internal/sqlitestore/external_accounts.go`、`feishu_gateway.go`、`device_connectors.go`
+- 协议类型：`packages/protocol/src/external-accounts.ts`、`connectors.ts`
+- Worker：`packages/worker/src/connectors/`（`index.ts` 入口，`feishu.ts`、`feishu-gateway-forwarder.ts`、`device-held.ts`、`bytedcli.ts`），daemon 处理 `packages/worker/src/daemon/handlers/connectors.ts`
 - Web：`apps/web/src/features/external-accounts/`、`apps/web/src/api/connectors.ts`、`apps/web/src/lib/connector-types.ts`；文案 `apps/web/src/i18n/locales/{en,zh-CN}/externalAccounts.ts`

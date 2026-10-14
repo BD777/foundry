@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/eventstream"
-	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishu"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishuevents"
 	"github.com/foundry-dev/foundry/apps/server/internal/feishugateway"
@@ -47,6 +47,7 @@ type Backend interface {
 	store.ResourceStore
 	store.ResourceLeaseStore
 	store.FeishuGatewayStore
+	store.DeviceConnectorStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -78,8 +79,10 @@ type Server struct {
 	store              Backend
 	// modelCatalogs keeps the catalogs devices answered (agent_model_catalog.go).
 	modelCatalogs modelCatalogCache
-	// externalAccounts holds people's third-party logins (external_accounts.go).
-	externalAccounts *externalaccounts.Service
+	// connectors is the Connectors module: people's third-party logins
+	// held here, device-held connectors' metadata, the catalog
+	// (connectors.go, external_accounts.go).
+	connectors *connectors.Module
 	// resources is the inventory devices report (resources.go).
 	resources *resources.Service
 	// leases decide who holds which instance (resource_leases.go).
@@ -183,13 +186,13 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessions, issues: issues, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
 	server.initAccounts()
-	server.externalAccounts = newExternalAccountService(store, options.Integrations)
-	server.hub.externalAccounts = server.externalAccounts
+	server.connectors = connectors.New(store, store, options.Integrations)
+	server.hub.connectors = server.connectors
 	server.resources = newResourceService(store, server.hub, stream)
 	server.hub.resources = server.resources
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
-	server.feishuGateway = newFeishuGateway(store, server.externalAccounts, options.Integrations)
+	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.onWorkerUpdateStatus = server.recordWorkerUpdateStatus

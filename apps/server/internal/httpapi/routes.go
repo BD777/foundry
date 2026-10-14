@@ -387,6 +387,17 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/feishu-gateway/requests", s.handleFeishuGatewayRequests, signedIn()),
 		fn("GET /api/workspaces/{id}/external-accounts", s.handleWorkspaceExternalAccounts, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/external-accounts", s.handleSetWorkspaceExternalAccounts, workspaceRole(maintainer, pathWorkspace("id"))),
+		// Device-held connectors (connectors.go): the credential stays on the
+		// device; only its owner reads, installs, signs in or out, and binds it
+		// (the handlers also refuse an Admin acting on an ownerless device).
+		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/poll", s.handlePollDeviceConnectorSignIn, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-out", s.handleSignOutDeviceConnector, deviceOwner("deviceId")),
+		fn("GET /api/workspaces/{id}/device-connectors", s.handleWorkspaceDeviceConnectors, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/device-connectors", s.handleSetWorkspaceDeviceConnectors, workspaceRole(maintainer, pathWorkspace("id"))),
 
 		fn("GET /api/agents", s.handleListAgents, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/workspace-files", s.handleListWorkspaceFiles, workspaceRole(viewer, queryWorkspace())),

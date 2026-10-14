@@ -18,8 +18,8 @@ import {
   sessionExternalAccountEnvironment,
   sessionExternalAccountNote,
   verifiedFeishuCliVersions,
-} from "../dist/external-accounts.js";
-import { startFeishuGatewayForwarder } from "../dist/feishu-gateway-forwarder.js";
+} from "../dist/connectors/feishu.js";
+import { startFeishuGatewayForwarder } from "../dist/connectors/feishu-gateway-forwarder.js";
 import { sessionEnvironment } from "../dist/session-ambient.js";
 import { redactTranscriptText } from "../dist/secret-redaction.js";
 

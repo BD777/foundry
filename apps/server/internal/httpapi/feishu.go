@@ -40,7 +40,7 @@ func (s *Server) feishuBotChoices(ctx context.Context, userID string) ([]store.E
 	if userID == "" {
 		return []store.ExternalProviderApp{}, nil
 	}
-	apps, err := s.externalAccounts.ListApps(ctx, userID)
+	apps, err := s.connectors.ServerHeld.ListApps(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

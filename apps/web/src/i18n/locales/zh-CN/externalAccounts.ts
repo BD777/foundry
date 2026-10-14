@@ -5,7 +5,7 @@ export const externalAccounts: Translation<typeof en> = {
   page: {
     title: "连接器",
     intro:
-      "会话以你的身份使用的外部服务。Foundry 把登录和应用密钥都保存在服务器上；只有你本人在自己的设备上、在绑定了该账号的工作区里发起的会话，才能经由 Foundry 访问飞书，设备上不保存任何凭据。",
+      "会话以你的身份使用的外部服务。每个标签页说明登录保存在哪里：飞书的在服务器上，bytedcli 的在你的每台设备上。只有绑定了它的工作区里的会话才会使用。",
     tabs: "连接器类型",
     loading: "正在加载飞书账号…",
     loadFailed: "无法加载飞书账号：{{error}}",
@@ -21,10 +21,11 @@ export const externalAccounts: Translation<typeof en> = {
   },
   providers: {
     feishu: "飞书",
+    bytedcli: "bytedcli",
   },
   feishu: {
     intro:
-      "你已连接的飞书账号，以及各自所属的组织和登录所用的飞书应用。会话里的 feishu-cli 用它们以你的身份在飞书中工作。",
+      "你已连接的飞书账号，以及各自所属的组织和登录所用的飞书应用。Foundry 把登录和应用密钥都保存在服务器上；会话里的 feishu-cli 经由 Foundry 以你的身份访问飞书，设备上不保存任何凭据。",
     connect: "连接飞书账号",
   },
   status: {
@@ -191,12 +192,98 @@ export const externalAccounts: Translation<typeof en> = {
     anotherBody:
       "扫码一次：扫码的飞书用户授权这个应用，并作为一个账号连接到这里。",
   },
+  deviceStatus: {
+    ready: "已登录",
+    expiring: "即将过期",
+    expired: "已过期",
+    signed_out: "未登录",
+    not_installed: "未安装",
+    unavailable: "此设备不可用",
+    error: "无法读取",
+  },
+  deviceHeld: {
+    intro: {
+      bytedcli:
+        "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。在这里为你的设备登录；工作区再选择会话使用哪台设备的登录。",
+      default:
+        "{{name}} 把登录保存在每台设备上，Foundry 不会把它复制到任何地方。",
+    },
+    loading: "正在读取你的设备…",
+    loadFailed: "无法读取你的设备：{{error}}",
+    unknown: "此服务器不认识连接器 {{kind}}。",
+    checkAll: "重新检查",
+    checking: "正在检查…",
+    checkAgain: "重新检查",
+    emptyTitle: "还没有能使用 {{name}} 的设备",
+    emptyBody: "配对一台能访问 {{name}} 所需网络的设备后，它会出现在这里。",
+    notOffered:
+      "{{devices}} 不提供 {{name}}：它需要能访问{{requirement}}，这些设备不能。",
+    notRead: "尚未检查",
+    notInstalled: "未安装 {{name}}",
+    notSignedIn: "未登录",
+    readFailed: "无法读取登录状态：{{detail}}",
+    signedIn: "已登录",
+    signedInAs: "已登录为 {{name}}",
+    sites: "站点 {{sites}}",
+    expires: "{{when}}过期",
+    expired: "{{when}}已过期",
+    versionFoundry: "{{name}} {{version}}，由 Foundry 安装",
+    versionDevice: "{{name}} {{version}}，设备自带",
+    checked: "{{when}}检查",
+    offline: "离线 · 上次读取于{{when}}",
+    workerTooOld:
+      "此设备的 worker 版本太旧，无法使用 {{name}}；请在“设备”中更新。",
+    install: "安装",
+    installing: "正在安装 {{name}}，可能需要几分钟…",
+    upgrade: "升级到 {{version}}",
+    signIn: "登录",
+    signInAgain: "重新登录",
+    signOut: "退出登录",
+    signOutTitle: "在 {{device}} 上退出 {{name}}？",
+    signOutBody:
+      "在设备上运行 {{name}} 自己的退出登录。重新登录之前，那台设备上的会话无法使用它。",
+    reminderExpiring: "{{device}} 上的 {{name}} 登录将于{{when}}过期。",
+    reminderExpired: "{{device}} 上的 {{name}} 登录已于{{when}}过期。",
+    checkedNotice: "已重新读取 {{device}} 上的 {{name}}。",
+    installed: "已在 {{device}} 上安装 {{name}}。",
+    signedOut: "{{device}} 上的 {{name}} 已退出登录。",
+    signedInNotice: "{{device}} 上的 {{name}} 已登录。",
+  },
+  deviceSignIn: {
+    title: "登录 {{name}}",
+    description:
+      "由 {{device}} 发起 {{name}} 自己的登录；登录只保存在那台设备上。",
+    starting: "正在请 {{device}} 发起登录…",
+    approveTitle: "在登录页面上确认",
+    approveBody:
+      "在这里打开页面，或用手机扫码，然后确认请求。设备上的 {{name}} 会完成登录。",
+    waiting: "等待你确认…",
+    expired: "登录请求已过期。",
+    denied: "登录请求已被拒绝。",
+    failed: "登录未完成：{{error}}",
+  },
   workspace: {
     rule: "只有你本人在自己的设备上发起的会话才会使用你的账号。其他成员能看到绑定了账号，但看不到是谁的账号。",
     binding: {
       feishu:
         "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
+      bytedcli:
+        "在你绑定的设备上，此工作区的会话用那台设备自己的 bytedcli 登录；登录不会离开设备。",
     },
+    useDevice: "{{device}} 上的会话使用它的 {{name}} 登录",
+    members: "其他成员在 {{device}} 上发起的会话也可以使用",
+    membersHint:
+      "他们会以你的身份访问字节跳动的服务。除非你确实要借出登录，否则不要开启。",
+    noDevices: "你的设备上还没有 {{name}}。请在“管理连接器”中设置。",
+    devicesLoadFailed: "无法加载设备的登录：{{error}}",
+    deviceBound: "此工作区在 {{device}} 上的会话将使用它的 {{name}} 登录。",
+    deviceUnbound: "此工作区在 {{device}} 上的会话不再使用它的 {{name}} 登录。",
+    membersOn:
+      "其他成员在 {{device}} 上的会话也可以在此工作区使用它的 {{name}} 登录。",
+    membersOff:
+      "只有你自己在 {{device}} 上的会话在此工作区使用它的 {{name}} 登录。",
+    othersOwner: "仅设备所有者的会话",
+    othersMembers: "那台设备上所有成员的会话",
     others: "其他成员绑定的账号",
     use: "在此工作区使用 {{name}}",
     empty: "你还没有{{provider}}账号。",

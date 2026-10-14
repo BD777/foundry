@@ -3,7 +3,7 @@ export const externalAccounts = {
   page: {
     title: "Connectors",
     intro:
-      "External services your sessions use as you. Foundry keeps each login and app secret on the server; sessions you start, on a device you own, in a workspace you bound the account to, reach Feishu through Foundry and hold no credential on the device.",
+      "External services your sessions use as you. Each tab says where its sign-in is kept: Feishu's on the server, bytedcli's on each of your devices. Only sessions in workspaces you bound it to use it.",
     tabs: "Connector types",
     loading: "Loading Feishu accounts…",
     loadFailed: "Could not load Feishu accounts: {{error}}",
@@ -20,10 +20,11 @@ export const externalAccounts = {
   },
   providers: {
     feishu: "Feishu",
+    bytedcli: "bytedcli",
   },
   feishu: {
     intro:
-      "Your connected Feishu accounts, each with its organisation and the Feishu app it signed in through. feishu-cli in your sessions uses them to work in Feishu as you.",
+      "Your connected Feishu accounts, each with its organisation and the Feishu app it signed in through. Foundry keeps each login and app secret on the server; feishu-cli in your sessions reaches Feishu through Foundry as you and holds no credential on the device.",
     connect: "Connect Feishu account",
   },
   status: {
@@ -200,12 +201,101 @@ export const externalAccounts = {
     anotherBody:
       "One scan: the Feishu user who scans authorizes this app and is connected as an account here.",
   },
+  deviceStatus: {
+    ready: "Signed in",
+    expiring: "Expires soon",
+    expired: "Expired",
+    signed_out: "Signed out",
+    not_installed: "Not installed",
+    unavailable: "Not available here",
+    error: "Could not read",
+  },
+  deviceHeld: {
+    intro: {
+      bytedcli:
+        "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Sign in on the devices you own here; a workspace then chooses which device's sign-in its sessions use.",
+      default:
+        "{{name}} keeps its sign-in on each device, and Foundry never copies it anywhere.",
+    },
+    loading: "Reading your devices…",
+    loadFailed: "Could not read your devices: {{error}}",
+    unknown: "This server does not know the connector {{kind}}.",
+    checkAll: "Check again",
+    checking: "Checking…",
+    checkAgain: "Check again",
+    emptyTitle: "No device can use {{name}} yet",
+    emptyBody:
+      "Pair a device that can reach where {{name}} works; it shows up here.",
+    notOffered:
+      "Not offered on {{devices}}: {{name}} needs access to the {{requirement}}, which they do not have.",
+    notRead: "Not checked yet",
+    notInstalled: "{{name}} is not installed",
+    notSignedIn: "Not signed in",
+    readFailed: "Could not read the sign-in: {{detail}}",
+    signedIn: "Signed in",
+    signedInAs: "Signed in as {{name}}",
+    sites: "site {{sites}}",
+    expires: "expires {{when}}",
+    expired: "expired {{when}}",
+    versionFoundry: "{{name}} {{version}}, installed by Foundry",
+    versionDevice: "{{name}} {{version}}, the device's own",
+    checked: "checked {{when}}",
+    offline: "Offline · last read {{when}}",
+    workerTooOld:
+      "This device's worker is too old for {{name}}; update it from Devices.",
+    install: "Install",
+    installing: "Installing {{name}}; this can take a few minutes…",
+    upgrade: "Upgrade to {{version}}",
+    signIn: "Sign in",
+    signInAgain: "Sign in again",
+    signOut: "Sign out",
+    signOutTitle: "Sign {{name}} out on {{device}}?",
+    signOutBody:
+      "Runs {{name}}'s own sign-out on the device. Sessions there lose the sign-in until you sign in again.",
+    reminderExpiring: "{{name}} on {{device}} expires {{when}}.",
+    reminderExpired: "{{name}} on {{device}} expired {{when}}.",
+    checkedNotice: "Read {{name}} on {{device}} again.",
+    installed: "{{name}} is installed on {{device}}.",
+    signedOut: "{{name}} on {{device}} is signed out.",
+    signedInNotice: "{{name}} is signed in on {{device}}.",
+  },
+  deviceSignIn: {
+    title: "Sign in to {{name}}",
+    description:
+      "{{device}} starts {{name}}'s own sign-in; the sign-in stays on that device.",
+    starting: "Asking {{device}} to start the sign-in…",
+    approveTitle: "Approve on the sign-in page",
+    approveBody:
+      "Open the page here, or scan the code with your phone, and approve the request. {{name}} on the device finishes the sign-in.",
+    waiting: "Waiting for you to approve…",
+    expired: "The sign-in request expired.",
+    denied: "The sign-in request was denied.",
+    failed: "The sign-in did not finish: {{error}}",
+  },
   workspace: {
     rule: "Only sessions you start, on devices you own, use your accounts. Other members see that an account is bound, not whose it is.",
     binding: {
       feishu:
         "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
+      bytedcli:
+        "Sessions here on a device you bind use bytedcli with that device's own sign-in; it never leaves the device.",
     },
+    useDevice: "Sessions on {{device}} use its {{name}} sign-in",
+    members: "Also sessions other members start on {{device}}",
+    membersHint:
+      "They act as you in ByteDance services. Leave off unless you mean to lend your sign-in.",
+    noDevices:
+      "None of your devices has {{name}} yet. Set it up from Manage connectors.",
+    devicesLoadFailed: "Could not load the devices' sign-ins: {{error}}",
+    deviceBound: "Sessions here on {{device}} use its {{name}} sign-in.",
+    deviceUnbound:
+      "Sessions here on {{device}} no longer use its {{name}} sign-in.",
+    membersOn:
+      "Other members' sessions on {{device}} may use its {{name}} sign-in here.",
+    membersOff:
+      "Only your own sessions on {{device}} use its {{name}} sign-in here.",
+    othersOwner: "For its owner's sessions",
+    othersMembers: "For every member's sessions on that device",
     others: "Bound by other members",
     use: "Use {{name}} in this workspace",
     empty: "You have no {{provider}} account yet.",
