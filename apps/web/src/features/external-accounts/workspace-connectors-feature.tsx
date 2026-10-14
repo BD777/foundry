@@ -14,7 +14,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 import { Panel } from "../../components/ui/panel";
-import { connectorTypes } from "../../lib/connector-types";
+import { connectorHolding, connectorTypes } from "../../lib/connector-types";
 import { organisationLabel } from "../../lib/feishu-app-names";
 import { navigateToConnectors } from "../../lib/in-app-navigation";
 import {
@@ -27,6 +27,7 @@ import {
   statusLabel,
   statusTone,
 } from "./account-format";
+import { WorkspaceDeviceConnectors } from "./workspace-device-connectors";
 
 export interface WorkspaceConnectorsFeatureProps {
   workspaceId: string;
@@ -38,8 +39,8 @@ export interface WorkspaceConnectorsFeatureProps {
 
 /**
  * A workspace's Connectors tab: per connector type, which of the caller's
- * accounts its sessions may act as, and which accounts other members bound.
- * Read on open and after each change.
+ * accounts (server-held) or devices' sign-ins (device-held) its sessions
+ * may use, and what other members bound. Read on open and after each change.
  */
 export function WorkspaceConnectorsFeature({
   workspaceId,
@@ -103,7 +104,7 @@ export function WorkspaceConnectorsFeature({
     <div className="fdy-xacc-workspace">
       <p className="fdy-xacc-muted">{t("workspace.rule")}</p>
       {readOnlyReason ? <Alert title={readOnlyReason} tone="info" /> : null}
-      {connectorTypes.map((type) => {
+      {serverHeldTypes.map((type) => {
         const provider = providerLabel(type);
         const own = mine.filter((account) => account.provider === type);
         const theirs = others.filter((account) => account.provider === type);
@@ -197,6 +198,20 @@ export function WorkspaceConnectorsFeature({
           </Panel>
         );
       })}
+      <WorkspaceDeviceConnectors
+        currentUserId={currentUserId}
+        kinds={deviceHeldTypes}
+        onNotice={onNotice}
+        readOnlyReason={readOnlyReason}
+        workspaceId={workspaceId}
+      />
     </div>
   );
 }
+
+const serverHeldTypes = connectorTypes.filter(
+  (type) => connectorHolding[type] === "server_held",
+);
+const deviceHeldTypes = connectorTypes.filter(
+  (type) => connectorHolding[type] === "device_held",
+);

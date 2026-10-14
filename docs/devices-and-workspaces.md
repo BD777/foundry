@@ -10,7 +10,8 @@
 
 - **一台机器在一个账号下是一个设备**，按 OS machine id 的哈希识别；同一台机器上的并行开发栈是不同设备；一个状态根只运行一个 Daemon（`device-pairing.ts` 的锁）。设备可以没有 Workspace：2026-10-09 起新设备配对后不再自动登记任何目录，人在 Workspaces 页添加（#113、#114）。
 - **配对**：登录的账号生成一次性配对 token（Web 上 15 分钟，`foundry-server devices pairing-token` 1 小时），`POST /api/daemon/pair` 兑换一次，得到设备自己的凭证；Server 只存哈希，Worker 存在 `~/.foundry/daemon-config.json`（仅所有者可读）。同一台机器再次配对会轮换凭证。细节见[安全边界](security.md)。
-- **Daemon 主动连接 Server**（`/api/daemon/ws`），设备不需要开放入站端口。连接打开后先 `hello`，再为每个 Workspace 注册；Worker 每 25 秒发心跳，Server 70 秒收不到任何字节就断开，Worker 退避重连（上限 30 秒）。会话生命周期消息走需确认的 outbox（`transport.ts` 的 `ReliableSessionTransport`）：重连后补发未确认的消息，按 socket 缓冲水位背压、合并同一事件的旧版本（2026-10-11，#120）；大消息在 Server 支持时分片为 `reply_chunk`。协议校验的单条上限是 2 MiB，Server 读帧上限 96 MiB（容纳 Skill 包）。
+- **Daemon 主动连接 Server**（`/api/daemon/ws`），设备不需要开放入站端口。连接打开后先 `hello`，再为每个 Workspace 注册；Worker 每 25 秒发心跳，Server 70 秒收不到任何字节就断开，Worker 退避重连（上限 30 秒）。会话生命周期消息走需确认的 outbox（`transport.ts` 的 `ReliableSessionTransport`）：重连后补发未确认的消息，按 socket 缓冲水位背压、合并同一事件的旧版本（2026-10-11，#120）；大消息在 Server 支持时分片为 `reply_chunk`。协议校验的单条上限是 2 MiB，Server 读帧上限 96 MiB（容纳 Skill 包，压缩消息解压后同样受限）。
+- **慢速上行**（2026-10-15）：daemon socket 协商 permessage-deflate（no context takeover，≥1 KiB 的消息才压缩；旧 Worker 的 `ws` 默认也会协商）。Server 在 upgrade 响应头 `Foundry-Daemon-Features: registration_sections` 声明它在内存里按 digest 保留设备注册的两个 section（`device`：agentProfiles + providerHealth；`workspace`：assets、agents、workspaceFiles、chats、skills）；Worker 对本进程已整份发过的 section 只发 digest（`omittedSections`），Server 缺（重启过）就回 `registration_needed`，Worker 整份重发，slim hello 被接受前其他注册先等着。`scan_skills` 带 `knownDigest`，未变的扫描结果只回 digest，Server 用保留的结果照常入库。重连报告行（Server 日志 `device … reconnected`）带上一连接前 3 分钟按消息类型的字节数、补发的 outbox 消息、outbox/socket 峰值和最长发送停滞（`send-meter.ts`）。
 - **Server 不读写自己磁盘上的 Workspace 路径。** 附件上传与读取、工作区文件与目录浏览都经设备通道分块转发，路径由设备按真实路径校验（M3-1，2026-09-28；`daemon_attachments.go`、`workspace-attachments.ts`）。
 - **移除设备是软删除**：设备被打上墓碑、不能再注册，它的聊天、Issue 与会话记录保留，它上报的 agent、profile、连接分配与 Skill 扫描被清除；有未结束的工作时拒绝移除。在线的 Daemon 收到关闭码 4001 `device_removed` 后停止重连、原地等待，只有重新 `pair` / `setup` 才能回来（`device_removal.go`、`device-removal.ts`）。
 - **断线可诊断**：设备页显示最近一次断开的 Server 侧原因与 Worker 重连后的自述（只在内存中，Server 重启后清空，`device_disconnects.go`），以及 Diagnostics 页的诊断与修复动作（`device_diagnostics.go`）。
@@ -78,7 +79,7 @@
 ## 代码位置
 
 - 配对与设备身份：`packages/worker/src/device-pairing.ts`、`device-removal.ts`；`apps/server/internal/httpapi/device_auth.go`、`device_removal.go`
-- 连接：`packages/worker/src/daemon-connection.ts`、`daemon/control-connection.ts`、`transport.ts`；`apps/server/internal/httpapi/daemon_hub.go`、`daemon_conn.go`、`daemon_rpc.go`、`daemon_reply_chunks.go`、`daemon_outbox.go`；消息名 `packages/protocol/src/daemon-messages.ts`；符号级流程见 [Daemon 生命周期](daemon-lifecycle.md)
+- 连接：`packages/worker/src/daemon-connection.ts`、`daemon/control-connection.ts`、`transport.ts`；`apps/server/internal/httpapi/daemon_hub.go`、`daemon_conn.go`、`registration_sections.go`、`daemon_rpc.go`、`daemon_reply_chunks.go`、`daemon_outbox.go`；消息名 `packages/protocol/src/daemon-messages.ts`；符号级流程见 [Daemon 生命周期](daemon-lifecycle.md)
 - 安装与更新：`packages/worker/src/worker-install.ts`、`service.ts`、`mac-worker-app.ts`、`worker-self-update.ts`、`self-update-status.ts`；`apps/server/internal/httpapi/worker_packages.go`、`worker_update.go`；`scripts/pack-worker-release.mjs`
 - Workspace：`packages/worker/src/workspaces.ts`、`workspace-registration.ts`、`workspace-folders.ts`、`daemon/workspace-roster.ts`、`daemon/handlers/workspaces.ts`；`apps/server/internal/httpapi/workspaces_http.go`、`workspace_relink.go`、`workspace_availability.go`；`apps/server/internal/sqlitestore/workspace_deletions.go`
 - Web：`apps/web/src/features/workspaces/`、`apps/web/src/features/devices/`、`apps/web/src/app/navigation.ts`

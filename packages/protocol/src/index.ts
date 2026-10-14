@@ -23,6 +23,7 @@ export {
 } from "./session-schedule.js";
 
 export * from "./browser-events.js";
+export * from "./connectors.js";
 export * from "./external-accounts.js";
 export * from "./feishu.js";
 export * from "./process-labels.js";

@@ -213,6 +213,18 @@
   font-size: 12px;
 }
 
+/* A device-held binding: the device's own checkbox, then lending it to
+   members, indented under it. */
+.fdy-xacc-binding-options {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.fdy-xacc-binding-options > .fdy-xacc-check + .fdy-xacc-check {
+  padding-left: 24px;
+}
+
 .fdy-xacc-workspace {
   display: grid;
   min-width: 0;

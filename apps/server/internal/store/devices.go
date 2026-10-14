@@ -165,6 +165,13 @@ type DaemonRegistration struct {
 	// Connections are the worker's own accounts of its previous connections;
 	// the server logs them and keeps the latest for the device page.
 	Connections []WorkerConnectionReport `json:"connections,omitempty"`
+	// Sections are the digests of the registration's sections, by name
+	// ("device": its agent profiles and provider health; "workspace": the
+	// workspace's assets, agents, files, chats and skills), and
+	// OmittedSections the ones left out because the server keeps them (see
+	// httpapi registration_sections.go).
+	Sections        map[string]string `json:"sections,omitempty"`
+	OmittedSections []string          `json:"omittedSections,omitempty"`
 }
 
 // WorkerConnectionReport is one connection to the server as the worker saw
@@ -183,6 +190,38 @@ type WorkerConnectionReport struct {
 	BytesSent         int64  `json:"bytesSent,omitempty"`
 	Proxy             string `json:"proxy,omitempty"`
 	MaxLagMs          int64  `json:"maxLagMs,omitempty"`
+	// SentAfterOpen is what the worker sent in the first minutes after the
+	// connection opened, by message type, largest first.
+	SentAfterOpen *WorkerSentAfterOpen `json:"sentAfterOpen,omitempty"`
+	// Replayed are session outbox messages carried over from an earlier
+	// connection.
+	Replayed *WorkerSentCount `json:"replayed,omitempty"`
+	// OutboxPeak is the most the session outbox and the socket held.
+	OutboxPeak *WorkerOutboxPeak `json:"outboxPeak,omitempty"`
+	// LongestSendStallMs is the longest the socket held bytes the network
+	// took none of.
+	LongestSendStallMs int64 `json:"longestSendStallMs,omitempty"`
+	// Compressed: the connection used permessage-deflate.
+	Compressed bool `json:"compressed,omitempty"`
+}
+
+// WorkerSentAfterOpen counts a connection's first messages by type.
+type WorkerSentAfterOpen struct {
+	WindowMs int64             `json:"windowMs"`
+	Types    []WorkerSentCount `json:"types"`
+}
+
+// WorkerSentCount is how many messages (of Type) went and their bytes.
+type WorkerSentCount struct {
+	Type  string `json:"type,omitempty"`
+	Count int64  `json:"count"`
+	Bytes int64  `json:"bytes"`
+}
+
+// WorkerOutboxPeak is the fullest a worker's outbox and socket got.
+type WorkerOutboxPeak struct {
+	Queued        int64 `json:"queued"`
+	BufferedBytes int64 `json:"bufferedBytes"`
 }
 
 // DiagnosticCheck is one check a worker ran on itself; the web words it by

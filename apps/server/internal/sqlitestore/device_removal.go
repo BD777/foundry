@@ -188,7 +188,8 @@ func (s *Store) assertWorkspaceDeviceNotRemoved(ctx context.Context, workspaceID
 
 // purgeRemovedDeviceState deletes what a removed device reported or was
 // given, as opposed to its history: agents, agent profiles, provider
-// health, server connection assignments, skill roots and skills, and the
+// health, server connection assignments, skill roots and skills, its
+// device-held connector readings and bindings, and the
 // per-device credential copies (httpapi.agentProfileSecretID:
 // "agent-profile:<device>:<profile>"). Workspaces, chats, sessions, runs and
 // issues stay readable. Nothing live is left to list, pick or project.
@@ -202,6 +203,8 @@ func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
 		{"skill scans", `DELETE FROM device_skill_scans WHERE device_id = ?`},
 		{"skill roots", `DELETE FROM device_skill_roots WHERE device_id = ?`},
 		{"tools", `DELETE FROM device_tools WHERE device_id = ?`},
+		{"connector states", `DELETE FROM device_connector_states WHERE device_id = ?`},
+		{"connector bindings", `DELETE FROM device_connector_bindings WHERE device_id = ?`},
 		{"resources", `DELETE FROM resource_instances WHERE source_id = ?`},
 		{"resource source", `DELETE FROM resource_sources WHERE id = ?`},
 		{"resource leases", `DELETE FROM resource_leases WHERE source_id = ?`},

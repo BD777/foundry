@@ -51,6 +51,7 @@ export const tsDtoPaths = [
   "packages/protocol/src/workspace.ts",
   "packages/protocol/src/feishu.ts",
   "packages/protocol/src/external-accounts.ts",
+  "packages/protocol/src/connectors.ts",
   "packages/protocol/src/browser-events.ts",
   "packages/protocol/src/resources.ts",
 ].map((path) => resolve(root, path));
@@ -69,6 +70,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/projections.go",
   "apps/server/internal/store/feishu.go",
   "apps/server/internal/store/external_accounts.go",
+  "apps/server/internal/store/device_connectors.go",
   "apps/server/internal/browserevent/payloads.go",
   "apps/server/internal/store/resources.go",
 ].map((path) => resolve(root, path));

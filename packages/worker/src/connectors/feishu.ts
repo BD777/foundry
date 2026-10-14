@@ -6,17 +6,17 @@ import type {
   AgentSession,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
-import { readDaemonConfig } from "./config.js";
+import { readDaemonConfig } from "../config.js";
 import {
   startFeishuGatewayForwarder,
   type FeishuGatewayForwarder,
 } from "./feishu-gateway-forwarder.js";
-import { findCommand, managedToolsBin } from "./managed-tools.js";
-import { foundryStatePath } from "./state-root.js";
-import { writeFileAtomic, writePrivateJSONAtomic } from "./storage.js";
-import { registerKnownSecret } from "./secret-redaction.js";
-import { isUtilitySession, isVerificationSession } from "./session-roles.js";
-import { errorMessage } from "./utils.js";
+import { findCommand, managedToolsBin } from "../managed-tools.js";
+import { foundryStatePath } from "../state-root.js";
+import { writeFileAtomic, writePrivateJSONAtomic } from "../storage.js";
+import { registerKnownSecret } from "../secret-redaction.js";
+import { isUtilitySession, isVerificationSession } from "../session-roles.js";
+import { errorMessage } from "../utils.js";
 
 /**
  * External accounts on the device (docs/security.md, External Accounts and

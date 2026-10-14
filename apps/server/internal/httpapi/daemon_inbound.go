@@ -65,6 +65,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsNativeCliInstalledType:       answer[wsNativeCliInstallResult],
 	wsWorkerUpdateStartedType:      answer[wsWorkerUpdateStarted],
 	wsToolInstalledType:            answer[wsToolInstalled],
+	wsConnectorReplyType:           answer[store.ConnectorReplyPayload],
 	wsRepositoryRefsReadType:       answer[wsRepositoryRefs],
 	wsSkillRepositoryFetchedType:   answer[wsSkillRepositoryFetched],
 	wsDiagnosticsReadyType:         answer[wsDiagnosticsReady],
@@ -115,6 +116,9 @@ var inboundHandlers = map[string]inboundHandler{
 			}
 			if reply.Registration.Device.ID != "" {
 				if err := c.syncRegistration(reply.Registration); err != nil {
+					if c.askForWholeRegistration(envelope.ID, err) {
+						return nil
+					}
 					return err
 				}
 				c.reply(registeredEnvelope(envelope.ID))
@@ -175,6 +179,10 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 		return err
 	}
 	if err := c.syncRegistration(registration); err != nil {
+		if c.askForWholeRegistration(envelope.ID, err) {
+			// Not registered yet: the device sends its hello again in full.
+			return nil
+		}
 		return err
 	}
 	c.applyServedWorkspaces(registration)
@@ -192,6 +200,18 @@ func (c *daemonConnection) onHello(_ context.Context, envelope wsEnvelope) error
 	go c.sendSessionTimers()
 	go c.reportLegacyResources(c.lifetime, registration)
 	return nil
+}
+
+// askForWholeRegistration answers a registration that left out sections
+// the server does not have with registration_needed; false for any other
+// error.
+func (c *daemonConnection) askForWholeRegistration(id string, err error) bool {
+	var needed *registrationNeededError
+	if !errors.As(err, &needed) {
+		return false
+	}
+	c.reply(registrationNeededEnvelope(id, needed.sections))
+	return true
 }
 
 func (c *daemonConnection) onHeartbeat(_ context.Context, envelope wsEnvelope) error {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/foundry-dev/foundry/apps/server/internal/externalaccounts"
+	"github.com/foundry-dev/foundry/apps/server/internal/connectors"
 	"github.com/foundry-dev/foundry/apps/server/internal/resources"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/gorilla/websocket"
@@ -21,6 +21,8 @@ type DaemonHub struct {
 	onEvidenceConnected func(context.Context, string)
 	skillScans          map[string]*skillScan
 	skillScansMu        sync.Mutex
+	// skillScanAnswers keeps each device's last scan answer (skills.go).
+	skillScanAnswers keptSkillScans
 	// onDeviceConnected runs once per daemon hello, until that socket closes.
 	onDeviceConnected func(ctx context.Context, deviceID string, capabilities []string)
 	// onWorkerUpdateStatus receives an update failure a worker reports
@@ -28,8 +30,8 @@ type DaemonHub struct {
 	onWorkerUpdateStatus func(deviceID string, status wsWorkerUpdateStatus)
 	connections          map[string]*daemonConnection
 	store                Backend
-	// externalAccounts mints what a session may act as (external_accounts.go).
-	externalAccounts *externalaccounts.Service
+	// connectors decides what a session may use of each connector (connectors.go).
+	connectors *connectors.Module
 	// resources keeps what devices report of their resources (resources.go).
 	resources *resources.Service
 	// leases follow devices going and coming (resource_leases.go).
@@ -44,6 +46,9 @@ type DaemonHub struct {
 	disconnects deviceDisconnects
 	// subagents caches each session's subagent list as its device read it.
 	subagents *subagentListCache
+	// sections keeps what devices registered, so a registration can leave
+	// out what did not change (registration_sections.go).
+	sections registrationSections
 	// readTimeout is how long a connection may receive nothing at all from
 	// its device (no pong, no part of a message) before it is dropped.
 	readTimeout time.Duration
@@ -64,6 +69,14 @@ func NewDaemonHub(store Backend, notifiers daemonNotifiers, allowedOrigin string
 			CheckOrigin: func(r *http.Request) bool {
 				return webSocketOriginAllowed(allowedOrigin, r)
 			},
+			// permessage-deflate, when the device offers it: registrations,
+			// scans and session events are JSON that shrinks several times,
+			// and a device's uplink can be slow and lossy. Only "no context
+			// takeover" is supported (each message compressed on its own),
+			// so no connection keeps a compression window between messages;
+			// the flate writers and readers are pooled. A worker that offers
+			// nothing keeps sending plain frames.
+			EnableCompression: true,
 		},
 	}
 }
@@ -78,7 +91,7 @@ func (h *DaemonHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	socket, err := h.upgrader.Upgrade(w, r, nil)
+	socket, err := h.upgrader.Upgrade(w, r, http.Header{daemonFeaturesHeader: {registrationSectionsFeature}})
 	if err != nil {
 		log.Printf("daemon websocket upgrade failed: %v", err)
 		return
@@ -275,6 +288,11 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	if !c.actor.ActsAsDevice(registration.Device.ID) {
 		return errors.New("daemon registration device does not match its credential")
 	}
+	// Before anything is logged or stored: a registration missing sections
+	// is sent again in full, with the same reports.
+	if err := c.hub.sections.fill(registration.Device.ID, &registration); err != nil {
+		return err
+	}
 	logWorkerStalls(registration)
 	c.hub.logWorkerConnections(registration)
 	// A device with no workspace yet registers itself alone; its workspaces
@@ -291,6 +309,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 		}
 		return err
 	}
+	c.hub.sections.keep(registration.Device.ID, registration)
 	if changes.DeletedWorkspace != "" {
 		// The person deleted this workspace from the device; the device
 		// still serves its folder. Only the device's news counts, and the

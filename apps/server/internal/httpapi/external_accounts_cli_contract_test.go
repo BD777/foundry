@@ -52,7 +52,7 @@ func TestFeishuCLIContractThroughTheGateway(t *testing.T) {
 		t.Skip("no node to run the worker's forwarder")
 	}
 	workerDist, _ := filepath.Abs("../../../../packages/worker/dist")
-	if _, err := os.Stat(filepath.Join(workerDist, "feishu-gateway-forwarder.js")); err != nil {
+	if _, err := os.Stat(filepath.Join(workerDist, "connectors", "feishu-gateway-forwarder.js")); err != nil {
 		t.Skip("the worker is not built (packages/worker/dist)")
 	}
 	versionOutput, _ := exec.Command(cli, "--version").CombinedOutput()
@@ -237,7 +237,7 @@ func startContractWorker(t *testing.T, node, dist, scratch string, input map[str
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(input)
-	command := exec.Command(node, script, "file://"+filepath.Join(dist, "feishu-gateway-forwarder.js"), "file://"+filepath.Join(dist, "external-accounts.js"))
+	command := exec.Command(node, script, "file://"+filepath.Join(dist, "connectors", "feishu-gateway-forwarder.js"), "file://"+filepath.Join(dist, "connectors", "feishu.js"))
 	command.Env = append(os.Environ(), "CONTRACT_INPUT="+string(encoded),
 		"FOUNDRY_STATE_ROOT="+filepath.Join(scratch, "state"), "FOUNDRY_TOOLS_ROOT="+filepath.Join(scratch, "tools"))
 	command.Stderr = os.Stderr

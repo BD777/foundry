@@ -166,6 +166,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"assets", "workspace_id", ownerWorkspace},
 	{"skills", "workspace_id", ownerWorkspace},
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
+	{"device_connector_bindings", "workspace_id", ownerWorkspace},
 	{"feishu_gateway_grants", "workspace_id", ownerWorkspace},
 }
 

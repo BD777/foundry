@@ -5,6 +5,10 @@ import {
   daemonMessageTypes,
   type WorkspaceFoldersPayload,
 } from "@bd777/foundry-protocol";
+import {
+  sectionedRegistration,
+  sentSectionsInFull,
+} from "../registration-sections.js";
 import type { SessionExecutionRegistry } from "../session-state.js";
 import { sendWebSocket, trySendWebSocket } from "../transport.js";
 import { errorMessage, safeID } from "../utils.js";
@@ -76,6 +80,23 @@ export class WorkspaceRoster {
   private reportedFolders: WorkspaceFoldersPayload | undefined;
   /** Whether the server takes workspace_folders news at all. */
   serverTakesFolders = false;
+  /**
+   * Whether the server keeps registration sections (its upgrade said so):
+   * registrations may leave out what it has (see registration-sections).
+   */
+  serverKeepsSections = false;
+  /** Registrations sent without some sections, by id, as they are whole. */
+  private readonly slimRegistrations = new Map<
+    string,
+    { type: string; whole: object }
+  >();
+  /**
+   * The id of a hello sent without some sections, until the server took it:
+   * a server that has to ask for it whole has not registered the device, and
+   * would refuse any other registration meanwhile. Those wait in afterHello.
+   */
+  private helloPending: string | undefined;
+  private afterHello: Array<() => void> = [];
   private closed = false;
 
   constructor(
@@ -111,10 +132,9 @@ export class WorkspaceRoster {
    * workspace's follows, as its agents are made from the device's profiles.
    */
   reportDevice(): void {
-    sendWebSocket(
-      this.socket,
+    this.sendRegistration(
       daemonMessageTypes.workspaceReady,
-      { registration: this.deviceRegistration() },
+      this.deviceRegistration(),
       `registration_device_${Date.now()}`,
     );
     for (const workspacePath of this.knownPaths().filter(
@@ -122,13 +142,70 @@ export class WorkspaceRoster {
     )) {
       const registration = this.registration(workspacePath);
       this.register(registration);
-      sendWebSocket(
-        this.socket,
+      this.sendRegistration(
         daemonMessageTypes.workspaceReady,
-        { registration },
+        registration,
         `registration_${safeID(registration.workspace.id)}_${Date.now()}`,
       );
     }
+  }
+
+  /**
+   * Sends a registration as hello or workspace_ready, leaving out the
+   * sections a server that keeps them was sent before.
+   */
+  sendRegistration(type: string, registration: object, id: string): void {
+    const hello = type === daemonMessageTypes.hello;
+    if (this.helloPending && !hello) {
+      this.afterHello.push(() => this.sendRegistration(type, registration, id));
+      return;
+    }
+    const payload = (value: object) =>
+      hello ? value : { registration: value };
+    if (!this.serverKeepsSections) {
+      sendWebSocket(this.socket, type, payload(registration), id);
+      return;
+    }
+    const { whole, slim } = sectionedRegistration(registration);
+    if (slim) {
+      this.slimRegistrations.set(id, { type, whole });
+      if (hello) this.helloPending = id;
+      sendWebSocket(this.socket, type, payload(slim), id);
+      return;
+    }
+    sendWebSocket(this.socket, type, payload(whole), id);
+    sentSectionsInFull(whole.sections);
+  }
+
+  /**
+   * The server does not have sections a registration left out: it goes
+   * again whole. False when id names no such registration.
+   */
+  registrationNeeded(id: string | undefined): boolean {
+    const sent = id ? this.slimRegistrations.get(id) : undefined;
+    if (!id || !sent) return false;
+    this.slimRegistrations.delete(id);
+    const whole = sent.whole as { sections: Record<string, string> };
+    if (this.helloPending === id) this.helloPending = `${id}_whole`;
+    sendWebSocket(
+      this.socket,
+      sent.type,
+      sent.type === daemonMessageTypes.hello ? whole : { registration: whole },
+      `${id}_whole`,
+    );
+    sentSectionsInFull(whole.sections);
+    return true;
+  }
+
+  /** The server took the registration sent as id. */
+  registrationTaken(id: string | undefined): void {
+    if (!id) return;
+    this.slimRegistrations.delete(id);
+    if (id !== this.helloPending) return;
+    this.helloPending = undefined;
+    const waiting = this.afterHello;
+    this.afterHello = [];
+    for (const send of waiting) send();
   }
 
   /**
@@ -273,10 +350,9 @@ export class WorkspaceRoster {
         console.log(
           `${logTime()} The workspace folder ${entry.path} is back; serving ${registration.workspace.name} again.`,
         );
-        sendWebSocket(
-          this.socket,
+        this.sendRegistration(
           daemonMessageTypes.workspaceReady,
-          { registration },
+          registration,
           `workspace_ready_${safeID(registration.workspace.id)}_${Date.now()}`,
         );
       } catch (error) {

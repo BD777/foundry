@@ -8,6 +8,7 @@
 import type { WorkerConnectionReport } from "@bd777/foundry-protocol";
 import type { Socket } from "node:net";
 import type WebSocket from "ws";
+import { SendMeter } from "./send-meter.js";
 import { openLagWindow } from "./stall-monitor.js";
 
 export type { WorkerConnectionReport };
@@ -51,6 +52,9 @@ export class ConnectionRecorder {
   private error = "";
   private counter: ByteCounter | undefined;
   private readonly lag = openLagWindow();
+  private compressed = false;
+  /** What the connection sent and how its socket kept up (see send-meter). */
+  readonly sends = new SendMeter();
 
   /** A message or ping arrived from the server. */
   serverData(): void {
@@ -69,6 +73,11 @@ export class ConnectionRecorder {
 
   socketError(error: Error & { code?: string }): void {
     this.error = error.code ? `${error.code}: ${error.message}` : error.message;
+  }
+
+  /** The connection negotiated permessage-deflate. */
+  compressing(): void {
+    this.compressed = true;
   }
 
   /** The TCP socket under the WebSocket, for byte counts. */
@@ -106,6 +115,8 @@ export class ConnectionRecorder {
         : {}),
       ...(proxyHost() ? { proxy: proxyHost() } : {}),
       ...(this.lag.maxLagMs ? { maxLagMs: this.lag.maxLagMs } : {}),
+      ...this.sends.report(),
+      ...(this.compressed ? { compressed: true } : {}),
     };
     pending = [...pending, report].slice(-keptReports);
     history = [...history, report].slice(-keptReports);
@@ -196,7 +207,42 @@ export function describeConnectionReport(
       : "",
     `proxy ${report.proxy ?? "none"}`,
     report.maxLagMs ? `max event-loop delay ${report.maxLagMs}ms` : "",
+    ...describeSends(report),
   ]
     .filter(Boolean)
     .join(", ");
+}
+
+function kilobytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes}B` : `${Math.round(bytes / 1024)}KB`;
+}
+
+/** The send part of the line (see send-meter), as the server writes it too. */
+function describeSends(report: WorkerConnectionReport): string[] {
+  const parts: string[] = [];
+  if (report.compressed) parts.push("compressed");
+  if (report.sentAfterOpen?.types.length) {
+    const types = report.sentAfterOpen.types
+      .map(
+        (entry) =>
+          `${entry.type} ${entry.count > 1 ? `${entry.count}x ` : ""}${kilobytes(entry.bytes)}`,
+      )
+      .join(" ");
+    parts.push(
+      `first ${Math.round(report.sentAfterOpen.windowMs / 1000)}s sent [${types}]`,
+    );
+  }
+  if (report.replayed)
+    parts.push(
+      `replayed ${report.replayed.count} outbox messages ${kilobytes(report.replayed.bytes)}`,
+    );
+  if (report.outboxPeak)
+    parts.push(
+      `outbox peak ${report.outboxPeak.queued} queued ${kilobytes(report.outboxPeak.bufferedBytes)} on socket`,
+    );
+  if (report.longestSendStallMs)
+    parts.push(
+      `longest send stall ${Math.round(report.longestSendStallMs / 1000)}s`,
+    );
+  return parts;
 }

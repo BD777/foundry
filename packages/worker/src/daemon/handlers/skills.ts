@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   daemonMessageTypes,
   type FetchSkillRepositoryPayload,
@@ -51,6 +52,24 @@ async function uploadRepositoryFiles(
     throw new Error(
       `uploading the files returned ${response.status}: ${await response.text()}`,
     );
+}
+
+/**
+ * A scan answer with its digest, or only the digest when the server says it
+ * keeps an answer with that digest (knownDigest): the skills that did not
+ * change are not sent again over a slow uplink on every reconnect.
+ */
+export function scanAnswer(
+  answer: Record<string, unknown>,
+  knownDigest: unknown,
+): Record<string, unknown> {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(answer))
+    .digest("base64url")
+    .slice(0, 32);
+  return digest === knownDigest
+    ? { unchanged: true, digest }
+    : { ...answer, digest };
 }
 
 /** Skills on the device and in repositories, and the tools they need. */
@@ -116,11 +135,14 @@ export function registerSkillHandlers(dispatch: DaemonDispatch): void {
             trySendWebSocket(
               ctx.socket,
               daemonMessageTypes.skillsScanned,
-              {
-                skills,
-                tools: checkPrograms(payload?.tools),
-                toolVersions: managedToolVersions(),
-              },
+              scanAnswer(
+                {
+                  skills,
+                  tools: checkPrograms(payload?.tools),
+                  toolVersions: managedToolVersions(),
+                },
+                payload?.knownDigest,
+              ),
               envelope.id,
             );
           } finally {

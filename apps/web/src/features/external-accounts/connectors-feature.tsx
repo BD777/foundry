@@ -1,7 +1,12 @@
 import { useTranslation } from "react-i18next";
 import { PageSurface } from "../../components/ui/page-surface";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { connectorTypes, type ConnectorType } from "../../lib/connector-types";
+import {
+  connectorHolding,
+  connectorTypes,
+  type ConnectorType,
+} from "../../lib/connector-types";
+import { DeviceHeldConnector } from "./device-held-connector";
 import { FeishuConnector } from "./feishu-connector";
 
 export interface ConnectorsFeatureProps {
@@ -14,7 +19,8 @@ export interface ConnectorsFeatureProps {
 
 /**
  * The Connectors page: external services a person's sessions use under the
- * person's own identity, one tab per kind of service.
+ * person's own identity, one tab per kind of service. A server-held kind
+ * has its own tab (Feishu); every device-held kind shares one (per device).
  */
 export function ConnectorsFeature({
   onTabChange,
@@ -40,7 +46,11 @@ export function ConnectorsFeature({
         tone="navigation"
         value={tab}
       />
-      {tab === "feishu" ? <FeishuConnector {...props} /> : null}
+      {connectorHolding[tab] === "device_held" ? (
+        <DeviceHeldConnector kind={tab} onNotice={props.onNotice} />
+      ) : tab === "feishu" ? (
+        <FeishuConnector {...props} />
+      ) : null}
     </PageSurface>
   );
 }

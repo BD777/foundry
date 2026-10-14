@@ -139,9 +139,9 @@ func probeConnectorsKeepAlive(t *testing.T, sw *integrations.Switch) (*Server, f
 	// The server's own service (real Feishu adapter, the app's base URL is
 	// the fake), sweeping often and treating every account as due.
 	server := NewServerWithOptions(f.db, ServerOptions{AllowedOrigin: accountsTestOrigin, Integrations: sw})
-	server.externalAccounts.KeepAliveInterval = 5 * time.Millisecond
-	server.externalAccounts.KeepAliveLead = 365 * 24 * time.Hour
-	server.externalAccounts.Logf = t.Logf
+	server.connectors.ServerHeld.KeepAliveInterval = 5 * time.Millisecond
+	server.connectors.ServerHeld.KeepAliveLead = 365 * 24 * time.Hour
+	server.connectors.ServerHeld.Logf = t.Logf
 	base := f.fake.Refreshes()
 	return server, func() int { return f.fake.Refreshes() - base }, nil
 }
@@ -186,7 +186,7 @@ func TestIntegrationsOffAnswersRequests(t *testing.T) {
 	f := newExternalAccountsFixture(t)
 	app := f.createApp(f.alice, "")
 	account := f.connect(f.alice, app)
-	f.server.externalAccounts.Integrations = integrations.New(false)
+	f.server.connectors.ServerHeld.Integrations = integrations.New(false)
 	f.server.feishu.Integrations = integrations.New(false)
 	refreshes := f.fake.Refreshes()
 
@@ -202,8 +202,8 @@ func TestIntegrationsOffAnswersRequests(t *testing.T) {
 		}
 	}
 	// A session's mint that needs a refresh fails the same way.
-	f.server.externalAccounts.RefreshLead = 365 * 24 * time.Hour
-	if _, err := f.server.externalAccounts.Mint(context.Background(), account, externalaccounts.Use{By: "session"}); !errors.Is(err, integrations.ErrOff) {
+	f.server.connectors.ServerHeld.RefreshLead = 365 * 24 * time.Hour
+	if _, err := f.server.connectors.ServerHeld.Mint(context.Background(), account, externalaccounts.Use{By: "session"}); !errors.Is(err, integrations.ErrOff) {
 		t.Fatalf("mint with integrations off: %v", err)
 	}
 	if f.fake.Refreshes() != refreshes || len(f.fake.Revoked()) != 0 {

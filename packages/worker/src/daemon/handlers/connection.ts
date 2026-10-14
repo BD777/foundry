@@ -13,6 +13,7 @@ import { serveResources } from "./resources.js";
 export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
   dispatch
     .on(daemonMessageTypes.error, (envelope, ctx) => {
+      ctx.roster.registrationTaken(envelope.id);
       console.error(
         `Server error: ${envelope.error ?? "unknown websocket error"}`,
       );
@@ -28,7 +29,13 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.ack, (envelope, ctx) => {
       ctx.sessionTransport.acknowledge(envelope.id);
     })
+    .on(daemonMessageTypes.registrationNeeded, (envelope, ctx) => {
+      // A registration left out sections the server does not have (it
+      // restarted): it goes again whole.
+      ctx.roster.registrationNeeded(envelope.id);
+    })
     .on(daemonMessageTypes.registered, (envelope, ctx) => {
+      ctx.roster.registrationTaken(envelope.id);
       ctx.state.registered = true;
       // A server that takes large envelopes in pieces says so here, and
       // one that takes news of workspace folders gone or back.

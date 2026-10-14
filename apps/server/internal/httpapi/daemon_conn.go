@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -228,9 +229,7 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 		close(c.finished)
 	}()
 
-	// A compressed skill package can be 64 MiB; base64 + JSON needs up to
-	// 86 MiB. Keep this bounded while allowing the documented package size.
-	c.socket.SetReadLimit(96 << 20)
+	c.socket.SetReadLimit(maxDaemonMessageBytes)
 	_ = c.extendReadDeadline()
 	c.socket.SetPongHandler(func(string) error {
 		return c.extendReadDeadline()
@@ -287,14 +286,42 @@ func (c *daemonConnection) readLoop(ctx context.Context) {
 // pongs and heartbeats queue behind it in the same stream. A deadline
 // refreshed only by pongs and whole messages expired mid-message and dropped
 // a device that was busy sending. A device that sends nothing still times out.
+//
+// The read limit counts the bytes on the wire; a compressed message is held
+// to the same bound once inflated.
 func (c *daemonConnection) readMessage() (int, []byte, error) {
 	messageType, reader, err := c.socket.NextReader()
 	if err != nil {
 		return messageType, nil, err
 	}
 	_ = c.extendReadDeadline()
-	message, err := io.ReadAll(progressReader{reader: reader, progress: c.extendReadDeadline})
+	limited := io.LimitReader(progressReader{reader: reader, progress: c.extendReadDeadline}, maxDaemonMessageBytes+1)
+	message, err := io.ReadAll(limited)
+	if err == nil && len(message) > maxDaemonMessageBytes {
+		return messageType, nil, websocket.ErrReadLimit
+	}
 	return messageType, message, err
+}
+
+// maxDaemonMessageBytes bounds one message from a device. A compressed
+// skill package can be 64 MiB; base64 + JSON needs up to 86 MiB.
+const maxDaemonMessageBytes = 96 << 20
+
+// compressMinBytes is the smallest message written compressed when the
+// device negotiated permessage-deflate: deflate saves next to nothing on an
+// ack or a ping-sized request.
+const compressMinBytes = 1024
+
+// writeEnvelope writes one envelope, compressed when the connection
+// negotiated permessage-deflate and the envelope is large enough. Only the
+// write loop calls it.
+func (c *daemonConnection) writeEnvelope(envelope wsEnvelope) error {
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	c.socket.EnableWriteCompression(len(data) >= compressMinBytes)
+	return c.socket.WriteMessage(websocket.TextMessage, data)
 }
 
 func (c *daemonConnection) extendReadDeadline() error {
@@ -346,7 +373,7 @@ func (c *daemonConnection) writeLoop() {
 			if !c.writeReplies() {
 				return
 			}
-			if err := c.socket.WriteJSON(envelope); err != nil {
+			if err := c.writeEnvelope(envelope); err != nil {
 				log.Printf("daemon websocket write failed type=%s id=%s connection=%p: %v", envelope.Type, envelope.ID, c, err)
 				return
 			}
@@ -421,7 +448,7 @@ func (c *daemonConnection) writeReplies() bool {
 	c.replies = nil
 	c.replyMu.Unlock()
 	for _, envelope := range replies {
-		if err := c.socket.WriteJSON(envelope); err != nil {
+		if err := c.writeEnvelope(envelope); err != nil {
 			log.Printf("daemon websocket write failed type=%s id=%s connection=%p: %v", envelope.Type, envelope.ID, c, err)
 			return false
 		}
