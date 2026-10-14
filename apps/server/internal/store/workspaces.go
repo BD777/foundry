@@ -1,5 +1,10 @@
 package store
 
+import (
+	"context"
+	"time"
+)
+
 type WorkspaceProjection struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -16,6 +21,26 @@ type WorkspaceProjection struct {
 	// the folder. Its sessions and history stay; adding the folder on the
 	// device again clears it.
 	UnavailableOnDevice *WorkspaceUnavailability `json:"unavailableOnDevice,omitempty"`
+	// Kind is WorkspaceKindProject (sent as absent) or
+	// WorkspaceKindPersonalAgent.
+	Kind string `json:"kind,omitempty"`
+	// ArchivedAt is set while the workspace is archived: hidden in an
+	// "Archived" group, starting no sessions, everything kept.
+	ArchivedAt string `json:"archivedAt,omitempty"`
+}
+
+// WorkspaceLifecycleStore keeps what the server, not the device, decides
+// about a workspace: its kind, whether it is archived, and its purpose.
+// Device registrations never change these.
+type WorkspaceLifecycleStore interface {
+	// SetWorkspaceKind sets WorkspaceProjection.Kind.
+	SetWorkspaceKind(ctx context.Context, workspaceID string, kind string) error
+	// SetWorkspaceArchived archives the workspace at at, or with a zero at
+	// restores it. Archiving an archived workspace keeps its first time.
+	SetWorkspaceArchived(ctx context.Context, workspaceID string, at time.Time) (WorkspaceProjection, error)
+	// SetWorkspacePurpose stores one sentence on what the workspace is for.
+	SetWorkspacePurpose(ctx context.Context, workspaceID string, purpose string) error
+	WorkspacePurpose(ctx context.Context, workspaceID string) (string, error)
 }
 
 // WorkspaceUnavailability says why a workspace cannot run on its device.

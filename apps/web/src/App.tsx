@@ -15,6 +15,7 @@ import {
   useWorkspaceChoiceRedirect,
 } from "./app/use-app-location";
 import { useAppRouteSync } from "./app/use-app-route-sync";
+import { useAssistantShell } from "./app/use-assistant-shell";
 import { useChatView } from "./app/use-chat-view";
 import { useCurrentWorkspace } from "./app/use-current-workspace";
 import { useDocumentTitle } from "./app/use-document-title";
@@ -50,7 +51,13 @@ export function App() {
     workspaceData,
   );
 
-  const { connectorTab, setConnectorTab } = useAppRouteSync({
+  const assistantShell = useAssistantShell(location);
+  const {
+    connectorTab,
+    setConnectorTab,
+    assistantSection,
+    setAssistantSection,
+  } = useAppRouteSync({
     activeView,
     activeWorkspaceId,
     onPopState: (route, routeWorkspaceId) => {
@@ -94,6 +101,7 @@ export function App() {
     <FoundryShell scrollMode={viewScrollMode} theme={preferences.themeMode}>
       <AppSidebar
         activeView={activeView}
+        interfaceMode={assistantShell.interfaceMode}
         counts={{
           review: current.reviewCount,
           running: current.runningCount,
@@ -135,6 +143,9 @@ export function App() {
           >
             <ActiveView
               {...viewContext}
+              assistantSection={assistantSection}
+              onAssistantSectionChange={setAssistantSection}
+              onInterfaceModeChange={assistantShell.setInterfaceMode}
               chatView={chatView}
               connectorTab={connectorTab}
               issueDraft={issueDraft}

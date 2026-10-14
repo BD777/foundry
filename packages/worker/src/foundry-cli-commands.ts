@@ -2,7 +2,8 @@
  * The `foundry` CLI's commands. Every command but `mcp` and `skill` calls one
  * Foundry tool on the server's MCP endpoint, the same tools sessions call:
  * `tool` names it, `positional` the argument the word after the verb fills,
- * `fixed` arguments it always sends and `flags` the arguments its flags set.
+ * `fixed` arguments it always sends and `flags` the arguments its flags set
+ * (a flag with a `field` sets that field of an object argument).
  * The CLI dispatches by this table alone, and test/foundry-skill.test.mjs
  * checks every tool and argument it names against the tool catalog.
  */
@@ -28,6 +29,8 @@ export interface FlagSpec {
   kind: FlagKind;
   /** A boolean flag that adds these values to a list argument instead. */
   adds?: string[];
+  /** Sets this field of the object argument instead of the argument itself. */
+  field?: string;
 }
 
 export interface ToolCommand {
@@ -52,6 +55,11 @@ const flag = (argument: string, kind: FlagKind = "string"): FlagSpec => ({
   argument,
   kind,
 });
+const field = (
+  argument: string,
+  name: string,
+  kind: FlagKind = "string",
+): FlagSpec => ({ argument, field: name, kind });
 
 /**
  * Flags every tool command accepts: the workspace a tool acts in (tools that
@@ -243,7 +251,71 @@ export const foundryCommands: Record<
       },
     },
   },
-  workspace: { list: { tool: "list_workspaces", flags: {} } },
+  workspace: {
+    list: { tool: "list_workspaces", flags: {} },
+    find: {
+      tool: "find_workspace",
+      positional: "query",
+      flags: { "--limit": flag("limit", "number") },
+    },
+    get: {
+      tool: "get_workspace",
+      positional: "workspaceId",
+      flags: { "--include": flag("include", "list") },
+    },
+    create: {
+      tool: "create_workspace",
+      flags: {
+        "--name": flag("name"),
+        "--purpose": flag("purpose"),
+        "--source": field("source", "kind"),
+        "--url": field("source", "url"),
+        "--path": field("source", "path"),
+        "--skill": flag("skills", "list"),
+        "--device": flag("deviceId"),
+      },
+    },
+    update: {
+      tool: "update_workspace",
+      positional: "workspaceId",
+      flags: {
+        "--name": flag("name"),
+        "--purpose": flag("purpose"),
+        "--add-skill": field("skills", "add", "list"),
+        "--remove-skill": field("skills", "remove", "list"),
+        "--add-connector": field("connectors", "add", "list"),
+        "--remove-connector": field("connectors", "remove", "list"),
+      },
+    },
+    archive: {
+      tool: "archive_workspace",
+      positional: "workspaceId",
+      flags: { "--restore": flag("restore", "boolean") },
+    },
+  },
+  assistant: {
+    remember: {
+      tool: "remember",
+      positional: "op",
+      flags: {
+        "--id": field("item", "id"),
+        "--content": field("item", "content"),
+        "--quote": field("item", "quote"),
+        "--inferred": field("item", "inferred", "boolean"),
+      },
+    },
+    rule: {
+      tool: "update_rules",
+      flags: {
+        "--action": field("change", "action"),
+        "--decision": field("change", "decision"),
+      },
+    },
+    tasks: {
+      tool: "list_tasks",
+      flags: { "--status": flag("status", "list") },
+    },
+  },
   device: {
     list: {
       tool: "list_resources",

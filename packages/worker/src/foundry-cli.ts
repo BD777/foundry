@@ -10,7 +10,8 @@
  *   foundry session <verb>      read, start, steer and wait on sessions
  *   foundry issue list|get      Issues, read-only
  *   foundry feishu subscribe|events  a connected Feishu app's events
- *   foundry workspace list      workspaces this credential reaches
+ *   foundry workspace <verb>    find, read, create, change and archive workspaces
+ *   foundry assistant <verb>    the assistant's memory, rules and tasks
  *   foundry device list         devices, whether online, and what they offer
  *   foundry profile|model list  runnable profiles and their models
  *   foundry skill [name]        print or install a bundled skill
@@ -76,28 +77,29 @@ function toolArguments(
       throw new FoundryClientError(
         `foundry ${name} reads no ${word} (it reads ${Object.keys(flags).join(", ")})`,
       );
+    const [target, key] = flagTarget(args, spec);
     switch (spec.kind) {
       case "boolean":
-        if (spec.adds) appendList(args, spec.argument, spec.adds);
-        else args[spec.argument] = true;
+        if (spec.adds) appendList(target, key, spec.adds);
+        else target[key] = true;
         break;
       case "number": {
         const number = Number(value());
         if (!Number.isInteger(number) || number <= 0)
           throw new FoundryClientError(`${word} needs a positive whole number`);
-        args[spec.argument] = number;
+        target[key] = number;
         break;
       }
       case "list":
-        appendList(args, spec.argument, value().split(","));
+        appendList(target, key, value().split(","));
         break;
       case "file":
-        args[spec.argument] = readFileSync(value(), "utf8");
+        target[key] = readFileSync(value(), "utf8");
         break;
       case "json": {
         const text = value();
         try {
-          args[spec.argument] = JSON.parse(text);
+          target[key] = JSON.parse(text);
         } catch {
           throw new FoundryClientError(`${word} needs JSON, got ${text}`);
         }
@@ -107,7 +109,7 @@ function toolArguments(
         // Large arguments (an upload's piece) exceed a command line's limit.
         const path = value();
         try {
-          args[spec.argument] = JSON.parse(readFileSync(path, "utf8"));
+          target[key] = JSON.parse(readFileSync(path, "utf8"));
         } catch (error) {
           throw new FoundryClientError(
             `${word} needs a file of JSON: ${errorMessage(error)}`,
@@ -116,7 +118,7 @@ function toolArguments(
         break;
       }
       default:
-        args[spec.argument] = value();
+        target[key] = value();
     }
   }
   if (command.positional && args[command.positional] === undefined)
@@ -124,6 +126,16 @@ function toolArguments(
       `foundry ${name} needs <${command.positional}>`,
     );
   return { args, server };
+}
+
+/** The object and key a flag sets: the argument, or a field of it. */
+function flagTarget(
+  args: Record<string, unknown>,
+  spec: FlagSpec,
+): [Record<string, unknown>, string] {
+  if (!spec.field) return [args, spec.argument];
+  const object = (args[spec.argument] ??= {}) as Record<string, unknown>;
+  return [object, spec.field];
 }
 
 function appendList(

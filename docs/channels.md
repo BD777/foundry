@@ -25,6 +25,14 @@
 
 `@机器人 /issue <目标>` 在话题里发起 Issue，澄清 Agent 立即开始。之后话题内的回复无需再 @：Server 根据 Issue 所处阶段，把回复转给澄清 Agent、作为执行者问题的回答，或作为反馈让 Issue 在同一个候选里继续。`/confirm` 确认当前草案，规则与 Web 相同。澄清回复、执行者的问题与许可请求、完成标准草案的新版本、开始执行、等待验收、接受、放弃和系统错误都会回到话题；验收附 Web 链接，接受只在 Web 上进行。话题中的发言在 Issue 里标注来自飞书，决定记为“<绑定账号> (via Feishu)”。飞书侧只做转换（`feishu/issues.go`），Issue 逻辑在 Server（`httpapi/feishu_issues.go`）；重投的事件按幂等键处理，不会重复建 Issue 或重复转发。
 
+### 单聊交给助理
+
+有[助理](personal-agent.md)的人，单聊默认交给助理（设置“单聊交给助理”，可限定一个应用）：存储的 `p2p` 路由不改写，消息改送到助理的 Workspace，原路由指向的 Workspace 作为路由先验写进助理每一轮的上下文；关掉设置即恢复原路由。这样的单聊在原 Workspace 和助理 Workspace 的 Channels 页都列出，带 `assistantWorkspaceId`。迁移来的单聊第一次收到消息时回一条一次性说明，按“人 × 应用”记在 `pa_direct_chats`。群不变，助理不在群里回答。
+
+- **模型之前的固定词**（`feishu/personal_agent.go`）：只认单聊配对的那个飞书用户。整条消息是“停 / stop”等时按停止开关处理，是“继续 / resume”时恢复，是“好的 / 不用了”等时回答该话题（或该单聊里卡片所在）的待定提议；助理停下或家电脑离线时由 Server 用固定文案回复。
+- **卡片按钮回调已接入 Bot 路由**（`personal_agent_cards.go`）：提议卡片的“好的 / 不用了”和停止卡片的“继续”经 `card.action.trigger` 回到应用的长连接，只认单聊配对的那个人按下；提议被接受、拒绝、执行、失败或过期时，卡片原地更新。**应用需要在“事件与回调”里以长连接方式订阅回调 `card.action.trigger`**，否则按钮无效，只能回复固定词或在 Web 上确认。
+- Server 一侧是 `httpapi/personal_agent_feishu.go`（`feishu.PersonalAgentDesk` 的实现，调用与 Web 相同的停止、恢复与提议服务，提议只按该单聊绑定的账号查找）。
+
 ### 关键决定
 
 - **2026-09-24（首次公开发布）起，群沿用生成配对码的账号的权限**，按发送者本人授权留到以后（[账号与权限设计 §8](accounts-permissions-design.md)）。
@@ -50,13 +58,14 @@
 
 - 按发送者本人授权：飞书用户与 Foundry 账号没有绑定，群里任何能 @ 机器人的人都以绑定账号的身份操作。
 - 通用 Bot Adapter：只有飞书专用实现，入站事件与出站动作没有抽象成契约。
-- 飞书侧不能为新话题指定设备、Agent 或模型，由 Server 按默认规则选择（`session_service.go` `pickSessionDevice`）。交互卡片回调没有接入 Bot 路由。Issue 话题里的文件不交给 Issue，只留标记。
+- 飞书侧不能为新话题指定设备、Agent 或模型，由 Server 按默认规则选择（`session_service.go` `pickSessionDevice`）。卡片按钮回调只用于助理的提议与停止卡片。Issue 话题里的文件不交给 Issue，只留标记。
 - 飞书里不能 Accept；CI 等其他反馈来源没有。
-- 卡片跟随状态只在内存里（`WSManager.sessions`）：Server 在会话运行中重启，这张卡片不再更新，会话本身不受影响。
+- 卡片跟随状态只在内存里（`WSManager.sessions`，助理的话题与提议卡片同样）：Server 在会话运行中重启，这张卡片不再更新，会话本身不受影响；之后的提议发到单聊里而不是原话题。
 
 **验证情况**
 
 - 消息里的文件：已实现，在测试中验证，尚未实机验证。`feishu/message_content_test.go`（每种消息类型的解析、单聊图片、下载失败、表情包、话题内文件 steer）、`httpapi/feishu_attachments_test.go`（超限拒绝、经设备分块写入、命名与 MIME 推断）；Issue 路径、群里 @ 行为和设备离线没有测试。
+- 助理的单聊（固定词、卡片回调、一次性说明、提议只属于绑定账号）：只在测试中验证（`feishu/personal_agent_test.go`、`httpapi/personal_agent_wiring_test.go`），未在真实飞书里验证 `card.action.trigger` 的投递。
 - 单元与集成测试用模拟事件和假飞书：`feishu/*_test.go`（配对、共享应用、会话名称、Issue 报告），`httpapi/feishu_test.go`、`feishu_issues_test.go`、`feishu_events_test.go`，`feishuevents/hub_test.go`，安全用例 `cases/security/feishu-group-identity.case.json`（群以绑定账号身份执行、权限变化后拒绝）。
 - 飞书中的 Issue（2026-10-03，#74）只用模拟事件测试过，尚未在真实飞书群验收。
 - 重建后的 Bot：dev 库里有一个 2026-10-12 迁移后在真实飞书完成配对的会话，库中没有话题记录。在这次文档整理中没有找到真实群里话题会话或流式卡片的运行记录；[实机回归](live-regression.md)也把“飞书续聊”列为未实测。

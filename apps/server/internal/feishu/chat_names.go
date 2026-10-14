@@ -174,9 +174,11 @@ func (m *WSManager) handleChatUpdated(ctx context.Context, event feishuevents.Ev
 }
 
 // notePeer records who a direct chat is with, the first time they write,
-// and names the chat after them.
+// and names the chat after them. A recorded peer is kept: it is the person
+// the chat is paired with, whom the assistant's fixed words and buttons
+// answer to.
 func (m *WSManager) notePeer(ctx context.Context, route store.FeishuBotRoute, senderOpenID string) {
-	if route.Kind != store.FeishuRouteP2P || senderOpenID == "" || route.PeerOpenID == senderOpenID {
+	if route.Kind != store.FeishuRouteP2P || senderOpenID == "" || route.PeerOpenID != "" {
 		return
 	}
 	if err := m.store.SetFeishuChatPeer(ctx, route.ID, senderOpenID); err != nil {

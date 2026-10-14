@@ -20,6 +20,7 @@ import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
 import { shortUnavailableReason } from "../../lib/agent-picker";
 import { chatComposerChoices, chatSortValue } from "./chat-model";
+import { chatHasQueue } from "./chat-session-model";
 import { chatMessageItems, chatViewMessages } from "./chat-message-items";
 import { ChatSurface } from "./chat-surface";
 import {
@@ -219,7 +220,11 @@ export function useChatFeature({
   const queue = useChatQueue({
     workspaceId,
     chatId:
-      selectedThread && !unlistedSelection ? selectedThread.id : undefined,
+      selectedThread &&
+      !unlistedSelection &&
+      chatHasQueue(selectedThread.id, threadSessions)
+        ? selectedThread.id
+        : undefined,
     runSettings: () => (selectedAgent ? composerChoices(selectedAgent) : {}),
     onSent: (chatId, items) =>
       items.forEach((item) =>

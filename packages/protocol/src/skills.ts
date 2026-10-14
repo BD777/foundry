@@ -329,7 +329,11 @@ export interface BuiltinSkillRevision {
  * session an agent started, or a person at a shell.
  */
 export type FoundryToolRole =
-  "session" | "issue_execution" | "issue_clarification" | "verifier";
+  | "session"
+  | "issue_execution"
+  | "issue_clarification"
+  | "verifier"
+  | "personal_agent";
 
 export interface FoundryToolCapability {
   name: string;

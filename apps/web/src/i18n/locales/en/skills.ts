@@ -474,6 +474,7 @@ export const skills = {
       issue_execution: "Issue execution",
       issue_clarification: "Issue clarification",
       verifier: "Verifiers",
+      personal_agent: "Assistant",
     },
     roleDescriptions: {
       session:
@@ -483,6 +484,8 @@ export const skills = {
         "The session that talks an Issue through with the person.",
       verifier:
         "Sessions started to check work, inside the read-only verification sandbox.",
+      personal_agent:
+        "Your assistant's own conversations: it finds or sets up the project for a request and hands the work there.",
     },
     guidanceTitle: "Guidance",
     guidanceIntro:

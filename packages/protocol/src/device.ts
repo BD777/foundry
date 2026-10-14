@@ -18,6 +18,12 @@ export interface DeviceProjection {
   resources?: DeviceResource[];
   /** Protocol features its worker declared; an older worker declares none. */
   capabilities?: string[];
+  /**
+   * The folders, resolved, the Personal Agent may create projects in
+   * (setting personalAgent.managedRoots, default ~/Foundry); reported by a
+   * worker that declared workspace_create.
+   */
+  managedRoots?: string[];
   /** The worker build it runs, reported at registration (0.5.7 and later). */
   worker?: DeviceWorker;
   /** The machine, reported at registration (0.5.7 and later). */

@@ -108,8 +108,8 @@ export function agentSessionHasStreamedResponse(
  * - agent or verification inside an Issue (issueId): it works in the
  *   Issue's candidate, gets no Chats group and is listed on its Issue.
  * - issue: an Issue's execution or clarification; listed on its Issue.
- * - naming, diagnostic: Foundry's own jobs (titles, group names, checks),
- *   not work anyone asked for.
+ * - naming, diagnostic, digest: Foundry's own jobs (titles, group names,
+ *   checks, the assistant's project summaries), not work anyone asked for.
  *
  * Any of them still opens by id (a link, the Issue page), read-only when
  * not listed.
@@ -126,6 +126,7 @@ export function isChatSession(session: AgentSession): boolean {
     case "issue":
     case "naming":
     case "diagnostic":
+    case "digest":
       return false;
     default: {
       // A new source does not compile until it is decided here.
@@ -134,6 +135,25 @@ export function isChatSession(session: AgentSession): boolean {
       return false;
     }
   }
+}
+
+/**
+ * Whether the server keeps a message queue for the thread: a person's own
+ * chat, or a device's native chat (no session of that id). Sessions an
+ * agent started, Issue sessions and the assistant's (any role) are listed
+ * or opened here but have none; asking for it answers 404
+ * (httpapi/chat_queue.go chatQueueChat).
+ */
+export function chatHasQueue(
+  threadId: string,
+  sessions: readonly AgentSession[],
+): boolean {
+  const session = sessions.find((row) => row.id === threadId);
+  return (
+    !session ||
+    (!session.role &&
+      (session.source === undefined || session.source === "chat"))
+  );
 }
 
 function chatThreadId(session: AgentSession): string {

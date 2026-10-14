@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "id": "personal-agent.a08-rename-routes-by-new-name",
+  "title": "A8: right after a rename, the new name routes",
+  "description": "A project is renamed; the deterministic digest and the L0 index row update at once, so find_workspace with the new name ranks it first without waiting for a digest session.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "digests", "routing"],
+  "preconditions": [
+    "Assistant set up; WP-S2 digests and WP-S3 rename in the build."
+  ],
+  "steps": [
+    {
+      "id": "rename",
+      "action": "request",
+      "target": "PATCH /api/workspaces/{id}",
+      "value": {
+        "name": "家庭记账"
+      }
+    },
+    {
+      "id": "find",
+      "action": "request",
+      "target": "find_workspace from an assistant session",
+      "value": {
+        "query": "家庭记账那个网页加个图表"
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "find",
+      "type": "json-shape",
+      "target": "first candidate",
+      "expected": "the renamed project, immediately after the rename"
+    }
+  ],
+  "automation": {
+    "status": "planned",
+    "runner": "repo-script",
+    "references": [
+      "scripts/pa-eval-run.mjs",
+      "apps/server/internal/httpapi/mcp_personal_agent.go"
+    ]
+  },
+  "evidence": {
+    "capture": ["response"],
+    "retainOn": "failure"
+  },
+  "cleanup": ["Rename the project back."]
+}

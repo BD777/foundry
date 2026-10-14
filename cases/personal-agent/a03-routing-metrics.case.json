@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "id": "personal-agent.a03-routing-metrics",
+  "title": "A3: real requests from every existing project route to where the person went",
+  "description": "The eval set (~/.foundry/pa-eval/set, built from the person's real first messages across their projects, de-identified, plus handwritten new/ask/answer cases) is replayed on a scratch copy of the dev database with the eval's own chats hidden. Without a model, find_workspace must put the gold project first for ≥ 90% of clear cases. With a real model on a sample, the §13 gates hold: clear top-1 ≥ 90%, wrong dispatch when going ahead ≤ 3%, asks on ambiguous ≥ 80%, “should create” precision and recall ≥ 85%, banned words 0, ≤ 0.2 questions per request.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "critical",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "routing", "eval", "real-model"],
+  "preconditions": [
+    "The server includes WP-S1 and WP-S2; the e2e step also WP-P and a native model login.",
+    "scripts/pa-eval-build.mjs",
+    "scripts/pa-eval-run.mjs"
+  ],
+  "steps": [
+    {
+      "id": "routing",
+      "action": "run",
+      "target": "node scripts/pa-eval-run.mjs",
+      "value": "find_workspace for every clear case, no model"
+    },
+    {
+      "id": "e2e",
+      "action": "run",
+      "target": "node scripts/pa-eval-run.mjs --no-routing --e2e --sample 40 --judge",
+      "value": "assistant sessions on a stratified sample; helpers cancelled at once"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "routing",
+      "type": "json-shape",
+      "target": "report.routing.metrics.top1",
+      "expected": ">= 0.9"
+    },
+    {
+      "afterStep": "e2e",
+      "type": "json-shape",
+      "target": "report.checks",
+      "expected": "every e2e gate PASS"
+    },
+    {
+      "afterStep": "e2e",
+      "type": "command-exit-zero",
+      "target": "pa-eval-run exit status"
+    }
+  ],
+  "automation": {
+    "status": "planned",
+    "runner": "repo-script",
+    "command": "node scripts/pa-eval-run.mjs --e2e --sample 40 --judge",
+    "references": ["scripts/pa-eval-run.mjs", "scripts/pa-eval-build.mjs"]
+  },
+  "evidence": {
+    "capture": ["response", "logs"],
+    "retainOn": "always"
+  },
+  "cleanup": ["scripts/scratch-stack.sh down pa-eval"]
+}

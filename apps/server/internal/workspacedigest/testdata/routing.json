@@ -1,0 +1,273 @@
+{
+  "now": "2026-10-15T08:00:00Z",
+  "workspaces": [
+    {
+      "workspaceId": "ws_budget",
+      "name": "Family budget",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-14T20:00:00Z",
+      "compiledAt": "2026-10-14T20:00:00Z",
+      "summarizedAt": "2026-10-14T21:00:00Z",
+      "l0": "记录家庭日常开销的小网页",
+      "summary": "一个记录家庭开销的网页：按类别记账、按月统计、导出 Excel。最近在做分类和图表。",
+      "routeWhen": [
+        "家庭记账、日常开销统计",
+        "记账网页的功能和界面",
+        "导出账单到 Excel"
+      ],
+      "notWhen": ["报税、个税计算", "旅行花费"],
+      "recentSessions": [
+        { "id": "s1", "title": "加月度汇总", "status": "completed" },
+        { "id": "s2", "title": "Expense categories", "status": "completed" }
+      ]
+    },
+    {
+      "workspaceId": "ws_tax",
+      "name": "Tax 2026",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-09-30T10:00:00Z",
+      "compiledAt": "2026-10-01T10:00:00Z",
+      "summarizedAt": "2026-10-01T10:00:00Z",
+      "l0": "2026 年个人所得税计算表格",
+      "summary": "用 Python 生成的个税汇算表格，包括专项附加扣除（房贷利息、子女教育）和年终奖计算。",
+      "routeWhen": ["个税汇算", "专项附加扣除", "income tax return"],
+      "notWhen": ["日常开销记账"]
+    },
+    {
+      "workspaceId": "ws_blog",
+      "name": "windeng.dev blog",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-10T10:00:00Z",
+      "compiledAt": "2026-10-10T10:00:00Z",
+      "summarizedAt": "2026-10-10T10:00:00Z",
+      "l0": "个人技术博客（Hugo 静态站）",
+      "summary": "Hugo 搭的个人博客，部署在 Cloudflare Pages。文章多是 Go、前端和 AI 工具。最近改了主题和暗色模式。",
+      "routeWhen": [
+        "写博客文章",
+        "博客样式、主题和部署",
+        "blog posts and theme"
+      ],
+      "notWhen": ["公司后台"]
+    },
+    {
+      "workspaceId": "ws_admin",
+      "name": "Admin console",
+      "deviceLabel": "Work PC",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-13T10:00:00Z",
+      "compiledAt": "2026-10-13T10:00:00Z",
+      "summarizedAt": "2026-10-13T10:00:00Z",
+      "l0": "公司内部管理后台（React + Go）",
+      "summary": "公司的管理后台：用户、权限、审计日志。前端 React，后端 Go。最近在排查登录慢和权限页 403。",
+      "routeWhen": [
+        "公司后台的页面、接口、权限",
+        "admin console login and permissions",
+        "后台用户管理"
+      ],
+      "notWhen": ["个人博客"],
+      "openIssues": [
+        { "id": "iss_1", "title": "Login takes 8s", "status": "in_progress" }
+      ]
+    },
+    {
+      "workspaceId": "ws_cv",
+      "name": "CV",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-08-01T10:00:00Z",
+      "compiledAt": "2026-08-01T10:00:00Z",
+      "summarizedAt": "2026-08-01T10:00:00Z",
+      "l0": "LaTeX 写的个人简历（中英文）",
+      "summary": "简历 (CV / resume) 的 LaTeX 源文件，中英文两版，生成 PDF。",
+      "routeWhen": ["改简历、更新工作经历", "resume / CV updates"],
+      "notWhen": [],
+      "recentSessions": [
+        {
+          "id": "s3",
+          "title": "Update work experience 2026",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "workspaceId": "ws_foundry",
+      "name": "foundry",
+      "deviceLabel": "dev server",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-15T07:00:00Z",
+      "compiledAt": "2026-10-15T07:00:00Z",
+      "summarizedAt": "2026-10-15T07:00:00Z",
+      "l0": "Foundry: self-hosted platform that runs Claude Code and Codex sessions on your devices",
+      "summary": "Foundry monorepo: Go server, Node worker, React web. Sessions, Issues, workspaces, devices, MCP tools, Feishu channel, connectors.",
+      "routeWhen": [
+        "Foundry server, worker or web UI",
+        "sessions, Issues, workspaces, devices features",
+        "MCP tools"
+      ],
+      "notWhen": ["HappyClaw"],
+      "skills": ["foundry", "playwright-cli"]
+    },
+    {
+      "workspaceId": "ws_inksprig",
+      "name": "Inksprig 拾墨",
+      "deviceLabel": "dev server",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-05T07:00:00Z",
+      "compiledAt": "2026-10-05T07:00:00Z",
+      "summarizedAt": "2026-10-05T07:00:00Z",
+      "l0": "拾墨：基于 DAG 的目标拆解应用",
+      "summary": "把目标拆成 DAG 节点的应用，TipTap 编辑器，飞书 OAuth 集成。",
+      "routeWhen": ["目标拆解", "DAG 节点和编辑器", "TipTap editor"],
+      "notWhen": []
+    },
+    {
+      "workspaceId": "ws_happyclaw",
+      "name": "HappyClaw",
+      "deviceLabel": "dev server",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-12T07:00:00Z",
+      "compiledAt": "2026-10-12T07:00:00Z",
+      "summarizedAt": "2026-10-12T07:00:00Z",
+      "l0": "自托管的多用户 AI Agent 系统，接飞书",
+      "summary": "HappyClaw：多用户 Agent 系统，Docker 容器运行，飞书机器人收发消息，workspace memory。",
+      "routeWhen": ["HappyClaw 部署、容器和故障", "飞书机器人消息收发"],
+      "notWhen": ["Foundry"]
+    },
+    {
+      "workspaceId": "ws_ipo",
+      "name": "港股打新",
+      "purpose": "跟踪港股新股申购与中签记录",
+      "deviceLabel": "MacBook",
+      "deviceOnline": false,
+      "lastActivityAt": "2026-10-09T07:00:00Z",
+      "compiledAt": "2026-10-09T07:00:00Z",
+      "dirty": true,
+      "recentSessions": [
+        { "id": "s4", "title": "记录中签结果", "status": "completed" },
+        { "id": "s5", "title": "更新 10 月新股列表", "status": "completed" }
+      ]
+    },
+    {
+      "workspaceId": "ws_travel",
+      "name": "日本旅行",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-11T07:00:00Z",
+      "compiledAt": "2026-10-11T07:00:00Z",
+      "summarizedAt": "2026-10-11T07:00:00Z",
+      "l0": "11 月日本旅行的行程与账单",
+      "summary": "东京、大阪、京都 10 天行程：机票、酒店、新干线，以及旅行花费 AA 记账。",
+      "routeWhen": ["行程安排、酒店、机票、交通", "旅行花费记账"],
+      "notWhen": ["家庭日常开销"]
+    },
+    {
+      "workspaceId": "ws_wedding",
+      "name": "Wedding website",
+      "purpose": "Our wedding website with an RSVP form",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-10-02T07:00:00Z",
+      "compiledAt": "2026-10-02T07:00:00Z",
+      "dirty": true,
+      "recentSessions": [
+        { "id": "s6", "title": "Add RSVP form", "status": "completed" },
+        { "id": "s7", "title": "Gallery page", "status": "completed" }
+      ]
+    },
+    {
+      "workspaceId": "ws_research",
+      "name": "LLM eval research",
+      "deviceLabel": "dev server",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-09-20T07:00:00Z",
+      "compiledAt": "2026-09-20T07:00:00Z",
+      "summarizedAt": "2026-09-20T07:00:00Z",
+      "l0": "Agent 评测方法调研笔记",
+      "summary": "关于 LLM agent 评测的论文阅读笔记：benchmark 对比、评测指标、LLM-as-judge。",
+      "routeWhen": ["论文阅读笔记", "benchmark 对比", "评测指标和方法"],
+      "notWhen": []
+    },
+    {
+      "workspaceId": "ws_dotfiles",
+      "name": "dotfiles",
+      "intro": "My dotfiles: zsh, neovim, tmux, managed with chezmoi.",
+      "deviceLabel": "MacBook",
+      "deviceOnline": true,
+      "lastActivityAt": "2026-07-01T07:00:00Z",
+      "compiledAt": "2026-07-01T07:00:00Z",
+      "dirty": true
+    },
+    {
+      "workspaceId": "ws_oldblog",
+      "name": "Old blog (WordPress)",
+      "archived": true,
+      "l0": "旧的 WordPress 博客",
+      "routeWhen": ["写博客文章"],
+      "deviceLabel": "MacBook",
+      "compiledAt": "2025-01-01T07:00:00Z",
+      "summarizedAt": "2025-01-01T07:00:00Z"
+    }
+  ],
+  "cases": [
+    { "request": "家庭记账网页加个按月统计的图表", "gold": "ws_budget" },
+    {
+      "request": "add a button to export the spending list to Excel",
+      "gold": "ws_budget"
+    },
+    {
+      "request": "这个月伙食开销有点高，在记账页面里加个分类",
+      "gold": "ws_budget"
+    },
+    { "request": "帮我算一下今年的专项附加扣除", "gold": "ws_tax" },
+    { "request": "个税汇算表格里房贷利息那一栏填错了", "gold": "ws_tax" },
+    { "request": "写一篇关于 Go 泛型的博客文章", "gold": "ws_blog" },
+    { "request": "博客首页的字体太小了", "gold": "ws_blog" },
+    { "request": "fix the dark mode colors on my blog", "gold": "ws_blog" },
+    { "request": "公司后台登录特别慢，查一下", "gold": "ws_admin" },
+    {
+      "request": "admin console permission page shows 403 for maintainers",
+      "gold": "ws_admin"
+    },
+    { "request": "后台的用户列表加一个导出功能", "gold": "ws_admin" },
+    { "request": "update my CV with the new job", "gold": "ws_cv" },
+    { "request": "简历里加上新的工作经历", "gold": "ws_cv" },
+    { "request": "Foundry 的 worker 断线后会话没恢复", "gold": "ws_foundry" },
+    {
+      "request": "add a new MCP tool that lists resources",
+      "gold": "ws_foundry"
+    },
+    {
+      "request": "在 foundry 的 web 界面加个暗色主题开关",
+      "gold": "ws_foundry"
+    },
+    { "request": "拾墨的 DAG 编辑器拖拽节点很卡", "gold": "ws_inksprig" },
+    { "request": "inksprig 里目标拆解的提示词要改一下", "gold": "ws_inksprig" },
+    { "request": "HappyClaw 的飞书机器人不回消息了", "gold": "ws_happyclaw" },
+    { "request": "看看 happyclaw 容器为什么一直重启", "gold": "ws_happyclaw" },
+    { "request": "记录一下今天的新股中签结果", "gold": "ws_ipo" },
+    { "request": "10月有哪些港股新股可以申购", "gold": "ws_ipo" },
+    { "request": "订一下大阪的酒店", "gold": "ws_travel" },
+    { "request": "把日本旅行的新干线票钱记一下", "gold": "ws_travel" },
+    {
+      "request": "the wedding site needs a page with hotel recommendations for guests",
+      "gold": "ws_wedding"
+    },
+    {
+      "request": "RSVP form should ask about dietary restrictions",
+      "gold": "ws_wedding"
+    },
+    {
+      "request": "整理一下最近读的 agent benchmark 论文",
+      "gold": "ws_research"
+    },
+    { "request": "对比几种评测指标的优缺点", "gold": "ws_research" },
+    {
+      "request": "neovim lsp config broke after the update",
+      "gold": "ws_dotfiles"
+    },
+    { "request": "tmux 的快捷键改一下", "gold": "ws_dotfiles" }
+  ]
+}

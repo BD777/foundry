@@ -225,10 +225,48 @@ export function validateClaudeLaunch(input: {
   }
 }
 
+/** Each personal_agent session's latest assistant section, by session id. */
+const personalAgentInstructionsBySession = new Map<
+  string,
+  { workspaceId: string; text: string }
+>();
+
 /**
- * What a workspace session is told about the device it runs on: none for a
- * utility session, a verifier's own notes for a verifier, the Resource
- * Pool's notes otherwise. `temporaryDirectory` is the session's TMPDIR.
+ * Keeps a personal_agent session's assistant section (run_session's
+ * personalAgentInstructions, docs/personal-agent.md §12) for every runtime
+ * the session starts. The server sends it with each run; a run without it
+ * keeps the last one, so a runtime started then (a timer's turn, a
+ * continuation) is still the assistant, and its runtime key, which includes
+ * the section, does not change for want of it. Memory only: the section
+ * holds what the person may ask the assistant to forget, and the next run
+ * brings the server's current one. Any other session's is ignored.
+ */
+export function keepPersonalAgentInstructions(
+  session: AgentSession,
+  instructions: string | undefined,
+): void {
+  const text = instructions?.trim();
+  if (session.role !== "personal_agent" || !session.id || !text) return;
+  personalAgentInstructionsBySession.set(session.id, {
+    workspaceId: session.workspaceId,
+    text,
+  });
+}
+
+/** Drops the sections kept for a workspace's sessions (it was forgotten). */
+export function forgetPersonalAgentInstructions(workspaceId: string): void {
+  for (const [sessionId, kept] of personalAgentInstructionsBySession)
+    if (kept.workspaceId === workspaceId)
+      personalAgentInstructionsBySession.delete(sessionId);
+}
+
+/**
+ * What a workspace session is told beyond its prompt, appended to Claude's
+ * system prompt and given to Codex as developer_instructions: none for a
+ * utility session, a verifier's own notes for a verifier; otherwise a
+ * personal_agent session's assistant section first (a stable prefix), then
+ * the Resource Pool's and the connectors' notes about the device it runs
+ * on. `temporaryDirectory` is the session's TMPDIR.
  */
 export function sessionDeviceNotes(
   workspacePath: string,
@@ -243,6 +281,9 @@ export function sessionDeviceNotes(
       temporaryDirectory,
     });
   return [
+    (session.role === "personal_agent" &&
+      personalAgentInstructionsBySession.get(session.id)?.text) ||
+      "",
     sessionResourceNotes(
       workspacePath,
       undefined,

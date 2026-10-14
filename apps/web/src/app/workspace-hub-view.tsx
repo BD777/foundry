@@ -91,6 +91,10 @@ export function WorkspaceHubView({
           readOnlyReason={workspaceDenial(data.workspace, "maintainer")}
           workspaceId={data.workspace.id}
           workspaceName={data.workspace.name}
+          workspaceNameOf={(id) =>
+            data.workspaces.find((workspace) => workspace.id === id)?.name
+          }
+          currentUserId={account.user?.id}
           onNotice={setNotice}
           onOpenChats={() => location.setActiveView("chats")}
           onOpenConnectors={() => location.setActiveView("connectors")}

@@ -1,4 +1,5 @@
 import { navigateAppRoute } from "../app/navigation";
+import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
 
 /**
@@ -68,4 +69,11 @@ export function navigateToFoundrySkill(): void {
 /** Opens Model providers with one provider's editor open. */
 export function navigateToModelProvider(profileId: string): void {
   navigateAppRoute({ view: "profiles" }, undefined, { provider: profileId });
+}
+
+/** Opens the assistant's settings at one section. */
+export function navigateToAssistantSettings(
+  section: AssistantSettingsSection,
+): void {
+  navigateAppRoute({ view: "assistantSettings", assistantSection: section });
 }

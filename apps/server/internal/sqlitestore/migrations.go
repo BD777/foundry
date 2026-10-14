@@ -33,8 +33,10 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupOwnership,
 		s.setupExternalAccounts,
 		s.setupFeishuGateway,
-		// Before the prune, which walks its bindings.
+		// Before the prune and dropping removed workspaces, which walk their
+		// workspace-owned rows.
 		s.setupDeviceConnectors,
+		s.setupPersonalAgents,
 		s.dropRemovedWorkspaces,
 		s.setupResources,
 		s.setupResourceLeases,
@@ -46,6 +48,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.pruneOrphanedRows,
 		s.setupProfilePromotions,
 		s.setupProfileCodexTransports,
+		s.setupWorkspaceLifecycle,
+		s.setupWorkspaceDigests,
 	}
 	for _, step := range steps {
 		if err := step(ctx); err != nil {

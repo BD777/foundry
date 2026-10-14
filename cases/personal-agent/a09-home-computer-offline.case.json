@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "personal-agent.a09-home-computer-offline",
+  "title": "A9: home computer offline — fixed server reply, switch offered, stop switch still works",
+  "description": "With the assistant's home computer offline, a new message gets the server's fixed text that the computer is not online, with a way to move the assistant to another computer; settings, memory and the stop switch keep working.",
+  "kind": "daemon",
+  "area": "personal-agent",
+  "risk": "high",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "offline", "stop-switch"],
+  "preconditions": ["Assistant set up; its home computer's worker stopped."],
+  "steps": [
+    {
+      "id": "message",
+      "action": "type",
+      "target": "assistant message box",
+      "value": "帮我看看今天的安排"
+    },
+    {
+      "id": "stop",
+      "action": "click",
+      "target": "button named 全部停下"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "message",
+      "type": "text",
+      "target": "reply",
+      "expected": "助理所在的电脑现在不在线, with an action to use another computer"
+    },
+    {
+      "afterStep": "stop",
+      "type": "json-shape",
+      "target": "GET /api/personal-agent",
+      "expected": "state stopped"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": ["docs/personal-agent.md#2-personal-agent-workspace"]
+  },
+  "evidence": {
+    "capture": ["screenshot", "response"],
+    "retainOn": "always"
+  },
+  "cleanup": ["Start the worker again and resume the assistant."]
+}

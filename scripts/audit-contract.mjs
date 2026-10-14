@@ -54,6 +54,7 @@ export const tsDtoPaths = [
   "packages/protocol/src/connectors.ts",
   "packages/protocol/src/browser-events.ts",
   "packages/protocol/src/resources.ts",
+  "packages/protocol/src/personal-agent.ts",
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
   "apps/server/internal/store/workspaces.go",
@@ -73,6 +74,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/device_connectors.go",
   "apps/server/internal/browserevent/payloads.go",
   "apps/server/internal/store/resources.go",
+  "apps/server/internal/store/personal_agent.go",
 ].map((path) => resolve(root, path));
 const tsMessagesPath = resolve(
   root,

@@ -455,12 +455,15 @@ export const skills: Translation<typeof en> = {
       issue_execution: "Issue 执行",
       issue_clarification: "Issue 澄清",
       verifier: "验证会话",
+      personal_agent: "助理",
     },
     roleDescriptions: {
       session: "对话、Agent 启动的会话，以及使用 foundry 命令的人。",
       issue_execution: "实现 Issue 的会话。",
       issue_clarification: "和人一起把 Issue 讨论清楚的会话。",
       verifier: "为检查工作而启动的会话，运行在只读验证沙箱里。",
+      personal_agent:
+        "助理自己的对话：为每件事找到或建好合适的项目，再把工作交到那里。",
     },
     guidanceTitle: "使用指引",
     guidanceIntro:

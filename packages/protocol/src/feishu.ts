@@ -23,6 +23,13 @@ export interface FeishuBotRoute {
   /** Account the bot acts as in the chat: whoever generated the pairing
    * code the chat used. */
   boundUserId?: string;
+  /**
+   * A direct chat its person's assistant takes (docs/personal-agent.md
+   * §10): the assistant's workspace, where its messages go. The chat is
+   * listed both under the workspace it was paired with and under the
+   * assistant's.
+   */
+  assistantWorkspaceId?: string;
   pairingCodeExpiresAt?: string;
   createdAt: string;
   updatedAt: string;

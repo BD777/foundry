@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "id": "personal-agent.a10-daily-creation-limit",
+  "title": "A10: past the daily new-project limit the tool refuses and the assistant explains in plain words",
+  "description": "After the day's limit of new projects (default 3), create_workspace is refused with a readable limit error; the assistant tells the person plainly that it cannot start another project today and links to raising the limit.",
+  "kind": "api",
+  "area": "personal-agent",
+  "risk": "medium",
+  "cadence": ["release", "manual"],
+  "tags": ["personal-agent", "limits", "real-model"],
+  "preconditions": ["Assistant set up with default limits."],
+  "steps": [
+    {
+      "id": "create-four",
+      "action": "type",
+      "target": "assistant message box",
+      "value": "four requests that each need a new project, in a row"
+    }
+  ],
+  "assertions": [
+    {
+      "afterStep": "create-four",
+      "type": "json-shape",
+      "target": "the fourth create_workspace",
+      "expected": "refused: limit"
+    },
+    {
+      "afterStep": "create-four",
+      "type": "text",
+      "target": "the fourth reply",
+      "expected": "plain explanation and a link to raise the limit; no banned words"
+    }
+  ],
+  "automation": {
+    "status": "manual",
+    "runner": "manual",
+    "references": [
+      "docs/personal-agent.md#9-用量与失控上限server-执行面板可在上限内调"
+    ]
+  },
+  "evidence": {
+    "capture": ["response"],
+    "retainOn": "always"
+  },
+  "cleanup": ["Archive the projects the run created."]
+}

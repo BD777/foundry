@@ -16,7 +16,7 @@ import { sessionPrompt } from "../session-prompt.js";
 import type { SessionEventEmitter } from "../session-state.js";
 import { claudeManagedPrompt } from "../skill-isolation.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
-import { isUtilitySession } from "../session-roles.js";
+import { isPromptOnlySession, isUtilitySession } from "../session-roles.js";
 import { resolveClaudeCommand } from "../native-cli.js";
 import {
   claudeOperationBounds,
@@ -162,7 +162,7 @@ function claudeTurnOptions(
   if (isUtilitySession(session)) {
     baseOptions.disallowedTools = ["Write", "Edit", "Bash"];
   }
-  if (session.source === "naming") baseOptions.tools = [];
+  if (isPromptOnlySession(session)) baseOptions.tools = [];
   return { flagSettings, baseOptions };
 }
 

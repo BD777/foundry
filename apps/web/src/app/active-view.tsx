@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type {
+  AssistantSettingsSection,
+  InterfaceMode,
+} from "../lib/assistant-settings-sections";
 import type { ConnectorType } from "../lib/connector-types";
+import {
+  AssistantHome,
+  AssistantSettings,
+  type AssistantFeatureEvent,
+} from "../features/personal-agent";
 import { DevicesFeature } from "../features/devices";
 import { IssueDetailView } from "../features/issue-detail";
 import {
@@ -41,6 +50,10 @@ export interface AppViewContext {
 }
 
 export interface ActiveViewProps extends AppViewContext {
+  assistantSection: AssistantSettingsSection;
+  onAssistantSectionChange: (section: AssistantSettingsSection) => void;
+  /** The assistant saved a new interface (its simpleInterface setting). */
+  onInterfaceModeChange: (mode: InterfaceMode) => void;
   /** The Chats page, kept by the shell so chats live across pages. */
   chatView: ReactNode;
   connectorTab: ConnectorType;
@@ -51,6 +64,9 @@ export interface ActiveViewProps extends AppViewContext {
 
 /** The page the route shows, wired to the shell's data and navigation. */
 export function ActiveView({
+  assistantSection,
+  onAssistantSectionChange,
+  onInterfaceModeChange,
   chatView,
   connectorTab,
   issueDraft,
@@ -65,7 +81,51 @@ export function ActiveView({
   const { t } = useTranslation("shell");
   const account = useAccountSession();
 
+  function handleAssistantEvent(event: AssistantFeatureEvent): void {
+    switch (event.type) {
+      case "notice.requested":
+        setNotice(event.message);
+        return;
+      case "settings.open":
+        if (event.section) onAssistantSectionChange(event.section);
+        location.setActiveView("assistantSettings");
+        return;
+      case "home.open":
+        location.setActiveView("assistant");
+        return;
+      case "devices.open":
+        location.openDevices(
+          event.deviceId,
+          event.deviceId ? "settings" : undefined,
+        );
+        return;
+      case "interface.changed":
+        onInterfaceModeChange(event.mode);
+        return;
+    }
+  }
+
   switch (activeView) {
+    case "assistant":
+      return (
+        <AssistantHome
+          agentProfiles={data.agentProfiles}
+          devices={data.devices}
+          onEvent={handleAssistantEvent}
+          workspaces={data.workspaces}
+        />
+      );
+    case "assistantSettings":
+      return (
+        <AssistantSettings
+          agentProfiles={data.agentProfiles}
+          devices={data.devices}
+          onEvent={handleAssistantEvent}
+          onSectionChange={onAssistantSectionChange}
+          section={assistantSection}
+          workspaces={data.workspaces}
+        />
+      );
     case "account":
     case "members":
       return (

@@ -5,6 +5,8 @@ import { appName, setDocumentPage } from "../lib/document-title";
 import type { NavView } from "./navigation";
 
 const globalViews = new Set<NavView>([
+  "assistant",
+  "assistantSettings",
   "account",
   "members",
   "profiles",

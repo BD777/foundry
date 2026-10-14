@@ -3,6 +3,9 @@ import type { Translation } from "../../translation";
 
 export const shell: Translation<typeof en> = {
   nav: {
+    assistantSection: "助理",
+    assistant: "助理",
+    assistantSettings: "设置",
     workspace: "工作区",
     manage: "管理",
     overview: "概览",
@@ -17,6 +20,8 @@ export const shell: Translation<typeof en> = {
     account: "账户",
   },
   views: {
+    assistant: "助理",
+    assistantSettings: "助理设置",
     account: "账户",
     members: "成员",
     assets: "资产",

@@ -68,7 +68,9 @@ export function useConversationInput(
   const runtime =
     props.composer.mode === "fixed"
       ? props.composer.runtime
-      : props.composer.runtimeControls.selectedRuntime;
+      : props.composer.mode === "selectable"
+        ? props.composer.runtimeControls.selectedRuntime
+        : undefined;
   const active = Boolean(
     props.active || props.sending || busy.pending || awaiting.waiting,
   );

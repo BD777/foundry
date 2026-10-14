@@ -67,6 +67,7 @@ func run(ctx context.Context, deps dependencies) error {
 	go api.ReconcileStaleSessions(ctx)
 	go api.RunFeishuGatewayMaintenance(ctx)
 	go api.RunResourceLeases(ctx)
+	go api.RunPersonalAgentSupervision(ctx)
 	if !cfg.Options.Integrations.On() {
 		deps.logf("integrations are off (%s=off): no Feishu bot connections, Connectors logins, refreshes or keep-alive, or skill repository checks", integrations.Env)
 	}

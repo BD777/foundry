@@ -604,19 +604,8 @@ func (s *Server) handleSetWorkspaceSkills(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "workspaceId is required")
 		return
 	}
-	if err := s.store.SetWorkspaceSkills(r.Context(), input); err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	s.projectionsChanged(input.WorkspaceID, workspaceSkillFields...)
-	// Every view's catalog lists the workspaces using each skill.
-	s.projectionsChanged("", fieldPromotedSkills)
-	bindings, err := s.store.ListWorkspaceSkillBindings(r.Context(), input.WorkspaceID)
-	if err != nil {
-		writeResult(w, nil, err)
-		return
-	}
-	writeResult(w, bindings, nil)
+	bindings, err := s.SetWorkspaceSkills(r.Context(), requestWorkspaceActor(r), input)
+	writeResult(w, bindings, err)
 }
 
 // skillPinner is the store capability behind pinning a workspace's skill.

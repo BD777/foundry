@@ -83,6 +83,9 @@ type sessionEvents struct {
 	// subagentEnds gathers the ends of a session's subagents, by session,
 	// with the session's workspace (see subagentChanged).
 	subagentEnds *eventstream.Throttle[string, string]
+	// presented, when set, is a session as viewers read it (the role the
+	// server computes); observers get the session as stored.
+	presented func(ctx context.Context, session store.AgentSession) store.AgentSession
 }
 
 func newSessionEvents(stream eventstream.Publisher) *sessionEvents {
@@ -141,7 +144,11 @@ func (e *sessionEvents) observe(observers ...any) {
 // its observers.
 func (e *sessionEvents) changed(ctx context.Context, change sessionChange, session store.AgentSession) {
 	session = slimAgentSession(session)
-	change.event().Publish(e.stream, eventstream.Route{Workspace: session.WorkspaceID}, session)
+	viewed := session
+	if e.presented != nil {
+		viewed = e.presented(ctx, session)
+	}
+	change.event().Publish(e.stream, eventstream.Route{Workspace: session.WorkspaceID}, viewed)
 	for _, observer := range e.changeObservers {
 		observer.sessionChanged(ctx, change, session)
 	}

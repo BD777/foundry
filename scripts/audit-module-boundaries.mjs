@@ -92,6 +92,7 @@ export const workerModules = {
       "workspaces",
       "workspace-attachments",
       "workspace-registration",
+      "personal-agent-settings",
       "workspace-bootstrap",
       "workspace-inspection",
       "repository-registry",
@@ -358,6 +359,8 @@ export const serverPackages = {
   externalaccounts: ["store", "integrations"],
   connectors: ["store", "integrations", "externalaccounts"],
   resources: ["store"],
+  personalagent: ["store"],
+  workspacedigest: ["store", "personalagent"],
   feishugateway: ["store", "integrations", "externalaccounts"],
   feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],
   feishu: [

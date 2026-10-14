@@ -13,7 +13,9 @@ export type ConversationComposer =
       >
     > &
       Pick<AgentComposerProps, "agentPickerFooter" | "slashItems">)
-  | { mode: "fixed"; runtime: RuntimeKind; model?: string };
+  | { mode: "fixed"; runtime: RuntimeKind; model?: string }
+  /** No agent shown: the person talks to the assistant, not to a runtime. */
+  | { mode: "plain" };
 
 /** The complete conversation contract. Hosts adapt business data and execute commands. */
 export interface ConversationProps {
@@ -47,6 +49,8 @@ export interface ConversationProps {
   inputRef?: Ref<HTMLTextAreaElement>;
   inputLabel?: string;
   sendLabel?: string;
+  /** The button that stops the reply being written; a default names the agent. */
+  stopLabel?: string;
   placeholder?: string;
   attachments?: ChatAttachment[];
   attachmentUploading?: boolean;

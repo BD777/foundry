@@ -139,6 +139,10 @@ var workspaceOwnedRows = []ownedRows{
 	{"resource_waits", "session_id", ownerSession},
 	{"resource_operations", "session_id", ownerSession},
 	{"evidence_requests", sessionRequestOwner, ownerSession},
+	// The assistant's tasks follow up their session; its proposals answer
+	// to the conversation that made them.
+	{"pa_tasks", "session_id", ownerSession},
+	{"pa_proposals", "session_id", ownerSession},
 	{"evidence_records", "issue_id", ownerIssue},
 	{"acceptance_artifacts", "issue_id", ownerIssue},
 	{"feishu_chat_threads", "issue_id", ownerIssue},
@@ -168,6 +172,10 @@ var workspaceOwnedRows = []ownedRows{
 	{"external_account_bindings", "workspace_id", ownerWorkspace},
 	{"device_connector_bindings", "workspace_id", ownerWorkspace},
 	{"feishu_gateway_grants", "workspace_id", ownerWorkspace},
+	// Work the assistant follows up in the workspace, and what it proposed
+	// to do to it: neither can go on without it.
+	{"pa_tasks", "workspace_id", ownerWorkspace},
+	{"pa_proposals", "workspace_id", ownerWorkspace},
 }
 
 // deleteWorkspaceRows deletes every row the workspace owns, but not the

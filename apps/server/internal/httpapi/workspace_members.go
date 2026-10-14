@@ -68,6 +68,10 @@ func (s *Server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "role must be viewer, member, maintainer or owner")
 		return
 	}
+	if err := s.refuseWorkspaceMembers(r.Context(), r.PathValue("id")); err != nil {
+		writeResult(w, nil, err)
+		return
+	}
 	username := strings.TrimSpace(input.Username)
 	user, _, err := s.store.GetUserCredentials(r.Context(), username)
 	if err != nil || !user.Active() {

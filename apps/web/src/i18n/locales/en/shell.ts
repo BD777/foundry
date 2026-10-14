@@ -1,6 +1,9 @@
 /** The application frame: navigation, sidebar, page-level notices. */
 export const shell = {
   nav: {
+    assistantSection: "Assistant",
+    assistant: "Assistant",
+    assistantSettings: "Settings",
     workspace: "Workspace",
     manage: "Manage",
     overview: "Overview",
@@ -15,6 +18,8 @@ export const shell = {
     account: "Account",
   },
   views: {
+    assistant: "Assistant",
+    assistantSettings: "Assistant settings",
     account: "Account",
     members: "Members",
     assets: "Assets",

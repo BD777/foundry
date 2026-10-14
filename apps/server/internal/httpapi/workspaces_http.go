@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,29 @@ func selectWorkspace(ctx context.Context, st store.Store, workspaces []store.Wor
 	}, nil
 }
 
+// defaultWorkspacesFirst orders workspaces for picking the one a person
+// without a selection lands in: their own projects first, most recently
+// updated first; the assistant's workspace, archived ones and those the
+// assistant created last. The person reaches those through the assistant.
+func (s *Server) defaultWorkspacesFirst(ctx context.Context, userID string, workspaces []store.WorkspaceProjection) []store.WorkspaceProjection {
+	ordered := slices.Clone(workspaces)
+	background := func(workspace store.WorkspaceProjection) bool {
+		if workspace.Kind == store.WorkspaceKindPersonalAgent || workspace.ArchivedAt != "" {
+			return true
+		}
+		created, err := s.store.PersonalAgentCreatedWorkspace(ctx, userID, workspace.ID)
+		return err == nil && created
+	}
+	rank := make(map[string]int, len(ordered))
+	for _, workspace := range ordered {
+		if background(workspace) {
+			rank[workspace.ID] = 1
+		}
+	}
+	slices.SortStableFunc(ordered, func(a, b store.WorkspaceProjection) int { return rank[a.ID] - rank[b.ID] })
+	return ordered
+}
+
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	view, err := s.visibilityFor(r.Context(), actorFromContext(r.Context()))
 	writeResult(w, view.workspaces, err)
@@ -60,56 +84,50 @@ func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDeviceOwner(w, r, strings.TrimSpace(input.DeviceID)) {
 		return
 	}
-	path := strings.TrimSpace(input.Path)
-	if path == "" {
-		writeError(w, http.StatusBadRequest, "path is required")
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-	item, err := s.hub.SetupWorkspace(ctx, strings.TrimSpace(input.DeviceID), path)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusConflict, "local daemon is not connected")
-		return
-	}
-	if errors.Is(err, store.ErrWorkspaceOwnedByAnotherDevice) {
-		writeError(w, http.StatusConflict, "This folder is already a workspace of another device. Open it there, or remove it from that device first.")
-		return
-	}
-	// The device keeps working after the wait ends, and a late answer still
-	// registers the folder.
-	if errors.Is(err, context.DeadlineExceeded) {
-		writeError(w, http.StatusGatewayTimeout, "The device did not finish setting up this folder within 60 seconds. It may still be working on it (a large folder takes longer the first time): check the device's Workspaces in a minute before trying again.")
-		return
-	}
+	item, err := s.CreateWorkspace(r.Context(), requestWorkspaceActor(r), WorkspaceCreateRequest{DeviceID: input.DeviceID, Path: input.Path})
 	writeResultWithStatus(w, http.StatusCreated, item, err)
 }
 
+// handleRenameWorkspace changes what PATCH sends: the display name, the
+// purpose, and whether the workspace is archived.
 func (s *Server) handleRenameWorkspace(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Name string `json:"name"`
+		Name     *string `json:"name"`
+		Purpose  *string `json:"purpose"`
+		Archived *bool   `json:"archived"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 120 || strings.ContainsAny(name, "\r\n\t") {
-		writeError(w, http.StatusBadRequest, "display name must be 1–120 characters on one line")
-		return
+	actor, workspaceID := requestWorkspaceActor(r), r.PathValue("id")
+	var item store.WorkspaceProjection
+	var err error
+	if input.Name != nil || input.Purpose != nil || input.Archived == nil {
+		item, err = s.UpdateWorkspaceDetails(r.Context(), actor, workspaceID, WorkspaceDetails{Name: input.Name, Purpose: input.Purpose})
 	}
-	item, err := s.store.RenameWorkspace(r.Context(), r.PathValue("id"), name)
-	if err == nil {
-		// The workspace list every view shows changed, and the catalog's
-		// list of the workspaces using each skill.
-		s.projectionsChanged("", fieldWorkspaces, fieldPromotedSkills)
+	if err == nil && input.Archived != nil {
+		if *input.Archived {
+			item, err = s.ArchiveWorkspace(r.Context(), actor, workspaceID)
+		} else {
+			item, err = s.RestoreWorkspace(r.Context(), actor, workspaceID)
+		}
 	}
 	writeResult(w, item, err)
+}
+
+// requestWorkspaceActor is the person behind a REST lifecycle write.
+func requestWorkspaceActor(r *http.Request) WorkspaceActor {
+	return WorkspaceActor{UserID: actorFromContext(r.Context()).AccountID()}
 }
 
 func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "workspace id is required")
+		return
+	}
+	if err := s.refuseRemovingWorkspace(r.Context(), id); err != nil {
+		writeResult(w, nil, err)
 		return
 	}
 	workspace, err := s.store.DeleteWorkspace(r.Context(), id)

@@ -20,7 +20,7 @@ func (s *Server) handleListAgentSessions(w http.ResponseWriter, r *http.Request)
 		items = slices.DeleteFunc(items, func(session store.AgentSession) bool { return session.IssueID != issueID })
 	}
 	if err == nil {
-		items = summarizeAgentSessionsForList(s.reconcileAgentSessions(r.Context(), items))
+		items = s.presentSessions(r.Context(), summarizeAgentSessionsForList(s.reconcileAgentSessions(r.Context(), items)))
 	}
 	writeResult(w, items, err)
 }
@@ -60,6 +60,7 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, _, err = s.reconcileAgentSession(r.Context(), item)
+	item = s.presentSession(r.Context(), item)
 	if err == nil && sessionEventsRequested(r) {
 		if windowed {
 			page, pageErr := windowSessionEvents(r.Context(), s.store, item, window)
@@ -71,6 +72,7 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		item, err = s.store.GetAgentSession(r.Context(), item.ID)
+		item = s.presentSession(r.Context(), item)
 	}
 	writeResult(w, item, err)
 }
@@ -97,7 +99,7 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	items = s.reconcileAgentSessions(r.Context(), items)
-	items = s.backfillSessionUsage(r.Context(), items)
+	items = s.presentSessions(r.Context(), s.backfillSessionUsage(r.Context(), items))
 	if !windowed {
 		writeResult(w, items, nil)
 		return
@@ -230,13 +232,13 @@ func (s *Server) handleCreateAgentSession(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, store.ErrSessionInputExists) && s.replaySentInput(w, r, sent, idempotent):
 		case session.ID != "":
 			// Created, but its device could not take it: the failed session.
-			writeJSON(w, errorStatus(err), slimAgentSession(session))
+			writeJSON(w, errorStatus(err), s.presentSession(r.Context(), slimAgentSession(session)))
 		default:
 			writeResult(w, nil, err)
 		}
 		return
 	}
-	session = slimAgentSession(session)
+	session = s.presentSession(r.Context(), slimAgentSession(session))
 	idempotent.record(r.Context(), session)
 	writeJSON(w, http.StatusCreated, session)
 }
@@ -275,7 +277,7 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if wasActive {
 		s.appendSessionControlAudit(r.Context(), session, "Steered by orchestrator", actor)
 	}
-	session = slimAgentSession(session)
+	session = s.presentSession(r.Context(), slimAgentSession(session))
 	idempotent.record(r.Context(), session)
 	writeResult(w, session, nil)
 }
@@ -288,5 +290,5 @@ func (s *Server) handleCancelAgentSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	session, err := s.cancelSession(r.Context(), actor, anchor.ID)
-	writeResult(w, slimAgentSession(session), err)
+	writeResult(w, s.presentSession(r.Context(), slimAgentSession(session)), err)
 }

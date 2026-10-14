@@ -230,6 +230,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 		CodexSpeed:           mcpArgString(args, "codexSpeed"),
 		ImportedContext:      mcpArgString(args, "importedContext"),
 		Prompt:               mcpArgString(args, "prompt"),
+		Title:                mcpArgString(args, "title"),
 		IssueID:              mcpArgString(args, "issueId"),
 		ForkSessionID:        mcpSessionID(args, "forkSessionId"),
 		Verification:         mcpArgBool(args, "verification"),
@@ -382,6 +383,9 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 		return "", err
 	}
 	defer s.discardHandedOver(ctx, attachments)
+	// Before the message starts it: the task's news goes to this
+	// conversation from its first event on.
+	s.adoptAssistantTask(ctx, call.actor, target)
 	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
 		Prompt:      mcpArgAlias(args, "prompt", "message"),
 		Attachments: attachments.list(),

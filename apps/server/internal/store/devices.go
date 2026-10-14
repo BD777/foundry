@@ -10,6 +10,10 @@ type DeviceProjection struct {
 	Owned bool `json:"owned,omitempty"`
 	// Resources is what the device offers sessions, reported by its worker.
 	Resources []DeviceResource `json:"resources,omitempty"`
+	// ManagedRoots are the folders, resolved, the Personal Agent may create
+	// projects in, reported by a worker declaring
+	// DaemonCapabilityWorkspaceCreate.
+	ManagedRoots []string `json:"managedRoots,omitempty"`
 	// Capabilities are the protocol features its worker declared at its
 	// last registration; an older worker declares none.
 	Capabilities []string `json:"capabilities,omitempty"`

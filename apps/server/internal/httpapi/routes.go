@@ -34,6 +34,19 @@ func publicRoute() accessRule { return accessRule{kind: "public", check: allow} 
 // signedIn routes serve the caller's own account (profile, pairing tokens).
 func signedIn() accessRule { return accessRule{kind: "signed-in", check: allow} }
 
+// personOnly routes act for the signed-in person on their own assistant: a
+// device credential or a session token never reaches them, so neither can
+// accept a proposal or change a setting (docs/personal-agent.md §4).
+func personOnly() accessRule {
+	return accessRule{kind: "person", check: func(_ *Server, w http.ResponseWriter, r *http.Request) bool {
+		if actor := actorFromContext(r.Context()); actor.Kind != ActorAccount || actor.AccountID() == "" {
+			writeForbidden(w, "Only the signed-in person manages their assistant.")
+			return false
+		}
+		return true
+	}}
+}
+
 func inHandler() accessRule { return accessRule{kind: ruleInHandler, check: allow} }
 func filtered() accessRule  { return accessRule{kind: ruleFiltered, check: allow} }
 func daemonProtocol() accessRule {
@@ -431,6 +444,25 @@ func (s *Server) routeTable() []route {
 		fn("DELETE /api/skill-repositories/{id}", s.handleDeleteSkillRepository, adminOnly()),
 		fn("PUT /api/skill-repositories/{id}/source", s.handleSetSkillRepositorySource, adminOnly()),
 		fn("GET /api/skills/catalog/{id}/revisions/{revision}/package", s.handleSkillPackage, signedIn()),
+
+		fn("GET /api/personal-agent", s.handlePersonalAgentOverview, personOnly()),
+		fn("POST /api/personal-agent", s.handleSetupPersonalAgent, personOnly()),
+		fn("PUT /api/personal-agent/settings", s.handleSavePersonalAgentSettings, personOnly()),
+		fn("POST /api/personal-agent/home", s.handleMovePersonalAgentHome, personOnly()),
+		fn("POST /api/personal-agent/stop", s.handleStopPersonalAgent, personOnly()),
+		fn("POST /api/personal-agent/resume", s.handleResumePersonalAgent, personOnly()),
+		fn("GET /api/personal-agent/memory", s.handleListPersonalAgentMemory, personOnly()),
+		fn("POST /api/personal-agent/memory", s.handleAddPersonalAgentMemory, personOnly()),
+		fn("DELETE /api/personal-agent/memory", s.handleForgetAllPersonalAgentMemory, personOnly()),
+		fn("PUT /api/personal-agent/memory/{id}", s.handleEditPersonalAgentMemory, personOnly()),
+		fn("POST /api/personal-agent/memory/{id}/confirm", s.handleConfirmPersonalAgentMemory, personOnly()),
+		fn("DELETE /api/personal-agent/memory/{id}", s.handleForgetPersonalAgentMemory, personOnly()),
+		fn("GET /api/personal-agent/proposals", s.handleListPersonalAgentProposals, personOnly()),
+		fn("POST /api/personal-agent/proposals/{id}/accept", s.handleAcceptPersonalAgentProposal, personOnly()),
+		fn("POST /api/personal-agent/proposals/{id}/decline", s.handleDeclinePersonalAgentProposal, personOnly()),
+		fn("GET /api/personal-agent/tasks", s.handleListPersonalAgentTasks, personOnly()),
+		fn("POST /api/personal-agent/tasks/{id}/stop", s.handleStopPersonalAgentTask, personOnly()),
+		fn("GET /api/personal-agent/actions", s.handleListPersonalAgentActions, personOnly()),
 
 		fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/chat-titles", s.handleListChatTitles, workspaceRole(viewer, queryWorkspace())),

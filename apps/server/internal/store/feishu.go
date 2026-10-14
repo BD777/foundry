@@ -54,6 +54,10 @@ type FeishuBotRoute struct {
 	// BoundUserID is the account the bot acts as in the chat: whoever
 	// generated the pairing code the chat used.
 	BoundUserID string `json:"boundUserId,omitempty"`
+	// AssistantWorkspaceID is set on a direct chat its person's assistant
+	// takes: the assistant's workspace, where its messages go. The chat is
+	// listed under the workspace it was paired with and the assistant's.
+	AssistantWorkspaceID string `json:"assistantWorkspaceId,omitempty"`
 	// PairingCode is the hash of the pairing route's current code; the
 	// plaintext is returned only by the request that generated it.
 	PairingCode          string `json:"-"`
