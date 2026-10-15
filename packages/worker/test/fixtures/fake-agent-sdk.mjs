@@ -57,3 +57,13 @@ export class Codex {
     };
   }
 }
+
+// Adapter seam: runtime tests stay offline when Codex uses its native control protocol.
+export class CodexAppServerThread {
+  constructor(command, env, config, options, id) {
+    const client = new Codex({ codexPathOverride: command, env, config });
+    return id && client.resumeThread
+      ? client.resumeThread(id, options)
+      : client.startThread(options);
+  }
+}

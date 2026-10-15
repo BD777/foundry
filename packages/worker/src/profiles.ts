@@ -437,6 +437,7 @@ export function agentProfilesForWorkspace(
       lastSeenLabel: device.lastSeenLabel,
       model: profile.model,
       models: profile.models,
+      contextWindows: profile.contextWindows,
       /* Reported so a saved value round-trips; nothing injects it and no field
          offers it, so a stale env var must not revive one either. */
       promptPrefix: profile.promptPrefix,
@@ -755,6 +756,7 @@ export function upsertAgentProfileConfig(
     codexReasoningEffort: input.codexReasoningEffort || undefined,
     codexSandboxMode: input.codexSandboxMode || undefined,
     codexSpeed: input.codexSpeed || undefined,
+    contextWindows: input.contextWindows ?? existing?.contextWindows,
     command: existing?.command,
     connectionType,
     enabled: true,
@@ -818,6 +820,7 @@ export function profileConfigFromInput(
       input.codexReasoningEffort || existing?.codexReasoningEffort,
     codexSandboxMode: input.codexSandboxMode || existing?.codexSandboxMode,
     codexSpeed: input.codexSpeed || existing?.codexSpeed,
+    contextWindows: input.contextWindows ?? existing?.contextWindows,
     connectionType,
     id: inputID || existing?.id || fallbackID,
     label: input.label?.trim() || existing?.label,

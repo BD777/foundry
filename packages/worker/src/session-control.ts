@@ -6,6 +6,13 @@
 import type { AgentSession, ChatAttachment } from "@bd777/foundry-protocol";
 import { dispatchKey } from "./session-state.js";
 
+export class ControlOutcomeUnknownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ControlOutcomeUnknownError";
+  }
+}
+
 export interface ActiveSessionSteerTarget {
   provider: AgentSession["provider"];
   /**
@@ -118,8 +125,13 @@ export function steerActiveSessionOnce(
   }
   const applying = steerActiveSession(sessionID, message, attachments, steerID);
   rememberSteer(key, applying);
-  applying.catch(() => {
-    if (appliedSteers.get(key) === applying) appliedSteers.delete(key);
+  applying.catch((error) => {
+    // An unknown native acknowledgement must not be retried as a new input.
+    if (
+      appliedSteers.get(key) === applying &&
+      !(error instanceof Error && error instanceof ControlOutcomeUnknownError)
+    )
+      appliedSteers.delete(key);
   });
   return applying;
 }

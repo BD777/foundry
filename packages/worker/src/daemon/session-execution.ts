@@ -23,7 +23,6 @@ import {
 import {
   forgetActiveSession,
   isAgentSessionCanceledError,
-  registerActiveSessionSteerTarget,
   takeQueuedSessionCancel,
 } from "../session-control.js";
 import {
@@ -244,17 +243,6 @@ export async function executeAgentSession(
     sessionId: session.id,
     inputId: session.input?.id,
   });
-  const unregisterUnsupportedCodexSteer =
-    session.provider === "codex"
-      ? registerActiveSessionSteerTarget(session.id, {
-          provider: "codex",
-          steer: async () => {
-            throw new Error(
-              "Codex SDK does not support steering the active turn yet. Keep it queued for the next turn.",
-            );
-          },
-        })
-      : undefined;
   try {
     const profile = await withSessionContextWindow(
       withDispatchCredential(
@@ -329,7 +317,6 @@ export async function executeAgentSession(
   } finally {
     flushPendingResponse();
     unregisterAmbient();
-    unregisterUnsupportedCodexSteer?.();
     forgetActiveSession(session.id);
   }
 }

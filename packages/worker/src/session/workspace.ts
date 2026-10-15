@@ -177,12 +177,10 @@ async function runSandboxed(
     provider: session.provider,
     cancel: () => canceled.abort(),
   };
-  // Codex cannot steer an active turn; whoever owns the session keeps its
-  // own answer for that.
-  const unregisterSteer =
-    session.provider !== "codex"
-      ? registerActiveSessionSteerTarget(session.id, steerTarget)
-      : () => {};
+  const unregisterSteer = registerActiveSessionSteerTarget(
+    session.id,
+    steerTarget,
+  );
   const unregisterCancel = registerActiveSessionCancelTarget(
     session.id,
     cancelTarget,

@@ -29,11 +29,11 @@ func messageSender(actor Actor) string {
 // takes it, naming the input first when the caller did not: the device
 // writes the message's event as evt_<input id>.
 func (s *Server) recordSteerSender(ctx context.Context, sessionID string, input *store.SendAgentSessionInput) error {
-	if input.SentBySessionID == "" {
-		return nil
-	}
 	if input.InputID == "" {
 		input.InputID = uuid.NewString()
+	}
+	if input.SentBySessionID == "" {
+		return nil
 	}
 	return s.store.RecordSessionInputSender(ctx, sessionID, input.InputID, input.SentBySessionID)
 }

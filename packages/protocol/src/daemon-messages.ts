@@ -409,6 +409,7 @@ export interface DaemonAgentProfileInput {
   codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];
   codexReasoningEffort?: AgentProfileProjection["codexReasoningEffort"];
   codexSandboxMode?: AgentProfileProjection["codexSandboxMode"];
+  contextWindows?: Record<string, number>;
   codexSpeed?: AgentProfileProjection["codexSpeed"];
   configScope?: AgentConfigScope;
   connectionType?: AgentConnectionType;

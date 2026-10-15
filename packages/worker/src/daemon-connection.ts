@@ -1,3 +1,8 @@
+import {
+  executionHostClient,
+  startExecutionHost,
+  stopExecutionHost,
+} from "./execution-host/client.js";
 import { writeFileSync } from "node:fs";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "./secret-redaction.js";
@@ -52,6 +57,7 @@ import { noteMissingFolder } from "./daemon/workspace-roster.js";
  * from both the WS (4001 close) and polling (410 register) paths.
  */
 async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
+  await stopExecutionHost();
   const device = getDevice();
   writeDeviceRemovedMarker({
     serverUrl: serverURL,
@@ -82,11 +88,13 @@ export async function connect(args: string[]): Promise<void> {
   }
   registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
-  // Agent processes die with this worker; those a previous one left
-  // running stop before any work starts here.
+  // Reattach the OS-managed execution owner before reporting live claims.
+  // The worker still supervises its own short-lived inspection processes.
+  await startExecutionHost(serverURLFromArgs(args));
   await superviseAgentProcesses();
   // Connector profiles a previous process wrote for its sessions.
-  reapConnectorLeftovers((message) => console.error(message));
+  if (!executionHostClient())
+    reapConnectorLeftovers((message) => console.error(message));
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -147,7 +155,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
   const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
   startStallMonitor();
   // No Claude process from an earlier worker is left to read these.
-  clearClaudeSettingsFiles();
+  if (!executionHostClient()) clearClaudeSettingsFiles();
   heartbeatTimer.unref();
   // The daemon's own folder may be gone (moved or renamed): it starts as
   // the device and reports that workspace missing.
@@ -156,10 +164,25 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
   if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
   // Timers of sessions no process of this worker runs, kept across restarts.
-  if (!once) startSessionTimers(serverURL);
+  if (!once && !executionHostClient()) startSessionTimers(serverURL);
   if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
-  const sessionTransport = new ReliableSessionTransport();
+  const sessionTransport = new ReliableSessionTransport({
+    onAcknowledged: (id) => executionHostClient()?.acknowledge(id),
+  });
   const sessionExecutions = new SessionExecutionRegistry();
+  const host = executionHostClient();
+  host?.attach(sessionTransport, sessionExecutions);
+  if (host) {
+    await host.refresh();
+    const reconnectHost = setInterval(() => {
+      void host
+        .refresh()
+        .catch((error) =>
+          console.error(`Execution host connection: ${errorMessage(error)}`),
+        );
+    }, 5000);
+    reconnectHost.unref();
+  }
   // Scratch directories of sessions idle too long, earlier runs' included;
   // those runs that kept no record had theirs adopted first.
   if (!once) {
@@ -173,7 +196,8 @@ async function connectWebSocket(args: string[]): Promise<void> {
     startSessionScratchSweeps(
       (sessionId) =>
         sessionExecutions.activeSessionIds().includes(sessionId) ||
-        sessionHasRunningBackgroundTasks(sessionId),
+        sessionHasRunningBackgroundTasks(sessionId) ||
+        executionHostClient()?.hasSession(sessionId) === true,
     );
   }
   const taskScheduler = new ConcurrentTaskScheduler(

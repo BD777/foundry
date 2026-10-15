@@ -326,3 +326,21 @@ test("official Codex opts Astra into its supported window, including resumed tur
     undefined,
   );
 });
+
+test("official Codex respects a saved per-model window without changing other models", async () => {
+  const profile = {
+    runtime: "codex",
+    connectionType: "local_login",
+    contextWindows: { "gpt-6-astra": 400_000 },
+  };
+  assert.deepEqual(await resolveSessionContextWindow(profile, "gpt-6-astra"), {
+    model: "gpt-6-astra",
+    tokens: 400_000,
+    source: "setting",
+  });
+  assert.deepEqual(await resolveSessionContextWindow(profile, "gpt-5.6-sol"), {
+    model: "gpt-5.6-sol",
+    tokens: 872_000,
+    source: "official",
+  });
+});

@@ -20,6 +20,8 @@
  * is already paired and installed changes nothing.
  */
 
+import { stopExecutionHost } from "./execution-host/client.js";
+import { executionHostPaths } from "./execution-host/paths.js";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -261,7 +263,17 @@ export function runtimeVersion(directory: string): string {
 }
 
 function pruneRuntimes(current: string, previous: string | undefined): void {
+  let pinned = "";
+  try {
+    pinned =
+      JSON.parse(
+        readFileSync(join(executionHostPaths().root, "identity.json"), "utf8"),
+      ).entry ?? "";
+  } catch {
+    /* No execution host has pinned a runtime. */
+  }
   for (const entry of readdirSync(runtimeRoot())) {
+    if (pinned.startsWith(join(runtimeRoot(), entry) + "/")) continue;
     if (entry === "current" || entry === current || entry === previous)
       continue;
     rmSync(join(runtimeRoot(), entry), { recursive: true, force: true });
@@ -632,6 +644,7 @@ async function runUpdate(args: string[]): Promise<void> {
 export async function uninstallCommand(args: string[]): Promise<void> {
   if (serviceInstalled()) uninstallService();
   await stopDaemonProcess();
+  await stopExecutionHost();
   removeWorkerApp();
   if (optionEnabled(args, "--purge")) {
     rmSync(foundryStateRoot(), { recursive: true, force: true });

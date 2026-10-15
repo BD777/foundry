@@ -186,8 +186,7 @@ func (s *Server) handleRetryChatQueueItem(w http.ResponseWriter, r *http.Request
 	}
 }
 
-// handleSteerChatQueueItem moves a queued message into the turn Claude is
-// running, with its files. Codex takes messages only between turns.
+// handleSteerChatQueueItem moves a queued message into an active native turn.
 func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request) {
 	workspaceID, chatID, ok := s.chatQueueChat(w, r, true)
 	if !ok {
@@ -202,8 +201,9 @@ func (s *Server) handleSteerChatQueueItem(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusConflict, "nothing is running in this chat to steer into")
 		return
 	}
-	if session.Provider != "claude" {
-		writeError(w, http.StatusConflict, "only Claude takes a message during its turn; this one is sent when the turn ends")
+	connection := s.hub.connectionFor(session.DeviceID)
+	if session.Provider != "claude" && (session.Provider != "codex" || connection == nil || !connection.hasCapability("codex_active_steer")) {
+		writeError(w, http.StatusConflict, "this device does not support steering this runtime; send the message when the turn ends")
 		return
 	}
 	item, queue, err := s.store.ClaimChatQueueItem(r.Context(), workspaceID, chatID, r.PathValue("itemId"), false)

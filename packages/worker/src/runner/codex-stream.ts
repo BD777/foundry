@@ -1,3 +1,6 @@
+import type { ManagedSkillRuntime } from "../skill-materializer.js";
+import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
+import { userMessageText } from "../session-prompt.js";
 import { appendFileSync } from "node:fs";
 import { processLabels } from "@bd777/foundry-protocol";
 import type { CodexContextFollower } from "../context-usage.js";
@@ -9,6 +12,7 @@ import {
 import {
   AgentSessionCanceledError,
   registerActiveSessionCancelTarget,
+  registerActiveSessionSteerTarget,
 } from "../session-control.js";
 import { codexFileWrites, type SessionTurnFiles } from "../session-files.js";
 import type {
@@ -39,6 +43,7 @@ export interface CodexTurnState {
   /** How full the thread's context is, from the log Codex keeps of it. */
   context: CodexContextFollower;
   nativeSessionId: string;
+  managedSkills?: ManagedSkillRuntime;
   finalResult: string;
   usage?: TurnTokenUsage;
   /** What the turn shows about the endpoint's Responses WebSocket. */
@@ -73,6 +78,33 @@ export async function runCodexStreamedTurn(
       abortController.abort();
     },
   });
+  const unregisterSteer = thread.steer
+    ? registerActiveSessionSteerTarget(sessionId, {
+        provider: "codex",
+        steer: async (message, attachments = [], steerId) => {
+          if (state.managedSkills)
+            validateWorkspaceSkillPrompt(message, state.managedSkills);
+          const input = [
+            { type: "text", text: userMessageText(message, attachments) },
+            ...attachments
+              .filter((attachment) => attachment.kind === "image")
+              .map((attachment) => ({
+                type: "local_image",
+                path: attachment.path,
+              })),
+          ];
+          await thread.steer!(input, steerId);
+          await state.emit(
+            "Steered into active turn",
+            message,
+            "info",
+            undefined,
+            { id: steerId ?? "", kind: "user", text: message, attachments },
+            steerId ? `evt_${steerId}` : undefined,
+          );
+        },
+      })
+    : () => {};
   // Quiet is not failure: Codex bounds its own stream and tools.
   let ceilingError: Error | undefined;
   const liveness = new CodexTurnLiveness({
@@ -129,6 +161,7 @@ export async function runCodexStreamedTurn(
     abortController.abort();
     liveness.close();
     unregisterCancel();
+    unregisterSteer();
   }
 }
 

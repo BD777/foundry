@@ -125,7 +125,10 @@ func TestSteeredMessageNamesTheSendingSession(t *testing.T) {
 		}
 	}
 	typed := store.SendAgentSessionInput{Prompt: "from the person"}
-	if err := server.recordSteerSender(ctx, "sess_running", &typed); err != nil || typed.InputID != "" {
-		t.Fatalf("person's steer: id %q, %v; want nothing recorded", typed.InputID, err)
+	if err := server.recordSteerSender(ctx, "sess_running", &typed); err != nil || !store.ValidSessionInputID(typed.InputID) {
+		t.Fatalf("person's steer: id %q, %v; want stable input identity", typed.InputID, err)
+	}
+	if got := server.hub.withSteerSender(ctx, store.AgentSessionEvent{ID: "evt_" + typed.InputID, SessionID: "sess_running", Label: steeredIntoTurnLabel}); got.Metadata != nil {
+		t.Fatalf("person's steer unexpectedly named a session sender: %+v", got.Metadata)
 	}
 }

@@ -408,6 +408,7 @@ export async function recheckRunningNativeChats(
  * worker declares it can run.
  */
 export const daemonCapabilities = [
+  "codex_active_steer",
   "issue_sessions",
   "issue_clarification",
   "worker_update",

@@ -259,6 +259,13 @@ export const profiles = {
     notAssigned: "Not assigned to this device",
   },
   accountDefaults: {
+    contextWindow: "Context window (tokens)",
+    contextAutomatic: "Automatic maximum",
+    contextChooseModel: "Choose a model to set its context window.",
+    contextNativeLimit: "the native CLI limit",
+    contextHint:
+      "Automatic uses up to {{limit}} tokens. You can request a smaller window (for example, 256K). Codex applies its own cap and reserved space. Changes take effect on the next turn, not during a running turn.",
+
     sectionLabel: "{{runtime}} runtime defaults",
     codexCatalog:
       "Models from OpenAI’s published Codex catalog and the native CLI. Offline results may be older; availability depends on your account and CLI version.",

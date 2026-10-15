@@ -1,3 +1,4 @@
+import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
   type EvidenceWorkerRequest,
@@ -7,16 +8,8 @@ import { evidenceWorkerAction } from "../../evidence-rpc.js";
 import { issueEnvironmentAction } from "../../issue-environment-rpc.js";
 import { queuePreview, runIssuePreview } from "../../issue-preview.js";
 import { recordedIssueCompletion } from "../../issue-recovery.js";
-import { executeIssue, syncReviews } from "../../issues.js";
-import {
-  profileConfigForSession,
-  withDispatchCredential,
-} from "../../profiles.js";
-import { withSessionContextWindow } from "../../context-window.js";
-import {
-  issueSessionCompletion,
-  SessionRunTransport,
-} from "../../issue-execution.js";
+import { runDispatchedIssue } from "../issue-run.js";
+import { issueSessionCompletion } from "../../issue-execution.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../utils.js";
@@ -69,41 +62,12 @@ export function runIssueExecution(
       );
       try {
         const workspacePath = ctx.roster.folderFor(session.workspaceId);
-        const profile =
-          issue.runtime === "mock"
-            ? undefined
-            : await withSessionContextWindow(
-                withDispatchCredential(
-                  profileConfigForSession(
-                    workspacePath,
-                    session,
-                    payload.profile,
-                  ),
-                  payload.credential,
-                ),
-                session,
-              );
-        await executeIssue(
+        await runDispatchedIssue(
           ctx.serverURL,
           workspacePath,
-          issue,
-          new SessionRunTransport(
-            ctx.sessionTransport,
-            session.id,
-            inputId || undefined,
-          ),
-          undefined,
-          session.skillRefs ?? [],
-          payload.userFiles === "readable" ? "readable" : "hidden",
-          session.id,
-          profile,
-          {
-            serverURL: ctx.serverURL,
-            sessionToken: payload.sessionToken ?? "",
-            workspaceID: session.workspaceId,
-          },
+          ctx.sessionTransport,
+          payload,
         );
-        await syncReviews(ctx.serverURL, workspacePath);
       } catch (error) {
         // executeIssue reports its own failures once the run started;
         // this is a refusal before it did (an unconfirmed contract).
@@ -135,6 +99,16 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
         daemonMessageTypes.issueEnvironmentResult,
         async () => {
           const sourcePath = ctx.roster.folderFor(payload.workspaceId);
+          const host = executionHostClient();
+          if (host) {
+            const result = await host.issueEnvironment({
+              ...payload,
+              sourcePath,
+            });
+            return payload.action === "status" && payload.notifyChanges
+              ? { ...(result as object), notifiesChanges: true }
+              : result;
+          }
           if (payload.action === "preview_start") {
             queuePreview(payload.issueId);
             void ctx.taskScheduler
@@ -161,7 +135,9 @@ export function registerIssueHandlers(dispatch: DaemonDispatch): void {
         ctx,
         envelope,
         daemonMessageTypes.evidenceResult,
-        () => evidenceWorkerAction(payload),
+        () =>
+          executionHostClient()?.evidence(payload) ??
+          evidenceWorkerAction(payload),
         (_message, error) => ({ taskId: payload.taskId, error: String(error) }),
       );
     });

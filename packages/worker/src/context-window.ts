@@ -99,6 +99,9 @@ export async function resolveSessionContextWindow(
   // window. Opt known models into their supported window on every turn,
   // including resumed sessions; never guess a larger window for unknown IDs.
   if (profile.runtime === "codex" && profile.connectionType === "local_login") {
+    const setting = profile.contextWindows?.[id];
+    if (setting !== undefined)
+      return { model: id, tokens: setting, source: "setting" };
     const tokens = officialContextWindow(id);
     return tokens ? { model: id, tokens, source: "official" } : undefined;
   }

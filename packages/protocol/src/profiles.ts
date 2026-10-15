@@ -185,6 +185,7 @@ export interface AgentProfileProjection {
   codexReasoningEffort?: CodexReasoningEffort;
   codexSandboxMode?: CodexSandboxMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
+  contextWindows?: Record<string, number>;
   codexSpeed?: CodexSpeed;
   baseUrl?: string;
   commandLabel?: string;

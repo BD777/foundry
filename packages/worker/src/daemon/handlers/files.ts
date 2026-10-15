@@ -1,3 +1,4 @@
+import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
   type ProtocolEnvelope,
@@ -271,7 +272,9 @@ function onStopBackgroundTask(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     envelope,
     daemonMessageTypes.backgroundTaskStopped,
     async () => {
-      await stopClaudeBackgroundTask(sessionId, taskId);
+      const host = executionHostClient();
+      if (host) await host.stopBackground(sessionId, taskId);
+      else await stopClaudeBackgroundTask(sessionId, taskId);
       return { sessionId, taskId };
     },
     (message) => ({ sessionId, taskId, error: message }),

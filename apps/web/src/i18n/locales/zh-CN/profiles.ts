@@ -251,6 +251,13 @@ export const profiles: Translation<typeof en> = {
     notAssigned: "未分配给这台设备",
   },
   accountDefaults: {
+    contextWindow: "上下文窗口（tokens）",
+    contextAutomatic: "自动使用最大窗口",
+    contextChooseModel: "选择模型后可以设置它的上下文窗口。",
+    contextNativeLimit: "原生 CLI 允许的上限",
+    contextHint:
+      "自动模式最多使用 {{limit}} tokens，也可设置较小窗口（如 256K）。Codex 会应用自身上限并预留空间。修改从下一轮生效，不改变正在运行的一轮。",
+
     sectionLabel: "{{runtime}} 运行时默认设置",
     codexCatalog:
       "合并 OpenAI 公布的 Codex 模型与原生 CLI 目录。离线结果可能较旧；实际可用性取决于账号和 CLI 版本。",

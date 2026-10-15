@@ -390,9 +390,17 @@ type wsSteerSessionPayload struct {
 
 type wsSessionSteeredPayload struct {
 	wsReplyError
-	SessionID string `json:"sessionId"`
+	OutcomeUnknown bool   `json:"outcomeUnknown,omitempty"`
+	SessionID      string `json:"sessionId"`
 	// InputID echoes the steer's id; older workers send none.
 	InputID string `json:"inputId,omitempty"`
+}
+
+func (p wsSessionSteeredPayload) refusal() error {
+	if p.OutcomeUnknown {
+		return &deviceNoAnswerError{device: "the native runtime", cause: replyRefusal(p.Error)}
+	}
+	return p.wsReplyError.refusal()
 }
 
 type wsCancelSessionPayload struct {

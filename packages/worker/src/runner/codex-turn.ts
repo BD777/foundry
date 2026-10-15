@@ -27,7 +27,7 @@ import {
   streamsCodexEvents,
   type CodexTurnState,
 } from "./codex-stream.js";
-import { loadCodexSdk, openCodexThread } from "./codex-thread.js";
+import { openCodexThread } from "./codex-thread.js";
 import {
   CodexTransportLearner,
   codexTransportPlan,
@@ -117,11 +117,10 @@ async function runCodexTurn(
   const resultPath = resolve(sessionDir, "result.md");
 
   try {
-    const Codex = await loadCodexSdk();
     writeFileSync(eventsPath, "");
     writeFileSync(stderrPath, "");
     const env = codexSessionEnvironment(workspacePath, profile, session);
-    const thread = await openCodexThread(Codex, {
+    const thread = await openCodexThread({
       workspacePath,
       session,
       profile,
@@ -143,6 +142,7 @@ async function runCodexTurn(
       nativeSessionId:
         session.nativeSessionId?.trim() || thread.thread.id || "",
       finalResult: "",
+      managedSkills,
       transport: new CodexTransportLearner(
         codexTransportPlan(profile),
         profile,
@@ -182,10 +182,10 @@ async function finishCodexTurn(
   state.thread.nativeSessionId = state.nativeSessionId;
   state.thread.lastUsed = Date.now();
   const response =
-    state.finalResult || "Codex SDK completed without a text response.";
+    state.finalResult || "Codex completed without a text response.";
   writeFileSync(resultPath, `${response}\n`);
   const fileReferences = await state.files.finish(state.finalResult);
-  await state.emit("Codex SDK finished", resultPath, undefined, {
+  await state.emit("Codex finished", resultPath, undefined, {
     ...turnUsageMetadata(state.usage, startedAt),
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   });

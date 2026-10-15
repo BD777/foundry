@@ -75,6 +75,7 @@ type AgentProfileCheck struct {
 }
 
 type AgentProfileProjection struct {
+	ContextWindows       map[string]int64   `json:"contextWindows,omitempty"`
 	AccountLabel         string             `json:"accountLabel,omitempty"`
 	ID                   string             `json:"id"`
 	DeviceID             string             `json:"deviceId"`
@@ -295,6 +296,7 @@ type AgentProjection struct {
 }
 
 type CreateAgentProfileInput struct {
+	ContextWindows       map[string]int64  `json:"contextWindows"`
 	ID                   string            `json:"id,omitempty"`
 	DeviceID             string            `json:"deviceId,omitempty"`
 	WorkspaceID          string            `json:"workspaceId,omitempty"`

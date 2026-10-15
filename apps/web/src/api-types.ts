@@ -160,6 +160,7 @@ export interface CreateAgentProfileInput {
   codexApprovalPolicy?: CodexApprovalPolicy;
   codexReasoningEffort?: CodexReasoningEffort;
   codexSandboxMode?: CodexSandboxMode;
+  contextWindows?: Record<string, number>;
   codexSpeed?: CodexSpeed;
   configScope: AgentConfigScope;
   connectionType: AgentConnectionType;

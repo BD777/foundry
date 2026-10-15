@@ -35,6 +35,12 @@ func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
+	windows := store.SaveProfileInput{ContextWindows: input.ContextWindows}
+	if message := normalizeContextWindows(&windows); message != "" {
+		writeError(w, http.StatusBadRequest, message)
+		return
+	}
+	input.ContextWindows = windows.ContextWindows
 	credential := strings.TrimSpace(input.APIKey)
 	input.APIKey = ""
 	if input.Command != "" || len(input.Env) > 0 {

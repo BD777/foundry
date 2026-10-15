@@ -2,6 +2,8 @@
 // reliable session outbox. Plain HTTP requests are in server-http.ts.
 
 import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
+import type { SessionOutboxStore } from "./session-outbox-store.js";
 import {
   daemonMessageTypes,
   processLabels,
@@ -55,6 +57,9 @@ export interface SessionOutboxStats {
 }
 
 export interface ReliableSessionTransportOptions {
+  store?: SessionOutboxStore;
+  onAcknowledged?: (id: string) => void;
+  onEnqueued?: (envelope: ProtocolEnvelope) => void;
   /**
    * Events are written only while the socket holds less than this; RPC
    * replies written directly to the socket wait behind at most this much.
@@ -219,7 +224,7 @@ export class ReliableSessionTransport {
   private sequence = 0;
   private socket?: WebSocketSender;
 
-  constructor(options: ReliableSessionTransportOptions = {}) {
+  constructor(private readonly options: ReliableSessionTransportOptions = {}) {
     this.highWaterMarkBytes =
       options.highWaterMarkBytes ?? defaultHighWaterMarkBytes;
     this.drainCheckMs = options.drainCheckMs ?? defaultDrainCheckMs;
@@ -230,6 +235,8 @@ export class ReliableSessionTransport {
     this.answerCheckMs = options.answerCheckMs ?? defaultAnswerCheckMs;
     this.pieceChars = options.pieceChars ?? defaultPieceChars;
     this.now = options.now ?? Date.now;
+    for (const envelope of options.store?.read() ?? [])
+      this.send(envelope.type, envelope.payload, envelope.id);
   }
 
   /**
@@ -275,13 +282,21 @@ export class ReliableSessionTransport {
     }
   }
 
-  send(type: string, payload?: unknown): string {
-    const id = `session_${Date.now()}_${++this.sequence}`;
+  send(type: string, payload?: unknown, knownId?: string): string {
+    const id =
+      knownId ??
+      (this.options.store
+        ? `session_${Date.now()}_${String(++this.sequence).padStart(10, "0")}_${randomUUID()}`
+        : `session_${Date.now()}_${++this.sequence}`);
+    if (this.pending.has(id)) return id;
     const envelope: ProtocolEnvelope = {
       id,
       payload,
       type,
     };
+    // Persist before publishing or dropping a superseded event.
+    this.options.store?.put(envelope);
+    this.options.onEnqueued?.(envelope);
     const coalesceKey = sessionEnvelopeCoalesceKey(type, payload);
     if (coalesceKey) {
       const previousId = this.coalescedEnvelopeIds.get(coalesceKey);
@@ -311,6 +326,7 @@ export class ReliableSessionTransport {
     if (!id || !entry) {
       return;
     }
+    this.options.onAcknowledged?.(id);
     const at = this.now();
     this.lastAck = { at, latencyMs: Math.max(0, at - entry.queuedAt) };
     this.forget(id);
@@ -431,6 +447,7 @@ export class ReliableSessionTransport {
   }
 
   private forget(id: string): void {
+    this.options.store?.remove(id);
     const entry = this.pending.get(id);
     if (!entry) {
       return;

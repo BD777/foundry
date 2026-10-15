@@ -543,7 +543,12 @@ export function useChatFeature({
       onResetControls={resetOverride}
       onRetryModels={retryModels}
       onSend={chatSend.send}
-      onSteer={chatSend.steer}
+      onSteer={
+        activeSession?.provider !== "codex" ||
+        device?.capabilities?.includes("codex_active_steer")
+          ? chatSend.steer
+          : undefined
+      }
       queue={queue}
       selectedAgentId={selectedAgent?.id ?? ""}
       // Offline, a message waits for the device: only a missing agent, or
