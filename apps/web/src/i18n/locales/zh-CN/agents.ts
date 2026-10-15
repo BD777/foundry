@@ -115,6 +115,7 @@ export const agents: Translation<typeof en> = {
     use: "使用“{{model}}”",
   },
   picker: {
+    namedAccount: "{{runtime}} · {{account}}",
     deviceAccount: "{{runtime}} · 设备账号",
     deviceOffline: "设备离线。",
     unavailableOnDevice: "在此设备上不可用。",

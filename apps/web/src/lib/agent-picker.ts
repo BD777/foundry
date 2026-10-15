@@ -185,7 +185,25 @@ export function pickerAgentMeta(agent: AgentProjection): PickerAgentMeta {
 }
 
 /** Current label rule shared by the chat and issue pickers. */
-export function pickerAgentLabel(agent: AgentProjection): string {
+export function pickerAgentLabel(
+  agent: AgentProjection,
+  profiles: AgentProfileProjection[] = [],
+): string {
+  const account = profiles
+    .find(
+      (profile) =>
+        profile.id === agent.profileId &&
+        profile.deviceId === agent.deviceId &&
+        profile.runtime === agent.provider &&
+        profile.connectionType === "local_login" &&
+        profile.origin !== "server",
+    )
+    ?.accountLabel?.trim();
+  if (agent.connectionType === "local_login" && account)
+    return i18n.t("agents:picker.namedAccount", {
+      runtime: runtimeMeta(agent.provider).label,
+      account,
+    });
   return agent.connectionType === "local_login"
     ? i18n.t("agents:picker.deviceAccount", {
         runtime: runtimeMeta(agent.provider).label,
@@ -233,9 +251,9 @@ export function buildPickerAgentOptions(
         detail: meta.detail,
         deviceId: agent.deviceId,
         disabled: agent.status !== "healthy",
-        label: pickerAgentLabel(agent),
+        label: pickerAgentLabel(agent, profiles),
         runtime: agent.provider,
-        title: meta.title,
+        title: meta.title ?? pickerAgentLabel(agent, profiles),
         value: agent.id,
       };
     });

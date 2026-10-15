@@ -12,6 +12,7 @@ import {
 } from "./native-cli.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { claudeConfigDir } from "./native-homes.js";
+import { claudeAccount, codexAccount } from "./native-account.js";
 
 // `claude auth status` reports an account login as "claude.ai" (current CLIs)
 // or "oauth_token"; API keys, key helpers and third-party gateways are not
@@ -156,6 +157,7 @@ function loginHealth(runtime: "claude" | "codex"): ProviderHealth {
       ...health,
       status: "healthy",
       authMode: "local_config",
+      accountLabel: claudeAccount()?.label,
       statusDetail:
         "Claude Code's stored login is due for renewal; it renews on its next request. Online account validity has not been verified.",
     };
@@ -185,7 +187,14 @@ function loginHealth(runtime: "claude" | "codex"): ProviderHealth {
         ...health,
         status: signedIn ? "healthy" : "missing_auth",
         authMode: signedIn ? "local_config" : "missing",
-        accountLabel: undefined,
+        // Identity only: CLI login status remains authoritative, and this
+        // does not promote a local login into online account verification.
+        accountLabel: signedIn
+          ? runtime === "codex"
+            ? codexAccount()?.label
+            : JSON.parse(result.stdout || "{}").email?.trim() ||
+              claudeAccount()?.label
+          : undefined,
         statusDetail: signedIn
           ? "Native CLI reports a local login. Online account validity has not been verified."
           : `No official login in the worker's ${runtime === "codex" ? process.env.CODEX_HOME || "~/.codex" : process.env.CLAUDE_CONFIG_DIR || "~/.claude"} configuration. Other apps may use a different configuration.`,
