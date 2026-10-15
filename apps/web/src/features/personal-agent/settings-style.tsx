@@ -7,7 +7,7 @@ import type {
 import { TextInput, Textarea } from "../../components/ui/field";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SelectMenu } from "../../components/ui/select-menu";
-import { extraInstructionsMaxChars } from "./assistant-model";
+import { browserTimezone, extraInstructionsMaxChars } from "./assistant-model";
 import {
   SettingsField,
   SettingsGroup,
@@ -71,7 +71,9 @@ export function StyleSection({
             onChange={(event) =>
               change({ timezone: event.target.value.trim() })
             }
-            placeholder={t("settings.style.timezonePlaceholder")}
+            placeholder={t("settings.style.timezonePlaceholder", {
+              zone: browserTimezone() || "UTC",
+            })}
             tone="boxed"
             value={draft.timezone}
           />

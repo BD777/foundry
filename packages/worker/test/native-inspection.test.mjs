@@ -34,6 +34,10 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
 });`,
     { mode: 0o700 },
   );
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("offline");
+  };
   const previous = {
     bin: process.env.FOUNDRY_CODEX_BIN,
     home: process.env.CODEX_HOME,
@@ -87,6 +91,7 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
     assert.match(missing.message, /no longer present/);
     assert.doesNotMatch(JSON.stringify(missing), /SECRET-MUST/);
   } finally {
+    globalThis.fetch = previousFetch;
     delete process.env.FOUNDRY_TEST_USAGE_FAIL;
     if (previous.bin === undefined) delete process.env.FOUNDRY_CODEX_BIN;
     else process.env.FOUNDRY_CODEX_BIN = previous.bin;

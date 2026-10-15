@@ -9,6 +9,9 @@ import (
 var (
 	ErrDevicePairingInvalid    = errors.New("device pairing token is invalid, expired or already used")
 	ErrDeviceCredentialInvalid = errors.New("device credential is invalid or revoked")
+	// ErrDevicePairingCancelled: the person cancelled, in the web, a pairing
+	// that waited for them to choose to share a system account.
+	ErrDevicePairingCancelled = errors.New("this pairing was cancelled in the Foundry web app")
 )
 
 // DeviceIdentity is the server's record of who a worker device is: the
@@ -30,6 +33,16 @@ type PairDeviceInput struct {
 	RequestedDeviceID string
 	CredentialHash    string
 	Now               time.Time
+	// WorkerFingerprint identifies the worker's own Foundry state on its
+	// system account; new pairings key the device by it instead of
+	// MachineFingerprint, so separate accounts and state roots are separate
+	// devices. Workers before it send none.
+	WorkerFingerprint string
+	// Identity is the system account and machine the worker runs on.
+	Identity DeviceAccountIdentity
+	// AcceptSharedAccount: the person chose, in the terminal, to share a
+	// system account other people's devices use.
+	AcceptSharedAccount bool
 }
 
 // DeviceCredentialStore authenticates worker devices. One machine

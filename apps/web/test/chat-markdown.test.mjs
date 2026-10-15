@@ -112,3 +112,66 @@ test("a settled answer is parsed as one document, so later link definitions reso
   assert.doesNotMatch(html, /\[plan\]/);
   assert.equal(html.match(/<li/g)?.length, 2);
 });
+
+async function renderedLinks(props, text) {
+  let links = [];
+  let body = "";
+  await renderMarkdown(props, text, (container) => {
+    body = container.textContent;
+    links = [...container.querySelectorAll("a")].map((a) => ({
+      href: a.getAttribute("href"),
+      text: a.textContent,
+    }));
+  });
+  return { body, links };
+}
+
+test("a bare URL ends before Chinese text and full-width punctuation", async () => {
+  const doc =
+    "https://bytedance.larkoffice.com/docx/CUqLdQeIioltsqxgPbHcmxannzg";
+  const message = `正在写文档 ${doc}，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。`;
+  for (const props of [{ typedText: true }, {}]) {
+    const { body, links } = await renderedLinks(props, message);
+    assert.deepEqual(links, [{ href: doc, text: doc }]);
+    assert.equal(body, message);
+  }
+});
+
+test("bare URL boundaries keep GFM rules and valid URLs whole", async () => {
+  const cases = [
+    ["见 https://a.example/x?q=1&b=2。", "https://a.example/x?q=1&b=2"],
+    ["见（https://a.example/p）后续", "https://a.example/p"],
+    ["见 (https://a.example/p) 后续", "https://a.example/p"],
+    [
+      "see https://a.example/wiki/Foo_(bar).",
+      "https://a.example/wiki/Foo_(bar)",
+    ],
+    ["链接 https://a.example/end.", "https://a.example/end"],
+    ["链接 https://a.example/end", "https://a.example/end"],
+    ["链接 https://a.example/a.，下一句", "https://a.example/a"],
+    [
+      "编码 https://a.example/%E4%B8%AD%E6%96%87 好",
+      "https://a.example/%E4%B8%AD%E6%96%87",
+    ],
+    ["文档https://a.example/d、另一个", "https://a.example/d"],
+    ["前往 www.example.com，然后", "http://www.example.com/"],
+  ];
+  for (const [text, href] of cases) {
+    const { body, links } = await renderedLinks({ typedText: true }, text);
+    assert.deepEqual(
+      links.map((link) => link.href),
+      [href],
+      text,
+    );
+    assert.equal(body, text, text);
+  }
+});
+
+test("explicit links and text without URLs are left alone", async () => {
+  const plain = await renderedLinks({}, "这里没有链接，只有中文。");
+  assert.deepEqual(plain.links, []);
+  const labelled = await renderedLinks({}, "[文档](https://a.example/d)，后续");
+  assert.deepEqual(labelled.links, [
+    { href: "https://a.example/d", text: "文档" },
+  ]);
+});

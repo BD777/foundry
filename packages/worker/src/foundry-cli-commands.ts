@@ -315,6 +315,24 @@ export const foundryCommands: Record<
       tool: "list_tasks",
       flags: { "--status": flag("status", "list") },
     },
+    item: {
+      tool: "update_list",
+      positional: "op",
+      flags: {
+        "--id": field("item", "id"),
+        "--text": field("item", "text"),
+        "--when": field("item", "when"),
+        "--at": field("item", "at"),
+        "--remind": field("item", "remind", "boolean"),
+        "--status": field("item", "status"),
+        "--task": field("item", "taskId"),
+        "--quote": field("item", "quote"),
+      },
+    },
+    list: {
+      tool: "read_list",
+      flags: { "--closed-since": flag("closedSince") },
+    },
   },
   device: {
     list: {

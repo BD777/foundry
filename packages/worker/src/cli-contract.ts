@@ -95,6 +95,14 @@ const pairingTokenOption: CliOptionContract = {
   type: "string",
 };
 
+const shareSystemAccountOption: CliOptionContract = {
+  defaultValue: "false",
+  description:
+    "Pair even though another person's device already uses this system account: you share its files and Claude/Codex sign-ins (otherwise you are asked first)",
+  name: "--share-system-account",
+  type: "bool",
+};
+
 const connectOptions: CliOptionContract[] = [
   serverOption,
   workspaceOption,
@@ -194,6 +202,7 @@ export const cliCommands: CliCommandContract[] = [
       serverOption,
       workspaceOption,
       pairingTokenOption,
+      shareSystemAccountOption,
       {
         defaultValue: "false",
         description: "Skip user service installation",
@@ -238,6 +247,7 @@ export const cliCommands: CliCommandContract[] = [
     options: [
       serverOption,
       pairingTokenOption,
+      shareSystemAccountOption,
       {
         description:
           "A first workspace to register now; without it the device starts with none",
@@ -425,7 +435,12 @@ export const cliCommands: CliCommandContract[] = [
       },
     ],
     id: "pair",
-    options: [serverOption, workspaceOption, pairingTokenOption],
+    options: [
+      serverOption,
+      workspaceOption,
+      pairingTokenOption,
+      shareSystemAccountOption,
+    ],
     path: ["pair"],
   },
   {

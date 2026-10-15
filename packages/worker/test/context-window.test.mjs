@@ -295,3 +295,34 @@ test("Claude Code is started on [1m] while Foundry keeps the plain name", async 
   assert.equal(report?.contextWindow, 1_000_000);
   assert.equal(report?.model, "claude-sonnet-4-6");
 });
+
+test("official Codex opts Astra into its supported window, including resumed turns", async () => {
+  const profile = serverProfile({
+    runtime: "codex",
+    connectionType: "local_login",
+    baseUrl: undefined,
+    model: "gpt-5.5",
+  });
+  const resolved = await withSessionContextWindow(
+    profile,
+    { id: "s", model: "gpt-6-astra", nativeSessionId: "existing" },
+    async () => {
+      throw new Error("must not query endpoint");
+    },
+  );
+  assert.deepEqual(resolved.contextWindow, {
+    model: "gpt-6-astra",
+    tokens: 872000,
+    source: "official",
+  });
+  assert.deepEqual(codexProfileConfig(resolved, {}), {
+    model_provider: "openai",
+    model_context_window: 872000,
+  });
+  assert.equal(872000 * 0.95, 828400);
+  assert.equal(
+    (await withSessionContextWindow(profile, { id: "s", model: "unknown" }))
+      .contextWindow,
+    undefined,
+  );
+});

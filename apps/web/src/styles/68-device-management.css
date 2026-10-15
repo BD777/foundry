@@ -740,6 +740,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The choice in an alert about a shared system account. */
+.fdy-account-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
 
 .fdy-device-resources {
   display: grid;
@@ -875,4 +882,66 @@
 .fdy-provider-promotion-key small {
   color: var(--fdy-ink-muted);
   line-height: 1.5;
+}
+
+/* What a computer has (device-labels.tsx): the owner's notes beside what
+   Foundry detected. */
+.fdy-device-labels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 20px 32px;
+  min-width: 0;
+}
+.fdy-device-labels-column {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+.fdy-device-labels-column h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fdy-ink-strong);
+}
+.fdy-device-labels-muted {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.fdy-device-label-rows,
+.fdy-device-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fdy-device-label-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.fdy-device-label-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.fdy-device-label-suggestions > span {
+  margin-right: 4px;
+}
+.fdy-device-facts li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.fdy-device-facts small {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }

@@ -273,12 +273,15 @@ export function sessionTranscriptEntries(
       }
       continue;
     }
+    // A message another session sent (its input, or steered in) names it.
+    const sentBySessionId = event.metadata?.sentBySessionId;
     if (event.message) {
       entries.push({
         ...event.message,
         id,
         stepId: `agent-session:${session.id}:${event.id}`,
         at: event.message.at ?? event.at,
+        ...(sentBySessionId ? { sentBySessionId } : {}),
       });
     } else if (event.detail.trim()) {
       entries.push({
@@ -287,6 +290,7 @@ export function sessionTranscriptEntries(
         kind: event.label === "Steered into active turn" ? "user" : "status",
         title: event.label,
         text: event.detail,
+        ...(sentBySessionId ? { sentBySessionId } : {}),
       });
     }
   }

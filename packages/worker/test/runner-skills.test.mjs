@@ -175,3 +175,229 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   );
   assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
 });
+
+// A large selection, as a workspace with the bytedcli bundle has: Codex got
+// every skill in one `--config developer_instructions=…` argument, over the
+// 128 KiB Linux allows one argument ("spawn E2BIG").
+async function bigSelection(t, count, bundled) {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+    await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { skillCatalog } = await import("../dist/skill-materializer.js");
+  const root = mkdtempSync(join(tmpdir(), "foundry-big-skills-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const skills = [];
+  for (let i = 0; i < count; i++) {
+    const name = `svc-${String(i).padStart(4, "0")}`;
+    const dir = join(root, "skills", name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      `---\nname: ${name}\nmetadata:\n  requires: [foundry-absent-tool]\n---\n`,
+    );
+    skills.push({
+      name,
+      dir,
+      description:
+        `Operate the ${name} service: query, deploy, inspect logs and troubleshoot incidents. `.repeat(
+          4,
+        ),
+      ...(bundled
+        ? { bundle: { id: "repo_big", name: "bytedcli", version: "0.170.0" } }
+        : {}),
+    });
+  }
+  return { root, managed: skillCatalog({ pluginDir: root, skills }) };
+}
+
+test("a Codex session with 1000 skills starts with a small argv", async (t) => {
+  const { mkdtempSync, writeFileSync, readFileSync, chmodSync } =
+    await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { Codex } = await import("@openai/codex-sdk");
+  const bin = mkdtempSync(join(tmpdir(), "foundry-fake-codex-"));
+  const fake = join(bin, "codex");
+  writeFileSync(
+    fake,
+    `#!${process.execPath}\nrequire("node:fs").writeFileSync(process.env.ARGV_REPORT, JSON.stringify(process.argv.slice(2).map((a) => Buffer.byteLength(a) + 1)));\n`,
+  );
+  chmodSync(fake, 0o755);
+  for (const bundled of [true, false]) {
+    const { managed } = await bigSelection(t, 1000, bundled);
+    const config = codexSessionConfig(
+      { ...managed, hostSkillPaths: ["/home/.agents/skills/qa/SKILL.md"] },
+      "Foundry device notes: test",
+    );
+    const report = join(bin, `argv-${bundled}.json`);
+    const codex = new Codex({
+      codexPathOverride: fake,
+      env: { PATH: process.env.PATH ?? "", ARGV_REPORT: report },
+      config,
+    });
+    const turn = await codex
+      .startThread({ skipGitRepoCheck: true, workingDirectory: bin })
+      .runStreamed("reply OK");
+    for await (const _ of turn.events);
+    const sizes = JSON.parse(readFileSync(report, "utf8"));
+    const total = sizes.reduce((sum, size) => sum + size, 0);
+    // Linux: 128 KiB per argument, about 2 MiB for all of them.
+    assert.ok(
+      Math.max(...sizes) < 32 * 1024,
+      `largest argument ${Math.max(...sizes)}`,
+    );
+    assert.ok(total < 48 * 1024, `argv ${total} bytes`);
+  }
+});
+
+test("a large bundle is one catalog entry with an index of its skills", async (t) => {
+  const { readFileSync } = await import("node:fs");
+  const { largeBundleSkills } = await import("../dist/skill-materializer.js");
+  const { managed } = await bigSelection(t, 300, true);
+  const single = { name: "qa", dir: "/sets/qa", description: "Quality" };
+  const small = Array.from({ length: largeBundleSkills - 1 }, (_, i) => ({
+    name: `small-${i}`,
+    dir: `/sets/small-${i}`,
+    bundle: { id: "repo_small", name: "feishu-cli" },
+  }));
+  const { skillCatalog } = await import("../dist/skill-materializer.js");
+  const catalog = skillCatalog({
+    ...managed,
+    skills: [...managed.skills, single, ...small],
+  });
+  assert.equal(catalog.indexes.length, 1);
+  const [index] = catalog.indexes;
+  assert.equal(index.name, "bytedcli");
+  assert.equal(index.skills.length, 300);
+  const listing = readFileSync(index.file, "utf8");
+  assert.match(listing, /^# bytedcli 0\.170\.0/);
+  for (const skill of managed.skills)
+    assert.ok(
+      listing.includes(`- ${skill.name}: `) &&
+        listing.includes(`${skill.dir}/SKILL.md`),
+    );
+  for (const options of [
+    claudeSessionOptions(catalog).systemPrompt.append,
+    codexSessionConfig({ ...catalog, hostSkillPaths: [] })
+      .developer_instructions,
+  ]) {
+    const entries = options
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line));
+    // The single skill and the small bundle's are listed one by one.
+    assert.deepEqual(
+      entries.filter((entry) => entry.name).map((entry) => entry.name),
+      ["qa", ...small.map((skill) => skill.name)],
+    );
+    assert.deepEqual(
+      entries.filter((entry) => entry.bundle),
+      [
+        {
+          bundle: "bytedcli",
+          version: "0.170.0",
+          description: "",
+          skills: 300,
+          index: index.file,
+        },
+      ],
+    );
+    assert.ok(
+      Buffer.byteLength(options) < 8 * 1024,
+      `${Buffer.byteLength(options)} bytes`,
+    );
+    // One line per missing program, however many skills need it.
+    assert.match(
+      options,
+      /foundry-absent-tool \(needed by svc-0000, .* and 295 more\)/,
+    );
+  }
+  // Every skill stays invocable in Claude.
+  assert.equal(
+    claudeSessionOptions(catalog).skills.length,
+    300 + 1 + small.length,
+  );
+});
+
+test("skills past the catalog budget share one index", async (t) => {
+  const { skillCatalogBudget } = await import("../dist/skill-materializer.js");
+  const { managed } = await bigSelection(t, 1000, false);
+  assert.equal(managed.indexes.length, 1);
+  const [overflow] = managed.indexes;
+  assert.equal(overflow.bundleId, undefined);
+  const append = claudeSessionOptions(managed).systemPrompt.append;
+  const listed = append
+    .split("\n")
+    .filter((line) => line.startsWith('{"name"'));
+  assert.equal(listed.length + overflow.skills.length, 1000);
+  assert.ok(listed.join("\n").length <= skillCatalogBudget);
+  assert.match(append, /"group":"more workspace skills"/);
+});
+
+test("a new skill set downloads only the revisions no set holds yet", async (t) => {
+  const { createServer } = await import("node:http");
+  const { createHash } = await import("node:crypto");
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { packZip } = await import("../dist/skill-zip.js");
+  const { materializeSessionSkills } =
+    await import("../dist/skill-materializer.js");
+  const packages = new Map();
+  const ref = (name, revision) => {
+    const zip = packZip([
+      {
+        path: "SKILL.md",
+        data: Buffer.from(
+          `---\nname: ${name}\ndescription: ${name} r${revision}\n---\nr${revision}\n`,
+        ),
+      },
+    ]);
+    const skillId = `skill-${name}-${process.pid}-${Date.now()}`;
+    packages.set(
+      `/api/skills/catalog/${skillId}/revisions/${revision}/package`,
+      zip,
+    );
+    return {
+      skillId,
+      revision,
+      name,
+      checksum: createHash("sha256").update(zip).digest("hex"),
+      byteSize: zip.length,
+    };
+  };
+  const requested = [];
+  const server = createServer((request, response) => {
+    requested.push(request.url);
+    const zip = packages.get(request.url);
+    response.writeHead(zip ? 200 : 404);
+    response.end(zip);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const refs = Array.from({ length: 30 }, (_, i) => ref(`s${i}`, 1));
+  const first = await materializeSessionSkills(refs, url, "/tmp");
+  assert.equal(requested.length, 30);
+  const updated = ref("s0", 2);
+  updated.skillId = refs[0].skillId;
+  packages.set(
+    `/api/skills/catalog/${updated.skillId}/revisions/2/package`,
+    packages.get([...packages.keys()].pop()),
+  );
+  const second = await materializeSessionSkills(
+    [updated, ...refs.slice(1)],
+    url,
+    "/tmp",
+  );
+  assert.notEqual(second.pluginDir, first.pluginDir);
+  assert.equal(requested.length, 31);
+  assert.match(
+    readFileSync(
+      join(second.skills.find((s) => s.name === "s0").dir, "SKILL.md"),
+      "utf8",
+    ),
+    /r2/,
+  );
+  assert.equal(second.skills.find((s) => s.name === "s1").description, "s1 r1");
+});

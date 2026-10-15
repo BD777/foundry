@@ -14,10 +14,11 @@ import (
 
 // §6: when a computer that was away connects again, the conversation that
 // handed a helper work there hears that it is back and what waited for it,
-// as a server notice: helpers still running there, a helper that failed
-// because the computer was offline, a write refused for that reason. A
-// connection that blinked tells nothing about the running helpers, and
-// nothing reaches a stopped assistant.
+// as a server notice: helpers queued for it, which start by themselves,
+// helpers still running there, a helper that failed while the computer
+// was offline (it waited too long), a write refused for that reason. A
+// connection that blinked tells nothing about the queued and running
+// helpers, and nothing reaches a stopped assistant.
 func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 	previous := coalesceNotices
 	coalesceNotices = 0
@@ -82,18 +83,23 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 		t.Helper()
 		helper, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_photos",
 			AgentID: "agent_photos", Provider: "claude", Prompt: prompt, Source: "agent", ParentSessionID: conversation.ID}, false)
-		if !errors.Is(err, ErrLocalDaemonNotConnected) {
-			t.Fatalf("a helper on the offline Studio: %v", err)
+		if err != nil || helper.Status != "queued" {
+			t.Fatalf("a helper on the offline Studio: %s %v", helper.Status, err)
 		}
 		return helper
 	}
 
-	// The Studio is offline: the helper fails at once, and the assistant
-	// hears so.
+	// The Studio is offline: the helper waits for it. One that waited too
+	// long fails, and the assistant hears so.
 	failed := handOff("sort the photos by year")
-	if text := told(); !strings.Contains(text, "Failed:") || !strings.Contains(text, failed.ID) {
+	quiet()
+	if err := f.server.expireDeviceWaits(ctx, time.Now().Add(offlineWaitLimit+time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if text := told(); !strings.Contains(text, "Failed:") || !strings.Contains(text, failed.ID) || !strings.Contains(text, "stayed offline") {
 		t.Fatalf("failed notice: %q", text)
 	}
+	waiting := handOff("print the best ones")
 	// Another helper ran there when the Studio went away.
 	running, err := f.db.CreateAgentSession(ctx, store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_photos",
 		AgentID: "agent_photos", Provider: "claude", Prompt: "tag the faces", Source: "agent", ParentSessionID: conversation.ID})
@@ -106,14 +112,17 @@ func TestAssistantHearsWhenAComputerIsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Seconds away: the running helper did not wait, the failed one did.
+	// Seconds away: the queued and running helpers did not wait, the
+	// failed one did.
 	connects(5 * time.Second)
-	if text := told(); !strings.Contains(text, `"Studio" is back online`) || !strings.Contains(text, failed.ID) || !strings.Contains(text, "failed because it was offline") ||
-		strings.Contains(text, running.ID) {
+	if text := told(); !strings.Contains(text, `"Studio" is back online`) || !strings.Contains(text, failed.ID) || !strings.Contains(text, "failed while it was offline") ||
+		strings.Contains(text, running.ID) || strings.Contains(text, waiting.ID) {
 		t.Fatalf("back notice after a blink: %q", text)
 	}
 	connects(10 * time.Minute)
-	if text := told(); !strings.Contains(text, running.ID) || !strings.Contains(text, "waited for it (now running)") || strings.Contains(text, failed.ID) {
+	if text := told(); !strings.Contains(text, running.ID) || !strings.Contains(text, "waited for it (now running)") ||
+		!strings.Contains(text, waiting.ID) || !strings.Contains(text, "was queued for it and is starting by itself now") ||
+		!strings.Contains(text, "do not send it again") || strings.Contains(text, failed.ID) {
 		t.Fatalf("back notice: %q", text)
 	}
 	// The same return told again (a second hello on the connection): nothing.

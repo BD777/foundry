@@ -253,7 +253,7 @@ export const profiles: Translation<typeof en> = {
   accountDefaults: {
     sectionLabel: "{{runtime}} 运行时默认设置",
     codexCatalog:
-      "来自 Codex 的官方目录。原生 CLI 可能使用内置的备用列表；账号实际可用的模型可能不同。",
+      "合并 OpenAI 公布的 Codex 模型与原生 CLI 目录。离线结果可能较旧；实际可用性取决于账号和 CLI 版本。",
     claudeCatalog: "这台设备上 Claude Code 报告的官方选项。",
     loadFailed: "无法加载官方模型，请重试。",
     hint: "{{device}} 上新会话的默认设置。已有会话不受影响。",

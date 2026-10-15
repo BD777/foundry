@@ -101,6 +101,7 @@ test("history navigation cannot be canceled by the initial bottom read-back", ()
 test("the person's own scroll to the very bottom resumes following", () => {
   assert.equal(
     nextChatScrollFollowMode("reading", {
+      towardLatest: true,
       type: "user.scrolled",
       viewport: viewport(0),
     }),
@@ -108,6 +109,7 @@ test("the person's own scroll to the very bottom resumes following", () => {
   );
   assert.equal(
     nextChatScrollFollowMode("navigating", {
+      towardLatest: true,
       type: "user.scrolled",
       viewport: viewport(0),
     }),
@@ -116,8 +118,19 @@ test("the person's own scroll to the very bottom resumes following", () => {
   // A small scroll up stays within the visual tolerance but is reading.
   assert.equal(
     nextChatScrollFollowMode("reading", {
+      towardLatest: false,
       type: "user.scrolled",
       viewport: viewport(12),
+    }),
+    "reading",
+  );
+  // Scrolling up from the bottom while rows above shrink by more than the
+  // scroll: the viewport is clamped to the bottom, but the person is reading.
+  assert.equal(
+    nextChatScrollFollowMode("reading", {
+      towardLatest: false,
+      type: "user.scrolled",
+      viewport: viewport(0),
     }),
     "reading",
   );

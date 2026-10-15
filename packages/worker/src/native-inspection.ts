@@ -14,6 +14,7 @@ import { claudeAccount } from "./native-account.js";
 import { claudeConfigDir, codexHome } from "./native-homes.js";
 import { claudeRenewalPending, isNativeAccountStatus } from "./native-login.js";
 import { parse as parseTOML } from "smol-toml";
+import { withPublishedCodexModels } from "./published-codex-models.js";
 
 const exec = promisify(execFile);
 export function nativeSources(runtime: "codex" | "claude"): string[] {
@@ -172,6 +173,10 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
 }
 
 export async function readOfficialCodexCatalog(): Promise<AgentModelOption[]> {
+  return withPublishedCodexModels(readNativeCodexCatalog);
+}
+
+async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
   const source = nativeSources("codex")[0]!;
   let hasCustomCatalog = false;
   try {

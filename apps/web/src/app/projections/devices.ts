@@ -87,6 +87,7 @@ function applyDeviceStatus(
       const {
         owned: _owned,
         runtimeSettings: _runtimeSettings,
+        sharesSystemAccountWith: _sharesSystemAccountWith,
         ...shared
       } = streamed;
       return {
@@ -95,6 +96,9 @@ function applyDeviceStatus(
         ...(device.runtimeSettings === undefined
           ? {}
           : { runtimeSettings: device.runtimeSettings }),
+        ...(device.sharesSystemAccountWith === undefined
+          ? {}
+          : { sharesSystemAccountWith: device.sharesSystemAccountWith }),
       };
     }),
   };

@@ -50,6 +50,11 @@ type AgentSessionEventMetadata struct {
 	// CodexTransport is what a Codex session showed about its compatible
 	// endpoint's Responses WebSocket; the server keeps it for the profile.
 	CodexTransport *CodexTransportReport `json:"codexTransport,omitempty"`
+	// SentBySessionID, on a message's event (its input, or a message
+	// steered into a running turn), is the session that sent it; empty for
+	// what the person typed. Viewers resolve its title themselves, as far
+	// as they may read that session.
+	SentBySessionID string `json:"sentBySessionId,omitempty"`
 }
 
 // SessionInputEventLabel marks the transcript event each session input
@@ -79,6 +84,17 @@ type SessionInput struct {
 	// resumed the session because the timer was due while no agent process
 	// ran it. Its transcript event shows the timer firing.
 	TimerFire *AgentSessionTimerFire `json:"timerFire,omitempty"`
+	// SentBySessionID is the session that sent the input (create_session's
+	// first message, send_message); its transcript event names it.
+	SentBySessionID string `json:"sentBySessionId,omitempty"`
+}
+
+// SessionLink names a session for a link to it: where it is and the title
+// its chat shows.
+type SessionLink struct {
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspaceId"`
+	Title       string `json:"title"`
 }
 
 // NativeSessionRef names one native Claude Code or Codex session.
@@ -199,6 +215,9 @@ type SendAgentSessionInput struct {
 	// TimerFire marks the input as a timer's prompt (set by the server for
 	// a device that resumes a session for a due timer, never by clients).
 	TimerFire *AgentSessionTimerFire `json:"-"`
+	// SentBySessionID is the session sending the message (set by the
+	// server from the caller's session token, never by clients).
+	SentBySessionID string `json:"-"`
 }
 
 type CreateAgentSessionInput struct {

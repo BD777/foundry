@@ -26,7 +26,7 @@ Personal Agent（界面上叫“助理”）是每个 Foundry 用户唯一的一
 
 **身份。** Workspace 增加 `kind` 字段：`project`（默认，现有的全部 Workspace）或 `personal_agent`。表 `personal_agents`（`user_id` 主键、`workspace_id` 唯一、`home_device_id`、`state` = `active | stopped`、`settings_json`、`prompt_version`、时间戳）保证每人恰好一个。它是这个人私有的：不能添加成员、不能分享、Server 拒绝 `DELETE /api/workspaces/{id}`（关闭助理只是 `stopped`，见 §8），别人看不到它的存在。
 
-**放在哪台设备。** “家”设备（home device）= 这个人自己拥有的设备中最近 7 天在线时间最长的一台，可在设置里改。目录固定为该设备上的 `~/Foundry/personal-agent`（受管根目录 `~/Foundry` 见 §4）。家设备离线时：停止开关、设置、记忆查看与编辑仍可用（都在 Server 上）；新消息由 Server 用固定文案回复“助理所在的电脑现在不在线”，并给出换一台的入口。换设备（`POST /api/personal-agent/home`）= 在新设备上新建目录（写入 `AGENTS.md`，旧设备在线时把 `cards/`、`notes/`、`log/` 经设备通道复制过去）；回到以前住过的设备时，接着用留在那里的目录。助理还是同一个（设置、记忆、任务、规则都在 Server 上）；离开的目录变成本人的已归档项目，记在 `formerWorkspaceIds`，以前的对话仍在那里可读。
+**放在哪台设备。** “家”设备（home device）= 这个人自己拥有的设备中最近 7 天在线时间最长的一台，可在设置里改。系统账号与别人的设备共用的设备（[一台电脑上的几个人](devices-and-workspaces.md)）不会被默认推荐或默认选中为家（只有共用设备时卡片不预选，需本人自己选），本人仍可在安家卡片里自己选它，卡片会写明谁会接触到助理的文件和登录（`suggestedHomeDevice`）。目录固定为该设备上的 `~/Foundry/personal-agent`（受管根目录 `~/Foundry` 见 §4）。家设备离线时：停止开关、设置、记忆查看与编辑仍可用（都在 Server 上）；新消息由 Server 用固定文案回复“助理所在的电脑现在不在线”，并给出换一台的入口。换设备（`POST /api/personal-agent/home`）= 在新设备上新建目录（写入 `AGENTS.md`，旧设备在线时把 `cards/`、`notes/`、`log/` 经设备通道复制过去）；回到以前住过的设备时，接着用留在那里的目录。助理还是同一个（设置、记忆、任务、规则都在 Server 上）；离开的目录变成本人的已归档项目，记在 `formerWorkspaceIds`，以前的对话仍在那里可读。
 
 **如何创建。** 不自动在人的电脑上建目录：首次打开“助理”时显示一张卡片“让助理在『MacBook』上安一个家”，一键确认后 Server 经 Worker 的 `setup_workspace`（新增 `create`，§4）建目录、`git init`、写入 `AGENTS.md`、登记为 `kind: personal_agent`。没有自己设备的人看到的是“接入一台电脑”的引导（目前唯一的技术步骤；托管执行端见“后续”）。
 
@@ -51,6 +51,8 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 **概括（模型，Foundry 会话）。** 仿照 `internal/chattitle` 的命名会话：Server 在 PA 家设备上起一个 `source: "digest"` 的只读工具会话（不给 Foundry 工具），输入是确定性摘要 + 经设备通道读到的 `AGENTS.md` / `README` 前 8 KiB + 最近会话的标题与概括，输出 JSON `{l0 ≤100 字, summary ≤600 字, routeWhen[], notWhen[]}`，由新包 `internal/workspacedigest` 校验，格式不对就丢弃、保留旧值。
 
+**脱敏。** 本人写下的东西（会话 / 对话标题与首条消息、目的、Issue 标题、文件名）、`AGENTS.md` / `README` 摘录、最近会话的回答，在保存、展示、参与排序或交给概括会话之前，都经同一个 `internal/redact` 的 `Text`：密钥与 token、密码标记后的值、私钥、URL 里的凭据与 token 参数、Cookie、IP、`user@host` 与 ssh/scp 目标的地址、登录用户、邮箱、电话换成 `‹ip›`、`‹secret›` 等占位符，其余字词保留以供路由（`~/.ssh/config` 里的主机别名不算地址）。概括的输出也再过一遍。启动时的迁移就地脱敏已存的行；已存的概括若含可脱敏内容，脱敏后标脏并立即重新概括。
+
 **刷新触发**（Server 观察者，挂在 `server.go` 现有的 `sessions.observe` / `issues.observe` 上）：
 
 | 触发                                                                             | 动作                                                                               |
@@ -70,20 +72,27 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 **动作与默认策略**（存在 `personal_agents.settings_json.policy`，Server 在每次工具调用时检查；面板可改，但“不允许”一栏的项不可放开）：
 
-| 动作                                                                                      | 默认                       | 说明                                                             |
-| ----------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------- |
-| 在允许的设备的受管根目录里新建（空目录或克隆）                                            | 自动，事后告知             | 名称、目录名由助理起；放在设置里的首选设备，离线则选另一台允许的 |
-| 把受管根目录之外的已有文件夹登记为项目                                                    | 先问                       | 碰到人原有的文件                                                 |
-| 改名、改 `purpose`（写进摘要）                                                            | 自动                       | 可撤销；回复里说一句                                             |
-| 加 Skill（本人的库或内置）                                                                | 自动                       |                                                                  |
-| 去掉 Skill                                                                                | 助理建的项目自动；其他先问 |                                                                  |
-| 把本人的连接器账号绑定到一个项目                                                          | 每个账号 × 项目首次先问    | 意味着那里的会话能以本人身份对外                                 |
-| 解绑连接器账号                                                                            | 先问                       | 可能让那里正在用的流程失效                                       |
-| 归档 / 恢复                                                                               | 归档先问；恢复自动         | 归档 = 隐藏、停止接新会话、保留一切                              |
-| 在本人不是 Owner 的项目里做上述任何改动                                                   | 不允许                     |                                                                  |
-| 删除项目或文件、成员与分享、飞书 Bot 配置、设备设置、模型服务、Accept / 确认 / 判定 Issue | 不允许（没有工具）         | 需要时给出页面链接，由人自己做                                   |
+| 动作                                                                                      | 默认                       | 说明                                                 |
+| ----------------------------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------- |
+| 在允许的设备的受管根目录里新建（空目录或克隆）                                            | 自动，事后告知             | 名称、目录名由助理起；放在哪台按下面的“放在哪台电脑” |
+| 把受管根目录之外的已有文件夹登记为项目                                                    | 先问                       | 碰到人原有的文件                                     |
+| 改名、改 `purpose`（写进摘要）                                                            | 自动                       | 可撤销；回复里说一句                                 |
+| 加 Skill（本人的库或内置）                                                                | 自动                       |                                                      |
+| 去掉 Skill                                                                                | 助理建的项目自动；其他先问 |                                                      |
+| 把本人的连接器账号绑定到一个项目                                                          | 每个账号 × 项目首次先问    | 意味着那里的会话能以本人身份对外                     |
+| 解绑连接器账号                                                                            | 先问                       | 可能让那里正在用的流程失效                           |
+| 归档 / 恢复                                                                               | 归档先问；恢复自动         | 归档 = 隐藏、停止接新会话、保留一切                  |
+| 在本人不是 Owner 的项目里做上述任何改动                                                   | 不允许                     |                                                      |
+| 删除项目或文件、成员与分享、飞书 Bot 配置、设备设置、模型服务、Accept / 确认 / 判定 Issue | 不允许（没有工具）         | 需要时给出页面链接，由人自己做                       |
 
 策略的键（`store.PersonalAgentActions`，协议 `personalAgentActions`）：`create_workspace`（受管根目录内新建，含登记受管根目录内已有的文件夹）、`register_folder`、`rename_workspace`（名称与 `purpose`）、`add_skill`、`remove_skill_created`（助理建的项目）、`remove_skill`（其他项目）、`bind_connector`、`unbind_connector`、`archive_workspace`、`restore_workspace`；值为 `auto / ask / deny`。“不允许”的行没有键，任何设置都放不开。面板的三个预设：多问我 = 全部 `ask`；默认 = 上表；放手 = 全部 `auto`，只有 `bind_connector` 仍 `ask`。
+
+**放在哪台电脑**（2026-10-15，依据 [`personal-agent-placement.md`](research/personal-agent-placement.md) R3、R7：没有产品能可靠地自己判断“这件事要公司网络”，所以由所有者标注、助理说明需要、Server 来选，都不合适时问一句）。
+
+- **事实**：每台设备有所有者写的**标签**（自由的 `key:value`，常用 `network: corp/home/public`、`toolchain: go/node/xcode`、`files: personal/work`、`gpu`、`always-on`，在设备页设置里编辑），旁边是 Foundry **检测到的事实**（只读）：系统与架构（`os:macos`、`arch:arm64`）、Worker 上报的工具链与容器运行时（`toolchain:go`）、显卡（`gpu:nvidia`）、设备持有的连接器的网络检查通过时的 `reaches:<host>`（bytedcli 的 `cloud.bytedance.net`），以及最近 7 天在线 ≥ 90%（观察 ≥ 24 小时）时的 `always-on`。见[设备与 Workspace](devices-and-workspaces.md#设备标签与检测到的事实2026-10-15)。
+- **说明需要**：`create_workspace` 的 `needs[]` 用同样的词（`["network:corp", "toolchain:go"]`）；不带值的需要匹配该键的任何值（`no` 除外），`yes` 匹配不带值的标签。自成一体的事（文档、小网页、调研）不写需要。
+- **选择**（`personalagent.Place`）：候选 = 本人自己的、设置里允许新建的设备，**在线与否都算**；系统账号与别人的设备共用的（[一台电脑上的几个人](devices-and-workspaces.md)）只在本人明确选了它时才算：勾了“可以在这里新建项目”（默认只有家，即安家时自己选的那台）或它是默认位置，从不因默认设置被选中；留下具备全部需要的。没写需要时，默认位置（设置“在哪里做事”的“默认在哪台电脑做事”，即 `preferredDeviceId`，空 = 助理的家）在线就用它；其余按：没人共用或是默认位置 > 一直开着（标签或检测）> 现在在线 > 最近在线比例高 > 默认位置 > 名称。助理点名 `deviceId` 时（本人说了用哪台）只查归属与设置（共用设备同样要本人选过），缺的需要在结果的 `place.unverified` 里列出。放在共用设备上时 `place.reason` 写明与谁共用，助理告诉本人。
+- **都不合适**：不新建，工具返回结果（不是错误）`{status: "no_place_fits", missing[], computers[{name, online, lacks[], notAllowed?}], next}`，审计记为 `refused` / `no_place`；助理用本人的话问**一个**问题（“这件事要连公司网络，你的工作笔记本能连上吗？我倾向用它。”），本人点名后带 `deviceId` 再调用。新建成功的结果带 `place: {computer, online, reason}`，助理用人话说放在哪里。
 
 **归档**是新状态：`workspaces` 的 `archived_at`。归档的 Workspace 在 Workspaces 页折叠到“已归档”分组，不进 L0 索引，`create_session` 返回“已归档，先恢复”；不删除任何记录或文件。Owner 原有的“移除”不变。
 
@@ -110,12 +119,14 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 | ------------------------------------------------------------------------ | ---- | ----------------------------------------------------------------------------------------- |
 | `find_workspace(query, limit≤5)`                                         | 读   | 按名称、L0、概括、`routeWhen`/`notWhen`、路由笔记与最近活跃度排序，返回候选、理由与新鲜度 |
 | `get_workspace(workspaceId, include[])`                                  | 读   | L1 全文 + 实时检查（在线、进行中的会话、Git 状态、`AGENTS.md` 摘录）                      |
-| `create_workspace(name, purpose, source, skills[], deviceId?)`           | 写   | §4；`deviceId` 省略时 Server 选；返回项目或提议                                           |
+| `create_workspace(name, purpose, source, skills[], needs[], deviceId?)`  | 写   | §4；`deviceId` 省略时 Server 按 `needs` 选；返回项目与 `place`、提议或 `no_place_fits`    |
 | `update_workspace(workspaceId, {name?, purpose?, skills?, connectors?})` | 写   | §4；返回前后对比或提议                                                                    |
 | `archive_workspace(workspaceId, restore?)`                               | 写   | §4                                                                                        |
 | `remember(op, item)`                                                     | 写   | 增、改、忘记关于这个人的事；Server 判定 origin（§2）                                      |
 | `update_rules(change)`                                                   | 写   | §4 规则变更                                                                               |
 | `list_tasks(status?)`                                                    | 读   | 助理派出、仍在跟进的事（`pa_tasks`），跨对话轮换保留                                      |
+| `update_list(op, item)`                                                  | 写   | 本人的清单（`pa_items`）：增、改一件本人要做 / 在做 / 做完的事，可设到点提醒（§6）        |
+| `read_list(closedSince?)`                                                | 读   | 本人的清单：未完成的，及某时之后做完或不做了的                                            |
 
 参数的确切形状以 `mcp_tools.json` 为准：`source = {kind: "empty" | "clone" | "existing", url?, path?}`；`skills` 与 `connectors` 在 `update_workspace` 里是 `{add[], remove[]}`（连接器按账号 id）；`include` ⊆ `live / instructions / note`，默认全部；`remember` 的 `op` = `add / update / forget`，`item = {id?, content? ≤300 字符, inferred?}`；`update_rules` 的 `change = {action, decision}`。写工具在策略为“先问”时返回 `{status: "needs_confirmation", proposalId, summary, expiresAt}`（`PersonalAgentNeedsConfirmation`）。
 
@@ -127,16 +138,18 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 ### 6. 派出与监督
 
-- **自己做 vs 交出去。** 能用至多 5 次左右工具调用完成、且不属于某个项目的事，助理自己做：回答问题、查状态、整理清单、记东西、设提醒（会话定时器已能跨空闲与重启存活）、在 `notes/` 写个草稿。其余都交给一个 Workspace 里的会话（编排调研 §1 的“按工作量决定”）。
+- **自己做 vs 交出去。** 能用至多 5 次左右工具调用完成、且不属于某个项目的事，助理自己做：回答问题、查状态、整理清单、记东西、记本人的清单与提醒（见下面“本人的清单”）、在 `notes/` 写个草稿。其余都交给一个 Workspace 里的会话（编排调研 §1 的“按工作量决定”）。
 - **简报**：目标与原因、已知事实和已排除的、范围（不碰什么）、完成标准、需要的证据、汇报格式；人说过的批准原话照引（编排调研 §1、§2）。
 - **一个 Workspace 同时只有一个写入的会话。** 那里已有本人的会话在跑：同一件事就 `send_message` 接着做；另一件写入的事就记为排队的任务，等前一个结束再派；只读的调查可以并行。
-- **监督靠事件，不靠轮询。** Server 观察助理派出的会话（`pa_tasks` 记录会话 id），在**结束、失败、以提问结束、超过 30 分钟没有任何事件**时，把一条事件作为输入送回该任务所属的助理对话（同一对话 2 分钟内的事件合并为一条）。助理据此核对证据（`read_context` 的 changes / summary）、决定重试一次还是换办法、再向人汇报。“做完了”之前必须读到证据；子会话的自述只算意图。
+- **监督靠事件，不靠轮询。** Server 观察助理派出的会话（`pa_tasks` 记录会话 id），在**结束、失败、以提问结束、超过 30 分钟没有任何事件**时，把一条事件作为输入送回该任务所属的助理对话（同一对话 2 分钟内的事件合并为一条）。**连不上模型服务**（2026-10-15）也算：子会话最近的事件只剩连接失败的尝试（Codex 的 `Reconnecting...`、Claude 没有拿到应答或 5xx 的重试）满 2 分钟，就送一条“卡住了，连不上它的模型服务”（每 30 秒检查一次，同一段只送一次）；只通知、不自动取消，由助理决定停掉它换账号重来。因模型重试被 Worker 标为 blocked 的子会话不再被当成“在等回答”。失败与连不上的通知带机器可读的原因 `[reason=<类别> profileId=… runtime=…]`（`not_signed_in`、`not_ready`、`unreachable`、`rate_limited`、`device_offline`、`task_error`，`httpapi/helper_failure.go`），账号问题时还列出该设备上其他能用的账号，助理换账号重来，不先问人。助理据此核对证据（`read_context` 的 changes / summary）、决定重试一次还是换办法、再向人汇报。“做完了”之前必须读到证据；子会话的自述只算意图。
+- **电脑离线时等待，不失败**（2026-10-15，[会话模型 · 设备离线时](session-model.md#设备离线时等待而不是失败2026-10-15)）。项目所在电脑离线时，`create_session` / `send_message` 照常接受，助理派出的会话排队等它，工具结果的 `waitingForDevice` 用一句话说明“电脑回来后自动开始，不要重发”；助理告诉本人“交代好了，等它开机就自动开始”。等待中的助理任务仍占 §9 的“同时在跑”名额，在首页“正在做的事”、`list_tasks` 与每轮上下文里显示为“等待 <电脑> 上线”（任务的 `waitingFor`），可用 `cancel_session` 或首页“正在做的事”的停止取消；超过 24 小时仍离线则失败，失败通知照常送回。电脑重新上线时的通知列出：排队等它、现在自己开始的事（“不要重发”）、它离开时还在运行的、它离线期间失败的，以及因它离线被拒的写操作（如新建项目）。
+- **本人的清单**（2026-10-15，本人真实使用后的要求：“助理应该记下我打算做什么、做了什么”）。Server 上的 `pa_items`，与助理自己的任务（`pa_tasks`，“正在做的事”）分开：一行一件本人要做、在做或做完的事，字段为本人语言的短句、本人说的时间（`when`，“下班后”“下午”）、知道钟点时的 `at`、是否提醒、状态（`open / done / dropped`）、本人原话（`quote`）、帮忙的助理任务（`taskId`）。助理用 `update_list` 写，规则同 `remember`：说的是本人的事就必须带本人在本对话中的原话，Server 找不到就拒绝（清单只收本人说的事，不设“待确认”）；只关联自己的任务不需要原话；审计只记操作与条目 id。每轮上下文列出未完成的条目（至多 20 条），`read_list` 读做完的。本人在首页“你的清单”里勾掉、改字、删除（cookie 接口 `GET/PUT/DELETE /api/personal-agent/list…`）；改了“什么时候”就清掉钟点与提醒，因为它们不再对得上本人的话。**到点提醒**：`at` + `remind` 的未完成条目到点时，Server（`RunPersonalAgentReminders`，每分钟）只发一次 Foundry 通知给这个人最近说过话的助理对话（网页或飞书单聊），由助理用一两句话提醒本人；助理停下时不发、留到之后。这是助理唯一可以承诺的提醒方式（提示词不再让它用会话自带的定时器：对话会轮换，定时器留在旧对话里）。
 
 ### 7. 进展汇报与摘要
 
 - **节奏**：马上回应一句；派出后用人话说一次去了哪里（“我在『家庭记账』里开始做了”）；之后只在需要人、卡住、失败、完成时开口；完成 = 结果 + 证据 + 可以点开的链接。不预测还在跑的结果（编排调研 §2）。
 - **对话轮换**：Web 首页是一条连续的对话，背后是一个个助理会话：安静超过 2 小时或上下文接近上限时，下一条消息开新会话，`handoff_session` 只带事实；飞书单聊里每个新话题本来就是新会话。跨轮换的连续性靠 `pa_tasks` 与 L0 的“进行中的事”。
-- **每日摘要**：默认关闭；打开后在设定时间生成（确定性数据 + 一个只带 L0 的隔离助理轮次），没有值得说的就不发；只发到本人的首页和单聊，遵守“活跃时段”（产品调研 §2.6）。活跃时段外的通知默认攒到时段开始，“需要你决定”的可设为随时发送。
+- **每日摘要**：默认关闭；打开后在设定时间（本人时区，之后 2 小时内仍补发，每天一次）由 Server 把确定性数据（清单上未完成的、过去一天做完的、在跟进与过去一天结束的任务）作为 Foundry 通知交给本人最近的助理对话，由助理写成几句话；没有值得说的就不发；只到本人的首页和单聊（产品调研 §2.6）。原设计的“只带 L0 的隔离助理轮次”与“活跃时段”尚未实现。活跃时段外的通知默认攒到时段开始，“需要你决定”的可设为随时发送。
 
 ### 8. 停止开关（绕过模型）
 
@@ -160,7 +173,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 
 ### 10. 入口
 
-- **Web**：侧边栏最上方新增“助理”分区；有 Personal Agent 的人打开 Foundry 默认落在 `/assistant`。首页：一条对话（输入框、提议卡片内嵌）、“正在做的事”（每项可单独停止、可点开进度）、最近的摘要卡片。首页不要求、也不改变当前选中的 Workspace（AGENTS.md：浏览不改变位置）。回复里的链接打开对应会话，沿用现有的会话链接。
+- **Web**：侧边栏最上方新增“助理”分区；有 Personal Agent 的人打开 Foundry 默认落在 `/assistant`。首页：一条对话（输入框、提议卡片内嵌）、“你的清单”（本人要做的与今天做完的，可勾掉、改、删，带提醒时间与“我在帮忙”的链接，§6）、“正在做的事”（每项可单独停止、可点开进度）、最近的摘要卡片。首页不要求、也不改变当前选中的 Workspace（AGENTS.md：浏览不改变位置）。回复里的链接打开对应会话，沿用现有的会话链接。
 - **简洁界面**：账号设置增加“界面：完整 / 简洁”。简洁时侧边栏只有“助理”和“设置”；新邀请、且名下没有设备的账号默认简洁，已有账号默认完整。
 - **飞书单聊**：PA Workspace 的 Channels 页选用飞书应用（默认用本人在连接器里的应用）。单聊路由（`p2p`）默认指向 PA Workspace；**群聊不变**，仍绑定到各自的 Workspace，助理不在群里回答，关于人的记忆不进入群上下文（知识调研 §4.5）。提议卡片的按钮回调接入 Bot 路由（现在未接入，见[渠道](channels.md)）。
 - **其他 Workspace 的 Chats** 保持原样，人仍可以直接进去工作。
@@ -175,7 +188,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 | 称呼与风格     | 助理的名字；说话语言；说话方式（自动：跟随你 / 通俗 / 技术）；详略；给助理的额外要求（≤ 2,000 字，附加在提示词“本人的要求”一节，不能改变 Server 规则） | “助理” / “Assistant”；跟随账号语言；自动；简洁；空 |
 | 关于我         | 记忆列表（内容、来源、日期、本人说的 / 助理猜的）；编辑、忘记、新增；待确认的外部建议；“全部忘记”；导出                                                | 空                                                 |
 | 什么时候先问我 | §4 表的每一行：自动做 / 先问我 / 不允许；三个预设：多问我、默认、放手                                                                                  | “默认”= §4                                         |
-| 在哪里做事     | 本人的每台电脑：可以在上面做事、可以在上面新建项目；首选的电脑；受管文件夹（只读显示，链接到该电脑的设置）                                             | 全部可以做事；只有家电脑可以新建                   |
+| 在哪里做事     | 本人的每台电脑：可以在上面做事、可以在上面新建项目、记下的标签（只读，链接到该电脑的设置）；默认在哪台电脑做事（§4 放在哪台电脑）；受管文件夹          | 全部可以做事；只有家电脑可以新建；默认 = 家        |
 | 用哪个模型     | 助理自己用的运行时与模型（来自家电脑的模型服务）；派出的工作默认用：与助理相同 / 各电脑的默认                                                          | 家电脑的默认；各电脑的默认                         |
 | 入口与通知     | 默认首页是助理；飞书单聊（用哪个应用、状态、配对）；每日摘要开关与时间；活跃时段；需要决定的事随时通知                                                 | 是；连接器里本人的应用；关；09:00–22:00；是        |
 | 用量与上限     | §9 的计数与当前值                                                                                                                                      | §9                                                 |
@@ -188,7 +201,7 @@ PA 目录只有：`AGENTS.md`（Foundry 生成：这个目录是什么、各子�
 提示词放在 `apps/server/internal/personalagent/prompt/system.md`（嵌入二进制，带版本号 `prompt_version`）。助理会话分两部分拿到它（`prompt.Fill` / `prompt.TurnContext`，Server 在每次 `run_session` 时计算）：
 
 - **系统提示词附加段**：这份提示词、本人的额外要求、L0 中变化少的部分（关于这个人、项目与电脑索引、生效规则）。不含时钟、进行中的事和在线状态，项目按最近活跃的“日期”排序，只有这些内容真的变了才变，逐字节相同时 Worker 沿用会话的运行时与提示缓存。Claude 经 `systemPrompt.append`，Codex 经 `developer_instructions`（与现有会话说明同一路径）。
-- **本轮上下文**：现在的日期时间、哪些电脑在线、进行中的事、单聊原来的去处，以“[Context from Foundry for this turn…]”标明是 Foundry 的话、不是本人的话，附在这一轮输入的后面（本人消息开头的 `/skill` 仍然有效）。存下的输入仍是本人的原话，`remember` 据此判定来源。
+- **本轮上下文**：现在的日期时间、哪些电脑在线、本人清单上未完成的事、进行中的事、单聊原来的去处，以“[Context from Foundry for this turn…]”标明是 Foundry 的话、不是本人的话，附在这一轮输入的后面（本人消息开头的 `/skill` 仍然有效）。存下的输入仍是本人的原话，`remember` 据此判定来源。
 
 `{{…}}` 由 Server 填写。
 
@@ -248,9 +261,10 @@ Decide which one, silently:
    remember or update_rules, then confirm in one short sentence.
 5. Something to get done. Continue with step 2.
 6. Small talk. Reply briefly and warmly.
-The person may say what they are *about to* do ("I'm going to rewrite my CV this week").
-Treat that as a request to help unless it is clearly just conversation; offer the obvious
-next step and start it if it is cheap and harmless.
+5a. Their plans and their day (things they will do, are doing or did): put each on their
+   list with update_list and confirm briefly. Keeping track is the request; never offer
+   things for them they did not ask for, least of all anything involving other people
+   (meetings, invitations, messages).
 
 # Step 2: where does the work belong?
 Go in this order and stop at the first that settles it:
@@ -283,6 +297,13 @@ note in cards/<project id>.md ("Wants X here, not in Y") so you do not repeat th
 - Create with create_workspace: a short human name, a one-sentence purpose, and the skills
   the work obviously needs. Do not ask the person to name it; pick a good name and tell
   them ("I've set up a new project, 『Wedding website』.").
+- Where it goes: pass as needs what the work cannot do without, in the key:value words the
+  snapshot lists for the person's computers ("network:corp", "toolchain:go",
+  "always-on"); none for self-contained work, which goes to the default place. Do not
+  pick a computer yourself unless the person named one. If create_workspace answers
+  no_place_fits, ask one plain question ("This needs the company network. Can your work
+  laptop reach it?"), never the key:value words, and call again with the computer they
+  name.
 - Change a project when the work needs it (add a skill, give it access to the person's
   Feishu, rename it when its purpose changed) with update_workspace. Archive projects the
   person says are finished or abandoned with archive_workspace. You never delete.
@@ -296,7 +317,8 @@ note in cards/<project id>.md ("Wants X here, not in Y") so you do not repeat th
 
 # Step 4: do it yourself, or hand it off?
 Do it yourself when it takes a handful of steps and is not part of a project: answering,
-looking something up, a short list or draft in notes/, a reminder (use your own timer),
+looking something up, a short list or draft in notes/, the person's list, a reminder (an
+item on their list with a time and remind: the only way to keep a promise to remind),
 checking how things are going. Otherwise hand it off; do not do a helper's job yourself,
 and do not redo work you handed off.
 Handing off:
@@ -375,7 +397,7 @@ Person: "what's 15% of 2,340?"
 Reply: "351."
 
 Person: "remind me tomorrow at 9 to pay rent"
-You: set your own timer. Reply: "I'll remind you tomorrow at 9:00."
+You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:00."
 ```
 
 ### 13. 评测
@@ -415,16 +437,20 @@ You: set your own timer. Reply: "I'll remind you tomorrow at 9:00."
 - **2026-10-15 终态设计，助理自己决定路由、新建与调整 Workspace**（本人要求）。取代 Roadmap 原来的“先给出放到哪里的建议由人确认，新建作为需要人接受的变更”：需要确认的动作改由 Server 的结构化策略决定（§4），默认只对碰到人原有文件、对外身份、归档和放宽规则确认。
 - **2026-10-15 记忆、策略、提议、任务与决定放在 Server，PA 目录只放助理自己的笔记、草稿与日志。** 理由：配置面板要能在家电脑离线时查看、编辑与真正遗忘；来源与信任要由 Server 判定；换电脑不丢。这是对知识调研“全部用 git 中的 markdown”建议的偏离，代价是这部分没有 git 历史，用 `superseded` 链与 `pa_actions` 补足。
 - **2026-10-15 助理会话保留原生的文件与命令工具**（产品调研建议去掉）：本人要求它能在自己的空间里干活。三要素（读不可信内容、持有隐私、能对外）用结构切断：PA Workspace 默认不绑定连接器，助理不拿资源租用工具，对外的事交给有对应绑定的项目里的会话。
+- **2026-10-15 新项目按标签与检测到的事实放置，都不合适时问一句**（本人批准，依据放置调研 R3、R7）：不让模型自己猜“要公司网络就用笔记本”，也不静默退回别的电脑。复用已有的 `preferredDeviceId` 作为“默认位置”，不另加设置。在线比例由 Server 记录每次连接（`device_presence`），不在设备上探测。
+- **2026-10-15 本人的清单与“只做被要求的事”**（本人在真实使用中的反馈）：本人说要做、在做、做完的事记到 Server 上的清单，与关于本人的记忆、助理自己的任务都分开；提醒只经清单条目的时间由 Server 发出。提示词同时改为：记下计划就是本人要的，不把计划变成助理的活；不经本人明确要求，不提议也不做任何牵涉别人的事（约会、邀请、发消息、评论、分享）；不用本人没先用的技术名称（文件夹式的项目名、电脑主机名、Claude / Codex、登录）；帮手因账号或连接失败时换一个能用的账号重来，不问本人，都不行才用大白话告诉本人能做什么。
 - **2026-10-15 汇总用 Server 确定性摘要 + Foundry 只读会话概括**，不用设备上的定期模型检查（产品调研 §3 的成本问题；本人规则“不在设备上开会话做诊断”）。
 
 ## 实现边界
 
+**状态：测试中**（2026-10-15 起在 dev 上由本人试用，按实际使用继续修问题与调路由）。
+
 截至 2026-10-15：**设计中的全部工作包（WP-0、S1–S4、W、UI、P、E）已实现并集成**，在 scratch stack 上用真实模型、真实 Worker 与真实浏览器验收。
 
-- **已建成**：助理核心（策略“自动 / 先问 / 不允许”、只有本人能接受的提议、§9 上限、绕过模型的停止与继续，`internal/personalagent`、`httpapi/personal_agent*.go`）；汇总与 `find_workspace` 排序（含 `close` 标记，`internal/workspacedigest`）；Workspace 生命周期（新建只在受管根目录、改名、Skill、连接器、归档与恢复，REST 与 MCP 共用 `httpapi/workspace_lifecycle.go`）；飞书单聊默认交给助理、停止 / 是否与提议卡片在模型之前处理、卡片随本人语言；Worker 受管根目录内新建与写入 `AGENTS.md`、每轮带上助理说明；稳定的系统段 + 每轮“来自 Foundry 的上下文”块；监督通知（完成、失败、提问、安静、电脑重新上线）；`remember` 必须引用本人在本对话中的原话，否则只作待确认；换电脑后对话历史连续；Web 首页 `/assistant`、设置 `/assistant/settings`、简洁界面开关（Server 设置）；CLI 命令与 Foundry Skill 的助理一节。
+- **已建成**：助理核心（策略“自动 / 先问 / 不允许”、只有本人能接受的提议、§9 上限、绕过模型的停止与继续，`internal/personalagent`、`httpapi/personal_agent*.go`）；汇总与 `find_workspace` 排序（含 `close` 标记，`internal/workspacedigest`）；Workspace 生命周期（新建只在受管根目录、改名、Skill、连接器、归档与恢复，REST 与 MCP 共用 `httpapi/workspace_lifecycle.go`）；飞书单聊默认交给助理、停止 / 是否与提议卡片在模型之前处理、卡片随本人语言；Worker 受管根目录内新建与写入 `AGENTS.md`、每轮带上助理说明；稳定的系统段 + 每轮“来自 Foundry 的上下文”块；监督通知（完成、失败、提问、安静、电脑重新上线，其中排队等电脑的事回来后自己开始）；派往离线电脑的会话排队等待而不是失败（`httpapi/session_device_wait.go`）；新项目按设备标签与检测到的事实放置、都不合适时返回 `no_place_fits` 由助理问一句（`personalagent/placement.go`、`httpapi/device_placement.go`、`mcp_personal_agent.go` 的 `assistantCreateDevice`）；`remember` 必须引用本人在本对话中的原话，否则只作待确认；换电脑后对话历史连续；Web 首页 `/assistant`、设置 `/assistant/settings`、简洁界面开关（Server 设置）；CLI 命令与 Foundry Skill 的助理一节；本人的清单（`pa_items`、`update_list` / `read_list`、首页“你的清单”、到点提醒与每日摘要的通知，`httpapi/personal_agent_list.go`、`sqlitestore/personal_agent_list.go`，2026-10-15）。
 - **验收**（`cases/personal-agent/` A1–A11）：A1、A2、A5、A6、A8–A11 通过，A7 在引用校验后通过；A3（排序 top-1 ≥ 90%）与 A4（两个候选接近时只问一句）未达标。
 - **评测**（§13，`~/.foundry/pa-eval/set/`，117 例，来自 dev 的真实请求并脱敏）：无模型排序 top-1 约 58–61%、top-3 约 78–84%；端到端 40 例：清楚的请求 top-1 52% → 70%，总体路由 68% → 80%，不必要的提问 17.5% → 10%，回复中的技术词 3 → 0，平均时延 19 s → 12 s，每次约 $0.43；留出的三分之一上路由无明显提升（约 55%），说明主要瓶颈不在提示词。
-- **已知限制**：评测环境里所有项目所在电脑都离线，概括读不到 `AGENTS.md`，任务也无法开始；约三分之一真实请求依赖“当时所在的项目”（“这个文件夹”）；每个助理回复约 4–6 万输入 token，其中大部分是 Claude Code 自身的系统提示词；飞书卡片位置只在内存中，重启后丢失（按钮仍有效）；每个飞书应用需在开放平台为长连接订阅 `card.action.trigger`；换电脑后在旧电脑上写的笔记不会复制过去。
+- **已知限制**：评测环境里所有项目所在电脑都离线，概括读不到 `AGENTS.md`，任务只能排队等电脑；约三分之一真实请求依赖“当时所在的项目”（“这个文件夹”）；每个助理回复约 4–6 万输入 token，其中大部分是 Claude Code 自身的系统提示词；飞书卡片位置只在内存中，重启后丢失（按钮仍有效）；每个飞书应用需在开放平台为长连接订阅 `card.action.trigger`；换电脑后在旧电脑上写的笔记不会复制过去。
 - **评测的副作用与对策**：一次基线评测中真实请求让助理升级了 sg-chaos 上的 `feishu-cli` 并装了 Skill（已还原）；评测 Worker 现在在 bubblewrap 中运行（主目录只读、凭据隐藏、无 sudo）。
 
 ## 后续

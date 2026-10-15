@@ -36,6 +36,8 @@ export const daemonMessageTypes = {
   attachmentWritten: "attachment_written",
   agentRuntimeSettingsUpserted: "agent_runtime_settings_upserted",
   cancelSession: "cancel_session",
+  /** Server tells: who else uses this device's system account (device-sharing.ts). */
+  deviceSharing: "device_sharing",
   directoriesListed: "directories_listed",
   inspectWorkspace: "inspect_workspace",
   inspectNativeAccount: "inspect_native_account",

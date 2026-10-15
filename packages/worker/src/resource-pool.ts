@@ -25,6 +25,7 @@ import type { DeviceResource } from "@bd777/foundry-protocol";
 import { discoverResources } from "./resources/index.js";
 import { browserProcessNames } from "./resources/detectors/browser.js";
 import { foundryStatePath } from "./state-root.js";
+import { sharedSystemAccountNote } from "./system-account-sharing.js";
 import { writePrivateJSONAtomic } from "./storage.js";
 import { errorMessage } from "./utils.js";
 
@@ -56,6 +57,7 @@ export function sessionResourceNotes(
   return [
     "Foundry device notes:",
     "- This session runs on the person's own device. Use the software installed here when a task needs it; do not download or install a tool the device already has.",
+    ...[sharedSystemAccountNote()].filter(Boolean),
     browsers.length
       ? Object.keys(launchers).length
         ? `- Browsers installed on this device: ${browsers.map((browser) => `${browser.name}: start it with ${launchers[browser.id]} (Foundry's launcher for ${browser.attributes?.path}; it takes the browser's own arguments)`).join("; ")}. The launcher reserves the browser for this session and it is closed when your reply ends. Run headless when no window is needed, each run with its own --user-data-dir under $TMPDIR unless the person chose one of their profiles for it. ${browserChoiceNote}`

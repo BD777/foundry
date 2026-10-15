@@ -9,6 +9,7 @@ import { setupPersonalAgent } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
+import { browserTimezone } from "./assistant-model";
 import { AssistantSetup } from "./assistant-setup";
 import type { AssistantController } from "./use-assistant";
 
@@ -57,7 +58,10 @@ export function AssistantGate({
           devices={devices.filter((device) => device.owned)}
           onConnectComputer={onConnectComputer}
           onSetUp={async (deviceId) => {
-            await setupPersonalAgent({ deviceId });
+            await setupPersonalAgent({
+              deviceId,
+              timezone: browserTimezone() || undefined,
+            });
             await assistant.reload();
           }}
           suggestedDeviceId={load.overview.suggestedHomeDeviceId}

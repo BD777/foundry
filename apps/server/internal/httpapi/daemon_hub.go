@@ -299,6 +299,7 @@ func (c *daemonConnection) syncRegistration(registration store.DaemonRegistratio
 	}
 	logWorkerStalls(registration)
 	c.hub.logWorkerConnections(registration)
+	c.hub.recordAccountIdentity(registration)
 	// A device with no workspace yet registers itself alone; its workspaces
 	// arrive later as the person adds them.
 	registration.Device.Status = "connected"

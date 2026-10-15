@@ -4,6 +4,7 @@ import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { RowMenu } from "../../components/ui/row-menu";
+import { AccountShareLabel } from "./device-account-share";
 import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
 
@@ -57,6 +58,7 @@ export function DeviceList({
                   .join(" · ")}
               </small>
             </span>
+            <AccountShareLabel device={row} />
             <WorkerStateBadge device={row} release={release} />
             <Badge tone={row.status === "connected" ? "online" : "neutral"}>
               {t(

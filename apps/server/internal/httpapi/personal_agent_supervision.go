@@ -19,7 +19,11 @@ import (
 // off, as a server notice (personalagent.Notice, never the person's word),
 // when one finishes, fails, ends with a question or waits for an answer,
 // or goes quiet (TaskSilentAfter without any activity; running past the
-// person's StuckAfterMinutes). Notices to one conversation within
+// person's StuckAfterMinutes), or cannot reach its model service
+// (serviceUnreachableAfter of nothing but failed attempts; it is told, not
+// stopped). A failure or an unreachable service carries its reason
+// category (helperFailureReason) and the accounts that work there, so the
+// assistant can start the work again elsewhere. Notices to one conversation within
 // TaskEventCoalesce go as one. Nothing is told while the assistant is
 // stopped, and the assistant's hourly turn limit applies to them as to any
 // turn.
@@ -66,6 +70,11 @@ func (s *Server) assistantTaskOf(ctx context.Context, session store.AgentSession
 // followAssistantTask brings the session's task up to date and tells its
 // conversation what needs its attention.
 func (s *Server) followAssistantTask(ctx context.Context, change sessionChange, session store.AgentSession) {
+	// One waiting on its model service retrying waits for no one:
+	// supervision follows whether it reaches the service.
+	if change == sessionBlocked && retryBlocked(session) {
+		return
+	}
 	agent, task, ok := s.assistantTaskOf(ctx, session)
 	if !ok {
 		return
@@ -142,7 +151,7 @@ func (s *Server) noticeAssistantTask(ctx context.Context, agent store.PersonalAg
 	if agent.State != store.PersonalAgentActive || task.ConversationSessionID == "" {
 		return
 	}
-	line := s.assistantTaskLine(ctx, agent, task, session, kind)
+	line := s.assistantTaskLine(ctx, agent, task, session, kind, now)
 	language := personalagent.LanguageOf(agent.Settings, s.accountLocale(ctx, agent.UserID))
 	s.assistantNotices.add(task.ConversationSessionID, language, line, now, func(text string) {
 		// The person may have pressed stop meanwhile.
@@ -160,7 +169,7 @@ const taskExcerptChars = 600
 
 // assistantTaskLine is one task event as the assistant reads it, in the
 // person's language: its conversation shows it too.
-func (s *Server) assistantTaskLine(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, kind string) string {
+func (s *Server) assistantTaskLine(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession, kind string, now time.Time) string {
 	say := func(key string, args ...any) string { return s.sayTask(ctx, agent, key, args...) }
 	work := s.taskWork(ctx, agent, task, session)
 	answer := cmp.Or(truncateRunes(strings.TrimSpace(session.Response), taskExcerptChars), say("none"))
@@ -168,7 +177,11 @@ func (s *Server) assistantTaskLine(ctx context.Context, agent store.PersonalAgen
 	case store.PersonalAgentTaskEventFinished:
 		return say("finished", work, answer)
 	case store.PersonalAgentTaskEventFailed:
-		return say("failed", work, cmp.Or(truncateRunes(strings.TrimSpace(session.Error), taskExcerptChars), say("none")))
+		return s.failedTaskLine(ctx, agent, session, work)
+	case assistantTaskEventUnreachable:
+		since, latest, _ := s.unreachableSince(ctx, session.ID)
+		minutes := max(int(now.Sub(since)/time.Minute), int(serviceUnreachableAfter/time.Minute))
+		return say("stuckUnreachable", work, minutes, latest) + "\n" + reasonTag(helperUnreachable, session) + "\n" + s.retryAdvice(ctx, agent, session, true)
 	case store.PersonalAgentTaskEventAsked:
 		if session.Status == "blocked" {
 			return say("blocked", work)
@@ -226,17 +239,35 @@ var taskNoticeTexts = map[string][2]string{
 		"Still running after more than %d minutes and nobody looked at it: %s. Check it with get_session; stop it if it is stuck, and tell the person it may be stuck."},
 	"silent": {"%d 分钟没有动静：%s。用 get_session 查看；卡住了就停掉，并说一声。",
 		"No news for %d minutes: %s. Check it with get_session; stop it if it is stuck, and say so."},
+	"stuckUnreachable": {"卡住了，连不上它的模型服务：%s 已经 %d 分钟没连上（最近一次：%s）。它还在自己重试，没有被停掉。",
+		"Stuck, can't reach its service: %s has not reached its model service for %d minutes (latest: %s). It keeps retrying and was not stopped."},
+	"failedAccount": {"失败了：%s。错误：%s\n原因：%s。",
+		"Failed: %s. Error: %s\nWhy: %s."},
+	helperNotSignedIn: {"它用的账号“%s”在那台电脑上没有登录", "its account %q is not signed in on that computer"},
+	helperNotReady:    {"它用的账号“%s”在那台电脑上还不能用", "its account %q is not ready on that computer"},
+	helperUnreachable: {"它用的账号“%s”连不上模型服务", "its account %q cannot reach its model service"},
+	helperRateLimited: {"它用的账号“%s”被限流或额度用完了", "its account %q is rate-limited or out of quota"},
+	"retryElsewhere": {"换一个能用的账号重新开始这件事（create_session 或 handoff_session 带 profileId），不用先问本人。能用的账号：%s",
+		"Start the work again on an account that works (create_session or handoff_session with its profileId), without asking the person first. Accounts that work there: %s"},
+	"stopAndRetryElsewhere": {"用 cancel_session 停掉它，再换一个能用的账号重新开始（create_session 或 handoff_session 带 profileId），不用先问本人。能用的账号：%s",
+		"Stop it with cancel_session, then start the work again on an account that works (create_session or handoff_session with its profileId), without asking the person first. Accounts that work there: %s"},
+	"noOtherAccount": {"那台电脑上没有别的能用的账号：告诉本人需要在那台电脑上登录，或给它分配一个模型服务。",
+		"No other account works on that computer: tell the person it needs a sign-in there, or a model service assigned to it."},
+	"noOtherAccountStuck": {"那台电脑上没有别的能用的账号：它可能自己恢复；过一会儿用 get_session 再看，并告诉本人它连不上模型服务。",
+		"No other account works on that computer: it may recover by itself; check again later with get_session, and tell the person it cannot reach its model service."},
 	"batch": {"交出去的事有 %d 条更新：\n- %s", "%d updates on work you handed off:\n- %s"},
-	"back": {"电脑“%s”重新上线了。之前在等它的事：\n- %s\n逐一看看现在怎样（get_session、list_tasks），还需要做的就接着做或重试，再用大白话告诉本人。",
-		"The computer %q is back online. What waited for it:\n- %s\nCheck each one now (get_session, list_tasks), carry on with or retry what still needs doing, and tell the person in plain words."},
+	"back": {"电脑“%s”重新上线了。之前在等它的事：\n- %s\n排队等它的事会自己开始，不要重发；其余的逐一看看现在怎样（get_session、list_tasks），还需要做的就接着做或重试，再用大白话告诉本人。",
+		"The computer %q is back online. What waited for it:\n- %s\nWork queued for it starts by itself, so do not send it again; check the rest now (get_session, list_tasks), carry on with or retry what still needs doing, and tell the person in plain words."},
 	"waited":         {"%s，在等这台电脑（现在：%s）", "%s waited for it (now %s)"},
+	"startsNow":      {"%s，排队等这台电脑，现在自己开始了", "%s was queued for it and is starting by itself now"},
 	"refusedOffline": {"你当时因为它不在线没做成：%s", "You could not do this because it was offline: %s"},
-	"failedOffline":  {"%s 因为它不在线而失败了", "%s failed because it was offline"},
+	"failedOffline":  {"%s 在它不在线时失败了", "%s failed while it was offline"},
 }
 
-// supervisionInterval is how often quiet and long-running tasks are looked
-// for.
-var supervisionInterval = time.Minute
+// supervisionInterval is how often quiet, long-running and unreachable
+// tasks are looked for: often enough that a helper that cannot reach its
+// service is told within serviceUnreachableAfter and half a minute.
+var supervisionInterval = 30 * time.Second
 
 // RunPersonalAgentSupervision looks, every supervisionInterval until ctx
 // ends, for the assistant's tasks that went quiet or ran too long.
@@ -264,8 +295,9 @@ func (s *Server) superviseAssistantTasks(ctx context.Context, now time.Time) err
 		return err
 	}
 	for _, session := range sessions {
-		// A blocked one already asked for the person.
-		if session.ParentSessionID == "" || session.Status != "running" {
+		// A blocked one already asked for the person, unless it waits on
+		// its model service retrying.
+		if session.ParentSessionID == "" || (session.Status != "running" && !retryBlocked(session)) {
 			continue
 		}
 		lastActivity, ok := parsePATime(cmp.Or(session.LastActivityAt, session.StartedAt))
@@ -280,9 +312,17 @@ func (s *Server) superviseAssistantTasks(ctx context.Context, now time.Time) err
 		started, _ := parsePATime(task.CreatedAt)
 		stuckAfter := time.Duration(personalagent.EffectiveLimits(agent.Settings.Limits).StuckAfterMinutes) * time.Minute
 		lastNotice, noticed := parsePATime(task.LastEventAt)
+		// Told once per spell of failed attempts.
+		unreachable := func() bool {
+			since, _, ok := s.unreachableSince(ctx, session.ID)
+			return ok && now.Sub(since) >= serviceUnreachableAfter && (!noticed || lastNotice.Before(since))
+		}
+		kind := store.PersonalAgentTaskEventSilent
 		switch {
 		case task.StuckSince == "" && stuckAfter > 0 && !started.IsZero() && now.Sub(started) >= stuckAfter:
 			task.StuckSince = formatPATime(now)
+		case unreachable():
+			kind = assistantTaskEventUnreachable
 		case silentFor >= personalagent.TaskSilentAfter && (!noticed || lastNotice.Before(lastActivity.Add(personalagent.TaskSilentAfter))):
 		default:
 			continue
@@ -291,7 +331,7 @@ func (s *Server) superviseAssistantTasks(ctx context.Context, now time.Time) err
 		if err := s.store.UpdatePersonalAgentTask(ctx, task); err != nil {
 			return err
 		}
-		s.noticeAssistantTask(ctx, agent, task, session, store.PersonalAgentTaskEventSilent, now)
+		s.noticeAssistantTask(ctx, agent, task, session, kind, now)
 	}
 	return nil
 }

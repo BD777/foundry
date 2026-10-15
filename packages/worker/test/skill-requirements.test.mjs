@@ -56,7 +56,10 @@ test("programs are checked on PATH and missing ones reach the session", () => {
       pluginDir: "/p",
       skills: [{ name: "demo", dir }],
     });
-    assert.match(policy, /missing on this device: demo needs absent-tool\./);
+    assert.match(
+      policy,
+      /missing on this device: absent-tool \(needed by demo\)\./,
+    );
     assert.doesNotMatch(policy, /present-tool\b.*missing/);
   } finally {
     process.env.PATH = path;

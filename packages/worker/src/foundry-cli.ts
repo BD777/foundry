@@ -11,7 +11,7 @@
  *   foundry issue list|get      Issues, read-only
  *   foundry feishu subscribe|events  a connected Feishu app's events
  *   foundry workspace <verb>    find, read, create, change and archive workspaces
- *   foundry assistant <verb>    the assistant's memory, rules and tasks
+ *   foundry assistant <verb>    the assistant's memory, rules, tasks and the person's list
  *   foundry device list         devices, whether online, and what they offer
  *   foundry profile|model list  runnable profiles and their models
  *   foundry skill [name]        print or install a bundled skill

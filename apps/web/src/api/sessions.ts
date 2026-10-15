@@ -5,6 +5,7 @@ import type {
   AgentSubagentTranscript,
   SessionFileDiff,
   SessionFileRead,
+  SessionLink,
 } from "@bd777/foundry-protocol";
 import type {
   CreateAgentSessionInput,
@@ -37,6 +38,14 @@ export function getAgentSession(
   options: RequestOptions = {},
 ): Promise<AgentSession> {
   return request("GET", sessionPath(sessionId), options);
+}
+
+/** Names a session for a link to it; 403/404 when the caller may not view it. */
+export function getSessionLink(
+  sessionId: string,
+  options: RequestOptions = {},
+): Promise<SessionLink> {
+  return request("GET", `${sessionPath(sessionId)}/link`, options);
 }
 
 /** The sessions that worked for one Issue, oldest first as the server lists them. */

@@ -1,6 +1,8 @@
 // Devices and the worker each runs: its build, updates, connections and
 // diagnostics.
 
+import type { DeviceAccountShare } from "./device-sharing.js";
+
 export interface DeviceProjection {
   id: string;
   label: string;
@@ -38,6 +40,12 @@ export interface DeviceProjection {
    * reload when this changes.
    */
   skillsVersion?: string;
+  /**
+   * Other people's devices under the same system account of this computer:
+   * they work with the same files and sign-ins. The server adds it, for the
+   * device's owner only.
+   */
+  sharesSystemAccountWith?: DeviceAccountShare[];
 }
 
 export interface DeviceWorkerUpdate {

@@ -54,6 +54,26 @@ export const devices = {
     submit: "Save name",
     failed: "Could not rename the device.",
   },
+  accountShare: {
+    label: "Shares a system account with {{names}}",
+    body_one:
+      "{{names}} uses this computer account too: you work with the same files and the same Claude/Codex sign-ins here; Foundry does not keep your work apart.",
+    body_other:
+      "{{names}} use this computer account too: you work with the same files and the same Claude/Codex sign-ins here; Foundry does not keep your work apart.",
+    chosen: "Since {{date}}, chosen by {{acceptedBy}}.",
+    noticed_one:
+      "Foundry noticed this computer account is used by both of you.",
+    noticed_other:
+      "Foundry noticed this computer account is used by all of you.",
+    noticeTitle: "Someone else now uses this computer account",
+    notice_one:
+      "{{names}} now also uses the system account of {{device}} in Foundry: you share its files and Claude/Codex sign-ins.",
+    notice_other:
+      "{{names}} now also use the system account of {{device}} in Foundry: you share its files and Claude/Codex sign-ins.",
+    dismiss: "Got it",
+    dismissing: "Saving…",
+    dismissFailed: "Could not save that you read this notice.",
+  },
   details: {
     missing:
       "This device's worker is older than 0.5.7 and reports no system details; update it to see them.",
@@ -167,6 +187,29 @@ export const devices = {
     creating: "Creating…",
     create: "Create pairing command",
     failedTitle: "Could not create a pairing token",
+    consent: {
+      title: "This computer account is already in use",
+      body_one:
+        "This computer account is already used by {{names}} in Foundry. If you continue, you share it: you'll both work with the same files and the same Claude/Codex sign-ins on this account; nothing here keeps your work apart. To have your own separate space, create a separate system account on this computer.",
+      body_other:
+        "This computer account is already used by {{names}} in Foundry. If you continue, you share it: you'll all work with the same files and the same Claude/Codex sign-ins on this account; nothing here keeps your work apart. To have your own separate space, create a separate system account on this computer.",
+      continue: "Continue",
+      continuing: "Continuing…",
+      cancel: "Cancel",
+      cancelling: "Cancelling…",
+      failed: "Could not record your choice",
+      acceptedTitle: "You chose to share this computer account",
+      accepted:
+        "The computer finishes pairing on its own. Both devices will then show that they share this system account.",
+      cancelledTitle: "Pairing cancelled",
+      cancelled:
+        "This pairing was cancelled. To pair the computer, create a new pairing command.",
+      expiredTitle: "Pairing command expired",
+      expired:
+        "This token can no longer be used. Create a new pairing command.",
+      pairedTitle: "Device paired",
+      paired: "The computer is paired and now appears in your devices.",
+    },
   },
   removal: {
     title: "Remove device from Foundry?",
@@ -406,6 +449,44 @@ export const devices = {
           "Cleared; the next skill scan reads every skill again.",
         "recheck-agents": "Looking up Claude Code and Codex again.",
       },
+    },
+  },
+  labels: {
+    title: "What this computer has",
+    intro:
+      "Your assistant uses this to decide where new projects go: work that needs the company network or your work files goes to a computer that has them. Note what Foundry cannot detect; it adds the rest itself.",
+    yours: "Noted by you",
+    detected: "Detected by Foundry",
+    keyLabel: "Name",
+    valueLabel: "Value (optional)",
+    keyPlaceholder: "network",
+    valuePlaceholder: "corp",
+    remove: "Remove {{label}}",
+    add: "Add a note",
+    suggested: "Common notes",
+    suggest: "Add {{label}}",
+    empty: "Nothing noted yet.",
+    save: "Save notes",
+    saved: "Notes saved.",
+    saveFailed: "Couldn't save the notes.",
+    loading: "Loading what this computer has…",
+    loadFailed: "Couldn't load what this computer has.",
+    retry: "Try again",
+    invalid:
+      "A name uses letters, digits, '.', '_' or '-' (up to 40); a value is one line without ':'.",
+    nothingDetected:
+      "Nothing detected yet. It appears once the computer reports in.",
+    online: "Online {{percent}}% of the last {{days}} days",
+    onlineHours: "Online {{percent}}% of the last {{hours}} hours",
+    onlineNone:
+      "Foundry hasn't followed this computer long enough to tell how often it is on.",
+    facts: {
+      os: "System: {{detail}}",
+      arch: "Processor: {{value}}",
+      toolchain: "{{detail}}",
+      gpu: "Graphics: {{detail}}",
+      reaches: "Reaches {{detail}}",
+      "always-on": "Always on: connected nearly all of the last week",
     },
   },
 };

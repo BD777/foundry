@@ -134,6 +134,7 @@ var workspaceOwnedRows = []ownedRows{
 	{"agent_session_events", "session_id", ownerSession},
 	{"agent_session_native_ids", "session_id", ownerSession},
 	{"agent_session_usage_backfills", "session_id", ownerSession},
+	{"session_input_senders", "session_id", ownerSession},
 	{"session_tokens", "session_id", ownerSession},
 	{"feishu_gateway_grants", "session_id", ownerSession},
 	{"resource_waits", "session_id", ownerSession},

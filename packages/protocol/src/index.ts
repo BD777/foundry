@@ -32,10 +32,13 @@ export { subagentResponseFingerprint } from "./subagent-responses.js";
 
 export * from "./chat.js";
 export * from "./device.js";
+export * from "./device-placement.js";
+export * from "./device-sharing.js";
 export * from "./foundry-data.js";
 export * from "./issue.js";
 export * from "./model-context.js";
 export * from "./personal-agent.js";
+export * from "./personal-agent-list.js";
 export * from "./profiles.js";
 export * from "./session.js";
 export * from "./skills.js";

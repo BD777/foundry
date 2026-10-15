@@ -94,7 +94,15 @@ export async function resolveSessionContextWindow(
   catalog: CatalogReader = readCatalog,
 ): Promise<SessionContextWindow | undefined> {
   const id = model.trim();
-  if (!id || !appliesTo(profile)) return undefined;
+  if (!id) return undefined;
+  // Official Codex defaults to 272K even when its model supports a larger
+  // window. Opt known models into their supported window on every turn,
+  // including resumed sessions; never guess a larger window for unknown IDs.
+  if (profile.runtime === "codex" && profile.connectionType === "local_login") {
+    const tokens = officialContextWindow(id);
+    return tokens ? { model: id, tokens, source: "official" } : undefined;
+  }
+  if (!appliesTo(profile)) return undefined;
   const setting = profile.contextWindows?.[id];
   let endpoint: number | undefined;
   if (setting === undefined) {

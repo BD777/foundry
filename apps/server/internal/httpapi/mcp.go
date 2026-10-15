@@ -212,6 +212,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		notices := s.resourceNoticeContent(r.Context(), actorFromContext(r.Context()))
 		if err != nil {
 			status, message := cmp.Or(errorStatus(err), http.StatusConflict), err.Error()
+			var structured interface{ mcpText() string }
+			if errors.As(err, &structured) {
+				message = structured.mcpText()
+			}
 			if status == http.StatusUnauthorized || status == http.StatusForbidden {
 				s.writeMCPError(w, request.ID, -32600, message)
 				return
@@ -299,6 +303,8 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"remember":          mcpTextTool((*Server).rememberForMCP),
 	"update_rules":      mcpTextTool((*Server).updateRulesForMCP),
 	"list_tasks":        mcpTextTool((*Server).listTasksForMCP),
+	"update_list":       mcpTextTool((*Server).updateListForMCP),
+	"read_list":         mcpTextTool((*Server).readListForMCP),
 }
 
 // executeMCPToolContent runs a tool and answers its MCP content: one text

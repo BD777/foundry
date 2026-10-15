@@ -113,7 +113,7 @@ func TestLimitsRefusePastTheirValue(t *testing.T) {
 
 func TestWindowsStartInThePersonsTimeZone(t *testing.T) {
 	now := time.Date(2026, 10, 15, 1, 30, 0, 0, time.UTC) // Thursday 09:30 in Shanghai
-	windows := Windows(now, "Asia/Shanghai")
+	windows := Windows(now, Location(store.PersonalAgentSettings{Timezone: "Asia/Shanghai"}, ""))
 	if windows.DayStart != "2026-10-14T16:00:00Z" || windows.WeekStart != "2026-10-11T16:00:00Z" ||
 		windows.MonthStart != "2026-09-30T16:00:00Z" || windows.HourAgo != "2026-10-15T00:30:00Z" {
 		t.Fatalf("windows = %+v", windows)
@@ -217,5 +217,28 @@ func TestResumeReplyNamesTheStoppedWork(t *testing.T) {
 	}
 	if got := ResumeReply("en", nil); strings.Contains(got, "which ones") {
 		t.Errorf("nothing was stopped, yet the reply asks which: %q", got)
+	}
+}
+
+func TestLocationFallsBackByLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		label    string
+		settings store.PersonalAgentSettings
+		locale   string
+		want     string
+	}{
+		{"the setting", store.PersonalAgentSettings{Timezone: "Europe/Paris", Language: "zh-CN"}, "zh-CN", "Europe/Paris"},
+		{"a Chinese account", store.PersonalAgentSettings{}, "zh-CN", "Asia/Shanghai"},
+		{"a Chinese assistant", store.PersonalAgentSettings{Language: "zh"}, "en", "Asia/Shanghai"},
+		{"an English account", store.PersonalAgentSettings{}, "en", "UTC"},
+		{"no language", store.PersonalAgentSettings{}, "", "UTC"},
+		{"an unknown zone", store.PersonalAgentSettings{Timezone: "Mars/Olympus"}, "zh-CN", "Asia/Shanghai"},
+	} {
+		if got := Location(tc.settings, tc.locale).String(); got != tc.want {
+			t.Errorf("%s: %s, want %s", tc.label, got, tc.want)
+		}
+	}
+	if ValidTimezone(" Asia/Tokyo ") != "Asia/Tokyo" || ValidTimezone("Mars/Olympus") != "" || ValidTimezone("") != "" || ValidTimezone("Local") != "" {
+		t.Error("ValidTimezone")
 	}
 }

@@ -13,7 +13,11 @@ import { conversationStoragePrefixes } from "../../components/conversation/conve
 import type { ParsedImageTag } from "../../components/conversation/conversation-types";
 import { chatComposer } from "./chat-surface-composer";
 import { ChatSidebar } from "./chat-thread-view";
-import { ChatReadOnlyNotice, ChatWorkNote } from "./chat-thread-notices";
+import {
+  ChatDeviceNote,
+  ChatReadOnlyNotice,
+  ChatWorkNote,
+} from "./chat-thread-notices";
 import { useChatContextPanel } from "./use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
 
@@ -138,7 +142,19 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onAttachmentsRestore={props.onAttachmentsRestore}
             onImagePreview={setPreviewImage}
             notice={
-              panel.backgroundNote || panel.schedule ? (
+              props.offlineDevice ? (
+                <ChatDeviceNote
+                  device={props.offlineDevice.label}
+                  onCancel={
+                    props.offlineDevice.waitingSessionId && props.onCancelActive
+                      ? () =>
+                          props.onCancelActive?.(
+                            props.offlineDevice?.waitingSessionId,
+                          )
+                      : undefined
+                  }
+                />
+              ) : panel.backgroundNote || panel.schedule ? (
                 <ChatWorkNote
                   backgroundNote={panel.backgroundNote}
                   onRevealBackgroundWork={panel.revealBackgroundWork}

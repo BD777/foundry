@@ -15,6 +15,7 @@ export * from "./api/accounts";
 export * from "./api/chats";
 export * from "./api/connectors";
 export * from "./api/devices";
+export * from "./api/device-placement";
 export * from "./api/feishu";
 export * from "./api/foundry-data";
 export * from "./api/issues";

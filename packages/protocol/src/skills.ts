@@ -281,6 +281,17 @@ export interface SessionSkillRef {
   name: string;
   checksum: string;
   byteSize: number;
+  /** The bundle the skill came with, so a session can be told about a large
+   * bundle as one entry instead of skill by skill. */
+  bundle?: SessionSkillBundle;
+}
+
+/** The bundle a session skill came with. */
+export interface SessionSkillBundle {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
 }
 
 /** One row of a workspace's selection from the server skill catalog. */

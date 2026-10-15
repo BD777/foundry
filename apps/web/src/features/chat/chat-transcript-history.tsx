@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { formatBytes } from "../../lib/format";
@@ -18,8 +19,19 @@ export function ChatTranscriptHistory({
 }) {
   const { t } = useTranslation(["chat", "common"]);
   const hasEarlier = Object.keys(state.earlier).length > 0;
+  // Once older messages were offered, their row stays, as the conversation's
+  // start: it sits above every message, so if it went away when the last of
+  // them arrived, everything the person is reading would move up.
+  const [offeredEarlier, setOfferedEarlier] = useState(hasEarlier);
+  if (hasEarlier && !offeredEarlier) setOfferedEarlier(true);
   if (!state.loading && !state.failed && !hasEarlier && !state.earlierFailed)
-    return null;
+    return offeredEarlier ? (
+      <div className="fdy-chat-history" data-state="start">
+        <span className="fdy-chat-history-start">
+          {t("chat:history.start")}
+        </span>
+      </div>
+    ) : null;
   const progress = state.progress
     ? state.progress.totalBytes
       ? `${Math.min(99, Math.round((state.progress.loadedBytes / state.progress.totalBytes) * 100))}%`

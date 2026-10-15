@@ -17,12 +17,14 @@ import { serverErrorText } from "../../lib/errors";
 import {
   answerableProposal,
   answeredWithoutModel,
+  assistantActivity,
   assistantRuntime,
   channelCommand,
   placeProposals,
 } from "./assistant-model";
 import { AssistantGate } from "./assistant-gate";
 import type { AssistantFeatureEvent } from "./assistant-events";
+import { PersonList } from "./person-list";
 import { ProposalCard } from "./proposal-card";
 import { TaskList } from "./task-list";
 import { useAssistant, type AssistantController } from "./use-assistant";
@@ -70,6 +72,7 @@ export function AssistantHome({
               agent.settings,
             )}
             assistant={assistant}
+            devices={devices}
             home={home}
             homeOnline={
               home ? home.status === "connected" : overview.homeDeviceOnline
@@ -87,6 +90,7 @@ function AssistantHomeReady({
   agent,
   runtime,
   assistant,
+  devices,
   home,
   homeOnline,
   onEvent,
@@ -95,6 +99,7 @@ function AssistantHomeReady({
   agent: PersonalAgent;
   runtime: AssistantRuntime | undefined;
   assistant: AssistantController;
+  devices: DeviceProjection[];
   home: DeviceProjection | undefined;
   homeOnline: boolean;
   onEvent: (event: AssistantFeatureEvent) => void;
@@ -216,7 +221,24 @@ function AssistantHomeReady({
       });
     }
     const last = conversation.lines[conversation.lines.length - 1];
-    if (conversation.working && !last?.streaming)
+    const activity = assistantActivity(
+      conversation.latestSession,
+      devices,
+      Boolean(last?.streaming),
+    );
+    if (activity && activity !== "working")
+      items.push({
+        id: "assistant-waiting",
+        role: "bot",
+        kind: "waiting",
+        text: t("conversation.waitingForComputerDetail", {
+          computer: activity.waitingFor.label,
+        }),
+        title: t("conversation.waitingForComputer", {
+          computer: activity.waitingFor.label,
+        }),
+      });
+    else if (activity === "working")
       items.push({
         id: "assistant-working",
         role: "bot",
@@ -226,7 +248,13 @@ function AssistantHomeReady({
         streaming: true,
       });
     return items;
-  }, [conversation.lines, conversation.working, assistant.proposals, t]);
+  }, [
+    conversation.lines,
+    conversation.latestSession,
+    devices,
+    assistant.proposals,
+    t,
+  ]);
 
   const historyNotice =
     conversation.state === "loading" ? (
@@ -346,6 +374,14 @@ function AssistantHomeReady({
         />
       </section>
       <aside className="fdy-pa-home-side">
+        <PersonList
+          error={assistant.listItemsError}
+          items={assistant.listItems}
+          onDelete={assistant.deleteItem}
+          onEdit={assistant.editItem}
+          onTick={assistant.tickItem}
+          tasks={assistant.tasks}
+        />
         <TaskList
           error={assistant.listsError}
           onStop={assistant.stopTask}

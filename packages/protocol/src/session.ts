@@ -311,6 +311,11 @@ export interface AgentSessionEventMetadata {
    * WebSocket; the server keeps it for the profile and base URL.
    */
   codexTransport?: CodexTransportReport;
+  /**
+   * On a message's event (an input, or a message steered into a running
+   * turn): the session that sent it. Absent for what the person typed.
+   */
+  sentBySessionId?: string;
 }
 
 /** A Codex session's transport observation, for the profile it ran. */
@@ -456,10 +461,18 @@ export interface SessionInput {
    * because the timer was due while no agent process ran it.
    */
   timerFire?: AgentSessionTimerFire;
+  /** The session that sent the input; absent for what the person typed. */
+  sentBySessionId?: string;
 }
 
 /** Label of the transcript event each session input writes. */
 export const sessionInputEventLabel = "User message";
+
+/**
+ * Label of the transcript notice that a queued session's input waits for
+ * its device (offline, or online but not starting it yet).
+ */
+export const sessionDeviceWaitEventLabel = "Waiting for device";
 
 /**
  * One native agent session (a Claude Code or Codex session) for its whole
@@ -550,6 +563,16 @@ export interface AgentSession {
   /** Present while the agent holds timers that will wake the session. */
   scheduled?: AgentSessionSchedule;
   events?: AgentSessionEvent[];
+}
+
+/**
+ * A session as a link to it names it (GET /api/agent-sessions/{id}/link):
+ * where it is and the title its chat shows. Only for a viewer who may view it.
+ */
+export interface SessionLink {
+  id: string;
+  workspaceId: string;
+  title: string;
 }
 
 /**

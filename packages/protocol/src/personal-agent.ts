@@ -85,7 +85,10 @@ export interface PersonalAgentSettings {
   assistantName: string;
   /** A BCP 47 tag; empty: the account's language. */
   language: string;
-  /** An IANA zone; empty: the home device's. */
+  /**
+   * An IANA zone. The web fills an empty one from the browser; still empty:
+   * Asia/Shanghai when the language is Chinese, else UTC.
+   */
   timezone: string;
   speakingStyle: PersonalAgentSpeakingStyle;
   verbosity: PersonalAgentVerbosity;
@@ -178,6 +181,8 @@ export interface PersonalAgentOverview {
 /** POST /api/personal-agent: set the assistant up on this device. */
 export interface PersonalAgentSetupInput {
   deviceId: string;
+  /** The browser's IANA time zone: the setting's first value. */
+  timezone?: string;
 }
 
 /**
@@ -297,6 +302,11 @@ export interface PersonalAgentTask {
   endedAt?: string;
   /** Set once it ran past stuckAfterMinutes without anyone asking. */
   stuckSince?: string;
+  /**
+   * When listed: the name of the offline computer its session is queued
+   * for. It starts by itself once that computer is back online.
+   */
+  waitingFor?: string;
 }
 
 /** Why the server wakes the assistant about a task. */
@@ -447,7 +457,7 @@ export type PersonalAgentActionOutcome =
 
 /** Why a call was refused. */
 export type PersonalAgentRefusal =
-  "not_allowed" | "not_owner" | "limit" | "stopped" | "invalid";
+  "not_allowed" | "not_owner" | "limit" | "stopped" | "invalid" | "no_place";
 
 /**
  * One write tool call, refused ones included, or one approved proposal

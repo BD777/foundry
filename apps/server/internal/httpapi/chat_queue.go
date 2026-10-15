@@ -430,7 +430,7 @@ func (s *Server) chatQueueDeviceConnected(ctx context.Context, workspaceID strin
 		return s.hub.HasConnection(session.DeviceID)
 	}
 	input := store.CreateAgentSessionInput{WorkspaceID: workspaceID, AgentID: settings.AgentID, ProfileID: settings.ProfileID, Provider: settings.Provider}
-	if err := s.resolveSessionDevice(ctx, &input); err != nil {
+	if err := s.pickSessionDevice(ctx, &input, false); err != nil {
 		// Any other refusal fails the message when it is sent.
 		return errorStatus(err) != http.StatusConflict
 	}

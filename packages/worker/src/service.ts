@@ -11,7 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
@@ -390,6 +390,7 @@ WantedBy=default.target
       ]);
       if (!started) reportNotRunning(command);
       console.log(`Installed systemd user service: ${unitPath}`);
+      if (started) reportLingerOff();
       return started;
     }
     console.log(`Installed systemd user service: ${unitPath}`);
@@ -442,7 +443,29 @@ export async function stopDaemonProcess(): Promise<void> {
  */
 function reportNotRunning(command: string): void {
   console.error(
-    `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+    `\nThe worker is not running: this machine has no systemd user session to start it.\nIf you switched to this account with su or sudo, sign in to it directly instead (ssh, or machinectl shell <user>@) and run the command again.\nOr start it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+  );
+}
+
+/**
+ * Several people on one machine each run their own worker under their own
+ * account; a systemd user service stops when its account logs out unless
+ * the account lingers, which only an administrator can turn on.
+ */
+function reportLingerOff(): void {
+  const linger = spawnSync(
+    "loginctl",
+    [
+      "show-user",
+      String(process.getuid?.() ?? ""),
+      "--property=Linger",
+      "--value",
+    ],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+  if (linger.status !== 0 || linger.stdout.trim() !== "no") return;
+  console.log(
+    `This account's services stop when it logs out. To keep the worker running, an administrator can run: sudo loginctl enable-linger ${userInfo().username}`,
   );
 }
 

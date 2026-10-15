@@ -547,7 +547,8 @@ func TestClaimedNativeChatIsMergedIntoFoundryThread(t *testing.T) {
 	}
 }
 
-func TestCreateAgentSessionRequiresConnectedDaemon(t *testing.T) {
+// A session for an offline device is kept, queued, and waits for it.
+func TestCreateAgentSessionForAnOfflineDeviceWaits(t *testing.T) {
 	store := newEmptyTestStore(t)
 	server := NewServer(store)
 
@@ -562,12 +563,12 @@ func TestCreateAgentSessionRequiresConnectedDaemon(t *testing.T) {
 		"workspaceId":"ws_offline",
 		"agentId":"agent_offline",
 		"provider":"codex",
-		"prompt":"Do not persist this"
-	}`, http.StatusConflict)
+		"prompt":"Wait for the device"
+	}`, http.StatusCreated)
 
 	sessions := getJSONForTest(t, server, "/api/agent-sessions?workspaceId=ws_offline", http.StatusOK)
-	if len(sessions) != 0 {
-		t.Fatalf("expected disconnected send to create no sessions, got %#v", sessions)
+	if len(sessions) != 1 || sessions[0]["status"] != "queued" {
+		t.Fatalf("expected one session waiting for the offline device, got %#v", sessions)
 	}
 }
 

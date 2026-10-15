@@ -1,6 +1,7 @@
 package sqlitestore
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -52,17 +53,23 @@ func (s *Store) CreateDevicePairingToken(ctx context.Context, tokenHash, userID 
 }
 
 func (s *Store) PairDevice(ctx context.Context, input store.PairDeviceInput) (store.DeviceIdentity, error) {
-	fingerprint := strings.TrimSpace(input.MachineFingerprint)
-	if fingerprint == "" {
+	legacy := strings.TrimSpace(input.MachineFingerprint)
+	if legacy == "" {
 		return store.DeviceIdentity{}, errors.New("machine fingerprint is required")
 	}
+	// A worker that reports its own fingerprint is keyed by it; one before
+	// it keeps the machine's.
+	key := cmp.Or(strings.TrimSpace(input.WorkerFingerprint), legacy)
+	account := strings.TrimSpace(input.Identity.OSAccountFingerprint)
+	host := strings.TrimSpace(input.Identity.HostFingerprint)
 	var identity store.DeviceIdentity
+	var shared *store.DeviceAccountSharedError
 	err := s.withTx(ctx, func(tx *Store) error {
-		var userID, expiresAt string
+		var userID, expiresAt, consent string
 		var usedAt sql.NullString
 		err := tx.conn().QueryRowContext(ctx,
-			`SELECT user_id, expires_at, used_at FROM device_pairing_tokens WHERE token_hash = ?`,
-			input.TokenHash).Scan(&userID, &expiresAt, &usedAt)
+			`SELECT user_id, expires_at, used_at, consent FROM device_pairing_tokens WHERE token_hash = ?`,
+			input.TokenHash).Scan(&userID, &expiresAt, &usedAt, &consent)
 		if errors.Is(err, sql.ErrNoRows) {
 			return store.ErrDevicePairingInvalid
 		}
@@ -72,6 +79,9 @@ func (s *Store) PairDevice(ctx context.Context, input store.PairDeviceInput) (st
 		if usedAt.Valid || !input.Now.Before(parseStoredTime(expiresAt)) {
 			return store.ErrDevicePairingInvalid
 		}
+		if consent == pairingConsentCancelled {
+			return store.ErrDevicePairingCancelled
+		}
 		owner, err := tx.GetUser(ctx, userID)
 		if err != nil {
 			return err
@@ -80,68 +90,119 @@ func (s *Store) PairDevice(ctx context.Context, input store.PairDeviceInput) (st
 			return store.ErrDevicePairingInvalid
 		}
 
-		deviceID, existing, err := tx.pairedDeviceID(ctx, userID, fingerprint, input.RequestedDeviceID)
+		match, err := tx.pairedDevice(ctx, userID, key, legacy, account, input.RequestedDeviceID)
 		if err != nil {
 			return err
 		}
+		deviceID := match.deviceID
+		others, err := tx.otherAccountUsers(ctx, account, userID, deviceID)
+		if err != nil {
+			return err
+		}
+		if len(others) > 0 && !input.AcceptSharedAccount && consent != pairingConsentAccepted {
+			shared = &store.DeviceAccountSharedError{SharedWith: ownerNames(others)}
+			return shared
+		}
 		now := formatTime(input.Now)
-		if existing {
+		if match.rowDeviceID != "" {
 			_, err = tx.conn().ExecContext(ctx, `UPDATE device_identities
-				SET device_id = ?, credential_hash = ?, paired_at = ?, revoked_at = NULL
-				WHERE owner_user_id = ? AND machine_fingerprint = ?`,
-				deviceID, input.CredentialHash, now, userID, fingerprint)
+				SET device_id = ?, machine_fingerprint = ?, credential_hash = ?, paired_at = ?, revoked_at = NULL,
+					os_account_fingerprint = CASE WHEN ? = '' THEN os_account_fingerprint ELSE ? END,
+					host_fingerprint = CASE WHEN ? = '' THEN host_fingerprint ELSE ? END
+				WHERE device_id = ?`,
+				deviceID, key, input.CredentialHash, now, account, account, host, host, match.rowDeviceID)
 		} else {
 			_, err = tx.conn().ExecContext(ctx, `INSERT INTO device_identities
-				(device_id, owner_user_id, machine_fingerprint, credential_hash, paired_at)
-				VALUES (?, ?, ?, ?, ?)`,
-				deviceID, userID, fingerprint, input.CredentialHash, now)
+				(device_id, owner_user_id, machine_fingerprint, credential_hash, paired_at, os_account_fingerprint, host_fingerprint)
+				VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				deviceID, userID, key, input.CredentialHash, now, account, host)
 		}
 		if err != nil {
 			return fmt.Errorf("save device identity: %w", err)
+		}
+		for _, other := range others {
+			// The later device records the choice; the one there first owes
+			// its owner a notice.
+			if _, err := tx.conn().ExecContext(ctx, `INSERT OR IGNORE INTO device_account_shares
+				(device_id, shared_device_id, accepted_by_user_id, accepted_at) VALUES (?, ?, ?, ?)`,
+				deviceID, other.deviceID, userID, now); err != nil {
+				return fmt.Errorf("record shared system account: %w", err)
+			}
 		}
 		if _, err := tx.conn().ExecContext(ctx,
 			`UPDATE device_pairing_tokens SET used_at = ?, used_by_device_id = ? WHERE token_hash = ?`,
 			now, deviceID, input.TokenHash); err != nil {
 			return fmt.Errorf("consume device pairing token: %w", err)
 		}
-		identity = store.DeviceIdentity{DeviceID: deviceID, OwnerUserID: userID, MachineFingerprint: fingerprint, PairedAt: input.Now}
+		identity = store.DeviceIdentity{DeviceID: deviceID, OwnerUserID: userID, MachineFingerprint: key, PairedAt: input.Now}
 		return nil
 	})
+	if shared != nil {
+		// Nothing was paired; the token now says what it waits for, so the
+		// web can ask the person too.
+		if err := s.notePairingNeedsConsent(ctx, input.TokenHash, shared.SharedWith); err != nil {
+			return store.DeviceIdentity{}, err
+		}
+	}
 	return identity, err
 }
 
-// pairedDeviceID picks the device id for a pairing. The same account on the
-// same machine keeps its device unless that device was removed; otherwise the
-// worker's local id is kept when nobody else holds it.
-func (s *Store) pairedDeviceID(ctx context.Context, userID, fingerprint, requested string) (string, bool, error) {
-	var current string
+// pairingMatch is the device a pairing becomes: deviceID, and the identity
+// row it takes over (rowDeviceID), if any.
+type pairingMatch struct {
+	deviceID    string
+	rowDeviceID string
+}
+
+// pairedDevice picks the device a pairing becomes. The same account on the
+// same worker keeps its device unless that device was removed; a device
+// paired before workers reported their own fingerprint (keyed by the
+// machine's) is kept only for the same system account, or when the worker
+// still holds its id. Otherwise the worker's local id is kept when nobody
+// else holds it.
+func (s *Store) pairedDevice(ctx context.Context, userID, key, legacy, account, requested string) (pairingMatch, error) {
+	requested = strings.TrimSpace(requested)
+	var match pairingMatch
 	err := s.conn().QueryRowContext(ctx,
 		`SELECT device_id FROM device_identities WHERE owner_user_id = ? AND machine_fingerprint = ?`,
-		userID, fingerprint).Scan(&current)
-	existing := err == nil
+		userID, key).Scan(&match.rowDeviceID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", false, fmt.Errorf("find paired device: %w", err)
+		return match, fmt.Errorf("find paired device: %w", err)
 	}
-	if existing {
-		removed, err := s.DeviceRemoved(ctx, current)
+	if errors.Is(err, sql.ErrNoRows) && key != legacy {
+		var current, recorded string
+		err = s.conn().QueryRowContext(ctx,
+			`SELECT device_id, os_account_fingerprint FROM device_identities WHERE owner_user_id = ? AND machine_fingerprint = ?`,
+			userID, legacy).Scan(&current, &recorded)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return match, fmt.Errorf("find paired device: %w", err)
+		}
+		if err == nil && ((account != "" && recorded == account) || (recorded == "" && current == requested)) {
+			match.rowDeviceID = current
+		}
+	}
+	if match.rowDeviceID != "" {
+		removed, err := s.DeviceRemoved(ctx, match.rowDeviceID)
 		if err != nil {
-			return "", false, err
+			return match, err
 		}
 		if !removed {
-			return current, true, nil
+			match.deviceID = match.rowDeviceID
+			return match, nil
 		}
 	}
-	requested = strings.TrimSpace(requested)
-	if requested != "" && requested != current {
+	if requested != "" && requested != match.rowDeviceID {
 		free, err := s.deviceIDFree(ctx, requested)
 		if err != nil {
-			return "", false, err
+			return match, err
 		}
 		if free {
-			return requested, existing, nil
+			match.deviceID = requested
+			return match, nil
 		}
 	}
-	return "dev_" + uuid.NewString(), existing, nil
+	match.deviceID = "dev_" + uuid.NewString()
+	return match, nil
 }
 
 func (s *Store) deviceIDFree(ctx context.Context, deviceID string) (bool, error) {

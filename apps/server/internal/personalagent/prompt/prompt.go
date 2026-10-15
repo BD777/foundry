@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -30,7 +31,7 @@ var system string
 // Version names system.md as embedded; it is stored as each assistant's
 // prompt_version. Bump it whenever system.md changes (prompt_test holds the
 // hash of every version).
-const Version = "2026-10-15.4"
+const Version = "2026-10-15.6"
 
 // Limits mirrored from personalagent/defaults.go.
 const (
@@ -38,6 +39,7 @@ const (
 	indexMaxEntries   = 40
 	indexMaxTokens    = 3000
 	extraMaxChars     = 2000
+	listContextMax    = 20
 	digestStaleAfter  = 7 * 24 * time.Hour
 	defaultNameZH     = "助理"
 	defaultNameEN     = "Assistant"
@@ -63,9 +65,6 @@ type Input struct {
 	// AccountLanguage is the person's account language, used when
 	// Settings.Language is empty.
 	AccountLanguage string
-	// HomeTimezone is the home device's IANA zone, used when
-	// Settings.Timezone is empty.
-	HomeTimezone string
 	// HomeDeviceID is the device the assistant's folder is on.
 	HomeDeviceID string
 	// Memory is the person's pa_memory items; only active ones are shown.
@@ -75,8 +74,13 @@ type Input struct {
 	Workspaces []store.WorkspaceDigest
 	// Devices are the digests of the devices the person owns.
 	Devices []store.DeviceDigest
+	// Places are those devices' labels and detected facts, by device id.
+	Places map[string]store.DevicePlacement
 	// Tasks are the assistant's pa_tasks; only unfinished ones are shown.
 	Tasks []store.PersonalAgentTask
+	// List is the person's list (pa_items); TurnContext shows the open
+	// items.
+	List []store.PersonalAgentListItem
 	// ConnectorsURL and SettingsURL are the Foundry pages where the person
 	// connects their accounts (Feishu and other sign-ins) and changes the
 	// assistant's settings. Empty: not shown.
@@ -93,8 +97,9 @@ func System() string { return system }
 
 // Fill renders the appended system prompt of an assistant session. It is
 // the same text for the same person, settings, memory, projects and
-// computers, whatever in.Now, in.Tasks, the computers' online state and
-// in.DirectChatPreviousWorkspaceID are (TurnContext carries those); only
+// computers, whatever in.Now, in.Tasks, in.List, the computers' online
+// state and in.DirectChatPreviousWorkspaceID are (TurnContext carries
+// those); only
 // the day a project's summary turns stale changes it.
 func Fill(in Input) string {
 	location := timeLocation(in)
@@ -173,9 +178,9 @@ const (
 )
 
 // TurnContext is what Foundry adds to each turn's input of an assistant
-// session: the time now, which computers are online, the work the assistant
-// follows up and where the person's direct chat went before it. It is
-// Foundry's, never the person's words.
+// session: the time now, which computers are online, the open items of the
+// person's list, the work the assistant follows up and where the person's
+// direct chat went before it. It is Foundry's, never the person's words.
 func TurnContext(in Input) string {
 	location := timeLocation(in)
 	var out strings.Builder
@@ -201,6 +206,8 @@ func TurnContext(in Input) string {
 	for _, digest := range in.Workspaces {
 		names[digest.WorkspaceID] = digest.Name
 	}
+	out.WriteString("The person's list, open (their plans; change it with update_list):\n")
+	writeList(&out, in.List, location)
 	out.WriteString("Work you are following up:\n")
 	writeTasks(&out, in.Tasks, names, location)
 	if id := in.DirectChatPreviousWorkspaceID; id != "" && names[id] != "" {
@@ -339,7 +346,7 @@ func writeDevices(out *strings.Builder, in Input) {
 		}
 		if setting.AllowCreate {
 			if device.DeviceID == preferred {
-				parts = append(parts, "new projects go here first")
+				parts = append(parts, "may hold new projects, the default place for self-contained work")
 			} else {
 				parts = append(parts, "may hold new projects")
 			}
@@ -347,8 +354,34 @@ func writeDevices(out *strings.Builder, in Input) {
 		if len(device.Runtimes) > 0 {
 			parts = append(parts, "runs "+strings.Join(device.Runtimes, ", "))
 		}
+		place := in.Places[device.DeviceID]
+		if len(place.Labels) > 0 {
+			labels := make([]string, len(place.Labels))
+			for i, label := range place.Labels {
+				labels[i] = labelText(label.Key, label.Value)
+			}
+			parts = append(parts, "the person says it has "+strings.Join(labels, ", "))
+		}
+		if len(place.Facts) > 0 {
+			facts := make([]string, len(place.Facts))
+			for i, fact := range place.Facts {
+				facts[i] = labelText(fact.Key, fact.Value)
+				if fact.Source == "connector" && fact.Detail != "" {
+					facts[i] += " (" + fact.Detail + ")"
+				}
+			}
+			parts = append(parts, "Foundry found "+strings.Join(facts, ", "))
+		}
 		fmt.Fprintf(out, "- %s [%s]: %s\n", quote(device.Label), device.DeviceID, strings.Join(parts, "; "))
 	}
+}
+
+// labelText is a label or fact as the assistant passes it in needs.
+func labelText(key, value string) string {
+	if value == "" {
+		return key
+	}
+	return key + ":" + value
 }
 
 func writeTasks(out *strings.Builder, tasks []store.PersonalAgentTask, names map[string]string, location *time.Location) {
@@ -370,6 +403,9 @@ func writeTasks(out *strings.Builder, tasks []store.PersonalAgentTask, names map
 			project = task.WorkspaceID
 		}
 		parts := []string{taskStatusLabels[task.Status]}
+		if task.WaitingFor != "" {
+			parts[0] = fmt.Sprintf("waiting for %s to come online; it starts by itself then", task.WaitingFor)
+		}
 		if task.ReadOnly {
 			parts = append(parts, "read-only")
 		}
@@ -382,6 +418,49 @@ func writeTasks(out *strings.Builder, tasks []store.PersonalAgentTask, names map
 			parts = append(parts, "helper "+task.SessionID)
 		}
 		fmt.Fprintf(out, "- %s in %s [%s]: %s\n", quote(task.Title), quote(project), task.ID, strings.Join(parts, "; "))
+	}
+}
+
+// writeList shows the open items of the person's list, oldest first, at
+// most listContextMax of them.
+func writeList(out *strings.Builder, items []store.PersonalAgentListItem, location *time.Location) {
+	open := []store.PersonalAgentListItem{}
+	for _, item := range items {
+		if item.Status == store.PersonalAgentItemOpen {
+			open = append(open, item)
+		}
+	}
+	if len(open) == 0 {
+		out.WriteString("Nothing.\n")
+		return
+	}
+	sort.SliceStable(open, func(i, j int) bool { return open[i].CreatedAt < open[j].CreatedAt })
+	for i, item := range open {
+		if i == listContextMax {
+			fmt.Fprintf(out, "- …and %d more; read_list shows them.\n", len(open)-i)
+			return
+		}
+		parts := []string{}
+		if item.When != "" {
+			parts = append(parts, quote(item.When))
+		}
+		if item.At != "" {
+			when := clock(item.At, location)
+			if item.Remind && item.RemindedAt == "" {
+				when = "reminder at " + when
+			} else if item.Remind {
+				when = "reminded at " + when
+			}
+			parts = append(parts, when)
+		}
+		if item.TaskID != "" {
+			parts = append(parts, "your task "+item.TaskID)
+		}
+		line := fmt.Sprintf("- %s [%s]", quote(item.Text), item.ID)
+		if len(parts) > 0 {
+			line += ": " + strings.Join(parts, "; ")
+		}
+		out.WriteString(line + "\n")
 	}
 }
 
@@ -467,15 +546,7 @@ func languageName(tag string) string {
 }
 
 func timeLocation(in Input) *time.Location {
-	for _, zone := range []string{in.Settings.Timezone, in.HomeTimezone} {
-		if zone == "" {
-			continue
-		}
-		if location, err := time.LoadLocation(zone); err == nil {
-			return location
-		}
-	}
-	return time.UTC
+	return personalagent.Location(in.Settings, in.AccountLanguage)
 }
 
 // stale: the project's summary is missing or older than digestStaleAfter.

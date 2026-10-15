@@ -16,6 +16,7 @@ export type TranscriptEntry = TranscriptMessage &
     | "usage"
     | "fileReferences"
     | "turnFiles"
+    | "sentBySessionId"
   > & {
     /**
      * This step's own identity where `id` is shared: `id` names the provider

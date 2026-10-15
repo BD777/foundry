@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   deviceConnectorsCapability,
+  deviceSharingCapability,
   resourceComputeCapability,
   resourceOperationsCapability,
   resourcesCapability,
@@ -52,6 +53,7 @@ import { getJSON, postJSON } from "./server-http.js";
 import { providerHealthData } from "./provider-health.js";
 import { agentProfilesForWorkspace, profileFingerprint } from "./profiles.js";
 import { deviceSystem, getDevice } from "./device.js";
+import { deviceAccountIdentity } from "./device-pairing.js";
 import { managedRoots } from "./personal-agent-settings.js";
 import { runningWorker } from "./worker-identity.js";
 import { optionValue, safeID, sizeLabel } from "./utils.js";
@@ -428,6 +430,7 @@ export const daemonCapabilities = [
   resourcesCapability,
   resourceOperationsCapability,
   resourceComputeCapability,
+  deviceSharingCapability,
 ];
 
 /**
@@ -459,6 +462,8 @@ export function daemonRegistration(workspacePath: string): {
   skills: SkillPackRef[];
   workspace: WorkspaceProjection;
   workspaceFiles: WorkspaceFileEntry[];
+  /** The system account and machine, as hashes (device-pairing.ts). */
+  identity: ReturnType<typeof deviceAccountIdentity>;
 } {
   const device = getDevice();
   const workspaceProjection = workspaceProjectionForPath(workspacePath, device);
@@ -492,6 +497,7 @@ export function daemonRegistration(workspacePath: string): {
       workspacePath,
       workspaceProjection.id,
     ),
+    identity: deviceAccountIdentity(),
   };
 }
 
@@ -520,6 +526,7 @@ export function daemonDeviceRegistration(): Omit<
     providerHealth: providerHealthData(),
     skills: [],
     workspaceFiles: [],
+    identity: deviceAccountIdentity(),
   };
 }
 

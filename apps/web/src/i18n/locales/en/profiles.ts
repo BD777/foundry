@@ -261,7 +261,7 @@ export const profiles = {
   accountDefaults: {
     sectionLabel: "{{runtime}} runtime defaults",
     codexCatalog:
-      "Official catalog from Codex. The native CLI may use its built-in fallback; account availability can differ.",
+      "Models from OpenAI’s published Codex catalog and the native CLI. Offline results may be older; availability depends on your account and CLI version.",
     claudeCatalog: "Official options reported by Claude Code on this device.",
     loadFailed: "Could not load official models. Retry.",
     hint: "Defaults for new sessions on {{device}}. Existing sessions are unchanged.",

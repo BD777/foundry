@@ -25,6 +25,7 @@ type Backend interface {
 	store.AccountStore
 	store.OwnershipStore
 	store.DeviceCredentialStore
+	store.DeviceSharingStore
 	store.RequestLedger
 	store.DaemonChangeStore
 	store.WorkspaceDeletionStore
@@ -34,6 +35,7 @@ type Backend interface {
 	store.ActiveAgentSessionStore
 	store.QueuedAgentSessionStore
 	store.SessionEventRecorder
+	store.SessionInputSenderStore
 	store.SessionEventWindowStore
 	store.SessionEventCatchUpStore
 	store.SessionStateStore
@@ -50,7 +52,9 @@ type Backend interface {
 	store.FeishuGatewayStore
 	store.DeviceConnectorStore
 	store.PersonalAgentStore
+	store.PersonalAgentListStore
 	store.WorkspaceDigestStore
+	store.DevicePlacementStore
 	feishuAppStore
 	secretKeeper
 	deviceNamer
@@ -230,6 +234,8 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server})
 	issues.observe(feishuReactions{server.feishu})
 	server.observeWorkspaceDigests(sessions, issues)
+	server.observeDeviceSharing()
+	server.trackDevicePresence()
 	return server
 }
 

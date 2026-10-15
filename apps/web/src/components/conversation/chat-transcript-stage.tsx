@@ -33,6 +33,7 @@ import {
 } from "./chat-transcript-index";
 import {
   CHAT_VIRTUOSO_VIEWPORT,
+  chatFirstRowsShift,
   estimateChatMessageHeight,
 } from "./chat-virtualization";
 import type { ChatScrollFollowController } from "./use-chat-scroll-follow";
@@ -95,8 +96,14 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
   const { t } = useTranslation("conversation");
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null);
-  const { contentRef, contentResized, readHistory, viewportRef } =
-    scrollController;
+  const {
+    contentRef,
+    contentResized,
+    readHistory,
+    readingHistory,
+    viewportRef,
+  } = scrollController;
+  const renderedRef = useRef<readonly ListItem<ChatMessageItem>[]>([]);
   const anchors = useMemo(() => buildChatTurnAnchors(messages), [messages]);
   const heightEstimates = useMemo(
     () => messages.map(estimateChatMessageHeight),
@@ -120,17 +127,31 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
     },
     [viewportRef],
   );
-  const { onContentResized, onItemsRendered } = navigation;
+  const { onContentResized, onItemsRendered, topRows } = navigation;
   const handleItemsRendered = useCallback(
-    (items: ListItem<ChatMessageItem>[]): void =>
-      onItemsRendered(chatRenderedRows(items, firstItemIndex)),
-    [firstItemIndex, onItemsRendered],
+    (items: ListItem<ChatMessageItem>[]): void => {
+      const shift = chatFirstRowsShift(
+        renderedRef.current,
+        items,
+        topRows()[0]?.index ?? 0,
+      );
+      renderedRef.current = items;
+      // Virtuoso measures rows before paint
+      // (`skipAnimationFrameInResizeObserver`), and its compensation for the
+      // other rows, like this one, runs right there: no frame shows the
+      // shifted rows.
+      if (shift !== 0 && readingHistory()) {
+        virtuosoRef.current?.scrollBy({ top: shift });
+      }
+      onItemsRendered(chatRenderedRows(items, firstItemIndex));
+    },
+    [firstItemIndex, onItemsRendered, readingHistory, topRows],
   );
   const prependAnchor = useChatPrependAnchor({
     firstItemIndex,
     messages,
     personScrolling: scrollController.personScrolling,
-    topRows: navigation.topRows,
+    topRows,
     virtuosoRef,
   });
   const { navigateTo } = navigation;
@@ -196,6 +217,7 @@ export const ChatTranscriptStage = memo(function ChatTranscriptStage({
         overscan={CHAT_VIRTUOSO_VIEWPORT.overscan}
         ref={virtuosoRef}
         scrollerRef={bindScroller}
+        skipAnimationFrameInResizeObserver
         startReached={onReachHistoryStart}
         totalListHeightChanged={handleTotalHeightChanged}
       />

@@ -133,6 +133,8 @@ const (
 	// The device owner's resource settings, which the worker enforces too.
 	wsResourceSettingsType        = "resource_settings"
 	wsResourceSettingsAppliedType = "resource_settings_applied"
+	// Who else uses the device's system account (device_sharing.go).
+	wsDeviceSharingType = "device_sharing"
 )
 
 type wsEnvelope struct {

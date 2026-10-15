@@ -44,6 +44,7 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	// The server's clock, never the worker's: the store keeps this time,
 	// so the streamed event and a later read of it agree.
 	payload.Event.At = time.Now().UTC().Format(time.RFC3339Nano)
+	payload.Event = c.hub.withSteerSender(ctx, payload.Event)
 	// An event sent again (its acknowledgement was late) is acknowledged
 	// again and nothing else: no new time, no stream, no cache change.
 	stored, err := c.recordSessionEvent(ctx, payload.Event)

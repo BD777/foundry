@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { readDaemonConfig, writeDaemonConfig } from "../config.js";
 import { devicePath, getDevice } from "../device.js";
-import { pairDevice } from "../device-pairing.js";
 import { prepareExplicitRepair } from "../device-removal.js";
+import { pairWithConsent } from "../pairing-consent.js";
 import { syncReviews } from "../issues.js";
 import { registerExecutionWorkspace } from "../repository-registry.js";
 import {
@@ -65,7 +65,9 @@ async function pairWithServer(
     );
   }
   const previousDeviceId = getDevice().id;
-  const { deviceId, credential } = await pairDevice(serverURL, token);
+  const { deviceId, credential } = await pairWithConsent(serverURL, token, {
+    shareSystemAccount: optionEnabled(args, "--share-system-account"),
+  });
   // A new device starts with no workspaces: registrations this machine kept
   // for the device it was before belong to that device, not to this one. The
   // folders themselves are left as they are.

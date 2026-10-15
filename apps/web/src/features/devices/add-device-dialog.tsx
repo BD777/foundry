@@ -11,6 +11,7 @@ import {
   useWorkerRelease,
 } from "../../lib/worker-commands";
 import { Dialog } from "../../components/ui/dialog";
+import { PairingProgress } from "./pairing-progress";
 
 /**
  * Adding a device (a one-time pairing token and the one command that installs
@@ -92,6 +93,7 @@ export function AddDeviceDialog({ onClose }: { onClose: () => void }) {
                 {t("add.newToken")}
               </Button>
             </div>
+            <PairingProgress token={pairing.token} />
           </>
         ) : (
           <div className="fdy-add-device-actions">
