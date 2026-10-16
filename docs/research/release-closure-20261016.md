@@ -64,3 +64,12 @@ Catalog device 指定通过哪台在线设备查询模型目录。它不改变�
 - 10 项 Web UI 审计、协议契约、模块边界、安装包体积及用例校验通过。Worker 安装体积 3 MB；用例校验保留其原有“尚未自动化”覆盖提示，不等同于所有人工场景都执行过。
 
 Web 完整重跑 791/791 pass、0 skip（421.845 秒）；最终 `go vet ./...` 通过。最终修改文件的格式及 `git diff --check` 通过。
+
+## 提交和结项发布（00:25）
+
+- 代码提交 `717f548` 已推送至 `release/2026-10-16-updates`，PR #133 的描述已更新为最终实现、验证及边界，不再保留早期“steer 尚未实现”的过期说法。
+- 该干净提交对应发布包 `0.5.7-dev.31.g717f548`；打包后 301 个 dist 文件与本地构建逐字节一致。原子切换 manifest，保留旧 tarball 和旧 manifest 备份；公网 release API 已返回新版。
+- 服务端在私有 SQLite 备份完成后重启，内部 `/healthz` 返回 200，Worker 重新连接，加载工作区派发记录清理补丁。
+- sg-chaos、byte-dev、byte-dev-sg、cottoncpp、Mac mini 五台 Worker 均登记新版并在线。byte-dev 更新操作的 compute 返回中途断开，随后登记确认新版已正常连回，不能把连接切换误报为安装失败。
+- MacBook compute 被另一业务会话持有，没有抢占或唤醒持有者。其 Worker / host 的前一版本配置隔离已经生效，本轮最终错误路径补丁待更新至上述新包。
+- 本会话等在途 host 继续原进程，按既有空闲策略换代；byte-dev 的 legacy host 延期仍保留。不把 Worker 安装版本当作所有 native 进程的实际版本。
