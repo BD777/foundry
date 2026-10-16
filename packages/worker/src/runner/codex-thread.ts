@@ -62,6 +62,7 @@ export async function openCodexThread(
     ...role?.thread,
   };
   const requestedNativeSessionId = session.nativeSessionId?.trim();
+  const profileConfig = codexProfileConfig(profile, env);
   cleanupActiveCodexThreads();
   const runtimeKey = activeRuntimeKey(
     "codex",
@@ -72,6 +73,8 @@ export async function openCodexThread(
     {
       ...threadOptions,
       ...sessionConfig,
+      profileConfig,
+      configurationHome: env.CODEX_HOME,
       transport: codexTransportPlan(profile),
     },
   );
@@ -93,7 +96,7 @@ export async function openCodexThread(
   const secrets = codexSessionSecretsConfig();
   const clientOptions = {
     config: {
-      ...codexProfileConfig(profile, env),
+      ...profileConfig,
       ...sessionConfig,
       ...codexFoundryTools(session)?.config,
       ...secrets,
@@ -105,6 +108,10 @@ export async function openCodexThread(
     },
   };
   await emit("Started Codex", `native app-server · ${codexCommand}`);
+  await emit(
+    "Execution configuration",
+    `Foundry-managed configuration: ${env.CODEX_HOME}. Native user/project settings are not inherited.`,
+  );
   const thread = new CodexAppServerThread(
     codexCommand,
     env,

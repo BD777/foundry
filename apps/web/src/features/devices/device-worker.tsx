@@ -138,6 +138,8 @@ export function workerUpdateStepLabel(
         : t("worker.steps.installing");
     case "restarting":
       return t("worker.steps.restarting");
+    case "waiting":
+      return t("worker.steps.waiting");
     default:
       return undefined;
   }

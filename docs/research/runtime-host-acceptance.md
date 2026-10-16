@@ -2,7 +2,18 @@
 
 2026-10-16；接续 `runtime-integration-gap.md` 的改造前分析。此记录区分实现、实测和部署，不把代码推送当作线上生效。
 
-## 实现边界
+## 2026-10-16 macOS 补齐
+
+以下为当前增量；后文的首次验收与发布状态保留为历史记录。
+
+- macOS 由独立 launchd job 托管 execution host；沿用原签名 Worker App 的可配置启动入口，Worker 与 host 分属两个 job。Linux 保持独立 systemd service。
+- 新 Worker 接回原 host；host 有活动 turn、后台任务、计时器或在途操作时不升级，完全空闲后以 drain 握手切换新版。无需手工停服务，但不是进程内热替换。
+- Mac native 进程增加父进程监护，host 被杀时回收原进程组；结果明确失败，不重复执行未知工具操作。
+- 首次旧架构迁移等待服务端活动输入、旧 Worker 子进程全部结束；最终检查期间暂停旧 Worker，异常时恢复。旧 SDK 的内存无法迁移。
+- watchdog 使用稳定脚本路径，核对实际 Worker PID 和启动身份，更新期间避让；不会以 execution job 为重启目标。
+- 最新定向测试：Mac 30 项全部通过；Linux 28 项通过、2 项 Mac 专用跳过。真实 OS 服务与 App 启动入口，native CLI 使用测试替身；验证 Worker 退出接回同一 native PID/启动身份、忙时延迟与空闲切换、host SIGKILL 清理、长 socket 路径、账号环境保留、首次迁移失败恢复、watchdog 身份核对。
+
+## 首次实现边界（历史）
 
 - Codex 从 SDK 的执行封装切到同一原生 CLI 的 app-server。一个 turn 只有一个原生执行者，执行、steer、interrupt 共享其 thread/turn 身份。Claude 仍走原生 Agent SDK。
 - 业务会话、输入 ID、Server 队列、权限、Issue 候选与验收模型保持原有职责。适配器把原生通知映射为既有事件；上层不消费 Codex RPC。
@@ -50,3 +61,15 @@ gpt-6-astra 的原生已知上限为 872000，95% 可用空间对应 828400。�
 ## 发布状态
 
 实现提交 `a7caf96` 已推送到 `release/2026-10-16-updates`（PR #133）。Server 已重启，健康检查通过；发布接口已提供 `0.5.7-dev.28.ga7caf96`，本机新 runtime 已安装。首次 Worker 切换须等本次旧版轮次结束，不能把安装成功描述为活动 Worker 已换代。部署监视任务在设备空闲后切换，并核对新 Worker 注册版本、Codex steer capability 和执行服务身份；结果写入本机私有 maintenance 目录。
+
+## 2026-10-16 13:35 部署验收增量
+
+- 服务端重启前使用 SQLite online backup 保存到本机私有 `~/.foundry/server-backups/mac-host-20261016-132909/`；重启后 `/healthz` 正常。
+- 发布并安装 `0.5.7-dev.30.gca56545.local.1792128550`；服务端设备记录确认 macbook、sg-chaos 均 connected 且注册此版本。
+- Mac 首次迁移前重新检查全部工作区 `activeSessionIds=[]`、无计时器、旧 Claude 进程组仅剩一个 idle 缓存进程，且成功 completion 与 SDK result 时间未变。暂停旧 Worker 后重查，仅关闭这个闲置缓存，始终恢复 Worker，再启动更新；未删除原生历史。
+- Mac 实际 execution host PID 73512，启动身份 `Fri Oct 16 05:31:01 2026`。真实 Worker 从 73505 重启到 74782 后，host PID/启动身份相同，owner.json 确认新 Worker 已接回。
+- Mac 原 App 可执行文件 SHA256 `894e0a8bd71e8c4a7604f6cacb699b665446f0bcd7705ea940eaf3cf138697b6`、CodeResources SHA256 `6ee6a6796aafd7483186332679d572a858e913642503621ea9ea8f9c07acd482` 更新前后相同；无重签名。
+- sg-chaos Worker 已更新并重启为 2546865，既有独立 host 2423477 保持原启动身份。本次对话仍在该旧 host 执行；新版 Worker 在其完全空闲时执行 host 升级，不强杀本次或其他活动任务。不能把 Worker 已更新说成所有在途执行已加载新代码。
+- `scripts/check-changed.sh`：42 文件，协议构建/测试、Web 类型与 16 测试文件、Worker 构建与 21 测试文件、HTTP 定向测试、UI/契约/模块审计全部通过，138.9 秒。
+- Mac 最终 OS 回归日志位于 compute scratch `mac-execution-review/mac-host-final-v3.log`。测试结束时 launchd 仅剩实际 production execution job，无遗留测试 job；compute lease 已释放。
+- 以上 host 故障注入使用确定性 CLI 替身；生产 Mac 验收是空闲状态下真实 Worker 重启接回，不伪称新增真实模型推理测试。

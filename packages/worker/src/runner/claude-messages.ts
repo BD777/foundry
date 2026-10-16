@@ -99,6 +99,11 @@ export function emitForClaudeRuntime(
   },
 ): void {
   const turn = runtime.pending;
+  if (event.metadata?.nativeAccountError)
+    event.metadata = {
+      ...event.metadata,
+      nativeAccountInputId: turn?.commandId ?? runtime.lastInputId,
+    };
   if (turn && !runtime.closed) {
     void turn.emit(
       event.label,
@@ -382,7 +387,9 @@ async function routeActiveClaudeMessage(
       processEvent.label,
       processEvent.detail,
       processEvent.level,
-      processEvent.metadata,
+      processEvent.metadata?.nativeAccountError
+        ? { ...processEvent.metadata, nativeAccountInputId: turn.commandId }
+        : processEvent.metadata,
       processEvent.message,
     );
   }

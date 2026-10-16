@@ -38,6 +38,8 @@ import {
 import {
   sessionHasRunningBackgroundTasks,
   closeAllActiveRuntimes,
+  startIdleRuntimeSweeps,
+  claudeRuntimeIsBusy,
   stopClaudeBackgroundTask,
 } from "../runner/active-runtimes.js";
 import { ConcurrentTaskScheduler } from "../task-scheduler.js";
@@ -46,6 +48,7 @@ import { ReliableSessionTransport } from "../transport.js";
 import { writePrivateJSONAtomic } from "../storage.js";
 import { startSessionTimers, sessionTimers } from "../session-timers.js";
 import { executionHostPaths } from "./paths.js";
+import { prepareExecutionSocket, runtimeStamp } from "./service.js";
 
 interface Claim {
   sessionId: string;
@@ -54,10 +57,14 @@ interface Claim {
 }
 export async function serveExecutionHost(serverURL: string): Promise<void> {
   const paths = executionHostPaths();
+  prepareExecutionSocket();
+  const entry = fileURLToPath(new URL("./main.js", import.meta.url));
+  const stamp = runtimeStamp(entry);
   writePrivateJSONAtomic(resolve(paths.root, "identity.json"), {
     pid: process.pid,
     startTime: processIdentity(process.pid)?.startTime,
-    entry: fileURLToPath(new URL("./main.js", import.meta.url)),
+    entry,
+    runtimeStamp: stamp,
     serverURL,
   });
   const token = readFileSync(paths.token, "utf8").trim();
@@ -95,22 +102,24 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       }
     },
   });
-  // The OS killed the prior service's cgroup. Never silently rerun a claim.
+  // Linux's cgroup and macOS's guardians/reaper clean the previous owner
+  // before new work is accepted. Never silently rerun its interrupted work.
+  await superviseAgentProcesses();
   for (const claim of Object.values(claims))
     if (claim.status === "active") {
       transport.send(daemonMessageTypes.sessionCompleted, {
         sessionId: claim.sessionId,
         inputId: claim.inputId,
         error:
-          "The execution host stopped. Its process tree was stopped by the service manager; retry explicitly to start a new execution.",
+          "The execution host stopped. Its previous execution processes were stopped; retry explicitly to start a new execution.",
       });
       claim.status = "completed";
     }
   persistClaims();
-  await superviseAgentProcesses();
   reapConnectorLeftovers(console.error);
   clearClaudeSettingsFiles();
   startSessionTimers(serverURL);
+  startIdleRuntimeSweeps();
   onIssueEnvironmentChange((change) =>
     transport.send(daemonMessageTypes.issueEnvironmentChanged, change),
   );
@@ -123,10 +132,31 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   );
   let owner: { pid: number; startTime: string } | undefined;
   let connection: Socket | undefined;
+  let operations = 0;
+  let scheduled = 0;
+  let draining = false;
+  let drainTimer: ReturnType<typeof setTimeout> | undefined;
+  const busy = () =>
+    operations > 0 ||
+    scheduled > 0 ||
+    sessionTimers.isTicking() ||
+    Object.values(claims).some((claim) => claim.status === "active") ||
+    [...activeClaudeRuntimes.values()].some(claudeRuntimeIsBusy);
+  const cancelUpgrade = () => {
+    if (!draining) return;
+    draining = false;
+    clearTimeout(drainTimer);
+    sessionTimers.start();
+  };
   const write = (socket: Socket, value: unknown) =>
     socket.write(`${JSON.stringify(value)}\n`);
   const snapshot = () => ({
     protocol: 1,
+    capabilities: ["idle_upgrade"],
+    entry,
+    runtimeStamp: stamp,
+    busy: busy(),
+    draining,
     serverURL,
     pid: process.pid,
     startTime: processIdentity(process.pid)?.startTime,
@@ -159,6 +189,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       },
     };
     const lines = createInterface({ input: socket });
+    lines.on("error", () => socket.destroy());
     socket.on("error", () => socket.destroy());
     socket.on("close", () => {
       clearTimeout(authDeadline);
@@ -169,6 +200,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     lines.on("line", (line) => {
       void (async () => {
         let id: string | undefined;
+        let operation = false;
         try {
           if (line.length > 16 * 1024 * 1024)
             throw new Error("Execution control message too large");
@@ -192,6 +224,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             )
               throw new Error("Another live worker owns the execution host");
             owner = request.owner;
+            writePrivateJSONAtomic(resolve(paths.root, "owner.json"), owner);
             connection?.destroy();
             connection = socket;
             authenticated = true;
@@ -206,6 +239,33 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
           if (request.method === "ack") {
             transport.acknowledge(request.envelopeId);
             return;
+          }
+          if (request.method === "prepare_upgrade") {
+            const ready = !busy();
+            if (ready) {
+              draining = true;
+              sessionTimers.stop();
+              closeAllActiveRuntimes();
+              clearTimeout(drainTimer);
+              // A lost upgrading worker must not leave the service frozen.
+              drainTimer = setTimeout(cancelUpgrade, 30_000);
+              drainTimer.unref();
+            }
+            write(socket, { id, result: { ready } });
+            return;
+          }
+          if (request.method === "cancel_upgrade") {
+            cancelUpgrade();
+            write(socket, { id, result: {} });
+            return;
+          }
+          if (request.method !== "snapshot") {
+            if (draining)
+              throw new Error(
+                "Execution service is upgrading; this request was not accepted.",
+              );
+            operations++;
+            operation = true;
           }
           if (request.method === "run") {
             const payload = request.payload as RunSessionPayload;
@@ -222,6 +282,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
               };
               persistClaims();
               if (inputId) noteSessionInput(session.id, inputId);
+              scheduled++;
               scheduler.setMaxConcurrentTasks(
                 readAgentRuntimeSettings().maxConcurrentTasks,
               );
@@ -271,6 +332,9 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                     }
                   },
                 )
+                .finally(() => {
+                  scheduled--;
+                })
                 .catch((error) => {
                   console.error(error);
                   process.exitCode = 1;
@@ -299,6 +363,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                 request.inputId,
                 request.message,
                 request.attachments,
+                request.sentBySessionId,
               );
               controlFlights.set(key, applying);
               try {
@@ -325,10 +390,14 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             const payload = request.payload;
             if (payload.action === "preview_start") {
               queuePreview(payload.issueId);
+              scheduled++;
               void scheduler
                 .schedule(`issue:${payload.issueId}`, () =>
                   runIssuePreview(payload.workspaceId, payload.issueId),
                 )
+                .finally(() => {
+                  scheduled--;
+                })
                 .catch(console.error);
               result = { status: "preview_queued", revision: payload.revision };
             } else result = await issueEnvironmentAction(payload);
@@ -346,6 +415,8 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             outcomeUnknown: error instanceof ControlOutcomeUnknownError,
           });
           if (!authenticated) socket.end();
+        } finally {
+          if (operation) operations--;
         }
       })();
     });

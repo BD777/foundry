@@ -1,3 +1,5 @@
+import { AgentRuntimeUpdateNotice } from "./agent-runtime-update-notice";
+import { AgentRuntimeStatus } from "./agent-runtime-status";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -7,7 +9,11 @@ import type {
   DeviceProfileBinding,
   ProviderHealth,
 } from "@bd777/foundry-protocol";
-import { inspectDeviceAccount, installDeviceCli } from "../../api";
+import {
+  inspectDeviceAccount,
+  installDeviceCli,
+  resumeNativeAccount,
+} from "../../api";
 import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
 import { ConfirmButton } from "../../components/ui/confirm-button";
@@ -37,6 +43,7 @@ export function DeviceAccounts({
   const { t } = useTranslation("profiles");
   const [checking, setChecking] = useState<"claude" | "codex">();
   const [error, setError] = useState("");
+  const [resuming, setResuming] = useState<string>();
   const [installing, setInstalling] = useState<"claude" | "codex">();
   const [installed, setInstalled] = useState<NativeCliInstallResult>();
   async function installCli(runtime: "claude" | "codex"): Promise<void> {
@@ -85,6 +92,7 @@ export function DeviceAccounts({
         );
         const nativeHealth = health.find((row) => row.provider === runtime);
         const status = local?.status ?? nativeHealth?.status;
+        const hold = local?.accountHold;
         const signedIn = !!local && status === "healthy";
         const unavailable = status === "unavailable";
         const name = runtimeMeta(runtime).productName;
@@ -106,15 +114,17 @@ export function DeviceAccounts({
                 <span className="fdy-account-name">
                   <strong>{name}</strong>
                   <small>
-                    {signedIn
-                      ? t("accounts.localLoginDetected")
-                      : missing
-                        ? t("accounts.cliMissing", { name })
-                        : unavailable
-                          ? (local?.statusDetail ??
-                            nativeHealth?.statusDetail ??
-                            t("accounts.installNative"))
-                          : t("accounts.noLogin")}
+                    {hold
+                      ? t("accounts.suspended")
+                      : signedIn
+                        ? t("accounts.localLoginDetected")
+                        : missing
+                          ? t("accounts.cliMissing", { name })
+                          : unavailable
+                            ? (local?.statusDetail ??
+                              nativeHealth?.statusDetail ??
+                              t("accounts.installNative"))
+                            : t("accounts.noLogin")}
                   </small>
                 </span>
                 <span className="fdy-account-open-label">
@@ -131,13 +141,15 @@ export function DeviceAccounts({
               >
                 {device.status !== "connected"
                   ? t("accounts.deviceOffline")
-                  : signedIn
-                    ? t("accounts.localLogin")
-                    : missing
-                      ? t("accounts.notInstalled")
-                      : unavailable
-                        ? t("accounts.unavailable")
-                        : t("accounts.workerNoLogin")}
+                  : hold
+                    ? t("accounts.suspended")
+                    : signedIn
+                      ? t("accounts.localLogin")
+                      : missing
+                        ? t("accounts.notInstalled")
+                        : unavailable
+                          ? t("accounts.unavailable")
+                          : t("accounts.workerNoLogin")}
               </Badge>
               {missing ? (
                 <ConfirmButton
@@ -178,7 +190,7 @@ export function DeviceAccounts({
                 </Button>
               )}
             </div>
-            {!signedIn && !missing && online ? (
+            {!signedIn && !hold && !missing && online ? (
               <p className="fdy-device-account-hint">
                 {t(
                   runtime === "claude"
@@ -187,6 +199,43 @@ export function DeviceAccounts({
                   { device: device.label },
                 )}
               </p>
+            ) : null}
+            {hold && local ? (
+              <Alert tone="warning" title={t("accounts.suspended")}>
+                <p>
+                  {t("accounts.suspendedDetail", {
+                    account: hold.accountLabel,
+                    at: new Date(hold.observedAt).toLocaleString(),
+                  })}
+                </p>
+                <p>{t("accounts.resumeHint")}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={resuming !== undefined}
+                  aria-busy={resuming === local.id}
+                  onClick={async () => {
+                    setResuming(local.id);
+                    setError("");
+                    try {
+                      await resumeNativeAccount(device.id, local.id, hold.id);
+                      await onRefresh();
+                    } catch (cause) {
+                      setError(
+                        cause instanceof Error
+                          ? cause.message
+                          : t("accounts.resumeFailed"),
+                      );
+                    } finally {
+                      setResuming(undefined);
+                    }
+                  }}
+                >
+                  {resuming === local.id
+                    ? t("accounts.resuming")
+                    : t("accounts.resume")}
+                </Button>
+              </Alert>
             ) : null}
             {missing && online ? (
               <p className="fdy-device-account-hint">
@@ -199,12 +248,16 @@ export function DeviceAccounts({
             {installed?.runtime === runtime ? (
               <Alert
                 tone={installed.ok ? "success" : "error"}
-                title={t(
-                  installed.ok
-                    ? "accounts.installCliDone"
-                    : "accounts.installCliFailed",
-                  { name, device: device.label },
-                )}
+                title={
+                  installed.cli?.update
+                    ? t(`runtimeUpdates.states.${installed.cli.update.state}`)
+                    : t(
+                        installed.ok
+                          ? "accounts.installCliDone"
+                          : "accounts.installCliFailed",
+                        { name, device: device.label },
+                      )
+                }
                 details={
                   installed.log.trim() ? (
                     <pre className="fdy-device-account-log">
@@ -216,20 +269,25 @@ export function DeviceAccounts({
                 {installed.command}
               </Alert>
             ) : null}
-            {cli?.outdated ? (
-              <Alert
-                tone="warning"
-                title={t("accounts.cliOutdated", {
-                  name,
-                  device: device.label,
-                  version: cli.version,
-                  minimum: cli.minimumVersion,
-                  command: cli.updateCommand,
-                })}
+            {cli?.installed ? (
+              <AgentRuntimeUpdateNotice
+                cli={cli}
+                name={name}
+                online={online}
+                busy={installing !== undefined}
+                onUpdate={() => void installCli(runtime)}
               />
             ) : null}
             {expanded === runtime ? (
               <div className="fdy-account-expanded">
+                {cli?.installed ? (
+                  <AgentRuntimeStatus
+                    cli={cli}
+                    online={online}
+                    busy={installing !== undefined}
+                    onCheck={() => void installCli(runtime)}
+                  />
+                ) : null}
                 <AccountInspection
                   deviceId={device.id}
                   runtime={runtime}

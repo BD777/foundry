@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -67,7 +68,17 @@ export interface WorkspaceSessionRun {
 export async function runWorkspaceSession(
   run: WorkspaceSessionRun,
 ): Promise<AgentSessionRunResult> {
-  if (run.sandbox) return runSandboxed(run, run.sandbox);
+  if (run.sandbox) {
+    const release = await acquireRuntime(
+      run.session.provider,
+      run.sandbox.signal,
+    );
+    try {
+      return await runSandboxed(run, run.sandbox);
+    } finally {
+      release();
+    }
+  }
   const start =
     run.session.provider === "codex"
       ? runCodexWorkspaceSession

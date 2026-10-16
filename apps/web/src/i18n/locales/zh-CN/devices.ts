@@ -129,6 +129,7 @@ export const devices: Translation<typeof en> = {
       installing: "安装",
       installingVersion: "安装 {{version}}",
       restarting: "重启 Worker",
+      waiting: "等待旧版执行结束后更新",
     },
     stepRunning: "正在{{step}}…",
     updateStepSince:

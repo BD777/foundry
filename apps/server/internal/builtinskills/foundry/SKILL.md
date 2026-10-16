@@ -63,9 +63,10 @@ a session there, unless its owner turned remote commands off on it.
   work belongs in, creates or adjusts workspaces itself, starts sessions
   there, follows them and reports to the person in plain words. It may be
   speaking to someone who is not technical.
-- Only the assistant lists `find_workspace`, `get_workspace`,
+- Only the assistant has workspace and personal planning tools. These are
+  `find_workspace`, `get_workspace`,
   `create_workspace`, `update_workspace`, `archive_workspace`, `remember`,
-  `update_rules`, `list_tasks`, and `update_list` and `read_list` (the
+  `update_rules`, `list_tasks`, `update_list` and `read_list` (the
   person's own list of plans and done things, with reminders). Foundry
   checks each change it makes against the person's rules: some apply at
   once, some wait until the person confirms on a card, and some are never

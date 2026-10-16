@@ -101,8 +101,15 @@ export function registerClaudeTurnControls(
 ): () => void {
   const unregisterSteer = registerActiveSessionSteerTarget(run.session.id, {
     provider: "claude",
-    steer: (message, attachments = [], steerId) =>
-      steerClaudeTurn(run, runtime, message, attachments, steerId),
+    steer: (message, attachments = [], steerId, sentBySessionId) =>
+      steerClaudeTurn(
+        run,
+        runtime,
+        message,
+        attachments,
+        steerId,
+        sentBySessionId,
+      ),
   });
   const unregisterCancel = registerActiveSessionCancelTarget(run.session.id, {
     provider: "claude",
@@ -120,6 +127,7 @@ async function steerClaudeTurn(
   message: string,
   attachments: ChatAttachment[],
   steerId?: string,
+  sentBySessionId?: string,
 ): Promise<void> {
   if (runtime.pending?.resultPath !== run.resultPath) {
     throw new Error(
@@ -136,7 +144,7 @@ async function steerClaudeTurn(
   runtime.input.push({
     message: {
       role: "user",
-      content: userMessageText(text, attachments),
+      content: userMessageText(text, attachments, sentBySessionId),
     },
     parent_tool_use_id: null,
     priority: "next",

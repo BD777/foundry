@@ -1,142 +1,10 @@
-/** Native Codex control transport. One process owns execution and controls. */
-import { createInterface } from "node:readline";
-import type { ChildProcess } from "node:child_process";
-import { spawnAgentProcess, stopAgentProcess } from "../agent-processes.js";
+import { authenticateIsolatedCodex } from "../agent-runtime/codex-auth.js";
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
+/** Codex threads backed by the shared native control client. */
+import { CodexAppServer } from "../agent-runtime/codex-client.js";
 import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
-
-import { ControlOutcomeUnknownError } from "../session-control.js";
-
-interface RpcPending {
-  resolve: (result: any) => void;
-  reject: (error: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-  method: string;
-}
-
-/** Requests have bounded acknowledgements; an executing turn has no idle timeout. */
-export class CodexAppServer {
-  private readonly child: ChildProcess;
-  private readonly pending = new Map<number, RpcPending>();
-  private sequence = 0;
-  private ended = false;
-  private failure?: Error;
-  private readonly ready: Promise<unknown>;
-  onNotification?: (method: string, params: any) => void;
-  onFailure?: (error: Error) => void;
-
-  constructor(command: string, env: NodeJS.ProcessEnv, cwd: string) {
-    this.child = spawnAgentProcess(
-      command,
-      ["app-server", "--listen", "stdio://"],
-      {
-        cwd,
-        env,
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      },
-    );
-    // Never let diagnostics fill the native process's pipe. The protocol's
-    // errors carry failure details, without exposing credentials from stderr.
-    this.child.stderr?.resume();
-    this.child.stdin?.on("error", (error) => this.fail(error));
-    this.child.once("error", (error) => this.fail(error));
-    this.child.once("close", () =>
-      this.fail(
-        new Error("Codex app-server exited before completing the request."),
-      ),
-    );
-    createInterface({ input: this.child.stdout! }).on("line", (line) => {
-      let message: any;
-      try {
-        message = JSON.parse(line);
-      } catch {
-        return;
-      }
-      if (message.method) {
-        if (message.id !== undefined) {
-          // Foundry has no interactive approval UI yet. Never auto-approve
-          // a native request merely because it arrived over this transport.
-          this.write({
-            id: message.id,
-            error: {
-              code: -32601,
-              message: `Foundry cannot answer ${message.method} interactively.`,
-            },
-          });
-        } else this.onNotification?.(message.method, message.params ?? {});
-        return;
-      }
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      clearTimeout(pending.timer);
-      if (message.error)
-        pending.reject(
-          new Error(message.error.message ?? "Codex request failed"),
-        );
-      else pending.resolve(message.result);
-    });
-    this.ready = this.call("initialize", {
-      clientInfo: { name: "foundry", title: "Foundry", version: "1" },
-      capabilities: { experimentalApi: true },
-    }).then(() => this.write({ method: "initialized" }));
-    // A process may fail before the caller begins its first request.
-    void this.ready.catch(() => undefined);
-  }
-
-  async request(method: string, params: unknown): Promise<any> {
-    await this.ready;
-    return this.call(method, params);
-  }
-
-  close(): void {
-    this.fail(new Error("Codex app-server closed."));
-    stopAgentProcess(this.child);
-  }
-
-  private write(value: unknown): void {
-    if (this.ended)
-      throw this.failure ?? new Error("Codex app-server is closed.");
-    this.child.stdin!.write(`${JSON.stringify(value)}\n`);
-  }
-
-  private call(method: string, params: unknown): Promise<any> {
-    if (this.ended) return Promise.reject(this.failure);
-    return new Promise((resolve, reject) => {
-      const id = ++this.sequence;
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(
-          new ControlOutcomeUnknownError(
-            `${method} acknowledgement lost; outcome unknown.`,
-          ),
-        );
-      }, 30_000);
-      this.pending.set(id, { resolve, reject, timer, method });
-      try {
-        this.write({ id, method, params });
-      } catch (error) {
-        this.fail(error as Error);
-      }
-    });
-  }
-
-  private fail(error: Error): void {
-    if (this.ended) return;
-    this.ended = true;
-    this.failure = error;
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(
-        new ControlOutcomeUnknownError(
-          `${pending.method} acknowledgement lost; outcome unknown.`,
-        ),
-      );
-    }
-    this.pending.clear();
-    this.onFailure?.(error);
-  }
-}
+export { CodexAppServer } from "../agent-runtime/codex-client.js";
+export type { CodexRpcTimeouts } from "../agent-runtime/codex-client.js";
 
 /** Boundary mapping: the rest of Foundry continues consuming its native-event shape. */
 export function appServerItem(item: any): Record<string, unknown> {
@@ -220,13 +88,33 @@ export class CodexAppServerThread implements CodexSDKThread {
   ): Promise<{ events: AsyncIterable<unknown> }> {
     if (this.active)
       throw new Error("A Codex turn is already running on this thread.");
-    const client = new CodexAppServer(
-      this.command,
-      this.env,
-      this.options.workingDirectory,
+    const releaseRuntime = await acquireRuntime(
+      "codex",
+      options?.signal as AbortSignal | undefined,
     );
+    let client: CodexAppServer;
+    try {
+      client = new CodexAppServer(
+        this.command,
+        this.env,
+        this.options.workingDirectory,
+        this.options.rpcTimeouts,
+      );
+    } catch (error) {
+      releaseRuntime();
+      throw error;
+    }
     const active = { client, turnId: "", terminal: false };
     this.active = active;
+    const startupNotice = setTimeout(() => {
+      void Promise.resolve()
+        .then(() =>
+          (
+            options?.onStartupWait as (() => void | Promise<void>) | undefined
+          )?.(),
+        )
+        .catch(() => undefined);
+    }, 30_000);
     const queue = new AsyncInputQueue<unknown>();
     let failure: Error | undefined;
     let usage: any;
@@ -245,6 +133,7 @@ export class CodexAppServerThread implements CodexSDKThread {
       active.terminal = true;
       failure = new Error("Codex turn was interrupted.");
       queue.close();
+      if (!active.turnId) client.close();
     };
     client.onFailure = (error) => {
       if (!active.terminal) failure = error;
@@ -305,13 +194,17 @@ export class CodexAppServerThread implements CodexSDKThread {
       }
     };
     const cleanup = () => {
+      clearTimeout(startupNotice);
       signal?.removeEventListener("abort", abort);
       client.close();
+      releaseRuntime();
       if (this.active === active) this.active = undefined;
     };
     try {
+      signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
+      await authenticateIsolatedCodex(client, this.env, this.command);
       const thread = await client.request(
         this.id ? "thread/resume" : "thread/start",
         {
@@ -321,11 +214,12 @@ export class CodexAppServerThread implements CodexSDKThread {
           approvalPolicy: this.options.approvalPolicy,
           sandbox: this.options.sandboxMode,
           config: this.config,
+          ...(this.options.ephemeral ? { ephemeral: true } : {}),
         },
       );
+      clearTimeout(startupNotice);
       this.id = thread.thread.id;
       queue.push({ type: "thread.started", thread_id: this.id });
-      signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
       const result = await client.request("turn/start", {
@@ -347,6 +241,7 @@ export class CodexAppServerThread implements CodexSDKThread {
       };
     } catch (error) {
       cleanup();
+      if (signal?.aborted) throw new Error("Codex turn was interrupted.");
       throw error;
     }
   }

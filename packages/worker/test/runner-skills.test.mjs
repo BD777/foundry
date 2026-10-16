@@ -8,9 +8,9 @@ const managed = (skills, hostSkillPaths = []) => ({
   hostSkillPaths,
 });
 
-test("Claude filters skills without turning off the device's own settings", () => {
+test("Claude admits managed skills without inheriting device settings", () => {
   const options = claudeSessionOptions(managed([]));
-  assert.equal(options.settingSources, undefined);
+  assert.deepEqual(options.settingSources, []);
   assert.deepEqual(options.skills, []);
   assert.deepEqual(options.plugins, []);
 });
@@ -143,7 +143,7 @@ test("compatible Codex routing pins the chosen endpoint and native credential va
   );
   assert.deepEqual(
     codexProfileConfig({ ...profile, codexModelProvider: "relay" }, env),
-    { model_provider: "relay" },
+    codexProfileConfig(profile, env),
   );
   assert.equal(
     codexSessionEnvironment("/tmp", {
@@ -160,8 +160,14 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     claudeSessionOptions(undefined, notes).systemPrompt.append,
     notes,
   );
-  assert.equal(claudeSessionOptions(undefined, notes).skills, undefined);
-  assert.deepEqual(claudeSessionOptions(undefined), {});
+  assert.deepEqual(claudeSessionOptions(undefined, notes).skills, []);
+  assert.deepEqual(claudeSessionOptions(undefined), {
+    settingSources: [],
+    strictMcpConfig: true,
+    mcpServers: {},
+    skills: [],
+    plugins: [],
+  });
   const withSkills = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
     notes,
@@ -216,12 +222,20 @@ test("a Codex session with 1000 skills starts with a small argv", async (t) => {
     await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { Codex } = await import("@openai/codex-sdk");
+  const { CodexAppServerThread } =
+    await import("../dist/runner/codex-app-server.js");
   const bin = mkdtempSync(join(tmpdir(), "foundry-fake-codex-"));
   const fake = join(bin, "codex");
   writeFileSync(
     fake,
-    `#!${process.execPath}\nrequire("node:fs").writeFileSync(process.env.ARGV_REPORT, JSON.stringify(process.argv.slice(2).map((a) => Buffer.byteLength(a) + 1)));\n`,
+    `#!${process.execPath}\nrequire("node:fs").writeFileSync(process.env.ARGV_REPORT, JSON.stringify(process.argv.slice(2).map((a) => Buffer.byteLength(a) + 1)));
+require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+ const m=JSON.parse(line); if(m.id===undefined)return;
+ let result={};if(m.method==='thread/start')result={thread:{id:'test'}};
+ if(m.method==='turn/start')result={turn:{id:'t'}};
+ console.log(JSON.stringify({id:m.id,result}));
+ if(m.method==='turn/start')setTimeout(()=>console.log(JSON.stringify({method:'turn/completed',params:{threadId:'test',turn:{id:'t',status:'completed'}}})),5);
+});\n`,
   );
   chmodSync(fake, 0o755);
   for (const bundled of [true, false]) {
@@ -231,14 +245,13 @@ test("a Codex session with 1000 skills starts with a small argv", async (t) => {
       "Foundry device notes: test",
     );
     const report = join(bin, `argv-${bundled}.json`);
-    const codex = new Codex({
-      codexPathOverride: fake,
-      env: { PATH: process.env.PATH ?? "", ARGV_REPORT: report },
+    const codex = new CodexAppServerThread(
+      fake,
+      { PATH: process.env.PATH ?? "", ARGV_REPORT: report },
       config,
-    });
-    const turn = await codex
-      .startThread({ skipGitRepoCheck: true, workingDirectory: bin })
-      .runStreamed("reply OK");
+      { workingDirectory: bin },
+    );
+    const turn = await codex.runStreamed("reply OK");
     for await (const _ of turn.events);
     const sizes = JSON.parse(readFileSync(report, "utf8"));
     const total = sizes.reduce((sum, size) => sum + size, 0);

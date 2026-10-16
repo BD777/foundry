@@ -1,13 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CodexAppServerThread,
   appServerItem,
 } from "../dist/runner/codex-app-server.js";
-function fixture(t, mode = "normal") {
+function fixture(t, mode = "normal", options = {}) {
   const root = mkdtempSync(join(tmpdir(), "foundry-app-server-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, "codex");
@@ -19,9 +26,9 @@ const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 const notify=(method,params)=>send({method,params:{threadId:'native',...params}});
 rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send({id:r.id,result});
 if(r.method==='initialize')return reply({});
-if(r.method==='thread/start'||r.method==='thread/resume')return reply({thread:{id:'native'}});
+if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
 if(r.method==='turn/start'){notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
-if(r.method==='turn/steer'){if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
+if(r.method==='turn/steer'){if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
 });`,
     { mode: 0o700 },
@@ -34,6 +41,7 @@ if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'tur
       workingDirectory: root,
       approvalPolicy: "never",
       sandboxMode: "read-only",
+      ...options,
     },
   );
 }
@@ -92,5 +100,74 @@ test("tool mapping retains outcomes", () => {
       changes: [{ path: "a", kind: { type: "add" } }],
     }).changes,
     [{ path: "a", kind: "add" }],
+  );
+});
+
+test("native startup can exceed the control deadline without replaying a turn", async (t) => {
+  const thread = fixture(t, "slow-start", {
+    rpcTimeouts: { initializeMs: 1000, startupMs: 1000, controlMs: 20 },
+  });
+  const controller = new AbortController();
+  const { events } = await thread.runStreamed("start", {
+    signal: controller.signal,
+  });
+  await assert.rejects(
+    thread.steer("no acknowledgement"),
+    (e) => e.name === "ControlOutcomeUnknownError",
+  );
+  controller.abort();
+  await assert.rejects(async () => {
+    for await (const event of events) {
+    }
+  }, /interrupted/);
+});
+
+test("cancel interrupts native startup without waiting for its deadline", async (t) => {
+  const thread = fixture(t, "hang-start", {
+    rpcTimeouts: { initializeMs: 5000, startupMs: 5000, controlMs: 5000 },
+  });
+  const controller = new AbortController();
+  const started = Date.now();
+  const running = thread.runStreamed("start", { signal: controller.signal });
+  const timer = setTimeout(() => controller.abort(), 100);
+  try {
+    await assert.rejects(running, /interrupted/);
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
+  assert.ok(
+    Date.now() - started < 2000,
+    "cancellation must not wait for the 5s startup deadline",
+  );
+});
+
+test("synchronous native spawn failure releases its runtime lease", async () => {
+  const { foundryToolsRoot } = await import("../dist/state-root.js");
+  const leases = join(foundryToolsRoot(), "agent-runtime-locks", "codex");
+  const ownReaders = () =>
+    (existsSync(leases) ? readdirSync(leases) : []).filter((name) => {
+      if (!name.startsWith("reader-")) return false;
+      try {
+        return (
+          JSON.parse(readFileSync(join(leases, name), "utf8")).pid ===
+          process.pid
+        );
+      } catch {
+        return false;
+      }
+    });
+  const before = ownReaders();
+  const thread = new CodexAppServerThread(
+    "",
+    {},
+    {},
+    { workingDirectory: tmpdir() },
+  );
+  await assert.rejects(thread.runStreamed("unused"));
+  assert.deepEqual(
+    ownReaders(),
+    before,
+    "failed spawn must not block future updates",
   );
 });

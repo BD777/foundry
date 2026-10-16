@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
 import { daemonConfigPath, readDaemonConfig } from "./config.js";
 import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
+import { processIdentity } from "./agent-processes.js";
 import { daemonLockHolder } from "./device-pairing.js";
 import { optionEnabled } from "./utils.js";
 import {
@@ -314,12 +316,18 @@ ${environmentVariablesXML()}
       dirname(plistPath),
       `${watchdogLabel()}.plist`,
     );
-    const watchdogScript = resolve(
-      dirname(fileURLToPath(import.meta.url)),
+    const watchdogSource = resolve(
+      dirname(host.cliPath ?? fileURLToPath(import.meta.url)),
       "..",
       "scripts",
       "watchdog.sh",
     );
+    // Keep the scheduled job independent of a runtime directory the updater
+    // may prune. The next invocation sees the new script atomically.
+    const watchdogScript = foundryStatePath("watchdog.sh");
+    const watchdogNext = `${watchdogScript}.${process.pid}.tmp`;
+    writeFileSync(watchdogNext, readFileSync(watchdogSource), { mode: 0o700 });
+    renameSync(watchdogNext, watchdogScript);
     writeFileSync(
       watchdogPath,
       `<?xml version="1.0" encoding="UTF-8"?>
@@ -417,14 +425,9 @@ export function serviceInstalled(): boolean {
 export async function stopDaemonProcess(): Promise<void> {
   const pid = daemonLockHolder();
   if (pid === undefined) return;
-  const alive = () => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const identity = processIdentity(pid);
+  if (!identity) return;
+  const alive = () => processIdentity(pid)?.startTime === identity.startTime;
   process.kill(pid, "SIGTERM");
   for (let i = 0; i < 50 && alive(); i++)
     await new Promise((done) => setTimeout(done, 100));

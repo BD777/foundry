@@ -62,9 +62,22 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     daemonMessageTypes.sessionSteered,
     async () => {
       const host = executionHostClient();
-      if (host) await host.steer(sessionId, inputId, message, attachments);
+      if (host)
+        await host.steer(
+          sessionId,
+          inputId,
+          message,
+          attachments,
+          payload?.sentBySessionId,
+        );
       else
-        await steerActiveSessionOnce(sessionId, inputId, message, attachments);
+        await steerActiveSessionOnce(
+          sessionId,
+          inputId,
+          message,
+          attachments,
+          payload?.sentBySessionId,
+        );
       return { sessionId, inputId };
     },
     (error, cause) => ({

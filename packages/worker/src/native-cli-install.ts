@@ -1,3 +1,10 @@
+import { nativeWorkIsActive } from "./agent-runtime/updates.js";
+import { nativeUpdateAdapter } from "./agent-runtime/adapters.js";
+import { updateAgentRuntime } from "./agent-runtime/update-controller.js";
+import {
+  runtimeUpdateState,
+  saveRuntimeUpdate,
+} from "./agent-runtime/state.js";
 import { spawn } from "node:child_process";
 import type { NativeCliInstallResult } from "@bd777/foundry-protocol";
 import { clearNativeLoginHealth } from "./native-login.js";
@@ -14,6 +21,27 @@ const timeoutMs = 10 * 60_000;
 export async function installNativeCli(
   runtime: "claude" | "codex",
 ): Promise<NativeCliInstallResult> {
+  if (
+    !process.env.FOUNDRY_NATIVE_CLI_INSTALL_COMMAND &&
+    nativeCli(runtime).installed
+  ) {
+    saveRuntimeUpdate(runtime, {
+      state: "checking",
+      checkedAt: new Date().toISOString(),
+    });
+    await updateAgentRuntime(nativeUpdateAdapter(runtime), {
+      busy: () => nativeWorkIsActive(runtime),
+    });
+    clearNativeLoginHealth();
+    const update = runtimeUpdateState(runtime);
+    return {
+      runtime,
+      ok: update?.state === "current" || update?.state === "waiting_idle",
+      command: "Official stable runtime update",
+      log: update?.detail ?? update?.state ?? "",
+      cli: nativeCli(runtime),
+    };
+  }
   const command =
     process.env.FOUNDRY_NATIVE_CLI_INSTALL_COMMAND?.trim() ||
     nativeCliInstallCommands[runtime];

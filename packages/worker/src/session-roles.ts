@@ -78,7 +78,7 @@ export function claudeRoleOptions(
       sdk: {
         permissionMode: "dontAsk",
         allowedTools: verificationClaudeTools,
-        settingSources: ["project"],
+        settingSources: [],
         strictMcpConfig: true,
       },
     };
@@ -88,7 +88,7 @@ export function claudeRoleOptions(
       permissionMode: "dontAsk",
       allowedTools: clarificationClaudeTools,
       disallowedTools: clarificationDeniedClaudeTools,
-      settingSources: ["project"],
+      settingSources: [],
       strictMcpConfig: true,
     },
   };

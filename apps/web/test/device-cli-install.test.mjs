@@ -164,5 +164,51 @@ test("an older program stays usable and says how to update it", async (t) => {
   assert.equal(view.button("Install Claude Code on Studio Mac"), null);
   assert.match(view.container.textContent, /2\.0\.1/);
   assert.match(view.container.textContent, /2\.1\.201/);
-  assert.match(view.container.textContent, /claude update/);
+  assert.match(view.container.textContent, /Update this device.s worker/);
+  assert.doesNotMatch(view.container.textContent, /claude update/);
+});
+
+test("a managed outdated runtime exposes automatic waiting and a direct update action", async (t) => {
+  const view = await mount(
+    health(
+      cli({
+        outdated: true,
+        generation: "runtime-a",
+        update: {
+          state: "waiting_idle",
+          target: "2.1.292",
+          checkedAt: "2026-10-16T00:00:00Z",
+        },
+      }),
+    ),
+  );
+  t.after(view.unmount);
+  assert.match(view.container.textContent, /worker will update automatically/);
+  assert.ok(view.button("Update Claude Code to stable"));
+  assert.equal(view.button("Update Claude Code to stable").disabled, false);
+  assert.doesNotMatch(view.container.textContent, /claude update/);
+});
+
+test("runtime updates cannot be started while offline or already updating", async (t) => {
+  for (const [state, status] of [
+    ["waiting_idle", "disconnected"],
+    ["updating", "connected"],
+  ]) {
+    const view = await mount(
+      health(
+        cli({
+          outdated: true,
+          generation: "runtime-a",
+          update: {
+            state,
+            target: "2.1.292",
+            checkedAt: "2026-10-16T00:00:00Z",
+          },
+        }),
+      ),
+      { status },
+    );
+    t.after(view.unmount);
+    assert.equal(view.button("Update Claude Code to stable").disabled, true);
+  }
 });

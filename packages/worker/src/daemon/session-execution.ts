@@ -164,13 +164,14 @@ export async function executeAgentSession(
     );
   };
   const responseStream = createResponseStreamBatcher<{
+    label: string;
     detail: string;
     level: AgentSessionEvent["level"];
     metadata?: AgentSessionEventMetadata;
     message?: AgentSessionEvent["message"];
   }>((pending) =>
     sendEvent(
-      "Response stream",
+      pending.label,
       pending.detail,
       pending.level,
       pending.metadata,
@@ -209,8 +210,8 @@ export async function executeAgentSession(
         sessionId: session.id,
       });
     }
-    if (label === "Response stream") {
-      responseStream.offer({ detail, level, metadata, message });
+    if (label === "Response stream" || label === processLabels.commentary) {
+      responseStream.offer({ label, detail, level, metadata, message });
       return;
     }
     flushPendingResponse();

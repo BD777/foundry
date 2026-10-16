@@ -47,10 +47,9 @@ const catalogs = new Map<
   { expiresAt: number; models: Promise<AgentModelOption[]> }
 >();
 
-/** Only server profiles calling a compatible endpoint get a window. */
+/** The selected compatible connection, whether imported or server-managed. */
 function appliesTo(profile: AgentProfileLocalConfig): boolean {
   return (
-    profile.origin === "server" &&
     !!profile.baseUrl?.trim() &&
     (profile.connectionType === "anthropic_compatible" ||
       profile.connectionType === "openai_compatible")

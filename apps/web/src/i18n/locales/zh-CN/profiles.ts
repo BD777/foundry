@@ -2,6 +2,37 @@ import type { profiles as en } from "../en/profiles";
 import type { Translation } from "../../translation";
 
 export const profiles: Translation<typeof en> = {
+  runtimeUpdates: {
+    updateNowLabel: "将 {{name}} 更新到稳定版",
+    noticeTitle: "{{name}} {{version}} → 稳定版 {{target}}",
+    workerRequired: "请先更新这台设备的 Worker，以启用 Agent 自动更新。",
+    externalHint: "此安装由外部程序管理。展开“账号与默认值”查看更新详情。",
+    waitingHint:
+      "当前 {{name}} 任务结束后，Worker 会自动更新。其他 Agent 可以继续运行。",
+    updatingHint: "Worker 正在更新并验证稳定版。",
+    failedHint: "Worker 更新未完成，已保留原版本。可以在这里重试。",
+    automaticHint: "Worker 会检查官方稳定版，并在此 Agent 空闲时自动更新。",
+    updateNow: "更新到稳定版",
+
+    policy: "Agent 运行时跟随官方稳定版，在空闲时自动更新。",
+    current: "已安装版本",
+    path: "执行程序",
+    target: "最新稳定版",
+    sdk: "SDK 目标版本",
+    status: "更新状态",
+    check: "检查更新",
+    checking: "正在检查更新…",
+    states: {
+      unknown: "尚未检查",
+      checking: "正在检查",
+      current: "已是最新",
+      available: "有可用更新",
+      waiting_idle: "等待当前工作结束",
+      updating: "正在更新并验证",
+      failed: "更新失败，保留原运行时",
+      external: "由其他安装程序管理",
+    },
+  },
   page: {
     title: "模型服务",
     intro:
@@ -214,6 +245,15 @@ export const profiles: Translation<typeof en> = {
     saveFailed: "无法更新这台设备的模型服务，请重试。",
   },
   accounts: {
+    suspended: "账号已停用",
+    suspendedDetail:
+      "{{account}} 于 {{at}} 返回了账号停用信号。Foundry 已停止向该账号派发任务。",
+    resumeHint:
+      "申诉恢复后，可手动允许 Foundry 再次使用此账号。这不代表官方已验证恢复；若再次明确返回停用信号，将重新阻止使用。",
+    resume: "恢复使用",
+    resuming: "正在恢复…",
+    resumeFailed: "恢复失败，请刷新后重试。",
+
     localLoginDetected: "检测到本地登录 · 未检查在线有效性",
     installNative: "请在这台设备上安装原生 Agent。",
     noLogin: "Worker 的配置中没有登录 · 可检查其他本地配置",
@@ -323,7 +363,7 @@ export const profiles: Translation<typeof en> = {
     usedByFoundry: "Foundry 正在使用",
     otherApp: "其他应用 · 仅供查看",
     backToFoundry: "回到 Foundry 的配置",
-    foundryUses: "Foundry 使用：<code>{{source}}</code>",
+    foundryUses: "登录来源：<code>{{source}}</code>",
     viewingOther: " · 查看其他配置不会改变执行账号。",
     lastChecked: "上次检查于 {{time}} · 凭据始终保留在这台设备上。",
     configurationUnavailable: "配置不可用",

@@ -37,6 +37,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		// workspace-owned rows.
 		s.setupDeviceConnectors,
 		s.setupPersonalAgents,
+		s.setupNativeAccountHolds,
 		s.dropRemovedWorkspaces,
 		s.setupResources,
 		s.setupResourceLeases,

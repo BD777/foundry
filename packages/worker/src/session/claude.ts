@@ -1,3 +1,5 @@
+import { claudeWorkspaceInstructions } from "../workspace-instructions.js";
+import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { redactSecrets } from "../secret-redaction.js";
@@ -36,7 +38,7 @@ export const claudeHarness: HarnessAdapter = {
     );
     env.CLAUDE_CONFIG_DIR = config;
     const sdkName = "@anthropic-ai/claude-agent-sdk";
-    const sdk = (await import(sdkName)) as {
+    const sdk = (await loadClaudeSdk()) as {
       query: (args: {
         prompt: AsyncIterable<unknown>;
         options: Record<string, unknown>;
@@ -90,7 +92,14 @@ export const claudeHarness: HarnessAdapter = {
             resolveClaudeCommand(),
           ),
           model,
-          systemPrompt: spec.systemPrompt,
+          systemPrompt: [
+            spec.systemPrompt,
+            policy.projectInstructions && workspace
+              ? claudeWorkspaceInstructions(workspace.path)
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
           // Read-only inspection tools inside the directory. The listed tools
           // are pre-approved; anything else falls through to canUseTool below
           // and is denied. Writes are refused by the sandbox regardless.
@@ -99,7 +108,7 @@ export const claudeHarness: HarnessAdapter = {
           disallowedTools: policy.deniedTools,
           mcpServers: {},
           strictMcpConfig: true,
-          settingSources: policy.projectInstructions ? ["project"] : [],
+          settingSources: [],
           skills: [],
           plugins: [],
           agents: {},

@@ -30,13 +30,26 @@ type OfficialSkill struct {
 
 // NativeCli is the device's own Claude Code / Codex program, which Foundry
 // runs instead of shipping a copy.
+type AgentRuntimeUpdate struct {
+	State       string `json:"state"`
+	CheckedAt   string `json:"checkedAt"`
+	Target      string `json:"target,omitempty"`
+	SDKTarget   string `json:"sdkTarget,omitempty"`
+	Current     string `json:"current,omitempty"`
+	Detail      string `json:"detail,omitempty"`
+	NextCheckAt int64  `json:"nextCheckAt,omitempty"`
+}
+
 type NativeCli struct {
-	Installed      bool   `json:"installed"`
-	Version        string `json:"version,omitempty"`
-	MinimumVersion string `json:"minimumVersion,omitempty"`
-	Outdated       bool   `json:"outdated,omitempty"`
-	InstallCommand string `json:"installCommand,omitempty"`
-	UpdateCommand  string `json:"updateCommand,omitempty"`
+	Path           string              `json:"path,omitempty"`
+	Generation     string              `json:"generation,omitempty"`
+	Update         *AgentRuntimeUpdate `json:"update,omitempty"`
+	Installed      bool                `json:"installed"`
+	Version        string              `json:"version,omitempty"`
+	MinimumVersion string              `json:"minimumVersion,omitempty"`
+	Outdated       bool                `json:"outdated,omitempty"`
+	InstallCommand string              `json:"installCommand,omitempty"`
+	UpdateCommand  string              `json:"updateCommand,omitempty"`
 }
 
 // NativeCliInstallResult is what running the official installer for a
@@ -75,6 +88,8 @@ type AgentProfileCheck struct {
 }
 
 type AgentProfileProjection struct {
+	RuntimeGeneration    string             `json:"runtimeGeneration,omitempty"`
+	AccountHold          *NativeAccountHold `json:"accountHold,omitempty"`
 	ContextWindows       map[string]int64   `json:"contextWindows,omitempty"`
 	AccountLabel         string             `json:"accountLabel,omitempty"`
 	ID                   string             `json:"id"`
@@ -277,25 +292,27 @@ type PromoteProfileInput struct {
 }
 
 type AgentProjection struct {
-	ID                 string `json:"id"`
-	WorkspaceID        string `json:"workspaceId"`
-	DeviceID           string `json:"deviceId"`
-	DeviceLabel        string `json:"deviceLabel"`
-	Provider           string `json:"provider"`
-	ProfileID          string `json:"profileId,omitempty"`
-	ProfileFingerprint string `json:"profileFingerprint,omitempty"`
-	ProfileLabel       string `json:"profileLabel,omitempty"`
-	ConnectionType     string `json:"connectionType,omitempty"`
-	Status             string `json:"status"`
-	AuthMode           string `json:"authMode"`
-	SecretStored       string `json:"secretStored"`
-	ConfigScope        string `json:"configScope"`
-	ConfigLabel        string `json:"configLabel"`
-	LastSeenLabel      string `json:"lastSeenLabel"`
-	StatusDetail       string `json:"statusDetail,omitempty"`
+	AccountHold        *NativeAccountHold `json:"accountHold,omitempty"`
+	ID                 string             `json:"id"`
+	WorkspaceID        string             `json:"workspaceId"`
+	DeviceID           string             `json:"deviceId"`
+	DeviceLabel        string             `json:"deviceLabel"`
+	Provider           string             `json:"provider"`
+	ProfileID          string             `json:"profileId,omitempty"`
+	ProfileFingerprint string             `json:"profileFingerprint,omitempty"`
+	ProfileLabel       string             `json:"profileLabel,omitempty"`
+	ConnectionType     string             `json:"connectionType,omitempty"`
+	Status             string             `json:"status"`
+	AuthMode           string             `json:"authMode"`
+	SecretStored       string             `json:"secretStored"`
+	ConfigScope        string             `json:"configScope"`
+	ConfigLabel        string             `json:"configLabel"`
+	LastSeenLabel      string             `json:"lastSeenLabel"`
+	StatusDetail       string             `json:"statusDetail,omitempty"`
 }
 
 type CreateAgentProfileInput struct {
+	RuntimeGeneration    string            `json:"-"`
 	ContextWindows       map[string]int64  `json:"contextWindows"`
 	ID                   string            `json:"id,omitempty"`
 	DeviceID             string            `json:"deviceId,omitempty"`

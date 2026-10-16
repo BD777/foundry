@@ -61,6 +61,11 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 // input: the server profile and credential, skills, the Issue it works on,
 // a session token and the external accounts it may act as.
 func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.AgentSession) (wsRunSessionPayload, error) {
+	if holds, ok := c.hub.store.(store.NativeAccountHoldStore); ok {
+		if err := holds.BindNativeAccount(ctx, session); err != nil {
+			return wsRunSessionPayload{}, err
+		}
+	}
 	profile, err := c.hub.serverProfileForSession(ctx, session)
 	if err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve server profile: %w", err)

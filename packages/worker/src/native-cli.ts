@@ -1,3 +1,8 @@
+import { nativeAccountFingerprint } from "./native-account.js";
+import {
+  runtimeDescriptor,
+  runtimeUpdateState,
+} from "./agent-runtime/state.js";
 import { execFile, spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -16,7 +21,7 @@ const requireFromHere = createRequire(import.meta.url);
  * neither root nor a writable npm prefix.
  */
 export const nativeCliInstallCommands: Record<Runtime, string> = {
-  claude: "curl -fsSL https://claude.ai/install.sh | bash",
+  claude: "curl -fsSL https://claude.ai/install.sh | bash -s stable",
   codex: "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 };
 
@@ -63,9 +68,8 @@ export const claudeTimerResumeVersion = "2.1.291";
 /**
  * The oldest program version Foundry works with: for Claude Code the later
  * of the version the Agent SDK was released with and the one session
- * timers need (claudeTimerResumeVersion); for Codex the release line of
- * the Codex SDK, unknown when that SDK is not installed (the npx
- * bootstrap).
+ * timers need (claudeTimerResumeVersion); Codex uses the stable native
+ * catalog baseline, independent of any SDK wrapper.
  */
 export function minimumCliVersion(runtime: Runtime): string | undefined {
   if (runtime === "claude") {
@@ -76,10 +80,7 @@ export function minimumCliVersion(runtime: Runtime): string | undefined {
       ? sdk
       : claudeTimerResumeVersion;
   }
-  const [major, minor] = (
-    sdkManifest("@openai/codex-sdk")?.version ?? ""
-  ).split(".");
-  return major && minor ? `${major}.${minor}.0` : undefined;
+  return "0.159.1";
 }
 
 /** An SDK's package.json; the SDKs do not export it, so look it up by path. */
@@ -98,17 +99,19 @@ function sdkManifest(
 
 /** The first `x.y.z` in a `--version` line (`2.1.288 (Claude Code)`, `codex-cli 0.153.4`). */
 export function parseCliVersion(output: string): string | undefined {
-  return /(\d+)\.(\d+)\.(\d+)/.exec(output)?.[0];
+  return /\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?/.exec(
+    output,
+  )?.[0];
 }
 
 /** Whether `version` is older than `minimum`, comparing x.y.z numerically. */
 export function isOlderVersion(version: string, minimum: string): boolean {
-  const a = version.split(".").map(Number);
-  const b = minimum.split(".").map(Number);
+  const a = version.split("-")[0]!.split(".").map(Number);
+  const b = minimum.split("-")[0]!.split(".").map(Number);
   for (let i = 0; i < 3; i++) {
     if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
   }
-  return false;
+  return version.includes("-") && !minimum.includes("-");
 }
 
 const cache = new Map<Runtime, { until: number; value: NativeCli }>();
@@ -118,10 +121,20 @@ export function clearNativeCliCache(): void {
   clearDeviceCommands();
 }
 
+/** Only protocol fields cross the registration boundary; retry counters stay local. */
+function nativeRuntimeUpdate(runtime: Runtime): NativeCli["update"] {
+  const update = runtimeUpdateState(runtime);
+  if (!update) return undefined;
+  const { state, checkedAt, target, sdkTarget, current, detail, nextCheckAt } =
+    update;
+  return { state, checkedAt, target, sdkTarget, current, detail, nextCheckAt };
+}
+
 /** The device's program for a runtime, with its version against the minimum. */
 export function nativeCli(runtime: Runtime): NativeCli {
   const cached = cache.get(runtime);
-  if (cached && cached.until > Date.now()) return cached.value;
+  if (cached && cached.until > Date.now())
+    return { ...cached.value, update: nativeRuntimeUpdate(runtime) };
   const value = detectNativeCli(runtime);
   cache.set(runtime, { until: Date.now() + 60_000, value });
   return value;
@@ -138,6 +151,9 @@ function detectNativeCli(runtime: Runtime): NativeCli {
   return {
     installed: true,
     version,
+    path: commandPath(found.command),
+    generation: `${runtimeDescriptor(runtime)?.generation ?? commandPath(found.command)}:${version}:${nativeAccountFingerprint(runtime)}`,
+    update: nativeRuntimeUpdate(runtime),
     minimumVersion,
     outdated: Boolean(
       version && minimumVersion && isOlderVersion(version, minimumVersion),
@@ -166,8 +182,10 @@ export function claudeCommandCandidates(
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
 ): string[] {
+  if (env.FOUNDRY_CLAUDE_BIN?.trim()) return [env.FOUNDRY_CLAUDE_BIN.trim()];
   return [
     env.FOUNDRY_CLAUDE_BIN,
+    runtimeDescriptor("claude")?.executable,
     "claude",
     resolve(home, ".local/bin/claude"),
     "/opt/homebrew/bin/claude",
@@ -192,9 +210,12 @@ export function codexCommandCandidates(
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
 ): string[] {
+  const pinned = env.FOUNDRY_CODEX_BIN?.trim() || env.CODEX_CLI_PATH?.trim();
+  if (pinned) return [pinned];
   return [
     env.FOUNDRY_CODEX_BIN,
     env.CODEX_CLI_PATH,
+    runtimeDescriptor("codex")?.executable,
     "codex",
     resolve(home, ".local/bin/codex"),
     "/opt/homebrew/bin/codex",

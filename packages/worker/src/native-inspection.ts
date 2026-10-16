@@ -1,5 +1,12 @@
+import {
+  isolatedCodexEnvironment,
+  isolatedClaudeEnvironment,
+} from "./runtime-isolation.js";
+import { authenticateIsolatedCodex } from "./agent-runtime/codex-auth.js";
+import { acquireRuntime } from "./agent-runtime/maintenance.js";
+import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /** Read-only native control APIs. No prompt, inference, auth copying or provider HTTP. */
-import { spawn, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -13,8 +20,7 @@ import { resolveClaudeCommand, resolveCodexCommand } from "./native-cli.js";
 import { claudeAccount } from "./native-account.js";
 import { claudeConfigDir, codexHome } from "./native-homes.js";
 import { claudeRenewalPending, isNativeAccountStatus } from "./native-login.js";
-import { parse as parseTOML } from "smol-toml";
-import { withPublishedCodexModels } from "./published-codex-models.js";
+import { CodexAppServer } from "./agent-runtime/codex-client.js";
 
 const exec = promisify(execFile);
 export function nativeSources(runtime: "codex" | "claude"): string[] {
@@ -36,92 +42,42 @@ export async function withCodexControl<T>(
   read: (call: (method: string, params: unknown) => Promise<any>) => Promise<T>,
   runtime?: { cwd: string; env: NodeJS.ProcessEnv; args?: string[] },
 ): Promise<T> {
-  const child = spawn(
-    resolveCodexCommand(),
-    [
-      "app-server",
-      "--stdio",
-      ...(runtime?.args ?? ["-c", 'model_provider="openai"']),
-    ],
-    {
-      cwd: runtime?.cwd ?? homedir(),
-      env: runtime?.env ?? {
-        ...process.env,
-        ...nativeLoginEnvironment("codex"),
-        CODEX_HOME: source,
-      },
-      stdio: ["pipe", "pipe", "ignore"],
-    },
-  );
-  let sequence = 0;
-  let buffer = "";
-  const pending = new Map<
-    number,
-    { resolve: (value: any) => void; reject: (error: Error) => void }
-  >();
-  let closed = false;
-  const fail = () => {
-    closed = true;
-    for (const item of pending.values())
-      item.reject(new Error("Native Codex check did not complete."));
-    pending.clear();
-  };
-  child.on("error", fail);
-  child.on("exit", fail);
-  child.stdin.on("error", fail);
-  child.stdout.on("data", (chunk) => {
-    buffer += chunk;
-    if (buffer.length > 4 * 1024 * 1024) {
-      fail();
-      child.kill();
-      return;
-    }
-    let boundary: number;
-    while ((boundary = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 1);
-      try {
-        const response = JSON.parse(line);
-        const item = pending.get(response.id);
-        if (!item) continue;
-        pending.delete(response.id);
-        // Do not forward raw CLI errors: they can contain credential-bearing URLs.
-        if (response.error)
-          item.reject(
-            new Error(
-              "Native Codex could not complete this read. Check login, connectivity or account access.",
-            ),
-          );
-        else item.resolve(response.result);
-      } catch {
-        /* Native diagnostics are not protocol responses. */
-      }
-    }
-  });
-  const call = (method: string, params: unknown) =>
-    new Promise<any>((resolveCall, reject) => {
-      if (closed) {
-        reject(new Error("Native Codex check did not complete."));
-        return;
-      }
-      const id = ++sequence;
-      pending.set(id, { resolve: resolveCall, reject });
-      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`);
-    });
-  const timer = setTimeout(() => {
-    fail();
-    child.kill();
-  }, 25000);
+  const releaseRuntime = await acquireRuntime("codex");
+  let client: CodexAppServer | undefined;
   try {
-    await call("initialize", {
-      clientInfo: { name: "foundry_account_check", version: "1.0.0" },
-    });
-    child.stdin.write('{"method":"initialized"}\n');
-    return await read(call);
+    const env =
+      runtime?.env ??
+      isolatedCodexEnvironment(
+        {
+          runtime: "codex",
+          id: "official-inspection",
+          connectionType: "local_login",
+        },
+        {
+          ...process.env,
+          ...nativeLoginEnvironment("codex"),
+          CODEX_HOME: source,
+        },
+        homedir(),
+      );
+    const command = resolveCodexCommand();
+    client = new CodexAppServer(
+      command,
+      env,
+      runtime?.cwd ?? homedir(),
+      { initializeMs: 25000, controlMs: 25000 },
+      runtime?.args ?? ["-c", 'model_provider="openai"'],
+    );
+    await authenticateIsolatedCodex(client, env, command);
+    return await read((method, params) => client!.request(method, params));
+  } catch {
+    // Native errors may include credential-bearing URLs.
+    throw new Error(
+      "Native Codex could not complete this read. Check login, connectivity or account access.",
+    );
   } finally {
-    clearTimeout(timer);
-    child.kill();
-    fail();
+    client?.close();
+    releaseRuntime();
   }
 }
 
@@ -139,14 +95,25 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
   }
   // Loaded on use: the SDK is installed beside the worker's runtime, not
   // with the npx bootstrap that runs install/doctor.
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  const { query } = await loadClaudeSdk();
   const session = query({
     prompt: noPrompt(),
     options: {
       cwd: homedir(),
       pathToClaudeCodeExecutable: resolveClaudeCommand(),
-      env: { ...process.env, ...nativeLoginEnvironment("claude") },
+      env: isolatedClaudeEnvironment(
+        {
+          runtime: "claude",
+          id: "official-inspection",
+          connectionType: "local_login",
+        },
+        { ...process.env, ...nativeLoginEnvironment("claude") },
+        homedir(),
+      ),
       settingSources: [],
+      strictMcpConfig: true,
+      skills: [],
+      plugins: [],
       persistSession: false,
       mcpServers: {},
       tools: [],
@@ -157,10 +124,12 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
     release();
   }, 45000);
   try {
-    return (await session.supportedModels()).map((model) => ({
-      id: model.value,
-      label: model.displayName,
-    }));
+    return (await session.supportedModels()).map(
+      (model: { value: string; displayName?: string }) => ({
+        id: model.value,
+        label: model.displayName,
+      }),
+    );
   } catch {
     throw new Error(
       "Claude Code could not return its official model catalog. Retry after checking the native CLI.",
@@ -173,23 +142,13 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
 }
 
 export async function readOfficialCodexCatalog(): Promise<AgentModelOption[]> {
-  return withPublishedCodexModels(readNativeCodexCatalog);
+  return readNativeCodexCatalog();
 }
 
 async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
   const source = nativeSources("codex")[0]!;
-  let hasCustomCatalog = false;
-  try {
-    const config = parseTOML(
-      readFileSync(resolve(source, "config.toml"), "utf8"),
-    );
-    hasCustomCatalog = Boolean(config.model_catalog_json);
-  } catch {
-    /* A missing config uses native defaults. */
-  }
-  // Native model/list owns remote discovery and its offline fallback. A custom
-  // catalog belongs to a gateway, so it must never appear as official options.
-  if (!hasCustomCatalog) {
+  // Official discovery uses the same isolated configuration as execution.
+  {
     try {
       const models = await withCodexControl(source, async (call) => {
         const options: AgentModelOption[] = [];
@@ -227,7 +186,19 @@ async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
     resolveCodexCommand(),
     ["debug", "models", "--bundled", "-c", 'model_provider="openai"'],
     {
-      env: { ...process.env, ...nativeLoginEnvironment("codex") },
+      env: isolatedCodexEnvironment(
+        {
+          runtime: "codex",
+          id: "official-inspection",
+          connectionType: "local_login",
+        },
+        {
+          ...process.env,
+          ...nativeLoginEnvironment("codex"),
+          CODEX_HOME: source,
+        },
+        homedir(),
+      ),
       timeout: 20000,
       maxBuffer: 4 * 1024 * 1024,
     },

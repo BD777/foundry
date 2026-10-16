@@ -175,6 +175,11 @@ export function shortUnavailableReason(
  * as one connection regardless of which identity currently represents it.
  */
 export function pickerAgentMeta(agent: AgentProjection): PickerAgentMeta {
+  if (agent.accountHold)
+    return {
+      detail: i18n.t("agents:picker.accountSuspended"),
+      title: agent.statusDetail,
+    };
   if (agent.status !== "healthy") {
     return {
       detail: shortUnavailableReason(agent.status, agent.statusDetail),
@@ -241,9 +246,10 @@ export function buildPickerAgentOptions(
   return canonical
     .filter(
       (agent) =>
-        !anyUsable ||
-        agent.status === "healthy" ||
-        agent.id === selectedAgentId,
+        (!agent.accountHold || agent.id === selectedAgentId) &&
+        (!anyUsable ||
+          agent.status === "healthy" ||
+          agent.id === selectedAgentId),
     )
     .map((agent) => {
       const meta = pickerAgentMeta(agent);

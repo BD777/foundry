@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  withCodexControl,
   inspectNativeAccount,
   readOfficialCodexCatalog,
 } from "../dist/native-inspection.js";
@@ -33,6 +41,17 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
  console.log(JSON.stringify({id:m.id,result}));
 });`,
     { mode: 0o700 },
+  );
+  writeFileSync(
+    join(directory, "auth.json"),
+    JSON.stringify({
+      tokens: {
+        account_id: "test-account",
+        access_token: "test-access",
+        id_token: "test-id",
+        refresh_token: "never-copy",
+      },
+    }),
   );
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -71,13 +90,19 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
       reads.filter((x) => x.method).map((x) => x.method),
       [
         "initialize",
+        "account/login/start",
         "account/read",
         "account/rateLimits/read",
         "initialize",
+        "account/login/start",
         "account/read",
         "account/rateLimits/read",
+        "initialize",
+        "account/login/start",
+        "model/list",
       ],
     );
+    assert(!JSON.stringify(reads).includes("never-copy"));
     assert.ok(
       reads.at(-1).includes("--bundled"),
       "official catalog cannot inherit a gateway catalog",
@@ -98,5 +123,40 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
     if (previous.home === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = previous.home;
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("failed Codex inspection setup releases its runtime lease", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "foundry-inspection-lease-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const source = join(directory, "not-a-directory");
+  writeFileSync(source, "not a native home");
+  const { foundryToolsRoot } = await import("../dist/state-root.js");
+  const leases = join(foundryToolsRoot(), "agent-runtime-locks", "codex");
+  const ownReaders = () =>
+    (existsSync(leases) ? readdirSync(leases) : []).filter((name) => {
+      if (!name.startsWith("reader-")) return false;
+      try {
+        return (
+          JSON.parse(readFileSync(join(leases, name), "utf8")).pid ===
+          process.pid
+        );
+      } catch {
+        return false;
+      }
+    });
+  const before = ownReaders();
+  const marker = process.env.FOUNDRY_RUNTIME_CONFIG_ISOLATED;
+  delete process.env.FOUNDRY_RUNTIME_CONFIG_ISOLATED;
+  try {
+    await assert.rejects(withCodexControl(source, async () => {}));
+    assert.deepEqual(
+      ownReaders(),
+      before,
+      "failed setup must not block future updates",
+    );
+  } finally {
+    if (marker !== undefined)
+      process.env.FOUNDRY_RUNTIME_CONFIG_ISOLATED = marker;
   }
 });

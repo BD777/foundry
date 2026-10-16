@@ -1,5 +1,42 @@
 /** Model providers, device accounts and account inspection. */
 export const profiles = {
+  runtimeUpdates: {
+    updateNowLabel: "Update {{name}} to stable",
+    noticeTitle: "{{name}} {{version}} → stable {{target}}",
+    workerRequired:
+      "Update this device’s worker to enable automatic agent updates.",
+    externalHint:
+      "This installation is managed externally. Open Account & defaults to see the update details.",
+    waitingHint:
+      "The worker will update automatically when active {{name}} work finishes. Other agents can keep running.",
+    updatingHint: "The worker is updating and validating the stable version.",
+    failedHint:
+      "The worker could not complete the update and kept the previous version. You can retry here.",
+    automaticHint:
+      "The worker checks official stable releases and updates automatically when this agent is idle.",
+    updateNow: "Update to stable",
+
+    policy:
+      "Agent runtimes follow official stable releases and update when idle.",
+    current: "Installed version",
+    path: "Executable",
+    target: "Latest stable",
+    sdk: "SDK target",
+    status: "Update status",
+    check: "Check for updates",
+    checking: "Checking updates…",
+    states: {
+      unknown: "Not checked",
+      checking: "Checking",
+      current: "Up to date",
+      available: "Update available",
+      waiting_idle: "Waiting for active work to finish",
+      updating: "Updating and validating",
+      failed: "Update failed; previous runtime retained",
+      external: "Managed by another installer",
+    },
+  },
+
   page: {
     title: "Model providers",
     intro:
@@ -220,6 +257,15 @@ export const profiles = {
     saveFailed: "Could not update this device's model providers. Try again.",
   },
   accounts: {
+    suspended: "Suspended",
+    suspendedDetail:
+      "{{account}} reported an account suspension at {{at}}. Foundry has stopped sending work to this account.",
+    resumeHint:
+      "After resolving the suspension, you can allow Foundry to try this account again. This does not verify recovery with the provider. Another explicit suspension will block it again.",
+    resume: "Resume use",
+    resuming: "Resuming…",
+    resumeFailed: "Could not resume the account. Refresh and try again.",
+
     localLoginDetected: "Local login detected · Online validity not checked",
     installNative: "Install the native agent on this device.",
     noLogin:
@@ -335,7 +381,7 @@ export const profiles = {
     usedByFoundry: "Used by Foundry",
     otherApp: "Other app · inspection only",
     backToFoundry: "Back to Foundry’s configuration",
-    foundryUses: "Foundry uses: <code>{{source}}</code>",
+    foundryUses: "Login source: <code>{{source}}</code>",
     viewingOther:
       " · Viewing another configuration does not change the execution account.",
     lastChecked: "Last checked {{time}} · Credentials stay on this device.",

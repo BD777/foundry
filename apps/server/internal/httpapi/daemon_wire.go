@@ -379,9 +379,10 @@ type wsRunSessionPayload struct {
 }
 
 type wsSteerSessionPayload struct {
-	Message     string                 `json:"message"`
-	Attachments []store.ChatAttachment `json:"attachments,omitempty"`
-	SessionID   string                 `json:"sessionId"`
+	SentBySessionID string                 `json:"sentBySessionId,omitempty"`
+	Message         string                 `json:"message"`
+	Attachments     []store.ChatAttachment `json:"attachments,omitempty"`
+	SessionID       string                 `json:"sessionId"`
 	// InputID is the message's id (a queued message's): a worker that
 	// already applied a steer with it answers without applying it again,
 	// and names its transcript event evt_<InputID>. Older workers ignore it.

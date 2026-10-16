@@ -411,3 +411,73 @@ test("a tool call split by a steered message gives each group its own row id", (
   assert.equal(messages[steer - 1].kind, "process");
   assert.equal(messages[steer + 1].kind, "process");
 });
+
+test("cumulative commentary updates replace the same native message without merging distinct messages", async () => {
+  const { sessionTranscriptEntries } =
+    await import("../src/features/chat/transcript-adapters.ts");
+  const event = (id, messageId, text, kind = "commentary") => ({
+    id,
+    sessionId: "s",
+    at: "2026-10-16T03:24:38Z",
+    label: "Commentary",
+    level: "info",
+    detail: text,
+    message: { id: messageId, kind, text },
+  });
+  const entries = sessionTranscriptEntries({
+    id: "s",
+    status: "running",
+    provider: "codex",
+    events: [
+      event("e1", "input1/msg1", "我先看"),
+      event("e2", "input1/msg1", "我先看看已有资料"),
+      event("tool", "call1", "读取目录", "tool"),
+      event("e3", "input1/msg1", "我先看看已有资料，再搭建阅读站。"),
+      event("e4", "input1/msg2", "另一段独立说明"),
+      event("e5", "input2/msg1", "新一轮的说明"),
+    ],
+  });
+  const comments = entries.filter((e) => e.kind === "commentary");
+  assert.deepEqual(
+    comments.map((e) => e.text),
+    ["我先看看已有资料，再搭建阅读站。", "另一段独立说明", "新一轮的说明"],
+  );
+  assert.equal(comments[0].stepId, "agent-session:s:e1");
+  assert.equal(entries[0], comments[0]);
+  assert.equal(entries[1].kind, "tool");
+});
+
+test("commentary streams as body text between independent thinking and tool groups", () => {
+  const commentary = {
+    id: "commentary",
+    kind: "commentary",
+    title: "Process",
+    text: "已安排只重启 **byte-dev** 的控制 worker。",
+    streaming: true,
+  };
+  const rows = projectTranscript([sequence[0], commentary]);
+  assert.equal(rows[0].kind, "process");
+  assert.equal(rows[1].kind, undefined);
+  assert.equal(rows[1].role, "bot");
+  assert.equal(rows[1].streaming, true);
+  assert.equal(rows[1].text, commentary.text);
+  assert.equal(rows[1].processItems, undefined);
+  const settled = projectTranscript([
+    sequence[0],
+    {
+      ...commentary,
+      streaming: false,
+      text: `${commentary.text}\n\n再检查兼容性。`,
+    },
+    sequence[1],
+    sequence[2],
+    sequence[3],
+  ]);
+  assert.deepEqual(
+    settled.map((row) => row.kind),
+    ["process", undefined, "process", undefined],
+  );
+  assert.equal(settled[1].id, rows[1].id);
+  assert.equal(settled[1].streaming, false);
+  assert.equal(settled[2].processItems.length, 2);
+});

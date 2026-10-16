@@ -1,9 +1,10 @@
+import { startAgentUpdates } from "./agent-runtime/updates.js";
 import {
   executionHostClient,
   startExecutionHost,
   stopExecutionHost,
 } from "./execution-host/client.js";
-import { writeFileSync } from "node:fs";
+import { writePrivateJSONAtomic } from "./storage.js";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "./secret-redaction.js";
 import { startStallMonitor } from "./stall-monitor.js";
@@ -21,7 +22,10 @@ import {
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
-import { sessionHasRunningBackgroundTasks } from "./runner/active-runtimes.js";
+import {
+  sessionHasRunningBackgroundTasks,
+  startIdleRuntimeSweeps,
+} from "./runner/active-runtimes.js";
 import { clearClaudeSettingsFiles } from "./session-policy.js";
 import { readRegistry, recordExplicitWorkspace } from "./workspaces.js";
 import { syncReviews } from "./issues.js";
@@ -35,7 +39,7 @@ import { reapConnectorLeftovers } from "./connectors/index.js";
 import { errorMessage, optionEnabled, optionValue, sleep } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock } from "./device-pairing.js";
-import { superviseAgentProcesses } from "./agent-processes.js";
+import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
 import { startSessionTimers } from "./session-timers.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
@@ -51,6 +55,16 @@ import { registerSkillHandlers } from "./daemon/handlers/skills.js";
 import { registerConnectorHandlers } from "./daemon/handlers/connectors.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
+
+let heartbeatStartTime: string | undefined;
+function writeDaemonHeartbeat(): void {
+  heartbeatStartTime ??= processIdentity(process.pid)?.startTime;
+  writePrivateJSONAtomic(foundryStatePath("daemon-heartbeat"), {
+    pid: process.pid,
+    startTime: heartbeatStartTime,
+    at: new Date().toISOString(),
+  });
+}
 
 /**
  * Record the server's removal decision locally and park the daemon. Called
@@ -88,6 +102,8 @@ export async function connect(args: string[]): Promise<void> {
   }
   registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
+  // Startup grace begins before native/service discovery can take time.
+  writeDaemonHeartbeat();
   // Reattach the OS-managed execution owner before reporting live claims.
   // The worker still supervises its own short-lived inspection processes.
   await startExecutionHost(serverURLFromArgs(args));
@@ -143,10 +159,9 @@ async function connectWebSocket(args: string[]): Promise<void> {
   // Process-level heartbeat: write a timestamp file every 30s so an
   // external watchdog can detect event-loop blocks. The watchdog kills
   // the daemon if the file is stale (>5min), and launchd restarts it.
-  const heartbeatPath = foundryStatePath("daemon-heartbeat");
   const writeHeartbeat = (): void => {
     try {
-      writeFileSync(heartbeatPath, new Date().toISOString());
+      writeDaemonHeartbeat();
     } catch {
       // Best-effort — don't crash the daemon over a heartbeat write.
     }
@@ -175,6 +190,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (host) {
     await host.refresh();
     const reconnectHost = setInterval(() => {
+      if (executionHostClient() !== host) return;
       void host
         .refresh()
         .catch((error) =>
@@ -199,6 +215,10 @@ async function connectWebSocket(args: string[]): Promise<void> {
         sessionHasRunningBackgroundTasks(sessionId) ||
         executionHostClient()?.hasSession(sessionId) === true,
     );
+  }
+  if (!once) {
+    startAgentUpdates();
+    if (!host) startIdleRuntimeSweeps();
   }
   const taskScheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,

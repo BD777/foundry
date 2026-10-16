@@ -81,11 +81,14 @@ export async function runCodexStreamedTurn(
   const unregisterSteer = thread.steer
     ? registerActiveSessionSteerTarget(sessionId, {
         provider: "codex",
-        steer: async (message, attachments = [], steerId) => {
+        steer: async (message, attachments = [], steerId, sentBySessionId) => {
           if (state.managedSkills)
             validateWorkspaceSkillPrompt(message, state.managedSkills);
           const input = [
-            { type: "text", text: userMessageText(message, attachments) },
+            {
+              type: "text",
+              text: userMessageText(message, attachments, sentBySessionId),
+            },
             ...attachments
               .filter((attachment) => attachment.kind === "image")
               .map((attachment) => ({
@@ -126,6 +129,12 @@ export async function runCodexStreamedTurn(
   try {
     const streamed = await thread.runStreamed(input, {
       signal: abortController.signal,
+      onStartupWait: () =>
+        state.emit(
+          "Notice",
+          "Codex is still preparing its native thread. No model turn has started yet; you can stop this startup from the chat.",
+          "warning",
+        ),
     });
     const events = streamed.events[Symbol.asyncIterator]();
     let turnCompleted = false;
@@ -155,6 +164,9 @@ export async function runCodexStreamedTurn(
     if (turnCompleted && typeof events.return === "function") {
       void events.return().catch(() => undefined);
     }
+  } catch (error) {
+    if (canceled) throw new AgentSessionCanceledError();
+    throw error;
   } finally {
     // The turn's process ends with it: one a failure left running would
     // write the thread alongside the next turn's.

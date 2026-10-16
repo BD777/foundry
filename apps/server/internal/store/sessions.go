@@ -21,6 +21,8 @@ type AgentSessionEvent struct {
 }
 
 type AgentSessionEventMetadata struct {
+	NativeAccountError   string `json:"nativeAccountError,omitempty"`
+	NativeAccountInputID string `json:"nativeAccountInputId,omitempty"`
 	// TaskOutputFile is a Claude background task's own output log. Workers
 	// before it sent that path, and every changed workspace file, as
 	// outputFile; that key is no longer read, so those guesses stay hidden.

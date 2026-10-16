@@ -312,12 +312,25 @@ export function spawnAgentProcess(
 ): ChildProcess {
   if (!supervisor) return spawn(command, args, options);
   const { registry, identity } = supervisor;
-  const child = spawn(command, args, { ...options, detached: true });
+  // launchd has no Linux cgroup. A guardian shares the native process's
+  // group, survives its owner's SIGKILL, and kills the group on reparenting.
+  const guarded = process.platform === "darwin";
+  const program = guarded ? process.execPath : command;
+  const arguments_ = guarded
+    ? [
+        fileURLToPath(new URL("./process-group-child.js", import.meta.url)),
+        "--owner",
+        String(process.pid),
+        command,
+        ...args,
+      ]
+    : args;
+  const child = spawn(program, arguments_, { ...options, detached: true });
   groupLeaders.add(child);
   const pid = child.pid;
   if (pid) {
     try {
-      recordAgentProcess(registry, pid, [command, ...args], {
+      recordAgentProcess(registry, pid, [program, ...arguments_], {
         pid: process.pid,
         startTime: identity.startTime,
       });
@@ -326,7 +339,10 @@ export function spawnAgentProcess(
         `Recording agent process ${pid} failed: ${errorMessage(error)}`,
       );
     }
-    child.once("exit", () => forgetAgentProcess(registry, pid));
+    child.once("exit", () => {
+      if (guarded) signalProcessGroup(pid, "SIGKILL");
+      forgetAgentProcess(registry, pid);
+    });
   }
   return child;
 }

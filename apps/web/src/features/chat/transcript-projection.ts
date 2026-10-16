@@ -28,7 +28,6 @@ export type TranscriptEntry = TranscriptMessage &
 
 const processKinds = new Set<TranscriptMessage["kind"]>([
   "reasoning",
-  "commentary",
   "tool",
   "context",
   "status",
@@ -152,7 +151,7 @@ export function projectTranscript(
       ...rest,
       role: kind === "user" ? "user" : "bot",
       kind:
-        kind === "user" || kind === "assistant"
+        kind === "user" || kind === "assistant" || kind === "commentary"
           ? undefined
           : (kind as "boundary" | "failure"),
     });

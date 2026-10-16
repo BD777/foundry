@@ -93,15 +93,24 @@ test("a run's window follows setting, endpoint catalog, official model, default"
   );
 });
 
-test("logins and device profiles keep the CLI's own window", async () => {
-  for (const profile of [
+test("selected device connections resolve a window while native Claude logins keep their own", async () => {
+  const session = { id: "s", model: "auto_model/alwaysday1_max" };
+  const resolved = await withSessionContextWindow(
     serverProfile({ origin: undefined }),
+    session,
+    catalog,
+  );
+  assert.deepEqual(resolved.contextWindow, {
+    tokens: 1000000,
+    source: "endpoint",
+    model: session.model,
+  });
+  const official = await withSessionContextWindow(
     serverProfile({ connectionType: "local_login", baseUrl: undefined }),
-  ]) {
-    const session = { id: "s", model: "auto_model/alwaysday1_max" };
-    const resolved = await withSessionContextWindow(profile, session, catalog);
-    assert.equal(resolved.contextWindow, undefined);
-  }
+    session,
+    catalog,
+  );
+  assert.equal(official.contextWindow, undefined);
 });
 
 test("Claude Code gets the window for a model it does not know", async () => {

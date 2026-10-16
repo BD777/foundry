@@ -6,6 +6,7 @@ import type {
   ConversationComposer,
 } from "../src/components/conversation/conversation-types";
 import { Button } from "../src/components/ui/button";
+import { projectTranscript } from "../src/features/chat/transcript-projection";
 import "../src/styles.css";
 import "./conversation.css";
 
@@ -84,6 +85,35 @@ function Fixture() {
         </Button>
         <Button onClick={() => setFailure(!failure)}>
           Failure: {String(failure)}
+        </Button>
+        <Button
+          onClick={() => {
+            setActive(true);
+            setMessages(
+              projectTranscript([
+                {
+                  id: "reason",
+                  kind: "reasoning",
+                  text: "Inspect worker compatibility.",
+                },
+                {
+                  id: "tool",
+                  kind: "tool",
+                  title: "Read configuration",
+                  text: "cgroup v1 detected",
+                  status: "completed",
+                },
+                {
+                  id: "progress",
+                  kind: "commentary",
+                  streaming: true,
+                  text: "已安排只重启 **byte-dev** 的控制 worker，执行服务保持原 PID，不会打断那两条活动会话。\n\n还发现一个 byte-dev 特有的兼容点：它使用 cgroup v1，我会一并修正检测和重试逻辑。",
+                },
+              ]).map((message) => ({ ...message, id: message.id! })),
+            );
+          }}
+        >
+          Codex commentary
         </Button>
         <Button
           onClick={() => {

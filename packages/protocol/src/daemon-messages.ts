@@ -480,6 +480,8 @@ export interface RunSessionPayload {
 
 /** steer_session */
 export interface SteerSessionPayload {
+  /** Authenticated sending session; absent for direct user input. */
+  sentBySessionId?: string;
   message?: string;
   attachments?: ChatAttachment[];
   sessionId?: string;

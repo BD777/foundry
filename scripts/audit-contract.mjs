@@ -65,6 +65,7 @@ export const goDtoPaths = [
   "apps/server/internal/store/device_sharing.go",
   "apps/server/internal/store/device_placement.go",
   "apps/server/internal/store/profiles.go",
+  "apps/server/internal/store/native_account_holds.go",
   "apps/server/internal/store/skills.go",
   "apps/server/internal/store/skill_repositories.go",
   "apps/server/internal/store/sessions.go",

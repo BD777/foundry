@@ -1,3 +1,4 @@
+import { isolatedCodexEnvironment } from "../runtime-isolation.js";
 import type {
   AgentProfileProjection,
   AgentSession,
@@ -125,6 +126,7 @@ export function codexEndpointConfig(
     model_provider: id,
     model_providers: {
       [id]: {
+        ...profile.codexProviderConfig,
         name: profile.label?.trim() || id,
         base_url: baseUrl,
         wire_api: "responses",
@@ -149,8 +151,6 @@ export function codexProfileConfig(
         ? codexContextWindowConfig(profile.contextWindow)
         : {}),
     };
-  if (profile.codexModelProvider)
-    return { model_provider: profile.codexModelProvider };
   const baseUrl = profile.baseUrl?.trim();
   if (!baseUrl) return {};
   return {
@@ -174,13 +174,9 @@ export function codexSessionEnvironment(
   const env = sessionEnvironment(workspacePath, profile, session);
   // The native CLI reads CODEX_API_KEY; the generic OpenAI alias alone is
   // insufficient for a server-dispatched compatible connection.
-  if (
-    profile.connectionType !== "local_login" &&
-    !profile.codexModelProvider &&
-    env.OPENAI_API_KEY
-  )
+  if (profile.connectionType !== "local_login" && env.OPENAI_API_KEY)
     env.CODEX_API_KEY = env.OPENAI_API_KEY;
-  return env;
+  return isolatedCodexEnvironment(profile, env, workspacePath);
 }
 
 type CodexSDKInput =

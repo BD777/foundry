@@ -72,7 +72,12 @@ export interface DeviceWorkerUpdate {
 }
 
 export type WorkerUpdateStep =
-  "starting" | "checking" | "downloading" | "installing" | "restarting";
+  | "starting"
+  | "checking"
+  | "downloading"
+  | "installing"
+  | "waiting"
+  | "restarting";
 
 /**
  * `exited`: the update command failed. `vanished`: it ended without

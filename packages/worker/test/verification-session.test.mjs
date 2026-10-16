@@ -125,12 +125,12 @@ test("a verifier's Claude runs its tools without a turn cap, inside the sandbox"
     assert.ok(options.allowedTools.includes(tool), tool);
   assert.equal(options.disallowedTools, undefined);
   assert.equal(options.maxTurns, undefined);
-  assert.deepEqual(options.settingSources, ["project"]);
+  assert.deepEqual(options.settingSources, []);
   assert.equal(options.strictMcpConfig, true);
   // Its Foundry tools: the server lists a verifier only those that read.
   // They reach the process over its input stream, never as an argument.
   assert.ok(call.mcpServers.foundry);
-  assert.equal(options.mcpServers, undefined);
+  assert.deepEqual(options.mcpServers, {});
   const notes = options.systemPrompt.append;
   assert.match(notes, /an independent verifier/);
   assert.match(notes, /read-only at the operating-system level/);

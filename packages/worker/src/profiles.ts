@@ -1,3 +1,4 @@
+import { nativeCli } from "./native-cli.js";
 /**
  * Agent profile management — local config, runtime environment, and status.
  */
@@ -49,10 +50,12 @@ export interface AgentProfileLocalConfig {
   /** False when the credential is a login or command, not a key to check. */
   keyCheckable?: boolean;
   /**
-   * A provider from Codex's own config.toml, run by this name so Codex
-   * applies its own definition rather than Foundry's approximation of it.
+   * The original native provider id, retained as discovery provenance.
+   * Execution materializes the selected connection instead of loading its file.
    */
   codexModelProvider?: string;
+  /** Explicit snapshot of the selected native provider, never global CLI settings. */
+  codexProviderConfig?: Record<string, unknown>;
   /** Found in the device's agent configuration rather than written for Foundry. */
   discovered?: boolean;
   baseUrl?: string;
@@ -416,6 +419,7 @@ export function agentProfilesForWorkspace(
     const id = profileID(profile);
     return {
       id,
+      runtimeGeneration: nativeCli(profile.runtime).generation,
       // Only a local login has an account to name; endpoint profiles
       // authenticate with a key, which identifies nobody.
       accountLabel:
@@ -646,6 +650,7 @@ export function profileRuntimeEnvironment(
   session?: AgentSession,
 ): Record<string, string> {
   const env: Record<string, string> = { ...(profile.env ?? {}) };
+  if (profile.runtime === "claude") env.DISABLE_AUTOUPDATER = "1";
   const model = session?.model?.trim() || profile.model?.trim();
   // A native login is not the daemon's inherited gateway configuration.
   // Empty values override inherited API keys, including in stage sandboxes.
@@ -653,8 +658,7 @@ export function profileRuntimeEnvironment(
     Object.assign(env, nativeLoginEnvironment(profile.runtime));
   }
   // A Codex provider run by name carries its own endpoint and credential.
-  const ownEndpoint =
-    profile.connectionType !== "local_login" && !profile.codexModelProvider;
+  const ownEndpoint = profile.connectionType !== "local_login";
   if (ownEndpoint && profile.apiKey?.trim()) {
     if (profile.runtime === "claude") {
       env.ANTHROPIC_AUTH_TOKEN = profile.apiKey.trim();
@@ -709,13 +713,43 @@ export function profileRuntimeEnvironment(
  * a keyless internal gateway). The daemon's own environment must never quietly
  * supply one — that would send the gateway a request authenticated as this
  * machine, and make a genuinely keyless connection look like it works. Local
- * logins and device-owned profiles are untouched: for them an inherited env
- * var is a configured credential source (see profileHasAuth).
+ * logins retain their explicit native credential source; an env profile and
+ * selected native provider env/header references admit only their named values.
  */
 export function baseProcessEnvironment(
   profile: AgentProfileLocalConfig,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+  if (!profile.command) {
+    const kept = new Set([
+      "CODEX_HOME",
+      "CLAUDE_CONFIG_DIR",
+      "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+      "CLAUDE_CODE_TMPDIR",
+      ...(profile.connectionType === "env"
+        ? credentialEnvNames(profile.runtime)
+        : []),
+      ...(typeof profile.codexProviderConfig?.env_key === "string"
+        ? [profile.codexProviderConfig.env_key]
+        : []),
+      ...Object.values(
+        (profile.codexProviderConfig?.env_http_headers ?? {}) as Record<
+          string,
+          string
+        >,
+      ),
+      ...(profile.connectionType === "local_login" &&
+      profile.runtime === "claude"
+        ? ["CLAUDE_CODE_OAUTH_TOKEN"]
+        : []),
+    ]);
+    for (const name of Object.keys(env))
+      if (
+        /^(?:CODEX_|CLAUDE_|CLAUDECODE$|ANTHROPIC_|OPENAI_)/.test(name) &&
+        !kept.has(name)
+      )
+        delete env[name];
+  }
   if (
     profile.origin === "server" &&
     (profile.connectionType === "anthropic_compatible" ||

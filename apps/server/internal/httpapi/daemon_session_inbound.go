@@ -48,6 +48,9 @@ func (c *daemonConnection) onSessionEvent(ctx context.Context, envelope wsEnvelo
 	// An event sent again (its acknowledgement was late) is acknowledged
 	// again and nothing else: no new time, no stream, no cache change.
 	stored, err := c.recordSessionEvent(ctx, payload.Event)
+	if err == nil && payload.Event.Metadata != nil {
+		err = c.observeNativeAccountHold(ctx, payload.Event.SessionID, payload.Event.Metadata.NativeAccountInputID, payload.Event.Metadata.NativeAccountError)
+	}
 	if err == nil {
 		target := c.sessionTarget(ctx, payload.Event.SessionID)
 		if stored {
@@ -141,6 +144,9 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		err     error
 	)
 	if payload.Error != "" {
+		if err := c.observeNativeAccountHold(ctx, payload.SessionID, payload.InputID, nativeAccountTerminalError(payload.Error)); err != nil {
+			return err
+		}
 		session, err = c.hub.store.FailAgentSession(ctx, payload.SessionID, payload.Error)
 	} else {
 		session, err = c.hub.store.CompleteAgentSession(ctx, payload.SessionID, payload.Response, payload.NativeSessionID)

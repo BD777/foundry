@@ -116,6 +116,7 @@ export const agents: Translation<typeof en> = {
   },
   picker: {
     namedAccount: "{{runtime}} · {{account}}",
+    accountSuspended: "账号已停用，可在设备账号设置中手动恢复使用。",
     deviceAccount: "{{runtime}} · 设备账号",
     deviceOffline: "设备离线。",
     unavailableOnDevice: "在此设备上不可用。",

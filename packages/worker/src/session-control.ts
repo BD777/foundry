@@ -6,12 +6,8 @@
 import type { AgentSession, ChatAttachment } from "@bd777/foundry-protocol";
 import { dispatchKey } from "./session-state.js";
 
-export class ControlOutcomeUnknownError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ControlOutcomeUnknownError";
-  }
-}
+export { ControlOutcomeUnknownError } from "./agent-runtime/control-error.js";
+import { ControlOutcomeUnknownError } from "./agent-runtime/control-error.js";
 
 export interface ActiveSessionSteerTarget {
   provider: AgentSession["provider"];
@@ -24,6 +20,7 @@ export interface ActiveSessionSteerTarget {
     message: string,
     attachments?: ChatAttachment[],
     steerId?: string,
+    sentBySessionId?: string,
   ) => Promise<void>;
 }
 
@@ -75,12 +72,13 @@ export async function steerActiveSession(
   message: string,
   attachments?: ChatAttachment[],
   steerID?: string,
+  sentBySessionId?: string,
 ): Promise<void> {
   const target = activeSessionSteerTargets.get(sessionID);
   if (!target) {
     throw new Error("This session is not accepting active steer input.");
   }
-  await target.steer(message, attachments, steerID);
+  await target.steer(message, attachments, steerID, sentBySessionId);
 }
 
 /**
@@ -114,16 +112,29 @@ export function steerActiveSessionOnce(
   steerID: string | undefined,
   message: string,
   attachments?: ChatAttachment[],
+  sentBySessionId?: string,
 ): Promise<void> {
   if (!steerID) {
-    return steerActiveSession(sessionID, message, attachments);
+    return steerActiveSession(
+      sessionID,
+      message,
+      attachments,
+      undefined,
+      sentBySessionId,
+    );
   }
   const key = `${sessionID}\u0000${steerID}`;
   const known = appliedSteers.get(key);
   if (known) {
     return known;
   }
-  const applying = steerActiveSession(sessionID, message, attachments, steerID);
+  const applying = steerActiveSession(
+    sessionID,
+    message,
+    attachments,
+    steerID,
+    sentBySessionId,
+  );
   rememberSteer(key, applying);
   applying.catch((error) => {
     // An unknown native acknowledgement must not be retried as a new input.

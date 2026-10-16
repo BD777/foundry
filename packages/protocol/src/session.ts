@@ -272,6 +272,8 @@ export interface AgentBackgroundTaskOutput {
 }
 
 export interface AgentSessionEventMetadata {
+  nativeAccountError?: "account_on_hold";
+  nativeAccountInputId?: string;
   /** A Claude background task's own output log, on its end event. */
   taskOutputFile?: string;
   /**

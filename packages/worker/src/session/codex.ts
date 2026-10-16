@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { resolveCodexCommand } from "../native-cli.js";
-import { codexEndpointConfig } from "../runner/codex-options.js";
+import { codexProfileConfig } from "../runner/codex-options.js";
 import { codexTransportPlan } from "../runner/codex-transport.js";
 import type { HarnessAdapter } from "./harness.js";
 import {
@@ -9,6 +9,7 @@ import {
   writeSandboxCredentials,
 } from "./provider-credentials.js";
 import { codexDisabledFeatures } from "./policy.js";
+import { CodexAppServerThread } from "../runner/codex-app-server.js";
 
 /**
  * The private Codex configuration of a stage session. Codex discovers skills
@@ -67,51 +68,46 @@ export const codexHarness: HarnessAdapter = {
       policy.projectInstructions,
       Boolean(workspace) || Boolean(spec.prompt.documents?.length),
     );
-    writeFileSync(resolve(config, "config.toml"), stage.toml, { mode: 0o600 });
-    const sdkName = "@openai/codex-sdk";
-    const sdk = (await import(sdkName)) as {
-      Codex: new (options: Record<string, unknown>) => {
-        startThread: (options: Record<string, unknown>) => {
-          id?: string | null;
-          run: (
-            input: unknown,
-            options: Record<string, unknown>,
-          ) => Promise<{
-            finalResponse: string;
-            items?: { type: string; command?: string; text?: string }[];
-          }>;
-        };
-      };
-    };
-    const baseUrl = profile.baseUrl?.trim();
+    writeFileSync(
+      resolve(config, "config.toml"),
+      stage.toml +
+        (workspace
+          ? `\n[projects.${JSON.stringify(resolve(workspace.path))}]\ntrust_level = "untrusted"\n`
+          : ""),
+      { mode: 0o600 },
+    );
+    if (profile.connectionType !== "local_login" && env.OPENAI_API_KEY)
+      env.CODEX_API_KEY = env.OPENAI_API_KEY;
     // A stage session learns nothing: it takes the WebSocket only where the
     // endpoint's transport is already known to allow it.
     const transport = codexTransportPlan(profile);
-    const codex = new sdk.Codex({
-      codexPathOverride: sandboxedExecutable(resolveCodexCommand()),
-      apiKey: profile.apiKey,
+    const thread = new CodexAppServerThread(
+      sandboxedExecutable(resolveCodexCommand()),
       env,
-      config: {
+      {
         ...stage.overrides,
-        ...(baseUrl && profile.connectionType !== "local_login"
-          ? codexEndpointConfig(
-              profile,
-              baseUrl,
-              Boolean(profile.apiKey),
-              transport.websockets && transport.learn !== "outcome",
-            )
-          : {}),
+        developer_instructions: spec.systemPrompt,
+        ...codexProfileConfig(
+          {
+            ...profile,
+            codexTransport:
+              transport.websockets && transport.learn !== "outcome"
+                ? "websocket"
+                : "https",
+          },
+          env,
+        ),
       },
-    });
-    const thread = codex.startThread({
-      workingDirectory: workspace?.path ?? home,
-      skipGitRepoCheck: true,
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
-      networkAccessEnabled: false,
-      webSearchMode: "disabled",
-      model: spec.model || profile.model,
-    });
+      {
+        workingDirectory: workspace?.path ?? home,
+        sandboxMode: "read-only",
+        approvalPolicy: "never",
+        networkAccessEnabled: false,
+        webSearchMode: "disabled",
+        ephemeral: true,
+        model: spec.model || profile.model,
+      },
+    );
     const images = spec.prompt.images.map((image, index) => {
       const path = resolve(home, `image-${index}.bin`);
       writeFileSync(path, image.bytes, { mode: 0o400 });
@@ -132,12 +128,28 @@ export const codexHarness: HarnessAdapter = {
     const text = spec.responseSchema
       ? `${prompt}\n\nYour final message must be one JSON object matching this JSON Schema:\n${JSON.stringify(spec.responseSchema)}`
       : prompt;
-    const result = await thread.run([{ type: "text", text }, ...images], {
-      signal,
-    });
-    for (const item of result.items ?? [])
-      if (item.type === "command_execution" && item.command)
-        note(`shell: ${item.command}`);
-    return { text: result.finalResponse, sessionId: thread.id ?? undefined };
+    const { events } = await thread.runStreamed(
+      [{ type: "text", text }, ...images],
+      { signal },
+    );
+    let answer = "";
+    let completed = false;
+    for await (const value of events) {
+      const event = value as {
+        type: string;
+        error?: { message?: string };
+        item?: { type?: string; command?: string; text?: string };
+      };
+      if (event.type === "turn.failed")
+        throw new Error(event.error?.message ?? "Codex verification failed.");
+      if (event.type === "turn.completed") completed = true;
+      if (event.type !== "item.completed") continue;
+      if (event.item?.type === "command_execution" && event.item.command)
+        note(`shell: ${event.item.command}`);
+      if (event.item?.type === "agent_message") answer = event.item.text ?? "";
+    }
+    if (!completed)
+      throw new Error("Codex verification ended without completing its turn.");
+    return { text: answer, sessionId: thread.id ?? undefined };
   },
 };

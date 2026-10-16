@@ -36,13 +36,17 @@ const agentModelCatalogs = new Map<string, Promise<AgentModelOption[]>>();
  */
 export function listAgentModels(
   profile: CreateAgentProfileInput,
-  { reuse = false }: { reuse?: boolean } = {},
+  {
+    reuse = false,
+    catalogIdentity,
+  }: { reuse?: boolean; catalogIdentity?: string } = {},
 ): Promise<AgentModelOption[]> {
   const body = reuse ? { profile } : { profile, refresh: true };
   if (profile.apiKey)
     return request("POST", "/api/agent-profiles/models", { body });
   const key = JSON.stringify(
     [
+      catalogIdentity,
       profile.deviceId,
       profile.id,
       profile.runtime,
@@ -113,4 +117,15 @@ export function saveAgentRuntimeSettings(
   input: SaveAgentRuntimeSettingsInput,
 ): Promise<AgentRuntimeSettings> {
   return request("POST", "/api/devices/runtime-settings", { body: input });
+}
+
+/** Explicit person-only override of Foundry’s remembered suspension. */
+export function resumeNativeAccount(
+  deviceId: string,
+  profileId: string,
+  holdId: string,
+): Promise<{ resumed: boolean }> {
+  return request("POST", "/api/agent-profiles/resume-account", {
+    body: { deviceId, profileId, holdId },
+  });
 }

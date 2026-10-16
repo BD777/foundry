@@ -363,3 +363,20 @@ test("official picker identities belong to the selected device and native profil
     );
   }
 });
+
+test("suspended accounts are hidden for new selections, retained disabled for their existing chat", () => {
+  const held = deviceAgent({
+    connectionType: "local_login",
+    status: "unavailable",
+    accountHold: {
+      id: "hold-1",
+      code: "account_on_hold",
+      accountLabel: "one@example.test",
+      observedAt: "2026-10-16T00:00:00Z",
+    },
+  });
+  assert.deepEqual(buildPickerAgentOptions([held], []), []);
+  const selected = buildPickerAgentOptions([held], [], held.id);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].disabled, true);
+});

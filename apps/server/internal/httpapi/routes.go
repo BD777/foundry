@@ -376,6 +376,7 @@ func (s *Server) routeTable() []route {
 
 		fn("GET /api/agent-profiles", s.handleListAgentProfiles, filtered()),
 		fn("POST /api/agent-profiles", s.handleCreateAgentProfile, inHandler()),
+		fn("POST /api/agent-profiles/resume-account", s.handleResumeNativeAccount, inHandler()),
 		fn("POST /api/agent-profiles/models", s.handleListAgentModels, inHandler()),
 		fn("GET /api/profiles", s.handleListProfiles, filtered()),
 		fn("POST /api/profiles", s.handleCreateProfile, signedIn()),

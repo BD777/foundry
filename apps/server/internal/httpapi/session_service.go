@@ -366,7 +366,7 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 		}
 		steerCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 		defer cancel()
-		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments); err != nil {
+		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments, input.SentBySessionID); err != nil {
 			return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
 		}
 		session, err = store.AgentSessionRecord(ctx, s.store, session.ID)

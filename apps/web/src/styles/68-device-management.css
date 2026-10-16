@@ -945,3 +945,19 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.fdy-agent-runtime-status {
+  min-width: 0;
+}
+.fdy-agent-runtime-status dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(0, 3fr);
+  gap: 0.5rem 1rem;
+}
+.fdy-agent-runtime-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-agent-runtime-status p {
+  margin-block: 0.75rem;
+}

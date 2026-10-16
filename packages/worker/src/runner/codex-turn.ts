@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -37,7 +38,7 @@ import { prepareTurnDirectory } from "./turn-directory.js";
 
 export { nativeSessionIdFromEvent } from "./codex-stream.js";
 
-export async function runCodexWorkspaceSession(
+async function runCodexWorkspaceSessionUnlocked(
   workspacePath: string,
   session: AgentSession,
   profile: AgentProfileLocalConfig,
@@ -190,4 +191,16 @@ async function finishCodexTurn(
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   });
   return { nativeSessionId: state.nativeSessionId, response };
+}
+
+/** Pin the runtime before resolving its executable, SDK or native session. */
+export async function runCodexWorkspaceSession(
+  ...args: Parameters<typeof runCodexWorkspaceSessionUnlocked>
+): Promise<AgentSessionRunResult> {
+  const release = await acquireRuntime("codex");
+  try {
+    return await runCodexWorkspaceSessionUnlocked(...args);
+  } finally {
+    release();
+  }
 }
