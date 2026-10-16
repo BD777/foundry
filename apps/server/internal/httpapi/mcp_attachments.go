@@ -89,10 +89,12 @@ type deliveredAttachment struct {
 }
 
 // mcpSessionWithAttachments is a session a tool started or messaged, with
-// the paths of the files that call handed over.
+// the paths of the files that call handed over and whether it waits for
+// its offline device (mcpSessionAnswer).
 type mcpSessionWithAttachments struct {
 	store.AgentSession
 	DeliveredAttachments []deliveredAttachment `json:"deliveredAttachments,omitempty"`
+	WaitingForDevice     string                `json:"waitingForDevice,omitempty"`
 }
 
 func withDeliveredAttachments(session store.AgentSession, attachments []store.ChatAttachment) any {
@@ -103,7 +105,7 @@ func withDeliveredAttachments(session store.AgentSession, attachments []store.Ch
 	for _, attachment := range attachments {
 		delivered = append(delivered, deliveredAttachment{attachment.ID, attachment.Name, attachment.Path})
 	}
-	return mcpSessionWithAttachments{session, delivered}
+	return mcpSessionWithAttachments{AgentSession: session, DeliveredAttachments: delivered}
 }
 
 // mcpAttachments writes the files refs name into one new folder of the

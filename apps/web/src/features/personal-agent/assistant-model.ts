@@ -4,6 +4,7 @@ import {
   type AgentProfileProjection,
   type AgentSession,
   type AgentSessionEvent,
+  type DeviceProjection,
   type PersonalAgentAction,
   type PersonalAgentDecision,
   type PersonalAgentLimits,
@@ -17,7 +18,13 @@ import {
   agentSessionDisplayEvents,
   responseStreamLabel,
 } from "../../lib/agent-session-events";
+import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isSessionLive } from "../../lib/session-status";
+
+/** This browser's IANA time zone, "" when it reports none. */
+export function browserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
+}
 
 // The assistant's rules as the panel shows them. The server holds the same
 // values (apps/server/internal/personalagent/defaults.go) and enforces them;
@@ -311,6 +318,23 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
 export function assistantWorking(sessions: AgentSession[]): boolean {
   const latest = sessions[sessions.length - 1];
   return Boolean(latest && isSessionLive(latest));
+}
+
+/**
+ * What the conversation shows after its last line: that the assistant waits
+ * for its offline computer (never as working), that it is working on an
+ * answer not yet streaming, or nothing.
+ */
+export function assistantActivity(
+  latest: AgentSession | undefined,
+  devices: readonly DeviceProjection[],
+  lastLineStreaming: boolean,
+): { waitingFor: DeviceProjection } | "working" | undefined {
+  const awaited = deviceAwaitedBy(latest, devices);
+  if (awaited) return { waitingFor: awaited };
+  return latest && isSessionLive(latest) && !lastLineStreaming
+    ? "working"
+    : undefined;
 }
 
 /**

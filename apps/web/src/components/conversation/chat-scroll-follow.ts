@@ -29,7 +29,12 @@ export type ChatScrollFollowEvent =
   | { type: "history-navigation.requested" }
   | { type: "thread.changed" }
   | { type: "user.scroll-intent" }
-  | { type: "user.scrolled"; viewport: ChatViewportMetrics }
+  | {
+      type: "user.scrolled";
+      /** The scroll moved toward the latest content (down). */
+      towardLatest: boolean;
+      viewport: ChatViewportMetrics;
+    }
   | { type: "viewport.scrolled"; viewport: ChatViewportMetrics };
 
 export function chatViewportIsAtLatest(viewport: ChatViewportMetrics): boolean {
@@ -70,8 +75,10 @@ export function nextChatScrollFollowMode(
       return "reading";
     case "user.scrolled":
       // Only the very bottom: a small scroll up stays within the visual
-      // tolerance and must keep the person reading.
-      return chatViewportIsPinnedToLatest(event.viewport)
+      // tolerance and must keep the person reading. Only a scroll down: rows
+      // above that shrink while the person scrolls up near the bottom clamp
+      // the viewport to the bottom, which is no return to the latest content.
+      return event.towardLatest && chatViewportIsPinnedToLatest(event.viewport)
         ? "following"
         : current;
     case "viewport.scrolled":

@@ -43,8 +43,32 @@ func (s *Server) handleSetupPersonalAgent(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	agent, err := s.setupPersonalAgent(r.Context(), s.personFrom(r), strings.TrimSpace(input.DeviceID), requestLanguage(r))
+	agent, err := s.setupPersonalAgent(r.Context(), s.personFrom(r), strings.TrimSpace(input.DeviceID), requestLanguage(r), input.Timezone)
 	writeResultWithStatus(w, http.StatusCreated, agent, err)
+}
+
+// handleFillPersonalAgentTimezone is the web giving the browser's time zone
+// to an assistant that has none; one already set stays.
+func (s *Server) handleFillPersonalAgentTimezone(w http.ResponseWriter, r *http.Request) {
+	agent, ok := s.personalAgentOf(w, r)
+	if !ok {
+		return
+	}
+	var input store.PersonalAgentTimezoneInput
+	if !decodeJSONRequest(w, r, &input) {
+		return
+	}
+	zone := personalagent.ValidTimezone(input.Timezone)
+	if zone == "" {
+		writeError(w, http.StatusBadRequest, "timezone must be an IANA time zone such as Asia/Shanghai")
+		return
+	}
+	if agent.Settings.Timezone != "" {
+		writeResult(w, agent, nil)
+		return
+	}
+	agent, err := s.store.FillPersonalAgentTimezone(r.Context(), agent.UserID, zone)
+	writeResult(w, agent, err)
 }
 
 func (s *Server) handleSavePersonalAgentSettings(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +247,7 @@ func (s *Server) handleListPersonalAgentTasks(w http.ResponseWriter, r *http.Req
 	}
 	s.refreshAssistantTasks(r.Context(), agent.UserID)
 	tasks, err := s.store.ListPersonalAgentTasks(r.Context(), agent.UserID, r.URL.Query()["status"])
-	writeResult(w, tasks, err)
+	writeResult(w, s.withTaskWaits(r.Context(), tasks), err)
 }
 
 // handleStopPersonalAgentTask stops one piece of work the assistant

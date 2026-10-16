@@ -1,3 +1,4 @@
+import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
   type ProtocolEnvelope,
@@ -6,15 +7,10 @@ import {
   type RunSessionPayload,
   type SteerSessionPayload,
 } from "@bd777/foundry-protocol";
-import { prepareSessionConnectors } from "../../connectors/index.js";
-import {
-  prepareClarification,
-  recoveredClarificationCompletion,
-} from "../../issue-clarification.js";
+import { recoveredClarificationCompletion } from "../../issue-clarification.js";
 import { recoveredIssueCompletion } from "../../issue-recovery.js";
-import type { SessionAmbientEnv } from "../../session-ambient.js";
-import { keepPersonalAgentInstructions } from "../../session-policy.js";
 import {
+  ControlOutcomeUnknownError,
   cancelActiveSession,
   noteSessionInput,
   steerActiveSessionOnce,
@@ -30,7 +26,7 @@ import { verificationDirectory } from "../../verification-session.js";
 import { sessionSchedulingKey } from "../../workspace-ops.js";
 import type { DaemonContext } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
-import { executeAgentSession, sessionExecution } from "../session-execution.js";
+import { runAgentSession } from "../session-run.js";
 import { runIssueExecution } from "./issues.js";
 import { errorMessage } from "../../utils.js";
 
@@ -65,10 +61,31 @@ function onSteerSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     envelope,
     daemonMessageTypes.sessionSteered,
     async () => {
-      await steerActiveSessionOnce(sessionId, inputId, message, attachments);
+      const host = executionHostClient();
+      if (host)
+        await host.steer(
+          sessionId,
+          inputId,
+          message,
+          attachments,
+          payload?.sentBySessionId,
+        );
+      else
+        await steerActiveSessionOnce(
+          sessionId,
+          inputId,
+          message,
+          attachments,
+          payload?.sentBySessionId,
+        );
       return { sessionId, inputId };
     },
-    (error) => ({ sessionId, inputId, error }),
+    (error, cause) => ({
+      sessionId,
+      inputId,
+      error,
+      outcomeUnknown: cause instanceof ControlOutcomeUnknownError,
+    }),
   );
 }
 
@@ -89,20 +106,28 @@ function onCancelSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     envelope,
     daemonMessageTypes.sessionCanceled,
     async () => {
-      const outcome = await cancelActiveSession(
-        sessionId,
-        payload?.inputId?.trim(),
-      );
+      const host = executionHostClient();
+      const outcome = host
+        ? await host.cancel(sessionId, payload?.inputId?.trim())
+        : await cancelActiveSession(sessionId, payload?.inputId?.trim());
       return outcome.answered ? { sessionId, answered: true } : { sessionId };
     },
     (error) => ({ sessionId, error }),
   );
 }
 
-function onRecoverSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+async function onRecoverSession(
+  envelope: ProtocolEnvelope,
+  ctx: DaemonContext,
+) {
   const payload = envelope.payload as RecoverSessionPayload | undefined;
   const sessionId = payload?.sessionId?.trim();
   const inputId = payload?.inputId?.trim() ?? "";
+  const host = executionHostClient();
+  if (host) {
+    await host.refresh();
+    if (sessionId && host.owns(sessionId, inputId)) return;
+  }
   // This process runs or just finished the input: its own report is
   // in the session outbox.
   if (
@@ -172,6 +197,19 @@ function onRunSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     return;
   }
   const inputId = payload.session.input?.id ?? "";
+  const host = executionHostClient();
+  if (host) {
+    ctx.state.acceptedRun = true;
+    // The host persists acceptance and owns duplicate suppression across workers.
+    void host
+      .run(ctx.roster.folderFor(payload.session.workspaceId), payload)
+      .catch((error) => {
+        console.error(
+          `Execution dispatch acknowledgement: ${errorMessage(error)}`,
+        );
+      });
+    return;
+  }
   if (!ctx.sessionExecutions.claim(payload.session.id, inputId)) {
     console.log(
       `Ignoring duplicate run_session for ${payload.session.id} ${inputId}`,
@@ -247,7 +285,12 @@ function scheduleAgentSession(
         `Running ${payload.session.provider} session ${payload.session.id}`,
       );
       try {
-        await runAgentSession(ctx, payload);
+        await runAgentSession(
+          ctx.serverURL,
+          ctx.roster.folderFor(payload.session.workspaceId),
+          ctx.sessionTransport,
+          payload,
+        );
       } catch (error) {
         const message = errorMessage(error);
         ctx.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
@@ -269,61 +312,4 @@ function scheduleAgentSession(
         `Session ${payload.session.id} scheduling failed: ${message}`,
       );
     });
-}
-
-/** One agent turn of the session. */
-async function runAgentSession(
-  ctx: DaemonContext,
-  payload: RunSessionPayload,
-): Promise<void> {
-  const ambient: SessionAmbientEnv = {
-    serverURL: ctx.serverURL,
-    sessionToken: payload.sessionToken ?? "",
-    workspaceID: payload.session.workspaceId,
-  };
-  const workspacePath = ctx.roster.folderFor(payload.session.workspaceId);
-  // An Issue's clarification runs read-only in the workspace with
-  // its turn's draft; its answer becomes the reply on the Issue.
-  const clarification =
-    payload.session.role === "issue_clarification"
-      ? await prepareClarification(
-          payload.session,
-          payload.clarification,
-          workspacePath,
-          ambient,
-        )
-      : undefined;
-  // Its connectors' tool profiles live while this run does; a run that
-  // never returns (a killed worker) leaves them to the next start's reap.
-  const accounts = clarification
-    ? undefined
-    : await prepareSessionConnectors(
-        payload.session,
-        {
-          externalAccounts: payload.externalAccounts,
-          deviceConnectors: payload.deviceConnectors,
-        },
-        {
-          serverURL: ctx.serverURL,
-          log: (message) => console.log(message),
-        },
-      );
-  keepPersonalAgentInstructions(
-    payload.session,
-    payload.personalAgentInstructions,
-  );
-  try {
-    await executeAgentSession(
-      ctx.sessionTransport,
-      clarification?.execution ??
-        sessionExecution(workspacePath, payload.session, ambient),
-      clarification?.session ?? payload.session,
-      payload.credential,
-      payload.profile,
-      ambient,
-      clarification?.settle,
-    );
-  } finally {
-    accounts?.release();
-  }
 }

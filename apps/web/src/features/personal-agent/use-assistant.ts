@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AgentSession,
   PersonalAgent,
+  PersonalAgentListItem,
   PersonalAgentOverview,
   PersonalAgentProposal,
   PersonalAgentTask,
@@ -9,16 +10,22 @@ import type {
 import {
   acceptPersonalAgentProposal,
   declinePersonalAgentProposal,
+  deletePersonalAgentListItem,
+  fillPersonalAgentTimezone,
   getPersonalAgent,
   isPersonalAgentUnavailable,
+  listPersonalAgentList,
   listPersonalAgentProposals,
   listPersonalAgentTasks,
   resumePersonalAgent,
   stopPersonalAgent,
   stopPersonalAgentTask,
+  updatePersonalAgentListItem,
 } from "../../api";
 import { serverErrorText } from "../../lib/errors";
 import { onStreamEvent } from "../../stream";
+import { browserTimezone } from "./assistant-model";
+import { listItemEdit, startOfLocalDay } from "./person-list-model";
 
 export type AssistantLoad =
   | { state: "loading" }
@@ -39,8 +46,8 @@ const sessionEventTypes = [
 const refreshDelayMs = 400;
 
 /**
- * The person's assistant: its state, the proposals waiting for them and the
- * work it follows up. Read when shown, and again when one of its sessions
+ * The person's assistant: its state, the proposals waiting for them, the
+ * work it follows up and the person's own list. Read when shown, and again when one of its sessions
  * (or a session doing its work) starts or ends, or the stream missed events.
  */
 export function useAssistant() {
@@ -48,6 +55,8 @@ export function useAssistant() {
   const [proposals, setProposals] = useState<PersonalAgentProposal[]>([]);
   const [tasks, setTasks] = useState<PersonalAgentTask[]>([]);
   const [listsError, setListsError] = useState("");
+  const [listItems, setListItems] = useState<PersonalAgentListItem[]>([]);
+  const [listItemsError, setListItemsError] = useState("");
   const agent = load.state === "ready" ? load.overview.agent : undefined;
   const workspaceId = agent?.workspaceId ?? "";
   const watched = useRef({ workspaceId, sessions: new Set<string>() });
@@ -56,9 +65,29 @@ export function useAssistant() {
     sessions: new Set(tasks.flatMap((task) => task.sessionId ?? [])),
   };
 
+  // An assistant without a time zone gets this browser's, offered once
+  // per page: the server keeps one the person chose.
+  const timezoneOffered = useRef(false);
+  const withTimezone = useCallback(
+    async (overview: PersonalAgentOverview): Promise<PersonalAgentOverview> => {
+      const zone = browserTimezone();
+      if (!overview.agent || overview.agent.settings.timezone || !zone)
+        return overview;
+      if (timezoneOffered.current) return overview;
+      timezoneOffered.current = true;
+      try {
+        return { ...overview, agent: await fillPersonalAgentTimezone(zone) };
+      } catch (error) {
+        console.warn("assistant time zone not saved", error);
+        return overview;
+      }
+    },
+    [],
+  );
+
   const readOverview = useCallback(async () => {
     try {
-      const overview = await getPersonalAgent();
+      const overview = await withTimezone(await getPersonalAgent());
       setLoad({ state: "ready", overview });
       return overview;
     } catch (error) {
@@ -69,9 +98,22 @@ export function useAssistant() {
       );
       return undefined;
     }
+  }, [withTimezone]);
+
+  // The person's list: open items, and those closed since the start of
+  // today. Read on its own so a failure leaves proposals and tasks shown.
+  const readListItems = useCallback(async () => {
+    try {
+      setListItems(
+        await listPersonalAgentList(startOfLocalDay().toISOString()),
+      );
+      setListItemsError("");
+    } catch (error) {
+      setListItemsError(serverErrorText(error));
+    }
   }, []);
 
-  const readLists = useCallback(async () => {
+  const readWork = useCallback(async () => {
     try {
       const [nextProposals, nextTasks] = await Promise.all([
         listPersonalAgentProposals(),
@@ -84,6 +126,10 @@ export function useAssistant() {
       setListsError(serverErrorText(error));
     }
   }, []);
+
+  const readLists = useCallback(async () => {
+    await Promise.all([readWork(), readListItems()]);
+  }, [readWork, readListItems]);
 
   const reload = useCallback(async () => {
     const overview = await readOverview();
@@ -133,6 +179,8 @@ export function useAssistant() {
     proposals,
     tasks,
     listsError,
+    listItems,
+    listItemsError,
     reload,
     replaceAgent,
     /** Stops everything; answers the server's fixed reply. */
@@ -162,6 +210,27 @@ export function useAssistant() {
     async stopTask(task: PersonalAgentTask): Promise<void> {
       await stopPersonalAgentTask(task.id);
       await readLists();
+    },
+    /** Ticks an item done, or reopens it. */
+    async tickItem(item: PersonalAgentListItem, done: boolean): Promise<void> {
+      await updatePersonalAgentListItem(item.id, {
+        status: done ? "done" : "open",
+      });
+      await readListItems();
+    },
+    /** Saves the person's words; nothing is sent when nothing changed. */
+    async editItem(
+      item: PersonalAgentListItem,
+      draft: { text: string; when: string },
+    ): Promise<void> {
+      const input = listItemEdit(item, draft);
+      if (Object.keys(input).length === 0) return;
+      await updatePersonalAgentListItem(item.id, input);
+      await readListItems();
+    },
+    async deleteItem(item: PersonalAgentListItem): Promise<void> {
+      await deletePersonalAgentListItem(item.id);
+      await readListItems();
     },
   };
 }

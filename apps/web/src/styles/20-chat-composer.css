@@ -303,6 +303,28 @@
   }
 }
 
+/* The workspace's device is offline: what is sent waits for it. */
+.fdy-chat-device-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-chat-device-note svg {
+  flex: none;
+  color: var(--fdy-warning-text);
+}
+
+.fdy-chat-device-note span {
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
 .fdy-chat-attachment-uploading {
   display: inline-flex;
   height: 32px;

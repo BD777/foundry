@@ -354,11 +354,14 @@ export class SessionTurnFiles {
   }
 
   /**
-   * Codex: snapshots the Git work tree before the turn runs, so its diffs
-   * have a "before". Outside a Git work tree there is none.
+   * Codex: snapshots the workspace's Git work tree before the turn runs, so
+   * its diffs have a "before". Outside a Git work tree there is none.
    */
   async snapshotWorkTree(): Promise<void> {
-    await this.changes.snapshotGitWorkTree(this.options.workspacePath);
+    await this.changes.snapshotGitWorkTree(
+      this.options.workspacePath,
+      sessionDirectory(this.options.sessionsRoot, this.options.sessionId),
+    );
   }
 
   private absolute(path: string): string {

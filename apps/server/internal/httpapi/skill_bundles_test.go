@@ -126,6 +126,11 @@ func TestSkillBundleLifecycle(t *testing.T) {
 	if got := names(); got != "tools-docs,tools-mail" {
 		t.Fatalf("workspace gets %q", got)
 	}
+	// Each bundled skill names its bundle, so a session lists a large one once.
+	if refs, _, _ := workspaceSkillRefs(ctx, f.server.store, "ws_alice"); len(refs) != 2 || refs[0].Bundle == nil ||
+		refs[0].Bundle.ID != bundle.ID || refs[0].Bundle.Name != "tools" || refs[0].Bundle.Version != "v1.0.0" {
+		t.Fatalf("bundled refs %+v", refs)
+	}
 
 	// v1.1.0 changes docs, adds calendar and drops mail.
 	if err := os.RemoveAll(filepath.Join(repo.dir, "skills/tools-mail")); err != nil {

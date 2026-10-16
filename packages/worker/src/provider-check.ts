@@ -1,3 +1,4 @@
+import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /**
  * Whether a provider found in the device's agent configuration really works.
  * Seeing an endpoint in a config file says nothing about it answering, so
@@ -6,6 +7,7 @@
  * A result stands until the provider's configuration or the device's login
  * changes; a failure is retried after an hour.
  */
+import { CodexAppServerThread } from "./runner/codex-app-server.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,39 +48,26 @@ async function runCodexTurn(
   directory: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const packageName = "@openai/codex-sdk";
-  const sdk = (await import(packageName)) as {
-    Codex: new (options: Record<string, unknown>) => {
-      startThread: (options: Record<string, unknown>) => {
-        runStreamed: (
-          input: string,
-          options: Record<string, unknown>,
-        ) => Promise<{ events: AsyncIterable<CodexEvent> }>;
-      };
-    };
-  };
   const env = codexSessionEnvironment(directory, profile);
-  const codex = new sdk.Codex({
-    codexPathOverride: resolveCodexCommand(),
-    apiKey: profile.codexModelProvider ? undefined : env.CODEX_API_KEY,
+  const thread = new CodexAppServerThread(
+    resolveCodexCommand(),
     env,
-    config: codexProfileConfig(profile, env),
-  });
-  const thread = codex.startThread({
-    workingDirectory: directory,
-    skipGitRepoCheck: true,
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
-    networkAccessEnabled: false,
-    webSearchMode: "disabled",
-    model: profile.model?.trim() || undefined,
-  });
+    codexProfileConfig(profile, env),
+    {
+      workingDirectory: directory,
+      sandboxMode: "read-only",
+      approvalPolicy: "never",
+      ephemeral: true,
+      model: profile.model?.trim() || undefined,
+    },
+  );
   // Codex retries a failing provider quietly; its last reported error is
   // what tells the user why the provider does not answer.
   let lastError = "";
   try {
     const { events } = await thread.runStreamed(prompt, { signal });
-    for await (const event of events) {
+    for await (const value of events) {
+      const event = value as CodexEvent;
       const message =
         event.type === "error"
           ? event.message
@@ -111,7 +100,7 @@ async function runClaudeTurn(
   signal: AbortSignal,
 ): Promise<void> {
   const packageName = "@anthropic-ai/claude-agent-sdk";
-  const sdk = (await import(packageName)) as {
+  const sdk = (await loadClaudeSdk()) as {
     query: (input: {
       prompt: string;
       options: Record<string, unknown>;

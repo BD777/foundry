@@ -55,11 +55,14 @@ export interface ChatViewMessage {
   stepUsage?: StepUsage;
   idea?: string;
   id?: string;
-  kind?: "boundary" | "failure" | "message" | "process" | "tool";
+  /** "waiting": queued work that waits for its offline device, without a timer. */
+  kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
   processItems?: ProcessDisplayItem[];
   recoverable?: boolean;
   role: "user" | "bot";
   runtime?: Exclude<WorkerRuntimeId, "mock">;
+  /** A user message another session sent: that session's id. */
+  sentBySessionId?: string;
   statusLabel?: string;
   streaming?: boolean;
   text: string;
@@ -242,6 +245,11 @@ export interface ChatContextCardData {
   timers: ChatTimerItem[];
   /** Commands, monitors and workflows (not subagents), running first. */
   background: ChatBackgroundTaskItem[];
+  /**
+   * The session that started this chat, when another one did: named, and
+   * opened by `onOpen` when the viewer may open it.
+   */
+  startedBy?: { sessionId: string; label: string; onOpen?: () => void };
 }
 
 /** Rows of the side panel still running while the chat's turn has ended. */

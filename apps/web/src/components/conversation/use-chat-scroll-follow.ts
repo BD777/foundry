@@ -22,6 +22,8 @@ export interface ChatScrollFollowController {
   /** The person is scrolling now: wheel, touch, keys or the scrollbar. */
   personScrolling: () => boolean;
   readHistory: () => void;
+  /** The person moved away from the latest content themselves. */
+  readingHistory: () => boolean;
   showScrollToLatest: boolean;
   viewportRef: RefObject<HTMLDivElement | null>;
 }
@@ -123,12 +125,16 @@ function watchViewportScrolling(
     userInput();
     transition({ type: "user.scroll-intent" });
   };
+  let lastScrollTop = viewport.scrollTop;
   const syncFollowFromPosition = (): void => {
-    const byUser = personScrolling();
-    transition({
-      type: byUser ? "user.scrolled" : "viewport.scrolled",
-      viewport: viewportMetrics(viewport),
-    });
+    const metrics = viewportMetrics(viewport);
+    const towardLatest = metrics.scrollTop > lastScrollTop;
+    lastScrollTop = metrics.scrollTop;
+    transition(
+      personScrolling()
+        ? { towardLatest, type: "user.scrolled", viewport: metrics }
+        : { type: "viewport.scrolled", viewport: metrics },
+    );
   };
   const handleWheel = (event: WheelEvent): void => {
     if (
@@ -141,6 +147,7 @@ function watchViewportScrolling(
       // scroll event follows; the intent alone resumes following.
       userInput();
       transition({
+        towardLatest: true,
         type: "user.scrolled",
         viewport: viewportMetrics(viewport),
       });
@@ -265,6 +272,11 @@ export function useChatScrollFollow(
     transition({ type: "history-navigation.requested" });
   }, [transition]);
 
+  const readingHistory = useCallback(
+    (): boolean => modeRef.current === "reading",
+    [],
+  );
+
   useLayoutEffect(() => {
     transition({ type: "thread.changed" });
     scrollToLatest("auto");
@@ -310,6 +322,7 @@ export function useChatScrollFollow(
     followLatest,
     personScrolling,
     readHistory,
+    readingHistory,
     showScrollToLatest,
     viewportRef,
   };

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import type { ChatThread } from "@bd777/foundry-protocol";
+import type { ChatThread, DeviceProjection } from "@bd777/foundry-protocol";
+import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isSessionLive } from "../../lib/session-status";
 import { chatUpdateTime, latestChatTime } from "./chat-time";
 import {
@@ -9,6 +10,7 @@ import {
   latestThreadSession,
 } from "./chat-model";
 import { liveThreadSchedule } from "./chat-schedule-model";
+import type { NamedSessions } from "./chat-session-model";
 import { chatListStatus, threadAnswerRevision } from "./chat-list-state";
 import type { ChatSessionThread } from "./chat-types";
 import type { ChatListItem } from "./chat-surface-types";
@@ -28,6 +30,8 @@ import {
 export function useChatListItems({
   active,
   archivedChats,
+  devices,
+  namedSessions,
   notify,
   onSelectChat,
   selectedChat,
@@ -39,6 +43,10 @@ export function useChatListItems({
   active: boolean;
   /** The workspace's native chats, in list order. */
   archivedChats: readonly ChatThread[];
+  /** Names the offline device a chat's queued session waits for. */
+  devices: readonly DeviceProjection[];
+  /** The server's names for sessions that started chats the list lacks. */
+  namedSessions?: NamedSessions;
   notify: (message: string) => void;
   onSelectChat: (chatId: string) => void;
   selectedChat?: ChatThread;
@@ -81,6 +89,7 @@ export function useChatListItems({
       : undefined;
     const answer = threadAnswerRevision(thread.sessions);
     const unread = readState.unread(thread.id, answer);
+    const awaitedDevice = deviceAwaitedBy(latest, devices);
     return {
       ...menuActions(thread.id),
       id: thread.id,
@@ -102,16 +111,24 @@ export function useChatListItems({
           ]),
         latest?.updatedLabel,
       ),
-      status: chatListStatus(
-        Boolean(activeThreadSession(thread)),
-        Boolean(terminalError || latest?.status === "failed"),
-        unread,
-        latest?.status === "blocked",
-      ),
+      status: awaitedDevice
+        ? ("waiting" as const)
+        : chatListStatus(
+            Boolean(activeThreadSession(thread)),
+            Boolean(terminalError || latest?.status === "failed"),
+            unread,
+            latest?.status === "blocked",
+          ),
       blocked: latest?.status === "blocked",
       blockedReason: latest?.blockedReason,
+      waitingFor: awaitedDevice?.label,
       scheduled: Boolean(liveThreadSchedule(thread.sessions)),
-      startedBy: chatStartedByLabel(thread.sessions[0], threads, threadTitle),
+      startedBy: chatStartedByLabel(
+        thread.sessions[0],
+        threads,
+        threadTitle,
+        namedSessions,
+      ),
       unread,
       foundrySessionId: latest?.id ?? thread.id,
       nativeSessionId: latest?.nativeSessionId,

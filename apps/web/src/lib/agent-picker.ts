@@ -175,6 +175,11 @@ export function shortUnavailableReason(
  * as one connection regardless of which identity currently represents it.
  */
 export function pickerAgentMeta(agent: AgentProjection): PickerAgentMeta {
+  if (agent.accountHold)
+    return {
+      detail: i18n.t("agents:picker.accountSuspended"),
+      title: agent.statusDetail,
+    };
   if (agent.status !== "healthy") {
     return {
       detail: shortUnavailableReason(agent.status, agent.statusDetail),
@@ -185,7 +190,25 @@ export function pickerAgentMeta(agent: AgentProjection): PickerAgentMeta {
 }
 
 /** Current label rule shared by the chat and issue pickers. */
-export function pickerAgentLabel(agent: AgentProjection): string {
+export function pickerAgentLabel(
+  agent: AgentProjection,
+  profiles: AgentProfileProjection[] = [],
+): string {
+  const account = profiles
+    .find(
+      (profile) =>
+        profile.id === agent.profileId &&
+        profile.deviceId === agent.deviceId &&
+        profile.runtime === agent.provider &&
+        profile.connectionType === "local_login" &&
+        profile.origin !== "server",
+    )
+    ?.accountLabel?.trim();
+  if (agent.connectionType === "local_login" && account)
+    return i18n.t("agents:picker.namedAccount", {
+      runtime: runtimeMeta(agent.provider).label,
+      account,
+    });
   return agent.connectionType === "local_login"
     ? i18n.t("agents:picker.deviceAccount", {
         runtime: runtimeMeta(agent.provider).label,
@@ -223,9 +246,10 @@ export function buildPickerAgentOptions(
   return canonical
     .filter(
       (agent) =>
-        !anyUsable ||
-        agent.status === "healthy" ||
-        agent.id === selectedAgentId,
+        (!agent.accountHold || agent.id === selectedAgentId) &&
+        (!anyUsable ||
+          agent.status === "healthy" ||
+          agent.id === selectedAgentId),
     )
     .map((agent) => {
       const meta = pickerAgentMeta(agent);
@@ -233,9 +257,9 @@ export function buildPickerAgentOptions(
         detail: meta.detail,
         deviceId: agent.deviceId,
         disabled: agent.status !== "healthy",
-        label: pickerAgentLabel(agent),
+        label: pickerAgentLabel(agent, profiles),
         runtime: agent.provider,
-        title: meta.title,
+        title: meta.title ?? pickerAgentLabel(agent, profiles),
         value: agent.id,
       };
     });

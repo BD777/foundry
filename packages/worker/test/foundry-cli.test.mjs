@@ -399,6 +399,38 @@ test("every command calls its tool with the arguments its flags set", async (t) 
       "list_tasks",
       { status: ["running", "asking"] },
     ],
+    [
+      [
+        "assistant",
+        "item",
+        "add",
+        "--text",
+        "Reply to the recruiters",
+        "--when",
+        "after work",
+        "--at",
+        "2026-10-15 19:00",
+        "--remind",
+        "--quote",
+        "下班再搞",
+      ],
+      "update_list",
+      {
+        op: "add",
+        item: {
+          text: "Reply to the recruiters",
+          when: "after work",
+          at: "2026-10-15 19:00",
+          remind: true,
+          quote: "下班再搞",
+        },
+      },
+    ],
+    [
+      ["assistant", "list", "--closed-since", "2026-10-13"],
+      "read_list",
+      { closedSince: "2026-10-13" },
+    ],
   ];
   for (const [args, tool, expected] of runs) {
     const before = calls.length;

@@ -1,3 +1,4 @@
+import { nativeCli } from "../native-cli.js";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import {
@@ -49,6 +50,12 @@ export function activeRuntimeKey(
   options: Record<string, unknown>,
 ): string {
   const stableOptions = { ...options };
+  const processEnv = options.env as NodeJS.ProcessEnv | undefined;
+  if (processEnv)
+    stableOptions.configurationHome =
+      provider === "claude"
+        ? processEnv.CLAUDE_CONFIG_DIR
+        : processEnv.CODEX_HOME;
   delete stableOptions.env;
   const inheritedEnvironmentKeys = [
     "ANTHROPIC_API_KEY",
@@ -80,6 +87,7 @@ export function activeRuntimeKey(
   );
   const identity = JSON.stringify({
     options: stableOptions,
+    runtimeGeneration: nativeCli(provider).generation,
     profileFingerprint: profileFingerprint(profile),
     profileId: profileID(profile),
     provider,
@@ -151,11 +159,20 @@ export function cleanupActiveClaudeRuntimes(): void {
   }
 }
 
+/** Idle cached agents must expire even when no next chat arrives. */
+export function startIdleRuntimeSweeps(): () => void {
+  const timer = setInterval(() => {
+    cleanupActiveClaudeRuntimes();
+    cleanupActiveCodexThreads();
+  }, 30_000);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 /**
- * Close ALL active runtimes and clear session registries. Called when the
- * WebSocket drops — runtimes can no longer deliver events to the server,
- * so keeping them alive only leaks state and causes stale-runtime reuse
- * on reconnect.
+ * Close this execution owner’s runtimes and clear its controls on shutdown
+ * or an idle upgrade. A normal Worker/server connection replacement does
+ * not call this on the independent execution owner.
  */
 export function closeAllActiveRuntimes(): void {
   const disconnectError = new Error("WebSocket disconnected");

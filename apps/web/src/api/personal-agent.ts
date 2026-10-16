@@ -2,6 +2,8 @@ import type {
   AgentSession,
   PersonalAgent,
   PersonalAgentActionRecord,
+  PersonalAgentListItem,
+  PersonalAgentListItemInput,
   PersonalAgentMemoryInput,
   PersonalAgentMemoryItem,
   PersonalAgentOverview,
@@ -56,6 +58,16 @@ export interface PersonalAgentSwitch {
   reply: string;
 }
 
+/**
+ * Gives an assistant without a time zone the browser's; one already set
+ * stays. Answers the assistant as stored.
+ */
+export function fillPersonalAgentTimezone(
+  timezone: string,
+): Promise<PersonalAgent> {
+  return request("POST", `${base}/timezone`, { body: { timezone } });
+}
+
 export function updatePersonalAgentSettings(
   settings: PersonalAgentSettings,
 ): Promise<PersonalAgent> {
@@ -102,6 +114,31 @@ export function listPersonalAgentTasks(): Promise<PersonalAgentTask[]> {
 /** Stops one piece of work the assistant handed off. */
 export function stopPersonalAgentTask(taskId: string): Promise<void> {
   return request("POST", `${base}/tasks/${id(taskId)}/stop`);
+}
+
+/**
+ * The person's list: every open item, and those closed at or after
+ * `closedSince` (RFC 3339; none without it). Oldest first.
+ */
+export function listPersonalAgentList(
+  closedSince?: string,
+): Promise<PersonalAgentListItem[]> {
+  const query = closedSince
+    ? `?${new URLSearchParams({ closedSince }).toString()}`
+    : "";
+  return request("GET", `${base}/list${query}`);
+}
+
+/** The person's edit; changing `when` clears its time and reminder. */
+export function updatePersonalAgentListItem(
+  itemId: string,
+  input: PersonalAgentListItemInput,
+): Promise<PersonalAgentListItem> {
+  return request("PUT", `${base}/list/${id(itemId)}`, { body: input });
+}
+
+export function deletePersonalAgentListItem(itemId: string): Promise<void> {
+  return request("DELETE", `${base}/list/${id(itemId)}`);
 }
 
 export function listPersonalAgentMemory(): Promise<PersonalAgentMemoryItem[]> {

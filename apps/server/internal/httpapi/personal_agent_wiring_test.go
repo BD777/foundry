@@ -381,7 +381,7 @@ func TestFeishuDeskActsForThePairedPersonOnly(t *testing.T) {
 func TestSetupAndMovingTheAssistantsHome(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
-	setupCall := f.as(f.bob, http.MethodPost, "/api/personal-agent", `{"deviceId":"dev_bob"}`)
+	setupCall := f.as(f.bob, http.MethodPost, "/api/personal-agent", `{"deviceId":"dev_bob","timezone":"Europe/London"}`)
 	setupCall.headers["Accept-Language"] = "en-GB,en;q=0.9"
 	created := doAuthCall(t, f.handler, setupCall)
 	expectStatus(t, created, http.StatusCreated, "bob sets up his assistant")
@@ -389,6 +389,9 @@ func TestSetupAndMovingTheAssistantsHome(t *testing.T) {
 	_ = json.Unmarshal(created.Body.Bytes(), &bobs)
 	if bobs.Settings.Language != "en" {
 		t.Fatalf("bob's browser asks for English, his assistant speaks %q", bobs.Settings.Language)
+	}
+	if bobs.Settings.Timezone != "Europe/London" {
+		t.Fatalf("bob's browser is in London, his assistant's time zone is %q", bobs.Settings.Timezone)
 	}
 	setup := f.lifecycle.creates[len(f.lifecycle.creates)-1]
 	if setup.Kind != store.WorkspaceKindPersonalAgent || setup.FolderName != "personal-agent" || setup.Name != personalagent.DefaultNameEN || setup.Create == nil ||

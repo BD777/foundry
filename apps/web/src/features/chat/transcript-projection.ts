@@ -16,6 +16,7 @@ export type TranscriptEntry = TranscriptMessage &
     | "usage"
     | "fileReferences"
     | "turnFiles"
+    | "sentBySessionId"
   > & {
     /**
      * This step's own identity where `id` is shared: `id` names the provider
@@ -27,7 +28,6 @@ export type TranscriptEntry = TranscriptMessage &
 
 const processKinds = new Set<TranscriptMessage["kind"]>([
   "reasoning",
-  "commentary",
   "tool",
   "context",
   "status",
@@ -151,7 +151,7 @@ export function projectTranscript(
       ...rest,
       role: kind === "user" ? "user" : "bot",
       kind:
-        kind === "user" || kind === "assistant"
+        kind === "user" || kind === "assistant" || kind === "commentary"
           ? undefined
           : (kind as "boundary" | "failure"),
     });

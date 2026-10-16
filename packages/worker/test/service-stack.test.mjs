@@ -46,3 +46,30 @@ test("systemd environment lines round-trip values with spaces, quotes and %", ()
     FOUNDRY_STACK: "dev",
   });
 });
+
+const { executionServiceEnvironment, executionLaunchAgent } =
+  await import("../dist/execution-host/service.js");
+test("execution service keeps native homes but never captures session credentials", () => {
+  const env = executionServiceEnvironment({
+    HOME: "/Users/me",
+    CODEX_HOME: "/Users/me/personal codex",
+    CLAUDE_CONFIG_DIR: "/Users/me/claude",
+    FOUNDRY_STACK: "dev",
+    FOUNDRY_SESSION_TOKEN: "private-session",
+    FOUNDRY_SESSION_ID: "s",
+    PATH: "/bin",
+  });
+  assert.equal(env.CODEX_HOME, "/Users/me/personal codex");
+  assert.equal(env.CLAUDE_CONFIG_DIR, "/Users/me/claude");
+  assert.equal(env.FOUNDRY_SESSION_TOKEN, undefined);
+  assert.equal(env.FOUNDRY_SESSION_ID, undefined);
+  const plist = executionLaunchAgent({
+    label: "test",
+    command: ["/bin/node", "/tmp/a & b/main.js"],
+    env,
+    root: "/tmp/a & b",
+  });
+  assert.match(plist, /a &amp; b/);
+  assert.ok(!plist.includes("private-session"));
+  assert.match(plist, /<key>AbandonProcessGroup<\/key><false\/>/);
+});

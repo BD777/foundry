@@ -79,10 +79,10 @@ func postSession(t *testing.T, server *Server, body string) *httptest.ResponseRe
 	return response
 }
 
-// With no live daemon connection the request stops at the connection guard
-// *after* the agent is resolved. Red: today it stops earlier at 404 because the
-// projected id is absent from the agents table. Green: 409 daemon guard proves
-// resolution accepted a trusted server-owned agent id.
+// With no live daemon connection the session waits for its device *after*
+// the agent is resolved: a queued session proves resolution accepted a
+// trusted server-owned agent id (the projected id is absent from the agents
+// table, which once answered 404).
 func TestCreateSessionResolvesProjectedServerAgent(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
 	body := `{"agentId":` + jsonString(fixture.agentID) +
@@ -93,8 +93,8 @@ func TestCreateSessionResolvesProjectedServerAgent(t *testing.T) {
 	if response.Code == http.StatusNotFound {
 		t.Fatalf("projected server agent rejected as not found: %s", response.Body.String())
 	}
-	if response.Code != http.StatusConflict {
-		t.Fatalf("expected daemon connection conflict after resolution, got %d: %s", response.Code, response.Body.String())
+	if response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"status":"queued"`) {
+		t.Fatalf("expected a session waiting for its device after resolution, got %d: %s", response.Code, response.Body.String())
 	}
 }
 
@@ -104,8 +104,8 @@ func TestCreateSessionByProfileIDOverHTTP(t *testing.T) {
 	fixture := setupProjectedSessionFixture(t)
 	body := `{"workspaceId":` + jsonString(fixture.workspace.ID) +
 		`,"profileId":` + jsonString(fixture.profile.ID) + `,"prompt":"synthetic","source":"chat"}`
-	if response := postSession(t, fixture.server, body); response.Code != http.StatusConflict {
-		t.Fatalf("by profile id = %d: %s, want the daemon connection conflict after resolution", response.Code, response.Body.String())
+	if response := postSession(t, fixture.server, body); response.Code != http.StatusCreated {
+		t.Fatalf("by profile id = %d: %s, want a session waiting for its device after resolution", response.Code, response.Body.String())
 	}
 	body = `{"workspaceId":` + jsonString(fixture.workspace.ID) +
 		`,"provider":"codex","profileId":` + jsonString(fixture.profile.ID) + `,"prompt":"synthetic","source":"chat"}`

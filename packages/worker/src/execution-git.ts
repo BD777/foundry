@@ -66,10 +66,27 @@ function execOptions(input: GitOptions, env: NodeJS.ProcessEnv) {
   };
 }
 
-function gitError(args: string[], error: unknown): Error {
-  const detail = error as Error & { stderr?: unknown; stdout?: unknown };
-  return new Error(
-    `git ${args[0]}: ${String(detail.stderr ?? "").trim() || String(detail.stdout ?? "").trim() || detail.message}`,
+/** A failed git run: its exit code, or that its time limit stopped it. */
+export interface GitError extends Error {
+  exitCode?: number;
+  timedOut: boolean;
+}
+
+function gitError(args: string[], error: unknown): GitError {
+  const detail = error as Error & {
+    stderr?: unknown;
+    stdout?: unknown;
+    code?: unknown;
+    killed?: boolean;
+  };
+  return Object.assign(
+    new Error(
+      `git ${args[0]}: ${String(detail.stderr ?? "").trim() || String(detail.stdout ?? "").trim() || detail.message}`,
+    ),
+    {
+      exitCode: typeof detail.code === "number" ? detail.code : undefined,
+      timedOut: detail.killed === true,
+    },
   );
 }
 

@@ -80,8 +80,11 @@
 }
 
 .fdy-pa-home-side {
+  display: grid;
   min-width: 0;
   min-height: 0;
+  align-content: start;
+  gap: 22px;
   overflow-y: auto;
   padding: 16px 18px;
   border-left: 1px solid var(--fdy-line);
@@ -227,6 +230,91 @@
 }
 
 .fdy-pa-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The person's list: their own words, ticked off here. */
+.fdy-pa-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fdy-pa-items {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fdy-pa-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--fdy-line-soft);
+}
+
+.fdy-pa-item:first-child {
+  border-top: 0;
+}
+
+.fdy-pa-item-head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.fdy-pa-item-check {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  cursor: pointer;
+}
+
+.fdy-pa-item-box {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fdy-pa-item-text {
+  min-width: 0;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fdy-pa-item[data-status="done"] .fdy-pa-item-text {
+  color: var(--fdy-ink-muted);
+  text-decoration: line-through;
+}
+
+.fdy-pa-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding-left: 22px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-pa-item-form {
+  display: grid;
+  gap: 8px;
+}
+
+.fdy-pa-item-field {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.fdy-pa-item-form-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;

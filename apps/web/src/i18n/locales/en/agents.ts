@@ -115,6 +115,9 @@ export const agents = {
     use: "Use “{{model}}”",
   },
   picker: {
+    namedAccount: "{{runtime}} · {{account}}",
+    accountSuspended:
+      "Account suspended. Resume use in device account settings.",
     deviceAccount: "{{runtime}} · Device account",
     deviceOffline: "Device is offline.",
     unavailableOnDevice: "Unavailable on this device.",

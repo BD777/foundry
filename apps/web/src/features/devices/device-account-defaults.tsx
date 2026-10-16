@@ -1,3 +1,8 @@
+import {
+  officialContextWindow,
+  parseContextWindow,
+} from "@bd777/foundry-protocol";
+import { TextInput } from "../../components/ui/field";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -35,8 +40,20 @@ export function DeviceAccountDefaults({
     codexSandboxMode: profile.codexSandboxMode,
     codexApprovalPolicy: profile.codexApprovalPolicy,
     codexSpeed: profile.codexSpeed,
+    contextWindows: profile.contextWindows,
     promptPrefix: profile.promptPrefix,
   });
+  const [windows, setWindows] = useState<Record<string, string>>(
+    Object.fromEntries(
+      Object.entries(profile.contextWindows ?? {}).map(([model, tokens]) => [
+        model,
+        String(tokens),
+      ]),
+    ),
+  );
+  const invalidWindow = Object.values(windows).some(
+    (value) => value.trim() && parseContextWindow(value) === undefined,
+  );
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [note, setNote] = useState("");
@@ -111,6 +128,39 @@ export function DeviceAccountDefaults({
           </Button>
         ) : null}
       </div>
+      {profile.runtime === "codex" ? (
+        <div className="fdy-profile-field">
+          <label htmlFor={`context-window-${profile.id}`}>
+            {t("accountDefaults.contextWindow")}
+          </label>
+          <TextInput
+            id={`context-window-${profile.id}`}
+            tone="boxed"
+            value={windows[draft.model ?? ""] ?? ""}
+            disabled={!draft.model || busy || device.status !== "connected"}
+            aria-invalid={invalidWindow || undefined}
+            placeholder={t("accountDefaults.contextAutomatic")}
+            onChange={(event) =>
+              setWindows({
+                ...windows,
+                [draft.model!]: event.currentTarget.value,
+              })
+            }
+          />
+          <small>
+            {!draft.model
+              ? t("accountDefaults.contextChooseModel")
+              : t("accountDefaults.contextHint", {
+                  limit:
+                    officialContextWindow(draft.model)?.toLocaleString() ??
+                    t("accountDefaults.contextNativeLimit"),
+                })}
+          </small>
+          {invalidWindow ? (
+            <small role="alert">{t("contextWindows.invalid")}</small>
+          ) : null}
+        </div>
+      ) : null}
       <RuntimeDefaultFields
         runtime={profile.runtime}
         value={draft}
@@ -124,6 +174,7 @@ export function DeviceAccountDefaults({
           disabled={
             busy ||
             invalidModel ||
+            invalidWindow ||
             loading ||
             (!!draft.model && !models.includes(draft.model)) ||
             device.status !== "connected"
@@ -132,7 +183,15 @@ export function DeviceAccountDefaults({
             setBusy(true);
             setMessage("");
             try {
-              await createAgentProfile(draft);
+              await createAgentProfile({
+                ...draft,
+                contextWindows: Object.fromEntries(
+                  Object.entries(windows).flatMap(([model, value]) => {
+                    const tokens = parseContextWindow(value);
+                    return tokens === undefined ? [] : [[model, tokens]];
+                  }),
+                ),
+              });
               await onRefresh();
               setMessage(t("accountDefaults.saved"));
             } catch (cause) {

@@ -190,7 +190,13 @@ test("a killed worker's agents are stopped: Codex's at once, the rest by the nex
     "the Codex agent stopped by its host",
     () => !running(codex.agent) && !running(codex.tool),
   );
-  assert.ok(running(claude.agent) && running(claude.tool), "left running");
+  if (process.platform === "darwin") {
+    await waitFor(
+      "Claude and its tools stopped by their guardian",
+      () => !running(claude.agent) && !running(claude.tool),
+    );
+  } else
+    assert.ok(running(claude.agent) && running(claude.tool), "left running");
 
   const next = await startWorker(script, "reap", agent, dir, stateRoot);
   t.after(() => next.kill("SIGKILL"));

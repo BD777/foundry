@@ -1,28 +1,45 @@
 /** Workspace skill discovery policy, shared by SDK and CLI execution. */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import type { ManagedSkillRuntime } from "./skill-materializer.js";
+import {
+  skillCatalogEntry,
+  type ManagedSkillRuntime,
+} from "./skill-materializer.js";
 import { foundryStatePath } from "./state-root.js";
 import { tryReadJSONFile, writeFileAtomic } from "./storage.js";
 import { withCodexControl } from "./native-inspection.js";
 import { hasProgram, skillToolRequirements } from "./skill-requirements.js";
 import { withManagedTools } from "./managed-tools.js";
 
+/** Skill names shown per missing program before "and N more". */
+const namesPerProgram = 5;
+
 /**
  * Names the programs the session's skills run that this device lacks, so the
- * agent tells the person rather than working around a missing tool.
+ * agent tells the person rather than working around a missing tool. One line
+ * per program, however many skills need it.
  */
 function missingProgramsNote(managed: ManagedSkillRuntime): string[] {
-  const missing = managed.skills.flatMap((skill) => {
+  const env = { ...process.env, PATH: withManagedTools(process.env.PATH) };
+  const present = new Map<string, boolean>();
+  const neededBy = new Map<string, string[]>();
+  for (const skill of managed.skills) {
     let tools: string[];
     try {
       tools = skillToolRequirements(skill.dir);
     } catch {
-      return [];
+      continue;
     }
-    const env = { ...process.env, PATH: withManagedTools(process.env.PATH) };
-    const absent = tools.filter((tool) => !hasProgram(tool, env));
-    return absent.length ? [`${skill.name} needs ${absent.join(", ")}`] : [];
+    for (const tool of tools) {
+      if (!present.has(tool)) present.set(tool, hasProgram(tool, env));
+      if (!present.get(tool))
+        neededBy.set(tool, [...(neededBy.get(tool) ?? []), skill.name]);
+    }
+  }
+  const missing = [...neededBy].map(([tool, names]) => {
+    const shown = names.slice(0, namesPerProgram).join(", ");
+    const more = names.length - namesPerProgram;
+    return `${tool} (needed by ${shown}${more > 0 ? ` and ${more} more` : ""})`;
   });
   return missing.length
     ? [
@@ -45,15 +62,27 @@ export function workspaceSkillInstructions(
   managed: ManagedSkillRuntime,
 ): string {
   const replaced = replacedByWorkspace(managed);
+  const indexes = managed.indexes ?? [];
+  const indexed = new Set(indexes.flatMap((index) => index.skills));
   return [
     "Foundry workspace skill policy: the following is the complete allowed skill catalog for this workspace session.",
     "Use only these managed copies and this agent's own built-in skills (marked builtIn), including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, say it must be promoted and selected for this workspace first. Ordinary project source files remain available.",
     "To create a skill or change one of these, work on a copy in this workspace's .agents/skills/<name>/ folder (copy the listed folder there first when changing an existing skill); never edit the listed copies. The person then publishes it from Foundry as a new skill or as a new version of the existing one.",
-    ...managed.skills.map((skill) =>
+    ...(indexes.length
+      ? [
+          "An entry with an index stands for many skills, all of them in the catalog: a large bundle, or the skills past those listed one by one. When a task may need one of them, or the person names a skill not listed one by one, read the index, which gives each skill's name, purpose and SKILL.md, then open that SKILL.md.",
+        ]
+      : []),
+    ...managed.skills
+      .filter((skill) => !indexed.has(skill.name))
+      .map(skillCatalogEntry),
+    ...indexes.map((index) =>
       JSON.stringify({
-        name: skill.name,
-        description: skill.description ?? "",
-        file: join(skill.dir, "SKILL.md"),
+        [index.bundleId ? "bundle" : "group"]: index.name,
+        ...(index.version ? { version: index.version } : {}),
+        description: (index.description ?? "").slice(0, 300),
+        skills: index.skills.length,
+        index: index.file,
       }),
     ),
     ...(managed.skills.length

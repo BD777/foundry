@@ -69,6 +69,8 @@ export const conversation: Translation<typeof en> = {
     },
   },
   message: {
+    sentBy: "来自",
+    openSender: "打开发出这条消息的会话 {{title}}",
     openFile: "打开 {{path}}",
     openPendingFile: "打开 {{path}}（这次回答结束时尚未写入）",
     showFolder: "查看 {{path}} 中的文件",

@@ -45,7 +45,7 @@ lower ones.
 | Foundation        | Devices and workspaces   | [devices-and-workspaces.md](devices-and-workspaces.md)             | [daemon lifecycle](daemon-lifecycle.md), [parallel dev stacks](dev-stacks.md), [Docker deployment](../deploy/README.md)                                                                                                                                                                            |
 | Foundation        | Identity and sharing     | [accounts-permissions-design.md](accounts-permissions-design.md)   | [security](security.md#accounts)                                                                                                                                                                                                                                                                   |
 
-The Personal Agent layer is designed but not built; its owning document
+The Personal Agent layer is built and under testing; its owning document
 is [personal-agent.md](personal-agent.md).
 
 ## Product and concepts

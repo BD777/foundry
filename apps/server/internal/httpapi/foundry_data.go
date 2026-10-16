@@ -306,7 +306,7 @@ func (s *Server) deviceSections(ctx context.Context, view visibility, workspace 
 			if err != nil {
 				return err
 			}
-			data.Devices = s.liveDevices(view.filterDevices(all))
+			data.Devices = s.withAccountShares(ctx, s.liveDevices(view.filterDevices(all)))
 			return nil
 		}},
 		{append([]string{fieldProfiles}, agentFields...), "ListProfiles", func() error {

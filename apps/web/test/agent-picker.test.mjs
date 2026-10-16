@@ -329,3 +329,54 @@ test("a promotion that kept the device profile's id stays offered once", () => {
   );
   assert.equal(promotedLegacyAgentIds(agents, profiles).size, 0);
 });
+
+test("official picker identities belong to the selected device and native profile", () => {
+  for (const runtime of ["codex", "claude"]) {
+    const agent = deviceAgent({
+      provider: runtime,
+      profileId: `${runtime}_local`,
+      connectionType: "local_login",
+    });
+    const profile = deviceProfile({
+      id: agent.profileId,
+      runtime,
+      connectionType: "local_login",
+      accountLabel: " person@example.com ",
+      promotedProfileId: undefined,
+    });
+    const otherDevice = {
+      ...profile,
+      deviceId: "other-device",
+      accountLabel: "other@example.com",
+    };
+    const option = buildPickerAgentOptions([agent], [otherDevice, profile])[0];
+    assert.match(option.label, / · person@example\.com$/);
+    assert.equal(option.title, option.label);
+    assert.match(pickerAgentLabel(agent, [otherDevice]), /Device account$/);
+    assert.match(
+      pickerAgentLabel(agent, [{ ...profile, accountLabel: " " }]),
+      /Device account$/,
+    );
+    assert.equal(
+      pickerAgentLabel({ ...agent, connectionType: "env" }, [profile]),
+      "team-relay",
+    );
+  }
+});
+
+test("suspended accounts are hidden for new selections, retained disabled for their existing chat", () => {
+  const held = deviceAgent({
+    connectionType: "local_login",
+    status: "unavailable",
+    accountHold: {
+      id: "hold-1",
+      code: "account_on_hold",
+      accountLabel: "one@example.test",
+      observedAt: "2026-10-16T00:00:00Z",
+    },
+  });
+  assert.deepEqual(buildPickerAgentOptions([held], []), []);
+  const selected = buildPickerAgentOptions([held], [], held.id);
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].disabled, true);
+});

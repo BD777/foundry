@@ -30,6 +30,8 @@ var personalAgentMCPTools = map[string]bool{
 	"remember":          true,
 	"update_rules":      true,
 	"list_tasks":        true,
+	"update_list":       true,
+	"read_list":         true,
 }
 
 // assistantWithheldMCPTools are tools the assistant does not get (§5): work
@@ -78,6 +80,10 @@ func refusalKind(err error) string {
 	}
 	if errors.Is(err, errAssistantStopped) {
 		return store.PersonalAgentRefusalStopped
+	}
+	var noPlace *paNoPlace
+	if errors.As(err, &noPlace) {
+		return store.PersonalAgentRefusalNoPlace
 	}
 	return store.PersonalAgentRefusalInvalid
 }
@@ -133,6 +139,10 @@ func (s *Server) assistantWrite(call mcpCall, tool string, plan paPlanner) (stri
 	refused := func(err error) (string, error) {
 		record.Outcome, record.Refusal, record.Error = store.PersonalAgentOutcomeRefused, refusalKind(err), err.Error()
 		s.recordPAAction(ctx, record, spec)
+		var noPlace *paNoPlace
+		if errors.As(err, &noPlace) {
+			return encodeJSON(noPlace.answer)
+		}
 		return "", err
 	}
 	if scope.agent.State == store.PersonalAgentStopped {
@@ -236,6 +246,12 @@ func (s *Server) accountLocale(ctx context.Context, userID string) string {
 	return user.Locale
 }
 
+// personLocation is the time zone of the assistant's person
+// (personalagent.Location).
+func (s *Server) personLocation(ctx context.Context, agent store.PersonalAgent) *time.Location {
+	return personalagent.Location(agent.Settings, s.accountLocale(ctx, agent.UserID))
+}
+
 // applyProposal applies an accepted proposal's spec as the person's
 // assistant, re-checking what may have changed since (ownership, limits).
 func (s *Server) applyProposal(ctx context.Context, proposal store.PersonalAgentProposal) (any, error) {
@@ -321,6 +337,8 @@ type paWorkspaceResult struct {
 	Purpose    string                           `json:"purpose,omitempty"`
 	Skills     []store.WorkspaceSkillBinding    `json:"skills,omitempty"`
 	Connectors *store.WorkspaceExternalAccounts `json:"connectors,omitempty"`
+	// Place is where a new project went and why.
+	Place *store.PersonalAgentPlacement `json:"place,omitempty"`
 }
 
 // paCreateSpec is create_workspace's arguments, resolved.
@@ -332,7 +350,10 @@ type paCreateSpec struct {
 		URL  string `json:"url,omitempty"`
 		Path string `json:"path,omitempty"`
 	} `json:"source"`
-	Skills   []string `json:"skills,omitempty"`
+	Skills []string `json:"skills,omitempty"`
+	// Needs are what the work needs from a computer, as key:value labels
+	// ("network:corp", "toolchain:go").
+	Needs    []string `json:"needs,omitempty"`
 	DeviceID string   `json:"deviceId,omitempty"`
 }
 
@@ -389,11 +410,19 @@ func (s *Server) planCreateWorkspace(ctx context.Context, scope paScope, args ma
 	if err != nil {
 		return write, err
 	}
+	needs, err := personalagent.ParseNeeds(spec.Needs)
+	if err != nil {
+		return write, invalid("needs: %v", err)
+	}
+	spec.Needs = nil
+	for _, need := range needs {
+		spec.Needs = append(spec.Needs, personalagent.LabelText(need))
+	}
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
 		return write, err
 	}
-	device, err := s.assistantCreateDevice(scope, devices, spec)
+	device, place, err := s.assistantCreateDevice(ctx, scope, devices, spec, needs)
 	if err != nil {
 		return write, err
 	}
@@ -425,7 +454,7 @@ func (s *Server) planCreateWorkspace(ctx context.Context, scope paScope, args ma
 		if err != nil {
 			return nil, err
 		}
-		result := paWorkspaceResult{Status: "applied", Workspace: summarizeWorkspace(workspace), Purpose: spec.Purpose}
+		result := paWorkspaceResult{Status: "applied", Workspace: summarizeWorkspace(workspace), Purpose: spec.Purpose, Place: &place}
 		if len(skills) > 0 {
 			if result.Skills, err = lifecycle.ChangeWorkspaceSkills(ctx, actor, workspace.ID, skills, nil); err != nil {
 				return result, fmt.Errorf("the project %s was created, but adding its skills failed: %w", workspace.ID, err)
@@ -436,55 +465,138 @@ func (s *Server) planCreateWorkspace(ctx context.Context, scope paScope, args ma
 	return write, nil
 }
 
-// assistantCreateDevice is where a new project goes: the device asked for,
-// which must be the person's and allow it; else the preferred device (the
-// home device by default), or another allowed one while it is offline.
-func (s *Server) assistantCreateDevice(scope paScope, devices []store.DeviceProjection, spec paCreateSpec) (store.DeviceProjection, error) {
+// paNoPlace is create_workspace's answer when no computer fits; the
+// assistant gets it as a result, not an error, and the audit as a refusal.
+type paNoPlace struct {
+	answer store.PersonalAgentNoPlace
+}
+
+func (n *paNoPlace) Error() string {
+	return "no computer fits: missing " + strings.Join(n.answer.Missing, ", ")
+}
+
+// assistantCreateDevice is where a new project goes (§4): the device asked
+// for, which must be the person's and allow it; else personalagent.Place
+// over the person's devices that allow it, online or not, by what the work
+// needs and their labels and detected facts. A device whose system account
+// someone else shares allows it only where the person chose it: "can start
+// new projects here" (by default only the home, picked at setup) or their
+// default place; never by a default such as "can work on this computer".
+func (s *Server) assistantCreateDevice(ctx context.Context, scope paScope, devices []store.DeviceProjection, spec paCreateSpec, needs []store.DeviceLabel) (store.DeviceProjection, store.PersonalAgentPlacement, error) {
+	shares, err := s.store.ListDeviceAccountShares(ctx)
+	if err != nil {
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, err
+	}
 	allowed := func(device store.DeviceProjection) bool {
 		settings := scope.device(device.ID)
+		if len(shares[device.ID]) > 0 && !settings.AllowCreate && device.ID != scope.agent.Settings.PreferredDeviceID {
+			return false
+		}
 		if spec.Source.Kind == "existing" && !withinAny(device.ManagedRoots, spec.Source.Path) {
 			return settings.AllowWork
 		}
 		return settings.AllowCreate
 	}
-	if spec.DeviceID != "" {
-		for _, device := range devices {
-			if device.ID == spec.DeviceID && scope.owned[device.ID] {
-				if !allowed(device) {
-					return device, notAllowed("creating projects on that computer", s.assistantSettingsURL())
-				}
-				return device, nil
-			}
+	owned := []store.DeviceProjection{}
+	for _, device := range devices {
+		if scope.owned[device.ID] && device.Status != "removed" {
+			owned = append(owned, device)
 		}
-		return store.DeviceProjection{}, refuse(store.PersonalAgentRefusalNotOwner, http.StatusUnprocessableEntity,
+	}
+	placements, err := s.devicePlacements(ctx, owned, time.Now())
+	if err != nil {
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, err
+	}
+	candidates := make([]personalagent.PlaceCandidate, 0, len(owned))
+	for _, device := range owned {
+		placement := placements[device.ID]
+		candidates = append(candidates, personalagent.PlaceCandidate{
+			DeviceID: device.ID, Name: device.Label, Online: s.hub.HasConnection(device.ID), Allowed: allowed(device),
+			Shared: sharedAccountNote(shares[device.ID]),
+			Labels: placement.Labels, Facts: placement.Facts, OnlineShare: placement.OnlineShare,
+		})
+	}
+	if spec.DeviceID != "" {
+		for i, device := range owned {
+			if device.ID != spec.DeviceID {
+				continue
+			}
+			candidate := candidates[i]
+			if !candidate.Allowed {
+				return device, store.PersonalAgentPlacement{}, notAllowed("creating projects on that computer", s.assistantSettingsURL())
+			}
+			reason := "the computer you named"
+			if candidate.Shared != "" {
+				reason += "; " + candidate.Shared + ", which the person chose to allow: tell them"
+			}
+			return device, store.PersonalAgentPlacement{
+				Computer: device.Label, DeviceID: device.ID, Online: candidate.Online,
+				Reason: reason, Unverified: emptyNil(candidate.Lacks(needs)),
+			}, nil
+		}
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, refuse(store.PersonalAgentRefusalNotOwner, http.StatusUnprocessableEntity,
 			"not allowed: %s is not one of the person's own computers", spec.DeviceID)
 	}
-	preferred := firstNonEmpty(scope.agent.Settings.PreferredDeviceID, scope.agent.HomeDeviceID)
-	candidates := []store.DeviceProjection{}
-	for _, device := range devices {
-		if scope.owned[device.ID] && device.Status != "removed" && allowed(device) {
-			candidates = append(candidates, device)
+	defaultID := firstNonEmpty(scope.agent.Settings.PreferredDeviceID, scope.agent.HomeDeviceID)
+	place, err := personalagent.Place(candidates, needs, defaultID)
+	var none *personalagent.NoPlace
+	switch {
+	case errors.Is(err, personalagent.ErrNoComputer):
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, notAllowed("creating projects: no computer of the person's allows it", s.assistantSettingsURL())
+	case errors.As(err, &none):
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, &paNoPlace{noPlaceAnswer(none)}
+	case err != nil:
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, err
+	}
+	for i, device := range owned {
+		if device.ID == place.DeviceID {
+			return device, store.PersonalAgentPlacement{Computer: device.Label, DeviceID: device.ID, Online: candidates[i].Online, Reason: place.Reason}, nil
 		}
 	}
-	slices.SortStableFunc(candidates, func(a, b store.DeviceProjection) int {
-		rank := func(device store.DeviceProjection) int {
-			online := s.hub.HasConnection(device.ID)
-			switch {
-			case device.ID == preferred && online:
-				return 0
-			case online:
-				return 1
-			case device.ID == preferred:
-				return 2
-			}
-			return 3
-		}
-		return rank(a) - rank(b)
-	})
-	if len(candidates) == 0 {
-		return store.DeviceProjection{}, notAllowed("creating projects: no computer of the person's allows it", s.assistantSettingsURL())
+	return store.DeviceProjection{}, store.PersonalAgentPlacement{}, fmt.Errorf("placement chose an unknown device %s", place.DeviceID)
+}
+
+// sharedAccountNote says who else uses the device's system account
+// (docs/devices-and-workspaces.md): they would reach the files and
+// sign-ins of work put there, so placement uses it only as the person
+// chose it (personalagent.PlaceCandidate.Shared). "" when no one does.
+func sharedAccountNote(shares []store.DeviceAccountShare) string {
+	if len(shares) == 0 {
+		return ""
 	}
-	return candidates[0], nil
+	names := []string{}
+	for _, share := range shares {
+		if name := strings.TrimSpace(share.OwnerName); name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "its system account is shared with someone else, who can reach its files and sign-ins"
+	}
+	return fmt.Sprintf("its system account is shared with %s, who can reach its files and sign-ins", strings.Join(names, ", "))
+}
+
+func emptyNil(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+// noPlaceAnswer is what the assistant reads when no computer fits.
+func noPlaceAnswer(none *personalagent.NoPlace) store.PersonalAgentNoPlace {
+	answer := store.PersonalAgentNoPlace{
+		Status: store.PersonalAgentNoPlaceStatus, Missing: none.Missing, Computers: []store.PersonalAgentPlaceGap{},
+		Next: "Nothing was created. None of the computers you may use is known to have " + strings.Join(none.Missing, ", ") +
+			". Ask the person ONE plain question in their words, naming what the work needs as they know it (\"the company network\", \"your work files\") and offering the computers that might have it by name, with the one you would pick. " +
+			"Never say device, label or these key:value words. If they name a computer, call create_workspace again with its deviceId; if a computer has it but is not allowed, they can allow it in your settings.",
+	}
+	for _, gap := range none.Computers {
+		answer.Computers = append(answer.Computers, store.PersonalAgentPlaceGap{
+			Name: gap.Name, DeviceID: gap.DeviceID, Online: gap.Online, Lacks: gap.Lacks, NotAllowed: gap.NotAllowed,
+		})
+	}
+	return answer
 }
 
 func withinAny(roots []string, path string) bool {
@@ -951,7 +1063,7 @@ func (s *Server) listTasksForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(tasks)
+	return encodeJSON(s.withTaskWaits(ctx, tasks))
 }
 
 func (s *Server) findWorkspaceForMCP(call mcpCall) (string, error) {
@@ -994,6 +1106,9 @@ func (s *Server) getWorkspaceForMCP(call mcpCall) (string, error) {
 	if digest, err := s.workspaceDigests().Digest(ctx, scope.agent.UserID, workspace.ID); err == nil {
 		answer["digest"] = digest
 	}
+	// Server-side, so read even while the device is offline: which
+	// accounts can run a session there, and the one used without profileId.
+	answer["accounts"] = s.accountsAnswer(ctx, workspace, scope.agent.UserID)
 	online := workspace.DeviceID != "" && s.hub.HasConnection(workspace.DeviceID)
 	if slices.Contains(include, "live") {
 		answer["live"] = s.liveWorkspace(ctx, workspace, online)

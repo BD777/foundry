@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -27,7 +28,7 @@ import {
   streamsCodexEvents,
   type CodexTurnState,
 } from "./codex-stream.js";
-import { loadCodexSdk, openCodexThread } from "./codex-thread.js";
+import { openCodexThread } from "./codex-thread.js";
 import {
   CodexTransportLearner,
   codexTransportPlan,
@@ -37,7 +38,7 @@ import { prepareTurnDirectory } from "./turn-directory.js";
 
 export { nativeSessionIdFromEvent } from "./codex-stream.js";
 
-export async function runCodexWorkspaceSession(
+async function runCodexWorkspaceSessionUnlocked(
   workspacePath: string,
   session: AgentSession,
   profile: AgentProfileLocalConfig,
@@ -117,11 +118,10 @@ async function runCodexTurn(
   const resultPath = resolve(sessionDir, "result.md");
 
   try {
-    const Codex = await loadCodexSdk();
     writeFileSync(eventsPath, "");
     writeFileSync(stderrPath, "");
     const env = codexSessionEnvironment(workspacePath, profile, session);
-    const thread = await openCodexThread(Codex, {
+    const thread = await openCodexThread({
       workspacePath,
       session,
       profile,
@@ -143,6 +143,7 @@ async function runCodexTurn(
       nativeSessionId:
         session.nativeSessionId?.trim() || thread.thread.id || "",
       finalResult: "",
+      managedSkills,
       transport: new CodexTransportLearner(
         codexTransportPlan(profile),
         profile,
@@ -182,12 +183,24 @@ async function finishCodexTurn(
   state.thread.nativeSessionId = state.nativeSessionId;
   state.thread.lastUsed = Date.now();
   const response =
-    state.finalResult || "Codex SDK completed without a text response.";
+    state.finalResult || "Codex completed without a text response.";
   writeFileSync(resultPath, `${response}\n`);
   const fileReferences = await state.files.finish(state.finalResult);
-  await state.emit("Codex SDK finished", resultPath, undefined, {
+  await state.emit("Codex finished", resultPath, undefined, {
     ...turnUsageMetadata(state.usage, startedAt),
     ...(fileReferences.length > 0 ? { fileReferences } : {}),
   });
   return { nativeSessionId: state.nativeSessionId, response };
+}
+
+/** Pin the runtime before resolving its executable, SDK or native session. */
+export async function runCodexWorkspaceSession(
+  ...args: Parameters<typeof runCodexWorkspaceSessionUnlocked>
+): Promise<AgentSessionRunResult> {
+  const release = await acquireRuntime("codex");
+  try {
+    return await runCodexWorkspaceSessionUnlocked(...args);
+  } finally {
+    release();
+  }
 }

@@ -374,6 +374,10 @@ export class SessionTimers {
     this.timer = undefined;
   }
 
+  isTicking(): boolean {
+    return this.ticking;
+  }
+
   private save(): void {
     const path = this.options.path;
     if (!path) return;

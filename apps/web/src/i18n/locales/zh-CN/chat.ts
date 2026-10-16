@@ -22,6 +22,7 @@ export const chat: Translation<typeof en> = {
     blocked: "等待中",
     blockedTitle: "等待中（限流或权限）",
     processing: "处理中",
+    waitingForDevice: "等待 {{device}} 上线",
     failed: "失败",
     unread: "未读",
     scheduled: "有定时任务：智能体会按时自行唤醒",
@@ -95,6 +96,11 @@ export const chat: Translation<typeof en> = {
     failedTitle: "无法打开这个会话",
     failed: "Foundry 无法连接服务器来查找它。",
     retry: "重试",
+    deviceFallback: "该设备",
+    deviceOfflineHint:
+      "{{device}} 已离线。发送的消息会等待，它上线后自动开始。",
+    waitingForDevice: "等待 {{device}} 上线，上线后自动开始。",
+    cancelWaiting: "取消",
   },
   notices: {
     attachNeedsWorkspace: "请先连接本地工作区，再添加附件。",
@@ -102,7 +108,6 @@ export const chat: Translation<typeof en> = {
     attachedMany_one: "已添加 {{count}} 个文件。",
     attachedMany_other: "已添加 {{count}} 个文件。",
     attachFailed: "无法添加这些文件。",
-    offlineSend: "本地 daemon 已离线，请重新连接后再发送。",
     emptyPrompt: "请先输入内容。",
     uploading: "请等待附件上传完成。",
     noAgent: "请先连接本地 Agent。",
@@ -110,6 +115,7 @@ export const chat: Translation<typeof en> = {
     stillResponding: "{{agent}} 仍在此对话中回复。",
     alreadyResponding: "{{agent}} 已在此对话中回复。",
     responding: "{{agent}} 正在回复。",
+    waitingForDevice: "{{device}} 已离线。消息会等待，上线后自动开始。",
     agentFailed: "{{agent}} 执行失败。",
     offlineSteer: "本地 daemon 已离线，请重新连接后再引导。",
     emptySteer: "请先写下引导内容。",
@@ -144,6 +150,8 @@ export const chat: Translation<typeof en> = {
     waitingForTask: "等待本地 daemon 完成当前任务：{{title}}",
     delivered:
       "已投递给本地 daemon，正在等待接收；daemon 重连或空闲后会自动重试。",
+    waitingForDevice:
+      "等待 {{device}} 上线。上线后自动开始；离线超过 24 小时则失败。",
     loadingTranscript: "正在加载已保存的实时记录…",
     waitingForResponse: "等待本地 Agent 开始回复。",
     loadingResponse: "正在加载回复…",
@@ -162,6 +170,9 @@ export const chat: Translation<typeof en> = {
     commentary: "过程",
     tool: "工具",
     processing: "处理中",
+    waitingForDevice: "等待 {{device}} 上线",
+    waitingForDeviceDetail:
+      "{{device}} 上线后自动开始；离线超过 24 小时则失败。",
     processed: "已处理",
     processedIn: "已处理 {{duration}}",
     loaded: "已加载",
@@ -207,8 +218,11 @@ export const chat: Translation<typeof en> = {
     loadEarlier: "加载更早的消息",
     loadingEarlier: "正在加载更早的消息…",
     earlierFailed: "更早的消息加载失败。",
+    start: "对话开始",
   },
   contextCard: {
+    startedBy: "派出者",
+    openStartedBy: "打开派出这个对话的会话 {{title}}",
     subagentsRefreshFailed: "子 agent 列表刷新失败。",
     label: "对话详情",
     show: "显示对话详情",

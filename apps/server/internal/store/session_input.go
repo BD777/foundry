@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 )
@@ -20,10 +21,18 @@ func SessionInputEvents(sessionID string, input SessionInput) []AgentSessionEven
 		ID: "evt_" + input.ID, SessionID: sessionID, At: input.At, Label: SessionInputEventLabel, Level: "info",
 		Message: &TranscriptMessage{ID: input.ID, At: input.At, Kind: "user", Text: input.Prompt, Attachments: input.Attachments},
 	}
-	if input.TimerFire != nil {
-		message.Metadata = &AgentSessionEventMetadata{TimerFire: input.TimerFire}
+	if input.TimerFire != nil || input.SentBySessionID != "" {
+		message.Metadata = &AgentSessionEventMetadata{TimerFire: input.TimerFire, SentBySessionID: input.SentBySessionID}
 	}
 	return append(events, message)
+}
+
+// SessionInputSenderStore keeps which session sent a message steered into
+// a running turn, whose event its device writes; SessionInputSender reads
+// it ("" when none did).
+type SessionInputSenderStore interface {
+	RecordSessionInputSender(ctx context.Context, sessionID, inputID, senderSessionID string) error
+	SessionInputSender(ctx context.Context, sessionID, inputID string) (string, error)
 }
 
 // NormalizeChatAttachments keeps the attachments a message can carry: each

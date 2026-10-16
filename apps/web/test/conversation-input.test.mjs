@@ -274,7 +274,7 @@ for (const [name, composer] of Object.entries(modes)) {
     assert.deepEqual(sent, []);
   });
 }
-test("Codex keeps messages queued and a new chat's accepted message leaves its assigned thread's composer free", async (t) => {
+test("Codex offers explicit steer when its host supports it and keeps ordinary messages queued", async (t) => {
   const composer = { mode: "fixed", runtime: "codex" };
   let accept;
   const h = await harness(t, composer, {
@@ -299,6 +299,8 @@ test("Codex keeps messages queued and a new chat's accepted message leaves its a
   await act(async () => accept({ threadKey: "workspace:assigned" }));
   assert.equal(h.input.draft, "draft");
   assert.equal(h.input.queue[0].text, "next");
+  assert.equal(h.input.canSteer, true);
+  await h.render({ onSteer: undefined });
   assert.equal(h.input.canSteer, false);
   await h.render({ threadKey: "workspace:new" });
   assert.equal(h.input.queue.length, 0);

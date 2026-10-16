@@ -27,8 +27,9 @@ import (
 var sessionControlTimeout = 8 * time.Second
 
 // startAgentSession creates a session on the agent its input names and hands it
-// to that agent's device. A refusal is a statusError; a session its device
-// could not take comes back failed, with StatusConflict.
+// to that agent's device, or leaves it waiting while that device is offline
+// (dispatchOrWait). A refusal is a statusError; a session its connected
+// device could not take comes back failed, with StatusConflict.
 func (s *Server) startAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
 	if err := s.resolveSessionDevice(ctx, &input); err != nil {
 		return store.AgentSession{}, err
@@ -52,7 +53,8 @@ var ErrLocalDaemonNotConnected = errors.New("local daemon is not connected")
 // device: the one way a new session starts, whoever starts it (a person,
 // the chat queue, Feishu, an agent over MCP). reconcile first settles the
 // workspace's sessions whose device stopped reporting (MCP creates without
-// it). A session its device does not take comes back failed, with
+// it). A session for an offline device waits for it, queued; one its
+// connected device does not take comes back failed, with
 // ErrLocalDaemonNotConnected; a refused creation, with the store's error.
 func (s *Server) createAndDispatch(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool) (store.AgentSession, error) {
 	return s.createAndDispatchWith(ctx, input, reconcile, nil)
@@ -98,10 +100,7 @@ func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAg
 			return s.failUndelivered(ctx, session, err.Error()), err
 		}
 	}
-	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
-		return failed, ErrLocalDaemonNotConnected
-	}
-	return session, nil
+	return s.dispatchOrWait(ctx, session)
 }
 
 // dispatchOrFail hands a session its viewers know of to its device. One the
@@ -162,13 +161,14 @@ func pickSessionAgent(agents []store.AgentProjection, input store.CreateAgentSes
 }
 
 // resolveSessionDevice finds the agent a new session runs on and checks its
-// device is reachable by the caller and connected. It may pin input.AgentID.
-// A refusal is a statusError; any other err is an ordinary failure.
-// Callers authorize the workspace first; an agent picked here always belongs
-// to it, so a session token reaches exactly the devices of workspaces its
-// scope grants.
+// device is reachable by the caller; an offline one is not refused, its
+// session waits for it. It may pin input.AgentID. A refusal is a
+// statusError; any other err is an ordinary failure. Callers authorize the
+// workspace first; an agent picked here always belongs to it, so a session
+// token reaches exactly the devices of workspaces its scope grants.
 func (s *Server) resolveSessionDevice(ctx context.Context, input *store.CreateAgentSessionInput) error {
-	return s.pickSessionDevice(ctx, input, false)
+	_, err := s.sessionDevice(ctx, input, false)
+	return err
 }
 
 // CreateSessionAndDispatch starts a session for an integration (Feishu)
@@ -181,17 +181,42 @@ func (s *Server) CreateSessionAndDispatch(ctx context.Context, input store.Creat
 	return s.createAndDispatch(ctx, input, true)
 }
 
-// pickSessionDevice is resolveSessionDevice. With anyAgent, a request no
-// agent answers (none named, none found, or its device removed) takes the
+// pickSessionDevice is resolveSessionDevice for work that does not wait: it
+// also refuses a device that is offline. With anyAgent, a request no agent
+// answers (none named, none found, or its device removed) takes the
 // workspace's first connected agent, else its first, pinning it; a
 // workspace without agents is left to the dispatch to fail.
 func (s *Server) pickSessionDevice(ctx context.Context, input *store.CreateAgentSessionInput, anyAgent bool) error {
+	deviceID, err := s.sessionDevice(ctx, input, anyAgent)
+	if err != nil || deviceID == "" {
+		return err
+	}
+	if !s.hub.HasConnection(deviceID) {
+		return &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+	}
+	return nil
+}
+
+// sessionDevice is the device the session input runs on, as
+// pickSessionDevice resolves it, connected or not; "" for a workspace
+// without agents (anyAgent).
+func (s *Server) sessionDevice(ctx context.Context, input *store.CreateAgentSessionInput, anyAgent bool) (string, error) {
 	if refusal := unservedWorkspace(ctx, s.store, input.WorkspaceID); refusal != nil {
-		return &statusError{http.StatusConflict, refusal}
+		return "", &statusError{http.StatusConflict, refusal}
+	}
+	// A runtime without a profile, or an integration's message naming
+	// nothing, runs under an account that can work on the device
+	// (chooseSessionAccount), never the runtime's first. MCP callers get
+	// the same for a request naming nothing (createAndDispatchForMCP); a
+	// person's REST request naming nothing stays refused.
+	if input.Provider != "" || anyAgent {
+		if err := s.chooseSessionAccount(ctx, input); err != nil {
+			return "", err
+		}
 	}
 	agents, err := s.store.ListAgents(ctx, input.WorkspaceID, "")
 	if err != nil {
-		return err
+		return "", err
 	}
 	deviceID := ""
 	if agent, ok := pickSessionAgent(agents, *input); ok {
@@ -213,18 +238,18 @@ func (s *Server) pickSessionDevice(ctx context.Context, input *store.CreateAgent
 				input.AgentID, input.Provider = resolved.ID, resolved.Provider
 			}
 		case errors.Is(resolveErr, store.ErrProfileRuntimeMismatch):
-			return &statusError{http.StatusBadRequest, resolveErr}
+			return "", &statusError{http.StatusBadRequest, resolveErr}
 		case errors.Is(resolveErr, store.ErrDeviceRemoved) && !anyAgent:
-			return &statusError{http.StatusGone, errors.New("device_removed")}
+			return "", &statusError{http.StatusGone, errors.New("device_removed")}
 		case !errors.Is(resolveErr, store.ErrNotFound) &&
 			!errors.Is(resolveErr, store.ErrProfileNotFound) &&
 			!errors.Is(resolveErr, store.ErrDeviceRemoved):
-			return resolveErr
+			return "", resolveErr
 		}
 	}
 	if deviceID == "" && anyAgent {
 		if len(agents) == 0 {
-			return nil
+			return "", nil
 		}
 		agent := agents[0]
 		for _, candidate := range agents {
@@ -236,17 +261,19 @@ func (s *Server) pickSessionDevice(ctx context.Context, input *store.CreateAgent
 		deviceID, input.AgentID, input.Provider = agent.DeviceID, agent.ID, agent.Provider
 	}
 	if deviceID == "" {
-		return &statusError{http.StatusBadRequest, errors.New("no agent is available for the selected runtime and profile")}
+		return "", &statusError{http.StatusBadRequest, errors.New("no agent is available for the selected runtime and profile")}
 	}
-	if !s.hub.HasConnection(deviceID) {
-		return &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
-	}
-	return nil
+	return deviceID, nil
 }
 
 // SendSessionMessage delivers a follow-up to a session on behalf of an
-// integration (Feishu) that acts with the workspace owner's authority.
+// integration (Feishu) that acts with the workspace owner's authority. Its
+// messages do not wait for an offline device: the chat says so at once,
+// as for a new topic (CreateSessionAndDispatch).
 func (s *Server) SendSessionMessage(ctx context.Context, sessionID, message string, attachments []store.ChatAttachment) error {
+	if session, err := s.store.GetAgentSessionSummary(ctx, sessionID); err == nil && !s.hub.HasConnection(session.DeviceID) {
+		return &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+	}
 	_, err := s.sendSessionMessage(ctx, sessionID, store.SendAgentSessionInput{Prompt: message, Attachments: attachments})
 	return err
 }
@@ -287,7 +314,8 @@ func (s *Server) SaveAttachments(ctx context.Context, workspaceID string, files 
 
 // sendSessionMessage is the one way to talk to an existing session: a
 // running session is steered, an idle one takes the message as its next
-// input and is dispatched again. A refusal is a statusError.
+// input and is dispatched again, or waits for its offline device
+// (dispatchOrWait). A refusal is a statusError.
 func (s *Server) sendSessionMessage(ctx context.Context, sessionID string, input store.SendAgentSessionInput) (store.AgentSession, error) {
 	return s.sendSessionMessageWith(ctx, sessionID, input, nil)
 }
@@ -322,6 +350,9 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 		if message == "" && len(attachments) == 0 {
 			return store.AgentSession{}, &statusError{http.StatusBadRequest, errors.New("message is required")}
 		}
+		if s.waitsForDevice(session) {
+			return store.AgentSession{}, &statusError{http.StatusConflict, errors.New("this session already waits for its offline device: send more once it has started, or cancel it")}
+		}
 		if !s.hub.HasConnection(session.DeviceID) {
 			return store.AgentSession{}, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
 		}
@@ -330,9 +361,12 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 				return store.AgentSession{}, &statusError{http.StatusConflict, err}
 			}
 		}
+		if err := s.recordSteerSender(ctx, session.ID, &input); err != nil {
+			return store.AgentSession{}, err
+		}
 		steerCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
 		defer cancel()
-		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments); err != nil {
+		if err := s.hub.SteerAgentSession(steerCtx, session, input.InputID, message, attachments, input.SentBySessionID); err != nil {
 			return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
 		}
 		session, err = store.AgentSessionRecord(ctx, s.store, session.ID)
@@ -340,6 +374,9 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 	}
 	if refusal := unservedWorkspace(ctx, s.store, session.WorkspaceID); refusal != nil {
 		return store.AgentSession{}, &statusError{http.StatusConflict, refusal}
+	}
+	if err := s.chooseRuntimeSwitch(ctx, session, &input); err != nil {
+		return store.AgentSession{}, err
 	}
 	session, err = s.store.SendAgentSessionInput(ctx, session.ID, input)
 	if err != nil {
@@ -354,22 +391,21 @@ func (s *Server) sendSessionMessageWith(ctx context.Context, sessionID string, i
 		s.sessions.recorded(ctx, session.WorkspaceID, event)
 	}
 	s.sessions.changed(ctx, sessionQueued, session)
-	if !s.hub.HasConnection(session.DeviceID) {
-		return s.failUndelivered(ctx, session, notConnected(nil)), &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
-	}
 	if beforeDelivery != nil {
 		if err := beforeDelivery(ctx); err != nil {
 			return s.failUndelivered(ctx, session, err.Error()), &statusError{http.StatusConflict, err}
 		}
 	}
-	if failed, err := s.dispatchOrFail(ctx, session, notConnected); err != nil {
-		return failed, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+	dispatched, err := s.dispatchOrWait(ctx, session)
+	if err != nil {
+		return dispatched, &statusError{http.StatusConflict, err}
 	}
-	return session, nil
+	return dispatched, nil
 }
 
 // cancelSession stops the work a session is doing. It never cascades:
-// sessions it created keep running. A refusal is a statusError.
+// sessions it created keep running. One that waits for its offline device
+// is canceled on the server alone. A refusal is a statusError.
 func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID string) (store.AgentSession, error) {
 	session, err := store.AgentSessionRecord(ctx, s.store, sessionID)
 	if err != nil {
@@ -385,21 +421,23 @@ func (s *Server) cancelSession(ctx context.Context, actor Actor, sessionID strin
 	if recovered || !activeOrBlocked(session.Status) {
 		return store.AgentSession{}, &statusError{http.StatusConflict, errors.New("agent session is not active")}
 	}
-	if !s.hub.HasConnection(session.DeviceID) {
-		return store.AgentSession{}, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
-	}
-	cancelCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
-	defer cancel()
-	answered, err := s.hub.CancelAgentSession(cancelCtx, session)
-	if err != nil {
-		return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
-	}
-	if answered {
-		// The turn had already answered; the stop ended only the background
-		// work it waited for. The device reports it completed with that
-		// answer, so it is not recorded as canceled.
-		s.appendSessionControlAudit(ctx, session, "Stopped by orchestrator", actor)
-		return session, nil
+	if !s.waitsForDevice(session) {
+		if !s.hub.HasConnection(session.DeviceID) {
+			return store.AgentSession{}, &statusError{http.StatusConflict, ErrLocalDaemonNotConnected}
+		}
+		cancelCtx, cancel := context.WithTimeout(ctx, sessionControlTimeout)
+		defer cancel()
+		answered, err := s.hub.CancelAgentSession(cancelCtx, session)
+		if err != nil {
+			return store.AgentSession{}, &statusError{cmp.Or(deviceErrorStatus(err), http.StatusConflict), err}
+		}
+		if answered {
+			// The turn had already answered; the stop ended only the background
+			// work it waited for. The device reports it completed with that
+			// answer, so it is not recorded as canceled.
+			s.appendSessionControlAudit(ctx, session, "Stopped by orchestrator", actor)
+			return session, nil
+		}
 	}
 	cancelMessage := "Canceled by user"
 	if actor.Agent() {

@@ -254,6 +254,7 @@ func (s *Server) handleSendAgentSessionMessage(w http.ResponseWriter, r *http.Re
 	if !decodeJSONRequest(w, r, &input) || !validRequestedInputID(w, input.InputID) {
 		return
 	}
+	input.SentBySessionID = messageSender(actor)
 	idempotent, handled := s.beginIdempotentRequest(w, r, "agent-sessions/messages:"+anchor.ID, input, http.StatusOK)
 	if handled {
 		return

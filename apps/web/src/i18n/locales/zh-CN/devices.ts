@@ -52,6 +52,24 @@ export const devices: Translation<typeof en> = {
     submit: "保存名称",
     failed: "无法重命名设备。",
   },
+  accountShare: {
+    label: "与 {{names}} 共用一个系统账号",
+    body_one:
+      "{{names}} 也在使用这台电脑上的这个系统账号：你们在这里使用相同的文件和相同的 Claude/Codex 登录；Foundry 不会把你们的工作分开。",
+    body_other:
+      "{{names}} 也在使用这台电脑上的这个系统账号：你们在这里使用相同的文件和相同的 Claude/Codex 登录；Foundry 不会把你们的工作分开。",
+    chosen: "自 {{date}} 起，由 {{acceptedBy}} 选择共用。",
+    noticed_one: "Foundry 发现你们都在使用这台电脑上的这个系统账号。",
+    noticed_other: "Foundry 发现你们都在使用这台电脑上的这个系统账号。",
+    noticeTitle: "有其他人也在使用这个系统账号了",
+    notice_one:
+      "{{names}} 现在也在 Foundry 中使用 {{device}} 的系统账号：你们共用它的文件和 Claude/Codex 登录。",
+    notice_other:
+      "{{names}} 现在也在 Foundry 中使用 {{device}} 的系统账号：你们共用它的文件和 Claude/Codex 登录。",
+    dismiss: "知道了",
+    dismissing: "正在保存…",
+    dismissFailed: "无法保存你已读过这条提示。",
+  },
   details: {
     missing: "这台设备的 Worker 早于 0.5.7，不会上报系统信息；更新后即可看到。",
     hostname: "主机名",
@@ -111,6 +129,7 @@ export const devices: Translation<typeof en> = {
       installing: "安装",
       installingVersion: "安装 {{version}}",
       restarting: "重启 Worker",
+      waiting: "等待旧版执行结束后更新",
     },
     stepRunning: "正在{{step}}…",
     updateStepSince:
@@ -161,6 +180,27 @@ export const devices: Translation<typeof en> = {
     creating: "正在创建…",
     create: "生成配对命令",
     failedTitle: "无法创建配对令牌",
+    consent: {
+      title: "这个系统账号已有人在用",
+      body_one:
+        "这台电脑上的这个系统账号已经被 {{names}} 在 Foundry 中使用。如果继续，你们将共用它：你们会使用这个账号上相同的文件和相同的 Claude/Codex 登录；这里没有任何东西能把你们的工作分开。想要自己独立的空间，请在这台电脑上另建一个系统账号。",
+      body_other:
+        "这台电脑上的这个系统账号已经被 {{names}} 在 Foundry 中使用。如果继续，你们将共用它：你们会使用这个账号上相同的文件和相同的 Claude/Codex 登录；这里没有任何东西能把你们的工作分开。想要自己独立的空间，请在这台电脑上另建一个系统账号。",
+      continue: "继续",
+      continuing: "正在继续…",
+      cancel: "取消",
+      cancelling: "正在取消…",
+      failed: "无法记录你的选择",
+      acceptedTitle: "你选择了共用这个系统账号",
+      accepted:
+        "这台电脑会自行完成配对。之后两台设备都会显示它们共用这个系统账号。",
+      cancelledTitle: "配对已取消",
+      cancelled: "这次配对已取消。要配对这台电脑，请重新生成配对命令。",
+      expiredTitle: "配对命令已过期",
+      expired: "这个令牌已不能再用，请重新生成配对命令。",
+      pairedTitle: "设备已配对",
+      paired: "这台电脑已配对，现在会出现在你的设备列表中。",
+    },
   },
   removal: {
     title: "要从 Foundry 移除这台设备吗？",
@@ -392,6 +432,42 @@ export const devices: Translation<typeof en> = {
         "clear-skill-scan-cache": "已清空，下次扫描会重新读取所有 Skill。",
         "recheck-agents": "正在重新查找 Claude Code 和 Codex。",
       },
+    },
+  },
+  labels: {
+    title: "这台电脑有什么",
+    intro:
+      "助理据此决定新项目放在哪里：需要公司网络或工作文件的事，会放到有这些的电脑上。记下 Foundry 查不到的，其余它会自己补上。",
+    yours: "你记下的",
+    detected: "Foundry 查到的",
+    keyLabel: "名称",
+    valueLabel: "值（可不填）",
+    keyPlaceholder: "network",
+    valuePlaceholder: "corp",
+    remove: "删除 {{label}}",
+    add: "添加一条",
+    suggested: "常用",
+    suggest: "添加 {{label}}",
+    empty: "还没有记下任何东西。",
+    save: "保存",
+    saved: "已保存。",
+    saveFailed: "没能保存。",
+    loading: "正在读取这台电脑的情况…",
+    loadFailed: "没能读取这台电脑的情况。",
+    retry: "重试",
+    invalid:
+      "名称用字母、数字、'.'、'_' 或 '-'（最多 40 个）；值写在一行里，不含 ':'。",
+    nothingDetected: "还没查到什么，电脑连上后会出现。",
+    online: "最近 {{days}} 天里 {{percent}}% 的时间在线",
+    onlineHours: "最近 {{hours}} 小时里 {{percent}}% 的时间在线",
+    onlineNone: "Foundry 跟踪这台电脑的时间还不够长，看不出它多常开着。",
+    facts: {
+      os: "系统：{{detail}}",
+      arch: "处理器：{{value}}",
+      toolchain: "{{detail}}",
+      gpu: "显卡：{{detail}}",
+      reaches: "能连上 {{detail}}",
+      "always-on": "一直开着：最近一周几乎都在线",
     },
   },
 };

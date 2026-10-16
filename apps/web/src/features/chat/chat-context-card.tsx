@@ -1,4 +1,10 @@
-import { ExternalLink, FolderClosed, X } from "lucide-react";
+import {
+  ChevronRight,
+  ExternalLink,
+  FolderClosed,
+  GitBranch,
+  X,
+} from "lucide-react";
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
@@ -50,6 +56,51 @@ function ResourceRow({
         ) : null}
       </span>
     </Button>
+  );
+}
+
+/** The session that started the chat: a row opening it, when it may be opened. */
+function StartedBySection({
+  link,
+}: {
+  link: NonNullable<ChatContextCardData["startedBy"]>;
+}) {
+  const { t } = useTranslation("chat");
+  const content = (
+    <>
+      <span className="fdy-chat-context-row-icon">
+        <GitBranch size={16} />
+      </span>
+      <span className="fdy-chat-context-row-copy">
+        <strong>{link.label}</strong>
+      </span>
+    </>
+  );
+  return (
+    <section className="fdy-chat-context-section">
+      <h3>{t("contextCard.startedBy")}</h3>
+      <div className="fdy-chat-context-list">
+        {link.onOpen ? (
+          <Button
+            className="fdy-chat-context-row"
+            onClick={link.onOpen}
+            title={t("contextCard.openStartedBy", { title: link.label })}
+            variant="ghost"
+          >
+            {content}
+            <ChevronRight
+              aria-hidden="true"
+              className="fdy-chat-context-row-forward"
+              size={14}
+            />
+          </Button>
+        ) : (
+          <div className="fdy-chat-context-row" data-static="true">
+            {content}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -106,6 +157,8 @@ export const ChatContextCard = memo(function ChatContextCard({
           status={data.status}
         />
       ) : null}
+
+      {data.startedBy ? <StartedBySection link={data.startedBy} /> : null}
 
       <SessionFileSections
         data={data}

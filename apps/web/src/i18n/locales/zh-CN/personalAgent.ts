@@ -35,6 +35,8 @@ export const personalAgent: Translation<typeof en> = {
     send: "发送",
     stopReply: "停止这次回复",
     working: "正在处理…",
+    waitingForComputer: "等待 {{computer}} 上线",
+    waitingForComputerDetail: "{{computer}} 上线后我会自己接着做。",
     newConversation: "新的对话",
     emptyTitle: "有什么可以帮你？",
     emptyBody:
@@ -64,6 +66,28 @@ export const personalAgent: Translation<typeof en> = {
       failed: "没能完成",
     },
   },
+  list: {
+    title: "你的清单",
+    open: "要做的",
+    doneToday: "今天做完的",
+    empty: "跟我说说你打算做什么，我帮你记在这里。",
+    reminder: "提醒 {{time}}",
+    helping: "我在帮忙",
+    actionsFor: "“{{text}}”的操作",
+    edit: "编辑",
+    delete: "删除",
+    deleteTitle: "从清单里删除？",
+    deleteBody: "把“{{text}}”从你的清单里删除？删除后无法恢复。",
+    deleteAction: "删除",
+    textLabel: "事项",
+    whenLabel: "时间",
+    whenPlaceholder: "比如：下班后",
+    save: "保存",
+    saving: "正在保存…",
+    cancel: "取消",
+    loadFailed: "没能加载你的清单",
+    failed: "没能更新你的清单",
+  },
   tasks: {
     title: "正在做的事",
     empty: "现在没有正在做的事。",
@@ -76,6 +100,7 @@ export const personalAgent: Translation<typeof en> = {
     stopping: "正在停止…",
     stopFailed: "没能停下",
     loadFailed: "没能加载正在做的事",
+    waitingForComputer: "等待 {{computer}} 上线",
     status: {
       queued: "排队中",
       running: "进行中",
@@ -92,6 +117,12 @@ export const personalAgent: Translation<typeof en> = {
     action: "在 {{device}} 上安家",
     working: "正在安家…",
     offline: "{{device}} 现在不在线，请选一台开着的电脑。",
+    shared:
+      "这台电脑的系统账号与 {{names}} 共用，他们也能接触到助理在那里的文件和登录。",
+    chooseComputer: "选择电脑",
+    actionUnchosen: "安家",
+    onlyShared:
+      "你的每台电脑都与别人共用系统账号，所以不替你预选。如果能接受他们接触到助理在那里的文件和登录，请自己选一台。",
     failed: "没能给助理安家",
     noComputer: {
       title: "先接入一台电脑",
@@ -158,7 +189,7 @@ export const personalAgent: Translation<typeof en> = {
         zhCN: "中文",
       },
       timezone: "时区",
-      timezonePlaceholder: "跟随它所在的电脑",
+      timezonePlaceholder: "跟随这个浏览器：{{zone}}",
       timezoneHint: "用于提醒和每日摘要，比如 Asia/Shanghai。",
       speakingStyle: "说话方式",
       speaking: {
@@ -241,8 +272,14 @@ export const personalAgent: Translation<typeof en> = {
       folder: "新项目放在 {{folders}}",
       noFolder: "这台电脑还没告诉 Foundry 新项目放在哪里。",
       openComputer: "电脑设置",
-      preferred: "新项目优先放在",
+      preferred: "默认在哪台电脑做事",
+      preferredHint:
+        "不依赖特定电脑的事从这里开始。需要只有某台电脑才有的东西（比如公司网络、工作文件）的事，会放到有它的电脑上；每台电脑有什么，在它的设置页里记下。哪台都没有时，助理会问你。",
       preferredHome: "它的家（{{device}}）",
+      has: "已记下：{{notes}}",
+      hasNothing: "还没记下这台电脑有什么。",
+      shared:
+        "与 {{names}} 共用系统账号：他们能接触到助理在这里做的事。只有你在下面勾选新建项目或把它设为默认位置，新项目才会放在这里。",
       none: "你还没有接入自己的电脑。",
     },
     models: {
@@ -315,6 +352,7 @@ export const personalAgent: Translation<typeof en> = {
         limit: "到了上限",
         stopped: "已停下",
         invalid: "请求不对",
+        no_place: "没有一台电脑具备它需要的条件",
       },
       tools: {
         create_workspace: "新建项目",

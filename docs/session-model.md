@@ -35,6 +35,28 @@
 
 新建会话仍是 `POST /api/agent-sessions`，请求中的 prompt 成为第一条输入。
 
+### 设备离线时：等待而不是失败（2026-10-15）
+
+发往离线设备的工作会等它回来（`session_device_wait.go`）：
+
+- 新建会话与给空闲会话的新输入照常被接受，状态为 `queued`；记录里写一条
+  `Waiting for device` 通知（"<电脑> is offline. This waits and starts by itself when it is
+  back online…"）。MCP `create_session` / `send_message` 的结果带 `waitingForDevice`
+  说明，`wait=true` 不在它上面等。Web 按“排队中 + 设备不在线”显示“等待 <电脑> 上线”，
+  可随时取消：会话列表、输入框上方，以及记录末尾（聊天与助理首页都是一行静止的等待说明，
+  不是带计时的“处理中”；这时记录里本轮的 `Waiting for device` 通知不另显示，设备回来后
+  它留在该轮的步骤里）。助理首页“正在做的事”与 `list_tasks` 读 Server 给任务算出的
+  `waitingFor`（会话排队且设备不在线时为电脑名），显示为“等待 <电脑> 上线”。
+- 设备重连时 `hello` 把它的排队会话按输入排队的先后派发（`dispatchQueuedAgentSessions`），
+  Worker 的调度器同时最多运行 `maxConcurrentTasks` 个，其余在设备上排队。
+- 等待超过 `offlineWaitLimit`（24 小时，Server 常量）的会话以明确原因失败
+  （"<电脑> stayed offline for 24 h, so this was not started…"，`expireDeviceWaits`，
+  随过期会话清扫每 30 秒检查一次）。
+- 取消等待中的会话只在 Server 上记为 `canceled`，不需要设备在线。
+- 不等待的：正在运行的会话在设备离线时不能 steer 或停止；附件要经设备上传，离线时不能附带；
+  聊天队列（运行中排队的后续消息）照旧留在队列里等设备；飞书话题与后续消息、Workspace 摘要、
+  命名任务在设备离线时仍立即拒绝。
+
 ### 派发与 Worker
 
 - `run_session` 载荷为 `{session, input, sessionToken, …}`；Worker 以 `input.id` 去重，

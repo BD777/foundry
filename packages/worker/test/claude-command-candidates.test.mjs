@@ -36,12 +36,7 @@ test("candidate order prefers env override, then PATH, then install locations", 
   ]);
   assert.deepEqual(
     claudeCommandCandidates({ FOUNDRY_CLAUDE_BIN: "/custom/claude" }, home),
-    [
-      "/custom/claude",
-      "claude",
-      resolve(home, ".local/bin/claude"),
-      "/opt/homebrew/bin/claude",
-    ],
+    ["/custom/claude"],
   );
 });
 

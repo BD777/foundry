@@ -204,6 +204,7 @@ export const activeClaudeRuntimes = new Map<string, ActiveClaudeRuntime>();
 // --- Codex active thread ---
 
 export interface CodexSDKThread {
+  steer?: (input: unknown, inputId?: string) => Promise<void>;
   id?: string | null;
   run: (input: unknown, options?: Record<string, unknown>) => Promise<unknown>;
   runStreamed?: (

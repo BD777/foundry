@@ -8,7 +8,7 @@
 
 ### 设备与连接
 
-- **一台机器在一个账号下是一个设备**，按 OS machine id 的哈希识别；同一台机器上的并行开发栈是不同设备；一个状态根只运行一个 Daemon（`device-pairing.ts` 的锁）。设备可以没有 Workspace：2026-10-09 起新设备配对后不再自动登记任何目录，人在 Workspaces 页添加（#113、#114）。
+- **一个系统账号的一个状态根，在一个 Foundry 账号下是一个设备**（2026-10-15 起的新配对）：Worker 报三个哈希，从不报原始 id 或用户名——Worker 指纹（machine id + 数字 uid（Windows 为 SID）+ 本 Worker 的状态根，新设备按它识别）、系统账号指纹（machine id + uid + 该账号自己的 `~/.foundry`，同一账号下的不同状态根、开发栈算同一个账号）和机器指纹（只有 machine id）。所以同一台电脑的不同系统账号、同一账号的并行开发栈都是不同设备。此前配对的设备按旧的机器指纹（machine id + 栈后缀）识别，id 不变、不用重新配对：升级后的 Worker 连上时补报账号指纹，再配对时只有同一系统账号（或仍持有该设备 id 的 Worker）会接回它。一个状态根只运行一个 Daemon（`device-pairing.ts` 的锁）。设备可以没有 Workspace：2026-10-09 起新设备配对后不再自动登记任何目录，人在 Workspaces 页添加（#113、#114）。
 - **配对**：登录的账号生成一次性配对 token（Web 上 15 分钟，`foundry-server devices pairing-token` 1 小时），`POST /api/daemon/pair` 兑换一次，得到设备自己的凭证；Server 只存哈希，Worker 存在 `~/.foundry/daemon-config.json`（仅所有者可读）。同一台机器再次配对会轮换凭证。细节见[安全边界](security.md)。
 - **Daemon 主动连接 Server**（`/api/daemon/ws`），设备不需要开放入站端口。连接打开后先 `hello`，再为每个 Workspace 注册；Worker 每 25 秒发心跳，Server 70 秒收不到任何字节就断开，Worker 退避重连（上限 30 秒）。会话生命周期消息走需确认的 outbox（`transport.ts` 的 `ReliableSessionTransport`）：重连后补发未确认的消息，按 socket 缓冲水位背压、合并同一事件的旧版本（2026-10-11，#120）；大消息在 Server 支持时分片为 `reply_chunk`。协议校验的单条上限是 2 MiB，Server 读帧上限 96 MiB（容纳 Skill 包，压缩消息解压后同样受限）。
 - **慢速上行**（2026-10-15）：daemon socket 协商 permessage-deflate（no context takeover，≥1 KiB 的消息才压缩；旧 Worker 的 `ws` 默认也会协商）。Server 在 upgrade 响应头 `Foundry-Daemon-Features: registration_sections` 声明它在内存里按 digest 保留设备注册的两个 section（`device`：agentProfiles + providerHealth；`workspace`：assets、agents、workspaceFiles、chats、skills）；Worker 对本进程已整份发过的 section 只发 digest（`omittedSections`），Server 缺（重启过）就回 `registration_needed`，Worker 整份重发，slim hello 被接受前其他注册先等着。`scan_skills` 带 `knownDigest`，未变的扫描结果只回 digest，Server 用保留的结果照常入库。重连报告行（Server 日志 `device … reconnected`）带上一连接前 3 分钟按消息类型的字节数、补发的 outbox 消息、outbox/socket 峰值和最长发送停滞（`send-meter.ts`）。
@@ -35,7 +35,31 @@
 ### 多设备与跨设备会话
 
 - 一个账号可有多台设备，一台设备可有多个 Workspace。别人只能看到托管了自己可见 Workspace 的设备，看不到它的执行设置（[安全边界 · Accounts](security.md#accounts)）。每台设备的并发上限 `maxConcurrentTasks` 默认 4、范围 1–16（`task-scheduler.ts`）。
+- **设备离线时工作等待它**（2026-10-15）：发往离线设备上 Workspace 的新会话与后续消息被接受并排队，设备重连后按排队先后自动开始，超过 24 小时仍离线则以明确原因失败，期间可随时取消（[会话模型 · 设备离线时](session-model.md#设备离线时等待而不是失败2026-10-15)）。Workspace 永远不会被悄悄换到另一台设备。
 - **跨设备会话经 Server 中转**（方案 A，2026-09-28）：Agent 在 `create_session` 中指定另一台设备上的 `workspaceId`，Server 按设备路由派发（`session_dispatch.go` 的 `DispatchAgentSession`），设备之间不直连。Agent 的可达范围由 `agentScope`（`access.go`）决定；2026-10-12 起（D1）只能控制它所代表的人创建的会话（[模块化架构 §5.6](architecture-modules.md#跨设备会话已定方案-a2026-09-28)）。官方账号登录留在各自设备上；Server 上的 API 连接密钥加密保存，只在一次运行时下发给目标设备，设备不落盘（[安全边界](security.md)）。在另一台设备上使用资源见 [Resources](resources.md)。
+
+### 设备标签与检测到的事实（2026-10-15）
+
+- **用途**：助理新建项目时按它们选电脑（[Personal Agent §4 放在哪台电脑](personal-agent.md#4-workspace-生命周期由助理驱动)）。哪台电脑在公司网络里、放着谁的文件，Foundry 自己判断不了（[放置调研](research/personal-agent-placement.md) R7），所以由所有者写下，Foundry 能查到的自己补上。
+- **标签**：设备所有者在设备页 Settings 的“这台电脑有什么”里编辑，自由的 `key` 或 `key: value`（键为小写字母、数字、`.` `_` `-`，最多 40 个字符；值一行、不含 `:`、最多 60 个字符；每台最多 24 条），保存时转小写、去重。页面给出常用的：`network: corp/home/public`、`toolchain: go/node/xcode`、`files: personal/work`、`gpu`、`always-on`。存在 Server 表 `device_labels`；`PUT /api/devices/{deviceId}/labels`（所有者）、`GET /api/device-placements`（调用者自己的设备）。会话令牌与设备凭证都不能改。
+- **检测到的事实**（只读，Server 每次读时由已有的上报算出，不在设备上另做探测）：Worker 上报的系统与架构（`os`、`arch`）；资源清单里就绪的工具链与容器运行时（`toolchain:<id>`）与显卡（`gpu:<厂商>`）；设备持有的连接器的网络检查（如 bytedcli 的 `cloud.bytedance.net:443`）没有失败时的 `reaches:<host>`；Server 记录的每次连接（表 `device_presence`，连接期间每 5 分钟推进，保留两周）算出的最近 7 天在线比例，≥ 90% 且观察满 24 小时记为 `always-on`。
+- **系统账号与别人的设备共用的设备**，助理只在本人明确选了它时才在上面放新项目：设置“在哪里做事”里勾了“可以在这里新建项目”（默认只有助理的家，即安家时自己选的那台）或把它设为默认位置；“可以在这台电脑上做事”默认全开，不算选择。合适的电脑不止一台时，不是默认位置的共用设备排在没人共用的之后；放在共用设备上时，结果的 `place.reason` 写明与谁共用，助理要告诉本人（`mcp_personal_agent.go` 的 `assistantCreateDevice`、`sharedAccountNote`）。
+
+### 一台电脑上的几个人（2026-10-15）
+
+一个系统账号默认只属于一个人。在同一个系统账号下，Foundry 无法把两个人的工作分开：文件、Claude/Codex 登录、Worker 的设备凭证都在这个账号里。所以和别人共用一个系统账号是一种明确的信任，被这样标出来，从不说成隔离（为什么不在一个 Worker 内做按人隔离，见[托管执行端调研](research/hosted-environments.md)：业界只在“一人一个系统账号一个 Worker”上支持多人共机）。
+
+- **配对时先说清楚**：要配对的 Worker 的系统账号指纹已属于另一个人的（未移除的）设备时，`POST /api/daemon/pair` 不配对、也不用掉 token，回答 409 `system_account_shared` 和对方的显示名，并在 token 上记下“等待选择”。终端与 Web 的 Add device 对话框都原样告诉这个人：“这台电脑上的这个系统账号已经被 <对方> 在 Foundry 中使用。如果继续，你们将共用它：你们会使用这个账号上相同的文件和相同的 Claude/Codex 登录；这里没有任何东西能把你们的工作分开。想要自己独立的空间，请在这台电脑上另建一个系统账号。”，给出继续 / 取消。终端里回答 `y`、Web 里点继续（`POST /api/devices/pairing-tokens/consent`）或命令带 `--share-system-account` 都算选择继续；Worker 每 3 秒重试一次，Web 选择后自动完成。取消后这个 token 作废。
+- **记录与标示**：继续时记下谁、何时选择（表 `device_account_shares`，后配对的设备 → 先在的设备）。两台设备在 Devices 页与设备详情上都对各自所有者显示“与 X 共用一个系统账号”及其含义（`DeviceProjection.sharesSystemAccountWith`，只给设备所有者）；先在的那位所有者看到一次提醒，点“知道了”后消失，标示保留。Foundry 事后才发现的共用（此前配对的设备补报账号指纹后）同样标出，只是没有“谁选择的”。设备被移除后不再算共用。
+- **对会话与助理的后果**：Server 把共用者告诉 Worker（`device_sharing`，Worker 声明同名能力），这台设备上的会话在设备说明里读到“这个电脑账号是共用的……不要假设隐私”（`system-account-sharing.ts`）。助理只在本人明确选了这样的设备时才把新项目放上去（见上一节与 [Personal Agent](personal-agent.md)）；“安家”卡片从不默认选中它，人仍可自己选。
+- **分享项目**：把 Workspace 分享给别人（成员）时，对话框写明他们在那台电脑上以所有者的系统账号工作，用同样的文件和登录；这与共用系统账号是同一种信任。
+
+**怎么做到“几个人、一台电脑、各自独立”**（推荐）：每个人一个自己的系统账号，各自安装、配对自己的 Worker。
+
+1. 管理员为每个人建系统账号（macOS：系统设置 → 用户与群组；Linux：`sudo adduser <name>`）。
+2. 每个人以自己的账号登录（macOS 图形登录或快速切换用户；Linux 直接登录或 `ssh`，不要用 `su`/`sudo -u`，它们没有 systemd 用户会话），在 Web 的 Devices → Add device 复制命令运行。状态根（`~/.foundry`）、`~/.foundry/bin/foundry-worker`、登录服务（Linux `~/.config/systemd/user/foundry-worker.service`；macOS `~/Library/LaunchAgents/dev.foundry.worker.plist` 与 `~/.foundry/Foundry Worker.app`）都在各自的家目录里，互不冲突；Worker 不监听固定端口（转发器与浏览器都用系统分配的端口），临时文件都用唯一名字。
+3. 各自登录 Claude Code / Codex。每个账号是一台独立的设备，不会出现共用提示。
+4. Linux 上用户服务在该账号退出登录后停止，要常驻需管理员执行 `sudo loginctl enable-linger <name>`（安装时检测到未开启会提示）；macOS 的 LaunchAgent 只在该用户登录（含快速切换后留在后台）时运行。
 
 ### 部署形态
 
@@ -46,7 +70,7 @@
 
 截至 2026-10-14（`3092162`）。
 
-**已实现**：上面各节描述的行为，代码在 Worker 的 `device-pairing.ts`、`device-removal.ts`、`daemon-connection.ts`、`daemon/control-connection.ts`、`transport.ts`、`service.ts`、`mac-worker-app.ts`、`worker-install.ts`、`worker-self-update.ts`、`workspaces.ts`、`workspace-registration.ts`、`workspace-folders.ts`、`daemon/workspace-roster.ts`，Server 的 `apps/server/internal/httpapi/daemon_*.go`、`device_*.go`、`devices_http.go`、`workspaces_http.go`、`workspace_relink.go`、`workspace_availability.go`、`worker_packages.go`、`worker_update.go`，Web 的 `apps/web/src/features/workspaces/` 与 `features/devices/`。
+**已实现**：上面各节描述的行为，代码在 Worker 的 `device-pairing.ts`、`device-removal.ts`、`daemon-connection.ts`、`daemon/control-connection.ts`、`transport.ts`、`service.ts`、`mac-worker-app.ts`、`worker-install.ts`、`worker-self-update.ts`、`workspaces.ts`、`workspace-registration.ts`、`workspace-folders.ts`、`daemon/workspace-roster.ts`，Server 的 `apps/server/internal/httpapi/daemon_*.go`、`device_*.go`、`devices_http.go`、`workspaces_http.go`、`workspace_relink.go`、`workspace_availability.go`、`worker_packages.go`、`worker_update.go`、`session_device_wait.go`（离线设备的工作等待）、`device_placement.go`（标签、检测到的事实与在线比例），Web 的 `apps/web/src/features/workspaces/` 与 `features/devices/`。
 
 **未实现 / 已知缺口**
 
@@ -78,7 +102,9 @@
 
 ## 代码位置
 
+- 标签与检测到的事实：`apps/server/internal/httpapi/device_placement.go`、`sqlitestore/device_placement.go`（`device_labels`、`device_presence`）、`personalagent/placement.go`（匹配与选择）；`packages/protocol/src/device-placement.ts`；`apps/web/src/features/devices/device-labels.tsx`
 - 配对与设备身份：`packages/worker/src/device-pairing.ts`、`device-removal.ts`；`apps/server/internal/httpapi/device_auth.go`、`device_removal.go`
+- 共用系统账号：`packages/worker/src/device-pairing.ts`（指纹）、`pairing-consent.ts`、`system-account-sharing.ts`；`apps/server/internal/httpapi/device_sharing.go`、`sqlitestore/device_sharing.go`（`device_account_shares`、`device_identities` 的指纹列、token 的 `consent`）；`packages/protocol/src/device-sharing.ts`；`apps/web/src/features/devices/pairing-progress.tsx`、`device-account-share.tsx`
 - 连接：`packages/worker/src/daemon-connection.ts`、`daemon/control-connection.ts`、`transport.ts`；`apps/server/internal/httpapi/daemon_hub.go`、`daemon_conn.go`、`registration_sections.go`、`daemon_rpc.go`、`daemon_reply_chunks.go`、`daemon_outbox.go`；消息名 `packages/protocol/src/daemon-messages.ts`；符号级流程见 [Daemon 生命周期](daemon-lifecycle.md)
 - 安装与更新：`packages/worker/src/worker-install.ts`、`service.ts`、`mac-worker-app.ts`、`worker-self-update.ts`、`self-update-status.ts`；`apps/server/internal/httpapi/worker_packages.go`、`worker_update.go`；`scripts/pack-worker-release.mjs`
 - Workspace：`packages/worker/src/workspaces.ts`、`workspace-registration.ts`、`workspace-folders.ts`、`daemon/workspace-roster.ts`、`daemon/handlers/workspaces.ts`；`apps/server/internal/httpapi/workspaces_http.go`、`workspace_relink.go`、`workspace_availability.go`；`apps/server/internal/sqlitestore/workspace_deletions.go`

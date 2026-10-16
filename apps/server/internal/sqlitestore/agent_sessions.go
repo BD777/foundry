@@ -455,6 +455,8 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 			Attachments:           start.attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			ImportedContext:       strings.TrimSpace(input.ImportedContext),
+			// The session that started it wrote its first message.
+			SentBySessionID: start.parent.ID,
 		},
 		CreatedLabel: "just now",
 		UpdatedLabel: "queued",
@@ -722,6 +724,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 			Attachments:           attachments,
 			ProfileTransitionNote: strings.TrimSpace(input.ProfileTransitionNote),
 			TimerFire:             input.TimerFire,
+			SentBySessionID:       strings.TrimSpace(input.SentBySessionID),
 		}
 		// What the native session missed is the server's to tell, never the
 		// client's: it alone knows which turns each native session ran.

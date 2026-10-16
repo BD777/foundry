@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 // Module-load-time state paths resolve from FOUNDRY_STATE_ROOT, so the
@@ -13,8 +13,16 @@ const stateRoot = mkdtempSync(join(tmpdir(), "foundry-device-pairing-"));
 process.env.FOUNDRY_STATE_ROOT = stateRoot;
 delete process.env.FOUNDRY_STACK;
 
-const { machineFingerprint, pairDevice, acquireDaemonLock, PairingError } =
-  await import("../dist/device-pairing.js");
+const {
+  machineFingerprint,
+  hostFingerprint,
+  osAccountFingerprint,
+  workerFingerprint,
+  pairDevice,
+  acquireDaemonLock,
+  PairingError,
+  SharedAccountError,
+} = await import("../dist/device-pairing.js");
 const { getDevice, devicePath } = await import("../dist/device.js");
 
 test("the machine fingerprint is a stable hash, distinct per dev stack", () => {
@@ -35,6 +43,39 @@ test("the machine fingerprint is a stable hash, distinct per dev stack", () => {
       // Not present on this platform.
     }
   }
+});
+
+test("the system account fingerprint follows the account, not the state root", () => {
+  const account = osAccountFingerprint();
+  const worker = workerFingerprint();
+  const host = hostFingerprint();
+  for (const value of [account, worker, host])
+    assert.match(value, /^[0-9a-f]{64}$/);
+  assert.equal(new Set([account, worker, host, machineFingerprint()]).size, 4);
+  // Another state root (a dev stack, FOUNDRY_STATE_ROOT) of the same
+  // account is another device but the same system account.
+  const otherRoot = mkdtempSync(join(tmpdir(), "foundry-device-pairing-b-"));
+  process.env.FOUNDRY_STATE_ROOT = otherRoot;
+  try {
+    assert.notEqual(workerFingerprint(), worker);
+    assert.equal(osAccountFingerprint(), account);
+    assert.equal(hostFingerprint(), host);
+  } finally {
+    process.env.FOUNDRY_STATE_ROOT = stateRoot;
+  }
+  // Another account's home is another system account on the same machine.
+  const home = process.env.HOME;
+  process.env.HOME = otherRoot;
+  try {
+    assert.notEqual(osAccountFingerprint(), account);
+    assert.equal(hostFingerprint(), host);
+  } finally {
+    process.env.HOME = home;
+  }
+  assert.ok(
+    !account.includes(userInfo().username),
+    "the user name never leaves the machine",
+  );
 });
 
 async function fakeServer(handler) {
@@ -73,6 +114,9 @@ test("pairing sends the fingerprint and local id and adopts the server's device 
       token: "token-1",
       machineFingerprint: machineFingerprint(),
       deviceId: local,
+      workerFingerprint: workerFingerprint(),
+      osAccountFingerprint: osAccountFingerprint(),
+      hostFingerprint: hostFingerprint(),
     });
     const stored = JSON.parse(readFileSync(devicePath, "utf8"));
     assert.equal(stored.id, "dev_assigned");
@@ -95,6 +139,57 @@ test("a rejected pairing token surfaces the server's reason", async () => {
         error.status === 401 &&
         /already used/.test(error.message),
     );
+  } finally {
+    server.close();
+  }
+});
+
+test("a server before the account check gets the old pairing body", async () => {
+  const server = await fakeServer((request) =>
+    "workerFingerprint" in request.body
+      ? [400, { error: "invalid JSON request body" }]
+      : [201, { deviceId: "dev_assigned", credential: "c" }],
+  );
+  try {
+    const result = await pairDevice(server.url, "token-2");
+    assert.equal(result.credential, "c");
+    assert.equal(server.requests.length, 2);
+    assert.deepEqual(Object.keys(server.requests[1].body).sort(), [
+      "deviceId",
+      "machineFingerprint",
+      "token",
+    ]);
+  } finally {
+    server.close();
+  }
+});
+
+test("a system account another person uses asks before pairing", async () => {
+  const server = await fakeServer((request) =>
+    request.body.acceptSharedAccount
+      ? [201, { deviceId: "dev_assigned", credential: "shared" }]
+      : [
+          409,
+          {
+            error: "This computer account is already used by Alice in Foundry.",
+            code: "system_account_shared",
+            sharedWith: ["Alice"],
+          },
+        ],
+  );
+  try {
+    await assert.rejects(
+      pairDevice(server.url, "token-3"),
+      (error) =>
+        error instanceof SharedAccountError &&
+        error.sharedWith.join() === "Alice" &&
+        /already used by Alice/.test(error.message),
+    );
+    const accepted = await pairDevice(server.url, "token-3", {
+      acceptSharedAccount: true,
+    });
+    assert.equal(accepted.credential, "shared");
+    assert.equal(server.requests[1].body.acceptSharedAccount, true);
   } finally {
     server.close();
   }

@@ -1,3 +1,4 @@
+import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
 import { resolve } from "node:path";
 import { claudeRunModel } from "../context-window.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -9,6 +10,7 @@ import {
 import { sessionEnvironment, withoutSessionToken } from "../session-ambient.js";
 import {
   claudeSessionOptions,
+  claudeWorkspaceInstructions,
   claudeSettingsFile,
   type ClaudeLaunchPlan,
 } from "../session-policy.js";
@@ -78,6 +80,10 @@ export async function prepareClaudeTurnRun(
     claudeManagedPrompt(sessionPrompt(session, profile), managedSkills);
   const query = await loadClaudeQuery();
   const { flagSettings, baseOptions } = claudeTurnOptions(request, command);
+  await request.emit(
+    "Execution configuration",
+    `Foundry-managed configuration: ${(baseOptions.env as NodeJS.ProcessEnv).CLAUDE_CONFIG_DIR}. Native user/project settings are not inherited.`,
+  );
   return {
     ...request,
     startedAt,
@@ -101,7 +107,7 @@ export async function prepareClaudeTurnRun(
 }
 
 async function loadClaudeQuery(): Promise<ClaudeQueryFunction> {
-  const sdk = (await import(claudeAgentSdkPackage)) as {
+  const sdk = (await loadClaudeSdk()) as {
     query?: ClaudeQueryFunction;
   };
   if (typeof sdk.query !== "function") {
@@ -125,15 +131,8 @@ function claudeTurnOptions(
   const effort = claudeEffort(session, profile);
   const permissionMode = claudePermissionMode(session, profile);
   const maxTurns = claudeMaxTurns(session);
-  // Claude Code applies ~/.claude/settings.json's `env` block ON TOP of the
-  // spawned process environment, so a pinned gateway/base URL/model in that
-  // file would otherwise silently override the Foundry-selected profile — the
-  // session would show one profile but call another provider. The SDK
-  // `settings` option is the flag-settings layer, the highest-priority
-  // user-controlled tier; mirroring the profile runtime env there makes the
-  // chosen profile authoritative (empty values clear a local override).
-  // autoCompactEnabled is pinned here too: a user-level disable otherwise
-  // turns a resumed long session into a hard "Prompt is too long" failure.
+  // The generated settings layer is authoritative. User/project settings
+  // sources stay disabled; credentials and native history keep their source.
   const flagSettings = plan?.settings ?? {
     env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
@@ -151,7 +150,13 @@ function claudeTurnOptions(
     permissionMode,
     settings: claudeSettingsFile(session.id || workspacePath, flagSettings),
     tools: { type: "preset", preset: "claude_code" },
-    ...(plan?.sdk ?? claudeSessionOptions(managedSkills)),
+    ...(plan?.sdk ??
+      claudeSessionOptions(
+        managedSkills,
+        isUtilitySession(session)
+          ? ""
+          : claudeWorkspaceInstructions(workspacePath),
+      )),
   };
   if (maxTurns !== undefined) baseOptions.maxTurns = maxTurns;
   if (model) baseOptions.model = claudeRunModel(profile, model);

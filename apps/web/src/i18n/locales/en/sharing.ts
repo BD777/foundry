@@ -15,7 +15,7 @@ export const sharing = {
   },
   runsCode: {
     title: "This role can run code",
-    body: "A {{role}} can start Chats and Issues that run commands on {{device}} as {{owner}}'s OS account, inside this workspace. Choose Viewer for people who only need to read.",
+    body: "A {{role}} works as {{owner}} on {{device}}: their Chats and Issues run commands as {{owner}}'s system account there and use the same files and the same Claude/Codex sign-ins. Choose Viewer for people who only need to read.",
   },
   inviteLink: {
     body: "Invite link for a new account that joins as {{role}} · shown only once, expires in 7 days",

@@ -13,6 +13,7 @@ import {
 import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
 import { Button } from "../ui/button";
+import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
 import type {
   ConversationFileReference,
   ParsedImageTag,
@@ -297,12 +298,15 @@ function fileLinkComponents(
 // stylesheet's per-block flow space instead of a fixed 1rem.
 const markdownFlowClassName = "space-y-[var(--fdy-markdown-flow-space)]";
 
+// Streamdown's own plugins, with bare URLs ending before CJK text.
+const markdownRemarkPlugins = [
+  ...Object.values(defaultRemarkPlugins),
+  remarkAutolinkCjkBoundary,
+];
+
 // Text a person typed keeps its line breaks, as chat products do; agent
 // answers stay standard Markdown, where a single newline is a soft break.
-const typedTextRemarkPlugins = [
-  ...Object.values(defaultRemarkPlugins),
-  remarkBreaks,
-];
+const typedTextRemarkPlugins = [...markdownRemarkPlugins, remarkBreaks];
 
 function MarkdownText({
   children,
@@ -328,7 +332,7 @@ function MarkdownText({
       mode={streaming ? "streaming" : "static"}
       parseIncompleteMarkdown={streaming}
       rehypePlugins={markdownRehypePlugins}
-      remarkPlugins={typedText ? typedTextRemarkPlugins : undefined}
+      remarkPlugins={typedText ? typedTextRemarkPlugins : markdownRemarkPlugins}
       skipHtml
     >
       {children}

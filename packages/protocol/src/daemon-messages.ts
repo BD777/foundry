@@ -36,6 +36,8 @@ export const daemonMessageTypes = {
   attachmentWritten: "attachment_written",
   agentRuntimeSettingsUpserted: "agent_runtime_settings_upserted",
   cancelSession: "cancel_session",
+  /** Server tells: who else uses this device's system account (device-sharing.ts). */
+  deviceSharing: "device_sharing",
   directoriesListed: "directories_listed",
   inspectWorkspace: "inspect_workspace",
   inspectNativeAccount: "inspect_native_account",
@@ -407,6 +409,7 @@ export interface DaemonAgentProfileInput {
   codexApprovalPolicy?: AgentProfileProjection["codexApprovalPolicy"];
   codexReasoningEffort?: AgentProfileProjection["codexReasoningEffort"];
   codexSandboxMode?: AgentProfileProjection["codexSandboxMode"];
+  contextWindows?: Record<string, number>;
   codexSpeed?: AgentProfileProjection["codexSpeed"];
   configScope?: AgentConfigScope;
   connectionType?: AgentConnectionType;
@@ -477,6 +480,8 @@ export interface RunSessionPayload {
 
 /** steer_session */
 export interface SteerSessionPayload {
+  /** Authenticated sending session; absent for direct user input. */
+  sentBySessionId?: string;
   message?: string;
   attachments?: ChatAttachment[];
   sessionId?: string;

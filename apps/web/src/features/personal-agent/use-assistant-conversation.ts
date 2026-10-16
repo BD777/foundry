@@ -75,6 +75,10 @@ export function useAssistantConversation(
   const [pending, setPending] = useState<PendingLine[]>([]);
   const held = useRef(sessions);
   held.current = sessions;
+  // The sessions read in full. One learned otherwise (a create's or send's
+  // reply, a stream announcement) comes without events, and its first
+  // input's event is never streamed: only a read has it.
+  const readInFull = useRef(new Set<string>());
 
   const upsert = useCallback((session: AgentSession) => {
     setSessions((current) => {
@@ -103,6 +107,7 @@ export function useAssistantConversation(
       const loaded = await Promise.all(
         recent.map((session) => getAgentSession(session.id)),
       );
+      for (const session of loaded) readInFull.current.add(session.id);
       setSessions((current) => {
         const next = new Map<string, AgentSession>();
         for (const session of loaded)
@@ -123,6 +128,7 @@ export function useAssistantConversation(
   useEffect(() => {
     setState("loading");
     setSessions(new Map());
+    readInFull.current = new Set();
     void read();
   }, [read]);
 
@@ -155,11 +161,38 @@ export function useAssistantConversation(
     return () => stops.forEach((stop) => stop());
   }, [workspaceId, read, upsert]);
 
+  useEffect(() => {
+    for (const id of sessions.keys()) {
+      if (readInFull.current.has(id)) continue;
+      readInFull.current.add(id);
+      const reading = readInFull.current;
+      getAgentSession(id).then(
+        (session) =>
+          setSessions((current) => {
+            const shown = current.get(id);
+            if (!shown) return current;
+            const next = new Map(current);
+            next.set(id, mergeLoadedAgentSession(shown, session));
+            return next;
+          }),
+        () => reading.delete(id),
+      );
+    }
+  }, [sessions]);
+
   const ordered = useMemo(
     () => recentAssistantSessions([...sessions.values()], shownSessions),
     [sessions],
   );
   const shownInputs = useMemo(() => sentInputs(sessions.values()), [sessions]);
+  // A message the conversation shows is no longer pending: kept, it would
+  // come back at the end whenever its input stopped being the latest.
+  useEffect(() => {
+    setPending((current) => {
+      const waiting = current.filter((line) => !shownInputs.has(line.clientId));
+      return waiting.length === current.length ? current : waiting;
+    });
+  }, [shownInputs]);
   const lines = useMemo<Array<AssistantLine & { clientId?: string }>>(
     () => [
       ...assistantLines(ordered),
@@ -182,6 +215,8 @@ export function useAssistantConversation(
     error,
     lines,
     working: assistantWorking(ordered),
+    /** The latest session: queued, it may wait for its offline computer. */
+    latestSession: latest,
     /** The latest turn: changes when a message starts a new one. */
     latestTurnId: latest ? `${latest.id}:${latest.input?.id ?? ""}` : "",
     retry: read,

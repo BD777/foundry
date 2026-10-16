@@ -1,4 +1,6 @@
-import { spawn } from "node:child_process";
+import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
+import { isolatedClaudeEnvironment } from "../runtime-isolation.js";
+import { nativeLoginEnvironment } from "../native-login-environment.js";
 import {
   accessSync,
   constants,
@@ -158,10 +160,9 @@ type RenewalOutcome = "fresh" | "renewed" | "not_renewed" | "no_login";
 
 /**
  * The device's own Claude Code renews its login the way it always does:
- * before a request, under its lock, with the token about to expire. A
- * one-word answer is the smallest request it makes; nothing is kept of it.
- * Only a login within that window is renewed: Claude Code renews none
- * earlier. Never where the login file cannot be written: the provider
+ * through a no-prompt native SDK account read. No model request is made.
+ * Only a login within that window is checked; whether it was renewed is
+ * determined from the original credential store, never assumed. Never where the login file cannot be written: the provider
  * would rotate the refresh token and the device could not keep the new one.
  */
 export function ensureFreshClaudeLogin(
@@ -195,23 +196,7 @@ async function renewClaudeLogin(
   triedFor = { expiry, at: now() };
   const cwd = mkdtempSync(join(tmpdir(), "foundry-claude-login-"));
   try {
-    await (options.run ?? runClaude)(
-      [
-        "--print",
-        "Reply with the single word OK.",
-        "--no-session-persistence",
-        "--max-turns",
-        "1",
-        "--tools",
-        "",
-        "--strict-mcp-config",
-        "--setting-sources",
-        "project",
-        "--model",
-        "haiku",
-      ],
-      cwd,
-    );
+    await (options.run ?? runClaude)(["native-account-metadata"], cwd);
   } catch {
     // Reported below by the login it left.
   } finally {
@@ -254,23 +239,50 @@ function claudeLoginEnvironment(): NodeJS.ProcessEnv {
   return env;
 }
 
-function runClaude(args: string[], cwd: string): Promise<void> {
-  return new Promise((done, fail) => {
-    const child = spawn(resolveClaudeCommand(), args, {
-      cwd,
-      env: claudeLoginEnvironment(),
-      stdio: ["ignore", "ignore", "ignore"],
-    });
-    const timer = setTimeout(() => child.kill("SIGTERM"), 120_000);
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      fail(error);
-    });
-    child.on("exit", () => {
-      clearTimeout(timer);
-      done();
-    });
+async function runClaude(_args: string[], cwd: string): Promise<void> {
+  const { query } = await loadClaudeSdk();
+  let release!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  async function* noPrompt(): AsyncGenerator<never> {
+    await closed;
+  }
+  const env = isolatedClaudeEnvironment(
+    {
+      runtime: "claude",
+      id: "credential-maintenance",
+      connectionType: "local_login",
+    },
+    { ...claudeLoginEnvironment(), ...nativeLoginEnvironment("claude") },
+    claudeConfigDir(),
+  );
+  const session = query({
+    prompt: noPrompt(),
+    options: {
+      cwd,
+      env,
+      pathToClaudeCodeExecutable: resolveClaudeCommand(),
+      settingSources: [],
+      strictMcpConfig: true,
+      mcpServers: {},
+      tools: [],
+      skills: [],
+      plugins: [],
+      persistSession: false,
+    },
+  });
+  const timer = setTimeout(() => {
+    session.close();
+    release();
+  }, 30000);
+  try {
+    await session.accountInfo();
+  } finally {
+    clearTimeout(timer);
+    session.close();
+    release();
+  }
 }
 
 /**

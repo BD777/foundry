@@ -333,24 +333,30 @@ func (s *Store) ListProviderHealth(ctx context.Context, deviceID string) ([]stor
 
 func (s *Store) ListAgentProfiles(ctx context.Context, deviceID string) ([]store.AgentProfileProjection, error) {
 	if deviceID != "" {
-		return listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles WHERE device_id = ? ORDER BY runtime, id`, deviceID)
+		rows, err := listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles WHERE device_id = ? ORDER BY runtime, id`, deviceID)
+		return s.overlayNativeAccountProfiles(ctx, rows, err)
 	}
-	return listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles ORDER BY device_id, runtime, id`)
+	rows, err := listJSON[store.AgentProfileProjection](ctx, s.reader(), `SELECT payload_json FROM agent_profiles ORDER BY device_id, runtime, id`)
+	return s.overlayNativeAccountProfiles(ctx, rows, err)
 }
 
 func (s *Store) ListAgents(ctx context.Context, workspaceID string, deviceID string) ([]store.AgentProjection, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
 	deviceID = strings.TrimSpace(deviceID)
 	if workspaceID != "" && deviceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY updated_at DESC, provider`, workspaceID, deviceID)
+		rows, err := listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? AND device_id = ? ORDER BY updated_at DESC, provider`, workspaceID, deviceID)
+		return s.overlayNativeAccountAgents(ctx, rows, err)
 	}
 	if workspaceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? ORDER BY updated_at DESC, provider`, workspaceID)
+		rows, err := listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE workspace_id = ? ORDER BY updated_at DESC, provider`, workspaceID)
+		return s.overlayNativeAccountAgents(ctx, rows, err)
 	}
 	if deviceID != "" {
-		return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE device_id = ? ORDER BY updated_at DESC, provider`, deviceID)
+		rows, err := listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents WHERE device_id = ? ORDER BY updated_at DESC, provider`, deviceID)
+		return s.overlayNativeAccountAgents(ctx, rows, err)
 	}
-	return listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents ORDER BY updated_at DESC, provider`)
+	rows, err := listJSON[store.AgentProjection](ctx, s.reader(), `SELECT payload_json FROM agents ORDER BY updated_at DESC, provider`)
+	return s.overlayNativeAccountAgents(ctx, rows, err)
 }
 
 func (s *Store) ListWorkspaceFiles(ctx context.Context, workspaceID string) ([]store.WorkspaceFileEntry, error) {

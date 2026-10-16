@@ -797,10 +797,10 @@ func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
 		return envelope.Result.Content[0].Text, envelope.Result.IsError
 	}
 	// Without a runtime the child used to find no agent; it now resolves the
-	// parent's runtime and only stops at dispatch, since no daemon is connected.
+	// parent's runtime and, since no daemon is connected, waits for it.
 	text, isError := call("create_session", `{"prompt":"Reply with exactly: CHILD-OK"}`)
-	if !isError || text != "local daemon is not connected" {
-		t.Fatalf("create_session without a runtime = %q (error %v), want it to reach dispatch", text, isError)
+	if isError || !strings.Contains(text, "waitingForDevice") || !strings.Contains(text, `"provider": "claude"`) {
+		t.Fatalf("create_session without a runtime = %q (error %v), want it to wait for the device", text, isError)
 	}
 	child, err := db.CreateAgentSession(ctx, store.CreateAgentSessionInput{
 		WorkspaceID: "ws_lineage", AgentID: "agent_lineage", Provider: "claude",
@@ -824,8 +824,8 @@ func TestMCPChildDefaultsAndWaitResult(t *testing.T) {
 		t.Fatal("wait result must not carry the event stream")
 	}
 	text, isError = call("handoff_session", `{"fromSessionId":"`+child.ID+`","prompt":"Continue."}`)
-	if !isError || text != "local daemon is not connected" {
-		t.Fatalf("handoff_session = %q (error %v), want it to reach dispatch", text, isError)
+	if isError || !strings.Contains(text, `"status": "queued"`) {
+		t.Fatalf("handoff_session = %q (error %v), want it to wait for the offline device", text, isError)
 	}
 	text, isError = call("list_models", `{"profileId":"missing"}`)
 	if !isError || text != "unknown profile: missing" {
@@ -876,9 +876,13 @@ func TestSessionDeviceResolvesARuntimeFromItsProfile(t *testing.T) {
 	}
 	server := NewServer(db)
 	input := store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}
-	// No daemon is connected, so success stops at the connection check.
-	if err := server.resolveSessionDevice(ctx, &input); errorStatus(err) != http.StatusConflict {
-		t.Fatalf("profile-only resolution = %v, want it to reach the connection check", err)
+	// No daemon is connected: the session would wait for it; work that does
+	// not wait stops at the connection check.
+	if err := server.resolveSessionDevice(ctx, &input); err != nil {
+		t.Fatalf("profile-only resolution = %v", err)
+	}
+	if err := server.pickSessionDevice(ctx, &store.CreateAgentSessionInput{WorkspaceID: "ws_profile", ProfileID: "codex_local"}, false); errorStatus(err) != http.StatusConflict {
+		t.Fatalf("profile-only resolution that does not wait = %v, want the connection check", err)
 	}
 	if input.Provider != "codex" {
 		t.Fatalf("provider = %q, want the profile's runtime", input.Provider)

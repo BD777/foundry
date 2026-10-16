@@ -98,3 +98,43 @@ test("successful results and ordinary assistants are not classified as API error
     undefined,
   );
 });
+
+test("native suspension is structured, but ordinary model and tool text cannot suspend an account", () => {
+  const text =
+    "Your account is on hold and can't use Claude Code. (error type account_on_hold)";
+  for (const message of [
+    {
+      type: "assistant",
+      is_api_error_message: true,
+      error: "account_on_hold",
+      message: { content: [{ type: "text", text }] },
+    },
+    {
+      type: "system",
+      subtype: "task_notification",
+      status: "failed",
+      summary: text,
+    },
+    { type: "result", is_error: true, errors: [text] },
+  ])
+    assert.equal(
+      claudeProcessEvent(message)?.metadata?.nativeAccountError,
+      "account_on_hold",
+    );
+  assert.equal(
+    claudeProcessEvent({
+      type: "assistant",
+      message: { content: [{ type: "text", text }] },
+    })?.metadata?.nativeAccountError,
+    undefined,
+  );
+  assert.equal(
+    claudeProcessEvent({
+      type: "assistant",
+      is_api_error_message: true,
+      error: "authentication_failed",
+      message: { content: [{ type: "text", text: "401 Unauthorized" }] },
+    })?.metadata?.nativeAccountError,
+    undefined,
+  );
+});

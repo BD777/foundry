@@ -290,6 +290,7 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
     const health = nativeLoginHealth("claude");
     assert.equal(health.status, "healthy");
     assert.equal(health.authMode, "local_config");
+    assert.equal(health.accountLabel, "stored@example.test");
     assert.match(health.statusDetail, /due for renewal/);
     const inspection = await inspectNativeAccount("claude");
     assert.equal(inspection.status, "local_login");
@@ -306,6 +307,7 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
     });
     clearNativeLoginHealth();
     assert.equal(nativeLoginHealth("claude").status, "healthy");
+    assert.equal(nativeLoginHealth("claude").accountLabel, "cli@example.test");
     const live = await inspectNativeAccount("claude");
     assert.equal(live.status, "local_login");
     assert.equal(live.accountLabel, "cli@example.test");

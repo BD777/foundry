@@ -133,6 +133,8 @@ const (
 	// The device owner's resource settings, which the worker enforces too.
 	wsResourceSettingsType        = "resource_settings"
 	wsResourceSettingsAppliedType = "resource_settings_applied"
+	// Who else uses the device's system account (device_sharing.go).
+	wsDeviceSharingType = "device_sharing"
 )
 
 type wsEnvelope struct {
@@ -377,9 +379,10 @@ type wsRunSessionPayload struct {
 }
 
 type wsSteerSessionPayload struct {
-	Message     string                 `json:"message"`
-	Attachments []store.ChatAttachment `json:"attachments,omitempty"`
-	SessionID   string                 `json:"sessionId"`
+	SentBySessionID string                 `json:"sentBySessionId,omitempty"`
+	Message         string                 `json:"message"`
+	Attachments     []store.ChatAttachment `json:"attachments,omitempty"`
+	SessionID       string                 `json:"sessionId"`
 	// InputID is the message's id (a queued message's): a worker that
 	// already applied a steer with it answers without applying it again,
 	// and names its transcript event evt_<InputID>. Older workers ignore it.
@@ -388,9 +391,17 @@ type wsSteerSessionPayload struct {
 
 type wsSessionSteeredPayload struct {
 	wsReplyError
-	SessionID string `json:"sessionId"`
+	OutcomeUnknown bool   `json:"outcomeUnknown,omitempty"`
+	SessionID      string `json:"sessionId"`
 	// InputID echoes the steer's id; older workers send none.
 	InputID string `json:"inputId,omitempty"`
+}
+
+func (p wsSessionSteeredPayload) refusal() error {
+	if p.OutcomeUnknown {
+		return &deviceNoAnswerError{device: "the native runtime", cause: replyRefusal(p.Error)}
+	}
+	return p.wsReplyError.refusal()
 }
 
 type wsCancelSessionPayload struct {

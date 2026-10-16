@@ -17,7 +17,7 @@ export const sharing: Translation<typeof en> = {
   },
   runsCode: {
     title: "这个角色可以运行代码",
-    body: "{{role}}可以在这个工作区内发起对话和 Issue，它们会以 {{owner}} 的系统账号在 {{device}} 上运行命令。只需要查看的人请选择查看者。",
+    body: "{{role}}在 {{device}} 上以 {{owner}} 的身份工作：他们发起的对话和 Issue 会以 {{owner}} 的系统账号在那里运行命令，并使用相同的文件和相同的 Claude/Codex 登录。只需要查看的人请选择查看者。",
   },
   inviteLink: {
     body: "新账号的邀请链接，加入后角色为{{role}} · 只显示一次，7 天后失效",

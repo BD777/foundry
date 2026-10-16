@@ -23,7 +23,6 @@ import {
 import {
   forgetActiveSession,
   isAgentSessionCanceledError,
-  registerActiveSessionSteerTarget,
   takeQueuedSessionCancel,
 } from "../session-control.js";
 import {
@@ -165,13 +164,14 @@ export async function executeAgentSession(
     );
   };
   const responseStream = createResponseStreamBatcher<{
+    label: string;
     detail: string;
     level: AgentSessionEvent["level"];
     metadata?: AgentSessionEventMetadata;
     message?: AgentSessionEvent["message"];
   }>((pending) =>
     sendEvent(
-      "Response stream",
+      pending.label,
       pending.detail,
       pending.level,
       pending.metadata,
@@ -210,8 +210,8 @@ export async function executeAgentSession(
         sessionId: session.id,
       });
     }
-    if (label === "Response stream") {
-      responseStream.offer({ detail, level, metadata, message });
+    if (label === "Response stream" || label === processLabels.commentary) {
+      responseStream.offer({ label, detail, level, metadata, message });
       return;
     }
     flushPendingResponse();
@@ -244,17 +244,6 @@ export async function executeAgentSession(
     sessionId: session.id,
     inputId: session.input?.id,
   });
-  const unregisterUnsupportedCodexSteer =
-    session.provider === "codex"
-      ? registerActiveSessionSteerTarget(session.id, {
-          provider: "codex",
-          steer: async () => {
-            throw new Error(
-              "Codex SDK does not support steering the active turn yet. Keep it queued for the next turn.",
-            );
-          },
-        })
-      : undefined;
   try {
     const profile = await withSessionContextWindow(
       withDispatchCredential(
@@ -329,7 +318,6 @@ export async function executeAgentSession(
   } finally {
     flushPendingResponse();
     unregisterAmbient();
-    unregisterUnsupportedCodexSteer?.();
     forgetActiveSession(session.id);
   }
 }

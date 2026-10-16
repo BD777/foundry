@@ -243,7 +243,7 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return encodeJSON(withDeliveredAttachments(session, delivered))
+	return encodeJSON(s.mcpSessionAnswer(call.r.Context(), session, delivered))
 }
 
 // handoffSessionForMCP is a factual handoff: only the goal, last result and
@@ -273,10 +273,12 @@ func (s *Server) handoffSessionForMCP(call mcpCall) (string, error) {
 	}
 	// Without a choice, the replacement runs like the session it
 	// continues: its profile on the same device (profiles belong to a
-	// device), elsewhere its runtime.
+	// device) while that account still works there, else its runtime under
+	// an account that does (chooseSessionAccount).
 	if input.ProfileID == "" {
 		input.Provider = source.Provider
-		if destination, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && destination.DeviceID == source.DeviceID {
+		if destination, err := s.store.GetWorkspace(ctx, input.WorkspaceID); err == nil && destination.DeviceID == source.DeviceID &&
+			s.accountUsable(ctx, destination, source.ProfileID) {
 			input.ProfileID = source.ProfileID
 		}
 	}
@@ -310,15 +312,13 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 		}
 		input.ParentSessionID = actor.Identity.SessionID
 		input.Source = "agent"
-		// Without a choice, a child runs like its parent: the same profile in
-		// the same workspace; elsewhere only the same runtime, since profiles
-		// belong to a device.
+		// Without a choice, a child runs like its parent in the same
+		// workspace. Elsewhere profiles belong to another device, whose own
+		// logins may not be signed in: the session runs under an account
+		// that works there (chooseSessionAccount).
 		if input.ProfileID == "" && input.Provider == "" {
-			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil {
-				input.Provider = parent.Provider
-				if input.WorkspaceID == parent.WorkspaceID {
-					input.ProfileID = parent.ProfileID
-				}
+			if parent, err := s.store.GetAgentSessionSummary(r.Context(), input.ParentSessionID); err == nil && input.WorkspaceID == parent.WorkspaceID {
+				input.Provider, input.ProfileID = parent.Provider, parent.ProfileID
 			}
 		}
 	}
@@ -331,7 +331,8 @@ func (s *Server) startMCPSession(r *http.Request, actor Actor, input store.Creat
 		}
 	}
 	session, delivered, err := s.createAndDispatchForMCP(r, actor, input, attachments)
-	if err != nil || !wait {
+	// One waiting for its offline device answers now, saying so.
+	if err != nil || !wait || s.waitsForDevice(session) {
 		return session, delivered, err
 	}
 	session, err = s.waitMCPTerminal(r.Context(), session.ID, timeoutMs)
@@ -352,6 +353,9 @@ func (s *Server) createAndDispatchForMCP(r *http.Request, actor Actor, input sto
 	}
 	if !actor.Agent() {
 		input.CreatedByUserID = actor.AccountID()
+	}
+	if err := s.chooseSessionAccount(ctx, &input); err != nil {
+		return store.AgentSession{}, nil, err
 	}
 	if err := s.resolveSessionDevice(ctx, &input); err != nil {
 		return store.AgentSession{}, nil, err
@@ -387,21 +391,22 @@ func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
 	// conversation from its first event on.
 	s.adoptAssistantTask(ctx, call.actor, target)
 	session, err := s.sendSessionMessageWith(ctx, target.ID, store.SendAgentSessionInput{
-		Prompt:      mcpArgAlias(args, "prompt", "message"),
-		Attachments: attachments.list(),
-		ProfileID:   mcpArgString(args, "profileId"),
-		Provider:    mcpArgString(args, "provider"),
-		Model:       mcpArgString(args, "model"),
+		Prompt:          mcpArgAlias(args, "prompt", "message"),
+		Attachments:     attachments.list(),
+		ProfileID:       mcpArgString(args, "profileId"),
+		Provider:        mcpArgString(args, "provider"),
+		Model:           mcpArgString(args, "model"),
+		SentBySessionID: messageSender(call.actor),
 	}, s.publishHandedOver(attachments))
 	if err != nil {
 		return "", err
 	}
-	if mcpArgBool(args, "wait") {
+	if mcpArgBool(args, "wait") && !s.waitsForDevice(session) {
 		if session, err = s.waitMCPTerminal(ctx, session.ID, mcpWaitMs(args)); err != nil {
 			return "", err
 		}
 	}
-	return encodeJSON(withDeliveredAttachments(slimAgentSession(session), attachments.list()))
+	return encodeJSON(s.mcpSessionAnswer(ctx, slimAgentSession(session), attachments.list()))
 }
 
 func (s *Server) cancelSessionForMCP(call mcpCall) (string, error) {

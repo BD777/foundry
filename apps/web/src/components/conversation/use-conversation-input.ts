@@ -75,7 +75,9 @@ export function useConversationInput(
     props.active || props.sending || busy.pending || awaiting.waiting,
   );
   const canSteer = Boolean(
-    props.active && runtime === "claude" && props.onSteer,
+    props.active &&
+    (runtime === "claude" || runtime === "codex") &&
+    props.onSteer,
   );
   const unavailable = Boolean(
     props.disabled || props.readOnly || props.attachmentUploading,

@@ -34,6 +34,15 @@
 //                      work is done (helpers run, up to --scenario-timeout-s);
 //                      "add an Excel export" in the same conversation must land
 //                      in that project without creating another.
+//   --scenario plans   the person's real message of 2026-10-15 (plans for
+//                      after work and the afternoon, a draft to finish, a
+//                      talk already had), as --user on the copy with the
+//                      assistant moved to the sandboxed worker: their list
+//                      must get the four things (the talk as done), the reply
+//                      must not offer to book a meeting or contact anyone and
+//                      must not name a program, a technical project or
+//                      computer name; then "我一般 7 点下班，到时提醒我" must
+//                      set reminders at 19:00 on the after-work items.
 //
 // Setup, all through the stack's HTTP API except two writes to the scratch
 // copy: the eval's own chats are hidden (chat_deletions) so digests cannot
@@ -49,7 +58,7 @@
 //          [--only id,id] [--judge] [--instance NAME] [--reuse] [--keep]
 //          [--user USERNAME] [--provider claude|codex] [--model M]
 //          [--worker-home scratch|real] [--case-timeout-s N] [--eval DIR]
-//          [--out FILE] [--scenario a1a2] [--scenario-timeout-s N]
+//          [--out FILE] [--scenario a1a2|plans] [--scenario-timeout-s N]
 //          [--summaries-wait-min N]
 // Exit: 0 every gate passed, 1 a gate failed, 2 the run itself failed.
 
@@ -109,6 +118,8 @@ const bannedTerms = [
   ["prompt", /\bprompts?\b/i, /prompt|提示词/i],
   ["directory", /\bdirector(y|ies)\b/i, /directory|目录/i],
   ["path", /\bpaths?\b/i, /path|路径/i],
+  ["Claude", /\bclaude\b/i, /claude/i],
+  ["Codex", /\bcodex\b/i, /codex/i],
   ["工作区", /工作区/, /workspace|工作区/i],
   ["设备", /设备/, /device|设备/i],
   ["会话", /会话/, /session|会话/i],
@@ -224,8 +235,8 @@ function parseArgs(argv) {
   args.workerHome ||= "scratch";
   if (!["scratch", "real"].includes(args.workerHome))
     throw new Error("--worker-home is scratch or real");
-  if (args.scenario && args.scenario !== "a1a2")
-    throw new Error("--scenario: only a1a2 so far");
+  if (args.scenario && !["a1a2", "plans"].includes(args.scenario))
+    throw new Error("--scenario is a1a2 or plans");
   if (!args.routing && !args.e2e && !args.scenario)
     throw new Error("nothing to run: --no-routing without --e2e or --scenario");
   return args;
@@ -1723,6 +1734,10 @@ function printReport(report) {
     lines.push(
       `\n## scenario A1/A2 (session ${report.scenario.sessionId})\n  A1 first reply: ${report.scenario.firstReply.slice(0, 160)}\n  A1 report:      ${report.scenario.reportReply.slice(0, 160)}\n  A2 reply:       ${report.scenario.a2Reply.slice(0, 160)}`,
     );
+  if (report.plans)
+    lines.push(
+      `\n## scenario plans (session ${report.plans.sessionId})\n  first reply:  ${report.plans.firstReply}\n  second reply: ${report.plans.secondReply}\n  list:\n${report.plans.items.map((item) => `    - [${item.status}] ${item.text} (${item.when || "-"}${item.remind ? `, remind ${item.at}` : ""})`).join("\n")}`,
+    );
   if (report.judge?.error)
     lines.push(`\n## judge\n  failed: ${report.judge.error}`);
   else if (report.judge)
@@ -1957,6 +1972,152 @@ async function scenarioA1A2(stack, args) {
   }
 }
 
+// The person's message from real use (dev, 2026-10-15), the document link
+// left out.
+const plansRequest =
+  "几个事情啊，一个是我昨晚联系了很多猎头，然后他们的一些微信消息我还没有回复。下班再搞。另外是下班也回去看一下脉脉有没有新信息，要礼貌回复\n" +
+  "然后是我下午要去给大家捋一下现在Autorun的流程，以及我想提出说把Autorun流程跟Tag流程给合并一下。正在写文档，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。\n\n" +
+  "然后刚刚跟伟超，也就是QA对了一下，他们有在维护一个提测这样的Workflow，然后我们后续看看可以直接调他的提测Workflow。";
+const plansFollowUp = "我一般 7 点下班，到时提醒我";
+// An offer to set up a meeting or reach other people for the person.
+const meetingOffer =
+  /(我(来|去|帮你)?(约|拉|订|安排|发|通知|邀请)|帮你(约|拉|订|安排|发|通知|邀请|找)|要不要我.{0,12}(约|拉|安排|通知|邀请)|都有空的时间|告诉我.{0,8}(名字|哪些人)|(book|schedule|set up|arrange) (a|the) meeting|invite)/i;
+
+// --scenario plans: the person's list from their own words (see the usage).
+async function scenarioPlans(client, worker, deviceId, args) {
+  let { agent } = { agent: (await client.get("/api/personal-agent"))?.agent };
+  if (!agent) throw new SetupError(`${args.user} has no assistant on the copy`);
+  if (agent.homeDeviceId !== deviceId) {
+    log(`moving the assistant to the sandboxed worker ${deviceId}`);
+    agent = await client.post("/api/personal-agent/home", { deviceId });
+  }
+  await client.request("PUT", "/api/personal-agent/settings", {
+    body: {
+      ...agent.settings,
+      timezone: agent.settings.timezone || "Asia/Shanghai",
+    },
+  });
+  agent = (await client.get("/api/personal-agent")).agent;
+  const location = agent.settings.timezone;
+  const technical = [
+    ...(await client.get("/api/workspaces")).map((w) => w.name),
+    ...(await client.get("/api/devices")).map((d) => d.label),
+  ].filter(
+    (name) => name && /^[\x21-\x7e]+$/.test(name) && /[-_.\d]/.test(name),
+  );
+  const knownWorkspaces = new Set(
+    (await client.get("/api/workspaces")).map((w) => w.id),
+  );
+  const listed = async () =>
+    client.get(
+      `/api/personal-agent/list?closedSince=${encodeURIComponent(new Date(Date.now() - 6 * 3600_000).toISOString())}`,
+    );
+  const before = new Set((await listed()).map((item) => item.id));
+
+  const session = await startAssistantSession(
+    client,
+    agent,
+    args.provider,
+    args.model,
+    plansRequest,
+  );
+  let detail = await settle(
+    client,
+    session.id,
+    Date.now() + args.caseTimeoutS * 1000,
+  );
+  const firstReply = detail.response || "";
+  const firstTools = (detail.events || []).map(parseToolEvent).filter(Boolean);
+  const items = (await listed()).filter((item) => !before.has(item.id));
+  const has = (re, status) =>
+    items.some(
+      (item) => re.test(item.text) && (!status || item.status === status),
+    );
+
+  const eventsBefore = (detail.events || []).length;
+  await client.post(
+    `/api/agent-sessions/${encodeURIComponent(session.id)}/messages`,
+    { prompt: plansFollowUp },
+  );
+  await sleep(3000);
+  detail = await settle(
+    client,
+    session.id,
+    Date.now() + args.caseTimeoutS * 1000,
+  );
+  const secondReply = detail.response || "";
+  const secondTools = (detail.events || [])
+    .slice(eventsBefore)
+    .map(parseToolEvent)
+    .filter(Boolean);
+  const after = (await listed()).filter((item) => !before.has(item.id));
+  const at19 = (item) =>
+    item.remind &&
+    item.at &&
+    new Date(item.at).toLocaleTimeString("en-GB", {
+      timeZone: location,
+      hour: "2-digit",
+      minute: "2-digit",
+    }) === "19:00";
+  const reminded = after.filter((item) => /猎头|微信|脉脉/.test(item.text));
+  await cancelHelpers(
+    client,
+    detail,
+    agent.workspaceId,
+    knownWorkspaces,
+    new Set(),
+  );
+
+  const replies = firstReply + "\n" + secondReply;
+  const named = technical.filter((name) => replies.includes(name));
+  const checks = [
+    gate(
+      "plans: four things on the list",
+      [/猎头|微信/, /脉脉/, /autorun|tag/i].filter((re) => has(re, "open"))
+        .length + (has(/伟超|QA|提测/i, "done") ? 1 : 0),
+      ">=",
+      4,
+    ),
+    gate(
+      "plans: no offer to contact anyone",
+      meetingOffer.test(replies) ? 1 : 0,
+      "<=",
+      0,
+    ),
+    gate(
+      "plans: no banned words",
+      bannedIn(firstReply, plansRequest).length +
+        bannedIn(secondReply, plansRequest + plansFollowUp).length,
+      "<=",
+      0,
+    ),
+    gate("plans: no technical names", named.length, "<=", 0),
+    gate(
+      "plans: reminders at 19:00 on the after-work items",
+      reminded.length >= 2 && reminded.every(at19) ? 1 : 0,
+      ">=",
+      1,
+    ),
+  ];
+  return {
+    sessionId: session.id,
+    firstReply,
+    secondReply,
+    firstTools: firstTools.map((t) => t.name),
+    secondTools: secondTools.map((t) => t.name),
+    items: after.map(({ id, text, when, at, remind, status }) => ({
+      id,
+      text,
+      when,
+      at,
+      remind,
+      status,
+    })),
+    technicalNamed: named,
+    checks: checks.map((c) => ({ ...c, ratio: false })),
+  };
+}
+
 async function settle(client, sessionId, until) {
   let detail;
   do {
@@ -2035,6 +2196,11 @@ async function main() {
     if (args.scenario === "a1a2") {
       report.scenario = await scenarioA1A2(stack, args);
       report.checks.push(...report.scenario.checks);
+    }
+    if (args.scenario === "plans") {
+      const { deviceId } = await workerAndAssistant(client, worker, true);
+      report.plans = await scenarioPlans(client, worker, deviceId, args);
+      report.checks.push(...report.plans.checks);
     }
     failed = report.checks.some((c) => c.pass === false);
   } catch (error) {

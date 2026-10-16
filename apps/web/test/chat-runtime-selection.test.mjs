@@ -43,7 +43,9 @@ async function mount(input = {}) {
     onNotice: () => {},
     ...input,
   };
+  let renders = 0;
   function Harness() {
+    if (++renders > 100) throw new Error("runtime render loop");
     value = useChatRuntime(props);
     return null;
   }
@@ -484,5 +486,109 @@ test("a model catalog is asked for once per page, unless refreshed", async () =>
     assert.deepEqual(await retried, []);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("duplicate device/server profile identities use the selected row catalog key", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  let fail = false;
+  globalThis.fetch = async () => {
+    calls++;
+    if (fail) return new Response('{"error":"offline"}', { status: 503 });
+    return new Response(JSON.stringify([{ id: "selected-model" }]));
+  };
+  let view;
+  const profile = {
+    id: "codex_local",
+    deviceId: "a",
+    runtime: "codex",
+    connectionType: "local_login",
+    configScope: "device",
+    label: "Codex",
+    models: [],
+  };
+  try {
+    view = await mount({
+      active: true,
+      threadKey: "duplicate-profile",
+      agents: [agent("one")],
+      profiles: [
+        {
+          ...profile,
+          origin: "device",
+          runtimeGeneration: "device-generation",
+          accountLabel: "local@example.test",
+        },
+        {
+          ...profile,
+          origin: "server",
+          runtimeGeneration: "server-generation",
+          accountLabel: "selected@example.test",
+        },
+      ],
+    });
+    assert.equal(calls, 1);
+    assert.equal(view.value.modelLoading, false);
+    assert.deepEqual(
+      view.value.modelOptions.map((model) => model.id),
+      ["selected-model"],
+    );
+    fail = true;
+    await act(async () => view.value.retryModels());
+    assert.equal(calls, 2);
+    assert.equal(view.value.modelLoadFailed, true);
+    await view.render();
+    assert.equal(calls, 2, "failure must not trigger an automatic retry loop");
+    fail = false;
+    await act(async () => view.value.retryModels());
+    assert.equal(calls, 3);
+    assert.equal(view.value.modelLoadFailed, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await view?.close();
+  }
+});
+
+test("runtime generation changes refresh the shared API catalog without losing current identity", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify([{ id: `model-${++calls}` }]));
+  const profile = {
+    id: "codex_local",
+    deviceId: "a",
+    runtime: "codex",
+    origin: "device",
+    connectionType: "local_login",
+    configScope: "device",
+    label: "Codex",
+    models: [],
+    runtimeGeneration: "before",
+  };
+  let view;
+  try {
+    view = await mount({
+      active: true,
+      threadKey: "generation-change",
+      agents: [agent("one")],
+      profiles: [profile],
+    });
+    assert.equal(calls, 1);
+    await view.render({
+      profiles: [{ ...profile, runtimeGeneration: "after" }],
+    });
+    assert.equal(calls, 2);
+    assert.deepEqual(
+      view.value.modelOptions.map((model) => model.id),
+      ["model-2"],
+    );
+    await view.render();
+    assert.equal(calls, 2);
+    await act(async () => view.value.retryModels());
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await view?.close();
   }
 });

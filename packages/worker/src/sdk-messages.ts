@@ -265,6 +265,16 @@ export function claudePartialText(message: unknown): string {
   return claudeStreamEventText(record.event);
 }
 
+/** Only native error records call this; never inspect ordinary model/tool text. */
+function nativeHoldMetadata(
+  text: string,
+): AgentSessionEventMetadata | undefined {
+  return text.includes("Your account is on hold") &&
+    text.includes("(error type account_on_hold)")
+    ? { nativeAccountError: "account_on_hold" }
+    : undefined;
+}
+
 export function claudeProcessEvent(
   message: unknown,
 ): ClaudeProcessEvent | undefined {
@@ -284,6 +294,9 @@ export function claudeProcessEvent(
     return {
       label: processLabels.sessionFailed,
       detail: apiError.text || apiError.code,
+      ...(apiError.code === "account_on_hold"
+        ? { metadata: { nativeAccountError: "account_on_hold" as const } }
+        : {}),
       level: "error",
     };
   }
@@ -326,6 +339,7 @@ export function claudeProcessEvent(
         terminalReasonLabel(record.terminal_reason) ||
         sdkString(record.stop_reason) ||
         "Claude Agent SDK turn failed.",
+      metadata: nativeHoldMetadata(errors),
       level: "error",
     };
   }
@@ -423,6 +437,7 @@ export function claudeSystemProcessEvent(
         detail: sdkString(record.summary) || "Subtask finished.",
         level: taskFailed ? "error" : "info",
         metadata: {
+          ...(taskFailed ? nativeHoldMetadata(sdkString(record.summary)) : {}),
           taskOutputFile: sdkString(record.output_file) || undefined,
           subagentUsage: claudeSubagentUsage(record),
           taskId: sdkString(record.task_id) || undefined,

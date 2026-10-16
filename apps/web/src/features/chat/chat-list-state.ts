@@ -6,7 +6,7 @@ export interface ChatReadEntry {
 }
 export type ChatReadState = Record<string, ChatReadEntry>;
 export type ChatListStatus =
-  "processing" | "blocked" | "failed" | "unread" | "idle";
+  "processing" | "blocked" | "waiting" | "failed" | "unread" | "idle";
 
 export function chatIsUnread(
   entry: ChatReadEntry | undefined,

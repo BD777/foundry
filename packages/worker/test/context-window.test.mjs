@@ -93,15 +93,24 @@ test("a run's window follows setting, endpoint catalog, official model, default"
   );
 });
 
-test("logins and device profiles keep the CLI's own window", async () => {
-  for (const profile of [
+test("selected device connections resolve a window while native Claude logins keep their own", async () => {
+  const session = { id: "s", model: "auto_model/alwaysday1_max" };
+  const resolved = await withSessionContextWindow(
     serverProfile({ origin: undefined }),
+    session,
+    catalog,
+  );
+  assert.deepEqual(resolved.contextWindow, {
+    tokens: 1000000,
+    source: "endpoint",
+    model: session.model,
+  });
+  const official = await withSessionContextWindow(
     serverProfile({ connectionType: "local_login", baseUrl: undefined }),
-  ]) {
-    const session = { id: "s", model: "auto_model/alwaysday1_max" };
-    const resolved = await withSessionContextWindow(profile, session, catalog);
-    assert.equal(resolved.contextWindow, undefined);
-  }
+    session,
+    catalog,
+  );
+  assert.equal(official.contextWindow, undefined);
 });
 
 test("Claude Code gets the window for a model it does not know", async () => {
@@ -294,4 +303,53 @@ test("Claude Code is started on [1m] while Foundry keeps the plain name", async 
   });
   assert.equal(report?.contextWindow, 1_000_000);
   assert.equal(report?.model, "claude-sonnet-4-6");
+});
+
+test("official Codex opts Astra into its supported window, including resumed turns", async () => {
+  const profile = serverProfile({
+    runtime: "codex",
+    connectionType: "local_login",
+    baseUrl: undefined,
+    model: "gpt-5.5",
+  });
+  const resolved = await withSessionContextWindow(
+    profile,
+    { id: "s", model: "gpt-6-astra", nativeSessionId: "existing" },
+    async () => {
+      throw new Error("must not query endpoint");
+    },
+  );
+  assert.deepEqual(resolved.contextWindow, {
+    model: "gpt-6-astra",
+    tokens: 872000,
+    source: "official",
+  });
+  assert.deepEqual(codexProfileConfig(resolved, {}), {
+    model_provider: "openai",
+    model_context_window: 872000,
+  });
+  assert.equal(872000 * 0.95, 828400);
+  assert.equal(
+    (await withSessionContextWindow(profile, { id: "s", model: "unknown" }))
+      .contextWindow,
+    undefined,
+  );
+});
+
+test("official Codex respects a saved per-model window without changing other models", async () => {
+  const profile = {
+    runtime: "codex",
+    connectionType: "local_login",
+    contextWindows: { "gpt-6-astra": 400_000 },
+  };
+  assert.deepEqual(await resolveSessionContextWindow(profile, "gpt-6-astra"), {
+    model: "gpt-6-astra",
+    tokens: 400_000,
+    source: "setting",
+  });
+  assert.deepEqual(await resolveSessionContextWindow(profile, "gpt-5.6-sol"), {
+    model: "gpt-5.6-sol",
+    tokens: 872_000,
+    source: "official",
+  });
 });

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -984,6 +985,142 @@ test("a Codex snapshot works while Foundry's session folders are git-ignored", a
   assert.equal(notes.before, "alpha\nbeta\n");
   assert.equal(notes.after, "alpha\nBETA\n");
   assert.deepEqual([notes.added, notes.removed], [1, 1]);
+});
+
+async function codexTurnWrites(files, paths) {
+  for (const write of codexFileWrites({
+    type: "item.completed",
+    item: {
+      type: "file_change",
+      status: "completed",
+      changes: paths.map((path) => ({ path, kind: "update" })),
+    },
+  }))
+    await files.recordToolWrite(write);
+}
+
+test("a Codex snapshot covers only the workspace inside a larger repository", async (t) => {
+  // byte-dev: the workspace is a folder of a repository with no commits and
+  // gigabytes of untracked siblings, reached through a symlinked home.
+  const root = mkdtempSync(join(tmpdir(), "foundry-snapshot-scope-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const repo = join(root, "data", "ccm");
+  const real = join(repo, "projects", "omh");
+  mkdirSync(real, { recursive: true });
+  await git(repo, ["init", "-b", "main"]);
+  symlinkSync(join(root, "data"), join(root, "home"));
+  const workspace = join(root, "home", "ccm", "projects", "omh");
+  const sibling = join(repo, "projects", "other");
+  mkdirSync(sibling);
+  writeFileSync(join(sibling, "big.txt"), "sibling\n");
+  writeFileSync(join(real, "plan.md"), "one\n");
+  // A nested worktree is its own repository: recorded, never entered.
+  const nested = join(real, ".worktrees", "feature");
+  mkdirSync(nested, { recursive: true });
+  await git(nested, ["init", "-b", "main"]);
+  writeFileSync(join(nested, "code.txt"), "nested\n");
+  await git(nested, ["add", "."]);
+  await git(nested, ["commit", "-m", "init"], { env: commitIdentity });
+
+  const sessionsRoot = join(workspace, ".foundry", "sessions");
+  const f = { workspace, sessionsRoot, home: join(root, "user-home") };
+  const turn = (inputId) =>
+    new SessionTurnFiles({
+      workspacePath: workspace,
+      sessionsRoot,
+      sessionId,
+      inputId,
+      startedAt: Date.now(),
+      home: f.home,
+      emit: async () => {},
+    });
+  const files = turn("in_1");
+  await files.snapshotWorkTree();
+  const manifest = JSON.parse(
+    readFileSync(
+      join(sessionsRoot, sessionId, "inputs", "in_1", "changes.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(manifest.source, "git-snapshot");
+  assert.equal(manifest.gitSnapshot.scope.prefix, "projects/omh/");
+  const listed = await git(repo, [
+    "ls-tree",
+    "-r",
+    "--name-only",
+    manifest.gitSnapshot.tree,
+  ]);
+  assert.deepEqual(listed.split("\n").sort(), [
+    "projects/omh/.worktrees/feature",
+    "projects/omh/plan.md",
+  ]);
+  assert.equal(
+    existsSync(join(sessionsRoot, sessionId, "git-snapshot.index")),
+    true,
+    "the index is kept for the next turn",
+  );
+
+  writeFileSync(join(real, "plan.md"), "one\ntwo\n");
+  writeFileSync(join(nested, "code.txt"), "nested\nedited\n");
+  writeFileSync(join(sibling, "big.txt"), "sibling\nedited\n");
+  await codexTurnWrites(files, [
+    join(workspace, "plan.md"),
+    join(workspace, ".worktrees", "feature", "code.txt"),
+    join(sibling, "big.txt"),
+  ]);
+  await files.finish("");
+  const plan = await diffOf(f, join(workspace, "plan.md"), "in_1");
+  assert.deepEqual([plan.before, plan.after], ["one\n", "one\ntwo\n"]);
+  // Not "new": the nested repository and the sibling have no "before".
+  for (const path of [
+    join(workspace, ".worktrees", "feature", "code.txt"),
+    join(sibling, "big.txt"),
+  ])
+    assert.equal((await diffOf(f, path, "in_1")).unavailable, "noBaseline");
+
+  // The next turn starts from the kept index and sees the new state.
+  const second = turn("in_2");
+  await second.snapshotWorkTree();
+  writeFileSync(join(real, "plan.md"), "one\ntwo\nthree\n");
+  await codexTurnWrites(second, [join(workspace, "plan.md")]);
+  await second.finish("");
+  const next = await diffOf(f, join(workspace, "plan.md"), "in_2");
+  assert.deepEqual(
+    [next.before, next.after],
+    ["one\ntwo\n", "one\ntwo\nthree\n"],
+  );
+});
+
+test("an unreadable file does not cost the Codex snapshot", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads every file");
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  const locked = join(f.workspace, "locked.bin");
+  writeFileSync(locked, "secret\n");
+  chmodSync(locked, 0o000);
+  const files = f.turn("in_1");
+  await files.snapshotWorkTree();
+  writeFileSync(join(f.workspace, "README.md"), "hi\nedited\n");
+  await codexTurnWrites(files, [join(f.workspace, "README.md")]);
+  await files.finish("");
+  const readme = await diffOf(f, join(f.workspace, "README.md"), "in_1");
+  assert.equal(readme.source, "git-snapshot");
+  assert.deepEqual([readme.before, readme.after], ["hi\n", "hi\nedited\n"]);
+});
+
+test("a session whose snapshot ran out of time takes no more", async (t) => {
+  const f = fixture(t);
+  await gitWorkspace(f.workspace);
+  mkdirSync(join(f.sessionsRoot, sessionId), { recursive: true });
+  writeFileSync(join(f.sessionsRoot, sessionId, "git-snapshot.skipped"), "\n");
+  const files = f.turn("in_1");
+  await files.snapshotWorkTree();
+  assert.equal(
+    existsSync(
+      join(f.sessionsRoot, sessionId, "inputs", "in_1", "changes.json"),
+    ),
+    false,
+  );
 });
 
 test("line counts match a minimal diff", () => {

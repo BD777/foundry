@@ -70,6 +70,8 @@ export const conversation = {
     },
   },
   message: {
+    sentBy: "From",
+    openSender: "Open {{title}}, the session that sent this message",
     openFile: "Open {{path}}",
     openPendingFile: "Open {{path}} (not written yet when this answer ended)",
     showFolder: "Show the files in {{path}}",

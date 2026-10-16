@@ -111,7 +111,7 @@ export function useChatRuntime({
   // its promotedProfileId pointer to the server definition.
   const selectedProfile = modelControlProfile(profiles, selectedAgent);
   const selectedProfileKey = selectedProfile
-    ? `${selectedProfile.deviceId}:${selectedProfile.id}`
+    ? `${selectedProfile.deviceId}:${selectedProfile.id}:${selectedProfile.runtimeGeneration ?? ""}:${selectedProfile.accountLabel ?? ""}`
     : "";
   const selectedOverride = selectedAgent?.id
     ? (overrides[selectedAgent.id] ?? {})
@@ -194,18 +194,27 @@ export function useChatRuntime({
   );
 
   const loadModels = useCallback(
-    async (input: CreateAgentProfileInput, quiet = false, reuse = false) => {
+    async (
+      input: CreateAgentProfileInput,
+      profileId: string,
+      quiet = false,
+      reuse = false,
+    ) => {
       if (!input.id || !input.deviceId) {
         return [];
       }
-      const profileId = `${input.deviceId}:${input.id}`;
+      // Use the selected projection's identity for loading, results and errors.
+      // Device and server rows may share an id but have different generations.
       try {
         setModelLoading((current) => ({ ...current, [profileId]: true }));
         setModelLoadFailed((current) => ({
           ...current,
           [profileId]: false,
         }));
-        const models = await listAgentModels(input, { reuse });
+        const models = await listAgentModels(input, {
+          reuse,
+          catalogIdentity: profileId,
+        });
         setModelOptions((current) => ({ ...current, [profileId]: models }));
         if (!quiet) {
           await onNotice(
@@ -308,8 +317,8 @@ export function useChatRuntime({
     // The configured models never disappear; this only re-runs the native
     // metadata discovery that augments them, so a failed directory refresh is
     // recoverable without reloading the app.
-    void loadModels(selectedProfileModelInput, true);
-  }, [loadModels, selectedProfileModelInput]);
+    void loadModels(selectedProfileModelInput, selectedProfileKey, true);
+  }, [loadModels, selectedProfileModelInput, selectedProfileKey]);
 
   useEffect(() => {
     if (restoringAgentRef.current) {
@@ -327,7 +336,7 @@ export function useChatRuntime({
     ) {
       return;
     }
-    void loadModels(selectedProfileModelInput, true, true);
+    void loadModels(selectedProfileModelInput, selectedProfileKey, true, true);
   }, [
     active,
     loadModels,

@@ -279,3 +279,29 @@ func TestModelCatalogMeasuredAgainstDirectReads(t *testing.T) {
 		t.Fatalf("reads direct=%d cached=%d, want 40 and 3", direct.reads.Load(), cached.reads.Load())
 	}
 }
+
+func TestModelCatalogRuntimeGenerationDoesNotReuseOlderClient(t *testing.T) {
+	endpoint := &fakeCatalogEndpoint{}
+	var cache modelCatalogCache
+	profile := catalogProfile()
+	profile.RuntimeGeneration = "old-cli:account-a"
+	first, err := cache.list(context.Background(), profile, false, endpoint.read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.RuntimeGeneration = "new-cli:account-a"
+	second, err := cache.list(context.Background(), profile, false, endpoint.read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.reads.Load() != 2 || first[0].ID == second[0].ID {
+		t.Fatal("reused catalog across runtime change")
+	}
+	profile.RuntimeGeneration = "new-cli:account-b"
+	if _, err := cache.list(context.Background(), profile, false, endpoint.read); err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.reads.Load() != 3 {
+		t.Fatal("reused catalog across account change")
+	}
+}

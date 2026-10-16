@@ -1,3 +1,4 @@
+import { isolatedCodexEnvironment } from "../runtime-isolation.js";
 import type {
   AgentProfileProjection,
   AgentSession,
@@ -18,6 +19,16 @@ import type { ManagedSkillRuntime } from "../skill-materializer.js";
 export const defaultCodexSandboxMode = "danger-full-access";
 
 /**
+ * The Codex SDK passes every config value as one `--config key=value`
+ * argument, and Linux refuses to start a process with one argument over
+ * 128 KiB (MAX_ARG_STRLEN: "spawn E2BIG"). Codex has no file form of
+ * developer_instructions, so what a session is told stays bounded instead:
+ * large bundles and a long catalog's tail are one entry each with an index
+ * file (skillCatalog in skill-materializer.ts).
+ */
+export const codexArgumentLimit = 128 * 1024;
+
+/**
  * Codex launch config for what a session is told and which skills it sees:
  * the device notes for every workspace session, plus the managed catalog with
  * host skill discovery turned off.
@@ -34,6 +45,12 @@ export function codexSessionConfig(
   ]
     .filter(Boolean)
     .join("\n\n");
+  // Room for the key and TOML quoting, which escapes quotes and newlines.
+  const argument = JSON.stringify(instructions).length + 64;
+  if (argument > codexArgumentLimit)
+    throw new Error(
+      `This Codex session's instructions take ${Math.ceil(argument / 1024)} KiB, more than the ${codexArgumentLimit / 1024} KiB one process argument may hold.`,
+    );
   return {
     ...(managed
       ? {
@@ -109,6 +126,7 @@ export function codexEndpointConfig(
     model_provider: id,
     model_providers: {
       [id]: {
+        ...profile.codexProviderConfig,
         name: profile.label?.trim() || id,
         base_url: baseUrl,
         wire_api: "responses",
@@ -127,9 +145,12 @@ export function codexProfileConfig(
   env: NodeJS.ProcessEnv,
 ): Record<string, unknown> {
   if (profile.connectionType === "local_login")
-    return { model_provider: "openai" };
-  if (profile.codexModelProvider)
-    return { model_provider: profile.codexModelProvider };
+    return {
+      model_provider: "openai",
+      ...(profile.contextWindow
+        ? codexContextWindowConfig(profile.contextWindow)
+        : {}),
+    };
   const baseUrl = profile.baseUrl?.trim();
   if (!baseUrl) return {};
   return {
@@ -153,13 +174,9 @@ export function codexSessionEnvironment(
   const env = sessionEnvironment(workspacePath, profile, session);
   // The native CLI reads CODEX_API_KEY; the generic OpenAI alias alone is
   // insufficient for a server-dispatched compatible connection.
-  if (
-    profile.connectionType !== "local_login" &&
-    !profile.codexModelProvider &&
-    env.OPENAI_API_KEY
-  )
+  if (profile.connectionType !== "local_login" && env.OPENAI_API_KEY)
     env.CODEX_API_KEY = env.OPENAI_API_KEY;
-  return env;
+  return isolatedCodexEnvironment(profile, env, workspacePath);
 }
 
 type CodexSDKInput =
