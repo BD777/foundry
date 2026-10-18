@@ -147,3 +147,18 @@ test("cancel aborts a running session", supported, async (t) => {
   handle.cancel();
   await assert.rejects(handle.result, /agent_sdk_error: Error: aborted/);
 });
+
+test("an already canceled Claude judgment never loads a query or writes credentials", async (t) => {
+  const root = fixture(t);
+  const { claudeHarness } = await import("../dist/session/claude.js");
+  const canceled = new AbortController();
+  canceled.abort();
+  await assert.rejects(
+    claudeHarness.run({
+      spec: spec(root, {}),
+      signal: canceled.signal,
+    }),
+    { name: "AbortError" },
+  );
+  assert.equal(calls.length, 0);
+});

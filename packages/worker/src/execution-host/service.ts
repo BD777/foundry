@@ -18,7 +18,7 @@ import {
   reapLeftoverAgentProcesses,
 } from "../agent-processes.js";
 import { workerAppExecutable, workerLauncherPath } from "../mac-worker-app.js";
-import { isManagedNativeRuntimePath } from "../native-homes.js";
+import { nativeServiceHome } from "../native-runtime-paths.js";
 import { executionHostPaths } from "./paths.js";
 
 export function executionServiceSupported(): boolean {
@@ -56,6 +56,7 @@ export function executionServiceEnvironment(
       "CODEX_HOME",
       "CODEX_CLI_PATH",
       "CLAUDE_CONFIG_DIR",
+      "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
       "HTTP_PROXY",
       "HTTPS_PROXY",
       "ALL_PROXY",
@@ -65,14 +66,11 @@ export function executionServiceEnvironment(
       "all_proxy",
       "no_proxy",
     ].flatMap((key) => {
-      const val = env[key];
+      const val =
+        key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR"
+          ? nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", env)
+          : env[key];
       if (!val) return [];
-      if (
-        (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
-        isManagedNativeRuntimePath(val)
-      ) {
-        return [];
-      }
       return [[key, val]];
     }),
   );

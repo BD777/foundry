@@ -12,6 +12,7 @@ import {
   claudeSessionOptions,
   claudeWorkspaceInstructions,
   claudeSettingsFile,
+  acquireClaudeSettings,
   type ClaudeLaunchPlan,
 } from "../session-policy.js";
 import { sessionPrompt } from "../session-prompt.js";
@@ -138,6 +139,10 @@ function claudeTurnOptions(
     env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
   };
+  const settings = plan?.execution
+    ? acquireClaudeSettings(session.id || workspacePath, flagSettings)
+    : undefined;
+  if (settings) plan!.execution!.own(settings.release);
   const baseOptions: Record<string, unknown> = {
     additionalDirectories: [workspacePath],
     cwd: workspacePath,
@@ -150,7 +155,9 @@ function claudeTurnOptions(
     includePartialMessages: true,
     pathToClaudeCodeExecutable: command,
     permissionMode,
-    settings: claudeSettingsFile(session.id || workspacePath, flagSettings),
+    settings:
+      settings?.path ??
+      claudeSettingsFile(session.id || workspacePath, flagSettings),
     tools: { type: "preset", preset: "claude_code" },
     ...(plan?.sdk ??
       claudeSessionOptions(

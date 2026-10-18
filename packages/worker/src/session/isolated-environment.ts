@@ -1,16 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { foundryStatePath } from "../state-root.js";
-import {
-  sandboxCredentialCopies,
-  writeSandboxCredentials,
-} from "./provider-credentials.js";
-
-/** The one private-state subdir a sandboxed agent may read skill files from. */
-export function skillSetsReadRoot(): string {
-  return foundryStatePath("skill-sets");
-}
-
+import { nativeSourceKeys } from "../native-runtime-paths.js";
 /**
  * The environment of an agent working inside a sandbox (an Issue's
  * execution or clarification, a verifier): its home, temporary space and
@@ -24,17 +14,9 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
   const temp = resolve(scratch, "tmp");
   for (const directory of [codexHome, claudeHome, temp])
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-  // Provider authentication stays private and is never staged in the
-  // candidate. The sandbox gets the device's access tokens, never a refresh
-  // token: providers rotate those, and a refresh in here would sign the
-  // device out (provider-credentials.ts). Native execution settings stay out.
-  writeSandboxCredentials(
-    sandboxCredentialCopies({
-      CODEX_HOME: codexHome,
-      CLAUDE_CONFIG_DIR: claudeHome,
-    }),
-  );
+  // Authentication is selected only after the runtime and profile are known.
   const inherited = { ...process.env };
+  for (const key of nativeSourceKeys) delete inherited[key];
   for (const key of Object.keys(inherited)) {
     if (/FOUNDRY.*(?:TOKEN|PAIRING|CONTROL|CREDENTIAL)/i.test(key))
       delete inherited[key];

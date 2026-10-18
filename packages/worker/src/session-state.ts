@@ -159,6 +159,7 @@ export interface ActiveClaudeContinuation {
 }
 
 export interface ActiveClaudeRuntime {
+  releasePreparation?: () => Promise<void>;
   closed: boolean;
   /** Foundry session currently attached to the long-lived native thread. */
   foundrySessionId: string;

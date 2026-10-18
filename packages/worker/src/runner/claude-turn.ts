@@ -8,7 +8,8 @@ import {
 import { officialSkills, refreshOfficialSkills } from "../official-skills.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { ClaudeAgentTurnError } from "../sdk-messages.js";
-import { sessionEnvironment, withoutSessionToken } from "../session-ambient.js";
+import { withoutSessionToken } from "../session-ambient.js";
+import { prepareExecution } from "../session/preparation/index.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
 import {
@@ -73,42 +74,55 @@ async function runClaudeWorkspaceSessionUnlocked(
     claudePermissionMode(session, profile),
   );
   if (refusal) throw new ClaudeAgentTurnError("root_bypass", refusal);
-  return runOnNativeSession(
-    {
-      provider: "claude",
-      session,
-      workspacePath,
-      env: withoutSessionToken(
-        sessionEnvironment(workspacePath, profile, session),
-      ),
-      isolated: Boolean(managedSkills),
-      emit: (label, detail, level) => emit(label, detail, level),
-      reportNativeSessionId,
-    },
-    async (prepared, start, report) => {
-      const plan = buildClaudeLaunchPlan({
+  const execution = await prepareExecution({
+    purpose: "workspace",
+    ownerId: session.id,
+    workspacePath,
+    session,
+    profile,
+    managedSkills,
+  });
+  profile = execution.native.profile;
+  managedSkills = execution.native.managedSkills;
+  try {
+    return await runOnNativeSession(
+      {
+        provider: "claude",
+        session,
         workspacePath,
-        session: prepared,
-        profile,
-        managedSkills,
-      });
-      for (const warning of plan.warnings) {
-        await emit("Connection credential missing", warning, "warning");
-      }
-      return runClaudeAgentSdkSession(
-        workspacePath,
-        prepared,
-        sessionDir,
-        profile,
-        emit,
-        emitSetup,
-        report,
-        managedSkills,
-        plan,
-        start,
-      );
-    },
-  );
+        env: withoutSessionToken(execution.native.env),
+        isolated: Boolean(managedSkills),
+        emit: (label, detail, level) => emit(label, detail, level),
+        reportNativeSessionId,
+      },
+      async (prepared, start, report) => {
+        const plan = buildClaudeLaunchPlan({
+          workspacePath,
+          session: prepared,
+          profile,
+          managedSkills,
+          execution,
+        });
+        for (const warning of plan.warnings) {
+          await emit("Connection credential missing", warning, "warning");
+        }
+        return runClaudeAgentSdkSession(
+          workspacePath,
+          prepared,
+          sessionDir,
+          profile,
+          emit,
+          emitSetup,
+          report,
+          managedSkills,
+          plan,
+          start,
+        );
+      },
+    );
+  } finally {
+    await execution.dispose();
+  }
 }
 
 export {

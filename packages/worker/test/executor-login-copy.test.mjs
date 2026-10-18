@@ -99,6 +99,12 @@ test("an executor's login copy follows the device's login, one way", (t) => {
   writeFileSync(join(device.codex, "auth.json"), codexLogin("at-first"));
   const scratch = join(device.root, "scratch");
   const env = isolatedAgentEnvironment(scratch);
+  assert.equal(
+    existsSync(join(env.CLAUDE_CONFIG_DIR, ".credentials.json")),
+    false,
+  );
+  assert.equal(existsSync(join(env.CODEX_HOME, "auth.json")), false);
+  writeSandboxCredentials(sandboxCredentialCopies(env));
   const claudeCopy = join(env.CLAUDE_CONFIG_DIR, ".credentials.json");
   const codexCopy = join(env.CODEX_HOME, "auth.json");
   assert.doesNotMatch(readFileSync(claudeCopy, "utf8"), /refresh/i);
@@ -135,6 +141,7 @@ test("a running sandbox's copy follows the device while it runs", async (t) => {
   const source = join(device.claude, ".credentials.json");
   writeFileSync(source, claudeLogin("sk-ant-oat01-first", 1_000));
   const env = isolatedAgentEnvironment(join(device.root, "scratch"));
+  writeSandboxCredentials(sandboxCredentialCopies(env));
   let renewals = 0;
   const stop = keepSandboxCredentialsCurrent(sandboxCredentialCopies(env), {
     intervalMs: 10,
@@ -206,5 +213,89 @@ test("the device's Claude renews its own login only near expiry, where it can ke
   assert.equal(
     await ensureFreshClaudeLogin({ ...options, expiry: () => undefined }),
     "no_login",
+  );
+});
+
+test("credential staging selects the actual runtime and custom source, never an unrelated official account", (t) => {
+  const device = deviceHomes(t);
+  const env = isolatedAgentEnvironment(join(device.root, "scratch"));
+  const custom = join(device.root, "custom-login");
+  mkdirSync(custom);
+  writeFileSync(join(custom, "auth.json"), codexLogin("at-custom"));
+  writeFileSync(
+    join(device.claude, ".credentials.json"),
+    claudeLogin("unrelated", 1_000),
+  );
+  const compatible = {
+    runtime: "codex",
+    connectionType: "openai_compatible",
+    apiKey: "endpoint-key",
+  };
+  assert.deepEqual(sandboxCredentialCopies(env, compatible), []);
+  const profile = {
+    runtime: "codex",
+    connectionType: "local_login",
+    env: { CODEX_HOME: custom },
+  };
+  const copies = sandboxCredentialCopies(env, profile);
+  assert.equal(copies.length, 1);
+  assert.equal(copies[0].device, join(custom, "auth.json"));
+  writeSandboxCredentials(copies);
+  assert.match(
+    readFileSync(join(env.CODEX_HOME, "auth.json"), "utf8"),
+    /at-custom/,
+  );
+  assert.equal(
+    existsSync(join(env.CLAUDE_CONFIG_DIR, ".credentials.json")),
+    false,
+  );
+  const stop = keepSandboxCredentialsCurrent(copies, {
+    renewClaude: async () => {},
+  });
+  stop();
+  stop();
+  assert.equal(existsSync(join(env.CODEX_HOME, "auth.json")), false);
+  assert.equal(existsSync(join(custom, "auth.json")), true);
+});
+
+test("stopping a credential lease prevents an in-flight renewal from recreating its copy", async (t) => {
+  const device = deviceHomes(t);
+  writeFileSync(
+    join(device.claude, ".credentials.json"),
+    claudeLogin("access", 1_000),
+  );
+  const env = isolatedAgentEnvironment(join(device.root, "scratch"));
+  const copies = sandboxCredentialCopies(env, {
+    runtime: "claude",
+    connectionType: "local_login",
+  });
+  writeSandboxCredentials(copies);
+  let finish;
+  let started;
+  const waiting = new Promise((resolve) => {
+    started = resolve;
+  });
+  const stop = keepSandboxCredentialsCurrent(copies, {
+    intervalMs: 1,
+    renewClaude: () => {
+      started();
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  // The unref'ed timer needs this bounded waiter to keep the test alive.
+  const deadline = setTimeout(() => {
+    started();
+  }, 2000);
+  await waiting;
+  clearTimeout(deadline);
+  assert.ok(finish, "renewal started");
+  stop();
+  finish();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(
+    existsSync(join(env.CLAUDE_CONFIG_DIR, ".credentials.json")),
+    false,
   );
 });

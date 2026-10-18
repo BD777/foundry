@@ -21,7 +21,7 @@ import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
 import { processIdentity } from "./agent-processes.js";
 import { daemonLockHolder } from "./device-pairing.js";
 import { optionEnabled } from "./utils.js";
-import { isManagedNativeRuntimePath } from "./native-homes.js";
+import { nativeServiceHome } from "./native-runtime-paths.js";
 import {
   foundryStackSuffix,
   foundryStatePath,
@@ -108,11 +108,11 @@ export function serviceEnvironment(
 
   for (const key of passthroughKeys) {
     let value = process.env[key] || installed[key];
-    if (
-      (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
-      isManagedNativeRuntimePath(value)
-    ) {
-      value = undefined;
+    if (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") {
+      value = nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", {
+        ...installed,
+        ...process.env,
+      });
     }
     if (value) {
       env[key] = value;
@@ -129,6 +129,7 @@ export function serviceEnvironment(
  */
 const passthroughKeys = [
   "CLAUDE_CONFIG_DIR",
+  "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
   "CODEX_CLI_PATH",
   "CODEX_HOME",
   "FOUNDRY_CLAUDE_BIN",

@@ -1,3 +1,7 @@
+import {
+  nativeSourceKeys,
+  withNativeSourceOverrides,
+} from "../native-runtime-paths.js";
 import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, resolve } from "node:path";
@@ -101,6 +105,20 @@ async function runSandboxed(
   sandbox: WorkspaceSandbox,
 ): Promise<AgentSessionRunResult> {
   const { session } = run;
+  const childProfile = { ...run.profile, env: { ...run.profile.env } };
+  for (const key of nativeSourceKeys) delete childProfile.env[key];
+  for (const key of [
+    "CODEX_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+  ] as const) {
+    const value =
+      sandbox.env[
+        key === "CLAUDE_SECURESTORAGE_CONFIG_DIR" ? "CLAUDE_CONFIG_DIR" : key
+      ];
+    if (value) childProfile.env[key] = value;
+    else delete childProfile.env[key];
+  }
   // The agent CLI is resolved here, where the whole host is visible, and
   // handed to the sandbox as a program it may run.
   const harness = run.profile.command
@@ -109,97 +127,108 @@ async function runSandboxed(
   // The agent gets the device's provider logins as access tokens only. The
   // device renews its own Claude login, and the copies follow it while the
   // agent runs (provider-credentials.ts).
-  const credentials = sandboxCredentialCopies(sandbox.env);
+  const credentials = sandboxCredentialCopies(sandbox.env, run.profile);
   const deviceClaudeLogin =
     session.provider === "claude" &&
     !run.profile.command &&
     run.profile.connectionType === "local_login";
-  if (deviceClaudeLogin) await ensureFreshClaudeLogin();
-  writeSandboxCredentials(credentials);
-  const launch = sandboxLaunch(
-    {
-      ...sandbox.profile,
-      executables: [
-        ...sandbox.profile.executables,
-        ...(harness ? [harness] : []),
-      ],
-    },
-    process.execPath,
-    [hostPath],
-  );
-  const canceled = new AbortController();
-  const signal = sandbox.signal
-    ? AbortSignal.any([sandbox.signal, canceled.signal])
-    : canceled.signal;
-  const child = spawnProcessGroup(
-    launch.command,
-    launch.args,
-    {
-      cwd: run.cwd,
-      env: {
-        ...sandbox.env,
-        // The device's state is unreadable inside; pass the settings along.
-        FOUNDRY_EXECUTOR_SETTINGS: JSON.stringify(readAgentRuntimeSettings()),
-        ...(harness &&
-          (session.provider === "codex"
-            ? { FOUNDRY_CODEX_BIN: harness }
-            : { FOUNDRY_CLAUDE_BIN: harness })),
-      },
-    },
-    signal,
-    sandbox.timeoutMs,
-  );
-  // Events are applied in order; results and steer acknowledgements wait for
-  // the events before them to be delivered.
-  let events = Promise.resolve();
-  const steering = new Map<
-    string,
-    { resolve: () => void; reject: (error: Error) => void }
-  >();
-  const steerTarget: ActiveSessionSteerTarget = {
-    provider: session.provider,
-    steer: (message, attachments, steerId) =>
-      new Promise<void>((resolve, reject) => {
-        const id = randomUUID();
-        const timer = setTimeout(() => {
-          steering.delete(id);
-          reject(
-            new Error(
-              "Steer acknowledgement timed out; check the conversation before retrying.",
-            ),
-          );
-        }, 15_000);
-        steering.set(id, {
-          resolve: () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          reject: (error) => {
-            clearTimeout(timer);
-            reject(error);
-          },
-        });
-        child.stdin.write(
-          `${JSON.stringify({ type: "steer", id, message, attachments, steerId })}\n`,
-        );
-      }),
-  };
-  const cancelTarget: ActiveSessionCancelTarget = {
-    provider: session.provider,
-    cancel: () => canceled.abort(),
-  };
-  const unregisterSteer = registerActiveSessionSteerTarget(
-    session.id,
-    steerTarget,
-  );
-  const unregisterCancel = registerActiveSessionCancelTarget(
-    session.id,
-    cancelTarget,
-  );
+  if (deviceClaudeLogin)
+    await ensureFreshClaudeLogin({
+      env: withNativeSourceOverrides(process.env, run.profile.env),
+    });
   const stopCredentials = keepSandboxCredentialsCurrent(credentials, {
-    renewClaude: deviceClaudeLogin ? undefined : async () => undefined,
+    renewClaude: deviceClaudeLogin
+      ? () =>
+          ensureFreshClaudeLogin({
+            env: withNativeSourceOverrides(process.env, run.profile.env),
+          })
+      : async () => undefined,
   });
+  let unregisterSteer = () => {};
+  let unregisterCancel = () => {};
   try {
+    writeSandboxCredentials(credentials);
+    const launch = sandboxLaunch(
+      {
+        ...sandbox.profile,
+        protectedReadRoots: [
+          ...sandbox.profile.protectedReadRoots,
+          ...(run.managedSkills ? [run.managedSkills.pluginDir] : []),
+        ],
+        executables: [
+          ...sandbox.profile.executables,
+          ...(harness ? [harness] : []),
+        ],
+      },
+      process.execPath,
+      [hostPath],
+    );
+    const canceled = new AbortController();
+    const signal = sandbox.signal
+      ? AbortSignal.any([sandbox.signal, canceled.signal])
+      : canceled.signal;
+    const child = spawnProcessGroup(
+      launch.command,
+      launch.args,
+      {
+        cwd: run.cwd,
+        env: {
+          ...sandbox.env,
+          // The device's state is unreadable inside; pass the settings along.
+          FOUNDRY_EXECUTOR_SETTINGS: JSON.stringify(readAgentRuntimeSettings()),
+          ...(harness &&
+            (session.provider === "codex"
+              ? { FOUNDRY_CODEX_BIN: harness }
+              : { FOUNDRY_CLAUDE_BIN: harness })),
+        },
+      },
+      signal,
+      sandbox.timeoutMs,
+    );
+    // Events are applied in order; results and steer acknowledgements wait for
+    // the events before them to be delivered.
+    let events = Promise.resolve();
+    const steering = new Map<
+      string,
+      { resolve: () => void; reject: (error: Error) => void }
+    >();
+    const steerTarget: ActiveSessionSteerTarget = {
+      provider: session.provider,
+      steer: (message, attachments, steerId) =>
+        new Promise<void>((resolve, reject) => {
+          const id = randomUUID();
+          const timer = setTimeout(() => {
+            steering.delete(id);
+            reject(
+              new Error(
+                "Steer acknowledgement timed out; check the conversation before retrying.",
+              ),
+            );
+          }, 15_000);
+          steering.set(id, {
+            resolve: () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            reject: (error) => {
+              clearTimeout(timer);
+              reject(error);
+            },
+          });
+          child.stdin.write(
+            `${JSON.stringify({ type: "steer", id, message, attachments, steerId })}\n`,
+          );
+        }),
+    };
+    const cancelTarget: ActiveSessionCancelTarget = {
+      provider: session.provider,
+      cancel: () => canceled.abort(),
+    };
+    unregisterSteer = registerActiveSessionSteerTarget(session.id, steerTarget);
+    unregisterCancel = registerActiveSessionCancelTarget(
+      session.id,
+      cancelTarget,
+    );
     return await new Promise<AgentSessionRunResult>((done, reject) => {
       let result: AgentSessionRunResult | undefined;
       let failure: string | undefined;
@@ -272,7 +301,7 @@ async function runSandboxed(
         `${JSON.stringify({
           cwd: run.cwd,
           session,
-          profile: run.profile,
+          profile: childProfile,
           managedSkills: run.managedSkills,
           ambient: sandbox.ambient,
         })}\n`,

@@ -151,6 +151,7 @@ export async function prepareCodexSkillIsolation(
   managed: ManagedSkillRuntime,
   cwd: string,
   env: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<ManagedSkillRuntime> {
   const paths = await withCodexControl(
     "",
@@ -188,7 +189,7 @@ export async function prepareCodexSkillIsolation(
         official: skills.filter(official),
       };
     },
-    { cwd, env, args: [] },
+    { cwd, env, args: [], signal },
   );
   return {
     ...managed,

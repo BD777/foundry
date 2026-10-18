@@ -26,7 +26,7 @@ export function codexStageConfig(
   const projectDocBytes = projectInstructions ? 32768 : 0;
   return {
     toml:
-      `project_doc_max_bytes = ${projectDocBytes}\n[features]\n` +
+      `project_doc_max_bytes = ${projectDocBytes}\ncli_auth_credentials_store = "ephemeral"\n[features]\n` +
       Object.keys(features)
         .map((key) => `${key} = false`)
         .join("\n") +
@@ -60,8 +60,15 @@ export const codexHarness: HarnessAdapter = {
     const config = resolve(home, "codex");
     mkdirSync(config, { mode: 0o700 });
     // The device's access token only (provider-credentials.ts).
-    writeSandboxCredentials(sandboxCredentialCopies({ CODEX_HOME: config }));
+    writeSandboxCredentials(
+      sandboxCredentialCopies({ CODEX_HOME: config }, profile),
+    );
     env.CODEX_HOME = config;
+    if (
+      profile.connectionType === "local_login" ||
+      profile.codexProviderConfig?.requires_openai_auth === true
+    )
+      env.FOUNDRY_CODEX_AUTH_SOURCE = config;
     // The read-only shell is how Codex looks at files: a directory, or the
     // PDFs it is given to read.
     const stage = codexStageConfig(
@@ -106,6 +113,10 @@ export const codexHarness: HarnessAdapter = {
         webSearchMode: "disabled",
         ephemeral: true,
         model: spec.model || profile.model,
+        contextWindow:
+          profile.connectionType === "openai_compatible"
+            ? profile.contextWindow
+            : undefined,
       },
     );
     const images = spec.prompt.images.map((image, index) => {

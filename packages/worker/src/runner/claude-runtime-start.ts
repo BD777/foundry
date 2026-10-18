@@ -24,6 +24,7 @@ import {
 } from "../session-work/supervisor.js";
 import {
   cleanupActiveClaudeRuntimes,
+  claudeRuntimeIsBusy,
   closeActiveClaudeRuntime,
   closeOtherClaudeWriters,
   logClaudeRuntime,
@@ -63,11 +64,18 @@ export async function acquireClaudeRuntime(
       held.nativeSessionId === run.requestedNativeSessionId)
       ? held
       : undefined;
-  if (held && !reusable) closeActiveClaudeRuntime(held);
+  if (held && !reusable) {
+    if (claudeRuntimeIsBusy(held))
+      throw new Error(
+        "The native runtime still has active work; wait before changing its session context.",
+      );
+    closeActiveClaudeRuntime(held);
+  }
   closeOtherClaudeWriters(
     run.session.id,
     run.requestedNativeSessionId,
     reusable,
+    { protectActiveWork: true },
   );
   if (reusable) {
     await reuseClaudeRuntime(run, reusable);
@@ -81,6 +89,7 @@ async function startClaudeRuntime(
 ): Promise<AcquiredClaudeRuntime> {
   const options = claudeProcessOptions(run);
   const runtime: ActiveClaudeRuntime = {
+    releasePreparation: run.plan?.execution?.retain(),
     closed: false,
     foundrySessionId: run.session.id,
     input: new AsyncInputQueue<unknown>(),
@@ -93,12 +102,17 @@ async function startClaudeRuntime(
   attachClaudeProcessOutput(run, runtime, options);
   activeClaudeRuntimes.set(run.runtimeKey, runtime);
   logClaudeRuntime("starting", runtime);
-  await run.emitSetup();
-  await run.emit(
-    claudeProcessStartedLabel,
-    `${claudeAgentSdkPackage} · ${run.command}`,
-  );
-  return { runtime, startOptions: options };
+  try {
+    await run.emitSetup();
+    await run.emit(
+      claudeProcessStartedLabel,
+      `${claudeAgentSdkPackage} · ${run.command}`,
+    );
+    return { runtime, startOptions: options };
+  } catch (error) {
+    closeActiveClaudeRuntime(runtime, error);
+    throw error;
+  }
 }
 
 /**
@@ -280,6 +294,11 @@ function attachClaudeProcessOutput(
     ) => {
       const child = spawnAgent(spawnOptions);
       runtime.pid = child.pid;
+      const releasePreparation = runtime.releasePreparation;
+      runtime.releasePreparation = undefined;
+      child.once("close", () => {
+        void releasePreparation?.().catch(() => undefined);
+      });
       logClaudeRuntime("process started", runtime);
       return child;
     };

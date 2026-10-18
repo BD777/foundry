@@ -6,7 +6,7 @@
  * conversation. Both runners use it, so the rules live here once.
  */
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { claudeConfigDir, codexHome } from "./native-homes.js";
+import { nativeExecutionHome } from "./native-runtime-paths.js";
 import { findSessionLog } from "./native-usage.js";
 import { foundryToolsEndpoint } from "./session-ambient.js";
 import {
@@ -192,11 +192,7 @@ function nativeHome(
   provider: "claude" | "codex",
   env: NodeJS.ProcessEnv,
 ): string {
-  // These are the execution homes, which may link transcripts from a custom
-  // source home. Credential discovery deliberately ignores managed homes.
-  return provider === "claude"
-    ? env.CLAUDE_CONFIG_DIR?.trim() || claudeConfigDir(env)
-    : env.CODEX_HOME?.trim() || codexHome(env);
+  return nativeExecutionHome(provider, env);
 }
 
 /**

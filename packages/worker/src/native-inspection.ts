@@ -6,6 +6,7 @@ import { authenticateIsolatedCodex } from "./agent-runtime/codex-auth.js";
 import { acquireRuntime } from "./agent-runtime/maintenance.js";
 import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /** Read-only native control APIs. No prompt, inference, auth copying or provider HTTP. */
+import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -40,10 +41,17 @@ export function nativeSources(runtime: "codex" | "claude"): string[] {
 export async function withCodexControl<T>(
   source: string,
   read: (call: (method: string, params: unknown) => Promise<any>) => Promise<T>,
-  runtime?: { cwd: string; env: NodeJS.ProcessEnv; args?: string[] },
+  runtime?: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    args?: string[];
+    signal?: AbortSignal;
+  },
 ): Promise<T> {
-  const releaseRuntime = await acquireRuntime("codex");
+  const releaseRuntime = await acquireRuntime("codex", runtime?.signal);
   let client: CodexAppServer | undefined;
+  const abort = () => client?.close();
+  runtime?.signal?.addEventListener("abort", abort, { once: true });
   try {
     const env =
       runtime?.env ??
@@ -57,8 +65,10 @@ export async function withCodexControl<T>(
           ...process.env,
           ...nativeLoginEnvironment("codex"),
           CODEX_HOME: source,
+          FOUNDRY_NATIVE_CODEX_SOURCE_HOME: source,
         },
         homedir(),
+        `metadata:${randomUUID()}`,
       );
     const command = resolveCodexCommand();
     client = new CodexAppServer(
@@ -68,6 +78,7 @@ export async function withCodexControl<T>(
       { initializeMs: 25000, controlMs: 25000 },
       runtime?.args ?? ["-c", 'model_provider="openai"'],
     );
+    runtime?.signal?.throwIfAborted();
     await authenticateIsolatedCodex(client, env, command);
     return await read((method, params) => client!.request(method, params));
   } catch {
@@ -76,6 +87,7 @@ export async function withCodexControl<T>(
       "Native Codex could not complete this read. Check login, connectivity or account access.",
     );
   } finally {
+    runtime?.signal?.removeEventListener("abort", abort);
     client?.close();
     releaseRuntime();
   }
@@ -109,6 +121,7 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
         },
         { ...process.env, ...nativeLoginEnvironment("claude") },
         homedir(),
+        `metadata:${randomUUID()}`,
       ),
       settingSources: [],
       strictMcpConfig: true,
@@ -196,8 +209,10 @@ async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
           ...process.env,
           ...nativeLoginEnvironment("codex"),
           CODEX_HOME: source,
+          FOUNDRY_NATIVE_CODEX_SOURCE_HOME: source,
         },
         homedir(),
+        `metadata:${randomUUID()}`,
       ),
       timeout: 20000,
       maxBuffer: 4 * 1024 * 1024,

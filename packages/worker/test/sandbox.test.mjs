@@ -767,3 +767,61 @@ test("sandboxes never hide the device's installed software", async () => {
   for (const path of ["/opt", "/Applications", "/snap", "/nix"])
     assert.equal(roots.includes(path), existsSync(path), path);
 });
+
+test(
+  "a session's exact protected skill snapshot is readable but neighboring collections are hidden and immutable",
+  supported("writable_tree"),
+  (t) => {
+    const root = scratch(t);
+    const previous = process.env.FOUNDRY_STATE_ROOT;
+    const state = join(root, "private-state");
+    process.env.FOUNDRY_STATE_ROOT = state;
+    t.after(() => {
+      if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+      else process.env.FOUNDRY_STATE_ROOT = previous;
+    });
+    const tree = join(root, "workspace");
+    const selected = join(state, "skill-sets", "selected");
+    const other = join(state, "skill-sets", "other");
+    for (const directory of [tree, selected, other])
+      mkdirSync(directory, { recursive: true });
+    writeFileSync(join(selected, "SKILL.md"), "selected method");
+    writeFileSync(join(other, "SKILL.md"), "other workspace method");
+    const launch = sandboxLaunch(
+      {
+        kind: "writable_tree",
+        policyFile: join(root, "exact-skills.sb"),
+        workdir: tree,
+        readRoots: [],
+        writeRoots: [tree],
+        protectedReadRoots: [selected],
+        readOnlyDirectories: [],
+        readOnlyPaths: [],
+        connectSockets: [],
+        executables: [],
+        userFiles: "hidden",
+      },
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+    import {readFileSync, writeFileSync} from 'node:fs';
+    const selected = ${JSON.stringify(join(selected, "SKILL.md"))};
+    const other = ${JSON.stringify(join(other, "SKILL.md"))};
+    const result = { selected: readFileSync(selected, 'utf8'), otherHidden: false, selectedImmutable: false };
+    try { readFileSync(other); } catch { result.otherHidden = true; }
+    try { writeFileSync(selected, 'changed'); } catch { result.selectedImmutable = true; }
+    console.log(JSON.stringify(result));
+  `,
+      ],
+    );
+    const result = run(launch, tree);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      selected: "selected method",
+      otherHidden: true,
+      selectedImmutable: true,
+    });
+  },
+);

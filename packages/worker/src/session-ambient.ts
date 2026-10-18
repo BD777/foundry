@@ -1,3 +1,4 @@
+import { withNativeSourceOverrides } from "./native-runtime-paths.js";
 import { isolatedClaudeEnvironment } from "./runtime-isolation.js";
 import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -105,8 +106,12 @@ export function sessionEnvironment(
   workspacePath: string,
   profile: AgentProfileLocalConfig,
   session?: AgentSession,
+  ownerId?: string,
 ): NodeJS.ProcessEnv {
-  const base = baseProcessEnvironment(profile);
+  const base = withNativeSourceOverrides(
+    baseProcessEnvironment(profile),
+    profile.env,
+  );
   const env = {
     ...base,
     // Tools Foundry installed for skills come first.
@@ -128,7 +133,7 @@ export function sessionEnvironment(
       : {}),
   };
   return profile.runtime === "claude"
-    ? isolatedClaudeEnvironment(profile, env, workspacePath)
+    ? isolatedClaudeEnvironment(profile, env, workspacePath, ownerId)
     : env;
 }
 

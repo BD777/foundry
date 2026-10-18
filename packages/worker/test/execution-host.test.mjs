@@ -231,7 +231,7 @@ if(r.method==='turn/interrupt')reply({});});`,
   const nativeEnvironment = JSON.parse(readFileSync(count + "-env", "utf8"));
   assert.ok(
     nativeEnvironment.codexHome.startsWith(
-      join(state, "native-runtime", "codex") + "/",
+      join(state, "native-runtime", "owners", "codex") + "/",
     ),
     "native execution uses Foundry's isolated configuration",
   );

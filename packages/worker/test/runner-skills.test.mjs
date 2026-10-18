@@ -414,4 +414,141 @@ test("a new skill set downloads only the revisions no set holds yet", async (t) 
     /r2/,
   );
   assert.equal(second.skills.find((s) => s.name === "s1").description, "s1 r1");
+  const { writeFileSync } = await import("node:fs");
+  const bundled = [updated, ...refs.slice(1)].map((ref) => ({
+    ...ref,
+    bundle: { id: "bundle", name: "Original bundle", version: "1" },
+  }));
+  const grouped = await materializeSessionSkills(bundled, url, "/tmp");
+  assert.equal(grouped.indexes.length, 1);
+  writeFileSync(grouped.indexes[0].file, "forged index");
+  const repaired = await materializeSessionSkills(bundled, url, "/tmp");
+  assert.notEqual(repaired.pluginDir, grouped.pluginDir);
+  assert.match(
+    readFileSync(repaired.indexes[0].file, "utf8"),
+    /Original bundle/,
+  );
+  const renamed = await materializeSessionSkills(
+    bundled.map((ref) => ({
+      ...ref,
+      bundle: { ...ref.bundle, name: "Renamed bundle" },
+    })),
+    url,
+    "/tmp",
+  );
+  assert.notEqual(renamed.pluginDir, repaired.pluginDir);
+  assert.match(readFileSync(renamed.indexes[0].file, "utf8"), /Renamed bundle/);
+  assert.equal(
+    requested.length,
+    31,
+    "generated indexes repair from verified archives",
+  );
+});
+
+test("cached skill generations verify all bytes and preserve active paths on repair", async (t) => {
+  const { createServer } = await import("node:http");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } =
+    await import("node:fs");
+  const { join } = await import("node:path");
+  const { packZip } = await import("../dist/skill-zip.js");
+  const { materializeSessionSkills } =
+    await import("../dist/skill-materializer.js");
+  const zip = packZip([
+    {
+      path: "SKILL.md",
+      data: Buffer.from(
+        "---\nname: integrity\ndescription: verified archive\n---\nOriginal instruction\n",
+      ),
+    },
+    { path: "scripts/run.js", data: Buffer.from("console.log('original');\n") },
+  ]);
+  const ref = {
+    skillId: randomUUID(),
+    name: "integrity",
+    revision: 1,
+    checksum: createHash("sha256").update(zip).digest("hex"),
+    byteSize: zip.length,
+  };
+  let requested = 0;
+  const server = createServer((_req, response) => {
+    requested++;
+    response.end(zip);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const materialize = () => materializeSessionSkills([ref], url, "/tmp");
+  let current = await materialize();
+  const original = current.pluginDir;
+  assert.equal((await materialize()).pluginDir, original);
+  assert.equal(requested, 1);
+  for (const change of [
+    (root) =>
+      writeFileSync(
+        join(root, "skills/integrity/SKILL.md"),
+        "tampered instruction",
+      ),
+    (root) =>
+      writeFileSync(
+        join(root, "skills/integrity/scripts/run.js"),
+        "tampered script",
+      ),
+    (root) =>
+      writeFileSync(
+        join(root, ".foundry-input-snapshot.json"),
+        "forged marker",
+      ),
+    (root) => writeFileSync(join(root, ".claude-plugin/plugin.json"), "{}"),
+    (root) => mkdirSync(join(root, "extra")),
+    (root) => {
+      const script = join(root, "skills/integrity/scripts/run.js");
+      rmSync(script);
+      symlinkSync("/etc/passwd", script);
+    },
+  ]) {
+    const held = current.pluginDir;
+    change(held);
+    const [next, concurrent] = await Promise.all([
+      materialize(),
+      materialize(),
+    ]);
+    assert.equal(next.pluginDir, concurrent.pluginDir);
+    assert.notEqual(next.pluginDir, held);
+    assert.equal(next.snapshotDigest, concurrent.snapshotDigest);
+    assert.match(
+      readFileSync(join(next.skills[0].dir, "SKILL.md"), "utf8"),
+      /Original instruction/,
+    );
+    assert.equal(
+      readFileSync(join(next.skills[0].dir, "scripts/run.js"), "utf8"),
+      "console.log('original');\n",
+    );
+    assert.equal(
+      readFileSync(
+        join(next.pluginDir, ".claude-plugin/plugin.json"),
+        "utf8",
+      ).includes("foundry-workspace"),
+      true,
+    );
+    // Repair must leave a generation held by another execution in place.
+    assert.ok(readFileSync(join(held, "skills/integrity/SKILL.md")).length);
+    current = next;
+  }
+  assert.equal(
+    requested,
+    1,
+    "verified archives supply repairs without a network request",
+  );
+  const { foundryStatePath } = await import("../dist/state-root.js");
+  writeFileSync(
+    foundryStatePath("skill-archives", `${ref.checksum}.zip`),
+    "bad archive",
+  );
+  assert.equal((await materialize()).pluginDir, current.pluginDir);
+  assert.equal(
+    requested,
+    2,
+    "archive bytes are checked independently from a valid generation",
+  );
 });
