@@ -164,6 +164,15 @@ func TestCreateWorkspaceNeedsTheWorkspaceCreateCapability(t *testing.T) {
 	server := NewServer(db)
 	httpServer := httptest.NewServer(server.Routes())
 	defer httpServer.Close()
+	// Hijacked daemon sockets are outside httptest.Server.Close's wait.
+	// Drain their handlers before the store and its temp directory are removed.
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown daemon handlers: %v", err)
+		}
+	}()
 	conn := dialDaemonForTest(t, httpServer)
 	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	writeWSForTest(t, conn, "hello", homeRegistration("dev_home"))
