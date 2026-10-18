@@ -35,6 +35,13 @@ func (d *digestDaemon) nextChatRun() wsRunSessionPayload {
 func TestAssistantRunsCarryItsInstructionsAndTheTurnsContext(t *testing.T) {
 	f := newDigestFixture(t)
 	ctx := context.Background()
+	// Keep project inputs stable before comparing turns. The background intro
+	// read can otherwise finish between dispatches and legitimately change
+	// the assistant's instructions even though only turn state changed here.
+	record := f.digest(t)
+	if err := f.server.workspaceDigests().SetIntro(ctx, "ws_budget", record.FilesRev, "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n"); err != nil {
+		t.Fatal(err)
+	}
 	conversation, err := f.server.createAndDispatch(ctx, store.CreateAgentSessionInput{
 		CreatedByUserID: f.aliceID, WorkspaceID: "ws_pa", AgentID: "agent_pa", Provider: "claude", Prompt: "plan my week", Source: "chat",
 	}, false)
