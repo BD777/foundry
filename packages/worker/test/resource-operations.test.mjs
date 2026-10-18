@@ -376,11 +376,18 @@ test("fencing: older generations are refused; reset closes the old session", asy
 test("a reset aborts an older lease's operation in flight", async (t) => {
   const h = harness();
   t.after(h.done);
-  const started = Date.now();
   const running = h.operate([{ op: "type_text", args: { text: "slow3000" } }], {
     generation: 1,
   });
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // This checks an action in flight, not provider initialization. A fixed
+  // startup sleep races under a loaded CI worker and can abort before any
+  // per-action result exists.
+  const readyBy = Date.now() + 10_000;
+  while (!h.calls().some((entry) => entry.tool === "type_text")) {
+    assert.ok(Date.now() < readyBy, "the slow action started");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const started = Date.now();
   await h.operations.reset({
     resourceId: "res_1",
     key,

@@ -115,6 +115,131 @@ test("an agent answer keeps Markdown soft breaks and GFM task lists", async () =
   assert.equal(html.match(/<li class="task-list-item">/g)?.length, 2);
 });
 
+test("CJK emphasis next to punctuation renders in streaming and settled text", async () => {
+  const cases = [
+    [
+      "**目前没有必须请你 review 或拍板的地方。**按你已经明确的原则",
+      "strong",
+      "目前没有必须请你 review 或拍板的地方。",
+    ],
+    ["- **高置信度：**下架后重复对账需要收敛", "strong", "高置信度："],
+    [
+      "- **需要实现和测试证明：**残差保留与强平风控",
+      "strong",
+      "需要实现和测试证明：",
+    ],
+    [
+      "唯一涉及策略取舍的是：**是否主动单腿清理本来合法的 dust。**你已经说过",
+      "strong",
+      "是否主动单腿清理本来合法的 dust。",
+    ],
+    [
+      "**重要提示（Important Notice）：**请注意",
+      "strong",
+      "重要提示（Important Notice）：",
+    ],
+    ["*中文斜体。*继续", "em", "中文斜体。"],
+    ["~~旧方案。~~新方案", "del", "旧方案。"],
+  ];
+  for (const props of [
+    { streaming: true },
+    { streaming: false },
+    { typedText: true },
+  ]) {
+    for (const [source, kind, text] of cases) {
+      await renderMarkdown(props, source, (container) => {
+        const formatted = container.querySelector(
+          `[data-streamdown="${kind}"], ${kind}`,
+        );
+        assert.equal(
+          formatted?.textContent,
+          text,
+          `${JSON.stringify(props)}: ${source}`,
+        );
+        assert.doesNotMatch(container.textContent, /\*\*|~~/);
+      });
+    }
+  }
+});
+
+test("CJK parsing preserves mixed GFM structure, nested formatting, code and escapes", async () => {
+  const source = [
+    "## 验收",
+    "",
+    "> **结论：**保留 *斜体。*继续与 ~~旧方案。~~更新。",
+    "",
+    "- **父项：**正文",
+    "  - **子项：**正文",
+    "",
+    "1. **步骤：**执行",
+    "2. **步骤：**完成",
+    "",
+    "| 项目 | 状态 |",
+    "| --- | --- |",
+    "| 加粗 | **通过：**继续 |",
+    "",
+    "**包含 `code` 和 [链接](https://example.com) 的内容。**继续。",
+    "",
+    "`**代码：**原样` 和 \\*\\*转义：\\*\\*原样。",
+    "",
+    "```text",
+    "**示例：**原样",
+    "~~示例。~~原样",
+    "```",
+  ].join("\n");
+  for (const streaming of [true, false]) {
+    await renderMarkdown({ streaming }, source, (container) => {
+      assert.equal(container.querySelector("h2")?.textContent, "验收");
+      assert.ok(container.querySelector("blockquote em"));
+      assert.ok(container.querySelector("blockquote del"));
+      assert.ok(container.querySelector("ul ul li"));
+      assert.equal(container.querySelectorAll("ol li").length, 2);
+      assert.equal(container.querySelectorAll("td").length, 2);
+      const strong = [
+        ...container.querySelectorAll('[data-streamdown="strong"]'),
+      ];
+      assert.equal(strong.length, 7);
+      const nested = strong.find((node) => node.textContent.startsWith("包含"));
+      assert.equal(nested?.querySelector("code")?.textContent, "code");
+      assert.equal(
+        nested?.querySelector("a")?.getAttribute("href"),
+        "https://example.com/",
+      );
+      assert.ok(
+        [...container.querySelectorAll("code")].some(
+          (node) => node.textContent === "**代码：**原样",
+        ),
+      );
+      assert.match(
+        container.querySelector("pre")?.textContent ?? "",
+        /\*\*示例：\*\*原样/,
+      );
+      assert.match(container.textContent, /\*\*转义：\*\*原样/);
+    });
+  }
+});
+
+test("finishing a streamed CJK emphasis keeps formatting and literal text stable", async () => {
+  const source = "**高置信度：**下架后重复对账需要收敛。";
+  await renderMarkdown(
+    { streaming: true },
+    source,
+    async (container, update) => {
+      const before = container.textContent;
+      assert.equal(
+        container.querySelector('[data-streamdown="strong"]')?.textContent,
+        "高置信度：",
+      );
+      await update({ streaming: false });
+      assert.equal(container.textContent, before);
+      assert.equal(
+        container.querySelector('[data-streamdown="strong"]')?.textContent,
+        "高置信度：",
+      );
+    },
+  );
+});
+
 test("relative links open verified files or stay text; unsafe links stay blocked", async () => {
   const opened = [];
   const reference = {
@@ -223,4 +348,15 @@ test("explicit links and text without URLs are left alone", async () => {
   assert.deepEqual(labelled.links, [
     { href: "https://a.example/d", text: "文档" },
   ]);
+});
+
+test("CJK syntax never cuts authored links containing Chinese punctuation", async () => {
+  const url = "https://a.example/p。q";
+  for (const props of [{ streaming: true }, {}, { typedText: true }]) {
+    for (const source of [`[${url}](${url})`, `<${url}>`]) {
+      const { body, links } = await renderedLinks(props, source);
+      assert.equal(body, url);
+      assert.deepEqual(links, [{ href: new URL(url).href, text: url }]);
+    }
+  }
 });
