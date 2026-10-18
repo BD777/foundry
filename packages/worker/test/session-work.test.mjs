@@ -25,6 +25,15 @@ function scratch(t) {
   t.after(() => rmSync(path, { recursive: true, force: true }));
   return path;
 }
+// Discovery may find unrelated timers on a fresh CI runner. These tests must
+// select their own work and inject report failures for that work specifically.
+function unrelatedHostSchedules(root) {
+  return new HostSchedules(join(root, "fake-hosts.json"), (argv) => ({
+    status: 0,
+    stdout: argv[0] === "crontab" ? "0 * * * * /unrelated-host-job\n" : "[]",
+    stderr: "",
+  }));
+}
 function work(overrides = {}) {
   return {
     id: "work_test",
@@ -698,6 +707,7 @@ test(
         { status: 200 },
       );
     });
+    supervisor.hosts = unrelatedHostSchedules(root);
     supervisor.attach(
       {
         id: "session",
@@ -710,13 +720,16 @@ test(
     await supervisor.start("http://isolated.invalid");
     supervisor.stop();
     await supervisor.tick();
-    assert.equal(observed.at(-1).observation.processRole, "foreground");
-    assert.match(supervisor.context("session"), /0 outstanding/);
+    assert.equal(
+      observed.findLast((w) => w.id === item.id).observation.processRole,
+      "foreground",
+    );
+    assert.match(supervisor.context("session"), /1 outstanding/);
     const exited = once(child, "exit");
     child.kill("SIGTERM");
     await exited;
     await supervisor.tick();
-    const actual = observed.at(-1).observation;
+    const actual = observed.findLast((w) => w.id === item.id).observation;
     assert.equal(actual.status, "completed");
     assert.equal(actual.confirmedRevision, 1);
     assert.ok(actual.endedAt);
@@ -1099,7 +1112,8 @@ test("a failed network report persists newly reconciled work before host exit", 
   const root = scratch(t);
   const item = work({ source: "claude" });
   const supervisor = new WorkSupervisor(root, async (_url, init) => {
-    if (init?.body) throw new Error("synthetic connection loss");
+    if (init?.body && JSON.parse(init.body).items.some((w) => w.id === item.id))
+      throw new Error("synthetic connection loss");
     return new Response(
       JSON.stringify({
         items: [item],
@@ -1109,6 +1123,7 @@ test("a failed network report persists newly reconciled work before host exit", 
       }),
     );
   });
+  supervisor.hosts = unrelatedHostSchedules(root);
   supervisor.attach(
     {
       id: "session",

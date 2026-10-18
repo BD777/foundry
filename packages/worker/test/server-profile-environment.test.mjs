@@ -1,3 +1,4 @@
+import "./fixtures/native-test-homes.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sessionEnvironment } from "../dist/session-ambient.js";

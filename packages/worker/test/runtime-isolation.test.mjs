@@ -294,7 +294,19 @@ test("a native connection imports only its provider definition, not ambient cred
   }
 });
 
-test("a changed Codex window starts a handle with the new config while retaining native thread identity", async () => {
+test("a changed Codex window starts a handle with the new config while retaining native thread identity", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-handle-"));
+  const command = join(root, "codex");
+  writeFileSync(command, "#!/bin/sh\necho codex-cli 0.163.0\n", {
+    mode: 0o700,
+  });
+  const previous = process.env.FOUNDRY_CODEX_BIN;
+  process.env.FOUNDRY_CODEX_BIN = command;
+  t.after(() => {
+    if (previous === undefined) delete process.env.FOUNDRY_CODEX_BIN;
+    else process.env.FOUNDRY_CODEX_BIN = previous;
+    rmSync(root, { recursive: true, force: true });
+  });
   const { openCodexThread } = await import("../dist/runner/codex-thread.js");
   const { activeCodexThreads } = await import("../dist/session-state.js");
   const session = {
