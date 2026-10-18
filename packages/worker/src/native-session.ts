@@ -192,7 +192,11 @@ function nativeHome(
   provider: "claude" | "codex",
   env: NodeJS.ProcessEnv,
 ): string {
-  return provider === "claude" ? claudeConfigDir(env) : codexHome(env);
+  // These are the execution homes, which may link transcripts from a custom
+  // source home. Credential discovery deliberately ignores managed homes.
+  return provider === "claude"
+    ? env.CLAUDE_CONFIG_DIR?.trim() || claudeConfigDir(env)
+    : env.CODEX_HOME?.trim() || codexHome(env);
 }
 
 /**

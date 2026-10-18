@@ -38,6 +38,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupDeviceConnectors,
 		s.setupPersonalAgents,
 		s.setupNativeAccountHolds,
+		s.setupSessionWork,
 		s.dropRemovedWorkspaces,
 		s.setupResources,
 		s.setupResourceLeases,

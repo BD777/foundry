@@ -126,6 +126,7 @@ export async function runCodexStreamedTurn(
       abortController.abort();
     },
   });
+  let events: AsyncIterator<unknown> | undefined;
   try {
     const streamed = await thread.runStreamed(input, {
       signal: abortController.signal,
@@ -136,8 +137,7 @@ export async function runCodexStreamedTurn(
           "warning",
         ),
     });
-    const events = streamed.events[Symbol.asyncIterator]();
-    let turnCompleted = false;
+    events = streamed.events[Symbol.asyncIterator]();
     while (true) {
       let next: IteratorResult<unknown>;
       try {
@@ -152,7 +152,6 @@ export async function runCodexStreamedTurn(
       if (next.done) break;
       liveness.observe(next.value);
       if (await handleCodexEvent(state, next.value)) {
-        turnCompleted = true;
         abortController.abort();
         break;
       }
@@ -161,9 +160,6 @@ export async function runCodexStreamedTurn(
     if (canceled) {
       throw new AgentSessionCanceledError();
     }
-    if (turnCompleted && typeof events.return === "function") {
-      void events.return().catch(() => undefined);
-    }
   } catch (error) {
     if (canceled) throw new AgentSessionCanceledError();
     throw error;
@@ -171,6 +167,14 @@ export async function runCodexStreamedTurn(
     // The turn's process ends with it: one a failure left running would
     // write the thread alongside the next turn's.
     abortController.abort();
+    // A terminal native failure is handled outside the iterator. Abort may
+    // already be a no-op for that terminal turn; return still runs the
+    // producer's finally and releases its native thread writer.
+    try {
+      await events?.return?.();
+    } catch {
+      // Preserve the turn's original outcome when closing its producer fails.
+    }
     liveness.close();
     unregisterCancel();
     unregisterSteer();

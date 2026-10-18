@@ -18,6 +18,7 @@ import {
   reapLeftoverAgentProcesses,
 } from "../agent-processes.js";
 import { workerAppExecutable, workerLauncherPath } from "../mac-worker-app.js";
+import { isManagedNativeRuntimePath } from "../native-homes.js";
 import { executionHostPaths } from "./paths.js";
 
 export function executionServiceSupported(): boolean {
@@ -63,7 +64,17 @@ export function executionServiceEnvironment(
       "https_proxy",
       "all_proxy",
       "no_proxy",
-    ].flatMap((key) => (env[key] ? [[key, env[key]!]] : [])),
+    ].flatMap((key) => {
+      const val = env[key];
+      if (!val) return [];
+      if (
+        (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
+        isManagedNativeRuntimePath(val)
+      ) {
+        return [];
+      }
+      return [[key, val]];
+    }),
   );
 }
 

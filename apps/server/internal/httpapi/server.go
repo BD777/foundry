@@ -106,6 +106,8 @@ type Server struct {
 	feishuGateway *feishugateway.Gateway
 	loginLimiter  *loginLimiter
 	setupMu       sync.Mutex
+	// Work dispatch and control serialize so a completed stop cannot race a new fire.
+	workMu        sync.Mutex
 	workerUpdates workerUpdates
 	setupCode     string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
@@ -231,7 +233,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server})
+	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server})
 	issues.observe(feishuReactions{server.feishu})
 	server.observeWorkspaceDigests(sessions, issues)
 	server.observeDeviceSharing()

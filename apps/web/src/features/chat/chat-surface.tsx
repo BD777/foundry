@@ -1,3 +1,4 @@
+import { isCurrentWork } from "./chat-work-state";
 import { ChevronLeft, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -20,6 +21,7 @@ import {
 } from "./chat-thread-notices";
 import { useChatContextPanel } from "./use-chat-context-panel";
 import { useChatDocumentTitle } from "./use-chat-document-title";
+import { useSessionWork } from "./use-session-work";
 
 export type {
   ChatAgentOption,
@@ -62,6 +64,14 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const [draftResetKey, setDraftResetKey] = useState(0);
   const panel = useChatContextPanel(props);
   const { detail } = panel;
+  const work = useSessionWork(contextCard?.status?.sessionId);
+  const workNotice = work.list?.items.some(isCurrentWork) ? (
+    <Button variant="ghost" onClick={panel.toggle}>
+      {t("work.open", {
+        count: work.list.items.filter(isCurrentWork).length,
+      })}
+    </Button>
+  ) : undefined;
   useChatDocumentTitle(
     !threadKey.endsWith(":new") && typeof chatTitle === "string"
       ? chatTitle
@@ -143,17 +153,23 @@ export function ChatSurface(props: ChatSurfaceProps) {
             onImagePreview={setPreviewImage}
             notice={
               props.offlineDevice ? (
-                <ChatDeviceNote
-                  device={props.offlineDevice.label}
-                  onCancel={
-                    props.offlineDevice.waitingSessionId && props.onCancelActive
-                      ? () =>
-                          props.onCancelActive?.(
-                            props.offlineDevice?.waitingSessionId,
-                          )
-                      : undefined
-                  }
-                />
+                <>
+                  <ChatDeviceNote
+                    device={props.offlineDevice.label}
+                    onCancel={
+                      props.offlineDevice.waitingSessionId &&
+                      props.onCancelActive
+                        ? () =>
+                            props.onCancelActive?.(
+                              props.offlineDevice?.waitingSessionId,
+                            )
+                        : undefined
+                    }
+                  />
+                  {workNotice}
+                </>
+              ) : work.list ? (
+                workNotice
               ) : panel.backgroundNote || panel.schedule ? (
                 <ChatWorkNote
                   backgroundNote={panel.backgroundNote}
@@ -182,6 +198,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
               data-open={panel.open ? "true" : "false"}
             >
               <ChatContextCard
+                work={work}
+                canControl={!props.readOnlyReason && !props.threadNotice}
                 chatKey={threadKey}
                 data={contextCard}
                 onClearTurnFilter={panel.clearTurnFilter}

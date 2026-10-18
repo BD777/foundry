@@ -14,6 +14,7 @@ import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
 import { Button } from "../ui/button";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
+import { markdownPlugins, useMarkdownMermaid } from "./markdown-mermaid";
 import type {
   ConversationFileReference,
   ParsedImageTag,
@@ -319,6 +320,8 @@ function MarkdownText({
   streaming: boolean;
   typedText: boolean;
 }) {
+  const { t } = useTranslation("conversation");
+  const mermaid = useMarkdownMermaid();
   // Streaming mode splits the text into blocks so growing text re-renders only
   // its last block. Settled text is parsed once as a whole: cheaper to mount
   // whenever the transcript scrolls it back in, and references defined in a
@@ -329,10 +332,17 @@ function MarkdownText({
       className={markdownFlowClassName}
       components={components}
       isAnimating={streaming}
+      // Streamdown retains the last successful SVG. A changed settled source
+      // or theme needs a fresh renderer, including valid -> invalid edits.
+      key={streaming ? "streaming" : `${mermaid.config?.theme}:${children}`}
       mode={streaming ? "streaming" : "static"}
+      mermaid={mermaid}
       parseIncompleteMarkdown={streaming}
+      // Incomplete diagram syntax stays readable as code until the turn ends.
+      plugins={streaming ? undefined : markdownPlugins}
       rehypePlugins={markdownRehypePlugins}
       remarkPlugins={typedText ? typedTextRemarkPlugins : markdownRemarkPlugins}
+      translations={t("diagram.controls", { returnObjects: true })}
       skipHtml
     >
       {children}

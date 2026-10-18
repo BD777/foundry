@@ -541,6 +541,9 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/background-tasks/{taskId}/stop", s.handleStopBackgroundTask, workspaceRole(member, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/work", s.handleListSessionWork, workspaceRole(member, sessionWorkspace("id"))),
+		fn("POST /api/agent-sessions/{id}/work", s.handleCreateSessionWork, workspaceRole(member, sessionWorkspace("id"))),
+		fn("POST /api/agent-sessions/{id}/work/operations", s.handleControlSessionWork, workspaceRole(member, sessionWorkspace("id"))),
 
 		// Installing a worker reads these before it has any credential.
 		fn("GET /api/worker/release", s.handleWorkerRelease, publicRoute()),
@@ -552,6 +555,9 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/digests", s.handleDaemonChatDigests, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/timer-fires", s.handleDaemonTimerFire, daemonProtocol()),
+		fn("GET /api/daemon/session-work", s.handleDeviceWork, daemonProtocol()),
+		fn("POST /api/daemon/session-work", s.handleDeviceWork, daemonProtocol()),
+		fn("POST /api/daemon/sessions/{id}/work-fire", s.handleWorkFire, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/session-tokens", s.handleDaemonSessionToken, daemonProtocol()),
 		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),

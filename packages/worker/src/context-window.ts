@@ -16,6 +16,9 @@
  *   95% usable; auto-compact follows the window without
  *   `model_auto_compact_token_limit`. Checked the same way, from the
  *   rollout's `token_count` records.
+ *   Compatible runs therefore also load a managed startup model catalog
+ *   (agent-runtime/codex-model-catalog.ts); a thread config override alone
+ *   cannot raise the unknown-model maximum.
  */
 import { createHash } from "node:crypto";
 import {

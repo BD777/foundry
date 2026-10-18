@@ -18,6 +18,7 @@ import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
 import { ScrollArea } from "./scroll-area";
+import { FoundryThemeContext } from "./theme-context";
 
 export type FoundryViewScrollMode = "contained" | "page";
 export type FoundryThemeMode = "light" | "dark";
@@ -39,12 +40,14 @@ export function FoundryShell({
   ...props
 }: FoundryShellProps) {
   return (
-    <main
-      className={cn("fdy-foundry-shell", className)}
-      data-scroll-mode={scrollMode}
-      data-theme={theme}
-      {...props}
-    />
+    <FoundryThemeContext.Provider value={theme}>
+      <main
+        className={cn("fdy-foundry-shell", className)}
+        data-scroll-mode={scrollMode}
+        data-theme={theme}
+        {...props}
+      />
+    </FoundryThemeContext.Provider>
   );
 }
 

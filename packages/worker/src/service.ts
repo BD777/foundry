@@ -21,6 +21,7 @@ import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
 import { processIdentity } from "./agent-processes.js";
 import { daemonLockHolder } from "./device-pairing.js";
 import { optionEnabled } from "./utils.js";
+import { isManagedNativeRuntimePath } from "./native-homes.js";
 import {
   foundryStackSuffix,
   foundryStatePath,
@@ -106,7 +107,13 @@ export function serviceEnvironment(
   };
 
   for (const key of passthroughKeys) {
-    const value = process.env[key] || installed[key];
+    let value = process.env[key] || installed[key];
+    if (
+      (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
+      isManagedNativeRuntimePath(value)
+    ) {
+      value = undefined;
+    }
     if (value) {
       env[key] = value;
     }

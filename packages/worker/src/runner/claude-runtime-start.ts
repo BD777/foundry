@@ -18,6 +18,11 @@ import {
 } from "../session-state.js";
 import { sessionTimers } from "../session-timers.js";
 import {
+  managedWorkEnabled,
+  workContext,
+  sessionWork,
+} from "../session-work/supervisor.js";
+import {
   cleanupActiveClaudeRuntimes,
   closeActiveClaudeRuntime,
   closeOtherClaudeWriters,
@@ -139,6 +144,106 @@ function installClaudeRuntimeObservers(
     configured: configuredWindow(run.profile.contextWindow),
   });
   options.hooks = mergeClaudeHooks(
+    {
+      UserPromptSubmit: [
+        {
+          hooks: [
+            async () => ({
+              hookSpecificOutput: {
+                hookEventName: "UserPromptSubmit",
+                additionalContext: workContext(runtime.foundrySessionId),
+              },
+            }),
+          ],
+        },
+      ],
+      PreToolUse: [
+        {
+          hooks: [
+            async (input: unknown) => {
+              const tool = (input as { tool_name?: string }).tool_name;
+              if (tool === "Bash")
+                sessionWork().toolStarting(
+                  runtime.foundrySessionId,
+                  (input as { tool_use_id?: string }).tool_use_id || "",
+                );
+              if (
+                managedWorkEnabled() &&
+                [
+                  "CronCreate",
+                  "CronDelete",
+                  "CronList",
+                  "ScheduleWakeup",
+                ].includes(tool || "")
+              )
+                return {
+                  hookSpecificOutput: {
+                    hookEventName: "PreToolUse",
+                    permissionDecision: "deny",
+                    permissionDecisionReason:
+                      "Use Foundry create_scheduled_work so the user can inspect, pause and stop it.",
+                  },
+                };
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  additionalContext: workContext(runtime.foundrySessionId),
+                },
+              };
+            },
+          ],
+        },
+      ],
+      PostToolUse: [
+        {
+          hooks: [
+            async (input: unknown) => {
+              sessionWork().toolCompleted(
+                (input as { tool_use_id?: string }).tool_use_id || "",
+              );
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PostToolUse",
+                  additionalContext: workContext(runtime.foundrySessionId),
+                },
+              };
+            },
+          ],
+        },
+      ],
+      PostToolUseFailure: [
+        {
+          hooks: [
+            async (input: unknown) => {
+              sessionWork().toolCompleted(
+                (input as { tool_use_id?: string }).tool_use_id || "",
+              );
+              return undefined;
+            },
+          ],
+        },
+      ],
+      PostCompact: [
+        {
+          hooks: [
+            async () => {
+              if (managedWorkEnabled())
+                runtime.input.push({
+                  type: "user",
+                  message: {
+                    role: "user",
+                    content: workContext(runtime.foundrySessionId),
+                  },
+                  parent_tool_use_id: null,
+                  isSynthetic: true,
+                  shouldQuery: false,
+                });
+              return undefined;
+            },
+          ],
+        },
+      ],
+    },
     runtime.timers.hooks(),
     runtime.background.hooks(),
     // A write belongs to the turn the stream answers, else to the work

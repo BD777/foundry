@@ -8,11 +8,13 @@ register("./bundler-resolve.mjs", import.meta.url);
 
 async function renderMarkdown(props, text, inspect) {
   const window = new Window();
+  let root;
   const previous = new Map();
   const globals = {
     window,
     document: window.document,
     navigator: window.navigator,
+    IntersectionObserver: window.IntersectionObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   };
   for (const key of ["Node", "Element", "HTMLElement", "Event", "MouseEvent"])
@@ -30,21 +32,68 @@ async function renderMarkdown(props, text, inspect) {
       await import("../src/components/conversation/markdown-content.tsx");
     const container = document.createElement("div");
     document.body.append(container);
-    const root = createRoot(container);
+    root = createRoot(container);
     await act(async () =>
       root.render(createElement(MarkdownContent, props, text)),
     );
     const html = container.innerHTML;
-    await inspect?.(container);
-    await act(async () => root.unmount());
+    await inspect?.(container, async (nextProps, nextText = text) => {
+      await act(async () =>
+        root.render(createElement(MarkdownContent, nextProps, nextText)),
+      );
+    });
     return html;
   } finally {
+    if (root) await act(async () => root.unmount());
     for (const [key, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     await window.happyDOM.close();
   }
 }
+
+test("Mermaid fences render diagrams after streaming ends; ordinary code stays code", async () => {
+  const source = 'flowchart TD\n  A["开始"] --> B["完成<br/>Done"]';
+  const markdown = `\`\`\`mermaid\n${source}\n\`\`\``;
+  await renderMarkdown(
+    { streaming: true },
+    markdown,
+    async (container, update) => {
+      assert.equal(
+        container.querySelector('[data-streamdown="mermaid-block"]'),
+        null,
+      );
+      assert.match(container.textContent, /flowchart TD/);
+
+      await update({ streaming: false });
+      // Streamdown lazy-loads its diagram UI through Suspense. Wait for that
+      // observable result, including under concurrent test/build CPU load.
+      const deadline = Date.now() + 5000;
+      while (
+        !container.querySelector('[data-streamdown="mermaid-block"]') &&
+        Date.now() < deadline
+      ) {
+        await act(
+          async () => new Promise((resolve) => setTimeout(resolve, 20)),
+        );
+      }
+      assert.ok(container.querySelector('[data-streamdown="mermaid-block"]'));
+      assert.ok(
+        container.querySelector('button[aria-label="View fullscreen"]'),
+      );
+      assert.ok(
+        container.querySelector('button[aria-label="Download diagram"]'),
+      );
+
+      await update({}, '```js\nconst chart = "flowchart TD";\n```');
+      assert.equal(
+        container.querySelector('[data-streamdown="mermaid-block"]'),
+        null,
+      );
+      assert.match(container.textContent, /const chart/);
+    },
+  );
+});
 
 test("a person's message keeps its line breaks and literal list markers", async () => {
   const html = await renderMarkdown(

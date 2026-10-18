@@ -9,6 +9,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import type { AgentProfileLocalConfig } from "./profiles.js";
 import { isPromptOnlySession, isUtilitySession } from "./session-roles.js";
+import { workContext } from "./session-work/supervisor.js";
 
 /**
  * The input this dispatch runs. Sessions built inside the worker (Issue
@@ -29,6 +30,7 @@ export function sessionPrompt(
     ? input.importedContext?.trim()
     : "";
   const prompt = [
+    !isUtilitySession(session) ? workContext(session.id) : "",
     importedContext
       ? `Context imported from the same Foundry chat before this turn:\n\n${importedContext}`
       : "",

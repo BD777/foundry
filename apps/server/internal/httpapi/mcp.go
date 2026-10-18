@@ -281,7 +281,11 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"get_session": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.sessionDigestForMCP(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"))
 	}),
-	"read_context": mcpTextTool((*Server).readContextForMCP),
+	"read_context":          mcpTextTool((*Server).readContextForMCP),
+	"list_session_work":     mcpTextTool((*Server).listWorkForMCP),
+	"get_session_work":      mcpTextTool((*Server).listWorkForMCP),
+	"control_session_work":  mcpTextTool((*Server).controlWorkForMCP),
+	"create_scheduled_work": mcpTextTool((*Server).createWorkForMCP),
 	"list_issues": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.listIssuesForMCP(call.r.Context(), call.actor, call.workspace, mcpArgList(call.args, "status"))
 	}),

@@ -14,6 +14,8 @@ import { SessionFileSections } from "./chat-context-files";
 import { useFoldOpen } from "./chat-context-folds";
 import { SubagentSection } from "./chat-context-subagents";
 import { TimerRow } from "./chat-context-timers";
+import { SessionWorkSection } from "./chat-context-work";
+import type { SessionWorkController } from "./use-session-work";
 import type {
   ChatContextCardData,
   ChatContextSelection,
@@ -105,6 +107,8 @@ function StartedBySection({
 }
 
 export const ChatContextCard = memo(function ChatContextCard({
+  work,
+  canControl = false,
   chatKey,
   data,
   onClearTurnFilter,
@@ -115,6 +119,8 @@ export const ChatContextCard = memo(function ChatContextCard({
   selectedId,
   turnFilter,
 }: {
+  work?: SessionWorkController;
+  canControl?: boolean;
   /** The open chat: which sections it unfolded is remembered by this key. */
   chatKey?: string;
   data: ChatContextCardData;
@@ -160,6 +166,26 @@ export const ChatContextCard = memo(function ChatContextCard({
 
       {data.startedBy ? <StartedBySection link={data.startedBy} /> : null}
 
+      {work && (work.list || work.error) ? (
+        <SessionWorkSection
+          controller={work}
+          canControl={canControl}
+          onInspect={(item) => {
+            const source = [
+              ...data.background,
+              ...data.subagents,
+              ...data.timers,
+            ].find(
+              (row) =>
+                row.sessionId === item.sessionId &&
+                (row.kind === "subagent" ? row.taskId : row.task.id) ===
+                  item.sourceId,
+            );
+            return source && onSelect ? () => onSelect(source) : undefined;
+          }}
+        />
+      ) : null}
+
       <SessionFileSections
         data={data}
         onClearTurnFilter={onClearTurnFilter}
@@ -185,7 +211,7 @@ export const ChatContextCard = memo(function ChatContextCard({
         </section>
       ) : null}
 
-      {data.background.length > 0 ? (
+      {!work?.list && data.background.length > 0 ? (
         <BackgroundSection
           chatKey={chatKey}
           items={data.background}
@@ -195,7 +221,7 @@ export const ChatContextCard = memo(function ChatContextCard({
         />
       ) : null}
 
-      {data.timers.length > 0 ? (
+      {!work?.list && data.timers.length > 0 ? (
         <section className="fdy-chat-context-section">
           <h3>{t("contextCard.timers")}</h3>
           <div className="fdy-chat-context-list">
@@ -211,7 +237,7 @@ export const ChatContextCard = memo(function ChatContextCard({
         </section>
       ) : null}
 
-      {data.subagents.length > 0 ? (
+      {!work?.list && data.subagents.length > 0 ? (
         <SubagentSection
           chatKey={chatKey}
           items={data.subagents}

@@ -121,6 +121,7 @@ export const workerModules = {
       "agent-runtime/adapters",
       "agent-runtime/claude-sdk",
       "agent-runtime/codex-client",
+      "agent-runtime/codex-model-catalog",
       "agent-runtime/codex-auth",
       "runtime-isolation",
       "agent-runtime/control-error",
@@ -190,8 +191,19 @@ export const workerModules = {
     dependsOn: ["platform", "resources"],
     files: ["resource-pool"],
   },
+  "session-work": {
+    dependsOn: ["transport"],
+    files: [
+      "session-work/supervisor",
+      "session-work/processes",
+      "session-work/host-schedules",
+      "session-work/native-schedules",
+      "session-work/detached-processes",
+    ],
+  },
   "session-runtime": {
     dependsOn: [
+      "session-work",
       "resource-pool",
       "sandbox",
       "harness-profiles",
@@ -328,6 +340,7 @@ export const workerModules = {
       "daemon/workspace-roster",
       "daemon/session-execution",
       "daemon/session-run",
+      "session-work/runtime",
       "daemon/issue-run",
       "execution-host/paths",
       "execution-host/service",
@@ -389,6 +402,7 @@ export const serverPackages = {
   connectors: ["store", "integrations", "externalaccounts"],
   resources: ["store"],
   personalagent: ["store"],
+  sessionwork: ["store"],
   workspacedigest: ["store", "personalagent", "redact"],
   feishugateway: ["store", "integrations", "externalaccounts"],
   feishuevents: ["store", "integrations", "externalaccounts", "feishugateway"],

@@ -32,6 +32,7 @@ func agentRouteAllowed(method string, path string) bool {
 	case method == http.MethodGet && strings.HasPrefix(path, "/api/agent-sessions/"):
 		rest := strings.TrimPrefix(path, "/api/agent-sessions/")
 		return rest != "" && !strings.Contains(rest, "/") ||
+			strings.HasSuffix(rest, "/work") ||
 			strings.HasSuffix(rest, "/subagents") ||
 			strings.Contains(rest, "/subagents/")
 	case method == http.MethodGet && strings.HasPrefix(path, "/api/agent-session-threads/"):

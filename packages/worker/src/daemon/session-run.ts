@@ -5,6 +5,8 @@ import type { SessionAmbientEnv } from "../session-ambient.js";
 import { keepPersonalAgentInstructions } from "../session-policy.js";
 import type { ReliableSessionTransport } from "../transport.js";
 import { executeAgentSession, sessionExecution } from "./session-execution.js";
+import { sessionWork } from "../session-work/supervisor.js";
+import { trackScheduledWork } from "../session-work/runtime.js";
 /** One agent turn of the session. */
 export async function runAgentSession(
   serverURL: string,
@@ -12,6 +14,11 @@ export async function runAgentSession(
   transport: ReliableSessionTransport,
   payload: RunSessionPayload,
 ): Promise<void> {
+  sessionWork().attach(payload.session, workspacePath);
+  const untrackWork = trackScheduledWork(
+    payload.session.id,
+    payload.session.input?.timerFire?.id,
+  );
   const ambient: SessionAmbientEnv = {
     serverURL: serverURL,
     sessionToken: payload.sessionToken ?? "",
@@ -59,6 +66,7 @@ export async function runAgentSession(
       clarification?.settle,
     );
   } finally {
+    untrackWork();
     accounts?.release();
   }
 }

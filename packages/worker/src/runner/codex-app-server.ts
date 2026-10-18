@@ -1,5 +1,7 @@
 import { authenticateIsolatedCodex } from "../agent-runtime/codex-auth.js";
 import { acquireRuntime } from "../agent-runtime/maintenance.js";
+import { codexModelCatalogArguments } from "../agent-runtime/codex-model-catalog.js";
+import { sessionWork, workContext } from "../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
 import { CodexAppServer } from "../agent-runtime/codex-client.js";
 import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
@@ -51,6 +53,7 @@ export function appServerInput(input: unknown): unknown[] {
 /** A thread handle keeps identity between turns; each turn has one native owner. */
 export class CodexAppServerThread implements CodexSDKThread {
   id?: string;
+  private starting = false;
   private active?: {
     client: CodexAppServer;
     turnId: string;
@@ -86,23 +89,42 @@ export class CodexAppServerThread implements CodexSDKThread {
     input: unknown,
     options?: Record<string, unknown>,
   ): Promise<{ events: AsyncIterable<unknown> }> {
-    if (this.active)
+    if (this.active || this.starting)
       throw new Error("A Codex turn is already running on this thread.");
-    const releaseRuntime = await acquireRuntime(
-      "codex",
-      options?.signal as AbortSignal | undefined,
-    );
+    this.starting = true;
+    let releaseRuntime = () => {};
     let client: CodexAppServer;
     try {
+      releaseRuntime = await acquireRuntime(
+        "codex",
+        options?.signal as AbortSignal | undefined,
+      );
+      if (
+        this.options.contextWindow &&
+        this.options.contextWindow.model !== this.options.model
+      )
+        throw new Error(
+          "Codex context window does not match the selected model.",
+        );
+      const catalogArgs = await codexModelCatalogArguments(
+        this.command,
+        this.env,
+        this.options.workingDirectory,
+        this.options.contextWindow,
+        options?.signal as AbortSignal | undefined,
+      );
       client = new CodexAppServer(
         this.command,
         this.env,
         this.options.workingDirectory,
         this.options.rpcTimeouts,
+        catalogArgs,
       );
     } catch (error) {
       releaseRuntime();
       throw error;
+    } finally {
+      this.starting = false;
     }
     const active = { client, turnId: "", terminal: false };
     this.active = active;
@@ -119,6 +141,7 @@ export class CodexAppServerThread implements CodexSDKThread {
     let failure: Error | undefined;
     let usage: any;
     const items = new Map<string, any>();
+    let lastCompactRefresh = 0;
     const signal = options?.signal as AbortSignal | undefined;
     const abort = () => {
       if (active.terminal) return;
@@ -145,6 +168,33 @@ export class CodexAppServerThread implements CodexSDKThread {
       if (method === "turn/started") active.turnId = params.turn.id;
       if (params.turnId && active.turnId && params.turnId !== active.turnId)
         return;
+      if (
+        method === "thread/compacted" ||
+        (method === "item/completed" &&
+          params.item?.type === "contextCompaction")
+      ) {
+        if (Date.now() - lastCompactRefresh < 1000) return;
+        lastCompactRefresh = Date.now();
+        const context = workContext(this.env.FOUNDRY_SESSION_ID || "");
+        if (context && active.turnId)
+          void client
+            .request("turn/steer", {
+              threadId: this.id,
+              expectedTurnId: active.turnId,
+              input: appServerInput(context),
+            })
+            .catch((error) => {
+              // Refusal is visible; per-turn sessionPrompt remains the fallback.
+              queue.push({
+                type: "item.completed",
+                item: {
+                  id: "work_context_recovery",
+                  type: "error",
+                  message: `Persistent work context refresh failed: ${String(error)}`,
+                },
+              });
+            });
+      }
       if (method === "thread/tokenUsage/updated") {
         const last = params.tokenUsage?.last;
         if (last)
@@ -155,6 +205,14 @@ export class CodexAppServerThread implements CodexSDKThread {
           };
       }
       if (method === "item/started" || method === "item/completed") {
+        if (params.item.type === "commandExecution") {
+          if (method === "item/started")
+            sessionWork().toolStarting(
+              this.env.FOUNDRY_SESSION_ID || "",
+              params.item.id,
+            );
+          else sessionWork().toolCompleted(params.item.id);
+        }
         // Foundry already records the person's input. Native echoes include
         // injected execution instructions and are not a second UI message.
         if (params.item.type === "userMessage") return;

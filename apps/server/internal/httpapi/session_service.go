@@ -64,6 +64,22 @@ func (s *Server) createAndDispatch(ctx context.Context, input store.CreateAgentS
 // session and before its device hears of it; a failure fails the session
 // with its error.
 func (s *Server) createAndDispatchWith(ctx context.Context, input store.CreateAgentSessionInput, reconcile bool, beforeDispatch func(context.Context) error) (store.AgentSession, error) {
+	if input.ParentSessionID != "" && ctx.Value(workDispatchContextKey{}) != true {
+		s.workMu.Lock()
+		defer s.workMu.Unlock()
+		if backing, ok := s.store.(store.WorkStore); ok {
+			parent, err := s.store.GetAgentSessionSummary(ctx, input.ParentSessionID)
+			if err == nil {
+				list, err := backing.ListSessionWork(ctx, parent.ID, "")
+				if err != nil {
+					return store.AgentSession{}, err
+				}
+				if list.Barrier {
+					return store.AgentSession{}, &statusError{http.StatusConflict, errors.New("automatic work is stopped for this conversation")}
+				}
+			}
+		}
+	}
 	if reconcile && input.WorkspaceID != "" {
 		if sessions, err := s.store.ListAgentSessionSummaries(ctx, input.WorkspaceID); err == nil {
 			s.reconcileAgentSessions(ctx, sessions)

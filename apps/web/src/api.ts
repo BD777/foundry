@@ -23,5 +23,6 @@ export * from "./api/personal-agent";
 export * from "./api/profiles";
 export * from "./api/resources";
 export * from "./api/sessions";
+export * from "./api/session-work";
 export * from "./api/skills";
 export * from "./api/workspaces";

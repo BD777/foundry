@@ -322,6 +322,7 @@ test("a changed Codex window starts a handle with the new config while retaining
   };
   try {
     const first = await openCodexThread(input);
+    assert.equal(first.thread.options.contextWindow.tokens, 400000);
     const next = await openCodexThread({
       ...input,
       profile: {
@@ -332,6 +333,12 @@ test("a changed Codex window starts a handle with the new config while retaining
     assert.notEqual(first.thread, next.thread);
     assert.equal(next.thread.id, "native-window");
     assert.equal(next.thread.config.model_context_window, 872000);
+    assert.equal(next.thread.options.contextWindow.tokens, 872000);
+    const official = await openCodexThread({
+      ...input,
+      profile: { ...profile, connectionType: "local_login" },
+    });
+    assert.equal(official.thread.options.contextWindow, undefined);
     const changedAccount = await openCodexThread({
       ...input,
       env: { CODEX_HOME: join(tmpdir(), "other-account") },

@@ -75,6 +75,8 @@ const (
 	ownerIssue
 	ownerRun
 	ownerSession
+	ownerThread
+	ownerWork
 )
 
 // ofWorkspace is the SQL set of the owner ids that belong to the workspace
@@ -87,6 +89,10 @@ func (kind ownerKind) ofWorkspace() string {
 		return `SELECT id FROM runs WHERE workspace_id = ?1 OR issue_id IN (SELECT id FROM issues WHERE workspace_id = ?1)`
 	case ownerSession:
 		return `SELECT id FROM agent_sessions WHERE workspace_id = ?1`
+	case ownerThread:
+		return `SELECT thread_id FROM agent_sessions WHERE workspace_id = ?1`
+	case ownerWork:
+		return `SELECT id FROM session_work WHERE session_id IN (SELECT id FROM agent_sessions WHERE workspace_id = ?1)`
 	default:
 		return `SELECT ?1`
 	}
@@ -101,6 +107,10 @@ func (kind ownerKind) existing() string {
 		return `SELECT id FROM runs`
 	case ownerSession:
 		return `SELECT id FROM agent_sessions`
+	case ownerThread:
+		return `SELECT thread_id FROM agent_sessions`
+	case ownerWork:
+		return `SELECT id FROM session_work`
 	default:
 		return `SELECT id FROM workspaces`
 	}
@@ -131,6 +141,13 @@ const (
 // not: it outlives the workspace on purpose.
 var workspaceOwnedRows = []ownedRows{
 	{"run_events", "run_id", ownerRun},
+	// Runs follow their work item; controls and barriers follow the native or
+	// Foundry thread, whose id need not be an agent_sessions primary key.
+	// Device-wide discovery coverage survives deleting any one workspace.
+	{"session_work_runs", "work_id", ownerWork},
+	{"session_work", "session_id", ownerSession},
+	{"session_work_operations", "thread_id", ownerThread},
+	{"session_work_scopes", "thread_id", ownerThread},
 	{"agent_session_events", "session_id", ownerSession},
 	{"agent_session_native_ids", "session_id", ownerSession},
 	{"agent_session_usage_backfills", "session_id", ownerSession},

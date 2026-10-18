@@ -137,7 +137,7 @@ async function runCodexTurn(
       eventsPath,
       thread,
       context: new CodexContextFollower(
-        [codexHome(env)],
+        [env.CODEX_HOME?.trim() || codexHome(env)],
         configuredWindow(profile.contextWindow),
       ),
       nativeSessionId:

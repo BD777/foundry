@@ -136,6 +136,69 @@ func TestEveryTableNamingAnOwnerIsOwned(t *testing.T) {
 	}
 }
 
+func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
+	for _, mode := range []string{"delete", "reopen"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			path := t.TempDir() + "/foundry.db"
+			db := openTestStore(t, path)
+			if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+				t.Fatal(err)
+			}
+			registerOtherWorkspace(t, db)
+			for _, suffix := range []string{"home", "other"} {
+				// Native thread ids need not name a session primary key.
+				execAll(t, db,
+					`INSERT INTO agent_sessions (id, thread_id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+					 VALUES ('sess_`+suffix+`', 'native_`+suffix+`', 'ws_`+suffix+`', 'agent_home', 'dev_home', 'codex', 'completed', '{}', '', '')`,
+					`INSERT INTO session_work (id, thread_id, session_id, device_id, payload_json)
+					 VALUES ('work_`+suffix+`', 'native_`+suffix+`', 'sess_`+suffix+`', 'dev_home', '{}')`,
+					`INSERT INTO session_work_runs (id, work_id, payload_json) VALUES ('run_`+suffix+`', 'work_`+suffix+`', '{}')`,
+					`INSERT INTO session_work_operations (id, thread_id, request_json, payload_json) VALUES ('op_`+suffix+`', 'native_`+suffix+`', '{}', '{}')`,
+					`INSERT INTO session_work_scopes (thread_id, stopped) VALUES ('native_`+suffix+`', 1)`,
+				)
+			}
+			execAll(t, db, `INSERT INTO session_work_coverage (device_id, payload_json) VALUES ('dev_home', '{}')`)
+			if mode == "delete" {
+				if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {
+					t.Fatal(err)
+				}
+				for _, table := range []string{"session_work", "session_work_runs", "session_work_operations", "session_work_scopes"} {
+					if got := countRows(t, db, `SELECT count(*) FROM `+table); got != 1 {
+						t.Errorf("deleting the workspace left %d rows in %s before restart", got, table)
+					}
+				}
+			} else {
+				// Simulate a deletion by an older server that left owned rows.
+				execAll(t, db, `DELETE FROM workspaces WHERE id = 'ws_home'`)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			db = openTestStore(t, path)
+			defer db.Close()
+			for table, key := range map[string]string{
+				"session_work": "id", "session_work_runs": "work_id",
+				"session_work_operations": "thread_id", "session_work_scopes": "thread_id",
+			} {
+				kept := "native_other"
+				if key == "id" || key == "work_id" {
+					kept = "work_other"
+				}
+				if got := countRows(t, db, `SELECT count(*) FROM `+table); got != 1 {
+					t.Errorf("%s has %d rows, want only the other workspace's row", table, got)
+				}
+				if got := countRows(t, db, `SELECT count(*) FROM `+table+` WHERE `+key+` = ?`, kept); got != 1 {
+					t.Errorf("%s lost the other workspace's row", table)
+				}
+			}
+			if got := countRows(t, db, `SELECT count(*) FROM session_work_coverage`); got != 1 {
+				t.Fatal("deleting a workspace removed device-wide discovery coverage")
+			}
+		})
+	}
+}
+
 // Deleting a workspace deletes every row it owns, directly or through its
 // issues, runs and sessions. Before it did, the contract of the deleted
 // workspace's issue iss_106 stayed behind, the next issue was numbered 106

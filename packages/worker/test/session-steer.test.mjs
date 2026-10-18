@@ -293,3 +293,45 @@ test("Codex active steer carries sender identity and preserves image input and t
     await running;
   }
 });
+
+test("Codex terminal failure closes its producer and releases its writer before returning", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  for (const cleanupFails of [false, true]) {
+    let writerHeld = true;
+    const thread = {
+      runStreamed: async () => ({
+        events: (async function* () {
+          try {
+            yield {
+              type: "turn.failed",
+              error: { message: "native upstream failed" },
+            };
+          } finally {
+            writerHeld = false;
+            if (cleanupFails) throw new Error("cleanup failed");
+          }
+        })(),
+      }),
+    };
+    await assert.rejects(
+      runCodexStreamedTurn(
+        {
+          emit: async () => {},
+          eventsPath: join(root, `failed-${cleanupFails}.jsonl`),
+          nativeSessionId: "",
+          files: { recordToolWrite: async () => {} },
+        },
+        thread,
+        "test",
+        `sess_${randomUUID()}`,
+      ),
+      /native upstream failed/,
+    );
+    assert.equal(
+      writerHeld,
+      false,
+      "failed turn left its native writer behind",
+    );
+  }
+});

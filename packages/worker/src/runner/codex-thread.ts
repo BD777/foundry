@@ -56,6 +56,12 @@ export async function openCodexThread(
     model: session.model?.trim() || profile.model?.trim() || undefined,
     modelReasoningEffort: codexReasoningEffort(session, profile),
     modelSpeed: codexSpeed(session, profile),
+    // Only compatible endpoints own their model metadata. Official logins
+    // retain the native account's catalog and supported model capabilities.
+    contextWindow:
+      profile.connectionType === "openai_compatible"
+        ? profile.contextWindow
+        : undefined,
     sandboxMode: codexSandboxMode(session, profile),
     skipGitRepoCheck: true,
     workingDirectory: workspacePath,

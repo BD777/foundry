@@ -6,6 +6,7 @@ import {
   type SessionFileReference,
 } from "@bd777/foundry-protocol";
 import { timerFireEvent } from "../agent-timers.js";
+import { sessionWork } from "../session-work/supervisor.js";
 import { redactSecrets } from "../secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
@@ -98,6 +99,13 @@ export function emitForClaudeRuntime(
     metadata?: AgentSessionEventMetadata;
   },
 ): void {
+  if (event.metadata?.backgroundTaskSnapshot)
+    sessionWork().observeBackground(
+      runtime.foundrySessionId,
+      event.metadata.backgroundTaskSnapshot,
+    );
+  if (event.metadata?.taskId)
+    sessionWork().observeAgent(runtime.foundrySessionId, event);
   const turn = runtime.pending;
   if (event.metadata?.nativeAccountError)
     event.metadata = {

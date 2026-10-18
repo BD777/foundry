@@ -33,6 +33,23 @@ test("a reinstall keeps settings given to the installed service", () => {
   }
 });
 
+test("a reinstall never captures an isolated native runtime directory into the service environment", () => {
+  const saved = process.env.CODEX_HOME;
+  try {
+    process.env.CODEX_HOME =
+      "/home/me/.foundry/native-runtime/codex/abcd1234efgh";
+    const env = serviceEnvironment({
+      CODEX_HOME: "/home/me/.foundry/native-runtime/codex/old1234",
+      CLAUDE_CONFIG_DIR: "/home/me/.foundry/native-runtime/claude/old5678",
+    });
+    assert.equal(env.CODEX_HOME, undefined);
+    assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
+  } finally {
+    if (saved === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = saved;
+  }
+});
+
 test("systemd environment lines round-trip values with spaces, quotes and %", () => {
   const env = {
     PATH: "/home/me/.local/bin:/usr/bin",
@@ -72,4 +89,14 @@ test("execution service keeps native homes but never captures session credential
   assert.match(plist, /a &amp; b/);
   assert.ok(!plist.includes("private-session"));
   assert.match(plist, /<key>AbandonProcessGroup<\/key><false\/>/);
+});
+
+test("execution service drops isolated native runtime paths", () => {
+  const env = executionServiceEnvironment({
+    HOME: "/Users/me",
+    CODEX_HOME: "/Users/me/.foundry/native-runtime/codex/abcd1234",
+    CLAUDE_CONFIG_DIR: "/Users/me/.foundry/native-runtime/claude/efgh5678",
+  });
+  assert.equal(env.CODEX_HOME, undefined);
+  assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
 });

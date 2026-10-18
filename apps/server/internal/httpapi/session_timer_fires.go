@@ -58,6 +58,19 @@ func (s *Server) handleDaemonTimerFire(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nativeSessionID := strings.TrimSpace(fire.NativeSessionID)
+	if backing, ok := s.store.(store.WorkStore); ok {
+		list, readErr := backing.ListSessionWork(ctx, session.ID, "")
+		if readErr != nil {
+			writeError(w, http.StatusInternalServerError, readErr.Error())
+			return
+		}
+		for _, item := range list.Items {
+			if item.Source == "claude" && item.SourceID == fire.TimerID && item.DesiredState != "enabled" {
+				writeError(w, http.StatusGone, "scheduled work is paused or stopped")
+				return
+			}
+		}
+	}
 	if session.Provider != "claude" || session.Role != "" ||
 		(nativeSessionID != "" && session.NativeSessionID != "" && session.NativeSessionID != nativeSessionID) {
 		// The session runs elsewhere now; resuming it would not bring the

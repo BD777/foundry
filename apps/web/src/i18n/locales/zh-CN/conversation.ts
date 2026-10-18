@@ -2,6 +2,26 @@ import type { conversation as en } from "../en/conversation";
 import type { Translation } from "../../translation";
 
 export const conversation: Translation<typeof en> = {
+  diagram: {
+    error: "图表暂时无法渲染，以下是原始代码。",
+    retry: "重试渲染",
+    controls: {
+      copyCode: "复制源码",
+      copied: "已复制",
+      downloadDiagram: "下载图表",
+      downloadDiagramAsMmd: "下载 Mermaid 源码",
+      downloadDiagramAsPng: "下载 PNG",
+      downloadDiagramAsSvg: "下载 SVG",
+      mermaidFormatMmd: "Mermaid 源码",
+      mermaidFormatPng: "PNG",
+      mermaidFormatSvg: "SVG",
+      viewFullscreen: "全屏查看",
+      exitFullscreen: "退出全屏",
+      zoomIn: "放大",
+      zoomOut: "缩小",
+      resetView: "重置视图",
+    },
+  },
   /** Labels the worker records on events and process rows, by protocol key. */
   processLabels: {
     sessionFailed: "执行失败",

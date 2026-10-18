@@ -47,6 +47,13 @@ import { FileSessionOutbox } from "../session-outbox-store.js";
 import { ReliableSessionTransport } from "../transport.js";
 import { writePrivateJSONAtomic } from "../storage.js";
 import { startSessionTimers, sessionTimers } from "../session-timers.js";
+import { startSessionWork } from "../session-work/runtime.js";
+import { ownPackage } from "../worker-identity.js";
+import {
+  managedWorkEnabled,
+  sessionWork,
+  sessionWorkBusy,
+} from "../session-work/supervisor.js";
 import { executionHostPaths } from "./paths.js";
 import { prepareExecutionSocket, runtimeStamp } from "./service.js";
 
@@ -118,7 +125,8 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   persistClaims();
   reapConnectorLeftovers(console.error);
   clearClaudeSettingsFiles();
-  startSessionTimers(serverURL);
+  startSessionTimers(serverURL, false);
+  await startSessionWork(serverURL, ownPackage().version);
   startIdleRuntimeSweeps();
   onIssueEnvironmentChange((change) =>
     transport.send(daemonMessageTypes.issueEnvironmentChanged, change),
@@ -140,19 +148,21 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     operations > 0 ||
     scheduled > 0 ||
     sessionTimers.isTicking() ||
+    sessionWorkBusy() ||
     Object.values(claims).some((claim) => claim.status === "active") ||
     [...activeClaudeRuntimes.values()].some(claudeRuntimeIsBusy);
   const cancelUpgrade = () => {
     if (!draining) return;
     draining = false;
+    sessionWork().setDraining(false);
     clearTimeout(drainTimer);
-    sessionTimers.start();
+    if (!managedWorkEnabled()) sessionTimers.start();
   };
   const write = (socket: Socket, value: unknown) =>
     socket.write(`${JSON.stringify(value)}\n`);
   const snapshot = () => ({
     protocol: 1,
-    capabilities: ["idle_upgrade"],
+    capabilities: ["idle_upgrade", "session_work"],
     entry,
     runtimeStamp: stamp,
     busy: busy(),
@@ -244,6 +254,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
             const ready = !busy();
             if (ready) {
               draining = true;
+              sessionWork().setDraining(true);
               sessionTimers.stop();
               closeAllActiveRuntimes();
               clearTimeout(drainTimer);

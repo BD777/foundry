@@ -223,30 +223,32 @@ type inspectCounts struct {
 
 // sessionDigest is a session's current state in a few hundred bytes.
 type sessionDigest struct {
-	ID              string           `json:"id"`
-	Kind            string           `json:"kind"`
-	Title           string           `json:"title"`
-	Status          string           `json:"status"`
-	Error           string           `json:"error,omitempty"`
-	Runtime         string           `json:"runtime,omitempty"`
-	Profile         string           `json:"profile,omitempty"`
-	Model           string           `json:"model,omitempty"`
-	Device          *inspectPlace    `json:"device,omitempty"`
-	Workspace       *inspectPlace    `json:"workspace,omitempty"`
-	Source          string           `json:"source,omitempty"`
-	Role            string           `json:"role,omitempty"`
-	IssueID         string           `json:"issueId,omitempty"`
-	ParentSessionID string           `json:"parentSessionId,omitempty"`
-	Group           *inspectPlace    `json:"group,omitempty"`
-	NativeSessionID string           `json:"nativeSessionId,omitempty"`
-	CreatedAt       string           `json:"createdAt,omitempty"`
-	StartedAt       string           `json:"startedAt,omitempty"`
-	CompletedAt     string           `json:"completedAt,omitempty"`
-	LastActivityAt  string           `json:"lastActivityAt,omitempty"`
-	LastInput       string           `json:"lastInput,omitempty"`
-	Events          inspectCounts    `json:"events"`
-	LastAnswer      string           `json:"lastAnswer,omitempty"`
-	LastError       *inspectEventRef `json:"lastError,omitempty"`
+	WorkItemsOmitted int                    `json:"workItemsOmitted,omitempty"`
+	Work             *store.SessionWorkList `json:"work,omitempty"`
+	ID               string                 `json:"id"`
+	Kind             string                 `json:"kind"`
+	Title            string                 `json:"title"`
+	Status           string                 `json:"status"`
+	Error            string                 `json:"error,omitempty"`
+	Runtime          string                 `json:"runtime,omitempty"`
+	Profile          string                 `json:"profile,omitempty"`
+	Model            string                 `json:"model,omitempty"`
+	Device           *inspectPlace          `json:"device,omitempty"`
+	Workspace        *inspectPlace          `json:"workspace,omitempty"`
+	Source           string                 `json:"source,omitempty"`
+	Role             string                 `json:"role,omitempty"`
+	IssueID          string                 `json:"issueId,omitempty"`
+	ParentSessionID  string                 `json:"parentSessionId,omitempty"`
+	Group            *inspectPlace          `json:"group,omitempty"`
+	NativeSessionID  string                 `json:"nativeSessionId,omitempty"`
+	CreatedAt        string                 `json:"createdAt,omitempty"`
+	StartedAt        string                 `json:"startedAt,omitempty"`
+	CompletedAt      string                 `json:"completedAt,omitempty"`
+	LastActivityAt   string                 `json:"lastActivityAt,omitempty"`
+	LastInput        string                 `json:"lastInput,omitempty"`
+	Events           inspectCounts          `json:"events"`
+	LastAnswer       string                 `json:"lastAnswer,omitempty"`
+	LastError        *inspectEventRef       `json:"lastError,omitempty"`
 	// OpenBackgroundTasks were started in the latest turn and not reported
 	// finished: what a turn that never ended may have been waiting on.
 	OpenBackgroundTasks []inspectTask `json:"openBackgroundTasks,omitempty"`
@@ -319,6 +321,21 @@ func (s *Server) describeSession(ctx context.Context, digest *sessionDigest, ses
 	}
 	digest.CreatedAt, _ = s.store.AgentSessionCreatedAt(ctx, session.ID)
 	digest.OpenBackgroundTasks = openBackgroundTasks(session.Events, parseInspectTime(session.StartedAt))
+	if work, err := s.sessionWorkList(ctx, session); err == nil {
+		if s.canControlSession(ctx, actorFromContext(ctx), session) {
+			if len(work.Items) > 24 {
+				digest.WorkItemsOmitted = len(work.Items) - 24
+				work.Items = work.Items[:24]
+			}
+			work.Operations = nil
+			for i := range work.Items {
+				work.Items[i].Spec.Prompt = ""
+				work.Items[i].Spec.Argv = nil
+				work.Items[i].Spec.Cwd = ""
+			}
+			digest.Work = &work
+		}
+	}
 	if layout, err := s.store.GetChatLayout(ctx, session.WorkspaceID); err == nil {
 		digest.Group = layoutGroup(layout, session.ID)
 	}
@@ -659,6 +676,7 @@ var readContextScopes = map[string]func(s *Server, call mcpCall) (string, error)
 	"changes":    (*Server).readChangesForMCP,
 	"file":       (*Server).readFileForMCP,
 	"background": (*Server).readBackgroundForMCP,
+	"work":       (*Server).listWorkForMCP,
 }
 
 func (s *Server) readContextForMCP(call mcpCall) (string, error) {

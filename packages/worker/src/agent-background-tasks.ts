@@ -271,7 +271,7 @@ export class ClaudeBackgroundTaskTracker {
   }
 
   record(taskId: string): BackgroundTaskRecord | undefined {
-    return this.tasks.get(taskId);
+    return this.tasks.get(taskId) ?? this.foreground.get(taskId);
   }
 
   snapshot(): AgentBackgroundTask[] {

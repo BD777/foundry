@@ -92,6 +92,8 @@ flowchart TB
 - **跨设备** = Transport 按 `deviceId` 路由 + Session / Resource 可以落在其他设备。上层
   只多一个目标设备参数。
 
+会话工作管理新增独立的 `session-work` 模块：身份、来源发现、持久清单、进程控制与调度协调只依赖 Transport / Platform。Session Runtime 读取其简报并报告原生任务事件；`session-work/runtime.ts` 属于 composition，通过回调注入 native stop / session cancel，避免领域模块反向依赖运行时。Server 的 `internal/sessionwork` 只依赖 store 模型，存储扩展使用独立 `WorkStore`；HTTP / MCP 共用同一控制入口。实现与验证边界见 `session-work-management-validation.md`。
+
 ## 3.1 依赖图
 
 箭头表示"依赖于"。按拓扑序从没有依赖的模块开始往上叠：下一层只依赖已经做好的层。

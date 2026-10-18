@@ -41,6 +41,8 @@ import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock } from "./device-pairing.js";
 import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
 import { startSessionTimers } from "./session-timers.js";
+import { startSessionWork } from "./session-work/runtime.js";
+import { ownPackage } from "./worker-identity.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
 import { DaemonDispatch } from "./daemon/dispatch.js";
@@ -179,7 +181,10 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
   if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
   // Timers of sessions no process of this worker runs, kept across restarts.
-  if (!once && !executionHostClient()) startSessionTimers(serverURL);
+  if (!once && !executionHostClient()) {
+    startSessionTimers(serverURL, false);
+    await startSessionWork(serverURL, ownPackage().version);
+  }
   if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
   const sessionTransport = new ReliableSessionTransport({
     onAcknowledged: (id) => executionHostClient()?.acknowledge(id),

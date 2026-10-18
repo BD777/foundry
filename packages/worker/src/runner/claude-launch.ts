@@ -25,6 +25,7 @@ import {
   type ClaudeOperationBounds,
 } from "../watchdog.js";
 import { activeRuntimeKey } from "./active-runtimes.js";
+import { managedWorkEnabled } from "../session-work/supervisor.js";
 import {
   claudeEffort,
   claudeMaxTurns,
@@ -142,6 +143,7 @@ function claudeTurnOptions(
     cwd: workspacePath,
     env: {
       ...env,
+      ...(managedWorkEnabled() ? { CLAUDE_CODE_DISABLE_CRON: "1" } : {}),
       CLAUDE_AGENT_SDK_CLIENT_APP: "foundry-worker",
     },
     forwardSubagentText: true,

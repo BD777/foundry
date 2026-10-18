@@ -526,7 +526,8 @@
             "subagents",
             "changes",
             "file",
-            "background"
+            "background",
+            "work"
           ]
         },
         "levels": {
@@ -1268,5 +1269,160 @@
     "annotations": {
       "readOnlyHint": true
     }
+  },
+  {
+    "name": "list_session_work",
+    "description": "List persistent schedules, background processes and subagents, including earlier turns, paused work and unconfirmed controls. Independent of compacted history. Defaults to this session.",
+    "summary": "Lists persistent schedules, background commands and subagents across the conversation, including pending controls.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
+        }
+      },
+      "required": []
+    },
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "limits": [
+      "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
+      "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped."
+    ]
+  },
+  {
+    "name": "get_session_work",
+    "description": "Read persistent work and control receipts for a session. Includes desired and observed state; pending does not mean stopped.",
+    "summary": "Shows persistent work, control receipts and the execution history of an individual item.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
+        },
+        "id": {
+          "type": "string",
+          "description": "Work ID; includes durable run history when provided."
+        }
+      },
+      "required": []
+    },
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "limits": [
+      "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
+      "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped."
+    ]
+  },
+  {
+    "name": "control_session_work",
+    "description": "Control persistent work. pause disables future schedule runs; stop also stops current execution. stop_all first blocks future work in this conversation. Only verified receipts prove cessation; refresh list_session_work to observe device confirmation. Single actions require the current revision; idempotencyKey must be stable across retries. Unassigned OS sources are skipped by bulk controls and reported in unmanaged; only the person may adopt an unconfirmed source. Do not describe an unverified receipt as fully stopped.",
+    "summary": "Pauses, resumes or stops conversation work, returning a durable receipt that devices must confirm.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
+        },
+        "id": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "pause",
+            "resume",
+            "stop",
+            "remove",
+            "run",
+            "stop_all",
+            "pause_all",
+            "adopt"
+          ]
+        },
+        "expectedRevision": {
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        }
+      },
+      "required": ["action", "idempotencyKey"]
+    },
+    "annotations": {
+      "readOnlyHint": false
+    },
+    "limits": [
+      "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
+      "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped.",
+      "Unassigned OS sources require explicit association by the person. Disabling host cron does not prove its earlier external executions have stopped."
+    ]
+  },
+  {
+    "name": "create_scheduled_work",
+    "description": "Create persistent Foundry-managed scheduled prompts or supervised background commands. Uses the session runtime and fresh credentials; do not use host crontab or detached claude processes. Choose cron + IANA timeZone, or at as a full RFC3339 instant. Reusing idempotencyKey returns the same work.",
+    "summary": "Creates a persistent scheduled prompt or supervised background command that Foundry can display and control.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
+        },
+        "title": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["schedule", "process"]
+        },
+        "spec": {
+          "type": "object",
+          "properties": {
+            "schedule": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "timeZone": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "enum": ["continue_thread", "new_session"]
+            },
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string"
+            }
+          }
+        },
+        "idempotencyKey": {
+          "type": "string"
+        }
+      },
+      "required": ["title", "spec", "idempotencyKey"]
+    },
+    "annotations": {
+      "readOnlyHint": false
+    },
+    "limits": [
+      "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
+      "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped."
+    ]
   }
 ]

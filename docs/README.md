@@ -58,6 +58,7 @@ is [personal-agent.md](personal-agent.md).
 - [Module architecture](architecture-modules.md): layer rules, code-module boundaries, the map from product modules to code modules, and the history of the milestone phase.
 - [Technical architecture](technical-selection.md): components, responsibilities and technology choices.
 - [Storage strategy](storage-strategy.md): what lives on the server, the worker and in the workspace.
+- [Session isolation and Workspace Skill drafts](session-isolation-design.md): proposed configuration boundaries, draft trials, shared launch preparation, migration and acceptance; not an implementation-status claim.
 - [Security](security.md): accounts, authorization, credentials, model catalogs and remote exposure.
 - [Development](development.md) and [live regression](live-regression.md): running, verifying and end-to-end cases.
 - [Web architecture](../apps/web/src/ARCHITECTURE.md): frontend module boundaries, kept beside the code.
