@@ -2,6 +2,8 @@ import { FileClock, FileText, FolderOpen } from "lucide-react";
 import { useMemo, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import remarkBreaks from "remark-breaks";
+import remarkCjkFriendly from "remark-cjk-friendly";
+import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
 import {
   defaultRehypePlugins,
   defaultRemarkPlugins,
@@ -299,9 +301,13 @@ function fileLinkComponents(
 // stylesheet's per-block flow space instead of a fixed 1rem.
 const markdownFlowClassName = "space-y-[var(--fdy-markdown-flow-space)]";
 
-// Streamdown's own plugins, with bare URLs ending before CJK text.
+// The same CJK syntax extensions used by @streamdown/cjk. Its bundled URL
+// transformer also splits authored links, so keep our source-aware autolink
+// rule instead. Emphasis must register before GFM; strikethrough after it.
 const markdownRemarkPlugins = [
+  remarkCjkFriendly,
   ...Object.values(defaultRemarkPlugins),
+  remarkCjkFriendlyGfmStrikethrough,
   remarkAutolinkCjkBoundary,
 ];
 
