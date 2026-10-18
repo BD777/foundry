@@ -67,7 +67,8 @@ export function parseCron(expression: string): ParsedCron | undefined {
   const dayOfMonth = parseCronField(domSpec, 1, 31);
   const month = parseCronField(monthSpec, 1, 12);
   // Both 0 and 7 mean Sunday in standard cron.
-  const dayOfWeek = parseCronField(dowSpec.replace(/7/g, "0"), 0, 6);
+  const dayOfWeek = parseCronField(dowSpec, 0, 7);
+  if (dayOfWeek?.delete(7)) dayOfWeek.add(0);
   if (!minute || !hour || !dayOfMonth || !month || !dayOfWeek) {
     return undefined;
   }

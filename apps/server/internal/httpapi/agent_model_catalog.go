@@ -160,6 +160,7 @@ func (c *modelCatalogCache) clock() time.Time {
 // credential is hashed with the rest and never kept in the clear.
 func modelCatalogKey(profile store.CreateAgentProfileInput) string {
 	fields, _ := json.Marshal([]string{
+		profile.RuntimeGeneration,
 		strings.TrimSpace(profile.DeviceID),
 		strings.TrimSpace(profile.ID),
 		strings.TrimSpace(profile.Runtime),

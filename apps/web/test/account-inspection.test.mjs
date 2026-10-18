@@ -356,7 +356,7 @@ test("same-second reads with different source lists still expose the fallback en
   );
   assert.match(
     view.container.textContent,
-    /Foundry uses: \/Users\/tester\/\.codex/,
+    /Login source: \/Users\/tester\/\.codex/,
   );
   // HOME was cached by the auto-check, so Back to it needs no new request.
   assert.equal(
@@ -408,7 +408,7 @@ test("a configuration that disappeared is explained and offers the execution con
     buttonByLabel(view.container, "Back to Foundry’s configuration").click(),
   );
   await tick();
-  assert.match(view.container.textContent, /Foundry uses:/);
+  assert.match(view.container.textContent, /Login source:/);
   assert.doesNotMatch(view.container.textContent, /no longer present/);
   assert.equal(
     calls,

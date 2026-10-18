@@ -1,3 +1,4 @@
+import "./fixtures/native-test-homes.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { sessionEnvironment } from "../dist/session-ambient.js";
@@ -95,7 +96,7 @@ test("official local logins keep their existing native-login isolation", () => {
   });
 });
 
-test("a device-owned compatible profile keeps inheriting the device environment", () => {
+test("a device-owned compatible profile does not inherit unrelated credentials", () => {
   withAmbientCredentials(() => {
     const env = sessionEnvironment("/workspace", {
       id: "local_gw",
@@ -105,6 +106,6 @@ test("a device-owned compatible profile keeps inheriting the device environment"
       connectionType: "openai_compatible",
       baseUrl: "http://gateway.internal/v1",
     });
-    assert.equal(env.OPENAI_API_KEY, "ambient-OPENAI_API_KEY");
+    assert.equal(env.OPENAI_API_KEY, undefined);
   });
 });

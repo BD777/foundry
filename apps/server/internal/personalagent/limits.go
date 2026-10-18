@@ -36,15 +36,9 @@ func (e *LimitError) Error() string {
 }
 
 // Windows are the starts of the windows the limits count in: the last
-// hour, and the current day, week (from Monday) and month in timezone (UTC
-// when empty or unknown).
-func Windows(now time.Time, timezone string) store.PersonalAgentWindows {
-	location := time.UTC
-	if timezone != "" {
-		if loaded, err := time.LoadLocation(timezone); err == nil {
-			location = loaded
-		}
-	}
+// hour, and the current day, week (from Monday) and month in location (the
+// person's, Location).
+func Windows(now time.Time, location *time.Location) store.PersonalAgentWindows {
 	local := now.In(location)
 	day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 	week := day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))

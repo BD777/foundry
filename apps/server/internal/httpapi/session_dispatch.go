@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -60,6 +61,11 @@ func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
 // input: the server profile and credential, skills, the Issue it works on,
 // a session token and the external accounts it may act as.
 func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.AgentSession) (wsRunSessionPayload, error) {
+	if holds, ok := c.hub.store.(store.NativeAccountHoldStore); ok {
+		if err := holds.BindNativeAccount(ctx, session); err != nil {
+			return wsRunSessionPayload{}, err
+		}
+	}
 	profile, err := c.hub.serverProfileForSession(ctx, session)
 	if err != nil {
 		return wsRunSessionPayload{}, fmt.Errorf("resolve server profile: %w", err)
@@ -178,13 +184,21 @@ func (c *daemonConnection) unsettledSessions(workspaceID string) ([]store.AgentS
 }
 
 // dispatchQueuedAgentSessions sends the device its queued sessions in one
-// workspace, or in all of them when workspaceID is empty.
+// workspace, or in all of them when workspaceID is empty, in the order
+// their inputs were queued: work that waited for the device starts as it
+// was sent, at most the device's maxConcurrentTasks at once (the worker's
+// scheduler holds the rest).
 func (c *daemonConnection) dispatchQueuedAgentSessions(workspaceID string) {
 	sessions, err := c.unsettledSessions(workspaceID)
 	if err != nil {
 		c.reply(wsEnvelope{Type: wsErrorType, Error: err.Error()})
 		return
 	}
+	slices.SortStableFunc(sessions, func(a, b store.AgentSession) int {
+		queuedA, _ := sessionQueuedSince(a)
+		queuedB, _ := sessionQueuedSince(b)
+		return queuedA.Compare(queuedB)
+	})
 	for _, session := range sessions {
 		if session.Status != "queued" {
 			continue

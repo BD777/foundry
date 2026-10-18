@@ -71,7 +71,7 @@ func typesForTest[O any](observers []O) []string {
 }
 
 // What follows a session's changes observes the sessions notifier, in a
-// fixed order (Feishu's card, the chat's queue, the chat's title, leases,
+// fixed order (scheduled run outcome, Feishu's card, the chat's queue, the chat's title, leases,
 // the Personal Agent's tasks and digests), each
 // after the session's viewers were told; the session it gets carries no
 // transcript. Its transcript's events are followed by Feishu's card and the
@@ -84,7 +84,7 @@ func TestSessionObserversReactInOrderAfterViewers(t *testing.T) {
 		got  []string
 		want []string
 	}{
-		{"changes", typesForTest(sessions.changeObservers), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "httpapi.assistantTaskReactions", "httpapi.workspaceDigestReactions"}},
+		{"changes", typesForTest(sessions.changeObservers), []string{"httpapi.workRunReactions", "httpapi.feishuReactions", "httpapi.chatQueueReactions", "*httpapi.chatTitleService", "httpapi.resourceLeaseReactions", "httpapi.assistantTaskReactions", "httpapi.workspaceDigestReactions"}},
 		{"transcript events", typesForTest(sessions.eventObservers), []string{"httpapi.feishuReactions", "httpapi.chatQueueReactions"}},
 		{"reported ends", typesForTest(sessions.endObservers), []string{"*httpapi.chatTitleService"}},
 		{"issue updates", typesForTest(server.issues.(*issueEvents).observers), []string{"httpapi.feishuReactions", "httpapi.workspaceDigestReactions"}},

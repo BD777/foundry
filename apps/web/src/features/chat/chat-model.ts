@@ -1,7 +1,9 @@
 import {
+  sessionDeviceWaitEventLabel,
   sessionInputEventLabel,
   type AgentSession,
   type ChatThread,
+  type DeviceProjection,
   type WorkerRuntimeId,
 } from "@bd777/foundry-protocol";
 import { i18n } from "../../i18n";
@@ -10,6 +12,7 @@ import {
   isProcessLabel,
   type ProcessLabelKey,
 } from "../../lib/process-labels";
+import { deviceAwaitedBy } from "../../lib/device-wait";
 import { formatCompactDuration } from "../../lib/format";
 import { isSessionLive } from "../../lib/session-status";
 import {
@@ -370,6 +373,7 @@ function transcriptContextTitle(text: string): string {
 function chatMessagesForSession(
   session: AgentSession | undefined,
   context: {
+    devices?: readonly DeviceProjection[];
     sessions?: AgentSession[];
     suppressedResponseFingerprints?: ReadonlySet<string>;
   } = {},
@@ -402,13 +406,19 @@ function chatMessagesForSession(
     !session.events.some((event) => event.message?.id === session.input?.id)
       ? session.input
       : undefined;
-  const turnLive = sessionActive && !pendingInput;
+  // Queued for an offline device, nothing runs: the transcript ends with
+  // what it waits for, never a running timer.
+  const awaitedDevice = deviceAwaitedBy(session, context.devices ?? []);
+  const turnLive = sessionActive && !pendingInput && !awaitedDevice;
   const turnStartedAt = turnLive ? currentTurnStartedAt(session) : undefined;
   const hasLiveResponse = agentSessionHasStreamedResponse(session);
   const duration = agentSessionDurationLabel(session);
   const terminalError = agentSessionTerminalError(session);
   const segments = projectTranscript(
-    sessionTranscriptEntries(session, context.suppressedResponseFingerprints),
+    sessionTranscriptEntries(
+      awaitedDevice ? withoutPendingDeviceWait(session) : session,
+      context.suppressedResponseFingerprints,
+    ),
   );
   segments.forEach((segment, index) => {
     const isLastSegment = index === segments.length - 1;
@@ -419,6 +429,9 @@ function chatMessagesForSession(
         role: "user",
         at: segment.at,
         text: segment.text,
+        ...(segment.sentBySessionId
+          ? { sentBySessionId: segment.sentBySessionId }
+          : {}),
       });
     } else if (segment.kind === "process") {
       messages.push({
@@ -476,7 +489,19 @@ function chatMessagesForSession(
   // from that input, where the group that replaces it will start too.
   const latest = messages.at(-1);
   const awaitingFrom = latest?.at ?? turnStartedAt;
-  if (
+  if (awaitedDevice && !terminalError) {
+    messages.push({
+      id: `agent-session:${session.id}:waiting-for-device`,
+      kind: "waiting",
+      role: "bot",
+      text: i18n.t("chat:transcript.waitingForDeviceDetail", {
+        device: awaitedDevice.label,
+      }),
+      title: i18n.t("chat:transcript.waitingForDevice", {
+        device: awaitedDevice.label,
+      }),
+    });
+  } else if (
     sessionActive &&
     !terminalError &&
     segments.length > 0 &&
@@ -492,7 +517,7 @@ function chatMessagesForSession(
       title: i18n.t("chat:transcript.processing"),
     });
   }
-  if (segments.length === 0 && !terminalError) {
+  if (segments.length === 0 && !terminalError && !awaitedDevice) {
     messages.push({
       agentLabel: session.profileLabel,
       id: `agent-session:${session.id}:fallback`,
@@ -516,6 +541,22 @@ function chatMessagesForSession(
     });
   }
   return messages;
+}
+
+/**
+ * The session without the notices that its latest input waits for its
+ * device: while it waits, the transcript's waiting row says so instead.
+ */
+function withoutPendingDeviceWait(session: AgentSession): AgentSession {
+  const events = session.events ?? [];
+  const lastInput = events
+    .map((event) => event.label)
+    .lastIndexOf(sessionInputEventLabel);
+  const kept = events.filter(
+    (event, index) =>
+      index < lastInput || event.label !== sessionDeviceWaitEventLabel,
+  );
+  return kept.length === events.length ? session : { ...session, events: kept };
 }
 
 /**
@@ -571,13 +612,17 @@ function agentSessionFailureMessage(
 
 function chatMessagesForThread(
   thread: ChatSessionThread | undefined,
-  context: { suppressedResponseFingerprints?: ReadonlySet<string> } = {},
+  context: {
+    devices?: readonly DeviceProjection[];
+    suppressedResponseFingerprints?: ReadonlySet<string>;
+  } = {},
 ): ChatViewMessage[] {
   if (!thread) {
     return [];
   }
   return thread.sessions.flatMap((session) =>
     chatMessagesForSession(session, {
+      devices: context.devices,
       sessions: thread.sessions,
       suppressedResponseFingerprints: context.suppressedResponseFingerprints,
     }),

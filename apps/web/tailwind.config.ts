@@ -11,6 +11,7 @@ export default {
     "./index.html",
     "./src/**/*.{ts,tsx}",
     "./node_modules/streamdown/dist/*.js",
+    "./node_modules/@streamdown/mermaid/dist/*.js",
   ],
   theme: {
     extend: {

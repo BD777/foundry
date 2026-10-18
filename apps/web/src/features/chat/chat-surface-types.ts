@@ -35,6 +35,8 @@ export interface ChatListItem {
   scheduled?: boolean;
   blocked?: boolean;
   blockedReason?: string;
+  /** Status "waiting": the offline device its queued work waits for. */
+  waitingFor?: string;
   /** Who started it, when another session did: "Started by <title>". */
   startedBy?: string;
   unread: boolean;
@@ -138,6 +140,12 @@ export interface ChatSurfaceProps {
   onAttachmentRemove?: (id: string) => void;
   onAttachmentsRestore?: (attachments: ChatAttachment[]) => void;
   onCancelActive?: (sessionId?: string) => Promise<void> | void;
+  /**
+   * The workspace's device is offline: what is sent waits for it. With
+   * `waitingSessionId`, the open chat's session already waits and may be
+   * cancelled.
+   */
+  offlineDevice?: { label: string; waitingSessionId?: string };
   onClaudeEffortChange: (value: ClaudeEffort | "") => void;
   onClaudePermissionModeChange: (value: ClaudePermissionMode) => void;
   onCodexApprovalPolicyChange: (value: CodexApprovalPolicy) => void;

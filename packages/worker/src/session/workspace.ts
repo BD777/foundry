@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { appendFileSync, existsSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -67,7 +68,17 @@ export interface WorkspaceSessionRun {
 export async function runWorkspaceSession(
   run: WorkspaceSessionRun,
 ): Promise<AgentSessionRunResult> {
-  if (run.sandbox) return runSandboxed(run, run.sandbox);
+  if (run.sandbox) {
+    const release = await acquireRuntime(
+      run.session.provider,
+      run.sandbox.signal,
+    );
+    try {
+      return await runSandboxed(run, run.sandbox);
+    } finally {
+      release();
+    }
+  }
   const start =
     run.session.provider === "codex"
       ? runCodexWorkspaceSession
@@ -177,12 +188,10 @@ async function runSandboxed(
     provider: session.provider,
     cancel: () => canceled.abort(),
   };
-  // Codex cannot steer an active turn; whoever owns the session keeps its
-  // own answer for that.
-  const unregisterSteer =
-    session.provider !== "codex"
-      ? registerActiveSessionSteerTarget(session.id, steerTarget)
-      : () => {};
+  const unregisterSteer = registerActiveSessionSteerTarget(
+    session.id,
+    steerTarget,
+  );
   const unregisterCancel = registerActiveSessionCancelTarget(
     session.id,
     cancelTarget,

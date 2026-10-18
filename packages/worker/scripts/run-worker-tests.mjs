@@ -507,6 +507,18 @@ const NATIVE_SANDBOX_TESTS = new Set([
   "verification-session.test.mjs",
 ]);
 
+// Like resource-pool, these need macOS's setuid ps. The service test also
+// talks to launchd, which cannot bootstrap a job from inside seatbelt. Both
+// use only mkdtemp state/native homes, fake CLIs and unique disposable jobs;
+// production credential homes are never passed to those jobs. Linux keeps
+// its outer write allowlist for these tests.
+const MAC_SERVICE_TESTS = new Set([
+  "agent-processes.test.mjs",
+  "execution-host.test.mjs",
+  "watchdog.test.mjs",
+  "execution-update.test.mjs",
+]);
+
 function runTests() {
   if (!existsSync(distEntry)) {
     fail(
@@ -527,7 +539,11 @@ function runTests() {
   const protectedFiles = [];
   for (const file of allFiles) {
     const base = file.split("/").pop();
-    if (NATIVE_SANDBOX_TESTS.has(base)) nativeFiles.push(file);
+    if (
+      NATIVE_SANDBOX_TESTS.has(base) ||
+      (process.platform === "darwin" && MAC_SERVICE_TESTS.has(base))
+    )
+      nativeFiles.push(file);
     else protectedFiles.push(file);
   }
   // Each file's process gets its own state root (per-file-state-root.mjs).

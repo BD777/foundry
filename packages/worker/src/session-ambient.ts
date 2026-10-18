@@ -1,3 +1,4 @@
+import { isolatedClaudeEnvironment } from "./runtime-isolation.js";
 import { withManagedTools } from "./managed-tools.js";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import { sessionScratchEnvironment } from "./resource-pool.js";
@@ -106,7 +107,7 @@ export function sessionEnvironment(
   session?: AgentSession,
 ): NodeJS.ProcessEnv {
   const base = baseProcessEnvironment(profile);
-  return {
+  const env = {
     ...base,
     // Tools Foundry installed for skills come first.
     PATH: withManagedTools(base.PATH),
@@ -126,6 +127,9 @@ export function sessionEnvironment(
       ? sessionScratchEnvironment(session.id)
       : {}),
   };
+  return profile.runtime === "claude"
+    ? isolatedClaudeEnvironment(profile, env, workspacePath)
+    : env;
 }
 
 /**

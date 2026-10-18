@@ -1,3 +1,4 @@
+import "./fixtures/native-test-homes.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
@@ -102,7 +103,7 @@ test("one plan drives SDK and CLI paths: prompt rewrite is SDK-only and isolatio
     managedSkills: managed,
   });
   assert.equal(plan.prompt, "/foundry-workspace:qa run checks");
-  assert.equal(plan.sdk.settingSources, undefined);
+  assert.deepEqual(plan.sdk.settingSources, []);
   assert.match(plan.sdk.systemPrompt.append, /^Foundry device notes:/);
   assert.ok(
     plan.sdk.systemPrompt.append.includes(
@@ -199,10 +200,10 @@ test("sessions with an orchestration identity get the Foundry tools with their o
         timeout: 660000,
       },
     });
-    assert.equal(
+    assert.deepEqual(
       plan.sdk.mcpServers,
-      undefined,
-      "kept out of the runtime identity",
+      {},
+      "native MCP is disabled; session MCP is attached after launch",
     );
     assert.deepEqual(plan.sdk.allowedTools, ["mcp__foundry"]);
     assert.equal(
@@ -326,7 +327,7 @@ test("an Issue's clarification runs only the read tools its role allows", async 
     ]);
     for (const tool of ["Bash", "Write", "Edit", "Task", "WebFetch"])
       assert.ok(plan.sdk.disallowedTools.includes(tool), tool);
-    assert.deepEqual(plan.sdk.settingSources, ["project"]);
+    assert.deepEqual(plan.sdk.settingSources, []);
     assert.equal(plan.sdk.strictMcpConfig, true);
     assert.ok(plan.mcpServers.foundry, "the Foundry tools are still there");
     assert.equal(claudePermissionMode(clarification, profile), "dontAsk");

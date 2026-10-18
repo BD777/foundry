@@ -37,9 +37,13 @@ func (s *Store) migrate(ctx context.Context) error {
 		// workspace-owned rows.
 		s.setupDeviceConnectors,
 		s.setupPersonalAgents,
+		s.setupNativeAccountHolds,
+		s.setupSessionWork,
 		s.dropRemovedWorkspaces,
 		s.setupResources,
 		s.setupResourceLeases,
+		// Before the prune, which walks its rows.
+		s.setupSessionInputSenders,
 		s.backfillWorkspaceScopedRecords,
 		s.pruneAgentSessionInlineEvents,
 		// Before the prune, so an issue number only orphaned rows still mention
@@ -50,6 +54,9 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupProfileCodexTransports,
 		s.setupWorkspaceLifecycle,
 		s.setupWorkspaceDigests,
+		s.setupDevicePlacement,
+		s.setupDeviceAccountSharing,
+		s.setupPersonalAgentList,
 	}
 	for _, step := range steps {
 		if err := step(ctx); err != nil {

@@ -59,6 +59,7 @@ requires_openai_auth = true
 `,
 );
 process.env.HOME = home;
+process.env.CODEX_HOME = join(home, ".codex");
 process.env.FOUNDRY_STATE_ROOT = join(home, ".foundry");
 process.env.GATEWAY_KEY = "gateway-key-0123456789";
 // Keys the daemon happens to inherit must never stand in for a provider's own.
@@ -109,6 +110,10 @@ test("the device's provider list names key sources, never values", () => {
   assert.equal(byID.codex_provider_relay.keySource, undefined);
   assert.equal(byID.relay_none.keySource, undefined);
   const listed = JSON.stringify(rows);
+  assert(
+    !listed.includes("codexProviderConfig"),
+    "internal connection definitions must not leak into registration",
+  );
   for (const value of [
     "gateway-key-0123456789",
     "file-key-0123456789",

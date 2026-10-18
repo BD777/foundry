@@ -1,5 +1,6 @@
 import type {
   DeviceDiagnostics,
+  DevicePairingStatus,
   DeviceProjection,
   DeviceRepairAction,
   DeviceRepairResult,
@@ -105,4 +106,35 @@ export function createDevicePairingToken(): Promise<{
     body: {},
     notifyAuthRequired: false,
   });
+}
+
+/**
+ * Where the caller's pairing token stands: "needs_consent" when its worker
+ * runs under a system account another person's device already uses.
+ */
+export function devicePairingStatus(
+  token: string,
+): Promise<DevicePairingStatus> {
+  return request("POST", "/api/devices/pairing-tokens/status", {
+    body: { token },
+  });
+}
+
+/** Continue (share that system account) or cancel a pairing waiting on it. */
+export function setDevicePairingConsent(
+  token: string,
+  accept: boolean,
+): Promise<DevicePairingStatus> {
+  return request("POST", "/api/devices/pairing-tokens/consent", {
+    body: { token, accept },
+  });
+}
+
+/** The device's owner read that someone else now shares its system account. */
+export function dismissSystemAccountNotice(deviceId: string): Promise<void> {
+  return request(
+    "POST",
+    `${devicePath(deviceId)}/system-account-notice/dismiss`,
+    { body: {} },
+  );
 }

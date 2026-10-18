@@ -9,6 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync, openSync } from "node:fs";
 import { dirname } from "node:path";
 import { serviceInstalled } from "./service.js";
+import { isManagedNativeRuntimePath } from "./native-homes.js";
 import {
   holdSelfUpdateLock,
   selfUpdateInProgress,
@@ -105,7 +106,17 @@ export function startSelfUpdate(serverURL: string): { log: string } {
           "--quiet",
           `--unit=foundry-worker-update-${Date.now()}`,
           ...[...carriedEnvironment, selfUpdateStatusVariable]
-            .filter((key) => environment[key] !== undefined)
+            .filter((key) => {
+              const val = environment[key];
+              if (val === undefined) return false;
+              if (
+                (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
+                isManagedNativeRuntimePath(val)
+              ) {
+                return false;
+              }
+              return true;
+            })
             .map((key) => `--setenv=${key}=${environment[key]}`),
           "--property=StandardOutput=append:" + log,
           "--property=StandardError=append:" + log,

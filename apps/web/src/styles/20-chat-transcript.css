@@ -337,6 +337,14 @@
   color: var(--fdy-error-text);
 }
 
+/* As tall as the load-earlier button it replaces (.fdy-button-sm). */
+.fdy-chat-history-start {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  color: var(--fdy-ink-faint);
+}
+
 .fdy-chat-history-progress {
   color: var(--fdy-ink-faint);
   font-variant-numeric: tabular-nums;
@@ -507,6 +515,21 @@
   color: var(--fdy-ink-strong);
 }
 
+.fdy-chat-message-sender {
+  overflow: hidden;
+  margin: 0 0 4px;
+  color: var(--fdy-ink-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdy-chat-message-sender strong {
+  color: var(--fdy-ink-muted);
+  font-weight: 500;
+}
+
 .fdy-chat-message-origin {
   display: block;
   margin-top: 4px;
@@ -650,6 +673,35 @@
 .fdy-chat-message-card[data-role="user"] .fdy-chat-message-copy {
   color: var(--fdy-ink);
   line-height: 1.5;
+}
+
+/* Queued work waiting for its offline device: a still status line, no timer. */
+.fdy-chat-waiting {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 0;
+  color: var(--fdy-ink-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fdy-chat-waiting svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fdy-warning-text);
+}
+
+.fdy-chat-waiting-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fdy-chat-waiting-copy strong {
+  color: var(--fdy-ink);
+  font-weight: 600;
 }
 
 .fdy-chat-truncation-boundary {

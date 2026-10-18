@@ -56,7 +56,7 @@ const minute = 60_000;
 const settings = {
   assistantName: "",
   language: "",
-  timezone: "",
+  timezone: "Europe/London",
   speakingStyle: "auto",
   verbosity: "concise",
   extraInstructions: "",
@@ -216,6 +216,7 @@ const formerSession = {
 
 let overview;
 let calls = [];
+let tasks = [task];
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(String(input), "https://foundry.example");
   const method = (init.method ?? "GET").toUpperCase();
@@ -236,7 +237,9 @@ globalThis.fetch = async (input, init = {}) => {
     case "GET /api/personal-agent/proposals":
       return json([proposal]);
     case "GET /api/personal-agent/tasks":
-      return json([task]);
+      return json(tasks);
+    case "GET /api/personal-agent/list":
+      return json([]);
     case "POST /api/personal-agent/proposals/prop_1/accept":
       return json({ ...proposal, status: "accepted" });
     case "POST /api/personal-agent/stop":
@@ -259,6 +262,14 @@ globalThis.fetch = async (input, init = {}) => {
       return json({ ...assistantSession, id: "sess_new" }, 201);
     case "PUT /api/personal-agent/settings":
       return json({ ...agent, settings: body });
+    case "POST /api/personal-agent/timezone":
+      return json({
+        ...overview.agent,
+        settings: {
+          ...overview.agent.settings,
+          timezone: overview.agent.settings.timezone || body.timezone,
+        },
+      });
     case "POST /api/personal-agent/home":
       return body.deviceId === "dev_pc"
         ? json({ ...agent, homeDeviceId: "dev_pc" })
@@ -469,6 +480,52 @@ test("a quiet conversation starts a new session; the home computer picks the run
   );
 });
 
+const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+test("an assistant without a time zone gets the browser's, once; a set one stays", async () => {
+  overview = {
+    agent: { ...agent, settings: { ...agent.settings, timezone: "" } },
+    homeDeviceOnline: true,
+  };
+  calls = [];
+  const page = await render(AssistantHome, {
+    agentProfiles,
+    devices,
+    workspaces: [],
+    onEvent: () => {},
+  });
+  const fills = () =>
+    calls.filter((call) => call.path === "/api/personal-agent/timezone");
+  assert.deepEqual(
+    fills().map((call) => call.body),
+    [{ timezone: browserZone }],
+  );
+  await page.unmount();
+
+  overview = {
+    agent: {
+      ...agent,
+      settings: { ...agent.settings, timezone: "Asia/Tokyo" },
+    },
+    homeDeviceOnline: true,
+  };
+  calls = [];
+  const settingsPage = await render(AssistantSettings, {
+    section: "style",
+    onSectionChange: () => {},
+    agentProfiles,
+    devices,
+    onEvent: () => {},
+  });
+  assert.equal(fills().length, 0, JSON.stringify(calls));
+  assert.equal(
+    settingsPage.container.querySelector("#fdy-pa-timezone").value,
+    "Asia/Tokyo",
+  );
+  await settingsPage.unmount();
+  overview = { agent, homeDeviceOnline: true };
+});
+
 test("first visit offers a one-tap setup on the suggested computer", async () => {
   overview = { homeDeviceOnline: false, suggestedHomeDeviceId: "dev_mac" };
   calls = [];
@@ -487,9 +544,35 @@ test("first visit offers a one-tap setup on the suggested computer", async () =>
     method: "POST",
     path: "/api/personal-agent",
     search: "",
-    body: { deviceId: "dev_mac" },
+    body: { deviceId: "dev_mac", timezone: browserZone },
   });
   assert.ok(page.container.querySelector(".fdy-pa-home-conversation"));
+  await page.unmount();
+});
+
+test("first visit never picks a shared computer; the person may still choose it", async () => {
+  overview = { homeDeviceOnline: false };
+  calls = [];
+  const shared = {
+    ...devices[0],
+    sharesSystemAccountWith: [
+      { deviceId: "dev_ann", deviceLabel: "Ann's Mac", ownerName: "Ann" },
+    ],
+  };
+  const page = await render(AssistantHome, {
+    agentProfiles,
+    devices: [shared],
+    workspaces: [],
+    onEvent: () => {},
+  });
+  assert.match(page.container.textContent, /so none is picked for you/);
+  assert.equal(button(page.container, "Set up").disabled, true);
+  assert.ok(page.container.querySelector('[aria-label="Computer"]'));
+  assert.equal(
+    calls.filter((call) => call.method === "POST").length,
+    0,
+    JSON.stringify(calls),
+  );
   await page.unmount();
 });
 
@@ -510,6 +593,17 @@ test("home: plain words, proposal cards, what it's doing, stop before the model"
   assert.match(text, /Build the family budget page/);
   assert.match(text, /In “Family budget”/);
   assert.doesNotMatch(text, /\b(workspace|device|session)s?\b/i);
+  // The person's list is read beside it: open items and what closed today.
+  assert.match(text, /Your list/);
+  const listRead = calls.find(
+    (call) => call.path === "/api/personal-agent/list",
+  );
+  assert.ok(listRead, JSON.stringify(calls));
+  assert.ok(
+    Number.isFinite(
+      Date.parse(new URLSearchParams(listRead.search).get("closedSince")),
+    ),
+  );
   // Reading the assistant never asks for, or changes, the shown project.
   assert.ok(
     calls.every(
@@ -541,6 +635,22 @@ test("home: plain words, proposal cards, what it's doing, stop before the model"
     message: "Stopped everything, 1 thing in progress.",
   });
   assert.match(page.container.textContent, /Everything is stopped/);
+  await page.unmount();
+});
+
+test("what it's doing shows work waiting for an offline computer as waiting", async () => {
+  overview = { agent, homeDeviceOnline: true };
+  tasks = [{ ...task, waitingFor: "Studio" }];
+  const page = await render(AssistantHome, {
+    agentProfiles,
+    devices,
+    workspaces: [{ id: "ws_budget", name: "Family budget" }],
+    onEvent: () => {},
+  });
+  const text = page.container.textContent;
+  assert.match(text, /Waiting for Studio to come online/);
+  assert.doesNotMatch(text, /In progress/);
+  tasks = [task];
   await page.unmount();
 });
 

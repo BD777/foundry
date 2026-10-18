@@ -1,4 +1,4 @@
-import type { ChatThread } from "@bd777/foundry-protocol";
+import type { ChatThread, DeviceProjection } from "@bd777/foundry-protocol";
 import {
   chatMessageItemId,
   chatMessages,
@@ -16,18 +16,24 @@ import type { ChatSessionThread, ChatViewMessage } from "./chat-types";
 /** The transcript the chat shows: its sessions' or stored messages, plus the outbox. */
 export function chatViewMessages({
   chat,
+  devices,
   outbox,
   suppressedResponseFingerprints,
   thread,
 }: {
   chat?: ChatThread;
+  /** Names the offline device a queued session waits for. */
+  devices?: readonly DeviceProjection[];
   outbox: readonly OutboxEntry[];
   suppressedResponseFingerprints: ReadonlySet<string>;
   thread?: ChatSessionThread;
 }): OutboxProjection {
   return withOutbox(
     thread
-      ? chatMessagesForThread(thread, { suppressedResponseFingerprints })
+      ? chatMessagesForThread(thread, {
+          devices,
+          suppressedResponseFingerprints,
+        })
       : chatMessages(chat),
     outbox,
     thread?.id,
@@ -55,13 +61,19 @@ function latestEditableUserIndex(messages: ChatViewMessage[]): number {
 /**
  * The transcript rows with their actions: copy, edit of the latest user
  * message while no agent is responding, and turning an idea into an Issue.
+ * `senderOf` names the session that sent a message another session sent.
  */
 export function chatMessageItems(
   messages: ChatViewMessage[],
   {
     agentActive,
     onTurnIntoIssue,
-  }: { agentActive: boolean; onTurnIntoIssue: (source: string) => void },
+    senderOf,
+  }: {
+    agentActive: boolean;
+    onTurnIntoIssue: (source: string) => void;
+    senderOf?: (sessionId: string) => ChatMessageItem["sentBy"];
+  },
 ): ChatMessageItem[] {
   const latestResponseIndex = latestCopyableResponseIndex(messages);
   const editableIndex = agentActive ? -1 : latestEditableUserIndex(messages);
@@ -75,5 +87,9 @@ export function chatMessageItems(
     onTurnIntoIssue: message.idea
       ? () => onTurnIntoIssue(message.idea ?? "")
       : undefined,
+    sentBy:
+      message.role === "user" && message.sentBySessionId
+        ? senderOf?.(message.sentBySessionId)
+        : undefined,
   }));
 }

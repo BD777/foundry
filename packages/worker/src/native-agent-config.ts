@@ -212,6 +212,26 @@ export function codexConfigProfiles(
       ...credential,
       baseUrl,
       codexModelProvider: key,
+      codexProviderConfig: Object.fromEntries(
+        [
+          "name",
+          "base_url",
+          "wire_api",
+          "env_key",
+          "env_key_instructions",
+          "experimental_bearer_token",
+          "requires_openai_auth",
+          "http_headers",
+          "env_http_headers",
+          "query_params",
+          "request_max_retries",
+          "stream_max_retries",
+          "stream_idle_timeout_ms",
+          "auth",
+        ]
+          .filter((name) => provider?.[name] !== undefined)
+          .map((name) => [name, provider![name]]),
+      ),
       configLabel: path.replace(homedir(), "~"),
       configSection: `model_providers.${key}`,
       connectionType: "openai_compatible" as const,

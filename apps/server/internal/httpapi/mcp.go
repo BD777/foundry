@@ -212,6 +212,10 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		notices := s.resourceNoticeContent(r.Context(), actorFromContext(r.Context()))
 		if err != nil {
 			status, message := cmp.Or(errorStatus(err), http.StatusConflict), err.Error()
+			var structured interface{ mcpText() string }
+			if errors.As(err, &structured) {
+				message = structured.mcpText()
+			}
 			if status == http.StatusUnauthorized || status == http.StatusForbidden {
 				s.writeMCPError(w, request.ID, -32600, message)
 				return
@@ -277,7 +281,11 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"get_session": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.sessionDigestForMCP(call.r.Context(), call.actor, mcpArgString(call.args, "sessionId"))
 	}),
-	"read_context": mcpTextTool((*Server).readContextForMCP),
+	"read_context":          mcpTextTool((*Server).readContextForMCP),
+	"list_session_work":     mcpTextTool((*Server).listWorkForMCP),
+	"get_session_work":      mcpTextTool((*Server).listWorkForMCP),
+	"control_session_work":  mcpTextTool((*Server).controlWorkForMCP),
+	"create_scheduled_work": mcpTextTool((*Server).createWorkForMCP),
 	"list_issues": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
 		return s.listIssuesForMCP(call.r.Context(), call.actor, call.workspace, mcpArgList(call.args, "status"))
 	}),
@@ -299,6 +307,8 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	"remember":          mcpTextTool((*Server).rememberForMCP),
 	"update_rules":      mcpTextTool((*Server).updateRulesForMCP),
 	"list_tasks":        mcpTextTool((*Server).listTasksForMCP),
+	"update_list":       mcpTextTool((*Server).updateListForMCP),
+	"read_list":         mcpTextTool((*Server).readListForMCP),
 }
 
 // executeMCPToolContent runs a tool and answers its MCP content: one text

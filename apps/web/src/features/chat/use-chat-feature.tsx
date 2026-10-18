@@ -13,6 +13,7 @@ import type {
   AgentProjection,
   AgentSession,
   ChatThread,
+  DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
 import { getChat } from "../../api";
@@ -20,7 +21,13 @@ import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
 import { shortUnavailableReason } from "../../lib/agent-picker";
 import { chatComposerChoices, chatSortValue } from "./chat-model";
-import { chatHasQueue } from "./chat-session-model";
+import {
+  chatHasQueue,
+  chatSessionLink,
+  sessionLinkView,
+  unlistedLinkedSessionIds,
+} from "./chat-session-model";
+import { useSessionLinks } from "./use-session-links";
 import { chatMessageItems, chatViewMessages } from "./chat-message-items";
 import { ChatSurface } from "./chat-surface";
 import {
@@ -42,6 +49,7 @@ import { useChatListItems } from "./use-chat-list-items";
 import { useChatAttachments } from "./use-chat-attachments";
 import { useChatSend } from "./use-chat-send";
 import { workspaceDenial } from "../../lib/workspace-access";
+import { deviceAwaitedBy } from "../../lib/device-wait";
 import {
   conversationStorageKey,
   conversationStoragePrefixes,
@@ -66,7 +74,11 @@ export interface UseChatFeatureInput {
   active: boolean;
   agents: AgentProjection[];
   archivedChats: ChatThread[];
+  /** The workspace's device, named while it is offline. */
+  device?: DeviceProjection;
   deviceOnline: boolean;
+  /** Every listed device: the one a queued session waits for is named. */
+  devices: readonly DeviceProjection[];
   onEvent: (event: ChatFeatureEvent) => Promise<void> | void;
   profiles: AgentProfileProjection[];
   /** Not switching workspace: a chat the list lacks is looked up by id. */
@@ -90,7 +102,9 @@ export function useChatFeature({
   active,
   agents,
   archivedChats,
+  device,
   deviceOnline,
+  devices,
   onEvent,
   profiles,
   ready = true,
@@ -245,6 +259,7 @@ export function useChatFeature({
     attachments,
     composerChoices,
     deviceOnline,
+    devices,
     emit,
     notify,
     outbox,
@@ -257,6 +272,7 @@ export function useChatFeature({
     workspaceId,
   });
   const { activeSession } = chatSend;
+  const awaitedDevice = deviceAwaitedBy(activeSession, devices);
   useEffect(() => {
     if (previousWorkspaceIdRef.current === workspaceId) {
       return;
@@ -300,11 +316,13 @@ export function useChatFeature({
     () =>
       chatViewMessages({
         chat: selectedChat,
+        devices,
         outbox: outbox.entries,
         suppressedResponseFingerprints: subagents.responseFingerprints,
         thread: selectedThread,
       }),
     [
+      devices,
       outbox.entries,
       selectedChat,
       selectedThread,
@@ -314,14 +332,20 @@ export function useChatFeature({
   const viewMessages = projection.messages;
   usePruneDeliveredOutbox(outbox, projection.delivered);
   const agentActive = Boolean(activeSession);
-  const messages = useMemo(
+  // The sessions the chats name: those that started them, and those that
+  // sent the open chat a message; the list names those it holds.
+  const senderIds = useMemo(
     () =>
-      chatMessageItems(viewMessages, {
-        agentActive,
-        onTurnIntoIssue: (source) =>
-          void emit({ source, type: "issue.draft.requested" }),
-      }),
-    [agentActive, emit, viewMessages],
+      viewMessages.flatMap((message) =>
+        message.sentBySessionId ? [message.sentBySessionId] : [],
+      ),
+    [viewMessages],
+  );
+  const namedSessions = useSessionLinks(
+    useMemo(
+      () => unlistedLinkedSessionIds(threads, senderIds),
+      [senderIds, threads],
+    ),
   );
   // The side panel follows the transcript a moment later, and only renders
   // again when what it shows changed.
@@ -357,6 +381,8 @@ export function useChatFeature({
   const list = useChatListItems({
     active,
     archivedChats: sortedArchivedChats,
+    devices,
+    namedSessions,
     notify,
     onSelectChat: (chatId) => void emit({ chatId, type: "chat.selected" }),
     selectedChat,
@@ -365,6 +391,46 @@ export function useChatFeature({
     threads,
     workspaceId,
   });
+  const listTitles = list.titles;
+  const linkOf = useCallback(
+    (id: string) =>
+      chatSessionLink(
+        id,
+        threads,
+        (thread) => listTitles[thread.id]?.title || thread.title,
+        namedSessions,
+      ),
+    [listTitles, namedSessions, threads],
+  );
+  const messages = useMemo(
+    () =>
+      chatMessageItems(viewMessages, {
+        agentActive,
+        onTurnIntoIssue: (source) =>
+          void emit({ source, type: "issue.draft.requested" }),
+        senderOf: (sessionId) => sessionLinkView(sessionId, linkOf(sessionId)),
+      }),
+    [agentActive, emit, linkOf, viewMessages],
+  );
+  // The side panel links the session that started the open chat.
+  const parentSessionId = selectedThread?.sessions[0]?.parentSessionId;
+  const parentLink = parentSessionId ? linkOf(parentSessionId) : undefined;
+  const panelCard = useMemo(
+    () =>
+      contextCard && parentSessionId
+        ? {
+            ...contextCard,
+            startedBy: sessionLinkView(parentSessionId, parentLink),
+          }
+        : contextCard,
+    [
+      contextCard,
+      parentSessionId,
+      parentLink?.sessionId,
+      parentLink?.title,
+      parentLink?.workspaceId,
+    ],
+  );
   const history = useMemo(
     () => (
       <ChatTranscriptHistory
@@ -418,7 +484,7 @@ export function useChatFeature({
         notices.linked?.title ||
         i18n.t("chat:list.newChat")
       }
-      contextCard={notices.linked ? undefined : contextCard}
+      contextCard={notices.linked ? undefined : panelCard}
       history={history}
       onReachHistoryStart={transcript.loadEarlier}
       onContextPanelVisibleChange={setContextPanelVisible}
@@ -443,6 +509,18 @@ export function useChatFeature({
       onAttachmentRemove={attachments.remove}
       onAttachmentsRestore={attachments.restore}
       onCancelActive={chatSend.cancel}
+      offlineDevice={
+        awaitedDevice && activeSession
+          ? {
+              label: awaitedDevice.label,
+              waitingSessionId: activeSession.id,
+            }
+          : deviceOnline
+            ? undefined
+            : {
+                label: device?.label || i18n.t("chat:thread.deviceFallback"),
+              }
+      }
       onClaudeEffortChange={(value) => updateOverride({ claudeEffort: value })}
       onClaudePermissionModeChange={(value) =>
         updateOverride({ claudePermissionMode: value })
@@ -465,16 +543,25 @@ export function useChatFeature({
       onResetControls={resetOverride}
       onRetryModels={retryModels}
       onSend={chatSend.send}
-      onSteer={chatSend.steer}
+      onSteer={
+        activeSession?.provider !== "codex" ||
+        device?.capabilities?.includes("codex_active_steer")
+          ? chatSend.steer
+          : undefined
+      }
       queue={queue}
       selectedAgentId={selectedAgent?.id ?? ""}
+      // Offline, a message waits for the device: only a missing agent, or
+      // an unready one on an online device, keeps it from being sent.
       sendDisabled={
-        !deviceOnline || !selectedAgent || selectedAgent.status !== "healthy"
+        !selectedAgent || (deviceOnline && selectedAgent.status !== "healthy")
       }
       sendDisabledReason={
-        !deviceOnline
-          ? i18n.t("agents:picker.deviceOffline")
-          : selectedAgent && selectedAgent.status !== "healthy"
+        !selectedAgent
+          ? deviceOnline
+            ? undefined
+            : i18n.t("agents:picker.deviceOffline")
+          : deviceOnline && selectedAgent.status !== "healthy"
             ? shortUnavailableReason(
                 selectedAgent.status,
                 selectedAgent.statusDetail,

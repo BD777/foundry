@@ -35,6 +35,12 @@ func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
+	windows := store.SaveProfileInput{ContextWindows: input.ContextWindows}
+	if message := normalizeContextWindows(&windows); message != "" {
+		writeError(w, http.StatusBadRequest, message)
+		return
+	}
+	input.ContextWindows = windows.ContextWindows
 	credential := strings.TrimSpace(input.APIKey)
 	input.APIKey = ""
 	if input.Command != "" || len(input.Env) > 0 {
@@ -110,6 +116,14 @@ func (s *Server) readAgentModels(ctx context.Context, actor Actor, profile store
 	if actor.Agent() && (profile.DeviceID == "" || profile.DeviceID == actor.Identity.DeviceID) {
 		profile.DeviceID = actor.Identity.DeviceID
 		profile.WorkspaceID = actor.Identity.WorkspaceID
+	}
+	// Runtime and account changes must not reuse a catalog from the old executable.
+	if health, err := s.store.ListProviderHealth(ctx, profile.DeviceID); err == nil {
+		for _, item := range health {
+			if item.Provider == profile.Runtime && item.Cli != nil {
+				profile.RuntimeGeneration = item.Cli.Generation + ":" + item.AccountLabel
+			}
+		}
 	}
 	s.injectModelListCredential(ctx, &profile)
 	models, err := s.modelCatalogs.list(ctx, profile, refresh, s.hub.ListAgentModels)

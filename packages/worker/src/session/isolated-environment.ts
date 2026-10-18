@@ -1,6 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { codexHome as deviceCodexHome } from "../native-homes.js";
 import { foundryStatePath } from "../state-root.js";
 import {
   sandboxCredentialCopies,
@@ -28,10 +27,7 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
   // Provider authentication stays private and is never staged in the
   // candidate. The sandbox gets the device's access tokens, never a refresh
   // token: providers rotate those, and a refresh in here would sign the
-  // device out (provider-credentials.ts). Codex's settings come along.
-  const codexConfig = resolve(deviceCodexHome(), "config.toml");
-  if (existsSync(codexConfig))
-    copyFileSync(codexConfig, resolve(codexHome, "config.toml"));
+  // device out (provider-credentials.ts). Native execution settings stay out.
   writeSandboxCredentials(
     sandboxCredentialCopies({
       CODEX_HOME: codexHome,
@@ -48,6 +44,7 @@ export function isolatedAgentEnvironment(scratch: string): NodeJS.ProcessEnv {
     HOME: scratch,
     CODEX_HOME: codexHome,
     CLAUDE_CONFIG_DIR: claudeHome,
+    FOUNDRY_RUNTIME_CONFIG_ISOLATED: "1",
     TMPDIR: temp,
     CLAUDE_CODE_TMPDIR: temp,
     TMP: temp,

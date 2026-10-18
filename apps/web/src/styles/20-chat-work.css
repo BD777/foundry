@@ -1,0 +1,51 @@
+.fdy-chat-work-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.fdy-chat-work-row {
+  min-width: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--fdy-line);
+}
+.fdy-chat-work-row > .fdy-chat-context-row {
+  width: 100%;
+  min-width: 0;
+}
+.fdy-chat-work-note {
+  margin: 4px 0 8px;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fdy-chat-work-error {
+  margin: 4px 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fdy-chat-work-group h4 {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-chat-work-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.fdy-chat-work-details dt {
+  color: var(--fdy-ink-muted);
+}
+.fdy-chat-work-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.fdy-chat-work-details pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

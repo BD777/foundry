@@ -43,10 +43,13 @@ const root = resolve(import.meta.dirname, "..");
 export const tsDtoPaths = [
   "packages/protocol/src/chat.ts",
   "packages/protocol/src/device.ts",
+  "packages/protocol/src/device-sharing.ts",
+  "packages/protocol/src/device-placement.ts",
   "packages/protocol/src/foundry-data.ts",
   "packages/protocol/src/issue.ts",
   "packages/protocol/src/profiles.ts",
   "packages/protocol/src/session.ts",
+  "packages/protocol/src/session-work.ts",
   "packages/protocol/src/skills.ts",
   "packages/protocol/src/workspace.ts",
   "packages/protocol/src/feishu.ts",
@@ -55,14 +58,19 @@ export const tsDtoPaths = [
   "packages/protocol/src/browser-events.ts",
   "packages/protocol/src/resources.ts",
   "packages/protocol/src/personal-agent.ts",
+  "packages/protocol/src/personal-agent-list.ts",
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
   "apps/server/internal/store/workspaces.go",
   "apps/server/internal/store/devices.go",
+  "apps/server/internal/store/device_sharing.go",
+  "apps/server/internal/store/device_placement.go",
   "apps/server/internal/store/profiles.go",
+  "apps/server/internal/store/native_account_holds.go",
   "apps/server/internal/store/skills.go",
   "apps/server/internal/store/skill_repositories.go",
   "apps/server/internal/store/sessions.go",
+  "apps/server/internal/store/session_work.go",
   "apps/server/internal/store/session_files.go",
   "apps/server/internal/store/session_timers.go",
   "apps/server/internal/store/session_activity.go",
@@ -75,6 +83,7 @@ export const goDtoPaths = [
   "apps/server/internal/browserevent/payloads.go",
   "apps/server/internal/store/resources.go",
   "apps/server/internal/store/personal_agent.go",
+  "apps/server/internal/store/personal_agent_list.go",
 ].map((path) => resolve(root, path));
 const tsMessagesPath = resolve(
   root,

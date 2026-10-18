@@ -35,7 +35,7 @@ func (d *queueDaemon) write(id, messageType string, payload any) {
 	writeWSIDForTest(d.t, d.conn, id, messageType, payload)
 }
 
-func connectQueueDaemon(t *testing.T, serverURL, deviceID, workspaceID, provider string, active []string) *queueDaemon {
+func connectQueueDaemon(t *testing.T, serverURL, deviceID, workspaceID, provider string, active []string, capabilities ...string) *queueDaemon {
 	t.Helper()
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(serverURL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
@@ -44,6 +44,7 @@ func connectQueueDaemon(t *testing.T, serverURL, deviceID, workspaceID, provider
 	t.Cleanup(func() { conn.Close() })
 	writeWSForTest(t, conn, "hello", map[string]any{
 		"activeSessionIds": active,
+		"capabilities":     capabilities,
 		"device":           map[string]any{"id": deviceID, "label": "Queue Device", "status": "connected", "lastSeenLabel": "online"},
 		"workspace":        map[string]any{"id": workspaceID, "name": "Queue", "localPath": t.TempDir(), "baseline": "main"},
 		"providerHealth":   []map[string]any{},
@@ -300,7 +301,7 @@ func jsonNumber(value int64) string {
 
 // A direct follow-up that finds the turn already running (a queued message
 // went first) is refused rather than steered, so it can be queued; steering
-// a queued message is Claude's alone.
+// a queued message requires native control support on the device.
 func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 	for _, provider := range []string{"claude", "codex"} {
 		t.Run(provider, func(t *testing.T) {
@@ -327,10 +328,9 @@ func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 			queue := client.queue(http.MethodPost, path, `{"text":"steer me"}`, "", http.StatusCreated)
 			status, raw := client.call(http.MethodPost, path+"/"+queue.Items[0].ID+"/steer", "", "")
 			if provider == "codex" {
-				if status != http.StatusConflict || !strings.Contains(string(raw), "only Claude") {
+				if status != http.StatusConflict || !strings.Contains(string(raw), "does not support steering") {
 					t.Fatalf("codex steer = %d %s", status, raw)
 				}
-				return
 			}
 			// No device is connected: the steer fails and the message keeps its place.
 			if status != http.StatusConflict {
@@ -339,7 +339,7 @@ func TestChatQueueSteerAndRequireIdle(t *testing.T) {
 			if after := client.queue(http.MethodGet, path, "", "", http.StatusOK); len(after.Items) != 1 || after.Items[0].State != store.ChatQueueStateQueued {
 				t.Fatalf("after a failed steer = %+v", after.Items)
 			}
-			daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", provider, []string{session.ID})
+			daemon := connectQueueDaemon(t, live.URL, "dev_queue", "ws_queue", provider, []string{session.ID}, "codex_active_steer")
 			attachment := `{"id":"att_1","name":"a.png","path":"/ws/a.png","kind":"image"}`
 			queue = client.queue(http.MethodPost, path, `{"text":"with a file","attachments":[`+attachment+`]}`, "", http.StatusCreated)
 			steered := client.queue(http.MethodPost, path+"/"+queue.Items[1].ID+"/steer", "", "", http.StatusOK)

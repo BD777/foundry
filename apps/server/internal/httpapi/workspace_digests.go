@@ -7,8 +7,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
 )
@@ -438,7 +440,7 @@ func (s *Server) digestSummaryAllowed(ctx context.Context, service *workspacedig
 	if daily <= 0 {
 		daily = personalagent.DefaultLimits.DailyDigestSessions
 	}
-	dayStart := startOfDay(now, agent.Settings.Timezone)
+	dayStart := startOfDay(now, s.personLocation(ctx, agent))
 	if today, err := service.SummariesSince(ctx, agent.UserID, dayStart); err != nil {
 		return err
 	} else if today >= daily {
@@ -511,7 +513,9 @@ func (s *Server) digestSummaryPrompt(ctx context.Context, service *workspacedige
 }
 
 // readInstructionFiles reads the start of the workspace's AGENTS.md /
-// README from its device, at most DigestSourceBytes together.
+// README from its device, at most DigestSourceBytes together, without
+// secrets and connection details (redacted before it is cut, so none is
+// cut short of its pattern).
 func (s *Server) readInstructionFiles(ctx context.Context, workspace store.WorkspaceProjection) []workspacedigest.InstructionExcerpt {
 	files, err := s.store.ListWorkspaceFiles(ctx, workspace.ID)
 	if err != nil || !s.hub.HasConnection(workspace.DeviceID) {
@@ -529,14 +533,25 @@ func (s *Server) readInstructionFiles(ctx context.Context, workspace store.Works
 		if err != nil || strings.TrimSpace(read.Content) == "" {
 			continue
 		}
-		content := read.Content
-		if len(content) > budget {
-			content = content[:budget]
-		}
+		content := redact.Text(validPrefix(read.Content, 2*budget))
+		content = validPrefix(content, budget)
 		budget -= len(content)
 		excerpts = append(excerpts, workspacedigest.InstructionExcerpt{Path: path, Content: content})
 	}
 	return excerpts
+}
+
+// validPrefix is text's first limit bytes at most, ending on a whole
+// character.
+func validPrefix(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
 }
 
 // finishDigestSummary takes a summary session's end: a valid answer is the
@@ -556,13 +571,8 @@ func (s *Server) finishDigestSummary(ctx context.Context, session store.AgentSes
 	}
 }
 
-// startOfDay is the start of now's day in the person's time zone (UTC when
-// it is unknown).
-func startOfDay(now time.Time, timezone string) time.Time {
-	location, err := time.LoadLocation(timezone)
-	if err != nil || timezone == "" {
-		location = time.UTC
-	}
+// startOfDay is the start of now's day in location.
+func startOfDay(now time.Time, location *time.Location) time.Time {
 	local := now.In(location)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 }

@@ -1,13 +1,17 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type {
+  DevicePlacement,
   DeviceProjection,
   PersonalAgentDeviceSettings,
   PersonalAgentSettings,
 } from "@bd777/foundry-protocol";
+import { listDevicePlacements } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { accountSharers, joinNames } from "../../lib/device-sharing";
 import {
   SettingsCheck,
   SettingsField,
@@ -44,7 +48,21 @@ export function PlacesSection({
   homeDeviceId: string;
   onOpenComputer: (deviceId: string) => void;
 }) {
-  const { t } = useTranslation("personalAgent");
+  const { t, i18n } = useTranslation("personalAgent");
+  const [placements, setPlacements] = useState<DevicePlacement[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    listDevicePlacements()
+      .then((list) => {
+        if (!cancelled) setPlacements(list);
+      })
+      .catch(() => {
+        // The notes are a hint here; the computer's page shows any error.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [owned.length]);
   if (!owned.length)
     return <p className="fdy-pa-muted">{t("settings.places.none")}</p>;
   const home = owned.find((device) => device.id === homeDeviceId);
@@ -71,6 +89,10 @@ export function PlacesSection({
         {owned.map((device) => {
           const entry = deviceSettings(draft, device.id);
           const folders = device.managedRoots ?? [];
+          const notes = notesOf(
+            placements.find((item) => item.deviceId === device.id),
+          );
+          const sharers = accountSharers(device);
           return (
             <li className="fdy-pa-place" key={device.id}>
               <div className="fdy-pa-inline">
@@ -83,6 +105,13 @@ export function PlacesSection({
                     : t("settings.status.offline")}
                 </Badge>
               </div>
+              {sharers.length ? (
+                <span className="fdy-pa-muted">
+                  {t("settings.places.shared", {
+                    names: joinNames(sharers, i18n.language),
+                  })}
+                </span>
+              ) : null}
               <SettingsCheck
                 checked={entry.allowWork}
                 label={t("settings.places.work")}
@@ -93,6 +122,11 @@ export function PlacesSection({
                 label={t("settings.places.create")}
                 onChange={(allowCreate) => update(device.id, { allowCreate })}
               />
+              <span className="fdy-pa-muted">
+                {notes.length
+                  ? t("settings.places.has", { notes: notes.join(" · ") })
+                  : t("settings.places.hasNothing")}
+              </span>
               <div className="fdy-pa-place-folder">
                 <span className="fdy-pa-muted">
                   {folders.length
@@ -115,7 +149,10 @@ export function PlacesSection({
         })}
       </ul>
       <SettingsGroup>
-        <SettingsField label={t("settings.places.preferred")}>
+        <SettingsField
+          label={t("settings.places.preferred")}
+          hint={t("settings.places.preferredHint")}
+        >
           <SelectMenu
             ariaLabel={t("settings.places.preferred")}
             className="fdy-pa-select"
@@ -137,4 +174,18 @@ export function PlacesSection({
       </SettingsGroup>
     </>
   );
+}
+
+/** What the person noted about a computer, and whether it is always on. */
+function notesOf(placement: DevicePlacement | undefined): string[] {
+  if (!placement) return [];
+  const notes = placement.labels.map((label) =>
+    label.value ? `${label.key}: ${label.value}` : label.key,
+  );
+  if (
+    !notes.includes("always-on") &&
+    placement.facts.some((fact) => fact.key === "always-on")
+  )
+    notes.push("always-on");
+  return notes;
 }

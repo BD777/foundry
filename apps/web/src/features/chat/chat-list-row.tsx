@@ -3,6 +3,7 @@ import {
   CircleAlert,
   Clock,
   GitBranch,
+  Hourglass,
   LoaderCircle,
   PauseCircle,
   Terminal,
@@ -78,9 +79,26 @@ export const ChatListRow = memo(function ChatListRow({
   );
 });
 
-/** The row's one status mark: blocked, working, failed, unread or scheduled. */
+/**
+ * The row's one status mark: blocked, waiting for its offline device,
+ * working, failed, unread or scheduled.
+ */
 function ChatRowStatus({ chat }: { chat: ChatListItem }) {
   const { t } = useTranslation("chat");
+  if (chat.status === "waiting") {
+    const label = t("listRow.waitingForDevice", { device: chat.waitingFor });
+    return (
+      <span
+        className="fdy-chat-row-status"
+        data-tone="warning"
+        role="img"
+        aria-label={label}
+        title={label}
+      >
+        <Hourglass size={14} />
+      </span>
+    );
+  }
   if (chat.status === "blocked")
     return (
       <span

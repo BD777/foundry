@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Which account a native agent CLI is signed in as on this machine.
  *
@@ -114,4 +115,34 @@ export function claudeAccount(
     return undefined;
   }
   return undefined;
+}
+
+/** Identity/config generation only: token renewal must not invalidate live runtimes. */
+export function nativeAccountFingerprint(runtime: "claude" | "codex"): string {
+  const source =
+    runtime === "codex"
+      ? codexAuthPath()
+      : resolve(claudeGlobalConfigDir(), ".claude.json");
+  let identity: unknown = null;
+  try {
+    const value = JSON.parse(readFileSync(source, "utf8"));
+    identity =
+      runtime === "codex"
+        ? {
+            mode: value.auth_mode,
+            account: value.tokens?.account_id,
+            email: jwtClaims(value.tokens?.id_token ?? "")?.email,
+          }
+        : {
+            account: value.oauthAccount?.accountUuid,
+            organization: value.oauthAccount?.organizationUuid,
+            email: value.oauthAccount?.emailAddress,
+          };
+  } catch {
+    /* Missing credentials have a stable empty identity. */
+  }
+  return createHash("sha256")
+    .update(JSON.stringify({ source, identity }))
+    .digest("hex")
+    .slice(0, 24);
 }

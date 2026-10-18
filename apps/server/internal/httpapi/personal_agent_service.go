@@ -75,7 +75,7 @@ func (s *Server) presentSessions(ctx context.Context, sessions []store.AgentSess
 
 // personalAgentUsage counts what the limits apply to, now.
 func (s *Server) personalAgentUsage(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgentUsage, error) {
-	return s.store.PersonalAgentUsage(ctx, agent, personalagent.Windows(time.Now(), agent.Settings.Timezone))
+	return s.store.PersonalAgentUsage(ctx, agent, personalagent.Windows(time.Now(), s.personLocation(ctx, agent)))
 }
 
 // limitRefusal is a reached limit as the assistant reads it.
@@ -427,11 +427,19 @@ func (s *Server) recordPAAction(ctx context.Context, record store.PersonalAgentA
 }
 
 // suggestedHomeDevice is the device the setup card offers: one of the
-// person's that is online, else the first.
+// person's that is online, else the first. A device whose system account
+// other people's devices use is never offered (they would reach the
+// assistant's files and sign-ins); the person may still pick it in the
+// card. None when every device of theirs is shared.
 func (s *Server) suggestedHomeDevice(ctx context.Context, userID string) (string, error) {
-	devices, err := s.store.DevicesOwnedBy(ctx, userID)
-	if err != nil || len(devices) == 0 {
+	owned, err := s.store.DevicesOwnedBy(ctx, userID)
+	if err != nil || len(owned) == 0 {
 		return "", err
+	}
+	shared := s.sharedAccountDevices(ctx)
+	devices := slices.DeleteFunc(owned, func(deviceID string) bool { return len(shared[deviceID]) > 0 })
+	if len(devices) == 0 {
+		return "", nil
 	}
 	slices.Sort(devices)
 	for _, deviceID := range devices {
@@ -450,8 +458,9 @@ func (s *Server) suggestedHomeDevice(ctx context.Context, userID string) (string
 // browserLanguage is the language of the browser that asked: an account
 // following its browser's language has no language of its own, and what the
 // server says itself (replies, cards, proposals, the folder's name) follows
-// the assistant's language setting, which starts as this.
-func (s *Server) setupPersonalAgent(ctx context.Context, account *store.User, deviceID, browserLanguage string) (store.PersonalAgent, error) {
+// the assistant's language setting, which starts as this. browserTimezone
+// is that browser's time zone, the time zone setting's first value.
+func (s *Server) setupPersonalAgent(ctx context.Context, account *store.User, deviceID, browserLanguage, browserTimezone string) (store.PersonalAgent, error) {
 	if _, err := s.store.GetPersonalAgent(ctx, account.ID); err == nil {
 		return store.PersonalAgent{}, &statusError{http.StatusConflict, store.ErrPersonalAgentExists}
 	}
@@ -466,6 +475,7 @@ func (s *Server) setupPersonalAgent(ctx context.Context, account *store.User, de
 	if account.Locale == "" {
 		settings.Language = browserLanguage
 	}
+	settings.Timezone = personalagent.ValidTimezone(browserTimezone)
 	if settings, err = personalagent.NormalizeSettings(settings, owned, deviceID); err != nil {
 		return store.PersonalAgent{}, err
 	}

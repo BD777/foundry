@@ -171,6 +171,14 @@ type PersonalAgentOverview struct {
 // PersonalAgentSetupInput is POST /api/personal-agent's body.
 type PersonalAgentSetupInput struct {
 	DeviceID string `json:"deviceId"`
+	// Timezone is the browser's IANA time zone: the setting's first value.
+	Timezone string `json:"timezone,omitempty"`
+}
+
+// PersonalAgentTimezoneInput is POST /api/personal-agent/timezone's body:
+// the browser's IANA time zone.
+type PersonalAgentTimezoneInput struct {
+	Timezone string `json:"timezone"`
 }
 
 // Memory origins.
@@ -299,6 +307,9 @@ type PersonalAgentTask struct {
 	LastEventAt           string `json:"lastEventAt,omitempty"`
 	EndedAt               string `json:"endedAt,omitempty"`
 	StuckSince            string `json:"stuckSince,omitempty"`
+	// WaitingFor, set when listed, is the name of the offline computer its
+	// session is queued for; not stored.
+	WaitingFor string `json:"waitingFor,omitempty"`
 }
 
 // Task event kinds.
@@ -507,6 +518,9 @@ const (
 	PersonalAgentRefusalLimit      = "limit"
 	PersonalAgentRefusalStopped    = "stopped"
 	PersonalAgentRefusalInvalid    = "invalid"
+	// PersonalAgentRefusalNoPlace: no computer the assistant may use has
+	// what a new project needs (PersonalAgentNoPlace).
+	PersonalAgentRefusalNoPlace = "no_place"
 )
 
 // PersonalAgentActionRecord is one write tool call, refused ones included,
@@ -548,6 +562,9 @@ type PersonalAgentStore interface {
 	// when the person or the workspace already has one.
 	CreatePersonalAgent(ctx context.Context, agent PersonalAgent) (PersonalAgent, error)
 	SavePersonalAgentSettings(ctx context.Context, userID string, settings PersonalAgentSettings) (PersonalAgent, error)
+	// FillPersonalAgentTimezone sets the assistant's time zone to timezone
+	// only while it has none: a zone the person chose is never replaced.
+	FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (PersonalAgent, error)
 	// SetPersonalAgentState switches active and stopped.
 	SetPersonalAgentState(ctx context.Context, userID, state string) (PersonalAgent, error)
 	// MovePersonalAgentHome makes workspaceID on deviceID the assistant's

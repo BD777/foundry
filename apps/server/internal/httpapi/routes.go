@@ -344,8 +344,17 @@ func (s *Server) routeTable() []route {
 
 		fn("GET /api/devices", s.handleListDevices, filtered()),
 		fn("POST /api/devices/pairing-tokens", s.handleCreateDevicePairingToken, signedIn()),
+		// A pairing that waits for its creator's choice to share a system
+		// account (device_sharing.go); the token names it, the caller must
+		// have created it.
+		fn("POST /api/devices/pairing-tokens/status", s.handleDevicePairingStatus, signedIn()),
+		fn("POST /api/devices/pairing-tokens/consent", s.handleDevicePairingConsent, signedIn()),
+		fn("POST /api/devices/{deviceId}/system-account-notice/dismiss", s.handleDismissSystemAccountNotice, deviceOwner("deviceId")),
 		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceOwner("deviceId")),
 		fn("PATCH /api/devices/{deviceId}", s.handleRenameDevice, deviceOwner("deviceId")),
+		// Labels and detected facts (device_placement.go): the caller's own devices.
+		fn("GET /api/device-placements", s.handleListDevicePlacements, filtered()),
+		fn("PUT /api/devices/{deviceId}/labels", s.handleSetDeviceLabels, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/worker/update", s.handleUpdateWorker, deviceOwner("deviceId")),
 		fn("POST /api/devices/runtime-settings", s.handleUpsertAgentRuntimeSettings, inHandler()),
 		fn("POST /api/devices/{id}/resources/refresh", s.handleRefreshDeviceResources, inHandler()),
@@ -367,6 +376,7 @@ func (s *Server) routeTable() []route {
 
 		fn("GET /api/agent-profiles", s.handleListAgentProfiles, filtered()),
 		fn("POST /api/agent-profiles", s.handleCreateAgentProfile, inHandler()),
+		fn("POST /api/agent-profiles/resume-account", s.handleResumeNativeAccount, inHandler()),
 		fn("POST /api/agent-profiles/models", s.handleListAgentModels, inHandler()),
 		fn("GET /api/profiles", s.handleListProfiles, filtered()),
 		fn("POST /api/profiles", s.handleCreateProfile, signedIn()),
@@ -448,6 +458,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/personal-agent", s.handlePersonalAgentOverview, personOnly()),
 		fn("POST /api/personal-agent", s.handleSetupPersonalAgent, personOnly()),
 		fn("PUT /api/personal-agent/settings", s.handleSavePersonalAgentSettings, personOnly()),
+		fn("POST /api/personal-agent/timezone", s.handleFillPersonalAgentTimezone, personOnly()),
 		fn("POST /api/personal-agent/home", s.handleMovePersonalAgentHome, personOnly()),
 		fn("POST /api/personal-agent/stop", s.handleStopPersonalAgent, personOnly()),
 		fn("POST /api/personal-agent/resume", s.handleResumePersonalAgent, personOnly()),
@@ -463,6 +474,9 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/personal-agent/tasks", s.handleListPersonalAgentTasks, personOnly()),
 		fn("POST /api/personal-agent/tasks/{id}/stop", s.handleStopPersonalAgentTask, personOnly()),
 		fn("GET /api/personal-agent/actions", s.handleListPersonalAgentActions, personOnly()),
+		fn("GET /api/personal-agent/list", s.handleListPersonalAgentItems, personOnly()),
+		fn("PUT /api/personal-agent/list/{id}", s.handleEditPersonalAgentItem, personOnly()),
+		fn("DELETE /api/personal-agent/list/{id}", s.handleDeletePersonalAgentItem, personOnly()),
 
 		fn("GET /api/chats", s.handleListChats, workspaceRole(viewer, queryWorkspace())),
 		fn("GET /api/chat-titles", s.handleListChatTitles, workspaceRole(viewer, queryWorkspace())),
@@ -514,6 +528,7 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/agent-session-threads/{id}", s.handleGetAgentSessionThread, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}", s.handleGetAgentSession, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/subagents", s.handleListAgentSubagents, workspaceRole(viewer, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/link", s.handleGetSessionLink, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/conversation", s.handleGetAgentSessionConversation, workspaceRole(viewer, sessionWorkspace("id"))),
 		fn("GET /api/agent-sessions/{id}/subagents/{taskId}", s.handleGetAgentSubagentTranscript, workspaceRole(viewer, sessionWorkspace("id"))),
 		// Files outside the workspace that only the answer names need Member (in handler).
@@ -526,6 +541,9 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/agent-sessions/{id}/messages", s.handleSendAgentSessionMessage, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/cancel", s.handleCancelAgentSession, workspaceRole(member, sessionWorkspace("id"))),
 		fn("POST /api/agent-sessions/{id}/background-tasks/{taskId}/stop", s.handleStopBackgroundTask, workspaceRole(member, sessionWorkspace("id"))),
+		fn("GET /api/agent-sessions/{id}/work", s.handleListSessionWork, workspaceRole(member, sessionWorkspace("id"))),
+		fn("POST /api/agent-sessions/{id}/work", s.handleCreateSessionWork, workspaceRole(member, sessionWorkspace("id"))),
+		fn("POST /api/agent-sessions/{id}/work/operations", s.handleControlSessionWork, workspaceRole(member, sessionWorkspace("id"))),
 
 		// Installing a worker reads these before it has any credential.
 		fn("GET /api/worker/release", s.handleWorkerRelease, publicRoute()),
@@ -537,6 +555,9 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/daemon/chats/running", s.handleDaemonRunningChats, daemonProtocol()),
 		fn("GET /api/daemon/chats/digests", s.handleDaemonChatDigests, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/timer-fires", s.handleDaemonTimerFire, daemonProtocol()),
+		fn("GET /api/daemon/session-work", s.handleDeviceWork, daemonProtocol()),
+		fn("POST /api/daemon/session-work", s.handleDeviceWork, daemonProtocol()),
+		fn("POST /api/daemon/sessions/{id}/work-fire", s.handleWorkFire, daemonProtocol()),
 		fn("POST /api/daemon/sessions/{id}/session-tokens", s.handleDaemonSessionToken, daemonProtocol()),
 		fn("POST /api/daemon/skill-repository-fetches/{id}", s.handleDaemonSkillRepositoryUpload, daemonProtocol()),
 		fn("GET /api/daemon/ws", s.handleDaemonWebSocket, daemonProtocol()),

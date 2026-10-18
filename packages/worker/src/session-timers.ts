@@ -374,6 +374,10 @@ export class SessionTimers {
     this.timer = undefined;
   }
 
+  isTicking(): boolean {
+    return this.ticking;
+  }
+
   private save(): void {
     const path = this.options.path;
     if (!path) return;
@@ -419,14 +423,14 @@ export const sessionTimers = new SessionTimers();
  * Keeps this worker's session timers across restarts and has the server
  * send the ones due while no process runs their session.
  */
-export function startSessionTimers(serverURL: string): void {
+export function startSessionTimers(serverURL: string, execute = true): void {
   timerServerURL = serverURL;
   sessionTimers.configure({
     path: foundryStatePath("session-timers.json"),
     send: (request) => sendTimerFire(serverURL, request),
   });
   sessionTimers.load();
-  sessionTimers.start();
+  if (execute) sessionTimers.start();
 }
 
 let timerServerURL: string | undefined;

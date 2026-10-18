@@ -1,4 +1,4 @@
-import { ArrowRight, Files, Pencil } from "lucide-react";
+import { ArrowRight, Files, Hourglass, Pencil } from "lucide-react";
 import { memo, type ReactNode, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
@@ -117,7 +117,36 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.idea === right.idea &&
       left.recoverable === right.recoverable &&
       left.streaming === right.streaming &&
+      left.sentBy?.sessionId === right.sentBy?.sessionId &&
+      left.sentBy?.label === right.sentBy?.label &&
+      Boolean(left.sentBy?.onOpen) === Boolean(right.sentBy?.onOpen) &&
       attachmentsEqual(left.attachments, right.attachments))
+  );
+}
+
+/** "From <session>" above a message another session sent. */
+function MessageSender({
+  sentBy,
+}: {
+  sentBy: NonNullable<ChatMessageItem["sentBy"]>;
+}) {
+  const { t } = useTranslation("conversation");
+  return (
+    <p className="fdy-chat-message-sender">
+      <span>{t("message.sentBy")}</span>{" "}
+      {sentBy.onOpen ? (
+        <Button
+          onClick={sentBy.onOpen}
+          size="inline"
+          title={t("message.openSender", { title: sentBy.label })}
+          variant="link"
+        >
+          {sentBy.label}
+        </Button>
+      ) : (
+        <strong>{sentBy.label}</strong>
+      )}
+    </p>
   );
 }
 
@@ -148,6 +177,17 @@ export const ChatMessageRow = memo(
           <span />
           <strong>{displayTitle(message.text)}</strong>
           <span />
+        </div>
+      );
+    }
+    if (message.kind === "waiting") {
+      return (
+        <div className="fdy-chat-waiting" role="status">
+          <Hourglass aria-hidden="true" size={15} />
+          <span className="fdy-chat-waiting-copy">
+            <strong>{message.title}</strong>
+            {message.text ? <span>{message.text}</span> : null}
+          </span>
         </div>
       );
     }
@@ -196,6 +236,7 @@ export const ChatMessageRow = memo(
         data-copy-always={message.copyAlways ? "true" : "false"}
         data-streaming={message.streaming ? "true" : "false"}
       >
+        {message.sentBy ? <MessageSender sentBy={message.sentBy} /> : null}
         <div className="fdy-chat-message-copy fdy-markdown">
           <MarkdownContent
             fileReferences={message.fileReferences}

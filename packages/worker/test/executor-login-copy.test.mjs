@@ -181,9 +181,13 @@ test("the device's Claude renews its own login only near expiry, where it can ke
   assert.equal(runs.length, 1);
   const args = runs[0];
   assert.ok(
-    args.includes("--print") && args.includes("--no-session-persistence"),
+    args.includes("native-account-metadata") && !args.includes("--print"),
   );
-  assert.equal(args[args.indexOf("--tools") + 1], "");
+  assert.deepEqual(
+    args,
+    ["native-account-metadata"],
+    "credential maintenance never submits a prompt",
+  );
 
   // A renewal that changed nothing is not repeated at every check.
   expiry = now() + 30 * 1000;

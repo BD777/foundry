@@ -1,3 +1,4 @@
+import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
   type SessionTimers,
@@ -60,6 +61,7 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
               } satisfies SessionTurnPayload)
           : undefined,
       );
+      if (features.sessionTurns) executionHostClient()?.reportOwnTurns();
       ctx.announceAdditionalIssueCapacity();
       if (ctx.once && ctx.idleTimeoutMs > 0) {
         ctx.state.idleTimer = setTimeout(
@@ -71,6 +73,10 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.sessionTimers, (envelope, ctx) => {
       // Timers of a session the server knows: kept here unless this
       // worker keeps or runs that session's own.
-      if (!ctx.once) sessionTimers.adopt([envelope.payload as SessionTimers]);
+      if (!ctx.once) {
+        const host = executionHostClient();
+        if (host) return host.adoptTimers(envelope.payload as SessionTimers);
+        sessionTimers.adopt([envelope.payload as SessionTimers]);
+      }
     });
 }

@@ -4,8 +4,9 @@
 // write in a turn, PostToolUse one after each write; the diff runs from the
 // first to the last, so other agents' edits to other files never show.
 // Codex reports no diffs: a turn in a Git work tree starts with a snapshot
-// written through a temporary index (the user's index is never touched),
-// and the diff runs from that snapshot, which may include other edits.
+// of the workspace folder written through Foundry's own index (the user's
+// index is never touched), and the diff runs from that snapshot, which may
+// include other edits.
 //
 // Copies are content-addressed under
 // `<sessions>/<id>/inputs/<inputId>/baselines/`, beside a `changes.json`
@@ -15,15 +16,17 @@ import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { git, gitBytes } from "./execution-git.js";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { git, gitBytes, type GitError } from "./execution-git.js";
 import { sessionArtifactDirectories } from "./session-artifacts.js";
 import { writeFileAtomic, writePrivateJSONAtomic } from "./storage.js";
 import { errorMessage } from "./utils.js";
@@ -48,11 +51,23 @@ export interface TurnFileChange {
   otherEdits?: boolean;
 }
 
+/** A Git tree of the work tree at one moment. */
+export interface GitSnapshot {
+  repoRoot: string;
+  tree: string;
+  /**
+   * The folder the tree covers (the workspace) and its path in the
+   * repository; files elsewhere have no "before". Older snapshots cover the
+   * whole repository.
+   */
+  scope?: { path: string; prefix: string };
+}
+
 export interface TurnChanges {
   version: 1;
   source: "hook" | "git-snapshot";
   /** Codex: the turn-start tree, in the work tree's repository. */
-  gitSnapshot?: { repoRoot: string; tree: string };
+  gitSnapshot?: GitSnapshot;
   /** By absolute path. */
   files: Record<string, TurnFileChange>;
 }
@@ -216,13 +231,39 @@ export class TurnFileChanges {
     this.save();
   }
 
-  /** Codex: the work tree's state at the turn start, as a Git tree. */
-  async snapshotGitWorkTree(workspacePath: string): Promise<void> {
+  /**
+   * Codex: the workspace folder's state at the turn start, as a Git tree.
+   * `sessionDirectory` keeps the snapshot's index between turns, so a later
+   * turn hashes only what changed since; a session whose snapshot ran out
+   * of time stops taking them instead of delaying every turn.
+   */
+  async snapshotGitWorkTree(
+    workspacePath: string,
+    sessionDirectory?: string,
+  ): Promise<void> {
+    const skipped = sessionDirectory
+      ? resolve(sessionDirectory, "git-snapshot.skipped")
+      : undefined;
+    if (skipped && existsSync(skipped)) return;
     // Foundry's own session files are not the user's work.
-    const snapshot = await gitWorkTreeSnapshot(workspacePath, [
-      resolve(workspacePath, ".foundry"),
-      this.directory,
-    ]);
+    const snapshot = await gitWorkTreeSnapshot(workspacePath, {
+      exclude: [
+        resolve(workspacePath, ".foundry"),
+        this.directory,
+        ...(sessionDirectory ? [sessionDirectory] : []),
+      ],
+      index: sessionDirectory
+        ? resolve(sessionDirectory, "git-snapshot.index")
+        : undefined,
+    });
+    if (snapshot === "timedOut") {
+      if (skipped)
+        writeFileAtomic(skipped, `${new Date().toISOString()}\n`, {
+          hardenParent: false,
+          fsync: false,
+        });
+      return;
+    }
     if (!snapshot) return;
     this.changes = {
       ...this.changes,
@@ -253,85 +294,160 @@ export class TurnFileChanges {
 /** Snapshot reads: bounded by the largest copy kept, never long. */
 const snapshotGit = { maxBuffer: 4 * maxBaselineBytes, timeout: 30_000 };
 
+function realpathOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+/** `path` relative to `base`, with `/`; undefined when it is not inside. */
+function inside(base: string, path: string): string | undefined {
+  const relativePath = relative(base, path);
+  if (relativePath.startsWith("..") || isAbsolute(relativePath))
+    return undefined;
+  return relativePath.split(sep).join("/");
+}
+
 /**
- * Writes the work tree as a Git tree object without touching the user's
- * index: `git add -A` stages into a temporary copy of it, kept outside the
- * work tree (the copy keeps `add` from re-hashing unchanged files). The
- * objects land in the repository's object store, where `git gc` collects
- * them. `exclude`: folders left out, such as Foundry's session files.
+ * Writes the workspace folder as a Git tree object without touching the
+ * user's index: `git add -A` stages into `index` (seeded from a copy of the
+ * user's), or into a temporary copy without one. The index keeps `add` from
+ * re-hashing unchanged files, so it is kept between turns. Only the
+ * workspace folder is staged: a workspace inside a much larger repository
+ * would otherwise hash all of it. Nested repositories and worktrees are
+ * recorded as their commit, never entered. Files Git cannot read are left
+ * out rather than failing the snapshot. The objects land in the
+ * repository's object store, where `git gc` collects them.
+ * `exclude`: folders left out, such as Foundry's session files.
+ * "timedOut": staging ran out of time.
  */
 export async function gitWorkTreeSnapshot(
   workspacePath: string,
-  exclude: string[] = [],
-): Promise<{ repoRoot: string; tree: string } | undefined> {
+  options: { exclude?: string[]; index?: string } = {},
+): Promise<GitSnapshot | "timedOut" | undefined> {
   let repoRoot: string;
+  let prefix: string;
   try {
-    repoRoot = await git(
-      workspacePath,
-      ["rev-parse", "--show-toplevel"],
-      snapshotGit,
-    );
+    // The prefix comes from Git, so a workspace reached through a symlink
+    // still finds its place in the repository.
+    [repoRoot = "", prefix = ""] = (
+      await git(
+        workspacePath,
+        ["rev-parse", "--show-toplevel", "--show-prefix"],
+        snapshotGit,
+      )
+    ).split("\n");
   } catch {
     return undefined;
   }
   if (!repoRoot) return undefined;
-  const temporaryFolder = mkdtempSync(join(tmpdir(), "foundry-snapshot-"));
-  const temporaryIndex = join(temporaryFolder, "index");
-  const inRepo = exclude
-    .map((path) => relative(repoRoot, path).split(sep).join("/"))
-    .filter((path) => path && !path.startsWith("..") && !isAbsolute(path));
+  const inWorkspace = (options.exclude ?? [])
+    .map((path) => inside(workspacePath, path))
+    .filter((path): path is string => Boolean(path));
   // Only the outermost of nested paths: git (2.39) fails `add` when an
   // exclude names a folder inside one that is already ignored, such as a
   // session folder under `.foundry/`, which Foundry adds to info/exclude.
-  const excluded = inRepo
+  const excluded = inWorkspace
     .filter(
       (path) =>
-        !inRepo.some((other) => other !== path && path.startsWith(`${other}/`)),
+        !inWorkspace.some(
+          (other) => other !== path && path.startsWith(`${other}/`),
+        ),
     )
     .map((path) => `:(exclude)${path}`);
+  const temporaryFolder = options.index
+    ? undefined
+    : mkdtempSync(join(tmpdir(), "foundry-snapshot-"));
+  const index = options.index ?? join(temporaryFolder!, "index");
   try {
-    const realIndex = resolve(
-      repoRoot,
-      await git(repoRoot, ["rev-parse", "--git-path", "index"], snapshotGit),
-    );
-    if (existsSync(realIndex)) copyFileSync(realIndex, temporaryIndex);
-    const withIndex = {
-      ...snapshotGit,
-      env: { GIT_INDEX_FILE: temporaryIndex },
-    };
-    await git(repoRoot, ["add", "-A", "--", ".", ...excluded], withIndex);
+    if (!existsSync(index)) {
+      const realIndex = resolve(
+        repoRoot,
+        await git(repoRoot, ["rev-parse", "--git-path", "index"], snapshotGit),
+      );
+      mkdirSync(dirname(index), { recursive: true });
+      if (existsSync(realIndex)) copyFileSync(realIndex, index);
+    }
+    const withIndex = { ...snapshotGit, env: { GIT_INDEX_FILE: index } };
+    try {
+      await git(
+        workspacePath,
+        [
+          "add",
+          "-A",
+          "--ignore-errors",
+          "--no-warn-embedded-repo",
+          "--",
+          ".",
+          ...excluded,
+        ],
+        withIndex,
+      );
+    } catch (error) {
+      const failure = error as GitError;
+      if (failure.timedOut) {
+        console.error(
+          `Snapshotting ${workspacePath} for diffs took over ${snapshotGit.timeout / 1000} s; this session's Codex turns go without one`,
+        );
+        return "timedOut";
+      }
+      // 1: some files could not be read; the rest are staged.
+      if (failure.exitCode !== 1) throw error;
+    }
     const tree = await git(repoRoot, ["write-tree"], withIndex);
-    return /^[0-9a-f]{40,64}$/.test(tree) ? { repoRoot, tree } : undefined;
+    return /^[0-9a-f]{40,64}$/.test(tree)
+      ? { repoRoot, tree, scope: { path: workspacePath, prefix } }
+      : undefined;
   } catch (error) {
     console.error(
-      `Could not snapshot ${repoRoot} for diffs: ${errorMessage(error)}`,
+      `Could not snapshot ${workspacePath} for diffs: ${errorMessage(error)}`,
     );
     return undefined;
   } finally {
-    rmSync(temporaryFolder, { recursive: true, force: true });
+    if (temporaryFolder)
+      rmSync(temporaryFolder, { recursive: true, force: true });
   }
+}
+
+/** Where a file sits in a snapshot's tree; undefined outside what it covers. */
+function snapshotObjectPath(
+  snapshot: GitSnapshot,
+  path: string,
+): string | undefined {
+  if (!snapshot.scope) {
+    const relativePath = inside(snapshot.repoRoot, path);
+    return relativePath || undefined;
+  }
+  const { path: folder, prefix } = snapshot.scope;
+  const relativePath =
+    inside(folder, path) ?? inside(realpathOrSelf(folder), path);
+  return relativePath ? `${prefix}${relativePath}` : undefined;
 }
 
 /** A file's state in a snapshot tree; the text when it is small text. */
 export async function gitSnapshotFile(
-  snapshot: { repoRoot: string; tree: string },
+  snapshot: GitSnapshot,
   path: string,
 ): Promise<{ snapshot: FileSnapshot; text?: string }> {
-  const relativePath = relative(snapshot.repoRoot, path);
-  if (
-    !relativePath ||
-    relativePath.startsWith("..") ||
-    isAbsolute(relativePath)
-  )
-    return { snapshot: { kind: "unknown" } };
-  const object = `${snapshot.tree}:${relativePath.split(sep).join("/")}`;
+  const relativePath = snapshotObjectPath(snapshot, path);
+  if (!relativePath) return { snapshot: { kind: "unknown" } };
+  const object = `${snapshot.tree}:${relativePath}`;
   let bytes: number;
   try {
     bytes = Number(
       await git(snapshot.repoRoot, ["cat-file", "-s", object], snapshotGit),
     );
   } catch {
-    // Not in the tree: the file did not exist, unless Git ignores it.
+    // Not in the tree: the file did not exist, unless Git ignores it or it
+    // belongs to a nested repository (the tree holds only its commit).
+    const owner = await git(
+      dirname(path),
+      ["rev-parse", "--show-toplevel"],
+      snapshotGit,
+    ).catch(() => undefined);
+    if (owner !== snapshot.repoRoot) return { snapshot: { kind: "unknown" } };
     const ignored = await git(
       snapshot.repoRoot,
       ["check-ignore", "-q", "--no-index", "--", relativePath],

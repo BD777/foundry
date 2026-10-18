@@ -1,5 +1,109 @@
 /** Chats: the chat list, groups, thread, detail panel and context card. */
 export const chat = {
+  work: {
+    runStatus: {
+      completed: "Last run completed",
+      failed: "Last run failed",
+      stopped: "Last run stopped",
+    },
+    schedulerMissing:
+      "Registered, awaiting the device scheduler. Update this device’s Worker; its execution service switches when idle.",
+    schedulerStale:
+      "Scheduler disconnected. Future runs are unconfirmed until the device’s execution service reconnects.",
+    retryControl: "Retry last action",
+    schedule: "Schedule",
+    actionFor: "{{action}}: {{title}}",
+    discovery: "Discovery details",
+    suspend: "Pause execution",
+    adoptStop: "Adopt and stop",
+    receipt: "Last control: {{state}}.",
+    unmanaged:
+      " {{count}} unassigned or unsupported source(s) still need attention.",
+    receiptState: {
+      pending: "Awaiting device confirmation",
+      verified: "Verified",
+      failed: "Failed",
+      unknown: "Not fully verified",
+    },
+    inspect: "Open task output",
+    unassigned: "Unassigned sources · {{count}}",
+    unassignedStatus: "Unassigned",
+    restart: "Run again",
+    loadFailed: "Work inventory unavailable",
+    coverageState: {
+      unverified: "classification not verified",
+      not_observed: "not yet observed",
+      observed: "observed",
+      partial: "partially observed",
+      managed_and_native: "managed and native tasks",
+      managed_native_and_attributed: "managed and attributable processes",
+    },
+    title: "Ongoing work",
+    pauseAll: "Pause schedules",
+    stopAll: "Stop all tasks ({{count}})",
+    stopAllScope:
+      "Stops this conversation’s schedules, background work and subagents, and blocks future automatic starts.",
+    discoveryPending:
+      "Registered tasks have ended. The device still needs to check for unregistered sources.",
+    pending: "Awaiting confirmation",
+    paused: "Paused",
+    stopped: "Stopped",
+    next: "Next: {{time}}",
+    currentContinues: "Future runs paused; the current run continues.",
+    unattributed:
+      "Source found on this device; its creator is unconfirmed. Adopt to manage it.",
+    applying: "Applying…",
+    created: "Created",
+    observed: "Last verified",
+    actual: "Actual state",
+    prompt: "Prompt",
+    identity: "Work ID",
+    pendingCount: "{{count}} control(s) awaiting device confirmation",
+    barrier:
+      "Automatic starts are blocked for this conversation. Resume individual tasks as needed.",
+    controlFailed: "Work control failed",
+    refresh: "Refresh",
+    empty: "No registered ongoing work",
+    history: "Ended ({{count}})",
+    coverage:
+      "Discovery: host schedules {{schedules}}; processes {{processes}}",
+    open: "{{count}} work item(s) · manage",
+    action: {
+      pause: "Pause",
+      resume: "Resume",
+      stop: "Stop",
+      remove: "Archive",
+      run: "Run now",
+      adopt: "Adopt and pause",
+    },
+    status: {
+      idle: "Scheduled",
+      running: "Running",
+      suspended: "Suspended",
+      completed: "Completed",
+      failed: "Failed",
+      stopped: "Stopped",
+      unknown: "Unverified",
+    },
+    kind: {
+      schedule: "Schedule",
+      process: "Process",
+      agent: "Agent",
+    },
+    group: {
+      schedule: "Schedules · {{count}}",
+      process: "Background execution · {{count}}",
+      agent: "Subagents · {{count}}",
+    },
+    source: {
+      foundry: "Foundry",
+      claude: "Claude",
+      crontab: "Host crontab",
+      systemd: "systemd",
+      launchd: "launchd",
+      process: "Host process",
+    },
+  },
   list: {
     title: "Chats",
     newChat: "New chat",
@@ -20,6 +124,7 @@ export const chat = {
     blocked: "Waiting",
     blockedTitle: "Waiting (rate limit or permission)",
     processing: "Working",
+    waitingForDevice: "Waiting for {{device}} to come online",
     failed: "Failed",
     unread: "Unread",
     scheduled: "Scheduled tasks: the agent wakes on its own",
@@ -97,6 +202,12 @@ export const chat = {
     failedTitle: "Could not open this chat",
     failed: "Foundry could not reach the server to look it up.",
     retry: "Try again",
+    deviceFallback: "The device",
+    deviceOfflineHint:
+      "{{device}} is offline. What you send waits and starts by itself when it is back online.",
+    waitingForDevice:
+      "Waiting for {{device}} to come online — it starts by itself.",
+    cancelWaiting: "Cancel",
   },
   notices: {
     attachNeedsWorkspace: "Connect a local workspace before attaching files.",
@@ -104,7 +215,6 @@ export const chat = {
     attachedMany_one: "{{count}} file attached.",
     attachedMany_other: "{{count}} files attached.",
     attachFailed: "Could not attach those files.",
-    offlineSend: "Local daemon is offline. Reconnect it before sending.",
     emptyPrompt: "Ask something first.",
     uploading: "Wait for attachments to finish uploading.",
     noAgent: "Connect a local agent first.",
@@ -112,6 +222,8 @@ export const chat = {
     stillResponding: "{{agent}} is still responding in this chat.",
     alreadyResponding: "{{agent}} is already responding in this chat.",
     responding: "{{agent}} is responding.",
+    waitingForDevice:
+      "{{device}} is offline. The message waits and starts by itself when it is back online.",
     agentFailed: "{{agent}} failed.",
     offlineSteer: "Local daemon is offline. Reconnect it before steering.",
     emptySteer: "Write the steering note first.",
@@ -155,6 +267,8 @@ export const chat = {
       "Waiting for the local daemon to finish its current task: {{title}}",
     delivered:
       "Sent to the local daemon and waiting for it to pick up; it retries automatically once the daemon reconnects or is idle.",
+    waitingForDevice:
+      "Waiting for {{device}} to come online. It starts by itself, and fails if the device stays offline for 24 hours.",
     loadingTranscript: "Loading the persisted live transcript…",
     waitingForResponse: "Waiting for the local agent to stream a response.",
     loadingResponse: "Loading response…",
@@ -175,6 +289,9 @@ export const chat = {
     commentary: "Process",
     tool: "Tool",
     processing: "Working…",
+    waitingForDevice: "Waiting for {{device}} to come online",
+    waitingForDeviceDetail:
+      "It starts by itself when {{device}} is back online, and fails if it stays offline for 24 hours.",
     processed: "Processed",
     processedIn: "Processed in {{duration}}",
     loaded: "Loaded",
@@ -223,8 +340,11 @@ export const chat = {
     loadEarlier: "Load earlier messages",
     loadingEarlier: "Loading earlier messages…",
     earlierFailed: "Couldn't load earlier messages.",
+    start: "Beginning of the conversation",
   },
   contextCard: {
+    startedBy: "Started by",
+    openStartedBy: "Open {{title}}, the session that started this chat",
     subagentsRefreshFailed: "Couldn't refresh the subagents.",
     label: "Chat details",
     show: "Show chat details",

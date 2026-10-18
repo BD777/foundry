@@ -1,3 +1,4 @@
+import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /**
  * The skills Claude Code and Codex ship themselves. Workspace skill isolation
  * keeps them: a session sees its own agent's official skills plus the skills
@@ -95,11 +96,12 @@ async function claudeSessionCommands(
   bundled: boolean,
 ): Promise<Array<{ name: string; description?: string }>> {
   const packageName = "@anthropic-ai/claude-agent-sdk";
-  const sdk = (await import(packageName)) as {
+  const sdk = (await loadClaudeSdk()) as {
     query: (input: {
       prompt: AsyncIterable<never>;
       options: Record<string, unknown>;
     }) => {
+      close: () => void;
       initializationResult: () => Promise<{
         commands: Array<{ name: string; description?: string }>;
       }>;
@@ -127,6 +129,7 @@ async function claudeSessionCommands(
     return (await session.initializationResult()).commands;
   } finally {
     abortController.abort();
+    session.close();
   }
 }
 

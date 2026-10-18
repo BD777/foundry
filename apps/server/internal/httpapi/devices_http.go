@@ -80,7 +80,7 @@ func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, err := s.store.ListDevices(r.Context())
-	writeResult(w, view.filterDevices(items), err)
+	writeResult(w, s.withAccountShares(r.Context(), view.filterDevices(items)), err)
 }
 
 func (s *Server) handleUpsertAgentRuntimeSettings(w http.ResponseWriter, r *http.Request) {

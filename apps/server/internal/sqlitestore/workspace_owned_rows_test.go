@@ -136,6 +136,69 @@ func TestEveryTableNamingAnOwnerIsOwned(t *testing.T) {
 	}
 }
 
+func TestSessionWorkFollowsWorkspaceDeletionAndOrphanPruning(t *testing.T) {
+	for _, mode := range []string{"delete", "reopen"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			path := t.TempDir() + "/foundry.db"
+			db := openTestStore(t, path)
+			if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "byte-dev")); err != nil {
+				t.Fatal(err)
+			}
+			registerOtherWorkspace(t, db)
+			for _, suffix := range []string{"home", "other"} {
+				// Native thread ids need not name a session primary key.
+				execAll(t, db,
+					`INSERT INTO agent_sessions (id, thread_id, workspace_id, agent_id, device_id, provider, status, payload_json, created_at, updated_at)
+					 VALUES ('sess_`+suffix+`', 'native_`+suffix+`', 'ws_`+suffix+`', 'agent_home', 'dev_home', 'codex', 'completed', '{}', '', '')`,
+					`INSERT INTO session_work (id, thread_id, session_id, device_id, payload_json)
+					 VALUES ('work_`+suffix+`', 'native_`+suffix+`', 'sess_`+suffix+`', 'dev_home', '{}')`,
+					`INSERT INTO session_work_runs (id, work_id, payload_json) VALUES ('run_`+suffix+`', 'work_`+suffix+`', '{}')`,
+					`INSERT INTO session_work_operations (id, thread_id, request_json, payload_json) VALUES ('op_`+suffix+`', 'native_`+suffix+`', '{}', '{}')`,
+					`INSERT INTO session_work_scopes (thread_id, stopped) VALUES ('native_`+suffix+`', 1)`,
+				)
+			}
+			execAll(t, db, `INSERT INTO session_work_coverage (device_id, payload_json) VALUES ('dev_home', '{}')`)
+			if mode == "delete" {
+				if _, err := db.DeleteWorkspace(ctx, "ws_home"); err != nil {
+					t.Fatal(err)
+				}
+				for _, table := range []string{"session_work", "session_work_runs", "session_work_operations", "session_work_scopes"} {
+					if got := countRows(t, db, `SELECT count(*) FROM `+table); got != 1 {
+						t.Errorf("deleting the workspace left %d rows in %s before restart", got, table)
+					}
+				}
+			} else {
+				// Simulate a deletion by an older server that left owned rows.
+				execAll(t, db, `DELETE FROM workspaces WHERE id = 'ws_home'`)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			db = openTestStore(t, path)
+			defer db.Close()
+			for table, key := range map[string]string{
+				"session_work": "id", "session_work_runs": "work_id",
+				"session_work_operations": "thread_id", "session_work_scopes": "thread_id",
+			} {
+				kept := "native_other"
+				if key == "id" || key == "work_id" {
+					kept = "work_other"
+				}
+				if got := countRows(t, db, `SELECT count(*) FROM `+table); got != 1 {
+					t.Errorf("%s has %d rows, want only the other workspace's row", table, got)
+				}
+				if got := countRows(t, db, `SELECT count(*) FROM `+table+` WHERE `+key+` = ?`, kept); got != 1 {
+					t.Errorf("%s lost the other workspace's row", table)
+				}
+			}
+			if got := countRows(t, db, `SELECT count(*) FROM session_work_coverage`); got != 1 {
+				t.Fatal("deleting a workspace removed device-wide discovery coverage")
+			}
+		})
+	}
+}
+
 // Deleting a workspace deletes every row it owns, directly or through its
 // issues, runs and sessions. Before it did, the contract of the deleted
 // workspace's issue iss_106 stayed behind, the next issue was numbered 106
@@ -205,6 +268,10 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 		`INSERT INTO feishu_bot_routes (id, app_id, workspace_id, kind, chat_id, created_at, updated_at)
 			VALUES ('fbr_pair', 'xapp_home', 'ws_home', 'pairing', '', '', ''), ('fbr_chat', 'xapp_home', 'ws_home', 'chat', 'oc_home', '', '')`,
 		`INSERT INTO agent_session_usage_backfills (session_id, backfilled_at) VALUES ('`+session.ID+`', '')`,
+		`INSERT INTO native_account_dispatches (session_id, input_id, device_id, runtime, account_label)
+			VALUES ('`+session.ID+`', 'input_home', 'dev_home', 'claude', 'held@example.test')`,
+		`INSERT INTO native_account_holds (device_id, runtime, account_label, hold_json)
+			VALUES ('dev_home', 'claude', 'held@example.test', '{"id":"hold_home","reason":"account_on_hold"}')`,
 		`INSERT INTO pa_tasks (id, user_id, conversation_session_id, session_id, workspace_id, title, status, created_at, updated_at)
 			VALUES ('task_home', '`+member.ID+`', 'sess_conversation', '`+session.ID+`', 'ws_home', 'work', 'running', '', '')`,
 		`INSERT INTO pa_proposals (id, user_id, session_id, kind, workspace_id, spec_json, summary, status, created_at, expires_at)
@@ -225,6 +292,9 @@ func TestDeleteWorkspaceLeavesNothingOfItsIssuesRunsOrSessions(t *testing.T) {
 	}
 	if left := countRows(t, db, `SELECT count(*) FROM skill_bundle_selections WHERE owner_id = 'ws_home'`); left != 0 {
 		t.Errorf("%d bundle selections of the deleted workspace left", left)
+	}
+	if kept := countRows(t, db, `SELECT count(*) FROM native_account_holds WHERE device_id = 'dev_home' AND active = 1`); kept != 1 {
+		t.Errorf("deleting a workspace removed its device's account hold: kept %d", kept)
 	}
 
 	next, err := db.CreateIssue(ctx, store.CreateIssueInput{WorkspaceID: "ws_other", SourceInput: "second", Runtime: "mock"})
@@ -306,6 +376,10 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 			VALUES ('iss_120/accept', 'key', 'sha', '{}'), ('agent-sessions/messages:sess_gone', 'key', 'sha', '{}')`,
 		`INSERT INTO session_tokens (token_hash, session_id, created_at, last_used_at, expires_at)
 			VALUES ('hash_gone', 'sess_gone', '', '', '')`,
+		`INSERT INTO native_account_dispatches (session_id, input_id, device_id, runtime, account_label)
+			VALUES ('sess_gone', 'input_gone', 'dev_home', 'claude', 'held@example.test')`,
+		`INSERT INTO native_account_holds (device_id, runtime, account_label, hold_json)
+			VALUES ('dev_home', 'claude', 'held@example.test', '{"id":"hold_gone","reason":"account_on_hold"}')`,
 		`INSERT INTO workspace_members (workspace_id, user_id, role, added_by, created_at)
 			VALUES ('ws_gone', '`+member.ID+`', 'owner', 'device', '')`,
 		`INSERT INTO chat_queue_items (id, workspace_id, chat_id, position, text, created_at, updated_at)
@@ -335,7 +409,7 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 	reopened := openTestStore(t, path)
 	defer reopened.Close()
 
-	want := "chat_queue_items=1 evidence_records=2 evidence_requests=2 issues=1 run_events=2 runs=1 session_tokens=1 workspace_members=1"
+	want := "chat_queue_items=1 evidence_records=2 evidence_requests=2 issues=1 native_account_dispatches=1 run_events=2 runs=1 session_tokens=1 workspace_members=1"
 	if !strings.Contains(logged.String(), want) {
 		t.Fatalf("log = %q, want counts %q", logged.String(), want)
 	}
@@ -354,6 +428,7 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 		`SELECT count(*) FROM chats WHERE id = 'chat_shared'`:                                              1,
 		`SELECT count(*) FROM evidence_requests WHERE scope IN ('issues/create', 'agent-sessions/create')`: 2,
 		`SELECT count(*) FROM skill_bundle_selections WHERE scope = 'user'`:                                1,
+		`SELECT count(*) FROM native_account_holds WHERE device_id = 'dev_home' AND active = 1`:            1,
 	} {
 		if got := countRows(t, reopened, query); got != want {
 			t.Errorf("%s = %d, want %d", query, got, want)

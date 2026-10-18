@@ -4,6 +4,7 @@ import type {
   AgentSession,
   ChatAttachment,
   ChatThread,
+  DeviceProjection,
 } from "@bd777/foundry-protocol";
 import {
   cancelAgentSession,
@@ -14,6 +15,7 @@ import { moveRuntimeChoice } from "../../components/conversation/conversation-st
 import type { ConversationSendOutcome } from "../../components/conversation/conversation-types";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
+import { deviceAwaitedBy } from "../../lib/device-wait";
 import { isTerminalSession } from "../../lib/session-status";
 import {
   activeThreadSession,
@@ -36,7 +38,13 @@ export interface UseChatSendInput {
   composerChoices: (
     agent: AgentProjection,
   ) => ReturnType<typeof chatComposerChoices>;
+  /**
+   * Offline, a message still goes: the server holds it until the device is
+   * back. Steering or stopping a running session needs the device.
+   */
   deviceOnline: boolean;
+  /** Names the offline device a queued session waits for. */
+  devices: readonly DeviceProjection[];
   emit: (event: ChatFeatureEvent) => Promise<void>;
   notify: (message: string) => Promise<void>;
   outbox: ChatOutbox;
@@ -58,6 +66,7 @@ export function useChatSend({
   attachments,
   composerChoices,
   deviceOnline,
+  devices,
   emit,
   notify,
   outbox,
@@ -135,10 +144,6 @@ export function useChatSend({
     queuedAttachments?: ChatAttachment[],
     options?: { idempotencyKey?: string },
   ): Promise<ConversationSendOutcome> {
-    if (!deviceOnline) {
-      await notify(i18n.t("chat:notices.offlineSend"));
-      return false;
-    }
     const prompt = draft.trim();
     const effectiveAttachments = queuedAttachments ?? attachments.attachments;
     if (!prompt && effectiveAttachments.length === 0) {
@@ -153,7 +158,9 @@ export function useChatSend({
       await notify(i18n.t("chat:notices.noAgent"));
       return false;
     }
-    if (selectedAgent.status !== "healthy") {
+    // An offline device's agents read as unavailable; the server checks the
+    // agent when the device is back.
+    if (deviceOnline && selectedAgent.status !== "healthy") {
       await notify(
         i18n.t("chat:notices.agentNotReady", {
           agent: agentLabel(selectedAgent),
@@ -256,10 +263,15 @@ export function useChatSend({
           chatId: session.threadId ?? session.nativeSessionId ?? session.id,
           type: "chat.selected",
         });
+        const awaitedDevice = deviceAwaitedBy(session, devices);
         await notify(
-          i18n.t("chat:notices.responding", {
-            agent: agentLabel(selectedAgent),
-          }),
+          awaitedDevice
+            ? i18n.t("chat:notices.waitingForDevice", {
+                device: awaitedDevice.label,
+              })
+            : i18n.t("chat:notices.responding", {
+                agent: agentLabel(selectedAgent),
+              }),
         );
       } catch {
         // Already persisted; a later snapshot/refresh projects the session.
@@ -313,7 +325,8 @@ export function useChatSend({
       await notify(i18n.t("chat:notices.noStopTarget"));
       return;
     }
-    if (!deviceOnline) {
+    // A queued session is the server's to cancel; a running one, the device's.
+    if (!deviceOnline && target.status !== "queued") {
       await notify(i18n.t("chat:notices.offlineStop"));
       return;
     }

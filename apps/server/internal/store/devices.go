@@ -34,6 +34,10 @@ type DeviceProjection struct {
 	// from /api/device-skills and reload it when this changes. The server
 	// adds it to projections.
 	SkillsVersion string `json:"skillsVersion,omitempty"`
+	// SharesSystemAccountWith are other people's devices under the same
+	// system account of this computer; the server adds it for the device's
+	// owner only (device_sharing.go).
+	SharesSystemAccountWith []DeviceAccountShare `json:"sharesSystemAccountWith,omitempty"`
 }
 
 // DeviceWorkerUpdate is an update in progress: when it was asked for and the
@@ -176,6 +180,9 @@ type DaemonRegistration struct {
 	// httpapi registration_sections.go).
 	Sections        map[string]string `json:"sections,omitempty"`
 	OmittedSections []string          `json:"omittedSections,omitempty"`
+	// Identity is the system account and machine the worker runs on, as
+	// hashes (device_sharing.go); workers before it report none.
+	Identity *DeviceAccountIdentity `json:"identity,omitempty"`
 }
 
 // WorkerConnectionReport is one connection to the server as the worker saw

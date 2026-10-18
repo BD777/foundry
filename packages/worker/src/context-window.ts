@@ -16,6 +16,9 @@
  *   95% usable; auto-compact follows the window without
  *   `model_auto_compact_token_limit`. Checked the same way, from the
  *   rollout's `token_count` records.
+ *   Compatible runs therefore also load a managed startup model catalog
+ *   (agent-runtime/codex-model-catalog.ts); a thread config override alone
+ *   cannot raise the unknown-model maximum.
  */
 import { createHash } from "node:crypto";
 import {
@@ -47,10 +50,9 @@ const catalogs = new Map<
   { expiresAt: number; models: Promise<AgentModelOption[]> }
 >();
 
-/** Only server profiles calling a compatible endpoint get a window. */
+/** The selected compatible connection, whether imported or server-managed. */
 function appliesTo(profile: AgentProfileLocalConfig): boolean {
   return (
-    profile.origin === "server" &&
     !!profile.baseUrl?.trim() &&
     (profile.connectionType === "anthropic_compatible" ||
       profile.connectionType === "openai_compatible")
@@ -94,7 +96,18 @@ export async function resolveSessionContextWindow(
   catalog: CatalogReader = readCatalog,
 ): Promise<SessionContextWindow | undefined> {
   const id = model.trim();
-  if (!id || !appliesTo(profile)) return undefined;
+  if (!id) return undefined;
+  // Official Codex defaults to 272K even when its model supports a larger
+  // window. Opt known models into their supported window on every turn,
+  // including resumed sessions; never guess a larger window for unknown IDs.
+  if (profile.runtime === "codex" && profile.connectionType === "local_login") {
+    const setting = profile.contextWindows?.[id];
+    if (setting !== undefined)
+      return { model: id, tokens: setting, source: "setting" };
+    const tokens = officialContextWindow(id);
+    return tokens ? { model: id, tokens, source: "official" } : undefined;
+  }
+  if (!appliesTo(profile)) return undefined;
   const setting = profile.contextWindows?.[id];
   let endpoint: number | undefined;
   if (setting === undefined) {

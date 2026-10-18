@@ -17,10 +17,12 @@ import (
 // person's computers connects again after being away, the assistant
 // conversations with something that waited for it hear so, as a server
 // notice merged with the task events (assistantNotices) and never while
-// the assistant is stopped: the helpers on it still running or waiting,
-// the helpers that failed because it was offline (a session for an
-// offline computer fails at once) and the writes the assistant was refused
-// for that reason. A connection that drops for less than deviceBackAfter and comes
+// the assistant is stopped: the helpers queued for it, which start by
+// themselves now (work sent to an offline computer waits for it,
+// session_device_wait.go), the helpers on it still running or waiting, the
+// helpers that failed while it was offline (one that waited past
+// offlineWaitLimit) and the writes the assistant was refused for that
+// reason. A connection that drops for less than deviceBackAfter and comes
 // back tells nothing about the helpers; a refused write is told whatever
 // the absence. What this follows lives in memory: after a server restart
 // nothing was away.
@@ -181,13 +183,16 @@ func (s *Server) assistantDeviceBack(ctx context.Context, deviceID string) {
 }
 
 // assistantWaitLine is a helper that waited for its computer, as the
-// back notice lists it.
+// back notice lists it: one still queued is being started.
 func (s *Server) assistantWaitLine(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession) string {
+	if session.Status == "queued" {
+		return s.sayTask(ctx, agent, "startsNow", s.taskWork(ctx, agent, task, session))
+	}
 	return s.sayTask(ctx, agent, "waited", s.taskWork(ctx, agent, task, session), session.Status)
 }
 
 // noteHelperFailedOffline keeps a helper that failed while its computer
-// was offline (it could not be started or sent more work there) for when
+// was offline (it waited for it too long, or stopped reporting) for when
 // that computer is back.
 func (s *Server) noteHelperFailedOffline(ctx context.Context, agent store.PersonalAgent, task store.PersonalAgentTask, session store.AgentSession) {
 	if session.DeviceID == "" || task.ConversationSessionID == "" || s.hub.HasConnection(session.DeviceID) {

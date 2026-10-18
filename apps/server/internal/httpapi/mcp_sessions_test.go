@@ -360,16 +360,23 @@ func TestRenamedToolArgumentsKeepTheirOldNames(t *testing.T) {
 		{"sessionId": child.ID, "prompt": "Continue."},
 		{"fromSessionId": child.ID, "prompt": "Continue."},
 	} {
-		if text, isError := call("handoff_session", arguments); !isError || text != "local daemon is not connected" {
-			t.Fatalf("handoff_session %v = %q, want it to reach dispatch", arguments, text)
+		if text, isError := call("handoff_session", arguments); isError || !strings.Contains(text, `"status": "queued"`) {
+			t.Fatalf("handoff_session %v = %q, want it to wait for the offline device", arguments, text)
 		}
 	}
 	for _, arguments := range []map[string]any{
 		{"sessionId": child.ID, "prompt": "Again."},
 		{"sessionId": child.ID, "message": "Again."},
 	} {
-		if text, isError := call("send_message", arguments); !isError || text != "local daemon is not connected" {
-			t.Fatalf("send_message %v = %q, want it to reach dispatch", arguments, text)
+		if text, isError := call("send_message", arguments); isError || !strings.Contains(text, "waitingForDevice") {
+			t.Fatalf("send_message %v = %q, want it to wait for the offline device", arguments, text)
+		}
+		// More for a session already waiting is refused, saying why.
+		if text, isError := call("send_message", arguments); !isError || !strings.Contains(text, "already waits for its offline device") {
+			t.Fatalf("send_message %v again = %q, want it refused", arguments, text)
+		}
+		if _, err := db.CancelAgentSession(ctx, child.ID, "test"); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if text, isError := call("send_message", map[string]any{"sessionId": child.ID}); !isError || text == "local daemon is not connected" {

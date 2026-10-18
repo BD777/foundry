@@ -20,6 +20,9 @@
  * is already paired and installed changes nothing.
  */
 
+import { stopExecutionHost } from "./execution-host/client.js";
+import { executionHostPaths } from "./execution-host/paths.js";
+import { prepareWorkerRestart } from "./execution-host/update.js";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -27,6 +30,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -52,7 +56,10 @@ import {
   foundryStateRoot,
   stackStateParent,
 } from "./state-root.js";
-import { releaseSelfUpdateLock } from "./self-update-lock.js";
+import {
+  holdSelfUpdateLock,
+  releaseSelfUpdateLock,
+} from "./self-update-lock.js";
 import {
   recordSelfUpdateEnd,
   recordSelfUpdateStep,
@@ -260,8 +267,32 @@ export function runtimeVersion(directory: string): string {
   return directory.split("+")[0]!;
 }
 
-function pruneRuntimes(current: string, previous: string | undefined): void {
+export function pruneRuntimes(
+  current: string,
+  previous: string | undefined,
+): void {
+  let pinned = "";
+  try {
+    pinned =
+      JSON.parse(
+        readFileSync(join(executionHostPaths().root, "identity.json"), "utf8"),
+      ).entry ?? "";
+  } catch {
+    /* No execution host has pinned a runtime. */
+  }
+  // HOME may be a symlink (/home -> /data00/home). The running module's
+  // entry uses its physical path; compare physical directories before deleting.
+  const canonical = (path: string): string => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return resolve(path);
+    }
+  };
+  const pinnedPath = pinned ? canonical(pinned) : "";
   for (const entry of readdirSync(runtimeRoot())) {
+    if (pinnedPath.startsWith(canonical(join(runtimeRoot(), entry)) + "/"))
+      continue;
     if (entry === "current" || entry === current || entry === previous)
       continue;
     rmSync(join(runtimeRoot(), entry), { recursive: true, force: true });
@@ -531,6 +562,7 @@ function rerunUnderPairedStack(serverURL: string): boolean {
 }
 
 export async function updateCommand(args: string[]): Promise<void> {
+  holdSelfUpdateLock();
   // An update started from the web holds the device's update lock until here,
   // and records how it ended for the worker to report.
   try {
@@ -590,30 +622,31 @@ async function runUpdate(args: string[]): Promise<void> {
       handOffToServedBuild(release, serverURL!)
     )
       return;
-    if (target === current && !handedOff(current)) {
+    // current points at installed files, not necessarily the running service.
+    // A retry after installation but before restart must finish activation.
+    if (target === current && !handedOff(current))
       console.log(
-        release.source === "server"
-          ? `${self.name} ${current} is already the version ${serverURL} serves.`
-          : `${self.name} ${current} is already the latest version.`,
+        `${self.name} ${current} is installed; completing service activation.`,
       );
-      reportWorkerShim(self.name);
-      return;
-    }
     specs =
       release.source === "server"
         ? serverPackageSpecs(release, serverURL!)
         : [`${self.name}@${target}`];
   }
-  if (!handedOff(current))
-    recordSelfUpdateStep("downloading", { version: target });
-  const version = handedOff(current)
-    ? current
-    : installRuntime(self.name, specs);
-  recordSelfUpdateStep("restarting", { version });
-  const restarted = await reinstallService({
-    cliPath: currentRuntimeCli(self.name),
-    macApp: process.platform === "darwin",
-  });
+  const reuseInstalled = handedOff(current) || target === current;
+  if (!reuseInstalled) recordSelfUpdateStep("downloading", { version: target });
+  const version = reuseInstalled ? current : installRuntime(self.name, specs);
+  const release = await prepareWorkerRestart(version);
+  let restarted: boolean;
+  try {
+    recordSelfUpdateStep("restarting", { version });
+    restarted = await reinstallService({
+      cliPath: currentRuntimeCli(self.name),
+      macApp: process.platform === "darwin",
+    });
+  } finally {
+    release();
+  }
   // A handed-off run's runtime was switched by the build that handed off.
   const before =
     (handedOff(current) && process.env.FOUNDRY_WORKER_PREVIOUS) || current;
@@ -632,6 +665,7 @@ async function runUpdate(args: string[]): Promise<void> {
 export async function uninstallCommand(args: string[]): Promise<void> {
   if (serviceInstalled()) uninstallService();
   await stopDaemonProcess();
+  await stopExecutionHost();
   removeWorkerApp();
   if (optionEnabled(args, "--purge")) {
     rmSync(foundryStateRoot(), { recursive: true, force: true });

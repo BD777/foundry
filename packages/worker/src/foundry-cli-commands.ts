@@ -89,6 +89,36 @@ export const foundryCommands: Record<
   Record<string, ToolCommand | LocalCommand>
 > = {
   mcp: { "": { local: true, flags: {} } },
+  work: {
+    list: {
+      tool: "list_session_work",
+      flags: { "--session": flag("sessionId") },
+    },
+    show: {
+      tool: "get_session_work",
+      flags: { "--session": flag("sessionId"), "--id": flag("id") },
+    },
+    control: {
+      tool: "control_session_work",
+      flags: {
+        "--session": flag("sessionId"),
+        "--id": flag("id"),
+        "--action": flag("action"),
+        "--revision": flag("expectedRevision", "number"),
+        "--key": flag("idempotencyKey"),
+      },
+    },
+    schedule: {
+      tool: "create_scheduled_work",
+      flags: {
+        "--session": flag("sessionId"),
+        "--title": flag("title"),
+        "--spec": flag("spec", "json"),
+        "--key": flag("idempotencyKey"),
+        "--kind": flag("kind"),
+      },
+    },
+  },
   session: {
     list: {
       tool: "list_sessions",
@@ -314,6 +344,24 @@ export const foundryCommands: Record<
     tasks: {
       tool: "list_tasks",
       flags: { "--status": flag("status", "list") },
+    },
+    item: {
+      tool: "update_list",
+      positional: "op",
+      flags: {
+        "--id": field("item", "id"),
+        "--text": field("item", "text"),
+        "--when": field("item", "when"),
+        "--at": field("item", "at"),
+        "--remind": field("item", "remind", "boolean"),
+        "--status": field("item", "status"),
+        "--task": field("item", "taskId"),
+        "--quote": field("item", "quote"),
+      },
+    },
+    list: {
+      tool: "read_list",
+      flags: { "--closed-since": flag("closedSince") },
     },
   },
   device: {

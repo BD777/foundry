@@ -57,6 +57,12 @@ export function workerLauncherScript(input: {
   return [
     "#!/bin/sh",
     "# Written by foundry-worker install/update; run by Foundry Worker.app.",
+    // Both launchd jobs use the unchanged signed app, so existing macOS
+    // privacy grants continue to name Foundry. Each job has its own role.
+    'if [ "${FOUNDRY_SERVICE_ROLE:-}" = "execution" ]; then',
+    `  export FOUNDRY_WORKER_APP=${shellQuote(workerAppName())}`,
+    '  exec "$FOUNDRY_EXECUTION_NODE" "$FOUNDRY_EXECUTION_ENTRY" "$FOUNDRY_EXECUTION_SERVER"',
+    "fi",
     ...Object.entries(input.env).map(
       ([key, value]) => `export ${key}=${shellQuote(value)}`,
     ),

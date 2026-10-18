@@ -3,10 +3,14 @@ import {
   type AgentProjection,
   type AgentSession,
   type ChatThread,
+  type DeviceProjection,
+  type SessionLink,
 } from "@bd777/foundry-protocol";
 import { runtimeMeta } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
 import { isProcessLabel } from "../../lib/process-labels";
+import { deviceAwaitedBy } from "../../lib/device-wait";
+import { navigateToChat } from "../../lib/in-app-navigation";
 import { isSessionLive } from "../../lib/session-status";
 import {
   agentSessionIsAwaitingDetails,
@@ -17,7 +21,10 @@ import type { CreateAgentSessionInput } from "../../api-types";
 
 export function agentSessionMessageText(
   session: AgentSession,
-  context: { sessions?: AgentSession[] } = {},
+  context: {
+    devices?: readonly DeviceProjection[];
+    sessions?: AgentSession[];
+  } = {},
 ): string {
   // While a turn runs, the response is still the previous turn's answer.
   if (session.response && !isSessionLive(session)) {
@@ -36,6 +43,12 @@ export function agentSessionMessageText(
     return latestResponseEvent.detail;
   }
   if (session.status === "queued") {
+    const awaitedDevice = deviceAwaitedBy(session, context.devices ?? []);
+    if (awaitedDevice) {
+      return i18n.t("chat:session.waitingForDevice", {
+        device: awaitedDevice.label,
+      });
+    }
     const blockingSession = (context.sessions ?? []).find(
       (candidate) =>
         candidate.id !== session.id &&
@@ -317,24 +330,99 @@ export function chatThreadsFromSessions(
     });
 }
 
+/** Another session a chat names: the one that started it or sent it a message. */
+export interface ChatSessionLink {
+  sessionId: string;
+  title: string;
+  workspaceId: string;
+}
+
+/** Sessions the server named for links (useSessionLinks); null: not viewable. */
+export type NamedSessions = ReadonlyMap<string, SessionLink | null>;
+
+const noNamedSessions: NamedSessions = new Map();
+
+/**
+ * The session `id` as a link names it: when the list holds it, its chat's
+ * title as the list shows it (`titleOf`); otherwise as the server named it
+ * (`named`). null: the viewer may not view it; undefined: not known yet.
+ */
+export function chatSessionLink(
+  id: string,
+  threads: readonly ChatSessionThread[],
+  titleOf: (thread: ChatSessionThread) => string,
+  named: NamedSessions = noNamedSessions,
+): ChatSessionLink | null | undefined {
+  for (const thread of threads) {
+    const listed = thread.sessions.find((candidate) => candidate.id === id);
+    if (listed)
+      return {
+        sessionId: id,
+        title: titleOf(thread),
+        workspaceId: listed.workspaceId,
+      };
+  }
+  const link = named.get(id);
+  if (!link) return link;
+  return {
+    sessionId: link.id,
+    title: link.title.trim() || i18n.t("chat:session.defaultTitle"),
+    workspaceId: link.workspaceId,
+  };
+}
+
+/**
+ * A link to the session `id` as the transcript and the side panel show it:
+ * its title, opening it in its workspace; "another session", opening
+ * nothing, while it is not known or the viewer may not view it.
+ */
+export function sessionLinkView(
+  id: string,
+  link: ChatSessionLink | null | undefined,
+): { sessionId: string; label: string; onOpen?: () => void } {
+  if (!link)
+    return { sessionId: id, label: i18n.t("chat:listRow.anotherSession") };
+  return {
+    sessionId: id,
+    label: link.title,
+    onOpen: () => navigateToChat(link.sessionId, link.workspaceId),
+  };
+}
+
+/**
+ * The sessions the chats link to that the list does not hold, for the
+ * server to name: those that started a listed chat, and `senders`.
+ */
+export function unlistedLinkedSessionIds(
+  threads: readonly ChatSessionThread[],
+  senders: readonly string[] = [],
+): string[] {
+  const listed = new Set(
+    threads.flatMap((thread) => thread.sessions.map((session) => session.id)),
+  );
+  const linked = [
+    ...threads.map((thread) => thread.sessions[0]?.parentSessionId ?? ""),
+    ...senders,
+  ];
+  return [...new Set(linked)].filter((id) => id && !listed.has(id)).sort();
+}
+
 /**
  * The list row's note of who started a chat another session started: the
- * starting chat's title as the list shows it (`titleOf`), or "another
- * session" when the list does not hold it. Undefined for the person's own.
+ * starting chat's title (chatSessionLink), or "another session" when it is
+ * not known or not viewable. Undefined for the person's own.
  */
 export function chatStartedByLabel(
   session: AgentSession | undefined,
   threads: readonly ChatSessionThread[],
   titleOf: (thread: ChatSessionThread) => string,
+  named: NamedSessions = noNamedSessions,
 ): string | undefined {
   const parentId = session?.parentSessionId;
   if (!parentId) return undefined;
-  const parent = threads.find((thread) =>
-    thread.sessions.some((candidate) => candidate.id === parentId),
-  );
-  const title = parent
-    ? titleOf(parent)
-    : i18n.t("chat:listRow.anotherSession");
+  const title =
+    chatSessionLink(parentId, threads, titleOf, named)?.title ??
+    i18n.t("chat:listRow.anotherSession");
   return session.source === "verification"
     ? i18n.t("chat:listRow.verifierStartedBy", { title })
     : i18n.t("chat:listRow.startedBy", { title });

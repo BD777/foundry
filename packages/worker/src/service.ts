@@ -8,17 +8,20 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DaemonConfig } from "./config.js";
 import { daemonConfigPath, readDaemonConfig } from "./config.js";
 import { ensureWorkerApp, workerLauncherScript } from "./mac-worker-app.js";
+import { processIdentity } from "./agent-processes.js";
 import { daemonLockHolder } from "./device-pairing.js";
 import { optionEnabled } from "./utils.js";
+import { isManagedNativeRuntimePath } from "./native-homes.js";
 import {
   foundryStackSuffix,
   foundryStatePath,
@@ -104,7 +107,13 @@ export function serviceEnvironment(
   };
 
   for (const key of passthroughKeys) {
-    const value = process.env[key] || installed[key];
+    let value = process.env[key] || installed[key];
+    if (
+      (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
+      isManagedNativeRuntimePath(value)
+    ) {
+      value = undefined;
+    }
     if (value) {
       env[key] = value;
     }
@@ -314,12 +323,18 @@ ${environmentVariablesXML()}
       dirname(plistPath),
       `${watchdogLabel()}.plist`,
     );
-    const watchdogScript = resolve(
-      dirname(fileURLToPath(import.meta.url)),
+    const watchdogSource = resolve(
+      dirname(host.cliPath ?? fileURLToPath(import.meta.url)),
       "..",
       "scripts",
       "watchdog.sh",
     );
+    // Keep the scheduled job independent of a runtime directory the updater
+    // may prune. The next invocation sees the new script atomically.
+    const watchdogScript = foundryStatePath("watchdog.sh");
+    const watchdogNext = `${watchdogScript}.${process.pid}.tmp`;
+    writeFileSync(watchdogNext, readFileSync(watchdogSource), { mode: 0o700 });
+    renameSync(watchdogNext, watchdogScript);
     writeFileSync(
       watchdogPath,
       `<?xml version="1.0" encoding="UTF-8"?>
@@ -390,6 +405,7 @@ WantedBy=default.target
       ]);
       if (!started) reportNotRunning(command);
       console.log(`Installed systemd user service: ${unitPath}`);
+      if (started) reportLingerOff();
       return started;
     }
     console.log(`Installed systemd user service: ${unitPath}`);
@@ -416,14 +432,9 @@ export function serviceInstalled(): boolean {
 export async function stopDaemonProcess(): Promise<void> {
   const pid = daemonLockHolder();
   if (pid === undefined) return;
-  const alive = () => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const identity = processIdentity(pid);
+  if (!identity) return;
+  const alive = () => processIdentity(pid)?.startTime === identity.startTime;
   process.kill(pid, "SIGTERM");
   for (let i = 0; i < 50 && alive(); i++)
     await new Promise((done) => setTimeout(done, 100));
@@ -442,7 +453,29 @@ export async function stopDaemonProcess(): Promise<void> {
  */
 function reportNotRunning(command: string): void {
   console.error(
-    `\nThe worker is not running: this machine has no systemd user session to start it.\nStart it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+    `\nThe worker is not running: this machine has no systemd user session to start it.\nIf you switched to this account with su or sudo, sign in to it directly instead (ssh, or machinectl shell <user>@) and run the command again.\nOr start it in the foreground (or under your own supervisor) with:\n  ${command}\n`,
+  );
+}
+
+/**
+ * Several people on one machine each run their own worker under their own
+ * account; a systemd user service stops when its account logs out unless
+ * the account lingers, which only an administrator can turn on.
+ */
+function reportLingerOff(): void {
+  const linger = spawnSync(
+    "loginctl",
+    [
+      "show-user",
+      String(process.getuid?.() ?? ""),
+      "--property=Linger",
+      "--value",
+    ],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+  if (linger.status !== 0 || linger.stdout.trim() !== "no") return;
+  console.log(
+    `This account's services stop when it logs out. To keep the worker running, an administrator can run: sudo loginctl enable-linger ${userInfo().username}`,
   );
 }
 

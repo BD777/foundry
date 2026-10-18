@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"log"
+	"slices"
 	"strings"
 	"time"
 
@@ -92,8 +93,16 @@ func (s *Server) assistantPromptInput(ctx context.Context, agent store.PersonalA
 	if err != nil {
 		return prompt.Input{}, err
 	}
+	places, err := s.ownDevicePlacements(ctx, devices, now)
+	if err != nil {
+		return prompt.Input{}, err
+	}
 	s.refreshAssistantTasks(ctx, agent.UserID)
 	tasks, err := s.store.ListPersonalAgentTasks(ctx, agent.UserID, nil)
+	if err != nil {
+		return prompt.Input{}, err
+	}
+	list, err := s.store.ListPersonalAgentItems(ctx, agent.UserID, "")
 	if err != nil {
 		return prompt.Input{}, err
 	}
@@ -106,11 +115,29 @@ func (s *Server) assistantPromptInput(ctx context.Context, agent store.PersonalA
 		Memory:                        memory,
 		Workspaces:                    workspaces,
 		Devices:                       devices,
-		Tasks:                         tasks,
+		Places:                        places,
+		Tasks:                         s.withTaskWaits(ctx, tasks),
+		List:                          list,
 		DirectChatPreviousWorkspaceID: s.directChatPrior(ctx, agent),
 		ConnectorsURL:                 s.webURL("/connectors"),
 		SettingsURL:                   s.webURL(personalagent.SettingsPath),
 	}, nil
+}
+
+// ownDevicePlacements are the labels and detected facts of the person's
+// devices (their digests), by device id.
+func (s *Server) ownDevicePlacements(ctx context.Context, digests []store.DeviceDigest, now time.Time) (map[string]store.DevicePlacement, error) {
+	all, err := s.store.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	owned := []store.DeviceProjection{}
+	for _, device := range all {
+		if slices.ContainsFunc(digests, func(digest store.DeviceDigest) bool { return digest.DeviceID == device.ID }) {
+			owned = append(owned, device)
+		}
+	}
+	return s.devicePlacements(ctx, owned, now)
 }
 
 // takesDirectChat reports whether the assistant takes the person's Feishu

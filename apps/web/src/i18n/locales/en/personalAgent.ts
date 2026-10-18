@@ -37,6 +37,9 @@ export const personalAgent = {
     send: "Send",
     stopReply: "Stop this reply",
     working: "Working on it…",
+    waitingForComputer: "Waiting for {{computer}} to come online",
+    waitingForComputerDetail:
+      "I'll pick this up by myself once {{computer}} is back online.",
     newConversation: "New conversation",
     emptyTitle: "What can I do for you?",
     emptyBody:
@@ -66,6 +69,28 @@ export const personalAgent = {
       failed: "Couldn't be done",
     },
   },
+  list: {
+    title: "Your list",
+    open: "To do",
+    doneToday: "Done today",
+    empty: "Tell me what you plan to do and I'll keep it here.",
+    reminder: "Reminder {{time}}",
+    helping: "I'm helping",
+    actionsFor: "Actions for “{{text}}”",
+    edit: "Edit",
+    delete: "Delete",
+    deleteTitle: "Delete from your list?",
+    deleteBody: "Delete “{{text}}” from your list? This can't be undone.",
+    deleteAction: "Delete",
+    textLabel: "What",
+    whenLabel: "When",
+    whenPlaceholder: "e.g. after work",
+    save: "Save",
+    saving: "Saving…",
+    cancel: "Cancel",
+    loadFailed: "Couldn't load your list",
+    failed: "Couldn't change your list",
+  },
   tasks: {
     title: "What I'm doing",
     empty: "Nothing in progress right now.",
@@ -78,6 +103,7 @@ export const personalAgent = {
     stopping: "Stopping…",
     stopFailed: "Couldn't stop it",
     loadFailed: "Couldn't load what I'm doing",
+    waitingForComputer: "Waiting for {{computer}} to come online",
     status: {
       queued: "Waiting its turn",
       running: "In progress",
@@ -94,6 +120,12 @@ export const personalAgent = {
     action: "Set up on {{device}}",
     working: "Setting up…",
     offline: "{{device}} is offline right now. Pick a computer that's on.",
+    shared:
+      "This computer's system account is shared with {{names}}, so they would reach your assistant's files and sign-ins there.",
+    chooseComputer: "Choose a computer",
+    actionUnchosen: "Set up",
+    onlyShared:
+      "Each of your computers shares its system account with someone else, so none is picked for you. Choose one if you're fine with them reaching your assistant's files and sign-ins there.",
     failed: "Couldn't set up your assistant",
     noComputer: {
       title: "Connect a computer first",
@@ -161,7 +193,7 @@ export const personalAgent = {
         zhCN: "中文",
       },
       timezone: "Time zone",
-      timezonePlaceholder: "Same as its computer",
+      timezonePlaceholder: "This browser's: {{zone}}",
       timezoneHint: "For reminders and the daily summary, e.g. Asia/Shanghai.",
       speakingStyle: "How it talks",
       speaking: {
@@ -249,8 +281,14 @@ export const personalAgent = {
       folder: "New projects go in {{folders}}",
       noFolder: "This computer hasn't said where new projects go yet.",
       openComputer: "Computer settings",
-      preferred: "Start new projects on",
+      preferred: "Default place",
+      preferredHint:
+        "Self-contained work starts here. Work that needs something only another computer has, like the company network or your work files, goes to a computer that has it; note what each has on its settings page. If none does, your assistant asks you.",
       preferredHome: "Where it lives ({{device}})",
+      has: "Noted: {{notes}}",
+      hasNothing: "Nothing noted about this computer yet.",
+      shared:
+        "Shares its system account with {{names}}: they can reach what your assistant does here. New projects go here only if you allow it below or make it the default place.",
       none: "You haven't connected a computer of your own yet.",
     },
     models: {
@@ -328,6 +366,7 @@ export const personalAgent = {
         limit: "a limit was reached",
         stopped: "it was stopped",
         invalid: "the request didn't make sense",
+        no_place: "none of your computers had what it needed",
       },
       tools: {
         create_workspace: "Start a project",

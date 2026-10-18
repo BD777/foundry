@@ -230,3 +230,16 @@ func TestWorkerReportsAFailedUpdateUnasked(t *testing.T) {
 		t.Fatalf("update = %+v", update)
 	}
 }
+
+func TestWorkerUpdateWaitingDoesNotConsumeRestartGrace(t *testing.T) {
+	var updates workerUpdates
+	old := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	updates.start("dev", store.DeviceWorkerUpdate{StartedAt: old, FromVersion: "old", Version: "new", Step: "waiting"})
+	if update, ok := updates.active("dev", "old", time.Now()); !ok || update.Stalled {
+		t.Fatal("waiting on live legacy work must not be called stalled")
+	}
+	updates.apply("dev", old, wsWorkerUpdateStatus{State: "running", Step: "restarting"})
+	if update, ok := updates.active("dev", "old", time.Now()); !ok || update.Stalled {
+		t.Fatal("restart needs its own grace after a long migration wait")
+	}
+}

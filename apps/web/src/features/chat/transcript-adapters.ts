@@ -132,6 +132,9 @@ export function sessionTranscriptEntries(
         : event.label === responseStreamLabel,
     )?.id;
   const entries: TranscriptEntry[] = [];
+  // Commentary deltas are cumulative snapshots of a native message, just
+  // like answers. Keep its position/step identity while updating its text.
+  const commentary = new Map<string, TranscriptEntry>();
   const usageIndex = new RequestUsageIndex(entries);
   let response: TranscriptEntry | undefined;
   // Files are counted per turn (input) and shown on the turn's last answer.
@@ -273,13 +276,27 @@ export function sessionTranscriptEntries(
       }
       continue;
     }
+    // A message another session sent (its input, or steered in) names it.
+    const sentBySessionId = event.metadata?.sentBySessionId;
     if (event.message) {
-      entries.push({
+      const update: TranscriptEntry = {
         ...event.message,
         id,
         stepId: `agent-session:${session.id}:${event.id}`,
         at: event.message.at ?? event.at,
-      });
+        ...(sentBySessionId ? { sentBySessionId } : {}),
+      };
+      const previous =
+        event.message.kind === "commentary" && event.message.id
+          ? commentary.get(id)
+          : undefined;
+      if (previous) {
+        Object.assign(previous, update, { stepId: previous.stepId });
+      } else {
+        entries.push(update);
+        if (event.message.kind === "commentary" && event.message.id)
+          commentary.set(id, update);
+      }
     } else if (event.detail.trim()) {
       entries.push({
         id,
@@ -287,6 +304,7 @@ export function sessionTranscriptEntries(
         kind: event.label === "Steered into active turn" ? "user" : "status",
         title: event.label,
         text: event.detail,
+        ...(sentBySessionId ? { sentBySessionId } : {}),
       });
     }
   }

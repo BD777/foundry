@@ -113,9 +113,15 @@ function TaskRow({
     <li className="fdy-pa-task" data-status={task.status}>
       <strong className="fdy-pa-task-title">{task.title}</strong>
       <span className="fdy-pa-task-meta">
-        <Badge tone={statusTone[task.status]}>
-          {t(`tasks.status.${task.status}`)}
-        </Badge>
+        {task.waitingFor ? (
+          <Badge tone="warn">
+            {t("tasks.waitingForComputer", { computer: task.waitingFor })}
+          </Badge>
+        ) : (
+          <Badge tone={statusTone[task.status]}>
+            {t(`tasks.status.${task.status}`)}
+          </Badge>
+        )}
         {task.stuckSince && active ? (
           <Badge tone="warn">{t("tasks.stuck")}</Badge>
         ) : null}

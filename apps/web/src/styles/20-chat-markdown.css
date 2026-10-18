@@ -451,3 +451,16 @@
   font-size: 12px;
   line-height: 20px;
 }
+
+.fdy-mermaid-error {
+  min-width: 0;
+  padding: 12px;
+  color: var(--fdy-ink-muted);
+}
+
+.fdy-mermaid-error pre {
+  max-height: 320px;
+  margin-block: 8px;
+  overflow: auto;
+  white-space: pre;
+}

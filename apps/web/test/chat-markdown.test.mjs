@@ -8,11 +8,13 @@ register("./bundler-resolve.mjs", import.meta.url);
 
 async function renderMarkdown(props, text, inspect) {
   const window = new Window();
+  let root;
   const previous = new Map();
   const globals = {
     window,
     document: window.document,
     navigator: window.navigator,
+    IntersectionObserver: window.IntersectionObserver,
     IS_REACT_ACT_ENVIRONMENT: true,
   };
   for (const key of ["Node", "Element", "HTMLElement", "Event", "MouseEvent"])
@@ -30,21 +32,68 @@ async function renderMarkdown(props, text, inspect) {
       await import("../src/components/conversation/markdown-content.tsx");
     const container = document.createElement("div");
     document.body.append(container);
-    const root = createRoot(container);
+    root = createRoot(container);
     await act(async () =>
       root.render(createElement(MarkdownContent, props, text)),
     );
     const html = container.innerHTML;
-    await inspect?.(container);
-    await act(async () => root.unmount());
+    await inspect?.(container, async (nextProps, nextText = text) => {
+      await act(async () =>
+        root.render(createElement(MarkdownContent, nextProps, nextText)),
+      );
+    });
     return html;
   } finally {
+    if (root) await act(async () => root.unmount());
     for (const [key, descriptor] of previous)
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else delete globalThis[key];
     await window.happyDOM.close();
   }
 }
+
+test("Mermaid fences render diagrams after streaming ends; ordinary code stays code", async () => {
+  const source = 'flowchart TD\n  A["开始"] --> B["完成<br/>Done"]';
+  const markdown = `\`\`\`mermaid\n${source}\n\`\`\``;
+  await renderMarkdown(
+    { streaming: true },
+    markdown,
+    async (container, update) => {
+      assert.equal(
+        container.querySelector('[data-streamdown="mermaid-block"]'),
+        null,
+      );
+      assert.match(container.textContent, /flowchart TD/);
+
+      await update({ streaming: false });
+      // Streamdown lazy-loads its diagram UI through Suspense. Wait for that
+      // observable result, including under concurrent test/build CPU load.
+      const deadline = Date.now() + 5000;
+      while (
+        !container.querySelector('[data-streamdown="mermaid-block"]') &&
+        Date.now() < deadline
+      ) {
+        await act(
+          async () => new Promise((resolve) => setTimeout(resolve, 20)),
+        );
+      }
+      assert.ok(container.querySelector('[data-streamdown="mermaid-block"]'));
+      assert.ok(
+        container.querySelector('button[aria-label="View fullscreen"]'),
+      );
+      assert.ok(
+        container.querySelector('button[aria-label="Download diagram"]'),
+      );
+
+      await update({}, '```js\nconst chart = "flowchart TD";\n```');
+      assert.equal(
+        container.querySelector('[data-streamdown="mermaid-block"]'),
+        null,
+      );
+      assert.match(container.textContent, /const chart/);
+    },
+  );
+});
 
 test("a person's message keeps its line breaks and literal list markers", async () => {
   const html = await renderMarkdown(
@@ -111,4 +160,67 @@ test("a settled answer is parsed as one document, so later link definitions reso
   );
   assert.doesNotMatch(html, /\[plan\]/);
   assert.equal(html.match(/<li/g)?.length, 2);
+});
+
+async function renderedLinks(props, text) {
+  let links = [];
+  let body = "";
+  await renderMarkdown(props, text, (container) => {
+    body = container.textContent;
+    links = [...container.querySelectorAll("a")].map((a) => ({
+      href: a.getAttribute("href"),
+      text: a.textContent,
+    }));
+  });
+  return { body, links };
+}
+
+test("a bare URL ends before Chinese text and full-width punctuation", async () => {
+  const doc =
+    "https://bytedance.larkoffice.com/docx/CUqLdQeIioltsqxgPbHcmxannzg";
+  const message = `正在写文档 ${doc}，还在修订中。得赶紧干完，在尽量在下午能够拉齐一个会议去说这个事情。`;
+  for (const props of [{ typedText: true }, {}]) {
+    const { body, links } = await renderedLinks(props, message);
+    assert.deepEqual(links, [{ href: doc, text: doc }]);
+    assert.equal(body, message);
+  }
+});
+
+test("bare URL boundaries keep GFM rules and valid URLs whole", async () => {
+  const cases = [
+    ["见 https://a.example/x?q=1&b=2。", "https://a.example/x?q=1&b=2"],
+    ["见（https://a.example/p）后续", "https://a.example/p"],
+    ["见 (https://a.example/p) 后续", "https://a.example/p"],
+    [
+      "see https://a.example/wiki/Foo_(bar).",
+      "https://a.example/wiki/Foo_(bar)",
+    ],
+    ["链接 https://a.example/end.", "https://a.example/end"],
+    ["链接 https://a.example/end", "https://a.example/end"],
+    ["链接 https://a.example/a.，下一句", "https://a.example/a"],
+    [
+      "编码 https://a.example/%E4%B8%AD%E6%96%87 好",
+      "https://a.example/%E4%B8%AD%E6%96%87",
+    ],
+    ["文档https://a.example/d、另一个", "https://a.example/d"],
+    ["前往 www.example.com，然后", "http://www.example.com/"],
+  ];
+  for (const [text, href] of cases) {
+    const { body, links } = await renderedLinks({ typedText: true }, text);
+    assert.deepEqual(
+      links.map((link) => link.href),
+      [href],
+      text,
+    );
+    assert.equal(body, text, text);
+  }
+});
+
+test("explicit links and text without URLs are left alone", async () => {
+  const plain = await renderedLinks({}, "这里没有链接，只有中文。");
+  assert.deepEqual(plain.links, []);
+  const labelled = await renderedLinks({}, "[文档](https://a.example/d)，后续");
+  assert.deepEqual(labelled.links, [
+    { href: "https://a.example/d", text: "文档" },
+  ]);
 });

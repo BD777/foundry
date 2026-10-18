@@ -191,7 +191,8 @@ export interface ChatMessageItem {
   editText?: string;
   id: string;
   idea?: string;
-  kind?: "boundary" | "failure" | "message" | "process" | "tool";
+  /** "waiting": queued work that waits for its offline device, without a timer. */
+  kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
   processItems?: ProcessDisplayItem[];
   onTurnIntoIssue?: () => void;
   recoverable?: boolean;
@@ -200,6 +201,11 @@ export interface ChatMessageItem {
   statusLabel?: ReactNode;
   /** Where the message came from, shown beside its time (e.g. "via Feishu"). */
   origin?: ReactNode;
+  /**
+   * The session that sent a message, when another session did: named above
+   * it, opened by `onOpen` (absent: the viewer cannot open it).
+   */
+  sentBy?: { sessionId: string; label: string; onOpen?: () => void };
   streaming?: boolean;
   text: ReactNode;
   title?: ReactNode;

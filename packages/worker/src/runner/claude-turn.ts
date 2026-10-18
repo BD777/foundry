@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
 import type { AgentSession } from "@bd777/foundry-protocol";
 import {
@@ -36,7 +37,7 @@ import {
 import { runProfileCommandSession } from "./profile-command.js";
 import { prepareTurnDirectory } from "./turn-directory.js";
 
-export async function runClaudeWorkspaceSession(
+async function runClaudeWorkspaceSessionUnlocked(
   workspacePath: string,
   session: AgentSession,
   profile: AgentProfileLocalConfig,
@@ -186,5 +187,17 @@ export async function runClaudeAgentSdkSession(
       error instanceof Error ? (error.stack ?? error.message) : String(error);
     writeFileSync(run.stderrPath, `${message}\n`);
     throw error;
+  }
+}
+
+/** Pin the runtime before resolving its executable, SDK or native session. */
+export async function runClaudeWorkspaceSession(
+  ...args: Parameters<typeof runClaudeWorkspaceSessionUnlocked>
+): Promise<AgentSessionRunResult> {
+  const release = await acquireRuntime("claude");
+  try {
+    return await runClaudeWorkspaceSessionUnlocked(...args);
+  } finally {
+    release();
   }
 }

@@ -224,3 +224,114 @@ test("one process writes a session: a newer one under another key replaces it an
   assert.deepEqual(received, [received[0], "Go on"]);
   assert.equal(activeClaudeRuntimes.get(writers[0].key), writers[0]);
 });
+
+test("inter-session inputs and Claude steers name the authenticated sender without changing transcript text", async () => {
+  const { session, events, finished } = await openTurn();
+  const sender = "sess_other_agent";
+  const text = "Release the compute lease when finished.";
+  await steerActiveSessionOnce(session.id, randomUUID(), text, [], sender);
+  await finished;
+  const prompt = sessionPrompt({
+    ...session,
+    input: { id: "next", prompt: text, sentBySessionId: sender },
+  });
+  assert.equal(received[1], prompt);
+  assert.match(prompt, /another agent session \("sess_other_agent"\)/);
+  assert.match(prompt, /not a message typed directly by the user/);
+  assert.equal(
+    events.find((event) => event.label === "Steered into active turn").detail,
+    text,
+  );
+  assert.equal(userMessageText(text), text);
+});
+
+test("Codex active steer carries sender identity and preserves image input and transcript", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  let receivedInput;
+  const events = [];
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    steer: async (input) => {
+      receivedInput = input;
+    },
+  };
+  const running = runCodexStreamedTurn(
+    { emit: async (...args) => events.push(args) },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await steerActiveSessionOnce(
+      id,
+      "source-steer",
+      "Please inspect",
+      [image],
+      "sess_sender",
+    );
+    assert.equal(
+      receivedInput[0].text,
+      userMessageText("Please inspect", [image], "sess_sender"),
+    );
+    assert.deepEqual(receivedInput[1], {
+      type: "local_image",
+      path: image.path,
+    });
+    assert.equal(events[0][4].text, "Please inspect");
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("Codex terminal failure closes its producer and releases its writer before returning", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  for (const cleanupFails of [false, true]) {
+    let writerHeld = true;
+    const thread = {
+      runStreamed: async () => ({
+        events: (async function* () {
+          try {
+            yield {
+              type: "turn.failed",
+              error: { message: "native upstream failed" },
+            };
+          } finally {
+            writerHeld = false;
+            if (cleanupFails) throw new Error("cleanup failed");
+          }
+        })(),
+      }),
+    };
+    await assert.rejects(
+      runCodexStreamedTurn(
+        {
+          emit: async () => {},
+          eventsPath: join(root, `failed-${cleanupFails}.jsonl`),
+          nativeSessionId: "",
+          files: { recordToolWrite: async () => {} },
+        },
+        thread,
+        "test",
+        `sess_${randomUUID()}`,
+      ),
+      /native upstream failed/,
+    );
+    assert.equal(
+      writerHeld,
+      false,
+      "failed turn left its native writer behind",
+    );
+  }
+});

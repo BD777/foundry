@@ -43,7 +43,8 @@ func TestSteerCarriesAttachmentsToTheDaemon(t *testing.T) {
 		t.Fatalf("start session: %v", err)
 	}
 
-	testServer := httptest.NewServer(NewServer(backing).Routes())
+	server := NewServer(backing)
+	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", nil)
 	if err != nil {
@@ -67,7 +68,9 @@ func TestSteerCarriesAttachmentsToTheDaemon(t *testing.T) {
 		MIMEType: "image/png", Size: 326, Kind: "image",
 	}
 	post := func(body string) (int, string) {
-		response, err := http.Post(testServer.URL+"/api/agent-sessions/"+session.ID+"/messages", "application/json", strings.NewReader(body))
+		req, _ := http.NewRequest(http.MethodPost, testServer.URL+"/api/agent-sessions/"+session.ID+"/messages", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return -1, err.Error()
 		}
@@ -125,6 +128,36 @@ func TestSteerCarriesAttachmentsToTheDaemon(t *testing.T) {
 	payload = steer(`{"prompt":"","attachments":[{"id":"att_green","name":"green.png","path":"/ws/.foundry/attachments/green.png","mimeType":"image/png","size":326,"kind":"image"}]}`)
 	if payload.Message != "" || len(payload.Attachments) != 1 || payload.Attachments[0] != image {
 		t.Fatalf("files-only steer payload = %+v", payload)
+	}
+
+	// The authenticated sender captured by send_message reaches the device.
+	senderDone := make(chan error, 1)
+	go func() {
+		senderDone <- server.hub.SteerAgentSession(ctx, session, "source-input", "coordinate", nil, "sess_sender")
+	}()
+	for {
+		var envelope wsEnvelope
+		if err := conn.ReadJSON(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Type != wsSteerSessionType {
+			continue
+		}
+		var sent wsSteerSessionPayload
+		if err := decodeWebSocketPayload(envelope.Payload, &sent); err != nil {
+			t.Fatal(err)
+		}
+		if sent.SentBySessionID != "sess_sender" {
+			t.Fatalf("steer lost sender: %+v", sent)
+		}
+		writeWSIDForTest(t, conn, envelope.ID, wsSessionSteeredType, map[string]any{"sessionId": session.ID})
+		if err := <-senderDone; err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	if status, body := post(`{"prompt":"typed","sentBySessionId":"sess_forged"}`); status != http.StatusBadRequest {
+		t.Fatalf("forged sender status = %d, want 400: %s", status, body)
 	}
 
 	if status, body := post(`{"prompt":"  "}`); status != http.StatusBadRequest {

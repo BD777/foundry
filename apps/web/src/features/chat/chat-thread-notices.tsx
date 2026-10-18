@@ -1,5 +1,11 @@
-import { ChevronRight, CircleAlert, Clock, LoaderCircle } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ChevronRight,
+  CircleAlert,
+  Clock,
+  Hourglass,
+  LoaderCircle,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -42,6 +48,51 @@ export function ChatWorkNote({
   return schedule ? (
     <ScheduledNote onClick={onRevealTimers} schedule={schedule} wakes={wakes} />
   ) : null;
+}
+
+/**
+ * The line above the input while the workspace's device is offline: what is
+ * sent waits for it, or (`onCancel`) the open chat already waits, and may be
+ * cancelled.
+ */
+export function ChatDeviceNote({
+  device,
+  onCancel,
+}: {
+  device: string;
+  onCancel?: () => Promise<void> | void;
+}) {
+  const { t } = useTranslation("chat");
+  const [cancelling, setCancelling] = useState(false);
+  async function cancel(): Promise<void> {
+    setCancelling(true);
+    try {
+      await onCancel?.();
+    } finally {
+      setCancelling(false);
+    }
+  }
+  return (
+    <div className="fdy-chat-device-note" role="status">
+      <Hourglass aria-hidden="true" size={14} />
+      <span>
+        {onCancel
+          ? t("thread.waitingForDevice", { device })
+          : t("thread.deviceOfflineHint", { device })}
+      </span>
+      {onCancel ? (
+        <Button
+          aria-busy={cancelling}
+          disabled={cancelling}
+          onClick={() => void cancel()}
+          size="sm"
+          variant="secondary"
+        >
+          {t("thread.cancelWaiting")}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 /** The next wake-up of an idle chat's timers, kept current by the minute. */

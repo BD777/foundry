@@ -1,5 +1,25 @@
 /** The conversation surface shared by Chats and Issues: transcript, process rows, queue and composer. */
 export const conversation = {
+  diagram: {
+    error: "This diagram could not be rendered. Its source is shown below.",
+    retry: "Retry diagram",
+    controls: {
+      copyCode: "Copy source",
+      copied: "Copied",
+      downloadDiagram: "Download diagram",
+      downloadDiagramAsMmd: "Download Mermaid source",
+      downloadDiagramAsPng: "Download PNG",
+      downloadDiagramAsSvg: "Download SVG",
+      mermaidFormatMmd: "Mermaid source",
+      mermaidFormatPng: "PNG",
+      mermaidFormatSvg: "SVG",
+      viewFullscreen: "View fullscreen",
+      exitFullscreen: "Exit fullscreen",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      resetView: "Reset view",
+    },
+  },
   /** Labels the worker records on events and process rows, by protocol key. */
   processLabels: {
     sessionFailed: "Session failed",
@@ -70,6 +90,8 @@ export const conversation = {
     },
   },
   message: {
+    sentBy: "From",
+    openSender: "Open {{title}}, the session that sent this message",
     openFile: "Open {{path}}",
     openPendingFile: "Open {{path}} (not written yet when this answer ended)",
     showFolder: "Show the files in {{path}}",

@@ -6,6 +6,12 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Panel } from "../../components/ui/panel";
 import { SelectMenu } from "../../components/ui/select-menu";
+import {
+  accountSharers,
+  joinNames,
+  preferUnsharedDevice,
+  sharesSystemAccount,
+} from "../../lib/device-sharing";
 import { serverErrorText } from "../../lib/errors";
 
 const isOnline = (device: DeviceProjection) => device.status === "connected";
@@ -13,7 +19,9 @@ const isOnline = (device: DeviceProjection) => device.status === "connected";
 /**
  * The first visit: one tap makes the assistant's home on the computer the
  * server suggests (the person's most-online one), or another they pick.
- * Without a computer of their own, where to connect one.
+ * A computer whose system account someone else shares is never picked for
+ * them: with only such computers, they choose one first. Without a
+ * computer of their own, where to connect one.
  */
 export function AssistantSetup({
   devices,
@@ -27,17 +35,16 @@ export function AssistantSetup({
   onSetUp: (deviceId: string) => Promise<void>;
   onConnectComputer: () => void;
 }) {
-  const { t } = useTranslation("personalAgent");
+  const { t, i18n } = useTranslation("personalAgent");
   const fallback =
     devices.find((device) => device.id === suggestedDeviceId) ??
-    devices.find(isOnline) ??
-    devices[0];
+    preferUnsharedDevice(devices);
   const [chosenId, setChosenId] = useState(fallback?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const chosen = devices.find((device) => device.id === chosenId) ?? fallback;
 
-  if (!chosen)
+  if (!devices.length)
     return (
       <Panel className="fdy-pa-setup">
         <Sparkles aria-hidden="true" className="fdy-pa-setup-icon" size={22} />
@@ -51,10 +58,11 @@ export function AssistantSetup({
     );
 
   async function setUp(): Promise<void> {
+    if (!chosen) return;
     setBusy(true);
     setError("");
     try {
-      await onSetUp(chosen!.id);
+      await onSetUp(chosen.id);
     } catch (reason) {
       setError(serverErrorText(reason));
     } finally {
@@ -67,7 +75,7 @@ export function AssistantSetup({
       <Sparkles aria-hidden="true" className="fdy-pa-setup-icon" size={22} />
       <h2>{t("setup.title")}</h2>
       <p>{t("setup.body")}</p>
-      {devices.length > 1 ? (
+      {devices.length > 1 || !fallback ? (
         <div className="fdy-pa-field">
           <span className="fdy-pa-field-label">{t("setup.computer")}</span>
           <SelectMenu
@@ -81,24 +89,36 @@ export function AssistantSetup({
                 ? t("settings.status.online")
                 : t("settings.status.offline"),
             }))}
-            value={chosen.id}
+            placeholder={t("setup.chooseComputer")}
+            value={chosen?.id ?? ""}
           />
         </div>
       ) : null}
-      {isOnline(chosen) ? null : (
+      {!chosen ? (
+        <p className="fdy-pa-muted">{t("setup.onlyShared")}</p>
+      ) : sharesSystemAccount(chosen) ? (
+        <p className="fdy-pa-muted">
+          {t("setup.shared", {
+            names: joinNames(accountSharers(chosen), i18n.language),
+          })}
+        </p>
+      ) : null}
+      {!chosen || isOnline(chosen) ? null : (
         <p className="fdy-pa-muted">
           {t("setup.offline", { device: chosen.label })}
         </p>
       )}
       <Button
         aria-busy={busy}
-        disabled={busy || !isOnline(chosen)}
+        disabled={busy || !chosen || !isOnline(chosen)}
         onClick={() => void setUp()}
         variant="primary"
       >
         {busy
           ? t("setup.working")
-          : t("setup.action", { device: chosen.label })}
+          : chosen
+            ? t("setup.action", { device: chosen.label })
+            : t("setup.actionUnchosen")}
       </Button>
       {error ? (
         <Alert tone="error" title={t("setup.failed")}>

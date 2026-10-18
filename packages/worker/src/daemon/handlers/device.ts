@@ -1,6 +1,7 @@
 import {
   daemonMessageTypes,
   type DeviceRepairAction,
+  type DeviceSharingPayload,
   type RunRepairPayload,
 } from "@bd777/foundry-protocol";
 import WebSocket from "ws";
@@ -14,6 +15,7 @@ import {
 import { currentSocket } from "../context.js";
 import { reply, type DaemonDispatch } from "../dispatch.js";
 import { errorMessage } from "../../utils.js";
+import { setSystemAccountSharing } from "../../system-account-sharing.js";
 
 /**
  * The server asks for update status: it understands a failure reported
@@ -45,6 +47,11 @@ function socketRoundTrip(socket: WebSocket): Promise<number> {
 /** The worker itself: its updates, diagnostics and repairs. */
 export function registerDeviceHandlers(dispatch: DaemonDispatch): void {
   dispatch
+    .on(daemonMessageTypes.deviceSharing, (envelope) => {
+      setSystemAccountSharing(
+        envelope.payload as Partial<DeviceSharingPayload> | undefined,
+      );
+    })
     .on(daemonMessageTypes.readWorkerUpdateStatus, (envelope, ctx) => {
       serverReadsWorkerUpdateStatus = true;
       trySendWebSocket(

@@ -26,6 +26,8 @@ var promptVersions = map[string]string{
 	"2026-10-15.2": "787ddd55f14e5daec392abf63f6e231cc9af52f7db0b040a29602d2edff489b6",
 	"2026-10-15.3": "2a2af22e131a0bfb8661c0e8e5888ad31307d11ebc70cadfe499b596b1b03a72",
 	"2026-10-15.4": "7f4e4e2544404bd90328b2091b320fa31bfdba59150622afb5246044d8eadde4",
+	"2026-10-15.5": "e3754f6a11bcde6c23e44115c5836c6c62fc22a3c490638b027067c8268b1785",
+	"2026-10-15.6": "9585d7b75f3193634203260075216603451c384a95ed7bbdb1e2014e616c39dc",
 }
 
 func TestEveryPromptChangeHasItsOwnVersion(t *testing.T) {
@@ -40,10 +42,10 @@ func TestEveryPromptChangeHasItsOwnVersion(t *testing.T) {
 // The words a non-technical person should never meet (§1, §13), as the
 // prompt lists them.
 var (
-	bannedEnglish = regexp.MustCompile(`(?i)\b(workspaces?|devices?|sessions?|repos?|repositor(?:y|ies)|branch(?:es)?|commits?|profiles?|runtimes?|models?|mcp|tokens?|agents?|prompts?|director(?:y|ies)|paths?)\b`)
+	bannedEnglish = regexp.MustCompile(`(?i)\b(workspaces?|devices?|sessions?|repos?|repositor(?:y|ies)|branch(?:es)?|commits?|profiles?|runtimes?|models?|mcp|tokens?|agents?|prompts?|director(?:y|ies)|paths?|claude|codex)\b`)
 	// "issue" is an ordinary word; Foundry's Issue is capitalised.
 	bannedIssue   = regexp.MustCompile(`\bIssues?\b`)
-	bannedEnList  = []string{"workspace", "device", "session", "repo", "repository", "branch", "commit", "Issue", "profile", "runtime", "model", "MCP", "token", "agent", "prompt", "directory", "path"}
+	bannedEnList  = []string{"workspace", "device", "session", "repo", "repository", "branch", "commit", "Issue", "profile", "runtime", "model", "MCP", "token", "agent", "prompt", "directory", "path", "Claude", "Codex"}
 	bannedChinese = []string{"工作区", "设备", "会话", "仓库", "分支", "提交", "模型", "令牌", "智能体", "提示词", "目录", "路径"}
 	foundryIDs    = regexp.MustCompile(`\b(ws|sess|dev|iss|native_claude|native_codex)_`)
 )
@@ -159,6 +161,7 @@ func TestFillIsStableAcrossTurns(t *testing.T) {
 	next.Tasks = next.Tasks[:1]
 	next.Tasks[0].Status, next.Tasks[0].LastEventAt = store.PersonalAgentTaskAsking, at(time.Hour)
 	next.DirectChatPreviousWorkspaceID = ""
+	next.List = next.List[:1]
 	for i := range next.Devices {
 		next.Devices[i].Online = !next.Devices[i].Online
 	}
@@ -193,6 +196,23 @@ func golden(t *testing.T, name, got string) {
 	}
 	if got != string(want) {
 		t.Fatalf("the output differs from %s; if intended, rerun with -update and review the diff", path)
+	}
+}
+
+// Each turn's context shows the open items of the person's list, with
+// their times in the person's zone, at most personalagent.ListContextMax.
+func TestTurnContextShowsTheOpenList(t *testing.T) {
+	out := prompt.TurnContext(fullInput())
+	if !strings.Contains(out, `- "回猎头的微信消息" [pai_wechat]: "下班后"; reminder at 2026-10-15 18:30`) ||
+		!strings.Contains(out, "your task task_1") || strings.Contains(out, "pai_qa") {
+		t.Fatalf("the list in the turn's context:\n%s", out)
+	}
+	in := newPersonInput()
+	for i := 0; i <= personalagent.ListContextMax; i++ {
+		in.List = append(in.List, store.PersonalAgentListItem{ID: fmt.Sprintf("pai_%02d", i), Text: "x", Status: store.PersonalAgentItemOpen, CreatedAt: at(time.Duration(i) * time.Minute)})
+	}
+	if out := prompt.TurnContext(in); !strings.Contains(out, "…and 1 more; read_list") || strings.Contains(out, fmt.Sprintf("[pai_%02d]", personalagent.ListContextMax)) {
+		t.Fatalf("the turn's context keeps %d open items:\n%s", personalagent.ListContextMax, out)
 	}
 }
 
@@ -285,7 +305,6 @@ func fullInput() prompt.Input {
 		PersonName:      "林梅",
 		Settings:        settings,
 		AccountLanguage: "en",
-		HomeTimezone:    "Europe/London",
 		HomeDeviceID:    "dev_mac",
 		Memory: []store.PersonalAgentMemoryItem{
 			{ID: "mem_1", Content: "有两个孩子，老大在读三年级。", Origin: store.PersonalAgentMemoryStated, Status: store.PersonalAgentMemoryActive, UpdatedAt: at(-72 * time.Hour)},
@@ -306,11 +325,23 @@ func fullInput() prompt.Input {
 			{DeviceID: "dev_nas", Label: "Home server", System: "Linux", Online: false, Runtimes: []string{"Codex"}},
 			{DeviceID: "dev_mac", Label: "MacBook", System: "macOS", Online: true, Runtimes: []string{"Claude Code", "Codex"}},
 		},
+		Places: map[string]store.DevicePlacement{
+			"dev_mac": {DeviceID: "dev_mac",
+				Labels: []store.DeviceLabel{{Key: "network", Value: "corp"}, {Key: "files", Value: "work"}},
+				Facts:  []store.DeviceFact{{Key: "os", Value: "macos", Source: "system"}, {Key: "reaches", Value: "cloud.bytedance.net", Detail: "ByteDance network", Source: "connector"}, {Key: "toolchain", Value: "go", Detail: "Go 1.23", Source: "toolchain"}}},
+			"dev_nas": {DeviceID: "dev_nas", Facts: []store.DeviceFact{{Key: "always-on", Source: "presence"}}},
+		},
 		Tasks: []store.PersonalAgentTask{
 			{ID: "task_1", SessionID: "sess_export", WorkspaceID: "ws_budget", Title: "Add an Excel export", Status: store.PersonalAgentTaskRunning, CreatedAt: at(-40 * time.Minute), LastEventAt: at(-5 * time.Minute)},
 			{ID: "task_2", SessionID: "sess_login", WorkspaceID: "ws_admin", Title: "Why login is slow", Status: store.PersonalAgentTaskAsking, ReadOnly: true, CreatedAt: at(-3 * time.Hour), StuckSince: at(-time.Hour)},
 			{ID: "task_3", WorkspaceID: "ws_budget", Title: "Monthly chart", Status: store.PersonalAgentTaskQueued, CreatedAt: at(-30 * time.Minute)},
 			{ID: "task_4", SessionID: "sess_done", WorkspaceID: "ws_blog", Title: "Fix the RSS feed", Status: store.PersonalAgentTaskDone, CreatedAt: at(-24 * time.Hour)},
+			{ID: "task_5", SessionID: "sess_theme", WorkspaceID: "ws_blog", Title: "New blog theme", Status: store.PersonalAgentTaskRunning, CreatedAt: at(-20 * time.Minute), WaitingFor: "Home server"},
+		},
+		List: []store.PersonalAgentListItem{
+			{ID: "pai_wechat", Text: "回猎头的微信消息", When: "下班后", At: at(9 * time.Hour), Remind: true, Status: store.PersonalAgentItemOpen, CreatedAt: at(-time.Hour)},
+			{ID: "pai_doc", Text: "把 AutoRun 和 Tag 流程合并的文档改完", When: "下午开会前", TaskID: "task_1", Status: store.PersonalAgentItemOpen, CreatedAt: at(-50 * time.Minute)},
+			{ID: "pai_qa", Text: "和伟超对了提测 Workflow", Status: store.PersonalAgentItemDone, CreatedAt: at(-40 * time.Minute), ClosedAt: at(-40 * time.Minute)},
 		},
 		DirectChatPreviousWorkspaceID: "ws_budget",
 		ConnectorsURL:                 "https://foundry.example/connectors",

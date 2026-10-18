@@ -173,7 +173,8 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 		args = append(args, id)
 	}
 	rows, err := s.reader().QueryContext(ctx, `
-		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
+		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size,
+			repo.id, CASE WHEN repo.name <> '' THEN repo.name ELSE repo.label END, repo.description, repo.version
 		FROM skill_repository_skills k
 		JOIN skill_repositories repo ON repo.id = k.repository_id AND repo.mode = 'bundle'
 		JOIN promoted_skills ps ON ps.id = k.skill_id
@@ -187,9 +188,12 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 	refs := []store.SessionSkillRef{}
 	for rows.Next() {
 		var ref store.SessionSkillRef
-		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize); err != nil {
+		var bundle store.SessionSkillBundle
+		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize,
+			&bundle.ID, &bundle.Name, &bundle.Description, &bundle.Version); err != nil {
 			return nil, err
 		}
+		ref.Bundle = &bundle
 		refs = append(refs, ref)
 	}
 	return refs, rows.Err()

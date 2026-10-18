@@ -8,9 +8,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
 
@@ -66,7 +68,7 @@ func Compile(src Source, previous *store.WorkspaceDigestRecord, now time.Time) s
 		WorkspaceID:    workspace.ID,
 		Name:           strings.TrimSpace(workspace.Name),
 		Kind:           workspace.Kind,
-		Purpose:        strings.TrimSpace(src.Purpose),
+		Purpose:        strings.TrimSpace(redact.Text(src.Purpose)),
 		DeviceID:       workspace.DeviceID,
 		DeviceLabel:    workspace.DeviceLabel,
 		DeviceOnline:   src.DeviceOnline,
@@ -195,7 +197,7 @@ func FirstParagraph(content string) string {
 		}
 		lines = append(lines, trimmed)
 	}
-	return truncateRunes(strings.Join(lines, " "), maxIntroRunes)
+	return truncateRunes(redact.Text(strings.Join(lines, " ")), maxIntroRunes)
 }
 
 // activity is one session or chat, as a digest reads it.
@@ -214,7 +216,7 @@ func activities(sessions []store.AgentSession, chats []store.ChatThread) []activ
 			continue
 		}
 		seen[session.ID] = true
-		title := cleanRequest(sessionTitle(session))
+		title := truncateRunes(cleanRequest(sessionTitle(session)), maxTitleRunes)
 		if title == "" {
 			title = untitledPrompt
 		}
@@ -288,8 +290,10 @@ var (
 	machinePrefixes = []string{"this session is being continued", "caveat:", "<local-command", "<command-", "[request interrupted"}
 )
 
-// cleanRequest is a message as the person wrote it: without images,
-// pasted blocks, links, ids or code, on one line.
+// cleanRequest is a message as the person wrote it: without secrets and
+// connection details (redact.Text), images, pasted blocks, links, ids or
+// code, on one line. It is what every title and request of the person's
+// history passes before a digest keeps, shows or ranks by it.
 func cleanRequest(text string) string {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	for _, prefix := range machinePrefixes {
@@ -297,14 +301,31 @@ func cleanRequest(text string) string {
 			return ""
 		}
 	}
-	text = markupPattern.ReplaceAllString(text, " ")
+	text = markupPattern.ReplaceAllString(redact.Text(requestStart(text)), " ")
 	return strings.Join(strings.Fields(text), " ")
+}
+
+// maxRequestBytes is how much of a message a digest reads: far more than
+// it keeps (maxHistoryRunes), and a pasted log is not redacted whole.
+const maxRequestBytes = 4096
+
+// requestStart is the start of a long message, ending before its last
+// word so a secret is not cut short of its pattern.
+func requestStart(text string) string {
+	if len(text) <= maxRequestBytes {
+		return text
+	}
+	text = truncateBytes(text, maxRequestBytes)
+	if space := strings.LastIndexFunc(text, unicode.IsSpace); space > 0 {
+		text = text[:space]
+	}
+	return text
 }
 
 func fileNames(files []store.WorkspaceFileEntry) []string {
 	names := []string{}
 	for _, file := range files {
-		names = append(names, file.Path)
+		names = append(names, redact.Text(file.Path))
 	}
 	sort.Strings(names)
 	return names
@@ -320,6 +341,8 @@ func contentSessions(sessions []store.WorkspaceDigestSession) []store.WorkspaceD
 	return content
 }
 
+// sessionTitle is a session's title or its prompt's first line, whole:
+// it is cut after it is cleaned, so no secret is cut short of its pattern.
 func sessionTitle(session store.AgentSession) string {
 	title := strings.TrimSpace(session.Title)
 	if title == "" {
@@ -331,7 +354,7 @@ func sessionTitle(session store.AgentSession) string {
 	if title == "" {
 		return untitledPrompt
 	}
-	return truncateRunes(title, maxTitleRunes)
+	return title
 }
 
 func sessionActivity(session store.AgentSession) time.Time {
@@ -356,7 +379,7 @@ func openIssues(issues []store.Issue) []store.WorkspaceDigestIssue {
 		if closedIssueStatuses[issue.Status] {
 			continue
 		}
-		open = append(open, store.WorkspaceDigestIssue{ID: issue.ID, Title: truncateRunes(strings.TrimSpace(issue.Title), maxTitleRunes), Status: issue.Status})
+		open = append(open, store.WorkspaceDigestIssue{ID: issue.ID, Title: truncateRunes(strings.TrimSpace(redact.Text(issue.Title)), maxTitleRunes), Status: issue.Status})
 	}
 	sort.SliceStable(open, func(i, j int) bool { return open[i].ID > open[j].ID })
 	if len(open) > maxOpenIssues {

@@ -104,7 +104,27 @@ export interface OfficialSkill {
  * copies: whether the program is there, its version against the minimum the
  * worker was built for, and the official commands to install or update it.
  */
+export interface AgentRuntimeUpdate {
+  state:
+    | "checking"
+    | "current"
+    | "available"
+    | "waiting_idle"
+    | "updating"
+    | "failed"
+    | "external";
+  checkedAt: string;
+  target?: string;
+  sdkTarget?: string;
+  current?: string;
+  detail?: string;
+  nextCheckAt?: number;
+}
+
 export interface NativeCli {
+  path?: string;
+  generation?: string;
+  update?: AgentRuntimeUpdate;
   installed: boolean;
   version?: string;
   minimumVersion?: string;
@@ -148,7 +168,16 @@ export interface AgentProfileCheck {
   message?: string;
 }
 
+export interface NativeAccountHold {
+  id: string;
+  code: "account_on_hold";
+  observedAt: string;
+  accountLabel: string;
+}
+
 export interface AgentProfileProjection {
+  runtimeGeneration?: string;
+  accountHold?: NativeAccountHold;
   /** The account a local login is signed in as, when the CLI recorded one. */
   accountLabel?: string;
   id: string;
@@ -185,6 +214,7 @@ export interface AgentProfileProjection {
   codexReasoningEffort?: CodexReasoningEffort;
   codexSandboxMode?: CodexSandboxMode;
   codexApprovalPolicy?: CodexApprovalPolicy;
+  contextWindows?: Record<string, number>;
   codexSpeed?: CodexSpeed;
   baseUrl?: string;
   commandLabel?: string;
@@ -328,6 +358,7 @@ export interface PromoteProfileInput {
 }
 
 export interface AgentProjection {
+  accountHold?: NativeAccountHold;
   id: string;
   workspaceId: string;
   deviceId: string;

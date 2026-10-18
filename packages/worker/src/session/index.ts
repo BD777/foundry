@@ -1,3 +1,4 @@
+import { acquireRuntime } from "../agent-runtime/maintenance.js";
 /**
  * Session Runtime. Chats and the sessions working for an Issue (execution,
  * clarification, orchestrated children) run through runWorkspaceSession
@@ -66,7 +67,7 @@ export function startSession(spec: SessionSpec): SessionHandle {
   };
 }
 
-async function run(
+async function runUnlocked(
   spec: SessionSpec,
   canceled: AbortSignal,
 ): Promise<SessionResult> {
@@ -174,5 +175,17 @@ export function stageLauncher(
       default:
         throw new Error("agent_verifier_isolation_unavailable");
     }
+  }
+}
+
+async function run(
+  spec: SessionSpec,
+  canceled: AbortSignal,
+): Promise<SessionResult> {
+  const release = await acquireRuntime(spec.harness, canceled);
+  try {
+    return await runUnlocked(spec, canceled);
+  } finally {
+    release();
   }
 }

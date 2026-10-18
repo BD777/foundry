@@ -56,6 +56,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ## 后续
 
+- **待实施方案：** [Workspace 草稿试用、隔离补全与启动准备重构](session-isolation-design.md)。让同 Workspace 的会话发现和试用草稿，按执行快照测试后独立发布；同时补齐缓存内容复核、精确挂载、creator 对照试验和原生子 Agent 验收。当前正文描述的“先发布再选用”仍是现状。
 - **下一步：** 从 Foundry 安装 Skill 缺失的程序，沿用 bundle 工具的安装路径（按设备、人点击、https 与校验）。
 - **下一步：** 私有仓库：让 Server 也能读需要凭据的来源，不依赖某台设备在线；凭据按[安全边界](security.md)的 sealed secret 规则保存。
 - **探索：** 自动提炼与推荐 Skill：从会话中提炼可复用的方法成为 Workspace 草稿，或按 Workspace 推荐库中已有的 Skill；产物仍经人发布进库。

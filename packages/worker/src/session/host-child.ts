@@ -1,3 +1,4 @@
+import { inheritRuntimeLease } from "../agent-runtime/maintenance.js";
 /**
  * Session host: runs one workspace session inside a sandbox, started by
  * runWorkspaceSession. Reads the run from its first stdin line, then steer
@@ -40,6 +41,7 @@ lines.once("line", async (line) => {
       managedSkills?: ManagedSkillRuntime;
       ambient?: SessionAmbientEnv;
     };
+    inheritRuntimeLease(input.session.provider);
     if (input.ambient)
       registerSessionAmbientEnv(input.session.id, input.ambient);
     lines.on("line", (line) => {

@@ -14,8 +14,8 @@ func (s *Server) liveDevices(devices []store.DeviceProjection) []store.DevicePro
 
 // deviceForEvent is the device as foundry-data lists it to a viewer who does
 // not own it: a device event reaches every viewer of the device's workspace,
-// so what only its owner sees (runtimeSettings) and what depends on the
-// viewer (owned) stay out.
+// so what only its owner sees (runtimeSettings, sharesSystemAccountWith)
+// and what depends on the viewer (owned) stay out.
 func (s *Server) deviceForEvent(ctx context.Context, deviceID string) (store.DeviceProjection, bool) {
 	devices, err := s.store.ListDevices(ctx)
 	if err != nil {
@@ -28,6 +28,7 @@ func (s *Server) deviceForEvent(ctx context.Context, deviceID string) (store.Dev
 		listed := s.liveDevices([]store.DeviceProjection{device})[0]
 		listed.RuntimeSettings = nil
 		listed.Owned = false
+		listed.SharesSystemAccountWith = nil
 		return listed, true
 	}
 	return store.DeviceProjection{}, false

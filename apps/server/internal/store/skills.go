@@ -83,6 +83,17 @@ type SessionSkillRef struct {
 	Name     string `json:"name"`
 	Checksum string `json:"checksum"`
 	ByteSize int64  `json:"byteSize"`
+	// Bundle names the bundle the skill came with, so a session can be told
+	// about a large bundle as one entry instead of skill by skill.
+	Bundle *SessionSkillBundle `json:"bundle,omitempty"`
+}
+
+// SessionSkillBundle is the bundle a session skill came with.
+type SessionSkillBundle struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Version     string `json:"version,omitempty"`
 }
 
 // WorkspaceSkillBinding is one selected catalog entry for a workspace.

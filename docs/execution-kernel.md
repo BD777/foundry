@@ -67,6 +67,8 @@
 
 ## 后续
 
+配置来源隔离、公共启动准备的封装重构及已知回归修复，见[会话隔离与 Workspace Skill 草稿方案](session-isolation-design.md)（待实施）。方案保留普通执行和独立判定两个入口，共用配置、凭据和材料准备，不改变现有 Chat 文件权限边界。
+
 与 [Roadmap](../README.md#roadmap) 一致，下一步是 Sandbox 隔离补全：
 
 - **Docker 容器隔离**：作为第三种 `SandboxBackend`，按 Workspace 选择，面向 Linux 服务器、团队共用机器与需要可复现环境的项目；独立根文件系统与资源限额。取舍（只能用镜像里的工具链、macOS 上经虚拟机运行、worktree 的 `.git` 路径挂载、容器内 Worker 需要宿主 docker.sock）见[模块化架构 §5.1](architecture-modules.md#51-sandbox)。

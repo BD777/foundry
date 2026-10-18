@@ -53,6 +53,8 @@ export function spawnProcessGroup(
     process.execPath,
     [
       fileURLToPath(new URL("./process-group-child.js", import.meta.url)),
+      "--owner",
+      String(process.pid),
       command,
       ...args,
     ],

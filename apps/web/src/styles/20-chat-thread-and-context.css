@@ -284,6 +284,15 @@
   background: var(--fdy-control-ghost-hover);
 }
 
+.fdy-chat-context-row[data-static="true"]:hover {
+  background: transparent;
+}
+
+.fdy-chat-context-row-forward {
+  flex: none;
+  color: var(--fdy-ink-faint);
+}
+
 .fdy-chat-context-row:focus-visible {
   outline: 2px solid var(--fdy-brass-line);
   outline-offset: 1px;

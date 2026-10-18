@@ -223,6 +223,16 @@ func (s *Store) SavePersonalAgentSettings(ctx context.Context, userID string, se
 	return s.GetPersonalAgent(ctx, userID)
 }
 
+func (s *Store) FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (store.PersonalAgent, error) {
+	if _, err := s.conn().ExecContext(ctx, `UPDATE personal_agents
+		SET settings_json = json_set(settings_json, '$.timezone', ?), updated_at = ?
+		WHERE user_id = ? AND coalesce(json_extract(settings_json, '$.timezone'), '') = ''`,
+		timezone, paNow(), userID); err != nil {
+		return store.PersonalAgent{}, fmt.Errorf("fill personal agent time zone: %w", err)
+	}
+	return s.GetPersonalAgent(ctx, userID)
+}
+
 func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string) (store.PersonalAgent, error) {
 	if state != store.PersonalAgentActive && state != store.PersonalAgentStopped {
 		return store.PersonalAgent{}, fmt.Errorf("invalid assistant state %q", state)

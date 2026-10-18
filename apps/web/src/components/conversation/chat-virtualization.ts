@@ -23,6 +23,47 @@ export const CHAT_VIRTUOSO_VIEWPORT = {
   overscan: { main: 600, reverse: 0 },
 } as const;
 
+/** A row as Virtuoso's `itemsRendered` reports it. */
+interface ChatVirtuosoItem {
+  data?: { id: string };
+  /** Top of the row in the list. */
+  offset: number;
+  /** Position in `messages`. */
+  originalIndex?: number;
+}
+
+/**
+ * How far the row at the viewport's top (`topIndex`, a position in
+ * `messages`) moved in the list between two of Virtuoso's layouts that both
+ * start at the first message.
+ *
+ * Virtuoso keeps the rows being read in place when rows above them change
+ * size (a row mounted at its estimate, then measured), except while it
+ * renders the very first message: then it moves nothing, and everything
+ * below shifts by the difference. That is the one change to compensate;
+ * anything else Virtuoso does itself (or, for rows added in front,
+ * `useChatPrependAnchor`).
+ */
+export function chatFirstRowsShift(
+  previous: readonly ChatVirtuosoItem[],
+  current: readonly ChatVirtuosoItem[],
+  topIndex: number,
+): number {
+  const first = previous[0];
+  if (
+    topIndex <= 0 ||
+    first?.originalIndex !== 0 ||
+    current[0]?.originalIndex !== 0 ||
+    first.data?.id !== current[0].data?.id
+  ) {
+    return 0;
+  }
+  const before = previous.find((item) => item.originalIndex === topIndex);
+  const id = before?.data?.id;
+  const after = id ? current.find((item) => item.data?.id === id) : undefined;
+  return before && after ? after.offset - before.offset : 0;
+}
+
 export function estimateChatMessageHeight(
   message: ChatMessageItem | undefined,
 ): number {

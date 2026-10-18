@@ -168,7 +168,7 @@ Initialize, pair, register, and install the local daemon. Start the server at `h
 pnpm --filter @bd777/foundry-worker foundry-worker -- setup --server http://127.0.0.1:31982 --workspace /tmp/foundry-workspace --token <pairing-token>
 ```
 
-Re-running `setup` or `pair` without `--token` keeps the saved credential. One machine is one device per account (identified by a hash of the OS machine id); pairing it again rotates the credential of the same device. Only one daemon runs per state root.
+Re-running `setup` or `pair` without `--token` keeps the saved credential. Each state root of each system account is one device per Foundry account (identified by hashes of the machine id, the account's uid and the state root); pairing it again rotates the credential of the same device. Only one daemon runs per state root. When another person's device already uses the system account, pairing says so and waits for a choice: answer in the terminal, choose in the web's Add device dialog, or pass `--share-system-account` (see [devices and workspaces](devices-and-workspaces.md)).
 
 Use `--no-start` to write the login service without starting it, or `--no-service` for a foreground-only smoke test.
 

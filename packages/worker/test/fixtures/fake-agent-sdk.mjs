@@ -57,3 +57,34 @@ export class Codex {
     };
   }
 }
+
+// Native thread seam; retains the same fixture assertions without an SDK dependency.
+export class CodexAppServerThread {
+  id = "codex-thread";
+  constructor(command, env, config, thread) {
+    this.options = { codexPathOverride: command, env, config };
+    this.thread = thread;
+  }
+  async runStreamed(input, run) {
+    calls.push({
+      sdk: "codex",
+      options: this.options,
+      thread: this.thread,
+      input,
+      run,
+    });
+    return {
+      events: (async function* () {
+        yield {
+          type: "item.completed",
+          item: { type: "command_execution", command: "ls" },
+        };
+        yield {
+          type: "item.completed",
+          item: { type: "agent_message", text: "codex answer" },
+        };
+        yield { type: "turn.completed" };
+      })(),
+    };
+  }
+}

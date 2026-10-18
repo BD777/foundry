@@ -1,3 +1,5 @@
+import { claudeWorkspaceInstructions } from "./workspace-instructions.js";
+export { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 // Session launch policy — the single place that defines how Foundry launches
 // a native agent runtime. Everything a launch depends on is assembled here
 // once and consumed by the Claude Agent SDK launch:
@@ -59,8 +61,8 @@ export class ClaudePolicyError extends Error {
 /**
  * SDK launch keys for what a session is told and which skills it sees: the
  * device notes for every workspace session, plus the managed skill catalog.
- * Only the skill listing is filtered; the device's own Claude settings,
- * project instructions and MCP servers load as in the person's terminal.
+ * Settings and integrations come from Foundry only. Workspace instruction
+ * documents are supplied separately, without loading their settings files.
  */
 export function claudeSessionOptions(
   managed: ManagedSkillRuntime | undefined,
@@ -73,6 +75,11 @@ export function claudeSessionOptions(
     .filter(Boolean)
     .join("\n\n");
   return {
+    settingSources: [],
+    strictMcpConfig: true,
+    mcpServers: {},
+    skills: [],
+    plugins: [],
     ...(managed
       ? {
           // Claude Code's own skills stay; device-installed ones do not.
@@ -313,7 +320,14 @@ export function buildClaudeLaunchPlan(input: {
   const env = withoutSessionToken(
     sessionEnvironment(workspacePath, profile, session),
   );
-  const deviceNotes = sessionDeviceNotes(workspacePath, session, env.TMPDIR);
+  const deviceNotes = [
+    sessionDeviceNotes(workspacePath, session, env.TMPDIR),
+    isUtilitySession(session) || isVerificationSession(session)
+      ? ""
+      : claudeWorkspaceInstructions(workspacePath),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const settings = foundryClaudeSettings(profile, session, managedSkills);
   const role = claudeRoleOptions(session);
   const tools = foundryToolsEndpoint(session);

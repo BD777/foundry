@@ -1,5 +1,5 @@
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { codexAgentExecutable } from "../agent-processes.js";
+import { CodexAppServerThread } from "./codex-app-server.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import {
   codexFoundryTools,
@@ -10,7 +10,6 @@ import { codexRoleOptions } from "../session-roles.js";
 import {
   activeCodexThreads,
   type ActiveCodexThread,
-  type CodexSDKThread,
   type SessionEventEmitter,
 } from "../session-state.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
@@ -29,24 +28,6 @@ import {
 } from "./codex-options.js";
 import { codexTransportPlan } from "./codex-transport.js";
 
-const codexSdkPackage = "@openai/codex-sdk";
-
-export type CodexSdkClient = new (options?: Record<string, unknown>) => {
-  startThread: (options?: Record<string, unknown>) => CodexSDKThread;
-  resumeThread: (
-    id: string,
-    options?: Record<string, unknown>,
-  ) => CodexSDKThread;
-};
-
-export async function loadCodexSdk(): Promise<CodexSdkClient> {
-  const sdk = (await import(codexSdkPackage)) as { Codex?: CodexSdkClient };
-  if (typeof sdk.Codex !== "function") {
-    throw new Error(`${codexSdkPackage} does not export Codex`);
-  }
-  return sdk.Codex;
-}
-
 export interface CodexThreadRequest {
   workspacePath: string;
   session: AgentSession;
@@ -63,13 +44,10 @@ export interface CodexThreadRequest {
  * when it holds the requested native session, else a new or resumed one.
  */
 export async function openCodexThread(
-  Codex: CodexSdkClient,
   request: CodexThreadRequest,
 ): Promise<ActiveCodexThread> {
   const { workspacePath, session, profile, env, emit, managedSkills } = request;
   const codexCommand = resolveCodexCommand();
-  // In the daemon the CLI leads a process group that dies with the worker.
-  const codexPathOverride = codexAgentExecutable(codexCommand);
   const deviceNotes = sessionDeviceNotes(workspacePath, session, env.TMPDIR);
   const sessionConfig = codexSessionConfig(managedSkills, deviceNotes);
   const role = codexRoleOptions(session);
@@ -78,12 +56,19 @@ export async function openCodexThread(
     model: session.model?.trim() || profile.model?.trim() || undefined,
     modelReasoningEffort: codexReasoningEffort(session, profile),
     modelSpeed: codexSpeed(session, profile),
+    // Only compatible endpoints own their model metadata. Official logins
+    // retain the native account's catalog and supported model capabilities.
+    contextWindow:
+      profile.connectionType === "openai_compatible"
+        ? profile.contextWindow
+        : undefined,
     sandboxMode: codexSandboxMode(session, profile),
     skipGitRepoCheck: true,
     workingDirectory: workspacePath,
     ...role?.thread,
   };
   const requestedNativeSessionId = session.nativeSessionId?.trim();
+  const profileConfig = codexProfileConfig(profile, env);
   cleanupActiveCodexThreads();
   const runtimeKey = activeRuntimeKey(
     "codex",
@@ -94,6 +79,8 @@ export async function openCodexThread(
     {
       ...threadOptions,
       ...sessionConfig,
+      profileConfig,
+      configurationHome: env.CODEX_HOME,
       transport: codexTransportPlan(profile),
     },
   );
@@ -113,16 +100,9 @@ export async function openCodexThread(
   }
   await request.emitSetup();
   const secrets = codexSessionSecretsConfig();
-  // A local login or a configured model provider brings its own endpoint
-  // and credentials.
-  const ownEndpoint =
-    profile.connectionType === "local_login" || profile.codexModelProvider;
-  const codex = new Codex({
-    codexPathOverride,
-    apiKey: ownEndpoint ? undefined : env.CODEX_API_KEY,
-    env,
+  const clientOptions = {
     config: {
-      ...codexProfileConfig(profile, env),
+      ...profileConfig,
       ...sessionConfig,
       ...codexFoundryTools(session)?.config,
       ...secrets,
@@ -132,11 +112,19 @@ export async function openCodexThread(
         ...(role?.config?.features as Record<string, boolean> | undefined),
       },
     },
-  });
-  await emit("Started Codex SDK", `${codexSdkPackage} · ${codexCommand}`);
-  const thread = requestedNativeSessionId
-    ? codex.resumeThread(requestedNativeSessionId, threadOptions)
-    : codex.startThread(threadOptions);
+  };
+  await emit("Started Codex", `native app-server · ${codexCommand}`);
+  await emit(
+    "Execution configuration",
+    `Foundry-managed configuration: ${env.CODEX_HOME}. Native user/project settings are not inherited.`,
+  );
+  const thread = new CodexAppServerThread(
+    codexCommand,
+    env,
+    clientOptions.config,
+    threadOptions,
+    requestedNativeSessionId,
+  );
   const entry: ActiveCodexThread = {
     key: runtimeKey,
     lastUsed: Date.now(),

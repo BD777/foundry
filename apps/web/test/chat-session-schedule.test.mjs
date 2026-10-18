@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { register } from "node:module";
-import test from "node:test";
+import test, { before, after, mock } from "node:test";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const { scheduledNote } =
@@ -12,6 +12,13 @@ const { mergeLoadedAgentSession } =
 const { sessionTranscriptEntries } =
   await import("../src/features/chat/transcript-adapters.ts");
 const { i18n } = await import("../src/i18n/index.ts");
+
+// Replay the incident at its original time; today's wall clock must not
+// expire the recurring timers in this historical fixture.
+before(() =>
+  mock.timers.enable({ apis: ["Date"], now: new Date(2026, 9, 12, 11, 45) }),
+);
+after(() => mock.timers.reset());
 
 // The real case: a fleet inspection every 30 minutes that Claude Code fires
 // 9 min 5 s after :28 and :58.

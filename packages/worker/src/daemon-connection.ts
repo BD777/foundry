@@ -1,4 +1,10 @@
-import { writeFileSync } from "node:fs";
+import { startAgentUpdates } from "./agent-runtime/updates.js";
+import {
+  executionHostClient,
+  startExecutionHost,
+  stopExecutionHost,
+} from "./execution-host/client.js";
+import { writePrivateJSONAtomic } from "./storage.js";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { registerKnownSecret } from "./secret-redaction.js";
 import { startStallMonitor } from "./stall-monitor.js";
@@ -16,7 +22,10 @@ import {
   readDeviceRemovedMarker,
   writeDeviceRemovedMarker,
 } from "./device-removal.js";
-import { sessionHasRunningBackgroundTasks } from "./runner/active-runtimes.js";
+import {
+  sessionHasRunningBackgroundTasks,
+  startIdleRuntimeSweeps,
+} from "./runner/active-runtimes.js";
 import { clearClaudeSettingsFiles } from "./session-policy.js";
 import { readRegistry, recordExplicitWorkspace } from "./workspaces.js";
 import { syncReviews } from "./issues.js";
@@ -30,8 +39,10 @@ import { reapConnectorLeftovers } from "./connectors/index.js";
 import { errorMessage, optionEnabled, optionValue, sleep } from "./utils.js";
 import { foundryStatePath } from "./state-root.js";
 import { acquireDaemonLock } from "./device-pairing.js";
-import { superviseAgentProcesses } from "./agent-processes.js";
+import { processIdentity, superviseAgentProcesses } from "./agent-processes.js";
 import { startSessionTimers } from "./session-timers.js";
+import { startSessionWork } from "./session-work/runtime.js";
+import { ownPackage } from "./worker-identity.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
 import { DaemonDispatch } from "./daemon/dispatch.js";
@@ -47,11 +58,22 @@ import { registerConnectorHandlers } from "./daemon/handlers/connectors.js";
 import { registerWorkspaceHandlers } from "./daemon/handlers/workspaces.js";
 import { noteMissingFolder } from "./daemon/workspace-roster.js";
 
+let heartbeatStartTime: string | undefined;
+function writeDaemonHeartbeat(): void {
+  heartbeatStartTime ??= processIdentity(process.pid)?.startTime;
+  writePrivateJSONAtomic(foundryStatePath("daemon-heartbeat"), {
+    pid: process.pid,
+    startTime: heartbeatStartTime,
+    at: new Date().toISOString(),
+  });
+}
+
 /**
  * Record the server's removal decision locally and park the daemon. Called
  * from both the WS (4001 close) and polling (410 register) paths.
  */
 async function stopAfterDeviceRemoval(serverURL: string): Promise<void> {
+  await stopExecutionHost();
   const device = getDevice();
   writeDeviceRemovedMarker({
     serverUrl: serverURL,
@@ -82,11 +104,15 @@ export async function connect(args: string[]): Promise<void> {
   }
   registerKnownSecret(existingConfig.deviceCredential);
   acquireDaemonLock();
-  // Agent processes die with this worker; those a previous one left
-  // running stop before any work starts here.
+  // Startup grace begins before native/service discovery can take time.
+  writeDaemonHeartbeat();
+  // Reattach the OS-managed execution owner before reporting live claims.
+  // The worker still supervises its own short-lived inspection processes.
+  await startExecutionHost(serverURLFromArgs(args));
   await superviseAgentProcesses();
   // Connector profiles a previous process wrote for its sessions.
-  reapConnectorLeftovers((message) => console.error(message));
+  if (!executionHostClient())
+    reapConnectorLeftovers((message) => console.error(message));
   // A folder named with --workspace stays served after a restart without it.
   try {
     recordExplicitWorkspace(explicitWorkspacePath(args));
@@ -135,10 +161,9 @@ async function connectWebSocket(args: string[]): Promise<void> {
   // Process-level heartbeat: write a timestamp file every 30s so an
   // external watchdog can detect event-loop blocks. The watchdog kills
   // the daemon if the file is stale (>5min), and launchd restarts it.
-  const heartbeatPath = foundryStatePath("daemon-heartbeat");
   const writeHeartbeat = (): void => {
     try {
-      writeFileSync(heartbeatPath, new Date().toISOString());
+      writeDaemonHeartbeat();
     } catch {
       // Best-effort — don't crash the daemon over a heartbeat write.
     }
@@ -147,7 +172,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
   const heartbeatTimer = setInterval(writeHeartbeat, 30_000);
   startStallMonitor();
   // No Claude process from an earlier worker is left to read these.
-  clearClaudeSettingsFiles();
+  if (!executionHostClient()) clearClaudeSettingsFiles();
   heartbeatTimer.unref();
   // The daemon's own folder may be gone (moved or renamed): it starts as
   // the device and reports that workspace missing.
@@ -156,10 +181,29 @@ async function connectWebSocket(args: string[]): Promise<void> {
   if (workspacePath && !startupWorkspacePath) noteMissingFolder(workspacePath);
   if (!(await registerAtStartup(serverURL, startupWorkspacePath))) return;
   // Timers of sessions no process of this worker runs, kept across restarts.
-  if (!once) startSessionTimers(serverURL);
+  if (!once && !executionHostClient()) {
+    startSessionTimers(serverURL, false);
+    await startSessionWork(serverURL, ownPackage().version);
+  }
   if (startupWorkspacePath) await syncReviews(serverURL, startupWorkspacePath);
-  const sessionTransport = new ReliableSessionTransport();
+  const sessionTransport = new ReliableSessionTransport({
+    onAcknowledged: (id) => executionHostClient()?.acknowledge(id),
+  });
   const sessionExecutions = new SessionExecutionRegistry();
+  const host = executionHostClient();
+  host?.attach(sessionTransport, sessionExecutions);
+  if (host) {
+    await host.refresh();
+    const reconnectHost = setInterval(() => {
+      if (executionHostClient() !== host) return;
+      void host
+        .refresh()
+        .catch((error) =>
+          console.error(`Execution host connection: ${errorMessage(error)}`),
+        );
+    }, 5000);
+    reconnectHost.unref();
+  }
   // Scratch directories of sessions idle too long, earlier runs' included;
   // those runs that kept no record had theirs adopted first.
   if (!once) {
@@ -173,8 +217,13 @@ async function connectWebSocket(args: string[]): Promise<void> {
     startSessionScratchSweeps(
       (sessionId) =>
         sessionExecutions.activeSessionIds().includes(sessionId) ||
-        sessionHasRunningBackgroundTasks(sessionId),
+        sessionHasRunningBackgroundTasks(sessionId) ||
+        executionHostClient()?.hasSession(sessionId) === true,
     );
+  }
+  if (!once) {
+    startAgentUpdates();
+    if (!host) startIdleRuntimeSweeps();
   }
   const taskScheduler = new ConcurrentTaskScheduler(
     readAgentRuntimeSettings().maxConcurrentTasks,

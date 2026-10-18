@@ -25,13 +25,19 @@ import {
   runtimeInstallArgs,
 } from "../dist/worker-install.js";
 
+import {
+  saveRuntimeUpdate,
+  runtimeUpdateState,
+} from "../dist/agent-runtime/state.js";
+import { foundryStatePath } from "../dist/state-root.js";
+
 const manifest = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 );
 
 test("the worker does not ship the agents' own Claude Code and Codex programs", () => {
   assert.equal(manifest.dependencies["@openai/codex"], undefined);
-  for (const sdk of ["@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"]) {
+  for (const sdk of ["@anthropic-ai/claude-agent-sdk"]) {
     assert.equal(
       manifest.dependencies[sdk],
       undefined,
@@ -45,7 +51,6 @@ test("the worker does not ship the agents' own Claude Code and Codex programs", 
   const { required } = runtimeCompanions(manifest);
   assert.deepEqual(required.sort(), [
     `@anthropic-ai/claude-agent-sdk@${manifest.peerDependencies["@anthropic-ai/claude-agent-sdk"]}`,
-    `@openai/codex-sdk@${manifest.peerDependencies["@openai/codex-sdk"]}`,
   ]);
   // Nothing native: no optional dependencies to build or download.
   assert.equal(manifest.optionalDependencies, undefined);
@@ -54,11 +59,16 @@ test("the worker does not ship the agents' own Claude Code and Codex programs", 
 test("program versions are read and compared with what Foundry needs", () => {
   assert.equal(parseCliVersion("2.1.288 (Claude Code)"), "2.1.288");
   assert.equal(parseCliVersion("codex-cli 0.153.4"), "0.153.4");
+  assert.equal(
+    parseCliVersion("codex-cli 0.162.0-alpha.17.2"),
+    "0.162.0-alpha.17.2",
+  );
+  assert.equal(isOlderVersion("0.162.0-alpha.17.2", "0.162.0"), true);
   assert.equal(isOlderVersion("2.1.9", "2.1.201"), true);
   assert.equal(isOlderVersion("2.1.288", "2.1.201"), false);
   assert.equal(isOlderVersion("0.142.0", "0.142.0"), false);
   assert.match(minimumCliVersion("claude"), /^\d+\.\d+\.\d+$/);
-  assert.match(minimumCliVersion("codex"), /^\d+\.\d+\.0$/);
+  assert.equal(minimumCliVersion("codex"), "0.159.1");
   // Session timers need the Claude Code that brings them back as fired on
   // resume: 2.1.289 fired a resumed timer at once (a real run, 2026-10-12).
   assert.equal(isOlderVersion(minimumCliVersion("claude"), "2.1.291"), false);
@@ -118,7 +128,7 @@ test("installing runs the official command on request and reads the program agai
 test("programs install per user with the official scripts, and update the way they were installed", (t) => {
   assert.equal(
     nativeCliInstallCommands.claude,
-    "curl -fsSL https://claude.ai/install.sh | bash",
+    "curl -fsSL https://claude.ai/install.sh | bash -s stable",
   );
   assert.equal(
     nativeCliInstallCommands.codex,
@@ -182,4 +192,38 @@ test("every lookup shares one probe of the device program", async (t) => {
   clearNativeCliCache();
   resolveClaudeCommand();
   assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2);
+});
+
+test("native CLI registration excludes private updater fields on fresh and cached reads", (t) => {
+  withEnv(t, { FOUNDRY_CLAUDE_BIN: fakeClaude(t, "2.1.292") });
+  const path = foundryStatePath("agent-updates", "claude.json");
+  const previous = runtimeUpdateState("claude");
+  t.after(() => {
+    if (previous) saveRuntimeUpdate("claude", previous);
+    else rmSync(path, { force: true });
+  });
+  const publicState = {
+    state: "current",
+    checkedAt: "2026-10-16T08:01:10.416Z",
+    current: "2.1.292",
+    target: "2.1.292",
+    sdkTarget: "0.3.301",
+    nextCheckAt: 1792159430990,
+  };
+  saveRuntimeUpdate("claude", {
+    ...publicState,
+    failureCount: 0,
+    futurePrivateField: "local",
+  });
+  const fresh = JSON.parse(JSON.stringify(nativeCli("claude")));
+  assert.deepEqual(fresh.update, publicState);
+  saveRuntimeUpdate("claude", {
+    ...publicState,
+    state: "failed",
+    failureCount: 3,
+    futurePrivateField: "local",
+  });
+  const cached = JSON.parse(JSON.stringify(nativeCli("claude")));
+  assert.deepEqual(cached.update, { ...publicState, state: "failed" });
+  assert.equal(runtimeUpdateState("claude").failureCount, 3);
 });

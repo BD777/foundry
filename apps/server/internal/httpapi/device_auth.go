@@ -61,6 +61,13 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 		Token              string `json:"token"`
 		MachineFingerprint string `json:"machineFingerprint"`
 		DeviceID           string `json:"deviceId"`
+		// What workers since the system-account check report: their own
+		// fingerprint (the device key), the account's and the machine's,
+		// and the person's choice in the terminal to share the account.
+		WorkerFingerprint    string `json:"workerFingerprint,omitempty"`
+		OSAccountFingerprint string `json:"osAccountFingerprint,omitempty"`
+		HostFingerprint      string `json:"hostFingerprint,omitempty"`
+		AcceptSharedAccount  bool   `json:"acceptSharedAccount,omitempty"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
@@ -85,7 +92,28 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 		RequestedDeviceID:  input.DeviceID,
 		CredentialHash:     accounts.HashToken(credential),
 		Now:                time.Now().UTC(),
+		WorkerFingerprint:  input.WorkerFingerprint,
+		Identity: store.DeviceAccountIdentity{
+			OSAccountFingerprint: input.OSAccountFingerprint,
+			HostFingerprint:      input.HostFingerprint,
+		},
+		AcceptSharedAccount: input.AcceptSharedAccount,
 	})
+	var shared *store.DeviceAccountSharedError
+	if errors.As(err, &shared) {
+		// Not a failed attempt: the token is good and waits for the
+		// person's choice, here or in the web.
+		writeJSON(w, http.StatusConflict, store.DevicePairingConsentNeeded{
+			Error:      sharedAccountMessage(shared.SharedWith),
+			Code:       store.SystemAccountSharedCode,
+			SharedWith: shared.SharedWith,
+		})
+		return
+	}
+	if errors.Is(err, store.ErrDevicePairingCancelled) {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
 	if errors.Is(err, store.ErrDevicePairingInvalid) {
 		s.loginLimiter.fail(key)
 		writeError(w, http.StatusUnauthorized, err.Error())
@@ -99,6 +127,7 @@ func (s *Server) handleDaemonPair(w http.ResponseWriter, r *http.Request) {
 	// Re-pairing rotates the credential; any daemon still holding the old one
 	// is disconnected so the new one is the only live identity.
 	s.hub.closeDevice(identity.DeviceID)
+	s.deviceSharingChanged()
 	writeJSON(w, http.StatusCreated, struct {
 		DeviceID   string `json:"deviceId"`
 		Credential string `json:"credential"`

@@ -13,9 +13,14 @@ import (
 // SteerAgentSession moves a message into the session's running turn.
 // inputID, the message's id when it has one, lets the device apply a steer
 // sent again only once.
-func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, inputID string, message string, attachments []store.ChatAttachment) error {
+func (h *DaemonHub) SteerAgentSession(ctx context.Context, session store.AgentSession, inputID string, message string, attachments []store.ChatAttachment, sentBySessionID string) error {
+	if holds, ok := h.store.(store.NativeAccountHoldStore); ok {
+		if err := holds.BindNativeAccount(ctx, session); err != nil {
+			return err
+		}
+	}
 	_, err := callDevice[wsSessionSteeredPayload](ctx, h.connectionFor(session.DeviceID), wsSteerSessionType,
-		wsSteerSessionPayload{SessionID: session.ID, Message: message, Attachments: attachments, InputID: strings.TrimSpace(inputID)})
+		wsSteerSessionPayload{SentBySessionID: sentBySessionID, SessionID: session.ID, Message: message, Attachments: attachments, InputID: strings.TrimSpace(inputID)})
 	return err
 }
 

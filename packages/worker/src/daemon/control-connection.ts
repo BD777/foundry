@@ -26,7 +26,6 @@ import {
 } from "../issue-environment-changes.js";
 import { refreshOfficialSkills } from "../official-skills.js";
 import { configuredAgentProfiles } from "../profiles.js";
-import { checkDueProviders } from "../provider-check.js";
 import { providerHealthData } from "../provider-health.js";
 import { closeAllActiveRuntimes } from "../runner/active-runtimes.js";
 import { daemonRequestHeaders } from "../server-http.js";
@@ -437,16 +436,7 @@ class ControlConnection {
         if (changed) this.reportDevice();
       },
     );
-    // Providers found in the device's configuration are offered once a turn
-    // through their SDK answered; a changed result is reported for the
-    // device, with or without a workspace.
-    void duringActivity("provider check", () =>
-      checkDueProviders(configuredAgentProfiles(""), providerHealthData(), () =>
-        this.reportDevice(),
-      ),
-    ).catch((error: unknown) =>
-      console.error(`Checking providers failed: ${errorMessage(error)}`),
-    );
+    // Never spend provider credentials on automatic inference health probes.
   }
 
   // The device's profiles, provider health or runtimes changed.
