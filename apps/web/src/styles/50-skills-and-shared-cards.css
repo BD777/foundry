@@ -1470,3 +1470,32 @@
     justify-content: flex-start;
   }
 }
+
+.fdy-workspace-drafts {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  padding-block: 1rem;
+}
+.fdy-workspace-drafts-heading,
+.fdy-workspace-drafts-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.fdy-workspace-drafts-heading {
+  justify-content: space-between;
+}
+.fdy-workspace-drafts-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.fdy-workspace-drafts-list li {
+  padding-block: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.fdy-workspace-drafts p {
+  margin: 0;
+}

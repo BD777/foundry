@@ -197,7 +197,7 @@ export function nativeUpdateAdapter(id: AgentRuntimeId): AgentUpdateAdapter {
               includeHidden: false,
             });
           } finally {
-            client.close();
+            await client.close();
           }
         } else if (sdkEntry) {
           const script = `

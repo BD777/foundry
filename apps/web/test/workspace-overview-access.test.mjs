@@ -43,11 +43,16 @@ const { createRoot } = await import("react-dom/client");
 const { WorkspaceOverview } =
   await import("../src/features/workspaces/index.ts");
 
-globalThis.fetch = async () =>
-  new Response(JSON.stringify({ repositories: [] }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+globalThis.fetch = async (url) =>
+  new Response(
+    JSON.stringify(
+      String(url).endsWith("/services") ? [] : { repositories: [] },
+    ),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 
 async function renderOverview(accessRole) {
   const container = window.document.createElement("div");

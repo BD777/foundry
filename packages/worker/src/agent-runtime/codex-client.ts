@@ -1,7 +1,10 @@
 /** Native Codex control transport. One process owns execution and controls. */
 import { createInterface } from "node:readline";
 import type { ChildProcess } from "node:child_process";
-import { spawnAgentProcess, stopAgentProcess } from "../agent-processes.js";
+import {
+  spawnAgentProcess,
+  stopAgentProcessAndWait,
+} from "../agent-processes.js";
 
 import { ControlOutcomeUnknownError } from "./control-error.js";
 
@@ -21,6 +24,7 @@ export interface CodexRpcTimeouts {
 /** Requests have bounded acknowledgements; an executing turn has no idle timeout. */
 export class CodexAppServer {
   private readonly child: ChildProcess;
+  readonly whenClosed: Promise<void>;
   private readonly pending = new Map<number, RpcPending>();
   private sequence = 0;
   private ended = false;
@@ -53,6 +57,9 @@ export class CodexAppServer {
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       },
+    );
+    this.whenClosed = new Promise((resolve) =>
+      this.child.once("close", () => resolve()),
     );
     // Never let diagnostics fill the native process's pipe. The protocol's
     // errors carry failure details, without exposing credentials from stderr.
@@ -132,9 +139,9 @@ export class CodexAppServer {
     return this.call(method, params);
   }
 
-  close(): void {
+  close(): Promise<void> {
     this.fail(new Error("Codex app-server closed."));
-    stopAgentProcess(this.child);
+    return stopAgentProcessAndWait(this.child);
   }
 
   private write(value: unknown): void {

@@ -198,6 +198,11 @@
   color: var(--fdy-ink);
 }
 
+.fdy-select-popover[data-inside-dialog="true"] {
+  /* Shared Dialog supports both compact (81) and sectioned (101) surfaces. */
+  z-index: 110;
+}
+
 .fdy-select-options {
   display: grid;
   gap: 2px;

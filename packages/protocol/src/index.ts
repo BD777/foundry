@@ -49,3 +49,4 @@ export * from "./workspace.js";
 export * from "./evidence.js";
 export * from "./evidence-validation.js";
 export * from "./evidence-rpc.js";
+export * from "./workspace-draft-skills.js";

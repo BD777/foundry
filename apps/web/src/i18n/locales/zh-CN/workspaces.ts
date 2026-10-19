@@ -2,6 +2,7 @@ import type { workspaces as en } from "../en/workspaces";
 import type { Translation } from "../../translation";
 
 export const workspaces: Translation<typeof en> = {
+  services: "服务",
   shared: {
     online: "在线",
     offline: "离线",

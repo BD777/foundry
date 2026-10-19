@@ -399,7 +399,7 @@ test("a runtime reaped as its replacement starts never unregisters the replaceme
   assert.equal(openProcesses().length, 1, "one process writes the session");
 });
 
-test("one process writes a native session: a model change closes the earlier process and the turn still open on it", async () => {
+test("a busy native owner survives a configuration change; explicit stop allows a new single writer", async () => {
   const cwd = workspace();
   const nativeId = randomUUID();
   claudeTranscript(nativeId);
@@ -418,7 +418,21 @@ test("one process writes a native session: a model change closes the earlier pro
       if (waited > 5000) throw new Error("the first turn never started");
       await new Promise((done) => setTimeout(done, 10));
     }
-    // Another model is another runtime key; both would resume nativeId.
+    // A different key must not silently preempt a live native owner.
+    await assert.rejects(
+      run(cwd, {
+        ...session,
+        model: "claude-other",
+        input: { id: randomUUID(), prompt: "changed configuration" },
+      }),
+      /active work/,
+    );
+    assert.equal(calls.length, 1);
+    assert.notEqual(calls[0].closed, true);
+    const { cancelActiveSession } = await import("../dist/session-control.js");
+    await cancelActiveSession(session.id);
+    assert.match(String((await open)?.message), /canceled/);
+    // After an explicit stop, a new process resumes the same native thread.
     const next = await run(cwd, {
       ...session,
       model: "claude-other",
@@ -430,7 +444,6 @@ test("one process writes a native session: a model change closes the earlier pro
     assert.equal(calls[1].options.resume, nativeId);
     assert.equal(calls[0].closed, true, "the earlier process was closed");
     assert.equal(openProcesses().length, 1, "one process writes the session");
-    assert.match(String((await open)?.message), /newer Claude process/);
     // And across a skill-set change, a reap, and the turns after them.
     await run(
       cwd,

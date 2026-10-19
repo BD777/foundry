@@ -48,6 +48,7 @@ export const workerModules = {
       "process-group",
       "process-group-child",
       "agent-processes",
+      "private-input-owners",
       "agent-process-host",
       "state-root",
       "stall-monitor",
@@ -118,11 +119,14 @@ export const workerModules = {
       "native-cli",
       "native-cli-install",
       "native-inspection",
+      "native-operation",
+      "native-credential-source",
       "agent-runtime/adapters",
       "agent-runtime/claude-sdk",
       "agent-runtime/codex-client",
       "agent-runtime/codex-model-catalog",
       "agent-runtime/codex-auth",
+      "agent-runtime/private-identity",
       "runtime-isolation",
       "agent-runtime/control-error",
       "agent-runtime/maintenance",
@@ -134,6 +138,7 @@ export const workerModules = {
       "native-login",
       "native-login-environment",
       "native-homes",
+      "native-runtime-paths",
       "models",
       "context-window",
       "official-skills",
@@ -148,6 +153,12 @@ export const workerModules = {
       "skill-files",
       "skill-isolation",
       "skill-materializer",
+      "skill-package-fetch",
+      "skill-snapshots",
+      "workspace-draft-skills",
+      "workspace-draft-packages",
+      "workspace-draft-scan-thread",
+      "workspace-skill-runtime",
       "skill-requirements",
       "skill-scan-thread",
       "skill-scanner",
@@ -191,8 +202,16 @@ export const workerModules = {
     dependsOn: ["platform", "resources"],
     files: ["resource-pool"],
   },
+  "native-work": {
+    dependsOn: ["platform"],
+    files: [
+      "agent-runtime/work/types",
+      "agent-runtime/work/claude",
+      "agent-runtime/work/codex",
+    ],
+  },
   "session-work": {
-    dependsOn: ["transport"],
+    dependsOn: ["transport", "native-work"],
     files: [
       "session-work/supervisor",
       "session-work/processes",
@@ -203,6 +222,7 @@ export const workerModules = {
   },
   "session-runtime": {
     dependsOn: [
+      "native-work",
       "session-work",
       "resource-pool",
       "sandbox",
@@ -263,6 +283,7 @@ export const workerModules = {
       "transcript-adapters/claude",
       "transcript-adapters/codex",
       "session/index",
+      "session/preparation/index",
       "session/types",
       "session/policy",
       "session/harness",
@@ -375,7 +396,10 @@ export const workerModules = {
 };
 
 /** Worker folders whose files only their entry file exposes (rule 6). */
-export const sealedWorkerFolders = { connectors: "connectors/index" };
+export const sealedWorkerFolders = {
+  connectors: "connectors/index",
+  "session/preparation": "session/preparation/index",
+};
 
 const harnessModules = new Set(["session-runtime", "harness-profiles"]);
 const harnessPackages = ["@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"];

@@ -63,7 +63,7 @@ async function refresh(source: string, command: string): Promise<void> {
       try {
         await native.request("account/read", { refreshToken: true });
       } finally {
-        native.close();
+        await native.close();
       }
     })().finally(() => renewals.delete(source));
     renewals.set(source, pending);

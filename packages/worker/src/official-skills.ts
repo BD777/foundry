@@ -1,3 +1,5 @@
+import { prepareNativeOperation } from "./native-operation.js";
+import { nativeLoginEnvironment } from "./native-login-environment.js";
 import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
 /**
  * The skills Claude Code and Codex ship themselves. Workspace skill isolation
@@ -102,6 +104,7 @@ async function claudeSessionCommands(
       options: Record<string, unknown>;
     }) => {
       close: () => void;
+      dispose: () => Promise<void>;
       initializationResult: () => Promise<{
         commands: Array<{ name: string; description?: string }>;
       }>;
@@ -110,26 +113,47 @@ async function claudeSessionCommands(
   const abortController = new AbortController();
   // Nothing is ever sent: the session starts, reports what it offers, ends.
   const silent = (async function* (): AsyncGenerator<never> {
-    await new Promise(() => {});
+    await new Promise<void>((done) => {
+      if (abortController.signal.aborted) done();
+      else
+        abortController.signal.addEventListener("abort", () => done(), {
+          once: true,
+        });
+    });
   })();
-  const session = sdk.query({
-    prompt: silent,
-    options: {
-      abortController,
-      cwd,
-      env: {
-        ...process.env,
-        ...(bundled ? {} : { CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }),
-      },
-      pathToClaudeCodeExecutable: resolveClaudeCommand(),
-      settingSources: [],
-    },
-  });
+  const operation = prepareNativeOperation(
+    { runtime: "claude", id: "official-skills", connectionType: "local_login" },
+    { ...process.env, ...nativeLoginEnvironment("claude") },
+    cwd,
+  );
+  let session: ReturnType<typeof sdk.query> | undefined;
   try {
+    session = sdk.query({
+      prompt: silent,
+      options: {
+        abortController,
+        cwd,
+        env: {
+          ...operation.env,
+          HOME: cwd,
+          ...(bundled ? {} : { CLAUDE_CODE_DISABLE_BUNDLED_SKILLS: "1" }),
+        },
+        pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        settingSources: [],
+        strictMcpConfig: true,
+        mcpServers: {},
+        tools: [],
+        persistSession: false,
+      },
+    });
     return (await session.initializationResult()).commands;
   } finally {
     abortController.abort();
-    session.close();
+    try {
+      await session?.dispose();
+    } finally {
+      operation.dispose();
+    }
   }
 }
 

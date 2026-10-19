@@ -1,6 +1,6 @@
 /** Persistent work is independent of a conversation turn or its compacted history. */
 export type WorkAction =
-  "pause" | "resume" | "stop" | "remove" | "run" | "adopt";
+  "pause" | "resume" | "stop" | "remove" | "run" | "adopt" | "link" | "unlink";
 export type WorkState = "enabled" | "paused" | "stopped" | "removed";
 export type WorkStatus =
   | "idle"
@@ -11,6 +11,32 @@ export type WorkStatus =
   | "stopped"
   | "unknown";
 
+/** Native capability evidence belongs to the adapter, never inferred by the UI. */
+export type NativeWorkCapability =
+  "available" | "unsupported" | "unavailable" | "unknown";
+export interface NativeWorkRun {
+  id: string;
+  startedAt: string;
+  endedAt?: string;
+  status: WorkStatus;
+}
+export interface NativeWorkInfo {
+  lastRun?: NativeWorkRun;
+  runtime: "claude" | "codex";
+  version: string;
+  sessionId: string;
+  taskId: string;
+  discovery: string;
+  observation: NativeWorkCapability;
+  controls: Record<"stop" | "pause" | "resume", NativeWorkCapability>;
+}
+
+export interface WorkSessionReference {
+  id: string;
+  title: string;
+  workspaceId: string;
+}
+
 export interface SessionWork {
   id: string;
   sessionId: string;
@@ -18,7 +44,20 @@ export interface SessionWork {
   workspaceId: string;
   deviceId: string;
   kind: "schedule" | "process" | "agent";
-  source: "foundry" | "claude" | "crontab" | "systemd" | "launchd" | "process";
+  source:
+    | "foundry"
+    | "claude"
+    | "codex"
+    | "crontab"
+    | "systemd"
+    | "launchd"
+    | "process";
+  native?: NativeWorkInfo;
+  /** Explicit references to one durable service; its owner and execution identity never change. */
+  relatedSessionIds?: string[];
+  relatedSessions?: WorkSessionReference[];
+  sharedSessionCount?: number;
+  referenceRevision?: number;
   sourceId?: string;
   parentId?: string;
   title: string;
@@ -104,6 +143,8 @@ export interface SessionWorkList {
 }
 
 export interface WorkControlInput {
+  relatedSessionId?: string;
+  expectedReferenceRevision?: number;
   id?: string;
   action: WorkOperation["action"];
   expectedRevision?: number;
@@ -142,7 +183,10 @@ export function hasFutureScheduledWork(item: SessionWork): boolean {
 
 export function isOutstandingWork(item: SessionWork): boolean {
   if (!isStandaloneWork(item)) return false;
-  if (item.management !== "managed" || item.desiredState === "removed")
+  if (
+    (item.management !== "managed" && !item.native) ||
+    item.desiredState === "removed"
+  )
     return false;
   if (
     item.revision !== item.observation.confirmedRevision ||
@@ -169,7 +213,7 @@ export function sessionWorkContext(
         item.desiredState !== "removed" &&
         isStandaloneWork(item) &&
         (isOutstandingWork(item) ||
-          item.management === "observed" ||
+          (item.management === "observed" && !item.native) ||
           (item.kind === "schedule" && item.desiredState === "paused")),
     )
     .sort(
@@ -189,7 +233,7 @@ export function sessionWorkContext(
     .slice(0, 24)
     .map(
       (item) =>
-        `- ${item.id}: ${item.title.slice(0, 140)}; source=${item.source}; management=${item.management}; desired=${item.desiredState}; actual=${item.observation.status}; ${item.revision === item.observation.confirmedRevision ? "confirmed" : "control NOT confirmed"}${item.observation.nextFireAt ? `; next=${item.observation.nextFireAt}` : ""}${hasFutureScheduledWork(item) ? "; recurring schedule remains enabled" : ""}`,
+        `- ${item.id}: ${item.title.slice(0, 140)}; source=${item.source}${item.source === "foundry" && item.kind === "process" ? `; workspace service; linked sessions=${(item.relatedSessionIds?.length || 0) + 1}; individual controls affect the same service globally` : ""}; management=${item.management}; desired=${item.desiredState}; actual=${item.observation.status}; ${item.revision === item.observation.confirmedRevision ? "confirmed" : "control NOT confirmed"}${item.observation.nextFireAt ? `; next=${item.observation.nextFireAt}` : ""}${hasFutureScheduledWork(item) ? "; recurring schedule remains enabled" : ""}`,
     );
   return [
     "Foundry persistent work state (independent of compacted history):",
@@ -204,7 +248,7 @@ export function sessionWorkContext(
     outstanding.length > lines.length
       ? `${outstanding.length - lines.length} further items: call list_session_work.`
       : "",
-    "Use list_session_work and control_session_work to inspect/control ALL work, including older turns. Completing an answer does not stop schedules. Only a verified control receipt proves work stopped. Use create_scheduled_work for timers; do not create host cron or detached agents to work around scheduling.",
+    "Use list_session_work to inspect this conversation's work and direct child sessions, including earlier turns. Use only listed control capabilities; native subagents are read-only. Completing an answer does not stop schedules. Only a verified control receipt proves a requested stop. Prefer native tools for in-session timers and background commands. Use create_scheduled_work only for durable wake-ups that must survive the native runtime. Do not create host cron or detached agents to bypass scheduling controls.",
   ]
     .filter(Boolean)
     .join("\n");

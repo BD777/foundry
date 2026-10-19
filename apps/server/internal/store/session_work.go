@@ -6,26 +6,55 @@ import (
 	"encoding/hex"
 )
 
+type NativeWorkRun struct {
+	ID        string `json:"id"`
+	StartedAt string `json:"startedAt"`
+	EndedAt   string `json:"endedAt,omitempty"`
+	Status    string `json:"status"`
+}
+
+type NativeWorkInfo struct {
+	LastRun     *NativeWorkRun    `json:"lastRun,omitempty"`
+	Runtime     string            `json:"runtime"`
+	Version     string            `json:"version"`
+	SessionID   string            `json:"sessionId"`
+	TaskID      string            `json:"taskId"`
+	Discovery   string            `json:"discovery"`
+	Observation string            `json:"observation"`
+	Controls    map[string]string `json:"controls"`
+}
+
+type WorkSessionReference struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	WorkspaceID string `json:"workspaceId"`
+}
+
 type SessionWork struct {
-	ID             string          `json:"id"`
-	SessionID      string          `json:"sessionId"`
-	ThreadID       string          `json:"threadId"`
-	WorkspaceID    string          `json:"workspaceId"`
-	DeviceID       string          `json:"deviceId"`
-	Kind           string          `json:"kind"`
-	Source         string          `json:"source"`
-	SourceID       string          `json:"sourceId,omitempty"`
-	ParentID       string          `json:"parentId,omitempty"`
-	Title          string          `json:"title"`
-	Management     string          `json:"management"`
-	DesiredState   string          `json:"desiredState"`
-	Revision       int64           `json:"revision"`
-	Generation     int64           `json:"generation"`
-	CreatedAt      string          `json:"createdAt"`
-	UpdatedAt      string          `json:"updatedAt"`
-	Spec           WorkSpec        `json:"spec"`
-	Observation    WorkObservation `json:"observation"`
-	AllowedActions []string        `json:"allowedActions"`
+	RelatedSessions    []WorkSessionReference `json:"relatedSessions,omitempty"`
+	ReferenceRevision  int64                  `json:"referenceRevision,omitempty"`
+	RelatedSessionIDs  []string               `json:"relatedSessionIds,omitempty"`
+	SharedSessionCount int                    `json:"sharedSessionCount,omitempty"`
+	Native             *NativeWorkInfo        `json:"native,omitempty"`
+	ID                 string                 `json:"id"`
+	SessionID          string                 `json:"sessionId"`
+	ThreadID           string                 `json:"threadId"`
+	WorkspaceID        string                 `json:"workspaceId"`
+	DeviceID           string                 `json:"deviceId"`
+	Kind               string                 `json:"kind"`
+	Source             string                 `json:"source"`
+	SourceID           string                 `json:"sourceId,omitempty"`
+	ParentID           string                 `json:"parentId,omitempty"`
+	Title              string                 `json:"title"`
+	Management         string                 `json:"management"`
+	DesiredState       string                 `json:"desiredState"`
+	Revision           int64                  `json:"revision"`
+	Generation         int64                  `json:"generation"`
+	CreatedAt          string                 `json:"createdAt"`
+	UpdatedAt          string                 `json:"updatedAt"`
+	Spec               WorkSpec               `json:"spec"`
+	Observation        WorkObservation        `json:"observation"`
+	AllowedActions     []string               `json:"allowedActions"`
 }
 
 type WorkSpec struct {
@@ -71,10 +100,12 @@ type WorkOperation struct {
 	Items     []WorkOperationItem `json:"items"`
 }
 type WorkControlInput struct {
-	ID               string `json:"id,omitempty"`
-	Action           string `json:"action"`
-	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
-	IdempotencyKey   string `json:"idempotencyKey"`
+	ExpectedReferenceRevision int64  `json:"expectedReferenceRevision,omitempty"`
+	RelatedSessionID          string `json:"relatedSessionId,omitempty"`
+	ID                        string `json:"id,omitempty"`
+	Action                    string `json:"action"`
+	ExpectedRevision          int64  `json:"expectedRevision,omitempty"`
+	IdempotencyKey            string `json:"idempotencyKey"`
 }
 type SessionWorkScope struct {
 	ID              string `json:"id"`
@@ -124,6 +155,7 @@ func WorkRunInputID(sessionID, runID string) string {
 
 // WorkStore keeps control intent independently of device observations and transcript retention.
 type WorkStore interface {
+	ListWorkspaceServices(context.Context, string) ([]SessionWork, error)
 	SessionWorkSources(context.Context, string) ([]AgentSession, error)
 	SaveWorkCoverage(context.Context, string, map[string]string) error
 	ListSessionWork(context.Context, string, string) (SessionWorkList, error)

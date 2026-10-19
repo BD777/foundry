@@ -1,3 +1,4 @@
+import { WorkspaceServices } from "../../components/workspace/workspace-services";
 import { useEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { WorkspaceProjection } from "@bd777/foundry-protocol";
@@ -163,6 +164,15 @@ export function WorkspaceOverview({
           <p role="status">{t("overview.offlineNote")}</p>
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
+      </Panel>
+      <Panel>
+        <PanelHeader>
+          <h2>{t("services")}</h2>
+        </PanelHeader>
+        <WorkspaceServices
+          workspaceId={workspace.id}
+          canControl={!rescanDenial}
+        />
       </Panel>
       <Panel className="fdy-workspace-repositories">
         <PanelHeader>

@@ -32,7 +32,7 @@ import {
   codexSessionEnvironment,
 } from "./runner/codex-options.js";
 import { sessionEnvironment } from "./session-ambient.js";
-import { claudeSettingsFile } from "./session-policy.js";
+import { acquireClaudeSettings } from "./session-policy.js";
 import { errorMessage } from "./utils.js";
 
 const checkTimeoutMs = 120_000;
@@ -111,26 +111,32 @@ async function runClaudeTurn(
     once: true,
   });
   const model = profile.model?.trim();
-  for await (const message of sdk.query({
-    prompt,
-    options: {
-      abortController,
-      cwd: directory,
-      env: sessionEnvironment(directory, profile),
-      maxTurns: 1,
-      pathToClaudeCodeExecutable: resolveClaudeCommand(),
-      permissionMode: "default",
-      settings: claudeSettingsFile(`provider-check:${profileID(profile)}`, {
-        env: profileRuntimeEnvironment(profile),
-      }),
-      tools: [],
-      ...(model ? { model } : {}),
-    },
-  })) {
-    if (message.type === "result" && message.subtype !== "success")
-      throw new Error(
-        message.result || `Claude ended with ${message.subtype}.`,
-      );
+  const settings = acquireClaudeSettings(
+    `provider-check:${profileID(profile)}`,
+    { env: profileRuntimeEnvironment(profile) },
+  );
+  try {
+    for await (const message of sdk.query({
+      prompt,
+      options: {
+        abortController,
+        cwd: directory,
+        env: sessionEnvironment(directory, profile),
+        maxTurns: 1,
+        pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        permissionMode: "default",
+        settings: settings.path,
+        tools: [],
+        ...(model ? { model } : {}),
+      },
+    })) {
+      if (message.type === "result" && message.subtype !== "success")
+        throw new Error(
+          message.result || `Claude ended with ${message.subtype}.`,
+        );
+    }
+  } finally {
+    settings.release();
   }
 }
 

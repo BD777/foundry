@@ -23,7 +23,6 @@ import {
   sandboxLauncher,
 } from "../dist/sandbox/index.js";
 import { seatbeltBackend } from "../dist/sandbox/darwin.js";
-import { privateTmpAllowed } from "../dist/sandbox/linux.js";
 
 const runtimeRoot = realpathSync(
   fileURLToPath(new URL("../../../", import.meta.url)),
@@ -462,31 +461,57 @@ const outsideTmpTree = {
 };
 
 test(
-  "a private /tmp is given only when no Foundry path lives under /tmp",
+  "Linux private /tmp supports nested roots without writable shadows of protected neighbours",
   { skip: process.platform !== "linux" },
   (t) => {
-    stateOutsideTmp(t);
-    assert.equal(privateTmpAllowed(outsideTmpTree), true);
-    // A socket directly in /tmp has no Foundry neighbours to expose.
-    assert.equal(
-      privateTmpAllowed({
-        ...outsideTmpTree,
-        connectSockets: ["/tmp/foundry-tools.sock"],
-      }),
-      true,
-    );
-    assert.equal(
-      privateTmpAllowed({
-        ...outsideTmpTree,
-        writeRoots: ["/tmp/state/environments/iss/workspace"],
-      }),
-      false,
-    );
-    process.env.FOUNDRY_STATE_ROOT = scratch(t);
-    assert.equal(
-      privateTmpAllowed(outsideTmpTree),
-      !realpathSync(process.env.FOUNDRY_STATE_ROOT).startsWith("/tmp/"),
-    );
+    const root = scratch(t),
+      home = join(root, "home"),
+      workspace = join(root, "workspace"),
+      secret = join(root, "unmounted-secret");
+    mkdirSync(home);
+    mkdirSync(workspace);
+    writeFileSync(secret, "private");
+    const marker = `/tmp/foundry-nested-private-${process.pid}`;
+    const code = `const fs=require('node:fs');const tryWrite=p=>{try{fs.writeFileSync(p,'x');return true}catch{return false}};console.log(JSON.stringify({temporary:tryWrite(${JSON.stringify(marker)}),home:tryWrite(${JSON.stringify(join(home, "ok"))}),workspace:tryWrite(${JSON.stringify(join(workspace, "bad"))}),neighbor:tryWrite(${JSON.stringify(join(root, "bad"))}),secret:fs.existsSync(${JSON.stringify(secret)})}));`;
+    for (const kind of ["writable_tree", "readonly_agent"]) {
+      const profile =
+        kind === "readonly_agent"
+          ? {
+              kind,
+              policyFile: join(root, "readonly.sb"),
+              home,
+              readRoots: [workspace],
+              workdir: workspace,
+            }
+          : {
+              kind,
+              policyFile: join(root, "tree.sb"),
+              workdir: workspace,
+              readRoots: [workspace],
+              writeRoots: [home],
+              protectedReadRoots: [],
+              readOnlyDirectories: [],
+              readOnlyPaths: [],
+              connectSockets: [],
+              executables: [],
+              userFiles: "hidden",
+            };
+      const launch = linuxBackend(t, () =>
+        sandboxLaunch(profile, process.execPath, ["-e", code]),
+      );
+      if (!launch) return;
+      const result = run(launch, workspace);
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout), {
+        temporary: true,
+        home: true,
+        workspace: false,
+        neighbor: false,
+        secret: false,
+      });
+      assert.equal(existsSync(marker), false);
+      assert.equal(readFileSync(secret, "utf8"), "private");
+    }
   },
 );
 
@@ -767,3 +792,139 @@ test("sandboxes never hide the device's installed software", async () => {
   for (const path of ["/opt", "/Applications", "/snap", "/nix"])
     assert.equal(roots.includes(path), existsSync(path), path);
 });
+
+test(
+  "a session's exact protected skill snapshot is readable but neighboring collections are hidden and immutable",
+  supported("writable_tree"),
+  (t) => {
+    const root = scratch(t);
+    const previous = process.env.FOUNDRY_STATE_ROOT;
+    const state = join(root, "private-state");
+    process.env.FOUNDRY_STATE_ROOT = state;
+    t.after(() => {
+      if (previous === undefined) delete process.env.FOUNDRY_STATE_ROOT;
+      else process.env.FOUNDRY_STATE_ROOT = previous;
+    });
+    const tree = join(root, "workspace");
+    const selected = join(state, "skill-sets", "selected");
+    const other = join(state, "skill-sets", "other");
+    for (const directory of [tree, selected, other])
+      mkdirSync(directory, { recursive: true });
+    writeFileSync(join(selected, "SKILL.md"), "selected method");
+    writeFileSync(join(other, "SKILL.md"), "other workspace method");
+    const launch = sandboxLaunch(
+      {
+        kind: "writable_tree",
+        policyFile: join(root, "exact-skills.sb"),
+        workdir: tree,
+        readRoots: [],
+        writeRoots: [tree],
+        protectedReadRoots: [selected],
+        readOnlyDirectories: [],
+        readOnlyPaths: [],
+        connectSockets: [],
+        executables: [],
+        userFiles: "hidden",
+      },
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+    import {readFileSync, writeFileSync} from 'node:fs';
+    const selected = ${JSON.stringify(join(selected, "SKILL.md"))};
+    const other = ${JSON.stringify(join(other, "SKILL.md"))};
+    const result = { selected: readFileSync(selected, 'utf8'), otherHidden: false, selectedImmutable: false };
+    try { readFileSync(other); } catch { result.otherHidden = true; }
+    try { writeFileSync(selected, 'changed'); } catch { result.selectedImmutable = true; }
+    console.log(JSON.stringify(result));
+  `,
+      ],
+    );
+    const result = run(launch, tree);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      selected: "selected method",
+      otherHidden: true,
+      selectedImmutable: true,
+    });
+  },
+);
+
+test(
+  "native Codex can build its inner read-only sandbox under both outer agent policies",
+  { skip: process.platform !== "linux" || !process.env.TEST_CODEX_SANDBOX_BIN },
+  (t) => {
+    const root = scratch(t),
+      home = join(root, "home"),
+      workspace = join(root, "workspace");
+    mkdirSync(home);
+    mkdirSync(workspace);
+    mkdirSync(join(home, "codex"));
+    mkdirSync(join(home, "tmp"));
+    writeFileSync(
+      join(home, "codex/config.toml"),
+      'cli_auth_credentials_store = "ephemeral"\n',
+    );
+    writeFileSync(join(workspace, "fixture.txt"), "READ_ONLY_FIXTURE");
+    const command = realpathSync(process.env.TEST_CODEX_SANDBOX_BIN);
+    for (const kind of ["writable_tree", "readonly_agent"]) {
+      const profile =
+        kind === "readonly_agent"
+          ? {
+              kind,
+              policyFile: join(root, "readonly.sb"),
+              home,
+              readRoots: [workspace],
+              workdir: workspace,
+            }
+          : {
+              kind,
+              policyFile: join(root, "tree.sb"),
+              workdir: workspace,
+              readRoots: [workspace],
+              writeRoots: [home],
+              protectedReadRoots: [],
+              readOnlyDirectories: [],
+              readOnlyPaths: [],
+              connectSockets: [],
+              executables: [],
+              userFiles: "hidden",
+            };
+      const launch = linuxBackend(t, () =>
+        sandboxLaunch(profile, command, [
+          "sandbox",
+          "-c",
+          'sandbox_mode="read-only"',
+          "--",
+          "sh",
+          "-c",
+          "cat fixture.txt; echo overwrite > fixture.txt",
+        ]),
+      );
+      if (!launch) return;
+      const result = spawnSync(launch.command, launch.args, {
+        cwd: workspace,
+        encoding: "utf8",
+        timeout: 30000,
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          CODEX_HOME: join(home, "codex"),
+          TMPDIR: join(home, "tmp"),
+        },
+      });
+      assert.match(
+        result.stdout,
+        /READ_ONLY_FIXTURE/,
+        result.stderr || String(result.error),
+      );
+      assert.notEqual(result.status, 0);
+      assert.doesNotMatch(result.stderr, /error building bubblewrap command/);
+      assert.equal(
+        readFileSync(join(workspace, "fixture.txt"), "utf8"),
+        "READ_ONLY_FIXTURE",
+      );
+    }
+  },
+);

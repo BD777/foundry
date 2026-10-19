@@ -1,3 +1,4 @@
+import { nativeCli } from "../native-cli.js";
 import { appendFileSync, writeFileSync } from "node:fs";
 import {
   processLabels,
@@ -99,13 +100,34 @@ export function emitForClaudeRuntime(
     metadata?: AgentSessionEventMetadata;
   },
 ): void {
+  if (event.metadata?.timerFire?.origin === "scheduled")
+    sessionWork().observeTimerRun(
+      runtime.foundrySessionId,
+      event.metadata.timerFire,
+      event.level === "error",
+      runtime.nativeSessionId,
+    );
+  if (event.metadata?.timerSnapshot)
+    sessionWork().observeTimers(
+      runtime.foundrySessionId,
+      event.metadata.timerSnapshot,
+      nativeCli("claude").version || "unknown",
+      runtime.nativeSessionId,
+    );
   if (event.metadata?.backgroundTaskSnapshot)
     sessionWork().observeBackground(
       runtime.foundrySessionId,
       event.metadata.backgroundTaskSnapshot,
+      nativeCli("claude").version || "unknown",
+      runtime.nativeSessionId,
     );
   if (event.metadata?.taskId)
-    sessionWork().observeAgent(runtime.foundrySessionId, event);
+    sessionWork().observeAgent(
+      runtime.foundrySessionId,
+      event,
+      nativeCli("claude").version || "unknown",
+      runtime.nativeSessionId,
+    );
   const turn = runtime.pending;
   if (event.metadata?.nativeAccountError)
     event.metadata = {

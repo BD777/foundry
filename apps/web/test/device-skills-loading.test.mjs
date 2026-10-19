@@ -71,6 +71,11 @@ function stubDeviceSkills(skills) {
   const original = globalThis.fetch;
   const requests = [];
   globalThis.fetch = async (url) => {
+    if (String(url).endsWith("/draft-skills"))
+      return new Response(
+        JSON.stringify({ enabled: true, supported: true, skills: [] }),
+        { status: 200 },
+      );
     if (!String(url).includes("/api/device-skills")) {
       return new Response("[]", { status: 200 });
     }

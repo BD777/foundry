@@ -1291,13 +1291,20 @@ func TestDaemonWebSocketFileReadAndAgentSession(t *testing.T) {
 		"agent_session_started",
 		"agent_session_native_session_id",
 		"agent_session_event",
+		"agent_session_event", // the persisted completion-only answer
 		"agent_session_completed",
 	}
-	for _, expected := range expectedStreamEvents {
+	for index, expected := range expectedStreamEvents {
 		select {
 		case streamed := <-streamedEvents:
 			if streamed.Type != expected {
 				t.Fatalf("expected streamed event %q, got %q", expected, streamed.Type)
+			}
+			if index == 4 {
+				payload, _ := streamed.Payload.(map[string]any)
+				if payload["sessionId"] != sessionID || payload["detail"] != "Codex read AGENTS.md." {
+					t.Fatalf("completion answer was not streamed before terminal status: %#v", payload)
+				}
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out waiting for streamed event %q", expected)

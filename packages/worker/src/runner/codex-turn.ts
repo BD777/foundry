@@ -2,7 +2,12 @@ import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
-import { CodexContextFollower, codexHome } from "../context-usage.js";
+import { CodexContextFollower } from "../context-usage.js";
+import { nativeExecutionHome } from "../native-runtime-paths.js";
+import {
+  prepareExecution,
+  type PreparedExecution,
+} from "../session/preparation/index.js";
 import { configuredWindow } from "../context-window.js";
 import { runOnNativeSession } from "../native-session.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
@@ -15,13 +20,10 @@ import type {
   AgentSessionRunResult,
   SessionEventEmitter,
 } from "../session-state.js";
-import {
-  prepareCodexSkillIsolation,
-  validateWorkspaceSkillPrompt,
-} from "../skill-isolation.js";
+import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
 import { turnUsageMetadata } from "../turn-usage.js";
-import { codexSessionEnvironment, codexSessionInput } from "./codex-options.js";
+import { codexSessionInput } from "./codex-options.js";
 import {
   runCodexStreamedTurn,
   runCodexUnstreamedTurn,
@@ -54,27 +56,42 @@ async function runCodexWorkspaceSessionUnlocked(
         "Custom runtime commands cannot enforce workspace skill isolation.",
       );
   }
-  return runOnNativeSession(
-    {
-      provider: "codex",
-      session,
-      workspacePath,
-      env: codexSessionEnvironment(workspacePath, profile, session),
-      isolated: Boolean(managedSkills),
-      emit: (label, detail, level) => emit(label, detail, level),
-      reportNativeSessionId,
-    },
-    (prepared, _start, report) =>
-      runCodexTurn(
+  const execution = await prepareExecution({
+    purpose: "workspace",
+    ownerId: session.id,
+    workspacePath,
+    session,
+    profile,
+    managedSkills,
+  });
+  profile = execution.native.profile;
+  managedSkills = execution.native.managedSkills;
+  try {
+    return await runOnNativeSession(
+      {
+        provider: "codex",
+        session,
         workspacePath,
-        prepared,
-        profile,
-        emit,
-        emitSetup,
-        report,
-        managedSkills,
-      ),
-  );
+        env: execution.native.env,
+        isolated: Boolean(managedSkills),
+        emit: (label, detail, level) => emit(label, detail, level),
+        reportNativeSessionId,
+      },
+      (prepared, _start, report) =>
+        runCodexTurn(
+          workspacePath,
+          prepared,
+          profile,
+          emit,
+          emitSetup,
+          report,
+          managedSkills,
+          execution,
+        ),
+    );
+  } finally {
+    await execution.dispose();
+  }
 }
 
 /** One Codex turn on the native thread the session was prepared with. */
@@ -86,15 +103,9 @@ async function runCodexTurn(
   emitSetup: () => Promise<void>,
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
+  execution?: PreparedExecution,
 ): Promise<AgentSessionRunResult> {
   const startedAt = Date.now();
-  if (managedSkills) {
-    managedSkills = await prepareCodexSkillIsolation(
-      managedSkills,
-      workspacePath,
-      codexSessionEnvironment(workspacePath, profile, session),
-    );
-  }
   const sessionDir = await prepareTurnDirectory(workspacePath, session);
   if (profile.command?.trim()) {
     await emitSetup();
@@ -120,7 +131,7 @@ async function runCodexTurn(
   try {
     writeFileSync(eventsPath, "");
     writeFileSync(stderrPath, "");
-    const env = codexSessionEnvironment(workspacePath, profile, session);
+    const env = execution!.native.env;
     const thread = await openCodexThread({
       workspacePath,
       session,
@@ -137,7 +148,7 @@ async function runCodexTurn(
       eventsPath,
       thread,
       context: new CodexContextFollower(
-        [env.CODEX_HOME?.trim() || codexHome(env)],
+        [nativeExecutionHome("codex", env)],
         configuredWindow(profile.contextWindow),
       ),
       nativeSessionId:

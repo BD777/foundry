@@ -7,7 +7,7 @@ import {
   realpathSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute } from "node:path";
+import { dirname, isAbsolute, relative } from "node:path";
 import { canonical, within } from "../paths.js";
 import {
   commandReadRoots,
@@ -190,28 +190,31 @@ function resolvedCommand(command: string): string {
     : command;
 }
 
-/**
- * A private, empty /tmp, so tools and test runners that write to /tmp itself
- * (not $TMPDIR) work without reaching the host's. Only when no Foundry path
- * for this sandbox sits inside a directory below /tmp: that directory's
- * unmounted contents (an environment's own records) would otherwise become
- * silently writable on the invisible tmpfs instead of failing. A path
- * directly in /tmp, such as the tools socket, has no such neighbours.
- */
-export function privateTmpAllowed(profile: WritableTreeProfile): boolean {
-  return ![
-    profile.workdir,
-    ...profile.readRoots,
-    ...profile.writeRoots,
-    ...profile.protectedReadRoots,
-    ...profile.readOnlyDirectories,
-    ...profile.readOnlyPaths,
-    ...profile.connectSockets,
-    ...governanceStatePaths(),
-  ].some((path) => {
-    const parent = dirname(canonical(path));
-    return parent !== "/tmp" && within("/tmp", parent);
-  });
+/** Private /tmp remains writable, while named trees' unmounted neighbours do not.
+ * Seal a separate tmpfs at every relevant /tmp/<parent> before exposing exact
+ * read/write roots beneath it. Nested bind mounts keep their own permissions. */
+function privateTmp(paths: string[], writeRoots: string[]) {
+  const parents = [
+    ...new Set(
+      paths.flatMap((path) => {
+        const at = canonical(path);
+        if (!within("/tmp", at) || dirname(at) === "/tmp" || at === "/tmp")
+          return [];
+        const parent = "/tmp/" + relative("/tmp", at).split("/")[0];
+        return writeRoots.some((root) => within(canonical(root), parent))
+          ? []
+          : [parent];
+      }),
+    ),
+  ].sort();
+  return {
+    mounts: [
+      "--tmpfs",
+      "/tmp",
+      ...parents.flatMap((path) => ["--tmpfs", path]),
+    ],
+    parents,
+  };
 }
 
 function writableTree(
@@ -230,11 +233,23 @@ function writableTree(
     runtime: true,
     home: profile.userFiles === "readable",
   });
-  const options = [
-    ...namespaces,
-    ...(privateTmpAllowed(profile) ? ["--tmpfs", "/tmp"] : []),
-    ...host.mounts,
-  ];
+  const temporary = privateTmp(
+    [
+      profile.workdir,
+      ...profile.readRoots,
+      ...profile.writeRoots,
+      ...profile.protectedReadRoots,
+      ...profile.readOnlyDirectories,
+      ...profile.readOnlyPaths,
+      ...profile.connectSockets,
+      command,
+      ...profile.executables,
+      runtimeRoot(),
+      ...governanceStatePaths(),
+    ],
+    profile.writeRoots,
+  );
+  const options = [...namespaces, ...temporary.mounts, ...host.mounts];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
   // Mount only the named read-only trees from protected state.
   for (const path of profile.protectedReadRoots) {
@@ -249,7 +264,7 @@ function writableTree(
   // Connecting needs the socket inode, not write access to its file system.
   for (const path of profile.connectSockets)
     options.push("--ro-bind", path, path);
-  options.push(...seal(host.masks));
+  options.push(...seal([...host.masks, ...temporary.parents]));
   return {
     command: executable,
     args: [
@@ -272,9 +287,24 @@ function readonlyAgent(
   // Beyond these roots: no source trees, global user config, project skills or
   // original materials. Only the private home is ever writable.
   const host = hostMounts([command], { runtime: false, home: false });
-  const options = [...namespaces, ...host.mounts];
+  const temporary = privateTmp(
+    [
+      profile.home,
+      ...profile.readRoots,
+      profile.workdir ?? profile.home,
+      command,
+      ...governanceStatePaths(),
+    ],
+    [profile.home],
+  );
+  const options = [...namespaces, ...temporary.mounts, ...host.mounts];
   for (const path of profile.readRoots) options.push("--ro-bind", path, path);
-  options.push("--bind", profile.home, profile.home, ...seal(host.masks));
+  options.push(
+    "--bind",
+    profile.home,
+    profile.home,
+    ...seal([...host.masks, ...temporary.parents]),
+  );
   return {
     command: executable,
     args: [

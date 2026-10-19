@@ -52,9 +52,10 @@ function missingProgramsNote(managed: ManagedSkillRuntime): string[] {
 function replacedByWorkspace(
   managed: ManagedSkillRuntime,
 ): (name: string) => boolean {
-  const names = new Set(
-    managed.skills.map((skill) => skill.name.toLowerCase()),
-  );
+  const names = new Set([
+    ...managed.skills.map((skill) => skill.name.toLowerCase()),
+    ...(managed.excludedNames ?? []).map((name) => name.toLowerCase()),
+  ]);
   return (name) => names.has(name.toLowerCase());
 }
 
@@ -66,7 +67,17 @@ export function workspaceSkillInstructions(
   const indexed = new Set(indexes.flatMap((index) => index.skills));
   return [
     "Foundry workspace skill policy: the following is the complete allowed skill catalog for this workspace session.",
-    "Use only these managed copies and this agent's own built-in skills (marked builtIn), including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, say it must be promoted and selected for this workspace first. Ordinary project source files remain available.",
+    ...(managed.skills.some((skill) => skill.draft) || managed.excludedNames
+      ? [
+          "For Skill trials use Foundry create_session with skillSelection and fresh native history. Native internal subagents are disabled until their Skill isolation can be independently verified. Use include with an exact draft id/digest for with_skill, library revisions for old_skill, and exclude with the same draft reference for without_skill. Never carry the method text into the baseline prompt or imported context.",
+        ]
+      : []),
+    ...(managed.draftsEnabled
+      ? [
+          "Workspace drafts are enabled. After creating or editing .agents/skills/<name>/, call refresh_workspace_skills to obtain a trusted immutable snapshot. You may read and trial the returned snapshots in this turn; native Skill registration updates on a later safe turn. Publication is a separate action, not a prerequisite for trial. Use draft:name for a draft that shares a library or built-in name.",
+        ]
+      : []),
+    "Use only these managed copies and this agent's own built-in skills (marked builtIn), including when a user names a skill or a skill references another skill. Do not discover, read, or invoke skills from device-local installations, plugins, other workspaces, or earlier conversation context. If a requested skill is absent, use refresh_workspace_skills when drafts are enabled; otherwise it must be promoted and selected for this workspace. Ordinary project source files remain available.",
     "To create a skill or change one of these, work on a copy in this workspace's .agents/skills/<name>/ folder (copy the listed folder there first when changing an existing skill); never edit the listed copies. The person then publishes it from Foundry as a new skill or as a new version of the existing one.",
     ...(indexes.length
       ? [
@@ -108,11 +119,15 @@ export function claudeManagedPrompt(
   managed: ManagedSkillRuntime | undefined,
 ): string {
   if (!managed) return prompt;
-  return prompt.replace(/^\s*\/([\w-]+)(?=\s|$)/, (match, name: string) =>
-    managed.skills.some((skill) => skill.name === name)
-      ? `/foundry-workspace:${name}`
-      : match,
-  );
+  return prompt.replace(/^\s*\/([\w:-]+)(?=\s|$)/, (match, name: string) => {
+    const skill = managed.skills.find(
+      (skill) =>
+        skill.name === name ||
+        skill.invocationName === name ||
+        skill.aliases?.includes(name),
+    );
+    return skill ? `/foundry-workspace:${skill.name}` : match;
+  });
 }
 
 // Native commands are distinct from user-installed skills. Keep this deliberately
@@ -132,7 +147,17 @@ export function validateWorkspaceSkillPrompt(
   if (!name || nativeCommands.has(name)) return;
   const unqualified = name.replace(/^foundry-workspace:/, "");
   if (
-    !managed.skills.some((skill) => skill.name === unqualified) &&
+    managed.excludedNames?.includes(unqualified) &&
+    !managed.skills.some((s) => s.invocationName === name)
+  )
+    throw new Error(`Skill "${name}" is excluded from this trial.`);
+  if (
+    !managed.skills.some(
+      (skill) =>
+        skill.name === unqualified ||
+        skill.invocationName === unqualified ||
+        skill.aliases?.includes(unqualified),
+    ) &&
     !managed.officialSkills?.some((skill) => skill.name === name)
   ) {
     throw new Error(
@@ -151,6 +176,7 @@ export async function prepareCodexSkillIsolation(
   managed: ManagedSkillRuntime,
   cwd: string,
   env: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<ManagedSkillRuntime> {
   const paths = await withCodexControl(
     "",
@@ -188,7 +214,7 @@ export async function prepareCodexSkillIsolation(
         official: skills.filter(official),
       };
     },
-    { cwd, env, args: [] },
+    { cwd, env, args: [], signal },
   );
   return {
     ...managed,

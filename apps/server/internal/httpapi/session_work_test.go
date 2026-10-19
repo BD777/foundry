@@ -33,6 +33,14 @@ func TestSessionWorkIncidentControlAndMCP(t *testing.T) {
 	if err = backing.AppendAgentSessionEvent(ctx, timerSnapshotEvent(session.ID, "old", []store.AgentScheduledTask{old})); err != nil {
 		t.Fatal(err)
 	}
+	// This fixture represents a definition already adopted by an older worker.
+	migrated := sessionwork.Timer(session, store.SessionKeptTimer{AgentScheduledTask: old})
+	migrated.Native = nil
+	migrated.Management = "managed"
+	migrated.AllowedActions = []string{"pause", "resume", "stop", "remove", "run"}
+	if _, err = backing.SaveSessionWork(ctx, migrated); err != nil {
+		t.Fatal(err)
+	}
 	server := NewServer(backing)
 	live := httptest.NewServer(server.Routes())
 	defer live.Close()
@@ -496,5 +504,249 @@ func TestSessionWorkRejectedFutureAckCannotPersistAsConfirmation(t *testing.T) {
 	list, err := backing.ListSessionWork(ctx, session.ID, "")
 	if err != nil || len(list.Items) != 1 || list.Items[0].Observation.ConfirmedRevision != 0 {
 		t.Fatalf("rejected ACK persisted as confirmation: %+v %v", list, err)
+	}
+}
+
+func TestSessionWorkShowsDirectChildrenAndLeavesTheirWorkAlone(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "codex")
+	root, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "DEV022 root", Title: "root"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "child", Title: "direct child", ParentSessionID: root.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grandchild, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "grandchild", ParentSessionID: child.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := sessionwork.Base(child, "process", "foundry", "child-service", "child service")
+	service.Observation.Status = "running"
+	if _, err = backing.SaveSessionWork(ctx, service); err != nil {
+		t.Fatal(err)
+	}
+	native := sessionwork.Base(root, "agent", "codex", "native-child", "native agent")
+	if _, err = backing.SaveSessionWork(ctx, native); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	path := "/api/agent-sessions/" + root.ID + "/work"
+	status, raw := client.call(http.MethodGet, path, "", "")
+	if status != 200 {
+		t.Fatalf("inventory %d %s", status, raw)
+	}
+	var list store.SessionWorkList
+	if err = json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	seenChild, seenNative := false, false
+	for _, w := range list.Items {
+		if w.SourceID == child.ID {
+			seenChild = true
+		}
+		if w.SourceID == grandchild.ID || w.ID == service.ID {
+			t.Fatalf("descendant flattened: %+v", w)
+		}
+		if w.ID == native.ID {
+			seenNative = true
+			if len(w.AllowedActions) != 0 || w.Management != "observed" {
+				t.Fatalf("native agent exposed controls: %+v", w)
+			}
+		}
+	}
+	if !seenChild || !seenNative {
+		t.Fatalf("missing direct work: %s", raw)
+	}
+	status, raw = client.call(http.MethodPost, path+"/operations", `{"action":"stop_all","idempotencyKey":"direct-only"}`, "")
+	if status != 200 {
+		t.Fatalf("stop %d %s", status, raw)
+	}
+	nested, err := backing.ListSessionWork(ctx, child.ID, "")
+	if err != nil || nested.Barrier {
+		t.Fatalf("parent barrier reached child: %+v %v", nested, err)
+	}
+	for _, w := range nested.Items {
+		if w.ID == service.ID && w.DesiredState != "enabled" {
+			t.Fatal("parent stopped hidden service")
+		}
+	}
+	current, _ := backing.ListSessionWork(ctx, root.ID, "")
+	for _, w := range current.Items {
+		if w.ID == native.ID && w.DesiredState != "enabled" {
+			t.Fatal("bulk stop changed read-only native agent")
+		}
+	}
+}
+
+func TestSessionWorkSharedServiceAssociationAuthorizationAndScope(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "codex")
+	owner, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumer, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "consumer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := sessionwork.Base(owner, "process", "foundry", "durable", "one service")
+	service, err = backing.SaveSessionWork(ctx, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	path := "/api/agent-sessions/" + owner.ID + "/work/operations"
+	body := func(target, key string) string {
+		return fmt.Sprintf(`{"id":%q,"action":"link","relatedSessionId":%q,"expectedRevision":1,"idempotencyKey":%q}`, service.ID, target, key)
+	}
+	status, _ := client.call(http.MethodPost, path, body("not-readable", "invalid"), "")
+	if status != http.StatusForbidden {
+		t.Fatalf("association with inaccessible session: %d", status)
+	}
+	status, raw := client.call(http.MethodPost, path, body(consumer.ID, "associate"), "")
+	if status != 200 {
+		t.Fatalf("link %d %s", status, raw)
+	}
+	status, raw = client.call(http.MethodGet, "/api/agent-sessions/"+consumer.ID+"/work", "", "")
+	if status != 200 {
+		t.Fatal(status)
+	}
+	var list store.SessionWorkList
+	if err = json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].ID != service.ID || list.Items[0].SharedSessionCount != 1 || list.Items[0].ReferenceRevision != 1 {
+		t.Fatalf("reference identity lost %s", raw)
+	}
+	stale := fmt.Sprintf(`{"id":%q,"action":"stop","expectedRevision":1,"idempotencyKey":"stale-scope"}`, service.ID)
+	status, raw = client.call(http.MethodPost, path, stale, "")
+	if status != http.StatusConflict {
+		t.Fatalf("outdated global impact accepted %d %s", status, raw)
+	}
+	fresh := fmt.Sprintf(`{"id":%q,"action":"stop","expectedRevision":1,"expectedReferenceRevision":1,"idempotencyKey":"global-stop"}`, service.ID)
+	status, raw = client.call(http.MethodPost, path, fresh, "")
+	if status != 200 {
+		t.Fatalf("explicit shared stop %d %s", status, raw)
+	}
+	after, _ := backing.ListSessionWork(ctx, consumer.ID, "")
+	if after.Items[0].DesiredState != "stopped" {
+		t.Fatal("global control did not reach same service")
+	}
+}
+
+func TestWorkspaceServicesRemainManageableWithoutLinkedOrActiveSessions(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "codex")
+	owner, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "codex", Prompt: "service creator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := sessionwork.Base(owner, "process", "foundry", "workspace-service", "durable workspace service")
+	service.AllowedActions = []string{"stop", "remove"}
+	service, err = backing.SaveSessionWork(ctx, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = backing.CompleteAgentSession(ctx, owner.ID, "finished", "native"); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	status, raw := client.call(http.MethodGet, "/api/workspaces/ws_queue/services", "", "")
+	if status != 200 {
+		t.Fatalf("list %d %s", status, raw)
+	}
+	var services []store.SessionWork
+	if err = json.Unmarshal(raw, &services); err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 || services[0].ID != service.ID || len(services[0].RelatedSessionIDs) != 0 {
+		t.Fatalf("service lost after session end %s", raw)
+	}
+	status, raw = client.call(http.MethodPost, "/api/workspaces/ws_queue/services/"+service.ID+"/operations", `{"action":"stop","expectedRevision":1,"idempotencyKey":"workspace-stop"}`, "")
+	if status != 200 {
+		t.Fatalf("workspace control %d %s", status, raw)
+	}
+	if err = backing.ObserveSessionWork(ctx, service.ID, store.WorkObservation{Status: "stopped", At: time.Now().UTC().Format(time.RFC3339Nano), ConfirmedRevision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	archive := `{"action":"remove","expectedRevision":2,"idempotencyKey":"archive-service"}`
+	status, first := client.call(http.MethodPost, "/api/workspaces/ws_queue/services/"+service.ID+"/operations", archive, "")
+	if status != 200 {
+		t.Fatalf("archive %d %s", status, first)
+	}
+	status, retry := client.call(http.MethodPost, "/api/workspaces/ws_queue/services/"+service.ID+"/operations", archive, "")
+	if status != 200 || !bytes.Equal(first, retry) {
+		t.Fatalf("archive retry lost durable receipt: %d %s", status, retry)
+	}
+
+	if err = backing.RegisterDaemon(ctx, store.DaemonRegistration{Device: store.DeviceProjection{ID: "dev_other", Label: "Other", Status: "connected"}, Workspace: store.WorkspaceProjection{ID: "ws_other", Name: "Other", LocalPath: t.TempDir()}, Agents: []store.AgentProjection{{ID: "agent_other", WorkspaceID: "ws_other", DeviceID: "dev_other", Provider: "codex", Status: "healthy"}}}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_other", AgentID: "agent_other", Provider: "codex", Prompt: "foreign"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	{
+		status, _ = client.call(http.MethodPost, "/api/workspaces/ws_queue/services/"+service.ID+"/operations", fmt.Sprintf(`{"action":"link","relatedSessionId":%q,"expectedRevision":2,"idempotencyKey":"foreign-link"}`, other.ID), "")
+		if status != http.StatusForbidden {
+			t.Fatalf("cross-workspace service link allowed: %d", status)
+		}
+	}
+}
+
+func TestSessionWorkNativeRunMetadataRoundTrip(t *testing.T) {
+	backing := newEmptyTestStore(t)
+	ctx := context.Background()
+	registerQueueDevice(t, backing, "claude")
+	session, err := backing.CreateAgentSession(ctx, store.CreateAgentSessionInput{WorkspaceID: "ws_queue", AgentID: "agent_queue", Provider: "claude", Prompt: "native timer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err = backing.CompleteAgentSession(ctx, session.ID, "waiting", "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(backing)
+	live := httptest.NewServer(server.Routes())
+	defer live.Close()
+	client := queueClient{t: t, server: server, url: live.URL}
+	item := sessionwork.Base(session, "schedule", "claude", "native-timer", "native schedule")
+	item.Management = "observed"
+	item.AllowedActions = []string{}
+	item.Spec.Recurring = true
+	item.Native = &store.NativeWorkInfo{Runtime: "claude", Version: "2.1.295", SessionID: "native", TaskID: "native-timer", LastRun: &store.NativeWorkRun{ID: "native-timer@first", StartedAt: "2026-10-19T00:00:00Z", Status: "running"}}
+	item.Observation = store.WorkObservation{Status: "running", At: time.Now().UTC().Format(time.RFC3339Nano), ConfirmedRevision: 1}
+	raw, _ := json.Marshal(map[string]any{"items": []store.SessionWork{item}})
+	status, body := client.call(http.MethodPost, "/api/daemon/session-work", string(raw), "")
+	if status != 200 {
+		t.Fatalf("observe %d %s", status, body)
+	}
+	status, body = client.call(http.MethodGet, "/api/agent-sessions/"+session.ID+"/work", "", "")
+	if status != 200 {
+		t.Fatal(status)
+	}
+	var list store.SessionWorkList
+	if err = json.Unmarshal(body, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].Native.LastRun.ID != "native-timer@first" || list.Items[0].Observation.Status != "running" || list.Items[0].Management != "observed" {
+		t.Fatalf("native definition/execution collapsed: %s", body)
+	}
+	if _, claimed, err := backing.ClaimWorkRun(ctx, item.ID, 1, "2026-10-19T01:00:00Z"); err == nil || claimed {
+		t.Fatalf("native run acquired second executor %v %v", claimed, err)
 	}
 }

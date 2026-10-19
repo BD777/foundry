@@ -112,6 +112,13 @@ export class ExecutionHostClient {
       ) === true
     );
   }
+  supportsCapability(capability: string): boolean {
+    return (
+      !!this.socket &&
+      !this.socket.destroyed &&
+      this.snapshot?.capabilities?.includes(capability) === true
+    );
+  }
   async open(): Promise<void> {
     if (this.closed) throw new Error("Execution host client is closed.");
     if (this.switching) return this.switching;

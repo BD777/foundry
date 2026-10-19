@@ -362,3 +362,40 @@ test("a timer turn Claude starts on its own waits for what it needs; a Foundry t
   await submit({ prompt: "a Foundry turn's prompt" });
   assert.deepEqual(started, ["refresh"], "a dispatch brought its own token");
 });
+
+test("authoritative empty Stop inventories are observable without synthetic transcript events", async () => {
+  const snapshots = [];
+  const tracker = new ClaudeTimerTracker({
+    emit: () => {},
+    isActiveTurn: () => false,
+    sessionId: () => "s",
+    timersObserved: (tasks) => snapshots.push(tasks),
+  });
+  await tracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
+  await tracker.hooks().Stop[0].hooks[0]({ session_crons: [] });
+  assert.deepEqual(snapshots, [[], []]);
+});
+
+test("a version without session_crons never turns a missing inventory into an empty one", async () => {
+  const observed = [];
+  const known = {
+    id: "kept",
+    kind: "cron",
+    prompt: "inspect",
+    schedule: "* * * * *",
+    recurring: true,
+    humanSchedule: "every minute",
+  };
+  const tracker = new ClaudeTimerTracker(
+    {
+      emit: () => {},
+      isActiveTurn: () => false,
+      sessionId: () => "s",
+      timersObserved: (tasks) => observed.push(tasks),
+    },
+    [known],
+  );
+  await tracker.hooks().Stop[0].hooks[0]({});
+  assert.deepEqual(tracker.snapshot(), [known]);
+  assert.deepEqual(observed, []);
+});

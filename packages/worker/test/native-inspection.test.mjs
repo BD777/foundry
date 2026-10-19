@@ -35,7 +35,7 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
  let result={};
  if(m.method==="account/read")result={account:{type:"chatgpt",email:"test@example.test",planType:"pro"}};
  if(m.method==="account/rateLimits/read"){
-  if(process.env.FOUNDRY_TEST_USAGE_FAIL) {console.log(JSON.stringify({id:m.id,error:{message:"SECRET-MUST-NOT-LEAK"}}));return;}
+  if(fs.existsSync(${JSON.stringify(join(directory, "usage-fail"))})) {console.log(JSON.stringify({id:m.id,error:{message:"SECRET-MUST-NOT-LEAK"}}));return;}
   result={rateLimits:{primary:{usedPercent:100,windowDurationMins:10080,resetsAt:1900000000}}};
  }
  console.log(JSON.stringify({id:m.id,result}));
@@ -65,12 +65,12 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
   process.env.CODEX_HOME = directory;
   try {
     const result = await inspectNativeAccount("codex");
-    assert.equal(result.status, "verified");
+    assert.equal(result.status, "verified", result.message);
     assert.equal(result.accountLabel, "test@example.test");
     assert.equal(result.usage[0].usedPercent, 100);
     assert.equal(result.executionSource, directory);
     assert.equal(result.source, directory);
-    process.env.FOUNDRY_TEST_USAGE_FAIL = "1";
+    writeFileSync(join(directory, "usage-fail"), "1");
     const failed = await inspectNativeAccount("codex");
     assert.equal(failed.status, "local_login");
     assert.equal(failed.usage.length, 0);
@@ -117,7 +117,6 @@ require("node:readline").createInterface({input:process.stdin}).on("line",line=>
     assert.doesNotMatch(JSON.stringify(missing), /SECRET-MUST/);
   } finally {
     globalThis.fetch = previousFetch;
-    delete process.env.FOUNDRY_TEST_USAGE_FAIL;
     if (previous.bin === undefined) delete process.env.FOUNDRY_CODEX_BIN;
     else process.env.FOUNDRY_CODEX_BIN = previous.bin;
     if (previous.home === undefined) delete process.env.CODEX_HOME;
@@ -158,5 +157,58 @@ test("failed Codex inspection setup releases its runtime lease", async (t) => {
   } finally {
     if (marker !== undefined)
       process.env.FOUNDRY_RUNTIME_CONFIG_ISOLATED = marker;
+  }
+});
+
+test("Claude account status uses disposable configuration without copying its credential source", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "claude-status-inputs-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const command = join(directory, "claude");
+  const receipt = join(directory, "receipt.json");
+  writeFileSync(
+    command,
+    `#!${process.execPath}
+const fs=require('node:fs');
+fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({config:process.env.CLAUDE_CONFIG_DIR,source:process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR,copied:fs.existsSync(process.env.CLAUDE_CONFIG_DIR+'/.credentials.json')}));
+console.log(JSON.stringify({loggedIn:true,authMethod:'claude.ai',apiProvider:'firstParty',email:'fixture@example.test'}));
+`,
+    { mode: 0o700 },
+  );
+  writeFileSync(
+    join(directory, ".credentials.json"),
+    JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "synthetic-status-access",
+        expiresAt: Date.now() + 86400000,
+      },
+    }),
+  );
+  const overrides = {
+    FOUNDRY_CLAUDE_BIN: command,
+    CLAUDE_CONFIG_DIR: directory,
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: directory,
+    FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME: directory,
+    FOUNDRY_NATIVE_CLAUDE_CREDENTIAL_NAMESPACE: directory,
+    FOUNDRY_NATIVE_CLAUDE_CONFIG_HOME: directory,
+  };
+  const previous = Object.fromEntries(
+    Object.keys(overrides).map((key) => [key, process.env[key]]),
+  );
+  Object.assign(process.env, overrides);
+  try {
+    const result = await inspectNativeAccount("claude");
+    assert.equal(result.status, "local_login", result.message);
+    assert.equal(result.accountLabel, "fixture@example.test");
+    const observed = JSON.parse(readFileSync(receipt, "utf8"));
+    assert.notEqual(observed.config, directory);
+    assert.equal(observed.source, directory);
+    assert.equal(observed.copied, false);
+    assert.equal(existsSync(observed.config), false);
+    assert.equal(existsSync(join(directory, ".credentials.json")), true);
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });

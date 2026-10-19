@@ -25,6 +25,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupProfiles,
 		s.addProfileContextWindowsColumn,
 		s.setupSkillCatalog,
+		s.setupWorkspaceDraftSkills,
 		s.migrateSessionUsageBackfills,
 		s.migrateNativeSessions,
 		s.setupFeishu,

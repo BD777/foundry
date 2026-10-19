@@ -1,3 +1,5 @@
+import { i18n } from "../src/i18n/index.ts";
+await i18n.changeLanguage("cimode");
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
@@ -198,9 +200,10 @@ test("completed and stopped schedules collapse into history while paused schedul
     ]);
     assert.match(html, /work\.history/);
     assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /<h3>work\.title<\/h3>/);
     assert.doesNotMatch(
       html,
-      /<h3|work\.group\.schedule|Older inspection|work\.action\./,
+      /work\.group\.schedule|Older inspection|work\.action\./,
     );
   }
   const paused = renderWork([
@@ -211,7 +214,7 @@ test("completed and stopped schedules collapse into history while paused schedul
   ]);
   assert.match(paused, /Older inspection/);
   assert.match(paused, /work\.paused/);
-  assert.match(paused, /work\.actionFor/);
+  assert.match(paused, /work\.actionsFor/);
   assert.doesNotMatch(paused, /work\.history/);
 });
 
@@ -308,17 +311,22 @@ test("bulk stop is available for multiple actual targets, never empty, history-o
     }),
   ];
   const html = renderWork(active);
-  assert.match(html, /work\.stopAll/);
-  assert.match(html, /work\.stopAllScope/);
+  assert.match(html, /aria-label="work\.actions"/);
   const ended = active.map((w) => ({
     ...w,
     desiredState: "stopped",
     observation: { status: "stopped", confirmedRevision: 2 },
   }));
-  assert.doesNotMatch(renderWork(ended), /work\.stopAll/);
-  assert.doesNotMatch(renderWork([work(), ended[1]]), /work\.stopAll/);
-  assert.doesNotMatch(renderWork(), /work\.stopAll/);
-  assert.doesNotMatch(renderWork(active, {}, {}, false), /work\.stopAll/);
+  assert.doesNotMatch(renderWork(ended), /aria-label="work\.actions"/);
+  assert.doesNotMatch(
+    renderWork([work(), ended[1]]),
+    /aria-label="work\.actions"/,
+  );
+  assert.doesNotMatch(renderWork(), /aria-label="work\.actions"/);
+  assert.doesNotMatch(
+    renderWork(active, {}, {}, false),
+    /aria-label="work\.actions"/,
+  );
 });
 
 test("a discovery receipt does not relabel ended tasks as ongoing executions", () => {
@@ -336,7 +344,7 @@ test("a discovery receipt does not relabel ended tasks as ongoing executions", (
     },
   );
   assert.match(html, /work\.discoveryPending/);
-  assert.doesNotMatch(html, /<h3>work\.title/);
+  assert.match(html, /<h3>work\.title<\/h3>/);
   assert.doesNotMatch(html, /work\.stopAll/);
 });
 
@@ -386,4 +394,67 @@ test("a recurring definition remains active and stoppable between completed exec
   assert.equal(isOutstandingWork(item), true);
   assert.ok(workActions(item).includes("stop"));
   assert.ok(workActions(item).includes("pause"));
+});
+
+test("native subagents remain read-only with a focusable icon naming type and status", () => {
+  const item = work({
+    kind: "agent",
+    source: "codex",
+    management: "observed",
+    allowedActions: [],
+    native: {
+      runtime: "codex",
+      version: "0.163.0",
+      sessionId: "native",
+      taskId: "child",
+      observation: "available",
+      controls: { stop: "unavailable" },
+    },
+    observation: { status: "running", confirmedRevision: 2 },
+  });
+  const html = renderWork([item]);
+  assert.match(html, /work\.group\.agent/);
+  assert.match(html, /work\.nativeAgent/);
+  assert.match(
+    html,
+    /role="img" aria-label="work\.nativeAgent · work\.status\.running"/,
+  );
+  assert.match(html, /tabindex="0"/);
+  assert.doesNotMatch(html, /aria-haspopup="menu"|work\.unassigned/);
+});
+
+test("shared services expose one entry and never contribute to conversation bulk stops", () => {
+  const shared = work({
+    kind: "process",
+    relatedSessionIds: ["consumer"],
+    sharedSessionCount: 1,
+  });
+  const html = renderWork([shared, work({ id: "other" })]);
+  assert.match(html, /work\.sharedService/);
+  assert.match(html, /work\.serviceOwner/);
+  assert.doesNotMatch(html, /work\.stopAllScope/);
+});
+
+test("an acknowledged stop intent never hides a still-running execution", () => {
+  const item = work({
+    desiredState: "stopped",
+    observation: { status: "running", confirmedRevision: 2 },
+  });
+  const html = renderWork([item]);
+  assert.match(html, /data-status="pending"/);
+  assert.equal(workActions(item).includes("stop"), true);
+});
+
+test("work keeps its title for ended-only history and hides an empty section", () => {
+  const ended = work({
+    desiredState: "stopped",
+    observation: { status: "stopped", confirmedRevision: 2 },
+  });
+  for (const items of [[ended], [work(), { ...ended, id: "ended" }]]) {
+    const html = renderWork(items);
+    assert.match(html, /<h3>work\.title<\/h3>/);
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /work\.history/);
+  }
+  assert.equal(renderWork([]), "");
 });

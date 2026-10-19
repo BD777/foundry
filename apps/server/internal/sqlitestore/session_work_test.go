@@ -16,7 +16,7 @@ func workFixture(t *testing.T) (*Store, store.SessionWork) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	w, err := s.SaveSessionWork(context.Background(), store.SessionWork{ID: "work_old", SessionID: "session", ThreadID: "thread", WorkspaceID: "workspace", DeviceID: "device", Kind: "schedule", Source: "claude", SourceID: "9b17c9d2", DesiredState: "enabled", AllowedActions: []string{"pause", "resume", "stop", "remove", "run"}, Observation: store.WorkObservation{Status: "idle"}})
+	w, err := s.SaveSessionWork(context.Background(), store.SessionWork{ID: "work_old", SessionID: "session", ThreadID: "thread", WorkspaceID: "workspace", DeviceID: "device", Kind: "schedule", Source: "claude", SourceID: "9b17c9d2", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"pause", "resume", "stop", "remove", "run"}, Observation: store.WorkObservation{Status: "idle"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestWorkRunClaimOnceAndManualRunPreservesPause(t *testing.T) {
 	}
 }
 
-func TestWorkAncestorBarrierAndObservedSources(t *testing.T) {
+func TestWorkDirectScopeDoesNotControlChildWork(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	registerAgentSessionTestDaemon(t, s, "ws_work", "agent_work")
@@ -138,18 +138,18 @@ func TestWorkAncestorBarrierAndObservedSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	op, err := s.ControlSessionWork(ctx, root.ID, root.ID, store.WorkControlInput{Action: "stop_all", IdempotencyKey: "stop"})
-	if err != nil || len(op.Items) != 1 || op.Unmanaged != 1 {
+	if err != nil || len(op.Items) != 0 || op.Unmanaged != 0 {
 		t.Fatalf("op=%+v %v", op, err)
 	}
 	late := w
 	late.ID = "late_nested"
 	late, err = s.SaveSessionWork(ctx, late)
-	if err != nil || late.DesiredState != "stopped" {
-		t.Fatalf("descendant escaped barrier: %+v %v", late, err)
+	if err != nil || late.DesiredState != "enabled" {
+		t.Fatalf("child work was affected by parent barrier: %+v %v", late, err)
 	}
 	list, err := s.ListSessionWork(ctx, child.ID, "")
-	if err != nil || !list.Barrier {
-		t.Fatalf("ancestor barrier missing %+v %v", list, err)
+	if err != nil || list.Barrier {
+		t.Fatalf("parent barrier leaked into child %+v %v", list, err)
 	}
 	for _, item := range list.Items {
 		if item.ID == observed.ID && item.DesiredState != "enabled" {
@@ -219,7 +219,7 @@ func TestWorkEmptyStopWaitsForDeviceSweepAndIncludesLateSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("verified")
-	late, err := s.SaveSessionWork(ctx, store.SessionWork{ID: "late_after_empty_sweep", SessionID: root.ID, ThreadID: root.ID, DeviceID: root.DeviceID, Kind: "schedule", Management: "managed", DesiredState: "enabled", Observation: store.WorkObservation{Status: "unknown"}})
+	late, err := s.SaveSessionWork(ctx, store.SessionWork{ID: "late_after_empty_sweep", SessionID: root.ID, ThreadID: root.ID, DeviceID: root.DeviceID, Kind: "schedule", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop"}, Observation: store.WorkObservation{Status: "unknown"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestWorkPauseIncludesAnOlderScheduleDiscoveredAfterTheRequest(t *testing.T)
 func TestWorkNativeTerminalHistoryIsNotAnUnconfirmedControl(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	history := store.SessionWork{ID: "history", SessionID: "s", ThreadID: "t", Source: "claude", SourceID: "native-task", Kind: "agent", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop"}, Observation: store.WorkObservation{Status: "completed", At: "2026-10-13T02:00:00Z", EndedAt: "2026-10-13T02:00:00Z"}}
+	history := store.SessionWork{ID: "history", SessionID: "s", ThreadID: "t", Source: "claude", SourceID: "native-task", Kind: "process", Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop"}, Observation: store.WorkObservation{Status: "completed", At: "2026-10-13T02:00:00Z", EndedAt: "2026-10-13T02:00:00Z"}}
 	saved, err := s.SaveSessionWork(ctx, history)
 	if err != nil || saved.Observation.ConfirmedRevision != saved.Revision {
 		t.Fatalf("terminal history became pending: %+v %v", saved, err)
@@ -516,5 +516,96 @@ func TestWorkAcknowledgementAloneCannotConfirmRunningProcessStopped(t *testing.T
 		if workOperationState(op, []store.SessionWork{item}, nil) == "verified" {
 			t.Fatalf("%s trusted ACK over actual running state", action)
 		}
+	}
+}
+
+func TestWorkSharedServiceReferencesNeverDuplicateOrImplicitlyStopExecution(t *testing.T) {
+	ctx := context.Background()
+	s, w := workFixture(t)
+	w.Kind = "process"
+	w.Source = "foundry"
+	w.ID = "service"
+	w.SourceID = "service-definition"
+	w.Observation = store.WorkObservation{Status: "running", At: "2026-10-19T00:00:00Z", ConfirmedRevision: 1}
+	saved, err := s.SaveSessionWork(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := store.WorkControlInput{ID: saved.ID, Action: "link", RelatedSessionID: "consumer", ExpectedRevision: saved.Revision, IdempotencyKey: "link-service"}
+	op, err := s.ControlSessionWork(ctx, "thread", "session", link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(op.Items) != 1 {
+		t.Fatalf("missing receipt %+v", op)
+	}
+	retry, err := s.ControlSessionWork(ctx, "thread", "session", link)
+	if err != nil || retry.ID != op.ID {
+		t.Fatalf("link retry %+v %v", retry, err)
+	}
+	linked, err := s.ListSessionWork(ctx, "consumer", "")
+	if err != nil || len(linked.Items) != 1 {
+		t.Fatalf("shared entry missing %+v %v", linked, err)
+	}
+	service := linked.Items[0]
+	if service.ID != saved.ID || service.SessionID != saved.SessionID || service.Generation != saved.Generation || service.Revision != saved.Revision || len(service.RelatedSessionIDs) != 1 {
+		t.Fatalf("link changed execution identity: %+v", service)
+	}
+	for _, scope := range []string{"thread", "consumer"} {
+		bulk, err := s.ControlSessionWork(ctx, scope, scope, store.WorkControlInput{Action: "stop_all", IdempotencyKey: "bulk"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range bulk.Items {
+			if item.ID == saved.ID {
+				t.Fatal("conversation bulk action included shared service")
+			}
+		}
+	}
+	unlink := store.WorkControlInput{ID: saved.ID, Action: "unlink", RelatedSessionID: "consumer", ExpectedReferenceRevision: 1, ExpectedRevision: saved.Revision, IdempotencyKey: "unlink-service"}
+	if _, err = s.ControlSessionWork(ctx, "consumer", "consumer", unlink); err != nil {
+		t.Fatal(err)
+	}
+	linked, _ = s.ListSessionWork(ctx, "consumer", "")
+	if len(linked.Items) != 0 {
+		t.Fatal("unlinked reference remained visible")
+	}
+	owner, _ := s.ListSessionWork(ctx, "thread", "")
+	for _, item := range owner.Items {
+		if item.ID == saved.ID && (item.DesiredState != "enabled" || item.Generation != saved.Generation || item.Observation.Status != "running") {
+			t.Fatalf("unlink stopped/restarted execution: %+v", item)
+		}
+	}
+}
+
+func TestNativeScheduleCannotBeClaimedByFoundryExecutor(t *testing.T) {
+	s, w := workFixture(t)
+	ctx := context.Background()
+	w.ID = "native-schedule"
+	w.Source = "claude"
+	w.Management = "observed"
+	w.Native = &store.NativeWorkInfo{Runtime: "claude", Version: "2.1.295"}
+	w.AllowedActions = []string{}
+	saved, err := s.SaveSessionWork(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err := s.ClaimWorkRun(ctx, saved.ID, saved.Generation, "2026-10-19T00:00:00Z"); err == nil || claimed {
+		t.Fatalf("native definition was claimed by second executor: %v %v", claimed, err)
+	}
+}
+
+func TestNewerNativeTerminalEventRepairsAcknowledgedRunningInventory(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	w := store.SessionWork{ID: "native-event", SessionID: "s", ThreadID: "s", Source: "codex", SourceID: "native-child", Kind: "agent", Native: &store.NativeWorkInfo{Runtime: "codex", Version: "0.163.0"}, DesiredState: "enabled", Observation: store.WorkObservation{Status: "running", At: "2026-10-19T00:00:00Z", ConfirmedRevision: 1}}
+	saved, err := s.SaveSessionWork(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Observation = store.WorkObservation{Status: "completed", At: "2026-10-19T00:01:00Z", EndedAt: "2026-10-19T00:01:00Z"}
+	repaired, err := s.SaveSessionWork(ctx, w)
+	if err != nil || repaired.Observation.Status != "completed" || repaired.Observation.ConfirmedRevision != saved.Revision {
+		t.Fatalf("newer terminal evidence lost %+v %v", repaired, err)
 	}
 }

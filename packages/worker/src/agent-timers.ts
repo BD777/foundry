@@ -69,6 +69,8 @@ export interface ClaudeTimerSink {
   sessionId: () => string;
   /** The session's timers changed (the device keeps them; see session-timers.ts). */
   timersChanged?: (tasks: AgentScheduledTask[]) => void;
+  /** An authoritative SDK inventory, including an empty first snapshot. */
+  timersObserved?: (tasks: AgentScheduledTask[]) => void;
   /**
    * Claude starts a timer's turn on its own, before it reads the prompt:
    * the process gets what the turn needs (a current Foundry token).
@@ -226,6 +228,10 @@ export class ClaudeTimerTracker {
   }
 
   /** A timer turn runs that was published as it started: Claude's own. */
+  isFiring(id: string): boolean {
+    return this.firing?.id === id;
+  }
+
   announcedFire(): boolean {
     return Boolean(this.firing?.announced);
   }
@@ -339,7 +345,7 @@ export class ClaudeTimerTracker {
   }
 
   private async handleStop(input: StopHookInput): Promise<undefined> {
-    if (this.closed || input.agent_id) {
+    if (this.closed || input.agent_id || !Array.isArray(input.session_crons)) {
       return undefined;
     }
     const crons = Array.isArray(input.session_crons) ? input.session_crons : [];
@@ -351,6 +357,8 @@ export class ClaudeTimerTracker {
         recurring: cron.recurring,
       })),
     );
+    if (Array.isArray(input.session_crons))
+      this.sink.timersObserved?.(this.snapshot());
     return undefined;
   }
 

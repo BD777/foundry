@@ -36,6 +36,7 @@ type Backend interface {
 	store.QueuedAgentSessionStore
 	store.SessionEventRecorder
 	store.SessionInputSenderStore
+	store.SessionInputCompletionStore
 	store.SessionEventWindowStore
 	store.SessionEventCatchUpStore
 	store.SessionStateStore

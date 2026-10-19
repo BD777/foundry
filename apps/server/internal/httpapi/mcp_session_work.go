@@ -23,6 +23,33 @@ func (s *Server) workSession(call mcpCall, control bool) (store.AgentSession, er
 	return session, err
 }
 func (s *Server) listWorkForMCP(call mcpCall) (string, error) {
+	if workspaceID := mcpArgString(call.args, "workspaceId"); workspaceID != "" {
+		scope, err := s.contextScope(call.r.Context(), call.actor)
+		if err != nil || !scope.can(workspaceID, store.WorkspaceRoleMember) || scope.issueID != "" {
+			return "", &statusError{http.StatusForbidden, errors.New("workspace service inventory requires workspace membership outside an Issue-scoped session")}
+		}
+		backing, err := s.workStore()
+		if err != nil {
+			return "", err
+		}
+		items, err := backing.ListWorkspaceServices(call.r.Context(), workspaceID)
+		if err != nil {
+			return "", err
+		}
+		if id := mcpArgString(call.args, "id"); id != "" {
+			for _, item := range items {
+				if item.ID == id {
+					runs, err := backing.ListWorkRuns(call.r.Context(), id)
+					if err != nil {
+						return "", err
+					}
+					return encodeJSON(map[string]any{"item": item, "runs": runs})
+				}
+			}
+			return "", &statusError{http.StatusNotFound, errors.New("service not found")}
+		}
+		return encodeJSON(map[string]any{"items": items, "scope": "workspace_services"})
+	}
 	session, err := s.workSession(call, false)
 	if err != nil {
 		return "", err
@@ -54,7 +81,7 @@ func (s *Server) controlWorkForMCP(call mcpCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	input := store.WorkControlInput{ID: mcpArgString(call.args, "id"), Action: mcpArgString(call.args, "action"), ExpectedRevision: int64(mcpArgNumber(call.args, "expectedRevision", 0)), IdempotencyKey: mcpArgString(call.args, "idempotencyKey")}
+	input := store.WorkControlInput{ExpectedReferenceRevision: int64(mcpArgNumber(call.args, "expectedReferenceRevision", 0)), RelatedSessionID: mcpArgString(call.args, "relatedSessionId"), ID: mcpArgString(call.args, "id"), Action: mcpArgString(call.args, "action"), ExpectedRevision: int64(mcpArgNumber(call.args, "expectedRevision", 0)), IdempotencyKey: mcpArgString(call.args, "idempotencyKey")}
 	op, err := s.controlWork(call.r.Context(), session, input)
 	if err != nil {
 		return "", err

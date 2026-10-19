@@ -5,6 +5,10 @@
 
 import { discoverResources } from "./resources/index.js";
 import {
+  executionHostClient,
+  type ExecutionHostClient,
+} from "./execution-host/client.js";
+import {
   chatFingerprint,
   chatUploads,
   reconcileWithServer,
@@ -414,6 +418,7 @@ export const daemonCapabilities = [
   "worker_update",
   "worker_update_status",
   "background_skill_scan",
+  "workspace_draft_skills_v1",
   "tool_install",
   "tool_sources",
   "tool_registry",
@@ -433,6 +438,21 @@ export const daemonCapabilities = [
   resourceComputeCapability,
   deviceSharingCapability,
 ];
+
+/** A busy older host keeps running after a daemon update. Its inputs must
+ * remain gated by what that execution owner actually understands. */
+export function availableDaemonCapabilities(
+  host:
+    | Pick<ExecutionHostClient, "supportsCapability">
+    | undefined = executionHostClient(),
+): string[] {
+  return daemonCapabilities.filter(
+    (capability) =>
+      capability !== "workspace_draft_skills_v1" ||
+      !host ||
+      host.supportsCapability(capability),
+  );
+}
 
 /**
  * A hello that names every workspace the daemon serves (the
@@ -472,7 +492,7 @@ export function daemonRegistration(workspacePath: string): {
   const agentProfiles = agentProfilesForWorkspace(device, workspacePath);
 
   return {
-    capabilities: daemonCapabilities,
+    capabilities: availableDaemonCapabilities(),
     assets: assetsForWorkspace(workspaceProjection, workspacePath),
     agentProfiles,
     agents: agentsForWorkspace(
@@ -512,7 +532,7 @@ export function daemonDeviceRegistration(): Omit<
 > {
   const device = getDevice();
   return {
-    capabilities: daemonCapabilities,
+    capabilities: availableDaemonCapabilities(),
     assets: [],
     agentProfiles: agentProfilesForWorkspace(device, ""),
     agents: [],

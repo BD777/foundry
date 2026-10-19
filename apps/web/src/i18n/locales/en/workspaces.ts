@@ -1,5 +1,6 @@
 /** Workspaces: the hub, overview, selection and editing. */
 export const workspaces = {
+  services: "Services",
   /** Words the workspace lists and dialogs share. */
   shared: {
     online: "Online",

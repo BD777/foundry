@@ -334,11 +334,16 @@ func (s *Server) routeTable() []route {
 		fn("PATCH /api/workspaces/{id}/members/{userId}", s.handleUpdateWorkspaceMember, workspaceRole(owner, pathWorkspace("id"))),
 		// Owners remove anyone; any member may leave (in handler).
 		fn("DELETE /api/workspaces/{id}/members/{userId}", s.handleRemoveWorkspaceMember, inHandler()),
+		fn("GET /api/workspaces/{id}/draft-skills", s.handleWorkspaceDraftSkills, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/draft-skills/refresh", s.handleWorkspaceDraftSkills, workspaceRole(member, pathWorkspace("id"))),
+		fn("PUT /api/workspaces/{id}/draft-skills", s.handleSetWorkspaceDraftSkills, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/skills", s.handleListWorkspaceSkills, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/skills", s.handleSetWorkspaceSkills, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/skills/{skillId}/pin", s.handleSetWorkspaceSkillPin, workspaceRole(maintainer, pathWorkspace("id"))),
 		fn("GET /api/me/default-skills", s.handleListMyDefaultSkills, signedIn()),
 		fn("PUT /api/me/default-skills", s.handleSetMyDefaultSkills, signedIn()),
+		fn("GET /api/workspaces/{id}/services", s.handleWorkspaceServices, workspaceRole(viewer, pathWorkspace("id"))),
+		fn("POST /api/workspaces/{id}/services/{workId}/operations", s.handleWorkspaceServiceControl, workspaceRole(member, pathWorkspace("id"))),
 		fn("GET /api/workspaces/{id}/inspection", s.handleWorkspaceInspection, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("POST /api/workspaces/{id}/inspection/rescan", s.handleWorkspaceInspection, workspaceRole(member, pathWorkspace("id"))),
 

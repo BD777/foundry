@@ -1,5 +1,41 @@
 /** Skills: catalog, versions, comparison and promotion. */
 export const skills = {
+  drafts: {
+    account: "Execution account",
+    chooseAccount: "Choose an account",
+    trial: "Trial…",
+    trialTitle: "Trial {{name}}",
+    trialHint:
+      "Each trial starts a clean conversation using a fixed content version and the selected account. For a fair comparison, use the same task and keep Skill text out of the task.",
+    trialMode: "Trial variant",
+    withSkill: "With this draft",
+    withoutSkill: "Without this Skill",
+    oldSkill: "With previous draft",
+    task: "Task to evaluate",
+    startTrial: "Start trial",
+    starting: "Starting…",
+    staleTrial:
+      "Modified since the last trial. This version has not been trialed.",
+    trialRecorded:
+      "A trial is recorded for this content version; review its result.",
+    viewTrial: "View trial",
+    title: "Workspace drafts",
+    hint: "Create or edit .agents/skills/<name>/, then refresh to trial an immutable copy. Existing runs keep their version. Publishing to the library is separate.",
+    enable: "Allow project drafts in new turns",
+    refresh: "Refresh drafts",
+    refreshing: "Refreshing…",
+    loading: "Loading draft settings…",
+    unsupported: "Connect and update this workspace’s worker to use drafts.",
+    scanned: "Last refreshed: {{at}}",
+    empty: "No project drafts found.",
+    unscanned: "Refresh to discover project drafts.",
+    ready: "Ready to trial",
+    invalid: "Unavailable",
+    conflict: "Name conflict",
+    version: "Content version: {{digest}}",
+    invoke:
+      "Use /{{name}} in a new turn. A refreshed snapshot can also be read and trialed in the current turn.",
+  },
   catalog: {
     searchPlaceholder: "Filter by name or description",
     clearFilter: "Clear filter",

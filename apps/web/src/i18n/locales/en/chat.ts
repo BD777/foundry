@@ -1,6 +1,45 @@
 /** Chats: the chat list, groups, thread, detail panel and context card. */
 export const chat = {
   work: {
+    childSessionSource: "Foundry session",
+    nativeSource: "{{source}} · native",
+    serviceSource: "Workspace service",
+    nativeRun: "Latest native run",
+    loadingServices: "Loading services…",
+    nativeControls: "Native controls",
+    capability: {
+      available: "available",
+      unavailable: "currently unavailable",
+      unsupported: "unsupported",
+      unknown: "unverified",
+    },
+    taskTitle: "Title",
+    workspaceServices: "Workspace services",
+    workspaceServicesNote:
+      "These services belong to this workspace and continue when sessions end. Linked sessions share the same execution; access from another device does not move the process.",
+    workspaceOwnedService: "Owned by this workspace",
+    creatorSession: "Creation session",
+    serviceDetails: "Service details",
+    noWorkspaceServices: "No persistent services in this workspace.",
+    manageWorkspaceService: "Manage in workspace",
+
+    migratedSchedule: "Foundry · migrated Claude schedule",
+    service: "Persistent service",
+    sharedService: "Shared service · {{count}} sessions",
+    serviceOwner: "Open owner session",
+    relatedSessions: "Linked sessions",
+    sharedActionTitle: "{{action}} shared service?",
+    sharedActionBody:
+      "This changes the same service for all {{count}} linked sessions. Unlink only removes the entry from this session.",
+
+    actionsFor: "Actions for {{title}}",
+    actions: "Work actions",
+    childSession: "Child session",
+    nativeAgent: "Native subagent",
+    nativeVersion: "Native runtime",
+    nativeDiscovery: "Observation source",
+    nativeIdentity: "Native task ID",
+
     runStatus: {
       completed: "Last run completed",
       failed: "Last run failed",
@@ -38,11 +77,11 @@ export const chat = {
       managed_and_native: "managed and native tasks",
       managed_native_and_attributed: "managed and attributable processes",
     },
-    title: "Ongoing work",
+    title: "Work",
     pauseAll: "Pause schedules",
-    stopAll: "Stop all tasks ({{count}})",
+    stopAll: "Stop controllable work ({{count}})",
     stopAllScope:
-      "Stops this conversation’s schedules, background work and subagents, and blocks future automatic starts.",
+      "Applies to controllable work shown here and blocks new managed starts in this conversation. Native subagents and work inside child sessions are excluded.",
     discoveryPending:
       "Registered tasks have ended. The device still needs to check for unregistered sources.",
     pending: "Awaiting confirmation",
@@ -69,6 +108,8 @@ export const chat = {
       "Discovery: host schedules {{schedules}}; processes {{processes}}",
     open: "{{count}} work item(s) · manage",
     action: {
+      link: "Link session",
+      unlink: "Unlink this session",
       pause: "Pause",
       resume: "Resume",
       stop: "Stop",
@@ -93,11 +134,12 @@ export const chat = {
     group: {
       schedule: "Schedules · {{count}}",
       process: "Background execution · {{count}}",
-      agent: "Subagents · {{count}}",
+      agent: "Agents · {{count}}",
     },
     source: {
       foundry: "Foundry",
       claude: "Claude",
+      codex: "Codex",
       crontab: "Host crontab",
       systemd: "systemd",
       launchd: "launchd",

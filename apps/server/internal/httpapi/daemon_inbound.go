@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -92,6 +93,12 @@ var inboundHandlers = map[string]inboundHandler{
 	wsProviderKeyReadType:          refusable[wsProviderKeyReadPayload],
 	wsResourcesRefreshedType:       refusable[wsResourcesRefreshedPayload],
 	wsSessionSteeredType:           refusable[wsSessionSteeredPayload],
+	wsDraftSkillExportedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
+		return deliverDaemonResponse[draftExportReply](c, envelope, nil)
+	},
+	wsWorkspaceSkillsRefreshedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
+		return deliverDaemonResponse[workspaceDraftReply](c, envelope, nil)
+	},
 	wsSkillsScannedType: func(c *daemonConnection, _ context.Context, envelope wsEnvelope) error {
 		return deliverDaemonResponse(c, envelope, func(reply wsSkillsScannedPayload) error { return replyRefusal(reply.Error) })
 	},
@@ -239,6 +246,7 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 	}
 	var probe struct {
 		SessionID string `json:"sessionId"`
+		InputID   string `json:"inputId"`
 		Event     struct {
 			SessionID string `json:"sessionId"`
 		} `json:"event"`
@@ -258,11 +266,11 @@ func (c *daemonConnection) authorizeTarget(ctx context.Context, envelope wsEnvel
 		sessionID = probe.Event.SessionID
 	}
 	session, err := c.hub.store.GetAgentSessionSummary(ctx, sessionID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return err
+	if err != nil {
+		return fmt.Errorf("authorize session %q input %q from device %q: %w", sessionID, probe.InputID, deviceID, err)
 	}
-	if err != nil || session.DeviceID != deviceID {
-		return errForeignTarget
+	if session.DeviceID != deviceID {
+		return fmt.Errorf("%w: session %q input %q belongs to %q, actor %q", errForeignTarget, sessionID, probe.InputID, session.DeviceID, deviceID)
 	}
 	return nil
 }

@@ -13,10 +13,7 @@ import type { AgentSession } from "@bd777/foundry-protocol";
 import { ExecutionStore, identifier } from "./execution-storage.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import type { WorkspaceSandbox } from "./session/index.js";
-import {
-  isolatedAgentEnvironment,
-  skillSetsReadRoot,
-} from "./session/isolated-environment.js";
+import { isolatedAgentEnvironment } from "./session/isolated-environment.js";
 
 /** A verifier's directory unused this long is removed with its caches. */
 const verifierRetentionMs = 7 * 24 * 60 * 60 * 1000;
@@ -69,7 +66,7 @@ export function verificationExecution(
         workdir: workspacePath,
         readRoots: [workspacePath],
         writeRoots: [scratch],
-        protectedReadRoots: [skillSetsReadRoot()],
+        protectedReadRoots: [],
         readOnlyDirectories: [],
         readOnlyPaths: [],
         connectSockets: [],

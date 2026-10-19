@@ -1,3 +1,4 @@
+import { withWorkspaceDraftSkills } from "./workspace-skill-runtime.js";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -50,6 +51,7 @@ export async function runIssueExecutor(
   skillRefs: SessionSkillRef[] = [],
   /** The execution session's Foundry credentials, scoped to this Issue. */
   ambient?: SessionAmbientEnv,
+  draftsEnabled = false,
 ): Promise<{ response: string; environment: IssueEnvironment }> {
   const registration = store.registration(environment.workspaceId)!;
   const toolPath = fileURLToPath(
@@ -118,11 +120,17 @@ export async function runIssueExecutor(
     let turn = 0;
     // Issue runs enforce the same workspace skill allowlist as chats. The
     // selection arrives in the run_issue dispatch and is materialized once.
-    const managedSkills = await materializeSessionSkills(
+    let managedSkills = await materializeSessionSkills(
       skillRefs,
       environment.controlServerURL || serverURL || "",
       environment.cwd,
     );
+    if (draftsEnabled)
+      managedSkills = await withWorkspaceDraftSkills(managedSkills, {
+        workspaceId: environment.workspaceId,
+        executionRootId: `issue:${issue.id}`,
+        workspacePath: environment.cwd,
+      });
     if (managedSkills.skills.length > 0) {
       await record(
         "Loaded skills",

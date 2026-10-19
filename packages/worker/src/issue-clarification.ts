@@ -15,10 +15,7 @@ import {
 import { EvidenceStore } from "./evidence-store.js";
 import { readableReferenceType, referenceFile } from "./reference-files.js";
 import { ExecutionStore, identifier } from "./execution-storage.js";
-import {
-  isolatedAgentEnvironment,
-  skillSetsReadRoot,
-} from "./execution-sandbox.js";
+import { isolatedAgentEnvironment } from "./execution-sandbox.js";
 import type { SessionAmbientEnv } from "./session-ambient.js";
 import type { WorkspaceSandbox } from "./session/index.js";
 import { readJSONFile, writePrivateJSONAtomic } from "./storage.js";
@@ -164,7 +161,7 @@ export function clarificationExecution(
         workdir: workspacePath,
         readRoots: [workspacePath],
         writeRoots: [scratch],
-        protectedReadRoots: [references, skillSetsReadRoot()],
+        protectedReadRoots: [references],
         readOnlyDirectories: [],
         readOnlyPaths: [],
         connectSockets: [],

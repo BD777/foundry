@@ -1,3 +1,4 @@
+import { hasLegacyManagedTimers } from "../session-work/supervisor.js";
 import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
 import { resolve } from "node:path";
 import { claudeRunModel } from "../context-window.js";
@@ -12,6 +13,7 @@ import {
   claudeSessionOptions,
   claudeWorkspaceInstructions,
   claudeSettingsFile,
+  acquireClaudeSettings,
   type ClaudeLaunchPlan,
 } from "../session-policy.js";
 import { sessionPrompt } from "../session-prompt.js";
@@ -25,7 +27,6 @@ import {
   type ClaudeOperationBounds,
 } from "../watchdog.js";
 import { activeRuntimeKey } from "./active-runtimes.js";
-import { managedWorkEnabled } from "../session-work/supervisor.js";
 import {
   claudeEffort,
   claudeMaxTurns,
@@ -138,19 +139,27 @@ function claudeTurnOptions(
     env: profileRuntimeEnvironment(profile, session),
     autoCompactEnabled: true,
   };
+  const settings = plan?.execution
+    ? acquireClaudeSettings(session.id || workspacePath, flagSettings)
+    : undefined;
+  if (settings) plan!.execution!.own(settings.release);
   const baseOptions: Record<string, unknown> = {
     additionalDirectories: [workspacePath],
     cwd: workspacePath,
     env: {
+      ...(hasLegacyManagedTimers(session.id)
+        ? { CLAUDE_CODE_DISABLE_CRON: "1" }
+        : {}),
       ...env,
-      ...(managedWorkEnabled() ? { CLAUDE_CODE_DISABLE_CRON: "1" } : {}),
       CLAUDE_AGENT_SDK_CLIENT_APP: "foundry-worker",
     },
     forwardSubagentText: true,
     includePartialMessages: true,
     pathToClaudeCodeExecutable: command,
     permissionMode,
-    settings: claudeSettingsFile(session.id || workspacePath, flagSettings),
+    settings:
+      settings?.path ??
+      claudeSettingsFile(session.id || workspacePath, flagSettings),
     tools: { type: "preset", preset: "claude_code" },
     ...(plan?.sdk ??
       claudeSessionOptions(
@@ -167,7 +176,12 @@ function claudeTurnOptions(
     baseOptions.allowDangerouslySkipPermissions = true;
   }
   if (isUtilitySession(session)) {
-    baseOptions.disallowedTools = ["Write", "Edit", "Bash"];
+    baseOptions.disallowedTools = [
+      ...((baseOptions.disallowedTools as string[] | undefined) ?? []),
+      "Write",
+      "Edit",
+      "Bash",
+    ];
   }
   if (isPromptOnlySession(session)) baseOptions.tools = [];
   return { flagSettings, baseOptions };

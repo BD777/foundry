@@ -52,6 +52,9 @@ export function codexSessionConfig(
       `This Codex session's instructions take ${Math.ceil(argument / 1024)} KiB, more than the ${codexArgumentLimit / 1024} KiB one process argument may hold.`,
     );
   return {
+    ...(managed?.skills.some((skill) => skill.draft) || managed?.excludedNames
+      ? { features: { multi_agent: false } }
+      : {}),
     ...(managed
       ? {
           skills: {
@@ -170,13 +173,14 @@ export function codexSessionEnvironment(
   workspacePath: string,
   profile: AgentProfileLocalConfig,
   session?: AgentSession,
+  ownerId?: string,
 ): NodeJS.ProcessEnv {
-  const env = sessionEnvironment(workspacePath, profile, session);
+  const env = sessionEnvironment(workspacePath, profile, session, ownerId);
   // The native CLI reads CODEX_API_KEY; the generic OpenAI alias alone is
   // insufficient for a server-dispatched compatible connection.
   if (profile.connectionType !== "local_login" && env.OPENAI_API_KEY)
     env.CODEX_API_KEY = env.OPENAI_API_KEY;
-  return isolatedCodexEnvironment(profile, env, workspacePath);
+  return isolatedCodexEnvironment(profile, env, workspacePath, ownerId);
 }
 
 type CodexSDKInput =

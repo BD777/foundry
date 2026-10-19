@@ -100,3 +100,14 @@ test("execution service drops isolated native runtime paths", () => {
   assert.equal(env.CODEX_HOME, undefined);
   assert.equal(env.CLAUDE_CONFIG_DIR, undefined);
 });
+
+test("execution services keep Claude's separate identity metadata source when recovering its execution home", () => {
+  const env = executionServiceEnvironment({
+    HOME: "/Users/me",
+    CLAUDE_CONFIG_DIR: "/Users/me/.foundry/native-runtime/claude/run",
+    FOUNDRY_NATIVE_CLAUDE_SOURCE_HOME: "/Users/me/.claude",
+    FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME: "/Users/me",
+  });
+  assert.equal(env.CLAUDE_CONFIG_DIR, "/Users/me/.claude");
+  assert.equal(env.FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME, "/Users/me");
+});

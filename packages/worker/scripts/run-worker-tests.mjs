@@ -513,6 +513,10 @@ const NATIVE_SANDBOX_TESTS = new Set([
 // production credential homes are never passed to those jobs. Linux keeps
 // its outer write allowlist for these tests.
 const MAC_SERVICE_TESTS = new Set([
+  // Owner cleanup needs the real process identity; all roots are disposable.
+  "input-maintenance.test.mjs",
+  // Runtime read leases also identify their owner with macOS ps.
+  "native-inspection.test.mjs",
   "agent-processes.test.mjs",
   "execution-host.test.mjs",
   "watchdog.test.mjs",

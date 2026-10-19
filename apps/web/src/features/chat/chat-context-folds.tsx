@@ -29,10 +29,12 @@ export function FinishedFold({
   children,
   label,
   memoryKey,
+  appearance = "default",
 }: {
   children: ReactNode;
   label: string;
   memoryKey?: string;
+  appearance?: "default" | "plain";
 }) {
   const [open, setOpen] = useFoldOpen(memoryKey);
   const id = useId();
@@ -41,22 +43,40 @@ export function FinishedFold({
       <Button
         aria-controls={open ? id : undefined}
         aria-expanded={open}
-        className="fdy-chat-context-fold"
+        className={
+          appearance === "plain"
+            ? "fdy-chat-work-fold"
+            : "fdy-chat-context-fold"
+        }
         onClick={() => setOpen(!open)}
         size="sm"
-        variant="ghost"
+        variant={appearance === "plain" ? "bare" : "ghost"}
       >
-        <span className="fdy-chat-context-fold-icon">
+        {appearance === "plain" ? label : null}
+        <span
+          className={
+            appearance === "plain"
+              ? "fdy-chat-work-fold-icon"
+              : "fdy-chat-context-fold-icon"
+          }
+        >
           {open ? (
             <ChevronDown aria-hidden="true" size={14} />
           ) : (
             <ChevronRight aria-hidden="true" size={14} />
           )}
         </span>
-        {label}
+        {appearance === "default" ? label : null}
       </Button>
       {open ? (
-        <div className="fdy-chat-context-list" id={id}>
+        <div
+          className={
+            appearance === "plain"
+              ? "fdy-chat-work-history"
+              : "fdy-chat-context-list"
+          }
+          id={id}
+        >
           {children}
         </div>
       ) : null}

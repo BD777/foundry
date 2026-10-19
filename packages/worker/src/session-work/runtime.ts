@@ -1,3 +1,4 @@
+import { nativeWorkController } from "../agent-runtime/work/types.js";
 import { activeClaudeRuntimes } from "../session-state.js";
 import { cancelActiveSession } from "../session-control.js";
 import { sessionTimers } from "../session-timers.js";
@@ -21,15 +22,34 @@ export async function startSessionWork(
       (r) => r.foundrySessionId === id && !r.closed,
     );
   supervisor.configureRuntime({
-    inspect(sessionId, sourceId) {
+    canStop(sessionId, sourceId, source) {
+      if (source === "codex")
+        return nativeWorkController(sessionId)?.canStop(sourceId) === true;
+      return Boolean(runtimeFor(sessionId)?.query?.stopTask);
+    },
+    inspect(sessionId, sourceId, source, kind) {
+      if (source === "codex")
+        return nativeWorkController(sessionId)?.inspect(sourceId) ?? "unknown";
       const runtime = runtimeFor(sessionId);
+      if (kind === "schedule" && runtime?.timers?.isFiring(sourceId))
+        return "running";
+      if (kind === "schedule")
+        return runtime?.timers?.snapshot().some((task) => task.id === sourceId)
+          ? "idle"
+          : "unknown";
       const task = runtime?.background?.record(sourceId);
       if (task) return task.status === "ended" ? "unknown" : task.status;
       return runtime?.background?.runsSubagent(sourceId)
         ? "running"
         : "unknown";
     },
-    async stop(sessionId, sourceId) {
+    async stop(sessionId, sourceId, source) {
+      if (source === "codex") {
+        const controller = nativeWorkController(sessionId);
+        if (!controller)
+          throw new Error("Native task controller is unavailable");
+        return controller.stop(sourceId);
+      }
       const runtime = runtimeFor(sessionId);
       if (!runtime?.query?.stopTask)
         throw new Error("Native task controller is unavailable");

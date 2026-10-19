@@ -168,8 +168,10 @@ type AgentSession struct {
 	// Prompt is the session's opening goal.
 	Prompt string `json:"prompt"`
 	// Input is the latest message sent to the session; Status describes it.
-	Input     SessionInput      `json:"input"`
-	SkillRefs []SessionSkillRef `json:"skillRefs,omitempty"`
+	Input                SessionInput            `json:"input"`
+	SkillRefs            []SessionSkillRef       `json:"skillRefs,omitempty"`
+	SkillSelection       *ResolvedSkillSelection `json:"skillSelection,omitempty"`
+	WorkspaceDraftSkills bool                    `json:"workspaceDraftSkills,omitempty"`
 	// Response is the answer to the latest input.
 	Response       string `json:"response,omitempty"`
 	Error          string `json:"error,omitempty"`
@@ -223,20 +225,22 @@ type SendAgentSessionInput struct {
 }
 
 type CreateAgentSessionInput struct {
-	CreatedByUserID      string `json:"-"`
-	WorkspaceID          string `json:"workspaceId"`
-	NativeSessionID      string `json:"nativeSessionId,omitempty"`
-	AgentID              string `json:"agentId"`
-	Provider             string `json:"provider"`
-	ProfileID            string `json:"profileId,omitempty"`
-	Model                string `json:"model,omitempty"`
-	ClaudeEffort         string `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode string `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort string `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode     string `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy  string `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed           string `json:"codexSpeed,omitempty"`
-	Prompt               string `json:"prompt"`
+	SkillSelection         *SkillSelection         `json:"skillSelection,omitempty"`
+	ResolvedSkillSelection *ResolvedSkillSelection `json:"-"`
+	CreatedByUserID        string                  `json:"-"`
+	WorkspaceID            string                  `json:"workspaceId"`
+	NativeSessionID        string                  `json:"nativeSessionId,omitempty"`
+	AgentID                string                  `json:"agentId"`
+	Provider               string                  `json:"provider"`
+	ProfileID              string                  `json:"profileId,omitempty"`
+	Model                  string                  `json:"model,omitempty"`
+	ClaudeEffort           string                  `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode   string                  `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort   string                  `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode       string                  `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy    string                  `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed             string                  `json:"codexSpeed,omitempty"`
+	Prompt                 string                  `json:"prompt"`
 	// Title names the session; empty: the start of the prompt.
 	Title                 string           `json:"title,omitempty"`
 	Attachments           []ChatAttachment `json:"attachments,omitempty"`

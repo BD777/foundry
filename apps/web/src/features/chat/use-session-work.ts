@@ -9,32 +9,35 @@ import { onStreamEvent } from "../../stream";
 
 export function useSessionWork(sessionId?: string) {
   const [list, setList] = useState<SessionWorkList>();
+  const [listSessionId, setListSessionId] = useState<string>();
   const [error, setError] = useState<string>();
   const [controlError, setControlError] = useState<string>();
   const [busy, setBusy] = useState<string>();
   const epoch = useRef(0);
-  const inFlight = useRef(false);
+  const inFlight = useRef<number | undefined>(undefined);
   const retry = useRef<WorkControlInput | undefined>(undefined);
   const refresh = useCallback(async () => {
-    if (!sessionId || inFlight.current) return;
-    inFlight.current = true;
     const version = epoch.current;
+    if (!sessionId || inFlight.current === version) return;
+    inFlight.current = version;
     try {
       const answer = await listSessionWork(sessionId);
       if (version === epoch.current) {
         setList(answer);
+        setListSessionId(sessionId);
         setError(undefined);
       }
     } catch (e) {
       if (version === epoch.current)
         setError(e instanceof Error ? e.message : String(e));
     } finally {
-      inFlight.current = false;
+      if (inFlight.current === version) inFlight.current = undefined;
     }
   }, [sessionId]);
   useEffect(() => {
     epoch.current++;
     setList(undefined);
+    setListSessionId(undefined);
     setError(undefined);
     setBusy(undefined);
     setControlError(undefined);
@@ -81,17 +84,20 @@ export function useSessionWork(sessionId?: string) {
       const input =
         retry.current?.id === item?.id &&
         retry.current?.action === action &&
-        retry.current?.expectedRevision === item?.revision
+        retry.current?.expectedRevision === item?.revision &&
+        retry.current?.expectedReferenceRevision === item?.referenceRevision
           ? retry.current
           : {
               id: item?.id,
               action,
+              ...(action === "unlink" ? { relatedSessionId: sessionId } : {}),
               expectedRevision: item?.revision,
+              expectedReferenceRevision: item?.referenceRevision,
               idempotencyKey: crypto.randomUUID(),
             };
       await applyControl(input);
     },
-    [applyControl],
+    [applyControl, sessionId],
   );
   const retryControl = useCallback(async () => {
     // Preserve the exact request: the device may have accepted it before a
@@ -99,7 +105,8 @@ export function useSessionWork(sessionId?: string) {
     if (retry.current) await applyControl(retry.current);
   }, [applyControl]);
   return {
-    list,
+    sessionId,
+    list: listSessionId === sessionId ? list : undefined,
     error: controlError || error,
     controlError,
     busy,

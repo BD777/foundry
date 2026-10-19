@@ -548,6 +548,8 @@ export interface AgentSession {
    * is forced to expose only these; an empty present list means none.
    */
   skillRefs?: SessionSkillRef[];
+  workspaceDraftSkills?: boolean;
+  skillSelection?: import("./workspace-draft-skills.js").ResolvedSkillSelection;
   /** The answer to the latest input. */
   response?: string;
   error?: string;

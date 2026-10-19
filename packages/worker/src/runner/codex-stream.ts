@@ -127,6 +127,7 @@ export async function runCodexStreamedTurn(
     },
   });
   let events: AsyncIterator<unknown> | undefined;
+  let turnFailed = false;
   try {
     const streamed = await thread.runStreamed(input, {
       signal: abortController.signal,
@@ -161,6 +162,7 @@ export async function runCodexStreamedTurn(
       throw new AgentSessionCanceledError();
     }
   } catch (error) {
+    turnFailed = true;
     if (canceled) throw new AgentSessionCanceledError();
     throw error;
   } finally {
@@ -172,12 +174,18 @@ export async function runCodexStreamedTurn(
     // producer's finally and releases its native thread writer.
     try {
       await events?.return?.();
-    } catch {
-      // Preserve the turn's original outcome when closing its producer fails.
+    } catch (error) {
+      // Keep the original execution error, but do not hide an unconfirmed
+      // shutdown or report a successful turn when its writer did not close.
+      if (!turnFailed) throw error;
+      await state
+        .emit("Notice", `Codex cleanup failed: ${String(error)}`, "warning")
+        .catch(() => {});
+    } finally {
+      liveness.close();
+      unregisterCancel();
+      unregisterSteer();
     }
-    liveness.close();
-    unregisterCancel();
-    unregisterSteer();
   }
 }
 
