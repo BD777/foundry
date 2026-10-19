@@ -25,6 +25,9 @@ func Thread(session store.AgentSession) string {
 func Base(session store.AgentSession, kind, source, sourceID, title string) store.SessionWork {
 	return store.SessionWork{ID: ID(session.ID, source, sourceID), SessionID: session.ID, ThreadID: Thread(session), WorkspaceID: session.WorkspaceID, DeviceID: session.DeviceID, Kind: kind, Source: source, SourceID: sourceID, Title: title, Management: "managed", DesiredState: "enabled", AllowedActions: []string{"stop"}, Observation: store.WorkObservation{Status: "unknown", At: time.Now().UTC().Format(time.RFC3339Nano)}}
 }
+func NativeInfo(session store.AgentSession, id, discovery string) *store.NativeWorkInfo {
+	return &store.NativeWorkInfo{Runtime: session.Provider, Version: "unknown", SessionID: session.NativeSessionID, TaskID: id, Discovery: discovery, Observation: "available", Controls: map[string]string{"stop": "unavailable", "pause": "unsupported", "resume": "unsupported"}}
+}
 func Timer(session store.AgentSession, timer store.SessionKeptTimer) store.SessionWork {
 	w := Base(session, "schedule", "claude", timer.ID, strings.SplitN(timer.Prompt, "\n", 2)[0])
 	w.CreatedAt = timer.FirstSeenAt
@@ -32,7 +35,10 @@ func Timer(session store.AgentSession, timer store.SessionKeptTimer) store.Sessi
 	if first, err := time.Parse(time.RFC3339Nano, timer.FirstSeenAt); err == nil && timer.Recurring {
 		w.Spec.ExpiresAt = first.Add(store.ClaudeRecurringTimerMaxAge).Format(time.RFC3339Nano)
 	}
-	w.AllowedActions = []string{"pause", "resume", "stop", "remove", "run"}
+	w.Management = "observed"
+	w.Native = NativeInfo(session, timer.ID, "transcript timer snapshot")
+	w.AllowedActions = []string{}
+	w.Observation.Status = "idle"
 	w.Observation.NextFireAt = timer.NextFireAt
 	return w
 }
@@ -54,6 +60,9 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 				}
 				w := Base(session, kind, "claude", task.ID, task.Description)
 				w.CreatedAt = task.StartedAt
+				w.Native = NativeInfo(session, task.ID, "transcript task lifecycle")
+				w.Management = "observed"
+				w.AllowedActions = []string{}
 				w.Spec.NativeSessionID = session.NativeSessionID
 				status := task.Status
 				if status == "ended" {
@@ -67,6 +76,9 @@ func FromEvents(session store.AgentSession) []store.SessionWork {
 			if _, exists := items[m.TaskID]; !exists {
 				w := Base(session, "agent", "claude", m.TaskID, e.Detail)
 				w.CreatedAt = e.At
+				w.Native = NativeInfo(session, m.TaskID, "transcript agent lifecycle")
+				w.Management = "observed"
+				w.AllowedActions = []string{}
 				w.Observation.Status = "running"
 				w.Observation.At = e.At
 				items[m.TaskID] = w

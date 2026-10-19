@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -85,6 +86,33 @@ func (c *daemonConnection) sessionLaunchSpec(ctx context.Context, session store.
 		return wsRunSessionPayload{}, fmt.Errorf("resolve workspace skills: %w", err)
 	} else {
 		session.SkillRefs = refs
+	}
+	if backing, ok := c.hub.store.(store.WorkspaceDraftStore); ok && c.hasCapability(workspaceDraftCapability) && session.Source != verificationSource && session.Source != "naming" && session.Source != store.DigestSessionSource {
+		drafts, err := backing.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
+		if err != nil {
+			return wsRunSessionPayload{}, err
+		}
+		session.WorkspaceDraftSkills = drafts.Enabled
+	}
+	if session.SkillSelection != nil {
+		if !c.hasCapability(workspaceDraftCapability) {
+			return wsRunSessionPayload{}, errors.New("update the worker before running a Skill trial")
+		}
+		if len(session.SkillSelection.Drafts) > 0 {
+			backing, ok := c.hub.store.(store.WorkspaceDraftStore)
+			if !ok {
+				return wsRunSessionPayload{}, errors.New("draft storage unavailable")
+			}
+			policy, err := backing.WorkspaceDrafts(ctx, session.WorkspaceID, session.WorkspaceID)
+			if err != nil {
+				return wsRunSessionPayload{}, err
+			}
+			if !policy.Enabled {
+				return wsRunSessionPayload{}, errors.New("workspace drafts are disabled")
+			}
+		}
+		session.SkillRefs = session.SkillSelection.LibraryRefs
+		session.WorkspaceDraftSkills = false
 	}
 	var (
 		issue         *store.Issue

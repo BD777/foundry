@@ -385,6 +385,57 @@
         "workspaceId": {
           "type": "string",
           "description": "Workspace to start the session in, one you reach as Member; defaults to yours with a session token, required without one."
+        },
+        "skillSelection": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["include", "exclude"]
+            },
+            "drafts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id", "digest"],
+                "additionalProperties": false
+              }
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "library": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "skillId": {
+                    "type": "string"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": ["skillId", "revision"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["mode"],
+          "additionalProperties": false,
+          "description": "Create a clean-history Skill trial with locked inputs. include adds exact draft snapshots from refresh_workspace_skills and replaces same-name selected methods; library pins selected methods to old revisions. exclude removes named methods and matching draft content. Fork/adoption/imported context are prohibited. Foundry governance remains."
         }
       },
       "required": ["prompt"]
@@ -1272,11 +1323,15 @@
   },
   {
     "name": "list_session_work",
-    "description": "List persistent schedules, background processes and subagents, including earlier turns, paused work and unconfirmed controls. Independent of compacted history. Defaults to this session.",
+    "description": "List persistent schedules, background processes and subagents, including earlier turns, paused work and unconfirmed controls. Independent of compacted history. Defaults to this session. Set workspaceId to discover the Workspace persistent-service inventory independently of sessions.",
     "summary": "Lists persistent schedules, background commands and subagents across the conversation, including pending controls.",
     "inputSchema": {
       "type": "object",
       "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "List persistent services owned by this Workspace, including services with no linked or active session. Omit to inspect conversation work."
+        },
         "sessionId": {
           "type": "string",
           "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
@@ -1299,6 +1354,10 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "List persistent services owned by this Workspace, including services with no linked or active session. Omit to inspect conversation work."
+        },
         "sessionId": {
           "type": "string",
           "description": "Defaults to the calling session; reads and controls its whole conversation work inventory."
@@ -1320,7 +1379,7 @@
   },
   {
     "name": "control_session_work",
-    "description": "Control persistent work. pause disables future schedule runs; stop also stops current execution. stop_all first blocks future work in this conversation. Only verified receipts prove cessation; refresh list_session_work to observe device confirmation. Single actions require the current revision; idempotencyKey must be stable across retries. Unassigned OS sources are skipped by bulk controls and reported in unmanaged; only the person may adopt an unconfirmed source. Do not describe an unverified receipt as fully stopped.",
+    "description": "Control persistent work. link/unlink explicitly changes a durable service reference (relatedSessionId) without starting/stopping execution. Service stop/pause/resume affects every linked session. stop_all excludes shared services and native subagents; it never traverses child sessions. pause disables future schedule runs; stop also stops current execution. stop_all first blocks future work in this conversation. Only verified receipts prove cessation; refresh list_session_work to observe device confirmation. Single actions require the current revision; idempotencyKey must be stable across retries. Unassigned OS sources are skipped by bulk controls and reported in unmanaged; only the person may adopt an unconfirmed source. Do not describe an unverified receipt as fully stopped.",
     "summary": "Pauses, resumes or stops conversation work, returning a durable receipt that devices must confirm.",
     "inputSchema": {
       "type": "object",
@@ -1342,8 +1401,18 @@
             "run",
             "stop_all",
             "pause_all",
-            "adopt"
+            "adopt",
+            "link",
+            "unlink"
           ]
+        },
+        "expectedReferenceRevision": {
+          "type": "integer",
+          "description": "The service referenceRevision from the latest inventory. Required after its associations change; prevents controls based on an outdated impact scope."
+        },
+        "relatedSessionId": {
+          "type": "string",
+          "description": "Required for link/unlink: explicitly associate a session with the same durable service. Linking never starts another process; unlinking never stops it."
         },
         "expectedRevision": {
           "type": "integer"
@@ -1365,8 +1434,8 @@
   },
   {
     "name": "create_scheduled_work",
-    "description": "Create persistent Foundry-managed scheduled prompts or supervised background commands. Uses the session runtime and fresh credentials; do not use host crontab or detached claude processes. Choose cron + IANA timeZone, or at as a full RFC3339 instant. Reusing idempotencyKey returns the same work.",
-    "summary": "Creates a persistent scheduled prompt or supervised background command that Foundry can display and control.",
+    "description": "Create a durable wake-up (kind=schedule) or a persistent local service (kind=process) that must outlive native runtime closure. Use native agent tools for ordinary in-session timers and background commands. A persistent service has one owner and one execution; use control_session_work link/unlink for explicit session references. Uses fresh runtime credentials; do not use host crontab or detached agents for scheduling. Choose cron + IANA timeZone, or at as a full RFC3339 instant. Reusing idempotencyKey returns the same work.",
+    "summary": "Creates durable wake-ups or persistent local services; ordinary background tasks use native tools.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1423,6 +1492,23 @@
     "limits": [
       "Uses the existing session and workspace access rules; inspecting commands requires control permission for the target session.",
       "Device observation and control require an updated worker. A pending or unknown receipt does not prove execution has stopped."
+    ]
+  },
+  {
+    "name": "refresh_workspace_skills",
+    "description": "Refresh the current session workspace drafts from .agents/skills and compatible project folders. Returns verified immutable snapshot paths and content digests you may read and trial in this turn. Does not hot-register native Skill tools or publish to the library. Invalid or conflicting drafts are reported explicitly.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false
+    },
+    "summary": "Discover and snapshot the current workspace’s Skill drafts for trial.",
+    "limits": [
+      "Only the caller’s own workspace execution root; no arbitrary device paths.",
+      "Requires a connected worker supporting workspace drafts and enabled workspace draft settings."
     ]
   }
 ]

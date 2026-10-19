@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { WorkspaceServicesDialog } from "../../components/workspace/workspace-services";
+import { workspaceDenial } from "../../lib/workspace-access";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -64,6 +67,7 @@ export function WorkspaceRow({
   onPrepareEnd: () => void;
 }) {
   const { t } = useTranslation("workspaces");
+  const [servicesOpen, setServicesOpen] = useState(false);
   const removed = isRemovedDevice(device);
   const online = device.status === "connected";
   const manageable =
@@ -125,7 +129,21 @@ export function WorkspaceRow({
           <ChevronRight size={14} />
         </span>
       </Button>
+      {servicesOpen ? (
+        <WorkspaceServicesDialog
+          workspaceId={workspace.id}
+          canControl={!workspaceDenial(workspace, "member")}
+          onClose={() => setServicesOpen(false)}
+        />
+      ) : null}
       <div className="fdy-location-workspace-actions">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => setServicesOpen(true)}
+        >
+          {t("services")}
+        </Button>
         {workspace.accessRole && workspace.accessRole !== "owner" ? (
           <Badge tone="neutral">
             {t("location.sharedRole", {

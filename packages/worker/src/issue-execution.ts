@@ -116,6 +116,7 @@ export async function executeIssue(
   runId = `run_${randomUUID()}`,
   profileOverride?: AgentProfileLocalConfig,
   ambient?: SessionAmbientEnv,
+  draftsEnabled = false,
 ): Promise<void> {
   if (
     issue.contractState !== "confirmed" ||
@@ -224,6 +225,7 @@ export async function executeIssue(
           serverURL,
           skillRefs,
           ambient,
+          draftsEnabled,
         );
         environment = result.environment;
         response = result.response;

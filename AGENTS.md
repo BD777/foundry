@@ -6,6 +6,47 @@ Foundry workers should treat this workspace context as authoritative.
 - Skills accumulate.
 - Workers do not remember.
 
+## Foundry iteration workflow
+
+- Choose a new session's model and reasoning effort for the task. Prefer Astra
+  with high effort for complex iterations; use xhigh only with a concrete reason
+  for the extra cost. Do not change already-running sessions just to apply this default.
+- Start from the person's problem; inspect the code and incident evidence, and
+  research established solutions when useful. Explain the cause and proposed fix;
+  ask for decisions when a real product or implementation tradeoff needs the person.
+- Work on local `main` by default. Inspect existing changes and active sessions
+  before editing; preserve other work. One owner should handle tightly coupled
+  changes. Reconcile existing branch/worktree work without discarding either side.
+- Separate Git submission from implementation and validation. A restriction on
+  commits does not block local edits, builds, deployments, API/browser checks or
+  other validation that creates no Git commits. Continue all independent work.
+  If a test flow itself creates commits (for example candidate sealing or Accept),
+  identify the exact step, target repository and dependencies; defer only the
+  affected steps under the applicable instruction, not the whole validation phase.
+  Do not alter product semantics or erase Git history to evade a restriction.
+  Keep private submission arrangements in session context, not repository files.
+- Build and deploy affected dev Server/Web components directly; this is authorized
+  without another approval. Preserve active sessions and check service health after
+  restart. Deployment need not wait for a commit.
+- Update Worker/daemon yourself when authorized and safe. Verify the actual loaded
+  execution host, not only the installed package. If permission is missing or the
+  update would interrupt active sessions, explain the impact and ask the person to
+  perform or approve that update; do not force-stop their work.
+- Verify the change yourself with appropriate tests, API requests and real-browser
+  end-to-end checks. The person's dev account is authorized for validation; use
+  clearly scoped synthetic data and preserve unrelated work. Alternatively reuse
+  a dedicated test account: record its non-secret identity/environment in
+  `docs/devlog/test-environment.md`, with credentials kept outside the repository.
+- Keep `docs/devlog/README.md` current by item. After self-verification, archive the
+  problem, investigation, fix, deployment/version evidence, checks and limitations
+  in `docs/devlog/DEV-NNN-topic.md` (link existing detailed records rather than
+  duplicating them). Give the person concrete acceptance steps and expected results.
+  Human acceptance is the default. The person may explicitly delegate release
+  acceptance to an Agent; then close only the verified scope, record the delegation
+  date/source and Agent evidence in the item's timeline, and retain unresolved
+  limitations. Never describe delegated acceptance as the person testing it.
+  A finished session is not a finished delivery.
+
 ## UI interaction and component principles
 
 - Make every action discoverable: use visible labels, chevrons or action

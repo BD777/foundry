@@ -20,3 +20,23 @@ export function controlSessionWork(
     { body: input },
   );
 }
+
+export function listWorkspaceServices(
+  workspaceId: string,
+): Promise<import("@bd777/foundry-protocol").SessionWork[]> {
+  return request(
+    "GET",
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/services`,
+  );
+}
+export function controlWorkspaceService(
+  workspaceId: string,
+  id: string,
+  input: WorkControlInput,
+): Promise<WorkOperation> {
+  return request(
+    "POST",
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/services/${encodeURIComponent(id)}/operations`,
+    { body: input },
+  );
+}

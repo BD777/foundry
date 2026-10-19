@@ -128,12 +128,14 @@ async function onRecoverSession(
     await host.refresh();
     if (sessionId && host.owns(sessionId, inputId)) return;
   }
-  // This process runs or just finished the input: its own report is
-  // in the session outbox.
+  // Never recover an input still executing. A recently completed dispatch
+  // may have lost its report (including a mistaken permanent ACK); report
+  // its persisted result again when the server explicitly asks. Dispatch
+  // deduplication still uses handled(), so this never reruns the input.
   if (
     !payload ||
     !sessionId ||
-    ctx.sessionExecutions.handled(sessionId, inputId)
+    ctx.sessionExecutions.isActive(sessionId, inputId)
   ) {
     return;
   }

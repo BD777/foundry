@@ -1,3 +1,7 @@
+import { foundryStatePath } from "../state-root.js";
+import { collectSkillSnapshotGarbage } from "../skill-snapshots.js";
+import { reapPrivateInputOwners } from "../private-input-owners.js";
+import { hasLiveAgentProcesses } from "../agent-processes.js";
 import { issueEnvironmentAction } from "../issue-environment-rpc.js";
 import { evidenceWorkerAction } from "../evidence-rpc.js";
 import { queuePreview, runIssuePreview } from "../issue-preview.js";
@@ -162,7 +166,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     socket.write(`${JSON.stringify(value)}\n`);
   const snapshot = () => ({
     protocol: 1,
-    capabilities: ["idle_upgrade", "session_work"],
+    capabilities: ["idle_upgrade", "session_work", "workspace_draft_skills_v1"],
     entry,
     runtimeStamp: stamp,
     busy: busy(),
@@ -180,8 +184,26 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       )
       .map((runtime) => runtime.foundrySessionId),
   });
+  let nextInputSweep = Date.now() + 60_000;
+  const sweepInputs = () => {
+    if (Date.now() < nextInputSweep || busy() || hasLiveAgentProcesses())
+      return;
+    nextInputSweep = Date.now() + 60 * 60 * 1000;
+    for (const runtime of ["codex", "claude"])
+      reapPrivateInputOwners(
+        foundryStatePath("native-runtime", "owners", runtime),
+        "native-config",
+        { currentOwnerIdle: true, minAgeMs: 60 * 60 * 1000 },
+      );
+    reapPrivateInputOwners(
+      foundryStatePath("native-operation-data"),
+      "native-operation-data",
+    );
+    collectSkillSnapshotGarbage({ idle: true });
+  };
   const announce = () => {
     if (connection) write(connection, { type: "snapshot", ...snapshot() });
+    sweepInputs();
   };
   const ticker = setInterval(announce, 5000);
   ticker.unref();

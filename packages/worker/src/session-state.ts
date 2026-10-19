@@ -159,6 +159,7 @@ export interface ActiveClaudeContinuation {
 }
 
 export interface ActiveClaudeRuntime {
+  releasePreparation?: () => Promise<void>;
   closed: boolean;
   /** Foundry session currently attached to the long-lived native thread. */
   foundrySessionId: string;
@@ -333,6 +334,11 @@ export class SessionExecutionRegistry {
   handled(sessionId: string, inputId = ""): boolean {
     const key = dispatchKey(sessionId, inputId);
     return this.active.has(key) || this.recent.has(key);
+  }
+
+  /** Recovery must distinguish a running input from a completed dispatch. */
+  isActive(sessionId: string, inputId = ""): boolean {
+    return this.active.has(dispatchKey(sessionId, inputId));
   }
 
   activeSessionIds(): string[] {

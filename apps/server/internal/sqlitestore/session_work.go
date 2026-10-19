@@ -44,12 +44,12 @@ func workKey(parts ...string) string {
 }
 
 func (s *Store) SessionWorkSources(ctx context.Context, id string) ([]store.AgentSession, error) {
-	return listJSON[store.AgentSession](ctx, s.conn(), `WITH RECURSIVE scope(id) AS (SELECT id FROM agent_sessions WHERE id=? OR thread_id=? UNION SELECT a.id FROM agent_sessions a JOIN scope p ON a.parent_session_id=p.id) SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id IN (SELECT id FROM scope)`, id, id)
+	return listJSON[store.AgentSession](ctx, s.conn(), `SELECT json_remove(payload_json,'$.events','$.response') FROM agent_sessions WHERE id=? OR thread_id=?`, id, id)
 }
 
 func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) (store.SessionWorkList, error) {
 	result := store.SessionWorkList{Items: []store.SessionWork{}, Operations: []store.WorkOperation{}, Coverage: map[string]string{"hostSchedules": "not_observed", "processes": "not_observed"}}
-	query := `WITH RECURSIVE scope(id) AS (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1 UNION SELECT a.id FROM agent_sessions a JOIN scope p ON a.parent_session_id=p.id) SELECT payload_json FROM session_work WHERE thread_id=?1 OR session_id IN (SELECT id FROM scope)`
+	query := `SELECT payload_json FROM session_work WHERE thread_id=?1 OR session_id IN (SELECT id FROM agent_sessions WHERE id=?1 OR thread_id=?1) OR EXISTS (SELECT 1 FROM json_each(session_work.payload_json,'$.relatedSessionIds') link WHERE link.value=?1 OR link.value IN (SELECT id FROM agent_sessions WHERE thread_id=?1))`
 	arg := threadID
 	if deviceID != "" {
 		query = `SELECT payload_json FROM session_work WHERE device_id = ?`
@@ -129,9 +129,6 @@ func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) 
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return result, err
 		}
-		if !stopped {
-			_ = s.conn().QueryRowContext(ctx, `WITH RECURSIVE parents(id,parent) AS (SELECT id,parent_session_id FROM agent_sessions WHERE id=? UNION SELECT a.id,a.parent_session_id FROM agent_sessions a JOIN parents p ON p.parent=a.id) SELECT EXISTS(SELECT 1 FROM session_work_scopes WHERE stopped=1 AND thread_id IN (SELECT id FROM parents))`, threadID).Scan(&stopped)
-		}
 		result.Barrier = stopped
 		err = scanRows(ctx, s.conn(), `SELECT rowid,payload_json FROM session_work_operations WHERE thread_id = ? ORDER BY rowid DESC LIMIT 30`, func(rows *sql.Rows) error {
 			var raw string
@@ -147,7 +144,7 @@ func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) 
 			if op.Action == "stop_all" || op.Action == "pause_all" {
 				n := 0
 				for _, item := range result.Items {
-					if item.Management == "observed" && item.DesiredState != "removed" {
+					if item.Management == "observed" && item.Native == nil && item.DesiredState != "removed" {
 						n++
 					}
 				}
@@ -157,11 +154,32 @@ func (s *Store) ListSessionWork(ctx context.Context, threadID, deviceID string) 
 			result.Operations = append(result.Operations, op)
 			return nil
 		}, threadID)
+		// Historical receipts can name targets no longer shown. Query them
+		// after closing rows, including on single-connection transactions.
+		for i, op := range result.Operations {
+			receiptItems := append([]store.SessionWork{}, result.Items...)
+			for _, target := range op.Items {
+				if slices.ContainsFunc(receiptItems, func(w store.SessionWork) bool { return w.ID == target.ID }) {
+					continue
+				}
+				var raw string
+				if readErr := s.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id=?`, target.ID).Scan(&raw); readErr == nil {
+					var prior store.SessionWork
+					if json.Unmarshal([]byte(raw), &prior) == nil {
+						receiptItems = append(receiptItems, prior)
+					}
+				}
+			}
+			result.Operations[i].State = workOperationState(op, receiptItems, result.Coverage)
+		}
 	}
 	return result, err
 }
 
 func workOperationState(op store.WorkOperation, items []store.SessionWork, coverage map[string]string) string {
+	if op.Action == "link" || op.Action == "unlink" {
+		return "verified"
+	}
 	if op.Unmanaged > 0 {
 		return "unknown"
 	}
@@ -180,7 +198,7 @@ func workOperationState(op store.WorkOperation, items []store.SessionWork, cover
 	}
 	if op.Action == "stop_all" {
 		for _, item := range items {
-			if item.Management != "managed" || item.DesiredState == "removed" || !store.StandaloneSessionWork(item) {
+			if len(item.RelatedSessionIDs) > 0 || item.Management != "managed" || !slices.Contains(item.AllowedActions, "stop") || item.DesiredState == "removed" || !store.StandaloneSessionWork(item) {
 				continue
 			}
 			if confirmedWorkEnded(item) {
@@ -201,7 +219,7 @@ func workOperationState(op store.WorkOperation, items []store.SessionWork, cover
 	}
 	if op.Action == "pause_all" {
 		for _, item := range items {
-			if item.Management != "managed" || item.Kind != "schedule" || item.DesiredState == "removed" || item.DesiredState == "stopped" || confirmedWorkEnded(item) || workObservationBefore(op.CreatedAt, item.CreatedAt) {
+			if len(item.RelatedSessionIDs) > 0 || item.Management != "managed" || item.Kind != "schedule" || item.DesiredState == "removed" || item.DesiredState == "stopped" || confirmedWorkEnded(item) || workObservationBefore(op.CreatedAt, item.CreatedAt) {
 				continue
 			}
 			if item.DesiredState != "paused" {
@@ -259,6 +277,14 @@ func workOperationState(op store.WorkOperation, items []store.SessionWork, cover
 }
 
 func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (store.SessionWork, error) {
+	if item.Kind == "agent" && (item.Source == "claude" || item.Source == "codex") {
+		item.Management = "observed"
+		item.AllowedActions = []string{}
+		if item.Native == nil {
+			item.Native = &store.NativeWorkInfo{Runtime: item.Source, Version: "unknown", SessionID: item.Spec.NativeSessionID, TaskID: item.SourceID, Discovery: "legacy native agent lifecycle", Observation: "unknown", Controls: map[string]string{"stop": "unavailable", "pause": "unknown", "resume": "unknown"}}
+		}
+	}
+
 	err := s.withTx(ctx, func(tx *Store) error {
 		var raw string
 		err := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work WHERE id = ?`, item.ID).Scan(&raw)
@@ -267,7 +293,30 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 			if err = json.Unmarshal([]byte(raw), &item); err != nil {
 				return err
 			}
-			if confirmNativeWorkHistory(&item, evidence) {
+			changed := confirmNativeWorkHistory(&item, evidence)
+			if item.Native != nil && evidence.Native != nil && item.Source == evidence.Source && item.SourceID == evidence.SourceID && (item.Native.SessionID == "" || evidence.Native.SessionID == "" || item.Native.SessionID == evidence.Native.SessionID) && item.Kind != "schedule" && item.Generation == 1 && evidence.Observation.EndedAt != "" && evidence.Observation.Error == "" && workObservationBefore(item.Observation.At, evidence.Observation.At) && slices.Contains([]string{"completed", "failed", "stopped"}, evidence.Observation.Status) {
+				item.Observation = evidence.Observation
+				item.Observation.ConfirmedRevision = item.Revision
+				changed = true
+			}
+			if evidence.Native != nil && (evidence.Source == "claude" || evidence.Source == "codex") && evidence.Kind == item.Kind {
+				// An already adopted historical schedule keeps its executor.
+				legacySchedule := item.Kind == "schedule" && item.Native == nil && item.Management == "managed"
+				if !legacySchedule && (item.Native == nil || evidence.Native.Version != "unknown") {
+					item.Native = evidence.Native
+					item.Management = evidence.Management
+					item.AllowedActions = evidence.AllowedActions
+					changed = true
+				}
+				// Native subagents are always observational, including old imports.
+				if item.Kind == "agent" {
+					item.Native = evidence.Native
+					item.Management = "observed"
+					item.AllowedActions = []string{}
+					changed = true
+				}
+			}
+			if changed {
 				return tx.writeWork(ctx, item)
 			}
 			return nil
@@ -280,17 +329,14 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if !stopped {
-			_ = tx.conn().QueryRowContext(ctx, `WITH RECURSIVE parents(id,parent) AS (SELECT id,parent_session_id FROM agent_sessions WHERE id=? UNION SELECT a.id,a.parent_session_id FROM agent_sessions a JOIN parents p ON p.parent=a.id) SELECT EXISTS(SELECT 1 FROM session_work_scopes WHERE stopped=1 AND thread_id IN (SELECT id FROM parents))`, item.SessionID).Scan(&stopped)
-		}
 		if item.CreatedAt == "" {
 			item.CreatedAt = formatTime(time.Now().UTC())
 		}
-		if stopped {
+		if stopped && slices.Contains(item.AllowedActions, "stop") {
 			item.DesiredState = "stopped"
 		} else if item.Kind == "schedule" && item.Management == "managed" && slices.Contains(item.AllowedActions, "pause") {
 			var rawPause string
-			pauseErr := tx.conn().QueryRowContext(ctx, `WITH RECURSIVE parents(id,parent) AS (SELECT id,parent_session_id FROM agent_sessions WHERE id=?1 UNION SELECT a.id,a.parent_session_id FROM agent_sessions a JOIN parents p ON p.parent=a.id) SELECT payload_json FROM session_work_operations WHERE (thread_id=?2 OR thread_id IN (SELECT id FROM parents)) AND json_extract(payload_json,'$.action')='pause_all' ORDER BY rowid DESC LIMIT 1`, item.SessionID, item.ThreadID).Scan(&rawPause)
+			pauseErr := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work_operations WHERE thread_id=? AND json_extract(payload_json,'$.action')='pause_all' ORDER BY rowid DESC LIMIT 1`, item.ThreadID).Scan(&rawPause)
 			if pauseErr != nil && !errors.Is(pauseErr, sql.ErrNoRows) {
 				return pauseErr
 			}
@@ -324,7 +370,7 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 // Only repair transcript imports that have never received a device observation;
 // later runs, errors and authoritative observations must not be overwritten.
 func confirmNativeWorkHistory(item *store.SessionWork, evidence store.SessionWork) bool {
-	if item.Source != "claude" || item.Kind == "schedule" || item.Management != "managed" ||
+	if (item.Source != "claude" && item.Source != "codex") || item.Kind == "schedule" ||
 		item.Generation != 1 || item.Observation.ConfirmedRevision != 0 || item.Observation.Error != "" ||
 		item.Spec.ManualRunAt != "" || item.DesiredState == "paused" ||
 		evidence.Source != item.Source || evidence.Kind != item.Kind || evidence.SourceID != item.SourceID || evidence.Observation.Error != "" {
@@ -452,6 +498,11 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 			if !all && item.ID != input.ID {
 				continue
 			}
+			// Shared services have a global lifecycle. A conversation bulk
+			// action never stops work used from another conversation.
+			if all && len(item.RelatedSessionIDs) > 0 {
+				continue
+			}
 			if input.Action == "pause_all" && item.Kind != "schedule" {
 				continue
 			}
@@ -468,7 +519,13 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 				continue
 			}
 			if all && item.Management == "observed" {
+				if item.Native != nil {
+					continue
+				}
 				op.Unmanaged++
+				continue
+			}
+			if input.Action == "stop_all" && !slices.Contains(item.AllowedActions, "stop") {
 				continue
 			}
 			if input.Action == "pause_all" && !slices.Contains(item.AllowedActions, "pause") {
@@ -493,6 +550,29 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 			}
 			if action == "pause_all" {
 				action = "pause"
+			}
+			if !all && item.Source == "foundry" && item.Kind == "process" && input.ExpectedReferenceRevision != item.ReferenceRevision {
+				return errors.New("service associations changed; refresh the impact scope before controlling")
+			}
+			if action == "link" || action == "unlink" {
+				if item.Source != "foundry" || item.Kind != "process" || input.RelatedSessionID == "" || input.RelatedSessionID == item.SessionID {
+					return errors.New("only durable services can link another session")
+				}
+				if action == "link" && !slices.Contains(item.RelatedSessionIDs, input.RelatedSessionID) {
+					item.ReferenceRevision++
+					item.RelatedSessionIDs = append(item.RelatedSessionIDs, input.RelatedSessionID)
+					slices.Sort(item.RelatedSessionIDs)
+				}
+				if action == "unlink" && slices.Contains(item.RelatedSessionIDs, input.RelatedSessionID) {
+					item.ReferenceRevision++
+					item.RelatedSessionIDs = slices.DeleteFunc(item.RelatedSessionIDs, func(id string) bool { return id == input.RelatedSessionID })
+				}
+				item.UpdatedAt = op.CreatedAt
+				if err := tx.writeWork(ctx, item); err != nil {
+					return err
+				}
+				op.Items = append(op.Items, store.WorkOperationItem{ID: item.ID, Revision: item.Revision})
+				continue
 			}
 			if !all && !slices.Contains(item.AllowedActions, action) {
 				return errors.New("this work source does not support that action")
@@ -574,6 +654,9 @@ func (s *Store) ClaimWorkRun(ctx context.Context, id string, generation int64, s
 		var w store.SessionWork
 		if err := json.Unmarshal([]byte(raw), &w); err != nil {
 			return err
+		}
+		if w.Native != nil || w.Management != "managed" || w.Kind != "schedule" {
+			return errors.New("native schedules are observed, not executed by Foundry")
 		}
 		var existing string
 		if priorErr := tx.conn().QueryRowContext(ctx, `SELECT payload_json FROM session_work_runs WHERE id=?`, run.ID).Scan(&existing); priorErr == nil {
@@ -697,4 +780,10 @@ func (s *Store) WorkRunInputSession(ctx context.Context, inputID string) (string
 		return "", store.ErrNotFound
 	}
 	return id, err
+}
+
+// Durable services belong to a workspace. Session IDs retain creation audit and
+// execution compatibility; active or linked sessions are not required to manage one.
+func (s *Store) ListWorkspaceServices(ctx context.Context, workspaceID string) ([]store.SessionWork, error) {
+	return listJSON[store.SessionWork](ctx, s.conn(), `SELECT payload_json FROM session_work WHERE json_extract(payload_json,'$.workspaceId')=? AND json_extract(payload_json,'$.kind')='process' AND json_extract(payload_json,'$.source')='foundry' ORDER BY id`, workspaceID)
 }

@@ -8,7 +8,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ### 概念
 
-- **来源**：设备的 Skill 根目录（默认 `~/.claude/skills`、`~/.codex/skills`，设备所有者可改）和该设备上每个 Workspace 自己的 `.agents/skills`、`.claude/skills`、`.codex/skills`。Workspace 里的是**草稿**：Agent（例如用 `skill-creator`）在那里新建或修改，人再从 Foundry 发布进库；会话从不直接读这些目录。
+- **来源**：设备的 Skill 根目录（默认 `~/.claude/skills`、`~/.codex/skills`，设备所有者可改）和该设备上每个 Workspace 自己的 `.agents/skills`、`.claude/skills`、`.codex/skills`。Workspace 里的是**草稿**：Agent（例如用 `skill-creator`）在那里新建或修改，经 Workspace 开关与设备能力协商启用后，Worker 将草稿及可解析依赖固定为受管快照用于当前执行。正式发布进库仍是独立动作。草稿与锁定版本试验的实施/准出状态见[接续记录](session-isolation-drafts-20261019.md)。
 - **库条目与版本**：库里每个 Skill 有若干不可变的 zip 版本（revision），压缩后上限 64 MiB。内容不变不产生新版本。
 - **仓库跟随**：库也可以跟随一个 git 仓库或 npm 包（`npm:<name>`），两种模式：`pick`（挑选其中若干 Skill）与 `bundle`（整个仓库作为一个单元）。都跟随最新 release tag / npm `latest` / 默认分支（或指定的分支、tag），变了的 Skill 才得到新版本；可回滚并暂停，再恢复；上游删除的 Skill 保留在库里并标记。
 - **Workspace 选用**：Workspace 选库条目和 bundle，可把某个条目固定到某个版本；未固定的跟最新版本。
@@ -56,7 +56,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ## 后续
 
-- **待实施方案：** [Workspace 草稿试用、隔离补全与启动准备重构](session-isolation-design.md)。让同 Workspace 的会话发现和试用草稿，按执行快照测试后独立发布；同时补齐缓存内容复核、精确挂载、creator 对照试验和原生子 Agent 验收。当前正文描述的“先发布再选用”仍是现状。
+- **已实现并自验：** [Workspace 草稿试用、隔离补全与启动准备](session-isolation-design.md)。已支持受管草稿快照、刷新、固定版本 include/exclude/previous 试验，以及缓存内容复核、精确挂载和共享启动准备。正式发布仍是独立动作；原生子 Agent 的 Skill 隔离尚未独立验证，因此试验使用 Foundry 独立会话。完整范围与平台局限见 [DEV-006/007 交付记录](devlog/DEV-006-007-isolation-drafts.md)；准出与源码合入见 [DEV-025](devlog/DEV-025-release-closure.md)。
 - **下一步：** 从 Foundry 安装 Skill 缺失的程序，沿用 bundle 工具的安装路径（按设备、人点击、https 与校验）。
 - **下一步：** 私有仓库：让 Server 也能读需要凭据的来源，不依赖某台设备在线；凭据按[安全边界](security.md)的 sealed secret 规则保存。
 - **探索：** 自动提炼与推荐 Skill：从会话中提炼可复用的方法成为 Workspace 草稿，或按 Workspace 推荐库中已有的 Skill；产物仍经人发布进库。

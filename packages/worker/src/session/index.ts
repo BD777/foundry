@@ -22,6 +22,8 @@ import { claudeHarness } from "./claude.js";
 import { codexHarness } from "./codex.js";
 import type { HarnessAdapter } from "./harness.js";
 import { sessionPolicy } from "./policy.js";
+import { withNativeSourceOverrides } from "../native-runtime-paths.js";
+import { prepareExecution } from "./preparation/index.js";
 import {
   ensureFreshClaudeLogin,
   keepSandboxCredentialsCurrent,
@@ -50,6 +52,8 @@ const harnesses: Record<SessionSpec["harness"], HarnessAdapter> = {
 
 /** Provider connection, auth and model fields; never custom tool configuration. */
 const providerEnvironmentKeys = [
+  "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_BASE_URL",
@@ -71,10 +75,10 @@ async function runUnlocked(
   spec: SessionSpec,
   canceled: AbortSignal,
 ): Promise<SessionResult> {
-  const profile = configuredAgentProfiles("").find(
+  const configured = configuredAgentProfiles("").find(
     (p) => profileID(p) === spec.profileId && p.runtime === spec.harness,
   );
-  if (!profile || profile.command)
+  if (!configured || configured.command)
     throw new Error("isolated_verifier_profile_unavailable");
   const policy = sessionPolicy(Boolean(spec.workspace));
   const home = resolve(spec.directory, "isolated-home");
@@ -85,33 +89,68 @@ async function runUnlocked(
   const temp = resolve(home, "tmp");
   mkdirSync(temp, { recursive: true, mode: 0o700 });
   const activity: string[] = [];
-  const env: Record<string, string> = {
-    PATH: process.env.PATH ?? "/usr/bin:/bin",
-    HOME: home,
-    TMPDIR: temp,
-    TMP: temp,
-    TEMP: temp,
-    CLAUDE_CODE_TMPDIR: temp,
-    LANG: "C.UTF-8",
-  };
-  for (const [key, value] of Object.entries(profileRuntimeEnvironment(profile)))
-    if (providerEnvironmentKeys.includes(key)) env[key] = value;
-  // The harness gets the device's access token only; the device renews its
-  // own Claude login, and the copy follows it (provider-credentials.ts).
-  const deviceClaudeLogin =
-    spec.harness === "claude" && profile.connectionType === "local_login";
-  if (deviceClaudeLogin) await ensureFreshClaudeLogin();
-  const stopCredentials = keepSandboxCredentialsCurrent(
-    sandboxCredentialCopies(
-      spec.harness === "claude"
-        ? { CLAUDE_CONFIG_DIR: resolve(home, ".claude") }
-        : { CODEX_HOME: resolve(home, "codex") },
-    ),
-    { renewClaude: deviceClaudeLogin ? undefined : async () => undefined },
-  );
-  const timeout = new AbortController();
-  const timer = setTimeout(() => timeout.abort(), policy.timeoutMs);
+  const execution = await prepareExecution({
+    purpose: "independent_judge",
+    signal: canceled,
+    ownerId: spec.directory,
+    workspacePath: spec.workspace?.path ?? home,
+    profile: configured,
+    model: spec.model,
+    environment: (profile) => {
+      const env: Record<string, string> = {
+        PATH: process.env.PATH ?? "/usr/bin:/bin",
+        HOME: home,
+        FOUNDRY_EXECUTION_SESSION_ROOT: resolve(home, "sessions"),
+        CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+        TMPDIR: temp,
+        TMP: temp,
+        TEMP: temp,
+        CLAUDE_CODE_TMPDIR: temp,
+        LANG: "C.UTF-8",
+      };
+      for (const [key, value] of Object.entries(
+        profileRuntimeEnvironment(profile),
+      ))
+        if (providerEnvironmentKeys.includes(key)) env[key] = value;
+      return env;
+    },
+  });
+  let stopCredentials = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const profile = execution.native.profile;
+    const env = Object.fromEntries(
+      Object.entries(execution.native.env).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+    // The harness gets the device's access token only; the device renews its
+    // own Claude login, and the copy follows it (provider-credentials.ts).
+    const deviceClaudeLogin =
+      spec.harness === "claude" && profile.connectionType === "local_login";
+    if (deviceClaudeLogin)
+      await ensureFreshClaudeLogin({
+        env: withNativeSourceOverrides(process.env, profile.env),
+      });
+    stopCredentials = keepSandboxCredentialsCurrent(
+      sandboxCredentialCopies(
+        spec.harness === "claude"
+          ? { CLAUDE_CONFIG_DIR: resolve(home, ".claude") }
+          : { CODEX_HOME: resolve(home, "codex") },
+        profile,
+      ),
+      {
+        renewClaude: deviceClaudeLogin
+          ? () =>
+              ensureFreshClaudeLogin({
+                env: withNativeSourceOverrides(process.env, profile.env),
+              })
+          : async () => undefined,
+      },
+    );
+    const timeout = new AbortController();
+    timer = setTimeout(() => timeout.abort(), policy.timeoutMs);
+    canceled.throwIfAborted();
     const result = await harnesses[spec.harness].run({
       spec,
       policy,
@@ -134,6 +173,7 @@ async function runUnlocked(
   } finally {
     clearTimeout(timer);
     stopCredentials();
+    await execution.dispose();
   }
 }
 

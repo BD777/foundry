@@ -1,3 +1,4 @@
+import { readClaudeCredentialSource } from "./native-credential-source.js";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -11,7 +12,6 @@ import {
   resolveCodexCommand,
 } from "./native-cli.js";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
-import { claudeConfigDir } from "./native-homes.js";
 import { claudeAccount, codexAccount } from "./native-account.js";
 
 // `claude auth status` reports an account login as "claude.ai" (current CLIs)
@@ -54,17 +54,18 @@ export interface ClaudeStoredLogin {
 }
 
 /**
- * The device's claude.ai login as the credentials file describes it: expiry
- * and plan only, never a token. Undefined where there is no such file (e.g.
- * macOS, which keeps the login in the keychain).
+ * The selected native login describes expiry and plan only, never a token.
+ * Explicit directories inspect fixtures/files; the default also reads Keychain.
  */
 export function claudeStoredLogin(
-  configDir: string = claudeConfigDir(),
+  configDir?: string,
 ): ClaudeStoredLogin | undefined {
   let oauth: Record<string, unknown> | undefined;
   try {
     const parsed: unknown = JSON.parse(
-      readFileSync(resolve(configDir, ".credentials.json"), "utf8"),
+      configDir === undefined
+        ? (readClaudeCredentialSource()?.text ?? "null")
+        : readFileSync(resolve(configDir, ".credentials.json"), "utf8"),
     );
     const value =
       parsed && typeof parsed === "object"

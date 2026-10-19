@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -144,6 +145,15 @@ func TestDaemonWebSocketHelloMustNameCredentialDevice(t *testing.T) {
 	credential := pairTestDevice(t, server, "dev_ws_laptop", "machine-ws-laptop")
 	testServer := httptest.NewServer(server.Routes())
 	defer testServer.Close()
+	// Hijacked WebSocket handlers outlive httptest.Server.Close. Drain their
+	// final presence writes before the store and its temp directory are removed.
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown daemon handlers: %v", err)
+		}
+	}()
 	headers := http.Header{}
 	headers.Set(deviceCredentialHeader, credential)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(testServer.URL, "http")+"/api/daemon/ws", headers)

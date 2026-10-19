@@ -1,3 +1,4 @@
+import { nativeCli } from "../native-cli.js";
 import { appendFileSync } from "node:fs";
 import type { UUID } from "node:crypto";
 import { claudeProcessStartedLabel } from "@bd777/foundry-protocol";
@@ -18,12 +19,15 @@ import {
 } from "../session-state.js";
 import { sessionTimers } from "../session-timers.js";
 import {
-  managedWorkEnabled,
   workContext,
   sessionWork,
+  managedWorkEnabled,
+  recordWorkToolStarting,
+  recordWorkToolCompleted,
 } from "../session-work/supervisor.js";
 import {
   cleanupActiveClaudeRuntimes,
+  claudeRuntimeIsBusy,
   closeActiveClaudeRuntime,
   closeOtherClaudeWriters,
   logClaudeRuntime,
@@ -63,11 +67,18 @@ export async function acquireClaudeRuntime(
       held.nativeSessionId === run.requestedNativeSessionId)
       ? held
       : undefined;
-  if (held && !reusable) closeActiveClaudeRuntime(held);
+  if (held && !reusable) {
+    if (claudeRuntimeIsBusy(held))
+      throw new Error(
+        "The native runtime still has active work; wait before changing its session context.",
+      );
+    closeActiveClaudeRuntime(held);
+  }
   closeOtherClaudeWriters(
     run.session.id,
     run.requestedNativeSessionId,
     reusable,
+    { protectActiveWork: true },
   );
   if (reusable) {
     await reuseClaudeRuntime(run, reusable);
@@ -81,6 +92,7 @@ async function startClaudeRuntime(
 ): Promise<AcquiredClaudeRuntime> {
   const options = claudeProcessOptions(run);
   const runtime: ActiveClaudeRuntime = {
+    releasePreparation: run.plan?.execution?.retain(),
     closed: false,
     foundrySessionId: run.session.id,
     input: new AsyncInputQueue<unknown>(),
@@ -93,12 +105,17 @@ async function startClaudeRuntime(
   attachClaudeProcessOutput(run, runtime, options);
   activeClaudeRuntimes.set(run.runtimeKey, runtime);
   logClaudeRuntime("starting", runtime);
-  await run.emitSetup();
-  await run.emit(
-    claudeProcessStartedLabel,
-    `${claudeAgentSdkPackage} · ${run.command}`,
-  );
-  return { runtime, startOptions: options };
+  try {
+    await run.emitSetup();
+    await run.emit(
+      claudeProcessStartedLabel,
+      `${claudeAgentSdkPackage} · ${run.command}`,
+    );
+    return { runtime, startOptions: options };
+  } catch (error) {
+    closeActiveClaudeRuntime(runtime, error);
+    throw error;
+  }
 }
 
 /**
@@ -123,6 +140,13 @@ function installClaudeRuntimeObservers(
           runtime.foundrySessionId,
           runtime.nativeSessionId,
           tasks,
+        ),
+      timersObserved: (tasks) =>
+        sessionWork().observeTimers(
+          runtime.foundrySessionId,
+          tasks,
+          nativeCli("claude").version || "unknown",
+          runtime.nativeSessionId,
         ),
       timerTurnStarting: async () => {
         reportClaudeOwnTurn(runtime);
@@ -163,27 +187,10 @@ function installClaudeRuntimeObservers(
             async (input: unknown) => {
               const tool = (input as { tool_name?: string }).tool_name;
               if (tool === "Bash")
-                sessionWork().toolStarting(
+                recordWorkToolStarting(
                   runtime.foundrySessionId,
                   (input as { tool_use_id?: string }).tool_use_id || "",
                 );
-              if (
-                managedWorkEnabled() &&
-                [
-                  "CronCreate",
-                  "CronDelete",
-                  "CronList",
-                  "ScheduleWakeup",
-                ].includes(tool || "")
-              )
-                return {
-                  hookSpecificOutput: {
-                    hookEventName: "PreToolUse",
-                    permissionDecision: "deny",
-                    permissionDecisionReason:
-                      "Use Foundry create_scheduled_work so the user can inspect, pause and stop it.",
-                  },
-                };
               return {
                 hookSpecificOutput: {
                   hookEventName: "PreToolUse",
@@ -198,7 +205,7 @@ function installClaudeRuntimeObservers(
         {
           hooks: [
             async (input: unknown) => {
-              sessionWork().toolCompleted(
+              recordWorkToolCompleted(
                 (input as { tool_use_id?: string }).tool_use_id || "",
               );
               return {
@@ -215,7 +222,7 @@ function installClaudeRuntimeObservers(
         {
           hooks: [
             async (input: unknown) => {
-              sessionWork().toolCompleted(
+              recordWorkToolCompleted(
                 (input as { tool_use_id?: string }).tool_use_id || "",
               );
               return undefined;
@@ -280,6 +287,11 @@ function attachClaudeProcessOutput(
     ) => {
       const child = spawnAgent(spawnOptions);
       runtime.pid = child.pid;
+      const releasePreparation = runtime.releasePreparation;
+      runtime.releasePreparation = undefined;
+      child.once("close", () => {
+        void releasePreparation?.().catch(() => undefined);
+      });
       logClaudeRuntime("process started", runtime);
       return child;
     };

@@ -134,3 +134,58 @@ test("a timer turn Claude starts on its own gets a fresh Foundry token", async (
     assert.fail("no mint"),
   );
 });
+
+test("immutable settings remain until the last owner releases them, and startup cleanup leaves leased files alone", async () => {
+  const { acquireClaudeSettings } = await import("../dist/session-policy.js");
+  const first = acquireClaudeSettings("same-session", {
+    env: { ANTHROPIC_AUTH_TOKEN: "first" },
+  });
+  const held = acquireClaudeSettings("same-session", {
+    env: { ANTHROPIC_AUTH_TOKEN: "first" },
+  });
+  const changed = acquireClaudeSettings("same-session", {
+    env: { ANTHROPIC_AUTH_TOKEN: "second" },
+  });
+  assert.equal(first.path, held.path);
+  assert.notEqual(first.path, changed.path);
+  clearClaudeSettingsFiles();
+  first.release();
+  first.release();
+  assert.equal(existsSync(held.path), true);
+  assert.match(readFileSync(held.path, "utf8"), /first/);
+  assert.match(readFileSync(changed.path, "utf8"), /second/);
+  held.release();
+  assert.equal(existsSync(held.path), false);
+  changed.release();
+  assert.equal(existsSync(changed.path), false);
+});
+
+test("a configuration refresh refuses to preempt a native owner with live background work", async () => {
+  const { activeClaudeRuntimes } = await import("../dist/session-state.js");
+  const { closeOtherClaudeWriters } =
+    await import("../dist/runner/active-runtimes.js");
+  const runtime = {
+    key: "busy-config-owner",
+    foundrySessionId: "session-busy-config",
+    nativeSessionId: "native-busy-config",
+    closed: false,
+    background: { hasRunning: () => true },
+  };
+  activeClaudeRuntimes.set(runtime.key, runtime);
+  try {
+    assert.throws(
+      () =>
+        closeOtherClaudeWriters(
+          runtime.foundrySessionId,
+          runtime.nativeSessionId,
+          undefined,
+          { protectActiveWork: true },
+        ),
+      /active work/,
+    );
+    assert.equal(runtime.closed, false);
+    assert.equal(activeClaudeRuntimes.get(runtime.key), runtime);
+  } finally {
+    activeClaudeRuntimes.delete(runtime.key);
+  }
+});

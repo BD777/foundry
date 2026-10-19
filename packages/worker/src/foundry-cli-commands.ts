@@ -92,11 +92,18 @@ export const foundryCommands: Record<
   work: {
     list: {
       tool: "list_session_work",
-      flags: { "--session": flag("sessionId") },
+      flags: {
+        "--session": flag("sessionId"),
+        "--workspace": flag("workspaceId"),
+      },
     },
     show: {
       tool: "get_session_work",
-      flags: { "--session": flag("sessionId"), "--id": flag("id") },
+      flags: {
+        "--session": flag("sessionId"),
+        "--workspace": flag("workspaceId"),
+        "--id": flag("id"),
+      },
     },
     control: {
       tool: "control_session_work",
@@ -105,6 +112,8 @@ export const foundryCommands: Record<
         "--id": flag("id"),
         "--action": flag("action"),
         "--revision": flag("expectedRevision", "number"),
+        "--reference-revision": flag("expectedReferenceRevision", "number"),
+        "--related-session": flag("relatedSessionId"),
         "--key": flag("idempotencyKey"),
       },
     },
@@ -282,6 +291,7 @@ export const foundryCommands: Record<
     },
   },
   workspace: {
+    "refresh-skills": { tool: "refresh_workspace_skills", flags: {} },
     list: { tool: "list_workspaces", flags: {} },
     find: {
       tool: "find_workspace",

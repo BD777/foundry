@@ -1,3 +1,4 @@
+import { nativeSourcePaths } from "./native-runtime-paths.js";
 /**
  * Discovery of agent profiles the user configured outside Foundry: Claude
  * Code's settings files, Codex's `config.toml`, and the endpoint variables the
@@ -22,8 +23,16 @@ export interface DiscoveredProfile extends AgentProfileLocalConfig {
 // move them (native-homes.ts).
 function claudeSettingsPaths(env: NodeJS.ProcessEnv): string[] {
   return [
-    resolve(claudeConfigDir(env), "settings.json"),
-    resolve(claudeConfigDir(env), "settings.local.json"),
+    resolve(
+      nativeSourcePaths("claude", env).configurationSourceHome ??
+        claudeConfigDir(env),
+      "settings.json",
+    ),
+    resolve(
+      nativeSourcePaths("claude", env).configurationSourceHome ??
+        claudeConfigDir(env),
+      "settings.local.json",
+    ),
   ];
 }
 

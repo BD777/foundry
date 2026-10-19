@@ -88,6 +88,16 @@ func (s *Server) sessionWorkList(ctx context.Context, session store.AgentSession
 			}
 			owner, readErr := s.store.GetAgentSessionSummary(ctx, item.SessionID)
 			if readErr == nil && s.canReadSession(ctx, actorFromContext(ctx), owner) {
+				item.SharedSessionCount = len(item.RelatedSessionIDs)
+				refs := []string{}
+				for _, id := range item.RelatedSessionIDs {
+					related, err := s.store.GetAgentSessionSummary(ctx, id)
+					if err == nil && s.canReadSession(ctx, actorFromContext(ctx), related) {
+						refs = append(refs, id)
+						item.RelatedSessions = append(item.RelatedSessions, store.WorkSessionReference{ID: id, Title: related.Title, WorkspaceID: related.WorkspaceID})
+					}
+				}
+				item.RelatedSessionIDs = refs
 				visible = append(visible, item)
 			}
 		}
@@ -167,8 +177,14 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 	if input.IdempotencyKey == "" || len(input.IdempotencyKey) > 160 {
 		return store.WorkOperation{}, &statusError{http.StatusBadRequest, errors.New("idempotencyKey (at most 160 characters) required")}
 	}
-	if !slices.Contains([]string{"pause", "resume", "stop", "remove", "run", "adopt", "stop_all", "pause_all"}, input.Action) {
+	if !slices.Contains([]string{"pause", "resume", "stop", "remove", "run", "adopt", "stop_all", "pause_all", "link", "unlink"}, input.Action) {
 		return store.WorkOperation{}, &statusError{http.StatusBadRequest, errors.New("unknown work action")}
+	}
+	if input.Action == "link" || input.Action == "unlink" {
+		related, err := s.store.GetAgentSessionSummary(ctx, input.RelatedSessionID)
+		if err != nil || related.WorkspaceID != session.WorkspaceID || !s.canControlSession(ctx, actorFromContext(ctx), related) {
+			return store.WorkOperation{}, &statusError{http.StatusForbidden, errors.New("you cannot associate this session with a service")}
+		}
 	}
 	list, err := s.sessionWorkList(ctx, session)
 	if err != nil {
@@ -180,11 +196,20 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 		return store.WorkOperation{}, err
 	}
 	for _, item := range list.Items {
+		if input.Action == "stop_all" || input.Action == "pause_all" {
+			action := "stop"
+			if input.Action == "pause_all" {
+				action = "pause"
+			}
+			if len(item.RelatedSessionIDs) > 0 || !slices.Contains(item.AllowedActions, action) {
+				continue
+			}
+		}
 		if input.Action != "stop_all" && input.Action != "pause_all" && input.ID != "" && input.ID != item.ID {
 			continue
 		}
 		owner, readErr := s.store.GetAgentSessionSummary(ctx, item.SessionID)
-		if readErr != nil || !s.canControlSession(ctx, actorFromContext(ctx), owner) {
+		if readErr != nil || !s.canControlWorkSource(ctx, actorFromContext(ctx), item, owner) {
 			return store.WorkOperation{}, &statusError{http.StatusForbidden, errors.New("you cannot control a descendant session's work")}
 		}
 	}
@@ -197,6 +222,16 @@ func (s *Server) controlWork(ctx context.Context, session store.AgentSession, in
 	s.workAudit(ctx, session, "Work control requested", op)
 	return op, nil
 }
+func (s *Server) canControlWorkSource(ctx context.Context, actor Actor, item store.SessionWork, owner store.AgentSession) bool {
+	if item.Source == "foundry" && item.Kind == "process" {
+		scope, err := s.contextScope(ctx, actor)
+		if err == nil && scope.issueID == "" && scope.can(item.WorkspaceID, store.WorkspaceRoleMember) {
+			return true
+		}
+	}
+	return s.canControlSession(ctx, actor, owner)
+}
+
 func (s *Server) workAudit(ctx context.Context, session store.AgentSession, label string, value any) {
 	raw, _ := json.Marshal(value)
 	event := store.AgentSessionEvent{ID: fmt.Sprintf("evt_work_%d", time.Now().UnixNano()), SessionID: session.ID, At: time.Now().UTC().Format(time.RFC3339Nano), Label: label, Detail: string(raw), Level: "info"}
@@ -383,6 +418,11 @@ func (s *Server) handleDeviceWork(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	list, err := backing.ListSessionWork(ctx, "", deviceID)
+	if err == nil && r.Header.Get("X-Foundry-Native-Work") != "1" {
+		// Legacy reconcilers auto-adopt every Claude timer, including observed
+		// ones. Do not hand new native definitions to that executor.
+		list.Items = slices.DeleteFunc(list.Items, func(item store.SessionWork) bool { return item.Native != nil && item.Kind == "schedule" })
+	}
 	if err == nil {
 		seen := map[string]bool{}
 		for _, root := range append(list.StoppedThreads, list.ScopeIDs...) {

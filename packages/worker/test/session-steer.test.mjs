@@ -185,7 +185,7 @@ test("a late steer of a message the session took as an input of its own does not
   );
 });
 
-test("one process writes a session: a newer one under another key replaces it and ends its open turn", async () => {
+test("configuration changes wait for a live owner while steering still reaches that owner", async () => {
   const session = chatSession();
   const cwd = join(root, `ws-${randomUUID()}`);
   const first = await openTurn(session, { cwd });
@@ -193,13 +193,26 @@ test("one process writes a session: a newer one under another key replaces it an
     (runtime) => runtime.foundrySessionId === session.id,
   );
   assert.ok(earlier, "the first process is registered");
-  const firstEnded = assert.rejects(
-    first.finished,
-    /newer Claude process took over/,
+  await assert.rejects(
+    runClaudeWorkspaceSession(
+      cwd,
+      {
+        ...session,
+        nativeSessionId: "steer-session",
+        input: { id: randomUUID(), prompt: "changed configuration" },
+      },
+      { ...profile, model: "opus" },
+      async () => {},
+      async () => {},
+      () => {},
+    ),
+    /active work/,
   );
+  assert.equal(earlier.closed, false);
+  await steerActiveSession(session.id, "Finish current work", []);
+  assert.equal((await first.finished).response, "green");
 
-  // The same session continues on another model: another runtime key, the
-  // same native session.
+  // After the old turn finishes, another model can safely resume its thread.
   const second = await openTurn(
     {
       ...session,
@@ -208,7 +221,6 @@ test("one process writes a session: a newer one under another key replaces it an
     },
     { cwd, runtime: { ...profile, model: "opus" } },
   );
-  await firstEnded;
   const writers = [...activeClaudeRuntimes.values()].filter(
     (runtime) => runtime.foundrySessionId === session.id,
   );
@@ -299,6 +311,7 @@ test("Codex terminal failure closes its producer and releases its writer before 
     await import("../dist/runner/codex-stream.js");
   for (const cleanupFails of [false, true]) {
     let writerHeld = true;
+    const notices = [];
     const thread = {
       runStreamed: async () => ({
         events: (async function* () {
@@ -317,7 +330,9 @@ test("Codex terminal failure closes its producer and releases its writer before 
     await assert.rejects(
       runCodexStreamedTurn(
         {
-          emit: async () => {},
+          emit: async (...event) => {
+            notices.push(event);
+          },
           eventsPath: join(root, `failed-${cleanupFails}.jsonl`),
           nativeSessionId: "",
           files: { recordToolWrite: async () => {} },
@@ -333,5 +348,41 @@ test("Codex terminal failure closes its producer and releases its writer before 
       false,
       "failed turn left its native writer behind",
     );
+    assert.equal(
+      notices.some(
+        (event) => event[0] === "Notice" && event[1].includes("cleanup failed"),
+      ),
+      cleanupFails,
+    );
   }
+});
+
+test("Codex cannot report success when closing its producer fails", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        try {
+          yield { type: "turn.completed", usage: {} };
+        } finally {
+          throw new Error("writer release unconfirmed");
+        }
+      })(),
+    }),
+  };
+  await assert.rejects(
+    runCodexStreamedTurn(
+      {
+        emit: async () => {},
+        eventsPath: join(root, "failed-close.jsonl"),
+        files: { recordToolWrite: async () => {} },
+        context: { read: async () => [], found: false },
+      },
+      thread,
+      "test",
+      `sess_${randomUUID()}`,
+    ),
+    /writer release unconfirmed/,
+  );
 });

@@ -62,6 +62,7 @@ export async function runDispatchedIssue(
       sessionToken: payload.sessionToken ?? "",
       workspaceID: session.workspaceId,
     },
+    session.workspaceDraftSkills,
   );
   await syncReviews(serverURL, workspacePath);
 }

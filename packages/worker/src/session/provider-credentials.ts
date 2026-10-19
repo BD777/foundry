@@ -1,5 +1,11 @@
+import { readClaudeCredentialSource } from "../native-credential-source.js";
+import {
+  nativeSourcePaths,
+  withNativeSourceOverrides,
+} from "../native-runtime-paths.js";
+import type { AgentProfileLocalConfig } from "../profiles.js";
 import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
-import { isolatedClaudeEnvironment } from "../runtime-isolation.js";
+import { prepareNativeOperation } from "../native-operation.js";
 import { nativeLoginEnvironment } from "../native-login-environment.js";
 import {
   accessSync,
@@ -8,9 +14,13 @@ import {
   readFileSync,
   rmSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { claudeConfigDir, codexHome } from "../native-homes.js";
+import {
+  claudeConfigDir,
+  claudeGlobalConfigDir,
+  codexHome,
+} from "../native-homes.js";
 import { writeFileAtomic } from "../storage.js";
 import { resolveClaudeCommand } from "../native-cli.js";
 
@@ -32,14 +42,15 @@ interface CredentialCopy {
   sandbox: string;
   /** The sandbox's version of the device's file, or undefined for none. */
   project: (device: string) => string | undefined;
+  read?: () => string | undefined;
 }
 
-function deviceClaudeCredentials(): string {
-  return resolve(claudeConfigDir(), ".credentials.json");
+function deviceClaudeCredentials(env = process.env): string {
+  return resolve(claudeConfigDir(env), ".credentials.json");
 }
 
-function deviceCodexAuth(): string {
-  return resolve(codexHome(), "auth.json");
+function deviceCodexAuth(env = process.env): string {
+  return resolve(codexHome(env), "auth.json");
 }
 
 function parse(text: string): Record<string, unknown> | undefined {
@@ -87,23 +98,42 @@ export function sandboxCodexAuth(device: string): string | undefined {
 /** The sandbox's copies of the device's provider logins, by its environment. */
 export function sandboxCredentialCopies(
   env: NodeJS.ProcessEnv,
+  profile?: AgentProfileLocalConfig,
 ): CredentialCopy[] {
+  if (profile?.command) return [];
+  const sourceEnv = withNativeSourceOverrides(process.env, profile?.env);
+  const claudeSource = deviceClaudeCredentials(sourceEnv);
+  const codexSource = deviceCodexAuth(sourceEnv);
   const copies: CredentialCopy[] = [];
   const claude = env.CLAUDE_CONFIG_DIR
     ? resolve(env.CLAUDE_CONFIG_DIR, ".credentials.json")
     : undefined;
-  if (claude && claude !== deviceClaudeCredentials())
+  if (
+    claude &&
+    claude !== claudeSource &&
+    (!profile ||
+      (profile.runtime === "claude" &&
+        profile.connectionType === "local_login"))
+  )
     copies.push({
-      device: deviceClaudeCredentials(),
+      device: claudeSource,
       sandbox: claude,
       project: sandboxClaudeCredentials,
+      read: () => readClaudeCredentialSource(sourceEnv)?.text,
     });
   const codex = env.CODEX_HOME
     ? resolve(env.CODEX_HOME, "auth.json")
     : undefined;
-  if (codex && codex !== deviceCodexAuth())
+  if (
+    codex &&
+    codex !== codexSource &&
+    (!profile ||
+      (profile.runtime === "codex" &&
+        (profile.connectionType === "local_login" ||
+          profile.codexProviderConfig?.requires_openai_auth === true)))
+  )
     copies.push({
-      device: deviceCodexAuth(),
+      device: codexSource,
       sandbox: codex,
       project: sandboxCodexAuth,
     });
@@ -125,7 +155,7 @@ function readText(path: string): string | undefined {
  */
 export function writeSandboxCredentials(copies: CredentialCopy[]): void {
   for (const copy of copies) {
-    const device = readText(copy.device);
+    const device = copy.read ? copy.read() : readText(copy.device);
     const projected = device === undefined ? undefined : copy.project(device);
     if (projected === undefined) {
       rmSync(copy.sandbox, { force: true });
@@ -140,8 +170,8 @@ export function writeSandboxCredentials(copies: CredentialCopy[]): void {
 }
 
 /** When the device's claude.ai access token expires, if it can be renewed. */
-export function claudeLoginExpiry(): number | undefined {
-  const text = readText(deviceClaudeCredentials());
+export function claudeLoginExpiry(env = process.env): number | undefined {
+  const text = readClaudeCredentialSource(env)?.text;
   const oauth = text ? parse(text)?.claudeAiOauth : undefined;
   if (!oauth || typeof oauth !== "object") return undefined;
   const { refreshToken, expiresAt } = oauth as Record<string, unknown>;
@@ -152,9 +182,9 @@ export function claudeLoginExpiry(): number | undefined {
     : undefined;
 }
 
-let renewal: Promise<RenewalOutcome> | undefined;
+const renewals = new Map<string, Promise<RenewalOutcome>>();
 /** The expiry a renewal was last tried for, and when: it is tried once. */
-let triedFor: { expiry: number; at: number } | undefined;
+const attempted = new Map<string, { expiry: number; at: number }>();
 
 type RenewalOutcome = "fresh" | "renewed" | "not_renewed" | "no_login";
 
@@ -168,21 +198,35 @@ type RenewalOutcome = "fresh" | "renewed" | "not_renewed" | "no_login";
 export function ensureFreshClaudeLogin(
   options: Parameters<typeof renewClaudeLogin>[0] = {},
 ): Promise<RenewalOutcome> {
-  renewal ??= renewClaudeLogin(options).finally(() => {
-    renewal = undefined;
-  });
+  const source = options.expiry
+    ? deviceClaudeCredentials(options.env)
+    : (readClaudeCredentialSource(options.env)?.id ??
+      deviceClaudeCredentials(options.env));
+  let renewal = renewals.get(source);
+  if (!renewal) {
+    renewal = renewClaudeLogin(options, source).finally(() => {
+      renewals.delete(source);
+    });
+    renewals.set(source, renewal);
+  }
   return renewal;
 }
 
 async function renewClaudeLogin(
   options: {
+    env?: NodeJS.ProcessEnv;
     now?: () => number;
     expiry?: () => number | undefined;
     run?: (args: string[], cwd: string) => Promise<void>;
     writable?: () => boolean;
   } = {},
+  sourceKey?: string,
 ): Promise<RenewalOutcome> {
-  const expiry = (options.expiry ?? claudeLoginExpiry)();
+  const sourceEnv = options.env ?? process.env;
+  const readExpiry = options.expiry ?? (() => claudeLoginExpiry(sourceEnv));
+  const source = sourceKey ?? deviceClaudeCredentials(sourceEnv);
+  const triedFor = attempted.get(source);
+  const expiry = readExpiry();
   if (expiry === undefined) return "no_login";
   const now = options.now ?? Date.now;
   if (expiry - now() > claudeRefreshWindowMs) return "fresh";
@@ -192,24 +236,42 @@ async function renewClaudeLogin(
     now() - triedFor.at < claudeRefreshWindowMs
   )
     return "not_renewed";
-  if (!(options.writable ?? claudeLoginWritable)()) return "not_renewed";
-  triedFor = { expiry, at: now() };
+  if (!(options.writable ?? (() => claudeLoginWritable(sourceEnv)))())
+    return "not_renewed";
+  attempted.set(source, { expiry, at: now() });
   const cwd = mkdtempSync(join(tmpdir(), "foundry-claude-login-"));
   try {
-    await (options.run ?? runClaude)(["native-account-metadata"], cwd);
+    await (
+      options.run ??
+      ((args, directory) => runClaude(args, directory, sourceEnv))
+    )(["native-account-metadata"], cwd);
   } catch {
     // Reported below by the login it left.
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
-  const after = (options.expiry ?? claudeLoginExpiry)();
+  const after = readExpiry();
   return after !== undefined && after - now() > claudeRefreshWindowMs
     ? "renewed"
     : "not_renewed";
 }
 
-function claudeLoginWritable(): boolean {
-  const file = deviceClaudeCredentials();
+function claudeLoginWritable(env = process.env): boolean {
+  if (
+    process.platform === "darwin" &&
+    readClaudeCredentialSource(env)?.kind === "keychain"
+  ) {
+    try {
+      accessSync(
+        resolve(env.HOME || homedir(), "Library/Keychains"),
+        constants.W_OK,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const file = deviceClaudeCredentials(env);
   try {
     accessSync(dirname(file), constants.W_OK);
     accessSync(file, constants.W_OK);
@@ -220,8 +282,15 @@ function claudeLoginWritable(): boolean {
 }
 
 /** The device's login and nothing else: no Foundry, no other credential. */
-function claudeLoginEnvironment(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
+function claudeLoginEnvironment(
+  sourceEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const source = nativeSourcePaths("claude", sourceEnv);
+  const env: NodeJS.ProcessEnv = {
+    ...sourceEnv,
+    CLAUDE_CONFIG_DIR: source.configurationSourceHome,
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: source.credentialNamespace,
+  };
   for (const key of Object.keys(env))
     if (
       key.startsWith("FOUNDRY_") ||
@@ -236,10 +305,15 @@ function claudeLoginEnvironment(): NodeJS.ProcessEnv {
       ].includes(key)
     )
       delete env[key];
+  env.FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME = claudeGlobalConfigDir(sourceEnv);
   return env;
 }
 
-async function runClaude(_args: string[], cwd: string): Promise<void> {
+async function runClaude(
+  _args: string[],
+  cwd: string,
+  sourceEnv: NodeJS.ProcessEnv,
+): Promise<void> {
   const { query } = await loadClaudeSdk();
   let release!: () => void;
   const closed = new Promise<void>((resolve) => {
@@ -248,40 +322,56 @@ async function runClaude(_args: string[], cwd: string): Promise<void> {
   async function* noPrompt(): AsyncGenerator<never> {
     await closed;
   }
-  const env = isolatedClaudeEnvironment(
+  const operation = prepareNativeOperation(
     {
       runtime: "claude",
       id: "credential-maintenance",
       connectionType: "local_login",
     },
-    { ...claudeLoginEnvironment(), ...nativeLoginEnvironment("claude") },
-    claudeConfigDir(),
-  );
-  const session = query({
-    prompt: noPrompt(),
-    options: {
-      cwd,
-      env,
-      pathToClaudeCodeExecutable: resolveClaudeCommand(),
-      settingSources: [],
-      strictMcpConfig: true,
-      mcpServers: {},
-      tools: [],
-      skills: [],
-      plugins: [],
-      persistSession: false,
+    {
+      ...claudeLoginEnvironment(sourceEnv),
+      ...nativeLoginEnvironment("claude"),
     },
-  });
-  const timer = setTimeout(() => {
-    session.close();
-    release();
-  }, 30000);
+    claudeConfigDir(sourceEnv),
+  );
+  let session: ReturnType<typeof query> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    session = query({
+      prompt: noPrompt(),
+      options: {
+        cwd,
+        env: operation.env,
+        pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        settingSources: [],
+        strictMcpConfig: true,
+        mcpServers: {},
+        tools: [],
+        skills: [],
+        plugins: [],
+        persistSession: false,
+      },
+    });
+    timer = setTimeout(() => {
+      session?.close();
+      release();
+    }, 30000);
     await session.accountInfo();
+    const deadline = Date.now() + 25000;
+    while (Date.now() < deadline) {
+      const expiry = claudeLoginExpiry(sourceEnv);
+      if (expiry === undefined || expiry - Date.now() > claudeRefreshWindowMs)
+        break;
+      await new Promise((done) => setTimeout(done, 500));
+    }
   } finally {
     clearTimeout(timer);
-    session.close();
     release();
+    try {
+      await session?.dispose();
+    } finally {
+      operation.dispose();
+    }
   }
 }
 
@@ -301,17 +391,24 @@ export function keepSandboxCredentialsCurrent(
   if (copies.length === 0) return () => {};
   const renew = options.renewClaude ?? (() => ensureFreshClaudeLogin());
   let busy = false;
+  let stopped = false;
   const timer = setInterval(() => {
     if (busy) return;
     busy = true;
     void renew()
       .catch(() => undefined)
-      .then(() => writeSandboxCredentials(copies))
+      .then(() => {
+        if (!stopped) writeSandboxCredentials(copies);
+      })
       .catch(() => undefined)
       .finally(() => {
         busy = false;
       });
   }, options.intervalMs ?? 30_000);
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+    for (const copy of copies) rmSync(copy.sandbox, { force: true });
+  };
 }

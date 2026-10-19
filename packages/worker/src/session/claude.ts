@@ -22,6 +22,7 @@ export const claudeHarness: HarnessAdapter = {
     signal,
     note,
   }) {
+    signal.throwIfAborted();
     const model = spec.model || profile.model;
     for (const key of [
       "ANTHROPIC_MODEL",
@@ -34,7 +35,7 @@ export const claudeHarness: HarnessAdapter = {
     mkdirSync(config, { mode: 0o700 });
     // The device's access token only (provider-credentials.ts).
     writeSandboxCredentials(
-      sandboxCredentialCopies({ CLAUDE_CONFIG_DIR: config }),
+      sandboxCredentialCopies({ CLAUDE_CONFIG_DIR: config }, profile),
     );
     env.CLAUDE_CONFIG_DIR = config;
     const sdkName = "@anthropic-ai/claude-agent-sdk";
@@ -45,7 +46,9 @@ export const claudeHarness: HarnessAdapter = {
       }) => AsyncIterable<Record<string, unknown>>;
     };
     const abort = new AbortController();
-    signal.addEventListener("abort", () => abort.abort(), { once: true });
+    const onAbort = () => abort.abort(signal.reason);
+    signal.throwIfAborted();
+    signal.addEventListener("abort", onAbort, { once: true });
     const messages = async function* () {
       yield {
         type: "user",
@@ -178,6 +181,8 @@ export const claudeHarness: HarnessAdapter = {
       throw new Error(
         `agent_sdk_error: ${String(error)}${safe.length ? `; ${safe}` : ""}`,
       );
+    } finally {
+      signal.removeEventListener("abort", onAbort);
     }
     return { text, structured, reportedModel, sessionId };
   },

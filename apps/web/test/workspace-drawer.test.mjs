@@ -97,8 +97,8 @@ test("workspaces page groups folders by device; only Switch activates", async ()
         (row) => row.textContent.includes(name),
       );
     const switchFor = (name) =>
-      rowFor(name)?.querySelector(
-        "button:not(.fdy-location-workspace-details)",
+      [...rowFor(name).querySelectorAll("button")].find(
+        (button) => button.getAttribute("aria-label") === `Switch to ${name}`,
       );
     assert.ok(
       rowFor("Next project")?.querySelector(".fdy-location-workspace-details"),

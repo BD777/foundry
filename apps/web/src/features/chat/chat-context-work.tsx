@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bot, ChevronDown, ChevronRight, Clock, Terminal } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   isStandaloneWork,
@@ -7,6 +7,10 @@ import {
   type SessionWork,
   type WorkAction,
 } from "@bd777/foundry-protocol";
+import { WorkspaceServicesDialog } from "../../components/workspace/workspace-services";
+import { RowMenu } from "../../components/ui/row-menu";
+import { WorkStatusIcon } from "../../components/work/work-status-icon";
+import { chatHref, navigateToChat } from "../../lib/in-app-navigation";
 import { Button } from "../../components/ui/button";
 import { Alert } from "../../components/ui/alert";
 import type { SessionWorkController } from "./use-session-work";
@@ -31,7 +35,34 @@ function WorkRow({
 }) {
   const { t, i18n } = useTranslation("chat");
   const [expanded, setExpanded] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
   const pending = needsConfirmation(item);
+  const childSession =
+    item.kind === "agent" && item.source === "foundry" && item.sourceId;
+  const unassigned = item.management === "observed" && !item.native;
+  const waitingAgain =
+    hasFutureScheduledWork(item) &&
+    ["completed", "failed", "stopped"].includes(item.observation.status);
+  const status = unassigned
+    ? "unknown"
+    : pending
+      ? "pending"
+      : item.management === "managed" && item.desiredState === "paused"
+        ? "paused"
+        : item.management === "managed" && item.desiredState === "stopped"
+          ? "stopped"
+          : waitingAgain
+            ? "idle"
+            : item.observation.status;
+  const statusLabel = unassigned
+    ? t("work.unassignedStatus")
+    : status === "pending"
+      ? t("work.pending")
+      : status === "paused"
+        ? t("work.paused")
+        : waitingAgain
+          ? `${t("work.status.idle")} · ${t(`work.runStatus.${item.observation.status as "completed" | "failed" | "stopped"}`)}`
+          : t(`work.status.${item.observation.status}`);
   const scheduler = controller.list?.coverage.scheduler;
   const error =
     item.observation.error &&
@@ -44,7 +75,16 @@ function WorkRow({
         )
       : item.observation.error;
   const inspect = onInspect?.(item);
+  const sharedCount =
+    item.sharedSessionCount ?? item.relatedSessionIds?.length ?? 0;
+  const shared = sharedCount > 0;
   const actions = canControl ? workActions(item) : [];
+  if (
+    canControl &&
+    controller.sessionId &&
+    item.relatedSessionIds?.includes(controller.sessionId)
+  )
+    actions.push("unlink");
   const label = (action: WorkAction) =>
     (action === "resume" && item.kind === "process" && isFinishedWork(item)) ||
     (action === "run" && isFinishedWork(item))
@@ -65,8 +105,38 @@ function WorkRow({
     const state = states.find((state) => state === value) || "not_observed";
     return t(`work.coverageState.${state}`);
   };
-  const Icon =
-    item.kind === "schedule" ? Clock : item.kind === "agent" ? Bot : Terminal;
+  const kindLabel =
+    item.kind === "agent"
+      ? t(childSession ? "work.childSession" : "work.nativeAgent")
+      : t(
+          item.kind === "process" && item.source === "foundry"
+            ? "work.service"
+            : `work.kind.${item.kind}`,
+        );
+  const sourceLabel = childSession
+    ? t("work.childSessionSource")
+    : item.native
+      ? t("work.nativeSource", { source: t(`work.source.${item.source}`) })
+      : item.source === "claude" && item.kind === "schedule"
+        ? t("work.migratedSchedule")
+        : item.source === "foundry" && item.kind === "process"
+          ? t("work.serviceSource")
+          : t(`work.source.${item.source}`);
+  const rowCopy = (
+    <span className="fdy-chat-work-copy">
+      <strong>{item.title}</strong>{" "}
+      <span className="fdy-chat-work-source">
+        {sourceLabel}
+        {!childSession ? (
+          expanded ? (
+            <ChevronDown aria-hidden="true" size={12} />
+          ) : (
+            <ChevronRight aria-hidden="true" size={12} />
+          )
+        ) : null}
+      </span>
+    </span>
+  );
   const at = (value: string) =>
     new Date(value).toLocaleString(i18n.language, {
       month: "numeric",
@@ -77,43 +147,96 @@ function WorkRow({
     });
   return (
     <div className="fdy-chat-work-row" data-work-id={item.id}>
-      <Button
-        variant="ghost"
-        className="fdy-chat-context-row"
-        aria-expanded={expanded}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <Icon aria-hidden="true" size={16} />
-        <span className="fdy-chat-context-row-copy">
-          <strong>{item.title}</strong>
-          <em>
-            {t(`work.source.${item.source}`)} · {t(`work.kind.${item.kind}`)}
-          </em>
-        </span>
-        <span className="fdy-chat-context-status">
-          {item.management === "observed"
-            ? t("work.unassignedStatus")
-            : pending
-              ? t("work.pending")
-              : item.desiredState === "paused"
-                ? t("work.paused")
-                : item.desiredState === "stopped"
-                  ? t("work.stopped")
-                  : hasFutureScheduledWork(item) &&
-                      ["completed", "failed", "stopped"].includes(
-                        item.observation.status,
-                      )
-                    ? t(
-                        `work.runStatus.${item.observation.status as "completed" | "failed" | "stopped"}`,
-                      )
-                    : t(`work.status.${item.observation.status}`)}
-        </span>
-        {expanded ? (
-          <ChevronDown aria-hidden="true" size={14} />
+      <div className="fdy-chat-work-heading">
+        <WorkStatusIcon
+          kind={item.kind}
+          status={status}
+          label={`${kindLabel} · ${statusLabel}`}
+        />
+        {childSession ? (
+          <Button asChild variant="bare" className="fdy-chat-work-open">
+            <a
+              title={item.title}
+              href={chatHref(childSession, item.workspaceId)}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                navigateToChat(childSession, item.workspaceId);
+              }}
+            >
+              {rowCopy}
+            </a>
+          </Button>
         ) : (
-          <ChevronRight aria-hidden="true" size={14} />
+          <Button
+            variant="bare"
+            className="fdy-chat-work-open"
+            title={item.title}
+            aria-expanded={expanded}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {rowCopy}
+          </Button>
         )}
-      </Button>
+        <RowMenu
+          label={t("work.actionsFor", { title: item.title })}
+          disabled={Boolean(controller.busy)}
+          items={actions.map((action) => ({
+            key: action,
+            label: label(action),
+            onSelect: () => void controller.control(action, item),
+            ...(shared && ["stop", "pause", "resume"].includes(action)
+              ? {
+                  confirm: {
+                    title: t("work.sharedActionTitle", {
+                      action: label(action),
+                    }),
+                    body: t("work.sharedActionBody", {
+                      count: sharedCount + 1,
+                    }),
+                    action: label(action),
+                  },
+                }
+              : {}),
+          }))}
+        />
+      </div>
+      {item.kind === "process" && item.source === "foundry" ? (
+        <Button
+          size="sm"
+          variant="link"
+          className="fdy-chat-work-service-link"
+          onClick={() => setServicesOpen(true)}
+        >
+          {t("work.manageWorkspaceService")}
+        </Button>
+      ) : null}
+      {servicesOpen ? (
+        <WorkspaceServicesDialog
+          workspaceId={item.workspaceId}
+          canControl={canControl}
+          onClose={() => setServicesOpen(false)}
+        />
+      ) : null}
+      {shared ? (
+        <p className="fdy-chat-work-note">
+          {t("work.sharedService", { count: sharedCount + 1 })}
+          <Button
+            size="sm"
+            variant="link"
+            onClick={() => navigateToChat(item.sessionId, item.workspaceId)}
+          >
+            {t("work.serviceOwner")}
+          </Button>
+        </p>
+      ) : null}
       {item.observation.nextFireAt && item.desiredState === "enabled" ? (
         <p className="fdy-chat-work-note">
           {t("work.next", { time: at(item.observation.nextFireAt) })}
@@ -123,30 +246,8 @@ function WorkRow({
       item.observation.status === "running" ? (
         <p className="fdy-chat-work-note">{t("work.currentContinues")}</p>
       ) : null}
-      {item.management === "observed" ? (
+      {unassigned ? (
         <p className="fdy-chat-work-note">{t("work.unattributed")}</p>
-      ) : null}
-      {actions.length ? (
-        <div
-          className="fdy-chat-work-actions"
-          aria-busy={controller.busy === item.id}
-        >
-          {actions.map((action) => (
-            <Button
-              key={action}
-              size="sm"
-              variant="secondary"
-              aria-label={t("work.actionFor", {
-                action: label(action),
-                title: item.title,
-              })}
-              disabled={Boolean(controller.busy)}
-              onClick={() => void controller.control(action, item)}
-            >
-              {label(action)}
-            </Button>
-          ))}
-        </div>
       ) : null}
       {controller.busy === item.id ? (
         <p className="fdy-chat-work-note" role="status">
@@ -165,6 +266,8 @@ function WorkRow({
       ) : null}
       {expanded ? (
         <dl className="fdy-chat-work-details">
+          <dt>{t("work.taskTitle")}</dt>
+          <dd>{item.title}</dd>
           <dt>{t("work.created")}</dt>
           <dd>{at(item.createdAt)}</dd>
           <dt>{t("work.observed")}</dt>
@@ -199,6 +302,67 @@ function WorkRow({
               ),
             })}
           </dd>
+          {item.native ? (
+            <>
+              <dt>{t("work.nativeVersion")}</dt>
+              <dd>
+                {item.native.runtime} {item.native.version}
+              </dd>
+              <dt>{t("work.nativeDiscovery")}</dt>
+              <dd>{item.native.discovery}</dd>
+              {item.native.lastRun ? (
+                <>
+                  <dt>{t("work.nativeRun")}</dt>
+                  <dd>
+                    {t(`work.status.${item.native.lastRun.status}`)} ·{" "}
+                    {at(item.native.lastRun.startedAt)}
+                    {item.native.lastRun.endedAt
+                      ? ` → ${at(item.native.lastRun.endedAt)}`
+                      : ""}
+                  </dd>
+                </>
+              ) : null}
+              <dt>{t("work.nativeControls")}</dt>
+              <dd>
+                {(["stop", "pause", "resume"] as const)
+                  .map(
+                    (action) =>
+                      `${t(`work.action.${action}`)}: ${t(`work.capability.${item.native!.controls[action]}`)}`,
+                  )
+                  .join(" · ")}
+              </dd>
+              <dt>{t("work.nativeIdentity")}</dt>
+              <dd>
+                <code>{item.native.taskId}</code>
+              </dd>
+            </>
+          ) : null}
+          {item.relatedSessionIds?.length ? (
+            <>
+              <dt>{t("work.relatedSessions")}</dt>
+              <dd>
+                {(
+                  item.relatedSessions ??
+                  item.relatedSessionIds.map((id) => ({
+                    id,
+                    title: id,
+                    workspaceId: "",
+                  }))
+                ).map((ref) => (
+                  <Button
+                    key={ref.id}
+                    size="sm"
+                    variant="link"
+                    onClick={() =>
+                      navigateToChat(ref.id, ref.workspaceId || undefined)
+                    }
+                  >
+                    {ref.title}
+                  </Button>
+                ))}
+              </dd>
+            </>
+          ) : null}
           <dt>{t("work.identity")}</dt>
           <dd>
             <code>{item.id}</code>
@@ -239,7 +403,10 @@ export function SessionWorkSection({
   );
   const ended = items.filter(isFinishedWork);
   const stoppable = items.filter(
-    (item) => isCurrentWork(item) && workActions(item).includes("stop"),
+    (item) =>
+      isCurrentWork(item) &&
+      !(item.sharedSessionCount || item.relatedSessionIds?.length) &&
+      workActions(item).includes("stop"),
   );
   const knownWorkEnded = items.length > 0 && items.every(isFinishedWork);
   const pending = items.filter(needsConfirmation).length;
@@ -247,34 +414,35 @@ export function SessionWorkSection({
   const unresolvedOperation =
     lastOperation && lastOperation.state !== "verified";
   if (!items.length && !controller.error && !unresolvedOperation) return null;
-  const unassigned = items.filter((w) => w.management === "observed");
+  const unassigned = items.filter(
+    (w) => w.management === "observed" && !w.native,
+  );
   return (
     <section
       className="fdy-chat-context-section fdy-chat-work"
       aria-label={t("work.title")}
     >
-      {items.some((item) => !isFinishedWork(item)) ||
-      controller.error ||
-      (!items.length && unresolvedOperation) ? (
+      <div className="fdy-chat-work-header">
         <h3>{t("work.title")}</h3>
-      ) : null}
-      {canControl && stoppable.length > 1 ? (
-        <>
-          <div className="fdy-chat-work-actions">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={Boolean(controller.busy)}
-              onClick={() => void controller.control("stop_all")}
-            >
-              {controller.busy === "stop_all"
-                ? t("work.applying")
-                : t("work.stopAll", { count: stoppable.length })}
-            </Button>
-          </div>
-          <p className="fdy-chat-work-note">{t("work.stopAllScope")}</p>
-        </>
-      ) : null}
+        {canControl && stoppable.length > 1 ? (
+          <RowMenu
+            label={t("work.actions")}
+            disabled={Boolean(controller.busy)}
+            items={[
+              {
+                key: "stop_all",
+                label: t("work.stopAll", { count: stoppable.length }),
+                onSelect: () => void controller.control("stop_all"),
+                confirm: {
+                  title: t("work.stopAll", { count: stoppable.length }),
+                  body: t("work.stopAllScope"),
+                  action: t("work.action.stop"),
+                },
+              },
+            ]}
+          />
+        ) : null}
+      </div>
       {unresolvedOperation ? (
         <p className="fdy-chat-work-note" role="status">
           {knownWorkEnded &&
@@ -325,7 +493,9 @@ export function SessionWorkSection({
       {(["schedule", "process", "agent"] as const).map((kind) => {
         const group = items.filter(
           (w) =>
-            w.kind === kind && w.management === "managed" && !isFinishedWork(w),
+            w.kind === kind &&
+            (w.management === "managed" || Boolean(w.native)) &&
+            !isFinishedWork(w),
         );
         return group.length ? (
           <div key={kind} className="fdy-chat-work-group">
@@ -358,6 +528,7 @@ export function SessionWorkSection({
       ) : null}
       {ended.length ? (
         <FinishedFold
+          appearance="plain"
           label={t("work.history", { count: ended.length })}
           memoryKey={items[0] && `${items[0].threadId}:work-history`}
         >

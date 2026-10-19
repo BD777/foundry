@@ -197,3 +197,39 @@ test("the idle Codex code-mode sidecar is accepted but its tools are not", async
     false,
   );
 });
+
+test("legacy idle upgrade recognizes the Node Codex launcher without accepting arbitrary Node work", async () => {
+  const { legacyMembersAreIdleCodex } =
+    await import("../dist/execution-host/service.js");
+  const rows = {
+    11: {
+      parent: 10,
+      argv: [
+        "/bin/node",
+        "/managed/.bin/codex",
+        "app-server",
+        "--listen",
+        "stdio://",
+      ],
+    },
+    12: {
+      parent: 11,
+      argv: ["/managed/vendor/bin/codex", "app-server", "--listen", "stdio://"],
+    },
+    13: { parent: 12, argv: ["/managed/vendor/bin/codex-code-mode-host"] },
+    14: { parent: 13, argv: ["node", "build.js"] },
+  };
+  assert.equal(
+    legacyMembersAreIdleCodex(10, [10, 11, 12, 13], (pid) => rows[pid]),
+    true,
+  );
+  assert.equal(
+    legacyMembersAreIdleCodex(10, [10, 11, 12, 13, 14], (pid) => rows[pid]),
+    false,
+  );
+  rows[11].argv = ["node", "build.js", "app-server"];
+  assert.equal(
+    legacyMembersAreIdleCodex(10, [10, 11, 12, 13], (pid) => rows[pid]),
+    false,
+  );
+});

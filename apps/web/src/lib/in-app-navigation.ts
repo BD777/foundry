@@ -1,4 +1,4 @@
-import { navigateAppRoute } from "../app/navigation";
+import { navigateAppRoute, pathForAppRoute } from "../app/navigation";
 import type { AssistantSettingsSection } from "./assistant-settings-sections";
 import type { ConnectorType } from "./connector-types";
 
@@ -39,6 +39,14 @@ export function navigateToResources(deviceId = "", type = ""): void {
  */
 export function navigateToChat(sessionId: string, workspaceId?: string): void {
   navigateAppRoute({ selectedChatId: sessionId, view: "chats" }, workspaceId);
+}
+
+/** A real link for opening/copying a chat while ordinary clicks stay in-app. */
+export function chatHref(sessionId: string, workspaceId?: string): string {
+  const path = pathForAppRoute({ selectedChatId: sessionId, view: "chats" });
+  return workspaceId
+    ? `${path}?workspace=${encodeURIComponent(workspaceId)}`
+    : path;
 }
 
 /** Opens an Issue's page through the same contract. */

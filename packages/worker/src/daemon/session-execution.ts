@@ -1,4 +1,8 @@
 import {
+  combineWorkspaceDraftSkills,
+  withWorkspaceDraftSkills,
+} from "../workspace-skill-runtime.js";
+import {
   daemonMessageTypes,
   processLabels,
   type AgentSession,
@@ -24,6 +28,8 @@ import {
   forgetActiveSession,
   isAgentSessionCanceledError,
   takeQueuedSessionCancel,
+  registerActiveSessionCancelTarget,
+  AgentSessionCanceledError,
 } from "../session-control.js";
 import {
   createResponseStreamBatcher,
@@ -34,7 +40,7 @@ import {
   sessionEvent,
   writeAgentSessionCompletionMarker,
 } from "../session-helpers.js";
-import { isVerificationSession } from "../session-roles.js";
+import { isVerificationSession, isUtilitySession } from "../session-roles.js";
 import type {
   AgentSessionRunResult,
   OutOfBandSessionEvent,
@@ -43,7 +49,10 @@ import {
   runWorkspaceSession,
   type WorkspaceSandbox,
 } from "../session/index.js";
-import { materializeSessionSkills } from "../skill-materializer.js";
+import {
+  materializeSessionSkills,
+  type ManagedSkillRuntime,
+} from "../skill-materializer.js";
 import type { ReliableSessionTransport } from "../transport.js";
 import { verificationExecution } from "../verification-session.js";
 import { errorMessage } from "../utils.js";
@@ -267,11 +276,72 @@ export async function executeAgentSession(
     // Resolve the workspace-selected skills into a managed runtime tree before
     // the agent starts. An empty selection materializes an empty allowlist,
     // which the runner enforces as "expose nothing".
-    const managedSkills = await materializeSessionSkills(
-      session.skillRefs ?? [],
-      ambient?.serverURL ?? "",
-      workspacePath,
-    );
+    const preparing = new AbortController();
+    const stopPreparing = registerActiveSessionCancelTarget(session.id, {
+      provider: session.provider,
+      cancel: () => preparing.abort(new AgentSessionCanceledError()),
+    });
+    let managedSkills: ManagedSkillRuntime;
+    try {
+      if (takeQueuedSessionCancel(session.id, session.input?.id))
+        preparing.abort(new AgentSessionCanceledError());
+      await emit(
+        "Preparing skills",
+        `Loading ${session.skillRefs?.length ?? 0} verified Skill packages before agent startup.`,
+      );
+      managedSkills = await materializeSessionSkills(
+        session.skillRefs ?? [],
+        ambient?.serverURL ?? "",
+        workspacePath,
+        {
+          signal: preparing.signal,
+          onRetry: (message) =>
+            emit("Skill download retry", message, "warning"),
+        },
+      );
+    } finally {
+      stopPreparing();
+    }
+    if (
+      session.workspaceDraftSkills &&
+      !isVerificationSession(session) &&
+      !isUtilitySession(session)
+    ) {
+      managedSkills = await withWorkspaceDraftSkills(managedSkills, {
+        workspaceId: session.workspaceId,
+        executionRootId:
+          session.issueId && session.role !== "issue_clarification"
+            ? `issue:${session.issueId}`
+            : session.workspaceId,
+        workspacePath: execution.cwd,
+      });
+      await emit(
+        "Workspace draft skills",
+        JSON.stringify(managedSkills.draftSkills),
+      );
+    }
+    if (session.skillSelection) {
+      if (session.skillSelection.mode === "include")
+        managedSkills = await combineWorkspaceDraftSkills(
+          managedSkills,
+          session.skillSelection.drafts,
+          session.skillSelection.transfers,
+        );
+      managedSkills = {
+        ...managedSkills,
+        draftsEnabled: false,
+        excludedNames: session.skillSelection.excludedNames,
+      };
+      await emit(
+        "Skill trial inputs",
+        JSON.stringify({
+          ...session.skillSelection,
+          transfers: session.skillSelection.transfers?.map(
+            ({ id, digest }) => ({ id, digest }),
+          ),
+        }),
+      );
+    }
     if (managedSkills.skills.length > 0) {
       await emit(
         "Loaded skills",

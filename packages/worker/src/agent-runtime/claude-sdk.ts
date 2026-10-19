@@ -1,3 +1,4 @@
+import { claudeAgentSpawn } from "../agent-processes.js";
 /** One SDK entry point; every query pins the selected immutable SDK generation. */
 import { pathToFileURL } from "node:url";
 import { acquireRuntime } from "./maintenance.js";
@@ -16,13 +17,26 @@ export async function loadClaudeSdk(): Promise<any> {
       let iterated = false;
       let release: (() => void) | undefined;
       let query: any;
+      let released = false;
+      const finish = () => {
+        if (!released) {
+          released = true;
+          release?.();
+        }
+      };
+      const children: Promise<void>[] = [];
+      let disposing: Promise<void> | undefined;
+      const spawn =
+        input.options?.spawnClaudeCodeProcess ??
+        claudeAgentSpawn(input.options?.stderr, true)!;
+
       const ready = (async () => {
         release = await acquireRuntime(
           "claude",
           input.options?.abortController?.signal,
         );
         if (closed) {
-          release();
+          finish();
           throw new Error("Claude query closed before starting.");
         }
         try {
@@ -31,15 +45,50 @@ export async function loadClaudeSdk(): Promise<any> {
             options: {
               ...input.options,
               env: { ...input.options?.env, DISABLE_AUTOUPDATER: "1" },
+              spawnClaudeCodeProcess: (
+                options: Parameters<
+                  NonNullable<ReturnType<typeof claudeAgentSpawn>>
+                >[0],
+              ) => {
+                const child = spawn(options);
+                children.push(
+                  new Promise<void>((resolve) =>
+                    child.once("close", () => resolve()),
+                  ),
+                );
+                return child;
+              },
             },
           });
           return query;
         } catch (error) {
-          release();
+          finish();
           throw error;
         }
       })();
       void ready.catch(() => {});
+      const dispose = () => {
+        closed = true;
+        query?.close?.();
+        disposing ??= (async () => {
+          try {
+            const resolved = await ready;
+            resolved.close?.();
+            if (!iterated) {
+              try {
+                for await (const _ of resolved) {
+                }
+              } catch {}
+            }
+            await Promise.all(children);
+          } catch {
+          } finally {
+            finish();
+          }
+        })();
+        return disposing;
+      };
+
       return new Proxy(
         {},
         {
@@ -52,26 +101,15 @@ export async function loadClaudeSdk(): Promise<any> {
                   yield* await ready;
                 } finally {
                   query?.close?.();
-                  release?.();
+                  await Promise.all(children);
+                  finish();
                 }
               };
             if (key === "close")
               return () => {
-                closed = true;
-                query?.close?.();
-                // Releasing at close is safe only after the SDK stream has ended.
-                // Iteration's finally owns the lease; a metadata-only query drains below.
-                if (query && !iterated)
-                  void (async () => {
-                    try {
-                      for await (const _ of query) {
-                      }
-                    } catch {
-                    } finally {
-                      release?.();
-                    }
-                  })();
+                void dispose();
               };
+            if (key === "dispose") return dispose;
             return async (...args: any[]) => {
               const resolved = await ready;
               if (typeof resolved[key] !== "function")

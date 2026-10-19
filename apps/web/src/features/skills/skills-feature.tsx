@@ -1,3 +1,4 @@
+import { WorkspaceDrafts } from "./workspace-drafts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -162,6 +163,20 @@ export function SkillsFeature({
         builtinSkills={builtinSkills ?? []}
         providerHealth={providerHealth ?? []}
       />
+
+      {workspaceDeviceId ? (
+        <WorkspaceDrafts
+          workspaceId={workspaceId}
+          readOnly={!!readOnlyReason}
+          online={workspaceDevice?.status === "connected"}
+          canTrial={
+            !readOnlyReason ||
+            ["member", "maintainer", "owner"].includes(
+              workspaces?.find((w) => w.id === workspaceId)?.accessRole ?? "",
+            )
+          }
+        />
+      ) : null}
 
       <WorkspaceBundles
         bundles={skillBundles ?? []}

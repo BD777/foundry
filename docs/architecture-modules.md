@@ -609,3 +609,5 @@ Issue 的全部会话（执行、澄清、协作会话及其派出者），点�
 - 不让内核功能依赖 Issue 的完整逻辑。
 - 不为统一抽象重写 Harness。Session Runtime 只是对现有原生 SDK / CLI 调用的收拢，模型
   请求仍只经原生 SDK 或 CLI。
+
+DEV-022 增加 `native-work` 边界（`agent-runtime/work/`）：只依赖协议与平台工具，封装原生任务身份、版本、观察、真实能力与精确控制；通过 sink 将统一任务交给 `session-work`。Session Runtime 提供已选择运行时的版本与原生 session 身份，领域 supervisor 不探测或依赖 Harness Profiles。持久服务属于 Workspace，创建 session 保留审计，关联 session 仅持有引用；新建/控制仍由同一 WorkStore 协调，不随 session 生命周期隐式终止。

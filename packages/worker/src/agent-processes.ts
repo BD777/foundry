@@ -239,6 +239,32 @@ export async function superviseAgentProcesses(): Promise<void> {
     );
 }
 
+/** Input cleanup must retain every still-live owner and native reader. */
+export function agentProcessesSupervised(): boolean {
+  return supervisor !== undefined;
+}
+export function hasLiveAgentProcesses(owner?: {
+  pid: number;
+  startTime: string;
+}): boolean {
+  return readAgentProcessRecords(agentProcessRegistry()).some((record) => {
+    if (
+      owner &&
+      (record.owner.pid !== owner.pid ||
+        record.owner.startTime !== owner.startTime)
+    )
+      return false;
+    if (stillRuns(record)) return true;
+    if (processIdentity(record.pid)) return false;
+    try {
+      process.kill(record.pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code !== "ESRCH";
+    }
+  });
+}
+
 /** The records of agent processes this worker started that still run. */
 function ownAgentProcesses(): number[] {
   if (!supervisor) return [];
@@ -299,6 +325,8 @@ function stopOnSignal(signal: NodeJS.Signals): void {
 
 /** Agent processes started as the leaders of their own process groups. */
 const groupLeaders = new WeakSet<ChildProcess>();
+const closedProcesses = new WeakSet<ChildProcess>();
+const processStops = new WeakMap<ChildProcess, Promise<void>>();
 
 /**
  * Starts an agent process. Under a supervising worker it leads its own
@@ -310,7 +338,11 @@ export function spawnAgentProcess(
   args: string[],
   options: SpawnOptions,
 ): ChildProcess {
-  if (!supervisor) return spawn(command, args, options);
+  if (!supervisor) {
+    const child = spawn(command, args, options);
+    child.once("close", () => closedProcesses.add(child));
+    return child;
+  }
   const { registry, identity } = supervisor;
   // launchd has no Linux cgroup. A guardian shares the native process's
   // group, survives its owner's SIGKILL, and kills the group on reparenting.
@@ -326,6 +358,7 @@ export function spawnAgentProcess(
       ]
     : args;
   const child = spawn(program, arguments_, { ...options, detached: true });
+  child.once("close", () => closedProcesses.add(child));
   groupLeaders.add(child);
   const pid = child.pid;
   if (pid) {
@@ -365,6 +398,78 @@ export function stopAgentProcess(child: ChildProcess, graceMs = 5000): void {
   timer.unref();
 }
 
+/** Zombies own no files or locks, but kill(pgid, 0) still sees them. */
+function liveGroupExists(pgid: number): boolean {
+  if (!groupExists(pgid)) return false;
+  if (process.platform === "linux") {
+    for (const name of readdirSync("/proc")) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = readFileSync(`/proc/${name}/stat`, "utf8");
+        const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+        if (Number(fields[2]) === pgid && fields[0] !== "Z") return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+      }
+    }
+    return false;
+  }
+  if (process.platform === "darwin") {
+    const ps = spawnSync("/bin/ps", ["-axo", "pgid=,stat="], {
+      encoding: "utf8",
+      timeout: 1000,
+    });
+    if (ps.status !== 0) return true;
+    return ps.stdout.split("\n").some((line) => {
+      const [group, state] = line.trim().split(/\s+/);
+      return Number(group) === pgid && !state?.startsWith("Z");
+    });
+  }
+  return true;
+}
+
+/**
+ * A turn may release its writer only after its native process has closed and
+ * its owned group has no live members. A bounded failure is not an exit receipt.
+ * Keep this separate from fire-and-forget shutdown callers.
+ */
+export function stopAgentProcessAndWait(
+  child: ChildProcess,
+  graceMs = 5000,
+  killWaitMs = 5000,
+): Promise<void> {
+  const pending = processStops.get(child);
+  if (pending) return pending;
+  const stopped = (async () => {
+    const pid = child.pid;
+    const group = pid !== undefined && groupLeaders.has(child);
+    const gone = () =>
+      closedProcesses.has(child) && (!group || !liveGroupExists(pid));
+    const send = (signal: NodeJS.Signals) => {
+      if (group && signalProcessGroup(pid, signal)) return;
+      if (!closedProcesses.has(child)) child.kill(signal);
+    };
+    const wait = async (ms: number) => {
+      const deadline = Date.now() + ms;
+      while (!gone()) {
+        if (Date.now() >= deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return true;
+    };
+    if (gone()) return;
+    send("SIGTERM");
+    if (await wait(graceMs)) return;
+    send("SIGKILL");
+    if (await wait(killWaitMs)) return;
+    throw new Error(
+      `Agent process ${pid ?? "(not started)"} did not finish closing; native writer release is unconfirmed.`,
+    );
+  })();
+  processStops.set(child, stopped);
+  return stopped;
+}
+
 /** What the Claude Agent SDK's spawnClaudeCodeProcess is given. */
 interface ClaudeSpawnOptions {
   command: string;
@@ -382,8 +487,9 @@ interface ClaudeSpawnOptions {
  */
 export function claudeAgentSpawn(
   onStderr?: (data: string) => void,
+  force = false,
 ): ((options: ClaudeSpawnOptions) => ChildProcess) | undefined {
-  if (!supervisor) return undefined;
+  if (!supervisor && !force) return undefined;
   return ({ command, args, cwd, env, signal }) => {
     const child = spawnAgentProcess(command, args, {
       cwd,

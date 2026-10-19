@@ -1,3 +1,4 @@
+import { privateConfigurationVersion } from "../agent-runtime/private-identity.js";
 import { nativeCli } from "../native-cli.js";
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
@@ -14,7 +15,6 @@ import {
 import type { FollowedLog } from "../background-output-follow.js";
 import { readAgentRuntimeSettings } from "../device.js";
 import {
-  profileFingerprint,
   profileID,
   profileRuntimeEnvironment,
   type AgentProfileLocalConfig,
@@ -86,12 +86,14 @@ export function activeRuntimeKey(
     }).sort(([left], [right]) => left.localeCompare(right)),
   );
   const identity = JSON.stringify({
-    options: stableOptions,
+    configurationVersion: privateConfigurationVersion({
+      options: stableOptions,
+      profile,
+      runtimeEnvironment,
+    }),
     runtimeGeneration: nativeCli(provider).generation,
-    profileFingerprint: profileFingerprint(profile),
     profileId: profileID(profile),
     provider,
-    runtimeEnvironment,
     threadId: session.threadId ?? session.id,
     workspaceId: session.workspaceId,
     workspacePath,
@@ -229,20 +231,25 @@ export function closeOtherClaudeWriters(
   sessionId: string,
   nativeSessionId: string,
   keep: ActiveClaudeRuntime | undefined,
+  options: { protectActiveWork?: boolean } = {},
 ): void {
-  for (const other of activeClaudeRuntimes.values()) {
-    if (
+  const others = [...activeClaudeRuntimes.values()].filter(
+    (other) =>
       other !== keep &&
       ((sessionId && other.foundrySessionId === sessionId) ||
-        (nativeSessionId && other.nativeSessionId === nativeSessionId))
-    )
-      closeActiveClaudeRuntime(
-        other,
-        new Error(
-          "A newer Claude process took over this session's native session.",
-        ),
-      );
-  }
+        (nativeSessionId && other.nativeSessionId === nativeSessionId)),
+  );
+  if (options.protectActiveWork && others.some(claudeRuntimeIsBusy))
+    throw new Error(
+      "Session configuration changed while its native runtime still has active work. Wait for it to finish or use a fresh test session.",
+    );
+  for (const other of others)
+    closeActiveClaudeRuntime(
+      other,
+      new Error(
+        "A newer Claude process took over this session's native session.",
+      ),
+    );
 }
 
 export function closeActiveClaudeRuntime(
@@ -279,6 +286,7 @@ export function closeActiveClaudeRuntime(
   } catch {
     // Best-effort cleanup only.
   }
+  void runtime.releasePreparation?.().catch(() => undefined);
 }
 
 /**

@@ -221,7 +221,7 @@ test("Claude isolates configuration and preserves native history and credential 
     root,
   );
   assert.notEqual(env.CLAUDE_CONFIG_DIR, source);
-  assert.equal(env.CLAUDE_SECURESTORAGE_CONFIG_DIR, source);
+  assert.equal(env.CLAUDE_SECURESTORAGE_CONFIG_DIR, "");
   assert.equal(
     existsSync(join(env.CLAUDE_CONFIG_DIR, ".credentials.json")),
     false,

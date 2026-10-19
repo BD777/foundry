@@ -19,6 +19,11 @@ import (
 func slimAgentSession(session store.AgentSession) store.AgentSession {
 	session.Events = nil
 	session.Input.ImportedContext = ""
+	if session.SkillSelection != nil {
+		selection := *session.SkillSelection
+		selection.Transfers = nil
+		session.SkillSelection = &selection
+	}
 	return session
 }
 

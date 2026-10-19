@@ -27,8 +27,8 @@ const notify=(method,params)=>send({method,params:{threadId:'native',...params}}
 rl.on('line',l=>{const r=JSON.parse(l);if(!r.id)return;const reply=result=>send({id:r.id,result});
 if(r.method==='initialize')return reply({});
 if(r.method==='thread/start'||r.method==='thread/resume'){if(process.env.MODE==='hang-start')return;if(process.env.MODE==='slow-start')return setTimeout(()=>reply({thread:{id:'native'}}),80);return reply({thread:{id:'native'}});}
-if(r.method==='turn/start'){if(process.env.MODE==='compact'){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
-if(r.method==='turn/steer'){if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
+if(r.method==='turn/start'){if(process.env.MODE.startsWith('compact')){notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('thread/compacted',{});return;}notify('item/started',{item:{id:'user',type:'userMessage',content:[{text:'internal execution prompt'}]}});notify('turn/started',{turn:{id:'turn-1'}});reply({turn:{id:'turn-1'}});notify('item/started',{turnId:'turn-1',item:{id:'msg',type:'agentMessage',text:'',phase:'commentary'}});notify('item/agentMessage/delta',{turnId:'turn-1',itemId:'msg',delta:'Working'});return;}
+if(r.method==='turn/steer'){if(process.env.MODE==='compact-pending'){notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}if(r.params.input[0].text==='no acknowledgement')return;if(r.params.expectedTurnId!=='turn-1')return send({id:r.id,error:{message:'wrong turn'}});if(process.env.MODE==='crash')return process.exit(1);reply({turnId:'turn-1'});notify('item/completed',{turnId:'turn-1',item:{id:'answer',type:'agentMessage',text:r.params.input[0].text,phase:'final_answer'}});notify('thread/tokenUsage/updated',{tokenUsage:{last:{inputTokens:42,cachedInputTokens:2,outputTokens:8}}});notify('turn/completed',{turn:{id:'turn-1',status:'completed'}});return;}
 if(r.method==='turn/interrupt'){reply({});notify('turn/completed',{turn:{id:'turn-1',status:'interrupted'}});}
 });`,
     { mode: 0o700 },
@@ -191,14 +191,24 @@ test("native compaction notification refreshes work context through turn/steer",
   const supervisor = sessionWork();
   await supervisor.start(`http://127.0.0.1:${server.address().port}`);
   supervisor.stop();
-  const thread = fixture(t, "compact", { sessionId: "session_compact" });
-  const { events } = await thread.runStreamed("start");
-  const seen = [];
-  for await (const event of events) seen.push(event);
-  assert.ok(
-    seen.some((event) =>
-      event.item?.text?.includes("Foundry persistent work state"),
-    ),
-    "compact did not refresh native turn context",
-  );
+  for (const mode of ["compact", "compact-pending"]) {
+    const thread = fixture(t, mode, { sessionId: "session_compact" });
+    const { events } = await thread.runStreamed("start");
+    const seen = [];
+    for await (const event of events) seen.push(event);
+    assert.equal(seen.at(-1).type, "turn.completed");
+    if (mode === "compact") {
+      assert.ok(
+        seen.some((event) =>
+          event.item?.text?.includes("Foundry persistent work state"),
+        ),
+        "compact did not refresh native turn context",
+      );
+    } else {
+      assert.ok(
+        !seen.some((event) => event.item?.id === "work_context_recovery"),
+        "late compact diagnostic must not enter a terminal turn",
+      );
+    }
+  }
 });

@@ -8,30 +8,30 @@
  *     skill-indexes/<id>.md        (one per large bundle, see skillCatalog)
  *
  * Packages are fetched from the server once per revision, checksum verified,
- * unpacked with the zip safety rules in skill-zip and kept by checksum in
- * <state>/skill-revisions, so a new set (one skill updated) copies the
- * unchanged ones locally instead of downloading them again. Sets get copies,
+ * retained as checksum-verified archives and unpacked with the zip safety
+ * rules in skill-zip. Every reuse verifies the full generated tree against
+ * those archives, including scripts, indexes and plugin metadata. Sets get copies,
  * not links: a sandboxed agent may read the skill sets only. Nothing here
  * touches the user's own skill directories.
  */
 
 import { parse as parseYaml } from "yaml";
 import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
+  materializeSkillSnapshot,
+  type SnapshotFile,
+} from "./skill-snapshots.js";
+import { writeFileAtomic } from "./storage.js";
 import type {
   SessionSkillBundle,
   SessionSkillRef,
 } from "@bd777/foundry-protocol";
-import { daemonRequestHeaders } from "./server-http.js";
+import {
+  fetchSkillPackage,
+  type SkillPackageOptions,
+} from "./skill-package-fetch.js";
 import {
   SKILL_PACKAGE_MAX_BYTES,
   SKILL_PACKAGE_MAX_FILES,
@@ -41,6 +41,9 @@ import { unpackZip } from "./skill-zip.js";
 
 export interface ManagedSkill {
   name: string;
+  invocationName?: string;
+  aliases?: string[];
+  draft?: import("@bd777/foundry-protocol").WorkspaceDraftSkill;
   /** Contains SKILL.md. */
   dir: string;
   description?: string;
@@ -63,7 +66,12 @@ export interface SkillIndex {
 }
 
 export interface ManagedSkillRuntime {
+  draftSkills?: import("@bd777/foundry-protocol").WorkspaceDraftSkill[];
+  draftsEnabled?: boolean;
+  excludedNames?: string[];
   pluginDir: string;
+  snapshotDigest?: string;
+  manifestFile?: string;
   /** Selected skills, every one usable, listed or indexed. */
   skills: ManagedSkill[];
   /** Skills told about through an index file instead of one by one;
@@ -78,8 +86,7 @@ export interface ManagedSkillRuntime {
   officialSkills?: { name: string; description?: string; path?: string }[];
 }
 
-function skillDescription(dir: string): string {
-  const text = readFileSync(join(dir, "SKILL.md"), "utf8");
+function skillDescription(text: string): string {
   const header = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   try {
     const data = header ? parseYaml(header[1]!) : {};
@@ -89,101 +96,71 @@ function skillDescription(dir: string): string {
   }
 }
 
-function setsRoot(): string {
-  return foundryStatePath("skill-sets");
-}
-
 function setHash(refs: SessionSkillRef[]): string {
-  const hash = createHash("sha256");
+  const hash = createHash("sha256").update("skill-snapshot-v2\n");
   for (const ref of [...refs].sort(
     (a, b) => a.skillId.localeCompare(b.skillId) || a.revision - b.revision,
   )) {
-    hash.update(`${ref.skillId}:${ref.revision}:${ref.checksum}\n`);
+    hash.update(
+      JSON.stringify([
+        ref.skillId,
+        ref.revision,
+        ref.checksum,
+        ref.name,
+        ref.bundle,
+      ]) + "\n",
+    );
   }
   return hash.digest("hex");
 }
 
-async function fetchSkillPackage(
+async function verifiedSkillEntries(
   serverURL: string,
   ref: SessionSkillRef,
-): Promise<Buffer> {
-  const path = `/api/skills/catalog/${encodeURIComponent(ref.skillId)}/revisions/${ref.revision}/package`;
-  const response = await fetch(`${serverURL}${path}`, {
-    headers: daemonRequestHeaders(false),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `skill package download failed (${response.status}) for ${ref.skillId}`,
-    );
-  }
-  const checksumHeader = response.headers.get("X-Foundry-Skill-Checksum") ?? "";
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const actual = createHash("sha256").update(buffer).digest("hex");
-  if (checksumHeader && checksumHeader !== ref.checksum) {
-    throw new Error(`skill checksum disagreement for ${ref.skillId}`);
-  }
-  if (actual !== ref.checksum) {
-    throw new Error(`skill package checksum mismatch for ${ref.skillId}`);
-  }
-  if (buffer.length !== ref.byteSize) {
-    throw new Error(`skill package size mismatch for ${ref.skillId}`);
-  }
-  return buffer;
-}
-
-function writeUnpacked(
-  targetDir: string,
-  entries: { path: string; data: Buffer }[],
-  checksum: string,
-): void {
-  const staging = `${targetDir}.staging-${process.pid}`;
-  rmSync(staging, { recursive: true, force: true });
-  mkdirSync(staging, { recursive: true });
-  for (const entry of entries) {
-    const full = join(staging, entry.path);
-    mkdirSync(join(full, ".."), { recursive: true });
-    writeFileSync(full, entry.data);
-  }
-  writeFileSync(join(staging, checksumFileName), checksum);
-  rmSync(targetDir, { recursive: true, force: true });
-  renameSync(staging, targetDir);
-}
-
-const checksumFileName = ".foundry-skill-checksum";
-
-function holdsRevision(dir: string, checksum: string): boolean {
-  try {
-    return (
-      existsSync(join(dir, "SKILL.md")) &&
-      readFileSync(join(dir, checksumFileName), "utf8") === checksum
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** The verified, unpacked revision, downloaded only if no set had it yet. */
-async function unpackedRevision(
-  serverURL: string,
-  ref: SessionSkillRef,
-): Promise<string> {
+  archiveReads: Map<string, Promise<SnapshotFile[]>>,
+  options: SkillPackageOptions,
+): Promise<SnapshotFile[]> {
+  options.signal?.throwIfAborted();
   if (!/^[0-9a-f]{64}$/.test(ref.checksum))
     throw new Error(`invalid skill checksum for ${ref.skillId}`);
-  const dir = foundryStatePath("skill-revisions", ref.checksum);
-  if (holdsRevision(dir, ref.checksum)) return dir;
-  const zip = await fetchSkillPackage(serverURL, ref);
-  const entries = unpackZip(zip, {
-    // fetchSkillPackage has already verified the immutable revision SHA-256.
-    allowLegacyCrc: true,
-    maxBytes: SKILL_PACKAGE_MAX_BYTES,
-    maxFiles: SKILL_PACKAGE_MAX_FILES,
-  });
-  if (!entries.some((entry) => entry.path === "SKILL.md")) {
-    throw new Error(`promoted skill ${ref.skillId} is missing a root SKILL.md`);
+  const pending = archiveReads.get(ref.checksum);
+  if (pending) return pending;
+  const read = (async () => {
+    const archive = foundryStatePath("skill-archives", `${ref.checksum}.zip`);
+    let zip: Buffer | undefined;
+    try {
+      const cached = readFileSync(archive);
+      if (
+        cached.length === ref.byteSize &&
+        createHash("sha256").update(cached).digest("hex") === ref.checksum
+      )
+        zip = cached;
+    } catch {
+      /* Legacy caches did not retain their verified archive. */
+    }
+    if (!zip) {
+      zip = await fetchSkillPackage(serverURL, ref, options);
+      options.signal?.throwIfAborted();
+      writeFileAtomic(archive, zip);
+    }
+    const entries = unpackZip(zip, {
+      allowLegacyCrc: true,
+      maxBytes: SKILL_PACKAGE_MAX_BYTES,
+      maxFiles: SKILL_PACKAGE_MAX_FILES,
+    });
+    if (!entries.some((entry) => entry.path === "SKILL.md"))
+      throw new Error(
+        `promoted skill ${ref.skillId} is missing a root SKILL.md`,
+      );
+    return entries;
+  })();
+  archiveReads.set(ref.checksum, read);
+  try {
+    return await read;
+  } finally {
+    if (archiveReads.get(ref.checksum) === read)
+      archiveReads.delete(ref.checksum);
   }
-  mkdirSync(foundryStatePath("skill-revisions"), { recursive: true });
-  writeUnpacked(dir, entries, ref.checksum);
-  return dir;
 }
 
 /** Revisions fetched at once when a set needs several. */
@@ -192,21 +169,35 @@ const fetchConcurrency = 8;
 async function mapConcurrent<T, R>(
   items: T[],
   limit: number,
-  run: (item: T) => Promise<R>,
+  run: (item: T, signal: AbortSignal) => Promise<R>,
+  signal?: AbortSignal,
 ): Promise<R[]> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) abort();
   const results = new Array<R>(items.length);
   let next = 0;
   const lanes = Array.from(
     { length: Math.min(limit, items.length) },
     async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await run(items[index]!);
+      try {
+        while (next < items.length && !controller.signal.aborted) {
+          const index = next++;
+          results[index] = await run(items[index]!, controller.signal);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) controller.abort(error);
       }
     },
   );
-  await Promise.all(lanes);
-  return results;
+  try {
+    await Promise.all(lanes);
+    controller.signal.throwIfAborted();
+    return results;
+  } finally {
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
 /** A bundle with at least this many skills is one catalog entry. */
@@ -217,7 +208,11 @@ export const skillCatalogBudget = 24 * 1024;
 /** A catalog entry for one skill, as the session is told it. */
 export function skillCatalogEntry(skill: ManagedSkill): string {
   return JSON.stringify({
-    name: skill.name,
+    name: skill.invocationName ?? skill.name,
+    ...(skill.aliases?.length ? { aliases: skill.aliases } : {}),
+    ...(skill.draft
+      ? { source: "workspace_draft", digest: skill.draft.digest }
+      : {}),
     description: skill.description ?? "",
     file: join(skill.dir, "SKILL.md"),
   });
@@ -248,6 +243,10 @@ function writeIfChanged(path: string, content: string): void {
  */
 export function skillCatalog(
   runtime: ManagedSkillRuntime,
+  emitIndex: (path: string, contents: string) => void = (path, contents) => {
+    mkdirSync(join(path, ".."), { recursive: true });
+    writeIfChanged(path, contents);
+  },
 ): ManagedSkillRuntime {
   const byBundle = new Map<string, ManagedSkill[]>();
   for (const skill of runtime.skills)
@@ -295,10 +294,9 @@ export function skillCatalog(
     });
   if (!groups.length) return { ...runtime, indexes: [] };
   const folder = join(runtime.pluginDir, "skill-indexes");
-  mkdirSync(folder, { recursive: true });
   const indexes = groups.map(({ id, meta, skills }) => {
     const file = join(folder, `${id.replace(/[^A-Za-z0-9_.-]/g, "_")}.md`);
-    writeIfChanged(
+    emitIndex(
       file,
       [
         `# ${meta.name}${meta.version ? ` ${meta.version}` : ""}`,
@@ -308,7 +306,7 @@ export function skillCatalog(
         "",
         ...skills.map(
           (skill) =>
-            `- ${skill.name}: ${oneLine(skill.description) || "(no description)"} (${join(skill.dir, "SKILL.md")})`,
+            `- ${skill.invocationName ?? skill.name}${skill.aliases?.length ? ` (aliases: ${skill.aliases.join(", ")})` : ""}: ${oneLine(skill.description) || "(no description)"} (${join(skill.dir, "SKILL.md")})`,
         ),
         "",
       ].join("\n"),
@@ -326,13 +324,12 @@ export async function materializeSessionSkills(
   refs: SessionSkillRef[] | undefined,
   serverURL: string,
   workspaceCwd: string,
+  options: SkillPackageOptions = {},
 ): Promise<ManagedSkillRuntime> {
+  options.signal?.throwIfAborted();
   const ordered = [...(refs ?? [])].sort(
     (a, b) => a.skillId.localeCompare(b.skillId) || a.revision - b.revision,
   );
-  const dir = join(setsRoot(), setHash(ordered));
-  const pluginMarker = join(dir, ".claude-plugin", "plugin.json");
-  const skillsRoot = join(dir, "skills");
 
   const seenNames = new Set<string>();
   for (const ref of ordered) {
@@ -354,36 +351,55 @@ export async function materializeSessionSkills(
     seenNames.add(name.toLowerCase());
   }
 
-  const skills = await mapConcurrent(
+  // Share immutable disk archives, not cancelable network operations between
+  // sessions. Canceling this preparation must leave another session alone.
+  const archiveReads = new Map<string, Promise<SnapshotFile[]>>();
+  const packages = await mapConcurrent(
     ordered,
     fetchConcurrency,
-    async (ref): Promise<ManagedSkill> => {
-      const targetDir = join(skillsRoot, ref.name);
-      if (!holdsRevision(targetDir, ref.checksum)) {
-        const source = await unpackedRevision(serverURL, ref);
-        const staging = `${targetDir}.staging-${process.pid}`;
-        rmSync(staging, { recursive: true, force: true });
-        mkdirSync(skillsRoot, { recursive: true });
-        cpSync(source, staging, { recursive: true });
-        rmSync(targetDir, { recursive: true, force: true });
-        renameSync(staging, targetDir);
-      }
+    (ref, signal) =>
+      verifiedSkillEntries(serverURL, ref, archiveReads, {
+        ...options,
+        signal,
+      }),
+    options.signal,
+  );
+  options.signal?.throwIfAborted();
+  return materializeSkillSnapshot(setHash(ordered), (dir) => {
+    const files: SnapshotFile[] = [
+      {
+        path: ".claude-plugin/plugin.json",
+        data: Buffer.from(
+          JSON.stringify(
+            { name: "foundry-workspace", version: "0.1.0" },
+            null,
+            2,
+          ),
+        ),
+      },
+    ];
+    const skills = ordered.map((ref, index): ManagedSkill => {
+      const entries = packages[index]!;
+      for (const entry of entries)
+        files.push({
+          path: `skills/${ref.name}/${entry.path}`,
+          data: entry.data,
+        });
       return {
         name: ref.name,
-        dir: targetDir,
-        description: skillDescription(targetDir),
+        dir: join(dir, "skills", ref.name),
+        description: skillDescription(
+          entries.find((e) => e.path === "SKILL.md")!.data.toString("utf8"),
+        ),
         ...(ref.bundle ? { bundle: ref.bundle } : {}),
       };
-    },
-  );
-
-  if (!existsSync(pluginMarker)) {
-    mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      pluginMarker,
-      JSON.stringify({ name: "foundry-workspace", version: "0.1.0" }, null, 2),
+    });
+    const value = skillCatalog({ pluginDir: dir, skills }, (file, contents) =>
+      files.push({
+        path: relative(dir, file).split("\\").join("/"),
+        data: Buffer.from(contents),
+      }),
     );
-  }
-
-  return skillCatalog({ pluginDir: dir, skills });
+    return { files, value };
+  });
 }

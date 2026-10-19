@@ -84,3 +84,22 @@ a session there, unless its owner turned remote commands off on it.
 - The person's stop switch cancels the assistant's sessions and every
   session it started ("Session canceled"); nothing it stopped restarts on
   its own.
+
+## Ongoing work
+
+`list_session_work` with `workspaceId` lists that Workspace's persistent services even with no active or linked session. Without it, the tool shows this conversation's native tasks, durable work,
+explicitly linked services and direct child sessions. It does not flatten
+work inside child sessions. Native subagents are read-only. Use only actions
+listed for each task; an unavailable controller does not justify stopping its
+parent runtime. A verified control receipt is evidence for that operation's
+targets, not a claim that every observed native task stopped.
+
+Use native tools for ordinary in-session timers and background commands.
+`create_scheduled_work` is the supplement for a durable wake-up that must
+survive native runtime closure (`kind=schedule`) or a persistent local service
+(`kind=process`, `spec.argv`). A service belongs to its Workspace and has one execution. Its creation session is audit history; services remain manageable from the Workspace after sessions end.
+`control_session_work` with `link`/`unlink` and `relatedSessionId` explicitly
+adds/removes a session reference without starting/stopping the service.
+Stopping or pausing a shared service affects every linked session; inspect
+its associations first. Conversation bulk controls exclude shared services.
+Never replace a managed schedule with host cron or a detached agent.

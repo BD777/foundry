@@ -1,32 +1,138 @@
+.fdy-chat-work {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-block: 16px;
+}
 .fdy-chat-work-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   padding: 4px 0 8px;
 }
+.fdy-chat-work-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fdy-chat-work-header h3 {
+  margin: 0;
+}
 .fdy-chat-work-row {
   min-width: 0;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--fdy-line);
+  padding: 2px 0;
 }
-.fdy-chat-work-row > .fdy-chat-context-row {
-  width: 100%;
+.fdy-chat-work-heading {
+  display: flex;
+  align-items: center;
   min-width: 0;
+  gap: 8px;
+  border-radius: 6px;
 }
+.fdy-chat-work-heading:hover {
+  background: var(--fdy-control-ghost-hover);
+}
+.fdy-chat-work-open {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 0;
+  justify-content: flex-start;
+  text-align: left;
+  border-radius: 4px;
+}
+.fdy-chat-work-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+.fdy-chat-work-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fdy-ink-strong);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.fdy-chat-work-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--fdy-ink-faint);
+  font-size: 10.5px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+.fdy-work-state-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--fdy-ink-muted);
+}
+.fdy-work-state-icon:focus-visible {
+  outline: 2px solid var(--fdy-brass);
+  outline-offset: 3px;
+}
+.fdy-work-state-icon[data-status="running"],
+.fdy-work-state-icon[data-status="idle"] {
+  color: var(--fdy-info-text);
+}
+.fdy-work-state-icon[data-status="completed"] {
+  color: var(--fdy-success-text);
+}
+.fdy-work-state-icon[data-status="failed"] {
+  color: var(--fdy-error-text);
+}
+.fdy-work-state-icon[data-status="paused"],
+.fdy-work-state-icon[data-status="suspended"],
+.fdy-work-state-icon[data-status="pending"] {
+  color: var(--fdy-warning-text);
+}
+.fdy-work-state-mark {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--fdy-panel);
+}
+.fdy-work-state-point {
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.fdy-work-state-icon[data-status="running"] .fdy-work-state-point {
+  background: currentColor;
+}
+
 .fdy-chat-work-note {
-  margin: 4px 0 8px;
+  margin: 2px 0 6px 28px;
   color: var(--fdy-ink-muted);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 .fdy-chat-work-error {
-  margin: 4px 0;
+  margin: 2px 0 6px 28px;
   color: var(--fdy-ink-muted);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 .fdy-chat-work-group h4 {
-  margin: 12px 0 4px;
+  margin: 0 0 3px;
   font-size: 12px;
   color: var(--fdy-ink-muted);
 }
@@ -35,7 +141,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: 6px 12px;
   font-size: 12px;
-  margin: 8px 0;
+  margin: 8px 0 10px 28px;
 }
 .fdy-chat-work-details dt {
   color: var(--fdy-ink-muted);
@@ -46,6 +152,55 @@
   min-width: 0;
 }
 .fdy-chat-work-details pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fdy-chat-work-fold {
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fdy-ink-muted);
+}
+.fdy-chat-work-fold:hover {
+  color: var(--fdy-ink-strong);
+}
+.fdy-chat-work-fold-icon {
+  display: inline-flex;
+}
+.fdy-chat-work-history {
+  min-width: 0;
+}
+.fdy-chat-work-service-link {
+  margin-left: 28px;
+}
+
+.fdy-workspace-service-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--fdy-line);
+  min-width: 0;
+}
+.fdy-workspace-service-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fdy-workspace-service-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fdy-workspace-service-row p {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.fdy-workspace-service-row pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

@@ -272,9 +272,11 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
   const previous = {
     bin: process.env.FOUNDRY_CLAUDE_BIN,
     config: process.env.CLAUDE_CONFIG_DIR,
+    namespace: process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR,
   };
   process.env.FOUNDRY_CLAUDE_BIN = command;
   process.env.CLAUDE_CONFIG_DIR = directory;
+  process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR = directory;
   const ran = () =>
     existsSync(calls)
       ? readFileSync(calls, "utf8").trim().split("\n").map(JSON.parse)
@@ -321,6 +323,7 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
     for (const [key, value] of [
       ["FOUNDRY_CLAUDE_BIN", previous.bin],
       ["CLAUDE_CONFIG_DIR", previous.config],
+      ["CLAUDE_SECURESTORAGE_CONFIG_DIR", previous.namespace],
     ])
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

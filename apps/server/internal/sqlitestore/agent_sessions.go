@@ -425,6 +425,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		createdBy = start.parent.CreatedByUserID
 	}
 	session := store.AgentSession{
+		SkillSelection:       input.ResolvedSkillSelection,
 		CreatedByUserID:      createdBy,
 		ID:                   id,
 		ThreadID:             id,

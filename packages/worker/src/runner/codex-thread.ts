@@ -52,6 +52,10 @@ export async function openCodexThread(
   const sessionConfig = codexSessionConfig(managedSkills, deviceNotes);
   const role = codexRoleOptions(session);
   const threadOptions = {
+    workSessionId:
+      !session.role && session.source !== "verification"
+        ? session.id
+        : undefined,
     approvalPolicy: codexApprovalPolicy(session, profile),
     model: session.model?.trim() || profile.model?.trim() || undefined,
     modelReasoningEffort: codexReasoningEffort(session, profile),
@@ -108,6 +112,7 @@ export async function openCodexThread(
       ...secrets,
       ...role?.config,
       features: {
+        ...(sessionConfig.features as Record<string, boolean> | undefined),
         ...secrets.features,
         ...(role?.config?.features as Record<string, boolean> | undefined),
       },

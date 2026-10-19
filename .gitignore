@@ -18,6 +18,7 @@ coverage/
 .tmp/
 .foundry/sessions/
 .foundry/attachments/
+.playwright-cli/
 
 # Local editor state
 .idea/

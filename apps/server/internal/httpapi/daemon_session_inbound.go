@@ -139,22 +139,25 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		c.hub.sessions.endReported(ctx, existing)
 		return nil
 	}
-	var (
-		session store.AgentSession
-		err     error
-	)
 	if payload.Error != "" {
 		if err := c.observeNativeAccountHold(ctx, payload.SessionID, payload.InputID, nativeAccountTerminalError(payload.Error)); err != nil {
 			return err
 		}
-		session, err = c.hub.store.FailAgentSession(ctx, payload.SessionID, payload.Error)
-	} else {
-		session, err = c.hub.store.CompleteAgentSession(ctx, payload.SessionID, payload.Response, payload.NativeSessionID)
+	}
+	// A new input can be queued after the read above. Fence the actual write,
+	// not just this handler's initial snapshot, before accepting a replay.
+	session, applied, err := c.hub.store.SettleAgentSessionInput(ctx, payload.SessionID, payload.InputID, payload.Response, payload.NativeSessionID, payload.Error)
+	if err == nil && !applied {
+		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})
+		return nil
 	}
 	if err == nil {
 		c.setActiveSession(payload.SessionID, false)
 		c.clearDispatchedSession(payload.SessionID)
 		c.hub.subagents.invalidate(payload.SessionID)
+		for _, event := range session.Events {
+			c.hub.sessions.recorded(ctx, session.WorkspaceID, event)
+		}
 		c.hub.sessions.changed(ctx, sessionCompleted, session)
 		c.hub.settleIssueSession(ctx, session, payload.IssueResult, payload.ClarificationResult)
 		c.reply(wsEnvelope{Type: wsAckType, ID: envelope.ID})

@@ -1,7 +1,5 @@
-import {
-  isolatedCodexEnvironment,
-  isolatedClaudeEnvironment,
-} from "./runtime-isolation.js";
+import { nativeSourcePaths } from "./native-runtime-paths.js";
+import { prepareNativeOperation } from "./native-operation.js";
 import { authenticateIsolatedCodex } from "./agent-runtime/codex-auth.js";
 import { acquireRuntime } from "./agent-runtime/maintenance.js";
 import { loadClaudeSdk } from "./agent-runtime/claude-sdk.js";
@@ -25,7 +23,12 @@ import { CodexAppServer } from "./agent-runtime/codex-client.js";
 const exec = promisify(execFile);
 export function nativeSources(runtime: "codex" | "claude"): string[] {
   const primary =
-    runtime === "codex" ? resolve(codexHome()) : resolve(claudeConfigDir());
+    runtime === "codex"
+      ? resolve(codexHome())
+      : resolve(
+          nativeSourcePaths("claude", process.env).configurationSourceHome ??
+            claudeConfigDir(),
+        );
   if (runtime === "claude") return [primary];
   // Configuration directories only; never enumerate credential contents.
   const others = readdirSync(homedir(), { withFileTypes: true })
@@ -40,14 +43,24 @@ export function nativeSources(runtime: "codex" | "claude"): string[] {
 export async function withCodexControl<T>(
   source: string,
   read: (call: (method: string, params: unknown) => Promise<any>) => Promise<T>,
-  runtime?: { cwd: string; env: NodeJS.ProcessEnv; args?: string[] },
+  runtime?: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    args?: string[];
+    signal?: AbortSignal;
+  },
 ): Promise<T> {
-  const releaseRuntime = await acquireRuntime("codex");
+  const releaseRuntime = await acquireRuntime("codex", runtime?.signal);
   let client: CodexAppServer | undefined;
+  let operation: ReturnType<typeof prepareNativeOperation> | undefined;
+  const abort = () => {
+    void client?.close().catch(() => {});
+  };
+  runtime?.signal?.addEventListener("abort", abort, { once: true });
   try {
     const env =
       runtime?.env ??
-      isolatedCodexEnvironment(
+      (operation = prepareNativeOperation(
         {
           runtime: "codex",
           id: "official-inspection",
@@ -57,9 +70,10 @@ export async function withCodexControl<T>(
           ...process.env,
           ...nativeLoginEnvironment("codex"),
           CODEX_HOME: source,
+          FOUNDRY_NATIVE_CODEX_SOURCE_HOME: source,
         },
         homedir(),
-      );
+      )).env;
     const command = resolveCodexCommand();
     client = new CodexAppServer(
       command,
@@ -68,6 +82,7 @@ export async function withCodexControl<T>(
       { initializeMs: 25000, controlMs: 25000 },
       runtime?.args ?? ["-c", 'model_provider="openai"'],
     );
+    runtime?.signal?.throwIfAborted();
     await authenticateIsolatedCodex(client, env, command);
     return await read((method, params) => client!.request(method, params));
   } catch {
@@ -76,7 +91,9 @@ export async function withCodexControl<T>(
       "Native Codex could not complete this read. Check login, connectivity or account access.",
     );
   } finally {
-    client?.close();
+    runtime?.signal?.removeEventListener("abort", abort);
+    await client?.close();
+    operation?.dispose();
     releaseRuntime();
   }
 }
@@ -96,34 +113,37 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
   // Loaded on use: the SDK is installed beside the worker's runtime, not
   // with the npx bootstrap that runs install/doctor.
   const { query } = await loadClaudeSdk();
-  const session = query({
-    prompt: noPrompt(),
-    options: {
-      cwd: homedir(),
-      pathToClaudeCodeExecutable: resolveClaudeCommand(),
-      env: isolatedClaudeEnvironment(
-        {
-          runtime: "claude",
-          id: "official-inspection",
-          connectionType: "local_login",
-        },
-        { ...process.env, ...nativeLoginEnvironment("claude") },
-        homedir(),
-      ),
-      settingSources: [],
-      strictMcpConfig: true,
-      skills: [],
-      plugins: [],
-      persistSession: false,
-      mcpServers: {},
-      tools: [],
+  const operation = prepareNativeOperation(
+    {
+      runtime: "claude",
+      id: "official-inspection",
+      connectionType: "local_login",
     },
-  });
-  const timeout = setTimeout(() => {
-    session.close();
-    release();
-  }, 45000);
+    { ...process.env, ...nativeLoginEnvironment("claude") },
+    homedir(),
+  );
+  let session: any;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
+    session = query({
+      prompt: noPrompt(),
+      options: {
+        cwd: homedir(),
+        pathToClaudeCodeExecutable: resolveClaudeCommand(),
+        env: operation.env,
+        settingSources: [],
+        strictMcpConfig: true,
+        skills: [],
+        plugins: [],
+        persistSession: false,
+        mcpServers: {},
+        tools: [],
+      },
+    });
+    timeout = setTimeout(() => {
+      session.close();
+      release();
+    }, 45000);
     return (await session.supportedModels()).map(
       (model: { value: string; displayName?: string }) => ({
         id: model.value,
@@ -136,8 +156,12 @@ export async function readClaudeCatalog(): Promise<AgentModelOption[]> {
     );
   } finally {
     clearTimeout(timeout);
-    session.close();
     release();
+    try {
+      await session?.dispose();
+    } finally {
+      operation.dispose();
+    }
   }
 }
 
@@ -182,37 +206,45 @@ async function readNativeCodexCatalog(): Promise<AgentModelOption[]> {
     }
   }
   // Explicitly exclude gateway catalog files; not an account entitlement claim.
-  const result = await exec(
-    resolveCodexCommand(),
-    ["debug", "models", "--bundled", "-c", 'model_provider="openai"'],
+  const operation = prepareNativeOperation(
     {
-      env: isolatedCodexEnvironment(
-        {
-          runtime: "codex",
-          id: "official-inspection",
-          connectionType: "local_login",
-        },
-        {
-          ...process.env,
-          ...nativeLoginEnvironment("codex"),
-          CODEX_HOME: source,
-        },
-        homedir(),
-      ),
-      timeout: 20000,
-      maxBuffer: 4 * 1024 * 1024,
+      runtime: "codex",
+      id: "official-inspection",
+      connectionType: "local_login",
     },
+    {
+      ...process.env,
+      ...nativeLoginEnvironment("codex"),
+      CODEX_HOME: source,
+      FOUNDRY_NATIVE_CODEX_SOURCE_HOME: source,
+    },
+    homedir(),
   );
-  const body = JSON.parse(result.stdout) as {
-    models?: Array<{
-      slug: string;
-      display_name?: string;
-      visibility?: string;
-    }>;
-  };
-  return (body.models ?? [])
-    .filter((row) => row.slug && (!row.visibility || row.visibility === "list"))
-    .map((row) => ({ id: row.slug, label: row.display_name }));
+  try {
+    const result = await exec(
+      resolveCodexCommand(),
+      ["debug", "models", "--bundled", "-c", 'model_provider="openai"'],
+      {
+        env: operation.env,
+        timeout: 20000,
+        maxBuffer: 4 * 1024 * 1024,
+      },
+    );
+    const body = JSON.parse(result.stdout) as {
+      models?: Array<{
+        slug: string;
+        display_name?: string;
+        visibility?: string;
+      }>;
+    };
+    return (body.models ?? [])
+      .filter(
+        (row) => row.slug && (!row.visibility || row.visibility === "list"),
+      )
+      .map((row) => ({ id: row.slug, label: row.display_name }));
+  } finally {
+    operation.dispose();
+  }
 }
 
 export async function inspectNativeAccount(
@@ -253,18 +285,33 @@ export async function inspectNativeAccount(
             : {}),
           status: "local_login",
           message:
-            "Claude Code's stored login is due for renewal; it renews on its next request. Read from the credentials file without running the CLI; online validity and remaining usage are not verified.",
+            "Claude Code's stored login is due for renewal; it renews on its next request. Read from the selected native credential store without running the CLI; online validity and remaining usage are not verified.",
         };
       }
-      const result = await exec(
-        resolveClaudeCommand(),
-        ["auth", "status", "--json"],
+      const operation = prepareNativeOperation(
         {
-          env: { ...process.env, ...nativeLoginEnvironment(runtime) },
-          timeout: 15000,
-          maxBuffer: 65536,
+          runtime: "claude",
+          id: "account-status",
+          connectionType: "local_login",
         },
-      ).then((result) => ({ ...result, status: 0 }));
+        { ...process.env, ...nativeLoginEnvironment(runtime) },
+        homedir(),
+      );
+      const result = await (async () => {
+        try {
+          return await exec(
+            resolveClaudeCommand(),
+            ["auth", "status", "--json"],
+            {
+              env: operation.env,
+              timeout: 15000,
+              maxBuffer: 65536,
+            },
+          ).then((result) => ({ ...result, status: 0 }));
+        } finally {
+          operation.dispose();
+        }
+      })();
       const parsed = JSON.parse(result.stdout) as {
         loggedIn?: boolean;
         email?: string;

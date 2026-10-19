@@ -131,6 +131,7 @@ export function SelectMenu({
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             aria-label={ariaLabel}
+            data-inside-dialog={insideDialog ? "true" : undefined}
             align="start"
             className={["fdy-select-popover", popoverClassName]
               .filter(Boolean)

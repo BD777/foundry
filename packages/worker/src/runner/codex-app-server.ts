@@ -1,7 +1,15 @@
+import { CodexNativeWork } from "../agent-runtime/work/codex.js";
+import { registerNativeWorkController } from "../agent-runtime/work/types.js";
+import { nativeCli } from "../native-cli.js";
 import { authenticateIsolatedCodex } from "../agent-runtime/codex-auth.js";
 import { acquireRuntime } from "../agent-runtime/maintenance.js";
 import { codexModelCatalogArguments } from "../agent-runtime/codex-model-catalog.js";
-import { sessionWork, workContext } from "../session-work/supervisor.js";
+import {
+  recordWorkToolStarting,
+  recordWorkToolCompleted,
+  workContext,
+  recordNativeWork,
+} from "../session-work/supervisor.js";
 /** Codex threads backed by the shared native control client. */
 import { CodexAppServer } from "../agent-runtime/codex-client.js";
 import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
@@ -141,6 +149,8 @@ export class CodexAppServerThread implements CodexSDKThread {
     let failure: Error | undefined;
     let usage: any;
     const items = new Map<string, any>();
+    let nativeWork: CodexNativeWork | undefined;
+    let unregisterWork = () => {};
     let lastCompactRefresh = 0;
     const signal = options?.signal as AbortSignal | undefined;
     const abort = () => {
@@ -156,13 +166,14 @@ export class CodexAppServerThread implements CodexSDKThread {
       active.terminal = true;
       failure = new Error("Codex turn was interrupted.");
       queue.close();
-      if (!active.turnId) client.close();
+      if (!active.turnId) void client.close().catch(() => {});
     };
     client.onFailure = (error) => {
       if (!active.terminal) failure = error;
       queue.close();
     };
     client.onNotification = (method, params) => {
+      nativeWork?.observe(method, params);
       if (active.terminal) return;
       if (params.threadId && this.id && params.threadId !== this.id) return;
       if (method === "turn/started") active.turnId = params.turn.id;
@@ -184,6 +195,7 @@ export class CodexAppServerThread implements CodexSDKThread {
               input: appServerInput(context),
             })
             .catch((error) => {
+              if (active.terminal) return;
               // Refusal is visible; per-turn sessionPrompt remains the fallback.
               queue.push({
                 type: "item.completed",
@@ -207,11 +219,11 @@ export class CodexAppServerThread implements CodexSDKThread {
       if (method === "item/started" || method === "item/completed") {
         if (params.item.type === "commandExecution") {
           if (method === "item/started")
-            sessionWork().toolStarting(
+            recordWorkToolStarting(
               this.env.FOUNDRY_SESSION_ID || "",
               params.item.id,
             );
-          else sessionWork().toolCompleted(params.item.id);
+          else recordWorkToolCompleted(params.item.id);
         }
         // Foundry already records the person's input. Native echoes include
         // injected execution instructions and are not a second UI message.
@@ -251,10 +263,15 @@ export class CodexAppServerThread implements CodexSDKThread {
         queue.close();
       }
     };
-    const cleanup = () => {
+    const cleanup = async () => {
+      active.terminal = true;
       clearTimeout(startupNotice);
       signal?.removeEventListener("abort", abort);
-      client.close();
+      // Keep ownership and the runtime pinned until shutdown is confirmed.
+      // A failed close must not make this handle available for another turn.
+      await client.close();
+      nativeWork?.closedAfterExit();
+      unregisterWork();
       releaseRuntime();
       if (this.active === active) this.active = undefined;
     };
@@ -277,6 +294,29 @@ export class CodexAppServerThread implements CodexSDKThread {
       );
       clearTimeout(startupNotice);
       this.id = thread.thread.id;
+      const foundrySessionId = this.options.workSessionId as string | undefined;
+      if (foundrySessionId && this.id) {
+        nativeWork = new CodexNativeWork(
+          client,
+          this.id,
+          nativeCli("codex").version || "unknown",
+          (task) => recordNativeWork(foundrySessionId, task),
+          (message) => {
+            // Closing the client rejects an inventory request still in flight.
+            // Its late diagnostic must not write to the completed turn's queue.
+            if (active.terminal) return;
+            queue.push({
+              type: "item.completed",
+              item: { id: "native_work_discovery", type: "error", message },
+            });
+          },
+        );
+        unregisterWork = registerNativeWorkController(
+          foundrySessionId,
+          nativeWork,
+        );
+        nativeWork.start();
+      }
       queue.push({ type: "thread.started", thread_id: this.id });
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
@@ -293,12 +333,21 @@ export class CodexAppServerThread implements CodexSDKThread {
             for await (const event of queue) yield event;
             if (failure) throw failure;
           } finally {
-            cleanup();
+            await cleanup();
           }
         })(),
       };
     } catch (error) {
-      cleanup();
+      try {
+        await cleanup();
+      } catch (cleanupError) {
+        throw new Error(
+          `${String(error)}; cleanup also failed: ${String(cleanupError)}`,
+          {
+            cause: error,
+          },
+        );
+      }
       if (signal?.aborted) throw new Error("Codex turn was interrupted.");
       throw error;
     }

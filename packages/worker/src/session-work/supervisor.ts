@@ -1,3 +1,12 @@
+import {
+  claudeBackgroundWork,
+  claudeScheduledWork,
+} from "../agent-runtime/work/claude.js";
+import {
+  nativeWorkInfo,
+  nativeWorkController,
+  type NativeWorkTask,
+} from "../agent-runtime/work/types.js";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,10 +26,7 @@ import { daemonRequestHeaders } from "../server-http.js";
 import { foundryStatePath } from "../state-root.js";
 import { writePrivateJSONAtomic } from "../storage.js";
 import { WorkProcesses } from "./processes.js";
-import {
-  readNativeSchedules,
-  retireNativeSchedule,
-} from "./native-schedules.js";
+import { readNativeSchedules } from "./native-schedules.js";
 import { HostSchedules, type HostSchedule } from "./host-schedules.js";
 import {
   discoverDetachedProcesses,
@@ -37,8 +43,14 @@ export interface WorkSession {
   workspacePath: string;
 }
 interface WorkRuntimeAdapter {
-  inspect: (sessionId: string, sourceId: string) => WorkObservation["status"];
-  stop: (sessionId: string, sourceId: string) => Promise<void>;
+  canStop?: (sessionId: string, sourceId: string, source: string) => boolean;
+  inspect: (
+    sessionId: string,
+    sourceId: string,
+    source?: string,
+    kind?: SessionWork["kind"],
+  ) => WorkObservation["status"];
+  stop: (sessionId: string, sourceId: string, source?: string) => Promise<void>;
   stopScheduledRun: (
     sessionId: string,
     workId: string,
@@ -151,64 +163,218 @@ export class WorkSupervisor {
     });
     this.save();
   }
+  hasLegacyTimers(sessionId: string): boolean {
+    return [...this.items.values()].some(
+      (item) =>
+        item.sessionId === sessionId &&
+        item.source === "claude" &&
+        item.kind === "schedule" &&
+        !item.native &&
+        item.management === "managed",
+    );
+  }
   context(sessionId: string): string {
     const thread = this.sessions.get(sessionId)?.threadId || sessionId;
     const scope = new Set([sessionId, thread]);
-    for (let size = -1; size !== scope.size;) {
-      size = scope.size;
-      for (const w of this.items.values())
-        if (
-          scope.has(w.sessionId) &&
-          w.kind === "agent" &&
-          w.source === "foundry" &&
-          w.sourceId
-        )
-          scope.add(w.sourceId);
-    }
-    return sessionWorkContext(
-      [...this.items.values()].filter(
-        (w) => scope.has(w.threadId) || scope.has(w.sessionId),
-      ),
-      [...scope].some((id) => this.stoppedThreads.has(id)),
+    const inventoryError = nativeWorkController(sessionId)?.inventoryError?.();
+    return (
+      sessionWorkContext(
+        [...this.items.values()].filter(
+          (w) =>
+            scope.has(w.threadId) ||
+            scope.has(w.sessionId) ||
+            w.relatedSessionIds?.some((id) => scope.has(id)),
+        ),
+        [...scope].some((id) => this.stoppedThreads.has(id)),
+      ) +
+      (inventoryError
+        ? `\nNative background inventory is unverified; the count covers known items only. ${inventoryError}`
+        : "")
     );
   }
-  observeBackground(sessionId: string, tasks: readonly AgentBackgroundTask[]) {
+  observeNativeWork(sessionId: string, task: NativeWorkTask) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    for (const task of tasks) {
-      const id = workIdentity(sessionId, "claude", task.id);
-      const previous = this.items.get(id);
-      const item: SessionWork = previous ?? {
-        id,
-        sessionId,
-        threadId: session.threadId,
-        deviceId: session.deviceId,
-        workspaceId: session.workspaceId,
-        kind: task.kind === "subagent" ? "agent" : "process",
-        source: "claude",
-        sourceId: task.id,
-        title: task.description,
-        management: "managed",
-        desiredState: "enabled",
-        revision: 1,
-        generation: 1,
-        createdAt: task.startedAt,
-        updatedAt: task.startedAt,
-        spec: {},
-        allowedActions: ["stop"],
-        observation: { status: "unknown", at: "", confirmedRevision: 0 },
+    const source = task.native.runtime;
+    const id = workIdentity(sessionId, source, task.id);
+    const previous = this.items.get(id);
+    // An already migrated timer retains its sole Foundry executor. Never
+    // revive its native definition or change its historical control intent.
+    if (
+      previous?.kind === "schedule" &&
+      !previous.native &&
+      previous.management === "managed"
+    )
+      return;
+    const item: SessionWork = previous ?? {
+      id,
+      sessionId,
+      threadId: session.threadId,
+      deviceId: session.deviceId,
+      workspaceId: session.workspaceId,
+      kind: task.kind,
+      source,
+      sourceId: task.id,
+      title: task.title,
+      management: "observed",
+      desiredState: "enabled",
+      revision: 1,
+      generation: 1,
+      createdAt: task.observation.startedAt || task.observation.at,
+      updatedAt: task.observation.at,
+      spec: {},
+      allowedActions: [],
+      observation: { status: "unknown", at: "", confirmedRevision: 0 },
+    };
+    if (task.kind === "schedule" && previous?.native?.lastRun) {
+      const run = previous.native.lastRun;
+      task.native = { ...task.native, lastRun: run };
+      task.observation = {
+        ...task.observation,
+        status: run.status,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
       };
-      item.observation = {
-        status: task.status === "ended" ? "unknown" : task.status,
-        at: new Date().toISOString(),
-        confirmedRevision: item.observation.confirmedRevision,
-        startedAt: task.startedAt,
-        endedAt: task.endedAt,
-        exitCode: task.exitCode,
-      };
-      this.items.set(id, item);
-      this.pending.set(id, item);
     }
+    item.native = task.native;
+    item.title = task.title;
+    item.spec = {
+      ...item.spec,
+      ...task.spec,
+      nativeSessionId: task.native.sessionId,
+    };
+    item.allowedActions =
+      task.kind === "process" && task.native.controls.stop === "available"
+        ? ["stop"]
+        : [];
+    item.management = item.allowedActions.length ? "managed" : "observed";
+    item.observation = {
+      ...task.observation,
+      confirmedRevision:
+        item.desiredState === "enabled" ||
+        ["completed", "failed", "stopped"].includes(task.observation.status)
+          ? item.revision
+          : item.observation.confirmedRevision,
+    };
+    item.updatedAt = task.observation.at;
+    this.items.set(id, item);
+    this.pending.set(id, item);
+    this.save();
+  }
+  observeBackground(
+    sessionId: string,
+    tasks: readonly AgentBackgroundTask[],
+    version = "unknown",
+    nativeSessionId?: string,
+  ) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    for (const task of tasks)
+      this.observeNativeWork(
+        sessionId,
+        claudeBackgroundWork(task, {
+          sessionId: nativeSessionId || session.nativeSessionId || "",
+          version,
+          canStop: (id) =>
+            this.runtime?.canStop?.(sessionId, id, "claude") === true,
+        }),
+      );
+  }
+
+  observeTimers(
+    sessionId: string,
+    tasks: readonly import("@bd777/foundry-protocol").AgentScheduledTask[],
+    version = "unknown",
+    nativeSessionId?: string,
+  ) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const at = new Date().toISOString();
+    for (const task of tasks)
+      this.observeNativeWork(
+        sessionId,
+        claudeScheduledWork(task, {
+          sessionId: nativeSessionId || session.nativeSessionId || "",
+          version,
+          canStop: () => false,
+        }),
+      );
+    for (const item of this.items.values())
+      if (
+        item.sessionId === sessionId &&
+        item.native?.runtime === "claude" &&
+        (!nativeSessionId ||
+          !item.native.sessionId ||
+          nativeSessionId === item.native.sessionId) &&
+        item.kind === "schedule" &&
+        !tasks.some((task) => task.id === item.sourceId)
+      ) {
+        item.observation = {
+          ...item.observation,
+          status: item.native.lastRun?.status || "stopped",
+          at,
+          endedAt:
+            item.native.lastRun?.status === "running"
+              ? undefined
+              : item.native.lastRun?.endedAt || at,
+          nextFireAt: undefined,
+          confirmedRevision: item.revision,
+        };
+        item.spec.recurring = false;
+        this.pending.set(item.id, item);
+      }
+    this.save();
+  }
+  observeTimerRun(
+    sessionId: string,
+    fire: { id?: string; startedAt?: string; completedAt?: string },
+    failed = false,
+    nativeSessionId?: string,
+  ) {
+    if (
+      !fire.id ||
+      !fire.startedAt ||
+      !Number.isFinite(Date.parse(fire.startedAt))
+    )
+      return;
+    const item = this.items.get(workIdentity(sessionId, "claude", fire.id));
+    if (
+      !item?.native ||
+      item.kind !== "schedule" ||
+      (nativeSessionId &&
+        item.native.sessionId &&
+        nativeSessionId !== item.native.sessionId)
+    )
+      return;
+    const id = `${fire.id}@${fire.startedAt}`;
+    const previous = item.native.lastRun;
+    if (
+      previous &&
+      (Date.parse(previous.startedAt) > Date.parse(fire.startedAt) ||
+        (previous.id === id && previous.endedAt && !fire.completedAt))
+    )
+      return;
+    const status = fire.completedAt
+      ? failed
+        ? "failed"
+        : "completed"
+      : "running";
+    item.native.lastRun = {
+      id,
+      startedAt: fire.startedAt,
+      endedAt: fire.completedAt || undefined,
+      status,
+    };
+    item.observation = {
+      ...item.observation,
+      status,
+      at: new Date().toISOString(),
+      startedAt: fire.startedAt,
+      endedAt: fire.completedAt || undefined,
+      confirmedRevision: item.revision,
+      error: undefined,
+    };
+    this.pending.set(item.id, item);
     this.save();
   }
   observeAgent(
@@ -218,6 +384,8 @@ export class WorkSupervisor {
       detail: string;
       metadata?: { taskId?: string; taskType?: string };
     },
+    version = "unknown",
+    nativeSessionId?: string,
   ) {
     const taskId = event.metadata?.taskId;
     if (!taskId) return;
@@ -249,8 +417,17 @@ export class WorkSupervisor {
         at,
         confirmedRevision: 0,
       },
-      allowedActions: ["stop"],
+      allowedActions: [],
     };
+    item.management = "observed";
+    item.allowedActions = [];
+    item.native = nativeWorkInfo(
+      "claude",
+      version,
+      nativeSessionId || session.nativeSessionId || "",
+      taskId,
+      "SDK agent lifecycle",
+    );
     if (/Subtask completed|Subtask failed/.test(event.label))
       item.observation = {
         ...item.observation,
@@ -260,6 +437,7 @@ export class WorkSupervisor {
       };
     this.items.set(id, item);
     this.pending.set(id, item);
+    this.save();
   }
   toolStarting(sessionId: string, toolId: string) {
     if (!this.active || !this.sessions.has(sessionId) || !toolId) return;
@@ -338,7 +516,10 @@ export class WorkSupervisor {
   private async api<T>(path: string, body?: unknown): Promise<T> {
     const response = await this.request(`${this.serverURL}${path}`, {
       method: body === undefined ? "GET" : "POST",
-      headers: daemonRequestHeaders(body !== undefined),
+      headers: {
+        ...daemonRequestHeaders(body !== undefined),
+        "X-Foundry-Native-Work": "1",
+      },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(12000),
     });
@@ -407,9 +588,15 @@ export class WorkSupervisor {
         this.rejectedUntil.delete(item.id);
       if (
         pending &&
-        Date.parse(pending.observation.at) > Date.parse(item.observation.at)
+        Date.parse(pending.observation.at) >= Date.parse(item.observation.at)
       ) {
         item.observation = pending.observation;
+        if (pending.native) {
+          item.native = pending.native;
+          item.spec = pending.spec;
+          item.allowedActions = pending.allowedActions;
+          item.management = pending.management;
+        }
         this.pending.set(item.id, item);
       }
       this.items.set(item.id, item);
@@ -497,10 +684,17 @@ export class WorkSupervisor {
                 workspaceId: session.workspaceId,
                 deviceId: session.deviceId,
                 kind: "schedule",
+                native: nativeWorkInfo(
+                  "claude",
+                  "unknown",
+                  task.createdBySessionId || "",
+                  task.id,
+                  ".claude/scheduled_tasks.json",
+                ),
                 source: "claude",
                 sourceId: task.id,
                 title: task.prompt.split("\n")[0]!.slice(0, 250),
-                management: "managed",
+                management: "observed",
                 desiredState: "enabled",
                 revision: 1,
                 generation: 1,
@@ -521,7 +715,7 @@ export class WorkSupervisor {
                   at: created,
                   confirmedRevision: 0,
                 },
-                allowedActions: ["pause", "resume", "stop", "remove", "run"],
+                allowedActions: [],
               };
               this.items.set(id, item);
               this.pending.set(id, item);
@@ -538,7 +732,9 @@ export class WorkSupervisor {
         if ((this.rejectedUntil.get(item.id) || 0) > Date.now()) continue;
         if (
           item.kind !== "schedule" &&
-          (item.source === "claude" || item.source === "process") &&
+          (item.source === "claude" ||
+            item.source === "codex" ||
+            item.source === "process") &&
           item.observation.confirmedRevision === item.revision &&
           !item.observation.error &&
           ["completed", "failed", "stopped"].includes(item.observation.status)
@@ -665,21 +861,68 @@ export class WorkSupervisor {
         confirmedRevision: item.revision,
       };
     }
-    if (item.kind !== "schedule" && item.source === "claude") {
+    if (item.native && (item.kind === "agent" || item.kind === "schedule")) {
+      if (
+        item.observation.endedAt &&
+        ["completed", "failed", "stopped"].includes(item.observation.status)
+      )
+        return { ...item.observation, at, confirmedRevision: item.revision };
       const status =
-        this.runtime?.inspect(item.sessionId, item.sourceId || "") ?? "unknown";
+        this.runtime?.inspect(
+          item.sessionId,
+          item.sourceId || "",
+          item.source,
+          item.kind,
+        ) ?? "unknown";
+      item.native.observation =
+        status === "unknown" ? "unavailable" : "available";
+      return {
+        ...item.observation,
+        status,
+        at,
+        confirmedRevision: item.revision,
+      };
+    }
+    if (
+      item.kind !== "schedule" &&
+      (item.source === "claude" || item.source === "codex")
+    ) {
+      if (item.native) {
+        const available =
+          this.runtime?.canStop?.(
+            item.sessionId,
+            item.sourceId || "",
+            item.source,
+          ) === true;
+        item.native.controls.stop = available ? "available" : "unavailable";
+        item.allowedActions = available ? ["stop"] : [];
+        item.management = available ? "managed" : "observed";
+      }
+      const status =
+        this.runtime?.inspect(
+          item.sessionId,
+          item.sourceId || "",
+          item.source,
+        ) ?? "unknown";
       const actual =
         status === "unknown" && item.observation.endedAt
           ? item.observation.status
           : status;
       if (item.desiredState === "stopped" || item.desiredState === "removed") {
         if (actual === "running")
-          await this.runtime?.stop(item.sessionId, item.sourceId || "");
+          await this.runtime?.stop(
+            item.sessionId,
+            item.sourceId || "",
+            item.source,
+          );
         const after =
           actual !== "running"
             ? actual
-            : (this.runtime?.inspect(item.sessionId, item.sourceId || "") ??
-              "unknown");
+            : (this.runtime?.inspect(
+                item.sessionId,
+                item.sourceId || "",
+                item.source,
+              ) ?? "unknown");
         if (after === "running" || after === "unknown")
           throw new Error("Native task termination not yet confirmed");
         return {
@@ -703,16 +946,16 @@ export class WorkSupervisor {
       item.kind === "schedule" &&
       (item.source === "foundry" || item.source === "claude")
     ) {
-      // A shared durable native source must be retired before this item can be
-      // driven by Foundry. Never silently edit an unrecognized native file.
-      if (item.source === "claude") {
-        retireNativeSchedule(
-          {
-            ...session,
-            nativeSessionId:
-              item.spec.nativeSessionId || session.nativeSessionId,
-          },
-          item.sourceId || "",
+      // Historical definitions whose native source was already retired keep
+      // their existing executor. New workers never migrate a remaining source.
+      if (
+        item.source === "claude" &&
+        readNativeSchedules(session.workspacePath).some(
+          (task) => task.id === item.sourceId,
+        )
+      ) {
+        throw new Error(
+          "This legacy timer still has a native definition; automatic migration is disabled to preserve native ownership.",
         );
       }
       const manualAt = item.spec.manualRunAt;
@@ -863,4 +1106,27 @@ export function sessionWorkBusy(): boolean {
 }
 export function managedWorkEnabled(): boolean {
   return instance?.enabled() === true;
+}
+
+/** Sandboxed SDK hosts report events but do not own the device reconciler. */
+export function recordWorkToolStarting(
+  sessionId: string,
+  toolId: string,
+): void {
+  instance?.toolStarting(sessionId, toolId);
+}
+export function recordWorkToolCompleted(toolId: string): void {
+  instance?.toolCompleted(toolId);
+}
+
+export function recordNativeWork(
+  sessionId: string,
+  task: NativeWorkTask,
+): void {
+  instance?.observeNativeWork(sessionId, task);
+}
+
+/** Native transcripts can retain definitions already migrated by older workers. */
+export function hasLegacyManagedTimers(sessionId: string): boolean {
+  return instance?.hasLegacyTimers(sessionId) === true;
 }

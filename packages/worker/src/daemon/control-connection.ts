@@ -45,6 +45,7 @@ import {
 import { errorMessage, safeID } from "../utils.js";
 import { workspaceFolderPresent } from "../workspace-registration.js";
 import {
+  availableDaemonCapabilities,
   recheckRunningNativeChats,
   syncNativeChats,
   withServedWorkspaces,
@@ -191,6 +192,7 @@ class ControlConnection {
   private readonly ctx: DaemonContext;
   private finished = false;
   private announcedIssueSlots = 1;
+  private announcedCapabilities = "";
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private sendSampleTimer: NodeJS.Timeout | undefined;
   private workspaceRoundTimer: NodeJS.Timeout | undefined;
@@ -316,13 +318,16 @@ class ControlConnection {
   // It carries how far behind the session outbox is (see
   // ReliableSessionTransport); an older server ignores it.
   private startHeartbeat(): void {
-    this.heartbeatTimer = setInterval(
-      () =>
-        trySendWebSocket(this.socket, daemonMessageTypes.heartbeat, {
-          outbox: this.options.sessionTransport.outboxStats(),
-        }),
-      heartbeatIntervalMs,
-    );
+    this.heartbeatTimer = setInterval(() => {
+      const capabilities = availableDaemonCapabilities().join("\n");
+      if (capabilities !== this.announcedCapabilities) {
+        this.announcedCapabilities = capabilities;
+        this.reportDevice();
+      }
+      trySendWebSocket(this.socket, daemonMessageTypes.heartbeat, {
+        outbox: this.options.sessionTransport.outboxStats(),
+      });
+    }, heartbeatIntervalMs);
   }
 
   /**
@@ -333,6 +338,7 @@ class ControlConnection {
    */
   private hello(): void {
     const { socket, roster, options } = this;
+    this.announcedCapabilities = availableDaemonCapabilities().join("\n");
     const endRegistration = beginActivity("registration");
     const registrations = presentRegistrations(roster);
     const primary =

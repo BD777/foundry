@@ -3,6 +3,45 @@ import type { Translation } from "../../translation";
 
 export const chat: Translation<typeof en> = {
   work: {
+    childSessionSource: "Foundry 子会话",
+    nativeSource: "{{source}} · 原生",
+    serviceSource: "工作区服务",
+    nativeRun: "最近一次原生执行",
+    loadingServices: "正在加载服务…",
+    nativeControls: "原生控制能力",
+    capability: {
+      available: "可用",
+      unavailable: "当前不可用",
+      unsupported: "不支持",
+      unknown: "未确认",
+    },
+    taskTitle: "标题",
+    workspaceServices: "工作区服务",
+    workspaceServicesNote:
+      "服务归属于本工作区，不随会话结束而停止。关联会话共享同一执行；从其他设备访问不会迁移进程。",
+    workspaceOwnedService: "归属于本工作区",
+    creatorSession: "创建来源会话",
+    serviceDetails: "服务详情",
+    noWorkspaceServices: "本工作区暂无持久服务。",
+    manageWorkspaceService: "在工作区管理",
+
+    migratedSchedule: "Foundry · 已迁移的 Claude 计划",
+    service: "持久服务",
+    sharedService: "共享服务 · {{count}} 个会话",
+    serviceOwner: "打开创建会话",
+    relatedSessions: "关联会话",
+    sharedActionTitle: "{{action}}共享服务？",
+    sharedActionBody:
+      "此操作会影响使用同一服务的全部 {{count}} 个会话。解绑仅移除当前会话的入口，不会停止服务。",
+
+    actionsFor: "{{title}} 的操作",
+    actions: "工作操作",
+    childSession: "子会话",
+    nativeAgent: "原生子 Agent",
+    nativeVersion: "原生运行时",
+    nativeDiscovery: "观察来源",
+    nativeIdentity: "原生任务 ID",
+
     runStatus: {
       completed: "本轮已完成",
       failed: "本轮失败",
@@ -39,11 +78,11 @@ export const chat: Translation<typeof en> = {
       managed_and_native: "受控及原生任务",
       managed_native_and_attributed: "受控及可归属进程",
     },
-    title: "后续工作",
+    title: "工作",
     pauseAll: "暂停全部定时",
-    stopAll: "停止全部任务（{{count}}）",
+    stopAll: "停止可控制工作（{{count}}）",
     stopAllScope:
-      "停止本对话的定时任务、后台执行和子 Agent，并阻止后续自动派发。",
+      "仅处理这里列出的可控制工作，并阻止本会话新的受管工作启动；不操作原生子 Agent 或子会话内部工作。",
     discoveryPending: "已登记的任务均已结束，设备仍需核验是否存在未登记来源。",
     pending: "待设备确认",
     paused: "已暂停",
@@ -66,6 +105,8 @@ export const chat: Translation<typeof en> = {
     coverage: "发现范围：宿主调度 {{schedules}}；进程 {{processes}}",
     open: "{{count}} 项后续工作 · 管理",
     action: {
+      link: "关联会话",
+      unlink: "解绑当前会话",
       pause: "暂停后续",
       resume: "恢复",
       stop: "停止",
@@ -95,6 +136,7 @@ export const chat: Translation<typeof en> = {
     source: {
       foundry: "Foundry",
       claude: "Claude",
+      codex: "Codex",
       crontab: "宿主 crontab",
       systemd: "systemd",
       launchd: "launchd",

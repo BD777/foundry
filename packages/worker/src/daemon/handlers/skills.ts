@@ -1,3 +1,10 @@
+import { dirname } from "node:path";
+import { readVerifiedSkillSnapshot } from "../../skill-snapshots.js";
+import { packZip } from "../../skill-zip.js";
+import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
+import { join } from "node:path";
+import { ExecutionStore } from "../../execution-storage.js";
+import { scanWorkspaceDraftsFromRefs } from "../../workspace-draft-scan-thread.js";
 import { createHash } from "node:crypto";
 import {
   daemonMessageTypes,
@@ -75,6 +82,73 @@ export function scanAnswer(
 /** Skills on the device and in repositories, and the tools they need. */
 export function registerSkillHandlers(dispatch: DaemonDispatch): void {
   dispatch
+    .on(daemonMessageTypes.exportDraftSkill, (envelope, ctx) =>
+      reply(ctx, envelope, daemonMessageTypes.draftSkillExported, () => {
+        const draft = envelope.payload as WorkspaceDraftSkill;
+        ctx.roster.folderFor(draft.workspaceId);
+        if (!draft.snapshotPath || !draft.snapshotDigest)
+          throw new Error("Draft snapshot is unavailable.");
+        const archive = packZip(
+          readVerifiedSkillSnapshot(
+            draft.snapshotRoot ?? dirname(draft.snapshotPath),
+            draft.snapshotDigest,
+          ),
+        );
+        if (archive.length > 64 * 1024 * 1024)
+          throw new Error("Draft transfer exceeds 64 MiB.");
+        return {
+          id: draft.id,
+          digest: draft.digest,
+          archiveBase64: archive.toString("base64"),
+          checksum: createHash("sha256").update(archive).digest("hex"),
+        };
+      }),
+    )
+    .on(daemonMessageTypes.refreshWorkspaceSkills, (envelope, ctx) => {
+      const request = envelope.payload as {
+        workspaceId: string;
+        issueId?: string;
+        libraryRefs?: import("@bd777/foundry-protocol").SessionSkillRef[];
+      };
+      return reply(
+        ctx,
+        envelope,
+        daemonMessageTypes.workspaceSkillsRefreshed,
+        async () => {
+          let path = ctx.roster.folderFor(request.workspaceId);
+          let storageRoot: string | undefined;
+          if (request.issueId) {
+            const environment = new ExecutionStore().environment(
+              request.workspaceId,
+              request.issueId,
+            );
+            if (!environment)
+              throw new Error(
+                "Issue candidate is unavailable; draft refresh cannot use the source workspace.",
+              );
+            path = environment.cwd;
+            storageRoot = join(environment.directory, "references", "drafts");
+          }
+          return {
+            enabled: true,
+            supported: true,
+            scannedAt: new Date().toISOString(),
+            skills: await scanWorkspaceDraftsFromRefs(
+              [
+                request.workspaceId,
+                request.issueId
+                  ? `issue:${request.issueId}`
+                  : request.workspaceId,
+                path,
+                storageRoot,
+              ],
+              request.libraryRefs ?? [],
+              ctx.serverURL,
+            ),
+          };
+        },
+      );
+    })
     .on(daemonMessageTypes.readRepositoryRefs, (envelope, ctx) =>
       reply(ctx, envelope, daemonMessageTypes.repositoryRefsRead, () =>
         readRepositoryRefs(envelope.payload as ReadRepositoryRefsPayload),

@@ -1,4 +1,9 @@
+import {
+  markPrivateInputOwner,
+  reapPrivateInputOwners,
+} from "./private-input-owners.js";
 import { claudeWorkspaceInstructions } from "./workspace-instructions.js";
+import type { PreparedExecution } from "./session/preparation/index.js";
 export { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 // Session launch policy — the single place that defines how Foundry launches
 // a native agent runtime. Everything a launch depends on is assembled here
@@ -17,7 +22,8 @@ export { claudeWorkspaceInstructions } from "./workspace-instructions.js";
 // The model never infers credentials: a missing credential is announced before
 // the first request rather than surfacing as an opaque provider 401.
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { privateConfigurationVersion } from "./agent-runtime/private-identity.js";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -80,11 +86,16 @@ export function claudeSessionOptions(
     mcpServers: {},
     skills: [],
     plugins: [],
+    ...(managed?.skills.some((skill) => skill.draft) || managed?.excludedNames
+      ? { disallowedTools: ["Agent", "Task"] }
+      : {}),
     ...(managed
       ? {
           // Claude Code's own skills stay; device-installed ones do not.
           skills: [
-            ...(managed.officialSkills ?? []).map((skill) => skill.name),
+            ...(managed.officialSkills ?? [])
+              .filter((skill) => !managed.excludedNames?.includes(skill.name))
+              .map((skill) => skill.name),
             ...managed.skills.map((skill) => `foundry-workspace:${skill.name}`),
           ],
           plugins: managed.skills.length
@@ -115,7 +126,10 @@ export function foundryClaudeSettings(
   managed?: ManagedSkillRuntime,
 ): Record<string, unknown> {
   return {
-    env: profileRuntimeEnvironment(profile, session),
+    env: {
+      ...profileRuntimeEnvironment(profile, session),
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
+    },
     autoCompactEnabled: true,
   };
 }
@@ -165,6 +179,7 @@ export const foundryToolTimeoutMs = 11 * 60 * 1000;
 const foundryToolsPermission = "mcp__foundry";
 
 export interface ClaudeLaunchPlan {
+  execution?: PreparedExecution;
   /** Managed-slash-rewritten prompt for the SDK path. */
   prompt: string;
   env: NodeJS.ProcessEnv;
@@ -312,13 +327,15 @@ export function buildClaudeLaunchPlan(input: {
   session: AgentSession;
   profile: AgentProfileLocalConfig;
   managedSkills?: ManagedSkillRuntime;
+  execution?: PreparedExecution;
 }): ClaudeLaunchPlan {
   const { workspacePath, profile, session } = input;
   const managedSkills = input.managedSkills;
   validateClaudeLaunch(input);
 
   const env = withoutSessionToken(
-    sessionEnvironment(workspacePath, profile, session),
+    input.execution?.native.env ??
+      sessionEnvironment(workspacePath, profile, session),
   );
   const deviceNotes = [
     sessionDeviceNotes(workspacePath, session, env.TMPDIR),
@@ -341,6 +358,7 @@ export function buildClaudeLaunchPlan(input: {
   };
 
   return {
+    execution: input.execution,
     prompt: claudeManagedPrompt(sessionPrompt(session, profile), managedSkills),
     env,
     settings,
@@ -367,8 +385,8 @@ export function buildClaudeLaunchPlan(input: {
  * Claude Code reads its flag settings from a file here rather than inline:
  * inline they become a `--settings` argument, and a process's arguments are
  * readable by anyone on the machine, while these settings carry the
- * connection's key. The file is owner-only; a session's process reads it at
- * start, and no process outlives the worker that cleared these at start.
+ * connection's key. Each file is immutable, owner-only and reference counted;
+ * one execution host never clears another host's active inputs.
  */
 // A sandboxed (Issue) session writes beside its own files: the worker's
 // state directory may not exist or be writable there.
@@ -381,18 +399,55 @@ export function claudeSettingsFile(
   key: string,
   settings: Record<string, unknown>,
 ): string {
-  const path = join(
-    claudeSettingsDir(),
-    `${createHash("sha256").update(key).digest("hex").slice(0, 32)}.json`,
-  );
-  mkdirSync(claudeSettingsDir(), { recursive: true, mode: 0o700 });
-  writeJSON(path, settings);
-  return path;
+  const lease = acquireClaudeSettings(key, settings);
+  unleasedSettings.add(lease.release);
+  return lease.path;
 }
 
-/** Removes settings files left by sessions of an earlier worker process. */
+const settingsOwner = `${process.pid}-${randomUUID()}`;
+const settingsLeases = new Map<string, number>();
+const unleasedSettings = new Set<() => void>();
+
+/** An immutable private settings file, held until every native owner releases it. */
+export function acquireClaudeSettings(
+  key: string,
+  settings: Record<string, unknown>,
+): { path: string; release: () => void } {
+  const version = privateConfigurationVersion(settings);
+  const directory = join(claudeSettingsDir(), settingsOwner);
+  const path = join(
+    directory,
+    `${createHash("sha256")
+      .update(key + ":" + version)
+      .digest("hex")}.json`,
+  );
+  if (!settingsLeases.has(path)) {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    markPrivateInputOwner(directory, "claude-settings");
+    writeJSON(path, settings);
+  }
+  settingsLeases.set(path, (settingsLeases.get(path) ?? 0) + 1);
+  let released = false;
+  return {
+    path,
+    release: () => {
+      if (released) return;
+      released = true;
+      const references = (settingsLeases.get(path) ?? 1) - 1;
+      if (references > 0) settingsLeases.set(path, references);
+      else {
+        settingsLeases.delete(path);
+        rmSync(path, { force: true });
+      }
+    },
+  };
+}
+
+/** Legacy callers release only their own files, never another execution host's. */
 export function clearClaudeSettingsFiles(): void {
-  rmSync(claudeSettingsDir(), { recursive: true, force: true });
+  for (const release of unleasedSettings) release();
+  unleasedSettings.clear();
+  reapPrivateInputOwners(claudeSettingsDir(), "claude-settings");
 }
 
 /**

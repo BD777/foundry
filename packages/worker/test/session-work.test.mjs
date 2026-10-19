@@ -447,7 +447,7 @@ test("an empty recovered conversation acknowledges its sweep only after reconcil
   );
 });
 
-test("native migration retains each timer's original owner after the session switches native threads", async (t) => {
+test("legacy unreconciled native sources are preserved instead of automatically migrated", async (t) => {
   const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
   const root = scratch(t);
   mkdirSync(join(root, ".claude"));
@@ -499,10 +499,10 @@ test("native migration retains each timer's original owner after the session swi
   });
   await supervisor.start("http://isolated.invalid");
   supervisor.stop();
-  assert.deepEqual(readNativeSchedules(root), []);
-  assert.equal(
-    sent.find((w) => w.id === item.id).observation.status,
-    "stopped",
+  assert.equal(readNativeSchedules(root)[0].createdBySessionId, "native_old");
+  assert.match(
+    sent.find((w) => w.id === item.id).observation.error,
+    /automatic migration is disabled/,
   );
 });
 
@@ -1176,4 +1176,146 @@ test("schedule expiry disables future runs without fabricating the current execu
     assert.equal(h.current.observation.endedAt, undefined);
     assert.equal(h.fires, 0);
   }
+});
+
+test("native schedule definitions cannot overwrite their independent current execution", async (t) => {
+  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  const supervisor = new WorkSupervisor(root);
+  supervisor.attach(
+    {
+      id: "session",
+      threadId: "thread",
+      workspaceId: "workspace",
+      deviceId: "device",
+      nativeSessionId: "native",
+    },
+    root,
+  );
+  const task = {
+    id: "timer",
+    kind: "cron",
+    prompt: "inspect",
+    schedule: "* * * * *",
+    recurring: true,
+    humanSchedule: "every minute",
+  };
+  const read = () =>
+    JSON.parse(readFileSync(join(root, "inventory.json"), "utf8")).items[0];
+  supervisor.observeTimers("session", [task], "2.1.295", "native");
+  supervisor.observeTimerRun(
+    "session",
+    { id: "timer", startedAt: "2026-10-19T01:00:00Z" },
+    false,
+    "native",
+  );
+  supervisor.observeTimers("session", [task], "2.1.295", "native");
+  assert.equal(read().observation.status, "running");
+  assert.equal(read().native.lastRun.id, "timer@2026-10-19T01:00:00Z");
+  supervisor.observeTimers("session", [], "2.1.295", "native");
+  assert.equal(read().spec.recurring, false);
+  assert.equal(read().observation.status, "running");
+  assert.equal(read().observation.endedAt, undefined);
+  supervisor.observeTimerRun(
+    "session",
+    {
+      id: "timer",
+      startedAt: "2026-10-19T01:00:00Z",
+      completedAt: "2026-10-19T01:01:00Z",
+    },
+    false,
+    "native",
+  );
+  supervisor.observeTimerRun(
+    "session",
+    { id: "timer", startedAt: "2026-10-19T01:00:00Z" },
+    false,
+    "native",
+  );
+  assert.equal(read().observation.status, "completed");
+  assert.equal(read().native.lastRun.status, "completed");
+  assert.match(sessionWorkContext([read()]), /0 outstanding work item/);
+  supervisor.observeTimerRun(
+    "session",
+    { id: "timer", startedAt: "2026-10-19T02:00:00Z" },
+    false,
+    "foreign-native",
+  );
+  assert.equal(read().native.lastRun.startedAt, "2026-10-19T01:00:00Z");
+});
+
+test("a native run ending during inventory sync retains its newer run identity and receipt", async (t) => {
+  const { WorkSupervisor } = await import("../dist/session-work/supervisor.js");
+  const root = scratch(t);
+  let supervisor,
+    old,
+    reported = false;
+  supervisor = new WorkSupervisor(root, async (_url, init) => {
+    if (init?.body) {
+      const item = JSON.parse(init.body).items.find((item) => item.native);
+      if (item) {
+        old = item;
+        if (!reported) {
+          reported = true;
+          supervisor.observeTimerRun(
+            "session",
+            {
+              id: "timer",
+              startedAt: "2026-10-19T01:00:00Z",
+              completedAt: "2026-10-19T01:01:00Z",
+            },
+            false,
+            "native",
+          );
+        }
+      }
+    }
+    return new Response(
+      JSON.stringify({
+        items: old ? [old] : [],
+        operations: [],
+        coverage: {
+          hostSchedules: "observed",
+          processes: "managed_native_and_attributed",
+        },
+      }),
+    );
+  });
+  supervisor.attach(
+    {
+      id: "session",
+      threadId: "thread",
+      workspaceId: "workspace",
+      deviceId: "device",
+      nativeSessionId: "native",
+    },
+    root,
+  );
+  supervisor.observeTimers(
+    "session",
+    [
+      {
+        id: "timer",
+        kind: "wakeup",
+        prompt: "inspect",
+        schedule: "0 9 * * *",
+        recurring: false,
+        humanSchedule: "once",
+      },
+    ],
+    "2.1.295",
+    "native",
+  );
+  supervisor.observeTimerRun(
+    "session",
+    { id: "timer", startedAt: "2026-10-19T01:00:00Z" },
+    false,
+    "native",
+  );
+  await supervisor.start("http://isolated.invalid");
+  supervisor.stop();
+  const item = JSON.parse(readFileSync(join(root, "inventory.json"), "utf8"))
+    .items[0];
+  assert.equal(item.native.lastRun.status, "completed");
+  assert.equal(item.observation.status, "completed");
 });

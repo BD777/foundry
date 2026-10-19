@@ -34,4 +34,4 @@
 - Chromium 完整设备页：展开详情之前即可看到“更新到稳定版”；键盘触发、busy、错误后重试、离线禁用、亮/暗和窄屏无横向溢出均验证。截图在 `.foundry/attachments/byte-recovery-validation/`。
 - 最终 worker tarball 内 241 个 dist 文件与已构建文件逐字节一致。
 
-未执行 commit，继续遵守北京时间 09:00–22:00 的本机限制。
+未执行 commit。

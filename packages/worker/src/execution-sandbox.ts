@@ -1,9 +1,6 @@
 import { resolve } from "node:path";
 import { canonical } from "./execution-storage.js";
-import {
-  isolatedAgentEnvironment,
-  skillSetsReadRoot,
-} from "./session/isolated-environment.js";
+import { isolatedAgentEnvironment } from "./session/isolated-environment.js";
 import {
   isSandboxError,
   sandboxLaunch,
@@ -16,7 +13,7 @@ import type {
 
 // The environment every sandboxed agent session gets lives with the session
 // runtime; Issue code keeps importing it from here.
-export { isolatedAgentEnvironment, skillSetsReadRoot };
+export { isolatedAgentEnvironment };
 
 /**
  * The sandbox of every process working in an Issue's candidate: the executor,
@@ -46,12 +43,8 @@ export function issueSandboxProfile(
     workdir: environment.cwd,
     readRoots: [environment.sourcePath],
     writeRoots: [environment.cwd, environment.scratch].map(canonical),
-    // Only the verified promoted-skill tree, just downloaded and checksum-checked.
-    // The verified promoted-skill tree and the contract's reference files.
-    protectedReadRoots: [
-      skillSetsReadRoot(),
-      resolve(environment.directory, "references"),
-    ],
+    // Exact skill snapshots are bound by the session launcher.
+    protectedReadRoots: [resolve(environment.directory, "references")],
     readOnlyDirectories: denied,
     readOnlyPaths: environment.repositories.map((repo) =>
       resolve(repo.worktreePath, ".git"),

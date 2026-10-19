@@ -18,7 +18,10 @@ import {
   reapLeftoverAgentProcesses,
 } from "../agent-processes.js";
 import { workerAppExecutable, workerLauncherPath } from "../mac-worker-app.js";
-import { isManagedNativeRuntimePath } from "../native-homes.js";
+import {
+  nativeServiceHome,
+  nativeSourcePaths,
+} from "../native-runtime-paths.js";
 import { executionHostPaths } from "./paths.js";
 
 export function executionServiceSupported(): boolean {
@@ -56,6 +59,8 @@ export function executionServiceEnvironment(
       "CODEX_HOME",
       "CODEX_CLI_PATH",
       "CLAUDE_CONFIG_DIR",
+      "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+      "FOUNDRY_NATIVE_CLAUDE_GLOBAL_HOME",
       "HTTP_PROXY",
       "HTTPS_PROXY",
       "ALL_PROXY",
@@ -65,14 +70,17 @@ export function executionServiceEnvironment(
       "all_proxy",
       "no_proxy",
     ].flatMap((key) => {
-      const val = env[key];
-      if (!val) return [];
+      const val =
+        key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR"
+          ? nativeServiceHome(key === "CODEX_HOME" ? "codex" : "claude", env)
+          : key === "CLAUDE_SECURESTORAGE_CONFIG_DIR"
+            ? nativeSourcePaths("claude", env).credentialNamespace
+            : env[key];
       if (
-        (key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR") &&
-        isManagedNativeRuntimePath(val)
-      ) {
+        val === undefined ||
+        (val === "" && key !== "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+      )
         return [];
-      }
       return [[key, val]];
     }),
   );
@@ -366,7 +374,8 @@ export function legacyExecutionHostIsAlone(pid: number): boolean {
 
 /** Caller already checked no claims, background tasks or own turns in the host snapshot.
  * Old Codex transports can leave child app-servers after completion. Only direct
- * child app-servers with no other processes in the cgroup are safe idle residue.
+ * child app-servers (including the CLI's Node launcher) with no other processes
+ * in the cgroup are safe idle residue.
  * Claude agents and arbitrary tool subprocesses never qualify here.
  */
 export function legacyMembersAreIdleCodex(
@@ -378,18 +387,31 @@ export function legacyMembersAreIdleCodex(
   const processes = new Map(
     members.filter((pid) => pid !== hostPid).map((pid) => [pid, read(pid)]),
   );
-  const codex = new Set(
+  const isCodex = (argv: string[]) =>
+    /^codex(?:\.exe)?$/.test(basename(argv[0] ?? "")) &&
+    argv[1] === "app-server";
+  const launchers = new Set(
     [...processes]
       .filter(
         ([, process]) =>
           process.parent === hostPid &&
-          /^codex(?:\.exe)?$/.test(basename(process.argv[0] ?? "")) &&
-          process.argv[1] === "app-server",
+          /^node(?:\.exe)?$/.test(basename(process.argv[0] ?? "")) &&
+          isCodex(process.argv.slice(1)),
+      )
+      .map(([pid]) => pid),
+  );
+  const codex = new Set(
+    [...processes]
+      .filter(
+        ([, process]) =>
+          (process.parent === hostPid || launchers.has(process.parent)) &&
+          isCodex(process.argv),
       )
       .map(([pid]) => pid),
   );
   return [...processes].every(
     ([pid, process]) =>
+      launchers.has(pid) ||
       codex.has(pid) ||
       (codex.has(process.parent) &&
         basename(process.argv[0] ?? "") === "codex-code-mode-host"),
