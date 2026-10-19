@@ -82,4 +82,10 @@ Work / 工作为稳定区块标题，既适用于活跃工作也适用于已结�
 
 远端补充尝试没有通过：产品沙箱仅探测 `/usr/bin/bwrap` / `/bin/bwrap`，临时 PATH 的 helper 只能满足外层测试启动器；相关沙箱用例仍被保护性拒绝。byte-dev 已安装的 bytedcli 也抢先于旧测试的假程序，造成 4 个连接器测试失败。两类是该验证设备的环境条件，不将该次全量检查当通过、不修改生产安装位置、不关闭隔离、不放宽断言。已释放 compute lease，回到具备标准环境的本机完整重跑及 GitHub Verify。远端完整日志保留在该设备 Foundry compute 的 `dev025-release/verify-final.log`。
 
-源码与测试已整理为 `fc8eff8a5380422ecf701da5bd07a764afe534d5`。最终发布清单共 202 个文件（177 个源码/测试、25 个文档/规则），没有未归属文件。重新构建的 266 个 Worker JavaScript 文件与已发布 `1792427546` 包逐一一致，无需重发同一运行时代码。dev `/healthz` 为 ok，startedAt 仍 `2026-10-19T15:32:36Z`。
+源码与测试已整理为 `fc8eff8a5380422ecf701da5bd07a764afe534d5`。最终发布清单共 203 个文件（178 个源码/测试、25 个文档/规则），没有未归属文件。重新构建的 266 个 Worker JavaScript 文件与已发布 `1792427546` 包逐一一致，无需重发同一运行时代码。dev `/healthz` 为 ok，startedAt 仍 `2026-10-19T15:32:36Z`。
+
+### GitHub 完整检查与 WebSocket 退出竞态
+
+最终集成内容 `45f24c0` 的 [PR Verify run 39295443355](https://github.com/BD777/foundry/actions/runs/39295443355) 已完整通过格式、`pnpm verify`（含所有测试/审计/Go vet）。同一内容的 push run 39295434390 在 `TestDaemonWebSocketHelloMustNameCredentialDevice` 的 TempDir 清理出现 `directory not empty`；授权拒绝/正确设备注册断言本身通过，但 WebSocket handler 的退出写入仍在发生，因此不能忽略该失败。
+
+沿用仓库已有 `workspace_lifecycle_test.go` 的排空方式，在该测试退出时等待 `Server.Shutdown`，随后才关闭 store/删除临时目录。保留错误设备必须拒绝、正确设备必须注册的断言，并显式断言排空无错误。只改测试，不改变产品权限逻辑或部署内容。此修订在 byte-dev 独立 checkout 上重复 30 次全部通过（`go test ./internal/httpapi -run '^TestDaemonWebSocketHelloMustNameCredentialDevice$' -count=30 -timeout=5m`，exit 0，10.333s），作为独立测试提交加入同一个 PR；最终准出仍以最新 SHA 的 Verify 为准，旧提交的成功不替代新提交检查。
