@@ -29,4 +29,4 @@ Worker 启动后检查；正常下次检查为 6 小时加 0–5 分钟抖动。
 - 主会话补做完整聊天页验收：隔离生产 DB 副本、integrations/egress 关闭、无 Worker，读取上述真实 6.1 Sol 会话已完成的 transcript。两条实际 commentary 在正文各出现一次，不在折叠标题中；页面 errors 为空。截图 .foundry/attachments/runtime-final/real-61-commentary.png。
 - 浏览器验证是“真实 transcript + 隔离完整页面”；合成流式增量、明暗/窄屏交互由原会话 fixture 验证，不冒称访问生产用户浏览器或重新实时生成模型内容。
 
-未 commit/push，遵守 09:00–22:00 提交限制；没有发布共享目录里的任意未检验变化。
+未 commit/push；没有发布共享目录里的任意未检验变化。

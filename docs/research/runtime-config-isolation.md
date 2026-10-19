@@ -56,4 +56,4 @@
 - sg-chaos host 2648384 仍承载本会话等在途执行；byte-dev host 1564333 仍为旧版。两者没有强制替换，不能把已安装新版 Worker 表述成当前 native turn 已隔离。
 - MacBook 离线，无法安装/验证新版。其原配置和登录未改。
 - 设备账号页将“Foundry 使用”澄清为“登录来源”；生成的执行配置路径写入 session 的 Execution configuration 事件。
-- 未 commit/push，遵守本机北京时间 09:00–22:00 禁止提交的约定。
+- 未 commit/push。

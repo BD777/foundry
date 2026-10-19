@@ -28,4 +28,4 @@
 - 新测试覆盖超过控制期限的启动仍可完成、控制请求超时保留结果未知、启动期间及时取消、相同 commentary ID 合并且不同 ID 保留、原步骤位置稳定。
 - 截图：`.foundry/attachments/codex-stream-review/replayed-light.png` 与 `replayed-dark-mobile.png`。
 - 网页通过现有构建发布；Worker 修复包供更新。MacBook 当前任务仍运行，不能以更新中断它；新 Worker 的启动/合并逻辑需该设备更新后才生效，网页去重无需 Worker 重启。
-- 遵守本机 09:00–22:00 禁止 commit 的钩子，保留改动并暂存，不绕过时间限制。
+- 改动已保留并暂存，尚未提交。

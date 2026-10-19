@@ -67,7 +67,7 @@
 
 ## 后续
 
-配置来源隔离、公共启动准备的封装重构及已知回归修复，见[会话隔离与 Workspace Skill 草稿方案](session-isolation-design.md)（待实施）。方案保留普通执行和独立判定两个入口，共用配置、凭据和材料准备，不改变现有 Chat 文件权限边界。
+配置来源隔离、公共启动准备的封装重构及已知回归修复，见[会话隔离与 Workspace Skill 草稿方案](session-isolation-design.md)（实施中；[第一批范围与验证](session-isolation-implementation-20261019.md)、[草稿与生命周期接续验证](session-isolation-drafts-20261019.md)）。方案保留普通执行和独立判定两个入口，共用配置、凭据和材料准备，不改变现有 Chat 文件权限边界。
 
 与 [Roadmap](../README.md#roadmap) 一致，下一步是 Sandbox 隔离补全：
 
