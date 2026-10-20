@@ -259,6 +259,7 @@ export const workerModules = {
       "session-file-diffs",
       "session-file-references",
       "session-policy",
+      "delegation-instructions",
       "workspace-instructions",
       "session-prompt",
       "session-roles",

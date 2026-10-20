@@ -1,6 +1,6 @@
 ---
 name: foundry
-description: Work with Foundry, the platform this session runs on - read other Foundry sessions, what they changed, native chats, Issues, workspaces and devices, and start, steer, wait on, verify or hand off sessions on this or another device. Use it whenever you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a Foundry chat link (…/chats/<id>?workspace=…); when asked what another session did, changed, why it failed or stopped, about an Issue, or about another device or workspace; when the person asks you to hand work to other Foundry sessions or to work in another workspace or on another device; when a task needs software only another device has; or when you decide part of your task is better done in other sessions.
+description: Work with Foundry, the platform this session runs on - read other Foundry sessions, what they changed, native chats, Issues, workspaces and devices, and start, steer, wait on, verify or hand off sessions on this or another device. Use it whenever you see a Foundry id (sess_…, native_claude_…, native_codex_…, iss_…, ws_…, dev_…) or a Foundry chat link (…/chats/<id>?workspace=…); when asked what another session did, changed, why it failed or stopped, about an Issue, or about another device or workspace; when the person asks you to hand work to other Foundry sessions or to work in another workspace or on another device; when a task needs software only another device has; or when an independent matter needs its own user chat and ongoing tracking. For temporary work within the current task and workspace, prefer permitted native subagents; do small or tightly coupled steps yourself.
 ---
 
 # Foundry
@@ -24,6 +24,27 @@ call; people at a shell call the same tools through the `foundry` command.
   workspace, sees only that Issue and controls only the Issue's sessions.
 - Anything you cannot reach answers "not found", the same as anything that
   does not exist.
+
+## Choose the scope before the tool
+
+Do small, tightly coupled or context-heavy steps yourself. For an independent,
+temporary part of the current task in this workspace and device, prefer a native
+subagent when the runtime, role, Skill isolation and user authorization permit it.
+Use a Foundry session for work across workspaces, devices or providers, or an
+independent matter needing its own user chat, ongoing tracking or explicitly
+different execution environment. Follow the person's explicit mechanism choice.
+A different model alone does not require Foundry: check native support first.
+
+Reuse the session already responsible with `send_message`; use `handoff_session`
+when its history would mislead the continuation. Native restrictions are not a
+reason to move every small task into Foundry: do it yourself. Any necessary child
+or Skill trial must preserve the locked Skill and permission constraints.
+
+Briefly state the delegation's purpose and expected result. Give it a distinct
+scope and file ownership, and ask for results and necessary evidence. Avoid
+repeating the same goal in multiple delegates, unnecessary nesting and routine
+stage reports. Native context, resumption and model options vary by runtime;
+Foundry's observation of a native subagent does not determine its file permissions.
 
 ## What a session costs
 
@@ -89,7 +110,8 @@ a session there, unless its owner turned remote commands off on it.
 
 `list_session_work` with `workspaceId` lists that Workspace's persistent services even with no active or linked session. Without it, the tool shows this conversation's native tasks, durable work,
 explicitly linked services and direct child sessions. It does not flatten
-work inside child sessions. Native subagents are read-only. Use only actions
+work inside child sessions. Foundry only observes native-subagent records; this
+does not make the subagents themselves read-only. Use only actions
 listed for each task; an unavailable controller does not justify stopping its
 parent runtime. A verified control receipt is evidence for that operation's
 targets, not a claim that every observed native task stopped.
