@@ -56,5 +56,12 @@ jobs:
       - name: Check formatting
         run: pnpm format
 
+      # The HTTP evidence test builds its fixture server inside a 90s scenario
+      # budget. Compile cold Go dependencies separately so that budget measures
+      # the end-to-end behavior, including after go.sum invalidates the cache.
+      - name: Build Server test prerequisite
+        working-directory: apps/server
+        run: go build -o "$RUNNER_TEMP/foundry-evidence-server" ./cmd/foundry-server
+
       - name: Verify
         run: pnpm verify

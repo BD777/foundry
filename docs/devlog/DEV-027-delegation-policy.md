@@ -91,6 +91,8 @@
 - sg-chaos daemon PID `1146265`、execution host PID `1147869` 均为 `1792510265`；实际 host entry、systemd MainPID 相符，两服务 `NRestarts=0`。因此本设备已完成实际加载，不再是“仅安装”。byte-dev 本轮没有升级到 DEV027，不扩大已测设备范围。
 - 原合成 Server/Worker PID `1149017/1150328` 仍存在，58105 health 正常；合成 Worker 保留 `1792399633` 测试基线。DEV024 已记录原 work ID 的两次 resume verified；本轮不停止服务、不清 DB，也不把测试基线描述成日常新版。
 
-固定源码以 `3be3dfd` 为基线，仅叠加 DEV024 的 go.mod、go.sum、取消读回归测试，以及 AGENTS 磁盘规则和 024/027 收尾记录。独立 worktree `/tmp/foundry-dev027-closure` 使用离线共享存储安装依赖，不复制数据库；所有构建输出均在隔离目录。DEV028 未验 Mac 改动和 DEV023 新实施代码均排除。主树 PA prompt、MCP 新对象、Server 路由/迁移与新模块已交回 DEV023；DEV028 的 operate_resource 和 Mac scope 继续由其 owner 独占。
+固定源码以 `3be3dfd` 为基线，仅叠加 DEV024 的 go.mod、go.sum、取消读回归测试，以及 AGENTS 磁盘规则和 024/027 收尾记录；另补 CI 的显式 Server 编译准备阶段（见下段）。独立 worktree `/tmp/foundry-dev027-closure` 使用离线共享存储安装依赖，不复制数据库；所有构建输出均在隔离目录。DEV028 未验 Mac 改动和 DEV023 新实施代码均排除。主树 PA prompt、MCP 新对象、Server 路由/迁移与新模块已交回 DEV023；DEV028 的 operate_resource 和 Mac scope 继续由其 owner 独占。
 
 本轮 7 文件 `check-changed` 全部通过（32 秒），包括 SQLite 取消读回归；重新构建的四个关键 Worker JS 文件与实际加载的固定包逐字节一致。完整 `pnpm verify` 对同一隔离快照运行，其最终结果和远端 CI/合入回执记录在[PR #137](https://github.com/BD777/foundry/pull/137)。证据目录为 `/tmp/dev027-evidence/`，包括 `live-closure.json`、`closure-live-skill.json`、`closure-processes.json`、`closure-loaded-files.json`、`closure-check-changed.log`、`closure-verify.log` 和最终 `closure-delivery.json`。前文“待部署/待升级”仅描述当时状态，以本节实际加载证据为准。
+
+CI 首次两条运行均在既有 `evidence-api-e2e` 的 90 秒总时限失败（实际 90.148 / 106.702 秒），同一用例本地 43.599 秒通过。该用例在时限内同步执行 `go build`；SQLite 依赖更新使 Go 缓存键改变。为单独检查冷编译，Verify workflow 新增显式 Server 编译准备步骤，随后仍执行完整 `pnpm verify`，不调整原用例超时、跳过沙箱或放宽业务断言。首次失败及最终复跑结果保留在 [PR #137](https://github.com/BD777/foundry/pull/137)；本地首轮另有 `/tmp` 仓库布局把测试 home 推导为 `/` 而触发 bubblewrap `/bin` 冲突，采用正常工作区层级复验，不改产品代码掩盖。
