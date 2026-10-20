@@ -1,6 +1,6 @@
 # DEV-027 · Foundry 子会话与原生子代理的选择边界
 
-状态：实现及 Codex 隔离自验通过，待与 DEV-024 共同上线；Claude 行为验证受原生登录限制。目标是减少等价委派入口的歧义，保留两种机制及其真实权限；本项不实现新的路由器或多 Agent 平台。
+状态：实现、Codex 自验及日常实际加载均通过，已与 DEV-024 共同上线；已验证范围按委托准出，源码与 CI 回执见本轮 release PR；Claude 行为验证受原生登录限制。目标是减少等价委派入口的歧义，保留两种机制及其真实权限；本项不实现新的路由器或多 Agent 平台。
 
 ## 授权与范围
 
@@ -66,4 +66,31 @@
 
 产物固定后才向 DEV-028 释放其他 Worker/Protocol 文件及 `operate_resource` 单一 schema 对象的写权。DEV-027 后续发布只使用固定产物，不混入其未验证改动。日常 Server/daemon 部署暂缓：DEV-024 正在保留并取证现有读连接 `not found` 现场，需与其协调一次安全部署。当前不能把隔离宿主生效写成所有日常活跃会话已切换。
 
-2026-10-20 23:45（UTC+8）统筹会话确认可在已测 Codex 范围继续准出，保留 Claude 凭据限制。隔离测试结束后已确认 host snapshot 的 busy=false、claims/background/ownTurns 均为空，再停止本轮测试 Worker/host 和端口 58105 Server；三个测试 Workspace 的 service 列表均为空，原 DB 和材料保留。回执为 `scratch-host-final.json`、`scratch-cleanup.json`。没有遗留本轮 schedule 或模型作业。
+2026-10-20 统筹会话确认可在已测 Codex 范围继续准出，保留 Claude 凭据限制。隔离测试结束后已确认 host snapshot 的 busy=false、claims/background/ownTurns 均为空，再停止本轮测试 Worker/host 和端口 58105 Server；三个测试 Workspace 的 service 列表均为空，原 DB 和材料保留。回执为 `scratch-host-final.json`、`scratch-cleanup.json`。没有遗留本轮 schedule 或模型作业。
+
+### 源码与包发布
+
+- 独立源码提交 `a2fba5038e47772bfaf9f2a6b1b4579be25cecce`（15 个文件）。共享 schema 仅 create/send/handoff，模块审计仅新增 delegation 文件归属；提交后 index 为空，其他专项 dirty 保留。README 自己一行单独留在工作树，未整表暂存。
+- 固定 Worker release 已原子发布为 `0.5.7-dev.43.ga31ae80.local.1792510265`。公开 `/api/worker/release` 回报同版；Protocol/Worker 的版本化和 latest 四个下载均与上表 SHA-256 相同。回执：`published-release.json`、`public-package-checks.json`。
+- 此步只发布包文件，没有重启日常 Server/daemon 或强切活跃 execution host。Server 将由 DEV-024 从上述固定 commit 加其 SQLite 最小修复构建共同部署，明确排除 DEV-028 的未验证修改；日常运行时实际加载仍待独立核验。
+
+### 上线前版本契约补项
+
+最后核对发现内置 Skill 定义仍为 revision 5；源代码明确要求目录内容变化时递增。虽然早期隔离测试已因 checksum 改变取得新内容，不能让同一版本号对应不同包。补提交 `3be3dfd9a05cba1a52c17f4b0b9f666e9c8152ca` 将 Claude/Codex 同升 revision 6，并以完整 Skill ZIP checksum `4d8b1ae40dd7c7531e860e513a1d53cf535ffb0052815e10d5772f992366858f` 增加版本身份 guard。针对两文件的 check-changed、builtinskills 整包测试通过，日志 `revision-check.log`。
+
+该补项只改变 Server 的版本身份及测试，Skill 内容和已发布 Worker 包不变。DEV-024 已在实际投产前收到新 SHA，改从新基线重建共同 Server；上表早期隔离 Server binary 不会作为最终生产产物。生产版本与最终二进制 hash 以共同部署回执为准。
+
+## 2026-10-21 日常实际生效与源码交付收尾
+
+原 owner 的原生 thread `01a159e6-68bf-7683-b724-adbe23083bcc` 恢复时报 `no rollout found`，统筹已确认其会话 failed；本轮由[唯一继任](https://dev.foundryapp.app/chats/sess_1792515861602906533)接续收尾，没有重置 thread、删除历史或重复派发原开发。2026-10-21 统筹转达用户授权：已验证范围自行准出、归档并通过保护分支流程交付。授权不包括将 Claude 凭据失败写成验证成功。
+
+01:08 继任执行 fresh 只读核验：
+
+- 日常 Server PID `1136698` 的实际 `/proc/.../exe` SHA-256 为 `a048c90a16473da4815bf9b944bb4706074b3849e77005624dbfe9211898c4b3`；`go version -m` 为 SQLite `1.40.1`，health startedAt `2026-10-20T16:04:11Z`。与 DEV024 的固定部署回执一致。
+- 日常 MCP `tools/list` 的 create/send/handoff 描述逐字匹配 `3be3dfd` 固定快照；内置 Skill API 同时返回 Claude/Codex revision `6`，manifest SHA-256 `96c5ff059fb7bb5dd90ad78389be2aa864f72e5ef2ce4d89a37bf983b9511242`。本继任会话实际 materialized Skill 也为相同内容。
+- sg-chaos daemon PID `1146265`、execution host PID `1147869` 均为 `1792510265`；实际 host entry、systemd MainPID 相符，两服务 `NRestarts=0`。因此本设备已完成实际加载，不再是“仅安装”。byte-dev 本轮没有升级到 DEV027，不扩大已测设备范围。
+- 原合成 Server/Worker PID `1149017/1150328` 仍存在，58105 health 正常；合成 Worker 保留 `1792399633` 测试基线。DEV024 已记录原 work ID 的两次 resume verified；本轮不停止服务、不清 DB，也不把测试基线描述成日常新版。
+
+固定源码以 `3be3dfd` 为基线，仅叠加 DEV024 的 go.mod、go.sum、取消读回归测试，以及 AGENTS 磁盘规则和 024/027 收尾记录。独立 worktree `/tmp/foundry-dev027-closure` 使用离线共享存储安装依赖，不复制数据库；所有构建输出均在隔离目录。DEV028 未验 Mac 改动和 DEV023 新实施代码均排除。主树 PA prompt、MCP 新对象、Server 路由/迁移与新模块已交回 DEV023；DEV028 的 operate_resource 和 Mac scope 继续由其 owner 独占。
+
+本轮 7 文件 `check-changed` 全部通过（32 秒），包括 SQLite 取消读回归；重新构建的四个关键 Worker JS 文件与实际加载的固定包逐字节一致。完整 `pnpm verify` 对同一隔离快照运行，其最终结果和远端 CI/合入回执记录在本轮 release PR。证据目录为 `/tmp/dev027-evidence/`，包括 `live-closure.json`、`closure-live-skill.json`、`closure-processes.json`、`closure-loaded-files.json`、`closure-check-changed.log`、`closure-verify.log` 和最终 `closure-delivery.json`。前文“待部署/待升级”仅描述当时状态，以本节实际加载证据为准。

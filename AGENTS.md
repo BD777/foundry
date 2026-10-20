@@ -17,6 +17,12 @@ Foundry workers should treat this workspace context as authoritative.
 - Work on local `main` by default. Inspect existing changes and active sessions
   before editing; preserve other work. One owner should handle tightly coupled
   changes. Reconcile existing branch/worktree work without discarding either side.
+- Check free disk space before and after large builds, package staging and database
+  backups. Below 10 GiB free or above 90% usage, reclaim verified disposable caches
+  before substantial new writes; below 5 GiB free or above 95%, defer large writes
+  until space is recovered. Coordinate cleanup with active builders. Never delete
+  database/WAL files, user work, active temporary files or the only rollback copy.
+  Prefer reuse over duplicate dependency trees and database snapshots.
 - Separate Git submission from implementation and validation. A restriction on
   commits does not block local edits, builds, deployments, API/browser checks or
   other validation that creates no Git commits. Continue all independent work.
