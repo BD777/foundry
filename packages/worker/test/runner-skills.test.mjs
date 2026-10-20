@@ -2,6 +2,7 @@ import "./fixtures/native-test-homes.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { claudeSessionOptions, codexSessionConfig } from "../dist/runner.js";
+import { delegationInstructions } from "../dist/delegation-instructions.js";
 
 const managed = (skills, hostSkillPaths = []) => ({
   pluginDir: "/state/skill-sets/abc",
@@ -159,7 +160,7 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   const notes = "Foundry device notes: test";
   assert.equal(
     claudeSessionOptions(undefined, notes).systemPrompt.append,
-    notes,
+    `${notes}\n\n${delegationInstructions}`,
   );
   assert.deepEqual(claudeSessionOptions(undefined, notes).skills, []);
   assert.deepEqual(claudeSessionOptions(undefined), {
@@ -168,6 +169,11 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
     mcpServers: {},
     skills: [],
     plugins: [],
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: delegationInstructions,
+    },
   });
   const withSkills = claudeSessionOptions(
     managed([{ name: "qa", dir: "/sets/qa" }]),
@@ -178,9 +184,46 @@ test("device notes reach Claude and Codex with or without a managed catalog", ()
   );
   assert.equal(
     codexSessionConfig(undefined, notes).developer_instructions,
-    notes,
+    `${notes}\n\n${delegationInstructions}`,
   );
   assert.equal(codexSessionConfig(undefined, notes).skills, undefined);
+});
+
+test("both runtimes receive the same delegation guidance without changing native isolation", () => {
+  for (const [label, catalog, restricted] of [
+    ["unmanaged", undefined, false],
+    ["ordinary", managed([]), false],
+    [
+      "draft",
+      managed([{ name: "trial", dir: "/trial", draft: { id: "draft" } }]),
+      true,
+    ],
+    ["excluded", { ...managed([]), excludedNames: ["trial"] }, true],
+    ["empty exclusion lock", { ...managed([]), excludedNames: [] }, true],
+  ]) {
+    const claude = claudeSessionOptions(catalog);
+    const codex = codexSessionConfig(catalog);
+    assert.equal(
+      claude.systemPrompt.append,
+      codex.developer_instructions,
+      label,
+    );
+    assert.equal(
+      claude.systemPrompt.append.split(delegationInstructions).length,
+      2,
+      label,
+    );
+    assert.deepEqual(
+      claude.disallowedTools,
+      restricted ? ["Agent", "Task"] : undefined,
+      label,
+    );
+    assert.equal(
+      codex.features?.multi_agent,
+      restricted ? false : undefined,
+      label,
+    );
+  }
 });
 
 // A large selection, as a workspace with the bytedcli bundle has: Codex got

@@ -140,3 +140,63 @@ Gateway 团队转来的记录称原第 4 轮经历 TLS EOF、300 秒 header time
 01:10 核验：实际 host PID `3056792`，entry 为 `0.5.7-dev.39.gc2e46c6.local.1792427546`，旧 PID `2941885` 不存在；daemon PID `3025723`。三个 Skill 下载准备文件哈希与发布包一致（DEV-025 列出完整值）。安装与激活两项现已分别证实，无需强切宿主。
 
 残余观察保留两个方向：若 Server 再次误拒收，利用新增 session/input、actor/actual device 和原始 notfound 分类定位第一次异常读取；若准备阶段再失败，依据 Skill、固定 revision、脱敏 origin/path、attempt 与 cause code 定位网络层。原历史原因仍未知；本项准出仅覆盖已验证的恢复、事务 fencing、实时补答与有界下载重试/取消，不包含持续 watchdog 或业务自动重放。
+
+## 10 月 20 日 23:33 复发：SQLite 取消查询后的旧快照
+
+本轮重新打开最初的间歇 notfound 调查。DEV028 `sess_1792510285202880973` 实际执行，但 acquire_resource 有时称 session 不存在，同参数随后又成功；Macbook 租约创建后 operate 连续 not_found，resource_status 却能读到 active。新诊断日志在 23:33–23:36 明确记录 `authorize session ...: not found` 后永久 ACK 丢弃事件，不再混为 foreign device。DEV028 的两个 Macbook 租约经 release 回执及独立 DB 查询均确认 released（UTC 15:35:46），没有遗留控制假完成。
+
+### 现场排除与根因证据
+
+- 保持日常 Server 不重启采证。日常单一监听 `127.0.0.1:31982` / PID `763136`；nginx `/api/` 只代理该端口。DEV027 的隔离栈在 `58105` / PID `1107845`，独立 DB 且 integrations=off，不在反代路径。
+- 日常所有被观察 DB/WAL/SHM fd 与磁盘文件一致，inode 分别 `3287564/4208080/4208081`；没有文件替换或 chat_deletions。独立 SQLite 只读连接能看到 DEV028 的 queued 行，但日常进程仍间歇报 missing 并丢其事件。queued 是丢失 started 报告后的已持久状态，不能假改成 running。
+- 当前依赖 `modernc.org/sqlite v1.39.1` 的 `stmt.query` 在取消竞态中将已经创建的 Rows 直接置 nil，未 Close。结果是泄漏的 SQL statement 可以持续持有 WAL 读事务，某个**空闲**池连接仍看旧快照；不同连接被轮流使用，使多个接口间歇看不到新记录。上游已有对应 [MR 81](https://gitlab.com/cznic/sqlite/-/merge_requests/81)。
+- 合成 DB 的因果对照：原版 1300 次取消后，writer 已提交 id=1300，reader 连读 24 次仍为 max1250，read pool 的 InUse=0、Idle=1。第二次仅 200 次取消即复现 writer=200、reader=150，直接查询新 id 返回 `sql: no rows in result set`。只在临时依赖副本给该分支补 Rows.Close 后，10,000 次测试不再旧读；这不是靠重开连接掩盖。
+- 官方修复版 [v1.40.1 对应源码](https://gitlab.com/cznic/sqlite/-/blob/v1.40.1/sqlite.go#L612-616) 包含同一修复，仍使用 SQLite 3.50.4、libc 1.66.10；本项目仅改变 sqlite 版本一行与校验和，不升级其它依赖、不放宽权限、不改业务状态。官方版 10,000 次同测未旧读。
+- 新增真实 Store 回归：反复取消查询后，新提交会话与资源租约必须立刻可读，空闲读池不得阻塞完整 WAL checkpoint。旧版回归失败（frames=1107、checkpointed=813），官方版连续 3 次通过（24.093 秒）。这同时覆盖“读不到新记录”和 WAL 长期被读事务占用。
+
+根因证据来自生产现象、实际依赖缺陷、隔离因果对照及修复版回归的闭环；没有附加到生产进程读取秘密内存，没有修改 DB 造状态，也没有执行业务重放。生产 WAL 当时为 5658960112 字节，与读事务泄漏的 checkpoint 饥饿机制相符；不能因此把历史所有磁盘占用都归于它。
+
+### 最小修复与验证快照
+
+改动仅 `apps/server/go.mod`、`apps/server/go.sum` 和 `apps/server/internal/sqlitestore/canceled_read_snapshot_test.go`。保留 DEV027 Worker/protocol 冻结及 DEV028 未验实现，未使用共享 Git index。
+
+首个验证快照以 DEV027 提交 `a2fba5038e47772bfaf9f2a6b1b4579be25cecce` 为基线叠加上述三文件，MCP schema 与其冻结副本 SHA-256 一致，明确排除 DEV028 dirty。权限、租约、重连、终态 fencing 及读池相关检查 33 pass / 1 条件 skip；check-changed 全部通过。后续 DEV027 发现内置 skill revision 需从 5 升 6，最终部署必须使用它补齐后的提交重新构建，不能发布首个快照旧 revision。
+
+生产一致备份 `/home/windeng/.foundry/server-backups/dev024-notfound-20261020T154532Z/`：DB 698159104 字节，quick_check=ok，保留旧二进制及日志。证据与隔离复现位于 `/tmp/dev024-notfound/`，包括 `repro.log`、`repro-original-2.log`、`repro-patched.log`、`repro-official-1401.log`、`regression-original.log`、`regression-1401.log`、`affected-tests.jsonl`、`check.log` 与源码快照 manifest。
+
+上线后须分别验证：实际 binary 的驱动版本；多次读的会话/新记录一致性；真实 acquire → status → 只读 operate → release；先前 dropped 事件是否停止，当前 worker/native 进程是否未中断。health 200 单独不构成放行。已被永久 ACK 丢弃的历史事件不凭空重建；只接受精确 input 的现有原生证据恢复路径。
+
+最终快照更新为 `3be3dfd9a05cba1a52c17f4b0b9f666e9c8152ca`（DEV027 两 runtime Foundry skill revision 6），仅叠加同一组三个 DEV024 文件。整个 Store 首次运行 236 pass，1 fail 是隔离 archive 未包含 `packages/protocol/test/evidence-digest-fixtures.json`；从同一固定 commit 补齐 fixture 后该项通过，未修改产品或断言来掩盖失败。最终 builtinskills 包 5 项通过。二进制 SHA-256 为 `a048c90a16473da4815bf9b944bb4706074b3849e77005624dbfe9211898c4b3`，`go version -m` 确认 sqlite v1.40.1。
+
+### Server 上线与 00:04:53 旧宿主独立事故
+
+2026-10-21 00:02:49 CST 开始替换日常 Server；固定二进制 PID `1136698`，health startedAt `2026-10-20T16:04:11Z`，实际 `/proc/.../exe` hash 与上述最终构建相同，driver v1.40.1。启动期间读取此前的大 WAL，控制面短暂不可用；未手删 WAL。启动后 6 次 DEV028 summary 读取一致，新租约 `lease_83344645481cf78b035d` 连续 8 次读取一致，00:04:41 只读 printf exitCode=0。到 00:24 再查，新 Server 没有 authorize notfound/session_event dropped 日志。历史已丢 started 事件没有假改成 running。
+
+但不能将此次上线称为全程无中断：00:04:53，sg-chaos **旧** execution host PID `763016` / `1792399633` 抛出 `Claude active input queue is closed`，栈为 `CodexNativeWork.onUnavailable` → `AsyncInputQueue.push`，Node exit 1；00:04:55 systemd 自动重启为 PID `1137991`，仍加载旧版。当前执行 claims 被新 host 标记真实失败。完整 journal 保存在 `/tmp/dev024-notfound/host-crash.log`。这一晚到 inventory 回调缺陷已有 DEV024 terminal guard，但此前仅 byte-dev 实际部署；sg-chaos 的覆盖遗漏在本次显现。Server 重连是背景，日志不足以确定该次 callback 具体为何触发，不能将它混为 SQLite 旧读故障。
+
+遗留 compute 租约经 resource_status 和 release_resource 均确认 `released`，endReason=`its session's turn failed`；未将 pending 当作释放。用户业务输入没有重放。
+
+固定 DEV027 Worker tarballs 校验匹配后，通过其标准 `update --server ... --from ...` 安装，未用当前 DEV028 dirty 重建。安装版本 `0.5.7-dev.43.ga31ae80.local.1792510265`，daemon PID `1146265`；当前维护回合仍 active，host `1137991` 等待自然 idle 接管，**此时仅安装与 daemon 完成，尚未声称 host 激活**。固定包 `runner/codex-app-server.js` 已核对含 `if (active.terminal) return` 保护。
+
+| 设备     | 00:24 所见安装/daemon                    | 00:24 实际 host/心跳             | 边界                                                  |
+| -------- | ---------------------------------------- | -------------------------------- | ----------------------------------------------------- |
+| sg-chaos | current `1792510265`，daemon PID 1146265 | host PID 1137991 / `1792399633`  | 待本维护回合自然退出后切换                            |
+| byte-dev | 本次未更新                               | 新鲜 scheduler 心跳 `1792427546` | 上次已实际部署 terminal guard；本次未重新读取远端 PID |
+
+两个原合成服务的 PID `375677/375855`、全部 PGID 成员及 58105 监听均已不存在，库存仍旧 running/unknown；不据此声称它们本次被 crash 杀死（可能更早停止）。按已授权短维护发精确 stop：Worker `wop_8cea9f5cb378aa32d808c415a3d4ed65`（revision 10）与 Server `wop_bc2ae065106677356cd16670e584435c`（revision 4）均取得 **verified** 回执，00:24:06 停止事实确认。保留原 work ID、helper、隔离 DB；宿主升级后通过原 resume 控制恢复，不新建竞争服务、不 down。
+
+### 00:29 受管维护最终核验
+
+00:25:49，sg-chaos 在维护回合自然结束后完成 idle upgrade；实际 execution host PID `1147869` 的 `/proc/cmdline` 与 systemd ExecStart 均指向固定 `1792510265`，NRestarts=0，terminal guard 文件 SHA 与固定验证包相同。00:29:06 新鲜 scheduler 心跳亦为该版本；daemon PID 1146265。byte-dev 同时心跳仍 `1792427546`，未声称升级到 DEV027 包。
+
+一次性受管续接 `work_e92c4fa678dbbc4ddc3f68977fea5c7d` 已执行；对未来唤醒的 pause 控制 `wop_3a8713596f420aab4cc1f804bed2a3f5` revision 2 为 **verified**，desired=paused。当前这一次维护回合自然结束，不增加循环或宿主 cron。
+
+原合成 Server 的 resume `wop_91bd0389bbbb55bbd13560c5050db28b` revision 5 与 Worker 的 resume `wop_58874a0cedd7d785ae29a905190aa695` revision 11 均为 **verified**。Server PID `1149017`，58105 health startedAt `2026-10-20T16:28:38Z`；随后 Worker PID `1150328`，16:29:11 明确连回原 `http://127.0.0.1:58105` / `foundry-dev006007-acceptance`。原服务 ID、helper、隔离 DB 均保留，未 down 或改配置；记录与实际 PID/startTicks/cgroup 对照见 `/tmp/dev024-notfound/maintenance-final-processes.json`。
+
+新版宿主资源闭环：`lease_2150b28e2f17079bffbb` generation 15 创建成功，6 次 status 均 active，printf exitCode=0（7 ms），release 回执明确 released by its holder。DEV028 summary 4 次并发读取一致为当前真实 running，最新活动 16:29:10，未写 DB 纠正历史状态。新 Server 截至 00:29 未出现 authorize notfound/session_event dropped；该观察窗口不宣称永不复发。
+
+已通知 parent、DEV027 和 DEV028 恢复原任务及一次受控 Mac 只读复测。DEV028 回报该复测成功：compute `lease_1a44103f801e7a41a0dd` generation 41，只读 printf/sw_vers/driver permission status exitCode=0，随后明确 released；未启动 App、操作用户窗口或截图。Mac 窗口能力改动的后续实机验收仍归 DEV028，不属于本项已验证范围。
+
+### 2026-10-21 源码交付复核
+
+继任 DEV027 owner 从 `3be3dfd` 建立隔离 release 快照，仅加入本项依赖与回归三文件，保留上述因果证据、部署与维护限制。01:08 再查实际 Server binary hash 及 SQLite 1.40.1、sg-chaos host/daemon 1792510265、两原合成进程与 58105 health 均与上节一致。本轮没有再次部署或重放业务。取消读回归及 7 文件 check-changed 通过；完整 release 验证、PR/远端 CI/最终 merge 回执统一见 [DEV027 收尾](DEV-027-delegation-policy.md#2026-10-21-日常实际生效与源码交付收尾)。

@@ -8,6 +8,24 @@ import (
 	"github.com/foundry-dev/foundry/apps/server/internal/skillarchive"
 )
 
+// Package URLs include the revision. Keep that identity immutable when any
+// bundled file changes, not just SKILL.md, for both native runtimes.
+func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
+	revisions := map[int]string{
+		6: "4d8b1ae40dd7c7531e860e513a1d53cf535ffb0052815e10d5772f992366858f",
+	}
+	claude, _ := Lookup("builtin-claude-foundry")
+	codex, _ := Lookup("builtin-codex-foundry")
+	if claude.Revision != codex.Revision {
+		t.Fatal("both runtimes must receive the same Foundry revision")
+	}
+	for _, skill := range []Skill{claude, codex} {
+		if want, ok := revisions[skill.Revision]; !ok || want != skill.Checksum {
+			t.Fatalf("%s revision %d has unrecorded package %s; bump and record the new revision", skill.ID, skill.Revision, skill.Checksum)
+		}
+	}
+}
+
 func TestBuiltInSkillsPackageLikeWorkspaceSkills(t *testing.T) {
 	claude := ForRuntime("claude")
 	if len(claude) != 2 || claude[0].Name != "skill-creator" || claude[1].Name != "foundry" {

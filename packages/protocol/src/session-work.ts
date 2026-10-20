@@ -248,7 +248,7 @@ export function sessionWorkContext(
     outstanding.length > lines.length
       ? `${outstanding.length - lines.length} further items: call list_session_work.`
       : "",
-    "Use list_session_work to inspect this conversation's work and direct child sessions, including earlier turns. Use only listed control capabilities; native subagents are read-only. Completing an answer does not stop schedules. Only a verified control receipt proves a requested stop. Prefer native tools for in-session timers and background commands. Use create_scheduled_work only for durable wake-ups that must survive the native runtime. Do not create host cron or detached agents to bypass scheduling controls.",
+    "Use list_session_work to inspect this conversation's work and direct child sessions, including earlier turns. Use only listed control capabilities; Foundry's native-subagent records are observational, not a restriction on their file permissions. Completing an answer does not stop schedules. Only a verified control receipt proves a requested stop. Prefer native tools for in-session timers and background commands. Use create_scheduled_work only for durable wake-ups that must survive the native runtime. Do not create host cron or detached agents to bypass scheduling controls.",
   ]
     .filter(Boolean)
     .join("\n");

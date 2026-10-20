@@ -22,6 +22,7 @@ var update = flag.Bool("update", false, "rewrite testdata/*.golden from Fill's o
 // Every version system.md shipped as, with its hash. Changing the prompt
 // fails here until it gets a new Version and a new line.
 var promptVersions = map[string]string{
+	"2026-10-20.1": "6f891e80c691d52772216f879bca831342289aa0e6c5b8aeb9326516c3a0ac14",
 	"2026-10-15.1": "5b8281e77291423e1cccd62f52d716ac78e9f417d5c7eb0daf8563a35d2bfee1",
 	"2026-10-15.2": "787ddd55f14e5daec392abf63f6e231cc9af52f7db0b040a29602d2edff489b6",
 	"2026-10-15.3": "2a2af22e131a0bfb8661c0e8e5888ad31307d11ebc70cadfe499b596b1b03a72",

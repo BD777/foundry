@@ -55,6 +55,7 @@ import {
   isVerificationSession,
 } from "./session-roles.js";
 import { verificationNotes } from "./verification-session.js";
+import { delegationInstructions } from "./delegation-instructions.js";
 
 /** Raised when a managed-skill session cannot be enforced by the runtime. */
 export class ClaudePolicyError extends Error {
@@ -76,6 +77,7 @@ export function claudeSessionOptions(
 ): Record<string, unknown> {
   const append = [
     deviceNotes,
+    delegationInstructions,
     managed ? workspaceSkillInstructions(managed) : "",
   ]
     .filter(Boolean)

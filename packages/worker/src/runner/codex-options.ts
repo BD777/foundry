@@ -14,6 +14,7 @@ import { currentInput } from "../session-prompt.js";
 import { isClarificationSession, isUtilitySession } from "../session-roles.js";
 import { workspaceSkillInstructions } from "../skill-isolation.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
+import { delegationInstructions } from "../delegation-instructions.js";
 
 /** Codex's counterpart of defaultClaudePermissionMode (claude-options.ts). */
 export const defaultCodexSandboxMode = "danger-full-access";
@@ -41,6 +42,7 @@ export function codexSessionConfig(
     throw new Error("Codex skill inventory was not verified.");
   const instructions = [
     deviceNotes,
+    delegationInstructions,
     managed ? workspaceSkillInstructions(managed) : "",
   ]
     .filter(Boolean)
