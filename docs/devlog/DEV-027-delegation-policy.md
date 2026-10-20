@@ -1,6 +1,6 @@
 # DEV-027 · Foundry 子会话与原生子代理的选择边界
 
-状态：实现、Codex 自验及日常实际加载均通过，已与 DEV-024 共同上线；已验证范围按委托准出，源码与 CI 回执见本轮 release PR；Claude 行为验证受原生登录限制。目标是减少等价委派入口的歧义，保留两种机制及其真实权限；本项不实现新的路由器或多 Agent 平台。
+状态：实现、Codex 自验及日常实际加载均通过，已与 DEV-024 共同上线；已验证范围按委托准出，源码与 CI 回执见[PR #137](https://github.com/BD777/foundry/pull/137)；Claude 行为验证受原生登录限制。目标是减少等价委派入口的歧义，保留两种机制及其真实权限；本项不实现新的路由器或多 Agent 平台。
 
 ## 授权与范围
 
@@ -93,4 +93,4 @@
 
 固定源码以 `3be3dfd` 为基线，仅叠加 DEV024 的 go.mod、go.sum、取消读回归测试，以及 AGENTS 磁盘规则和 024/027 收尾记录。独立 worktree `/tmp/foundry-dev027-closure` 使用离线共享存储安装依赖，不复制数据库；所有构建输出均在隔离目录。DEV028 未验 Mac 改动和 DEV023 新实施代码均排除。主树 PA prompt、MCP 新对象、Server 路由/迁移与新模块已交回 DEV023；DEV028 的 operate_resource 和 Mac scope 继续由其 owner 独占。
 
-本轮 7 文件 `check-changed` 全部通过（32 秒），包括 SQLite 取消读回归；重新构建的四个关键 Worker JS 文件与实际加载的固定包逐字节一致。完整 `pnpm verify` 对同一隔离快照运行，其最终结果和远端 CI/合入回执记录在本轮 release PR。证据目录为 `/tmp/dev027-evidence/`，包括 `live-closure.json`、`closure-live-skill.json`、`closure-processes.json`、`closure-loaded-files.json`、`closure-check-changed.log`、`closure-verify.log` 和最终 `closure-delivery.json`。前文“待部署/待升级”仅描述当时状态，以本节实际加载证据为准。
+本轮 7 文件 `check-changed` 全部通过（32 秒），包括 SQLite 取消读回归；重新构建的四个关键 Worker JS 文件与实际加载的固定包逐字节一致。完整 `pnpm verify` 对同一隔离快照运行，其最终结果和远端 CI/合入回执记录在[PR #137](https://github.com/BD777/foundry/pull/137)。证据目录为 `/tmp/dev027-evidence/`，包括 `live-closure.json`、`closure-live-skill.json`、`closure-processes.json`、`closure-loaded-files.json`、`closure-check-changed.log`、`closure-verify.log` 和最终 `closure-delivery.json`。前文“待部署/待升级”仅描述当时状态，以本节实际加载证据为准。
