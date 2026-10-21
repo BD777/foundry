@@ -2,6 +2,40 @@ import type { workspaces as en } from "../en/workspaces";
 import type { Translation } from "../../translation";
 
 export const workspaces: Translation<typeof en> = {
+  tunnels: {
+    compatibility: "兼容范围",
+    compatibilityNote:
+      "应用的服务端 Cookie 按 Foundry 登录会话隔离；重新登录 Foundry 后，可能需要重新登录应用。暂不支持将登录凭据保存在 JavaScript Cookie、localStorage 或 IndexedDB，以及依赖 Web Worker / Service Worker、Authorization 请求头或外部登录跳转的应用。",
+    title: "Web 访问",
+    register: "登记 Web 服务",
+    cancel: "取消",
+    note: "登记实际设备上已运行的服务。关闭访问不会停止服务进程。",
+    name: "服务名称",
+    target: "执行设备与 Workspace",
+    port: "本地 loopback 端口",
+    protocol: "协议",
+    association: "关联进程",
+    external: "外部管理的服务",
+    linked: "已关联 Workspace 进程",
+    privateNote:
+      "新登记默认仅本人可访问，不会启动进程。HTTPS 需要可信的本地证书。",
+    saving: "保存中…",
+    open: "打开服务",
+    disable: "关闭访问",
+    enable: "开启访问",
+    share: "允许两个 Workspace 的成员使用此应用",
+    shared: "已共享给 Workspace 成员",
+    empty: "尚未登记 Web 服务。",
+    error: "Web 访问更新失败",
+    status: {
+      ready: "可以连接",
+      disabled: "访问已关闭",
+      preview_domain_unconfigured:
+        "预览域名和 HTTPS 证书尚未配置，暂不能从浏览器打开。",
+      device_offline: "执行设备离线",
+      worker_update_required: "更新执行设备的 Worker 后才能使用 Web 访问。",
+    },
+  },
   services: "服务",
   shared: {
     online: "在线",

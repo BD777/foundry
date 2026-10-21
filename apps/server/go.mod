@@ -7,6 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.12.0
 	go.yaml.in/yaml/v3 v3.0.5
+	golang.org/x/net v0.47.0
 	modernc.org/sqlite v1.40.1
 )
 

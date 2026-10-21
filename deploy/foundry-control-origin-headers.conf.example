@@ -1,0 +1,15 @@
+# Include inside EVERY canonical control-site static location that declares
+# add_header (Nginx add_header inheritance otherwise replaces the parent set).
+# Do not include on preview application origins. Control API responses receive
+# the same boundaries from the Server in FOUNDRY_PREVIEW_SAME_SITE mode.
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Origin-Agent-Cluster "?1" always;
+add_header Permissions-Policy "document-domain=()" always;
+add_header Content-Security-Policy "frame-ancestors 'self'" always;
+
+# The canonical control server must also refuse unknown hosts BEFORE serving
+# static content, e.g. server-level:
+# if ($host != dev.foundryapp.app) { return 404; }
+# Preview hosts use their separate server blocks and never this SPA fallback.

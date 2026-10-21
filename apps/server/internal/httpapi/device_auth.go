@@ -31,7 +31,7 @@ func (s *Server) authenticateDevice(w http.ResponseWriter, r *http.Request, cred
 		writeError(w, http.StatusUnauthorized, "device owner is not an active account")
 		return Actor{}, false
 	}
-	return Actor{Kind: ActorDaemon, DeviceID: identity.DeviceID, Account: &owner}, true
+	return Actor{Kind: ActorDaemon, DeviceID: identity.DeviceID, Account: &owner, DeviceCredentialHash: accounts.HashToken(credential)}, true
 }
 
 func (s *Server) handleCreateDevicePairingToken(w http.ResponseWriter, r *http.Request) {

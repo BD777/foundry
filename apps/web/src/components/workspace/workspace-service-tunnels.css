@@ -1,0 +1,51 @@
+.fdy-service-tunnels {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.fdy-service-tunnels-heading,
+.fdy-service-tunnels-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fdy-service-tunnels-heading {
+  justify-content: space-between;
+}
+.fdy-service-tunnels-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.fdy-service-tunnels-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+}
+.fdy-service-tunnels-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.fdy-service-tunnels-form > p {
+  grid-column: 1 / -1;
+}
+.fdy-service-tunnels-form > button {
+  justify-self: start;
+}
+.fdy-service-tunnels-sharing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.fdy-service-tunnel-row {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fdy-line);
+  overflow-wrap: anywhere;
+}

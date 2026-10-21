@@ -1,3 +1,4 @@
+import { protectHTTPPort } from "./protected-http-ports.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -256,6 +257,9 @@ async function bridgeToSocket(socketPath: string): Promise<Server> {
     bridge.once("error", reject);
     bridge.listen(0, "127.0.0.1", done);
   });
+  const address = bridge.address();
+  if (address && typeof address !== "string")
+    bridge.once("close", protectHTTPPort(address.port));
   return bridge;
 }
 

@@ -1,5 +1,40 @@
 /** Workspaces: the hub, overview, selection and editing. */
 export const workspaces = {
+  tunnels: {
+    compatibility: "Compatibility",
+    compatibilityNote:
+      "Server-managed application cookies are isolated by Foundry sign-in session. Signing in again may require signing in to the application again. Apps that store sign-in credentials in JavaScript cookies, localStorage or IndexedDB, or require web workers, Authorization headers or external sign-in redirects, are not supported yet.",
+    title: "Web access",
+    register: "Register web service",
+    cancel: "Cancel",
+    note: "Register an existing service on its actual device. Closing access leaves the service running.",
+    name: "Service name",
+    target: "Executing device and workspace",
+    port: "Loopback port",
+    protocol: "Protocol",
+    association: "Process association",
+    external: "Externally managed service",
+    linked: "Linked to workspace process",
+    privateNote:
+      "Only you can access a new mapping. No process is started. HTTPS requires a trusted local certificate.",
+    saving: "Saving…",
+    open: "Open service",
+    disable: "Close access",
+    enable: "Enable access",
+    share: "Allow members of both workspaces to use this application",
+    shared: "Shared with workspace members",
+    empty: "No web services registered.",
+    error: "Web access could not be updated",
+    status: {
+      ready: "Ready to connect",
+      disabled: "Access closed",
+      preview_domain_unconfigured:
+        "Preview hostnames and HTTPS certificates must be configured before browser access is available.",
+      device_offline: "Executing device is offline",
+      worker_update_required:
+        "Update the executing device’s Worker to enable web access.",
+    },
+  },
   services: "Services",
   /** Words the workspace lists and dialogs share. */
   shared: {

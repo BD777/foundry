@@ -16,6 +16,10 @@ const (
 )
 
 type ServerOptions struct {
+	// PreviewDomain is the preview DNS suffix. Shared-site use is opt-in and
+	// enables stronger control-origin/cookie/provenance enforcement.
+	PreviewDomain          string
+	PreviewSameSite        bool
 	AgentSessionStaleAfter time.Duration
 	AllowedOrigin          string
 	EnableDevReset         bool
@@ -109,12 +113,20 @@ func (s *Server) withAuthentication(next http.Handler) http.Handler {
 // authenticateAccountRequest is the browser path: a session cookie identifies
 // the account; everything else except the public auth routes is 401.
 func (s *Server) authenticateAccountRequest(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	_, accountCookieErr := r.Cookie(s.accountCookieName())
+	if s.options.PreviewSameSite && (!isPublicAuthRoute(r) || accountCookieErr == nil) && !s.sameSiteAccountRequestAllowed(r) {
+		writeError(w, http.StatusForbidden, "open Foundry from its own origin; browser provenance required")
+		return
+	}
 	user, handled := s.authenticateAccount(w, r)
 	if handled {
 		return
 	}
 	public := isPublicAuthRoute(r)
 	if user == nil && !public {
+		if s.previewSignInRequired(w, r) {
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "login required")
 		return
 	}

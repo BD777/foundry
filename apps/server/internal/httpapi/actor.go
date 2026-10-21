@@ -9,9 +9,11 @@ import (
 
 // Actor is the authenticated identity behind one API call.
 type Actor struct {
-	Kind     ActorKind
-	Identity store.SessionTokenIdentity
-	DeviceID string
+	// Hash only: revalidate long-lived device data channels after credential rotation.
+	DeviceCredentialHash string
+	Kind                 ActorKind
+	Identity             store.SessionTokenIdentity
+	DeviceID             string
 	// Account is set when a logged-in Foundry account made the call
 	// (ActorAccount).
 	Account *store.User

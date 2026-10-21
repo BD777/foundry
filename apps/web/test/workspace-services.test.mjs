@@ -49,6 +49,20 @@ const answer = (data, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+// Process inventory tests keep the independent Web endpoint inventory empty.
+function mockProcessInventory(fetchProcess) {
+  globalThis.fetch = (url, ...args) =>
+    String(url).endsWith("/service-tunnels")
+      ? Promise.resolve(
+          answer({
+            items: [],
+            targets: [],
+            canManage: false,
+            configured: false,
+          }),
+        )
+      : fetchProcess(url, ...args);
+}
 const deferred = () => {
   let resolve;
   const promise = new Promise((r) => (resolve = r));
@@ -75,12 +89,13 @@ async function mounted(workspaceId = "ws_a") {
   };
 }
 test("refresh is busy, then recovers from a failed inventory without leaving an error", async () => {
-  globalThis.fetch = async () =>
-    answer({ error: "temporary unavailable" }, 503);
+  mockProcessInventory(async () =>
+    answer({ error: "temporary unavailable" }, 503),
+  );
   const view = await mounted();
   assert.match(view.container.textContent, /temporary unavailable/);
   const pending = deferred();
-  globalThis.fetch = () => pending.promise;
+  mockProcessInventory(() => pending.promise);
   const refresh = [...view.container.querySelectorAll("button")].find(
     (b) => b.textContent === "Refresh",
   );
@@ -95,10 +110,11 @@ test("refresh is busy, then recovers from a failed inventory without leaving an 
 });
 test("late inventory replies from an old workspace never replace the new workspace", async () => {
   const pending = deferred();
-  globalThis.fetch = (url) =>
+  mockProcessInventory((url) =>
     String(url).includes("ws_a")
       ? pending.promise
-      : Promise.resolve(answer([]));
+      : Promise.resolve(answer([])),
+  );
   const view = await mounted();
   await view.render("ws_b", false);
   await act(async () =>
@@ -118,10 +134,12 @@ test("successful background refresh clears a load failure", async () => {
     return 1;
   };
   try {
-    globalThis.fetch = async () => answer({ error: "offline inventory" }, 503);
+    mockProcessInventory(async () =>
+      answer({ error: "offline inventory" }, 503),
+    );
     const view = await mounted();
     assert.match(view.container.textContent, /offline inventory/);
-    globalThis.fetch = async () => answer([]);
+    mockProcessInventory(async () => answer([]));
     await act(async () => poll());
     assert.equal(view.container.querySelector('[role="alert"]'), null);
     assert.match(view.container.textContent, /No persistent services/);
@@ -141,10 +159,10 @@ test("slow inventories are shared by polling and manual refresh instead of overl
   try {
     const pending = deferred();
     let reads = 0;
-    globalThis.fetch = () => {
+    mockProcessInventory(() => {
       reads++;
       return pending.promise;
-    };
+    });
     const view = await mounted();
     await act(async () => {
       poll();

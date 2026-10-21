@@ -140,6 +140,7 @@ const (
 // table keyed by any of these owners belongs here. deleted_workspaces does
 // not: it outlives the workspace on purpose.
 var workspaceOwnedRows = []ownedRows{
+	{"service_tunnels", "workspace_id", ownerWorkspace},
 	{"pa_context_patches", "workspace_id", ownerWorkspace},
 	{"pa_maintenance", "workspace_id", ownerWorkspace},
 	{"run_events", "run_id", ownerRun},

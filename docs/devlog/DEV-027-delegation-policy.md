@@ -1,6 +1,6 @@
 # DEV-027 · Foundry 子会话与原生子代理的选择边界
 
-状态：原委派边界已准出；默认报告协议 revision 9 已上线，新会话理解与分发验证通过。旧验证会话续接仍见目录不可见问题，未计通过；源码由 PA 唯一联合集成，PR/CI 待完成。
+状态：默认报告协议 revision 9 已上线并随 PR #138 合入；fresh 与原 native thread 续接均已验证，最终 main CI 通过。旧失败记录保留；Claude 实际模型行为未测。
 
 ## 授权与范围
 
@@ -186,3 +186,11 @@ Web仍为 `9fd6da9e0f5d89ba`，Worker仍 `1792570873`，其public配对指针未
 既有Skill/CLI/schema契约5/5、builtinskills、gofmt、contract audit与本项源码/报告格式通过；`check-changed`总体仍因共享README格式警告为FAIL，由PA联合整合时统一机械对齐，不改其他事项状态。本项只改总表027行。源码仍未提交，完整release CI及合并回执归PA唯一集成owner；本owner现有一次性计划仅作只读复核，不新增timer/重叠PR/发布。
 
 完整回执与精确delta已持久化在 `.foundry/attachments/20261021/dev027-reporting/`，含 `delivery.json`、`manifest.json`、`reporting-rev9.patch`、`served-package-hashes.json`、`probe-receipt.json`、fresh结果和保留的续接失败结果。真实样本仅存聚合数/去身份化判断，未保存业务正文。
+
+## 2026-10-22 最终合入与原线程续接复验
+
+rev9随 [PR #138](https://github.com/BD777/foundry/pull/138) 合入 `c1338f7b18ae736c2ce048beeadf8dd87ada4aa1`。最新head `b72aa69` 两条Verify及合入后main [39632103251](https://github.com/BD777/foundry/actions/runs/39632103251) 通过；文档索引修正后的最终main `69f2084ab17611c395420505c679b7c0d3ebc635` 与本地同步，[39634194951](https://github.com/BD777/foundry/actions/runs/39634194951) 亦成功。此前“待提交/待CI”描述对应当时状态，以本节为准。
+
+原续接缺口已由PA修复并实际部署：恢复同一原生thread后、执行新turn前，通过原生 `thread/inject_items` 刷新Foundry当前可信developer配置；刷新失败则不执行，不扩大sandbox或改变账号/线程身份。实际host PID `2062401` 加载 `.1792596448`。原probe `sess_1792560833744595155` 保持native `01a15cf3-c368-7860-b29a-ee27a1a19d34`，新input `01a15f37-900a-7a86-b41e-38e4b1ae51d1` 的提示未提供新路径；执行确实从当前受管 `69e135…` 目录读取Skill，返回完整SHA-256 `177209f2b4e7b0e53fac2279b1b4da8592fb2f960b4b7ff7414a7a1b85662144` 和对应协调规则。新结果关闭本例续接传播缺口，原失败及host路径存在的证据不删除，不改写为当时成功，也不扩大为所有provider已实测。
+
+独立只读核验与原始复验答复归档于 `.foundry/attachments/20261021/dev027-reporting/final-closure.json`、`resume-probe-fixed.md`。本项已完成的一次性计划取得精确remove verified回执，未停止共享服务、未重复发布或创建PR。联合交付最终回执见 [PA合入记录](https://github.com/BD777/foundry/pull/138#issuecomment-6321097469)。

@@ -51,6 +51,7 @@ export const workerModules = {
       "private-input-owners",
       "agent-process-host",
       "state-root",
+      "protected-http-ports",
       "stall-monitor",
       "connection-reports",
       "send-meter",
@@ -88,6 +89,7 @@ export const workerModules = {
     dependsOn: ["device"],
     files: [
       "transport",
+      "service-tunnels",
       "server-http",
       "registration-sections",
       "session-outbox-store",
@@ -384,6 +386,7 @@ export const workerModules = {
       "daemon/handlers/files",
       "daemon/handlers/issues",
       "daemon/handlers/resources",
+      "daemon/handlers/service-tunnels",
       "daemon/handlers/sessions",
       "daemon/handlers/skills",
       "daemon/handlers/workspaces",

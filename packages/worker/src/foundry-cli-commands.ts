@@ -89,6 +89,20 @@ export const foundryCommands: Record<
   Record<string, ToolCommand | LocalCommand>
 > = {
   mcp: { "": { local: true, flags: {} } },
+  service: {
+    register: {
+      tool: "register_service",
+      flags: {
+        "--workspace": flag("workspaceId"),
+        "--target-workspace": flag("targetWorkspaceId"),
+        "--name": flag("name"),
+        "--port": flag("port", "number"),
+        "--protocol": flag("protocol"),
+        "--work-id": flag("workId"),
+        "--registration-key": flag("registrationKey"),
+      },
+    },
+  },
   work: {
     list: {
       tool: "list_session_work",

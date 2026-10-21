@@ -58,3 +58,5 @@ export * from "./knowledge.js";
 export * from "./knowledge-vault.js";
 
 export * from "./personal-agent-maintenance.js";
+
+export * from "./service-tunnels.js";

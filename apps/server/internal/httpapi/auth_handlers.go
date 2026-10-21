@@ -138,7 +138,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(s.accountCookieName()); err == nil && cookie.Value != "" {
 		if err := s.store.DeleteUserSession(r.Context(), accounts.HashToken(cookie.Value)); err != nil {
 			writeError(w, http.StatusInternalServerError, "logout failed")
 			return

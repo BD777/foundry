@@ -1,0 +1,39 @@
+# Replace preview.example.net and certificate paths with the dedicated preview
+# site configured as FOUNDRY_PREVIEW_DOMAIN. It must have a different registrable
+# domain from FOUNDRY_WEB_ORIGIN. Install only after wildcard DNS/TLS is ready.
+# Include this at nginx http{} scope, alongside the existing Foundry config.
+map $http_upgrade $foundry_preview_connection {
+    default upgrade;
+    '' close;
+}
+# Do not log query strings, cookies, authorization headers or exchange bodies.
+log_format foundry_preview '$time_iso8601 $host $request_method $status '
+                           'bytes=$body_bytes_sent rt=$request_time';
+server {
+    listen 443 ssl;
+    server_name "~^[a-f0-9]{32}\.preview\.example\.net$";
+    ssl_certificate /etc/ssl/preview.example.net/cert.pem;
+    ssl_certificate_key /etc/ssl/preview.example.net/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 64m;
+    access_log /var/log/nginx/foundry-preview.access.log foundry_preview;
+    location / {
+        proxy_pass http://127.0.0.1:31982;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $foundry_preview_connection;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 60;
+    }
+}
+server {
+    listen 80;
+    access_log /var/log/nginx/foundry-preview.access.log foundry_preview;
+    server_name "~^[a-f0-9]{32}\.preview\.example\.net$";
+    return 301 https://$host$request_uri;
+}
