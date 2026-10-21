@@ -80,10 +80,19 @@ func (s *Server) setupPending(ctx context.Context) bool {
 	return true
 }
 
+// Same-site previews require a browser-enforced host-only credential. The
+// legacy cookie is intentionally never an authentication fallback in this mode.
+func (s *Server) accountCookieName() string {
+	if s.options.PreviewSameSite {
+		return "__Host-foundry_session"
+	}
+	return sessionCookieName
+}
+
 // authenticateAccount resolves the session cookie. It returns handled=true
 // after writing a response itself.
 func (s *Server) authenticateAccount(w http.ResponseWriter, r *http.Request) (*store.User, bool) {
-	cookie, err := r.Cookie(sessionCookieName)
+	cookie, err := r.Cookie(s.accountCookieName())
 	if err != nil || cookie.Value == "" {
 		return nil, false
 	}
@@ -117,8 +126,9 @@ func (s *Server) sameOriginWrite(r *http.Request) bool {
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
+	s.clearLegacyAccountCookie(w)
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     s.accountCookieName(),
 		Value:    token,
 		Path:     "/",
 		Expires:  expires,
@@ -130,8 +140,9 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires t
 }
 
 func (s *Server) clearSessionCookie(w http.ResponseWriter) {
+	s.clearLegacyAccountCookie(w)
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     s.accountCookieName(),
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -151,6 +162,15 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user store
 	if err := s.store.CreateUserSession(r.Context(), user.ID, accounts.HashToken(token), expires); err != nil {
 		writeError(w, http.StatusInternalServerError, "create login session")
 		return false
+	}
+	// Replacing this browser's login must also revoke preview grants bound to
+	// the previous login, even when the person signs in without an explicit logout.
+	if previous, err := r.Cookie(s.accountCookieName()); err == nil && previous.Value != "" {
+		if err = s.store.DeleteUserSession(r.Context(), accounts.HashToken(previous.Value)); err != nil {
+			_ = s.store.DeleteUserSession(r.Context(), accounts.HashToken(token))
+			writeError(w, http.StatusInternalServerError, "replace login session")
+			return false
+		}
 	}
 	s.setSessionCookie(w, token, expires)
 	return true
@@ -254,5 +274,11 @@ func (l *loginLimiter) succeed(keys ...string) {
 	defer l.mu.Unlock()
 	for _, key := range keys {
 		delete(l.entries, key)
+	}
+}
+
+func (s *Server) clearLegacyAccountCookie(w http.ResponseWriter) {
+	if s.options.PreviewSameSite {
+		http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 	}
 }

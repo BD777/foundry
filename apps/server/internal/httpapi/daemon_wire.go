@@ -9,6 +9,7 @@ import (
 )
 
 const (
+	wsServiceTunnelOpenType        = "service_tunnel_open"
 	wsContextPatchType             = "context_patch"
 	wsContextPatchedType           = "context_patched"
 	wsKnowledgeCommandType         = "knowledge_command"

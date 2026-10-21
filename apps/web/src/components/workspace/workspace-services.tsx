@@ -19,6 +19,7 @@ import { Alert } from "../ui/alert";
 import { EmptyState } from "../ui/empty-state";
 import { Panel, PanelHeader } from "../ui/panel";
 import "./workspace-services.css";
+import { WorkspaceServiceTunnels } from "./workspace-service-tunnels";
 
 /** Workspace inventory remains reachable after creator/consumer sessions end. */
 export function WorkspaceServices({
@@ -32,6 +33,7 @@ export function WorkspaceServices({
 }) {
   const { t } = useTranslation(["chat", "workspaces"]);
   const [items, setItems] = useState<SessionWork[]>();
+  const [webServiceCount, setWebServiceCount] = useState(0);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -77,6 +79,7 @@ export function WorkspaceServices({
   useEffect(() => {
     epoch.current++;
     setItems(undefined);
+    setWebServiceCount(0);
     setError("");
     setLoadError("");
     setRefreshing(false);
@@ -140,6 +143,12 @@ export function WorkspaceServices({
           {refreshing ? t("work.refreshingServices") : t("work.refresh")}
         </Button>
       </PanelHeader>
+      <WorkspaceServiceTunnels
+        key={workspaceId}
+        workspaceId={workspaceId}
+        services={items || []}
+        onCount={setWebServiceCount}
+      />
       {!canControl ? (
         <p className="fdy-workspace-services-note">
           {t("work.servicesReadOnly")}
@@ -264,7 +273,7 @@ export function WorkspaceServices({
           </article>
         );
       })}
-      {items?.length === 0 ? (
+      {items?.length === 0 && webServiceCount === 0 ? (
         <EmptyState
           title={t("work.noWorkspaceServices")}
           body={t("work.emptyServicesBody")}

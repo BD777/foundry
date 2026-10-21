@@ -283,6 +283,7 @@ var mcpToolHandlers = map[string]mcpToolHandler{
 	}),
 	"read_context":             mcpTextTool((*Server).readContextForMCP),
 	"refresh_workspace_skills": mcpTextTool((*Server).refreshWorkspaceSkillsForMCP),
+	"register_service":         mcpTextTool((*Server).registerServiceForMCP),
 	"list_session_work":        mcpTextTool((*Server).listWorkForMCP),
 	"get_session_work":         mcpTextTool((*Server).listWorkForMCP),
 	"control_session_work":     mcpTextTool((*Server).controlWorkForMCP),

@@ -45,6 +45,7 @@ import { startSessionWork } from "./session-work/runtime.js";
 import { ownPackage } from "./worker-identity.js";
 import { logTime } from "./daemon/context.js";
 import { runControlConnection } from "./daemon/control-connection.js";
+import { registerServiceTunnelHandlers } from "./daemon/handlers/service-tunnels.js";
 import { DaemonDispatch } from "./daemon/dispatch.js";
 import { registerAgentHandlers } from "./daemon/handlers/agents.js";
 import { registerConnectionHandlers } from "./daemon/handlers/connection.js";
@@ -274,6 +275,7 @@ async function connectWebSocket(args: string[]): Promise<void> {
 /** Every message type the server sends a daemon, and the daemon's answer. */
 export const daemonDispatch = new DaemonDispatch();
 registerConnectionHandlers(daemonDispatch);
+registerServiceTunnelHandlers(daemonDispatch);
 registerFileHandlers(daemonDispatch);
 registerWorkspaceHandlers(daemonDispatch);
 registerAgentHandlers(daemonDispatch);

@@ -1,5 +1,55 @@
 [
   {
+    "name": "register_service",
+    "description": "Register an already running HTTP(S) web service in Workspace Services for private Foundry-authenticated browser access. First verify its actual executing device, workspace and exact loopback port; no scanning or process launch occurs. workspaceId is where it is shown; targetWorkspaceId is the workspace on its actual executing device (defaults to workspaceId). The person must own that device and belong to both workspaces. Use one stable registrationKey for retries. External Compose/system services remain externally managed; closing web access never kills their process. New mappings are private to the person; sharing is an explicit Foundry Web action. Configured preview hostnames and a capable Worker are required for opening, and returned status is capability/readiness, not an application health check.",
+    "summary": "Registers a known local web endpoint without starting or stopping it.",
+    "limits": [
+      "Only the person's own executing devices and reachable workspaces, outside Issue-scoped sessions.",
+      "Only explicit loopback HTTP(S) ports; no arbitrary hosts or control ports.",
+      "Never public anonymous access; default private, sharing only from Foundry Web."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "targetWorkspaceId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["http", "https"]
+        },
+        "workId": {
+          "type": "string"
+        },
+        "registrationKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "required": ["name", "port", "registrationKey"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true
+    }
+  },
+  {
     "name": "list_workspaces",
     "description": "List the workspaces you can reach (id, name, deviceId, deviceLabel, accessRole). A workspace with \"unavailable\" set is one its device no longer serves: sessions cannot start there until the person adds the folder again. A session token reaches every workspace of the person who started it, as at most Member (a session working in an Issue: only the Issue's workspace). A session started in a workspace runs on its device, under that device's model logins; the device may be another person's.",
     "summary": "Lists the workspaces the agent can reach, with each one's device and the agent's access there.",

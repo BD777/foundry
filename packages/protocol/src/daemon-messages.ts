@@ -27,6 +27,7 @@ import type {
 import type { AgentSession } from "./session.js";
 
 export const daemonMessageTypes = {
+  serviceTunnelOpen: "service_tunnel_open",
   ack: "ack",
   agentModelsListed: "agent_models_listed",
   agentProfileUpserted: "agent_profile_upserted",
@@ -557,4 +558,12 @@ export interface ReadSkillContentPayload {
 /** run_repair */
 export interface RunRepairPayload {
   action?: DeviceRepairAction;
+}
+
+/** One requested outbound data stream; only an explicit loopback port. */
+export interface ServiceTunnelOpenPayload {
+  streamId: string;
+  workspaceId: string;
+  port: number;
+  protocol: string;
 }

@@ -1,3 +1,4 @@
+import { protectHTTPPort } from "../protected-http-ports.js";
 import {
   createServer,
   request as httpRequest,
@@ -172,6 +173,8 @@ export async function startFeishuGatewayForwarder(
       resolveListen();
     });
   });
+  const unprotect = protectHTTPPort((listener.address() as AddressInfo).port);
+  listener.once("close", unprotect);
   listener.unref();
   host = `127.0.0.1:${(listener.address() as AddressInfo).port}`;
   return {

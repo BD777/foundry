@@ -422,6 +422,7 @@ export async function recheckRunningNativeChats(
  * worker declares it can run.
  */
 export const daemonCapabilities = [
+  "service_tunnels_v1",
   "knowledge_files_v1",
   "context_patch_v1",
   "context_files_v1",
@@ -464,7 +465,8 @@ export function availableDaemonCapabilities(
 ): string[] {
   return daemonCapabilities.filter(
     (capability) =>
-      (capability !== "workspace_draft_skills_v1" &&
+      (capability !== "service_tunnels_v1" &&
+        capability !== "workspace_draft_skills_v1" &&
         capability !== "role_run_budgets_v1" &&
         capability !== "exact_input_cancel_v1") ||
       !host ||

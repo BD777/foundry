@@ -75,6 +75,7 @@ type Backend interface {
 }
 
 type Server struct {
+	tunnels            serviceTunnelRuntime
 	projections        projectionCache
 	issueMutationLocks sync.Map
 	idempotencyLocks   sync.Map
@@ -254,6 +255,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 // accounting entirely. Call it before or during http.Server.Shutdown. It is
 // idempotent and safe to call concurrently.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.tunnels.closeAll()
 	s.feishu.StopAll()
 	s.feishuEvents.Stop()
 	s.stream.Shutdown()
@@ -270,7 +272,7 @@ func (s *Server) Routes() http.Handler {
 	if s.options.WebDistDir != "" {
 		mux.Handle("GET /{path...}", s.serveWeb(s.options.WebDistDir))
 	}
-	return withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux))))
+	return s.withServicePreview(withSlowRequestLog(withCORS(s.options.AllowedOrigin, s.withAuthentication(enforceAgentRoute(mux)))))
 }
 
 func (s *Server) handleOptions(w http.ResponseWriter, _ *http.Request) {

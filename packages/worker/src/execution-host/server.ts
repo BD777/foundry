@@ -167,6 +167,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const snapshot = () => ({
     protocol: 1,
     capabilities: [
+      "service_tunnels_v1",
       "idle_upgrade",
       "session_work",
       "workspace_draft_skills_v1",

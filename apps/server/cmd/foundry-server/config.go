@@ -72,6 +72,8 @@ func loadConfig(getenv func(string) string) config {
 		SecretKeyPath: envOrDefault(getenv, "FOUNDRY_SECRET_KEY_PATH",
 			defaultSecretKeyPath(dbPath)),
 		Options: httpapi.ServerOptions{
+			PreviewDomain:     strings.TrimSpace(getenv("FOUNDRY_PREVIEW_DOMAIN")),
+			PreviewSameSite:   getenv("FOUNDRY_PREVIEW_SAME_SITE") == "1",
 			AllowedOrigin:     envOrDefault(getenv, "FOUNDRY_WEB_ORIGIN", "http://127.0.0.1:31983"),
 			EnableDevReset:    getenv("FOUNDRY_ENABLE_DEV_RESET") == "1",
 			WebDistDir:        getenv("FOUNDRY_WEB_DIST"),
@@ -96,6 +98,9 @@ func setSettings(getenv func(string) string, names []string) []string {
 }
 
 func validateSettings(cfg config) error {
+	if cfg.Options.PreviewSameSite && !strings.HasPrefix(cfg.Options.AllowedOrigin, "https://") {
+		return fmt.Errorf("FOUNDRY_PREVIEW_SAME_SITE requires an HTTPS FOUNDRY_WEB_ORIGIN")
+	}
 	if len(cfg.RetiredSettings) > 0 {
 		return fmt.Errorf("%s no longer supported: browsers sign in with accounts and workers pair with a one-time token; unset them",
 			strings.Join(cfg.RetiredSettings, " and "))

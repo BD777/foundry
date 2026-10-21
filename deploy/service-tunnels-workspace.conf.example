@@ -1,0 +1,49 @@
+# Example for ONE registered project Workspace in same-site mode.
+# FOUNDRY_WEB_ORIGIN=https://dev.foundryapp.app
+# FOUNDRY_PREVIEW_DOMAIN=foundryapp.app
+# FOUNDRY_PREVIEW_SAME_SITE=1
+# Replace the Workspace ID and certificate paths with an authorized provision.
+# DNS *.ws-<id>.foundryapp.app routes to the Foundry Server, not to a Worker.
+# Both edge and origin certificates must cover *.ws-<id>.foundryapp.app.
+# *.foundryapp.app alone and *.*.foundryapp.app are NOT sufficient certificates.
+# Do not enable paid certificate features without the person's approval.
+# Ensure Cloudflare bypasses caching for these private application hosts; an
+# existing Cache Everything/Worker rule must not override Cache-Control:no-store.
+# No per-service DNS write is required within a configured Workspace wildcard.
+map $http_upgrade $foundry_workspace_connection {
+    default upgrade;
+    '' close;
+}
+log_format foundry_workspace_preview '$time_iso8601 $host $request_method $status '
+                                     'bytes=$body_bytes_sent rt=$request_time';
+server {
+    listen 443 ssl;
+    server_name "~^[a-z0-9][a-z0-9-]{0,62}\.ws-c32d4f0d0c9543dba35caddbd01e9047\.foundryapp\.app$";
+    ssl_certificate /etc/ssl/foundry-preview/ws-c32d4f0d0c9543dba35caddbd01e9047/cert.pem;
+    ssl_certificate_key /etc/ssl/foundry-preview/ws-c32d4f0d0c9543dba35caddbd01e9047/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 64m;
+    access_log /var/log/nginx/foundry-preview.access.log foundry_workspace_preview;
+    location / {
+        proxy_pass http://127.0.0.1:31982;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $foundry_workspace_connection;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 60;
+    }
+}
+server {
+    listen 80;
+    server_name "~^[a-z0-9][a-z0-9-]{0,62}\.ws-c32d4f0d0c9543dba35caddbd01e9047\.foundryapp\.app$";
+    access_log /var/log/nginx/foundry-preview.access.log foundry_workspace_preview;
+    return 301 https://$host$request_uri;
+}
+# Keep the canonical control server's Host gate and static-location isolation
+# headers, and reject all unknown hosts in the default server. The Server then
+# independently checks the exact registered mapping, account and Workspace.

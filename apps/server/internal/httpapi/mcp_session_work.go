@@ -48,7 +48,24 @@ func (s *Server) listWorkForMCP(call mcpCall) (string, error) {
 			}
 			return "", &statusError{http.StatusNotFound, errors.New("service not found")}
 		}
-		return encodeJSON(map[string]any{"items": items, "scope": "workspace_services"})
+		tunnels := []map[string]any{}
+		if mappings, err := s.tunnelStore(); err == nil {
+			registered, err := mappings.ListServiceTunnels(call.r.Context(), workspaceID)
+			if err != nil {
+				return "", err
+			}
+			userID := call.actor.AccountID()
+			if call.actor.Agent() {
+				userID = scope.agentFor
+			}
+			for _, item := range registered {
+				if s.authorizeTunnel(call.r.Context(), item, userID) && scope.can(item.TargetWorkspaceID, store.WorkspaceRoleMember) {
+					_, status := s.liveTunnel(item)
+					tunnels = append(tunnels, map[string]any{"service": item, "url": s.tunnelURL(item), "status": status})
+				}
+			}
+		}
+		return encodeJSON(map[string]any{"items": items, "serviceTunnels": tunnels, "scope": "workspace_services"})
 	}
 	session, err := s.workSession(call, false)
 	if err != nil {
