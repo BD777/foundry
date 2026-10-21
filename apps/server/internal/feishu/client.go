@@ -45,13 +45,22 @@ func NewClient(appID, appSecret, baseURL string) *Client {
 }
 
 func (c *Client) ReplyCard(ctx context.Context, messageID string, cardJSON string) (string, error) {
+	return c.ReplyCardWithKey(ctx, messageID, cardJSON, "")
+}
+
+// Feishu deduplicates equal UUIDs for one hour. Persistent thread receipts
+// remain the long-lived identity; this also covers a lost immediate response.
+func (c *Client) ReplyCardWithKey(ctx context.Context, messageID, cardJSON, key string) (string, error) {
+	body := larkim.NewReplyMessageReqBodyBuilder().
+		MsgType(larkim.MsgTypeInteractive).
+		Content(cardJSON).
+		ReplyInThread(true)
+	if key != "" {
+		body.Uuid(key)
+	}
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(messageID).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType(larkim.MsgTypeInteractive).
-			Content(cardJSON).
-			ReplyInThread(true).
-			Build()).
+		Body(body.Build()).
 		Build()
 
 	resp, err := c.lark.Im.V1.Message.Reply(ctx, req)

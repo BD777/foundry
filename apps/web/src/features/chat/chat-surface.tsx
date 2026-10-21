@@ -1,4 +1,4 @@
-import { isCurrentWork } from "./chat-work-state";
+import { sidebarWorkCounts } from "./chat-work-state";
 import { ChevronLeft, PanelRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -65,19 +65,32 @@ export function ChatSurface(props: ChatSurfaceProps) {
   const panel = useChatContextPanel(props);
   const { detail } = panel;
   const work = useSessionWork(contextCard?.status?.sessionId);
-  const workNotice = work.list?.items.some(isCurrentWork) ? (
-    <Button variant="ghost" onClick={panel.toggle}>
-      {t("work.open", {
-        count: work.list.items.filter(isCurrentWork).length,
-      })}
-    </Button>
-  ) : undefined;
+  const workCounts = sidebarWorkCounts(work.list?.items ?? []);
+  const workNotice =
+    workCounts.timers || workCounts.agents ? (
+      <Button variant="ghost" onClick={panel.toggle}>
+        {[
+          workCounts.timers
+            ? t("work.timerCount", { count: workCounts.timers })
+            : "",
+          workCounts.agents
+            ? t("work.agentCount", { count: workCounts.agents })
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </Button>
+    ) : undefined;
   useChatDocumentTitle(
     !threadKey.endsWith(":new") && typeof chatTitle === "string"
       ? chatTitle
       : "",
     Boolean(props.agentActive),
-    Boolean(panel.backgroundNote),
+    Boolean(
+      props.backgroundWork?.taskIds.length ||
+      props.backgroundWork?.subagentIds.length ||
+      props.backgroundWork?.timerRun,
+    ),
   );
   // Stable, so the memoized chat list does not render for transcript events.
   const latestCallbacks = useRef({ onChatsDeleted, onNewChat });
@@ -198,6 +211,8 @@ export function ChatSurface(props: ChatSurfaceProps) {
               data-open={panel.open ? "true" : "false"}
             >
               <ChatContextCard
+                accountUsage={props.accountUsage}
+                usageCompletion={props.usageCompletion}
                 work={work}
                 canControl={!props.readOnlyReason && !props.threadNotice}
                 chatKey={threadKey}

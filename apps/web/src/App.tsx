@@ -114,6 +114,7 @@ export function App() {
         workspaceSelector={
           <WorkspacesFeature
             compact
+            collapsed={preferences.sidebarCollapsed}
             activeWorkspaceId={activeWorkspaceId}
             devices={data.devices}
             onEvent={handleWorkspaceEvent}

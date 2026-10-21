@@ -4,7 +4,7 @@ import type { DeviceProjection, WorkerRelease } from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { RowMenu } from "../../components/ui/row-menu";
-import { AccountShareLabel } from "./device-account-share";
+import { AccountShareIcon } from "./device-account-share";
 import { deviceSummary } from "./device-details";
 import { workerState, workerUpdateStepLabel } from "./device-worker";
 
@@ -17,6 +17,7 @@ export function DeviceList({
   onOpen,
   onRename,
   onRemove,
+  onRefresh,
 }: {
   devices: DeviceProjection[];
   /** The worker this server serves, to mark devices that are behind it. */
@@ -27,6 +28,7 @@ export function DeviceList({
   onOpen: (deviceId: string) => void;
   onRename: (device: DeviceProjection) => void;
   onRemove: (device: DeviceProjection) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const { t } = useTranslation("devices");
   return (
@@ -58,7 +60,6 @@ export function DeviceList({
                   .join(" · ")}
               </small>
             </span>
-            <AccountShareLabel device={row} />
             <WorkerStateBadge device={row} release={release} />
             <Badge tone={row.status === "connected" ? "online" : "neutral"}>
               {t(
@@ -67,6 +68,7 @@ export function DeviceList({
             </Badge>
             <span>{t("list.view")}</span>
           </Button>
+          <AccountShareIcon device={row} onRefresh={onRefresh} />
           {!row.owned ? (
             <Badge tone="neutral">{t("list.sharedWithYou")}</Badge>
           ) : (

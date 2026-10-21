@@ -24,7 +24,7 @@ export function withAccountNav(
     { id: "account", label: "account", icon: UserRound },
   ];
   return sections.map((section) =>
-    section.label === "manage"
+    section.id === "manage"
       ? { ...section, items: [...section.items, ...accountItems] }
       : section,
   );

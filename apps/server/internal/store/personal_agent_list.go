@@ -21,8 +21,15 @@ const (
 
 // PersonalAgentListItem is one thing on the person's list (table pa_items).
 type PersonalAgentListItem struct {
-	ID     string `json:"id"`
-	UserID string `json:"-"`
+	ID             string                 `json:"id"`
+	UserID         string                 `json:"-"`
+	IntentRevision int64                  `json:"intentRevision,omitempty"`
+	Revision       int64                  `json:"revision,omitempty"`
+	SourceInputID  string                 `json:"sourceInputId,omitempty"`
+	SourceInboxID  string                 `json:"sourceInboxId,omitempty"`
+	CaptureKey     string                 `json:"-"`
+	CaptureHash    string                 `json:"-"`
+	Plan           *PersonalAgentItemPlan `json:"plan,omitempty"`
 	// Text is the thing, short, in the person's language.
 	Text string `json:"text"`
 	// When is when the person said it happens, in their words ("after
@@ -49,9 +56,39 @@ type PersonalAgentListItem struct {
 // PersonalAgentListItemInput is the person's edit of an item on the web;
 // absent fields stay as they are.
 type PersonalAgentListItemInput struct {
-	Text   *string `json:"text,omitempty"`
-	When   *string `json:"when,omitempty"`
-	Status *string `json:"status,omitempty"`
+	Revision *int64                 `json:"revision,omitempty"`
+	Plan     *PersonalAgentItemPlan `json:"plan,omitempty"`
+	Text     *string                `json:"text,omitempty"`
+	When     *string                `json:"when,omitempty"`
+	Status   *string                `json:"status,omitempty"`
+}
+
+// PersonalAgentItemPlan supplements the person's short task without
+// duplicating execution state or changing what their original words meant.
+type PersonalAgentItemPlan struct {
+	Route        *PersonalAgentRouteDecision       `json:"route,omitempty"`
+	Mode         string                            `json:"mode"`
+	Progress     string                            `json:"progress"`
+	NextAction   string                            `json:"nextAction,omitempty"`
+	WaitingFor   string                            `json:"waitingFor,omitempty"`
+	WorkspaceID  string                            `json:"workspaceId,omitempty"`
+	Dependencies []string                          `json:"dependencies,omitempty"`
+	WorkRefs     []PersonalAgentWorkReference      `json:"workRefs,omitempty"`
+	Evidence     []PersonalAgentCompletionEvidence `json:"evidence,omitempty"`
+}
+
+type PersonalAgentWorkReference struct {
+	Kind        string `json:"kind"`
+	ID          string `json:"id"`
+	WorkspaceID string `json:"workspaceId"`
+	Relation    string `json:"relation"`
+}
+
+type PersonalAgentCompletionEvidence struct {
+	Kind       string `json:"kind"`
+	Ref        string `json:"ref"`
+	Summary    string `json:"summary"`
+	ObservedAt string `json:"observedAt"`
 }
 
 // PersonalAgentListStore keeps the person's list and the daily digest's
@@ -77,4 +114,12 @@ type PersonalAgentListStore interface {
 	// ClaimPersonalAgentDigest marks the person's daily digest of day
 	// (YYYY-MM-DD) sent; false when it already was.
 	ClaimPersonalAgentDigest(ctx context.Context, userID, day string) (bool, error)
+}
+
+// Routing is an explainable decision for this intent, not an access grant.
+type PersonalAgentRouteDecision struct {
+	Kind               string   `json:"kind"`
+	Reason             string   `json:"reason"`
+	Alternatives       []string `json:"alternatives,omitempty"`
+	NeedsClarification bool     `json:"needsClarification"`
 }

@@ -324,6 +324,9 @@ func (s *Store) SaveSessionWork(ctx context.Context, item store.SessionWork) (st
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		if err := tx.assertDeviceNotRemoved(ctx, item.DeviceID); err != nil {
+			return err
+		}
 		var stopped bool
 		err = tx.conn().QueryRowContext(ctx, `SELECT stopped FROM session_work_scopes WHERE thread_id = ?`, item.ThreadID).Scan(&stopped)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -577,6 +580,11 @@ func (s *Store) ControlSessionWork(ctx context.Context, threadID, sessionID stri
 			if !all && !slices.Contains(item.AllowedActions, action) {
 				return errors.New("this work source does not support that action")
 			}
+			if action == "run" || action == "resume" || action == "adopt" {
+				if err := tx.assertDeviceNotRemoved(ctx, item.DeviceID); err != nil {
+					return err
+				}
+			}
 			// Bulk stop records intent even if a source is currently unreachable.
 			switch action {
 			case "pause":
@@ -653,6 +661,9 @@ func (s *Store) ClaimWorkRun(ctx context.Context, id string, generation int64, s
 		}
 		var w store.SessionWork
 		if err := json.Unmarshal([]byte(raw), &w); err != nil {
+			return err
+		}
+		if err := tx.assertDeviceNotRemoved(ctx, w.DeviceID); err != nil {
 			return err
 		}
 		if w.Native != nil || w.Management != "managed" || w.Kind != "schedule" {

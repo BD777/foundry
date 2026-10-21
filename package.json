@@ -19,7 +19,7 @@
     "regression:api": "pnpm cases:validate && pnpm test:smoke:api",
     "regression:commit": "pnpm format && pnpm verify",
     "test": "pnpm test:js && pnpm test:go",
-    "test:go": "cd apps/server && go test ./...",
+    "test:go": "cd apps/server && go test -timeout 20m ./...",
     "test:js": "pnpm -r --if-present test",
     "test:smoke:api": "node scripts/smoke-api.mjs",
     "stack": "node scripts/dev-stack.mjs",

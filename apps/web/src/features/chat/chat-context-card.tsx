@@ -1,3 +1,5 @@
+import { ChatAccountUsage } from "./chat-account-usage";
+import type { AccountUsageTarget } from "./chat-account-usage-model";
 import {
   ChevronRight,
   ExternalLink,
@@ -9,7 +11,6 @@ import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../components/ui/button";
 import { ChatSessionStatusLine } from "./chat-session-status";
-import { BackgroundSection } from "./chat-context-background";
 import { SessionFileSections } from "./chat-context-files";
 import { useFoldOpen } from "./chat-context-folds";
 import { SubagentSection } from "./chat-context-subagents";
@@ -107,6 +108,8 @@ function StartedBySection({
 }
 
 export const ChatContextCard = memo(function ChatContextCard({
+  accountUsage,
+  usageCompletion,
   work,
   canControl = false,
   chatKey,
@@ -119,6 +122,8 @@ export const ChatContextCard = memo(function ChatContextCard({
   selectedId,
   turnFilter,
 }: {
+  accountUsage?: AccountUsageTarget;
+  usageCompletion?: string;
   work?: SessionWorkController;
   canControl?: boolean;
   /** The open chat: which sections it unfolded is remembered by this key. */
@@ -164,6 +169,10 @@ export const ChatContextCard = memo(function ChatContextCard({
         />
       ) : null}
 
+      {accountUsage ? (
+        <ChatAccountUsage target={accountUsage} completion={usageCompletion} />
+      ) : null}
+
       {data.startedBy ? <StartedBySection link={data.startedBy} /> : null}
 
       {work && (work.list || work.error) ? (
@@ -171,11 +180,7 @@ export const ChatContextCard = memo(function ChatContextCard({
           controller={work}
           canControl={canControl}
           onInspect={(item) => {
-            const source = [
-              ...data.background,
-              ...data.subagents,
-              ...data.timers,
-            ].find(
+            const source = [...data.subagents, ...data.timers].find(
               (row) =>
                 row.sessionId === item.sessionId &&
                 (row.kind === "subagent" ? row.taskId : row.task.id) ===
@@ -211,19 +216,9 @@ export const ChatContextCard = memo(function ChatContextCard({
         </section>
       ) : null}
 
-      {!work?.list && data.background.length > 0 ? (
-        <BackgroundSection
-          chatKey={chatKey}
-          items={data.background}
-          onSelect={onSelect}
-          reveal={reveal}
-          selectedId={selectedId}
-        />
-      ) : null}
-
       {!work?.list && data.timers.length > 0 ? (
         <section className="fdy-chat-context-section">
-          <h3>{t("contextCard.timers")}</h3>
+          <h3>{t("work.title")}</h3>
           <div className="fdy-chat-context-list">
             {data.timers.map((item) => (
               <TimerRow

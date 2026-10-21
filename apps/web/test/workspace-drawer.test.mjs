@@ -66,7 +66,7 @@ test("workspaces page groups folders by device; only Switch activates", async ()
       ),
     );
     await act(() =>
-      container.querySelector('[aria-label="Open workspaces"]').click(),
+      container.querySelector('[aria-label^="Open workspaces"]').click(),
     );
     assert.deepEqual(events.pop(), { type: "workspace.browse.requested" });
     assert.equal(window.document.querySelector('[role="dialog"]'), null);

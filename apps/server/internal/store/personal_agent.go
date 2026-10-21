@@ -106,28 +106,30 @@ type PersonalAgent struct {
 // PersonalAgentSettings is what the settings panel edits (settings_json).
 // An empty string means the default named in the protocol.
 type PersonalAgentSettings struct {
-	AssistantName      string                        `json:"assistantName"`
-	Language           string                        `json:"language"`
-	Timezone           string                        `json:"timezone"`
-	SpeakingStyle      string                        `json:"speakingStyle"`
-	Verbosity          string                        `json:"verbosity"`
-	ExtraInstructions  string                        `json:"extraInstructions"`
-	Policy             PersonalAgentPolicy           `json:"policy"`
-	Devices            []PersonalAgentDeviceSettings `json:"devices"`
-	PreferredDeviceID  string                        `json:"preferredDeviceId"`
-	AssistantProfileID string                        `json:"assistantProfileId"`
-	AssistantModel     string                        `json:"assistantModel"`
-	DelegateModel      string                        `json:"delegateModel"`
-	HomePage           bool                          `json:"homePage"`
-	SimpleInterface    bool                          `json:"simpleInterface"`
-	FeishuDirectChat   bool                          `json:"feishuDirectChat"`
-	FeishuAppID        string                        `json:"feishuAppId"`
-	DailyDigest        bool                          `json:"dailyDigest"`
-	DailyDigestTime    string                        `json:"dailyDigestTime"`
-	ActiveHoursStart   string                        `json:"activeHoursStart"`
-	ActiveHoursEnd     string                        `json:"activeHoursEnd"`
-	UrgentAnytime      bool                          `json:"urgentAnytime"`
-	Limits             PersonalAgentLimits           `json:"limits"`
+	RunDefault         *PersonalAgentRunPreference           `json:"runDefault,omitempty"`
+	RoleOverrides      map[string]PersonalAgentRunPreference `json:"roleOverrides,omitempty"`
+	AssistantName      string                                `json:"assistantName"`
+	Language           string                                `json:"language"`
+	Timezone           string                                `json:"timezone"`
+	SpeakingStyle      string                                `json:"speakingStyle"`
+	Verbosity          string                                `json:"verbosity"`
+	ExtraInstructions  string                                `json:"extraInstructions"`
+	Policy             PersonalAgentPolicy                   `json:"policy"`
+	Devices            []PersonalAgentDeviceSettings         `json:"devices"`
+	PreferredDeviceID  string                                `json:"preferredDeviceId"`
+	AssistantProfileID string                                `json:"assistantProfileId"`
+	AssistantModel     string                                `json:"assistantModel"`
+	DelegateModel      string                                `json:"delegateModel"`
+	HomePage           bool                                  `json:"homePage"`
+	SimpleInterface    bool                                  `json:"simpleInterface"`
+	FeishuDirectChat   bool                                  `json:"feishuDirectChat"`
+	FeishuAppID        string                                `json:"feishuAppId"`
+	DailyDigest        bool                                  `json:"dailyDigest"`
+	DailyDigestTime    string                                `json:"dailyDigestTime"`
+	ActiveHoursStart   string                                `json:"activeHoursStart"`
+	ActiveHoursEnd     string                                `json:"activeHoursEnd"`
+	UrgentAnytime      bool                                  `json:"urgentAnytime"`
+	Limits             PersonalAgentLimits                   `json:"limits"`
 }
 
 // PersonalAgentDeviceSettings is what the assistant may do on one device.

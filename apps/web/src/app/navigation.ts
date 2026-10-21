@@ -1,6 +1,6 @@
 import {
   Columns2,
-  FolderOpen,
+  LayoutDashboard,
   KeyRound,
   Library,
   MessageSquareText,
@@ -457,6 +457,7 @@ export function scrollModeForView(view: string): "page" | "contained" {
 }
 
 const assistantNavSection: SidebarNavSection<SidebarView> = {
+  id: "assistant",
   label: "assistantSection",
   items: [
     { id: "assistant", label: "assistant", icon: Sparkles },
@@ -469,21 +470,23 @@ const assistantNavSection: SidebarNavSection<SidebarView> = {
 };
 
 /**
- * The sidebar: the assistant, what a person works on, then what they
- * manage. Labels are keys of the shell namespace's `nav`; the shell
+ * The sidebar: the selected workspace, then the global assistant and
+ * management. Labels are keys of the shell namespace's `nav`; the shell
  * translates them.
  */
 export const navSections: Array<SidebarNavSection<SidebarView>> = [
-  assistantNavSection,
   {
+    id: "workspace",
     label: "workspace",
     items: [
-      { id: "workspace", label: "overview", icon: FolderOpen },
+      { id: "workspace", label: "overview", icon: LayoutDashboard },
       { id: "issues", label: "issues", icon: Columns2 },
       { id: "chats", label: "chats", icon: MessageSquareText },
     ],
   },
+  { ...assistantNavSection, dividerBefore: true },
   {
+    id: "manage",
     label: "manage",
     items: [
       { id: "devices", label: "devices", icon: Monitor },
@@ -501,5 +504,5 @@ export const navSections: Array<SidebarNavSection<SidebarView>> = [
  */
 export const simpleNavSections: Array<SidebarNavSection<SidebarView>> = [
   assistantNavSection,
-  { label: "manage", items: [] },
+  { id: "manage", label: "manage", items: [] },
 ];

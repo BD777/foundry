@@ -5,6 +5,7 @@ import type {
   PersonalAgent,
   PersonalAgentOverview,
 } from "@bd777/foundry-protocol";
+import { ownedDeviceCandidates } from "../../lib/devices";
 import { setupPersonalAgent } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -55,7 +56,7 @@ export function AssistantGate({
         </Alert>
       ) : (
         <AssistantSetup
-          devices={devices.filter((device) => device.owned)}
+          devices={ownedDeviceCandidates(devices)}
           onConnectComputer={onConnectComputer}
           onSetUp={async (deviceId) => {
             await setupPersonalAgent({

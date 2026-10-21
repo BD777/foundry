@@ -1,6 +1,6 @@
 # DEV-022 · 原生持续工作统一抽象与 Ongoing work UI
 
-状态：2026-10-20 按用户显式委托，由 Agent 完成 only-ended 标题与对称间距修订、自验及视觉准出归档。公开 Web build 为 `5c363c9b29f8b22e`；原生工作及 Workspace 服务证据、此前用户指出的未通过历史保留。源码合入和本轮截图见 [DEV-025](DEV-025-release-closure.md)。
+状态：2026-10-21 本轮 timer-only 侧栏修复已部署并完成 Agent 自验，公开 Web `a3e6df1daecced03`。Timers 与 Agents 独立，命令历史不再混入；完整库存/聊天记录及 Workspace Services 保留。Server/Worker 本轮未改，源码精确增量交唯一 PA 联合 Git/CI owner；不宣称用户亲测本轮。此前委托准出与历史证据保留。
 
 负责人：[Astra / xhigh 实施 session](https://dev.foundryapp.app/chats/sess_1792392033435484621)，创建回执已确认模型与推理强度。
 
@@ -226,3 +226,46 @@ DEV-006/007 owner 已接回合成栈，独立确认新宿主并完成当前回�
 用户于 01:07 明确委托“你验证OK了的，你都先确认归档吧”。本轮按已验证范围由 Agent 准出，未追加用户本人测试的声明；历史未通过/待验条目是对应时点记录，不抹除。最终边界、浏览器/版本/合入证据见 [DEV-025](DEV-025-release-closure.md)。
 
 only-ended 修订的公开 build `5c363c9b29f8b22e` 已在真实独立 HTTP/UI fixture 完成零项/6 条已结束/8 活跃+3 历史、键盘、中英、双主题与 390px 窄屏检查。上下 16px、gap 8px；axe 亮/暗各 20 pass、0 violation。截图及交互 fixture 外层 143 的准确边界见 DEV-025，不将该外层测试回执写成 PASS。两个既有合成服务继续运行并保留数据，临时计划已有精确 remove verified；未调用 stop_all。
+
+## 2026-10-21 · 侧栏只展示定时任务与独立 Agent
+
+用户实际反馈右侧 `Work → Ended (119)` 被 cat、ssh、test、git 等普通调用历史填满，明确要求“这里预期只放 timer 类的东西，工具调用历史不用放在这里”。反馈图：`.foundry/attachments/20261021/att_dmaiyanmwdkb/att_dmaix6sk0j39_0_image.png`。本轮修正的是侧栏范围，不删除原生记录，也不改变原任务/服务的生命周期；历史三类统一模型仍保留在 MCP 库存，持久服务仍从 Workspace Services 管理。
+
+根因：`SessionWorkSection` 只过滤 removed/非独立工作，将 schedule、process、agent 合并到一个 Ended 折叠；原生 app-server 正常记录的命令执行因此进入侧栏。没有证据需要改源分类，故不修改 Server、Worker、协议或数据库。
+
+实现边界：
+
+- 仅 `kind=schedule` 进入 Timers（定时任务），Foundry 和原生 timer 一致；Agent 独立成区，原生 subagent 与直接 Foundry 子会话仍可辨识、查看和跳转。两个历史折叠、空态和输入框计数分别按其种类计算，命令及服务不参与。
+- 移除侧栏的 conversation-wide `stop_all`。`useSessionWork` 只接受有明确目标、当前可见且具备相应能力的单项控制；拒绝 bulk、process、native-agent 生命周期控制。重试保留原幂等键/版本，同时检查目标仍属于侧栏范围，不能借失败重试控制隐藏服务。
+- 控制回执只有完整目标集都属于当前区时才呈现，隐藏/混合目标的旧 bulk 回执不冒充 timer 回执。真实 timer 的 pending、unknown、offline、屏障说明及单项控制保持；原生缺能力时不造按钮。
+- 无 work list 或读取失败时，旧 `BackgroundSection` 不再回退渲染；真实旧 timer 与 subagent 回退仍可见。普通后台进程不参与侧栏入口计数，聊天文档的后台活动标识和原始记录保留。
+- `lib/session-work-state.ts`、Workspace Services 的生命周期与完整后端库存未改。没有用工具名/标题正则猜测类型，也未停止或删除既存计划/服务。
+
+本轮 14 个代码/测试路径位于右栏组件、状态、controller、chat 中英翻译和对应测试；没有改 DEV-033 左栏。DEV-034 的 service/tunnel 实现由其 owner 独立处理，未混入本次候选。固定候选 `/home/windeng/workspace/foundry-dev022-timers` 继承 `/home/windeng/workspace/foundry-dev033-tools`，保留其 029 async + 032 + 031 align + 033 tool-group 基线；2,183 个其他基线文件逐一核对未变。精确 source manifest / before-after / patch 位于 `/tmp/dev022-timers-20261021/`，供唯一联合 Git/CI owner 集成，不整树打包 dirty。
+
+自验证据：
+
+| 范围                       | 结果                                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/check-changed.sh` | 48 个相关 Web 测试文件和 10 项 UI 审计通过；初轮发现可选索引及 fixture 缺字段两处类型错误，修正后独立 typecheck 通过；最终定向 check-changed 通过。                                                     |
+| 固定组合候选               | typecheck、生产构建通过；23 项定向回归全通过，含 bulk/隐藏控制拒绝、原幂等键重试、119 条范围投影、无 list 的旧 fallback 与历史折叠。                                                                    |
+| 119 条混合库存             | 111 条命令 + 4 个 timer + 3 个 agent + 1 个服务完整保留；侧栏仅 7 行，当前计数为 2 timers/2 agents，已结束计数分别为 2/1。过程不变更隐藏服务。                                                          |
+| 真实浏览器                 | 生产 CSS 的 14 个场景通过：中英、深浅、1280/390px、仅命令、仅历史、仅 Agent、fallback、读取失败、离线；最长标题无横向溢出。两个历史折叠互不影响，键盘 Space/tooltip/菜单与 Foundry 子会话链接验证通过。 |
+| 控制请求                   | 浏览器模拟单项暂停后保持 pending，失败重试使用完全相同的 ID/revision/idempotencyKey；请求只指向 timer，没有 bulk/隐藏 process 写入，服务仍 running。所有测试 API 均为隔离 fixture，不执行真实任务。     |
+| 可访问性                   | 最终亮/暗各 20 pass、0 violation、0 incomplete。                                                                                                                                                        |
+
+固定 fixture 单独打包的 CSS 起初与应用入口不同，最终改为引用实际待发布 CSS，并核对 SHA-256 `bcd7eac38c26fac9af6dd3d9af7cdd27a734e5b267a969ccd1470827e6bb48a2` 完全相同后重跑矩阵。测试专用入口未纳入生产发布。详见 `check-changed.log`、`typecheck-final.log`、`final-check.log`、`candidate-tests.log`、`production-css.json`、`browser-matrix.json`、`retry-browser.json`、`a11y-{light,dark}.json`。
+
+截图：`.foundry/attachments/dev022-timers-20261021/final-panel-light.png`、`final-panel-dark.png` 及同目录中英/主题/窄屏整页。此前准出保留为历史；本次追加的 timer-only 约束以此节为准。最终发布和回执在下文登记，不以候选构建成功冒充公网已生效。
+
+### 2026-10-21 21:43 · 最终发布与线上回执
+
+DEV-033 明确移交窗口后，从公开 `8577a1b9c462b8ca` / index SHA `30e536b579628bf81b10f05b3c140b70a5c96e40d754c38f1e84bb7ee365ffcf` 做 CAS 发布，保留旧 assets 和该版 index/version 回滚文件。最终 Web **`a3e6df1daecced03`**，index SHA-256 **`15a60b859b2fc0f55a6e8d3c97516603c69050822991a5c6b27c108d0c0ecf7d`**；公开 HTTP、磁盘、认证浏览器 meta 与 `version.json` 一致，实际脚本为 `index-ONTVRq5D.js`。
+
+Server PID **1840661**、已加载二进制 SHA **`3b6403643063afff677888c6b2c568aebfa09add25ca312bd12807363b2f142a`**、health startedAt=`2026-10-21T10:42:57Z` 保持不变且 healthy。Worker release pointer SHA **`264c61395b300b0ad4445b9e8027e17d547d6ac6f5a8e0dd8adae59202523720`** 未改；本轮没有重启 Server 或更新 Worker。发布前后磁盘分别约 10.14/10.13 GiB 可用，仅清理已核实无进程引用的本 owner 旧测试浏览器 profile，未删数据库/WAL/业务文件或回滚包。
+
+复用登记的 e2e-alice，在真实 dev 页面读取既有合成会话；只在浏览器中替换该会话的一条 **GET work 响应**为 119 条混合 fixture，不创建会话、不写服务端数据。已部署的实际页面显示 Timers/Agents 两区、7 个正确条目、历史分别 2/1，原聊天内容保持可读，未出现 `/work/operations` 写请求。随后解除读取拦截并正常读取真实库存，再关闭浏览器。截图 `live-119.png` 与 `live-{version,119,unrouted}.json` 区分公开构建核验和受控数据注入，不冒称这些合成 timer 在真实运行。
+
+回执与固定文件：`/tmp/dev022-timers-20261021/deployment.json`、`source-manifest.json`（14 代码/测试路径）、`delta-manifest.json`、`delta.patch`、`readme-row.json`。DEV-029 async、032、031 align 和 033 tools 基线完整保留，未混入 DEV-034 未验增量。预览与浏览器关闭后释放纯 Web 发布窗口给 DEV-032；后续版本必须从本固定候选叠加，避免旧快照重新带回命令历史。源码交 PA 单一联合 CI/受保护合入，无竞争 PR 或独立 Git 操作。
+
+用户可直接刷新原会话验收：定时区仅显示真实 timer，展开“已结束的定时任务”不会出现普通命令；Agent 及直接 Foundry 子会话在独立区，历史计数互不影响；没有会暗中作用于隐藏工作项的全会话批量按钮。原工具历史仍在聊天记录，持久服务仍在 Workspace Services。本轮按已有委托完成上述已验证范围，不记录为用户本人测试。

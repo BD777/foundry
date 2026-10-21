@@ -72,6 +72,14 @@ func (s *Store) ListDeviceLabels(ctx context.Context, deviceIDs []string) ([]sto
 }
 
 func (s *Store) SetDeviceLabels(ctx context.Context, deviceID string, labels []store.DeviceLabel, userID string) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
+		return tx.setDeviceLabels(ctx, deviceID, labels, userID)
+	})
+}
+func (s *Store) setDeviceLabels(ctx context.Context, deviceID string, labels []store.DeviceLabel, userID string) error {
 	if strings.TrimSpace(deviceID) == "" {
 		return fmt.Errorf("device labels need a device")
 	}

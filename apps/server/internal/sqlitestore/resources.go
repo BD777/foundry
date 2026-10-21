@@ -168,6 +168,11 @@ func (s *Store) ReplaceSourceResources(ctx context.Context, source store.Resourc
 		return err
 	}
 	return s.withTx(ctx, func(tx *Store) error {
+		if source.Kind == "device" {
+			if err := tx.assertDeviceNotRemoved(ctx, source.ID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.conn().ExecContext(ctx, `INSERT INTO resource_sources
 			(id, kind, label, online, scanner_version, detector_errors_json, last_report_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -233,6 +238,14 @@ func (s *Store) ResourceSourceSettings(ctx context.Context, sourceID string) (st
 }
 
 func (s *Store) SetResourceSourceSettings(ctx context.Context, sourceID string, settings store.ResourceSourceSettings, byUserID string) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, sourceID); err != nil {
+			return err
+		}
+		return tx.setResourceSourceSettings(ctx, sourceID, settings, byUserID)
+	})
+}
+func (s *Store) setResourceSourceSettings(ctx context.Context, sourceID string, settings store.ResourceSourceSettings, byUserID string) error {
 	if _, err := s.conn().ExecContext(ctx, `INSERT INTO resource_source_settings
 		(source_id, allow_remote_commands, updated_by, updated_at) VALUES (?, ?, ?, ?)
 		ON CONFLICT(source_id) DO UPDATE SET allow_remote_commands = excluded.allow_remote_commands,

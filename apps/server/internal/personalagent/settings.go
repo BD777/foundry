@@ -24,6 +24,25 @@ var clockPattern = regexp.MustCompile(`^([01][0-9]|2[0-3]):[0-5][0-9]$`)
 // is an error, never silently lowered.
 func NormalizeSettings(in store.PersonalAgentSettings, ownedDevices []string, home string) (store.PersonalAgentSettings, error) {
 	out := in
+	if in.RunDefault != nil {
+		if err := ValidateRunPreference(*in.RunDefault); err != nil {
+			return in, err
+		}
+		if in.RunDefault.DeviceID != "" && !contains(ownedDevices, in.RunDefault.DeviceID) {
+			return in, fmt.Errorf("default execution computer must belong to the person")
+		}
+	}
+	for role, preference := range in.RoleOverrides {
+		if !contains(RunRoles, role) {
+			return in, fmt.Errorf("unknown assistant role %q", role)
+		}
+		if err := ValidateRunPreference(preference); err != nil {
+			return in, err
+		}
+		if preference.DeviceID != "" && !contains(ownedDevices, preference.DeviceID) {
+			return in, fmt.Errorf("role execution computer must belong to the person")
+		}
+	}
 	out.AssistantName = strings.TrimSpace(in.AssistantName)
 	if utf8.RuneCountInString(out.AssistantName) > AssistantNameMaxChars || strings.ContainsAny(out.AssistantName, "\r\n\t") {
 		return in, fmt.Errorf("the assistant's name is at most %d characters on one line", AssistantNameMaxChars)

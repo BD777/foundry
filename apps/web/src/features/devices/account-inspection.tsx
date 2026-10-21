@@ -1,3 +1,4 @@
+import { AccountUsageWindows } from "../../components/account-usage-windows";
 import { useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
@@ -13,18 +14,25 @@ import {
 
 export function AccountInspection({
   deviceId,
+  identity,
   runtime,
   online,
   onChecked,
 }: {
   deviceId: string;
+  identity?: string;
   runtime: "claude" | "codex";
   online: boolean;
   /** A new read also refreshed the device's agents on the server. */
   onChecked: () => Promise<void>;
 }) {
   const { t } = useTranslation("profiles");
-  const snapshot = useDeviceAccountInspection(deviceId, runtime, online);
+  const snapshot = useDeviceAccountInspection(
+    deviceId,
+    runtime,
+    online,
+    identity,
+  );
   // Reads restored from an earlier mount are not new; only later ones are.
   const seenChecks = useRef(snapshot.accepted);
   useEffect(() => {
@@ -56,24 +64,17 @@ export function AccountInspection({
       (!snapshot.selectedSource && loadingTarget === ""));
 
   function checkCurrent() {
-    checkInspection(deviceId, runtime, viewedSource || undefined);
+    checkInspection(deviceId, runtime, viewedSource || undefined, identity);
   }
   function backToExecution() {
     if (!executionSource) return;
     if (snapshot.results[executionSource])
-      resetInspectionSource(deviceId, runtime, executionSource);
-    else selectInspectionSource(deviceId, runtime, executionSource);
+      resetInspectionSource(deviceId, runtime, executionSource, identity);
+    else selectInspectionSource(deviceId, runtime, executionSource, identity);
   }
 
-  const claude = runtime === "claude";
-  const checkLabel = claude
-    ? result
-      ? t("inspection.recheckLocal")
-      : t("inspection.checkLocal")
-    : t("inspection.checkAccount");
-  const busyLabel = claude
-    ? t("inspection.checkingLocal")
-    : t("inspection.checking");
+  const checkLabel = t("inspection.checkAccount");
+  const busyLabel = t("inspection.checking");
 
   return (
     <section
@@ -114,41 +115,7 @@ export function AccountInspection({
             </span>
           </div>
           <p>{result.message}</p>
-          {result.usage.map((usage, index) => (
-            <div className="fdy-account-usage" key={index}>
-              <span>
-                {usage.windowMinutes
-                  ? usage.windowMinutes >= 1440
-                    ? t("inspection.windowDays", {
-                        days: usage.windowMinutes / 1440,
-                      })
-                    : t("inspection.windowHours", {
-                        hours: usage.windowMinutes / 60,
-                      })
-                  : t("inspection.usageWindow")}
-              </span>
-              <strong>
-                {t("inspection.used", { percent: usage.usedPercent })}
-              </strong>
-              {usage.usedPercent >= 100 ? (
-                <small>{t("inspection.limitReached")}</small>
-              ) : null}
-              <progress
-                aria-label={t("inspection.usageLabel")}
-                max={100}
-                value={usage.usedPercent}
-              />
-              {usage.resetsAt ? (
-                <small>
-                  {t("inspection.resets", {
-                    time: new Date(usage.resetsAt * 1000).toLocaleString(
-                      i18n.language,
-                    ),
-                  })}
-                </small>
-              ) : null}
-            </div>
-          ))}
+          <AccountUsageWindows windows={result.usage} />
           {sourceMissing ? (
             <p className="fdy-account-source-missing" role="status">
               <Trans
@@ -179,7 +146,7 @@ export function AccountInspection({
                       : t("inspection.otherApp"),
                 }))}
                 onChange={(source) =>
-                  selectInspectionSource(deviceId, runtime, source)
+                  selectInspectionSource(deviceId, runtime, source, identity)
                 }
               />
             </label>

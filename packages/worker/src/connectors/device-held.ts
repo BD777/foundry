@@ -1,10 +1,23 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  lstatSync,
+  openSync,
+  fstatSync,
+  closeSync,
+  constants,
+} from "node:fs";
 import { connect } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   ConnectorDescriptor,
+  ConnectorAuthorizationGroup,
+  ConnectorAuthorizationState,
+  ConnectorAuthorizationChallenge,
   ConnectorReplyPayload,
   ConnectorRequestPayload,
   DeviceConnectorSignIn,
@@ -51,6 +64,8 @@ export interface LoginReading {
 }
 
 export interface SignInStep {
+  challenge?: ConnectorAuthorizationChallenge;
+  expiresAt?: string;
   status: DeviceConnectorSignIn["status"];
   verificationUrl?: string;
   userCode?: string;
@@ -70,6 +85,21 @@ export interface DeviceHeldAdapter {
   beginSignIn(run: ToolRun, scratch: string): Promise<SignInStep>;
   pollSignIn(run: ToolRun): Promise<SignInStep>;
   signOut(run: ToolRun): Promise<void>;
+  readAuthorizations?(
+    run: ToolRun,
+    version?: string,
+  ): Promise<ConnectorAuthorizationState[]>;
+  beginAuthorization?(
+    run: ToolRun,
+    scratch: string,
+    group: ConnectorAuthorizationGroup,
+  ): Promise<{ step: SignInStep; continuation?: unknown }>;
+  pollAuthorization?(
+    run: ToolRun,
+    group: ConnectorAuthorizationGroup,
+    continuation: unknown,
+  ): Promise<SignInStep>;
+
   /** The session-notes line for a session given the connector. */
   sessionNote(
     use: DeviceConnectorUse,
@@ -181,6 +211,21 @@ export class DeviceHeldConnectors {
   >();
   private readonly latest = new Map<string, { at: number; version: string }>();
   private readonly busy = new Map<string, Promise<unknown>>();
+  private readonly queued = new Map<string, number>();
+  private readonly installing = new Set<string>();
+  // Continuation secrets never leave this device or enter logs / state records.
+  private readonly authorizationOperations = new Map<
+    string,
+    {
+      kind: string;
+      group: string;
+      revision: number;
+      expires: number;
+      continuation: unknown;
+      step: SignInStep;
+      image?: string;
+    }
+  >();
 
   constructor(options: DeviceHeldOptions) {
     this.options = {
@@ -286,13 +331,51 @@ export class DeviceHeldConnectors {
   }
 
   /** Runs one action at a time per connector: the tool's login is one. */
-  private serialized<T>(kind: string, work: () => Promise<T>): Promise<T> {
+  private serialized<T>(
+    kind: string,
+    action: string,
+    operationId: string | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const count = this.queued.get(kind) ?? 0;
+    // One active command and at most one waiting command. Installation has a
+    // longer budget, so never put authorization behind it or vice versa.
+    if (
+      count >= 2 ||
+      this.installing.has(kind) ||
+      (action === "install" && count > 0)
+    )
+      return Promise.reject(new Error("connector_busy"));
+    this.queued.set(kind, count + 1);
+    if (action === "install") this.installing.add(kind);
+    const accepted = Date.now();
     const before = this.busy.get(kind) ?? Promise.resolve();
-    const next = before.then(work, work);
-    this.busy.set(
-      kind,
-      next.catch(() => undefined),
-    );
+    const next = before.then(async () => {
+      const started = Date.now();
+      console.info("connector command", {
+        kind,
+        action,
+        operationId,
+        queueWaitMs: started - accepted,
+      });
+      try {
+        return await work();
+      } finally {
+        this.queued.set(kind, (this.queued.get(kind) ?? 1) - 1);
+        this.installing.delete(kind);
+        console.info("connector command finished", {
+          kind,
+          action,
+          operationId,
+          elapsedMs: Date.now() - started,
+        });
+      }
+    });
+    const settled = next.catch(() => undefined);
+    this.busy.set(kind, settled);
+    void settled.then(() => {
+      if (this.busy.get(kind) === settled) this.busy.delete(kind);
+    });
     return next;
   }
 
@@ -330,9 +413,40 @@ export class DeviceHeldConnectors {
       const run = this.runner(located.path, adapter);
       try {
         state.version = await adapter.readVersion(run);
-        if (located.source === "foundry")
-          state.latestVersion = await this.latestFor(connector);
-        reading = await adapter.readLogin(run);
+        // Independent reads share no continuation state. Keep package metadata
+        // and capability discovery out of the native login's serial deadline.
+        const [login] = await Promise.all([
+          adapter.readLogin(run).then(
+            (value) => ({ value }),
+            (error) => ({ error }),
+          ),
+          (async () => {
+            if (located.source === "foundry")
+              state.latestVersion = await this.latestFor(connector);
+          })(),
+          (async () => {
+            if (!adapter.readAuthorizations) return;
+            try {
+              state.authorizations = await adapter.readAuthorizations(
+                run,
+                state.version,
+              );
+            } catch {
+              state.authorizations = (connector.authorizationGroups ?? []).map(
+                (g) => ({
+                  id: g.id,
+                  revision: g.revision,
+                  status: "unknown",
+                  verification: "not_checked",
+                  checkedAt: state.checkedAt,
+                  reason: "check_failed",
+                }),
+              );
+            }
+          })(),
+        ]);
+        if ("error" in login) throw login.error;
+        reading = login.value;
         state.signedIn = reading.signedIn;
         state.status = reading.signedIn ? "ready" : "signed_out";
         if (reading.signedIn) {
@@ -417,6 +531,180 @@ export class DeviceHeldConnectors {
     return this.status(connector, true);
   }
 
+  private async authorization(
+    request: ConnectorRequestPayload,
+  ): Promise<ConnectorReplyPayload> {
+    const {
+      connector,
+      operationId,
+      authorizationId,
+      authorizationRevision,
+      action,
+    } = request;
+    const group = authorizationId
+      ? connector.authorizationGroups?.find(
+          (g) =>
+            g.id === authorizationId && g.revision === authorizationRevision,
+        )
+      : { id: "", revision: 0 };
+
+    if (!group || !operationId || !/^[a-zA-Z0-9_-]{16,100}$/.test(operationId))
+      return { error: "Invalid authorization operation." };
+    const now = this.options.now();
+    for (const [id, op] of this.authorizationOperations)
+      if (op.expires <= now) this.authorizationOperations.delete(id);
+    const current = this.authorizationOperations.get(operationId);
+    if (
+      current &&
+      (current.kind !== connector.kind ||
+        current.group !== group.id ||
+        current.revision !== group.revision)
+    )
+      return { error: "Authorization scope mismatch." };
+    if (action === "sign_in_dismiss") {
+      this.authorizationOperations.delete(operationId);
+      return {};
+    }
+    const { adapter, run } = await this.usable(checkedDescriptor(connector));
+    if (
+      authorizationId &&
+      (!adapter.beginAuthorization || !adapter.pollAuthorization)
+    )
+      return { error: "Update the worker to authorize this capability." };
+    if (action === "sign_in_begin") {
+      if (current)
+        return {
+          signIn: {
+            ...current.step,
+            operationId,
+            authorizationId,
+            authorizationRevision,
+          },
+          authorizationImage: current.image,
+        };
+      for (const [id, op] of this.authorizationOperations)
+        if (op.kind === connector.kind && op.group === group.id)
+          this.authorizationOperations.delete(id);
+      const scratch = mkdtempSync(join(tmpdir(), "foundry-connector-"));
+      try {
+        const started = authorizationId
+          ? await adapter.beginAuthorization!(
+              run,
+              scratch,
+              group as ConnectorAuthorizationGroup,
+            )
+          : {
+              step: await adapter.beginSignIn(run, scratch),
+              continuation: undefined,
+            };
+        const step = checkedStep(started.step);
+        let image: string | undefined;
+        if (step.challenge?.kind === "qr_image") {
+          const path = join(scratch, "sign-in.png");
+          if (lstatSync(scratch).isSymbolicLink())
+            throw new Error("Invalid authorization image.");
+          const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+          let bytes: Buffer;
+          try {
+            const stat = fstatSync(fd);
+            if (!stat.isFile() || stat.size > 512 * 1024 || stat.size < 24)
+              throw new Error("Invalid authorization image.");
+            bytes = readFileSync(fd);
+          } finally {
+            closeSync(fd);
+          }
+          const width = bytes.readUInt32BE(16),
+            height = bytes.readUInt32BE(20);
+          if (!width || !height || width > 4096 || height > 4096)
+            throw new Error("Invalid authorization image.");
+          if (
+            !bytes
+              .subarray(0, 8)
+              .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          )
+            throw new Error("Invalid authorization image.");
+          image = bytes.toString("base64");
+        }
+        const expires = now + 5 * 60_000;
+        step.expiresAt = new Date(expires).toISOString();
+        this.authorizationOperations.set(operationId, {
+          kind: connector.kind,
+          group: group.id,
+          revision: group.revision,
+          continuation: started.continuation,
+          step,
+          image,
+          expires,
+        });
+        const signIn = {
+          ...step,
+          operationId,
+          authorizationId,
+          authorizationRevision,
+        };
+        if (step.status !== "pending") {
+          const saved = this.authorizationOperations.get(operationId)!;
+          saved.continuation = undefined;
+          saved.image = undefined;
+          saved.step = {
+            status: step.status,
+            error: step.error,
+            expiresAt: step.expiresAt,
+          };
+          return {
+            signIn: {
+              ...saved.step,
+              operationId,
+              authorizationId,
+              authorizationRevision,
+            },
+          };
+        }
+        return { signIn, authorizationImage: image };
+      } finally {
+        rmSync(scratch, { recursive: true, force: true });
+      }
+    }
+    if (!current)
+      return {
+        signIn: {
+          status: "expired",
+          operationId,
+          authorizationId,
+          authorizationRevision,
+        },
+      };
+    if (current.step.status === "pending") {
+      const step = checkedStep(
+        authorizationId
+          ? await adapter.pollAuthorization!(
+              run,
+              group as ConnectorAuthorizationGroup,
+              current.continuation,
+            )
+          : await adapter.pollSignIn(run),
+      );
+      current.step =
+        step.status === "pending" ? { ...current.step, ...step } : step;
+      if (step.status !== "pending") {
+        current.continuation = undefined;
+        current.image = undefined;
+      }
+    }
+    // Retain a terminal receipt until expiry. A lost reply must not cause a
+    // consumed continuation to run again; pending replies retain the native PNG.
+    return {
+      signIn: {
+        ...current.step,
+        expiresAt: new Date(current.expires).toISOString(),
+        operationId,
+        authorizationId,
+        authorizationRevision,
+      },
+      authorizationImage: current.image,
+    };
+  }
+
   /** Answers connector_request; a failure is the reply's error. */
   async handle(
     request: ConnectorRequestPayload,
@@ -424,32 +712,47 @@ export class DeviceHeldConnectors {
     const connector = request?.connector;
     if (!connector?.kind) return { error: "no connector named" };
     try {
-      return await this.serialized(connector.kind, async () => {
-        switch (request.action) {
-          case "status":
-            return { state: await this.status(connector, request.fresh) };
-          case "install":
-            return { state: await this.install(connector) };
-          case "sign_in_begin": {
-            const signIn = await this.signInBegin(connector);
-            return signIn.status === "complete"
-              ? { signIn, state: await this.status(connector, true) }
-              : { signIn };
+      return await this.serialized(
+        connector.kind,
+        request.action,
+        request.operationId,
+        async () => {
+          if (
+            request.operationId &&
+            ["sign_in_begin", "sign_in_poll", "sign_in_dismiss"].includes(
+              request.action,
+            )
+          )
+            return this.authorization(request);
+          switch (request.action) {
+            case "status":
+              return { state: await this.status(connector, request.fresh) };
+            case "install":
+              return { state: await this.install(connector) };
+            case "sign_in_begin": {
+              const signIn = await this.signInBegin(connector);
+              return signIn.status === "complete"
+                ? { signIn, state: await this.status(connector, true) }
+                : { signIn };
+            }
+            case "sign_in_poll": {
+              const signIn = await this.signInPoll(connector);
+              return signIn.status === "complete"
+                ? { signIn, state: await this.status(connector, true) }
+                : { signIn };
+            }
+            case "sign_out":
+              for (const [id, op] of this.authorizationOperations)
+                if (op.kind === connector.kind)
+                  this.authorizationOperations.delete(id);
+              return { state: await this.signOut(connector) };
+            default:
+              return {
+                error: `unknown connector action ${String(request.action)}`,
+              };
           }
-          case "sign_in_poll": {
-            const signIn = await this.signInPoll(connector);
-            return signIn.status === "complete"
-              ? { signIn, state: await this.status(connector, true) }
-              : { signIn };
-          }
-          case "sign_out":
-            return { state: await this.signOut(connector) };
-          default:
-            return {
-              error: `unknown connector action ${String(request.action)}`,
-            };
-        }
-      });
+        },
+      );
     } catch (error) {
       return { error: errorMessage(error) };
     }
@@ -487,6 +790,14 @@ export class DeviceHeldConnectors {
 
 function checkedStep(step: SignInStep): SignInStep {
   const clean: SignInStep = { status: step.status };
+  if (step.challenge?.kind === "qr_image")
+    clean.challenge = { kind: "qr_image" };
+  if (step.challenge?.kind === "local_interaction")
+    clean.challenge = {
+      kind: "local_interaction",
+      instruction: step.challenge.instruction.slice(0, 300),
+    };
+  if (step.expiresAt) clean.expiresAt = step.expiresAt;
   if (step.verificationUrl) {
     const url = new URL(step.verificationUrl);
     if (url.protocol !== "https:")

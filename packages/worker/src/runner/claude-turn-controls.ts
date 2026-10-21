@@ -1,3 +1,4 @@
+import { ControlOutcomeUnknownError } from "../agent-runtime/control-error.js";
 import { randomUUID } from "node:crypto";
 import {
   processLabels,
@@ -113,6 +114,7 @@ export function registerClaudeTurnControls(
   });
   const unregisterCancel = registerActiveSessionCancelTarget(run.session.id, {
     provider: "claude",
+    inputId: run.session.input?.id,
     cancel: () => cancelClaudeTurn(run, runtime),
   });
   return () => {
@@ -150,24 +152,30 @@ async function steerClaudeTurn(
     priority: "next",
     type: "user",
   });
-  await run.emit(
-    "Steered into active turn",
-    text,
-    "info",
-    undefined,
-    attachments.length > 0
-      ? {
-          id: `steer_${randomUUID()}`,
-          kind: "user",
-          text,
-          attachments,
-        }
-      : undefined,
-    // Named like a sent message's input event: the server then knows the
-    // message is in this session and never sends it again as an input of
-    // its own.
-    steerId ? `evt_${steerId}` : undefined,
-  );
+  try {
+    await run.emit(
+      "Steered into active turn",
+      text,
+      "info",
+      undefined,
+      attachments.length > 0
+        ? {
+            id: `steer_${randomUUID()}`,
+            kind: "user",
+            text,
+            attachments,
+          }
+        : undefined,
+      // Named like a sent message's input event: the server then knows the
+      // message is in this session and never sends it again as an input of
+      // its own.
+      steerId ? `evt_${steerId}` : undefined,
+    );
+  } catch {
+    throw new ControlOutcomeUnknownError(
+      "Native input was accepted, but its receipt could not be persisted. Reconcile before retrying.",
+    );
+  }
 }
 
 async function cancelClaudeTurn(
@@ -201,6 +209,14 @@ export function openClaudeTurn(
   },
 ): ActiveClaudeTurn {
   const livenessSettings = turnLivenessSettings();
+  const minutes = run.session.input?.executionBudget?.timeoutMinutes;
+  if (minutes && minutes > 0) {
+    const bound = Math.min(minutes, 240) * 60_000;
+    livenessSettings.ceilingMs =
+      livenessSettings.ceilingMs > 0
+        ? Math.min(livenessSettings.ceilingMs, bound)
+        : bound;
+  }
   const operationBounds = claudeTurnOperationBounds(run);
   const turn: ActiveClaudeTurn = {
     emit: run.emit,
@@ -222,10 +238,22 @@ export function openClaudeTurn(
     liveness: new ClaudeTurnLiveness(
       {
         ...livenessSettings,
+        ...(minutes && minutes > 0
+          ? {
+              checkIntervalMs: Math.max(
+                50,
+                Math.min(1000, (minutes * 60_000) / 4),
+              ),
+            }
+          : {}),
         ...(startsProcess
           ? {
-              firstResponseTimeoutMs:
+              firstResponseTimeoutMs: Math.min(
                 operationBounds.apiTimeoutMs + livenessSettings.graceMs,
+                minutes && minutes > 0
+                  ? Math.min(minutes, 240) * 60_000
+                  : Number.POSITIVE_INFINITY,
+              ),
             }
           : { startupTimeoutMs: undefined }),
         backgroundBusy: () =>

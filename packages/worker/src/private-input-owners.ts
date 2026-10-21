@@ -1,5 +1,11 @@
 /** Ownership records for generated inputs; unknown/legacy paths are never swept. */
-import { lstatSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  readlinkSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import {
   processIdentity,
@@ -110,7 +116,43 @@ export function reapPrivateInputOwners(
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const path = join(root, entry.name);
       if (privateInputCanBeRemoved(path, kind, sweep)) {
-        rmSync(path, { recursive: true, force: true });
+        // Codex's native SQLite index stores absolute rollout paths through
+        // these aliases. Remove all generated configuration, but retain only
+        // verified history links so collecting a dead process cannot erase
+        // the native thread's address. No credentials/configuration remain.
+        let history = new Set<string>();
+        if (kind === "native-config") {
+          try {
+            const record = JSON.parse(
+              readFileSync(
+                join(path, ".foundry-native-execution.json"),
+                "utf8",
+              ),
+            );
+            if (
+              record.version === 1 &&
+              record.runtime === "codex" &&
+              record.configHome === path &&
+              typeof record.sources?.dataHome === "string"
+            ) {
+              for (const name of ["sessions", "archived_sessions"]) {
+                const link = join(path, name);
+                if (
+                  lstatSync(link).isSymbolicLink() &&
+                  readlinkSync(link) === resolve(record.sources.dataHome, name)
+                )
+                  history.add(name);
+              }
+            }
+          } catch {
+            /* Unverified aliases are not preserved. */
+          }
+        }
+        if (history.size) {
+          for (const name of readdirSync(path))
+            if (!history.has(name))
+              rmSync(join(path, name), { recursive: true, force: true });
+        } else rmSync(path, { recursive: true, force: true });
         removed++;
       }
     }

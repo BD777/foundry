@@ -23,7 +23,8 @@ type deviceEvents struct {
 	// reauthorizeOwner ends the streams of a device's owner, which reconnect
 	// with the owner's reach as it is now (streamReach is fixed when one
 	// opens).
-	reauthorizeOwner func(ctx context.Context, deviceID string)
+	reauthorizeOwner        func(ctx context.Context, deviceID string)
+	workspaceContentChanged func(context.Context, string)
 }
 
 // deviceProjector is the device as its event carries it (see
@@ -96,6 +97,9 @@ func (e *deviceEvents) reported(ctx context.Context, deviceID string, changes st
 	for _, workspaceID := range changes.Workspaces {
 		if workspaceID != "" {
 			e.data.changed(workspaceID, workspace...)
+			if e.workspaceContentChanged != nil && (changes.Parts.WorkspaceFiles || changes.Parts.Workspace || changes.Parts.Skills || changes.Parts.NewWorkspace) {
+				e.workspaceContentChanged(ctx, workspaceID)
+			}
 		}
 	}
 }

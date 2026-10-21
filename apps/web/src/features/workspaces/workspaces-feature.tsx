@@ -37,6 +37,8 @@ export const workspaceSwitchIntentMs = 300;
 
 export interface WorkspacesFeatureProps {
   compact?: boolean;
+  /** Icon-only sidebar entry on wide screens. */
+  collapsed?: boolean;
   activeWorkspaceId: string;
   devices: DeviceProjection[];
   /** The device whose group the page brings into view. */

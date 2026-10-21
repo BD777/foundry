@@ -14,6 +14,11 @@ import type {
 } from "../api-types";
 import { request } from "./http";
 
+/** The signed-in person's visible account catalog, independent of browsing location. */
+export function listAgentProfiles(): Promise<AgentProfileProjection[]> {
+  return request("GET", "/api/agent-profiles");
+}
+
 export function createAgentProfile(
   input: CreateAgentProfileInput,
 ): Promise<AgentProfileProjection> {

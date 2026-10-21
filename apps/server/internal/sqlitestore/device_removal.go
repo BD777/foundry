@@ -42,7 +42,10 @@ func (s *Store) SoftRemoveDevice(ctx context.Context, id string) (store.DevicePr
 			return err
 		}
 		if removed {
-			// Idempotent retries succeed without rechecking active work.
+			// Idempotent retries also repair old dangling authorizations.
+			if err := tx.purgeRemovedDeviceState(ctx, id); err != nil {
+				return err
+			}
 			device = markDeviceRemoved(d)
 			return nil
 		}
@@ -89,6 +92,29 @@ func (s *Store) SoftRemoveDevice(ctx context.Context, id string) (store.DevicePr
 				AND json_extract(payload_json, '$.status') IN ('queued','running')
 				AND workspace_id IN (`+deviceWorkspacesSQL+`)`, id).Scan(&activeVerifications); err != nil {
 			return err
+		}
+		work, err := listJSON[store.SessionWork](ctx, tx.conn(), `SELECT payload_json FROM session_work WHERE device_id = ?`, id)
+		if err != nil {
+			return err
+		}
+		for _, item := range work {
+			if !confirmedWorkEnded(item) && (item.DesiredState == "enabled" || item.Observation.Status == "running" || item.Observation.Status == "suspended" || (item.Observation.Status == "unknown" && item.Observation.StartedAt != "")) {
+				return fmt.Errorf("%w: device work %s has no confirmed stop", store.ErrDeviceBusy, item.ID)
+			}
+		}
+		var writing int
+		if err := tx.conn().QueryRowContext(ctx, `SELECT count(*) FROM knowledge_mutations m JOIN knowledge_vaults v ON v.id=m.vault_id WHERE v.device_id=? AND m.status='writing'`, id).Scan(&writing); err != nil {
+			return err
+		}
+		if writing > 0 {
+			return fmt.Errorf("%w: knowledge writes await receipts", store.ErrDeviceBusy)
+		}
+		var liveLeases int
+		if err := tx.conn().QueryRowContext(ctx, `SELECT count(*) FROM resource_leases WHERE (source_id = ? OR holder_device_id = ?) AND state IN ('active','parked')`, id, id).Scan(&liveLeases); err != nil {
+			return err
+		}
+		if liveLeases > 0 {
+			return fmt.Errorf("%w: %d active resource lease(s)", store.ErrDeviceBusy, liveLeases)
 		}
 		if activeRuns+activeSessions+inProgressIssues+queuedIssues+activeVerifications > 0 {
 			return fmt.Errorf(
@@ -194,6 +220,9 @@ func (s *Store) assertWorkspaceDeviceNotRemoved(ctx context.Context, workspaceID
 // "agent-profile:<device>:<profile>"). Workspaces, chats, sessions, runs and
 // issues stay readable. Nothing live is left to list, pick or project.
 func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
+	if err := s.invalidateRemovedDeviceReferences(ctx, id); err != nil {
+		return err
+	}
 	for _, statement := range []struct{ label, query string }{
 		{"agents", `DELETE FROM agents WHERE device_id = ?`},
 		{"agent profiles", `DELETE FROM agent_profiles WHERE device_id = ?`},
@@ -207,7 +236,6 @@ func (s *Store) purgeRemovedDeviceState(ctx context.Context, id string) error {
 		{"connector bindings", `DELETE FROM device_connector_bindings WHERE device_id = ?`},
 		{"resources", `DELETE FROM resource_instances WHERE source_id = ?`},
 		{"resource source", `DELETE FROM resource_sources WHERE id = ?`},
-		{"resource leases", `DELETE FROM resource_leases WHERE source_id = ?`},
 		{"resource fences", `DELETE FROM resource_fences WHERE source_id = ?`},
 		{"resource settings", `DELETE FROM resource_source_settings WHERE source_id = ?`},
 		{"credentials", `DELETE FROM secret_records WHERE substr(id, 1, length('agent-profile:' || ?1 || ':')) = 'agent-profile:' || ?1 || ':'`},

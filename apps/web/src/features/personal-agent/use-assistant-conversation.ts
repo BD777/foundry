@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentSession } from "@bd777/foundry-protocol";
+import type {
+  AgentSession,
+  PersonalAgentInboxEntry,
+} from "@bd777/foundry-protocol";
 import {
   cancelAgentSession,
-  createAgentSession,
+  capturePersonalAgentInbox,
   getAgentSession,
   listPersonalAgentSessions,
-  sendAgentSessionMessage,
+  listPersonalAgentInbox,
+  actOnPersonalAgentInbox,
 } from "../../api";
 import {
   mergeAgentSessionEvent,
@@ -16,7 +20,6 @@ import { onStreamEvent } from "../../stream";
 import {
   assistantLines,
   assistantWorking,
-  continuedSession,
   isAssistantSession,
   recentAssistantSessions,
   type AssistantLine,
@@ -73,6 +76,10 @@ export function useAssistantConversation(
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [error, setError] = useState("");
   const [pending, setPending] = useState<PendingLine[]>([]);
+  const [inbox, setInbox] = useState<PersonalAgentInboxEntry[]>([]);
+  const [inboxError, setInboxError] = useState("");
+  const [retryingInboxId, setRetryingInboxId] = useState<string>();
+  const retryKeys = useRef(new Map<string, string>());
   const held = useRef(sessions);
   held.current = sessions;
   // The sessions read in full. One learned otherwise (a create's or send's
@@ -94,14 +101,16 @@ export function useAssistantConversation(
   const read = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      const [current, ...earlier] = await Promise.all([
+      const [current, received, ...earlier] = await Promise.all([
         listPersonalAgentSessions(workspaceId),
+        listPersonalAgentInbox(),
         // A project it left may be gone; its conversations go with it.
         ...former
           .split("\n")
           .filter(Boolean)
           .map((id) => listPersonalAgentSessions(id).catch(() => [])),
       ]);
+      setInbox(received);
       const listed = [...current!, ...earlier.flat()];
       const recent = recentAssistantSessions(listed, shownSessions);
       const loaded = await Promise.all(
@@ -131,6 +140,43 @@ export function useAssistantConversation(
     readInFull.current = new Set();
     void read();
   }, [read]);
+
+  const waitingInbox = useMemo(
+    () =>
+      inbox
+        .filter((entry) =>
+          ["pending", "waiting", "dispatching"].includes(entry.status),
+        )
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)),
+    [inbox],
+  );
+  const failedInbox = useMemo(
+    () =>
+      inbox.filter(
+        (entry) =>
+          entry.status !== "cancelled" &&
+          ["failed", "canceled"].includes(entry.resultStatus ?? ""),
+      ),
+    [inbox],
+  );
+  const needsInboxRefresh = inbox.some(
+    (entry) =>
+      ["pending", "waiting", "dispatching"].includes(entry.status) ||
+      (entry.status === "delivered" && !entry.resultStatus),
+  );
+  useEffect(() => {
+    if (!needsInboxRefresh) return;
+    const timer = window.setInterval(() => {
+      void listPersonalAgentInbox().then(
+        (items) => {
+          setInbox(items);
+          setInboxError("");
+        },
+        (reason) => setInboxError(serverErrorText(reason)),
+      );
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [needsInboxRefresh]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -196,6 +242,15 @@ export function useAssistantConversation(
   const lines = useMemo<Array<AssistantLine & { clientId?: string }>>(
     () => [
       ...assistantLines(ordered),
+      ...waitingInbox
+        .filter((entry) => !shownInputs.has(entry.inputId))
+        .map((entry) => ({
+          id: `received:${entry.id}`,
+          clientId: entry.messageId,
+          role: "person" as const,
+          text: entry.text,
+          at: entry.createdAt,
+        })),
       ...pending
         .filter((line) => !shownInputs.has(line.clientId))
         .map((line) => ({
@@ -206,7 +261,7 @@ export function useAssistantConversation(
           at: line.at,
         })),
     ],
-    [ordered, pending, shownInputs],
+    [ordered, pending, shownInputs, waitingInbox],
   );
   const latest = ordered[ordered.length - 1];
 
@@ -214,44 +269,59 @@ export function useAssistantConversation(
     state,
     error,
     lines,
+    waitingInbox,
+    failedInbox,
+    inboxError,
+    retryingInboxId,
+    async retryInbox(entry: PersonalAgentInboxEntry): Promise<void> {
+      if (retryingInboxId) return;
+      const requestId = retryKeys.current.get(entry.id) ?? crypto.randomUUID();
+      retryKeys.current.set(entry.id, requestId);
+      setRetryingInboxId(entry.id);
+      setInboxError("");
+      try {
+        const saved = await actOnPersonalAgentInbox(entry.id, {
+          action: "retry",
+          revision: entry.revision,
+          requestId,
+        });
+        setInbox((items) => [
+          ...items.filter(
+            (item) => item.id !== entry.id && item.id !== saved.id,
+          ),
+          saved,
+        ]);
+        retryKeys.current.delete(entry.id);
+      } catch (reason) {
+        setInboxError(serverErrorText(reason));
+      } finally {
+        setRetryingInboxId(undefined);
+      }
+    },
     working: assistantWorking(ordered),
     /** The latest session: queued, it may wait for its offline computer. */
     latestSession: latest,
     /** The latest turn: changes when a message starts a new one. */
     latestTurnId: latest ? `${latest.id}:${latest.input?.id ?? ""}` : "",
     retry: read,
-    async send(
-      text: string,
-      clientId: string,
-      runtime: AssistantRuntime,
-    ): Promise<void> {
+    async send(text: string, clientId: string): Promise<void> {
       setPending((current) => [
         ...current.filter((line) => line.clientId !== clientId),
         { clientId, text, at: new Date().toISOString() },
       ]);
-      const continued = continuedSession(
-        ordered.filter((session) => session.workspaceId === workspaceId),
-      );
       try {
-        upsert(
-          continued
-            ? await sendAgentSessionMessage(
-                continued.id,
-                { prompt: text, inputId: clientId },
-                clientId,
-              )
-            : await createAgentSession(
-                {
-                  agentId: "",
-                  inputId: clientId,
-                  prompt: text,
-                  source: "chat",
-                  workspaceId,
-                  ...runtime,
-                },
-                clientId,
-              ),
+        const receipt = await capturePersonalAgentInbox({
+          text,
+          messageId: clientId,
+        });
+        setInbox((current) => [
+          ...current.filter((entry) => entry.id !== receipt.id),
+          receipt,
+        ]);
+        setPending((current) =>
+          current.filter((line) => line.clientId !== clientId),
         );
+        void read();
       } catch (reason) {
         setPending((current) =>
           current.filter((line) => line.clientId !== clientId),

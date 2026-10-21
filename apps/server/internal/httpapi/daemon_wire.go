@@ -9,6 +9,10 @@ import (
 )
 
 const (
+	wsContextPatchType             = "context_patch"
+	wsContextPatchedType           = "context_patched"
+	wsKnowledgeCommandType         = "knowledge_command"
+	wsKnowledgeResultType          = "knowledge_result"
 	wsExportDraftSkillType         = "export_draft_skill"
 	wsDraftSkillExportedType       = "draft_skill_exported"
 	wsRefreshWorkspaceSkillsType   = "refresh_workspace_skills"
@@ -416,6 +420,9 @@ type wsCancelSessionPayload struct {
 }
 
 type wsSessionCanceledPayload struct {
+	InputID string `json:"inputId,omitempty"`
+	Pending bool   `json:"pending,omitempty"`
+	Stopped bool   `json:"stopped,omitempty"`
 	wsReplyError
 	SessionID string `json:"sessionId"`
 	// Answered: the turn had already answered, and the stop ended only the

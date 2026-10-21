@@ -105,6 +105,8 @@ export const workspaces: Translation<typeof en> = {
     locating: "正在定位…",
   },
   overview: {
+    noMatchesTitle: "没有匹配的仓库",
+    noRepositoriesTitle: "暂无可显示的仓库",
     gitStates: {
       ready: "Git 已初始化",
       unborn: "Git 已初始化 · 尚无初始提交",

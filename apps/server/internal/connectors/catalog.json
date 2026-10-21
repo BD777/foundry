@@ -4,7 +4,9 @@
     "label": "Feishu",
     "holding": "server_held",
     "adapter": "feishu",
-    "tool": { "command": "feishu-cli" }
+    "tool": {
+      "command": "feishu-cli"
+    }
   },
   {
     "kind": "bytedcli",
@@ -26,6 +28,21 @@
       }
     ],
     "expiryReminderDays": 3,
-    "isolationEnv": { "BYTEDCLI_PROFILE": "foundry-no-login" }
+    "isolationEnv": {
+      "BYTEDCLI_PROFILE": "foundry-no-login"
+    },
+    "authorizationGroups": [
+      {
+        "id": "feishu_web_session",
+        "revision": 1,
+        "label": "Meego Web session (CN)",
+        "labels": {
+          "en": "Meego Web session (CN)",
+          "zh-CN": "Meego 网页会话（中国区）"
+        },
+        "capabilities": ["meego_goapi.cn"],
+        "credential": "native_web_session"
+      }
+    ]
   }
 ]

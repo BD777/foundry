@@ -1,3 +1,7 @@
+import { open, realpath, mkdir, symlink, lstat } from "node:fs/promises";
+import { resolve, relative, isAbsolute, dirname, sep } from "node:path";
+import { findSessionLog } from "../native-usage.js";
+import { nativeSourcePaths } from "../native-runtime-paths.js";
 import { CodexNativeWork } from "../agent-runtime/work/codex.js";
 import { registerNativeWorkController } from "../agent-runtime/work/types.js";
 import { nativeCli } from "../native-cli.js";
@@ -15,6 +19,29 @@ import { CodexAppServer } from "../agent-runtime/codex-client.js";
 import { AsyncInputQueue, type CodexSDKThread } from "../session-state.js";
 export { CodexAppServer } from "../agent-runtime/codex-client.js";
 export type { CodexRpcTimeouts } from "../agent-runtime/codex-client.js";
+
+/** Resume preserves native history, including its original developer instructions.
+ * Refresh only Foundry's trusted current configuration before any new user turn.
+ * A failure deliberately aborts startup instead of running with a stale catalog.
+ */
+export async function refreshCodexInstructions(
+  client: Pick<CodexAppServer, "request">,
+  threadId: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  const text = config.developer_instructions;
+  if (typeof text !== "string" || !text.trim()) return;
+  await client.request("thread/inject_items", {
+    threadId,
+    items: [
+      {
+        type: "message",
+        role: "developer",
+        content: [{ type: "input_text", text }],
+      },
+    ],
+  });
+}
 
 /** Boundary mapping: the rest of Foundry continues consuming its native-event shape. */
 export function appServerItem(item: any): Record<string, unknown> {
@@ -56,6 +83,91 @@ export function appServerInput(input: unknown): unknown[] {
       ? { type: "localImage", path: part.path }
       : { ...part, text_elements: [] },
   );
+}
+
+/** A collected execution home can leave Codex's index pointing at a dead
+ * symlink. Recover only the same transcript in the selected native data source;
+ * never start a replacement thread or rewrite the native database. */
+export async function resumeCodexThread(
+  client: Pick<CodexAppServer, "request">,
+  params: Record<string, unknown> & { threadId: string },
+  env: NodeJS.ProcessEnv,
+) {
+  try {
+    return await client.request("thread/resume", params);
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes(
+        `no rollout found for thread id ${params.threadId}`,
+      )
+    )
+      throw error;
+    const home = nativeSourcePaths("codex", env).dataHome;
+    const found = await findSessionLog("codex", params.threadId, [home]);
+    if (!found) throw error;
+    const path = await realpath(found);
+    const inside = relative(await realpath(resolve(home, "sessions")), path);
+    if (inside.startsWith("..") || isAbsolute(inside)) throw error;
+    const file = await open(path, "r");
+    let header;
+    try {
+      const bytes = Buffer.alloc(64 * 1024);
+      const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
+      header = JSON.parse(
+        bytes.subarray(0, bytesRead).toString("utf8").split("\n")[0] ?? "",
+      );
+    } finally {
+      await file.close();
+    }
+    if (
+      header.type !== "session_meta" ||
+      header.payload?.id !== params.threadId
+    )
+      throw error;
+    // Paginated native threads reject changing their indexed rollout path.
+    // Restore only the missing, generated history alias named by native metadata.
+    // Configuration and credentials are never recreated in that retired home.
+    if (env.FOUNDRY_RUNTIME_CONFIG_ISOLATED !== "1" || !env.CODEX_HOME)
+      throw error;
+    const metadata = await client.request("thread/read", {
+      threadId: params.threadId,
+      includeTurns: false,
+    });
+    if (
+      metadata.thread?.id !== params.threadId ||
+      typeof metadata.thread.path !== "string"
+    )
+      throw error;
+    const parent = dirname(resolve(env.CODEX_HOME));
+    const indexed = resolve(metadata.thread.path);
+    const pieces = relative(parent, indexed).split(sep);
+    if (
+      pieces.length < 3 ||
+      !/^[a-f0-9]{24}$/.test(pieces[0] ?? "") ||
+      pieces[1] !== "sessions" ||
+      resolve(home, ...pieces.slice(1)) !== path
+    )
+      throw error;
+    if ((await lstat(parent)).isSymbolicLink()) throw error;
+    const retired = resolve(parent, pieces[0]!);
+    try {
+      await lstat(retired);
+      throw error;
+    } catch (missing) {
+      if ((missing as NodeJS.ErrnoException).code !== "ENOENT") throw missing;
+    }
+    await mkdir(retired, { mode: 0o700 });
+    await symlink(
+      resolve(home, "sessions"),
+      resolve(retired, "sessions"),
+      "dir",
+    );
+    const result = await client.request("thread/resume", params);
+    if (result.thread?.id !== params.threadId)
+      throw new Error("Codex resumed a different thread; no input was sent.");
+    return result;
+  }
 }
 
 /** A thread handle keeps identity between turns; each turn has one native owner. */
@@ -280,20 +392,26 @@ export class CodexAppServerThread implements CodexSDKThread {
       if (signal?.aborted)
         throw new Error("Codex turn was interrupted before it started.");
       await authenticateIsolatedCodex(client, this.env, this.command);
-      const thread = await client.request(
-        this.id ? "thread/resume" : "thread/start",
-        {
-          ...(this.id ? { threadId: this.id } : {}),
-          cwd: this.options.workingDirectory,
-          model: this.options.model,
-          approvalPolicy: this.options.approvalPolicy,
-          sandbox: this.options.sandboxMode,
-          config: this.config,
-          ...(this.options.ephemeral ? { ephemeral: true } : {}),
-        },
-      );
+      const params = {
+        cwd: this.options.workingDirectory,
+        model: this.options.model,
+        approvalPolicy: this.options.approvalPolicy,
+        sandbox: this.options.sandboxMode,
+        config: this.config,
+        ...(this.options.ephemeral ? { ephemeral: true } : {}),
+      };
+      const resumed = Boolean(this.id);
+      const thread = this.id
+        ? await resumeCodexThread(
+            client,
+            { ...params, threadId: this.id },
+            this.env,
+          )
+        : await client.request("thread/start", params);
       clearTimeout(startupNotice);
       this.id = thread.thread.id;
+      if (resumed)
+        await refreshCodexInstructions(client, this.id!, this.config);
       const foundrySessionId = this.options.workSessionId as string | undefined;
       if (foundrySessionId && this.id) {
         nativeWork = new CodexNativeWork(

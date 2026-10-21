@@ -1,3 +1,7 @@
+import {
+  AgentSessionCanceledError,
+  registerActiveSessionCancelTarget,
+} from "../session-control.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AgentSession } from "@bd777/foundry-protocol";
@@ -44,6 +48,8 @@ export async function runProfileCommandSession(
   const prompt = sessionPrompt(session, profile);
   await emit("Started custom profile command", maskCommand(command) ?? command);
 
+  let canceled = false;
+  let timedOut = false;
   const result = await new Promise<{
     code: number | null;
     signal: NodeJS.Signals | null;
@@ -58,11 +64,23 @@ export async function runProfileCommandSession(
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const timeoutMs = Number(
+    const unregisterCancel = registerActiveSessionCancelTarget(session.id, {
+      provider: profile.runtime,
+      inputId: session.input?.id,
+      cancel: () => {
+        canceled = true;
+        stopAgentProcess(child);
+      },
+    });
+    let timeoutMs = Number(
       process.env.FOUNDRY_SESSION_TIMEOUT_MS ??
         (isUtilitySession(session) ? 180000 : 900000),
     );
+    const minutes = session.input?.executionBudget?.timeoutMinutes;
+    if (minutes && minutes > 0)
+      timeoutMs = Math.min(timeoutMs, Math.min(minutes, 240) * 60_000);
     const timeout = setTimeout(() => {
+      timedOut = true;
       stopAgentProcess(child);
     }, timeoutMs);
     const stdout: Buffer[] = [];
@@ -71,10 +89,12 @@ export async function runProfileCommandSession(
     child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.on("error", (error) => {
       clearTimeout(timeout);
+      unregisterCancel();
       rejectRun(error);
     });
     child.on("close", (code, signal) => {
       clearTimeout(timeout);
+      unregisterCancel();
       const stdoutText = Buffer.concat(stdout).toString("utf8");
       const stderrText = Buffer.concat(stderr).toString("utf8");
       writeFileSync(stdoutPath, stdoutText);
@@ -84,6 +104,8 @@ export async function runProfileCommandSession(
     sendPrompt(child, prompt);
   });
 
+  if (canceled) throw new AgentSessionCanceledError();
+  if (timedOut) throw new Error("The configured run time limit was reached.");
   if (result.code !== 0) {
     throw new Error(
       `${profile.label ?? profile.runtime} exited with ${result.signal ?? result.code}: ${result.stderr.trim()}`,

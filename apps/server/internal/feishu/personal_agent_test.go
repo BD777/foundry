@@ -267,7 +267,7 @@ func TestAssistantWordsAreHandledBeforeTheModel(t *testing.T) {
 		t.Fatalf("stop: %v, %d sessions started, want the switch pressed and no session", f.desk.stops, len(f.started())-before)
 	}
 	replies := f.bot.take()
-	if !repliesContain(replies, "om_stop", "2 thing(s) that were running") || !repliesContain(replies, "om_stop", `"op":"resume"`) {
+	if !repliesContain(replies, "om_stop", "stops requested for 2 execution(s)") || !repliesContain(replies, "om_stop", `"op":"resume"`) {
 		t.Fatalf("the stop was answered %+v, want the fixed text with a resume button", replies)
 	}
 
@@ -427,7 +427,7 @@ func TestAssistantAnswersInThePersonsLanguage(t *testing.T) {
 
 	f.send(t, personMessage("om_stop_zh", "", "停", "ou_person"))
 	replies := f.bot.take()
-	if !repliesContain(replies, "om_stop_zh", "停了 2 件正在做的事") || !repliesContain(replies, "om_stop_zh", "继续") {
+	if !repliesContain(replies, "om_stop_zh", "对 2 项执行请求停止") || !repliesContain(replies, "om_stop_zh", "继续") {
 		t.Fatalf("a Chinese stop was answered %+v, want Chinese", replies)
 	}
 	f.send(t, personMessage("om_resume_en", "", "resume", "ou_person"))
@@ -446,7 +446,7 @@ func TestAssistantAnswersInThePersonsLanguage(t *testing.T) {
 	f.desk.set(func(a *fakeAssistant) { a.route.HomeOffline = false })
 	f.send(t, personMessage("om_stop_en", "", "停", "ou_person"))
 	replies = f.bot.take()
-	if !repliesContain(replies, "om_stop_en", "Everything is stopped") || !repliesContain(replies, "om_stop_en", `"content":"Resume"`) {
+	if repliesContain(replies, "om_stop_en", "Everything is stopped") || !repliesContain(replies, "om_stop_en", "Check Foundry Activity for receipts") || !repliesContain(replies, "om_stop_en", "New work paused") || !repliesContain(replies, "om_stop_en", `"content":"Resume"`) {
 		t.Fatalf("with English chosen, the stop was answered %+v, want English with a Resume button", replies)
 	}
 	f.send(t, personMessage("om_resume_zh", "", "继续", "ou_person"))

@@ -113,7 +113,7 @@ const labels = (element) =>
     (strong) => strong.textContent,
   );
 
-test("ended subagents and finished tasks fold into one row each, remembered per chat", async () => {
+test("fallback subagents keep their own history; ordinary commands never appear", async () => {
   const { ChatContextCard } =
     await import("../src/features/chat/chat-context-card.tsx");
   const card = (chatKey) => createElement(ChatContextCard, { chatKey, data });
@@ -143,12 +143,10 @@ test("ended subagents and finished tasks fold into one row each, remembered per 
       ]);
       assert.equal(labels(subagents()).length, 7);
 
-      // Background: running stays out; every finished task folds, failed too.
-      const tasks = section(container, "Background");
-      assert.deepEqual(labels(tasks), ["Task b-run"]);
-      assert.equal(
-        tasks.querySelector(".fdy-chat-context-fold").textContent,
-        "2 finished · 1 failed",
+      assert.equal(section(container, "Background"), undefined);
+      assert.doesNotMatch(
+        container.textContent,
+        /Task b-run|Task b-done|Task b-fail/,
       );
 
       // Another chat starts folded; coming back finds this one still open.

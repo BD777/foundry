@@ -106,6 +106,8 @@ export const workspaces = {
     locating: "Locating…",
   },
   overview: {
+    noMatchesTitle: "No matching repositories",
+    noRepositoriesTitle: "No repositories to show",
     gitStates: {
       ready: "Git initialized",
       unborn: "Git initialized · no initial commit",

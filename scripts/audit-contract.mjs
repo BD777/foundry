@@ -60,6 +60,12 @@ export const tsDtoPaths = [
   "packages/protocol/src/resources.ts",
   "packages/protocol/src/personal-agent.ts",
   "packages/protocol/src/personal-agent-list.ts",
+  "packages/protocol/src/personal-agent-inbox.ts",
+  "packages/protocol/src/personal-agent-runtime.ts",
+  "packages/protocol/src/personal-agent-operation.ts",
+  "packages/protocol/src/personal-agent-maintenance.ts",
+  "packages/protocol/src/knowledge.ts",
+  "packages/protocol/src/knowledge-vault.ts",
 ].map((path) => resolve(root, path));
 export const goDtoPaths = [
   "apps/server/internal/store/workspaces.go",
@@ -86,6 +92,17 @@ export const goDtoPaths = [
   "apps/server/internal/store/resources.go",
   "apps/server/internal/store/personal_agent.go",
   "apps/server/internal/store/personal_agent_list.go",
+  "apps/server/internal/store/personal_agent_inbox.go",
+  "apps/server/internal/store/personal_agent_runtime.go",
+  "apps/server/internal/store/personal_agent_maintenance.go",
+  "apps/server/internal/store/personal_agent_run_control.go",
+  "apps/server/internal/store/personal_agent_operation.go",
+  "apps/server/internal/store/knowledge.go",
+  "apps/server/internal/store/knowledge_vault.go",
+  "apps/server/internal/store/knowledge_entries.go",
+  "apps/server/internal/store/knowledge_publications.go",
+  "apps/server/internal/store/knowledge_migrations.go",
+  "apps/server/internal/store/knowledge_replica_cleanup.go",
 ].map((path) => resolve(root, path));
 const tsMessagesPath = resolve(
   root,

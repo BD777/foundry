@@ -182,7 +182,7 @@ func TestChannelWordsMatchWholeMessages(t *testing.T) {
 		!IsDecline("不用了") || !IsDecline("No thanks.") {
 		t.Error("resume, accept or decline words")
 	}
-	if !strings.Contains(StopReply("zh", 3), "停了 3 件") || !strings.Contains(ProposalSummary("zh", store.PersonalAgentActionArchive, "旧博客"), "『旧博客』收起来") {
+	if (!strings.Contains(StopReply("zh", 3), "确认停下了 3 项执行") || !strings.Contains(StopReply("zh", 3), "未收到回执")) || !strings.Contains(ProposalSummary("zh", store.PersonalAgentActionArchive, "旧博客"), "『旧博客』收起来") {
 		t.Error("fixed replies")
 	}
 }

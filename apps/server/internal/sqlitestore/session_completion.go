@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 )
@@ -20,7 +21,11 @@ func (s *Store) SettleAgentSessionInput(ctx context.Context, sessionID, inputID,
 			return nil
 		}
 		if failure != "" {
-			session, err = tx.FailAgentSession(ctx, sessionID, failure)
+			if strings.Contains(strings.ToLower(failure), "session was canceled") {
+				session, err = tx.CancelAgentSession(ctx, sessionID, failure)
+			} else {
+				session, err = tx.FailAgentSession(ctx, sessionID, failure)
+			}
 		} else {
 			session, err = tx.completeAgentSession(ctx, sessionID, response, nativeSessionID)
 			if err == nil {
@@ -36,6 +41,9 @@ func (s *Store) SettleAgentSessionInput(ctx context.Context, sessionID, inputID,
 			}
 		}
 		applied = err == nil
+		if err == nil && inputID != "" && inputID == session.Input.ID {
+			err = tx.NotePersonalAgentNativeEnd(ctx, sessionID, inputID, session.Status)
+		}
 		return err
 	})
 	return session, applied && err == nil, err

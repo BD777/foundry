@@ -504,7 +504,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 	route := chat.FeishuBotRoute
 	if inThread && routeErr == nil {
 		if thread, err := m.store.GetFeishuChatThread(ctx, rootID); err == nil && thread.ChatID == chatID && route.WorkspaceID == thread.WorkspaceID {
-			if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, thread.LatestSessionID, sender, cleanText) {
+			if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, thread.LatestSessionID, sender, incoming, rootID) {
 				return nil
 			}
 			if thread.IssueID != "" {
@@ -522,7 +522,7 @@ func (m *WSManager) handleMessage(ctx context.Context, app *botApp, event *larki
 	if !hasMention && route.Kind != store.FeishuRouteP2P {
 		return nil
 	}
-	if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, "", sender, cleanText) {
+	if chat.assistant != nil && m.handleAssistantWords(ctx, app, chat, messageID, "", sender, incoming, rootID) {
 		return nil
 	}
 	if goal, isIssue := strings.CutPrefix(cleanText, issueCommand); !inThread && isIssue && m.issueDesk() != nil {

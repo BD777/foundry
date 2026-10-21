@@ -215,7 +215,7 @@ func (s *Server) handleListDevicePlacements(w http.ResponseWriter, r *http.Reque
 		writeResult(w, nil, err)
 		return
 	}
-	devices, err := s.store.ListDevices(r.Context())
+	devices, err := store.DeviceCandidates(r.Context(), s.store)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
@@ -249,7 +249,7 @@ func (s *Server) handleSetDeviceLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deviceID := r.PathValue("deviceId")
-	devices, err := s.store.ListDevices(r.Context())
+	devices, err := store.DeviceCandidates(r.Context(), s.store)
 	if err != nil {
 		writeResult(w, nil, err)
 		return

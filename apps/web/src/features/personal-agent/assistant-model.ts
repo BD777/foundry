@@ -262,6 +262,9 @@ function withInputEvent(session: AgentSession): AgentSessionEvent[] {
     detail: input.prompt,
     level: "info",
     message: { id: input.id, kind: "user", text: input.prompt, at },
+    metadata: input.sentBySessionId
+      ? { sentBySessionId: input.sentBySessionId }
+      : undefined,
   };
   return [...events.slice(0, index), event, ...events.slice(index)];
 }
@@ -284,7 +287,11 @@ export function assistantLines(sessions: AgentSession[]): AssistantLine[] {
       if (event.label === sessionInputEventLabel) {
         flush();
         const text = event.message?.text ?? event.detail;
-        if (text.trim() && !isServerNotice(text))
+        if (
+          text.trim() &&
+          !event.metadata?.sentBySessionId &&
+          !isServerNotice(text)
+        )
           lines.push({
             id: `${session.id}:${event.message?.id ?? event.id}`,
             role: "person",

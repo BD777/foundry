@@ -110,7 +110,7 @@ function onCancelSession(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       const outcome = host
         ? await host.cancel(sessionId, payload?.inputId?.trim())
         : await cancelActiveSession(sessionId, payload?.inputId?.trim());
-      return outcome.answered ? { sessionId, answered: true } : { sessionId };
+      return { sessionId, ...outcome };
     },
     (error) => ({ sessionId, error }),
   );

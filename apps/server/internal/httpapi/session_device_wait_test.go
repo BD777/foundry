@@ -154,51 +154,46 @@ func TestCancelWorkWaitingForItsDevice(t *testing.T) {
 	}
 }
 
-// The assistant's helpers take the same path: create_session and
-// send_message for a project on an offline computer answer the queued
-// session and say plainly that it starts when the computer is back,
-// without waiting on it even when asked to.
+// An offline assistant dispatch persists its item/operation without inventing a
+// queued native session. Repeated tool calls keep the same intent and receipt.
 func TestAssistantHelperForAnOfflineComputerWaits(t *testing.T) {
 	f := newAssistantFixture(t)
-	text, failed := f.tool(t, f.token, "create_session", map[string]any{"workspaceId": "ws_alice", "prompt": "tidy the photos", "wait": true, "timeoutMs": 60_000})
-	if failed {
-		t.Fatalf("create_session on an offline computer: %s", text)
-	}
-	var created struct {
-		ID               string `json:"id"`
-		Status           string `json:"status"`
-		WaitingForDevice string `json:"waitingForDevice"`
-	}
-	if err := json.Unmarshal([]byte(text), &created); err != nil {
-		t.Fatalf("decode %s: %v", text, err)
-	}
-	if created.Status != "queued" || !strings.Contains(created.WaitingForDevice, "starts by itself") {
-		t.Fatalf("created = %+v", created)
-	}
-	tasks, err := f.server.store.ListPersonalAgentTasks(context.Background(), f.aliceID, nil)
-	if err != nil || len(tasks) != 1 || tasks[0].SessionID != created.ID || tasks[0].Status != store.PersonalAgentTaskRunning {
-		t.Fatalf("tasks = %+v %v", tasks, err)
-	}
-	// What it is doing says the task waits for that computer.
-	text, failed = f.tool(t, f.token, "list_tasks", map[string]any{})
-	var listed []store.PersonalAgentTask
-	if failed || json.Unmarshal([]byte(text), &listed) != nil || len(listed) != 1 || listed[0].WaitingFor == "" {
-		t.Fatalf("list_tasks while the computer is offline: %s", text)
-	}
-	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/personal-agent/tasks", ""))
-	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &listed) != nil || len(listed) != 1 || listed[0].WaitingFor == "" {
-		t.Fatalf("GET tasks while the computer is offline: %d %s", recorder.Code, recorder.Body.String())
-	}
-
-	if _, err := f.server.cancelSession(context.Background(), Actor{Kind: ActorAccount}, created.ID); err != nil {
+	ctx := context.Background()
+	items := f.server.store.(store.PersonalAgentListStore)
+	item, err := items.AddPersonalAgentItem(ctx, store.PersonalAgentListItem{UserID: f.aliceID, Text: "tidy the synthetic photos", Plan: &store.PersonalAgentItemPlan{Mode: "execute", Progress: "ready", WorkspaceID: "ws_alice"}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	text, failed = f.tool(t, f.token, "send_message", map[string]any{"sessionId": created.ID, "prompt": "tidy them after all", "wait": true})
-	var sent struct {
-		Status           string `json:"status"`
-		WaitingForDevice string `json:"waitingForDevice"`
+	arguments := map[string]any{"itemId": item.ID, "intentRevision": item.IntentRevision, "stepKey": "tidy", "workspaceId": "ws_alice", "prompt": "tidy the synthetic photos"}
+	text, failed := f.tool(t, f.token, "dispatch_item", arguments)
+	var op store.PersonalAgentOperation
+	if failed || json.Unmarshal([]byte(text), &op) != nil {
+		t.Fatalf("capture: %s", text)
 	}
-	if failed || json.Unmarshal([]byte(text), &sent) != nil || sent.Status != "queued" || !strings.Contains(sent.WaitingForDevice, "starts by itself") {
-		t.Fatalf("send_message on an offline computer: %s", text)
+	backing, _ := f.server.assistantOperationStore()
+	op, err = backing.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.deliverPersonalAgentOperation(ctx, backing, op)
+	waiting, err := backing.GetPersonalAgentOperation(ctx, f.aliceID, op.ID)
+	if err != nil || waiting.Status != "waiting" || waiting.Reason != "device_offline" || waiting.SessionID != "" {
+		t.Fatalf("offline receipt: %+v %v", waiting, err)
+	}
+	text, failed = f.tool(t, f.token, "dispatch_item", arguments)
+	var replay store.PersonalAgentOperation
+	if failed || json.Unmarshal([]byte(text), &replay) != nil || replay.ID != op.ID {
+		t.Fatalf("duplicate dispatch: %s", text)
+	}
+	recorder := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/personal-agent/operations", ""))
+	var visible []store.PersonalAgentOperation
+	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &visible) != nil || len(visible) != 1 || visible[0].Reason != "device_offline" {
+		t.Fatalf("visible waiting work: %d %s", recorder.Code, recorder.Body.String())
+	}
+	for _, tool := range []string{"create_session", "send_message"} {
+		text, failed = f.tool(t, f.token, tool, map[string]any{"workspaceId": "ws_alice", "sessionId": f.conversation.ID, "prompt": "bypass"})
+		if !failed || !strings.Contains(text, "dispatch_item") {
+			t.Fatalf("legacy bypass %s: %s", tool, text)
+		}
 	}
 }

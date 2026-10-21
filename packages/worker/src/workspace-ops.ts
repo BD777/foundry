@@ -3,6 +3,10 @@
  * and daemon connection helpers.
  */
 
+import {
+  instructionFileNames,
+  instructionFileRevision,
+} from "./workspace-context-revision.js";
 import { discoverResources } from "./resources/index.js";
 import {
   executionHostClient,
@@ -25,6 +29,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   deviceConnectorsCapability,
+  connectorAuthorizationCapability,
   deviceSharingCapability,
   resourceComputeCapability,
   resourceOperationsCapability,
@@ -170,10 +175,14 @@ export function workspaceFilesForWorkspace(
     return entries;
   }
 
-  for (const entry of readdirSync(root, { withFileTypes: true }).slice(
-    0,
-    120,
-  )) {
+  for (const entry of readdirSync(root, { withFileTypes: true })
+    .sort(
+      (a, b) =>
+        Number(instructionFileNames.has(b.name)) -
+          Number(instructionFileNames.has(a.name)) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, 120)) {
     if (ignored.has(entry.name)) {
       continue;
     }
@@ -193,6 +202,7 @@ export function workspaceFilesForWorkspace(
       kind,
       sizeLabel: kind === "directory" ? "directory" : sizeLabel(stat.size),
       updatedLabel: "local",
+      revision: instructionFileRevision(root, entry.name),
     });
   }
 
@@ -412,6 +422,11 @@ export async function recheckRunningNativeChats(
  * worker declares it can run.
  */
 export const daemonCapabilities = [
+  "knowledge_files_v1",
+  "context_patch_v1",
+  "context_files_v1",
+  "role_run_budgets_v1",
+  "exact_input_cancel_v1",
   "codex_active_steer",
   "issue_sessions",
   "issue_clarification",
@@ -431,6 +446,7 @@ export const daemonCapabilities = [
   "attachment_files",
   "feishu_gateway",
   deviceConnectorsCapability,
+  connectorAuthorizationCapability,
   workspaceFoldersCapability,
   workspaceCreateCapability,
   resourcesCapability,
@@ -448,7 +464,9 @@ export function availableDaemonCapabilities(
 ): string[] {
   return daemonCapabilities.filter(
     (capability) =>
-      capability !== "workspace_draft_skills_v1" ||
+      (capability !== "workspace_draft_skills_v1" &&
+        capability !== "role_run_budgets_v1" &&
+        capability !== "exact_input_cancel_v1") ||
       !host ||
       host.supportsCapability(capability),
   );

@@ -142,6 +142,7 @@ async function runCodexTurn(
       managedSkills,
     });
     const state: CodexTurnState = {
+      inputId: session.input?.id,
       emit,
       reportNativeSessionId,
       files,
@@ -169,9 +170,18 @@ async function runCodexTurn(
     if (state.nativeSessionId)
       await state.context.follow(state.nativeSessionId, { resumed: true });
 
-    if (streamsCodexEvents(thread.thread))
+    if (streamsCodexEvents(thread.thread)) {
+      const minutes = session.input?.executionBudget?.timeoutMinutes;
+      if (minutes && minutes > 0)
+        state.ceilingMs = Math.min(minutes, 240) * 60_000;
       await runCodexStreamedTurn(state, thread.thread, input, session.id);
-    else await runCodexUnstreamedTurn(state, thread.thread, input);
+    } else {
+      if (session.input?.executionBudget)
+        throw new Error(
+          "This Codex transport cannot enforce a role run deadline; use a streaming native runtime.",
+        );
+      await runCodexUnstreamedTurn(state, thread.thread, input);
+    }
     return await finishCodexTurn(state, resultPath, startedAt);
   } catch (error) {
     if (isAgentSessionCanceledError(error)) {

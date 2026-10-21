@@ -232,6 +232,7 @@ async function runSandboxed(
     };
     const cancelTarget: ActiveSessionCancelTarget = {
       provider: session.provider,
+      inputId: session.input?.id,
       cancel: () => canceled.abort(),
     };
     unregisterSteer = registerActiveSessionSteerTarget(session.id, steerTarget);

@@ -80,11 +80,16 @@ export function inspectDeviceAccount(
   deviceId: string,
   runtime: "claude" | "codex",
   source?: string,
+  selection?: {
+    profileId: string;
+    runtimeGeneration: string;
+    refresh?: boolean;
+  },
 ): Promise<NativeAccountInspection> {
   return request(
     "POST",
     `${devicePath(deviceId)}/accounts/${runtime}/inspect`,
-    { body: { source } },
+    { body: { source, ...selection } },
   );
 }
 

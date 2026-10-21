@@ -47,7 +47,7 @@ func (s *Server) movePersonalAgentHome(ctx context.Context, account *store.User,
 	if err != nil {
 		return agent, err
 	}
-	owned, err := s.store.DevicesOwnedBy(ctx, account.ID)
+	owned, err := store.AvailableOwnedDevices(ctx, s.store, account.ID)
 	if err != nil {
 		return agent, err
 	}

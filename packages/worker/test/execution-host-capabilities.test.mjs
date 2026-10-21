@@ -52,12 +52,24 @@ test("draft capability follows the connected execution host across an upgrade", 
     "a busy older host retains its limits",
   );
   assert.ok(availableDaemonCapabilities(client).includes("worker_update"));
-  capabilities = [...capabilities, "workspace_draft_skills_v1"];
+  assert.equal(
+    availableDaemonCapabilities(client).includes("exact_input_cancel_v1"),
+    false,
+  );
+  capabilities = [
+    ...capabilities,
+    "workspace_draft_skills_v1",
+    "exact_input_cancel_v1",
+  ];
   await client.refresh();
   assert.equal(
     advertisesDrafts(),
     true,
     "a new host can enable the capability",
+  );
+  assert.equal(
+    availableDaemonCapabilities(client).includes("exact_input_cancel_v1"),
+    true,
   );
   client.close();
   assert.equal(

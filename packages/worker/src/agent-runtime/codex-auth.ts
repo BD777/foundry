@@ -74,6 +74,7 @@ export async function authenticateIsolatedCodex(
   client: CodexAppServer,
   env: NodeJS.ProcessEnv,
   command: string,
+  allowRefresh = true,
 ): Promise<void> {
   const source = env.FOUNDRY_CODEX_AUTH_SOURCE;
   if (!source) return;
@@ -98,6 +99,10 @@ export async function authenticateIsolatedCodex(
       force ||
       (typeof expiry === "number" && expiry * 1000 < Date.now() + 300000)
     ) {
+      if (!allowRefresh)
+        throw new Error(
+          "Native login renewal is required; a quota read cannot renew credentials.",
+        );
       await refresh(source, command);
       auth = sourceAuth(source);
     }

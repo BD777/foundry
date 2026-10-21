@@ -9,6 +9,7 @@ import {
   forgetPersonalAgentMemory,
   listPersonalAgentMemory,
   updatePersonalAgentMemory,
+  transferLegacyKnowledge,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -33,7 +34,11 @@ function exportMemory(items: PersonalAgentMemoryItem[]): void {
 }
 
 /** "About me": what it knows, where each item came from, and forgetting. */
-export function MemorySection() {
+export function MemorySection({
+  hasWorkspaceMemory = false,
+}: {
+  hasWorkspaceMemory?: boolean;
+}) {
   const { t } = useTranslation("personalAgent");
   const [items, setItems] = useState<PersonalAgentMemoryItem[]>();
   const [loadError, setLoadError] = useState("");
@@ -68,6 +73,12 @@ export function MemorySection() {
     }
   }
 
+  const transferring = items?.some((item) => item.status === "transferring");
+  useEffect(() => {
+    if (!transferring) return;
+    const timer = setInterval(() => void read(), 3000);
+    return () => clearInterval(timer);
+  }, [transferring, read]);
   async function add(event: FormEvent): Promise<void> {
     event.preventDefault();
     const content = draft.trim();
@@ -92,31 +103,42 @@ export function MemorySection() {
       </p>
     );
   const pending = items.filter((item) => item.status === "pending");
-  const active = items.filter((item) => item.status === "active");
+  const active = items.filter(
+    (item) => item.status === "active" || item.status === "transferring",
+  );
 
   return (
     <>
-      <p className="fdy-pa-intro">{t("settings.memory.intro")}</p>
-      <form className="fdy-pa-memory-add" onSubmit={(event) => void add(event)}>
-        <TextInput
-          aria-label={t("settings.memory.addLabel")}
-          className="fdy-pa-input"
-          disabled={busy}
-          maxLength={memoryItemMaxChars}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={t("settings.memory.addPlaceholder")}
-          tone="boxed"
-          value={draft}
-        />
-        <Button
-          aria-busy={busy}
-          disabled={busy || !draft.trim()}
-          type="submit"
-          variant="primary"
+      <p className="fdy-pa-intro">
+        {hasWorkspaceMemory
+          ? t("knowledge.legacyIntro")
+          : t("settings.memory.intro")}
+      </p>
+      {!hasWorkspaceMemory ? (
+        <form
+          className="fdy-pa-memory-add"
+          onSubmit={(event) => void add(event)}
         >
-          {busy ? t("settings.memory.adding") : t("settings.memory.add")}
-        </Button>
-      </form>
+          <TextInput
+            aria-label={t("settings.memory.addLabel")}
+            className="fdy-pa-input"
+            disabled={busy}
+            maxLength={memoryItemMaxChars}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={t("settings.memory.addPlaceholder")}
+            tone="boxed"
+            value={draft}
+          />
+          <Button
+            aria-busy={busy}
+            disabled={busy || !draft.trim()}
+            type="submit"
+            variant="primary"
+          >
+            {busy ? t("settings.memory.adding") : t("settings.memory.add")}
+          </Button>
+        </form>
+      ) : null}
       {error ? (
         <Alert tone="error" title={t("settings.memory.failed")}>
           {error}
@@ -132,7 +154,13 @@ export function MemorySection() {
           </p>
           <ul className="fdy-pa-memory">
             {pending.map((item) => (
-              <MemoryRow busy={busy} item={item} key={item.id} run={run} />
+              <MemoryRow
+                busy={busy}
+                item={item}
+                key={item.id}
+                run={run}
+                canTransfer={hasWorkspaceMemory}
+              />
             ))}
           </ul>
         </div>
@@ -140,7 +168,13 @@ export function MemorySection() {
       {active.length ? (
         <ul className="fdy-pa-memory">
           {active.map((item) => (
-            <MemoryRow busy={busy} item={item} key={item.id} run={run} />
+            <MemoryRow
+              busy={busy}
+              item={item}
+              key={item.id}
+              run={run}
+              canTransfer={hasWorkspaceMemory}
+            />
           ))}
         </ul>
       ) : (
@@ -178,13 +212,16 @@ function MemoryRow({
   item,
   busy,
   run,
+  canTransfer = false,
 }: {
+  canTransfer?: boolean;
   item: PersonalAgentMemoryItem;
   busy: boolean;
   run: (action: () => Promise<void>) => Promise<boolean>;
 }) {
   const { t } = useTranslation("personalAgent");
   const [editing, setEditing] = useState<string>();
+  const moving = item.status === "transferring";
   const unconfirmed = item.origin === "inferred" || item.status === "pending";
   const done = () => undefined;
 
@@ -215,7 +252,20 @@ function MemoryRow({
       <div className="fdy-pa-memory-actions">
         {editing === undefined ? (
           <>
-            {unconfirmed ? (
+            {moving ? <p role="status">{t("knowledge.legacyMoving")}</p> : null}
+            {canTransfer && !moving ? (
+              <ConfirmButton
+                size="sm"
+                disabled={busy}
+                confirmLabel={t("knowledge.transferConfirm")}
+                onConfirm={() =>
+                  void run(() => transferLegacyKnowledge(item).then(done))
+                }
+              >
+                {t("knowledge.transfer")}
+              </ConfirmButton>
+            ) : null}
+            {unconfirmed && !moving ? (
               <Button
                 disabled={busy}
                 onClick={() =>
@@ -228,7 +278,7 @@ function MemoryRow({
               </Button>
             ) : null}
             <Button
-              disabled={busy}
+              disabled={busy || moving}
               onClick={() => setEditing(item.content)}
               size="sm"
               variant="ghost"

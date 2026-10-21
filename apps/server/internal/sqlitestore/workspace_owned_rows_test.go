@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -19,6 +20,11 @@ var ownerColumns = []string{"workspace_id", "issue_id", "run_id", "session_id"}
 
 // unownedOwnerColumns name a workspace without belonging to it.
 var unownedOwnerColumns = map[string]string{
+	"pa_inbox.session_id":           "the person's durable intake survives deletion of a processing conversation",
+	"pa_run_snapshots.session_id":   "immutable personal run audit, not a child of its execution session",
+	"pa_run_controls.session_id":    "an unresolved exact-input stop receipt cannot be erased by deleting its session",
+	"knowledge_vaults.workspace_id": "the person's authority pointer and revocation recovery survive workspace loss; deletion of a current authority is refused",
+
 	"deleted_workspaces.workspace_id": "the deletion outlives the workspace",
 	"user_invites.workspace_id":       "an invite's grant; it lapses once its inviter no longer owns the workspace",
 	"workspace_digests.workspace_id":  "a person's digest belongs to their membership, deleted with it (ON DELETE CASCADE)",
@@ -447,5 +453,40 @@ func TestOpenPrunesRowsOfDeletedWorkspacesIssuesRunsAndSessions(t *testing.T) {
 	}
 	if logged.Len() != 0 {
 		t.Fatalf("second prune logged %q", logged.String())
+	}
+}
+
+func TestKnowledgeAuthorityAndPendingContextPatchProtectWorkspaceDeletion(t *testing.T) {
+	db, ctx := newTestStore(t), context.Background()
+	if err := db.RegisterDaemon(ctx, homeRegistration("dev_home", "home")); err != nil {
+		t.Fatal(err)
+	}
+	vault, err := db.CreateKnowledgeVault(ctx, store.KnowledgeVault{ID: "selected-memory", UserID: "person", Kind: "memory", WorkspaceID: "ws_home", DeviceID: "dev_home", RootPath: "knowledge"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.DeleteWorkspace(ctx, "ws_home"); !errors.Is(err, store.ErrWorkspaceBusy) {
+		t.Fatalf("selected authority removed: %v", err)
+	}
+	// Simulate the pointer having moved; only the test's metadata is removed.
+	if _, err = db.conn().ExecContext(ctx, `DELETE FROM knowledge_vaults WHERE id=?`, vault.ID); err != nil {
+		t.Fatal(err)
+	}
+	execAll(t, db, `INSERT INTO pa_context_patches VALUES('patch','person','ws_home','applying',1,'{}')`)
+	if _, err = db.DeleteWorkspace(ctx, "ws_home"); !errors.Is(err, store.ErrWorkspaceBusy) {
+		t.Fatalf("unknown remote patch lost its fence: %v", err)
+	}
+	execAll(t, db, `UPDATE pa_context_patches SET status='applied' WHERE id='patch'`)
+	if _, err = db.EnqueuePersonalAgentMaintenance(ctx, store.PersonalAgentMaintenance{ID: "review", UserID: "person", Role: "governance", WorkspaceID: "ws_home", EventKey: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.DeleteWorkspace(ctx, "ws_home"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, `SELECT count(*) FROM pa_maintenance WHERE workspace_id='ws_home'`); n != 0 {
+		t.Fatal("workspace review survived deletion")
+	}
+	if n := countRows(t, db, `SELECT count(*) FROM pa_context_patches WHERE workspace_id='ws_home'`); n != 0 {
+		t.Fatal("settled file operation survived deletion")
 	}
 }

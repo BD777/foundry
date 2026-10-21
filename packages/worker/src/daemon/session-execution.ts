@@ -279,6 +279,7 @@ export async function executeAgentSession(
     const preparing = new AbortController();
     const stopPreparing = registerActiveSessionCancelTarget(session.id, {
       provider: session.provider,
+      inputId: session.input?.id,
       cancel: () => preparing.abort(new AgentSessionCanceledError()),
     });
     let managedSkills: ManagedSkillRuntime;

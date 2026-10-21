@@ -34,9 +34,9 @@ func IsDecline(message string) bool { return matchesWord(message, DeclineWords) 
 // StopReply answers the stop switch (§8).
 func StopReply(language string, stopped int) string {
 	if language == "en" {
-		return fmt.Sprintf("Everything is stopped: %d thing(s) that were running. Say \"resume\" or press the button to go on.", stopped)
+		return fmt.Sprintf("New work is paused; %d execution(s) are confirmed stopped. Pending stops still need a device receipt. Independent services are managed separately.", stopped)
 	}
-	return fmt.Sprintf("已全部停下，停了 %d 件正在做的事。说『继续』或点按钮恢复。", stopped)
+	return fmt.Sprintf("已暂停新工作，确认停下了 %d 项执行。未收到回执的停止仍需等设备确认，独立服务需单独管理。", stopped)
 }
 
 // ResumeReply answers resuming: nothing that was stopped restarts by

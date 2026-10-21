@@ -272,3 +272,7 @@ func (h *DaemonHub) RefreshDeviceResources(ctx context.Context, deviceID, reques
 	}
 	return value, nil
 }
+
+func (h *DaemonHub) cancelExactAssistantInput(ctx context.Context, session store.AgentSession) (wsSessionCanceledPayload, error) {
+	return callDevice[wsSessionCanceledPayload](ctx, h.connectionFor(session.DeviceID), wsCancelSessionType, wsCancelSessionPayload{SessionID: session.ID, InputID: session.Input.ID})
+}

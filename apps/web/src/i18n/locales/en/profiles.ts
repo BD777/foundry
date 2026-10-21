@@ -1,5 +1,23 @@
 /** Model providers, device accounts and account inspection. */
 export const profiles = {
+  quota: {
+    nativeSnapshot: "Native app observation · may be cached",
+    title: "Usage",
+    accountScope: "Account quota",
+    refresh: "Refresh account usage",
+    unknown: "Unknown",
+    windowMinutes: "{{minutes}} min",
+    extraUsage: "Extra usage",
+    offline: "Device offline · last observed usage",
+    failed: "Could not refresh · showing last observed usage",
+    renewal: "Open the native app to renew its login, then refresh usage.",
+    unsupported: "This native version does not expose account usage.",
+    unavailable: "Account usage is currently unavailable.",
+    stale: "Last observed usage · refresh for current limits",
+    more: "Show {{count}} more",
+    less: "Show less",
+    observed: "Checked {{time}}",
+  },
   runtimeUpdates: {
     updateNowLabel: "Update {{name}} to stable",
     noticeTitle: "{{name}} {{version}} → stable {{target}}",

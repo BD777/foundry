@@ -202,7 +202,7 @@ export const externalAccounts = {
       "One scan: the Feishu user who scans authorizes this app and is connected as an account here.",
   },
   deviceStatus: {
-    ready: "Signed in",
+    ready: "Base login ready",
     expiring: "Expires soon",
     expired: "Expired",
     signed_out: "Signed out",
@@ -211,6 +211,7 @@ export const externalAccounts = {
     error: "Could not read",
   },
   deviceHeld: {
+    offlineUnknown: "Device offline",
     intro: {
       bytedcli:
         "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Sign in on the devices you own here; a workspace then chooses which device's sign-in its sessions use.",
@@ -259,7 +260,48 @@ export const externalAccounts = {
     signedOut: "{{name}} on {{device}} is signed out.",
     signedInNotice: "{{name}} is signed in on {{device}}.",
   },
+  authorization: {
+    separate:
+      "Additional capabilities use their own authorization. They do not share the Feishu account connected above.",
+    localOnly:
+      "Local credential status; business permissions have not been tested.",
+    workerUpgrade:
+      "Update this device’s worker to check and authorize this capability.",
+    checked: "Checked {{when}}",
+    authorize: "Authorize capability",
+    prepare: "Prepare existing login",
+    nativeQr: "Native authorization QR code",
+    scanNative:
+      "Scan this original QR code with the provider’s mobile app. Keep this page open while it finishes.",
+    imageExpired:
+      "This authorization image is no longer available. Restart authorization.",
+    status: {
+      ready: "Local credential ready",
+      needs_auth: "Needs authorization",
+      expired: "Expired",
+      unknown: "Not verified",
+      unavailable: "Unavailable",
+    },
+    reason: {
+      bootstrap_available:
+        "A saved native session may be reusable; preparing it does not repeat the base login.",
+      cli_upgrade: "Update the installed CLI to support this authorization.",
+      check_failed: "Could not check this capability. Base login is unchanged.",
+    },
+  },
   deviceSignIn: {
+    connectionUncertain:
+      "Connection interrupted: {{error}}. Retry to check the same authorization.",
+    reconnecting:
+      "Waiting for the device to confirm this step. This authorization will resume automatically; no new sign-in is started.",
+    phase: {
+      checking: "Checking the existing login on {{device}}…",
+      starting: "Preparing authorization on {{device}}…",
+      awaiting_user: "Waiting for you to approve…",
+      verifying: "Verifying the device login…",
+    },
+
+    unverified: "The device has not confirmed a usable login.",
     title: "Sign in to {{name}}",
     description:
       "{{device}} starts {{name}}'s own sign-in; the sign-in stays on that device.",
@@ -273,7 +315,24 @@ export const externalAccounts = {
     failed: "The sign-in did not finish: {{error}}",
   },
   workspace: {
-    rule: "Only sessions you start, on devices you own, use your accounts. Other members see that an account is bound, not whose it is.",
+    appUnavailable:
+      "This account’s app is unavailable. Manage it in Connectors.",
+    executionDevice: "Execution device",
+    executionHint:
+      "This setting applies only to sessions running on the selected device.",
+    deviceScope: "Login on {{device}}",
+    deviceOwnerOnly: "Only the execution device’s owner can manage its login.",
+    lastRead:
+      "Local login read {{when}}; service access has not been verified.",
+    useExisting: "Use existing login",
+    authorize: "Authorize and use here",
+    enabled: "Enabled here",
+    removeBinding: "Remove binding",
+    retryBinding: "Retry saving binding",
+    nativeBoundary:
+      "Removing this binding does not block your own local CLI login. Other devices’ logins are managed in Connectors.",
+
+    rule: "Feishu accounts follow their workspace grants. Device logins apply only on their execution device.",
     binding: {
       feishu:
         "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
@@ -288,8 +347,7 @@ export const externalAccounts = {
       "None of your devices has {{name}} yet. Set it up from Manage connectors.",
     devicesLoadFailed: "Could not load the devices' sign-ins: {{error}}",
     deviceBound: "Sessions here on {{device}} use its {{name}} sign-in.",
-    deviceUnbound:
-      "Sessions here on {{device}} no longer use its {{name}} sign-in.",
+    deviceUnbound: "The {{name}} binding on {{device}} was removed.",
     membersOn:
       "Other members' sessions on {{device}} may use its {{name}} sign-in here.",
     membersOff:

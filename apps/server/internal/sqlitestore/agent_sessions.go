@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -239,8 +240,17 @@ func (s *Store) CreateAgentSession(ctx context.Context, input store.CreateAgentS
 }
 
 func (s *Store) createAgentSession(ctx context.Context, input store.CreateAgentSessionInput) (store.AgentSession, error) {
+	if err := s.checkPARunInput(ctx, input.CreatedByUserID, input.InputID, input.ExecutionBudget); err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, input.CreatedByUserID, input.WorkspaceID, input.InputID); err != nil {
+		return store.AgentSession{}, err
+	}
 	start, err := s.checkSessionStart(ctx, input)
 	if err != nil {
+		return store.AgentSession{}, err
+	}
+	if err := s.checkPAContextPatchFence(ctx, start.agent.WorkspaceID); err != nil {
 		return store.AgentSession{}, err
 	}
 	now := time.Now().UTC()
@@ -450,6 +460,7 @@ func (start sessionStart) record(id string, inputID string, now time.Time) store
 		Title:                titleFromInput(titleInput),
 		Prompt:               start.prompt,
 		Input: store.SessionInput{
+			ExecutionBudget:       input.ExecutionBudget,
 			ID:                    inputID,
 			At:                    formatTime(now),
 			Prompt:                start.prompt,
@@ -526,6 +537,33 @@ func (s *Store) sessionInputID(ctx context.Context, requested string, now time.T
 
 // recordSessionInput writes the input into the session's transcript.
 func (s *Store) recordSessionInput(ctx context.Context, sessionID string, input store.SessionInput, now time.Time) error {
+	// Central gate also covers Issue execution and clarification inputs, which
+	// do not enter through CreateAgentSession. Their enclosing transaction rolls
+	// the session row back together with the refused input.
+	var workspaceID string
+	if err := s.reader().QueryRowContext(ctx, `SELECT workspace_id FROM agent_sessions WHERE id=?`, sessionID).Scan(&workspaceID); err != nil {
+		return err
+	}
+	if err := s.checkPAContextPatchFence(ctx, workspaceID); err != nil {
+		return err
+	}
+
+	if budget := input.ExecutionBudget; budget != nil {
+		var user string
+		if e := s.reader().QueryRowContext(ctx, `SELECT COALESCE(json_extract(payload_json,'$.createdByUserId'),'') FROM agent_sessions WHERE id=?`, sessionID).Scan(&user); e != nil {
+			return e
+		}
+		snap, e := s.GetPersonalAgentRunSnapshot(ctx, user, budget.SnapshotID)
+		if e != nil {
+			return e
+		}
+		if e = s.BindPersonalAgentRunSnapshot(ctx, user, snap.ID, sessionID); e != nil {
+			return e
+		}
+		if _, e = s.EnsurePersonalAgentRunControl(ctx, store.PersonalAgentRunControl{ID: flow.Key("parctl", sessionID, input.ID), UserID: user, SessionID: sessionID, InputID: input.ID, SnapshotID: snap.ID, Role: snap.Role, TokenBudget: snap.TokenBudget, TimeoutMinutes: snap.TimeoutMinutes}); e != nil {
+			return e
+		}
+	}
 	if input.At == "" {
 		input.At = formatTime(now)
 	}
@@ -659,6 +697,15 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		if err != nil {
 			return err
 		}
+		if err := tx.checkPAContextPatchFence(ctx, session.WorkspaceID); err != nil {
+			return err
+		}
+		if err := tx.checkPARunInput(ctx, session.CreatedByUserID, input.InputID, input.ExecutionBudget); err != nil {
+			return err
+		}
+		if err := tx.checkPAOperationInput(ctx, input.PersonalAgentOperationID, input.PersonalAgentOperationRevision, session.CreatedByUserID, session.WorkspaceID, input.InputID); err != nil {
+			return err
+		}
 		if isActiveAgentSession(session.Status) {
 			return store.ErrAgentSessionActive
 		}
@@ -719,6 +766,7 @@ func (s *Store) SendAgentSessionInput(ctx context.Context, sessionID string, inp
 		}
 		previousInputID := session.Input.ID
 		session.Input = store.SessionInput{
+			ExecutionBudget:       input.ExecutionBudget,
 			ID:                    inputID,
 			At:                    formatTime(now),
 			Prompt:                prompt,

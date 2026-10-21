@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import test from "node:test";
 import { Window } from "happy-dom";
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 
 register("./bundler-resolve.mjs", import.meta.url);
 const window = new Window({ url: "https://foundry.example/" });
@@ -284,7 +284,13 @@ test("sign-in shows the device's sign-in page as a link and QR code until the de
     ],
     "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
       202,
-      { status: "pending", verificationUrl: url },
+      {
+        status: "pending",
+        operationId: "op-test",
+        expiresAt: iso(600_000),
+        intervalSeconds: 3,
+        verificationUrl: url,
+      },
     ],
     "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/poll": () => {
       polls += 1;
@@ -348,10 +354,12 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
         begun === 1
           ? {
               status: "denied",
+              operationId: "op-denied",
               verificationUrl: "https://cloud.bytedance.net/x",
             }
           : {
               status: "pending",
+              operationId: "op-next",
               verificationUrl: "https://cloud.bytedance.net/y",
             },
       ];
@@ -428,6 +436,8 @@ test("the workspace tab binds the person's own devices and lends to members only
   const notices = [];
   const view = (bindings) => ({
     workspaceId: "ws_1",
+    defaultDeviceId: "dev_mac",
+    executionDevices: [{ deviceId: "dev_mac", name: "macbook" }],
     connectors: [bytedcli],
     bindings,
     devices: [
@@ -458,6 +468,10 @@ test("the workspace tab binds the person's own devices and lends to members only
       { workspaceId: "ws_1", bindings: [], accounts: [] },
     ],
     "GET /api/workspaces/ws_1/device-connectors": () => [200, view(bindings)],
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
+      202,
+      { status: "complete", operationId: "reuse", state: state("dev_mac") },
+    ],
     "PUT /api/workspaces/ws_1/device-connectors": (body) => {
       bindings = [
         ...bindings.filter((binding) => binding.grantedBy !== "u_me"),
@@ -481,23 +495,14 @@ test("the workspace tab binds the person's own devices and lends to members only
   const section = tab.container.querySelector(
     '[role=region][aria-label="bytedcli"]',
   );
-  assert.match(
-    section.textContent,
-    /use bytedcli with that device's own sign-in/,
-  );
-  assert.match(
-    section.textContent,
-    /Sessions on macbook use its bytedcli sign-in/,
-  );
+  assert.match(section.textContent, /Login on macbook/);
+  assert.match(section.textContent, /Use existing login/);
   assert.equal(section.textContent.includes("sg-chaos"), false);
-  assert.match(
-    section.textContent,
-    /Bound by other membersbob-macFor its owner's sessions/,
-  );
+  assert.equal(section.textContent.includes("bob-mac"), false);
   assert.equal(section.textContent.includes("someone@"), false);
   let boxes = section.querySelectorAll("input[type=checkbox]");
-  assert.equal(boxes.length, 1);
-  await tab.click(boxes[0]);
+  assert.equal(boxes.length, 0);
+  await tab.click(tab.button("Use existing login", section));
   assert.deepEqual(requests.at(-1), {
     method: "PUT",
     path: "/api/workspaces/ws_1/device-connectors",
@@ -512,9 +517,9 @@ test("the workspace tab binds the person's own devices and lends to members only
   boxes = tab.container
     .querySelector('[role=region][aria-label="bytedcli"]')
     .querySelectorAll("input[type=checkbox]");
-  assert.equal(boxes.length, 2, "lending to members is offered once bound");
-  assert.equal(boxes[1].checked, false);
-  await tab.click(boxes[1]);
+  assert.equal(boxes.length, 1, "lending to members is offered once bound");
+  assert.equal(boxes[0].checked, false);
+  await tab.click(boxes[0]);
   assert.deepEqual(requests.at(-1).body, {
     bindings: [{ kind: "bytedcli", deviceId: "dev_mac", members: true }],
   });
@@ -531,6 +536,8 @@ test("a viewer cannot change device bindings", async () => {
       200,
       {
         workspaceId: "ws_1",
+        defaultDeviceId: "dev_mac",
+        executionDevices: [{ deviceId: "dev_mac", name: "macbook" }],
         connectors: [bytedcli],
         bindings: [],
         devices: [device("dev_mac", "macbook", [state("dev_mac")])],
@@ -543,8 +550,157 @@ test("a viewer cannot change device bindings", async () => {
     readOnlyReason: "You are a Viewer here; this needs Maintainer.",
     onNotice: () => {},
   });
-  const boxes = tab.container.querySelectorAll("input[type=checkbox]");
-  assert.ok(boxes.length > 0);
-  for (const box of boxes) assert.equal(box.disabled, true);
+  assert.equal(tab.button("Use existing login").disabled, true);
   await tab.unmount();
+});
+
+test("same-named devices remain distinguishable in global connector management", async () => {
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [bytedcli],
+        devices: [
+          device("dev_one", "MacBook", [state("dev_one")]),
+          device("dev_two", "MacBook", [state("dev_two")]),
+        ],
+      },
+    ],
+  };
+  const page = await render(ConnectorsFeature, {
+    ...props,
+    onNotice: () => {},
+  });
+  const rows = [...page.container.querySelectorAll(".fdy-xacc-row")];
+  assert.equal(rows.length, 2);
+  assert.match(rows[0].textContent, /dev_one/);
+  assert.match(rows[1].textContent, /dev_two/);
+  await page.unmount();
+});
+
+test("additional capability keeps base login and renders the native image without an approval link", async () => {
+  const group = {
+    id: "web_session",
+    revision: 1,
+    label: "Extra service",
+    capabilities: ["service_one", "service_two"],
+    credential: "native_web_session",
+  };
+  const descriptor = { ...bytedcli, authorizationGroups: [group] };
+  const local = state("dev_mac", {
+    authorizations: [
+      {
+        id: group.id,
+        revision: 1,
+        status: "needs_auth",
+        checkedAt: iso(0),
+        verification: "local_state",
+      },
+    ],
+  });
+  let dismissals = 0;
+  routes = {
+    "GET /api/connectors/devices": () => [
+      200,
+      {
+        connectors: [descriptor],
+        devices: [
+          device("dev_mac", "MacBook", [local], {
+            authorizationSupported: true,
+          }),
+        ],
+      },
+    ],
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": (body) => {
+      assert.equal(body.authorizationId, group.id);
+      assert.equal(body.authorizationRevision, 1);
+      return [
+        202,
+        {
+          status: "pending",
+          operationId: "operation-image",
+          expiresAt: iso(60000),
+          challenge: {
+            kind: "qr_image",
+            imageUrl:
+              "/api/devices/dev_mac/connectors/bytedcli/sign-in/image?operationId=operation-image&authorizationId=web_session&authorizationRevision=1",
+          },
+        },
+      ];
+    },
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/poll": () => [
+      200,
+      { status: "pending", operationId: "operation-image" },
+    ],
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/dismiss": () => {
+      dismissals++;
+      return [200, {}];
+    },
+  };
+  const StrictConnector = (props) =>
+    createElement(StrictMode, null, createElement(ConnectorsFeature, props));
+  const page = await render(StrictConnector, { ...props, onNotice: () => {} });
+  assert.match(page.container.textContent, /Base login ready/);
+  assert.match(page.container.textContent, /Needs authorization/);
+  await page.click(page.button("Authorize capability"));
+  const dialog = document.querySelector("[role=dialog]");
+  assert.equal(
+    dismissals,
+    0,
+    "StrictMode does not dismiss the active operation",
+  );
+  assert.ok(dialog.querySelector("img.fdy-xacc-auth-image"));
+  assert.equal(dialog.querySelector(".fdy-xacc-qr svg"), null);
+  assert.equal(
+    dialog.querySelector("a[target=_blank]"),
+    null,
+    "an applink is not an approval action",
+  );
+  await page.click(dialog.querySelector("button[aria-label^=Close]"));
+  assert.equal(dismissals, 1);
+  assert.match(page.container.textContent, /Base login ready/);
+  await page.unmount();
+});
+
+test("a lost initial receipt retries the same request id and shows preparation as pending", async () => {
+  const { DeviceSignInDialog } =
+    await import("../src/features/external-accounts/device-sign-in-dialog.tsx");
+  const ids = [];
+  routes = {
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": (body) => {
+      ids.push(body.requestId);
+      return ids.length === 1
+        ? [503, { error: "response lost" }]
+        : [
+            202,
+            {
+              status: "pending",
+              phase: "checking",
+              operationId: "same-operation",
+              expiresAt: iso(60000),
+            },
+          ];
+    },
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in/dismiss": () => [
+      200,
+      {},
+    ],
+  };
+  const page = await render(DeviceSignInDialog, {
+    target: {
+      deviceId: "dev_mac",
+      deviceName: "MacBook",
+      kind: "bytedcli",
+      label: "bytedcli",
+    },
+    onClose: () => {},
+    onSignedIn: () => assert.fail("pending is not success"),
+  });
+  assert.match(document.body.textContent, /Connection interrupted/);
+  assert.doesNotMatch(document.body.textContent, /sign-in did not finish/);
+  await page.click(page.button("Try again"));
+  assert.equal(ids.length, 2);
+  assert.equal(ids[0], ids[1]);
+  assert.match(document.body.textContent, /Checking the existing login/);
+  await page.unmount();
 });

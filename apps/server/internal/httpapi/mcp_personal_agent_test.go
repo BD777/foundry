@@ -522,7 +522,7 @@ func TestAskingAgainSupersedesTheOlderCard(t *testing.T) {
 // The stop switch cancels the assistant's conversations and the work it
 // handed off, voids its proposals and refuses its writes, all without the
 // model; resuming restarts nothing.
-func TestStopCancelsEverythingTheAssistantStarted(t *testing.T) {
+func TestStopRequestsEverythingWithoutInventingOfflineReceipts(t *testing.T) {
 	f := newAssistantFixture(t)
 	ctx := context.Background()
 	f.setPolicy(t, store.PersonalAgentActionRenameWorkspace, store.PersonalAgentAsk)
@@ -543,12 +543,22 @@ func TestStopCancelsEverythingTheAssistantStarted(t *testing.T) {
 	expectStatus(t, stopped, http.StatusOK, "stop")
 	var answer personalAgentSwitch
 	_ = json.Unmarshal(stopped.Body.Bytes(), &answer)
-	if answer.Stopped != 3 || answer.Agent.State != store.PersonalAgentStopped || !strings.Contains(answer.Reply, "3") {
+	if answer.Stopped != 0 || answer.Agent.State != store.PersonalAgentStopped || !strings.Contains(answer.Reply, "0") {
 		t.Fatalf("stop answered %+v", answer)
 	}
 	for _, session := range append(helpers, f.conversation) {
-		if got, _ := f.server.store.GetAgentSessionSummary(ctx, session.ID); got.Status != "canceled" {
-			t.Errorf("%s is %s after stop", session.ID, got.Status)
+		if got, _ := f.server.store.GetAgentSessionSummary(ctx, session.ID); got.Status == "canceled" {
+			t.Errorf("%s falsely marked canceled without a native receipt", session.ID)
+		}
+	}
+	controls, _ := f.server.assistantRunControlStore()
+	pendingStops, e := controls.ListPersonalAgentRunControls(ctx, f.aliceID)
+	if e != nil || len(pendingStops) != 3 {
+		t.Fatalf("missing stop requests: %+v %v", pendingStops, e)
+	}
+	for _, control := range pendingStops {
+		if control.State != "stop_requested" || control.SessionID == unrelated.ID {
+			t.Fatalf("wrong stop scope: %+v", control)
 		}
 	}
 	if got, _ := f.server.store.GetAgentSessionSummary(ctx, unrelated.ID); got.Status == "canceled" {
@@ -569,12 +579,16 @@ func TestStopCancelsEverythingTheAssistantStarted(t *testing.T) {
 	resumed := doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/personal-agent/resume", ""))
 	expectStatus(t, resumed, http.StatusOK, "resume")
 	_ = json.Unmarshal(resumed.Body.Bytes(), &answer)
-	if answer.Agent.State != store.PersonalAgentActive || len(answer.Tasks) != 2 {
+	if answer.Agent.State != store.PersonalAgentActive || len(answer.Tasks) != 0 {
 		t.Fatalf("resume answered %+v", answer)
 	}
-	for _, helper := range helpers {
-		if got, _ := f.server.store.GetAgentSessionSummary(ctx, helper.ID); got.Status != "canceled" {
-			t.Errorf("resume restarted %s (%s)", helper.ID, got.Status)
+	for _, control := range pendingStops {
+		current, _ := controls.GetPersonalAgentRunControl(ctx, f.aliceID, control.ID)
+		if current.State != "stop_requested" {
+			t.Fatal("resume erased a pending stop")
+		}
+		if allowed, e := controls.AuthorizePersonalAgentDispatch(ctx, control.SessionID, control.InputID); e != nil || allowed {
+			t.Fatalf("resume redispatched stopped input: %v %v", allowed, e)
 		}
 	}
 }

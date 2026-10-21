@@ -301,7 +301,7 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
     await assert.rejects(readClaudeCatalog(), /due for renewal/);
     assert.deepEqual(ran(), [], "no CLI command may race the renewal");
 
-    // Outside the window everything runs exactly as before.
+    // Outside the renewal window status reads may also attempt a no-prompt usage control read.
     writeClaudeLogin(directory, {
       accessToken: "synthetic-access",
       refreshToken: "synthetic-refresh",
@@ -314,10 +314,19 @@ console.log(JSON.stringify({loggedIn:true,authMethod:"claude.ai",email:"cli@exam
     assert.equal(live.status, "local_login");
     assert.equal(live.accountLabel, "cli@example.test");
     assert.equal(live.plan, "pro");
-    assert.deepEqual(ran(), [
+    const commands = ran();
+    assert.deepEqual(commands.slice(0, 2), [
       ["auth", "status", "--json"],
       ["auth", "status", "--json"],
     ]);
+    assert.equal(commands.length, 3);
+    assert.ok(commands[2].includes("--safe-mode"));
+    assert.ok(commands[2].includes("--no-session-persistence"));
+    assert.equal(
+      live.quotaStatus,
+      "error",
+      "a CLI without the control protocol cannot invent quota",
+    );
   } finally {
     clearNativeLoginHealth();
     for (const [key, value] of [

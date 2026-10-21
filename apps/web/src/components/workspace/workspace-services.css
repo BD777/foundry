@@ -1,0 +1,79 @@
+.fdy-workspace-services {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+
+.fdy-workspace-services-panel {
+  padding: 22px;
+}
+
+.fdy-workspace-services-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-service-row {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--fdy-line);
+}
+
+.fdy-workspace-service-row > .fdy-button {
+  justify-self: start;
+}
+
+.fdy-workspace-service-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fdy-workspace-service-identity {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-service-identity strong {
+  color: var(--fdy-ink-strong);
+  font-size: 14px;
+}
+
+.fdy-workspace-service-identity span {
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+}
+
+.fdy-workspace-service-details {
+  min-width: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.fdy-workspace-service-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--fdy-ink);
+}
+
+.fdy-workspace-service-details pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .fdy-workspace-services-panel {
+    padding: 16px;
+  }
+}

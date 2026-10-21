@@ -279,7 +279,7 @@ test("the check action is visibly busy, ignores double clicks and offers retry o
   await view.unmount();
 });
 
-test("Claude checks only the local login and never promises online usage", async () => {
+test("Claude unavailable quota stays honest and offers a native account recheck", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     jsonResponse({
@@ -290,20 +290,17 @@ test("Claude checks only the local login and never promises online usage", async
       checkedAt: new Date().toISOString(),
       status: "local_login",
       message:
-        "Claude Code reports local OAuth credentials. Its SDK does not expose an account quota read; online validity and remaining usage are not verified.",
+        "Claude Code reports local OAuth credentials. The native usage read is unavailable; online validity and remaining usage are not verified.",
       usage: [],
     });
   const view = await mount("dev-claude", "claude");
   await tick();
   assert.match(view.container.textContent, /Local login · unverified online/);
-  assert.match(
-    view.container.textContent,
-    /does not expose an account quota read/,
-  );
+  assert.match(view.container.textContent, /native usage read is unavailable/);
   assert.equal(view.container.querySelectorAll("progress").length, 0);
   assert.match(
-    buttonByLabel(view.container, "Re-check local login").textContent,
-    /Re-check local login/,
+    buttonByLabel(view.container, "Check account & usage").textContent,
+    /Check account & usage/,
   );
   globalThis.fetch = originalFetch;
   await view.unmount();

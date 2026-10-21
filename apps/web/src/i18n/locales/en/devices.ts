@@ -55,6 +55,12 @@ export const devices = {
     failed: "Could not rename the device.",
   },
   accountShare: {
+    detailsFor: "Shared computer account on {{device}}",
+    unreadFor: "Unread shared account notice on {{device}}",
+    acceptedOn: "Sharing was accepted on {{date}}.",
+    read: "Notice read. The computer account is still shared.",
+    refreshFailed:
+      "The notice was read, but the device could not be refreshed.",
     label: "Shares a system account with {{names}}",
     body_one:
       "{{names}} uses this computer account too: you work with the same files and the same Claude/Codex sign-ins here; Foundry does not keep your work apart.",

@@ -166,7 +166,13 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
     socket.write(`${JSON.stringify(value)}\n`);
   const snapshot = () => ({
     protocol: 1,
-    capabilities: ["idle_upgrade", "session_work", "workspace_draft_skills_v1"],
+    capabilities: [
+      "idle_upgrade",
+      "session_work",
+      "workspace_draft_skills_v1",
+      "role_run_budgets_v1",
+      "exact_input_cancel_v1",
+    ],
     entry,
     runtimeStamp: stamp,
     busy: busy(),
@@ -413,10 +419,25 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
               }
             }
           } else if (request.method === "cancel") {
-            result = await cancelActiveSession(
-              request.sessionId,
-              request.inputId,
-            );
+            const key = dispatchKey(request.sessionId, request.inputId ?? "");
+            const ended = () =>
+              !!request.inputId &&
+              !!claims[key] &&
+              claims[key].status !== "active";
+            if (ended()) result = { inputId: request.inputId, stopped: true };
+            else {
+              const outcome = await cancelActiveSession(
+                request.sessionId,
+                request.inputId,
+              );
+              result = {
+                ...outcome,
+                inputId: request.inputId,
+                ...(ended()
+                  ? { stopped: true, pending: false }
+                  : { pending: true }),
+              };
+            }
           } else if (request.method === "stop_background") {
             await stopClaudeBackgroundTask(request.sessionId, request.taskId);
           } else if (request.method === "issue_environment") {

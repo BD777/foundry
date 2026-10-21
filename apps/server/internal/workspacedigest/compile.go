@@ -158,7 +158,11 @@ func instructionFilesRev(files []store.WorkspaceFileEntry) string {
 	for _, file := range files {
 		for _, name := range names {
 			if file.Path == name {
-				parts = append(parts, file.Path+"="+file.SizeLabel+"@"+file.UpdatedLabel)
+				version := file.Revision
+				if version == "" {
+					version = file.SizeLabel + "@" + file.UpdatedLabel
+				}
+				parts = append(parts, file.Path+"="+version)
 			}
 		}
 	}

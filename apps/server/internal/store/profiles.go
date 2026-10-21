@@ -63,20 +63,27 @@ type NativeCliInstallResult struct {
 }
 
 type NativeAccountInspection struct {
-	Runtime         string               `json:"runtime"`
-	Source          string               `json:"source"`
-	Sources         []string             `json:"sources"`
-	ExecutionSource string               `json:"executionSource"`
-	CheckedAt       string               `json:"checkedAt"`
-	Status          string               `json:"status"`
-	AccountLabel    string               `json:"accountLabel,omitempty"`
-	Plan            string               `json:"plan,omitempty"`
-	Message         string               `json:"message"`
-	Usage           []NativeAccountUsage `json:"usage"`
+	QuotaMayBeCached  bool                 `json:"quotaMayBeCached,omitempty"`
+	RuntimeGeneration string               `json:"runtimeGeneration,omitempty"`
+	AuthMode          string               `json:"authMode,omitempty"`
+	QuotaStatus       string               `json:"quotaStatus,omitempty"`
+	QuotaReason       string               `json:"quotaReason,omitempty"`
+	Runtime           string               `json:"runtime"`
+	Source            string               `json:"source"`
+	Sources           []string             `json:"sources"`
+	ExecutionSource   string               `json:"executionSource"`
+	CheckedAt         string               `json:"checkedAt"`
+	Status            string               `json:"status"`
+	AccountLabel      string               `json:"accountLabel,omitempty"`
+	Plan              string               `json:"plan,omitempty"`
+	Message           string               `json:"message"`
+	Usage             []NativeAccountUsage `json:"usage"`
 }
 
 type NativeAccountUsage struct {
-	UsedPercent   float64  `json:"usedPercent"`
+	ID            string   `json:"id,omitempty"`
+	Label         string   `json:"label,omitempty"`
+	UsedPercent   *float64 `json:"usedPercent,omitempty"`
 	WindowMinutes *float64 `json:"windowMinutes,omitempty"`
 	ResetsAt      *float64 `json:"resetsAt,omitempty"`
 }

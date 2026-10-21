@@ -2,7 +2,7 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -122,13 +122,21 @@ func instantNotices(t *testing.T) {
 	t.Cleanup(func() { coalesceNotices = previous })
 }
 
-// createHelper hands ws_budget work over MCP and answers the helper the
-// device received.
+// createHelper exercises the shared dispatch/account layer used by all callers.
+// PA MCP ledger routing is covered separately by personal_agent_operations_test.go.
 func (f accountsFixture) createHelper(t *testing.T, arguments map[string]any) store.AgentSession {
 	t.Helper()
-	arguments["workspaceId"], arguments["prompt"] = "ws_budget", "review the doc"
-	if text, isError := f.call("create_session", arguments); isError {
-		t.Fatalf("create_session %v = %s", arguments, text)
+	profile, _ := arguments["profileId"].(string)
+	provider, _ := arguments["provider"].(string)
+	input := store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget", Prompt: "review the doc", ProfileID: profile, Provider: provider, ParentSessionID: f.conversation.ID, Source: "agent"}
+	if err := f.server.chooseSessionAccount(context.Background(), &input); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.pickSessionDevice(context.Background(), &input, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.server.createAndDispatch(context.Background(), input, false); err != nil {
+		t.Fatalf("dispatch helper %v: %v", arguments, err)
 	}
 	return f.daemon.nextChatRun().Session
 }
@@ -151,14 +159,11 @@ func TestHelperRunsUnderAnAccountThatWorksOnItsDevice(t *testing.T) {
 			t.Fatalf("create_session %v ran %s/%s, want %s", want.arguments, helper.Provider, helper.ProfileID, want.profile)
 		}
 	}
-	text, isError := f.call("create_session", map[string]any{"workspaceId": "ws_budget", "provider": "claude", "prompt": "go"})
-	var refusal struct {
-		Error    string             `json:"error"`
-		Accounts []workspaceAccount `json:"accounts"`
-	}
-	if !isError || json.Unmarshal([]byte(text), &refusal) != nil || refusal.Error != "no_usable_account" || len(refusal.Accounts) != 4 ||
-		!strings.Contains(text, `"problem":"not_signed_in"`) {
-		t.Fatalf("a claude helper where no claude account works = %s, want no_usable_account listing the accounts", text)
+	refusedInput := store.CreateAgentSessionInput{CreatedByUserID: f.aliceID, WorkspaceID: "ws_budget", Provider: "claude", Prompt: "go", ParentSessionID: f.conversation.ID}
+	err := f.server.chooseSessionAccount(ctx, &refusedInput)
+	var refusal *noUsableAccountError
+	if !errors.As(err, &refusal) || len(refusal.accounts) != 4 || !strings.Contains(refusal.mcpText(), `"problem":"not_signed_in"`) {
+		t.Fatalf("unavailable runtime: %v", err)
 	}
 
 	if err := f.db.SetDeviceProfiles(ctx, store.SetDeviceProfilesInput{DeviceID: "dev_home", ProfileIDs: []string{f.service.ID}}); err != nil {
@@ -175,7 +180,7 @@ func TestHelperRunsUnderAnAccountThatWorksOnItsDevice(t *testing.T) {
 		t.Fatalf("a helper ran %s, want %s the person last completed work on there", helper.ProfileID, f.service.ID)
 	}
 
-	text, isError = f.call("get_workspace", map[string]any{"workspaceId": "ws_budget", "include": []string{"note"}})
+	text, isError := f.call("get_workspace", map[string]any{"workspaceId": "ws_budget", "include": []string{"note"}})
 	if isError || !strings.Contains(text, `"defaultProfileId": "`+f.service.ID+`"`) || !strings.Contains(text, `"problem": "not_signed_in"`) ||
 		!strings.Contains(text, `"kind": "model_service"`) || !strings.Contains(text, `"kind": "device_login"`) {
 		t.Fatalf("get_workspace accounts = %s", text)
@@ -196,8 +201,8 @@ func TestRuntimeSwitchRunsUnderAnAccountThatWorks(t *testing.T) {
 	waitForStatus(t, f.db, helper.ID, "completed")
 	f.heard(t)
 	for _, provider := range []string{"codex", "codex"} {
-		if text, isError := f.call("send_message", map[string]any{"sessionId": helper.ID, "prompt": "again", "provider": provider}); isError {
-			t.Fatalf("send_message = %s", text)
+		if _, err := f.server.sendSessionMessageWith(ctx, helper.ID, store.SendAgentSessionInput{Prompt: "again", Provider: provider}, nil); err != nil {
+			t.Fatalf("runtime switch: %v", err)
 		}
 		run := f.daemon.nextChatRun().Session
 		if run.ProfileID != accountsGateway {
@@ -220,7 +225,7 @@ func TestFailedHelperNoticeCarriesItsReason(t *testing.T) {
 	f.server.failUndelivered(ctx, helper, "Not logged in · Please run /login")
 	notice := f.heard(t)
 	for _, want := range []string{"Failed:", "Not logged in", "is not signed in on that computer", "[reason=not_signed_in profileId=claude_local runtime=claude]",
-		"Accounts that work there:", "profileId " + accountsGateway} {
+		"availability observations grant no permission to switch:", "profileId " + accountsGateway} {
 		if !strings.Contains(notice, want) {
 			t.Fatalf("failure notice misses %q:\n%s", want, notice)
 		}
@@ -275,7 +280,7 @@ func TestUnreachableHelperIsReported(t *testing.T) {
 	}
 	notice := f.heard(t)
 	for _, want := range []string{"Stuck, can't reach its service", stuck.ID, "waiting for network", "[reason=unreachable profileId=codex_local runtime=codex]",
-		"Stop it with cancel_session", "profileId " + accountsGateway} {
+		"Obtain a stop receipt before replacing the current execution", "profileId " + accountsGateway} {
 		if !strings.Contains(notice, want) {
 			t.Fatalf("unreachable notice misses %q:\n%s", want, notice)
 		}

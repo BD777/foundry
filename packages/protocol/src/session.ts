@@ -450,7 +450,14 @@ export interface AgentSubagentDigest {
  * One message delivered to a session: the unit of dispatch. It is not a
  * session of its own; identity, permissions and lineage stay with the session.
  */
+export interface SessionExecutionBudget {
+  snapshotId: string;
+  tokenBudget: number;
+  timeoutMinutes: number;
+}
+
 export interface SessionInput {
+  executionBudget?: SessionExecutionBudget;
   id: string;
   prompt: string;
   attachments?: ChatAttachment[];

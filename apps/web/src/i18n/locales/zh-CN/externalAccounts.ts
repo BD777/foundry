@@ -193,7 +193,7 @@ export const externalAccounts: Translation<typeof en> = {
       "扫码一次：扫码的飞书用户授权这个应用，并作为一个账号连接到这里。",
   },
   deviceStatus: {
-    ready: "已登录",
+    ready: "基础登录就绪",
     expiring: "即将过期",
     expired: "已过期",
     signed_out: "未登录",
@@ -202,6 +202,7 @@ export const externalAccounts: Translation<typeof en> = {
     error: "无法读取",
   },
   deviceHeld: {
+    offlineUnknown: "设备离线",
     intro: {
       bytedcli:
         "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。在这里为你的设备登录；工作区再选择会话使用哪台设备的登录。",
@@ -249,7 +250,42 @@ export const externalAccounts: Translation<typeof en> = {
     signedOut: "{{device}} 上的 {{name}} 已退出登录。",
     signedInNotice: "{{device}} 上的 {{name}} 已登录。",
   },
+  authorization: {
+    separate: "附加能力单独授权，不共用上方连接的飞书账号。",
+    localOnly: "本地凭据状态；尚未验证业务权限。",
+    workerUpgrade: "需更新这台设备的 Worker 才能检查和授权此能力。",
+    checked: "{{when}}检查",
+    authorize: "授权此能力",
+    prepare: "准备已有登录",
+    nativeQr: "原生授权二维码",
+    scanNative: "请用服务方手机 App 扫描此原始二维码，保持页面打开直到完成。",
+    imageExpired: "此授权二维码已失效，请重新发起授权。",
+    status: {
+      ready: "本地凭据就绪",
+      needs_auth: "待授权",
+      expired: "已过期",
+      unknown: "待核验",
+      unavailable: "不可用",
+    },
+    reason: {
+      bootstrap_available:
+        "检测到可能可复用的原生会话；准备此能力不会重复基础登录。",
+      cli_upgrade: "请更新设备上的 CLI 以支持此授权。",
+      check_failed: "暂时无法检查此能力；基础登录不受影响。",
+    },
+  },
   deviceSignIn: {
+    connectionUncertain: "连接中断：{{error}}。重试会查询同一次授权。",
+    reconnecting:
+      "正在等待设备确认这一步，将自动继续当前授权，不会重复发起登录。",
+    phase: {
+      checking: "正在检查 {{device}} 上的现有登录…",
+      starting: "正在 {{device}} 上准备授权…",
+      awaiting_user: "等待你确认授权…",
+      verifying: "正在核验设备登录…",
+    },
+
+    unverified: "设备尚未确认有效登录。",
     title: "登录 {{name}}",
     description:
       "由 {{device}} 发起 {{name}} 自己的登录；登录只保存在那台设备上。",
@@ -263,7 +299,21 @@ export const externalAccounts: Translation<typeof en> = {
     failed: "登录未完成：{{error}}",
   },
   workspace: {
-    rule: "只有你本人在自己的设备上发起的会话才会使用你的账号。其他成员能看到绑定了账号，但看不到是谁的账号。",
+    appUnavailable: "此账号的应用不可用，请在“管理连接器”中处理。",
+    executionDevice: "执行设备",
+    executionHint: "此设置仅适用于在所选设备上执行的会话。",
+    deviceScope: "{{device}} 上的登录",
+    deviceOwnerOnly: "只有执行设备的所有者可以管理这台设备的登录。",
+    lastRead: "{{when}}读取的本地登录；尚未验证服务访问。",
+    useExisting: "使用现有登录",
+    authorize: "授权并在此使用",
+    enabled: "已在此启用",
+    removeBinding: "移除绑定",
+    retryBinding: "重试保存绑定",
+    nativeBoundary:
+      "移除绑定不会阻止你自己的本机 CLI 登录。其他设备的登录请在“管理连接器”中查看。",
+
+    rule: "飞书账号遵循工作区授权；设备登录仅适用于对应的执行设备。",
     binding: {
       feishu:
         "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
@@ -277,7 +327,7 @@ export const externalAccounts: Translation<typeof en> = {
     noDevices: "你的设备上还没有 {{name}}。请在“管理连接器”中设置。",
     devicesLoadFailed: "无法加载设备的登录：{{error}}",
     deviceBound: "此工作区在 {{device}} 上的会话将使用它的 {{name}} 登录。",
-    deviceUnbound: "此工作区在 {{device}} 上的会话不再使用它的 {{name}} 登录。",
+    deviceUnbound: "已移除 {{device}} 上的 {{name}} 工作区绑定。",
     membersOn:
       "其他成员在 {{device}} 上的会话也可以在此工作区使用它的 {{name}} 登录。",
     membersOff:

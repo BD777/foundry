@@ -84,6 +84,10 @@ func writeResultWithStatus(w http.ResponseWriter, status int, payload any, err e
 			writeError(w, status, err.Error())
 			return
 		}
+		if errors.Is(err, store.ErrPersonalAgentRevision) || errors.Is(err, store.ErrIdempotencyConflict) || errors.Is(err, store.ErrPersonalAgentInputUnconfirmed) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not found")
 			return

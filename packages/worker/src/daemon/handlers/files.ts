@@ -1,3 +1,10 @@
+import {
+  contextPatch,
+  ContextPatchError,
+} from "../../knowledge/context-patches.js";
+import type { ContextPatchCommand } from "@bd777/foundry-protocol";
+import { knowledgeCommand, KnowledgeFileError } from "../../knowledge/files.js";
+import type { KnowledgeCommand } from "@bd777/foundry-protocol";
 import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
@@ -73,6 +80,8 @@ export async function subagentList(
 /** Files of workspaces and sessions, attachments, and background task logs. */
 export function registerFileHandlers(dispatch: DaemonDispatch): void {
   dispatch
+    .on(daemonMessageTypes.contextPatch, onContextPatch)
+    .on(daemonMessageTypes.knowledgeCommand, onKnowledgeCommand)
     .on(daemonMessageTypes.attachmentWrite, onAttachmentWrite)
     .on(daemonMessageTypes.attachmentRead, onAttachmentRead)
     .on(daemonMessageTypes.readFile, onReadFile)
@@ -414,5 +423,37 @@ function onListWorkspaceTree(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       workspaceId: payload.workspaceId,
     }),
     failed,
+  );
+}
+
+function onKnowledgeCommand(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = envelope.payload as KnowledgeCommand;
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.knowledgeResult,
+    () => knowledgeCommand(ctx.roster.folderFor(payload.workspaceId), payload),
+    (message, error) => ({
+      error: message,
+      code:
+        error instanceof KnowledgeFileError ? error.code : "knowledge_io_error",
+    }),
+  );
+}
+
+function onContextPatch(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = envelope.payload as ContextPatchCommand;
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.contextPatched,
+    () => contextPatch(ctx.roster.folderFor(payload.workspaceId), payload),
+    (message, error) => ({
+      error: message,
+      code:
+        error instanceof ContextPatchError
+          ? error.code
+          : "context_patch_io_error",
+    }),
   );
 }

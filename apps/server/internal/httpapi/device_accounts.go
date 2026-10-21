@@ -16,6 +16,7 @@ type wsNativeAccountInspectionResult struct {
 	// Registration refreshes the device's agents with what the check found.
 	Registration store.DaemonRegistration `json:"registration"`
 	Error        string                   `json:"error,omitempty"`
+	ErrorCode    string                   `json:"errorCode,omitempty"`
 }
 
 func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Request) {
@@ -24,12 +25,37 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var input struct {
-		Source string `json:"source,omitempty"`
+		Source            string `json:"source,omitempty"`
+		ProfileID         string `json:"profileId,omitempty"`
+		RuntimeGeneration string `json:"runtimeGeneration,omitempty"`
+		Refresh           bool   `json:"refresh,omitempty"`
 	}
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	result, err := s.hub.InspectNativeAccount(r.Context(), deviceID, runtime, input.Source)
+	if input.ProfileID != "" {
+		profile, err := s.deviceProfileProjection(r.Context(), deviceID, input.ProfileID)
+		if err != nil {
+			writeResult(w, nil, err)
+			return
+		}
+		if profile.Runtime != runtime || profile.ConnectionType != "local_login" || profile.BaseURL != "" || input.Source != "" {
+			writeError(w, http.StatusBadRequest, "usage is available only for the selected native subscription account")
+			return
+		}
+		if input.RuntimeGeneration == "" || profile.RuntimeGeneration != input.RuntimeGeneration {
+			writeError(w, http.StatusConflict, "the selected account changed; reload the account selection")
+			return
+		}
+	} else if input.RuntimeGeneration != "" {
+		writeError(w, http.StatusBadRequest, "a selected profile is required")
+		return
+	}
+	result, err := s.hub.InspectNativeAccount(r.Context(), deviceID, runtime, input.Source, nativeInspectionOptions{input.RuntimeGeneration, input.Refresh})
+	if err == nil && input.ProfileID != "" && result.RuntimeGeneration != input.RuntimeGeneration {
+		writeError(w, http.StatusConflict, "this worker cannot verify usage for the selected account; update it and retry")
+		return
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusConflict, "device disconnected")
 		return
@@ -37,18 +63,28 @@ func (s *Server) handleInspectNativeAccount(w http.ResponseWriter, r *http.Reque
 	writeResult(w, result, err)
 }
 
+type nativeInspectionOptions struct {
+	RuntimeGeneration string `json:"runtimeGeneration,omitempty"`
+	Refresh           bool   `json:"refresh,omitempty"`
+}
+
 // InspectNativeAccount asks a device which native login a runtime would use.
 // The device answers with a fresh registration too, so its agents stop
 // showing a status from before, say, the CLI was installed.
-func (h *DaemonHub) InspectNativeAccount(ctx context.Context, deviceID, runtime, source string) (store.NativeAccountInspection, error) {
+func (h *DaemonHub) InspectNativeAccount(ctx context.Context, deviceID, runtime, source string, options ...nativeInspectionOptions) (store.NativeAccountInspection, error) {
 	connection := h.connectionFor(deviceID)
 	if connection == nil {
 		return store.NativeAccountInspection{}, store.ErrNotFound
 	}
+	var selection nativeInspectionOptions
+	if len(options) > 0 {
+		selection = options[0]
+	}
 	payload, err := json.Marshal(struct {
+		nativeInspectionOptions
 		Runtime string `json:"runtime"`
 		Source  string `json:"source,omitempty"`
-	}{runtime, source})
+	}{selection, runtime, source})
 	if err != nil {
 		return store.NativeAccountInspection{}, err
 	}
@@ -59,6 +95,9 @@ func (h *DaemonHub) InspectNativeAccount(ctx context.Context, deviceID, runtime,
 		return store.NativeAccountInspection{}, err
 	}
 	if value.Error != "" {
+		if value.ErrorCode == "account_changed" {
+			return store.NativeAccountInspection{}, &statusError{http.StatusConflict, errors.New(value.Error)}
+		}
 		return store.NativeAccountInspection{}, errors.New(value.Error)
 	}
 	if value.Registration.Device.ID != "" {

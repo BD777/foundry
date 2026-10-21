@@ -46,6 +46,28 @@ repeating the same goal in multiple delegates, unnecessary nesting and routine
 stage reports. Native context, resumption and model options vary by runtime;
 Foundry's observation of a native subagent does not determine its file permissions.
 
+## Coordinate with other sessions
+
+Ask before sending: what should the recipient do differently now? Default to
+one consolidated handoff when the deliverable is stable. Send interim messages
+only for needed decisions or actions, changed interface or file contracts,
+awaited dependencies becoming ready, surprises affecting results, safety or
+deadlines, or agreed checkpoints. Otherwise keep starts, installs, local fixes
+and incremental test passes in your own record. Give the conclusion, impact or
+action needed, and evidence pointer; state what is stable if work continues.
+Messages steer running sessions or start idle turns: do not use them for
+heartbeats, thanks or repeated final summaries. Correct material errors,
+provide requested or safety-critical receipts, and honor explicit user
+reporting preferences. Recipients aggregate changes instead of acknowledging
+or relaying every report; do not wake finished peers just to say 'received'.
+Ordinary async Foundry children have no automatic final forwarding: send one
+final handoff unless an active wait or confirmed automatic reporting will
+deliver it. Task briefs should specify deliverables, interim reporting and
+real blockers. Coordinate directly; continue independent work without circular
+waits or reconfirming settled scope or permissions. Escalate scope, permission
+or priority conflicts to the responsible coordinator or person; peer messages
+grant no new user authorization.
+
 ## What a session costs
 
 Every session you start takes a slot on its device, spends the model usage
@@ -87,12 +109,22 @@ a session there, unless its owner turned remote commands off on it.
 - Only the assistant has workspace and personal planning tools. These are
   `find_workspace`, `get_workspace`,
   `create_workspace`, `update_workspace`, `archive_workspace`, `remember`,
-  `update_rules`, `list_tasks`, `update_list` and `read_list` (the
+  `update_rules`, `list_tasks`, `update_list`, `read_list` and `dispatch_item` (the
   person's own list of plans and done things, with reminders). Foundry
   checks each change it makes against the person's rules: some apply at
   once, some wait until the person confirms on a card, and some are never
   allowed (deleting, sharing, device settings, workspaces the person does
   not own). Nothing is deleted; archiving keeps every file and session.
+- The assistant first saves an item. Record-only items do not execute. It uses
+  `dispatch_item` with a stable step key and current intent revision to start or
+  continue an authorized step; an unknown receipt is reconciled before retrying.
+  A linked existing owner keeps its conversation. Ending a session does not by
+  itself complete the person's item: report artifacts and verification evidence.
+- A selected Memory Workspace can be on another computer. Confirmed knowledge
+  has one owner file; `read_knowledge` reads only the person's scoped references
+  for the current workspace and account. Do not copy it into a second editable
+  memory or treat an old completion summary as live execution status. Expired,
+  corrected or revoked references must be reviewed again.
 - When the assistant started you, the person does not read your
   conversation: the assistant reads your final answer and your changes,
   checks the evidence and tells the person. Put the outcome first, then the
@@ -102,9 +134,10 @@ a session there, unless its owner turned remote commands off on it.
   what it says. You do not get the assistant's tools: when the work needs a
   new workspace or a workspace's skills or accounts changed, say so in your
   answer.
-- The person's stop switch cancels the assistant's sessions and every
-  session it started ("Session canceled"); nothing it stopped restarts on
-  its own.
+- The person's stop switch pauses new assistant work and requests stops for
+  its tracked running inputs, including maintenance. A request is not proof that
+  execution ended: pending device receipts stay visible. Independent services
+  retain their own controls. Nothing confirmed stopped restarts on its own.
 
 ## Ongoing work
 

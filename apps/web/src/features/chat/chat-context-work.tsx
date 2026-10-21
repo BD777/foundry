@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
-  isStandaloneWork,
   hasFutureScheduledWork,
   type SessionWork,
   type WorkAction,
@@ -19,7 +18,7 @@ import {
   needsConfirmation,
   isFinishedWork,
   workActions,
-  isCurrentWork,
+  isSidebarWork,
 } from "./chat-work-state";
 
 function WorkRow({
@@ -372,95 +371,100 @@ function WorkRow({
     </div>
   );
 }
-export function SessionWorkSection({
+function WorkInventoryError({
   controller,
   canControl,
-  onInspect,
 }: {
   controller: SessionWorkController;
   canControl: boolean;
-  onInspect?: (item: SessionWork) => (() => void) | undefined;
 }) {
   const { t } = useTranslation("chat");
-  const list = controller.list;
-  if (!list)
-    return controller.error ? (
-      <section className="fdy-chat-context-section">
-        <Alert tone="error" title={t("work.loadFailed")}>
-          {controller.error}
-          <Button
-            size="sm"
-            variant="link"
-            onClick={() => void controller.refresh()}
-          >
-            {t("work.refresh")}
-          </Button>
-        </Alert>
-      </section>
-    ) : null;
+  const retryControl = Boolean(controller.controlError && canControl);
+  return (
+    <Alert
+      tone="error"
+      title={t(
+        controller.controlError ? "work.controlFailed" : "work.loadFailed",
+      )}
+    >
+      {controller.error}
+      <Button
+        size="sm"
+        variant="link"
+        disabled={Boolean(controller.busy)}
+        onClick={() =>
+          void (retryControl ? controller.retryControl() : controller.refresh())
+        }
+      >
+        {t(retryControl ? "work.retryControl" : "work.refresh")}
+      </Button>
+    </Alert>
+  );
+}
+
+type WorkSectionProps = {
+  controller: SessionWorkController;
+  canControl: boolean;
+  onInspect?: (item: SessionWork) => (() => void) | undefined;
+};
+
+function WorkKindSection({
+  kind,
+  controller,
+  canControl,
+  onInspect,
+}: WorkSectionProps & {
+  kind: "schedule" | "agent";
+}) {
+  const { t } = useTranslation("chat");
+  const list = controller.list!;
   const items = list.items.filter(
-    (w) => w.desiredState !== "removed" && isStandaloneWork(w),
+    (item) => isSidebarWork(item) && item.kind === kind,
   );
   const ended = items.filter(isFinishedWork);
-  const stoppable = items.filter(
-    (item) =>
-      isCurrentWork(item) &&
-      !(item.sharedSessionCount || item.relatedSessionIds?.length) &&
-      workActions(item).includes("stop"),
+  const current = items.filter((item) => !isFinishedWork(item));
+  const unassigned = current.filter(
+    (item) => item.management === "observed" && !item.native,
   );
-  const knownWorkEnded = items.length > 0 && items.every(isFinishedWork);
+  const ids = new Set(items.map((item) => item.id));
+  // Global receipts may contain hidden processes. Only project receipts whose
+  // complete target set belongs to this section; never change the inventory.
+  const lastOperation = list.operations?.find(
+    (op) => op.items.length > 0 && op.items.every((item) => ids.has(item.id)),
+  );
+  const unresolved = lastOperation && lastOperation.state !== "verified";
+  const error = controller.controlError
+    ? ids.has(controller.controlTargetId ?? "")
+    : kind === "schedule" && Boolean(controller.error);
+  if (!items.length && !error) return null;
   const pending = items.filter(needsConfirmation).length;
-  const lastOperation = list.operations?.[0];
-  const unresolvedOperation =
-    lastOperation && lastOperation.state !== "verified";
-  if (!items.length && !controller.error && !unresolvedOperation) return null;
-  const unassigned = items.filter(
-    (w) => w.management === "observed" && !w.native,
+  const title = t(kind === "schedule" ? "work.title" : "work.agentsTitle");
+  const row = (item: SessionWork) => (
+    <WorkRow
+      key={item.id}
+      item={item}
+      controller={controller}
+      canControl={canControl}
+      onInspect={onInspect}
+    />
   );
   return (
     <section
       className="fdy-chat-context-section fdy-chat-work"
-      aria-label={t("work.title")}
+      aria-label={title}
+      data-work-kind={kind}
     >
       <div className="fdy-chat-work-header">
-        <h3>{t("work.title")}</h3>
-        {canControl && stoppable.length > 1 ? (
-          <RowMenu
-            label={t("work.actions")}
-            disabled={Boolean(controller.busy)}
-            items={[
-              {
-                key: "stop_all",
-                label: t("work.stopAll", { count: stoppable.length }),
-                onSelect: () => void controller.control("stop_all"),
-                confirm: {
-                  title: t("work.stopAll", { count: stoppable.length }),
-                  body: t("work.stopAllScope"),
-                  action: t("work.action.stop"),
-                },
-              },
-            ]}
-          />
-        ) : null}
+        <h3>{title}</h3>
       </div>
-      {unresolvedOperation ? (
+      {unresolved ? (
         <p className="fdy-chat-work-note" role="status">
-          {knownWorkEnded &&
-          lastOperation.action === "stop_all" &&
-          lastOperation.state === "pending"
-            ? t("work.discoveryPending")
-            : t("work.receipt", {
-                state: t(`work.receiptState.${lastOperation.state}`),
-              })}
-          {lastOperation.unmanaged
-            ? t("work.unmanaged", { count: lastOperation.unmanaged })
-            : null}
+          {t("work.receipt", {
+            state: t(`work.receiptState.${lastOperation.state}`),
+          })}
         </p>
       ) : null}
-      {list.barrier &&
-      items.some(
-        (item) => item.management === "managed" && !isFinishedWork(item),
-      ) ? (
+      {list.barrier && current.some((item) => item.management === "managed") ? (
         <p className="fdy-chat-work-note">{t("work.barrier")}</p>
       ) : null}
       {pending ? (
@@ -468,81 +472,47 @@ export function SessionWorkSection({
           {t("work.pendingCount", { count: pending })}
         </p>
       ) : null}
-      {controller.error ? (
-        <Alert
-          tone="error"
-          title={t(
-            controller.controlError ? "work.controlFailed" : "work.loadFailed",
-          )}
-        >
-          {controller.error}
-          <Button
-            size="sm"
-            variant="link"
-            disabled={Boolean(controller.busy)}
-            onClick={() =>
-              void (controller.controlError
-                ? controller.retryControl()
-                : controller.refresh())
-            }
-          >
-            {t(controller.controlError ? "work.retryControl" : "work.refresh")}
-          </Button>
-        </Alert>
+      {error ? (
+        <WorkInventoryError controller={controller} canControl={canControl} />
       ) : null}
-      {(["schedule", "process", "agent"] as const).map((kind) => {
-        const group = items.filter(
-          (w) =>
-            w.kind === kind &&
-            (w.management === "managed" || Boolean(w.native)) &&
-            !isFinishedWork(w),
-        );
-        return group.length ? (
-          <div key={kind} className="fdy-chat-work-group">
-            <h4>{t(`work.group.${kind}`, { count: group.length })}</h4>
-            {group.map((item) => (
-              <WorkRow
-                key={item.id}
-                item={item}
-                controller={controller}
-                canControl={canControl}
-                onInspect={onInspect}
-              />
-            ))}
-          </div>
-        ) : null;
-      })}
+      {current.filter((item) => !unassigned.includes(item)).map(row)}
       {unassigned.length ? (
         <div className="fdy-chat-work-group">
           <h4>{t("work.unassigned", { count: unassigned.length })}</h4>
-          {unassigned.map((item) => (
-            <WorkRow
-              key={item.id}
-              item={item}
-              controller={controller}
-              canControl={canControl}
-              onInspect={onInspect}
-            />
-          ))}
+          {unassigned.map(row)}
         </div>
       ) : null}
       {ended.length ? (
         <FinishedFold
           appearance="plain"
-          label={t("work.history", { count: ended.length })}
-          memoryKey={items[0] && `${items[0].threadId}:work-history`}
+          label={t(
+            kind === "schedule" ? "work.timerHistory" : "work.agentHistory",
+            { count: ended.length },
+          )}
+          memoryKey={`${controller.sessionId || items[0]?.threadId || "work"}:${kind}-history`}
         >
-          {ended.map((item) => (
-            <WorkRow
-              key={item.id}
-              item={item}
-              controller={controller}
-              canControl={canControl}
-              onInspect={onInspect}
-            />
-          ))}
+          {ended.map(row)}
         </FinishedFold>
       ) : null}
     </section>
+  );
+}
+
+/** Timers and agents have independent histories; commands/services stay elsewhere. */
+export function SessionWorkSection(props: WorkSectionProps) {
+  if (!props.controller.list)
+    return props.controller.error ? (
+      <section className="fdy-chat-context-section">
+        <WorkInventoryError
+          controller={props.controller}
+          canControl={props.canControl}
+        />
+      </section>
+    ) : null;
+  return (
+    <>
+      <WorkKindSection {...props} kind="schedule" />
+      <WorkKindSection {...props} kind="agent" />
+    </>
   );
 }

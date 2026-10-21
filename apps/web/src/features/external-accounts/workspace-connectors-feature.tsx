@@ -27,6 +27,7 @@ import {
   statusLabel,
   statusTone,
 } from "./account-format";
+import { WorkspaceAccountAuthorization } from "./workspace-account-authorization";
 import { WorkspaceDeviceConnectors } from "./workspace-device-connectors";
 
 export interface WorkspaceConnectorsFeatureProps {
@@ -42,7 +43,13 @@ export interface WorkspaceConnectorsFeatureProps {
  * accounts (server-held) or devices' sign-ins (device-held) its sessions
  * may use, and what other members bound. Read on open and after each change.
  */
-export function WorkspaceConnectorsFeature({
+export function WorkspaceConnectorsFeature(
+  props: WorkspaceConnectorsFeatureProps,
+) {
+  return <WorkspaceConnectorsContent key={props.workspaceId} {...props} />;
+}
+
+function WorkspaceConnectorsContent({
   workspaceId,
   currentUserId,
   readOnlyReason,
@@ -52,6 +59,11 @@ export function WorkspaceConnectorsFeature({
   const [view, setView] = useState<WorkspaceExternalAccounts>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [authorizing, setAuthorizing] = useState<{
+    account?: ExternalAccount;
+  }>();
+  const [bindingRetry, setBindingRetry] = useState<ExternalAccount>();
+  const [bindingError, setBindingError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -74,19 +86,25 @@ export function WorkspaceConnectorsFeature({
   );
 
   async function toggle(account: ExternalAccount, use: boolean) {
+    setBindingError("");
     const accountIds = mine
       .filter((entry) => (entry.id === account.id ? use : bound.has(entry.id)))
       .map((entry) => entry.id);
+    if (use && !accountIds.includes(account.id)) accountIds.push(account.id);
     setBusy(true);
     try {
       setView(await setWorkspaceExternalAccounts(workspaceId, accountIds));
+      setBindingRetry(undefined);
       onNotice(
         t(use ? "workspace.bound" : "workspace.unbound", {
           name: accountName(account),
         }),
       );
     } catch (cause) {
-      onNotice(t("workspace.saveFailed", { error: errorText(cause) }));
+      const message = t("workspace.saveFailed", { error: errorText(cause) });
+      setBindingError(message);
+      if (use) setBindingRetry(account);
+      onNotice(message);
     } finally {
       setBusy(false);
     }
@@ -104,6 +122,39 @@ export function WorkspaceConnectorsFeature({
     <div className="fdy-xacc-workspace">
       <p className="fdy-xacc-muted">{t("workspace.rule")}</p>
       {readOnlyReason ? <Alert title={readOnlyReason} tone="info" /> : null}
+      {bindingError ? (
+        <Alert title={bindingError} tone="error">
+          {bindingRetry ? (
+            <Button
+              disabled={busy}
+              size="sm"
+              onClick={() => void toggle(bindingRetry, true)}
+            >
+              {t("workspace.retryBinding")}
+            </Button>
+          ) : null}
+        </Alert>
+      ) : null}
+      {authorizing ? (
+        <WorkspaceAccountAuthorization
+          key={authorizing.account?.id ?? "new"}
+          account={authorizing.account}
+          onClose={() => setAuthorizing(undefined)}
+          onConnected={(account) => {
+            setView(
+              (current) =>
+                current && {
+                  ...current,
+                  accounts: [
+                    ...current.accounts.filter((a) => a.id !== account.id),
+                    account,
+                  ],
+                },
+            );
+            void toggle(account, true);
+          }}
+        />
+      ) : null}
       {serverHeldTypes.map((type) => {
         const provider = providerLabel(type);
         const own = mine.filter((account) => account.provider === type);
@@ -125,12 +176,22 @@ export function WorkspaceConnectorsFeature({
                 size="sm"
                 variant="ghost"
               >
-                {own.length
-                  ? t("workspace.manage")
-                  : t("workspace.connect", { provider })}
+                {t("workspace.manage")}
                 <ChevronRight size={14} />
               </Button>
             </div>
+            <span className="fdy-xacc-form-actions">
+              <Button
+                disabled={
+                  busy || Boolean(readOnlyReason) || Boolean(authorizing)
+                }
+                size="sm"
+                variant={own.length ? "ghost" : "primary"}
+                onClick={() => setAuthorizing({})}
+              >
+                {t("workspace.connect", { provider })}
+              </Button>
+            </span>
             {own.length === 0 ? (
               <p className="fdy-xacc-muted">
                 {t("workspace.empty", { provider })}
@@ -142,7 +203,11 @@ export function WorkspaceConnectorsFeature({
                     <label className="fdy-xacc-check">
                       <Checkbox
                         checked={bound.has(account.id)}
-                        disabled={busy || Boolean(readOnlyReason)}
+                        disabled={
+                          busy ||
+                          Boolean(readOnlyReason) ||
+                          (!accountUsable(account) && !bound.has(account.id))
+                        }
                         onChange={(event) =>
                           void toggle(account, event.currentTarget.checked)
                         }
@@ -171,6 +236,15 @@ export function WorkspaceConnectorsFeature({
                         ) : null}
                       </span>
                     </label>
+                    {!accountUsable(account) ? (
+                      <Button
+                        disabled={busy || Boolean(readOnlyReason)}
+                        size="sm"
+                        onClick={() => setAuthorizing({ account })}
+                      >
+                        {t("workspace.authorize")}
+                      </Button>
+                    ) : null}
                     <Badge tone={statusTone(account.status)}>
                       {statusLabel(account.status)}
                     </Badge>
@@ -199,6 +273,7 @@ export function WorkspaceConnectorsFeature({
         );
       })}
       <WorkspaceDeviceConnectors
+        key={workspaceId}
         currentUserId={currentUserId}
         kinds={deviceHeldTypes}
         onNotice={onNotice}

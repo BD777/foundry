@@ -3,9 +3,11 @@ import type {
   SessionWork,
   SessionWorkList,
   WorkControlInput,
+  WorkAction,
 } from "@bd777/foundry-protocol";
 import { controlSessionWork, listSessionWork } from "../../api";
 import { onStreamEvent } from "../../stream";
+import { isSidebarWork, workActions } from "./chat-work-state";
 
 export function useSessionWork(sessionId?: string) {
   const [list, setList] = useState<SessionWorkList>();
@@ -80,7 +82,10 @@ export function useSessionWork(sessionId?: string) {
     [sessionId, busy, refresh],
   );
   const control = useCallback(
-    async (action: WorkControlInput["action"], item?: SessionWork) => {
+    async (action: WorkAction, item: SessionWork) => {
+      // This UI hides processes and has no conversation-wide stop/barrier action.
+      if (!item || !isSidebarWork(item) || !workActions(item).includes(action))
+        return;
       const input =
         retry.current?.id === item?.id &&
         retry.current?.action === action &&
@@ -102,13 +107,20 @@ export function useSessionWork(sessionId?: string) {
   const retryControl = useCallback(async () => {
     // Preserve the exact request: the device may have accepted it before a
     // response was lost, even if polling has since advanced the task revision.
-    if (retry.current) await applyControl(retry.current);
-  }, [applyControl]);
+    if (
+      retry.current?.id &&
+      list?.items.some(
+        (item) => item.id === retry.current?.id && isSidebarWork(item),
+      )
+    )
+      await applyControl(retry.current);
+  }, [applyControl, list]);
   return {
     sessionId,
     list: listSessionId === sessionId ? list : undefined,
     error: controlError || error,
     controlError,
+    controlTargetId: controlError ? retry.current?.id : undefined,
     busy,
     refresh,
     control,

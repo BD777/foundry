@@ -27,6 +27,7 @@ for (const key of [
   "FocusEvent",
   "NodeFilter",
   "DOMRect",
+  "PopStateEvent",
 ]) {
   Object.defineProperty(globalThis, key, {
     configurable: true,
@@ -1433,7 +1434,7 @@ test("the workspace tab binds the person's own accounts and shows others' withou
     onNotice: (line) => notices.push(line),
   });
   const text = tab.container.textContent;
-  assert.match(text, /Only sessions you start, on devices you own/);
+  assert.match(text, /Feishu accounts follow their workspace grants/);
   const section = tab.container.querySelector(
     '[role=region][aria-label="Feishu"]',
   );
@@ -1460,19 +1461,15 @@ test("the workspace tab binds the person's own accounts and shows others' withou
   ];
   assert.equal(work.checked, true);
   assert.equal(personal.checked, false);
-  await tab.click(personal);
-  assert.deepEqual(requests.at(-1), {
-    method: "PUT",
-    path: "/api/workspaces/ws_1/external-accounts",
-    body: { accountIds: ["xacc_ready", "xacc_mine2"] },
-  });
   assert.equal(
-    tab.container.querySelectorAll(
-      ".fdy-xacc-binding-row input[type=checkbox]",
-    )[1].checked,
+    personal.disabled,
     true,
+    "expired accounts offer authorization before binding",
   );
-  assert.match(notices.at(-1), /Personal is used in this workspace/);
+  assert.ok(tab.button("Authorize and use here", section));
+  await tab.click(work);
+  assert.deepEqual(requests.at(-1).body, { accountIds: [] });
+  assert.match(notices.at(-1), /is no longer used in this workspace/);
   await tab.click(tab.button("Manage connectors", tab.container));
   assert.equal(window.location.pathname, "/connectors/feishu");
   await tab.unmount();
@@ -1480,6 +1477,15 @@ test("the workspace tab binds the person's own accounts and shows others' withou
 
 test("a connector type without the person's accounts offers to connect one", async () => {
   routes = {
+    "GET /api/external-accounts": () => [
+      200,
+      {
+        providers: [feishu],
+        apps: [orgApp],
+        accounts: [],
+        secretsConfigured: true,
+      },
+    ],
     "GET /api/workspaces/ws_1/external-accounts": () => [
       200,
       { ...workspaceView(), bindings: [], accounts: [] },
@@ -1493,7 +1499,11 @@ test("a connector type without the person's accounts offers to connect one", asy
   assert.match(tab.container.textContent, /You have no Feishu account yet\./);
   window.history.replaceState(null, "", "/workspace/connectors");
   await tab.click(tab.button("Connect Feishu account", tab.container));
-  assert.equal(window.location.pathname, "/connectors/feishu");
+  assert.equal(window.location.pathname, "/workspace/connectors");
+  assert.ok(
+    document.querySelector("[role=dialog]"),
+    "authorization opens in the workspace",
+  );
   await tab.unmount();
 });
 

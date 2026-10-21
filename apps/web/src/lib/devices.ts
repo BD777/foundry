@@ -12,3 +12,10 @@ export function isRemovedDevice(device?: DeviceProjection): boolean {
 export function liveDevices(devices: DeviceProjection[]): DeviceProjection[] {
   return devices.filter((device) => !isRemovedDevice(device));
 }
+
+/** Candidates for configuring work, excluding historical identities. */
+export function ownedDeviceCandidates(
+  devices: DeviceProjection[],
+): DeviceProjection[] {
+  return liveDevices(devices).filter((device) => device.owned);
+}

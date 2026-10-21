@@ -160,3 +160,49 @@ test("snapshot reopening rejects linked and escaping paths before reading their 
     );
   }
 });
+
+test("collecting a dead Codex configuration retains native-index history addresses without credentials", (t) => {
+  const root = fixture(t),
+    managed = join(root, "managed"),
+    home = join(managed, "dead");
+  const source = join(root, "native-source");
+  mkdirSync(home, { recursive: true });
+  for (const name of ["sessions", "archived_sessions"]) {
+    mkdirSync(join(source, name), { recursive: true });
+    symlinkSync(join(source, name), join(home, name));
+  }
+  writeFileSync(join(source, "sessions", "native.jsonl"), "retained history");
+  markPrivateInputOwner(home, "native-config");
+  const marker = JSON.parse(readFileSync(join(home, inputOwnerFile), "utf8"));
+  Object.assign(marker, {
+    supervised: true,
+    createdAt: 0,
+    startTime: "prior-process",
+  });
+  writeFileSync(join(home, inputOwnerFile), JSON.stringify(marker));
+  writeFileSync(
+    join(home, ".foundry-native-execution.json"),
+    JSON.stringify({
+      version: 1,
+      runtime: "codex",
+      configHome: home,
+      sources: { dataHome: source },
+    }),
+  );
+  writeFileSync(join(home, "config.toml"), "private configuration");
+  writeFileSync(join(home, "auth.json"), "temporary secret");
+  assert.equal(
+    reapPrivateInputOwners(managed, "native-config", { minAgeMs: 0 }),
+    1,
+  );
+  assert.equal(
+    readFileSync(join(home, "sessions", "native.jsonl"), "utf8"),
+    "retained history",
+  );
+  assert.equal(existsSync(join(home, "config.toml")), false);
+  assert.equal(existsSync(join(home, "auth.json")), false);
+  assert.equal(
+    reapPrivateInputOwners(managed, "native-config", { minAgeMs: 0 }),
+    0,
+  );
+});

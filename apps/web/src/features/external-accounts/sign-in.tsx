@@ -1,5 +1,4 @@
 import { ExternalLink } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -12,7 +11,7 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { Checkbox, TextInput } from "../../components/ui/field";
-import { useCopied } from "../../lib/use-copied";
+import { AuthorizationChallenge } from "./authorization-challenge";
 import { accountName, countdown, errorText } from "./account-format";
 
 /** Which login page a new app's QR code opens; the tenant's brand is detected after the scan. */
@@ -156,7 +155,6 @@ export function ScanStep({
   const { t } = useTranslation(["externalAccounts", "common"]);
   const [login, setLogin] = useState(started);
   const [now, setNow] = useState(Date.now());
-  const { copied, copy, reset: resetCopied } = useCopied();
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState("");
   const expired =
@@ -172,7 +170,11 @@ export function ScanStep({
       while (!cancelled) {
         const interval = Math.max(2, current.intervalSeconds ?? 0) * 1000;
         await new Promise((settle) => setTimeout(settle, interval));
-        if (cancelled) return;
+        if (
+          cancelled ||
+          (current.expiresAt && Date.now() >= Date.parse(current.expiresAt))
+        )
+          return;
         try {
           const next = await getExternalAccountLogin(started.id);
           if (cancelled) return;
@@ -208,8 +210,6 @@ export function ScanStep({
     };
   }, [started.id]);
 
-  useEffect(() => resetCopied(), [login.phase]);
-
   async function switchBrand(next: SignInBrand) {
     setSwitching(true);
     setSwitchError("");
@@ -236,63 +236,43 @@ export function ScanStep({
         : "";
   return (
     <div className="fdy-xacc-form">
-      <div className="fdy-xacc-scan">
-        <div className="fdy-xacc-qr" data-dimmed={failure ? "true" : undefined}>
-          <QRCodeSVG
-            bgColor="#ffffff"
-            fgColor="#111111"
-            level="M"
-            marginSize={2}
-            size={176}
-            title={t("connect.qrTitle")}
-            value={link}
-          />
-        </div>
-        <div className="fdy-xacc-code-copy">
-          {step !== "login" ? (
-            <span className="fdy-xacc-step">
-              {t("connect.stepOf", { step: step === "register" ? 1 : 2 })}
-            </span>
-          ) : null}
-          <strong>{t(`connect.${step}Title`)}</strong>
-          <p>{t(`connect.${step}Body`)}</p>
-          <div className="fdy-xacc-code-actions">
-            <Button asChild size="sm" variant="primary">
-              <a href={link} rel="noreferrer" target="_blank">
-                <ExternalLink size={14} />
-                {t("connect.openPage")}
-              </a>
+      <AuthorizationChallenge
+        active={!failure && login.status === "pending"}
+        challenge={{
+          operationId: login.id,
+          verificationUrl: link,
+          userCode: login.userCode,
+          expiresAt: login.expiresAt,
+          intervalSeconds: login.intervalSeconds,
+        }}
+      >
+        {step !== "login" ? (
+          <span className="fdy-xacc-step">
+            {t("connect.stepOf", { step: step === "register" ? 1 : 2 })}
+          </span>
+        ) : null}
+        <strong>{t(`connect.${step}Title`)}</strong>
+        <p>{t(`connect.${step}Body`)}</p>
+        {brand && onSwitchBrand && step === "register" && !failure ? (
+          <div className="fdy-xacc-brand-switch">
+            <Button
+              disabled={switching}
+              onClick={() =>
+                void switchBrand(brand === "lark" ? "feishu" : "lark")
+              }
+              size="inline"
+              variant="link"
+            >
+              {t(
+                brand === "lark"
+                  ? "connect.switchToFeishu"
+                  : "connect.switchToLark",
+              )}
             </Button>
-            <Button onClick={() => void copy(link)} size="sm" variant="ghost">
-              {copied() ? t("common:actions.copied") : t("connect.copyLink")}
-            </Button>
+            <small>{t("connect.brandHint")}</small>
           </div>
-          {login.userCode ? (
-            <small className="fdy-xacc-user-code">
-              {t("connect.userCode")} <code>{login.userCode}</code>
-            </small>
-          ) : null}
-          {brand && onSwitchBrand && step === "register" && !failure ? (
-            <div className="fdy-xacc-brand-switch">
-              <Button
-                disabled={switching}
-                onClick={() =>
-                  void switchBrand(brand === "lark" ? "feishu" : "lark")
-                }
-                size="inline"
-                variant="link"
-              >
-                {t(
-                  brand === "lark"
-                    ? "connect.switchToFeishu"
-                    : "connect.switchToLark",
-                )}
-              </Button>
-              <small>{t("connect.brandHint")}</small>
-            </div>
-          ) : null}
-        </div>
-      </div>
+        ) : null}
+      </AuthorizationChallenge>
       {switchError ? (
         <Alert
           title={t("connect.failed", { error: switchError })}

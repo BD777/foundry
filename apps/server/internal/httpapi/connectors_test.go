@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -114,7 +115,9 @@ func (w *fakeConnectorWorker) count(action string) int {
 func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	f := newIsolationFixture(t)
 	now := time.Now().UTC()
-	f.server.connectors.Devices.Now = func() time.Time { return now }
+	var clock atomic.Int64
+	clock.Store(now.UnixNano())
+	f.server.connectors.Devices.Now = func() time.Time { return time.Unix(0, clock.Load()) }
 	httpServer := httptest.NewServer(f.handler)
 	defer httpServer.Close()
 	worker := &fakeConnectorWorker{t: t, signedIn: true, expires: now.Add(48 * time.Hour)}
@@ -170,25 +173,50 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	worker.signedIn = false
 	worker.mu.Unlock()
 	var signIn store.DeviceConnectorSignIn
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", "", http.StatusAccepted), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
+	waitFor(t, "authorization challenge", func() bool {
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"test-start"}`, http.StatusAccepted), &signIn)
+		return signIn.VerificationURL != ""
+	})
 	if signIn.Status != "pending" || !strings.HasPrefix(signIn.VerificationURL, "https://cloud.bytedance.net/") {
 		t.Fatalf("sign-in = %+v", signIn)
 	}
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", "", http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	now = now.Add(3 * time.Second)
+	clock.Store(now.UnixNano())
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	waitFor(t, "native pending poll", func() bool { return worker.count("sign_in_poll") == 1 })
 	worker.mu.Lock()
 	worker.approved = true
 	worker.expires = now.Add(30 * 24 * time.Hour)
 	worker.mu.Unlock()
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", "", http.StatusOK), &signIn)
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
 	if signIn.Status != "pending" || worker.count("sign_in_poll") != 1 {
 		t.Fatalf("a poll right after another asked the device again: %+v, %d polls", signIn, worker.count("sign_in_poll"))
 	}
 	now = now.Add(3 * time.Second)
-	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", "", http.StatusOK), &signIn)
+	clock.Store(now.UnixNano())
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+	waitFor(t, "authorization complete", func() bool {
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"`+signIn.OperationID+`"}`, http.StatusOK), &signIn)
+		return signIn.Status == "complete"
+	})
 	if signIn.Status != "complete" || signIn.State == nil || signIn.State.Status != store.DeviceConnectorReady || signIn.State.ExpiringSince != "" {
 		t.Fatalf("completed sign-in = %+v", signIn)
 	}
 
+	// A fresh native login is reused without beginning another challenge.
+	before := worker.count("sign_in_begin")
+	var reused store.DeviceConnectorSignIn
+	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
+	waitFor(t, "reuse existing login", func() bool {
+		_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in", `{"requestId":"reuse-native"}`, http.StatusAccepted), &reused)
+		return reused.Status == "complete"
+	})
+	if reused.Status != "complete" || reused.State == nil || worker.count("sign_in_begin") != before {
+		t.Fatalf("native reuse: %+v", reused)
+	}
+	call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/poll", `{"operationId":"stale-id"}`, http.StatusConflict)
 	// Sign-out only on request, and the record follows.
 	var signedOut store.DeviceConnectorState
 	_ = json.Unmarshal(call(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-out", "", http.StatusOK), &signedOut)
@@ -196,6 +224,12 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 		t.Fatalf("signed out = %+v", signedOut)
 	}
 
+	// A completed adapter reply without a usable fresh login is not success.
+	descriptor, _ := f.server.connectors.Devices.Connector("bytedcli")
+	unverified := f.server.signInAnswer(context.Background(), "dev_alice", descriptor, store.ConnectorReplyPayload{SignIn: &store.DeviceConnectorSignIn{Status: "complete"}})
+	if unverified.Status != "failed" || unverified.State != nil {
+		t.Fatalf("unverified completion: %+v", unverified)
+	}
 	// Bindings: a maintainer binds their own device's login, not another's.
 	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_bob"}]}`, http.StatusNotFound)
 	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"feishu","deviceId":"dev_alice"}]}`, http.StatusBadRequest)
@@ -253,5 +287,64 @@ func TestDeviceHeldConnectorNeedsANewWorker(t *testing.T) {
 	}
 	if worker.count("status") != 0 {
 		t.Fatal("an old worker was asked")
+	}
+}
+
+func TestWorkspaceConnectorsExcludeUnrelatedOwnedDevices(t *testing.T) {
+	f := newIsolationFixture(t)
+	_, credential := pairOverHTTP(t, f.handler, f.alice, "alice-other-machine", "dev_alice_other")
+	expectStatus(t, doAuthCall(t, f.handler, deviceCall(http.MethodPost, "/api/daemon/register", registrationBody("dev_alice_other", "ws_alice_other"), credential)), http.StatusOK, "register unrelated owned device")
+	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, "/api/workspaces/ws_alice/device-connectors", ""))
+	expectStatus(t, response, http.StatusOK, "workspace scope")
+	var view store.WorkspaceDeviceConnectors
+	_ = json.Unmarshal(response.Body.Bytes(), &view)
+	if view.DefaultDeviceID != "dev_alice" || len(view.ExecutionDevices) != 1 || len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" {
+		t.Fatalf("workspace offered unrelated login: %+v", view)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other"}]}`)), http.StatusConflict, "cross-device binding")
+	// A pre-existing legacy binding may survive unchanged, but cannot be broadened.
+	err := f.server.connectors.Devices.SetBindings(context.Background(), "ws_alice", f.aliceID, []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev_alice_other"}}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other","members":false},{"kind":"bytedcli","deviceId":"dev_alice"}]}`)), http.StatusOK, "retain legacy grant")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[{"kind":"bytedcli","deviceId":"dev_alice_other","members":true}]}`)), http.StatusConflict, "cannot widen legacy grant")
+}
+
+func TestDeviceAuthorizationImageIsOwnerOperationAndGroupScoped(t *testing.T) {
+	f := newIsolationFixture(t)
+	descriptor, _ := f.server.connectors.Devices.Connector("bytedcli")
+	input := connectorAuthorizationInput{AuthorizationID: "feishu_web_session", AuthorizationRevision: 1}
+	scope, err := authorizationScope(descriptor, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin, err := f.server.connectors.Devices.Authorize(f.aliceID, "dev_alice", scope, "image-request", "", true, func(_, _ string, _ func(string)) (store.DeviceConnectorSignIn, error) {
+		return store.DeviceConnectorSignIn{Status: "pending", Image: []byte{137, 80, 78, 71, 13, 10, 26, 10}, Challenge: &store.ConnectorAuthorizationChallenge{Kind: "qr_image"}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "image prepared", func() bool {
+		_, e := f.server.connectors.Devices.AuthorizationImage(f.aliceID, "dev_alice", scope, begin.OperationID)
+		return e == nil
+	})
+	path := "/api/devices/dev_alice/connectors/bytedcli/sign-in/image?authorizationId=feishu_web_session&authorizationRevision=1&operationId=" + begin.OperationID
+	response := doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path, ""))
+	expectStatus(t, response, http.StatusOK, "owner's active image")
+	if response.Header().Get("Cache-Control") != "no-store, private" || response.Header().Get("Content-Type") != "image/png" {
+		t.Fatal(response.Header())
+	}
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.bob, http.MethodGet, path, "")), http.StatusNotFound, "another user's image")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, strings.Replace(path, "Revision=1", "Revision=2", 1), "")), http.StatusNotFound, "wrong revision")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path+"-stale", "")), http.StatusNotFound, "wrong operation")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodPost, "/api/devices/dev_alice/connectors/bytedcli/sign-in/dismiss", `{"operationId":"`+begin.OperationID+`","authorizationId":"feishu_web_session","authorizationRevision":1}`)), http.StatusNoContent, "dismiss image")
+	expectStatus(t, doAuthCall(t, f.handler, f.as(f.alice, http.MethodGet, path, "")), http.StatusNotFound, "dismissed image")
+	// A ready base login does not satisfy the additional credential group.
+	if authorizationReady(store.DeviceConnectorState{SignedIn: true, Status: store.DeviceConnectorReady}, input) {
+		t.Fatal("base login granted additional capability")
+	}
+	if !authorizationReady(store.DeviceConnectorState{Authorizations: []store.ConnectorAuthorizationState{{ID: input.AuthorizationID, Revision: 1, Status: "ready"}}}, input) {
+		t.Fatal("capability incorrectly depends on base login")
 	}
 }
