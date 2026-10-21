@@ -86,4 +86,8 @@ Web 提供 Connectors 的 Cloudflare 页及 Workspace 内入口、官方授权�
 
 原两项合成保护服务按原ID恢复且receipt verified（Server rev13/PID2146897，Worker rev20/PID2147187，iss107/108仍accepted）；证据 `/tmp/dev023-evidence/dev035-maintenance/final-receipt.json` 与本项 `/tmp/dev035-evidence/runtime-final.json`。没有重复维护、停止业务或恢复旧计时器；本项旧续接remove操作 `wop_09aa463bd30bc686467dc9fe048fb6af` 已verified。当前用户可用Cloudflare账号数量仍为0，等待本人批准，不发起额外真实grant或读取业务数据。
 
-源码交付：[PR141](https://github.com/BD777/foundry/pull/141) 独立承接本项，不带未验设备控制改动。完整 CI 首轮发现新增 MCP 工具缺少对应的 Foundry CLI 命令表入口；已补 `foundry cloudflare accounts` 与 `foundry cloudflare read /zones --account <Foundry-account-id> --query '{"page":"1"}'`，复用相同 MCP 权限网关。它与官方 `cf` 是两种消费入口，不新增凭据体系。命令表契约测试正确识别固定 action 参数，新增子进程回归验证结构化参数及非法 JSON 本地拒绝，相关13项测试全通过。该补充仅改变 Worker 的 CLI 命令表，Server/Web和原有账号权限不变；新包发布与最终 CI 回执另记。
+源码交付：[PR141](https://github.com/BD777/foundry/pull/141) 独立承接本项，不带未验设备控制改动。完整 CI 首轮发现新增 MCP 工具缺少对应的 Foundry CLI 命令表入口；已补 `foundry cloudflare accounts` 与 `foundry cloudflare read /zones --account <Foundry-account-id> --query '{"page":"1"}'`，复用相同 MCP 权限网关。它与官方 `cf` 是两种消费入口，不新增凭据体系。命令表契约测试正确识别固定 action 参数，新增子进程回归验证结构化参数及非法 JSON 本地拒绝，相关13项测试全通过。该补充仅改变 Worker 的 CLI 命令表，Server/Web和原有账号权限不变；完整 CI 终态见 PR141 的最新提交检查记录。
+
+CLI 映射补包已于2026-10-22 02:40显式发布为 `0.5.7-dev.54.g076bb8d`，Worker包 SHA256 `43cfe7bafec0acd375aa2f542ab9d897a4f150ffcd5f1fc3aaa42bc8addcdde8`，pointer `d6e11274e7f2bc95c9f7bac472d816d9fd6f4a490a82bede95768ee7cd765496`。逐包比较只有 `dist/foundry-cli-commands.js` 改变；协议产物、Cloudflare授权/网关模块、Server和Web完全相同。标准更新后daemon PID2158934；actualhost2144701继续保留活动执行，仍加载5745，其Cloudflare模块与新包相同，无需为独立CLI命令表再做宿主维护。
+
+安装产物的Foundry CLI帮助已列出Cloudflare命令。当前原生会话没有导出Foundry session credential，实际CLI调用被既有guard拒绝并要求使用MCP；没有为测试提取或注入真实会话令牌。官方 `cf@0.14.0` 的专用短期句柄网关不依赖该通用CLI凭据，仍以已完成的真实CLI fixture和本人批准后的实际访问为验收依据。补包、52路径PR清单、修复回归与运行时证据位于 `/tmp/dev035-evidence/cli-fix/`；真实CF批准仍未由Agent代为完成。
