@@ -2,9 +2,11 @@
 
 [项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
 
+> **2026-10-21 实施修订：** 当前方案与边界见 [DEV-023 修订设计](devlog/DEV-023-personal-agent.md) 和 [实施/验收矩阵](devlog/DEV-023-implementation.md)。下文保留 2026-10-15 的设计基线，不代表每一段均为当前行为。记忆正文现在由独立可选设备上的 Memory / 领域 Workspace 单写持有，Server 保存控制记录、索引与授权；离线写入、迁移、角色配置和停止范围以修订文档及实际回执为准。侧栏布局随后按 Workspace、Assistant 与全局管理的作用域调整。
+
 Personal Agent（界面上叫“助理”）是每个 Foundry 用户唯一的一层总调度：人只说想要什么、要去做什么，它判断这件事该在哪里做，必要时自己新建或调整一个项目（Workspace），把工作交给那里的会话去做，盯着进展，最后用人听得懂的话汇报。它负责：每个用户一个 Personal Agent Workspace；把这个人的其他 Workspace 与设备汇总进来；意图判断与路由；它发起的 Workspace 生命周期（新建、改名、调整 Skill 与连接器、归档）；派出与监督会话；进展与摘要；停止开关与用量上限；Web 首页与飞书单聊入口；配置面板。它不负责具体工作（在目标 Workspace 的会话里完成）、会话的启动与隔离（[执行内核](execution-kernel.md)）、编排原语本身（[Agent 能力面](session-orchestration-design.md)），也不替代任何 Workspace 自己的知识：它只保存派生的摘要和指针，不是第二个真相源。在分层图中位于“入口”与“工作流”之间：依赖 Chats（它自己的对话就是 Chat 会话）、Agent 能力面（新增工具放在那里）、[渠道](channels.md)（飞书单聊）、[设备与 Workspace](devices-and-workspaces.md)（建目录、登记、归档）、[Skills](skills.md)、[连接器](connectors.md)与[身份与共享](accounts-permissions-design.md)；没有模块依赖它。Web 里的位置：侧边栏最上方的“助理”（`/assistant`，有 Personal Agent 的人登录后的默认页），设置在 `/assistant/settings`。
 
-本文是终态设计，不是 v1。依据的调研（2026-10-15，在 `docs/research/`）：[`personal-agent-products.md`](research/personal-agent-products.md)（下称“产品调研”）、[`personal-agent-knowledge.md`](research/personal-agent-knowledge.md)（“知识调研”）、[`personal-agent-orchestration.md`](research/personal-agent-orchestration.md)（“编排调研”）、[`personal-agent-codebase-survey.md`](research/personal-agent-codebase-survey.md)（“代码调研”）。理由不在此重复，引用时注明章节。
+以下是初版终态设计基线，后续修订以上述链接为准。依据的调研（2026-10-15，在 `docs/research/`）：[`personal-agent-products.md`](research/personal-agent-products.md)（下称“产品调研”）、[`personal-agent-knowledge.md`](research/personal-agent-knowledge.md)（“知识调研”）、[`personal-agent-orchestration.md`](research/personal-agent-orchestration.md)（“编排调研”）、[`personal-agent-codebase-survey.md`](research/personal-agent-codebase-survey.md)（“代码调研”）。理由不在此重复，引用时注明章节。
 
 ## 设计
 
