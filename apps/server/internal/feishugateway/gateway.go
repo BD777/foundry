@@ -164,6 +164,9 @@ func derivedHandle(appHandle, prefix string) (string, bool) {
 // IssueHandles creates a session's grant for one account
 // (externalaccounts.HandleIssuer).
 func (g *Gateway) IssueHandles(ctx context.Context, request externalaccounts.HandleRequest) (store.ExternalAccountGateway, error) {
+	if request.Account.Provider != "feishu" {
+		return store.ExternalAccountGateway{}, errAccessEnded
+	}
 	seed := make([]byte, 32)
 	if _, err := rand.Read(seed); err != nil {
 		return store.ExternalAccountGateway{}, err
@@ -260,7 +263,7 @@ func (g *Gateway) check(ctx context.Context, caller Caller, deviceOwner string) 
 	if err != nil {
 		return store.ExternalAccount{}, store.ExternalProviderApp{}, errAccessEnded
 	}
-	if account.AppID != caller.AppID || !externalaccounts.Eligible(account, account.WorkspaceIDs, session.WorkspaceID, session.CreatedByUserID, deviceOwner) {
+	if account.Provider != "feishu" || account.AppID != caller.AppID || !externalaccounts.Eligible(account, account.WorkspaceIDs, session.WorkspaceID, session.CreatedByUserID, deviceOwner) {
 		return store.ExternalAccount{}, store.ExternalProviderApp{}, errAccessEnded
 	}
 	app, err := g.accounts.GetExternalProviderApp(ctx, account.AppID)

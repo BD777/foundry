@@ -104,9 +104,10 @@ export function getWorkspaceExternalAccounts(
 export function setWorkspaceExternalAccounts(
   workspaceId: string,
   accountIds: string[],
+  resources?: Record<string, string[]>,
 ): Promise<WorkspaceExternalAccounts> {
   return request("PUT", workspaceAccountsPath(workspaceId), {
-    body: { accountIds },
+    body: { accountIds, resources },
   });
 }
 
@@ -233,4 +234,78 @@ export function dismissDeviceConnectorSignIn(
       },
     },
   );
+}
+
+export function beginCloudflareSignIn(
+  requestId: string,
+  accountId?: string,
+): Promise<ExternalAccountLogin> {
+  return request("POST", "/api/connectors/cloudflare/sign-in", {
+    body: { requestId, accountId },
+  });
+}
+export function cancelCloudflareSignIn(
+  id: string,
+  requestId: string,
+): Promise<unknown> {
+  return request(
+    "DELETE",
+    `/api/connectors/cloudflare/logins/${encodeURIComponent(id)}`,
+    { body: { requestId } },
+  );
+}
+export interface CloudflareZone {
+  id: string;
+  name: string;
+  status: string;
+  type?: string;
+  account?: { id: string; name: string };
+}
+export function getCloudflareZones(
+  accountId: string,
+  page = 1,
+): Promise<{
+  success: boolean;
+  result: CloudflareZone[];
+  result_info?: { total_pages?: number };
+}> {
+  return request(
+    "GET",
+    `/api/connectors/cloudflare/accounts/${encodeURIComponent(accountId)}/zones?page=${page}`,
+  );
+}
+export async function getCloudflareBindingWorkspaces(): Promise<
+  Array<{ id: string; name: string; detail?: string }>
+> {
+  const [workspaces, devices] = await Promise.all([
+    request<
+      Array<{
+        id: string;
+        name: string;
+        deviceId?: string;
+        localPath?: string;
+        archivedAt?: string;
+        accessRole?: string;
+      }>
+    >("GET", "/api/workspaces"),
+    request<Array<{ id: string; label: string; status: string }>>(
+      "GET",
+      "/api/devices",
+    ),
+  ]);
+  const names = new Map(devices.map((d) => [d.id, d]));
+  return workspaces
+    .filter(
+      (w) =>
+        !w.archivedAt &&
+        (w.accessRole === "owner" || w.accessRole === "maintainer") &&
+        names.get(w.deviceId ?? "")?.status !== "removed",
+    )
+    .map((w) => ({
+      id: w.id,
+      name: w.name,
+      detail: [names.get(w.deviceId ?? "")?.label, w.localPath ?? w.id]
+        .filter(Boolean)
+        .join(" · "),
+    }));
 }

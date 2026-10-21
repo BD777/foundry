@@ -107,6 +107,7 @@ export interface ExternalAccount {
 }
 
 export interface ExternalAccountBinding {
+  resourceIds?: string[];
   workspaceId: string;
   accountId: string;
   grantedBy: string;
@@ -159,7 +160,7 @@ export interface ExternalAccountLogin {
   /** pending, complete or failed. */
   status: "pending" | "complete" | "failed";
   /** A setup's phase: confirm the new app, then authorize it. Empty for a plain login. */
-  phase?: "register" | "authorize";
+  phase?: "register" | "authorize" | "verifying";
   verificationUri?: string;
   verificationUriComplete?: string;
   userCode?: string;
@@ -200,6 +201,7 @@ export interface ExternalAccountMaterial {
 
 /** A session's way through the server's gateway for one account. */
 export interface ExternalAccountGateway {
+  expiresAt?: string;
   /** Server path the device's loopback forwarder sends requests under. */
   path: string;
   /** Stands in for the app secret. */
@@ -218,6 +220,7 @@ export interface WorkspaceExternalAccounts {
 }
 
 export interface SetWorkspaceExternalAccountsInput {
+  resources?: Record<string, string[]>;
   accountIds: string[];
 }
 

@@ -99,17 +99,18 @@ type Service struct {
 	// of the app secret and the access token; nil gives sessions nothing.
 	Handles HandleIssuer
 
-	loginsMu sync.Mutex
-	logins   map[string]*pendingLogin
-	locksMu  sync.Mutex
-	locks    map[string]*sync.Mutex
+	authorizationEpochs sync.Map
+	loginsMu            sync.Mutex
+	logins              map[string]*pendingLogin
+	locksMu             sync.Mutex
+	locks               map[string]*sync.Mutex
 }
 
 // NewService builds a service over the store, the secret keeper (nil when
 // the server has none) and the providers.
 func NewService(st store.ExternalAccountStore, secrets SecretKeeper, registry *Registry) *Service {
 	if registry == nil {
-		registry = NewRegistry(&Feishu{})
+		registry = NewRegistry(&Feishu{}, NewCloudflare())
 	}
 	return &Service{
 		store:             st,

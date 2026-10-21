@@ -74,7 +74,7 @@ func writeExternalAccountError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusPreconditionFailed, err.Error())
 	case errors.Is(err, integrations.ErrOff):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
-	case errors.Is(err, externalaccounts.ErrAppInUse), errors.Is(err, externalaccounts.ErrAccountUnusable):
+	case errors.Is(err, externalaccounts.ErrAppInUse), errors.Is(err, externalaccounts.ErrAccountUnusable), errors.Is(err, externalaccounts.ErrAuthorizationInProgress):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, store.ErrExternalAppNotFound), errors.Is(err, store.ErrExternalAccountNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -455,7 +455,7 @@ func (s *Server) handleSetWorkspaceExternalAccounts(w http.ResponseWriter, r *ht
 	if !decodeJSONRequest(w, r, &input) {
 		return
 	}
-	view, err := s.SetWorkspaceConnectors(r.Context(), WorkspaceActor{UserID: actor.AccountID()}, r.PathValue("id"), input.AccountIDs)
+	view, err := s.SetWorkspaceConnectors(r.Context(), WorkspaceActor{UserID: actor.AccountID()}, r.PathValue("id"), input.AccountIDs, input.Resources)
 	if err != nil {
 		writeResult(w, nil, err)
 		return

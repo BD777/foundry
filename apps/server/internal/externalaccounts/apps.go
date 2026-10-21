@@ -325,6 +325,11 @@ func (s *Service) AppCredentials(ctx context.Context, app store.ExternalProvider
 	if !s.SecretsConfigured() {
 		return AppCredentials{}, ErrSecretsNotConfigured
 	}
+	if provider, ok := s.registry.Lookup(app.Provider); ok {
+		if _, public := provider.(AuthorizationCodeProvider); public && app.CreatedVia == "dynamic_registration" {
+			return AppCredentials{ClientID: app.ClientID, BaseURL: app.BaseURL}, nil
+		}
+	}
 	secret, err := s.secrets.GetSecret(ctx, AppSecretID(app.ID))
 	if err != nil {
 		return AppCredentials{}, fmt.Errorf("unseal the app secret of %s: %w", app.ID, err)

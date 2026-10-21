@@ -128,6 +128,7 @@ test("every CLI command calls a Foundry tool with arguments it takes", () => {
       for (const required of tool.inputSchema.required ?? [])
         assert.ok(
           spec.positional === required ||
+            Object.hasOwn(spec.fixed ?? {}, required) ||
             Object.values(spec.flags).some((f) => f.argument === required),
           `${name} cannot set ${required}, which ${spec.tool} requires`,
         );

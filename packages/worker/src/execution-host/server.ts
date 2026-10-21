@@ -167,6 +167,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const snapshot = () => ({
     protocol: 1,
     capabilities: [
+      "cloudflare_gateway_v1",
       "service_tunnels_v1",
       "idle_upgrade",
       "session_work",

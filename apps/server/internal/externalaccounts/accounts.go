@@ -77,6 +77,24 @@ func (s *Service) Update(ctx context.Context, account store.ExternalAccount, upd
 // deleted here; the account stays, marked revoked, until disconnected. The
 // gateway refuses the account's handles from then on.
 func (s *Service) Revoke(ctx context.Context, account store.ExternalAccount, actorID string) (store.ExternalAccount, error) {
+	if account.Provider == "cloudflare" {
+		gate := s.codeCommitLock(account.OwnerUserID, account.Provider)
+		gate.Lock()
+		defer gate.Unlock()
+		fresh, err := s.store.GetExternalAccount(ctx, account.ID)
+		if err != nil {
+			return account, err
+		}
+		account = fresh
+		s.authorizationEpoch(account.OwnerUserID, account.Provider).Add(1)
+		account.Status = store.ExternalAccountRevoked
+		account.StatusDetail = "provider_revoke_pending"
+		if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
+			return account, err
+		}
+		s.changed(account.ID)
+	}
+
 	lock := s.lockFor(account.ID)
 	lock.Lock()
 	defer lock.Unlock()
@@ -138,10 +156,28 @@ func (s *Service) revokeLocked(ctx context.Context, account store.ExternalAccoun
 // Disconnect revokes (when a grant is still held) and removes the account
 // with its bindings and audit lines.
 func (s *Service) Disconnect(ctx context.Context, account store.ExternalAccount, actorID string) error {
+	if account.Provider == "cloudflare" {
+		gate := s.codeCommitLock(account.OwnerUserID, account.Provider)
+		gate.Lock()
+		defer gate.Unlock()
+		fresh, err := s.store.GetExternalAccount(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		account = fresh
+		s.authorizationEpoch(account.OwnerUserID, account.Provider).Add(1)
+		account.Status = store.ExternalAccountRevoked
+		account.StatusDetail = "provider_revoke_pending"
+		if _, err := s.store.SaveExternalAccount(ctx, account); err != nil {
+			return err
+		}
+		s.changed(account.ID)
+	}
+
 	lock := s.lockFor(account.ID)
 	lock.Lock()
 	defer lock.Unlock()
-	if account.Status != store.ExternalAccountRevoked {
+	if account.Status != store.ExternalAccountRevoked || account.StatusDetail == "provider_revoke_pending" {
 		if err := s.revokeLocked(ctx, account); err != nil {
 			return err
 		}

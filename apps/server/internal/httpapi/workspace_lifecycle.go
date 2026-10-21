@@ -467,9 +467,9 @@ func (s *Server) ChangeWorkspaceSkills(ctx context.Context, actor WorkspaceActor
 // SetWorkspaceConnectors replaces the connector accounts actor bound to the
 // workspace with accountIDs (actor's own accounts only) and returns the
 // workspace's connectors as actor sees them.
-func (s *Server) SetWorkspaceConnectors(ctx context.Context, actor WorkspaceActor, workspaceID string, accountIDs []string) (store.WorkspaceExternalAccounts, error) {
+func (s *Server) SetWorkspaceConnectors(ctx context.Context, actor WorkspaceActor, workspaceID string, accountIDs []string, resources ...map[string][]string) (store.WorkspaceExternalAccounts, error) {
 	workspaceID = strings.TrimSpace(workspaceID)
-	view, err := s.setWorkspaceConnectors(ctx, actor.UserID, workspaceID, accountIDs)
+	view, err := s.setWorkspaceConnectors(ctx, actor.UserID, workspaceID, accountIDs, resources...)
 	s.auditWorkspaceLifecycle(ctx, actor, WorkspaceLifecycleRecord{
 		Operation: WorkspaceOpSetConnectors, WorkspaceID: workspaceID, Err: err,
 		Summary: "bound connector accounts " + strings.Join(accountIDs, ", "),
@@ -477,12 +477,12 @@ func (s *Server) SetWorkspaceConnectors(ctx context.Context, actor WorkspaceActo
 	return view, err
 }
 
-func (s *Server) setWorkspaceConnectors(ctx context.Context, userID string, workspaceID string, accountIDs []string) (store.WorkspaceExternalAccounts, error) {
+func (s *Server) setWorkspaceConnectors(ctx context.Context, userID string, workspaceID string, accountIDs []string, resources ...map[string][]string) (store.WorkspaceExternalAccounts, error) {
 	before, err := s.store.ListWorkspaceExternalAccounts(ctx, workspaceID)
 	if err != nil {
 		return store.WorkspaceExternalAccounts{}, err
 	}
-	if err := s.store.SetWorkspaceExternalAccounts(ctx, workspaceID, userID, accountIDs); err != nil {
+	if err := s.store.SetWorkspaceExternalAccounts(ctx, workspaceID, userID, accountIDs, resources...); err != nil {
 		if errors.Is(err, store.ErrExternalAccountNotFound) {
 			return store.WorkspaceExternalAccounts{}, &statusError{http.StatusNotFound, err}
 		}

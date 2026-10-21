@@ -570,3 +570,42 @@ test("inside a Foundry session the CLI never acts with the device credential", a
   assert.match(listed.stderr, /Foundry tools/);
   assert.equal(calls.length, 0, "no request carries the device credential");
 });
+
+test("Cloudflare commands use the scoped MCP tool and structured query", async (t) => {
+  const { calls, url } = await fakeTools(t, () => ['{"success":true}', false]);
+  const env = {
+    FOUNDRY_SERVER_URL: url,
+    FOUNDRY_SESSION_TOKEN: "fixture-session",
+    FOUNDRY_WORKSPACE_ID: "",
+  };
+  const accounts = await foundry(["cloudflare", "accounts"], env);
+  assert.equal(accounts.code, 0, accounts.stderr);
+  assert.equal(calls[0].name, "cloudflare");
+  assert.deepEqual(calls[0].arguments, { action: "accounts" });
+  const read = await foundry(
+    [
+      "cloudflare",
+      "read",
+      "/zones",
+      "--account",
+      "xacc_fixture",
+      "--query",
+      '{"page":"2","per_page":"1"}',
+    ],
+    env,
+  );
+  assert.equal(read.code, 0, read.stderr);
+  assert.equal(calls[1].name, "cloudflare");
+  assert.deepEqual(calls[1].arguments, {
+    action: "request",
+    path: "/zones",
+    accountId: "xacc_fixture",
+    query: { page: "2", per_page: "1" },
+  });
+  const invalid = await foundry(
+    ["cloudflare", "read", "/zones", "--query", "not-json"],
+    env,
+  );
+  assert.notEqual(invalid.code, 0);
+  assert.equal(calls.length, 2, "invalid JSON reached the server");
+});

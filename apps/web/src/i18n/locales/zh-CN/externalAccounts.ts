@@ -2,6 +2,52 @@ import type { externalAccounts as en } from "../en/externalAccounts";
 import type { Translation } from "../../translation";
 
 export const externalAccounts: Translation<typeof en> = {
+  cloudflare: {
+    requestedPermissions: "申请权限",
+    revokePending:
+      "Foundry 访问已停止，Cloudflare 端撤销仍待完成，请重试断开。",
+    unverifiedZone:
+      "此已保存域名尚未在已加载列表中核实。请继续加载、检查权限或移除。",
+    verificationPending:
+      "已收到批准，身份核验或保存仍待完成；会继续重试当前操作，不会重新发起授权。",
+
+    unknownOperation:
+      "此次授权状态已不可用。请先刷新连接，再决定是否重新授权；已保存的登录不会被清除。",
+    intro: "Cloudflare 登录保存在服务端。为各工作区选择可读取的域名。",
+    connect: "授权 Cloudflare",
+    refresh: "刷新",
+    empty: "尚未连接 Cloudflare 身份。",
+    noSecretStore: "请先配置服务端密钥存储再授权。",
+    identityConfirmed: "授权时身份已核实 · 资源访问取决于已授权限",
+    needsAuth: "需要授权",
+    permissions: "已授权限",
+    reauthorize: "重新授权",
+    revoke: "断开授权",
+    revokeDetail: "停止此授权及各工作区通过它进行的访问，不会修改 DNS 记录。",
+    workspace: "工作区",
+    chooseWorkspace: "选择你管理的工作区",
+    connected: "Cloudflare 身份已连接，请检查各工作区启用的域名范围。",
+    authorizeDetail:
+      "在此浏览器打开 Cloudflare 官方页面批准只读权限，再回到这里选择工作区域名。关闭弹窗不会撤销已批准、正在核验的授权。",
+    preparing: "正在准备官方授权…",
+    waiting: "等待你在 Cloudflare 页面确认…",
+    verifying: "正在核验 Cloudflare 身份…",
+    openAuthorization: "打开 Cloudflare 授权页",
+    workspaceAccess: "工作区访问",
+    bindingDetail: "仅你在自己设备上的会话可读取所选域名的 DNS 和证书信息。",
+    identity: "Cloudflare 身份",
+    chooseIdentity: "选择身份",
+    discovering: "正在检查可访问的域名…",
+    discoveryFailed: "Cloudflare 未能列出域名，请检查已授权限。",
+    more: "加载更多域名",
+    save: "保存所选域名",
+    refreshZones: "重新检查域名",
+    removeBinding: "移除工作区绑定",
+    bound: "Cloudflare 资源绑定已保存。",
+    unbound: "工作区访问已移除，Cloudflare 登录仍保留。",
+    consumption:
+      "已绑定会话可使用 Cloudflare MCP 工具；cf CLI 还需执行设备加载新版 Worker 并安装官方 CLI。凭据不会复制到设备。",
+  },
   page: {
     title: "连接器",
     intro:
@@ -20,6 +66,7 @@ export const externalAccounts: Translation<typeof en> = {
     workspaces_other: "已绑定 {{count}} 个工作区",
   },
   providers: {
+    cloudflare: "Cloudflare",
     feishu: "飞书",
     bytedcli: "bytedcli",
   },

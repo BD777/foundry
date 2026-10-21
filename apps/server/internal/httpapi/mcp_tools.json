@@ -1,5 +1,43 @@
 [
   {
+    "name": "cloudflare",
+    "description": "Read the Cloudflare zones explicitly bound to this session workspace through the official Cloudflare MCP and Foundry gateway. Start with action accounts to see eligible Cloudflare identities and zone IDs; then action request with accountId, an allowed GET path (/zones, /zones/<id>, DNS records, or SSL certificate metadata) and optional query. No DNS writes, deployments, billing changes or arbitrary JavaScript. Credentials stay on the server; unbinding or disconnecting revokes access. If permissions are missing ask the person to authorize in Connectors → Cloudflare.",
+    "summary": "Read selected Cloudflare zones, DNS and certificate metadata.",
+    "limits": [
+      "Requires the account owner’s active session on their own device and an explicit workspace zone binding.",
+      "Read-only; provider approval remains the person’s action."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["accounts", "request"]
+        },
+        "accountId": {
+          "type": "string",
+          "description": "Foundry connected-account id from action accounts; not the Cloudflare account or zone id."
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "register_service",
     "description": "Register an already running HTTP(S) web service in Workspace Services for private Foundry-authenticated browser access. First verify its actual executing device, workspace and exact loopback port; no scanning or process launch occurs. workspaceId is where it is shown; targetWorkspaceId is the workspace on its actual executing device (defaults to workspaceId). The person must own that device and belong to both workspaces. Use one stable registrationKey for retries. External Compose/system services remain externally managed; closing web access never kills their process. New mappings are private to the person; sharing is an explicit Foundry Web action. Configured preview hostnames and a capable Worker are required for opening, and returned status is capability/readiness, not an application health check.",
     "summary": "Registers a known local web endpoint without starting or stopping it.",

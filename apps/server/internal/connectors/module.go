@@ -20,7 +20,8 @@ type Store interface {
 // (externalaccounts.Service: logins, refresh, the materials the Feishu
 // gateway serves) and the device-held kind (DeviceHeld).
 type Module struct {
-	catalog *Catalog
+	Cloudflare *CloudflareGateway
+	catalog    *Catalog
 	// ServerHeld runs the server-held connectors' accounts and apps. Only
 	// the connector HTTP files and the Feishu gateway and channel use it.
 	ServerHeld *externalaccounts.Service
@@ -35,7 +36,11 @@ func New(st Store, secrets externalaccounts.SecretKeeper, sw *integrations.Switc
 	serverHeld := externalaccounts.NewService(st, secrets, nil)
 	serverHeld.Integrations = sw
 	catalog := DefaultCatalog()
-	return &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog)}
+	m := &Module{catalog: catalog, ServerHeld: serverHeld, Devices: NewDeviceHeld(st, catalog)}
+	if gatewayStore, ok := st.(CloudflareStore); ok {
+		m.Cloudflare = NewCloudflareGateway(gatewayStore, serverHeld)
+	}
+	return m
 }
 
 // Catalog lists every connector.
@@ -89,7 +94,12 @@ func (m *Module) SessionConnectors(ctx context.Context, request SessionRequest) 
 		if err != nil {
 			m.ServerHeld.Logf("external accounts for session %s: %v", session.ID, err)
 		}
-		result.ExternalAccounts = materials
+		for _, material := range materials {
+			if material.Provider == "cloudflare" && !has("cloudflare_gateway_v1") {
+				continue
+			}
+			result.ExternalAccounts = append(result.ExternalAccounts, material)
+		}
 	} else {
 		accounts, err := m.ServerHeld.SessionAccounts(ctx, session.WorkspaceID, session.CreatedByUserID, request.DeviceOwner)
 		result.GatewayMissing = err == nil && len(accounts) > 0

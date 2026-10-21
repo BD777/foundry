@@ -5,6 +5,7 @@ import type {
   DeviceConnectorUse,
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
+import { prepareCloudflareSession } from "./cloudflare.js";
 import { bytedcliAdapter } from "./bytedcli.js";
 import { DeviceHeldConnectors } from "./device-held.js";
 import {
@@ -57,14 +58,32 @@ export async function prepareSessionConnectors(
     input.externalAccounts,
     options,
   );
+  const cloudflare = await prepareCloudflareSession(
+    session,
+    input.externalAccounts,
+    { serverURL: options.serverURL },
+  );
+  if (session.id) {
+    if (Object.keys(cloudflare.environment).length)
+      environmentBySession.set(session.id, cloudflare.environment);
+    if (cloudflare.notes.length)
+      notesBySession.set(session.id, cloudflare.notes.join("\n"));
+  }
   const uses = Array.isArray(input.deviceConnectors)
     ? input.deviceConnectors
     : [];
   if (session.id && uses.length > 0 && sessionTakesExternalAccounts(session)) {
     const { environment, notes } = deviceHeldConnectors.sessionSetup(uses);
     if (Object.keys(environment).length > 0)
-      environmentBySession.set(session.id, environment);
-    if (notes.length > 0) notesBySession.set(session.id, notes.join("\n"));
+      environmentBySession.set(session.id, {
+        ...environmentBySession.get(session.id),
+        ...environment,
+      });
+    if (notes.length > 0)
+      notesBySession.set(
+        session.id,
+        [notesBySession.get(session.id), ...notes].filter(Boolean).join("\n"),
+      );
   }
   let released = false;
   return {
@@ -72,6 +91,7 @@ export async function prepareSessionConnectors(
       if (released) return;
       released = true;
       accounts.release();
+      cloudflare.release();
       if (session.id) {
         environmentBySession.delete(session.id);
         notesBySession.delete(session.id);

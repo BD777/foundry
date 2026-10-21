@@ -7,6 +7,7 @@ import {
   type ConnectorType,
 } from "../../lib/connector-types";
 import { DeviceHeldConnector } from "./device-held-connector";
+import { CloudflareConnector } from "./cloudflare-connector";
 import { FeishuConnector } from "./feishu-connector";
 
 export interface ConnectorsFeatureProps {
@@ -50,6 +51,11 @@ export function ConnectorsFeature({
         <DeviceHeldConnector kind={tab} onNotice={props.onNotice} />
       ) : tab === "feishu" ? (
         <FeishuConnector {...props} />
+      ) : tab === "cloudflare" ? (
+        <CloudflareConnector
+          currentUserId={props.currentUserId}
+          onNotice={props.onNotice}
+        />
       ) : null}
     </PageSurface>
   );

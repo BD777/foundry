@@ -134,9 +134,6 @@ type Provider interface {
 // ServerHeldProvider runs the platform's login and refresh on the server.
 type ServerHeldProvider interface {
 	Provider
-	BeginDeviceLogin(ctx context.Context, app AppCredentials, scopes []string) (DeviceLogin, error)
-	// PollDeviceLogin asks once whether the person approved.
-	PollDeviceLogin(ctx context.Context, app AppCredentials, login DeviceLogin) (Grant, PollOutcome, error)
 	// Refresh spends grant's refresh token for a new access token (and, for
 	// rotating providers, a new refresh token). Failures are *RefreshError.
 	Refresh(ctx context.Context, app AppCredentials, grant Grant) (Grant, error)
@@ -148,6 +145,23 @@ type ServerHeldProvider interface {
 	// ScopeApplyURL is the provider page where the app's owner enables
 	// scopes the app lacks; empty when there is none.
 	ScopeApplyURL(app AppCredentials, scopes []string) string
+}
+
+// DeviceFlowProvider supports an actual provider device authorization grant.
+type DeviceFlowProvider interface {
+	ServerHeldProvider
+	BeginDeviceLogin(context.Context, AppCredentials, []string) (DeviceLogin, error)
+	PollDeviceLogin(context.Context, AppCredentials, DeviceLogin) (Grant, PollOutcome, error)
+}
+
+// AuthorizationCodeProvider supports browser redirects with PKCE. Public client
+// registration and code exchange are provider mechanisms, not a device grant.
+type AuthorizationCodeProvider interface {
+	ServerHeldProvider
+	RegisterPublicClient(context.Context, string) (string, error)
+	AuthorizationURL(clientID, redirectURI, state, challenge string, scopes []string) string
+	ExchangeCode(context.Context, AppCredentials, string, string, string) (Grant, error)
+	OAuthIssuer() string
 }
 
 // TenantTokenIssuer is a provider whose apps also act as themselves (a
@@ -210,7 +224,7 @@ var ErrRegistrationDenied = errors.New("the person declined to create the app")
 // AppRegistrar is a server-held provider that can create an app for the
 // person during sign-in, so nobody pastes an app ID and secret.
 type AppRegistrar interface {
-	ServerHeldProvider
+	DeviceFlowProvider
 	BeginAppRegistration(ctx context.Context, brand string) (AppRegistration, error)
 	// PollAppRegistration asks once whether the person confirmed; the
 	// returned registration replaces the one passed (its brand may move).

@@ -128,9 +128,13 @@ func (s *Service) material(ctx context.Context, account store.ExternalAccount, r
 	if provider != nil && len(provider.Describe().Tools) > 0 {
 		tool = provider.Describe().Tools[0]
 	}
+	expires := gateway.ExpiresAt
+	if expires == "" {
+		expires = s.formatTime(s.Now().Add(sessionHandleLifetime))
+	}
 	return store.ExternalAccountMaterial{
 		AccountID: account.ID, Provider: account.Provider, Label: account.Label, Tool: tool, ProfileName: ProfileName(account.ID, request.SessionID),
-		ClientID: app.ClientID, Gateway: &gateway, ExpiresAt: s.formatTime(s.Now().Add(sessionHandleLifetime)),
+		ClientID: app.ClientID, Gateway: &gateway, ExpiresAt: expires,
 		Scope: strings.Join(account.GrantedScopes, " "), Subject: account.Subject, DisplayName: account.DisplayName,
 	}, nil
 }

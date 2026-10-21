@@ -18,11 +18,12 @@ type pendingLogin struct {
 	owner string
 	label string
 	// replace is the account a re-authorization renews; nil connects a new one.
-	replace *store.ExternalAccount
-	app     store.ExternalProviderApp
-	login   DeviceLogin
-	doneAt  time.Time
-	elapsed bool
+	replace  *store.ExternalAccount
+	app      store.ExternalProviderApp
+	login    DeviceLogin
+	doneAt   time.Time
+	elapsed  bool
+	codeFlow *pendingCodeFlow
 }
 
 // BeginLogin starts a device-flow login through app for ownerUserID and
@@ -56,7 +57,11 @@ func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.
 	if len(scopes) == 0 {
 		scopes = provider.PresetScopes(input.IncludeApprovalScopes)
 	}
-	login, err := provider.BeginDeviceLogin(ctx, credentials, scopes)
+	device, ok := provider.(DeviceFlowProvider)
+	if !ok {
+		return store.ExternalAccountLogin{}, errors.New("this provider uses browser authorization")
+	}
+	login, err := device.BeginDeviceLogin(ctx, credentials, scopes)
 	if err != nil {
 		return store.ExternalAccountLogin{}, err
 	}
@@ -66,7 +71,9 @@ func (s *Service) BeginLogin(ctx context.Context, ownerUserID string, app store.
 	}
 	pending.authorize(s, app, login, "")
 	s.track(pending)
-	go s.pollLogin(pending, provider, credentials)
+	go s.pollLogin(pending, device, credentials)
+	pending.mu.Lock()
+	defer pending.mu.Unlock()
 	return pending.view, nil
 }
 
@@ -218,6 +225,20 @@ func (s *Service) Login(loginID, ownerUserID string) (store.ExternalAccountLogin
 	}
 	pending.mu.Lock()
 	defer pending.mu.Unlock()
+	if pending.codeFlow != nil && pending.view.Status == "pending" && (s.Now().After(pending.login.ExpiresAt) || pending.codeFlow.epoch != s.authorizationEpoch(pending.owner, pending.app.Provider).Load()) {
+		pending.codeFlow.consumed = true
+		pending.codeFlow.verifier = ""
+		pending.codeFlow.grant = nil
+		pending.view.Status = "failed"
+		pending.view.Error = "Authorization expired or was superseded by a connection change."
+		pending.view.VerificationURI = ""
+		pending.view.VerificationURIComplete = ""
+		pending.doneAt = s.Now()
+	}
+	if pending.codeFlow != nil && pending.view.Status == "pending" && pending.codeFlow.grant != nil && !pending.codeFlow.verifying && !s.Now().Before(pending.codeFlow.retryAt) {
+		pending.codeFlow.verifying = true
+		go s.verifyCodeLogin(pending)
+	}
 	return pending.view, true
 }
 
@@ -225,6 +246,16 @@ func (s *Service) pruneLoginsLocked() {
 	now := s.Now()
 	for id, pending := range s.logins {
 		pending.mu.Lock()
+		if pending.codeFlow != nil && pending.view.Status == "pending" && now.After(pending.login.ExpiresAt) {
+			pending.codeFlow.grant = nil
+			pending.codeFlow.verifier = ""
+			pending.codeFlow.consumed = true
+			pending.view.Status = "failed"
+			pending.view.Error = "Authorization expired."
+			pending.view.VerificationURI = ""
+			pending.view.VerificationURIComplete = ""
+			pending.doneAt = now
+		}
 		expired := !pending.doneAt.IsZero() && now.Sub(pending.doneAt) > s.LoginGrace
 		pending.mu.Unlock()
 		if expired {
@@ -262,7 +293,7 @@ func missingScopes(requested, granted []string) []string {
 	return missing
 }
 
-func (s *Service) pollLogin(pending *pendingLogin, provider ServerHeldProvider, credentials AppCredentials) {
+func (s *Service) pollLogin(pending *pendingLogin, provider DeviceFlowProvider, credentials AppCredentials) {
 	// The deadline follows the service clock, so the provider's expiry and
 	// the server's own clock agree (tests move both).
 	ctx, cancel := context.WithTimeout(context.Background(), pending.login.ExpiresAt.Sub(s.Now())+30*time.Second)
@@ -322,6 +353,22 @@ func (s *Service) completeLogin(ctx context.Context, pending *pendingLogin, prov
 		return store.ExternalAccount{}, ErrMissingRefreshToken
 	}
 	identity, identityErr := provider.Identity(ctx, credentials, grant.AccessToken)
+	if _, strict := provider.(AuthorizationCodeProvider); strict && (identityErr != nil || identity.Subject == "") {
+		if identityErr != nil {
+			return store.ExternalAccount{}, fmt.Errorf("provider identity verification: %w", identityErr)
+		}
+		return store.ExternalAccount{}, errors.New("provider returned no identity")
+	}
+	if pending.codeFlow != nil {
+		gate := s.codeCommitLock(pending.owner, pending.app.Provider)
+		gate.Lock()
+		defer gate.Unlock()
+		pending.mu.Lock()
+		defer pending.mu.Unlock()
+		if pending.view.Status != "pending" || pending.view.Phase != "verifying" || s.Now().After(pending.login.ExpiresAt) || pending.codeFlow.epoch != s.authorizationEpoch(pending.owner, pending.app.Provider).Load() {
+			return store.ExternalAccount{}, ErrLoginExpired
+		}
+	}
 	now := s.Now()
 	grant.Generation = 1
 	label := pending.label
@@ -341,6 +388,22 @@ func (s *Service) completeLogin(ctx context.Context, pending *pendingLogin, prov
 	}
 	if identityErr != nil {
 		account.StatusDetail = "identity_unread"
+	}
+	if pending.codeFlow != nil && pending.replace == nil && identity.Subject != "" {
+		accounts, err := s.store.ListExternalAccounts(ctx, pending.owner)
+		if err != nil {
+			return store.ExternalAccount{}, err
+		}
+		for _, existing := range accounts {
+			if existing.Provider == account.Provider && existing.Subject == identity.Subject {
+				if existing.StatusDetail == "provider_revoke_pending" {
+					return store.ExternalAccount{}, fmt.Errorf("%w: retry the pending disconnect first", ErrAccountUnusable)
+				}
+				copy := existing
+				pending.replace = &copy
+				break
+			}
+		}
 	}
 	if pending.replace != nil {
 		return s.renewAccount(ctx, pending, account, grant)
@@ -371,6 +434,15 @@ func (s *Service) renewAccount(ctx context.Context, pending *pendingLogin, fresh
 	lock := s.lockFor(previous.ID)
 	lock.Lock()
 	defer lock.Unlock()
+	if pending.codeFlow != nil {
+		current, err := s.store.GetExternalAccount(ctx, previous.ID)
+		if err != nil {
+			return store.ExternalAccount{}, store.ErrExternalAccountNotFound
+		}
+		if current.OwnerUserID != pending.owner {
+			return store.ExternalAccount{}, ErrAccountUnusable
+		}
+	}
 	fresh.ID, fresh.CreatedAt, fresh.KeepAlive, fresh.LastUsedAt = previous.ID, previous.CreatedAt, previous.KeepAlive, previous.LastUsedAt
 	if pending.label == "" {
 		fresh.Label = previous.Label

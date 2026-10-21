@@ -188,10 +188,12 @@ type ExternalAccount struct {
 // ExternalAccountBinding lets a workspace use an account. In the MVP only
 // sessions the account owner started, on devices the owner owns, get it.
 type ExternalAccountBinding struct {
-	WorkspaceID string `json:"workspaceId"`
-	AccountID   string `json:"accountId"`
-	GrantedBy   string `json:"grantedBy"`
-	CreatedAt   string `json:"createdAt"`
+	// ResourceIDs restrict a binding to explicitly selected provider resources.
+	ResourceIDs []string `json:"resourceIds,omitempty"`
+	WorkspaceID string   `json:"workspaceId"`
+	AccountID   string   `json:"accountId"`
+	GrantedBy   string   `json:"grantedBy"`
+	CreatedAt   string   `json:"createdAt"`
 }
 
 // ExternalAccountEvent is one line of an account's audit trail. It never
@@ -313,6 +315,7 @@ type ExternalAccountMaterial struct {
 // of the app secret, the user access token and the user refresh token. A handle is useless without
 // the device's credential and dies with the session.
 type ExternalAccountGateway struct {
+	ExpiresAt     string `json:"expiresAt,omitempty"`
 	Path          string `json:"path"`
 	AppHandle     string `json:"appHandle"`
 	UserHandle    string `json:"userHandle"`
@@ -331,7 +334,8 @@ type WorkspaceExternalAccounts struct {
 
 // SetWorkspaceExternalAccountsInput replaces the caller's bindings.
 type SetWorkspaceExternalAccountsInput struct {
-	AccountIDs []string `json:"accountIds"`
+	Resources  map[string][]string `json:"resources,omitempty"`
+	AccountIDs []string            `json:"accountIds"`
 }
 
 // ExternalAccountsView is the External accounts page.
@@ -372,7 +376,7 @@ type ExternalAccountStore interface {
 
 	// SetWorkspaceExternalAccounts replaces the workspace's bindings for the
 	// accounts userID owns; other owners' bindings stay.
-	SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string) error
+	SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string, resources ...map[string][]string) error
 	ListWorkspaceExternalAccounts(ctx context.Context, workspaceID string) ([]ExternalAccountBinding, error)
 
 	AppendExternalAccountEvent(ctx context.Context, event ExternalAccountEvent) error

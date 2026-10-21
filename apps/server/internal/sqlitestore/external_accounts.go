@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -90,6 +91,9 @@ func (s *Store) setupExternalAccounts(ctx context.Context) error {
 			`ALTER TABLE external_provider_apps ADD COLUMN `+column+` TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
+	}
+	if err := s.ensureColumn(ctx, "external_account_bindings", "resource_ids", `ALTER TABLE external_account_bindings ADD COLUMN resource_ids TEXT NOT NULL DEFAULT '[]'`); err != nil {
+		return err
 	}
 	return nil
 }
@@ -328,15 +332,33 @@ func (s *Store) DeleteExternalAccount(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string) error {
+func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, userID string, accountIDs []string, resources ...map[string][]string) error {
 	return s.withTx(ctx, func(tx *Store) error {
+		before, err := tx.ListWorkspaceExternalAccounts(ctx, workspaceID)
+		if err != nil {
+			return err
+		}
+		previous := map[string][]string{}
+		for _, binding := range before {
+			previous[binding.AccountID] = binding.ResourceIDs
+		}
+		selected := map[string][]string{}
+		if len(resources) > 0 && resources[0] != nil {
+			selected = resources[0]
+		}
+		cloudflareCount := 0
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM external_account_bindings
 			WHERE workspace_id = ? AND account_id IN (SELECT id FROM external_accounts WHERE owner_user_id = ?)`,
 			workspaceID, userID); err != nil {
 			return fmt.Errorf("clear external account bindings: %w", err)
 		}
 		now := formatTime(time.Now())
+		seenAccounts := map[string]bool{}
 		for _, accountID := range accountIDs {
+			if seenAccounts[accountID] {
+				continue
+			}
+			seenAccounts[accountID] = true
 			account, err := tx.GetExternalAccount(ctx, accountID)
 			if err != nil {
 				return err
@@ -344,9 +366,37 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 			if account.OwnerUserID != userID {
 				return fmt.Errorf("%w: %s is not owned by the caller", store.ErrExternalAccountNotFound, accountID)
 			}
+			ids := previous[accountID]
+			if value, ok := selected[accountID]; ok {
+				ids = value
+			}
+			if account.Provider == "cloudflare" {
+				cloudflareCount++
+				if cloudflareCount > 1 {
+					return errors.New("select one Cloudflare identity per workspace")
+				}
+				if len(ids) == 0 || len(ids) > 50 {
+					return errors.New("select between 1 and 50 Cloudflare zones")
+				}
+				seen := map[string]bool{}
+				clean := []string{}
+				for _, id := range ids {
+					if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(id) {
+						return errors.New("invalid Cloudflare zone")
+					}
+					if !seen[id] {
+						clean = append(clean, id)
+						seen[id] = true
+					}
+				}
+				ids = clean
+			} else {
+				ids = nil
+			}
+			encoded, _ := json.Marshal(nonNilStrings(ids))
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO external_account_bindings
-				(workspace_id, account_id, granted_by, created_at) VALUES (?, ?, ?, ?)
-				ON CONFLICT(workspace_id, account_id) DO NOTHING`, workspaceID, accountID, userID, now); err != nil {
+				(workspace_id, account_id, granted_by, created_at, resource_ids) VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT(workspace_id, account_id) DO NOTHING`, workspaceID, accountID, userID, now, string(encoded)); err != nil {
 				return fmt.Errorf("bind external account: %w", err)
 			}
 		}
@@ -355,7 +405,7 @@ func (s *Store) SetWorkspaceExternalAccounts(ctx context.Context, workspaceID, u
 }
 
 func (s *Store) ListWorkspaceExternalAccounts(ctx context.Context, workspaceID string) ([]store.ExternalAccountBinding, error) {
-	rows, err := s.reader().QueryContext(ctx, `SELECT workspace_id, account_id, granted_by, created_at
+	rows, err := s.reader().QueryContext(ctx, `SELECT workspace_id, account_id, granted_by, created_at, resource_ids
 		FROM external_account_bindings WHERE workspace_id = ? ORDER BY created_at, account_id`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace external accounts: %w", err)
@@ -364,7 +414,11 @@ func (s *Store) ListWorkspaceExternalAccounts(ctx context.Context, workspaceID s
 	bindings := []store.ExternalAccountBinding{}
 	for rows.Next() {
 		var binding store.ExternalAccountBinding
-		if err := rows.Scan(&binding.WorkspaceID, &binding.AccountID, &binding.GrantedBy, &binding.CreatedAt); err != nil {
+		var resources string
+		if err := rows.Scan(&binding.WorkspaceID, &binding.AccountID, &binding.GrantedBy, &binding.CreatedAt, &resources); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(resources), &binding.ResourceIDs); err != nil {
 			return nil, err
 		}
 		bindings = append(bindings, binding)

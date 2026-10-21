@@ -46,6 +46,12 @@ export interface FeishuGatewayForwarderOptions {
   /** This device's credential, read per request. */
   credential: () => string | undefined;
   log?: (message: string) => void;
+  /** Optional connector-specific admission and ephemeral handle renewal. */
+  authorizeHeaders?: (
+    headers: IncomingHttpHeaders,
+  ) => Promise<Record<string, string>>;
+  methods?: readonly string[];
+  allowUpgrade?: boolean;
 }
 
 export interface FeishuGatewayForwarder {
@@ -100,8 +106,41 @@ export async function startFeishuGatewayForwarder(
     headers: forwardedHeaders(incoming.headers, host, options.credential()),
   });
 
-  const listener: Server = createServer((incoming, response) => {
-    const outgoing = send(target(incoming), (answer) => {
+  const listener: Server = createServer(async (incoming, response) => {
+    if (options.methods && !options.methods.includes(incoming.method ?? "")) {
+      response.writeHead(403, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          success: false,
+          errors: [{ message: "This connector is read-only." }],
+        }),
+      );
+      return;
+    }
+    const requestOptions = target(incoming);
+    if (options.authorizeHeaders) {
+      try {
+        Object.assign(
+          requestOptions.headers,
+          await options.authorizeHeaders(incoming.headers),
+        );
+      } catch {
+        response.writeHead(403, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            success: false,
+            errors: [
+              {
+                message:
+                  "The session connector is unavailable. Check its workspace binding.",
+              },
+            ],
+          }),
+        );
+        return;
+      }
+    }
+    const outgoing = send(requestOptions, (answer) => {
       const headers: Record<string, string | string[]> = {};
       for (const [name, value] of Object.entries(answer.headers))
         if (value !== undefined && !hopByHop.has(name)) headers[name] = value;
@@ -119,10 +158,14 @@ export async function startFeishuGatewayForwarder(
 
   // The event connection: an HTTP upgrade relayed byte for byte.
   listener.on("upgrade", (incoming, client: Socket, head: Buffer) => {
-    const options = target(incoming);
-    options.headers.connection = "Upgrade";
-    options.headers.upgrade = incoming.headers.upgrade ?? "websocket";
-    const outgoing = send(options);
+    if (options.allowUpgrade === false) {
+      client.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      return;
+    }
+    const requestOptions = target(incoming);
+    requestOptions.headers.connection = "Upgrade";
+    requestOptions.headers.upgrade = incoming.headers.upgrade ?? "websocket";
+    const outgoing = send(requestOptions);
     outgoing.on("upgrade", (answer, upstream: Socket, upstreamHead: Buffer) => {
       const lines = [
         `HTTP/1.1 ${answer.statusCode ?? 101} ${answer.statusMessage ?? "Switching Protocols"}`,

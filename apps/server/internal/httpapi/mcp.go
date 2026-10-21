@@ -107,7 +107,15 @@ func (s *Server) mcpToolAvailability(ctx context.Context, actor Actor) func(name
 			role, verifier = s.sessionRole(ctx, session), session.Source == verificationSource
 		}
 	}
-	return func(name string) error { return mcpToolAllowed(role, verifier, name) }
+	return func(name string) error {
+		if err := mcpToolAllowed(role, verifier, name); err != nil {
+			return err
+		}
+		if name == "cloudflare" {
+			return s.cloudflareToolAvailable(ctx, actor)
+		}
+		return nil
+	}
 }
 
 // mcpToolAllowed is the rule mcpToolAvailability applies to a session of
@@ -264,6 +272,13 @@ func mcpRequestTool(run func(s *Server, r *http.Request, actor Actor, args map[s
 
 // mcpToolHandlers implement the catalog in mcp_tools.json, one per tool.
 var mcpToolHandlers = map[string]mcpToolHandler{
+	"cloudflare": mcpTextTool(func(s *Server, call mcpCall) (string, error) {
+		value, err := s.mcpCloudflare(call.r, call.actor, call.args)
+		if err != nil {
+			return "", err
+		}
+		return encodeJSON(value)
+	}),
 	"list_workspaces":  mcpTextTool((*Server).listWorkspacesForMCP),
 	"list_resources":   mcpTextTool((*Server).listResourcesForMCP),
 	"acquire_resource": mcpRequestTool((*Server).acquireResourceForMCP),

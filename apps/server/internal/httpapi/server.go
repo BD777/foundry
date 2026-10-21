@@ -218,6 +218,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	server.leases = newResourceLeases(store, server.resources, server.hub)
 	server.hub.leases = server.leases
 	server.feishuGateway = newFeishuGateway(store, server.connectors.ServerHeld, options.Integrations)
+	server.connectors.SetGatewayIssuer(server.feishuGateway)
 	server.titles = &chatTitleService{store: store, dispatch: server.dispatchNamingJob, connected: server.hub.HasConnection, sessions: sessions, chats: chats}
 	server.hub.onEvidenceConnected = server.recoverEvidenceVerifications
 	server.hub.assistantRun = server.assistantRunFor
