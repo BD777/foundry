@@ -43,7 +43,7 @@ func MemoryOrigin(inferred, grounded bool) string {
 // notice and a timer's prompt (the assistant's own) are not theirs. What
 // the person attached is never in the text, only its marker.
 func PersonWords(input store.SessionInput) (string, bool) {
-	if input.TimerFire != nil || IsNotice(input.Prompt) || strings.TrimSpace(input.Prompt) == "" {
+	if input.SentBySessionID != "" || input.TimerFire != nil || IsNotice(input.Prompt) || strings.TrimSpace(input.Prompt) == "" {
 		return "", false
 	}
 	return input.Prompt, true

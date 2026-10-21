@@ -74,12 +74,19 @@ const AgentSessionRoleIssueClarification = "issue_clarification"
 // SessionInput is one message delivered to a session: the unit of dispatch.
 // It is not a session of its own; identity, permissions and lineage belong
 // to the session it was sent to.
+type SessionExecutionBudget struct {
+	SnapshotID     string `json:"snapshotId"`
+	TokenBudget    int64  `json:"tokenBudget"`
+	TimeoutMinutes int    `json:"timeoutMinutes"`
+}
+
 type SessionInput struct {
-	ID                    string           `json:"id"`
-	Prompt                string           `json:"prompt"`
-	Attachments           []ChatAttachment `json:"attachments,omitempty"`
-	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
-	ImportedContext       string           `json:"importedContext,omitempty"`
+	ExecutionBudget       *SessionExecutionBudget `json:"executionBudget,omitempty"`
+	ID                    string                  `json:"id"`
+	Prompt                string                  `json:"prompt"`
+	Attachments           []ChatAttachment        `json:"attachments,omitempty"`
+	ProfileTransitionNote string                  `json:"profileTransitionNote,omitempty"`
+	ImportedContext       string                  `json:"importedContext,omitempty"`
 	// When the server received the input; its transcript events carry it.
 	At string `json:"at,omitempty"`
 	// TimerFire is set when the input is a timer's prompt: its device
@@ -193,19 +200,22 @@ type AgentSession struct {
 // SendAgentSessionInput is a new message for an idle session. Setting the
 // agent, provider or profile switches the runtime the session continues on.
 type SendAgentSessionInput struct {
-	AgentID               string           `json:"agentId,omitempty"`
-	Provider              string           `json:"provider,omitempty"`
-	ProfileID             string           `json:"profileId,omitempty"`
-	Model                 string           `json:"model,omitempty"`
-	ClaudeEffort          string           `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode  string           `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort  string           `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode      string           `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy   string           `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed            string           `json:"codexSpeed,omitempty"`
-	Prompt                string           `json:"prompt"`
-	Attachments           []ChatAttachment `json:"attachments,omitempty"`
-	ProfileTransitionNote string           `json:"profileTransitionNote,omitempty"`
+	ExecutionBudget                *SessionExecutionBudget `json:"-"`
+	PersonalAgentOperationID       string                  `json:"-"`
+	PersonalAgentOperationRevision int64                   `json:"-"`
+	AgentID                        string                  `json:"agentId,omitempty"`
+	Provider                       string                  `json:"provider,omitempty"`
+	ProfileID                      string                  `json:"profileId,omitempty"`
+	Model                          string                  `json:"model,omitempty"`
+	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode               string                  `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy            string                  `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed                     string                  `json:"codexSpeed,omitempty"`
+	Prompt                         string                  `json:"prompt"`
+	Attachments                    []ChatAttachment        `json:"attachments,omitempty"`
+	ProfileTransitionNote          string                  `json:"profileTransitionNote,omitempty"`
 	// ImportedContext is ignored: the server tells each native session the
 	// turns it missed. Accepted so older clients that send it still work.
 	ImportedContext string `json:"importedContext,omitempty"`
@@ -225,22 +235,25 @@ type SendAgentSessionInput struct {
 }
 
 type CreateAgentSessionInput struct {
-	SkillSelection         *SkillSelection         `json:"skillSelection,omitempty"`
-	ResolvedSkillSelection *ResolvedSkillSelection `json:"-"`
-	CreatedByUserID        string                  `json:"-"`
-	WorkspaceID            string                  `json:"workspaceId"`
-	NativeSessionID        string                  `json:"nativeSessionId,omitempty"`
-	AgentID                string                  `json:"agentId"`
-	Provider               string                  `json:"provider"`
-	ProfileID              string                  `json:"profileId,omitempty"`
-	Model                  string                  `json:"model,omitempty"`
-	ClaudeEffort           string                  `json:"claudeEffort,omitempty"`
-	ClaudePermissionMode   string                  `json:"claudePermissionMode,omitempty"`
-	CodexReasoningEffort   string                  `json:"codexReasoningEffort,omitempty"`
-	CodexSandboxMode       string                  `json:"codexSandboxMode,omitempty"`
-	CodexApprovalPolicy    string                  `json:"codexApprovalPolicy,omitempty"`
-	CodexSpeed             string                  `json:"codexSpeed,omitempty"`
-	Prompt                 string                  `json:"prompt"`
+	ExecutionBudget                *SessionExecutionBudget `json:"-"`
+	PersonalAgentOperationID       string                  `json:"-"`
+	PersonalAgentOperationRevision int64                   `json:"-"`
+	SkillSelection                 *SkillSelection         `json:"skillSelection,omitempty"`
+	ResolvedSkillSelection         *ResolvedSkillSelection `json:"-"`
+	CreatedByUserID                string                  `json:"-"`
+	WorkspaceID                    string                  `json:"workspaceId"`
+	NativeSessionID                string                  `json:"nativeSessionId,omitempty"`
+	AgentID                        string                  `json:"agentId"`
+	Provider                       string                  `json:"provider"`
+	ProfileID                      string                  `json:"profileId,omitempty"`
+	Model                          string                  `json:"model,omitempty"`
+	ClaudeEffort                   string                  `json:"claudeEffort,omitempty"`
+	ClaudePermissionMode           string                  `json:"claudePermissionMode,omitempty"`
+	CodexReasoningEffort           string                  `json:"codexReasoningEffort,omitempty"`
+	CodexSandboxMode               string                  `json:"codexSandboxMode,omitempty"`
+	CodexApprovalPolicy            string                  `json:"codexApprovalPolicy,omitempty"`
+	CodexSpeed                     string                  `json:"codexSpeed,omitempty"`
+	Prompt                         string                  `json:"prompt"`
 	// Title names the session; empty: the start of the prompt.
 	Title                 string           `json:"title,omitempty"`
 	Attachments           []ChatAttachment `json:"attachments,omitempty"`

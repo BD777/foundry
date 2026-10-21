@@ -479,3 +479,342 @@ test("the Connectors module is sealed: only its entry file is imported from outs
     existsSync(join(repoRoot, "apps/server/internal/connectors/catalog.json")),
   );
 });
+
+test("additional authorization is independent of base and official-provider login", async () => {
+  const { parseMeegoAuthorization, parseSessionAuthorization } =
+    await import("../dist/connectors/bytedcli.js");
+  for (const [state, status] of [
+    ["ready", "ready"],
+    ["missing", "needs_auth"],
+    ["bootstrap_available", "unknown"],
+  ]) {
+    const reading = parseMeegoAuthorization(
+      JSON.stringify({
+        status: "success",
+        data: {
+          authenticated: true,
+          providers: {
+            official: { state: "ready" },
+            goapi: { state, source: "feishu_web_session" },
+          },
+        },
+      }),
+      "2026-10-21T00:00:00Z",
+    );
+    assert.equal(reading.status, status);
+    assert.equal(reading.verification, "local_state");
+  }
+  const token = "fixture-private-continuation-1234";
+  const parsed = parseSessionAuthorization(
+    JSON.stringify({
+      status: "success",
+      data: {
+        login_status: "pending",
+        complete_token: token,
+        qr_image_path: "/never/read/provider/path.png",
+        qr_payload: "private-qr-payload",
+        lark_applink_url: "https://applink.example/does-not-authorize",
+      },
+    }),
+  );
+  assert.equal(parsed.continuation, token);
+  assert.deepEqual(parsed.step, {
+    status: "pending",
+    challenge: { kind: "qr_image" },
+  });
+  assert.equal(JSON.stringify(parsed.step).includes(token), false);
+  assert.equal(
+    parseSessionAuthorization(
+      JSON.stringify({
+        status: "success",
+        data: {
+          login_status: "success",
+          feishu_web_session_ready: true,
+          meego_goapi_session_ready: false,
+        },
+      }),
+    ).step.status,
+    "failed",
+  );
+});
+
+test("group operations keep continuation on device, reuse begin, reject stale scope and expire", async () => {
+  const fake = fakeTool();
+  let now = Date.now();
+  let begins = 0;
+  let polls = 0;
+  const group = {
+    id: "web_session",
+    revision: 1,
+    label: "Web session",
+    capabilities: ["one", "two"],
+    credential: "native_web_session",
+  };
+  const connector = { ...bytedcli, authorizationGroups: [group] };
+  const image = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jm1kAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const secret = "fixture-secret-kept-on-device";
+  const adapter = {
+    ...bytedcliAdapter,
+    readVersion: async () => "0.174.0",
+    readLogin: async () => ({ signedIn: true }),
+    readAuthorizations: async () => [],
+    beginAuthorization: async (_run, scratch) => {
+      begins++;
+      writeFileSync(join(scratch, "sign-in.png"), image);
+      return {
+        step: { status: "pending", challenge: { kind: "qr_image" } },
+        continuation: secret,
+      };
+    },
+    pollAuthorization: async (_run, _group, continuation) => {
+      polls++;
+      assert.equal(continuation, secret);
+      return { status: "pending" };
+    },
+  };
+  const rt = runtime(fake, { adapters: { bytedcli: adapter }, now: () => now });
+  const request = {
+    connector,
+    authorizationId: group.id,
+    authorizationRevision: 1,
+    operationId: "operation_1234567890123456",
+  };
+  const [first, again] = await Promise.all([
+    rt.handle({ ...request, action: "sign_in_begin" }),
+    rt.handle({ ...request, action: "sign_in_begin" }),
+  ]);
+  assert.equal(begins, 1);
+  assert.equal(first.authorizationImage, image.toString("base64"));
+  assert.equal(JSON.stringify(first).includes(secret), false);
+  assert.deepEqual(first, again);
+  assert.equal(
+    (
+      await rt.handle({
+        ...request,
+        authorizationRevision: 2,
+        action: "sign_in_poll",
+      })
+    ).error,
+    "Invalid authorization operation.",
+  );
+  assert.equal(
+    (
+      await rt.handle({
+        ...request,
+        operationId: "wrong_operation_123456789",
+        action: "sign_in_poll",
+      })
+    ).signIn.status,
+    "expired",
+  );
+  const recovered = await rt.handle({ ...request, action: "sign_in_poll" });
+  assert.equal(recovered.authorizationImage, image.toString("base64"));
+  assert.equal(recovered.signIn.challenge.kind, "qr_image");
+  assert.equal(polls, 1);
+  await rt.handle({ ...request, action: "sign_in_dismiss" });
+  assert.equal(
+    (await rt.handle({ ...request, action: "sign_in_poll" })).signIn.status,
+    "expired",
+  );
+  await rt.handle({ ...request, action: "sign_in_begin" });
+  now += 6 * 60_000;
+  assert.equal(
+    (await rt.handle({ ...request, action: "sign_in_poll" })).signIn.status,
+    "expired",
+  );
+  assert.equal(polls, 1);
+  const restarted = runtime(fake, { adapters: { bytedcli: adapter } });
+  assert.equal(
+    (await restarted.handle({ ...request, action: "sign_in_poll" })).signIn
+      .status,
+    "expired",
+  );
+});
+
+test("real Feishu reuse-page error falls back once to documented native QR without logout", async () => {
+  const group = {
+    id: "feishu_web_session",
+    revision: 1,
+    label: "Web",
+    capabilities: ["meego_goapi.cn"],
+    credential: "native_web_session",
+  };
+  const calls = [];
+  const captured = {
+    status: "error",
+    data: null,
+    error: {
+      code: "FEISHU_WEB_SESSION_AUTHORIZE_PARSE_FAILED",
+      message: "Feishu authorize page missing flow key, user id, or scope.",
+      endpoint: "https://provider.invalid/?secret=must-not-escape",
+      details: { flowKey: true, userId: false, scope: false },
+    },
+  };
+  const pending = {
+    status: "success",
+    data: {
+      login_status: "pending",
+      complete_token: "fixture-private-token-123456",
+      qr_image_path: "/fixture/sign-in.png",
+      qr_payload: "must-not-escape",
+    },
+  };
+  const run = async (args) => {
+    calls.push(args);
+    return args.includes("--version")
+      ? { code: 0, stdout: "0.174.0", stderr: "" }
+      : {
+          code: args.includes("--session-method") ? 0 : 1,
+          stdout: JSON.stringify(
+            args.includes("--session-method") ? pending : captured,
+          ),
+          stderr: "",
+        };
+  };
+  const result = await bytedcliAdapter.beginAuthorization(
+    run,
+    "/fixture",
+    group,
+  );
+  assert.equal(result.step.status, "pending");
+  assert.deepEqual(result.step.challenge, { kind: "qr_image" });
+  assert.equal(calls.filter((a) => a.includes("--begin")).length, 2);
+  assert.deepEqual(calls.at(-1).slice(-2), ["--session-method", "qr"]);
+  assert.equal(
+    calls.some(
+      (a) =>
+        a.includes("logout") ||
+        a.includes("clear") ||
+        a.includes("--auto") ||
+        a.includes("browser-cookie"),
+    ),
+    false,
+  );
+  assert.equal(JSON.stringify(result.step).includes("must-not-escape"), false);
+  const failures = [];
+  const alwaysFail = async (args) => {
+    failures.push(args);
+    return args.includes("--version")
+      ? { code: 0, stdout: "0.174.0", stderr: "" }
+      : { code: 1, stdout: JSON.stringify(captured), stderr: "" };
+  };
+  const failed = await bytedcliAdapter.beginAuthorization(
+    alwaysFail,
+    "/fixture",
+    group,
+  );
+  assert.equal(failures.length, 3, "version plus exactly two bounded attempts");
+  assert.match(
+    failed.step.error,
+    /FEISHU_WEB_SESSION_AUTHORIZE_PARSE_FAILED; begin; exit 1/,
+  );
+  assert.equal(failed.step.error.includes("secret="), false);
+  const before = failures.length;
+  const polled = await bytedcliAdapter.pollAuthorization(
+    alwaysFail,
+    group,
+    "fixture-private-token-123456",
+  );
+  assert.equal(
+    failures.length,
+    before + 1,
+    "poll never silently starts another challenge",
+  );
+  assert.match(polled.error, /; poll; exit 1/);
+});
+
+test("bounded FIFO reports busy instead of building an unbounded authorization queue", async () => {
+  const fake = fakeTool();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let entered;
+  const started = new Promise((resolve) => {
+    entered = resolve;
+  });
+  let calls = 0;
+  const rt = runtime(fake, {
+    adapters: {
+      bytedcli: {
+        ...bytedcliAdapter,
+        readVersion: async () => "0.174.0",
+        readAuthorizations: async () => [],
+        readLogin: async () => {
+          calls++;
+          entered();
+          await gate;
+          return { signedIn: true };
+        },
+      },
+    },
+  });
+  const first = rt.handle({
+    connector: bytedcli,
+    action: "status",
+    fresh: true,
+  });
+  await started;
+  const second = rt.handle({
+    connector: bytedcli,
+    action: "status",
+    fresh: true,
+  });
+  assert.deepEqual(
+    await rt.handle({ connector: bytedcli, action: "sign_in_begin" }),
+    { error: "connector_busy" },
+  );
+  assert.equal(calls, 1);
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls, 2);
+});
+
+test("same-operation basic receipt survives lost begin and completion responses", async () => {
+  const fake = fakeTool();
+  let begins = 0,
+    polls = 0;
+  const rt = runtime(fake, {
+    adapters: {
+      bytedcli: {
+        ...bytedcliAdapter,
+        beginSignIn: async () => {
+          begins++;
+          return {
+            status: "pending",
+            verificationUrl: "https://login.example/approve",
+          };
+        },
+        pollSignIn: async () => {
+          polls++;
+          return { status: "complete" };
+        },
+        readLogin: async () => {
+          throw new Error("completion must be verified separately by server");
+        },
+      },
+    },
+  });
+  const request = {
+    connector: bytedcli,
+    operationId: "base_operation_123456789",
+  };
+  await rt.handle({ ...request, action: "sign_in_begin" });
+  assert.equal(
+    (await rt.handle({ ...request, action: "sign_in_begin" })).signIn.status,
+    "pending",
+  );
+  assert.equal(begins, 1);
+  assert.equal(
+    (await rt.handle({ ...request, action: "sign_in_poll" })).signIn.status,
+    "complete",
+  );
+  assert.equal(
+    (await rt.handle({ ...request, action: "sign_in_poll" })).signIn.status,
+    "complete",
+  );
+  assert.equal(polls, 1);
+});

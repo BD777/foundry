@@ -53,6 +53,11 @@ export const devices: Translation<typeof en> = {
     failed: "无法重命名设备。",
   },
   accountShare: {
+    detailsFor: "{{device}} 的共用系统账号详情",
+    unreadFor: "{{device}} 有未读的共用系统账号提示",
+    acceptedOn: "于 {{date}} 确认共用。",
+    read: "已读；这台电脑的系统账号仍处于共用状态。",
+    refreshFailed: "已保存已读状态，但无法刷新设备。",
     label: "与 {{names}} 共用一个系统账号",
     body_one:
       "{{names}} 也在使用这台电脑上的这个系统账号：你们在这里使用相同的文件和相同的 Claude/Codex 登录；Foundry 不会把你们的工作分开。",

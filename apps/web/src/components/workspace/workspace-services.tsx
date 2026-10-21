@@ -16,43 +16,73 @@ import { Dialog } from "../ui/dialog";
 import { RowMenu } from "../ui/row-menu";
 import { WorkStatusIcon } from "../work/work-status-icon";
 import { Alert } from "../ui/alert";
+import { EmptyState } from "../ui/empty-state";
+import { Panel, PanelHeader } from "../ui/panel";
+import "./workspace-services.css";
 
 /** Workspace inventory remains reachable after creator/consumer sessions end. */
 export function WorkspaceServices({
   workspaceId,
   canControl = true,
-  showDescription = true,
+  embedded = false,
 }: {
   workspaceId: string;
   canControl?: boolean;
-  showDescription?: boolean;
+  embedded?: boolean;
 }) {
-  const { t } = useTranslation("chat");
+  const { t } = useTranslation(["chat", "workspaces"]);
   const [items, setItems] = useState<SessionWork[]>();
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState("");
   const epoch = useRef(0);
+  const inFlight = useRef<
+    { epoch: number; promise: Promise<void> } | undefined
+  >(undefined);
   const retry = useRef<
     { item: SessionWork; input: WorkControlInput } | undefined
   >(undefined);
-  const refresh = useCallback(async () => {
-    const current = epoch.current;
-    try {
-      const result = await listWorkspaceServices(workspaceId);
-      if (!Array.isArray(result))
-        throw new Error("Invalid workspace service inventory");
-      if (current === epoch.current) setItems(result);
-    } catch (e) {
-      if (current === epoch.current) setError(String(e));
-    }
-  }, [workspaceId]);
+  const refresh = useCallback(
+    async (foreground = false) => {
+      const current = epoch.current;
+      if (foreground) setRefreshing(true);
+      try {
+        if (inFlight.current?.epoch !== current) {
+          const promise = (async () => {
+            try {
+              const result = await listWorkspaceServices(workspaceId);
+              if (!Array.isArray(result))
+                throw new Error("Invalid workspace service inventory");
+              if (current === epoch.current) {
+                setItems(result);
+                setLoadError("");
+              }
+            } catch (e) {
+              if (current === epoch.current) setLoadError(String(e));
+            } finally {
+              if (inFlight.current?.epoch === current)
+                inFlight.current = undefined;
+            }
+          })();
+          inFlight.current = { epoch: current, promise };
+        }
+        await inFlight.current.promise;
+      } finally {
+        if (foreground && current === epoch.current) setRefreshing(false);
+      }
+    },
+    [workspaceId],
+  );
   useEffect(() => {
     epoch.current++;
     setItems(undefined);
     setError("");
+    setLoadError("");
+    setRefreshing(false);
     setBusy("");
     retry.current = undefined;
-    void refresh();
+    void refresh(true);
     const timer = setInterval(() => void refresh(), 3000);
     return () => {
       epoch.current++;
@@ -88,27 +118,40 @@ export function WorkspaceServices({
       if (current === epoch.current) setBusy("");
     }
   }
+  const Container = embedded ? "section" : Panel;
   return (
-    <section
-      className="fdy-workspace-services"
+    <Container
+      className={`fdy-workspace-services${embedded ? "" : " fdy-workspace-services-panel"}`}
+      role="region"
       aria-label={t("work.workspaceServices")}
     >
-      {showDescription ? <p>{t("work.workspaceServicesNote")}</p> : null}
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => {
-          setError("");
-          void refresh();
-        }}
-      >
-        {t("work.refresh")}
-      </Button>
-      {error ? (
-        <Alert
-          tone="error"
-          title={t(retry.current ? "work.controlFailed" : "work.loadFailed")}
+      <PanelHeader>
+        <div>
+          {!embedded ? <h2>{t("workspaces:services")}</h2> : null}
+          <p>{t("work.workspaceServicesNote")}</p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={refreshing}
+          aria-busy={refreshing}
+          onClick={() => void refresh(true)}
         >
+          {refreshing ? t("work.refreshingServices") : t("work.refresh")}
+        </Button>
+      </PanelHeader>
+      {!canControl ? (
+        <p className="fdy-workspace-services-note">
+          {t("work.servicesReadOnly")}
+        </p>
+      ) : null}
+      {loadError ? (
+        <Alert tone="error" title={t("work.loadFailed")}>
+          {loadError}
+        </Alert>
+      ) : null}
+      {error ? (
+        <Alert tone="error" title={t("work.controlFailed")}>
           {error}
           {retry.current ? (
             <Button
@@ -127,8 +170,10 @@ export function WorkspaceServices({
           ) : null}
         </Alert>
       ) : null}
-      {!items && !error ? (
-        <p role="status">{t("work.loadingServices")}</p>
+      {!items && !loadError ? (
+        <p className="fdy-workspace-services-note" role="status">
+          {t("work.loadingServices")}
+        </p>
       ) : null}
       {items?.map((item) => {
         const pending = needsConfirmation(item);
@@ -149,7 +194,12 @@ export function WorkspaceServices({
                 status={pending ? "pending" : item.observation.status}
                 label={`${t("work.service")} · ${statusLabel}`}
               />
-              <strong>{item.title}</strong>
+              <div className="fdy-workspace-service-identity">
+                <strong>{item.title}</strong>
+                <span role="status">
+                  {busy === item.id ? t("work.applying") : statusLabel}
+                </span>
+              </div>
               <RowMenu
                 label={t("work.actionsFor", { title: item.title })}
                 disabled={Boolean(busy)}
@@ -176,7 +226,7 @@ export function WorkspaceServices({
                 }
               />
             </div>
-            <p>
+            <p className="fdy-workspace-services-note">
               {count > 1
                 ? t("work.sharedService", { count })
                 : t("work.workspaceOwnedService")}
@@ -189,10 +239,13 @@ export function WorkspaceServices({
               {t("work.creatorSession")}
             </Button>
             {item.observation.error ? (
-              <p role="status">{item.observation.error}</p>
+              <Alert tone="error" title={t("work.serviceStatusUnconfirmed")}>
+                {item.observation.error}
+              </Alert>
             ) : null}
-            <details>
+            <details className="fdy-workspace-service-details">
               <summary>{t("work.serviceDetails")}</summary>
+              <p>{t("work.serviceExecutionNote")}</p>
               <p>
                 {t("work.identity")}: <code>{item.id}</code>
               </p>
@@ -211,8 +264,13 @@ export function WorkspaceServices({
           </article>
         );
       })}
-      {items?.length === 0 ? <p>{t("work.noWorkspaceServices")}</p> : null}
-    </section>
+      {items?.length === 0 ? (
+        <EmptyState
+          title={t("work.noWorkspaceServices")}
+          body={t("work.emptyServicesBody")}
+        />
+      ) : null}
+    </Container>
   );
 }
 export function WorkspaceServicesDialog({
@@ -228,13 +286,13 @@ export function WorkspaceServicesDialog({
   return (
     <Dialog
       title={t("work.workspaceServices")}
-      description={t("work.workspaceServicesNote")}
+      description=""
       onClose={onClose}
     >
       <WorkspaceServices
         workspaceId={workspaceId}
         canControl={canControl}
-        showDescription={false}
+        embedded
       />
     </Dialog>
   );

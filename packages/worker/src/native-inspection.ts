@@ -1,3 +1,5 @@
+import { codexQuotaWindows } from "./native-quota.js";
+import { readClaudeQuota } from "./native-claude-quota.js";
 import { nativeSourcePaths } from "./native-runtime-paths.js";
 import { prepareNativeOperation } from "./native-operation.js";
 import { authenticateIsolatedCodex } from "./agent-runtime/codex-auth.js";
@@ -14,8 +16,12 @@ import type {
   NativeAccountInspection,
 } from "@bd777/foundry-protocol";
 import { nativeLoginEnvironment } from "./native-login-environment.js";
-import { resolveClaudeCommand, resolveCodexCommand } from "./native-cli.js";
-import { claudeAccount } from "./native-account.js";
+import {
+  nativeCli,
+  resolveClaudeCommand,
+  resolveCodexCommand,
+} from "./native-cli.js";
+import { claudeAccount, codexAccount } from "./native-account.js";
 import { claudeConfigDir, codexHome } from "./native-homes.js";
 import { claudeRenewalPending, isNativeAccountStatus } from "./native-login.js";
 import { CodexAppServer } from "./agent-runtime/codex-client.js";
@@ -45,9 +51,10 @@ export async function withCodexControl<T>(
   read: (call: (method: string, params: unknown) => Promise<any>) => Promise<T>,
   runtime?: {
     cwd: string;
-    env: NodeJS.ProcessEnv;
+    env?: NodeJS.ProcessEnv;
     args?: string[];
     signal?: AbortSignal;
+    allowRefresh?: boolean;
   },
 ): Promise<T> {
   const releaseRuntime = await acquireRuntime("codex", runtime?.signal);
@@ -83,7 +90,12 @@ export async function withCodexControl<T>(
       runtime?.args ?? ["-c", 'model_provider="openai"'],
     );
     runtime?.signal?.throwIfAborted();
-    await authenticateIsolatedCodex(client, env, command);
+    await authenticateIsolatedCodex(
+      client,
+      env,
+      command,
+      runtime?.allowRefresh ?? true,
+    );
     return await read((method, params) => client!.request(method, params));
   } catch {
     // Native errors may include credential-bearing URLs.
@@ -254,6 +266,17 @@ export async function inspectNativeAccount(
   const sources = nativeSources(runtime);
   const source = requestedSource || sources[0]!;
   const base: NativeAccountInspection = {
+    runtimeGeneration: nativeCli(runtime).generation,
+    authMode:
+      runtime === "codex" && source === sources[0]
+        ? codexAccount()?.mode === "login"
+          ? "subscription"
+          : codexAccount()?.mode === "api_key"
+            ? "api_key"
+            : "unknown"
+        : "unknown",
+    quotaStatus: "unavailable",
+    quotaReason: "native_read_failed",
     runtime,
     source,
     sources,
@@ -284,6 +307,8 @@ export async function inspectNativeAccount(
             ? { plan: pending.subscriptionType }
             : {}),
           status: "local_login",
+          authMode: "subscription",
+          quotaReason: "renewal_pending",
           message:
             "Claude Code's stored login is due for renewal; it renews on its next request. Read from the selected native credential store without running the CLI; online validity and remaining usage are not verified.",
         };
@@ -324,57 +349,61 @@ export async function inspectNativeAccount(
       const account = [parsed.email, parsed.orgName]
         .filter((part): part is string => Boolean(part?.trim()))
         .join(" · ");
-      return {
+      const local: NativeAccountInspection = {
         ...base,
+        authMode: signedIn ? "subscription" : "none",
         ...(signedIn && account ? { accountLabel: account } : {}),
         ...(signedIn && parsed.subscriptionType
           ? { plan: parsed.subscriptionType }
           : {}),
         status: signedIn ? "local_login" : "not_signed_in",
         message: signedIn
-          ? "Claude Code reports local OAuth credentials. Its SDK does not expose an account quota read; online validity and remaining usage are not verified."
+          ? "Claude Code reports local OAuth credentials; remaining usage has not been verified."
           : "Claude Code reports no official login in this configuration.",
       };
+      return signedIn ? readClaudeQuota(local) : local;
     }
-    return await withCodexControl(source, async (call) => {
-      const { account } = await call("account/read", { refreshToken: false });
-      if (account?.type !== "chatgpt")
-        return {
+    return await withCodexControl(
+      source,
+      async (call) => {
+        const { account } = await call("account/read", { refreshToken: false });
+        if (account?.type !== "chatgpt")
+          return {
+            ...base,
+            status: "not_signed_in",
+            authMode: account?.type === "apiKey" ? "api_key" : "none",
+            message:
+              account?.type === "apiKey"
+                ? "This configuration uses an API key, not a ChatGPT account."
+                : "No ChatGPT login in this configuration.",
+          };
+        const local: NativeAccountInspection = {
           ...base,
-          status: "not_signed_in",
-          message:
-            account?.type === "apiKey"
-              ? "This configuration uses an API key, not a ChatGPT account."
-              : "No ChatGPT login in this configuration.",
+          status: "local_login",
+          authMode: "subscription",
+          accountLabel: account.email ?? undefined,
+          plan: account.planType,
+          message: "ChatGPT login found; online usage could not be verified.",
         };
-      const local: NativeAccountInspection = {
-        ...base,
-        status: "local_login",
-        accountLabel: account.email ?? undefined,
-        plan: account.planType,
-        message: "ChatGPT login found; online usage could not be verified.",
-      };
-      try {
-        const result = await call("account/rateLimits/read", {});
-        const limits = result.rateLimits;
-        if (!limits || typeof limits !== "object") return local;
-        return {
-          ...local,
-          status: "verified",
-          message:
-            "Verified by Codex's native account usage read. This is not a model request.",
-          usage: [limits?.primary, limits?.secondary]
-            .filter(Boolean)
-            .map((window) => ({
-              usedPercent: window.usedPercent,
-              windowMinutes: window.windowDurationMins,
-              resetsAt: window.resetsAt,
-            })),
-        };
-      } catch {
-        return local;
-      }
-    });
+        try {
+          const result = await call("account/rateLimits/read", {});
+          const usage = codexQuotaWindows(result);
+          return {
+            ...local,
+            checkedAt: new Date().toISOString(),
+            status: "verified",
+            quotaStatus: usage.length ? "supported" : "unknown",
+            quotaReason: undefined,
+            message:
+              "Verified by Codex's native account usage read. This is not a model request.",
+            usage,
+          };
+        } catch {
+          return local;
+        }
+      },
+      { cwd: homedir(), allowRefresh: false },
+    );
   } catch {
     return base;
   }

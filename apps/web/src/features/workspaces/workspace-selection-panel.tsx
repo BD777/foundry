@@ -22,6 +22,8 @@ import { WorkspaceRow } from "./workspace-row";
 
 interface Props {
   compact?: boolean;
+  /** Icon-only sidebar entry on wide screens. */
+  collapsed?: boolean;
   activeWorkspaceId: string;
   devices: DeviceProjection[];
   workspaces: WorkspaceProjection[];
@@ -116,6 +118,7 @@ export function WorkspaceSelectionPanel(props: Props) {
   if (props.compact)
     return (
       <CompactLocationSwitcher
+        collapsed={props.collapsed}
         device={activeDevice}
         workspace={current}
         onBrowse={props.onBrowse}

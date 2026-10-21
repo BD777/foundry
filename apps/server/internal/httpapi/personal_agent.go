@@ -141,6 +141,13 @@ func (s *Server) handleAddPersonalAgentMemory(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	if _, e := s.primaryKnowledgeVault(r.Context(), agent.UserID); e == nil {
+		writeResult(w, nil, invalid("a Memory Workspace is selected; add new facts to that source"))
+		return
+	} else if !errors.Is(e, store.ErrNotFound) {
+		writeResult(w, nil, e)
+		return
+	}
 	var input store.PersonalAgentMemoryInput
 	if !decodeJSONRequest(w, r, &input) {
 		return

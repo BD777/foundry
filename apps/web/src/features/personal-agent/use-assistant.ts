@@ -3,6 +3,8 @@ import type {
   AgentSession,
   PersonalAgent,
   PersonalAgentListItem,
+  PersonalAgentItemPlan,
+  PersonalAgentOperation,
   PersonalAgentOverview,
   PersonalAgentProposal,
   PersonalAgentTask,
@@ -15,6 +17,7 @@ import {
   getPersonalAgent,
   isPersonalAgentUnavailable,
   listPersonalAgentList,
+  listPersonalAgentOperations,
   listPersonalAgentProposals,
   listPersonalAgentTasks,
   resumePersonalAgent,
@@ -54,6 +57,7 @@ export function useAssistant() {
   const [load, setLoad] = useState<AssistantLoad>({ state: "loading" });
   const [proposals, setProposals] = useState<PersonalAgentProposal[]>([]);
   const [tasks, setTasks] = useState<PersonalAgentTask[]>([]);
+  const [operations, setOperations] = useState<PersonalAgentOperation[]>([]);
   const [listsError, setListsError] = useState("");
   const [listItems, setListItems] = useState<PersonalAgentListItem[]>([]);
   const [listItemsError, setListItemsError] = useState("");
@@ -62,7 +66,10 @@ export function useAssistant() {
   const watched = useRef({ workspaceId, sessions: new Set<string>() });
   watched.current = {
     workspaceId,
-    sessions: new Set(tasks.flatMap((task) => task.sessionId ?? [])),
+    sessions: new Set([
+      ...tasks.flatMap((task) => task.sessionId ?? []),
+      ...operations.flatMap((op) => op.sessionId ?? []),
+    ]),
   };
 
   // An assistant without a time zone gets this browser's, offered once
@@ -128,7 +135,13 @@ export function useAssistant() {
   }, []);
 
   const readLists = useCallback(async () => {
-    await Promise.all([readWork(), readListItems()]);
+    await Promise.all([
+      readWork(),
+      readListItems(),
+      listPersonalAgentOperations()
+        .then(setOperations)
+        .catch((e) => setListsError(serverErrorText(e))),
+    ]);
   }, [readWork, readListItems]);
 
   const reload = useCallback(async () => {
@@ -178,12 +191,13 @@ export function useAssistant() {
     agent,
     proposals,
     tasks,
+    operations,
     listsError,
     listItems,
     listItemsError,
     reload,
     replaceAgent,
-    /** Stops everything; answers the server's fixed reply. */
+    /** Pauses new dispatch and requests execution stops; receipts remain separate. */
     async stopAll(): Promise<string> {
       const answer = await stopPersonalAgent();
       replaceAgent(answer.agent);
@@ -214,9 +228,20 @@ export function useAssistant() {
     /** Ticks an item done, or reopens it. */
     async tickItem(item: PersonalAgentListItem, done: boolean): Promise<void> {
       await updatePersonalAgentListItem(item.id, {
+        revision: item.revision,
         status: done ? "done" : "open",
       });
       await readListItems();
+    },
+    async planItem(
+      item: PersonalAgentListItem,
+      plan: PersonalAgentItemPlan,
+    ): Promise<void> {
+      await updatePersonalAgentListItem(item.id, {
+        revision: item.revision,
+        plan,
+      });
+      await readLists();
     },
     /** Saves the person's words; nothing is sent when nothing changed. */
     async editItem(

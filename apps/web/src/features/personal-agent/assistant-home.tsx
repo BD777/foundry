@@ -14,11 +14,10 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { serverErrorText } from "../../lib/errors";
+import { navigateToChat } from "../../lib/in-app-navigation";
 import {
   answerableProposal,
-  answeredWithoutModel,
   assistantActivity,
-  assistantRuntime,
   channelCommand,
   placeProposals,
 } from "./assistant-model";
@@ -28,10 +27,7 @@ import { PersonList } from "./person-list";
 import { ProposalCard } from "./proposal-card";
 import { TaskList } from "./task-list";
 import { useAssistant, type AssistantController } from "./use-assistant";
-import {
-  useAssistantConversation,
-  type AssistantRuntime,
-} from "./use-assistant-conversation";
+import { useAssistantConversation } from "./use-assistant-conversation";
 
 export interface AssistantHomeProps {
   /** Every computer the person can see; their own ones carry `owned`. */
@@ -49,7 +45,6 @@ export interface AssistantHomeProps {
  * project directly and never changes the project the rest of Foundry shows.
  */
 export function AssistantHome({
-  agentProfiles,
   devices,
   workspaces,
   onEvent,
@@ -66,11 +61,6 @@ export function AssistantHome({
         return (
           <AssistantHomeReady
             agent={agent}
-            runtime={assistantRuntime(
-              agentProfiles,
-              agent.homeDeviceId,
-              agent.settings,
-            )}
             assistant={assistant}
             devices={devices}
             home={home}
@@ -88,7 +78,6 @@ export function AssistantHome({
 
 function AssistantHomeReady({
   agent,
-  runtime,
   assistant,
   devices,
   home,
@@ -97,7 +86,6 @@ function AssistantHomeReady({
   workspaces,
 }: {
   agent: PersonalAgent;
-  runtime: AssistantRuntime | undefined;
   assistant: AssistantController;
   devices: DeviceProjection[];
   home: DeviceProjection | undefined;
@@ -114,6 +102,16 @@ function AssistantHomeReady({
   const [switchError, setSwitchError] = useState("");
   const stopped = agent.state === "stopped";
   const name = agent.settings.assistantName.trim() || t("defaultName");
+  const namedTasks = useMemo(
+    () =>
+      assistant.tasks.map((task) => ({
+        ...task,
+        title:
+          assistant.listItems.find((item) => item.taskId === task.id)?.text ??
+          task.title,
+      })),
+    [assistant.tasks, assistant.listItems],
+  );
   const notice = (message: string) =>
     onEvent({ type: "notice.requested", message });
 
@@ -163,17 +161,9 @@ function AssistantHomeReady({
       );
       return "replied";
     }
-    if (stopped) throw new Error(t("conversation.stopped"));
-    if (!runtime)
-      throw new Error(
-        t("conversation.noRuntime", {
-          device: home?.label ?? agent.homeDeviceId,
-        }),
-      );
     await conversation.send(
       text,
       options?.idempotencyKey ?? crypto.randomUUID(),
-      runtime,
     );
     return true;
   }
@@ -221,6 +211,26 @@ function AssistantHomeReady({
       });
     }
     const last = conversation.lines[conversation.lines.length - 1];
+    if (conversation.waitingInbox.length) {
+      const reason = conversation.waitingInbox[0]?.waitingReason;
+      items.push({
+        id: "assistant-inbox-receipt",
+        role: "bot",
+        kind: "waiting",
+        text: t("inbox.received", { count: conversation.waitingInbox.length }),
+        title: t(
+          reason === "device_offline"
+            ? "inbox.deviceOffline"
+            : reason === "worker_update_required"
+              ? "inbox.workerUpdateRequired"
+              : reason === "account_unavailable"
+                ? "inbox.accountUnavailable"
+                : reason === "assistant_paused"
+                  ? "inbox.paused"
+                  : "inbox.pending",
+        ),
+      });
+    }
     const activity = assistantActivity(
       conversation.latestSession,
       devices,
@@ -251,6 +261,7 @@ function AssistantHomeReady({
   }, [
     conversation.lines,
     conversation.latestSession,
+    conversation.waitingInbox,
     devices,
     assistant.proposals,
     t,
@@ -356,12 +367,8 @@ function AssistantHomeReady({
         <Conversation
           active={conversation.working}
           activeExecutionId={conversation.latestTurnId}
-          canSendDuringExecution={(text) =>
-            answeredWithoutModel(text, stopped, assistant.proposals)
-          }
+          canSendDuringExecution={() => true}
           composer={{ mode: "plain" }}
-          disabled={!homeOnline}
-          disabledReason={t("conversation.offline")}
           history={history}
           inputLabel={t("conversation.inputLabel")}
           messages={messages}
@@ -374,13 +381,85 @@ function AssistantHomeReady({
         />
       </section>
       <aside className="fdy-pa-home-side">
+        {conversation.inboxError ? (
+          <Alert tone="error" title={t("inbox.readFailed")}>
+            {conversation.inboxError}
+          </Alert>
+        ) : null}
+        {conversation.waitingInbox.some(
+          (entry) => entry.status === "waiting" && !entry.sessionId,
+        ) ? (
+          <section aria-label={t("inbox.savedWaiting")}>
+            <h2 className="fdy-pa-side-title">{t("inbox.savedWaiting")}</h2>
+            <p className="fdy-pa-field-hint">{t("inbox.retrySettingsHint")}</p>
+            <ul className="fdy-pa-items">
+              {conversation.waitingInbox
+                .filter(
+                  (entry) => entry.status === "waiting" && !entry.sessionId,
+                )
+                .map((entry) => (
+                  <li className="fdy-pa-item" key={entry.id}>
+                    <p>{entry.text}</p>
+                    <Button
+                      size="sm"
+                      disabled={!!conversation.retryingInboxId}
+                      onClick={() => void conversation.retryInbox(entry)}
+                    >
+                      {t("inbox.retryWithSettings")}
+                    </Button>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ) : null}
+        {conversation.failedInbox.length ? (
+          <section aria-label={t("inbox.failedTitle")}>
+            <h2 className="fdy-pa-side-title">{t("inbox.failedTitle")}</h2>
+            <ul className="fdy-pa-items">
+              {conversation.failedInbox.map((entry) => (
+                <li className="fdy-pa-item" key={entry.id}>
+                  <p>{entry.text}</p>
+                  <p className="fdy-pa-muted">
+                    {entry.resultError || t("inbox.failedTitle")}
+                  </p>
+                  <Button
+                    size="sm"
+                    disabled={Boolean(conversation.retryingInboxId)}
+                    onClick={() => void conversation.retryInbox(entry)}
+                  >
+                    {t("inbox.retrySaved")}
+                  </Button>
+                  {entry.sessionId ? (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => navigateToChat(entry.sessionId!)}
+                    >
+                      {t("inbox.openResult")}
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <PersonList
           error={assistant.listItemsError}
           items={assistant.listItems}
           onDelete={assistant.deleteItem}
           onEdit={assistant.editItem}
           onTick={assistant.tickItem}
-          tasks={assistant.tasks}
+          tasks={namedTasks}
+          operations={assistant.operations}
+          workspaces={workspaces}
+          onPlan={assistant.planItem}
+          onRefresh={assistant.reload}
+          onContinue={async (item) => {
+            await send(
+              t("planning.continuePrompt", { id: item.id, text: item.text }),
+              [],
+            );
+          }}
         />
         <TaskList
           error={assistant.listsError}
@@ -388,7 +467,7 @@ function AssistantHomeReady({
           projectName={(id) =>
             workspaces.find((workspace) => workspace.id === id)?.name
           }
-          tasks={assistant.tasks}
+          tasks={namedTasks}
         />
       </aside>
     </div>

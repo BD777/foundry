@@ -44,6 +44,24 @@ func (c *daemonConnection) dispatchAgentSession(session store.AgentSession) erro
 }
 
 func (c *daemonConnection) sendAgentSession(session store.AgentSession) error {
+	if session.Input.ExecutionBudget != nil && (!c.hasCapability("role_run_budgets_v1") || !c.hasCapability("exact_input_cancel_v1")) {
+		return fmt.Errorf("the active execution host needs an update to enforce role run deadlines")
+	}
+	if session.Input.ExecutionBudget != nil {
+		if _, err := ensureAssistantRunControlRecord(context.Background(), c.hub.store, session); err != nil {
+			return err
+		}
+	}
+	if controls, ok := c.hub.store.(store.PersonalAgentRunControlStore); ok {
+		allowed, err := controls.AuthorizePersonalAgentDispatch(context.Background(), session.ID, session.Input.ID)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return nil
+		}
+	}
+
 	spec, err := c.sessionLaunchSpec(context.Background(), session)
 	if err != nil {
 		return err

@@ -1,136 +1,200 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { CircleAlert, UsersRound } from "lucide-react";
 import type { DeviceProjection } from "@bd777/foundry-protocol";
 import { dismissSystemAccountNotice } from "../../api";
 import { Alert } from "../../components/ui/alert";
-import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Popover } from "../../components/ui/popover";
 import {
   accountSharers,
   firstAcceptedShare,
   joinNames,
   pendingAccountShareNotices,
-  type AccountShareNotice,
 } from "../../lib/device-sharing";
 import { serverErrorText } from "../../lib/errors";
 import { dateOnly } from "../../lib/time-format";
 
-/**
- * Other people's devices run under this device's system account: they share
- * its files and Claude/Codex sign-ins. Labelled as sharing someone chose,
- * never as isolation.
- */
-export function AccountShareLabel({ device }: { device: DeviceProjection }) {
-  const { t, i18n } = useTranslation("devices");
-  const names = accountSharers(device);
-  if (!names.length) return null;
-  return (
-    <Badge tone="neutral">
-      {t("accountShare.label", { names: joinNames(names, i18n.language) })}
-    </Badge>
-  );
-}
-
-/** On the device's page: who shares its account, what that means, since when. */
-export function AccountShareExplanation({
-  device,
-}: {
-  device: DeviceProjection;
-}) {
-  const { t, i18n } = useTranslation("devices");
-  const names = accountSharers(device);
-  if (!names.length) return null;
-  const joined = joinNames(names, i18n.language);
-  const accepted = firstAcceptedShare(device);
-  return (
-    <Alert title={t("accountShare.label", { names: joined })}>
-      <p>{t("accountShare.body", { names: joined, count: names.length })}</p>
-      <p>
-        {accepted?.acceptedAt
-          ? t("accountShare.chosen", {
-              date: dateOnly(accepted.acceptedAt),
-              acceptedBy: accepted.acceptedBy ?? accepted.ownerName,
-            })
-          : t("accountShare.noticed", { count: names.length })}
-      </p>
-    </Alert>
-  );
-}
-
-/**
- * The one notice for the owner who was there first: someone else now uses
- * the system account of their device. "Got it" dismisses it; the label stays.
- */
-export function AccountShareNotices({
-  devices,
-  onRefresh,
-}: {
-  devices: readonly DeviceProjection[];
-  onRefresh: () => Promise<void>;
-}) {
-  const notices = pendingAccountShareNotices(devices);
-  if (!notices.length) return null;
-  return (
-    <>
-      {notices.map((notice) => (
-        <AccountShareNoticeAlert
-          key={notice.device.id}
-          notice={notice}
-          onRefresh={onRefresh}
-        />
-      ))}
-    </>
-  );
-}
-
-function AccountShareNoticeAlert({
-  notice,
-  onRefresh,
-}: {
-  notice: AccountShareNotice;
-  onRefresh: () => Promise<void>;
-}) {
-  const { t, i18n } = useTranslation("devices");
+/** The notice belongs to this exact device identity, independently of its label. */
+function useShareNotice(
+  device: DeviceProjection,
+  onRefresh: () => Promise<void>,
+) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function dismiss(): Promise<void> {
+  const [acknowledged, setAcknowledged] = useState("");
+  const [error, setError] = useState<{ message: string; afterSave: boolean }>();
+  const signature = JSON.stringify([
+    device.id,
+    device.sharesSystemAccountWith
+      ?.filter((s) => s.noticePending)
+      .map((s) => [s.deviceId, s.acceptedAt])
+      .sort(),
+  ]);
+  const pending =
+    device.owned === true &&
+    pendingAccountShareNotices([device]).length > 0 &&
+    acknowledged !== signature;
+  const saved = acknowledged === signature;
+  async function run(dismiss: boolean) {
+    if (busy) return;
     setBusy(true);
-    setError("");
+    setError(undefined);
+    let afterSave = !dismiss;
     try {
-      await dismissSystemAccountNotice(notice.device.id);
+      if (dismiss) {
+        await dismissSystemAccountNotice(device.id);
+        setAcknowledged(signature);
+        afterSave = true;
+      }
       await onRefresh();
     } catch (reason) {
-      setError(serverErrorText(reason));
+      setError({ message: serverErrorText(reason), afterSave });
     } finally {
       setBusy(false);
     }
   }
+  return {
+    busy,
+    error,
+    pending,
+    saved,
+    confirm: () => run(true),
+    retryRefresh: () => run(false),
+  };
+}
+type NoticeState = ReturnType<typeof useShareNotice>;
 
+/** Card affordance is a sibling of the navigation button, never nested in it. */
+export function AccountShareIcon({
+  device,
+  onRefresh,
+}: {
+  device: DeviceProjection;
+  onRefresh: () => Promise<void>;
+}) {
+  const { t } = useTranslation("devices");
+  const notice = useShareNotice(device, onRefresh);
+  if (!accountSharers(device).length) return null;
+  const label = t(
+    notice.pending ? "accountShare.unreadFor" : "accountShare.detailsFor",
+    { device: device.label },
+  );
+  const Icon = notice.pending ? CircleAlert : UsersRound;
+  return (
+    <Popover
+      openOnHover
+      label={t("accountShare.detailsFor", { device: device.label })}
+      className="fdy-account-share-popover"
+      trigger={
+        <Button
+          variant="icon"
+          size="icon"
+          className="fdy-account-share-trigger"
+          aria-label={label}
+        >
+          <Icon size={18} aria-hidden="true" />
+        </Button>
+      }
+    >
+      <strong>{device.label}</strong>
+      <AccountShareFacts device={device} />
+      <ShareNoticeAction notice={notice} />
+    </Popover>
+  );
+}
+
+/** Same facts in the popover and full device details, without duplicate alerts. */
+export function AccountShareExplanation({
+  device,
+  onRefresh,
+}: {
+  device: DeviceProjection;
+  onRefresh: () => Promise<void>;
+}) {
+  const { t, i18n } = useTranslation("devices");
+  const notice = useShareNotice(device, onRefresh);
+  const names = accountSharers(device);
+  if (!names.length) return null;
+  return (
+    <Alert
+      title={t("accountShare.label", {
+        names: joinNames(names, i18n.language),
+      })}
+    >
+      <AccountShareFacts device={device} />
+      <ShareNoticeAction notice={notice} />
+    </Alert>
+  );
+}
+
+function AccountShareFacts({ device }: { device: DeviceProjection }) {
+  const { t, i18n } = useTranslation("devices");
+  const names = accountSharers(device),
+    accepted = firstAcceptedShare(device);
+  return (
+    <div className="fdy-account-share-facts">
+      <p>
+        {t("accountShare.body", {
+          names: joinNames(names, i18n.language),
+          count: names.length,
+        })}
+      </p>
+      <p>
+        {accepted?.acceptedAt
+          ? accepted.acceptedBy
+            ? t("accountShare.chosen", {
+                date: dateOnly(accepted.acceptedAt),
+                acceptedBy: accepted.acceptedBy,
+              })
+            : t("accountShare.acceptedOn", {
+                date: dateOnly(accepted.acceptedAt),
+              })
+          : t("accountShare.noticed", { count: names.length })}
+      </p>
+    </div>
+  );
+}
+
+function ShareNoticeAction({ notice }: { notice: NoticeState }) {
+  const { t } = useTranslation("devices");
   return (
     <>
-      <Alert tone="warning" title={t("accountShare.noticeTitle")}>
-        <p>
-          {t("accountShare.notice", {
-            names: joinNames(notice.names, i18n.language),
-            count: notice.names.length,
-            device: notice.device.label,
-          })}
-        </p>
+      {notice.pending ? (
         <div className="fdy-account-share-actions">
+          <p>{t("accountShare.noticeTitle")}</p>
           <Button
-            aria-busy={busy}
-            disabled={busy}
-            onClick={() => void dismiss()}
             size="sm"
+            disabled={notice.busy}
+            aria-busy={notice.busy}
+            onClick={() => void notice.confirm()}
           >
-            {busy ? t("accountShare.dismissing") : t("accountShare.dismiss")}
+            {notice.busy
+              ? t("accountShare.dismissing")
+              : t("accountShare.dismiss")}
           </Button>
         </div>
-      </Alert>
-      {error ? (
-        <Alert tone="error" title={t("accountShare.dismissFailed")}>
-          {error}
+      ) : notice.saved ? (
+        <p role="status">{t("accountShare.read")}</p>
+      ) : null}
+      {notice.error ? (
+        <Alert
+          tone="error"
+          title={t(
+            notice.error.afterSave
+              ? "accountShare.refreshFailed"
+              : "accountShare.dismissFailed",
+          )}
+        >
+          <p>{notice.error.message}</p>
+          {notice.error.afterSave ? (
+            <Button
+              size="sm"
+              disabled={notice.busy}
+              onClick={() => void notice.retryRefresh()}
+            >
+              {t("list.refresh")}
+            </Button>
+          ) : null}
         </Alert>
       ) : null}
     </>

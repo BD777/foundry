@@ -396,6 +396,7 @@ class ControlConnection {
   // Every round: folders gone or back, then the native chats of those there.
   private workspaceRound(): void {
     this.roster.checkFolders();
+    this.roster.checkContextFiles();
     this.syncKnownNativeChats();
   }
 

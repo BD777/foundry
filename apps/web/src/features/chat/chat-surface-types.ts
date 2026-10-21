@@ -1,3 +1,4 @@
+import type { AccountUsageTarget } from "./chat-account-usage-model";
 import type { ReactNode } from "react";
 import type {
   AgentModelOption,
@@ -99,6 +100,8 @@ export interface ChatSurfaceProps {
   attachments?: ChatAttachment[];
   chats: ChatListItem[];
   chatTitle: ReactNode;
+  accountUsage?: AccountUsageTarget;
+  usageCompletion?: string;
   contextCard?: ChatContextCardData;
   /** The side panel (the context card) is on screen, or no longer is. */
   onContextPanelVisibleChange?: (visible: boolean) => void;

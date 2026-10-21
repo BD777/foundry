@@ -143,6 +143,19 @@ export interface NativeCliInstallResult {
 }
 
 export interface NativeAccountInspection {
+  /** Native login/config generation; a response for another identity is never reusable. */
+  runtimeGeneration?: string;
+  /** The native interface can return a cached observation without its original timestamp. */
+  quotaMayBeCached?: boolean;
+  authMode?: "subscription" | "api_key" | "none" | "unknown";
+  quotaStatus?:
+    "supported" | "unknown" | "unavailable" | "unsupported" | "error";
+  quotaReason?:
+    | "renewal_pending"
+    | "native_read_failed"
+    | "not_exposed"
+    | "account_changed";
+
   runtime: "claude" | "codex";
   source: string;
   sources: string[];
@@ -156,7 +169,11 @@ export interface NativeAccountInspection {
 }
 
 export interface NativeAccountUsage {
-  usedPercent: number;
+  /** Stable native bucket/window id; older workers may omit it. */
+  id?: string;
+  label?: string;
+  /** Percentage USED, never remaining. Missing means unknown, not zero. */
+  usedPercent?: number;
   windowMinutes?: number;
   resetsAt?: number;
 }

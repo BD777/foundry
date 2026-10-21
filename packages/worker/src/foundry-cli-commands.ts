@@ -334,6 +334,33 @@ export const foundryCommands: Record<
     },
   },
   assistant: {
+    knowledge: {
+      tool: "read_knowledge",
+      positional: "publicationId",
+      flags: {
+        "--entry": flag("entryId"),
+        "--after-entry": flag("afterEntryId"),
+        "--query": flag("query"),
+        "--sources": flag("listSources", "boolean"),
+      },
+    },
+    dispatch: {
+      tool: "dispatch_item",
+      positional: "itemId",
+      flags: {
+        "--intent-revision": flag("intentRevision", "number"),
+        "--step": flag("stepKey"),
+        "--workspace": flag("workspaceId"),
+        "--session": flag("sessionId"),
+        "--replace-owner": flag("replaceOwner", "boolean"),
+        ...prompt,
+      },
+    },
+    "cancel-dispatch": {
+      tool: "cancel_item_dispatch",
+      positional: "operationId",
+      flags: { "--revision": flag("revision", "number") },
+    },
     remember: {
       tool: "remember",
       positional: "op",
@@ -342,6 +369,12 @@ export const foundryCommands: Record<
         "--content": field("item", "content"),
         "--quote": field("item", "quote"),
         "--inferred": field("item", "inferred", "boolean"),
+        "--intent-key": field("item", "intentKey"),
+        "--title": field("item", "title"),
+        "--vault": field("item", "vaultId"),
+        "--revision": field("item", "expectedRevision", "number"),
+        "--hash": field("item", "expectedHash"),
+        "--expires": field("item", "expiresAt"),
       },
     },
     rule: {
@@ -360,6 +393,10 @@ export const foundryCommands: Record<
       positional: "op",
       flags: {
         "--id": field("item", "id"),
+        "--revision": field("item", "revision", "number"),
+        "--intent-key": field("item", "intentKey"),
+        "--plan": field("item", "plan", "json"),
+        "--plan-file": field("item", "plan", "jsonFile"),
         "--text": field("item", "text"),
         "--when": field("item", "when"),
         "--at": field("item", "at"),

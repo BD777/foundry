@@ -8,6 +8,8 @@ import { SessionWorkSection } from "../src/features/chat/chat-context-work.tsx";
 import {
   workActions,
   isCurrentWork,
+  isSidebarWork,
+  sidebarWorkCounts,
 } from "../src/features/chat/chat-work-state.ts";
 import { isOutstandingWork } from "@bd777/foundry-protocol";
 function work(overrides = {}) {
@@ -85,7 +87,11 @@ test("unassigned sources have their own group and pending controls remain visibl
         }),
       ],
       operations: [
-        { id: "operation", state: "unknown", unmanaged: 1, items: [] },
+        {
+          id: "operation",
+          state: "unknown",
+          items: [{ id: "work_a", revision: 2 }],
+        },
       ],
       coverage: {
         hostSchedules: "partial",
@@ -101,7 +107,7 @@ test("unassigned sources have their own group and pending controls remain visibl
   );
   assert.match(html, /work\.unassigned/);
   assert.match(html, /Unrelated cron/);
-  assert.match(html, /work\.unmanaged/);
+  assert.match(html, /work\.receipt/);
   assert.match(html, /work\.barrier/);
   const readonly = renderToStaticMarkup(
     createElement(SessionWorkSection, { controller, canControl: false }),
@@ -178,11 +184,11 @@ test("an empty inventory contributes no heading, controls or discovery placehold
   );
 });
 
-test("an empty inventory still exposes unresolved controls and read failures", () => {
+test("an empty visible inventory hides unscoped receipts but keeps read failures", () => {
   const pending = renderWork([], {
     operations: [{ id: "stop", state: "pending", items: [] }],
   });
-  assert.match(pending, /work\.receipt/);
+  assert.equal(pending, "");
   assert.doesNotMatch(pending, /<button/);
   const failed = renderWork([], {}, { error: "Device disconnected" });
   assert.match(failed, /Device disconnected/);
@@ -198,7 +204,7 @@ test("completed and stopped schedules collapse into history while paused schedul
         observation: { status, confirmedRevision: 2 },
       }),
     ]);
-    assert.match(html, /work\.history/);
+    assert.match(html, /work\.timerHistory/);
     assert.match(html, /aria-expanded="false"/);
     assert.match(html, /<h3>work\.title<\/h3>/);
     assert.doesNotMatch(
@@ -215,7 +221,7 @@ test("completed and stopped schedules collapse into history while paused schedul
   assert.match(paused, /Older inspection/);
   assert.match(paused, /work\.paused/);
   assert.match(paused, /work\.actionsFor/);
-  assert.doesNotMatch(paused, /work\.history/);
+  assert.doesNotMatch(paused, /work\.timerHistory/);
 });
 
 test("controls have concrete row targets and pending work cannot be prematurely archived or restarted", () => {
@@ -285,6 +291,7 @@ test("a failed action offers a real retry, while a read failure offers refresh",
     {
       error: "Response lost",
       controlError: "Response lost",
+      controlTargetId: "work_a",
       retryControl: async () => {},
     },
   );
@@ -300,52 +307,51 @@ test("a failed action offers a real retry, while a read failure offers refresh",
   assert.doesNotMatch(readFailure, /work\.retryControl/);
 });
 
-test("bulk stop is available for multiple actual targets, never empty, history-only or read-only", () => {
-  const active = [
+test("the sidebar exposes no conversation-wide action, even with multiple visible timers", () => {
+  const items = [
     work(),
-    work({
-      id: "work_b",
-      title: "Collector",
-      kind: "process",
-      observation: { status: "running", confirmedRevision: 2 },
-    }),
+    work({ id: "second" }),
+    work({ id: "hidden", kind: "process" }),
   ];
-  const html = renderWork(active);
-  assert.match(html, /aria-label="work\.actions"/);
-  const ended = active.map((w) => ({
-    ...w,
-    desiredState: "stopped",
-    observation: { status: "stopped", confirmedRevision: 2 },
-  }));
-  assert.doesNotMatch(renderWork(ended), /aria-label="work\.actions"/);
-  assert.doesNotMatch(
-    renderWork([work(), ended[1]]),
-    /aria-label="work\.actions"/,
-  );
-  assert.doesNotMatch(renderWork(), /aria-label="work\.actions"/);
-  assert.doesNotMatch(
-    renderWork(active, {}, {}, false),
-    /aria-label="work\.actions"/,
-  );
+  const html = renderWork(items);
+  assert.doesNotMatch(html, /aria-label="work\.actions"|work\.stopAll/);
+  assert.match(html, /data-work-id="work_a"/);
+  assert.match(html, /data-work-id="second"/);
+  assert.doesNotMatch(html, /data-work-id="hidden"/);
 });
 
-test("a discovery receipt does not relabel ended tasks as ongoing executions", () => {
-  const html = renderWork(
-    [
-      work({
-        desiredState: "stopped",
-        observation: { status: "stopped", confirmedRevision: 2 },
-      }),
-    ],
-    {
+test("hidden or mixed-target receipts never leak into timer history", () => {
+  const ended = work({
+    desiredState: "stopped",
+    observation: { status: "stopped", confirmedRevision: 2 },
+  });
+  const hidden = work({ id: "process", kind: "process" });
+  for (const targets of [
+    [],
+    [{ id: "process" }],
+    [{ id: "work_a" }, { id: "process" }],
+  ]) {
+    const html = renderWork([ended, hidden], {
       operations: [
-        { id: "bulk", action: "stop_all", state: "pending", items: [] },
+        { id: "bulk", action: "stop_all", state: "pending", items: targets },
       ],
-    },
+    });
+    assert.match(html, /work\.timerHistory/);
+    assert.doesNotMatch(html, /work\.receipt|work\.discoveryPending/);
+  }
+  assert.match(
+    renderWork([ended], {
+      operations: [
+        {
+          id: "single",
+          action: "stop",
+          state: "pending",
+          items: [{ id: "work_a" }],
+        },
+      ],
+    }),
+    /work\.receipt/,
   );
-  assert.match(html, /work\.discoveryPending/);
-  assert.match(html, /<h3>work\.title<\/h3>/);
-  assert.doesNotMatch(html, /work\.stopAll/);
 });
 
 test("runtime helpers and foreground processes contribute neither task rows nor bulk stop targets", () => {
@@ -413,7 +419,7 @@ test("native subagents remain read-only with a focusable icon naming type and st
     observation: { status: "running", confirmedRevision: 2 },
   });
   const html = renderWork([item]);
-  assert.match(html, /work\.group\.agent/);
+  assert.match(html, /work\.agentsTitle/);
   assert.match(html, /work\.nativeAgent/);
   assert.match(
     html,
@@ -423,16 +429,21 @@ test("native subagents remain read-only with a focusable icon naming type and st
   assert.doesNotMatch(html, /aria-haspopup="menu"|work\.unassigned/);
 });
 
-test("shared services expose one entry and never contribute to conversation bulk stops", () => {
+test("workspace services stay in inventory but are absent from the conversation sidebar", () => {
   const shared = work({
     kind: "process",
+    title: "Protected shared service",
     relatedSessionIds: ["consumer"],
     sharedSessionCount: 1,
   });
-  const html = renderWork([shared, work({ id: "other" })]);
-  assert.match(html, /work\.sharedService/);
-  assert.match(html, /work\.serviceOwner/);
-  assert.doesNotMatch(html, /work\.stopAllScope/);
+  const before = structuredClone(shared);
+  const html = renderWork([shared, work({ id: "timer" })]);
+  assert.doesNotMatch(
+    html,
+    /Protected shared service|work\.sharedService|work\.serviceOwner/,
+  );
+  assert.deepEqual(shared, before);
+  assert.equal(renderWork([shared]), "");
 });
 
 test("an acknowledged stop intent never hides a still-running execution", () => {
@@ -454,7 +465,55 @@ test("work keeps its title for ended-only history and hides an empty section", (
     const html = renderWork(items);
     assert.match(html, /<h3>work\.title<\/h3>/);
     assert.match(html, /aria-expanded="false"/);
-    assert.match(html, /work\.history/);
+    assert.match(html, /work\.timerHistory/);
   }
   assert.equal(renderWork([]), "");
+});
+
+test("119 mixed records have timer-only counts and separate agent history without mutating inventory", async () => {
+  const { mixedSidebarInventory } =
+    await import("./fixtures/timer-sidebar-data.ts");
+  const items = mixedSidebarInventory();
+  const before = structuredClone(items);
+  assert.equal(items.length, 119);
+  assert.deepEqual(sidebarWorkCounts(items), { timers: 2, agents: 2 });
+  assert.equal(items.filter(isSidebarWork).length, 7);
+  const html = renderWork(items);
+  const timerSection = html.match(
+    /<section[^>]+data-work-kind="schedule"[^>]*>([\s\S]*?)<\/section>/,
+  )?.[1];
+  const agentSection = html.match(
+    /<section[^>]+data-work-kind="agent"[^>]*>([\s\S]*?)<\/section>/,
+  )?.[1];
+  assert.ok(timerSection && agentSection);
+  assert.match(timerSection, /timer-active|timer-native/);
+  assert.match(timerSection, /work\.timerHistory/);
+  assert.doesNotMatch(
+    timerSection,
+    /agent-child|agent-native|work\.agentHistory/,
+  );
+  assert.match(agentSection, /agent-child|agent-native/);
+  assert.match(agentSection, /work\.agentHistory/);
+  assert.doesNotMatch(agentSection, /timer-active|work\.timerHistory/);
+  assert.doesNotMatch(
+    html,
+    /command-\d+|Workspace durable service|work\.stopAll|aria-label="work\.actions"/,
+  );
+  assert.deepEqual(items, before);
+  const commandsOnly = items.filter((item) => item.kind === "process");
+  assert.equal(renderWork(commandsOnly), "");
+  assert.deepEqual(sidebarWorkCounts(commandsOnly), { timers: 0, agents: 0 });
+});
+
+test("errors for hidden control targets do not offer a retry in the timer panel", () => {
+  const html = renderWork(
+    [work(), work({ id: "hidden-service", kind: "process" })],
+    {},
+    {
+      error: "Hidden service control failed",
+      controlError: "Hidden service control failed",
+      controlTargetId: "hidden-service",
+    },
+  );
+  assert.doesNotMatch(html, /Hidden service control failed|work\.retryControl/);
 });

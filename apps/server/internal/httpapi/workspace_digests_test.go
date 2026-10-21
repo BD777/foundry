@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,10 +22,11 @@ import (
 // digestDaemon plays the assistant's home device: it answers file reads
 // and hands over the summary sessions it is given.
 type digestDaemon struct {
-	t       *testing.T
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-	runs    chan wsRunSessionPayload
+	ignoreCancel atomic.Bool
+	t            *testing.T
+	conn         *websocket.Conn
+	writeMu      sync.Mutex
+	runs         chan wsRunSessionPayload
 }
 
 func (d *digestDaemon) write(id, messageType string, payload any) {
@@ -37,7 +39,7 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 	t.Helper()
 	conn := dialDaemonForTest(t, live)
 	writeWSForTest(t, conn, "hello", map[string]any{
-		"capabilities":     []string{store.DaemonCapabilityWorkspaceCreate},
+		"capabilities":     []string{store.DaemonCapabilityWorkspaceCreate, "role_run_budgets_v1", "exact_input_cancel_v1", "context_files_v1"},
 		"activeSessionIds": []string{},
 		"device":           map[string]any{"id": "dev_home", "label": "MacBook", "status": "connected"},
 		"workspace":        map[string]any{"id": "ws_pa", "name": "Assistant", "localPath": "/home/me/Foundry/personal-agent"},
@@ -67,6 +69,13 @@ func connectDigestDaemon(t *testing.T, live *httptest.Server) *digestDaemon {
 					"workspaceId": read.WorkspaceID, "path": read.Path,
 					"content": "# Budget\n\nTracks the family's spending by month.\n\nRun `make`.\n",
 				})
+			case wsCancelSessionType:
+				if daemon.ignoreCancel.Load() {
+					continue
+				}
+				var cancel wsCancelSessionPayload
+				_ = json.Unmarshal(envelope.Payload, &cancel)
+				daemon.write(envelope.ID, wsSessionCanceledType, map[string]any{"sessionId": cancel.SessionID, "inputId": cancel.InputID, "stopped": true})
 			case wsRunSessionType:
 				var run wsRunSessionPayload
 				if json.Unmarshal(envelope.Payload, &run) == nil {

@@ -145,15 +145,43 @@ export function installDeviceConnector(
 export function beginDeviceConnectorSignIn(
   deviceId: string,
   kind: string,
+  requestId: string,
+  authorization?: { id: string; revision: number },
 ): Promise<DeviceConnectorSignIn> {
-  return request("POST", `${deviceConnectorPath(deviceId, kind)}/sign-in`);
+  return request("POST", `${deviceConnectorPath(deviceId, kind)}/sign-in`, {
+    body: {
+      requestId,
+      ...(authorization
+        ? {
+            authorizationId: authorization.id,
+            authorizationRevision: authorization.revision,
+          }
+        : {}),
+    },
+  });
 }
 
 export function pollDeviceConnectorSignIn(
   deviceId: string,
   kind: string,
+  operationId: string,
+  authorization?: { id: string; revision: number },
 ): Promise<DeviceConnectorSignIn> {
-  return request("POST", `${deviceConnectorPath(deviceId, kind)}/sign-in/poll`);
+  return request(
+    "POST",
+    `${deviceConnectorPath(deviceId, kind)}/sign-in/poll`,
+    {
+      body: {
+        operationId,
+        ...(authorization
+          ? {
+              authorizationId: authorization.id,
+              authorizationRevision: authorization.revision,
+            }
+          : {}),
+      },
+    },
+  );
 }
 
 export function signOutDeviceConnector(
@@ -181,5 +209,28 @@ export function setWorkspaceDeviceConnectors(
     "PUT",
     `/api/workspaces/${encodeURIComponent(workspaceId)}/device-connectors`,
     { body: { bindings } },
+  );
+}
+
+export function dismissDeviceConnectorSignIn(
+  deviceId: string,
+  kind: string,
+  operationId: string,
+  authorization?: { id: string; revision: number },
+): Promise<void> {
+  return request(
+    "POST",
+    `${deviceConnectorPath(deviceId, kind)}/sign-in/dismiss`,
+    {
+      body: {
+        operationId,
+        ...(authorization
+          ? {
+              authorizationId: authorization.id,
+              authorizationRevision: authorization.revision,
+            }
+          : {}),
+      },
+    },
   );
 }

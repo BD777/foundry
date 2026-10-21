@@ -36,16 +36,43 @@ type ConnectorTool struct {
 	Registry string `json:"registry,omitempty"`
 }
 
+type ConnectorAuthorizationGroup struct {
+	ID           string            `json:"id"`
+	Revision     int               `json:"revision"`
+	Label        string            `json:"label"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Capabilities []string          `json:"capabilities"`
+	Credential   string            `json:"credential"`
+}
+type ConnectorAuthorizationState struct {
+	ID           string `json:"id"`
+	Revision     int    `json:"revision"`
+	Status       string `json:"status"`
+	CheckedAt    string `json:"checkedAt"`
+	Verification string `json:"verification"`
+	Reason       string `json:"reason,omitempty"`
+}
+type ConnectorAuthorizationChallenge struct {
+	Kind        string `json:"kind"`
+	URL         string `json:"url,omitempty"`
+	UserCode    string `json:"userCode,omitempty"`
+	ImageURL    string `json:"imageUrl,omitempty"`
+	Instruction string `json:"instruction,omitempty"`
+}
+
+const DaemonCapabilityConnectorAuthorization = "connector_authorization_v1"
+
 // ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
 type ConnectorDescriptor struct {
-	Kind               string                 `json:"kind"`
-	Label              string                 `json:"label"`
-	Holding            string                 `json:"holding"`
-	Adapter            string                 `json:"adapter"`
-	Tool               ConnectorTool          `json:"tool"`
-	Requires           []ConnectorRequirement `json:"requires,omitempty"`
-	ExpiryReminderDays int                    `json:"expiryReminderDays,omitempty"`
-	IsolationEnv       map[string]string      `json:"isolationEnv,omitempty"`
+	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
+	Kind                string                        `json:"kind"`
+	Label               string                        `json:"label"`
+	Holding             string                        `json:"holding"`
+	Adapter             string                        `json:"adapter"`
+	Tool                ConnectorTool                 `json:"tool"`
+	Requires            []ConnectorRequirement        `json:"requires,omitempty"`
+	ExpiryReminderDays  int                           `json:"expiryReminderDays,omitempty"`
+	IsolationEnv        map[string]string             `json:"isolationEnv,omitempty"`
 }
 
 // Device-held connector statuses.
@@ -62,40 +89,50 @@ const (
 // DeviceConnectorState is a device-held connector on one device as last
 // read there. It never holds a credential.
 type DeviceConnectorState struct {
-	DeviceID      string   `json:"deviceId"`
-	Kind          string   `json:"kind"`
-	Status        string   `json:"status"`
-	StatusDetail  string   `json:"statusDetail,omitempty"`
-	Installed     bool     `json:"installed"`
-	Version       string   `json:"version,omitempty"`
-	InstallSource string   `json:"installSource,omitempty"`
-	LatestVersion string   `json:"latestVersion,omitempty"`
-	SignedIn      bool     `json:"signedIn"`
-	Identity      string   `json:"identity,omitempty"`
-	Sites         []string `json:"sites,omitempty"`
-	ExpiresAt     string   `json:"expiresAt,omitempty"`
-	CheckedAt     string   `json:"checkedAt"`
-	ExpiringSince string   `json:"expiringSince,omitempty"`
+	Authorizations []ConnectorAuthorizationState `json:"authorizations,omitempty"`
+	DeviceID       string                        `json:"deviceId"`
+	Kind           string                        `json:"kind"`
+	Status         string                        `json:"status"`
+	StatusDetail   string                        `json:"statusDetail,omitempty"`
+	Installed      bool                          `json:"installed"`
+	Version        string                        `json:"version,omitempty"`
+	InstallSource  string                        `json:"installSource,omitempty"`
+	LatestVersion  string                        `json:"latestVersion,omitempty"`
+	SignedIn       bool                          `json:"signedIn"`
+	Identity       string                        `json:"identity,omitempty"`
+	Sites          []string                      `json:"sites,omitempty"`
+	ExpiresAt      string                        `json:"expiresAt,omitempty"`
+	CheckedAt      string                        `json:"checkedAt"`
+	ExpiringSince  string                        `json:"expiringSince,omitempty"`
 }
 
 // DeviceConnectorSignIn is a sign-in through the device's tool, relayed to
 // the person: the page to approve on, then the outcome.
 type DeviceConnectorSignIn struct {
-	Status          string                `json:"status"`
-	VerificationURL string                `json:"verificationUrl,omitempty"`
-	UserCode        string                `json:"userCode,omitempty"`
-	Error           string                `json:"error,omitempty"`
-	State           *DeviceConnectorState `json:"state,omitempty"`
+	Phase                 string                           `json:"phase,omitempty"`
+	AuthorizationID       string                           `json:"authorizationId,omitempty"`
+	AuthorizationRevision int                              `json:"authorizationRevision,omitempty"`
+	Challenge             *ConnectorAuthorizationChallenge `json:"challenge,omitempty"`
+	Image                 []byte                           `json:"-"`
+	OperationID           string                           `json:"operationId,omitempty"`
+	ExpiresAt             string                           `json:"expiresAt,omitempty"`
+	IntervalSeconds       int                              `json:"intervalSeconds,omitempty"`
+	Status                string                           `json:"status"`
+	VerificationURL       string                           `json:"verificationUrl,omitempty"`
+	UserCode              string                           `json:"userCode,omitempty"`
+	Error                 string                           `json:"error,omitempty"`
+	State                 *DeviceConnectorState            `json:"state,omitempty"`
 }
 
 // DeviceConnectorDevice is one of the person's devices with its
 // device-held connectors.
 type DeviceConnectorDevice struct {
-	DeviceID  string                 `json:"deviceId"`
-	Name      string                 `json:"name"`
-	Online    bool                   `json:"online"`
-	Supported bool                   `json:"supported"`
-	States    []DeviceConnectorState `json:"states"`
+	AuthorizationSupported bool                   `json:"authorizationSupported,omitempty"`
+	DeviceID               string                 `json:"deviceId"`
+	Name                   string                 `json:"name"`
+	Online                 bool                   `json:"online"`
+	Supported              bool                   `json:"supported"`
+	States                 []DeviceConnectorState `json:"states"`
 }
 
 // DeviceConnectorsView is the device-held part of the Connectors page.
@@ -119,11 +156,18 @@ type DeviceConnectorBinding struct {
 
 // WorkspaceDeviceConnectors is a workspace's device-held bindings and the
 // caller's devices to bind.
+type ConnectorExecutionDevice struct {
+	DeviceID string `json:"deviceId"`
+	Name     string `json:"name"`
+}
+
 type WorkspaceDeviceConnectors struct {
-	WorkspaceID string                   `json:"workspaceId"`
-	Connectors  []ConnectorDescriptor    `json:"connectors"`
-	Bindings    []DeviceConnectorBinding `json:"bindings"`
-	Devices     []DeviceConnectorDevice  `json:"devices"`
+	ExecutionDevices []ConnectorExecutionDevice `json:"executionDevices"`
+	DefaultDeviceID  string                     `json:"defaultDeviceId"`
+	WorkspaceID      string                     `json:"workspaceId"`
+	Connectors       []ConnectorDescriptor      `json:"connectors"`
+	Bindings         []DeviceConnectorBinding   `json:"bindings"`
+	Devices          []DeviceConnectorDevice    `json:"devices"`
 }
 
 // DeviceConnectorBindingInput is one binding the caller wants.
@@ -153,16 +197,20 @@ type DeviceConnectorUse struct {
 // device-held connector ("status", "install", "sign_in_begin",
 // "sign_in_poll", "sign_out").
 type ConnectorRequestPayload struct {
-	Action    string              `json:"action"`
-	Connector ConnectorDescriptor `json:"connector"`
-	Fresh     bool                `json:"fresh,omitempty"`
+	AuthorizationID       string              `json:"authorizationId,omitempty"`
+	AuthorizationRevision int                 `json:"authorizationRevision,omitempty"`
+	OperationID           string              `json:"operationId,omitempty"`
+	Action                string              `json:"action"`
+	Connector             ConnectorDescriptor `json:"connector"`
+	Fresh                 bool                `json:"fresh,omitempty"`
 }
 
 // ConnectorReplyPayload is connector_reply.
 type ConnectorReplyPayload struct {
-	State  *DeviceConnectorState  `json:"state,omitempty"`
-	SignIn *DeviceConnectorSignIn `json:"signIn,omitempty"`
-	Error  string                 `json:"error,omitempty"`
+	AuthorizationImage string                 `json:"authorizationImage,omitempty"`
+	State              *DeviceConnectorState  `json:"state,omitempty"`
+	SignIn             *DeviceConnectorSignIn `json:"signIn,omitempty"`
+	Error              string                 `json:"error,omitempty"`
 }
 
 // DeviceConnectorStore keeps what devices read of their device-held

@@ -74,6 +74,8 @@ export interface WorkspaceRelinkResult {
 export type WorkspaceAccessRole = "viewer" | "member" | "maintainer" | "owner";
 
 export interface WorkspaceFileEntry {
+  /** Device content identity for bounded instruction files; absent on older workers. */
+  revision?: string;
   id: string;
   workspaceId: string;
   path: string;

@@ -57,7 +57,9 @@ export function listItemEdit(
   item: PersonalAgentListItem,
   draft: { text: string; when: string },
 ): PersonalAgentListItemInput {
-  const input: PersonalAgentListItemInput = {};
+  const input: PersonalAgentListItemInput = {
+    ...(item.revision ? { revision: item.revision } : {}),
+  };
   const text = draft.text.trim();
   const when = draft.when.trim();
   if (text && text !== item.text) input.text = text;

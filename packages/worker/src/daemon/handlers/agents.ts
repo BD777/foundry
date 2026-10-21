@@ -8,6 +8,10 @@ import {
 import { writeAgentRuntimeSettings } from "../../device.js";
 import { listAgentModelsConfig } from "../../models.js";
 import { installNativeCli } from "../../native-cli-install.js";
+import {
+  NativeAccountChangedError,
+  inspectSelectedAccount,
+} from "../../native-quota-cache.js";
 import { inspectNativeAccount } from "../../native-inspection.js";
 import { clearNativeLoginHealth } from "../../native-login.js";
 import { refreshOfficialSkills } from "../../official-skills.js";
@@ -31,7 +35,12 @@ function hasWorkspace(
 export function registerAgentHandlers(dispatch: DaemonDispatch): void {
   dispatch
     .on(daemonMessageTypes.inspectNativeAccount, (envelope, ctx) => {
-      const input = envelope.payload as { runtime?: string; source?: string };
+      const input = envelope.payload as {
+        runtime?: string;
+        source?: string;
+        runtimeGeneration?: string;
+        refresh?: boolean;
+      };
       if (input?.runtime !== "claude" && input?.runtime !== "codex") {
         trySendWebSocket(
           ctx.socket,
@@ -41,7 +50,15 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
         );
         return;
       }
-      void inspectNativeAccount(input.runtime, input.source)
+      void (
+        input.runtimeGeneration
+          ? inspectSelectedAccount(
+              input.runtime,
+              input.runtimeGeneration,
+              input.refresh,
+            )
+          : inspectNativeAccount(input.runtime, input.source)
+      )
         .catch((error: unknown) => {
           const reason = errorMessage(error);
           console.error(
@@ -50,7 +67,12 @@ export function registerAgentHandlers(dispatch: DaemonDispatch): void {
           trySendWebSocket(
             ctx.socket,
             daemonMessageTypes.nativeAccountInspected,
-            { error: `Could not inspect this native account: ${reason}` },
+            {
+              error: `Could not inspect this native account: ${reason}`,
+              ...(error instanceof NativeAccountChangedError
+                ? { errorCode: "account_changed" }
+                : {}),
+            },
             envelope.id,
           );
           return undefined;

@@ -3,9 +3,9 @@ export const shell = {
   nav: {
     assistantSection: "Assistant",
     assistant: "Assistant",
-    assistantSettings: "Settings",
+    assistantSettings: "Assistant settings",
     workspace: "Workspace",
-    manage: "Manage",
+    manage: "Global management",
     overview: "Overview",
     issues: "Issues",
     chats: "Chats",
@@ -41,6 +41,9 @@ export const shell = {
     workspace: "Workspace",
   },
   sidebar: {
+    interfaceControls: "Interface controls",
+    globalScope: "Global",
+    workspaceScope: "Workspace: {{workspace}}",
     open: "Open {{label}}",
     lightMode: "Switch to light mode",
     darkMode: "Switch to dark mode",

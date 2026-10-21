@@ -30,10 +30,7 @@ import { DeviceSettings } from "./device-settings";
 import { DeviceSkills } from "./device-skills";
 import { DeviceRemovalDialog } from "./device-removal-dialog";
 import { DeviceRenameDialog } from "./device-rename-dialog";
-import {
-  AccountShareExplanation,
-  AccountShareNotices,
-} from "./device-account-share";
+import { AccountShareExplanation } from "./device-account-share";
 import { DeviceDetails } from "./device-details";
 import { DeviceList } from "./device-list";
 import { AddDeviceDialog } from "./add-device-dialog";
@@ -135,14 +132,11 @@ export function DevicesFeature(props: DevicesFeatureProps) {
             </div>
           </header>
           <UpdateAllWorkersStatus state={updateAll} />
-          <AccountShareNotices
-            devices={availableDevices}
-            onRefresh={onRefresh}
-          />
           {addingDevice ? (
             <AddDeviceDialog onClose={() => setAddingDevice(false)} />
           ) : null}
           <DeviceList
+            onRefresh={onRefresh}
             devices={availableDevices}
             release={release}
             workspaceCount={(id) => deviceWorkspaces(id).length}
@@ -230,8 +224,7 @@ export function DevicesFeature(props: DevicesFeatureProps) {
               {t("detail.offline")}
             </p>
           ) : null}
-          <AccountShareNotices devices={[device]} onRefresh={onRefresh} />
-          <AccountShareExplanation device={device} />
+          <AccountShareExplanation device={device} onRefresh={onRefresh} />
           <DeviceDetails device={device} />
           {device.owned ? (
             <DeviceWorker device={device} prominent onRefresh={onRefresh} />

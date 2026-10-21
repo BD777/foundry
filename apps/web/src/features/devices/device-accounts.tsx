@@ -289,6 +289,8 @@ export function DeviceAccounts({
                   />
                 ) : null}
                 <AccountInspection
+                  key={local?.runtimeGeneration ?? cli?.generation ?? runtime}
+                  identity={local?.runtimeGeneration ?? cli?.generation}
                   deviceId={device.id}
                   runtime={runtime}
                   online={device.status === "connected"}

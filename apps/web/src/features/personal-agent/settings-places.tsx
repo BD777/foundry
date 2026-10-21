@@ -11,6 +11,7 @@ import { listDevicePlacements } from "../../api";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { SelectMenu } from "../../components/ui/select-menu";
+import { liveDevices, isRemovedDevice } from "../../lib/devices";
 import { accountSharers, joinNames } from "../../lib/device-sharing";
 import {
   SettingsCheck,
@@ -63,7 +64,8 @@ export function PlacesSection({
       cancelled = true;
     };
   }, [owned.length]);
-  if (!owned.length)
+  const candidates = liveDevices(owned);
+  if (!candidates.length)
     return <p className="fdy-pa-muted">{t("settings.places.none")}</p>;
   const home = owned.find((device) => device.id === homeDeviceId);
 
@@ -86,7 +88,7 @@ export function PlacesSection({
     <>
       <p className="fdy-pa-intro">{t("settings.places.intro")}</p>
       <ul className="fdy-pa-places">
-        {owned.map((device) => {
+        {candidates.map((device) => {
           const entry = deviceSettings(draft, device.id);
           const folders = device.managedRoots ?? [];
           const notes = notesOf(
@@ -158,16 +160,28 @@ export function PlacesSection({
             className="fdy-pa-select"
             onChange={(preferredDeviceId) => change({ preferredDeviceId })}
             options={[
+              ...(draft.preferredDeviceId &&
+              !candidates.some((d) => d.id === draft.preferredDeviceId)
+                ? [
+                    {
+                      value: draft.preferredDeviceId,
+                      label: `${owned.find((d) => d.id === draft.preferredDeviceId)?.label ?? draft.preferredDeviceId} · ${t("settings.devices.unavailable")}`,
+                      disabled: true,
+                    },
+                  ]
+                : []),
               {
                 value: "",
+                disabled: isRemovedDevice(home),
                 label: t("settings.places.preferredHome", {
                   device: home?.label ?? homeDeviceId,
                 }),
               },
-              ...owned
+              ...candidates
                 .filter((device) => device.id !== homeDeviceId)
                 .map((device) => ({ value: device.id, label: device.label })),
             ]}
+            placeholder={t("settings.devices.unavailable")}
             value={draft.preferredDeviceId}
           />
         </SettingsField>

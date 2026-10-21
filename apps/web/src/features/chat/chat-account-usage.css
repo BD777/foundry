@@ -1,0 +1,21 @@
+.fdy-chat-account-usage {
+  display: grid;
+  gap: 6px;
+}
+.fdy-chat-account-usage-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+/* Own the row title margin even when the global section h3 rule loads later. */
+.fdy-chat-account-usage-heading .fdy-chat-account-usage-title {
+  margin: 0;
+}
+.fdy-chat-account-usage-caption,
+.fdy-chat-account-usage-note {
+  margin: 0;
+  color: var(--fdy-ink-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

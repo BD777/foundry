@@ -2,6 +2,24 @@ import type { profiles as en } from "../en/profiles";
 import type { Translation } from "../../translation";
 
 export const profiles: Translation<typeof en> = {
+  quota: {
+    nativeSnapshot: "原生应用返回的额度 · 可能为缓存",
+    title: "Usage",
+    accountScope: "账号额度",
+    refresh: "刷新账号额度",
+    unknown: "未知",
+    windowMinutes: "{{minutes}} 分钟",
+    extraUsage: "额外用量",
+    offline: "设备离线 · 显示上次读取结果",
+    failed: "刷新失败 · 显示上次读取结果",
+    renewal: "请在原生应用续期登录后刷新额度。",
+    unsupported: "此原生版本未提供账号额度读取。",
+    unavailable: "暂时无法获取账号额度。",
+    stale: "上次读取结果 · 刷新查看当前额度",
+    more: "再显示 {{count}} 项",
+    less: "收起",
+    observed: "读取于 {{time}}",
+  },
   runtimeUpdates: {
     updateNowLabel: "将 {{name}} 更新到稳定版",
     noticeTitle: "{{name}} {{version}} → 稳定版 {{target}}",

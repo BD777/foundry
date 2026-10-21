@@ -245,20 +245,3 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 		t.Fatalf("the owner's session on another device = %q", got)
 	}
 }
-
-func TestSignInPollsCloseTogetherShareAnAnswer(t *testing.T) {
-	devices := NewDeviceHeld(newMemoryStore(), DefaultCatalog())
-	now := time.Now()
-	devices.Now = func() time.Time { return now }
-	if _, ok := devices.RecentSignInPoll("dev", "bytedcli"); ok {
-		t.Fatal("an answer before any poll")
-	}
-	devices.RememberSignInPoll("dev", "bytedcli", store.DeviceConnectorSignIn{Status: "pending"})
-	if answer, ok := devices.RecentSignInPoll("dev", "bytedcli"); !ok || answer.Status != "pending" {
-		t.Fatalf("recent = %+v %v", answer, ok)
-	}
-	now = now.Add(signInPollGap)
-	if _, ok := devices.RecentSignInPoll("dev", "bytedcli"); ok {
-		t.Fatal("an old answer was reused")
-	}
-}

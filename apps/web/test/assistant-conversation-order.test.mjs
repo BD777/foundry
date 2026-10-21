@@ -1,5 +1,5 @@
 // The assistant's conversation keeps the server's order through a live
-// exchange. Replays a real two-message sequence (dev, 2026-10-15; text
+// exchange through durable receipt and serialized dispatch. Replays a two-message sequence (dev, 2026-10-15; text
 // de-identified, steps trimmed): the first message creates the session, the
 // second continues it. The server answers a create and a send without
 // events, and streams no event for a new session's first input, so the page
@@ -54,6 +54,7 @@ const secondAnswer = "Yes. Tell me an item and I will note it.";
 
 /** The server: what it stores, and what it streams and answers. */
 const stored = new Map();
+const inbox = [];
 const slim = (session) => ({ ...session, events: undefined });
 function userEvent(sessionId, input) {
   return {
@@ -77,6 +78,26 @@ globalThis.fetch = async (input, init = {}) => {
       headers: { "Content-Type": "application/json" },
     });
   const route = `${method} ${url.pathname}`;
+  if (route === "GET /api/personal-agent/inbox") return json(inbox);
+  if (route === "POST /api/personal-agent/inbox") {
+    const existing = inbox.find((e) => e.messageId === body.messageId);
+    if (existing) return json(existing, 202);
+    const entry = {
+      id: `inbox_${body.messageId}`,
+      rootId: `inbox_${body.messageId}`,
+      channel: "web",
+      messageId: body.messageId,
+      text: body.text,
+      inputId: body.messageId,
+      status: "pending",
+      revision: 1,
+      createdAt: at(inbox.length ? 73001 : 0),
+      updatedAt: at(inbox.length ? 73001 : 0),
+    };
+    inbox.push(entry);
+    dispatchInbox(entry);
+    return json(entry, 202);
+  }
   if (route === "GET /api/agent-sessions")
     return json(
       [...stored.values()]
@@ -86,19 +107,22 @@ globalThis.fetch = async (input, init = {}) => {
         )
         .map(slim),
     );
-  if (route === "POST /api/agent-sessions")
-    return json(
-      createSession("sess_1792025645924060412", body.inputId, body.prompt, 0),
-      201,
-    );
-  const sent = url.pathname.match(/^\/api\/agent-sessions\/([^/]+)\/messages$/);
-  if (method === "POST" && sent)
-    return json(sendMessage(sent[1], body.inputId, body.prompt, 73_001));
   const read = url.pathname.match(/^\/api\/agent-sessions\/([^/]+)$/);
   if (method === "GET" && read && stored.has(read[1]))
     return json(stored.get(read[1]));
   throw new Error(`unexpected ${route}`);
 };
+
+function dispatchInbox(entry) {
+  const latest = [...stored.values()].at(-1);
+  if (latest && ["queued", "running", "blocked"].includes(latest.status))
+    return;
+  const session = latest
+    ? sendMessage(latest.id, entry.inputId, entry.text, 73001)
+    : createSession("sess_1792025645924060412", entry.inputId, entry.text, 0);
+  entry.sessionId = session.id;
+  entry.status = "delivered";
+}
 
 /** Creating a session (the page, Feishu, a new conversation after a quiet spell). */
 function createSession(id, inputId, prompt, atMs) {
@@ -221,6 +245,7 @@ const settle = () =>
 /** The home's conversation, rendered; `shown` is what it lists, in order. */
 async function openConversation() {
   stored.clear();
+  inbox.length = 0;
   const view = {};
   function Harness() {
     view.conversation = useAssistantConversation(workspaceId);
@@ -288,12 +313,11 @@ test("a conversation started in Feishu keeps its first message first", async () 
   await page.close();
 });
 
-test("a message sent while the reply is written shows once, where the session took it", async () => {
+test("a message received during a reply is saved once and continues after that reply", async () => {
   const page = await openConversation();
   await act(() => page.conversation.send(firstText, firstInput, runtime));
   await settle();
   const session = stored.get("sess_1792025645924060412");
-  session.beforeAnswer = () => takeSteer(session.id);
   await act(async () =>
     runTurn(session.id, firstInput, 2_441, firstAnswer, {
       midway: () =>
@@ -303,8 +327,25 @@ test("a message sent while the reply is written shows once, where the session to
   await settle();
   assert.deepEqual(page.shown(), [
     `person: ${firstText}`,
-    `person: ${secondText}`,
     `assistant: ${firstAnswer}`,
+    `person: ${secondText}`,
+  ]);
+  assert.equal(inbox.filter((e) => e.messageId === secondInput).length, 1);
+  assert.equal(
+    inbox.find((e) => e.messageId === secondInput).status,
+    "pending",
+  );
+  await act(async () =>
+    dispatchInbox(inbox.find((e) => e.messageId === secondInput)),
+  );
+  await settle();
+  await act(async () => runTurn(session.id, secondInput, 73338, secondAnswer));
+  await settle();
+  assert.deepEqual(page.shown(), [
+    `person: ${firstText}`,
+    `assistant: ${firstAnswer}`,
+    `person: ${secondText}`,
+    `assistant: ${secondAnswer}`,
   ]);
   await page.close();
 });

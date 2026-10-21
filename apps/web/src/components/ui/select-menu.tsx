@@ -53,7 +53,11 @@ export interface SelectMenuProps {
   renderOptionPrefix?: (option: SelectMenuOption) => ReactNode;
   renderTriggerPrefix?: (option: SelectMenuOption | undefined) => ReactNode;
   side?: "top" | "bottom";
-  /** "icon": a borderless square holding only the trigger prefix, for toolbars. */
+  /**
+   * "icon": a borderless square holding only the trigger prefix, for toolbars.
+   * Its public --fdy-select-icon-size CSS variable defaults to 26px; a
+   * containing toolbar may set it to match its other controls.
+   */
   tone?: "field" | "pill" | "icon";
   value: string;
 }

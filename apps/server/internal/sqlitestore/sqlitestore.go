@@ -218,14 +218,23 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 	var active int
 	if err := tx.QueryRowContext(ctx, `SELECT
 		(SELECT count(*) FROM runs WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled')) +
-		(SELECT count(*) FROM agent_sessions WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled'))`,
-		id, id).Scan(&active); err != nil {
+		(SELECT count(*) FROM agent_sessions WHERE workspace_id = ? AND status NOT IN ('completed','failed','canceled','cancelled')) +
+        (SELECT count(*) FROM pa_context_patches WHERE workspace_id=? AND status='applying') +
+        (SELECT count(*) FROM pa_run_controls c JOIN agent_sessions a ON a.id=c.session_id WHERE a.workspace_id=? AND c.state IN ('monitoring','stop_requested') AND json_extract(c.payload_json,'$.dispatchAttempted')=1)`,
+		id, id, id, id).Scan(&active); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
 	if active > 0 {
 		return store.WorkspaceProjection{}, store.ErrWorkspaceBusy
 	}
 
+	var authority bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM knowledge_vaults WHERE workspace_id=?)`, id).Scan(&authority); err != nil {
+		return store.WorkspaceProjection{}, err
+	}
+	if authority {
+		return store.WorkspaceProjection{}, fmt.Errorf("%w: move the selected knowledge authority before removing its workspace", store.ErrWorkspaceBusy)
+	}
 	if err := deleteWorkspaceRows(ctx, tx, id); err != nil {
 		return store.WorkspaceProjection{}, err
 	}
@@ -245,6 +254,9 @@ func (s *Store) DeleteWorkspace(ctx context.Context, id string) (store.Workspace
 // reporting its hostname (in system), and later registrations keep this name.
 func (s *Store) RenameDevice(ctx context.Context, id string, name string) (store.DeviceProjection, error) {
 	err := s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, id); err != nil {
+			return err
+		}
 		result, err := tx.conn().ExecContext(ctx, `UPDATE devices SET label = ?,
 			payload_json = json_set(payload_json, '$.label', ?) WHERE id = ?`, name, name, id)
 		if err != nil {

@@ -16,7 +16,15 @@ export const chat = {
     taskTitle: "Title",
     workspaceServices: "Workspace services",
     workspaceServicesNote:
-      "These services belong to this workspace and continue when sessions end. Linked sessions share the same execution; access from another device does not move the process.",
+      "Services belong to this workspace and keep running after sessions end.",
+    serviceExecutionNote:
+      "Linked sessions share one execution. Access from another device does not move the process.",
+    refreshingServices: "Refreshing…",
+    serviceStatusUnconfirmed: "Service status needs confirmation",
+    servicesReadOnly:
+      "Read-only access. Workspace members can manage services.",
+    emptyServicesBody:
+      "Ask an agent in this workspace to start a persistent service. It will appear here.",
     workspaceOwnedService: "Owned by this workspace",
     creatorSession: "Creation session",
     serviceDetails: "Service details",
@@ -77,7 +85,12 @@ export const chat = {
       managed_and_native: "managed and native tasks",
       managed_native_and_attributed: "managed and attributable processes",
     },
-    title: "Work",
+    title: "Timers",
+    agentsTitle: "Agents",
+    timerHistory: "Ended timers ({{count}})",
+    agentHistory: "Ended agents ({{count}})",
+    timerCount: "{{count}} timer(s)",
+    agentCount: "{{count}} agent(s)",
     pauseAll: "Pause schedules",
     stopAll: "Stop controllable work ({{count}})",
     stopAllScope:

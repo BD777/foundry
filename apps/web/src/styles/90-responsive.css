@@ -121,93 +121,70 @@
     min-height: auto;
   }
 
+  .fdy-sidebar-collapse-button.fdy-button {
+    display: none;
+  }
+
+  /* One scrollable strip with three explicit peer groups. The working
+     location lives only in its group's row; the page itself never overflows. */
   .fdy-sidebar-nav-scroll {
-    position: relative;
-    display: block;
     width: 100%;
-    min-height: 0;
     flex: none;
-    border-top: 1px solid var(--fdy-line-strong);
-    border-bottom: 1px solid var(--fdy-line-strong);
-  }
-
-  .fdy-sidebar-nav-scroll::before,
-  .fdy-sidebar-nav-scroll::after {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 1;
-    width: 44px;
-    opacity: 0;
-    transition: opacity 0.16s ease;
-    content: "";
-    pointer-events: none;
-  }
-
-  .fdy-sidebar-nav-scroll::before {
-    left: 0;
-    background: linear-gradient(90deg, var(--fdy-paper-side) 18%, transparent);
-  }
-
-  .fdy-sidebar-nav-scroll::after {
-    right: 0;
-    background: linear-gradient(90deg, transparent, var(--fdy-paper-side) 82%);
-  }
-
-  .fdy-sidebar-nav-scroll[data-scroll-start="true"]::before,
-  .fdy-sidebar-nav-scroll[data-scroll-end="true"]::after {
-    opacity: 1;
-  }
-
-  .fdy-sidebar-nav-scroll .fdy-scroll-viewport {
-    height: auto;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    scroll-padding: 12px;
-    scroll-snap-type: x proximity;
-  }
-
-  .fdy-sidebar-nav-scroll .fdy-scroll-viewport::-webkit-scrollbar {
-    display: none;
-  }
-
-  .fdy-sidebar-nav-scroll .fdy-scrollbar {
-    display: none;
+    border-block: 1px solid var(--fdy-line-strong);
+    scroll-padding-inline: 12px;
   }
 
   .fdy-sidebar-nav {
     display: flex;
     width: max-content;
     min-width: 100%;
-    gap: 6px;
-    padding: 8px 12px 10px;
+    gap: 20px;
+    padding: 8px 12px;
+  }
+
+  .fdy-sidebar-scope-divider {
+    align-self: stretch;
+    flex: none;
+    margin: 0;
+    border-top: 0;
+    border-left: 1px solid var(--fdy-line-strong);
   }
 
   .fdy-sidebar-nav-section {
-    display: contents;
+    flex: none;
   }
 
-  .fdy-sidebar-nav-section > span {
-    display: none;
+  .fdy-sidebar-nav-heading,
+  .fdy-sidebar-nav-section:first-child .fdy-sidebar-nav-heading {
+    position: sticky;
+    left: 12px;
+    width: max-content;
+    padding: 0 10px 5px;
+  }
+
+  .fdy-sidebar-nav-items {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .fdy-sidebar-section-header {
+    width: 168px;
+    margin: 0;
   }
 
   .fdy-sidebar-nav-link.fdy-button {
     width: auto;
-    height: 32px;
-    min-height: 32px;
+    min-height: 36px;
     flex: none;
     gap: 7px;
     margin-bottom: 0;
-    padding: 0 10px;
+    padding: 8px 10px;
     border-left: 0;
     border-radius: 8px;
-    scroll-snap-align: start;
     white-space: nowrap;
   }
 
-  /* Without the desktop accent bar, the current tab needs its own fill. */
   .fdy-sidebar-nav-link[data-state="active"] {
     background: var(--fdy-selection);
     box-shadow: none;

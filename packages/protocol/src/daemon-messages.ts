@@ -47,6 +47,10 @@ export const daemonMessageTypes = {
   workspaceInspected: "workspace_inspected",
   error: "error",
   fileRead: "file_read",
+  contextPatch: "context_patch",
+  contextPatched: "context_patched",
+  knowledgeCommand: "knowledge_command",
+  knowledgeResult: "knowledge_result",
   forgetWorkspace: "forget_workspace",
   /** Server asks: folders near a missing workspace's that look like it. */
   findMovedWorkspace: "find_moved_workspace",

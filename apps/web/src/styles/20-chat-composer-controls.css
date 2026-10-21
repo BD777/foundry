@@ -70,8 +70,8 @@
 }
 
 .fdy-select-trigger[data-tone="icon"] {
-  width: 26px;
-  height: 26px;
+  width: var(--fdy-select-icon-size, 26px);
+  height: var(--fdy-select-icon-size, 26px);
   padding: 0;
   justify-content: center;
   border-radius: 7px;

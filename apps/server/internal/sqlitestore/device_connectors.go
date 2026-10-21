@@ -51,6 +51,15 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 }
 
 func (s *Store) SaveDeviceConnectorState(ctx context.Context, state store.DeviceConnectorState) error {
+	return s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, state.DeviceID); err != nil {
+			return err
+		}
+		return tx.saveDeviceConnectorState(ctx, state)
+	})
+}
+
+func (s *Store) saveDeviceConnectorState(ctx context.Context, state store.DeviceConnectorState) error {
 	if strings.TrimSpace(state.DeviceID) == "" || strings.TrimSpace(state.Kind) == "" {
 		return fmt.Errorf("a device connector state needs a device and a kind")
 	}
@@ -116,12 +125,20 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 
 func (s *Store) SetWorkspaceDeviceConnectors(ctx context.Context, workspaceID, userID string, bindings []store.DeviceConnectorBindingInput) error {
 	return s.withTx(ctx, func(tx *Store) error {
+		if len(bindings) > 0 {
+			if err := tx.assertWorkspaceDeviceNotRemoved(ctx, workspaceID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_connector_bindings WHERE workspace_id = ? AND granted_by = ?`,
 			workspaceID, userID); err != nil {
 			return fmt.Errorf("clear device connector bindings: %w", err)
 		}
 		now := formatTime(time.Now())
 		for _, binding := range bindings {
+			if err := tx.assertDeviceNotRemoved(ctx, binding.DeviceID); err != nil {
+				return err
+			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO device_connector_bindings
 				(workspace_id, kind, device_id, members, granted_by, created_at) VALUES (?, ?, ?, ?, ?, ?)
 				ON CONFLICT(workspace_id, kind, device_id) DO UPDATE SET

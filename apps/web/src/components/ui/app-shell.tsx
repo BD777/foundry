@@ -7,17 +7,16 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
-  useCallback,
+  Fragment,
   useEffect,
   useRef,
-  useState,
   type HTMLAttributes,
   type ReactNode,
 } from "react";
 import { cn } from "../../lib/cn";
 import { useTranslation } from "react-i18next";
 import { Button } from "./button";
-import { ScrollArea } from "./scroll-area";
+import { Tooltip } from "./tooltip";
 import { FoundryThemeContext } from "./theme-context";
 
 export type FoundryViewScrollMode = "contained" | "page";
@@ -128,12 +127,19 @@ export interface SidebarNavItem<T extends string> {
 }
 
 export interface SidebarNavSection<T extends string> {
+  /** Stable identity, independent of the displayed language. */
+  id: string;
+  /** Context shown in navigation tooltips, including when collapsed. */
+  scopeLabel?: string;
+  /** A visible boundary before a new navigation scope, also when collapsed. */
+  dividerBefore?: boolean;
+  /** Controls for this section alone, before its links. */
+  header?: ReactNode;
   items: Array<SidebarNavItem<T>>;
   label: string;
 }
 
 export interface FoundrySidebarProps<T extends string> {
-  workspaceSelector?: ReactNode;
   activeItemId?: T;
   brandName?: string;
   collapsed?: boolean;
@@ -144,7 +150,6 @@ export interface FoundrySidebarProps<T extends string> {
   onThemeToggle?: () => void;
   onToggleCollapsed?: () => void;
   theme?: FoundryThemeMode;
-  workspaceName: ReactNode;
 }
 
 export function FoundrySidebar<T extends string>({
@@ -157,8 +162,6 @@ export function FoundrySidebar<T extends string>({
   onThemeToggle,
   onToggleCollapsed,
   theme = "light",
-  workspaceName,
-  workspaceSelector,
 }: FoundrySidebarProps<T>) {
   return (
     <aside
@@ -168,15 +171,11 @@ export function FoundrySidebar<T extends string>({
       <SidebarBrand
         collapsed={collapsed}
         name={brandName}
-        workspaceName={workspaceName}
         languageControl={languageControl}
         onThemeToggle={onThemeToggle}
         onToggleCollapsed={onToggleCollapsed}
         theme={theme}
       />
-      {workspaceSelector ? (
-        <div className="fdy-sidebar-workspace-slot">{workspaceSelector}</div>
-      ) : null}
       <SidebarNav
         activeItemId={activeItemId}
         onSelect={onNavSelect}
@@ -189,7 +188,6 @@ export function FoundrySidebar<T extends string>({
 export interface SidebarBrandProps {
   collapsed?: boolean;
   name: ReactNode;
-  workspaceName: ReactNode;
   languageControl?: ReactNode;
   onThemeToggle?: () => void;
   onToggleCollapsed?: () => void;
@@ -199,7 +197,6 @@ export interface SidebarBrandProps {
 export function SidebarBrand({
   collapsed = false,
   name,
-  workspaceName,
   languageControl,
   onThemeToggle,
   onToggleCollapsed,
@@ -219,9 +216,12 @@ export function SidebarBrand({
       </span>
       <span className="fdy-sidebar-brand-copy">
         <strong>{name}</strong>
-        <small>{workspaceName}</small>
       </span>
-      <span className="fdy-sidebar-brand-actions">
+      <span
+        className="fdy-sidebar-brand-actions"
+        role="group"
+        aria-label={t("sidebar.interfaceControls")}
+      >
         {languageControl}
         <Button
           aria-label={themeLabel}
@@ -260,108 +260,114 @@ export function SidebarNav<T extends string>({
   onSelect,
   sections,
 }: SidebarNavProps<T>) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef(new Map<T, HTMLButtonElement>());
-  const [scrollEdges, setScrollEdges] = useState({ end: false, start: false });
-
-  const updateScrollEdges = useCallback(() => {
-    const viewport = viewportRef.current;
-
-    if (!viewport) {
-      return;
-    }
-
-    const maxScrollLeft = Math.max(
-      0,
-      viewport.scrollWidth - viewport.clientWidth,
-    );
-    const nextEdges = {
-      end: viewport.scrollLeft < maxScrollLeft - 2,
-      start: viewport.scrollLeft > 2,
-    };
-
-    setScrollEdges((currentEdges) =>
-      currentEdges.end === nextEdges.end &&
-      currentEdges.start === nextEdges.start
-        ? currentEdges
-        : nextEdges,
-    );
-  }, []);
-
   useEffect(() => {
-    const viewport = viewportRef.current;
-    const activeItem = activeItemId
-      ? itemRefs.current.get(activeItemId)
-      : undefined;
-
-    if (
-      !viewport ||
-      !activeItem ||
-      viewport.scrollWidth <= viewport.clientWidth
-    ) {
-      return;
-    }
-
-    activeItem.scrollIntoView({
-      block: "nearest",
-      inline: "center",
-    });
-    window.requestAnimationFrame(updateScrollEdges);
-  }, [activeItemId, updateScrollEdges]);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-
-    if (!viewport) {
-      return;
-    }
-
-    viewport.addEventListener("scroll", updateScrollEdges, { passive: true });
-    window.addEventListener("resize", updateScrollEdges);
-    updateScrollEdges();
-
-    return () => {
-      viewport.removeEventListener("scroll", updateScrollEdges);
-      window.removeEventListener("resize", updateScrollEdges);
+    const revealActive = () => {
+      const activeItem = activeItemId
+        ? itemRefs.current.get(activeItemId)
+        : null;
+      activeItem?.scrollIntoView({ block: "nearest", inline: "center" });
     };
-  }, [updateScrollEdges]);
+    revealActive();
+    // Crossing the layout breakpoint reveals the current entry. A phone's
+    // keyboard changes viewport height too; it must not pull the page back
+    // to navigation while the person is editing its contents.
+    const layout = window.matchMedia("(max-width: 860px)");
+    layout.addEventListener("change", revealActive);
+    return () => layout.removeEventListener("change", revealActive);
+  }, [activeItemId]);
 
   return (
-    <ScrollArea
-      className="fdy-sidebar-nav-scroll"
-      data-scroll-end={scrollEdges.end ? "true" : "false"}
-      data-scroll-start={scrollEdges.start ? "true" : "false"}
-      viewportRef={viewportRef}
-    >
-      <nav className="fdy-sidebar-nav">
+    <div className="fdy-sidebar-nav-scroll">
+      <nav
+        className="fdy-sidebar-nav"
+        onKeyDown={(event) => {
+          if (
+            event.defaultPrevented ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey
+          )
+            return;
+          if (
+            ![
+              "ArrowDown",
+              "ArrowUp",
+              "ArrowRight",
+              "ArrowLeft",
+              "Home",
+              "End",
+            ].includes(event.key)
+          )
+            return;
+          const buttons = Array.from(
+            event.currentTarget.querySelectorAll<HTMLButtonElement>(
+              "button:not(:disabled)",
+            ),
+          );
+          const index = buttons.indexOf(event.target as HTMLButtonElement);
+          if (index < 0) return;
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? buttons.length - 1
+                : (index +
+                    (event.key === "ArrowDown" || event.key === "ArrowRight"
+                      ? 1
+                      : -1) +
+                    buttons.length) %
+                  buttons.length;
+          event.preventDefault();
+          buttons[next]?.focus();
+        }}
+      >
         {sections.map((section) => (
-          <div className="fdy-sidebar-nav-section" key={section.label}>
-            <span>{section.label}</span>
-            {section.items.map((item) => (
-              <SidebarNavButton
-                active={item.id === activeItemId}
-                item={item}
-                key={item.id}
-                refCallback={(node) => {
-                  if (node) {
-                    itemRefs.current.set(item.id, node);
-                  } else {
-                    itemRefs.current.delete(item.id);
-                  }
-                }}
-                onSelect={onSelect}
-              />
-            ))}
-          </div>
+          <Fragment key={section.id}>
+            {section.dividerBefore ? (
+              <div className="fdy-sidebar-scope-divider" aria-hidden="true" />
+            ) : null}
+            <section
+              className="fdy-sidebar-nav-section"
+              data-section-id={section.id}
+              aria-label={section.label}
+            >
+              <span className="fdy-sidebar-nav-heading">{section.label}</span>
+              <div className="fdy-sidebar-nav-items">
+                {section.header ? (
+                  <div className="fdy-sidebar-section-header">
+                    {section.header}
+                  </div>
+                ) : null}
+                {section.items.map((item) => (
+                  <SidebarNavButton
+                    active={item.id === activeItemId}
+                    item={item}
+                    scopeLabel={section.scopeLabel ?? section.label}
+                    key={item.id}
+                    refCallback={(node) => {
+                      if (node) {
+                        itemRefs.current.set(item.id, node);
+                      } else {
+                        itemRefs.current.delete(item.id);
+                      }
+                    }}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </div>
+            </section>
+          </Fragment>
         ))}
       </nav>
-    </ScrollArea>
+    </div>
   );
 }
 
 interface SidebarNavButtonProps<T extends string> {
   active: boolean;
   item: SidebarNavItem<T>;
+  scopeLabel: string;
   onSelect: (id: T) => void;
   refCallback?: (node: HTMLButtonElement | null) => void;
 }
@@ -369,6 +375,7 @@ interface SidebarNavButtonProps<T extends string> {
 function SidebarNavButton<T extends string>({
   active,
   item,
+  scopeLabel,
   onSelect,
   refCallback,
 }: SidebarNavButtonProps<T>) {
@@ -376,30 +383,33 @@ function SidebarNavButton<T extends string>({
   const Icon = item.icon;
 
   return (
-    <Button
-      aria-current={active ? "page" : undefined}
-      aria-label={t("sidebar.open", { label: item.label })}
-      className="fdy-sidebar-nav-link"
-      data-nav-id={item.id}
-      data-foundry-sidebar-nav-link="true"
-      data-state={active ? "active" : "idle"}
-      onClick={() => onSelect(item.id)}
-      ref={refCallback}
-      variant="nav"
-    >
-      <span className="fdy-sidebar-nav-icon" aria-hidden="true">
-        <Icon />
-      </span>
-      <span className="fdy-sidebar-nav-label">{item.label}</span>
-      {item.badge ? (
-        <b data-tone={item.badge.tone ?? "brass"}>{item.badge.children}</b>
-      ) : null}
-      {item.liveCount ? (
-        <i>
-          <span />
-          {item.liveCount.children}
-        </i>
-      ) : null}
-    </Button>
+    <Tooltip content={`${scopeLabel} · ${item.label}`}>
+      <Button
+        aria-current={active ? "page" : undefined}
+        aria-label={t("sidebar.open", { label: item.label })}
+        title={`${scopeLabel} · ${item.label}`}
+        className="fdy-sidebar-nav-link"
+        data-nav-id={item.id}
+        data-foundry-sidebar-nav-link="true"
+        data-state={active ? "active" : "idle"}
+        onClick={() => onSelect(item.id)}
+        ref={refCallback}
+        variant="nav"
+      >
+        <span className="fdy-sidebar-nav-icon" aria-hidden="true">
+          <Icon />
+        </span>
+        <span className="fdy-sidebar-nav-label">{item.label}</span>
+        {item.badge ? (
+          <b data-tone={item.badge.tone ?? "brass"}>{item.badge.children}</b>
+        ) : null}
+        {item.liveCount ? (
+          <i>
+            <span />
+            {item.liveCount.children}
+          </i>
+        ) : null}
+      </Button>
+    </Tooltip>
   );
 }

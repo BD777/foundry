@@ -30,10 +30,14 @@ export interface ActiveSessionSteerTarget {
  * answer.
  */
 export interface SessionCancelOutcome {
+  inputId?: string;
+  pending?: boolean;
+  stopped?: boolean;
   answered?: boolean;
 }
 
 export interface ActiveSessionCancelTarget {
+  inputId?: string;
   provider: AgentSession["provider"];
   cancel: () =>
     Promise<SessionCancelOutcome | void> | SessionCancelOutcome | void;
@@ -42,6 +46,24 @@ export interface ActiveSessionCancelTarget {
 const activeSessionSteerTargets = new Map<string, ActiveSessionSteerTarget>();
 const activeSessionCancelTargets = new Map<string, ActiveSessionCancelTarget>();
 const queuedSessionCancelRequests = new Set<string>();
+const cancelFlights = new WeakMap<
+  ActiveSessionCancelTarget,
+  Promise<SessionCancelOutcome>
+>();
+function cancelTargetOnce(
+  target: ActiveSessionCancelTarget,
+): Promise<SessionCancelOutcome> {
+  const previous = cancelFlights.get(target);
+  if (previous) return previous;
+  let flight: Promise<SessionCancelOutcome>;
+  try {
+    flight = Promise.resolve(target.cancel()).then((value) => value ?? {});
+  } catch (error) {
+    flight = Promise.reject(error);
+  }
+  cancelFlights.set(target, flight);
+  return flight;
+}
 
 export function registerActiveSessionSteerTarget(
   sessionID: string,
@@ -60,6 +82,11 @@ export function registerActiveSessionCancelTarget(
   target: ActiveSessionCancelTarget,
 ): () => void {
   activeSessionCancelTargets.set(sessionID, target);
+  if (
+    target.inputId &&
+    queuedSessionCancelRequests.delete(dispatchKey(sessionID, target.inputId))
+  )
+    void cancelTargetOnce(target).catch(() => {});
   return () => {
     if (activeSessionCancelTargets.get(sessionID) === target) {
       activeSessionCancelTargets.delete(sessionID);
@@ -159,9 +186,12 @@ export async function cancelActiveSession(
   const target = activeSessionCancelTargets.get(sessionID);
   if (!target) {
     queuedSessionCancelRequests.add(dispatchKey(sessionID, inputID));
-    return {};
+    return { inputId: inputID, pending: true };
   }
-  return (await target.cancel()) ?? {};
+  if (inputID && target.inputId !== inputID)
+    return { inputId: inputID, pending: true };
+  const outcome = await cancelTargetOnce(target);
+  return { ...outcome, inputId: inputID, pending: true };
 }
 
 /** Whether a cancel for this input arrived before it started; it is used up. */

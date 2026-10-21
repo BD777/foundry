@@ -1,3 +1,4 @@
+import { ownedDeviceCandidates } from "../lib/devices";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -207,9 +208,9 @@ export function ActiveView({
     case "resources":
       return (
         <ResourcesFeature
-          ownedDeviceIds={data.devices
-            .filter((device) => device.owned)
-            .map((device) => device.id)}
+          ownedDeviceIds={ownedDeviceCandidates(data.devices).map(
+            (device) => device.id,
+          )}
         />
       );
     case "library":

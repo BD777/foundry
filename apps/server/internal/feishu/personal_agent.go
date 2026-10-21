@@ -170,15 +170,16 @@ func pairedSender(route store.FeishuBotRoute, sender string) bool {
 // computer offline. It reports whether the message was handled; when not,
 // it goes to the assistant. threadSessionID is the session of the topic the
 // message replies in, "" at the chat's top level.
-func (m *WSManager) handleAssistantWords(ctx context.Context, app *botApp, chat chatRoute, messageID, threadSessionID, sender, text string) bool {
+func (m *WSManager) handleAssistantWords(ctx context.Context, app *botApp, chat chatRoute, messageID, threadSessionID, sender string, message incomingMessage, rootMessageID string) bool {
+	text := message.text
 	assistant := chat.assistant
 	if _, refusal := m.boundUser(ctx, chat.FeishuBotRoute); refusal != "" {
 		return false
 	}
-	word := ""
-	if pairedSender(chat.stored, sender) {
-		word = m.PersonalAgents.Word(text)
+	if !pairedSender(chat.stored, sender) {
+		return true
 	}
+	word := m.PersonalAgents.Word(text)
 	language := m.PersonalAgents.Language(ctx, assistant.userID, text)
 	switch {
 	case word == PersonalAgentWordStop:
@@ -190,12 +191,18 @@ func (m *WSManager) handleAssistantWords(ctx context.Context, app *botApp, chat 
 			m.replyCard(ctx, app.client, messageID, card)
 			return true
 		}
+		if m.captureAssistantInput(ctx, app, chat, messageID, threadSessionID, sender, message, rootMessageID, language) {
+			return true
+		}
 		m.replyCard(ctx, app.client, messageID, BuildAssistantStoppedCard(assistantText(language, "stoppedTitle"), assistantText(language, "stopped"), language))
 		return true
 	case word == PersonalAgentWordAccept || word == PersonalAgentWordDecline:
 		if m.answerProposalByWord(ctx, app.client, chat, messageID, threadSessionID, word == PersonalAgentWordAccept, language) {
 			return true
 		}
+	}
+	if m.captureAssistantInput(ctx, app, chat, messageID, threadSessionID, sender, message, rootMessageID, language) {
+		return true
 	}
 	if assistant.route.HomeOffline {
 		body := assistantText(language, "offline")

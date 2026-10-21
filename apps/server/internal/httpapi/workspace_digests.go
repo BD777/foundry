@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/foundry-dev/foundry/apps/server/internal/personalagent"
+	"github.com/foundry-dev/foundry/apps/server/internal/personalagent/flow"
 	"github.com/foundry-dev/foundry/apps/server/internal/redact"
 	"github.com/foundry-dev/foundry/apps/server/internal/store"
 	"github.com/foundry-dev/foundry/apps/server/internal/workspacedigest"
@@ -170,6 +171,34 @@ func (d digestSources) Collect(ctx context.Context, access workspacedigest.Acces
 	if source.Chats, err = s.store.ListChats(ctx, workspaceID); err != nil {
 		return source, err
 	}
+	// Maintenance output is a proposal, not new domain activity. Remove both
+	// its Foundry and native chat projections before computing ContentRev.
+	if maintenance, ok := s.store.(store.PersonalAgentMaintenanceStore); ok {
+		inputs, e := maintenance.PersonalAgentMaintenanceInputs(ctx, workspaceID)
+		if e != nil {
+			return source, e
+		}
+		excluded := map[string]bool{}
+		kept := source.Sessions[:0]
+		for _, session := range source.Sessions {
+			if inputs[session.Input.ID] {
+				excluded[session.ID] = true
+				if session.NativeSessionID != "" {
+					excluded[session.NativeSessionID] = true
+				}
+				continue
+			}
+			kept = append(kept, session)
+		}
+		source.Sessions = kept
+		chats := source.Chats[:0]
+		for _, chat := range source.Chats {
+			if !excluded[chat.ID] && !excluded[chat.NativeSessionID] {
+				chats = append(chats, chat)
+			}
+		}
+		source.Chats = chats
+	}
 	titles, err := s.store.ListChatTitles(ctx, workspaceID)
 	if err != nil {
 		return source, err
@@ -256,7 +285,7 @@ func (d digestSources) Devices(ctx context.Context, userID string) ([]workspaced
 	for _, id := range owned {
 		ownedSet[id] = true
 	}
-	devices, err := s.store.ListDevices(ctx)
+	devices, err := store.DeviceCandidates(ctx, s.store)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +414,7 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 	// A worker that takes setup_workspace's create knows a digest session
 	// is read-only and without Foundry tools; an older one would run it as
 	// a chat.
-	if home == nil || !s.hub.HasConnection(agent.HomeDeviceID) || !home.hasCapability(store.DaemonCapabilityWorkspaceCreate) {
+	if home == nil || !s.hub.HasConnection(agent.HomeDeviceID) || !home.hasCapability(store.DaemonCapabilityWorkspaceCreate) || !home.hasCapability("role_run_budgets_v1") || !home.hasCapability("exact_input_cancel_v1") {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	if record.Digest.SummarizedAt == "" {
@@ -405,28 +434,46 @@ func (s *Server) startDigestSummary(ctx context.Context, service *workspacediges
 	if err != nil {
 		return err
 	}
-	input := store.CreateAgentSessionInput{
-		CreatedByUserID:      agent.UserID,
-		WorkspaceID:          agent.WorkspaceID,
-		Source:               store.DigestSessionSource,
-		ProfileID:            agent.Settings.AssistantProfileID,
-		Model:                agent.Settings.AssistantModel,
-		CodexSandboxMode:     "read-only",
-		CodexApprovalPolicy:  "never",
-		ClaudePermissionMode: "dontAsk",
-		Prompt:               prompt,
+	operationID := flow.Key("digest", agent.UserID, record.Digest.WorkspaceID, record.ContentRev, record.SummaryDueAt)
+	snapshot, err := s.pinAssistantRun(ctx, agent, operationID, "coordinator", agent.WorkspaceID)
+	if err != nil {
+		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
+	if err = s.checkPinnedAssistantRun(ctx, snapshot); err != nil {
+		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
+	}
+	input := runSessionInput(snapshot, prompt, flow.InputID(operationID))
+	input.Source = store.DigestSessionSource
+	input.CodexSandboxMode, input.CodexApprovalPolicy, input.ClaudePermissionMode = "read-only", "never", "dontAsk"
 	if err := s.pickSessionDevice(ctx, &input, true); err != nil {
 		return service.Postpone(ctx, record, now.Add(digestRetryOffline))
 	}
 	session, err := s.store.CreateAgentSession(ctx, input)
+	if errors.Is(err, store.ErrSessionInputExists) {
+		if work, ok := s.store.(store.WorkStore); ok {
+			if id, e := work.WorkRunInputSession(ctx, input.InputID); e == nil {
+				session, err = s.store.GetAgentSessionSummary(ctx, id)
+			}
+		}
+	}
 	if err != nil {
 		return err
+	}
+	if runs, e := s.assistantRuntimeStore(); e == nil {
+		_ = runs.BindPersonalAgentRunSnapshot(ctx, agent.UserID, snapshot.ID, session.ID)
 	}
 	s.sessions.changed(ctx, sessionCreated, session)
 	if claimed, err := service.Claim(ctx, record, session.ID); err != nil || !claimed {
 		s.failUndelivered(ctx, session, "another summary of this project is running")
 		return err
+	}
+	if !activeOrBlocked(session.Status) {
+		full, e := s.store.GetAgentSession(ctx, session.ID)
+		if e != nil {
+			return e
+		}
+		s.finishDigestSummary(ctx, full)
+		return nil
 	}
 	_, err = s.dispatchOrFail(ctx, session, notConnected)
 	return err

@@ -1,3 +1,8 @@
+import {
+  DeviceReferences,
+  currentDeviceGrants,
+} from "./settings-device-references";
+import { isRemovedDevice } from "../../lib/devices";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -8,7 +13,7 @@ import type {
   PersonalAgentSettings,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
-import { updatePersonalAgentSettings } from "../../api";
+import { listAgentProfiles, updatePersonalAgentSettings } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { PageSurface } from "../../components/ui/page-surface";
@@ -17,6 +22,7 @@ import {
   assistantSettingsSections,
   type AssistantSettingsSection,
 } from "../../lib/assistant-settings-sections";
+import { onStreamEvent } from "../../stream";
 import { serverErrorText } from "../../lib/errors";
 import {
   loosenedActions,
@@ -28,7 +34,10 @@ import { AssistantGate } from "./assistant-gate";
 import { ActivitySection } from "./settings-activity";
 import { EntrySection } from "./settings-entry";
 import { LimitsSection } from "./settings-limits";
+import { KnowledgeSection } from "./settings-knowledge";
 import { MemorySection } from "./settings-memory";
+import { MaintenanceSection } from "./settings-maintenance";
+import { RoleRuns } from "./settings-runs";
 import { ModelsSection } from "./settings-models";
 import { PlacesSection } from "./settings-places";
 import { RulesSection } from "./settings-rules";
@@ -103,10 +112,58 @@ function SettingsPanel({
 }) {
   const { t } = useTranslation("personalAgent");
   const [draft, setDraft] = useState<PersonalAgentSettings>(agent.settings);
+  const [hasWorkspaceMemory, setHasWorkspaceMemory] = useState(false);
+  // A removal event revokes only that grant, preserving other unsaved edits.
+  // Location references stay explicit until the person reconfigures them.
+  useEffect(() => {
+    setDraft((current) => currentDeviceGrants(current, devices));
+  }, [devices]);
+  const [catalog, setCatalog] = useState<AgentProfileProjection[]>();
+  const [catalogError, setCatalogError] = useState("");
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const allProfiles = catalog ?? agentProfiles;
+  useEffect(() => {
+    if (section !== "models" && section !== "memory") return;
+    let active = true,
+      version = 0;
+    const read = async () => {
+      const current = ++version;
+      try {
+        const profiles = await listAgentProfiles();
+        if (active && current === version) {
+          setCatalog(profiles);
+          setCatalogError("");
+        }
+      } catch (error) {
+        if (active && current === version)
+          setCatalogError(serverErrorText(error));
+      }
+    };
+    void read();
+    const stop = onStreamEvent(
+      "foundry_data_changed",
+      (event) => {
+        if (
+          !event.resources?.length ||
+          event.resources.some((field) =>
+            ["agentProfiles", "devices", "workspaces"].includes(field),
+          )
+        )
+          void read();
+      },
+      { onResync: () => void read() },
+    );
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [section, catalogRefresh]);
+
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [confirmLoosen, setConfirmLoosen] = useState(false);
-  const saved = JSON.stringify(agent.settings);
+  const currentSettings = currentDeviceGrants(agent.settings, devices);
+  const saved = JSON.stringify(currentSettings);
   const dirty = JSON.stringify(draft) !== saved;
   const owned = devices.filter((device) => device.owned);
   const home = devices.find((device) => device.id === agent.homeDeviceId);
@@ -115,7 +172,7 @@ function SettingsPanel({
 
   // What the server holds now replaces a draft with no changes.
   useEffect(() => {
-    if (!dirty) setDraft(agent.settings);
+    if (!dirty) setDraft(currentSettings);
   }, [saved]);
 
   const change = (patch: Partial<PersonalAgentSettings>) => {
@@ -165,10 +222,22 @@ function SettingsPanel({
         tone="navigation"
         value={section}
       />
+      <DeviceReferences agent={agent} draft={draft} devices={devices} />
       <section
         aria-label={t(`settings.sections.${section}`)}
         className="fdy-pa-section"
       >
+        {catalogError && (section === "models" || section === "memory") ? (
+          <Alert tone="error" title={t("settings.models.catalogFailed")}>
+            <p>{catalogError}</p>
+            <Button
+              size="sm"
+              onClick={() => setCatalogRefresh((value) => value + 1)}
+            >
+              {t("settings.models.refreshCatalog")}
+            </Button>
+          </Alert>
+        ) : null}
         {section === "status" ? (
           <StatusSection
             agent={agent}
@@ -179,7 +248,15 @@ function SettingsPanel({
         ) : section === "style" ? (
           <StyleSection change={change} draft={draft} />
         ) : section === "memory" ? (
-          <MemorySection />
+          <>
+            <KnowledgeSection
+              devices={devices}
+              workspaces={workspaces}
+              profiles={allProfiles}
+              onLocation={setHasWorkspaceMemory}
+            />
+            <MemorySection hasWorkspaceMemory={hasWorkspaceMemory} />
+          </>
         ) : section === "rules" ? (
           <RulesSection change={change} draft={draft} />
         ) : section === "places" ? (
@@ -193,22 +270,33 @@ function SettingsPanel({
             owned={owned}
           />
         ) : section === "models" ? (
-          <ModelsSection
-            agentProfiles={agentProfiles}
-            change={change}
-            draft={draft}
-            home={home}
-          />
+          <>
+            <ModelsSection
+              agentProfiles={allProfiles}
+              devices={owned}
+              workspaces={workspaces.filter(
+                (w) =>
+                  !isRemovedDevice(devices.find((d) => d.id === w.deviceId)),
+              )}
+              change={change}
+              draft={draft}
+              home={home}
+            />
+          </>
         ) : section === "entry" ? (
           <EntrySection change={change} draft={draft} />
         ) : section === "limits" ? (
           <LimitsSection change={change} draft={draft} usage={overview.usage} />
         ) : (
-          <ActivitySection
-            projectName={(id) =>
-              workspaces.find((workspace) => workspace.id === id)?.name
-            }
-          />
+          <>
+            <RoleRuns devices={devices} workspaces={workspaces} />
+            <MaintenanceSection workspaces={workspaces} />
+            <ActivitySection
+              projectName={(id) =>
+                workspaces.find((workspace) => workspace.id === id)?.name
+              }
+            />{" "}
+          </>
         )}
       </section>
       {dirty ? (
@@ -259,7 +347,7 @@ function SettingsPanel({
             <Button
               disabled={saving}
               onClick={() => {
-                setDraft(agent.settings);
+                setDraft(currentSettings);
                 setConfirmLoosen(false);
                 setSaveError("");
               }}

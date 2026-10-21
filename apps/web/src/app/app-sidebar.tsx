@@ -52,6 +52,13 @@ export function AppSidebar({
       ).map((section) => ({
         ...section,
         label: t(`nav.${section.label as NavLabel}`),
+        header: section.id === "workspace" ? workspaceSelector : undefined,
+        scopeLabel:
+          section.id === "workspace"
+            ? t("sidebar.workspaceScope", {
+                workspace: workspaceName || t("nav.workspace"),
+              })
+            : t("sidebar.globalScope"),
         items: section.items.map((item) => ({
           ...item,
           label: t(`nav.${item.label as NavLabel}`),
@@ -65,7 +72,16 @@ export function AppSidebar({
             item.id === "issues" && running ? { children: running } : undefined,
         })),
       })),
-    [account.user?.role, interfaceMode, review, running, activeSkills],
+    [
+      account.user?.role,
+      interfaceMode,
+      review,
+      running,
+      activeSkills,
+      workspaceSelector,
+      workspaceName,
+      t,
+    ],
   );
 
   return (
@@ -78,10 +94,6 @@ export function AppSidebar({
       onThemeToggle={preferences.toggleThemeMode}
       onToggleCollapsed={preferences.toggleSidebarCollapsed}
       theme={preferences.themeMode}
-      workspaceName={interfaceMode === "simple" ? "" : workspaceName}
-      workspaceSelector={
-        interfaceMode === "simple" ? undefined : workspaceSelector
-      }
     />
   );
 }

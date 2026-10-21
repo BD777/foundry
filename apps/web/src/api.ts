@@ -26,3 +26,7 @@ export * from "./api/sessions";
 export * from "./api/session-work";
 export * from "./api/skills";
 export * from "./api/workspaces";
+
+export * from "./api/knowledge";
+
+export * from "./api/personal-agent-maintenance";

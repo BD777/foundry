@@ -1,3 +1,4 @@
+import { DeviceAuthorizationGroups } from "./device-authorization-groups";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -160,7 +161,10 @@ export function DeviceHeldConnector({
   const signIn = (device: DeviceConnectorDevice) =>
     setSigningIn({
       deviceId: device.deviceId,
-      deviceName: device.name,
+      deviceName:
+        view.devices.filter((d) => d.name === device.name).length > 1
+          ? `${device.name} (${device.deviceId})`
+          : device.name,
       kind,
       label: connector.label,
     });
@@ -229,8 +233,12 @@ export function DeviceHeldConnector({
               <DeviceRow
                 busy={busy === device.deviceId}
                 connector={connector}
+                distinguishDevice={
+                  view.devices.filter((d) => d.name === device.name).length > 1
+                }
                 device={device}
                 key={device.deviceId}
+                onState={(next) => showState(device.deviceId, next)}
                 onCheck={() =>
                   void act(
                     device,
@@ -305,18 +313,22 @@ export function DeviceHeldConnector({
  */
 function DeviceRow({
   connector,
+  distinguishDevice,
   device,
   state,
   busy,
+  onState,
   onCheck,
   onInstall,
   onSignIn,
   onSignOut,
 }: {
   connector: ConnectorDescriptor;
+  distinguishDevice: boolean;
   device: DeviceConnectorDevice;
   state?: DeviceConnectorState;
   busy: boolean;
+  onState: (state: DeviceConnectorState) => void;
   onCheck: () => void;
   onInstall: () => void;
   onSignIn: () => void;
@@ -335,7 +347,7 @@ function DeviceRow({
           ? t("deviceHeld.readFailed", { detail: state.statusDetail ?? "" })
           : t("deviceHeld.notSignedIn");
   const where = !device.online
-    ? t("deviceHeld.offline", {
+    ? t(state ? "deviceHeld.offline" : "deviceHeld.offlineUnknown", {
         when: state ? relativeWhen(state.checkedAt) : "",
       })
     : !device.supported
@@ -398,6 +410,7 @@ function DeviceRow({
       <div className="fdy-xacc-row-main">
         <div className="fdy-xacc-identity">
           <strong>{device.name}</strong>
+          {distinguishDevice ? <small>{device.deviceId}</small> : null}
           <span>{summary}</span>
           {where ? <small>{where}</small> : null}
         </div>
@@ -435,6 +448,13 @@ function DeviceRow({
           />
         </span>
       </div>
+      <DeviceAuthorizationGroups
+        connector={connector}
+        device={device}
+        state={state}
+        disabled={busy}
+        onState={onState}
+      />
     </li>
   );
 }

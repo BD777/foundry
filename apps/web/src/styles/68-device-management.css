@@ -284,13 +284,6 @@
 .fdy-connections-device-link {
   justify-self: start;
 }
-.fdy-sidebar-workspace-slot {
-  padding: 2px 12px 12px;
-  min-width: 0;
-}
-.fdy-sidebar[data-collapsed="true"] .fdy-sidebar-workspace-slot {
-  display: none;
-}
 @media (max-width: 700px) {
   .fdy-management-heading {
     align-items: flex-start;
@@ -315,9 +308,6 @@
   }
   .fdy-profile-card-copy {
     flex-basis: 65%;
-  }
-  .fdy-sidebar-workspace-slot {
-    padding: 0 8px;
   }
 }
 .fdy-page-surface-devices {
@@ -960,4 +950,28 @@
 }
 .fdy-agent-runtime-status p {
   margin-block: 0.75rem;
+}
+
+/* The card's sharing affordance owns its control; row navigation is separate. */
+.fdy-account-share-trigger {
+  flex: 0 0 auto;
+}
+.fdy-account-share-popover {
+  width: min(26rem, calc(100vw - 24px));
+  max-height: min(36rem, var(--radix-popover-content-available-height));
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+.fdy-account-share-facts {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.fdy-account-share-facts p,
+.fdy-account-share-actions p {
+  margin: 0;
+}
+.fdy-account-share-actions p {
+  flex-basis: 100%;
 }

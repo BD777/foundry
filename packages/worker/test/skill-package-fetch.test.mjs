@@ -257,65 +257,69 @@ test("real HTTP socket loss retries the immutable GET once and verifies its byte
   assert.match(notices[0], /UND_ERR_SOCKET|ECONNRESET/);
 });
 
-test("a session canceled during Skill download never reaches its native runtime", async (t) => {
-  const { executeAgentSession } =
-    await import("../dist/daemon/session-execution.js");
-  const { cancelActiveSession } = await import("../dist/session-control.js");
-  const { mkdtempSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const root = mkdtempSync(join(tmpdir(), "skill-cancel-"));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const { ref } = fixture();
-  const state = { pending: 0 };
-  let started;
-  const entered = new Promise((resolve) => {
-    started = resolve;
-  });
-  t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
-    started();
-    return pendingFetch(signal, state);
-  });
-  const sent = [];
-  const session = {
-    id: `sess_${randomUUID()}`,
-    provider: "codex",
-    profileId: "codex_local",
-    workspaceId: "ws",
-    source: "chat",
-    model: "gpt-6-astra",
-    input: { id: "input", prompt: "synthetic never executed" },
-    skillRefs: [ref],
-  };
-  const running = executeAgentSession(
-    { send: (type, payload) => sent.push({ type, payload }) },
-    { cwd: root, stateRoot: root },
-    session,
-    undefined,
-    { id: "codex_local", runtime: "codex", connectionType: "local_login" },
-    {
-      serverURL: "https://foundry.invalid",
-      sessionToken: "",
-      workspaceID: "ws",
-    },
-  );
-  await entered;
-  await cancelActiveSession(session.id, "input");
-  await running;
-  assert.equal(state.pending, 0);
-  assert.ok(sent.some((x) => x.payload?.event?.label === "Session canceled"));
-  assert.ok(
-    !sent.some((x) =>
-      /Started Codex|Loaded skills/.test(x.payload?.event?.label ?? ""),
-    ),
-  );
-  assert.equal(
-    existsSync(
-      join(root, ".foundry", "sessions", session.id, "inputs", "input"),
-    ),
-    false,
-  );
-});
+test(
+  "a session canceled during Skill download never reaches its native runtime",
+  { timeout: 10000 },
+  async (t) => {
+    const { executeAgentSession } =
+      await import("../dist/daemon/session-execution.js");
+    const { cancelActiveSession } = await import("../dist/session-control.js");
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = mkdtempSync(join(tmpdir(), "skill-cancel-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const { ref } = fixture();
+    const state = { pending: 0 };
+    let started;
+    const entered = new Promise((resolve) => {
+      started = resolve;
+    });
+    t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
+      started();
+      return pendingFetch(signal, state);
+    });
+    const sent = [];
+    const session = {
+      id: `sess_${randomUUID()}`,
+      provider: "codex",
+      profileId: "codex_local",
+      workspaceId: "ws",
+      source: "chat",
+      model: "gpt-6-astra",
+      input: { id: "input", prompt: "synthetic never executed" },
+      skillRefs: [ref],
+    };
+    const running = executeAgentSession(
+      { send: (type, payload) => sent.push({ type, payload }) },
+      { cwd: root, stateRoot: root },
+      session,
+      undefined,
+      { id: "codex_local", runtime: "codex", connectionType: "local_login" },
+      {
+        serverURL: "https://foundry.invalid",
+        sessionToken: "",
+        workspaceID: "ws",
+      },
+    );
+    await entered;
+    await cancelActiveSession(session.id, "input");
+    await running;
+    assert.equal(state.pending, 0);
+    assert.ok(sent.some((x) => x.payload?.event?.label === "Session canceled"));
+    assert.ok(
+      !sent.some((x) =>
+        /Started Codex|Loaded skills/.test(x.payload?.event?.label ?? ""),
+      ),
+    );
+    assert.equal(
+      existsSync(
+        join(root, ".foundry", "sessions", session.id, "inputs", "input"),
+      ),
+      false,
+    );
+  },
+);
 
 test(
   "cancel interrupts a real response body that never finishes",

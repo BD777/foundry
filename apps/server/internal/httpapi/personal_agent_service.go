@@ -234,6 +234,11 @@ func (s *Server) StopPersonalAgent(ctx context.Context, userID string) (int, err
 	if err := s.expirePersonalAgentProposals(ctx, userID, time.Time{}); err != nil {
 		log.Printf("personal agent %s: void proposals on stop: %v", userID, err)
 	}
+	if operations, e := s.assistantOperationStore(); e == nil {
+		if e = operations.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
+			return 0, e
+		}
+	}
 	ids, err := s.store.PersonalAgentActiveSessions(ctx, agent)
 	if err != nil {
 		return 0, err
@@ -244,27 +249,51 @@ func (s *Server) StopPersonalAgent(ctx context.Context, userID string) (int, err
 			stopped++
 		}
 	}
+	if controls, e := s.assistantRunControlStore(); e == nil {
+		if all, e := controls.ActivePersonalAgentRunControlsForUser(ctx, userID); e == nil {
+			seen := map[string]bool{}
+			for _, id := range ids {
+				seen[id] = true
+			}
+			for _, control := range all {
+				if seen[control.SessionID] || (control.State != "monitoring" && control.State != "stop_requested") {
+					continue
+				}
+				if control, e = controls.RequestPersonalAgentRunStop(ctx, userID, control.ID, "assistant_stopped"); e == nil {
+					s.reconcileAssistantRunControl(ctx, controls, control)
+					if receipt, e := controls.GetPersonalAgentRunControl(ctx, userID, control.ID); e == nil && receipt.State == "stopped" {
+						stopped++
+					}
+				}
+			}
+		}
+	}
 	s.refreshAssistantTasks(ctx, userID)
 	return stopped, nil
 }
 
-// stopAssistantSession cancels one session for the stop switch. A session
-// whose device is gone is recorded cancelled: it can do nothing more.
+// The stop switch requests a stop of each exact input. Disconnected native
+// processes are not declared canceled merely because their transport is gone.
 func (s *Server) stopAssistantSession(ctx context.Context, sessionID string) bool {
-	_, err := s.cancelSession(ctx, Actor{Kind: ActorAccount}, sessionID)
-	if err == nil {
-		return true
+	session, err := s.store.GetAgentSessionSummary(ctx, sessionID)
+	if err != nil || !activeOrBlocked(session.Status) {
+		return false
 	}
-	if errors.Is(err, ErrLocalDaemonNotConnected) {
-		session, cancelErr := s.store.CancelAgentSession(ctx, sessionID, "Stopped by the person")
-		if cancelErr == nil {
-			s.sessions.changed(ctx, sessionCompleted, session)
-			return true
-		}
-		err = cancelErr
+	c, err := s.ensureAssistantRunControl(ctx, session)
+	if err != nil {
+		return false
 	}
-	log.Printf("stop assistant session %s: %v", sessionID, err)
-	return false
+	backing, err := s.assistantRunControlStore()
+	if err != nil {
+		return false
+	}
+	c, err = backing.RequestPersonalAgentRunStop(ctx, session.CreatedByUserID, c.ID, "assistant_stopped")
+	if err != nil {
+		return false
+	}
+	s.reconcileAssistantRunControl(ctx, backing, c)
+	current, err := backing.GetPersonalAgentRunControl(ctx, c.UserID, c.ID)
+	return err == nil && current.State == "stopped"
 }
 
 // ResumePersonalAgent turns the assistant back on (§8). Nothing it stopped
@@ -432,7 +461,7 @@ func (s *Server) recordPAAction(ctx context.Context, record store.PersonalAgentA
 // assistant's files and sign-ins); the person may still pick it in the
 // card. None when every device of theirs is shared.
 func (s *Server) suggestedHomeDevice(ctx context.Context, userID string) (string, error) {
-	owned, err := s.store.DevicesOwnedBy(ctx, userID)
+	owned, err := store.AvailableOwnedDevices(ctx, s.store, userID)
 	if err != nil || len(owned) == 0 {
 		return "", err
 	}
@@ -464,7 +493,7 @@ func (s *Server) setupPersonalAgent(ctx context.Context, account *store.User, de
 	if _, err := s.store.GetPersonalAgent(ctx, account.ID); err == nil {
 		return store.PersonalAgent{}, &statusError{http.StatusConflict, store.ErrPersonalAgentExists}
 	}
-	owned, err := s.store.DevicesOwnedBy(ctx, account.ID)
+	owned, err := store.AvailableOwnedDevices(ctx, s.store, account.ID)
 	if err != nil {
 		return store.PersonalAgent{}, err
 	}
@@ -530,7 +559,7 @@ func (s *Server) createAssistantFolder(ctx context.Context, userID, deviceID, na
 	files := append([]WorkspaceFile{{Path: "AGENTS.md", Content: personalagent.AgentsFile()}}, carried...)
 	return lifecycleFor(s).CreateWorkspace(ctx, WorkspaceActor{UserID: userID}, WorkspaceCreateRequest{
 		DeviceID:   deviceID,
-		Create:     &WorkspaceCreateSource{Kind: WorkspaceCreateEmpty, GitInit: true, Files: files},
+		Create:     &WorkspaceCreateSource{Kind: WorkspaceCreateEmpty, GitInit: false, Files: files},
 		FolderName: folder,
 		Name:       name,
 		Kind:       store.WorkspaceKindPersonalAgent,
@@ -624,6 +653,16 @@ func (s *Server) savePersonalAgentSettings(ctx context.Context, userID string, s
 	normalized, err := personalagent.NormalizeSettings(settings, owned, agent.HomeDeviceID)
 	if err != nil {
 		return agent, &statusError{http.StatusBadRequest, err}
+	}
+	available, err := store.AvailableOwnedDevices(ctx, s.store, userID)
+	if err != nil {
+		return agent, err
+	}
+	for i := range normalized.Devices {
+		entry := &normalized.Devices[i]
+		if !slices.Contains(available, entry.DeviceID) && !slices.ContainsFunc(settings.Devices, func(sent store.PersonalAgentDeviceSettings) bool { return sent.DeviceID == entry.DeviceID }) {
+			entry.AllowWork, entry.AllowCreate = false, false
+		}
 	}
 	return s.store.SavePersonalAgentSettings(ctx, userID, normalized)
 }

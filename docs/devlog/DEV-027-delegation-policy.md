@@ -1,6 +1,6 @@
 # DEV-027 · Foundry 子会话与原生子代理的选择边界
 
-状态：实现、Codex 自验及日常实际加载均通过，已与 DEV-024 共同上线；已验证范围按委托准出，源码与 CI 回执见[PR #137](https://github.com/BD777/foundry/pull/137)；Claude 行为验证受原生登录限制。目标是减少等价委派入口的歧义，保留两种机制及其真实权限；本项不实现新的路由器或多 Agent 平台。
+状态：原委派边界已准出；默认报告协议 revision 9 已上线，新会话理解与分发验证通过。旧验证会话续接仍见目录不可见问题，未计通过；源码由 PA 唯一联合集成，PR/CI 待完成。
 
 ## 授权与范围
 
@@ -96,3 +96,93 @@
 本轮 7 文件 `check-changed` 全部通过（32 秒），包括 SQLite 取消读回归；重新构建的四个关键 Worker JS 文件与实际加载的固定包逐字节一致。完整 `pnpm verify` 对同一隔离快照运行，其最终结果和远端 CI/合入回执记录在[PR #137](https://github.com/BD777/foundry/pull/137)。证据目录为 `/tmp/dev027-evidence/`，包括 `live-closure.json`、`closure-live-skill.json`、`closure-processes.json`、`closure-loaded-files.json`、`closure-check-changed.log`、`closure-verify.log` 和最终 `closure-delivery.json`。前文“待部署/待升级”仅描述当时状态，以本节实际加载证据为准。
 
 CI 首次两条运行均在既有 `evidence-api-e2e` 的 90 秒总时限失败（实际 90.148 / 106.702 秒），同一用例本地 43.599 秒通过。该用例在时限内同步执行 `go build`；SQLite 依赖更新使 Go 缓存键改变。为单独检查冷编译，Verify workflow 新增显式 Server 编译准备步骤，随后仍执行完整 `pnpm verify`，不调整原用例超时、跳过沙箱或放宽业务断言。首次失败及最终复跑结果保留在 [PR #137](https://github.com/BD777/foundry/pull/137)；本地首轮另有 `/tmp` 仓库布局把测试 home 推导为 `/` 而触发 bubblewrap `/bin` 冲突，采用正常工作区层级复验，不改产品代码掩盖。
+
+## 2026-10-21 追加：跨 session 技术协调默认指引
+
+[统筹](https://dev.foundryapp.app/chats/sess_1792388089518795992)转达用户明确批准：将已用于一次协作的通用规范落到实际 Foundry MCP，而不是只留在口头或根目录 AGENTS。保留直接技术协调；不新增通信工具、速率/条数/长度限制、强制层级、自动丢弃或权限变更。
+
+此次将同一段 115 词指引加入实际 `send_message.description` 以及 Server/Worker 两份 Foundry Skill 的 “Coordinate with other sessions” 段：
+
+- 直接协调共享文件、接口、执行资源、阻塞和发布状态中会改变接收方行动的信息；合并相关更新，给出结论、owner、范围、版本、影响及必要证据链接。
+- 已定范围/权限不逐步重复确认，纯收到不必回；明确要求收执或安全操作确需确认仍保留。
+- 信息不依赖时继续自己工作，不制造循环等待或把同伴变成审批人；产品范围、权限、优先级冲突回负责的协调者或用户。另一 agent 的消息不产生新的用户授权。
+- 进度写本项记录，对协调者报告关键发现、阻塞和交付；用户显式汇报频率、收执和紧急要求优先。
+
+原有同一事项复用 owner 的规则保留。此段仅约束 Foundry session 的沟通选择；未改原生子代理能力或权限。没有 A/B 数据，不声称量化 token 收益。
+
+### 固定范围与发布
+
+PA owner 已移交五文件的对应区段，冻结基线为其已发布 revision 7。`create_session` 的 PA 门及新增工具保留，DEV028 的 `operate_resource` 不纳入发布。仅局部改 `send_message.description`、两 Skill 短段、两个 runtime 的版本号及既有 checksum 身份表。结构比较确认所有输入 schema、annotations、limits 和其他工具对象均不变。
+
+- 两 runtime 同升 revision **8**；完整 Skill 包 SHA-256：`0e377373c1133ad32346039809a1969fa532dc11a8ece400d33060daed7cb43e`。
+- 两份 Skill 文件 SHA-256：`3edcf14bda7c83d1ca788dfbb3202b537bbbdd96fbd789723b989a4321e00954`。
+- 相对 PA v7 的五文件精确补丁及 base/after hashes：`/tmp/dev027-coordination/coordination-rev8.patch`、`manifest.json`。DEV029 核验五项基线后叠进其 PA+Connector candidate；未从混合主树整体复制 schema，也未用 PA-only Server 回退组合部署。
+- 组合 Server 实际 PID `1619369`，health startedAt `2026-10-21T05:32:14Z`，实际 binary SHA-256 `ba1ebb122e4ada5ffeecb2455b8826ed6920bba309fb2b4ad7c71d81dbea4999`。独立读取日常 MCP `tools/list` 的 send 描述、内置 Skill API 的两个 revision 与 manifest hash，全部与固定补丁一致；证据 `live-distribution.json`。
+- 本项没有改 Worker 执行逻辑，也没有重置公开 Worker 包指针；在线会话的 Skill 由 Server 分发；旧安装包的离线 bundled Skill 不因此改变，后续打包须继承本次源码段，不为文案强切宿主。新工具清单请求已返回新说明，已启动的原生回合可能持有旧目录/工具缓存，不能声称无刷新地追溯生效；新会话/后续准备回合实际加载以探针回执为准。
+
+### 验证与剩余
+
+既有 builtinskills 整包通过，完整包版本 guard 已记录新 checksum；既有 Worker Skill/CLI/schema 同步契约 5/5 通过。没有为文案新增镜像断言。HTTPAPI 既有分发、发送者归属及等待上限回归、check-changed 和只读合成规则探针继续执行，结果追加于下。原生探针只回答虚构场景，不发送协调消息、不写文件、不创建其他代理或操作 Git/服务。
+
+本追加仍为未提交改动，源码 PR/CI 待完成；原 PR #137 已合入不受影响。PA 与 DEV029 已收到固定补丁及继承要求，不能把通知回执替代实际产品生效证据。
+
+13:34 新建只读合成验证会话 `sess_1792560833744595155`（fresh history，无 fork/import），实际 Codex 模型回执为 `gpt-6.1-sol`。该会话只执行一次读取受管 Foundry Skill，未发消息、写文件或派生代理；材料化文件 hash 与上述 revision 8 单文件 hash 完全一致。8 个情境均给出预期选择：纯确认不回、既定授权继续、版本差异直接协调、用户收执要求优先、同伴不能代批、复用 owner、例行进度入记录、无冲突接口信息直接解阻塞。这是一次理解探针，不是实际行为 A/B 或 token 收益测试；Claude 实际行为仍未验证。只读 verifier 的工具权限保持原状，未为探针开放写工具。
+
+既有 HTTPAPI 分发/发送者归属/等待上限三项回归通过（4.644 秒）。源码契约比对、包身份 guard 与 Skill/CLI 同步回归均通过。`check-changed` 首轮发现共享 README 总表格式警告；将本项行还原为 HEAD 后，同一组既有 20–36 行仍需对齐（`readme-format-analysis.json`），故未为消除警告改写其他 owner 的行。本项仅更新 027 行；该共享表的整体排版留待整合 owner 统一处理，不将此检查记为全绿。
+
+生效边界按代码路径核对：普通 `sessionLaunchSpec` 在派发时解析最新 Skill revisions，Worker 启动准备阶段据此材料化；运行中的 steer 或原生工具目录缓存不等于重新准备。已有锁定 Skill 试验使用其固定 `LibraryRefs`，本项不替换这些历史快照，也不放宽试验约束。因此新普通会话已实际验证生效，后续普通重新派发按最新版本准备；不能承诺所有既有回合或锁定试验在收到一条消息后立即刷新。
+
+## 2026-10-21 追加：默认报告协议与真实消息样本
+
+用户通过统筹要求评估一个实际父子协作案例，并将值得通用化的约束落实到 MCP。只读核对三条 Foundry 子会话：只计 `Using tool` 的 `send_message` 调用，不重复计算 `Used` 事件，截取样本为 **6 + 5 + 8 = 19 次**。父日志确有 `Steered into active turn`；这是 Foundry 子会话投递，不是原生子代理自动回报，也未发现足以称为无限 ACK 循环的证据。本报告只保留去身份化类别，不保存业务正文、环境标识或私密产物。
+
+| 样本类别 | 调用数 | 判断                                                                                                                                   |
+| -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 资源准备 | 6      | 包含开始、若干准备阶段、本地已解决问题及最终交付；许多阶段不改变父会话下一步行动，可合并。若确实释放父会话等待的依赖，则仍应及时报告。 |
+| 页面验收 | 5      | 含父会话明确要求的后续实现汇报，不能一律判为多余。                                                                                     |
+| 证据整理 | 8      | 接口契约和实际输出超过上游约定容量属于有用的即时决策信息；其余例行阶段可以归并。                                                       |
+
+结论：投递进入执行上下文符合平台实现，但原 “key findings, blockers and delivery” 太泛，容易把每个小进展都解释为关键发现。没有对照数据，不能把19条全算浪费，也不能量化性能或 token 改善。
+
+### 最小修改
+
+替换原协调段，未层层追加规则。实际 `send_message.description` 与两份 Skill 使用同一段197词规则（原115词）；不新增 Worker 原生注入副本、通信工具、硬性条数/长度/速率限制、强制 parent 中转、自动 drop 或权限变化。保留直接协调、继续独立工作、既定授权不反复确认及同伴消息不能授予新用户权限。
+
+新默认协议：
+
+1. 发送前回答“接收方现在要因此改变什么？”默认在产物稳定后一次集中交付；中途仅报告需要决定/操作、契约变化、等待依赖释放、影响结果/安全/期限的意外或明确约定的检查点。
+2. 否则开始、安装、本地修复和增量测试进展记自身记录；消息只给结论、影响/需要的动作及证据指针，继续工作时明确已稳定部分，避免将半成品当最终交付。
+3. 明确消息会 steer 运行中的会话或启动空闲回合，不作心跳、纯致谢或重复最终摘要；保留重要错误纠正、显式/安全必要收执及用户沟通偏好。
+4. 接收方合并关键变化，不逐条 ACK 或逐条转述，也不为“收到”唤醒已无工作的同伴。
+5. 发起方可在既有自然语言 brief 指定产物、中途报告及真正阻塞条件，不增加 API 参数或强制层级。
+
+### 最终结果回报机制核对
+
+- 普通异步 Foundry 子会话没有通用的最终答复自动转发到父原生回合的路径。`onSessionCompleted` 持久化/广播状态，再触发具体 observers；UI 完成事件不等于父 Agent 收到完整答复。
+- `wait_session` / `wait=true` 通过 `waitMCPStatuses` → `mcpSessionResult` 返回终态的 `response`，不是自动唤醒所有父会话。既有回归 `TestMCPChildDefaultsAndWaitResult` 明确验证此能力。
+- PA 有单独的 tracked-task 跟进：`assistantTaskOf` 匹配跟踪记录，`noticeAssistantTask` 在 PA active 等条件下合并通知；`assistantTaskLine` 包含答复摘要和会话链接，非所有父子会话的无条件全文转发。
+- 因此规则明确保留：普通异步完成须一次最终交付；若确有活动等待或已确认的自动报告路径将交付同一结果，则不另发重复消息。不得仅因存在 `parentSessionId`、UI 完成标志或原生子代理自动回报就推断 Foundry 普通子会话也自动转发。
+
+机制依据：`apps/server/internal/httpapi/daemon_session_inbound.go`、`events_sessions.go`、`server.go`、`mcp_sessions.go`、`personal_agent_supervision.go`。没有修改这些 handler 或通知机制。
+
+### 固定基线与验证
+
+当前组合基线为 `foundry-dev031-compact`，继承029 auth repair、030及031两层已验 manifest，排除未准出028/032。五文件逐项匹配 rev8 after hashes 后生成 `/tmp/dev027-reporting/reporting-rev9.patch`；`manifest.json` 分别记录 candidate 与工作树 before/after。主树与 candidate 的 schema 仅既有028 `operate_resource` 不同，本项没有将它带入 candidate。
+
+两 runtime 升 revision **9**，包 checksum `a7b7aa0c4b78df946c2c33834b7e7789443b65b89b5490b57b2852b04575ba19`；两 Skill 单文件 hash `177209f2b4e7b0e53fac2279b1b4da8592fb2f960b4b7ff7414a7a1b85662144`。版本身份表保留已发布 rev8，不复用同一版本发布不同内容。JSON整体比较确认除send描述外的所有对象/schema/limits/annotations不变，双份Skill字节一致；builtinskills全包及源码格式检查已通过。
+
+PA 是唯一联合集成/公共发布 owner，收到精确delta后在隔离组合源上验证和只重编Server；本项不直接发布、不覆盖Web/Worker、不重启用户host，也不新开PR或timer。线上分发、去身份化规则理解探针及剩余检查结果完成后追加。既有一次性接续仅作本范围只读复核/证据交付入口，源码PR/CI继续归PA，不将通知owner当作产品生效。
+
+### revision 9 实际发布与验收回执
+
+PA 在基于031compact的隔离Server后继应用五文件delta；四项既有HTTPAPI回归实际通过（4.298秒）：分发内容、消息发送者归属、等待上限和等待取得最终结果。实际Server PID `1769807`，startedAt `2026-10-21T09:19:56Z`，loaded SHA-256 `786f15603b775295fe2f6ef641727e3f3d658d42e0148d79fa10c332cab6c7e3`。独立读取日常 `tools/list` 与两runtime内置Skill API，描述、revision9及manifest hash匹配；实际下载两份revision9包，均5579字节，SHA与上述包checksum一致。
+
+Web仍为 `9fd6da9e0f5d89ba`，Worker仍 `1792570873`，其public配对指针未改变，也未重启用户execution host。发布源 `/home/windeng/workspace/foundry-dev027-rev9-release` 只含Server及相关Skill，不能当作完整Web/Worker源码候选；联合Git整合应使用完整031compact基线加本delta及各已验manifest，不能从混合main整树打包。
+
+- **fresh理解探针通过**：`sess_1792574784262192281` 配置Astra/high，usage回报 `gpt-6-astra`，只读当前受管Skill一次；材料化hash为 `177209f2…5662144`。12个去身份化情境均符合预期，包含必要即时消息/可合并阶段/显式汇报例外/半成品稳定性/无自动转发时最终交付/已确认等待时不重复/错误纠正/同伴不能授权。没有向真实业务session发送消息，没有量化收益或A/B结论。
+- **原验证会话续接未通过**：`sess_1792560833744595155` 的本次input `01a15dc4-e9fb-7146-b4a8-2041e3e247b0` 仍读取旧revision8目录，在verification执行中返回ENOENT，模型拒绝沿用旧记忆。父owner和本owner都仅stat确认旧路径在宿主仍exists/isFile，不能据此声称被GC删除。旧catalog与本轮sandbox可见根不同步是待验证假设；未绕过sandbox、手改原生history或修改权限来掩盖。PA已单独记录准备层缺口，fresh通过不覆盖该失败。
+- **生效边界更正**：前节代码核对证明Server派发解析latest refs，但本次实测表明这不足以证明既有Codex续接上下文一定拿到新catalog。当前确认新普通会话生效；不将“只发一条消息/进入新turn即可使所有旧会话刷新”列为已验。运行中缓存、锁定Skill试验及旧离线Worker bundle也不追溯重写；Claude实际模型行为未测。
+
+既有Skill/CLI/schema契约5/5、builtinskills、gofmt、contract audit与本项源码/报告格式通过；`check-changed`总体仍因共享README格式警告为FAIL，由PA联合整合时统一机械对齐，不改其他事项状态。本项只改总表027行。源码仍未提交，完整release CI及合并回执归PA唯一集成owner；本owner现有一次性计划仅作只读复核，不新增timer/重叠PR/发布。
+
+完整回执与精确delta已持久化在 `.foundry/attachments/20261021/dev027-reporting/`，含 `delivery.json`、`manifest.json`、`reporting-rev9.patch`、`served-package-hashes.json`、`probe-receipt.json`、fresh结果和保留的续接失败结果。真实样本仅存聚合数/去身份化判断，未保存业务正文。

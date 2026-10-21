@@ -1,3 +1,7 @@
+import {
+  instructionEntriesRevision,
+  workspaceInstructionRevision,
+} from "../workspace-context-revision.js";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type WebSocket from "ws";
@@ -98,6 +102,7 @@ export class WorkspaceRoster {
   private helloPending: string | undefined;
   private afterHello: Array<() => void> = [];
   private closed = false;
+  private readonly contextRevisions = new Map<string, string>();
 
   constructor(
     private readonly socket: WebSocket,
@@ -227,6 +232,10 @@ export class WorkspaceRoster {
       registration.workspace.id,
       registration.workspace.localPath,
     );
+    this.contextRevisions.set(
+      registration.workspace.id,
+      instructionEntriesRevision(registration.workspaceFiles),
+    );
     this.announcedWorkspaceIds.add(registration.workspace.id);
     loggedMissingFolders.delete(registration.workspace.localPath);
   }
@@ -253,7 +262,34 @@ export class WorkspaceRoster {
         }
       }
     }
-    if (workspaceId) this.announcedWorkspaceIds.delete(workspaceId);
+    if (workspaceId) {
+      this.announcedWorkspaceIds.delete(workspaceId);
+      this.contextRevisions.delete(workspaceId);
+    }
+  }
+
+  /** Metadata checks share the existing timer; unchanged files emit nothing. */
+  checkContextFiles(): void {
+    if (this.closed) return;
+    for (const [id, path] of this.workspacePaths) {
+      if (!this.announcedWorkspaceIds.has(id) || !workspaceFolderPresent(path))
+        continue;
+      if (this.contextRevisions.get(id) === workspaceInstructionRevision(path))
+        continue;
+      try {
+        const registration = this.registration(path);
+        this.register(registration);
+        this.sendRegistration(
+          daemonMessageTypes.workspaceReady,
+          registration,
+          `context_${safeID(id)}_${Date.now()}`,
+        );
+      } catch (error) {
+        console.error(
+          `Reading workspace context metadata failed: ${errorMessage(error)}`,
+        );
+      }
+    }
   }
 
   /** The folder the workspace was last known at, present or not. */

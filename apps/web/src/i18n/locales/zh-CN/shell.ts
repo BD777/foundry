@@ -5,9 +5,9 @@ export const shell: Translation<typeof en> = {
   nav: {
     assistantSection: "助理",
     assistant: "助理",
-    assistantSettings: "设置",
+    assistantSettings: "助理设置",
     workspace: "工作区",
-    manage: "管理",
+    manage: "全局管理",
     overview: "概览",
     issues: "Issues",
     chats: "对话",
@@ -43,6 +43,9 @@ export const shell: Translation<typeof en> = {
     workspace: "工作区",
   },
   sidebar: {
+    interfaceControls: "界面工具",
+    globalScope: "全局",
+    workspaceScope: "工作区：{{workspace}}",
     open: "打开{{label}}",
     lightMode: "切换到浅色模式",
     darkMode: "切换到深色模式",

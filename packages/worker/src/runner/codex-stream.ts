@@ -1,3 +1,4 @@
+import { ControlOutcomeUnknownError } from "../agent-runtime/control-error.js";
 import type { ManagedSkillRuntime } from "../skill-materializer.js";
 import { validateWorkspaceSkillPrompt } from "../skill-isolation.js";
 import { userMessageText } from "../session-prompt.js";
@@ -31,6 +32,8 @@ import {
 
 /** What one Codex turn learns as it runs; every phase reads and updates it. */
 export interface CodexTurnState {
+  inputId?: string;
+  ceilingMs?: number;
   emit: SessionEventEmitter;
   reportNativeSessionId: (nativeSessionId: string) => void;
   files: SessionTurnFiles;
@@ -73,6 +76,7 @@ export async function runCodexStreamedTurn(
   let canceled = false;
   const unregisterCancel = registerActiveSessionCancelTarget(sessionId, {
     provider: "codex",
+    inputId: state.inputId,
     cancel: () => {
       canceled = true;
       abortController.abort();
@@ -97,21 +101,36 @@ export async function runCodexStreamedTurn(
               })),
           ];
           await thread.steer!(input, steerId);
-          await state.emit(
-            "Steered into active turn",
-            message,
-            "info",
-            undefined,
-            { id: steerId ?? "", kind: "user", text: message, attachments },
-            steerId ? `evt_${steerId}` : undefined,
-          );
+          try {
+            await state.emit(
+              "Steered into active turn",
+              message,
+              "info",
+              undefined,
+              { id: steerId ?? "", kind: "user", text: message, attachments },
+              steerId ? `evt_${steerId}` : undefined,
+            );
+          } catch {
+            throw new ControlOutcomeUnknownError(
+              "Native input was accepted, but its receipt could not be persisted. Reconcile before retrying.",
+            );
+          }
         },
       })
     : () => {};
   // Quiet is not failure: Codex bounds its own stream and tools.
   let ceilingError: Error | undefined;
+  const limits = turnLivenessSettings();
+  if (state.ceilingMs)
+    limits.ceilingMs =
+      limits.ceilingMs > 0
+        ? Math.min(limits.ceilingMs, state.ceilingMs)
+        : state.ceilingMs;
   const liveness = new CodexTurnLiveness({
-    ...turnLivenessSettings(),
+    ...limits,
+    ...(state.ceilingMs
+      ? { checkIntervalMs: Math.max(50, Math.min(1000, state.ceilingMs / 4)) }
+      : {}),
     startupTimeoutMs: undefined,
     onNotice: (notice) =>
       void state.emit(

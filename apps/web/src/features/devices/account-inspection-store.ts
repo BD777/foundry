@@ -138,16 +138,17 @@ async function request(
   }
 }
 
-function keyOf(deviceId: string, runtime: Runtime) {
-  return `${deviceId}\u0000${runtime}`;
+function keyOf(deviceId: string, runtime: Runtime, identity = "") {
+  return `${deviceId}\u0000${runtime}\u0000${identity}`;
 }
 
 export function useDeviceAccountInspection(
   deviceId: string,
   runtime: Runtime,
   online: boolean,
+  identity?: string,
 ): InspectionSnapshot {
-  const key = keyOf(deviceId, runtime);
+  const key = keyOf(deviceId, runtime, identity);
   const snapshot = useSyncExternalStore(
     (listener) => subscribe(key, listener),
     () => entryFor(key).view,
@@ -169,16 +170,18 @@ export function checkInspection(
   deviceId: string,
   runtime: Runtime,
   source?: string,
+  identity?: string,
 ) {
-  void request(keyOf(deviceId, runtime), deviceId, runtime, source);
+  void request(keyOf(deviceId, runtime, identity), deviceId, runtime, source);
 }
 
 export function selectInspectionSource(
   deviceId: string,
   runtime: Runtime,
   source: string,
+  identity?: string,
 ) {
-  const key = keyOf(deviceId, runtime);
+  const key = keyOf(deviceId, runtime, identity);
   const entry = entryFor(key);
   entry.selectedSource = source;
   publish(key);
@@ -189,8 +192,9 @@ export function resetInspectionSource(
   deviceId: string,
   runtime: Runtime,
   source: string,
+  identity?: string,
 ) {
-  const key = keyOf(deviceId, runtime);
+  const key = keyOf(deviceId, runtime, identity);
   entryFor(key).selectedSource = source;
   publish(key);
 }

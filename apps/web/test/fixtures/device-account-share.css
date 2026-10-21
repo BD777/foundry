@@ -1,0 +1,5 @@
+.device-share-fixture {
+  height: 100dvh;
+  overflow: auto;
+  padding: 24px;
+}

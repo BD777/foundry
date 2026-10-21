@@ -177,3 +177,19 @@ func TestCompileKeepsThePersonsRequestsAsHistory(t *testing.T) {
 		t.Fatalf("candidates = %+v", candidates)
 	}
 }
+
+func TestInstructionContentRevisionDetectsSameSizeChangesWithoutClockChurn(t *testing.T) {
+	now := time.Now()
+	source := Source{UserID: "person", Workspace: store.WorkspaceProjection{ID: "context"}, Files: []store.WorkspaceFileEntry{{Path: "AGENTS.md", Kind: "file", SizeLabel: "1 KB", UpdatedLabel: "local", Revision: "sha256:first"}}}
+	first := Compile(source, nil, now)
+	source.Files[0].Revision = "sha256:second"
+	second := Compile(source, &first, now)
+	if first.ContentRev == second.ContentRev {
+		t.Fatal("same-size context change lost")
+	}
+	source.Files[0].UpdatedLabel = "a different presentation timestamp"
+	third := Compile(source, &second, now.Add(time.Minute))
+	if second.ContentRev != third.ContentRev {
+		t.Fatal("unchanged content would rerun maintenance")
+	}
+}

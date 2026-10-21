@@ -108,9 +108,14 @@ type Server struct {
 	loginLimiter  *loginLimiter
 	setupMu       sync.Mutex
 	// Work dispatch and control serialize so a completed stop cannot race a new fire.
-	workMu        sync.Mutex
-	workerUpdates workerUpdates
-	setupCode     string
+	workMu          sync.Mutex
+	inboxMu         sync.Mutex
+	paOperationsMu  sync.Mutex
+	paMaintenanceMu sync.Mutex
+	knowledgeMu     sync.Mutex
+	paRunControlsMu sync.Mutex
+	workerUpdates   workerUpdates
+	setupCode       string
 	// stream is GET /api/events; the notifiers tell browsers on it, by
 	// domain, what the server's handlers change.
 	stream      *eventstream.Hub
@@ -200,6 +205,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		toolResolver:              skilltools.Resolver{ReleaseAPI: "https://api.github.com", PyPIAPI: "https://pypi.org"},
 	}
 	devices := newDeviceEvents(stream, store, data, server)
+	devices.workspaceContentChanged = server.refreshWorkspaceDigests
 	devices.reauthorizeOwner = server.reauthorizeDeviceOwner
 	server.devices = devices
 	server.hub = NewDaemonHub(store, daemonNotifiers{sessions: sessions, issues: issues, devices: devices, chats: chats, dataChanges: data}, options.AllowedOrigin)
@@ -234,7 +240,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 	// chat's queued messages, the chat's title, the resources it leases;
 	// and, once a device that reported a session ended was answered, naming
 	// what it answered.
-	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server})
+	sessions.observe(workRunReactions{server}, feishuReactions{server.feishu}, chatQueueReactions{server}, server.titles, resourceLeaseReactions{server}, assistantTaskReactions{server}, assistantInboxReactions{server}, assistantRunControlReactions{server})
 	issues.observe(feishuReactions{server.feishu})
 	server.observeWorkspaceDigests(sessions, issues)
 	server.observeDeviceSharing()

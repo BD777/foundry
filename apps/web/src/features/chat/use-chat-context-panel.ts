@@ -74,7 +74,11 @@ export function useChatContextPanel({
   }, [closeDetail]);
   // An idle chat whose agent still works: the note names what keeps running
   // and opens the panel on those rows.
-  const backgroundWork = agentActive ? undefined : runningWork;
+  const backgroundWork = useMemo(
+    () =>
+      agentActive || !runningWork ? undefined : { ...runningWork, taskIds: [] },
+    [agentActive, runningWork],
+  );
   const backgroundNote = backgroundWork
     ? backgroundWorkNote(backgroundWork)
     : undefined;

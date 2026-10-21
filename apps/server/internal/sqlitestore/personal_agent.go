@@ -186,6 +186,22 @@ func (s *Store) PersonalAgentForWorkspace(ctx context.Context, workspaceID strin
 }
 
 func (s *Store) CreatePersonalAgent(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgent, error) {
+	var saved store.PersonalAgent
+	err := s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, agent.HomeDeviceID); err != nil {
+			return err
+		}
+		if err := tx.validatePersonalAgentDeviceReferences(ctx, store.PersonalAgentSettings{}, agent.Settings); err != nil {
+			return err
+		}
+		var err error
+		saved, err = tx.createPersonalAgent(ctx, agent)
+		return err
+	})
+	return saved, err
+}
+
+func (s *Store) createPersonalAgent(ctx context.Context, agent store.PersonalAgent) (store.PersonalAgent, error) {
 	if agent.UserID == "" || agent.WorkspaceID == "" {
 		return store.PersonalAgent{}, errors.New("an assistant needs a person and a workspace")
 	}
@@ -213,14 +229,30 @@ func (s *Store) CreatePersonalAgent(ctx context.Context, agent store.PersonalAge
 }
 
 func (s *Store) SavePersonalAgentSettings(ctx context.Context, userID string, settings store.PersonalAgentSettings) (store.PersonalAgent, error) {
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return store.PersonalAgent{}, err
-	}
-	if err := s.updatePersonalAgent(ctx, userID, `settings_json = ?, updated_at = ?`, string(raw), paNow()); err != nil {
-		return store.PersonalAgent{}, err
-	}
-	return s.GetPersonalAgent(ctx, userID)
+	var saved store.PersonalAgent
+	err := s.withTx(ctx, func(tx *Store) error {
+		previous, err := tx.GetPersonalAgent(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if err := tx.validatePersonalAgentDeviceReferences(ctx, previous.Settings, settings); err != nil {
+			return err
+		}
+		settings.Devices, err = tx.currentPersonalAgentGrants(ctx, settings.Devices)
+		if err != nil {
+			return err
+		}
+		raw, err := json.Marshal(settings)
+		if err != nil {
+			return err
+		}
+		if err := tx.updatePersonalAgent(ctx, userID, `settings_json = ?, updated_at = ?`, string(raw), paNow()); err != nil {
+			return err
+		}
+		saved, err = tx.GetPersonalAgent(ctx, userID)
+		return err
+	})
+	return saved, err
 }
 
 func (s *Store) FillPersonalAgentTimezone(ctx context.Context, userID, timezone string) (store.PersonalAgent, error) {
@@ -241,7 +273,20 @@ func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string)
 	if state == store.PersonalAgentStopped {
 		stoppedAt = now
 	}
-	if err := s.updatePersonalAgent(ctx, userID, `state = ?, stopped_at = ?, updated_at = ?`, state, stoppedAt, now); err != nil {
+	if err := s.withTx(ctx, func(tx *Store) error {
+		if e := tx.updatePersonalAgent(ctx, userID, `state = ?, stopped_at = ?, updated_at = ?`, state, stoppedAt, now); e != nil {
+			return e
+		}
+		if state == store.PersonalAgentStopped {
+			if _, e := tx.conn().ExecContext(ctx, `UPDATE pa_run_controls SET state='stop_requested',revision=revision+1,payload_json=json_set(payload_json,'$.state','stop_requested','$.stopReason','assistant_stopped','$.revision',revision+1,'$.updatedAt',?) WHERE user_id=? AND state='monitoring'`, now, userID); e != nil {
+				return e
+			}
+			if e := tx.CancelUndispatchedPersonalAgentOperations(ctx, userID); e != nil {
+				return e
+			}
+		}
+		return nil
+	}); err != nil {
 		return store.PersonalAgent{}, err
 	}
 	return s.GetPersonalAgent(ctx, userID)
@@ -253,6 +298,9 @@ func (s *Store) SetPersonalAgentState(ctx context.Context, userID, state string)
 func (s *Store) MovePersonalAgentHome(ctx context.Context, userID, workspaceID, deviceID string) (store.PersonalAgent, error) {
 	var moved store.PersonalAgent
 	err := s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
 		agent, err := tx.GetPersonalAgent(ctx, userID)
 		if err != nil {
 			return err
@@ -403,38 +451,66 @@ func (s *Store) ConfirmPersonalAgentMemory(ctx context.Context, userID, id strin
 // forgetting is real deletion of the content (§2).
 func (s *Store) ForgetPersonalAgentMemory(ctx context.Context, userID, id string) error {
 	return s.withTx(ctx, func(tx *Store) error {
-		item, err := tx.GetPersonalAgentMemory(ctx, userID, id)
-		if err != nil {
+		if err := tx.forgetLegacyTransfer(ctx, userID, id); err != nil {
 			return err
 		}
-		now := paNow()
-		for visited := map[string]bool{}; item.ID != "" && !visited[item.ID]; {
-			visited[item.ID] = true
-			if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_memory SET content = '', status = ?, updated_at = ? WHERE user_id = ? AND id = ?`,
-				store.PersonalAgentMemoryForgotten, now, userID, item.ID); err != nil {
-				return fmt.Errorf("forget personal agent memory: %w", err)
-			}
-			if item.Supersedes == "" {
-				break
-			}
-			if item, err = tx.GetPersonalAgentMemory(ctx, userID, item.Supersedes); errors.Is(err, store.ErrNotFound) {
-				break
-			} else if err != nil {
-				return err
-			}
-		}
-		return nil
+		return tx.eraseLegacyMemoryChain(ctx, userID, id)
 	})
+}
+func (tx *Store) eraseLegacyMemoryChain(ctx context.Context, userID, id string) error {
+	item, err := tx.GetPersonalAgentMemory(ctx, userID, id)
+	if err != nil {
+		return err
+	}
+	now := paNow()
+	for visited := map[string]bool{}; item.ID != "" && !visited[item.ID]; {
+		visited[item.ID] = true
+		if _, err := tx.conn().ExecContext(ctx, `UPDATE pa_memory SET content = '', status = ?, updated_at = ? WHERE user_id = ? AND id = ?`,
+			store.PersonalAgentMemoryForgotten, now, userID, item.ID); err != nil {
+			return fmt.Errorf("forget personal agent memory: %w", err)
+		}
+		if item.Supersedes == "" {
+			break
+		}
+		if item, err = tx.GetPersonalAgentMemory(ctx, userID, item.Supersedes); errors.Is(err, store.ErrNotFound) {
+			break
+		} else if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) ForgetAllPersonalAgentMemory(ctx context.Context, userID string) (int, error) {
-	result, err := s.conn().ExecContext(ctx, `UPDATE pa_memory SET content = '', status = ?, updated_at = ? WHERE user_id = ? AND status != ?`,
-		store.PersonalAgentMemoryForgotten, paNow(), userID, store.PersonalAgentMemoryForgotten)
-	if err != nil {
-		return 0, fmt.Errorf("forget all personal agent memory: %w", err)
-	}
-	count, _ := result.RowsAffected()
-	return int(count), nil
+	count := 0
+	err := s.withTx(ctx, func(tx *Store) error {
+		rows, e := tx.reader().QueryContext(ctx, `SELECT id FROM pa_memory WHERE user_id=? AND status<>?`, userID, store.PersonalAgentMemoryForgotten)
+		if e != nil {
+			return e
+		}
+		ids := []string{}
+		for rows.Next() {
+			var id string
+			if e = rows.Scan(&id); e != nil {
+				rows.Close()
+				return e
+			}
+			ids = append(ids, id)
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return e
+		}
+		for _, id := range ids {
+			if e = tx.ForgetPersonalAgentMemory(ctx, userID, id); e != nil {
+				return e
+			}
+			count++
+		}
+		return nil
+	})
+	return count, err
 }
 
 const proposalColumns = `id, user_id, session_id, kind, workspace_id, spec_json, summary, status, created_at, expires_at, decided_at, decided_via, error`
@@ -546,6 +622,34 @@ func scanTask(row interface{ Scan(...any) error }) (store.PersonalAgentTask, err
 }
 
 func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
+	var out store.PersonalAgentTask
+	err := s.withTx(ctx, func(tx *Store) error {
+		if task.SessionID != "" {
+			old, e := scanTask(tx.reader().QueryRowContext(ctx, `SELECT `+taskColumns+` FROM pa_tasks WHERE user_id=? AND session_id=? ORDER BY created_at DESC LIMIT 1`, task.UserID, task.SessionID))
+			if e == nil {
+				if old.WorkspaceID != task.WorkspaceID {
+					return store.ErrIdempotencyConflict
+				}
+				if task.ConversationSessionID != "" && task.ConversationSessionID != old.ConversationSessionID {
+					old.ConversationSessionID = task.ConversationSessionID
+					if e = tx.UpdatePersonalAgentTask(ctx, old); e != nil {
+						return e
+					}
+				}
+				out = old
+				return nil
+			}
+			if !errors.Is(e, store.ErrNotFound) {
+				return e
+			}
+		}
+		var e error
+		out, e = tx.insertPersonalAgentTask(ctx, task)
+		return e
+	})
+	return out, err
+}
+func (tx *Store) insertPersonalAgentTask(ctx context.Context, task store.PersonalAgentTask) (store.PersonalAgentTask, error) {
 	if task.UserID == "" || task.WorkspaceID == "" {
 		return task, errors.New("a task needs a person and a workspace")
 	}
@@ -554,7 +658,7 @@ func (s *Store) CreatePersonalAgentTask(ctx context.Context, task store.Personal
 	if task.Status == "" {
 		task.Status = store.PersonalAgentTaskRunning
 	}
-	_, err := s.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := tx.conn().ExecContext(ctx, `INSERT INTO pa_tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID, task.UserID, task.ConversationSessionID, task.SessionID, task.WorkspaceID, task.Title, task.Status,
 		task.ReadOnly, task.CreatedAt, task.UpdatedAt, task.LastEventAt, task.EndedAt, task.StuckSince)
 	if err != nil {

@@ -11,6 +11,11 @@ export type PersonalAgentListItemStatus = "open" | "done" | "dropped";
 /** One thing on the person's list (table pa_items). */
 export interface PersonalAgentListItem {
   id: string;
+  intentRevision?: number;
+  revision?: number;
+  sourceInputId?: string;
+  sourceInboxId?: string;
+  plan?: PersonalAgentItemPlan;
   /** The thing, short, in the person's language. */
   text: string;
   /** When it happens, in the person's words ("after work", "下午"). */
@@ -38,7 +43,42 @@ export interface PersonalAgentListItem {
  * matches their words.
  */
 export interface PersonalAgentListItemInput {
+  revision?: number;
+  plan?: PersonalAgentItemPlan;
   text?: string;
   when?: string;
   status?: PersonalAgentListItemStatus;
+}
+
+export interface PersonalAgentItemPlan {
+  route?: PersonalAgentRouteDecision;
+  mode: string;
+  progress: string;
+  nextAction?: string;
+  waitingFor?: string;
+  workspaceId?: string;
+  dependencies?: string[];
+  workRefs?: PersonalAgentWorkReference[];
+  evidence?: PersonalAgentCompletionEvidence[];
+}
+
+export interface PersonalAgentWorkReference {
+  kind: string;
+  id: string;
+  workspaceId: string;
+  relation: string;
+}
+
+export interface PersonalAgentCompletionEvidence {
+  kind: string;
+  ref: string;
+  summary: string;
+  observedAt: string;
+}
+
+export interface PersonalAgentRouteDecision {
+  kind: "record" | "continue" | "existing" | "create" | "multiple" | "clarify";
+  reason: string;
+  alternatives?: string[];
+  needsClarification: boolean;
 }

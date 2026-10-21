@@ -190,6 +190,14 @@ func (s *Store) SaveResourceLeaseChanges(ctx context.Context, changes store.Reso
 			}
 		}
 		for _, lease := range ordered {
+			if store.LeaseLive(lease.State) {
+				if err := tx.assertDeviceNotRemoved(ctx, lease.SourceID); err != nil {
+					return err
+				}
+				if err := tx.assertDeviceNotRemoved(ctx, lease.HolderDeviceID); err != nil {
+					return err
+				}
+			}
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO resource_leases (`+resourceLeaseColumns+`)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET state = excluded.state, park_until = excluded.park_until,

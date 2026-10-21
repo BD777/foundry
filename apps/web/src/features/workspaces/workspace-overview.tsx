@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { TextInput } from "../../components/ui/field";
 import { Panel, PanelHeader } from "../../components/ui/panel";
+import { EmptyState } from "../../components/ui/empty-state";
 import { workspaceDenial } from "../../lib/workspace-access";
 import { i18n } from "../../i18n";
 
@@ -165,15 +166,10 @@ export function WorkspaceOverview({
         ) : null}
         {error ? <p role="alert">{error}</p> : null}
       </Panel>
-      <Panel>
-        <PanelHeader>
-          <h2>{t("services")}</h2>
-        </PanelHeader>
-        <WorkspaceServices
-          workspaceId={workspace.id}
-          canControl={!rescanDenial}
-        />
-      </Panel>
+      <WorkspaceServices
+        workspaceId={workspace.id}
+        canControl={!rescanDenial}
+      />
       <Panel className="fdy-workspace-repositories">
         <PanelHeader>
           <div>
@@ -247,13 +243,20 @@ export function WorkspaceOverview({
             </div>
           ))}
           {!visible.length ? (
-            <p>
-              {query
-                ? t("overview.noMatches")
-                : inspection?.scannedAt
-                  ? t("overview.noneFound")
-                  : t("overview.rescanHint")}
-            </p>
+            <EmptyState
+              title={t(
+                query
+                  ? "overview.noMatchesTitle"
+                  : "overview.noRepositoriesTitle",
+              )}
+              body={
+                query
+                  ? t("overview.noMatches")
+                  : inspection?.scannedAt
+                    ? t("overview.noneFound")
+                    : t("overview.rescanHint")
+              }
+            />
           ) : null}
         </div>
         {visible.length > limit ? (

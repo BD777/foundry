@@ -1,22 +1,30 @@
 /* Dialog primitive (components/ui/dialog.tsx). Consumers style only their
    own content; the surface, header, body and footer belong here. */
 
+/* Each portal is one stacking context. Later (nested) dialogs cover the whole
+   earlier layer, regardless of layout; menus can still portal above a dialog. */
+.fdy-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
 .fdy-dialog-overlay {
+  z-index: 0;
+  pointer-events: auto;
   position: fixed;
   inset: 0;
   background: var(--fdy-overlay);
 }
 
 .fdy-dialog-overlay[data-layout="sectioned"] {
-  z-index: 100;
   backdrop-filter: blur(4px);
 }
 
-.fdy-dialog-overlay[data-layout="compact"] {
-  z-index: 80;
-}
-
 .fdy-dialog {
+  z-index: 1;
+  pointer-events: auto;
   position: fixed;
   top: 50%;
   left: 50%;
@@ -58,7 +66,6 @@
 
 /* Sectioned: a divided header above a padded body that scrolls. */
 .fdy-dialog[data-layout="sectioned"] {
-  z-index: 101;
   display: flex;
   flex-direction: column;
   width: min(570px, calc(100vw - 32px));
@@ -106,7 +113,6 @@
    scrolls the body, whose padding keeps its controls' focus rings visible. */
 .fdy-dialog[data-layout="compact"] {
   --fdy-dialog-padding: 20px;
-  z-index: 81;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(560px, calc(100vw - 32px));

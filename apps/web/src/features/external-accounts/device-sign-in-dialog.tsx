@@ -1,6 +1,4 @@
-import { ExternalLink } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   DeviceConnectorSignIn,
@@ -9,11 +7,12 @@ import type {
 import {
   beginDeviceConnectorSignIn,
   pollDeviceConnectorSignIn,
+  dismissDeviceConnectorSignIn,
 } from "../../api";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
-import { useCopied } from "../../lib/use-copied";
+import { AuthorizationChallenge } from "./authorization-challenge";
 import { errorText } from "./account-format";
 
 export interface DeviceSignInTarget {
@@ -21,6 +20,7 @@ export interface DeviceSignInTarget {
   deviceName: string;
   kind: string;
   label: string;
+  authorization?: { id: string; revision: number };
 }
 
 const pollEveryMs = 3_000;
@@ -56,7 +56,13 @@ export function DeviceSignInDialog({
       open={Boolean(target)}
       title={target ? t("deviceSignIn.title", { name: target.label }) : ""}
     >
-      {target ? <DeviceSignIn onSignedIn={onSignedIn} target={target} /> : null}
+      {target ? (
+        <DeviceSignIn
+          key={`${target.deviceId}:${target.kind}:${target.authorization?.id ?? ""}:${target.authorization?.revision ?? 0}`}
+          onSignedIn={onSignedIn}
+          target={target}
+        />
+      ) : null}
     </Dialog>
   );
 }
@@ -69,46 +75,122 @@ function DeviceSignIn({
   onSignedIn: (state: DeviceConnectorState | undefined) => void;
 }) {
   const { t } = useTranslation(["externalAccounts", "common"]);
-  const { copied, copy } = useCopied();
+  const requestId = useRef(crypto.randomUUID());
+  const operation = useRef("");
+  const done = useRef(onSignedIn);
+  done.current = onSignedIn;
+  const [resume, setResume] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const [signIn, setSignIn] = useState<DeviceConnectorSignIn>();
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
+  const [challenge, setChallenge] =
+    useState<DeviceConnectorSignIn["challenge"]>();
+  const dismiss = (id: string) =>
+    id
+      ? dismissDeviceConnectorSignIn(
+          target.deviceId,
+          target.kind,
+          id,
+          target.authorization,
+        ).catch(() => {})
+      : Promise.resolve();
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      // StrictMode remounts the same effect; only a real close dismisses it.
+      queueMicrotask(() => {
+        if (!mounted.current) void dismiss(operation.current);
+      });
+    };
+  }, []);
+  async function restart() {
+    await dismiss(operation.current);
+    requestId.current = crypto.randomUUID();
+    operation.current = "";
+    setResume(0);
+    setAttempt((count) => count + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
+    const startedRequestId = requestId.current;
     let timer: number | undefined;
     setSignIn(undefined);
     setLink("");
+    setChallenge(undefined);
+    let expiresAt = "";
+    let interval = pollEveryMs;
     setError("");
     const settle = (next: DeviceConnectorSignIn): boolean => {
-      if (cancelled) return false;
-      setSignIn(next);
-      if (next.verificationUrl) setLink(next.verificationUrl);
-      if (next.status === "complete") {
-        onSignedIn(next.state);
+      if (cancelled) {
+        if (!mounted.current || startedRequestId !== requestId.current)
+          void dismiss(next.operationId ?? "");
         return false;
       }
+      setSignIn(next);
+      if (next.challenge) setChallenge(next.challenge);
+      if (next.operationId) operation.current = next.operationId;
+      if (next.expiresAt) expiresAt = next.expiresAt;
+      interval = Math.max(2, next.intervalSeconds ?? 3) * 1000;
+      if (next.verificationUrl) setLink(next.verificationUrl);
+      if (next.status === "complete") {
+        if (
+          (target.authorization
+            ? next.state?.authorizations?.some(
+                (a) =>
+                  a.id === target.authorization!.id &&
+                  a.revision === target.authorization!.revision &&
+                  a.status === "ready",
+              )
+            : next.state?.signedIn) &&
+          next.state?.deviceId === target.deviceId &&
+          next.state.kind === target.kind
+        ) {
+          operation.current = "";
+          done.current(next.state);
+        } else setError(t("deviceSignIn.unverified"));
+        return false;
+      }
+      if (next.status !== "pending") setLink("");
       return next.status === "pending";
     };
     const poll = async () => {
+      if (cancelled) return;
+      if (expiresAt && Date.now() >= Date.parse(expiresAt)) {
+        settle({ status: "expired", operationId: operation.current });
+        return;
+      }
       try {
         const next = await pollDeviceConnectorSignIn(
           target.deviceId,
           target.kind,
+          operation.current,
+          target.authorization,
         );
-        if (settle(next)) timer = window.setTimeout(poll, pollEveryMs);
+        if (settle(next)) timer = window.setTimeout(poll, interval);
       } catch (cause) {
         if (!cancelled) setError(errorText(cause));
       }
     };
     void (async () => {
+      if (resume > 0 && operation.current) {
+        await poll();
+        return;
+      }
       try {
         const started = await beginDeviceConnectorSignIn(
           target.deviceId,
           target.kind,
+          requestId.current,
+          target.authorization,
         );
-        if (settle(started)) timer = window.setTimeout(poll, pollEveryMs);
+        if (settle(started)) {
+          if (started.challenge?.kind === "qr_image") void poll();
+          else timer = window.setTimeout(poll, interval);
+        }
       } catch (cause) {
         if (!cancelled) setError(errorText(cause));
       }
@@ -117,10 +199,10 @@ function DeviceSignIn({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [target.deviceId, target.kind, attempt]);
+  }, [target.deviceId, target.kind, attempt, resume]);
 
   const failure = error
-    ? t("deviceSignIn.failed", { error })
+    ? t("deviceSignIn.connectionUncertain", { error })
     : signIn?.status === "expired"
       ? t("deviceSignIn.expired")
       : signIn?.status === "denied"
@@ -128,61 +210,64 @@ function DeviceSignIn({
         : signIn?.status === "failed"
           ? t("deviceSignIn.failed", { error: signIn.error ?? "" })
           : "";
-  if (!link && !failure)
+  const progress = t(
+    `deviceSignIn.phase.${signIn?.phase ?? (link || challenge ? "awaiting_user" : "checking")}`,
+    {
+      device: target.deviceName,
+    },
+  );
+  if (!link && !challenge && !failure)
     return (
       <p className="fdy-xacc-waiting" role="status">
-        {t("deviceSignIn.starting", { device: target.deviceName })}
+        {signIn?.error ? t("deviceSignIn.reconnecting") : progress}
       </p>
     );
   return (
     <div className="fdy-xacc-form">
-      {link ? (
-        <div className="fdy-xacc-scan">
-          <div
-            className="fdy-xacc-qr"
-            data-dimmed={failure ? "true" : undefined}
-          >
-            <QRCodeSVG
-              bgColor="#ffffff"
-              fgColor="#111111"
-              level="M"
-              marginSize={2}
-              size={176}
-              title={t("connect.qrTitle")}
-              value={link}
-            />
-          </div>
-          <div className="fdy-xacc-code-copy">
-            <strong>{t("deviceSignIn.approveTitle")}</strong>
-            <p>{t("deviceSignIn.approveBody", { name: target.label })}</p>
-            <div className="fdy-xacc-code-actions">
-              <Button asChild size="sm" variant="primary">
-                <a href={link} rel="noreferrer" target="_blank">
-                  <ExternalLink size={14} />
-                  {t("connect.openPage")}
-                </a>
-              </Button>
-              <Button onClick={() => void copy(link)} size="sm" variant="ghost">
-                {copied() ? t("common:actions.copied") : t("connect.copyLink")}
-              </Button>
-            </div>
-            {signIn?.userCode ? (
-              <small className="fdy-xacc-user-code">
-                {t("connect.userCode")} <code>{signIn.userCode}</code>
-              </small>
-            ) : null}
-          </div>
-        </div>
+      <AuthorizationChallenge
+        active={
+          !failure &&
+          signIn?.status === "pending" &&
+          signIn.phase !== "verifying"
+        }
+        onImageError={() => setError(t("authorization.imageExpired"))}
+        challenge={{
+          operationId: operation.current,
+          verificationUrl: link,
+          imageUrl:
+            challenge?.kind === "qr_image" ? challenge.imageUrl : undefined,
+          expiresAt: signIn?.expiresAt,
+          userCode: signIn?.userCode,
+        }}
+      >
+        <strong>{t("deviceSignIn.approveTitle")}</strong>
+        <p>
+          {challenge?.kind === "qr_image"
+            ? t("authorization.scanNative")
+            : t("deviceSignIn.approveBody", { name: target.label })}
+        </p>
+      </AuthorizationChallenge>
+      {challenge?.kind === "local_interaction" ? (
+        <Alert tone="info" title={challenge.instruction} />
       ) : null}
       {failure ? (
-        <Alert title={failure} tone="error">
-          <Button onClick={() => setAttempt((count) => count + 1)} size="sm">
+        <Alert title={failure} tone={error ? "info" : "error"}>
+          <Button
+            onClick={() => {
+              if (error) {
+                setResume((count) => count + 1);
+                return;
+              }
+              void restart();
+            }}
+            size="sm"
+          >
             {t("connect.tryAgain")}
           </Button>
         </Alert>
       ) : (
         <p className="fdy-xacc-waiting" role="status">
-          {t("deviceSignIn.waiting")}
+          {signIn?.error ? t("deviceSignIn.reconnecting") : progress}
         </p>
       )}
     </div>

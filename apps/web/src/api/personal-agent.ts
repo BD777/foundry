@@ -4,6 +4,9 @@ import type {
   PersonalAgentActionRecord,
   PersonalAgentListItem,
   PersonalAgentListItemInput,
+  PersonalAgentInboxEntry,
+  PersonalAgentInboxCapture,
+  PersonalAgentInboxAction,
   PersonalAgentMemoryInput,
   PersonalAgentMemoryItem,
   PersonalAgentOverview,
@@ -31,6 +34,25 @@ export function isPersonalAgentUnavailable(error: unknown): boolean {
 
 export function getPersonalAgent(): Promise<PersonalAgentOverview> {
   return request("GET", base);
+}
+
+export function capturePersonalAgentInbox(
+  input: PersonalAgentInboxCapture,
+): Promise<PersonalAgentInboxEntry> {
+  return request("POST", `${base}/inbox`, { body: input });
+}
+
+export function listPersonalAgentInbox(): Promise<PersonalAgentInboxEntry[]> {
+  return request("GET", `${base}/inbox`);
+}
+
+export function actOnPersonalAgentInbox(
+  inboxId: string,
+  input: PersonalAgentInboxAction,
+): Promise<PersonalAgentInboxEntry> {
+  return request("POST", `${base}/inbox/${id(inboxId)}/action`, {
+    body: input,
+  });
 }
 
 /** The one-tap setup: makes the assistant's home on this computer. */
@@ -183,4 +205,37 @@ export function listPersonalAgentActions(): Promise<
   PersonalAgentActionRecord[]
 > {
   return request("GET", `${base}/actions`);
+}
+
+export function listPersonalAgentRunSnapshots(): Promise<
+  import("@bd777/foundry-protocol").PersonalAgentRunSnapshot[]
+> {
+  return request("GET", `${base}/runs`);
+}
+export function listPersonalAgentRunControls(): Promise<
+  import("@bd777/foundry-protocol").PersonalAgentRunControl[]
+> {
+  return request("GET", `${base}/run-controls`);
+}
+export function stopPersonalAgentRun(
+  control: string,
+): Promise<import("@bd777/foundry-protocol").PersonalAgentRunControl> {
+  return request("POST", `${base}/run-controls/${id(control)}/stop`, {
+    body: {},
+  });
+}
+
+export function listPersonalAgentOperations(): Promise<
+  import("@bd777/foundry-protocol").PersonalAgentOperation[]
+> {
+  return request("GET", `${base}/operations`);
+}
+
+export function cancelPendingPersonalAgentOperation(
+  idValue: string,
+  revision: number,
+): Promise<import("@bd777/foundry-protocol").PersonalAgentOperation> {
+  return request("POST", `${base}/operations/${id(idValue)}/cancel-pending`, {
+    body: { revision },
+  });
 }

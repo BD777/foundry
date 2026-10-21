@@ -39,6 +39,8 @@ export * from "./issue.js";
 export * from "./model-context.js";
 export * from "./personal-agent.js";
 export * from "./personal-agent-list.js";
+export * from "./personal-agent-inbox.js";
+export * from "./personal-agent-runtime.js";
 export * from "./profiles.js";
 export * from "./session.js";
 export * from "./session-work.js";
@@ -50,3 +52,9 @@ export * from "./evidence.js";
 export * from "./evidence-validation.js";
 export * from "./evidence-rpc.js";
 export * from "./workspace-draft-skills.js";
+
+export * from "./personal-agent-operation.js";
+export * from "./knowledge.js";
+export * from "./knowledge-vault.js";
+
+export * from "./personal-agent-maintenance.js";

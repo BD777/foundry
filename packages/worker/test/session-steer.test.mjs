@@ -62,7 +62,10 @@ function chatSession() {
 const profile = { id: "claude_local", runtime: "claude", label: "Claude" };
 
 /** Starts a turn that stays open until something is steered into it. */
-async function openTurn(session = chatSession(), { cwd, runtime } = {}) {
+async function openTurn(
+  session = chatSession(),
+  { cwd, runtime, rejectReceipt = false } = {},
+) {
   cwd ??= join(root, `ws-${randomUUID()}`);
   mkdirSync(cwd, { recursive: true });
   const events = [];
@@ -71,8 +74,11 @@ async function openTurn(session = chatSession(), { cwd, runtime } = {}) {
     cwd,
     session,
     runtime ?? profile,
-    async (label, detail, level, metadata, message, eventId) =>
-      events.push({ label, detail, message, eventId }),
+    async (label, detail, level, metadata, message, eventId) => {
+      if (rejectReceipt && label === "Steered into active turn")
+        throw new Error("receipt disk unavailable");
+      events.push({ label, detail, message, eventId });
+    },
     async () => {},
     () => {},
   );
@@ -385,4 +391,152 @@ test("Codex cannot report success when closing its producer fails", async () => 
     ),
     /writer release unconfirmed/,
   );
+});
+
+test("accepted Claude steer with a lost receipt cannot enqueue twice", async () => {
+  const { session, finished } = await openTurn(undefined, {
+    rejectReceipt: true,
+  });
+  const steerId = randomUUID();
+  await assert.rejects(
+    steerActiveSessionOnce(session.id, steerId, "one delivery"),
+    { name: "ControlOutcomeUnknownError" },
+  );
+  await assert.rejects(
+    steerActiveSessionOnce(session.id, steerId, "one delivery"),
+    { name: "ControlOutcomeUnknownError" },
+  );
+  await finished;
+  assert.equal(
+    received.filter((text) => text.includes("one delivery")).length,
+    1,
+  );
+});
+
+test("accepted Codex steer with a lost receipt cannot reach native twice", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  const id = `sess_${randomUUID()}`;
+  let finish;
+  let calls = 0;
+  const gate = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const thread = {
+    runStreamed: async () => ({
+      events: (async function* () {
+        await gate;
+      })(),
+    }),
+    steer: async () => {
+      calls++;
+    },
+  };
+  const running = runCodexStreamedTurn(
+    {
+      emit: async () => {
+        throw new Error("receipt disk unavailable");
+      },
+    },
+    thread,
+    "initial",
+    id,
+  );
+  try {
+    await assert.rejects(steerActiveSessionOnce(id, "stable", "one delivery"), {
+      name: "ControlOutcomeUnknownError",
+    });
+    await assert.rejects(steerActiveSessionOnce(id, "stable", "one delivery"), {
+      name: "ControlOutcomeUnknownError",
+    });
+    assert.equal(calls, 1);
+  } finally {
+    finish();
+    await running;
+  }
+});
+
+test("a role deadline aborts the native Codex producer without a server connection", async () => {
+  const { runCodexStreamedTurn } =
+    await import("../dist/runner/codex-stream.js");
+  let aborted = false;
+  let closed = false;
+  const thread = {
+    runStreamed: async (_input, { signal }) => ({
+      events: (async function* () {
+        try {
+          await new Promise((_, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                aborted = true;
+                reject(new Error("aborted"));
+              },
+              { once: true },
+            );
+          });
+        } finally {
+          closed = true;
+        }
+      })(),
+    }),
+  };
+  await assert.rejects(
+    runCodexStreamedTurn(
+      { emit: async () => {}, ceilingMs: 1 },
+      thread,
+      "initial",
+      `sess_${randomUUID()}`,
+    ),
+    /ceiling/,
+  );
+  assert.equal(aborted, true);
+  assert.equal(closed, true);
+});
+
+test("late exact-input cancellation never stops a later native turn", async () => {
+  const control = await import("../dist/session-control.js");
+  const id = `cancel-${randomUUID()}`;
+  let stopped = 0;
+  const remove = control.registerActiveSessionCancelTarget(id, {
+    provider: "codex",
+    inputId: "new-input",
+    cancel: () => {
+      stopped++;
+    },
+  });
+  try {
+    const old = await control.cancelActiveSession(id, "old-input");
+    assert.equal(stopped, 0);
+    assert.equal(old.stopped, undefined);
+    assert.equal(old.pending, true);
+    const current = await control.cancelActiveSession(id, "new-input");
+    assert.equal(stopped, 1);
+    assert.equal(current.pending, true);
+    assert.equal(current.stopped, undefined);
+    await control.cancelActiveSession(id, "new-input");
+    assert.equal(stopped, 1, "native cancel repeated after its acceptance");
+  } finally {
+    remove();
+  }
+});
+test("a queued cancellation is consumed when its exact target registers", async () => {
+  const control = await import("../dist/session-control.js");
+  const id = `queued-cancel-${randomUUID()}`;
+  await control.cancelActiveSession(id, "input-to-stop");
+  let stopped = 0;
+  const remove = control.registerActiveSessionCancelTarget(id, {
+    provider: "claude",
+    inputId: "input-to-stop",
+    cancel: () => {
+      stopped++;
+    },
+  });
+  try {
+    assert.equal(stopped, 1);
+    await control.cancelActiveSession(id, "input-to-stop");
+    assert.equal(stopped, 1);
+  } finally {
+    remove();
+  }
 });

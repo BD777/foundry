@@ -3,6 +3,9 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import type {
   PersonalAgentListItem,
+  PersonalAgentItemPlan,
+  PersonalAgentOperation,
+  WorkspaceProjection,
   PersonalAgentTask,
 } from "@bd777/foundry-protocol";
 import { Alert } from "../../components/ui/alert";
@@ -13,6 +16,7 @@ import { RowMenu } from "../../components/ui/row-menu";
 import { serverErrorText } from "../../lib/errors";
 import { navigateToChat } from "../../lib/in-app-navigation";
 import { clockTime, fullWhen } from "../../lib/time-format";
+import { ItemPlan } from "./person-list-plan";
 import { helpingTask, personListView, reminderAt } from "./person-list-model";
 
 type ItemDraft = { text: string; when: string };
@@ -22,6 +26,14 @@ export interface PersonListProps {
   /** The assistant's tasks, for the ones helping with an item. */
   tasks: PersonalAgentTask[];
   error: string;
+  workspaces?: WorkspaceProjection[];
+  operations?: PersonalAgentOperation[];
+  onPlan?: (
+    item: PersonalAgentListItem,
+    plan: PersonalAgentItemPlan,
+  ) => Promise<void>;
+  onContinue?: (item: PersonalAgentListItem) => Promise<void>;
+  onRefresh?: () => Promise<void>;
   onTick: (item: PersonalAgentListItem, done: boolean) => Promise<void>;
   onEdit: (item: PersonalAgentListItem, draft: ItemDraft) => Promise<void>;
   onDelete: (item: PersonalAgentListItem) => Promise<void>;
@@ -50,7 +62,12 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
           <h3 className="fdy-pa-side-subtitle">{t("list.open")}</h3>
           <ul className="fdy-pa-items">
             {open.map((item) => (
-              <PersonListRow item={item} key={item.id} {...actions} />
+              <PersonListRow
+                item={item}
+                allItems={items}
+                key={item.id}
+                {...actions}
+              />
             ))}
           </ul>
         </>
@@ -60,7 +77,12 @@ export function PersonList({ items, error, ...actions }: PersonListProps) {
           <h3 className="fdy-pa-side-subtitle">{t("list.doneToday")}</h3>
           <ul className="fdy-pa-items">
             {doneToday.map((item) => (
-              <PersonListRow item={item} key={item.id} {...actions} />
+              <PersonListRow
+                item={item}
+                allItems={items}
+                key={item.id}
+                {...actions}
+              />
             ))}
           </ul>
         </>
@@ -78,8 +100,15 @@ function PersonListRow({
   onTick,
   onEdit,
   onDelete,
+  onPlan,
+  onContinue,
+  onRefresh,
+  operations = [],
+  workspaces = [],
+  allItems,
 }: Omit<PersonListProps, "items" | "error"> & {
   item: PersonalAgentListItem;
+  allItems: PersonalAgentListItem[];
 }) {
   const { t } = useTranslation("personalAgent");
   const [busy, setBusy] = useState(false);
@@ -253,6 +282,15 @@ function PersonListRow({
           ) : null}
         </span>
       ) : null}
+      <ItemPlan
+        item={item}
+        items={allItems}
+        operations={operations}
+        workspaces={workspaces}
+        onSave={onPlan}
+        onContinue={onContinue}
+        onRefresh={onRefresh}
+      />
       {failed}
     </li>
   );

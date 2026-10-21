@@ -171,6 +171,9 @@ func (s *Store) SetDeviceSkillRoots(ctx context.Context, input store.SetDeviceSk
 	now := formatTime(time.Now())
 	paths := dedupeTrimmed(input.Paths)
 	return s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
 		if _, err := tx.conn().ExecContext(ctx, `DELETE FROM device_skill_roots WHERE device_id = ?`, deviceID); err != nil {
 			return fmt.Errorf("replace device %s skill roots: %w", deviceID, err)
 		}
@@ -209,6 +212,9 @@ func (s *Store) ReplaceDeviceSkills(ctx context.Context, input store.ReplaceDevi
 	now := formatTime(time.Now())
 	changed := false
 	err := s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
 		stored, err := tx.deviceSkillRows(ctx, deviceID)
 		if err != nil {
 			return err

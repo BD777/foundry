@@ -27,47 +27,13 @@ type DeviceHeld struct {
 	// Now is the clock; tests move it.
 	Now func() time.Time
 
-	pollsMu sync.Mutex
-	polls   map[string]signInPoll
-}
-
-// signInPollGap: polls of one sign-in closer than this get the last answer
-// instead of another run of the device's tool.
-const signInPollGap = 2 * time.Second
-
-type signInPoll struct {
-	at     time.Time
-	answer store.DeviceConnectorSignIn
+	authorizationMu sync.Mutex
+	authorizations  map[string]*authorizationSlot
 }
 
 // NewDeviceHeld builds the service over the store and the catalog.
 func NewDeviceHeld(st store.DeviceConnectorStore, catalog *Catalog) *DeviceHeld {
-	return &DeviceHeld{store: st, catalog: catalog, Now: time.Now, polls: map[string]signInPoll{}}
-}
-
-// RecentSignInPoll is the answer of a poll of the device's sign-in made
-// less than signInPollGap ago.
-func (d *DeviceHeld) RecentSignInPoll(deviceID, kind string) (store.DeviceConnectorSignIn, bool) {
-	d.pollsMu.Lock()
-	defer d.pollsMu.Unlock()
-	poll, ok := d.polls[deviceID+"\x00"+kind]
-	if !ok || d.Now().Sub(poll.at) >= signInPollGap {
-		return store.DeviceConnectorSignIn{}, false
-	}
-	return poll.answer, true
-}
-
-// RememberSignInPoll keeps a poll's answer for RecentSignInPoll.
-func (d *DeviceHeld) RememberSignInPoll(deviceID, kind string, answer store.DeviceConnectorSignIn) {
-	d.pollsMu.Lock()
-	defer d.pollsMu.Unlock()
-	now := d.Now()
-	for key, poll := range d.polls {
-		if now.Sub(poll.at) > time.Hour {
-			delete(d.polls, key)
-		}
-	}
-	d.polls[deviceID+"\x00"+kind] = signInPoll{at: now, answer: answer}
+	return &DeviceHeld{store: st, catalog: catalog, Now: time.Now}
 }
 
 // Connector finds a device-held connector by kind.
@@ -126,6 +92,32 @@ func (d *DeviceHeld) Record(ctx context.Context, deviceID string, reading store.
 			reading.ExpiresAt = ""
 		}
 	}
+	descriptor, _ := d.Connector(reading.Kind)
+	cleanAuth := []store.ConnectorAuthorizationState{}
+	for _, group := range descriptor.AuthorizationGroups {
+		for _, a := range reading.Authorizations {
+			if a.ID != group.ID || a.Revision != group.Revision {
+				continue
+			}
+			switch a.Status {
+			case "ready", "needs_auth", "expired", "unknown", "unavailable":
+			default:
+				a.Status = "unknown"
+			}
+			if a.Verification != "local_state" {
+				a.Verification = "not_checked"
+			}
+			switch a.Reason {
+			case "bootstrap_available", "cli_upgrade", "check_failed":
+			default:
+				a.Reason = ""
+			}
+			a.CheckedAt = reading.CheckedAt
+			cleanAuth = append(cleanAuth, a)
+			break
+		}
+	}
+	reading.Authorizations = cleanAuth
 	reading.Sites = cleanSites(reading.Sites)
 	reading.Identity = identityLabel(reading.Identity)
 	if !reading.SignedIn {

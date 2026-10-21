@@ -140,6 +140,8 @@ const (
 // table keyed by any of these owners belongs here. deleted_workspaces does
 // not: it outlives the workspace on purpose.
 var workspaceOwnedRows = []ownedRows{
+	{"pa_context_patches", "workspace_id", ownerWorkspace},
+	{"pa_maintenance", "workspace_id", ownerWorkspace},
 	{"run_events", "run_id", ownerRun},
 	// Runs follow their work item; controls and barriers follow the native or
 	// Foundry thread, whose id need not be an agent_sessions primary key.

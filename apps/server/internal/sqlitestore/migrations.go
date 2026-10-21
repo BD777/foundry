@@ -38,6 +38,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		// workspace-owned rows.
 		s.setupDeviceConnectors,
 		s.setupPersonalAgents,
+		s.setupPersonalAgentMaintenance,
+		s.setupPersonalAgentContextPatch,
 		s.setupNativeAccountHolds,
 		s.setupSessionWork,
 		s.dropRemovedWorkspaces,
@@ -58,6 +60,16 @@ func (s *Store) migrate(ctx context.Context) error {
 		s.setupDevicePlacement,
 		s.setupDeviceAccountSharing,
 		s.setupPersonalAgentList,
+		s.setupPersonalAgentInbox,
+		s.setupPersonalAgentRuntime,
+		s.setupPersonalAgentRunControls,
+		s.setupPersonalAgentOperations,
+		s.setupKnowledge,
+		s.setupKnowledgeEntries,
+		s.setupKnowledgeLegacyTransfer,
+		s.setupKnowledgePublications,
+		s.setupKnowledgeMigrations,
+		s.setupKnowledgeReplicaCleanup,
 	}
 	for _, step := range steps {
 		if err := step(ctx); err != nil {

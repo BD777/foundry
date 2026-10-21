@@ -22,16 +22,18 @@ import (
 // personalAgentMCPTools are the Personal Agent's own tools
 // (docs/personal-agent.md §5): only a personal_agent session lists them.
 var personalAgentMCPTools = map[string]bool{
-	"find_workspace":    true,
-	"get_workspace":     true,
-	"create_workspace":  true,
-	"update_workspace":  true,
-	"archive_workspace": true,
-	"remember":          true,
-	"update_rules":      true,
-	"list_tasks":        true,
-	"update_list":       true,
-	"read_list":         true,
+	"find_workspace":       true,
+	"get_workspace":        true,
+	"create_workspace":     true,
+	"update_workspace":     true,
+	"archive_workspace":    true,
+	"remember":             true,
+	"update_rules":         true,
+	"list_tasks":           true,
+	"update_list":          true,
+	"dispatch_item":        true,
+	"cancel_item_dispatch": true,
+	"read_list":            true,
 }
 
 // assistantWithheldMCPTools are tools the assistant does not get (§5): work
@@ -346,9 +348,10 @@ type paCreateSpec struct {
 	Name    string `json:"name"`
 	Purpose string `json:"purpose"`
 	Source  struct {
-		Kind string `json:"kind"`
-		URL  string `json:"url,omitempty"`
-		Path string `json:"path,omitempty"`
+		Kind    string `json:"kind"`
+		GitInit bool   `json:"gitInit,omitempty"`
+		URL     string `json:"url,omitempty"`
+		Path    string `json:"path,omitempty"`
 	} `json:"source"`
 	Skills []string `json:"skills,omitempty"`
 	// Needs are what the work needs from a computer, as key:value labels
@@ -418,7 +421,7 @@ func (s *Server) planCreateWorkspace(ctx context.Context, scope paScope, args ma
 	for _, need := range needs {
 		spec.Needs = append(spec.Needs, personalagent.LabelText(need))
 	}
-	devices, err := s.store.ListDevices(ctx)
+	devices, err := store.DeviceCandidates(ctx, s.store)
 	if err != nil {
 		return write, err
 	}
@@ -446,7 +449,10 @@ func (s *Server) planCreateWorkspace(ctx context.Context, scope paScope, args ma
 		if spec.Source.Kind == "existing" {
 			request.Path = spec.Source.Path
 		} else {
-			request.Create = &WorkspaceCreateSource{Kind: spec.Source.Kind, URL: strings.TrimSpace(spec.Source.URL), GitInit: spec.Source.Kind == WorkspaceCreateEmpty}
+			request.Create = &WorkspaceCreateSource{Kind: spec.Source.Kind, URL: strings.TrimSpace(spec.Source.URL), GitInit: spec.Source.Kind == WorkspaceCreateEmpty && spec.Source.GitInit}
+		}
+		if spec.Source.Kind == WorkspaceCreateEmpty {
+			request.Create.Files = []WorkspaceFile{{Path: "AGENTS.md", Content: fmt.Sprintf("# %s\n\n## Purpose\n%s\n\n## Working agreement\nKeep domain artifacts here. Preserve their source and version; do not treat summaries as current execution status. Link existing work before starting a duplicate. Ask when the goal, authority or permissions are unclear. Propose changes to these instructions for review when a session may depend on them.\n\n## Open context\nConfirm authoritative inputs, desired outputs and completion evidence with the person as needed. Do not invent personal facts.\n", spec.Name, spec.Purpose)}}
 		}
 		actor := WorkspaceActor{UserID: scope.agent.UserID, SessionID: scope.sessionID}
 		lifecycle := lifecycleFor(s)
@@ -538,6 +544,9 @@ func (s *Server) assistantCreateDevice(ctx context.Context, scope paScope, devic
 			"not allowed: %s is not one of the person's own computers", spec.DeviceID)
 	}
 	defaultID := firstNonEmpty(scope.agent.Settings.PreferredDeviceID, scope.agent.HomeDeviceID)
+	if err := store.RequireDeviceAvailable(ctx, s.store, defaultID); err != nil {
+		return store.DeviceProjection{}, store.PersonalAgentPlacement{}, err
+	}
 	place, err := personalagent.Place(candidates, needs, defaultID)
 	var none *personalagent.NoPlace
 	switch {
@@ -914,6 +923,12 @@ type paMemorySpec struct {
 // paMemoryItemArgs is remember's item: quote is the person's words the
 // fact rests on, which the server looks for in what they wrote (§2).
 type paMemoryItemArgs struct {
+	VaultID          string `json:"vaultId,omitempty"`
+	IntentKey        string `json:"intentKey,omitempty"`
+	Title            string `json:"title,omitempty"`
+	ExpiresAt        string `json:"expiresAt,omitempty"`
+	ExpectedRevision *int64 `json:"expectedRevision,omitempty"`
+	ExpectedHash     string `json:"expectedHash,omitempty"`
 	store.PersonalAgentMemoryInput
 	Quote string `json:"quote,omitempty"`
 }
@@ -969,6 +984,9 @@ func (s *Server) planRemember(ctx context.Context, scope paScope, args map[strin
 	default:
 		return write, invalid("op must be add, update or forget")
 	}
+	if planned, handled, err := s.planRememberSource(ctx, scope, spec, item, write); handled {
+		return planned, err
+	}
 	if spec.Op != store.PersonalAgentMemoryAdd {
 		existing, err := s.store.GetPersonalAgentMemory(ctx, scope.agent.UserID, strings.TrimSpace(spec.Item.ID))
 		if err != nil || existing.Status == store.PersonalAgentMemoryForgotten || existing.Status == store.PersonalAgentMemorySuperseded {
@@ -1022,10 +1040,15 @@ func (s *Server) personSaid(ctx context.Context, sessionID string, turn store.Se
 			input := store.SessionInput{Prompt: event.Message.Text}
 			if event.Metadata != nil {
 				input.TimerFire = event.Metadata.TimerFire
+				input.SentBySessionID = event.Metadata.SentBySessionID
 			}
 			add(input)
 		case event.Label == steeredIntoTurnLabel:
-			add(store.SessionInput{Prompt: event.Detail})
+			input := store.SessionInput{Prompt: event.Detail}
+			if event.Metadata != nil {
+				input.SentBySessionID = event.Metadata.SentBySessionID
+			}
+			add(input)
 		}
 	}
 	add(turn)
@@ -1077,12 +1100,11 @@ func (s *Server) findWorkspaceForMCP(call mcpCall) (string, error) {
 		return "", &statusError{http.StatusBadRequest, errors.New("query is required: the request in the person's own words")}
 	}
 	limit := min(max(mcpArgNumber(call.args, "limit", 3), 1), personalagent.FindWorkspaceLimit)
-	candidates, err := s.workspaceDigests().Find(ctx, scope.agent.UserID, query, workspacedigest.FindOptions{
-		Limit: limit, Notes: s.assistantNotes(ctx, scope.agent),
-	})
+	records, err := s.assistantWorkspaceCandidates(ctx, scope.agent.UserID)
 	if err != nil {
 		return "", err
 	}
+	candidates := workspacedigest.RankRecords(query, records, s.assistantNotes(ctx, scope.agent), time.Now(), limit)
 	return encodeJSON(map[string]any{"candidates": candidates, "close": workspacedigest.Close(candidates)})
 }
 

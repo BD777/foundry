@@ -81,6 +81,11 @@ export interface PersonalAgent {
  * the person's cookie only). An empty string means the default named.
  */
 export interface PersonalAgentSettings {
+  runDefault?: import("./personal-agent-runtime.js").PersonalAgentRunPreference;
+  roleOverrides?: Record<
+    string,
+    import("./personal-agent-runtime.js").PersonalAgentRunPreference
+  >;
   /** Empty: "助理" or "Assistant", by language. */
   assistantName: string;
   /** A BCP 47 tag; empty: the account's language. */
@@ -199,7 +204,7 @@ export type PersonalAgentMemoryOrigin =
  * newer item (supersedes points back); "forgotten": its content is erased.
  */
 export type PersonalAgentMemoryStatus =
-  "active" | "pending" | "superseded" | "forgotten";
+  "active" | "pending" | "transferring" | "superseded" | "forgotten";
 
 /** One fact or preference about the person (table pa_memory). */
 export interface PersonalAgentMemoryItem {

@@ -16,6 +16,7 @@ import type {
   DeviceProjection,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
+import { accountUsageTarget } from "./chat-account-usage-model";
 import { getChat } from "../../api";
 import { i18n } from "../../i18n";
 import { composerSlashItems, type ComposerSlashSkills } from "./composer-slash";
@@ -484,6 +485,17 @@ export function useChatFeature({
         notices.linked?.title ||
         i18n.t("chat:list.newChat")
       }
+      accountUsage={accountUsageTarget(
+        profiles.find(
+          (profile) =>
+            profile.id === selectedAgent?.profileId &&
+            profile.deviceId === selectedAgent?.deviceId,
+        ),
+        devices,
+      )}
+      usageCompletion={threadSessions
+        .map((session) => `${session.id}:${session.status}`)
+        .join("|")}
       contextCard={notices.linked ? undefined : panelCard}
       history={history}
       onReachHistoryStart={transcript.loadEarlier}

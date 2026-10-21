@@ -34,6 +34,31 @@ export interface ConnectorTool {
   registry?: string;
 }
 
+/** A shared credential requirement; multiple business capabilities can use it. */
+export interface ConnectorAuthorizationGroup {
+  id: string;
+  revision: number;
+  label: string;
+  labels?: Record<string, string>;
+  capabilities: string[];
+  credential: "native_login" | "native_web_session";
+}
+
+export interface ConnectorAuthorizationState {
+  id: string;
+  revision: number;
+  status: "ready" | "needs_auth" | "expired" | "unknown" | "unavailable";
+  checkedAt: string;
+  verification: "local_state" | "not_checked";
+  /** Adapter code only; never raw provider output or credentials. */
+  reason?: "bootstrap_available" | "cli_upgrade" | "check_failed";
+}
+
+export type ConnectorAuthorizationChallenge =
+  | { kind: "url"; url: string; userCode?: string }
+  | { kind: "qr_image"; imageUrl?: string }
+  | { kind: "local_interaction"; instruction: string };
+
 export interface ConnectorDescriptor {
   kind: string;
   label: string;
@@ -44,6 +69,7 @@ export interface ConnectorDescriptor {
   requires?: ConnectorRequirement[];
   /** A device-held login this close to its expiry is "expiring". */
   expiryReminderDays?: number;
+  authorizationGroups?: ConnectorAuthorizationGroup[];
   /**
    * How a session that may not use the device's login is kept from it, with
    * the tool's documented configuration: these variables are set for it.
@@ -83,12 +109,22 @@ export interface DeviceConnectorState {
   sites?: string[];
   expiresAt?: string;
   checkedAt: string;
+  authorizations?: ConnectorAuthorizationState[];
   /** When a check first found the login inside the reminder window. */
   expiringSince?: string;
 }
 
 /** A sign-in through the device's tool, relayed to the person. */
 export interface DeviceConnectorSignIn {
+  /** Observed progress, never a claim that a timed-out grant failed. */
+  phase?: "checking" | "starting" | "awaiting_user" | "verifying";
+  authorizationId?: string;
+  authorizationRevision?: number;
+  challenge?: ConnectorAuthorizationChallenge;
+  /** Opaque operation, scoped to the signed-in person, connector and device. */
+  operationId?: string;
+  expiresAt?: string;
+  intervalSeconds?: number;
   status: "pending" | "complete" | "expired" | "denied" | "failed";
   /** The page the person opens (or scans) to approve. */
   verificationUrl?: string;
@@ -105,6 +141,7 @@ export interface DeviceConnectorDevice {
   online: boolean;
   /** The device's worker handles device-held connectors. */
   supported: boolean;
+  authorizationSupported?: boolean;
   states: DeviceConnectorState[];
 }
 
@@ -131,9 +168,17 @@ export interface DeviceConnectorBinding {
   state?: DeviceConnectorState;
 }
 
-/** A workspace's device-held bindings, and the caller's devices to bind. */
+export interface ConnectorExecutionDevice {
+  deviceId: string;
+  name: string;
+}
+
+/** A workspace's device-held bindings and its real execution targets. */
 export interface WorkspaceDeviceConnectors {
   workspaceId: string;
+  /** Default workspace device plus devices with actual session agents here. */
+  executionDevices: ConnectorExecutionDevice[];
+  defaultDeviceId: string;
   connectors: ConnectorDescriptor[];
   bindings: DeviceConnectorBinding[];
   devices: DeviceConnectorDevice[];
@@ -166,7 +211,12 @@ export interface DeviceConnectorUse {
 }
 
 export type DeviceConnectorAction =
-  "status" | "install" | "sign_in_begin" | "sign_in_poll" | "sign_out";
+  | "status"
+  | "install"
+  | "sign_in_begin"
+  | "sign_in_poll"
+  | "sign_in_dismiss"
+  | "sign_out";
 
 /** connector_request: one action on a device-held connector. */
 export interface ConnectorRequestPayload {
@@ -174,10 +224,15 @@ export interface ConnectorRequestPayload {
   connector: ConnectorDescriptor;
   /** status: re-read now instead of using a reading a few seconds old. */
   fresh?: boolean;
+  authorizationId?: string;
+  authorizationRevision?: number;
+  operationId?: string;
 }
 
 /** connector_reply */
 export interface ConnectorReplyPayload {
+  /** Daemon-only PNG; never persisted in state or returned in browser JSON. */
+  authorizationImage?: string;
   /** deviceId and expiringSince are the server's to fill. */
   state?: DeviceConnectorState;
   signIn?: DeviceConnectorSignIn;
@@ -186,3 +241,6 @@ export interface ConnectorReplyPayload {
 
 /** The worker handles connector_request. */
 export const deviceConnectorsCapability = "device_connectors";
+
+/** Worker supports scoped groups and device-local continuation contexts. */
+export const connectorAuthorizationCapability = "connector_authorization_v1";

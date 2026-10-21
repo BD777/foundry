@@ -56,65 +56,67 @@ export function Dialog({
       }}
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay
-          className="fdy-dialog-overlay"
-          data-layout={layout}
-        />
-        <RadixDialog.Content
-          className="fdy-dialog"
-          data-layout={layout}
-          data-size={size}
-          onOpenAutoFocus={(event) => {
-            opener.current =
-              document.activeElement instanceof HTMLElement
-                ? document.activeElement
-                : null;
-            if (initialFocus?.current) {
+        <div className="fdy-dialog-layer">
+          <RadixDialog.Overlay
+            className="fdy-dialog-overlay"
+            data-layout={layout}
+          />
+          <RadixDialog.Content
+            className="fdy-dialog"
+            data-layout={layout}
+            data-size={size}
+            onOpenAutoFocus={(event) => {
+              opener.current =
+                document.activeElement instanceof HTMLElement
+                  ? document.activeElement
+                  : null;
+              if (initialFocus?.current) {
+                event.preventDefault();
+                initialFocus.current.focus();
+              }
+            }}
+            onCloseAutoFocus={(event) => {
+              const target = returnFocusTo ?? opener.current;
+              opener.current = null;
+              if (!target) return;
               event.preventDefault();
-              initialFocus.current.focus();
-            }
-          }}
-          onCloseAutoFocus={(event) => {
-            const target = returnFocusTo ?? opener.current;
-            opener.current = null;
-            if (!target) return;
-            event.preventDefault();
-            target.focus();
-          }}
-          onEscapeKeyDown={(event) => {
-            if (busy) event.preventDefault();
-          }}
-          onInteractOutside={(event) => {
-            if (busy) event.preventDefault();
-          }}
-        >
-          <header className="fdy-dialog-header">
-            <div>
-              <RadixDialog.Title className="fdy-dialog-title">
-                {title}
-              </RadixDialog.Title>
-              <RadixDialog.Description className="fdy-dialog-description">
-                {description}
-              </RadixDialog.Description>
-            </div>
-            <RadixDialog.Close asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={busy}
-                aria-label={t("dialog.close", { title })}
-              >
-                <X size={18} />
-              </Button>
-            </RadixDialog.Close>
-          </header>
-          {children != null ? (
-            <div className="fdy-dialog-body">{children}</div>
-          ) : null}
-          {footer ? (
-            <footer className="fdy-dialog-footer">{footer}</footer>
-          ) : null}
-        </RadixDialog.Content>
+              target.focus();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (busy) event.preventDefault();
+            }}
+            onInteractOutside={(event) => {
+              if (busy) event.preventDefault();
+            }}
+          >
+            <header className="fdy-dialog-header">
+              <div>
+                <RadixDialog.Title className="fdy-dialog-title">
+                  {title}
+                </RadixDialog.Title>
+                <RadixDialog.Description className="fdy-dialog-description">
+                  {description}
+                </RadixDialog.Description>
+              </div>
+              <RadixDialog.Close asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={busy}
+                  aria-label={t("dialog.close", { title })}
+                >
+                  <X size={18} />
+                </Button>
+              </RadixDialog.Close>
+            </header>
+            {children != null ? (
+              <div className="fdy-dialog-body">{children}</div>
+            ) : null}
+            {footer ? (
+              <footer className="fdy-dialog-footer">{footer}</footer>
+            ) : null}
+          </RadixDialog.Content>
+        </div>
       </RadixDialog.Portal>
     </RadixDialog.Root>
   );

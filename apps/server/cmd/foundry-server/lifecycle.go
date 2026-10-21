@@ -69,6 +69,11 @@ func run(ctx context.Context, deps dependencies) error {
 	go api.RunResourceLeases(ctx)
 	go api.RunPersonalAgentSupervision(ctx)
 	go api.RunPersonalAgentReminders(ctx)
+	go api.RunPersonalAgentInbox(ctx)
+	go api.RunPersonalAgentOperations(ctx)
+	go api.RunKnowledgeOperations(ctx)
+	go api.RunPersonalAgentRunControls(ctx)
+	go api.RunPersonalAgentMaintenance(ctx)
 	if !cfg.Options.Integrations.On() {
 		deps.logf("integrations are off (%s=off): no Feishu bot connections, Connectors logins, refreshes or keep-alive, or skill repository checks", integrations.Env)
 	}

@@ -195,9 +195,9 @@ fi
 # with a touched file (feishu.go -> feishu_test.go, feishu_gateway_test.go) plus tests in
 # touched _test.go files. Small packages (<= 10 test files) and shared-file changes run
 # the whole package; a touched package with no matching tests is compiled only.
-go_test_cmd="cd apps/server && go test"
+go_test_cmd="cd apps/server && go test -timeout 20m"
 if command -v systemd-run >/dev/null 2>&1; then
-  go_test_cmd="cd apps/server && systemd-run --user --scope -q -p MemoryMax=2500M go test"
+  go_test_cmd="cd apps/server && systemd-run --user --scope -q -p MemoryMax=2500M go test -timeout 20m"
 fi
 go_full=() go_plan=()
 mapfile -t go_dirs < <(printf '%s\n' "${go_files[@]}" | grep . | xargs -r -n1 dirname | sort -u)

@@ -238,7 +238,24 @@ func deviceOwner(name string) accessRule {
 	}}
 }
 
+func deviceRemovalOwner(name string) accessRule {
+	return accessRule{kind: "device-owner", check: func(s *Server, w http.ResponseWriter, r *http.Request) bool {
+		return s.requireDeviceHistoricalOwner(w, r, strings.TrimSpace(r.PathValue(name)))
+	}}
+}
+
 func (s *Server) requireDeviceOwner(w http.ResponseWriter, r *http.Request, deviceID string) bool {
+	if !s.requireDeviceHistoricalOwner(w, r, deviceID) {
+		return false
+	}
+	if err := store.RequireDeviceAvailable(r.Context(), s.store, deviceID); err != nil {
+		writeResult(w, nil, err)
+		return false
+	}
+	return true
+}
+
+func (s *Server) requireDeviceHistoricalOwner(w http.ResponseWriter, r *http.Request, deviceID string) bool {
 	scope, err := s.requestScope(r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "resolve access")
@@ -355,7 +372,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/pairing-tokens/status", s.handleDevicePairingStatus, signedIn()),
 		fn("POST /api/devices/pairing-tokens/consent", s.handleDevicePairingConsent, signedIn()),
 		fn("POST /api/devices/{deviceId}/system-account-notice/dismiss", s.handleDismissSystemAccountNotice, deviceOwner("deviceId")),
-		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceOwner("deviceId")),
+		fn("DELETE /api/devices/{deviceId}", s.handleDeleteDevice, deviceRemovalOwner("deviceId")),
 		fn("PATCH /api/devices/{deviceId}", s.handleRenameDevice, deviceOwner("deviceId")),
 		// Labels and detected facts (device_placement.go): the caller's own devices.
 		fn("GET /api/device-placements", s.handleListDevicePlacements, filtered()),
@@ -423,6 +440,8 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in", s.handleBeginDeviceConnectorSignIn, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/poll", s.handlePollDeviceConnectorSignIn, deviceOwner("deviceId")),
+		fn("GET /api/devices/{deviceId}/connectors/{kind}/sign-in/image", s.handleDeviceConnectorAuthorizationImage, deviceOwner("deviceId")),
+		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-in/dismiss", s.handleDismissDeviceConnectorAuthorization, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/sign-out", s.handleSignOutDeviceConnector, deviceOwner("deviceId")),
 		fn("GET /api/workspaces/{id}/device-connectors", s.handleWorkspaceDeviceConnectors, workspaceRole(viewer, pathWorkspace("id"))),
 		fn("PUT /api/workspaces/{id}/device-connectors", s.handleSetWorkspaceDeviceConnectors, workspaceRole(maintainer, pathWorkspace("id"))),
@@ -461,6 +480,37 @@ func (s *Server) routeTable() []route {
 		fn("GET /api/skills/catalog/{id}/revisions/{revision}/package", s.handleSkillPackage, signedIn()),
 
 		fn("GET /api/personal-agent", s.handlePersonalAgentOverview, personOnly()),
+		fn("GET /api/personal-agent/inbox", s.handleListPersonalAgentInbox, personOnly()),
+		fn("POST /api/personal-agent/inbox", s.handleCapturePersonalAgentInbox, personOnly()),
+		fn("POST /api/personal-agent/inbox/{id}/action", s.handlePersonalAgentInboxAction, personOnly()),
+		fn("POST /api/personal-agent/run-preview", s.handlePersonalAgentRunPreview, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults/{vault}/assistant-access", s.handleAssistantMemoryAccess, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults/{vault}/initial-location", s.handleResetPendingKnowledgeLocation, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults/{vault}/repair-index", s.handleRepairKnowledgeIndex, personOnly()),
+		fn("GET /api/personal-agent/knowledge/vaults/{vault}/entries", s.handleKnowledgeEntries, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults/{vault}/entries", s.handleKnowledgeEntryWrite, personOnly()),
+		fn("GET /api/personal-agent/knowledge/vaults/{vault}/entries/{entry}/source-review", s.handleKnowledgeSourceInspect, personOnly()),
+		fn("GET /api/personal-agent/knowledge/vaults/{vault}/entries/{entry}", s.handleKnowledgeEntryRead, personOnly()),
+		fn("GET /api/personal-agent/knowledge/replica-cleanup", s.handleKnowledgeReplicaCleanup, personOnly()),
+		fn("GET /api/personal-agent/knowledge/migrations", s.handleKnowledgeMigrations, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults/{vault}/migrate", s.handleBeginKnowledgeMigration, personOnly()),
+		fn("POST /api/personal-agent/knowledge/migrations/{migration}/cancel", s.handleCancelKnowledgeMigration, personOnly()),
+		fn("GET /api/personal-agent/knowledge/mutations", s.handleKnowledgeMutations, personOnly()),
+		fn("GET /api/personal-agent/knowledge/publications", s.handleKnowledgePublications, personOnly()),
+		fn("POST /api/personal-agent/knowledge/publications", s.handlePublishKnowledge, personOnly()),
+		fn("POST /api/personal-agent/knowledge/publications/{publication}/revoke", s.handleRevokeKnowledgePublication, personOnly()),
+		fn("GET /api/personal-agent/knowledge/vaults", s.handleKnowledgeVaults, personOnly()),
+		fn("POST /api/personal-agent/knowledge/vaults", s.handleCreateKnowledgeVault, personOnly()),
+		fn("POST /api/personal-agent/operations/{operation}/cancel-pending", s.handleCancelPendingDispatch, personOnly()),
+		fn("GET /api/personal-agent/operations", s.handlePersonalAgentOperations, personOnly()),
+		fn("GET /api/personal-agent/run-controls", s.handleAssistantRunControls, personOnly()),
+		fn("POST /api/personal-agent/run-controls/{control}/stop", s.handleStopAssistantRun, personOnly()),
+		fn("POST /api/personal-agent/memory/{id}/transfer", s.handleLegacyKnowledgeTransfer, personOnly()),
+		fn("GET /api/personal-agent/context-patches", s.handleContextPatches, personOnly()),
+		fn("POST /api/personal-agent/maintenance/{job}/patch", s.handleContextPatch, personOnly()),
+		fn("GET /api/personal-agent/maintenance", s.handleMaintenanceList, personOnly()),
+		fn("POST /api/personal-agent/maintenance/{job}", s.handleMaintenanceAction, personOnly()),
+		fn("GET /api/personal-agent/runs", s.handlePersonalAgentRunSnapshots, personOnly()),
 		fn("POST /api/personal-agent", s.handleSetupPersonalAgent, personOnly()),
 		fn("PUT /api/personal-agent/settings", s.handleSavePersonalAgentSettings, personOnly()),
 		fn("POST /api/personal-agent/timezone", s.handleFillPersonalAgentTimezone, personOnly()),

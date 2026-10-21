@@ -210,6 +210,9 @@ func (s *Server) listGroupSessionsForMCP(call mcpCall) (string, error) {
 
 // createSessionForMCP starts a session (create_session).
 func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
+	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
+		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
+	}
 	args := call.args
 	// It once passed an undocumented nativeSessionId through, which could
 	// adopt a person's native chat or fork a session the caller cannot
@@ -256,6 +259,9 @@ func (s *Server) createSessionForMCP(call mcpCall) (string, error) {
 // only a session it controls: the replacement takes that session's work
 // over.
 func (s *Server) handoffSessionForMCP(call mcpCall) (string, error) {
+	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
+		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
+	}
 	ctx, actor, args := call.r.Context(), call.actor, call.args
 	lookup := s.sessionTarget
 	if actor.Agent() {
@@ -382,6 +388,9 @@ func (s *Server) createAndDispatchForMCP(r *http.Request, actor Actor, input sto
 }
 
 func (s *Server) sendMessageForMCP(call mcpCall) (string, error) {
+	if _, err := s.paScope(call.r.Context(), call.actor); err == nil {
+		return "", invalid("use dispatch_item for assistant execution: preserve the authorized item, reuse its stable stepKey and existing owner; replaceOwner starts a clean context only after that owner stops")
+	}
 	ctx, args := call.r.Context(), call.args
 	target, err := s.controlledSession(ctx, call.actor, mcpArgString(args, "sessionId"), "message")
 	if err != nil {

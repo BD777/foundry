@@ -130,6 +130,16 @@ func (c *daemonConnection) onSessionCompleted(ctx context.Context, envelope wsEn
 		return nil
 	}
 	if existingErr == nil && !isRecoverableAgentSessionStatus(existing.Status) {
+		if controls, ok := c.hub.store.(store.PersonalAgentRunControlStore); ok && payload.InputID != "" {
+			status := "completed"
+			if payload.Error != "" {
+				status = "failed"
+			}
+			if err := controls.NotePersonalAgentNativeEnd(ctx, payload.SessionID, payload.InputID, status); err != nil {
+				return err
+			}
+		}
+
 		c.setActiveSession(payload.SessionID, false)
 		c.clearDispatchedSession(payload.SessionID)
 		// A session the server already settled (a stale reconcile) still

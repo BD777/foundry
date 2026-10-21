@@ -45,6 +45,9 @@ func (s *Store) ReplaceDeviceTools(ctx context.Context, deviceID string, tools m
 	now := formatTime(time.Now())
 	changed := false
 	err := s.withTx(ctx, func(tx *Store) error {
+		if err := tx.assertDeviceNotRemoved(ctx, deviceID); err != nil {
+			return err
+		}
 		rows, err := tx.conn().QueryContext(ctx, `SELECT tool, available, version FROM device_tools WHERE device_id = ?`, deviceID)
 		if err != nil {
 			return err

@@ -80,6 +80,7 @@ type WorkspaceRelinkSuggestion struct {
 }
 
 type WorkspaceFileEntry struct {
+	Revision     string `json:"revision,omitempty"`
 	ID           string `json:"id"`
 	WorkspaceID  string `json:"workspaceId"`
 	Path         string `json:"path"`
