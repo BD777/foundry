@@ -466,10 +466,18 @@ test("a role deadline aborts the native Codex producer without a server connecti
       events: (async function* () {
         try {
           await new Promise((_, reject) => {
+            // A real native producer owns a process/socket handle. Keep this
+            // stand-in alive too, and fail boundedly if the role abort breaks.
+            const timeout = setTimeout(
+              () =>
+                reject(new Error("native stand-in missed its role deadline")),
+              1000,
+            );
             signal.addEventListener(
               "abort",
               () => {
                 aborted = true;
+                clearTimeout(timeout);
                 reject(new Error("aborted"));
               },
               { once: true },
