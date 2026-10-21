@@ -83,7 +83,7 @@ func TestCatalogDescribesFeishuAndBytedcli(t *testing.T) {
 // same tool, and no provider is outside the catalog.
 func TestServerHeldConnectorsMatchTheirProviders(t *testing.T) {
 	catalog := DefaultCatalog()
-	providers := externalaccounts.NewRegistry(&externalaccounts.Feishu{}).Describe()
+	providers := externalaccounts.NewRegistry(&externalaccounts.Feishu{}, externalaccounts.NewCloudflare()).Describe()
 	held := map[string]store.ConnectorDescriptor{}
 	for _, descriptor := range catalog.All() {
 		if descriptor.Holding == store.ConnectorServerHeld {

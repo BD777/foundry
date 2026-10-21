@@ -1,3 +1,4 @@
+import { CloudflareConnector } from "./cloudflare-connector";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -272,6 +273,14 @@ function WorkspaceConnectorsContent({
           </Panel>
         );
       })}
+      <CloudflareConnector
+        workspaceId={workspaceId}
+        workspaceView={view}
+        onWorkspaceChanged={setView}
+        currentUserId={currentUserId}
+        readOnlyReason={readOnlyReason}
+        onNotice={onNotice}
+      />
       <WorkspaceDeviceConnectors
         key={workspaceId}
         currentUserId={currentUserId}
@@ -285,7 +294,7 @@ function WorkspaceConnectorsContent({
 }
 
 const serverHeldTypes = connectorTypes.filter(
-  (type) => connectorHolding[type] === "server_held",
+  (type): type is "feishu" => type === "feishu",
 );
 const deviceHeldTypes = connectorTypes.filter(
   (type) => connectorHolding[type] === "device_held",

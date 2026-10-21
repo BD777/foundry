@@ -4,7 +4,7 @@
  * section per type. A server-held type keeps its logins on the server; a
  * device-held one leaves them on each device (docs/connectors.md).
  */
-export const connectorTypes = ["feishu", "bytedcli"] as const;
+export const connectorTypes = ["feishu", "bytedcli", "cloudflare"] as const;
 export type ConnectorType = (typeof connectorTypes)[number];
 
 export const connectorHolding: Record<
@@ -12,5 +12,6 @@ export const connectorHolding: Record<
   "server_held" | "device_held"
 > = {
   feishu: "server_held",
+  cloudflare: "server_held",
   bytedcli: "device_held",
 };

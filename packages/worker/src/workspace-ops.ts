@@ -446,6 +446,7 @@ export const daemonCapabilities = [
   "verification_sessions",
   "attachment_files",
   "feishu_gateway",
+  "cloudflare_gateway_v1",
   deviceConnectorsCapability,
   connectorAuthorizationCapability,
   workspaceFoldersCapability,
@@ -465,7 +466,8 @@ export function availableDaemonCapabilities(
 ): string[] {
   return daemonCapabilities.filter(
     (capability) =>
-      (capability !== "service_tunnels_v1" &&
+      (capability !== "cloudflare_gateway_v1" &&
+        capability !== "service_tunnels_v1" &&
         capability !== "workspace_draft_skills_v1" &&
         capability !== "role_run_budgets_v1" &&
         capability !== "exact_input_cancel_v1") ||

@@ -1,5 +1,59 @@
 /** Connectors: external services sessions use as the person (Feishu first). */
 export const externalAccounts = {
+  cloudflare: {
+    requestedPermissions: "Requested permissions",
+    revokePending:
+      "Foundry access is stopped. Cloudflare revocation is pending; retry disconnect.",
+    unverifiedZone:
+      "This saved zone is not in the loaded list. Load more, check permissions, or remove it.",
+    verificationPending:
+      "Approval received. Identity verification or saving is still pending; this operation retries without another authorization.",
+
+    unknownOperation:
+      "This authorization is no longer known. Refresh connections before starting again; any saved login is preserved.",
+    intro:
+      "Cloudflare identities stay on the server. Select the zones each workspace may read.",
+    connect: "Connect Cloudflare",
+    refresh: "Refresh",
+    empty: "No Cloudflare identity connected.",
+    noSecretStore:
+      "The server secret store must be configured before connecting.",
+    identityConfirmed:
+      "Identity verified at sign-in · resource access depends on granted permissions",
+    needsAuth: "Authorization required",
+    permissions: "Granted permissions",
+    reauthorize: "Re-authorize",
+    revoke: "Disconnect authorization",
+    revokeDetail:
+      "Stop this authorization and all workspace access through it. This does not change DNS records.",
+    workspace: "Workspace",
+    chooseWorkspace: "Choose a workspace you manage",
+    connected:
+      "Cloudflare identity connected. Review the zones enabled for each workspace.",
+    authorizeDetail:
+      "Open the official Cloudflare page in this browser and approve read access. Return here to select workspace zones. Closing this dialog does not revoke an approval already being verified.",
+    preparing: "Preparing official authorization…",
+    waiting: "Waiting for your approval on Cloudflare…",
+    verifying: "Verifying your Cloudflare identity…",
+    openAuthorization: "Open Cloudflare authorization",
+    workspaceAccess: "Workspace access",
+    bindingDetail:
+      "Only your sessions on your own devices can read the selected zones, DNS and certificate metadata.",
+    identity: "Cloudflare identity",
+    chooseIdentity: "Choose an identity",
+    discovering: "Checking accessible zones…",
+    discoveryFailed:
+      "Cloudflare could not list zones. Check the granted permissions.",
+    more: "Load more zones",
+    save: "Save selected zones",
+    refreshZones: "Check zones again",
+    removeBinding: "Remove workspace binding",
+    bound: "Cloudflare resource binding saved.",
+    unbound:
+      "Workspace access removed; the Cloudflare login remains connected.",
+    consumption:
+      "Bound sessions can use the Cloudflare MCP tool. The cf CLI also needs an updated execution worker and the installed official CLI. Credentials are never copied to the device.",
+  },
   page: {
     title: "Connectors",
     intro:
@@ -19,6 +73,7 @@ export const externalAccounts = {
     workspaces_other: "Bound to {{count}} workspaces",
   },
   providers: {
+    cloudflare: "Cloudflare",
     feishu: "Feishu",
     bytedcli: "bytedcli",
   },

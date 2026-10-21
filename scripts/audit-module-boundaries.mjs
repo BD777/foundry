@@ -305,6 +305,7 @@ export const workerModules = {
       "verification-session",
       "connectors/index",
       "connectors/feishu",
+      "connectors/cloudflare",
       "connectors/feishu-gateway-forwarder",
       "connectors/device-held",
       "connectors/bytedcli",
@@ -466,7 +467,8 @@ export const serverPackages = {
  * used by the connector HTTP files only.
  */
 export const sealedServerPackages = {
-  externalaccounts: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
+  externalaccounts:
+    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
 };

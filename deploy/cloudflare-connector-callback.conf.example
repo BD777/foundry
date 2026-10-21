@@ -1,0 +1,15 @@
+# Include in the canonical HTTPS Foundry server block. OAuth callback queries
+# contain a one-use code and state: omit access/error request logging here.
+# Keep the control origin's existing Host, TLS and isolation-header rules.
+location = /api/connectors/cloudflare/oauth/callback {
+    access_log off;
+    error_log /dev/null crit;
+    proxy_pass http://127.0.0.1:31982;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_read_timeout 40s;
+}

@@ -440,6 +440,12 @@ func (s *Server) routeTable() []route {
 		// Device-held connectors (connectors.go): the credential stays on the
 		// device; only its owner reads, installs, signs in or out, and binds it
 		// (the handlers also refuse an Admin acting on an ownerless device).
+		fn("POST /api/connectors/cloudflare/sign-in", s.handleCloudflareBegin, personOnly()),
+		fn("GET /api/connectors/cloudflare/oauth/callback", s.handleCloudflareCallback, personOnly()),
+		fn("DELETE /api/connectors/cloudflare/logins/{id}", s.handleCloudflareCancel, personOnly()),
+		fn("GET /api/connectors/cloudflare/accounts/{accountId}/zones", s.handleCloudflareZones, externalAccountOwner("accountId")),
+		fn("POST /api/connectors/cloudflare/session-handle", s.handleCloudflareSessionHandle, daemonProtocol()),
+		fn("GET /api/connectors/cloudflare/gateway/{path...}", s.handleCloudflareGateway, daemonProtocol()),
 		fn("GET /api/connectors/devices", s.handleDeviceConnectorsView, signedIn()),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/check", s.handleCheckDeviceConnector, deviceOwner("deviceId")),
 		fn("POST /api/devices/{deviceId}/connectors/{kind}/install", s.handleInstallDeviceConnector, deviceOwner("deviceId")),

@@ -44,5 +44,17 @@
         "credential": "native_web_session"
       }
     ]
+  },
+  {
+    "kind": "cloudflare",
+    "label": "Cloudflare",
+    "holding": "server_held",
+    "adapter": "cloudflare",
+    "tool": {
+      "command": "cf",
+      "source": "npm",
+      "package": "cf",
+      "registry": "npmjs"
+    }
   }
 ]

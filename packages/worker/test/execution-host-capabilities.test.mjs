@@ -51,6 +51,11 @@ test("draft capability follows the connected execution host across an upgrade", 
     false,
     "a busy older host retains its limits",
   );
+  assert.equal(
+    availableDaemonCapabilities(client).includes("cloudflare_gateway_v1"),
+    false,
+    "busy older host cannot prepare Cloudflare CLI",
+  );
   assert.ok(availableDaemonCapabilities(client).includes("worker_update"));
   assert.equal(
     availableDaemonCapabilities(client).includes("exact_input_cancel_v1"),
@@ -58,6 +63,7 @@ test("draft capability follows the connected execution host across an upgrade", 
   );
   capabilities = [
     ...capabilities,
+    "cloudflare_gateway_v1",
     "workspace_draft_skills_v1",
     "exact_input_cancel_v1",
   ];
@@ -71,7 +77,15 @@ test("draft capability follows the connected execution host across an upgrade", 
     availableDaemonCapabilities(client).includes("exact_input_cancel_v1"),
     true,
   );
+  assert.equal(
+    availableDaemonCapabilities(client).includes("cloudflare_gateway_v1"),
+    true,
+  );
   client.close();
+  assert.equal(
+    availableDaemonCapabilities(client).includes("cloudflare_gateway_v1"),
+    false,
+  );
   assert.equal(
     advertisesDrafts(),
     false,

@@ -1,0 +1,12 @@
+.fdy-cf-account {
+  flex-wrap: wrap;
+}
+.fdy-cf-details {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.fdy-cf-account > .fdy-cf-details {
+  flex: 1 1 18rem;
+}
