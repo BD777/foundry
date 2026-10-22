@@ -60,16 +60,28 @@ test("HtmlFileView renders sandboxed iframe preview by default and switches to c
   const iframe = container.querySelector("iframe");
   assert.ok(iframe, "iframe should be rendered by default");
   assert.equal(iframe.getAttribute("srcDoc"), sampleHtml);
-  assert.equal(iframe.getAttribute("sandbox"), "allow-scripts allow-forms allow-popups");
+  assert.equal(
+    iframe.getAttribute("sandbox"),
+    "allow-scripts allow-forms allow-popups",
+  );
 
   // Toggle to code view
   const buttons = [...container.querySelectorAll("button")];
-  const codeToggle = buttons.find((b) => b.getAttribute("value") === "code" || b.textContent?.includes("源码") || b.textContent?.includes("Code"));
+  const codeToggle = buttons.find(
+    (b) =>
+      b.getAttribute("value") === "code" ||
+      b.textContent?.includes("源码") ||
+      b.textContent?.includes("Code"),
+  );
   assert.ok(codeToggle, "Code toggle should exist");
 
   await act(async () => codeToggle.click());
 
-  assert.equal(container.querySelector("iframe"), null, "iframe should not exist in code view");
+  assert.equal(
+    container.querySelector("iframe"),
+    null,
+    "iframe should not exist in code view",
+  );
   const codeBlock = container.querySelector("code");
   assert.ok(codeBlock, "code element should exist in code view");
   assert.equal(codeBlock.textContent, sampleHtml);

@@ -468,7 +468,8 @@ export const serverPackages = {
  * used by the connector HTTP files only.
  */
 export const sealedServerPackages = {
-  externalaccounts: /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
+  externalaccounts:
+    /^(connectors|cloudflare_connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishugateway: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
   feishuevents: /^(connectors|external_accounts|feishu)[a-z_]*\.go$/,
 };
