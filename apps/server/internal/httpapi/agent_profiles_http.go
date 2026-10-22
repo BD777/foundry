@@ -11,23 +11,40 @@ import (
 )
 
 func (s *Server) handleListAgentProfiles(w http.ResponseWriter, r *http.Request) {
-	actor := actorFromContext(r.Context())
+	ctx := r.Context()
+	actor := actorFromContext(ctx)
 	deviceID := r.URL.Query().Get("deviceId")
 	if actor.Agent() {
 		// A session token only ever sees its own device's profiles.
 		deviceID = actor.Identity.DeviceID
 	}
-	view, err := s.visibilityFor(r.Context(), actor)
+	view, err := s.visibilityFor(ctx, actor)
 	if err != nil {
 		writeResult(w, nil, err)
 		return
 	}
-	items, err := s.store.ListAgentProfiles(r.Context(), deviceID)
-	if err == nil {
-		items = filterByDevice(view, s.overlayServerCredential(r.Context(), items),
-			func(item store.AgentProfileProjection) string { return item.DeviceID })
+	items, err := s.store.ListAgentProfiles(ctx, deviceID)
+	if err != nil {
+		writeResult(w, nil, err)
+		return
 	}
-	writeResult(w, items, err)
+	items = filterByDevice(view, s.overlayServerCredential(ctx, items),
+		func(item store.AgentProfileProjection) string { return item.DeviceID })
+
+	devices, err := s.store.ListDevices(ctx)
+	if err == nil {
+		profiles, err := s.store.ListProfiles(ctx)
+		if err == nil {
+			bindings, err := s.store.ListDeviceProfiles(ctx, deviceID)
+			if err == nil {
+				projected, _, err := s.serverProfileProjections(ctx, store.WorkspaceProjection{}, devices, s.overlayProfileCredentials(ctx, view.filterConnections(profiles)), bindings, items, nil)
+				if err == nil {
+					items = projected
+				}
+			}
+		}
+	}
+	writeResult(w, items, nil)
 }
 
 func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request) {

@@ -761,6 +761,18 @@ func TestFoundryDataProjectsServerProfiles(t *testing.T) {
 			t.Fatalf("agent profile list = %+v", rows)
 		}
 	})
+
+	t.Run("list endpoint includes server model providers assigned to device", func(t *testing.T) {
+		server, _, profileID := newServerWithBinding(t, "connected", false)
+		listed := requestForTest(t, server, http.MethodGet, "/api/agent-profiles?deviceId=dev_1", "", http.StatusOK)
+		var rows []store.AgentProfileProjection
+		if err := json.Unmarshal(listed.Body.Bytes(), &rows); err != nil {
+			t.Fatalf("decode agent profiles: %v", err)
+		}
+		if _, ok := findAgentProfile(rows, profileID); !ok {
+			t.Fatalf("agent-profiles endpoint did not include assigned server profile %s: %+v", profileID, rows)
+		}
+	})
 }
 
 // A session that runs a server profile must carry the definition, otherwise

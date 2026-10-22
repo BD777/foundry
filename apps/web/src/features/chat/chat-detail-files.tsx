@@ -1,15 +1,19 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   SessionFileRead,
   WorkspaceFileRead,
 } from "@bd777/foundry-protocol";
+import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "../../components/ui/alert";
+import { Button } from "../../components/ui/button";
+import { SegmentedControl } from "../../components/ui/segmented-control";
 import { MarkdownContent } from "../../components/conversation/markdown-content";
 import { formatBytes } from "../../lib/format";
 import type { ChatSessionFileItem } from "./chat-types";
 
 export const markdownExtensions = new Set(["md", "markdown", "mdx"]);
+export const htmlExtensions = new Set(["html", "htm"]);
 
 export function extensionOf(path: string): string {
   const name = path.split("/").pop() ?? "";
@@ -26,9 +30,75 @@ export function formatFileSize(bytes: number): string {
 const workspaceReadLimit = 128 * 1024;
 const sessionReadLimit = 256 * 1024;
 
-/** Text by its type: Markdown rendered, anything else as code. */
+/** HTML file with live preview and source code switcher. */
+export function HtmlFileView({
+  content,
+  path,
+}: {
+  content: string;
+  path: string;
+}) {
+  const { t } = useTranslation("chat");
+  const [mode, setMode] = useState<"preview" | "code">("preview");
+
+  const openInNewWindow = () => {
+    const blob = new Blob([content], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
+  return (
+    <div className="fdy-chat-file-html">
+      <div className="fdy-chat-file-html-bar">
+        <SegmentedControl
+          aria-label={t("detail.htmlModeLabel")}
+          onValueChange={(val) => setMode(val as "preview" | "code")}
+          options={[
+            { label: t("detail.htmlPreview"), value: "preview" },
+            { label: t("detail.htmlCode"), value: "code" },
+          ]}
+          size="sm"
+          value={mode}
+        />
+        <Button
+          className="fdy-chat-file-html-open"
+          onClick={openInNewWindow}
+          size="sm"
+          variant="ghost"
+        >
+          <ExternalLink aria-hidden="true" size={14} />
+          {t("detail.openInNewWindow")}
+        </Button>
+      </div>
+
+      {mode === "preview" ? (
+        <div className="fdy-chat-file-html-frame-wrap">
+          <iframe
+            className="fdy-chat-file-html-frame"
+            sandbox="allow-scripts allow-forms allow-popups"
+            srcDoc={content}
+            title={path}
+          />
+        </div>
+      ) : (
+        <div className="fdy-markdown">
+          <pre className="fdy-chat-file-code">
+            <code>{content}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Text by its type: Markdown rendered, HTML with preview, anything else as code. */
 function TextFileView({ content, path }: { content: string; path: string }) {
-  return markdownExtensions.has(extensionOf(path)) ? (
+  const ext = extensionOf(path);
+  if (htmlExtensions.has(ext)) {
+    return <HtmlFileView content={content} path={path} />;
+  }
+  return markdownExtensions.has(ext) ? (
     <div className="fdy-markdown">
       <MarkdownContent>{content}</MarkdownContent>
     </div>

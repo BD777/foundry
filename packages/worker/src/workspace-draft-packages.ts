@@ -39,11 +39,19 @@ export function draftPackages(
       files: d.files,
       draft: d,
     }));
-  if (selected?.snapshotDigest) {
-    const files = readVerifiedSkillSnapshot(
-      selected.pluginDir,
-      selected.snapshotDigest,
-    );
+  if (selected?.snapshotDigest && sources.length > 0) {
+    let cachedFiles: SnapshotFile[] | undefined;
+    const getLibraryFiles = (prefix: string) => {
+      if (!cachedFiles && selected.snapshotDigest) {
+        cachedFiles = readVerifiedSkillSnapshot(
+          selected.pluginDir,
+          selected.snapshotDigest,
+        );
+      }
+      return (cachedFiles ?? [])
+        .filter((f) => f.path.startsWith(prefix))
+        .map((f) => ({ ...f, path: f.path.slice(prefix.length) }));
+    };
     for (const skill of selected.skills) {
       const prefix =
         relative(selected.pluginDir, skill.dir).split("\\").join("/") + "/";
@@ -52,16 +60,16 @@ export function draftPackages(
         dir: skill.dir,
         root: dirname(skill.dir),
         dirName: skill.name,
-        files: files
-          .filter((f) => f.path.startsWith(prefix))
-          .map((f) => ({ ...f, path: f.path.slice(prefix.length) })),
+        get files() {
+          return getLibraryFiles(prefix);
+        },
       });
     }
   }
   const analyze = createSkillDependencyAnalyzer(sources);
   const links = new Map<Source, { target: Source; offset?: string }[]>();
   const errors = new Map<Source, string>();
-  for (const source of sources) {
+  for (const source of sources.filter((s) => s.draft)) {
     const targets: { target: Source; offset?: string }[] = [];
     for (const dep of analyze(source, source.files).filter(
       (d) => d.strength === "required",

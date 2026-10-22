@@ -516,6 +516,7 @@ export interface AgentSession {
     | "diagnostic"
     | "naming"
     | "verification"
+    | "maintenance"
     | "agent"
     | "issue"
     | "digest";

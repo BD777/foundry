@@ -29,6 +29,29 @@ test("unselected slash skill is rejected before inference or filesystem lookup",
   ])
     assert.doesNotThrow(() => validateWorkspaceSkillPrompt(prompt, managed));
 });
+test("Codex official system skills are accepted by workspace validation", () => {
+  const codexManaged = {
+    pluginDir: "/managed/set-a",
+    skills: [{ name: "selected", dir: "/managed/set-a/skills/selected" }],
+    officialSkills: [
+      { name: "skill-creator", description: "Create or update a Codex skill" },
+      { name: "review-agent", description: "Defect-first review" },
+    ],
+  };
+  for (const prompt of [
+    "/skill-creator create a new skill",
+    "/review-agent check changes",
+    "/selected run",
+  ]) {
+    assert.doesNotThrow(() =>
+      validateWorkspaceSkillPrompt(prompt, codexManaged),
+    );
+  }
+  assert.throws(
+    () => validateWorkspaceSkillPrompt("/unconfigured test", codexManaged),
+    /not configured/,
+  );
+});
 test("catalog points exclusively at managed copies and covers dependency references", () => {
   const policy = workspaceSkillInstructions(managed);
   assert.match(policy, /\/managed\/set-a\/skills\/selected\/SKILL.md/);

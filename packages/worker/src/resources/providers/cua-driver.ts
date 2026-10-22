@@ -29,6 +29,7 @@ import {
 } from "../provider.js";
 import { McpError, McpStdioClient, type McpToolResult } from "./mcp-stdio.js";
 import { errorMessage } from "../../utils.js";
+import { WindowScope, readMacAppIdentity } from "./macos-window-scope.js";
 
 /** The longest edge of a screenshot Foundry asks for (and the default). */
 export const maxImageDimension = 1280;
@@ -60,11 +61,16 @@ interface OpSpec {
 
 export type MappedAction =
   | { kind: "tool"; tool: string; args: Record<string, unknown> }
+  | { kind: "select"; args: Record<string, unknown> }
   | { kind: "wait"; ms: number };
 
 const deliveryMode = ["background", "foreground"] as const;
 const target = { pid: "int", window_id: "int" } as const;
-const input = { ...target, delivery_mode: deliveryMode } as const;
+const input = {
+  ...target,
+  delivery_mode: deliveryMode,
+  frame_id: "string",
+} as const;
 const pointer = { element_token: "string", x: "number", y: "number" } as const;
 const pointed = [["element_token"], ["x", "y"]];
 
@@ -83,9 +89,21 @@ const tool =
     args: { ...args, ...fixed },
   });
 
+const inputTool =
+  (name: string) =>
+  (args: Record<string, unknown>): MappedAction => {
+    const { frame_id: _frame, ...rest } = args;
+    return tool(name)({ delivery_mode: "background", ...rest });
+  };
+
 const operations: Record<string, OpSpec> = {
+  select_window: {
+    args: target,
+    required: ["pid", "window_id"],
+    build: (args) => ({ kind: "select", args }),
+  },
   screenshot: {
-    args: { ...target, max_image_dimension: "int" },
+    args: { ...target, scope: ["desktop"], max_image_dimension: "int" },
     build: (args) =>
       args.pid !== undefined
         ? {
@@ -144,9 +162,17 @@ const operations: Record<string, OpSpec> = {
     build: tool("launch_app"),
   },
   activate_window: {
-    args: target,
+    args: { ...target, delivery_mode: deliveryMode },
     required: ["pid"],
-    build: tool("bring_to_front"),
+    build: (args) => {
+      if (args.delivery_mode !== "foreground")
+        throw new ProviderError(
+          "needs_foreground",
+          "activate_window needs explicit delivery_mode:foreground and the person's permission to take focus",
+        );
+      const { delivery_mode: _mode, ...rest } = args;
+      return tool("bring_to_front")(rest);
+    },
   },
   click: {
     args: {
@@ -157,22 +183,22 @@ const operations: Record<string, OpSpec> = {
       modifier: "strings",
     },
     anyOf: pointed,
-    build: tool("click"),
+    build: inputTool("click"),
   },
   double_click: {
     args: { ...input, ...pointer },
     anyOf: pointed,
-    build: tool("double_click"),
+    build: inputTool("double_click"),
   },
   right_click: {
     args: { ...input, ...pointer, modifier: "string_or_strings" },
     anyOf: pointed,
-    build: tool("right_click"),
+    build: inputTool("right_click"),
   },
   type_text: {
     args: { ...input, text: "string", element_token: "string" },
     required: ["text"],
-    build: tool("type_text"),
+    build: inputTool("type_text"),
   },
   key: {
     args: {
@@ -182,12 +208,12 @@ const operations: Record<string, OpSpec> = {
       element_token: "string",
     },
     required: ["key"],
-    build: tool("press_key"),
+    build: inputTool("press_key"),
   },
   hotkey: {
     args: { ...input, keys: "strings" },
     required: ["keys"],
-    build: tool("hotkey"),
+    build: inputTool("hotkey"),
   },
   scroll: {
     args: {
@@ -198,12 +224,12 @@ const operations: Record<string, OpSpec> = {
       by: ["line", "page"],
     },
     required: ["direction"],
-    build: tool("scroll"),
+    build: inputTool("scroll"),
   },
   drag: {
     // On macOS cua-driver drags only in the foreground, on a window.
     args: {
-      ...target,
+      ...input,
       from_x: "number",
       from_y: "number",
       to_x: "number",
@@ -211,12 +237,12 @@ const operations: Record<string, OpSpec> = {
       duration_ms: "int",
       button: ["left", "right", "middle"],
     },
-    required: ["from_x", "from_y", "to_x", "to_y", "window_id"],
-    build: tool("drag", { delivery_mode: "foreground" }),
+    required: ["from_x", "from_y", "to_x", "to_y", "pid", "window_id"],
+    build: inputTool("drag"),
   },
   set_value: {
-    args: { ...input, value: "string", element_token: "string" },
-    required: ["value"],
+    args: { ...target, value: "string", element_token: "string" },
+    required: ["value", "element_token"],
     build: tool("set_value"),
   },
   screen_size: { args: {}, build: tool("get_screen_size") },
@@ -272,6 +298,12 @@ export function mapComputerUseAction(action: ResourceAction): MappedAction {
   for (const name of spec.required ?? [])
     if (!(name in given))
       throw new ProviderError("invalid_args", `${action.op} needs ${name}`);
+  for (const name of ["pid", "window_id"])
+    if (name in given && (given[name] as number) <= 0)
+      throw new ProviderError(
+        "invalid_args",
+        `${action.op}: ${name} must be positive`,
+      );
   if (
     spec.anyOf &&
     !spec.anyOf.some((group) => group.every((name) => name in given))
@@ -284,6 +316,36 @@ export function mapComputerUseAction(action: ResourceAction): MappedAction {
     throw new ProviderError(
       "invalid_args",
       "screenshot of a window needs pid and window_id (without both, it is the whole display)",
+    );
+  if (action.op === "screenshot") {
+    if ("pid" in given && given.scope === "desktop")
+      throw new ProviderError(
+        "invalid_args",
+        "Choose a window or scope:desktop, not both",
+      );
+    if (!("pid" in given) && given.scope !== "desktop")
+      throw new ProviderError(
+        "target_required",
+        "Select a window first, supply pid and window_id, or explicitly request scope:desktop",
+      );
+  }
+  if (
+    [
+      "click",
+      "double_click",
+      "right_click",
+      "type_text",
+      "key",
+      "hotkey",
+      "scroll",
+      "drag",
+    ].includes(action.op) &&
+    !given.element_token &&
+    (!given.pid || !given.window_id)
+  )
+    throw new ProviderError(
+      "target_required",
+      "Input needs a selected window, exact pid and window_id, or an element_token",
     );
   if (action.op === "hotkey" && (given.keys as string[]).length < 2)
     throw new ProviderError(
@@ -465,7 +527,7 @@ export async function convertToolResult(
         error: `the screenshot is ${(encoded.data.length / 1048576).toFixed(1)} MB encoded, over the ${imageLimit / 1048576} MB limit; lower max_image_dimension`,
       };
     const size = pngSize(source);
-    const snapshot = structured.snapshot_id;
+    const snapshot = structured.foundry_frame_id ?? structured.snapshot_id;
     images.push({
       data: encoded.data.toString("base64"),
       mimeType: encoded.mimeType,
@@ -480,20 +542,29 @@ export async function convertToolResult(
     });
   }
   let text = texts.join("\n");
-  if (result.structuredContent && !result.isError) {
+  if (result.structuredContent) {
     const json = structuredText(result.structuredContent, text);
     if (json) text = text ? `${text}\n${json}` : json;
   }
   if (result.isError) {
     const message = text || "cua-driver reported an error";
+    const refusal = structured.refusal;
+    const backendCode =
+      structured.code ??
+      (refusal && typeof refusal === "object"
+        ? (refusal as Record<string, unknown>).code
+        : undefined);
     return {
       op,
       ok: false,
       // The window has no screenshot in this session (a new session after
       // a reset, or none taken): take one, then act on its pixels.
-      errorCode: /screenshot_context_missing/.test(message)
-        ? "stale_frame"
-        : "backend_error",
+      errorCode:
+        typeof backendCode === "string"
+          ? backendCode
+          : /screenshot_context_missing/.test(message)
+            ? "stale_frame"
+            : "backend_error",
       error: capText(message),
     };
   }
@@ -556,6 +627,11 @@ function failure(
 }
 
 export interface CuaDriverProviderOptions {
+  /** Read-only identity check; injectable for contract tests. */
+  appIdentity?: (
+    pid: number,
+    signal: AbortSignal,
+  ) => Promise<string | undefined>;
   /** The MCP server to run; by default the installed `cua-driver mcp`. */
   command?: () => { command: string; args: string[] } | undefined;
   env?: NodeJS.ProcessEnv;
@@ -581,6 +657,8 @@ export function createCuaDriverProvider(
     id: cuaDriverBackend,
     type: "computer_use",
     platforms: ["darwin"],
+    // Keep the selection for the lease, including idle periods.
+    idleCloseMs: 0,
     async open() {
       const resolved = command();
       if (!resolved)
@@ -608,13 +686,28 @@ function cuaDriverSession(
   encode: ImageEncoder,
   options: CuaDriverProviderOptions,
 ): ProviderSession {
+  const scope = new WindowScope(
+    options.appIdentity ?? readMacAppIdentity,
+    (name, args, signal) =>
+      client.callTool(name, args, options.callTimeoutMs ?? 120_000, signal),
+  );
   return {
     get alive() {
       return client.alive;
     },
     async invoke(action, signal) {
       try {
-        const mapped = mapComputerUseAction(action);
+        const prepared = scope.prepare(action);
+        const mapped = mapComputerUseAction(prepared);
+        if (mapped.kind === "select") {
+          const result = await scope.select(mapped.args, signal);
+          return await convertToolResult(
+            action.op,
+            result,
+            encode,
+            options.maxImageBytes,
+          );
+        }
         if (mapped.kind === "wait") {
           await sleep(mapped.ms, signal);
           return { op: action.op, ok: true, text: `waited ${mapped.ms} ms` };
@@ -626,12 +719,15 @@ function cuaDriverSession(
             errorCode: "backend_unsupported",
             error: `this cua-driver has no ${mapped.tool} tool (${action.op}); update cua-driver`,
           };
+        await scope.validate(prepared, signal);
+        scope.begin(prepared);
         const result = await client.callTool(
           mapped.tool,
           mapped.args,
           options.callTimeoutMs ?? 120_000,
           signal,
         );
+        scope.observe(prepared, result);
         return await convertToolResult(
           action.op,
           result,

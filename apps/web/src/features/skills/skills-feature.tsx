@@ -189,6 +189,7 @@ export function SkillsFeature({
 
       <SkillCatalogList
         activeSkillNames={activeSkillNames}
+        bundles={skillBundles}
         loading={catalogLoading}
         description={
           defaultSkillIds?.some((id) =>

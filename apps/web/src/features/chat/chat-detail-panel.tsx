@@ -20,6 +20,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { readWorkspaceFile } from "../../api";
 import { Button } from "../../components/ui/button";
+import { fileIconForName } from "../../components/ui/file-tree";
 import { subagentUsageSummary } from "../../components/conversation/turn-usage";
 import { ChatMessageList } from "../../components/conversation/chat-message-list";
 import { chatMessagesForSubagentTranscript } from "./chat-transcript-model";
@@ -68,7 +69,7 @@ function PanelKindIcon({
   selection: ChatContextSelection;
 }) {
   if (browsedFileName) {
-    return <FileText aria-hidden="true" size={17} />;
+    return fileIconForName(browsedFileName, 17);
   }
   if (selection.kind === "subagent") {
     return <Bot aria-hidden="true" size={17} />;
@@ -89,8 +90,11 @@ function PanelKindIcon({
   if (selection.kind === "source") {
     return <FolderClosed aria-hidden="true" size={17} />;
   }
-  if (selection.kind === "session-file" && selection.inGitRepo) {
-    return <FileDiff aria-hidden="true" size={17} />;
+  if (selection.kind === "session-file") {
+    if (selection.inGitRepo) {
+      return <FileDiff aria-hidden="true" size={17} />;
+    }
+    return fileIconForName(selection.label ?? selection.path, 17);
   }
   return <FileText aria-hidden="true" size={17} />;
 }

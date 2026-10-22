@@ -339,3 +339,86 @@ test("the save action sits in the heading, above the skill list", async () => {
     container.remove();
   }
 });
+
+test("a multi-skill bundle is grouped and collapsed by default, and expands when clicked", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const catalog = [
+    {
+      id: "s-stand",
+      name: "standalone",
+      description: "Standalone skill",
+      originDeviceId: "d",
+      originRoot: "/r",
+      latestRevision: 1,
+    },
+    {
+      id: "s-b1",
+      name: "bundle-tool-1",
+      description: "Tool 1",
+      originDeviceId: "d",
+      originRoot: "/r",
+      latestRevision: 1,
+    },
+    {
+      id: "s-b2",
+      name: "bundle-tool-2",
+      description: "Tool 2",
+      originDeviceId: "d",
+      originRoot: "/r",
+      latestRevision: 1,
+    },
+  ];
+  const skillBundles = [
+    {
+      id: "bundle-big",
+      name: "big-suite",
+      label: "Big Suite",
+      skillIds: ["s-b1", "s-b2"],
+    },
+  ];
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SkillsFeature, {
+          workspaceId: "w",
+          catalog,
+          skillBundles,
+          workspaceBundleIds: ["bundle-big"],
+          bindings: [],
+          devices: [],
+        }),
+      ),
+    );
+
+    // Standalone skill is rendered
+    assert.match(container.textContent, /standalone/);
+
+    // Bundle header is present and collapsed by default
+    const bundleHeader = container.querySelector(".fdy-skill-bundle-header");
+    assert.ok(bundleHeader);
+    assert.match(bundleHeader.textContent, /big-suite/);
+    assert.match(bundleHeader.textContent, /2 skills/);
+    assert.equal(bundleHeader.getAttribute("aria-expanded"), "false");
+
+    // The sublist is not in the DOM while collapsed
+    assert.equal(container.querySelector(".fdy-skill-bundle-sublist"), null);
+
+    // Click to expand
+    await act(async () => bundleHeader.click());
+    assert.equal(bundleHeader.getAttribute("aria-expanded"), "true");
+    const sublist = container.querySelector(".fdy-skill-bundle-sublist");
+    assert.ok(sublist);
+    assert.match(sublist.textContent, /bundle-tool-1/);
+    assert.match(sublist.textContent, /bundle-tool-2/);
+
+    // Click to collapse
+    await act(async () => bundleHeader.click());
+    assert.equal(bundleHeader.getAttribute("aria-expanded"), "false");
+    assert.equal(container.querySelector(".fdy-skill-bundle-sublist"), null);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

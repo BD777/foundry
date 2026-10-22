@@ -76,6 +76,7 @@ import { workspaceProjectionForPath } from "./issues.js";
 import { status } from "./service.js";
 import { ExecutionStore } from "./execution-storage.js";
 import { nativeCli, outdatedNote } from "./native-cli.js";
+import { sandboxAvailable } from "./sandbox/index.js";
 
 export function sessionSchedulingKey(session: AgentSession): string {
   const conversationID =
@@ -464,15 +465,17 @@ export function availableDaemonCapabilities(
     | Pick<ExecutionHostClient, "supportsCapability">
     | undefined = executionHostClient(),
 ): string[] {
+  const sandboxOk = sandboxAvailable("readonly_agent");
   return daemonCapabilities.filter(
     (capability) =>
-      (capability !== "cloudflare_gateway_v1" &&
+      (capability !== "verification_sessions" || sandboxOk) &&
+      ((capability !== "cloudflare_gateway_v1" &&
         capability !== "service_tunnels_v1" &&
         capability !== "workspace_draft_skills_v1" &&
         capability !== "role_run_budgets_v1" &&
         capability !== "exact_input_cancel_v1") ||
-      !host ||
-      host.supportsCapability(capability),
+        !host ||
+        host.supportsCapability(capability)),
   );
 }
 

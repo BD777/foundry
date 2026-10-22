@@ -140,6 +140,7 @@ export function isChatSession(session: AgentSession): boolean {
     case "naming":
     case "diagnostic":
     case "digest":
+    case "maintenance":
       return false;
     default: {
       // A new source does not compile until it is decided here.

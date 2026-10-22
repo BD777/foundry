@@ -707,19 +707,19 @@ export const personalAgent = {
       },
       override: "Use separate settings for this role",
       inherits:
-        "Inherits the shared default. Execution follows the target project's computer.",
+        "Inherits the shared default. Execution follows the target workspace's device.",
       enabled: "Enable this role",
-      location: "Execution computer",
+      location: "Execution device",
       locationHint:
-        "Must match the target project's computer. Changing this choice does not move the project.",
-      targetLocation: "Follow the target project",
+        "Must match the target workspace's device. Changing this choice does not move the workspace.",
+      targetLocation: "Follow target workspace",
       tokenBudget: "Token budget per run",
       timeout: "Maximum run time (minutes)",
       fallbackHint:
-        "No automatic account change unless a fallback below explicitly allows this project.",
-      fallbackWorkspace: "Fallback {{index}}: allowed project",
+        "No automatic account change unless a fallback below explicitly allows this workspace.",
+      fallbackWorkspace: "Fallback {{index}}: allowed workspace",
       fallback: "Fallback {{index}}",
-      chooseWorkspace: "Choose a project",
+      chooseWorkspace: "Choose a workspace",
       chooseAccount: "Choose an explicit account",
       removeFallback: "Remove fallback",
       addFallback: "Add an explicit fallback",
@@ -727,16 +727,16 @@ export const personalAgent = {
       unavailable: "Currently unavailable",
       missingChoice: "{{name}} (not currently listed)",
       accountHint:
-        "Accounts belong to their computer; model services must be assigned to it. A local sign-in alone does not prove online availability.",
+        "Accounts belong to their device; model services must be assigned to it. A local sign-in alone does not prove online availability.",
       effort: "Reasoning effort",
       effortHint:
         "The requested level must be supported by the runtime and model. Actual reported settings are recorded separately.",
       applyNext:
         "Saved changes apply to new runs. Existing runs keep their recorded configuration; unavailable choices wait rather than silently switching.",
       intro:
-        "What your assistant thinks with. The choices come from the computer it lives on.",
+        "What your assistant thinks with. The choices come from the device it lives on.",
       service: "What it runs on",
-      serviceDefault: "Its computer's default",
+      serviceDefault: "Its device's default",
       model: "Model",
       modelDefault: "The default for that choice",
       loading: "Loading…",
@@ -744,7 +744,7 @@ export const personalAgent = {
       delegate: "Work it hands off uses",
       delegates: {
         same_as_assistant: "The same as the assistant",
-        device_default: "Each computer's default",
+        device_default: "Each device's default",
       },
     },
     entry: {

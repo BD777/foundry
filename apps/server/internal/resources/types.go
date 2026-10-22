@@ -63,6 +63,7 @@ const keptLimit = 4000
 // computerUseOperations follow packages/protocol computerUseOperations,
 // each one cua-driver tool (packages/worker/src/resources/providers).
 var computerUseOperations = []OperationSpec{
+	{Name: "select_window"},
 	{Name: "screenshot"},
 	{Name: "get_ui_tree"},
 	{Name: "find_elements", Hidden: []string{"query"}},

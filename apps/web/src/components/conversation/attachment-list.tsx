@@ -1,8 +1,9 @@
-import { FileText, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { ChatAttachment } from "@bd777/foundry-protocol";
 import { localImageUrl } from "../../api";
 import { formatBytes } from "../../lib/format";
 import { Button } from "../ui/button";
+import { fileIconForName } from "../ui/file-tree";
 import type { ParsedImageTag } from "./conversation-types";
 
 function formatAttachmentSize(size: number): string {
@@ -42,7 +43,7 @@ function AttachmentPreviewItem({
         </Button>
       ) : (
         <span className="fdy-chat-attachment-file-icon">
-          <FileText size={17} />
+          {fileIconForName(attachment.name, 17)}
         </span>
       )}
       <span className="fdy-chat-attachment-copy">

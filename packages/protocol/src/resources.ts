@@ -361,6 +361,7 @@ export interface ResourceBackendInstallResult {
  * device (ms, at most 5000).
  */
 export const computerUseOperations = [
+  "select_window",
   "screenshot",
   "get_ui_tree",
   "find_elements",

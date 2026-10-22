@@ -574,6 +574,9 @@ export const chat: Translation<typeof en> = {
     subagentUsage:
       "子智能体共用了 {{usage}}。下方各步骤显示各自模型请求的用量。",
     openInNewWindow: "新窗口打开",
+    htmlPreview: "预览",
+    htmlCode: "源码",
+    htmlModeLabel: "预览或源码",
     webPreviewTitle: "预览 {{url}}",
     background: {
       kind: "类型",

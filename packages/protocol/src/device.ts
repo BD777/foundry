@@ -188,7 +188,10 @@ export interface DeviceDiagnostics {
 
 /** A repair a person can ask a worker to make on itself. */
 export type DeviceRepairAction =
-  "forget-missing-workspaces" | "clear-skill-scan-cache" | "recheck-agents";
+  | "forget-missing-workspaces"
+  | "clear-skill-scan-cache"
+  | "recheck-agents"
+  | "install-bubblewrap";
 
 export interface DeviceRepairResult {
   action: DeviceRepairAction;

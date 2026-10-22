@@ -1,4 +1,4 @@
-import { FileClock, FileText, FolderOpen } from "lucide-react";
+import { FileClock, FolderOpen } from "lucide-react";
 import { useMemo, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import remarkBreaks from "remark-breaks";
@@ -15,6 +15,7 @@ import {
 import { localImageUrl } from "../../api";
 import { i18n } from "../../i18n";
 import { Button } from "../ui/button";
+import { fileIconForName } from "../ui/file-tree";
 import { remarkAutolinkCjkBoundary } from "./remark-autolink-cjk-boundary";
 import { markdownPlugins, useMarkdownMermaid } from "./markdown-mermaid";
 import type {
@@ -239,7 +240,7 @@ function FileReferenceButton({
       ) : reference.pending ? (
         <FileClock aria-hidden="true" size={13} />
       ) : (
-        <FileText aria-hidden="true" size={13} />
+        fileIconForName(reference.path, 13)
       )}
       {code ? <code>{children}</code> : <span>{children}</span>}
     </Button>
