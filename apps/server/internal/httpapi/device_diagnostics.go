@@ -33,6 +33,7 @@ var deviceRepairActions = map[string]bool{
 	"forget-missing-workspaces": true,
 	"clear-skill-scan-cache":    true,
 	"recheck-agents":            true,
+	"install-bubblewrap":        true,
 }
 
 // diagnosticsConnection is the device's live connection when its worker can

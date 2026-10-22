@@ -1,43 +1,5 @@
 [
   {
-    "name": "cloudflare",
-    "description": "Read the Cloudflare zones explicitly bound to this session workspace through the official Cloudflare MCP and Foundry gateway. Start with action accounts to see eligible Cloudflare identities and zone IDs; then action request with accountId, an allowed GET path (/zones, /zones/<id>, DNS records, or SSL certificate metadata) and optional query. No DNS writes, deployments, billing changes or arbitrary JavaScript. Credentials stay on the server; unbinding or disconnecting revokes access. If permissions are missing ask the person to authorize in Connectors → Cloudflare.",
-    "summary": "Read selected Cloudflare zones, DNS and certificate metadata.",
-    "limits": [
-      "Requires the account owner’s active session on their own device and an explicit workspace zone binding.",
-      "Read-only; provider approval remains the person’s action."
-    ],
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["accounts", "request"]
-        },
-        "accountId": {
-          "type": "string",
-          "description": "Foundry connected-account id from action accounts; not the Cloudflare account or zone id."
-        },
-        "path": {
-          "type": "string"
-        },
-        "query": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          }
-        }
-      },
-      "required": ["action"],
-      "additionalProperties": false
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false,
-      "openWorldHint": true
-    }
-  },
-  {
     "name": "register_service",
     "description": "Register an already running HTTP(S) web service in Workspace Services for private Foundry-authenticated browser access. First verify its actual executing device, workspace and exact loopback port; no scanning or process launch occurs. workspaceId is where it is shown; targetWorkspaceId is the workspace on its actual executing device (defaults to workspaceId). The person must own that device and belong to both workspaces. Use one stable registrationKey for retries. External Compose/system services remain externally managed; closing web access never kills their process. New mappings are private to the person; sharing is an explicit Foundry Web action. Configured preview hostnames and a capable Worker are required for opening, and returned status is capability/readiness, not an application health check.",
     "summary": "Registers a known local web endpoint without starting or stopping it.",
@@ -198,7 +160,7 @@
   },
   {
     "name": "operate_resource",
-    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource this session leases (acquire_resource). For a Mac's screen the operations are cua-driver's tools: screenshot (returned as an image: a JPEG at most 1280 px on its long edge), get_ui_tree and find_elements (the accessibility tree, with an element_token per element), list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size and wait. Prefer acting on element_token from get_ui_tree over pixel coordinates; pixel coordinates refer to the window's latest screenshot taken through this lease, so take one first. Input is delivered in the background without moving the person's pointer, except activate_window and drag. screenshotAfter adds a screenshot of the same window after the actions. Each result says ok or an errorCode (stale_lease, lease ended, stale_frame: take a new screenshot; backend_error: what cua-driver said). For a device's compute the operations are run, put_files, get_file, git_sync and cleanup, run by the device's worker as its own user in a scratch folder of Foundry's (scratch names it; the same name finds the same folder in later leases, so a checkout and its installed dependencies stay) or, with workspaceId, in a workspace on that device this session may work in; each result's text is JSON (a run's exitCode, timedOut, durationMs and the tails of stdout and stderr). The lease block of the result says how long you keep it.",
+    "description": "Run one operation, or a short batch in order (stopping at the first failure), on a resource this session leases (acquire_resource). For a Mac's screen select_window binds an exact pid + window_id to this lease on workers advertising details.windowScope=v1; later window actions inherit that target. The other operations map to cua-driver tools: screenshot (returned as an image: a JPEG at most 1280 px on its long edge), get_ui_tree and find_elements (the accessibility tree, with an element_token per element), list_apps, list_windows, open_app, activate_window, click, double_click, right_click, type_text, key, hotkey, scroll, drag, set_value, screen_size and wait. Prefer acting on element_token from get_ui_tree over pixel coordinates; pixel coordinates refer to the window's latest screenshot taken through this lease, so take one first. Input explicitly requests background delivery by default: this is best effort, not a guarantee of action effect or focus isolation for every app. Inspect effect/verified and observe again. Drag is refused in background on driver 0.34/0.35. Never retry foreground without the person's permission: activate_window and any foreground input require delivery_mode:foreground. Backend refusals do not authorize escalation. A selected window cannot silently become a desktop target; after a backend restart select it again. Pixel input in a selected window requires frame_id from the latest screenshot image frameId; capture again after input or window geometry changes. screenshotAfter adds a screenshot of the same window after the actions. Each result says ok or an errorCode (stale_lease, lease ended, stale_frame: take a new screenshot; backend_error: what cua-driver said). For a device's compute the operations are run, put_files, get_file, git_sync and cleanup, run by the device's worker as its own user in a scratch folder of Foundry's (scratch names it; the same name finds the same folder in later leases, so a checkout and its installed dependencies stay) or, with workspaceId, in a workspace on that device this session may work in; each result's text is JSON (a run's exitCode, timedOut, durationMs and the tails of stdout and stderr). The lease block of the result says how long you keep it.",
     "summary": "Operates a leased resource step by step: screenshots, accessibility tree, clicks, typing, keys, scrolling and dragging on a Mac's screen through cua-driver.",
     "limits": [
       "Only with a live lease this session holds; refused once it ended or was taken.",
@@ -217,6 +179,7 @@
         "op": {
           "type": "string",
           "enum": [
+            "select_window",
             "screenshot",
             "get_ui_tree",
             "find_elements",
@@ -245,7 +208,7 @@
         },
         "args": {
           "type": "object",
-          "description": "The operation's arguments, with cua-driver's own names. Windows are addressed by pid and window_id (from list_windows). screenshot {pid?, window_id?, max_image_dimension? (at most 1280)}: one window (with pid and window_id) or the whole display; get_ui_tree {pid, window_id, query?, max_elements?, max_depth?, include_screenshot?}: the accessibility tree with element_token per element; find_elements {pid, window_id, query}; list_apps {}; list_windows {pid?, on_screen_only?}; open_app {bundle_id | name, urls?}; activate_window {pid, window_id?} (brings it to the front, taking focus); click / double_click / right_click {element_token | x, y, pid?, window_id?, button?, count?, modifier?}; type_text {text, element_token?, pid?, window_id?} (does not press Return); key {key, modifiers?, pid?, window_id?}; hotkey {keys: [\"cmd\", \"c\"], pid?, window_id?}; scroll {direction, amount?, by?, element_token? | x, y, pid?, window_id?}; drag {from_x, from_y, to_x, to_y, pid, window_id} (runs in the foreground); set_value {value, element_token?, pid?, window_id?}; screen_size {}; wait {ms} (at most 5000). x and y are pixels in that window's latest screenshot taken through this lease; the backend maps them to the screen. compute (every operation takes scratch? (a folder name, default \"default\") or workspaceId?; paths are relative to it and cannot leave it): run {argv: [\"pnpm\", \"test\"] | command: \"shell line\", cwd?, env? {NAME: value}, timeoutSec? (default 600, at most 1800), tailBytes? (each stream, default 32768, at most 131072), saveOutput? (a file to write the whole output to)}; put_files {upload (a name you choose), offset (bytes already sent), data (base64 of the next piece), done? (true with the last piece), format? (tar | tar.gz | zip | file; default tar), dest? (folder to unpack into, or for file the file's path)}; get_file {path, offset?, length?}; git_sync {url (https), ref? (branch, tag or commit), dir? (default \"repo\")}: clones or fetches and checks out ref, keeping ignored files such as node_modules; cleanup {path?}: deletes the scratch folder, or a path in it."
+          "description": "The operation's arguments, with cua-driver's own names. Windows are addressed by pid and window_id (from list_windows). select_window {pid, window_id}: bind this lease to a live window without activating it (read its UI tree); screenshot {pid?, window_id?, scope?: desktop, max_image_dimension? (at most 1280)}: one window (selected or with pid and window_id); the whole display requires explicit scope:desktop and no selection; get_ui_tree {pid, window_id, query?, max_elements?, max_depth?, include_screenshot?}: the accessibility tree with element_token per element; find_elements {pid, window_id, query}; list_apps {}; list_windows {pid?, on_screen_only?}; open_app {bundle_id | name, urls?}; activate_window {pid?, window_id?, delivery_mode: foreground} (brings it to the front, taking focus); click / double_click / right_click {element_token | x, y, pid?, window_id?, button?, count?, modifier?}; type_text {text, element_token?, pid?, window_id?} (does not press Return); key {key, modifiers?, pid?, window_id?}; hotkey {keys: [\"cmd\", \"c\"], pid?, window_id?}; scroll {direction, amount?, by?, element_token? | x, y, pid?, window_id?}; drag {from_x, from_y, to_x, to_y, pid?, window_id?, frame_id?, delivery_mode?} (background by default; unsupported background drag is refused); set_value {value, element_token, pid?, window_id?}; screen_size {}; wait {ms} (at most 5000). Input tools except set_value accept delivery_mode: background|foreground (default background); frame_id binds selected-window pixel input to the last capture. Omitted pid/window_id use the selected window, otherwise input needs an exact window pair or element_token. x and y are pixels in that window's latest screenshot taken through this lease; the backend maps them to the screen. compute (every operation takes scratch? (a folder name, default \"default\") or workspaceId?; paths are relative to it and cannot leave it): run {argv: [\"pnpm\", \"test\"] | command: \"shell line\", cwd?, env? {NAME: value}, timeoutSec? (default 600, at most 1800), tailBytes? (each stream, default 32768, at most 131072), saveOutput? (a file to write the whole output to)}; put_files {upload (a name you choose), offset (bytes already sent), data (base64 of the next piece), done? (true with the last piece), format? (tar | tar.gz | zip | file; default tar), dest? (folder to unpack into, or for file the file's path)}; get_file {path, offset?, length?}; git_sync {url (https), ref? (branch, tag or commit), dir? (default \"repo\")}: clones or fetches and checks out ref, keeping ignored files such as node_modules; cleanup {path?}: deletes the scratch folder, or a path in it."
         },
         "actions": {
           "type": "array",
@@ -255,6 +218,7 @@
               "op": {
                 "type": "string",
                 "enum": [
+                  "select_window",
                   "screenshot",
                   "get_ui_tree",
                   "find_elements",
@@ -290,7 +254,7 @@
         },
         "screenshotAfter": {
           "type": "boolean",
-          "description": "Also take a screenshot after the actions (of the window the last action named by pid and window_id, else the whole display)."
+          "description": "Also take a screenshot after the actions (of the window the last action named by pid and window_id, else the selected window; without selection explicitly request scope:desktop)."
         }
       },
       "required": ["leaseId"]
@@ -1860,5 +1824,43 @@
       "Only the caller’s own workspace execution root; no arbitrary device paths.",
       "Requires a connected worker supporting workspace drafts and enabled workspace draft settings."
     ]
+  },
+  {
+    "name": "cloudflare",
+    "description": "Read the Cloudflare zones explicitly bound to this session workspace through the official Cloudflare MCP and Foundry gateway. Start with action accounts to see eligible Cloudflare identities and zone IDs; then action request with accountId, an allowed GET path (/zones, /zones/<id>, DNS records, or SSL certificate metadata) and optional query. No DNS writes, deployments, billing changes or arbitrary JavaScript. Credentials stay on the server; unbinding or disconnecting revokes access. If permissions are missing ask the person to authorize in Connectors → Cloudflare.",
+    "summary": "Read selected Cloudflare zones, DNS and certificate metadata.",
+    "limits": [
+      "Requires the account owner’s active session on their own device and an explicit workspace zone binding.",
+      "Read-only; provider approval remains the person’s action."
+    ],
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["accounts", "request"]
+        },
+        "accountId": {
+          "type": "string",
+          "description": "Foundry connected-account id from action accounts; not the Cloudflare account or zone id."
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": true
+    }
   }
 ]

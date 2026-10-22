@@ -337,6 +337,7 @@ export const devices = {
       eventLoop: "Worker responsiveness",
       memory: "Memory",
       disk: "Disk space",
+      sandbox: "Sandbox isolation (bwrap)",
       workspaces: "Registered folders",
       skills: "Skill scan",
       chats: "Local chat sync",
@@ -386,6 +387,12 @@ export const devices = {
     disk: {
       free: "{{freeGb}} GB free at {{path}}",
       advice: "Free some disk space on this device.",
+    },
+    sandbox: {
+      available: "Bubblewrap sandbox is available",
+      missing: "Bubblewrap (bwrap) is missing or user namespaces are disabled",
+      advice:
+        "Install bubblewrap ('sudo apt install -y bubblewrap') on the device to enable sandboxed verification.",
     },
     agent: {
       notInstalled: "Not installed",
@@ -441,6 +448,7 @@ export const devices = {
         "forget-missing-workspaces": "Forget missing folders",
         "clear-skill-scan-cache": "Clear the skill scan cache",
         "recheck-agents": "Re-check agents",
+        "install-bubblewrap": "Install bubblewrap (bwrap)",
       },
       confirm: {
         "forget-missing-workspaces":
@@ -448,6 +456,8 @@ export const devices = {
         "clear-skill-scan-cache":
           "Rescan every skill from scratch next time? Click again",
         "recheck-agents": "Look up Claude Code and Codex again? Click again",
+        "install-bubblewrap":
+          "Attempt to install bubblewrap via package manager? Click again",
       },
       done: {
         "forget-missing-workspaces_one": "Forgot {{count}} missing folder.",
@@ -455,6 +465,7 @@ export const devices = {
         "clear-skill-scan-cache":
           "Cleared; the next skill scan reads every skill again.",
         "recheck-agents": "Looking up Claude Code and Codex again.",
+        "install-bubblewrap": "Bubblewrap installed successfully.",
       },
     },
   },

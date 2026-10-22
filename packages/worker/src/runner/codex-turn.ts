@@ -9,6 +9,7 @@ import {
   type PreparedExecution,
 } from "../session/preparation/index.js";
 import { configuredWindow } from "../context-window.js";
+import { officialSkills, refreshOfficialSkills } from "../official-skills.js";
 import { runOnNativeSession } from "../native-session.js";
 import type { AgentProfileLocalConfig } from "../profiles.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
@@ -49,8 +50,21 @@ async function runCodexWorkspaceSessionUnlocked(
   reportNativeSessionId: (nativeSessionId: string) => void,
   managedSkills?: ManagedSkillRuntime,
 ): Promise<AgentSessionRunResult> {
+  // Codex's own skills stay available under workspace isolation; they
+  // are read once per installed version.
+  if (managedSkills && !managedSkills.officialSkills) {
+    if (!officialSkills("codex"))
+      await refreshOfficialSkills(["codex"]).catch(() => false);
+    if (officialSkills("codex")) {
+      managedSkills = {
+        ...managedSkills,
+        officialSkills: officialSkills("codex"),
+      };
+    }
+  }
   if (managedSkills) {
-    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
+    if (managedSkills.officialSkills && managedSkills.officialSkills.length > 0)
+      validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
     if (profile.command?.trim())
       throw new Error(
         "Custom runtime commands cannot enforce workspace skill isolation.",
@@ -66,6 +80,9 @@ async function runCodexWorkspaceSessionUnlocked(
   });
   profile = execution.native.profile;
   managedSkills = execution.native.managedSkills;
+  if (managedSkills) {
+    validateWorkspaceSkillPrompt(currentInput(session).prompt, managedSkills);
+  }
   try {
     return await runOnNativeSession(
       {

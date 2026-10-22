@@ -18,16 +18,21 @@ import type {
   FileTreeRow,
 } from "./file-tree-model";
 
-export function fileIconForName(name: string) {
+export function fileIconForName(name: string, size = 15) {
   const extension = name.includes(".")
     ? name.slice(name.lastIndexOf(".") + 1).toLowerCase()
     : "";
   switch (extension) {
     case "md":
+    case "markdown":
+    case "mdx":
     case "txt":
     case "log":
     case "rtf":
-      return <FileText aria-hidden="true" size={15} />;
+    case "pdf":
+    case "doc":
+    case "docx":
+      return <FileText aria-hidden="true" size={size} />;
     case "ts":
     case "tsx":
     case "js":
@@ -41,29 +46,37 @@ export function fileIconForName(name: string) {
     case "c":
     case "cpp":
     case "h":
+    case "hpp":
     case "html":
+    case "htm":
     case "css":
     case "scss":
+    case "less":
     case "sh":
     case "bash":
     case "zsh":
-      return <FileCode aria-hidden="true" size={15} />;
+    case "sql":
+      return <FileCode aria-hidden="true" size={size} />;
     case "json":
     case "yaml":
     case "yml":
     case "toml":
     case "xml":
     case "csv":
-      return <FileSpreadsheet aria-hidden="true" size={15} />;
+    case "tsv":
+    case "xlsx":
+    case "xls":
+      return <FileSpreadsheet aria-hidden="true" size={size} />;
     case "png":
     case "jpg":
     case "jpeg":
     case "gif":
     case "svg":
     case "webp":
-      return <FileImage aria-hidden="true" size={15} />;
+    case "ico":
+      return <FileImage aria-hidden="true" size={size} />;
     default:
-      return <File aria-hidden="true" size={15} />;
+      return <File aria-hidden="true" size={size} />;
   }
 }
 

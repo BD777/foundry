@@ -3,8 +3,10 @@ import { navigateToChat } from "../../lib/in-app-navigation";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AlertTriangle } from "lucide-react";
 import type { WorkspaceDraftSkills } from "@bd777/foundry-protocol";
 import { request, send } from "../../api/http";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Checkbox } from "../../components/ui/field";
 
@@ -68,86 +70,152 @@ export function WorkspaceDrafts({
       aria-label={t("drafts.title")}
       aria-busy={busy}
     >
-      <div className="fdy-workspace-drafts-heading">
-        <h2>{t("drafts.title")}</h2>
-        <Button
-          disabled={busy || !view?.enabled || !view.supported || !canTrial}
-          onClick={() => void update(true)}
-        >
-          {busy ? t("drafts.refreshing") : t("drafts.refresh")}
-        </Button>
+      <header className="fdy-skill-catalog-heading">
+        <div className="fdy-skill-catalog-heading-copy">
+          <h2>{t("drafts.title")}</h2>
+          <p>{t("drafts.hint")}</p>
+        </div>
+        <div className="fdy-skill-catalog-heading-actions">
+          <Button
+            disabled={busy || !view?.enabled || !view.supported || !canTrial}
+            onClick={() => void update(true)}
+            size="sm"
+          >
+            {busy ? t("drafts.refreshing") : t("drafts.refresh")}
+          </Button>
+        </div>
+      </header>
+
+      <div className="fdy-workspace-drafts-bar">
+        <label className="fdy-workspace-drafts-toggle">
+          <Checkbox
+            checked={view?.enabled ?? false}
+            disabled={!view || busy || readOnly}
+            onChange={(event) =>
+              void update(false, event.currentTarget.checked)
+            }
+          />
+          <span>{t("drafts.enable")}</span>
+        </label>
+        {view?.scannedAt && (
+          <span className="fdy-workspace-drafts-scanned">
+            {t("drafts.scanned", {
+              at: new Date(view.scannedAt).toLocaleString(),
+            })}
+          </span>
+        )}
       </div>
-      <p>{t("drafts.hint")}</p>
-      <label className="fdy-workspace-drafts-toggle">
-        <Checkbox
-          checked={view?.enabled ?? false}
-          disabled={!view || busy || readOnly}
-          onChange={(event) => void update(false, event.currentTarget.checked)}
-        />
-        {t("drafts.enable")}
-      </label>
-      {error && <p role="alert">{error}</p>}
-      {!view && !error && <p role="status">{t("drafts.loading")}</p>}
-      {view && !view.supported && (
-        <p role="status">{t("drafts.unsupported")}</p>
+
+      {error && (
+        <p className="fdy-workspace-drafts-alert" role="alert">
+          {error}
+        </p>
       )}
-      {view?.scannedAt && (
-        <p>
-          {t("drafts.scanned", {
-            at: new Date(view.scannedAt).toLocaleString(),
-          })}
+      {!view && !error && (
+        <p className="fdy-workspace-drafts-status" role="status">
+          {t("drafts.loading")}
+        </p>
+      )}
+      {view && !view.supported && (
+        <p className="fdy-workspace-drafts-status" role="status">
+          {t("drafts.unsupported")}
         </p>
       )}
       {view?.skills.length === 0 && (
-        <p>{view.scannedAt ? t("drafts.empty") : t("drafts.unscanned")}</p>
+        <div className="fdy-workspace-drafts-empty">
+          <p>{view.scannedAt ? t("drafts.empty") : t("drafts.unscanned")}</p>
+        </div>
       )}
+
       <ul className="fdy-workspace-drafts-list">
-        {view?.skills.map((skill) => (
-          <li key={skill.id}>
-            <div>
-              <strong>{skill.name}</strong>{" "}
-              <span>{t(`drafts.${skill.status}`)}</span>
-            </div>
-            <p>{skill.description}</p>
-            <code>{skill.relativePath}</code>
-            {skill.digest && (
-              <p>
-                {t("drafts.version", { digest: skill.digest.slice(0, 12) })}
-              </p>
-            )}
-            {skill.status === "ready" && (
-              <p>{t("drafts.invoke", { name: `draft:${skill.name}` })}</p>
-            )}
-            {skill.status === "ready" && (
-              <Button
-                disabled={
-                  busy || !view?.enabled || !view.supported || !canTrial
-                }
-                onClick={() => setTrial(skill)}
-              >
-                {t("drafts.trial")}
-              </Button>
-            )}
-            {skill.lastTrial && (
-              <div>
-                <span>
-                  {skill.lastTrial.digest !== skill.digest
-                    ? t("drafts.staleTrial")
-                    : t("drafts.trialRecorded")}
-                </span>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    navigateToChat(skill.lastTrial!.sessionId, workspaceId)
-                  }
-                >
-                  {t("drafts.viewTrial")}
-                </Button>
+        {view?.skills.map((skill) => {
+          const statusTone =
+            skill.status === "ready"
+              ? "online"
+              : skill.status === "conflict"
+                ? "warn"
+                : "error";
+          return (
+            <li className="fdy-workspace-draft-card" key={skill.id}>
+              <div className="fdy-workspace-draft-header">
+                <div className="fdy-workspace-draft-title-row">
+                  <strong className="fdy-workspace-draft-name">
+                    {skill.name}
+                  </strong>
+                  <Badge tone={statusTone}>{t(`drafts.${skill.status}`)}</Badge>
+                </div>
+                <div className="fdy-workspace-draft-actions">
+                  {skill.status === "ready" && (
+                    <Button
+                      disabled={
+                        busy || !view?.enabled || !view.supported || !canTrial
+                      }
+                      onClick={() => setTrial(skill)}
+                      size="sm"
+                    >
+                      {t("drafts.trial")}
+                    </Button>
+                  )}
+                  {skill.lastTrial && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        navigateToChat(skill.lastTrial!.sessionId, workspaceId)
+                      }
+                    >
+                      {t("drafts.viewTrial")}
+                    </Button>
+                  )}
+                </div>
               </div>
-            )}
-            {skill.error && <p role="note">{skill.error}</p>}
-          </li>
-        ))}
+
+              {skill.description ? (
+                <p className="fdy-workspace-draft-description">
+                  {skill.description}
+                </p>
+              ) : null}
+
+              <div className="fdy-workspace-draft-meta-row">
+                <code className="fdy-workspace-draft-path">
+                  {skill.relativePath}
+                </code>
+                {skill.digest ? (
+                  <span className="fdy-workspace-draft-version">
+                    {t("drafts.version", {
+                      digest: skill.digest.slice(0, 12),
+                    })}
+                  </span>
+                ) : null}
+                {skill.status === "ready" ? (
+                  <span className="fdy-workspace-draft-invoke">
+                    {t("drafts.invoke", { name: `draft:${skill.name}` })}
+                  </span>
+                ) : null}
+              </div>
+
+              {skill.lastTrial ? (
+                <div className="fdy-workspace-draft-trial-info">
+                  <span>
+                    {skill.lastTrial.digest !== skill.digest
+                      ? t("drafts.staleTrial")
+                      : t("drafts.trialRecorded")}
+                  </span>
+                </div>
+              ) : null}
+
+              {skill.error ? (
+                <div className="fdy-workspace-draft-error" role="note">
+                  <AlertTriangle
+                    className="fdy-workspace-draft-error-icon"
+                    size={14}
+                  />
+                  <span>{skill.error}</span>
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
       {trial && (
         <DraftTrialDialog

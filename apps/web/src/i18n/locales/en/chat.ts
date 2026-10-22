@@ -607,6 +607,9 @@ export const chat = {
     subagentUsage:
       "The subagent used {{usage}}. Steps below show their own model requests.",
     openInNewWindow: "Open in new window",
+    htmlPreview: "Preview",
+    htmlCode: "Code",
+    htmlModeLabel: "Preview or code",
     webPreviewTitle: "Preview {{url}}",
     background: {
       kind: "Kind",

@@ -133,6 +133,13 @@ export const skills = {
     viaBundle: "From {{name}}",
     viaBundleTitle:
       "This workspace gets the skill from the {{name}} bundle it uses",
+    collapseBundle: "Collapse",
+    expandBundle: "Expand",
+    bundleSkillsCount_one: "{{count}} skill",
+    bundleSkillsCount_other: "{{count}} skills",
+    bundleSelectedCount: "{{selected}} of {{total}} selected",
+    bundleAllSelected: "all {{count}} selected",
+    bundleMatches: "{{count}} matching",
     missingTools: "{{device}} lacks {{tools}}",
     missingToolsTitle:
       "This skill runs {{tools}}, which the workspace's device did not find on its PATH at its last skill scan. Install it there; sessions are told it is missing.",

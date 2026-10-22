@@ -42,11 +42,13 @@ function harness({ drop = "", maxImageBytes, idleMs, notify } = {}) {
   const folder = mkdtempSync(join(tmpdir(), "fake-cua-"));
   const log = join(folder, "calls.jsonl");
   const provider = createCuaDriverProvider({
+    appIdentity: async () => "synthetic-launch",
     command: () => ({ command: process.execPath, args: [fakeDriver] }),
     env: { ...process.env, FAKE_CUA_LOG: log, FAKE_CUA_DROP: drop },
     encodeImage: async (data) => ({ data, mimeType: "image/jpeg" }),
     ...(maxImageBytes ? { maxImageBytes } : {}),
   });
+  if (idleMs) provider.idleCloseMs = idleMs;
   const operations = new ResourceOperations({
     providers: new ProviderRegistry([provider]),
     platform: "darwin",
@@ -136,7 +138,9 @@ test("structured results stay parseable JSON under the size bound", async () => 
 test("operations map onto cua-driver tools with its argument names", async (t) => {
   const h = harness();
   t.after(h.done);
-  const shot = await h.operate([{ op: "screenshot" }]);
+  const shot = await h.operate([
+    { op: "screenshot", args: { scope: "desktop" } },
+  ]);
   assert.equal(shot.opened, true);
   assert.equal(shot.results[0].ok, true);
   const [desktop] = shot.results[0].images;
@@ -152,15 +156,37 @@ test("operations map onto cua-driver tools with its argument names", async (t) =
     { op: "click", args: { element_token: "snap1:3", pid: 42, window_id: 7 } },
     {
       op: "click",
-      args: { x: 10, y: 20.5, pid: 42, window_id: 7, count: 2, button: "left" },
+      args: {
+        x: 10,
+        y: 20.5,
+        pid: 42,
+        window_id: 7,
+        count: 2,
+        button: "left",
+        delivery_mode: "background",
+      },
     },
-    { op: "key", args: { key: "return", modifiers: ["cmd"], pid: 42 } },
+    {
+      op: "key",
+      args: { key: "return", modifiers: ["cmd"], pid: 42, window_id: 7 },
+    },
     {
       op: "drag",
-      args: { from_x: 1, from_y: 2, to_x: 3, to_y: 4, window_id: 7 },
+      args: {
+        from_x: 1,
+        from_y: 2,
+        to_x: 3,
+        to_y: 4,
+        pid: 42,
+        window_id: 7,
+        delivery_mode: "foreground",
+      },
     },
     { op: "open_app", args: { bundle_id: "com.apple.TextEdit" } },
-    { op: "activate_window", args: { pid: 42, window_id: 7 } },
+    {
+      op: "activate_window",
+      args: { pid: 42, window_id: 7, delivery_mode: "foreground" },
+    },
     { op: "get_ui_tree", args: { pid: 42, window_id: 7, query: "Save" } },
     { op: "screen_size" },
     { op: "wait", args: { ms: 10 } },
@@ -191,12 +217,37 @@ test("operations map onto cua-driver tools with its argument names", async (t) =
           include_accessibility_tree: false,
         },
       ],
-      ["click", { element_token: "snap1:3", pid: 42, window_id: 7 }],
       [
         "click",
-        { x: 10, y: 20.5, pid: 42, window_id: 7, count: 2, button: "left" },
+        {
+          element_token: "snap1:3",
+          pid: 42,
+          window_id: 7,
+          delivery_mode: "background",
+        },
       ],
-      ["press_key", { key: "return", modifiers: ["cmd"], pid: 42 }],
+      [
+        "click",
+        {
+          x: 10,
+          y: 20.5,
+          pid: 42,
+          window_id: 7,
+          count: 2,
+          button: "left",
+          delivery_mode: "background",
+        },
+      ],
+      [
+        "press_key",
+        {
+          key: "return",
+          modifiers: ["cmd"],
+          pid: 42,
+          window_id: 7,
+          delivery_mode: "background",
+        },
+      ],
       [
         "drag",
         {
@@ -204,6 +255,7 @@ test("operations map onto cua-driver tools with its argument names", async (t) =
           from_y: 2,
           to_x: 3,
           to_y: 4,
+          pid: 42,
           window_id: 7,
           delivery_mode: "foreground",
         },
@@ -245,7 +297,10 @@ test("argument checks: unknown ops, missing or mistyped args, wait capped", () =
     "invalid_args",
   );
   assert.equal(code({ op: "screenshot", args: { pid: 1 } }), "invalid_args");
-  assert.equal(code({ op: "hotkey", args: { keys: ["cmd"] } }), "invalid_args");
+  assert.equal(
+    code({ op: "hotkey", args: { keys: ["cmd"], pid: 42, window_id: 7 } }),
+    "invalid_args",
+  );
   assert.equal(
     code({ op: "scroll", args: { direction: "sideways" } }),
     "invalid_args",
@@ -284,6 +339,57 @@ test("argument checks: unknown ops, missing or mistyped args, wait capped", () =
   );
 });
 
+test("selected-window input reaches only its target and reset cannot fall back to desktop", async (t) => {
+  const h = harness();
+  t.after(h.done);
+  const selected = await h.operate([
+    { op: "select_window", args: { pid: 42, window_id: 7 } },
+  ]);
+  assert.equal(selected.results[0].ok, true, JSON.stringify(selected));
+  const shot = await h.operate([{ op: "screenshot" }]);
+  const frame = shot.results[0].images[0].frameId;
+  const before = h.calls().filter((call) => call.tool === "click").length;
+  const wrong = await h.operate([
+    { op: "click", args: { x: 1, y: 1, frame_id: "old" } },
+  ]);
+  assert.equal(wrong.results[0].errorCode, "stale_frame");
+  assert.equal(
+    h.calls().filter((call) => call.tool === "click").length,
+    before,
+  );
+  const acted = await h.operate([
+    { op: "click", args: { x: 1, y: 1, frame_id: frame } },
+  ]);
+  assert.equal(acted.results[0].ok, true);
+  assert.deepEqual(h.calls().findLast((call) => call.tool === "click").args, {
+    delivery_mode: "background",
+    pid: 42,
+    window_id: 7,
+    x: 1,
+    y: 1,
+  });
+  const stale = await h.operate([
+    { op: "click", args: { x: 1, y: 1, frame_id: frame } },
+  ]);
+  assert.equal(stale.results[0].errorCode, "stale_frame");
+  await h.operations.reset({
+    resourceId: "res_1",
+    key,
+    type: "computer_use",
+    generation: 2,
+    reason: "ended",
+  });
+  const next = await h.operate([{ op: "screenshot" }], {
+    generation: 2,
+    leaseId: "lease_2",
+  });
+  assert.equal(next.results[0].errorCode, "target_required");
+  assert.equal(
+    h.calls().some((call) => call.tool === "get_desktop_state"),
+    false,
+  );
+});
+
 test("a batch stops at the first failure; errors keep their codes", async (t) => {
   const h = harness({ drop: "set_value" });
   t.after(h.done);
@@ -302,7 +408,9 @@ test("a batch stops at the first failure; errors keep their codes", async (t) =>
   const missing = await h.operate([{ op: "type_text", args: {} }]);
   assert.equal(missing.results[0].errorCode, "invalid_args");
   assert.match(missing.results[0].error, /needs text/);
-  const failed = await h.operate([{ op: "click", args: { x: 666, y: 1 } }]);
+  const failed = await h.operate([
+    { op: "click", args: { x: 666, y: 1, pid: 42, window_id: 7 } },
+  ]);
   assert.deepEqual(
     [
       failed.results[0].ok,
@@ -311,10 +419,12 @@ test("a batch stops at the first failure; errors keep their codes", async (t) =>
     ],
     [false, "backend_error", "boom: no such window"],
   );
-  const stale = await h.operate([{ op: "click", args: { x: 777, y: 1 } }]);
+  const stale = await h.operate([
+    { op: "click", args: { x: 777, y: 1, pid: 42, window_id: 7 } },
+  ]);
   assert.equal(stale.results[0].errorCode, "stale_frame");
   const unsupported = await h.operate([
-    { op: "set_value", args: { value: "x" } },
+    { op: "set_value", args: { value: "x", element_token: "snap1:3" } },
   ]);
   assert.equal(unsupported.results[0].errorCode, "backend_unsupported");
   assert.match(unsupported.results[0].error, /set_value/);
@@ -323,9 +433,30 @@ test("a batch stops at the first failure; errors keep their codes", async (t) =>
 test("an image over the limit is too_large", async (t) => {
   const h = harness({ maxImageBytes: 10 });
   t.after(h.done);
-  const result = await h.operate([{ op: "screenshot" }]);
+  const result = await h.operate([
+    { op: "screenshot", args: { scope: "desktop" } },
+  ]);
   assert.equal(result.results[0].errorCode, "too_large");
   assert.match(result.results[0].error, /max_image_dimension/);
+});
+
+test("a background refusal stops the batch and never retries foreground", async (t) => {
+  const h = harness();
+  t.after(h.done);
+  const result = await h.operate([
+    {
+      op: "drag",
+      args: { pid: 42, window_id: 7, from_x: 1, from_y: 2, to_x: 3, to_y: 4 },
+    },
+    { op: "type_text", args: { pid: 42, window_id: 7, text: "must not run" } },
+  ]);
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].errorCode, "background_unavailable");
+  assert.match(result.results[0].error, /"effect":"refused"/);
+  assert.deepEqual(
+    h.calls().map(({ tool, args }) => [tool, args.delivery_mode]),
+    [["drag", "background"]],
+  );
 });
 
 test("fencing: older generations are refused; reset closes the old session", async (t) => {
@@ -376,9 +507,12 @@ test("fencing: older generations are refused; reset closes the old session", asy
 test("a reset aborts an older lease's operation in flight", async (t) => {
   const h = harness();
   t.after(h.done);
-  const running = h.operate([{ op: "type_text", args: { text: "slow3000" } }], {
-    generation: 1,
-  });
+  const running = h.operate(
+    [{ op: "type_text", args: { text: "slow3000", pid: 42, window_id: 7 } }],
+    {
+      generation: 1,
+    },
+  );
   // This checks an action in flight, not provider initialization. A fixed
   // startup sleep races under a loaded CI worker and can abort before any
   // per-action result exists.
@@ -404,8 +538,12 @@ test("operations on one instance run one at a time, in order", async (t) => {
   const h = harness();
   t.after(h.done);
   await Promise.all([
-    h.operate([{ op: "type_text", args: { text: "slow150" } }]),
-    h.operate([{ op: "type_text", args: { text: "slow10" } }]),
+    h.operate([
+      { op: "type_text", args: { text: "slow150", pid: 42, window_id: 7 } },
+    ]),
+    h.operate([
+      { op: "type_text", args: { text: "slow10", pid: 42, window_id: 7 } },
+    ]),
     h.operate([{ op: "list_apps" }]),
   ]);
   const events = h
@@ -432,7 +570,7 @@ test("the deadline bounds a request; idle sessions close", async (t) => {
   // Open the session first: the deadline then bounds the action only.
   await h.operate([{ op: "list_apps" }]);
   const late = await h.operate(
-    [{ op: "type_text", args: { text: "slow2000" } }],
+    [{ op: "type_text", args: { text: "slow2000", pid: 42, window_id: 7 } }],
     { deadlineMs: 200 },
   );
   assert.equal(late.results[0].errorCode, "timeout");
@@ -584,6 +722,7 @@ test("the cua-driver detector climbs installed → configured → permitted, pas
   ]);
   assert.deepEqual(stopped.instance.details, {
     grantTo: "CuaDriver.app",
+    windowScope: "v1",
     path: bin,
     version: "0.34.1",
   });

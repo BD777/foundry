@@ -7,11 +7,12 @@ import { runtimeMeta } from "../components/ui/runtime-mark";
  */
 export function workspaceComposerSkills(data: FoundryData) {
   return {
-    // The server lists the selected and default skills (workspaceSkills).
+    // The server lists the selected, default, and ready draft skills (workspaceSkills).
     workspace: (data.workspaceSkills ?? []).map((skill) => ({
       value: skill.name,
       label: skill.name,
       description: skill.description,
+      tag: (skill as { draft?: boolean }).draft ? "Draft" : undefined,
     })),
     byAgent: Object.fromEntries(
       data.providerHealth

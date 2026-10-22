@@ -1,6 +1,6 @@
 # DEV-031 · Subscription account usage in the chat side panel
 
-Status: implemented, deployed and Agent-accepted for the verified scope below. Final source CI/integration remains with the joint release owner.
+Status: implemented, deployed and Agent-accepted for the verified scope below. The original quota implementation, compact layout and alignment fix merged through PR138; post-merge and final main CI passed. Claude availability/freshness limitations remain unchanged.
 
 The request is to show the selected official subscription account's quota in the right panel. It is account-wide usage, distinct from the conversation's Context token meter. API-key and compatible endpoint profiles do not inherit subscription quotas.
 
@@ -84,3 +84,15 @@ This follow-up uses the already published DEV033 fixed Web candidate, preserving
 Published Web **`751e32929d69edee`**, index SHA-256 **`29fff88b59503ebb5855a13dca128a9f8de6706e551015f1a35b0d1fc7cee7c8`**. It overlays `/home/windeng/workspace/foundry-dev033-release` (DEV033 + verified DEV032 UI) and preserves the paired Server PID1806348 / hash `fb96a556…` with DEV027 rev9 and Worker `1792570873`; neither changed or restarted. The automatic publisher stayed disabled, old assets/rollback were retained, and disk remained above 13 GiB free.
 
 Exact four-path delta (two header files, the fixture and this report) and immutable inherited manifest: `/tmp/dev031-align-evidence/source-manifest.json` and `baseline-manifest.json`. Candidate: `/home/windeng/workspace/foundry-dev031-align` (**Web-only**, never a Server/Worker build source). Receipt: `deployment.json`; visual/geometry evidence: `before-geometry.json`, `after-geometry.json`, `measurements.json`, `production-matrix.log`, and `.foundry/attachments/dev031-align/{before-290,en-290,usage-aligned}.png`. This narrowly scoped visual fix is Agent-accepted under the person's existing delegation and returned to the sole joint integration owner; source CI/merge remains a separate pending step.
+
+## Source integration closure (2026-10-22)
+
+The joint integration owner's final receipt was independently checked against GitHub and local Git:
+
+- [PR138](https://github.com/BD777/foundry/pull/138) merged as `c1338f7b18ae736c2ce048beeadf8dd87ada4aa1`, including the original quota feature, compact sidebar and title-alignment follow-up. Both latest-head checks on `b72aa69dfb96baf015460067aeb4f2d5404f9bae` passed: [PR run 39627514744](https://github.com/BD777/foundry/actions/runs/39627514744) and [push run 39627507077](https://github.com/BD777/foundry/actions/runs/39627507077).
+- [Post-merge main run 39632103251](https://github.com/BD777/foundry/actions/runs/39632103251) completed with `success` on `c1338f7`. The documentation-placement-only PR139 then merged as `69f2084ab17611c395420505c679b7c0d3ebc635`; [final main run 39634194951](https://github.com/BD777/foundry/actions/runs/39634194951) also completed with `success` on that exact SHA.
+- Manifest comparison found 31 independently owned product/test files byte-identical to their accepted versions. The two shared files `chat-surface.tsx` and `chat-context-card.tsx` contain the separately integrated work/timer presentation changes; inspection confirmed their Usage wiring was preserved. The shared module registry and historical reports are not asserted byte-identical to the earlier isolated candidate.
+
+This supersedes the pending-source-integration statements recorded in the earlier timeline. It does not expand acceptance to real Claude percentage windows: the native no-window result and potentially cached observation semantics remain explicit. No new deployment, model/quota probe, PR or Git history operation was performed for this receipt. This closure note is a local documentation update; the linked CI receipts attest the merged commits, not this subsequent note.
+
+[Final joint integration receipt](https://github.com/BD777/foundry/pull/138#issuecomment-6321097469).

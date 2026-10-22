@@ -324,6 +324,7 @@ export const devices: Translation<typeof en> = {
       eventLoop: "Worker 响应情况",
       memory: "内存",
       disk: "磁盘空间",
+      sandbox: "沙箱隔离 (bwrap)",
       workspaces: "已登记的文件夹",
       skills: "Skill 扫描",
       chats: "本地对话同步",
@@ -369,6 +370,12 @@ export const devices: Translation<typeof en> = {
     disk: {
       free: "{{path}} 剩余 {{freeGb}} GB",
       advice: "请清理这台设备的磁盘空间。",
+    },
+    sandbox: {
+      available: "Bubblewrap 沙箱可用",
+      missing: "缺少 bubblewrap (bwrap) 或未开启 user namespace",
+      advice:
+        "请在设备上安装 bubblewrap（'sudo apt install -y bubblewrap'）以支持沙箱验证。",
     },
     agent: {
       notInstalled: "未安装",
@@ -424,11 +431,13 @@ export const devices: Translation<typeof en> = {
         "forget-missing-workspaces": "忘掉不存在的文件夹",
         "clear-skill-scan-cache": "清空 Skill 扫描缓存",
         "recheck-agents": "重新检查 Agent",
+        "install-bubblewrap": "安装 bubblewrap (bwrap)",
       },
       confirm: {
         "forget-missing-workspaces": "确定忘掉已不存在的文件夹？再点一次",
         "clear-skill-scan-cache": "下次从头重新扫描所有 Skill？再点一次",
         "recheck-agents": "重新查找 Claude Code 和 Codex？再点一次",
+        "install-bubblewrap": "尝试通过系统包管理器安装 bubblewrap？再点一次",
       },
       done: {
         "forget-missing-workspaces_one": "已忘掉 {{count}} 个不存在的文件夹。",
@@ -436,6 +445,7 @@ export const devices: Translation<typeof en> = {
           "已忘掉 {{count}} 个不存在的文件夹。",
         "clear-skill-scan-cache": "已清空，下次扫描会重新读取所有 Skill。",
         "recheck-agents": "正在重新查找 Claude Code 和 Codex。",
+        "install-bubblewrap": "bubblewrap 安装成功。",
       },
     },
   },

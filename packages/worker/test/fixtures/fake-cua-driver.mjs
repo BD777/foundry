@@ -51,6 +51,60 @@ const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const text = (value) => ({ content: [{ type: "text", text: value }] });
 
 async function call(name, args) {
+  if (name === "get_window_state") {
+    // Observed against the installed macOS 0.34.0 driver. In particular,
+    // tree_format belongs to later contracts and must not creep into select.
+    const allowed = new Set([
+      "pid",
+      "window_id",
+      "include_screenshot",
+      "include_accessibility_tree",
+      "max_image_dimension",
+      "max_elements",
+      "max_depth",
+      "query",
+    ]);
+    const unknown = Object.keys(args).find((key) => !allowed.has(key));
+    if (unknown)
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `get_window_state: unknown argument ${unknown}`,
+          },
+        ],
+        structuredContent: {
+          status: "refused",
+          refusal: { code: "invalid_arguments" },
+        },
+      };
+  }
+  if (name === "drag" && args.delivery_mode !== "foreground")
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text",
+          text: "Background drag is unavailable; nothing was sent",
+        },
+      ],
+      structuredContent: { code: "background_unavailable", effect: "refused" },
+    };
+  if (name === "list_windows" && args.pid === 42)
+    return {
+      structuredContent: {
+        windows: [
+          {
+            pid: 42,
+            window_id: 7,
+            is_on_screen: true,
+            on_current_space: true,
+            bounds: { x: 0, y: 0, width: 500, height: 300 },
+          },
+        ],
+      },
+    };
   if (name === "list_windows" || name === "list_apps") return captured[name];
   if (name === "get_window_state")
     return {

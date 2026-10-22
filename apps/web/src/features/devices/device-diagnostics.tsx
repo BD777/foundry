@@ -230,6 +230,19 @@ export function DeviceDiagnostics({
           >
             {t("diagnostics.repair.action.recheck-agents")}
           </ConfirmButton>
+          {report?.checks.some(
+            (c) => c.id === "runtime.sandbox" && c.status !== "ok",
+          ) ? (
+            <ConfirmButton
+              confirmLabel={t("diagnostics.repair.confirm.install-bubblewrap")}
+              disabled={!online || Boolean(repairing)}
+              onConfirm={() => void repair("install-bubblewrap")}
+              size="sm"
+              variant="secondary"
+            >
+              {t("diagnostics.repair.action.install-bubblewrap")}
+            </ConfirmButton>
+          ) : null}
         </div>
         {repairing ? (
           <p role="status">{t("diagnostics.repair.running")}</p>

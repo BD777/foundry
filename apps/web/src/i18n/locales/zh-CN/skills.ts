@@ -127,6 +127,13 @@ export const skills: Translation<typeof en> = {
     useBundle: "在这个工作区使用 {{name}}",
     viaBundle: "来自 {{name}}",
     viaBundleTitle: "这个工作区通过它使用的 {{name}} 套件获得这个 Skill",
+    collapseBundle: "收起",
+    expandBundle: "展开",
+    bundleSkillsCount_one: "{{count}} 个技能",
+    bundleSkillsCount_other: "{{count}} 个技能",
+    bundleSelectedCount: "已选 {{selected}} / {{total}}",
+    bundleAllSelected: "已全选（{{count}} 个）",
+    bundleMatches: "匹配 {{count}} 个",
     missingTools: "{{device}} 缺少 {{tools}}",
     missingToolsTitle:
       "这个 Skill 需要运行 {{tools}}，工作区所在设备在上次扫描 Skill 时没在 PATH 里找到。请在设备上安装；会话会被告知缺少这些程序。",

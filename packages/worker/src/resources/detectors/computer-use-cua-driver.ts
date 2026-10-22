@@ -131,7 +131,10 @@ export function createCuaDriverDetector(
     async detect(context: DetectContext) {
       const env = cuaDriverEnv(context.env);
       const binary = resolveBinary(env);
-      const details: Record<string, string> = { grantTo: "CuaDriver.app" };
+      const details: Record<string, string> = {
+        grantTo: "CuaDriver.app",
+        windowScope: "v1",
+      };
       let readiness: ResourceReadiness;
       let version: string | undefined;
       if (!binary) {

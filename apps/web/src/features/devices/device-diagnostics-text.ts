@@ -112,6 +112,14 @@ export function checkText(check: DiagnosticCheck): CheckText {
         detail: values.error ? String(values.error) : t("disk.free", values),
         advice: advise("disk.advice"),
       };
+    case "runtime.sandbox":
+      return {
+        title: t("check.sandbox"),
+        detail: values.available
+          ? t("sandbox.available", values)
+          : t("sandbox.missing", values),
+        advice: advise("sandbox.advice"),
+      };
     case "agents.claude":
     case "agents.codex": {
       const name = runtimeMeta(

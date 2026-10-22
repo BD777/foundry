@@ -82,6 +82,15 @@ export function claudeRoleOptions(
         strictMcpConfig: true,
       },
     };
+  if (isMaintenanceSession(session))
+    return {
+      sdk: {
+        permissionMode: "dontAsk",
+        allowedTools: ["Read", "Grep", "Glob", "mcp__foundry"],
+        settingSources: [],
+        strictMcpConfig: true,
+      },
+    };
   if (!isClarificationSession(session)) return undefined;
   return {
     sdk: {
@@ -117,6 +126,16 @@ export function codexRoleOptions(session: AgentSession):
         webSearchMode: "disabled",
       },
     };
+  if (isMaintenanceSession(session))
+    return {
+      config: { features: codexDisabledFeatures(true) },
+      thread: {
+        sandboxMode: "read-only",
+        approvalPolicy: "never",
+        networkAccessEnabled: false,
+        webSearchMode: "disabled",
+      },
+    };
   if (!isClarificationSession(session)) return undefined;
   return {
     // Its read-only shell stays: Codex reads files through it, inside a
@@ -135,13 +154,21 @@ export function isDiagnosticSession(session: AgentSession): boolean {
   return session.source === "diagnostic";
 }
 
+export function isMaintenanceSession(session: AgentSession): boolean {
+  return session.source === "maintenance";
+}
+
 /**
- * Sessions Foundry starts for itself (diagnostics, naming, the Personal
+ * Sessions Foundry starts for itself (diagnostics, naming, maintenance, the Personal
  * Agent's digest summaries): read-only, a few turns, no tools beyond reading
  * and no Foundry tools. A verifier is a role of its own (session-roles.ts).
  */
 export function isUtilitySession(session: AgentSession): boolean {
-  return isDiagnosticSession(session) || isPromptOnlySession(session);
+  return (
+    isDiagnosticSession(session) ||
+    isPromptOnlySession(session) ||
+    isMaintenanceSession(session)
+  );
 }
 
 /**

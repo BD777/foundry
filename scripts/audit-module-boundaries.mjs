@@ -197,6 +197,7 @@ export const workerModules = {
       "resources/provider",
       "resources/providers/mcp-stdio",
       "resources/providers/cua-driver",
+      "resources/providers/macos-window-scope",
       "resources/cua-driver-host",
       "resources/operations",
       "resources/install",

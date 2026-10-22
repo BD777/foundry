@@ -12,6 +12,7 @@ import {
   fstatSync,
   rmSync,
 } from "node:fs";
+import { execSync } from "node:child_process";
 import { statfs } from "node:fs/promises";
 import type {
   DeviceDiagnostics,
@@ -20,6 +21,7 @@ import type {
   DiagnosticCheck,
   WorkerConnectionReport,
 } from "@bd777/foundry-protocol";
+import { sandboxAvailable } from "./sandbox/index.js";
 import {
   describeConnectionReport,
   proxyHost,
@@ -256,6 +258,20 @@ async function runtimeChecks(): Promise<DiagnosticCheck[]> {
       }),
     );
   }
+  if (process.platform === "linux") {
+    const bwrapOk = sandboxAvailable("readonly_agent");
+    checks.push(
+      check("runtime.sandbox", bwrapOk ? "ok" : "warn", {
+        backend: "bubblewrap",
+        available: bwrapOk,
+        ...(bwrapOk
+          ? {}
+          : {
+              hint: "install bubblewrap (sudo apt install -y bubblewrap) for sandboxed Issue verification",
+            }),
+      }),
+    );
+  }
   return checks;
 }
 
@@ -407,6 +423,27 @@ export function runRepair(
       clearNativeLoginHealth();
       recheckAgents();
       return { action };
+    }
+    case "install-bubblewrap": {
+      if (process.platform !== "linux") {
+        throw new Error("Bubblewrap is only applicable to Linux");
+      }
+      try {
+        const cmd = existsSync("/usr/bin/apt-get")
+          ? "sudo -n apt-get update && sudo -n apt-get install -y bubblewrap"
+          : existsSync("/usr/bin/dnf")
+            ? "sudo -n dnf install -y bubblewrap"
+            : "sudo -n pacman -S --noconfirm bubblewrap";
+        execSync(cmd, { stdio: "pipe", timeout: 60000 });
+        return {
+          action,
+          values: { installed: true },
+        };
+      } catch {
+        throw new Error(
+          "Automatic installation requires passwordless sudo. Please run 'sudo apt install -y bubblewrap' on the host.",
+        );
+      }
     }
     default:
       throw new Error(`unknown repair: ${String(action)}`);
