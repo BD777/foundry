@@ -281,6 +281,8 @@ export interface SessionSkillRef {
   name: string;
   checksum: string;
   byteSize: number;
+  /** Trusted expanded-content digest; older servers omit it. */
+  sourceDigest?: string;
   /** The bundle the skill came with, so a session can be told about a large
    * bundle as one entry instead of skill by skill. */
   bundle?: SessionSkillBundle;

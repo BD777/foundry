@@ -54,6 +54,18 @@ func TestContentIndexIgnoresZipEncodingAndOrder(t *testing.T) {
 		t.Fatal("original changed")
 	}
 }
+
+func TestContentDigestWorkerCacheVector(t *testing.T) {
+	idx, err := Inspect(archive(t, map[string]string{
+		"SKILL.md": "method", "references/🚀.txt": "supplementary", "references/\ue000.txt": "bmp",
+	}, zip.Deflate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx.SourceDigest != "ca23927a531692a2dd71b09ed2195a4415574efd6b1d6a5a1533167664956b35" {
+		t.Fatalf("Worker cache digest changed: %s", idx.SourceDigest)
+	}
+}
 func TestRenameSupportsFrontmatterEndingAtEOF(t *testing.T) {
 	data := archive(t, map[string]string{"SKILL.md": "---\nname: alpha\n---"}, zip.Store)
 	renamed, err := Rename(data, "beta")

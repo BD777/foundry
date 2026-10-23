@@ -1,4 +1,6 @@
 import { dirname } from "node:path";
+import { SkillPrewarmer } from "../../skill-prewarm.js";
+import type WebSocket from "ws";
 import { readVerifiedSkillSnapshot } from "../../skill-snapshots.js";
 import { packZip } from "../../skill-zip.js";
 import type { WorkspaceDraftSkill } from "@bd777/foundry-protocol";
@@ -12,6 +14,7 @@ import {
   type ReadRepositoryRefsPayload,
   type ReadSkillContentPayload,
   type ScanSkillsPayload,
+  type PrepareSkillsPayload,
 } from "@bd777/foundry-protocol";
 import { recordActivity } from "../../diagnostics.js";
 import {
@@ -81,7 +84,20 @@ export function scanAnswer(
 
 /** Skills on the device and in repositories, and the tools they need. */
 export function registerSkillHandlers(dispatch: DaemonDispatch): void {
+  const warmers = new WeakMap<WebSocket, SkillPrewarmer>();
   dispatch
+    .on(daemonMessageTypes.prepareSkills, (envelope, ctx) => {
+      const payload = envelope.payload as PrepareSkillsPayload;
+      if (!Array.isArray(payload?.refs)) return;
+      let warmer = warmers.get(ctx.socket);
+      if (!warmer) {
+        warmer = new SkillPrewarmer();
+        warmers.set(ctx.socket, warmer);
+        const current = warmer;
+        ctx.socket.once("close", () => current.stop());
+      }
+      warmer.update(payload.refs, ctx.serverURL);
+    })
     .on(daemonMessageTypes.exportDraftSkill, (envelope, ctx) =>
       reply(ctx, envelope, daemonMessageTypes.draftSkillExported, () => {
         const draft = envelope.payload as WorkspaceDraftSkill;

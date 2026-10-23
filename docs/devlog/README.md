@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-23 Skill 启动：[DEV-038 启动准备复用](DEV-038-skill-preparation.md)。代码、自验、dev Server/daemon 与实际执行宿主切换完成；两项既有服务已恢复并核验 running。真实会话13个 Skill 准备69ms、全部复用且零下载/解包；人工验收待确认。
+
 2026-10-20 运维恢复：[DEV-026 磁盘满导致 dev API 502](DEV-026-disk-full.md)。已清理约 17 GiB 构建缓存，健康检查与实际 daemon API 请求恢复；人工验收待确认。
 
 | ID / 事项                                                                                            | 总体状态                            | ① 理解/调研                                         | ② 代码/合入                                                                    | ③ dev Server/Web                           | ④ Worker                                                  | ⑤ Agent 自验                                                     | ⑥ 人工验收                                    | 下一步                                                                   |

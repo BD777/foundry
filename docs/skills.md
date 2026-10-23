@@ -68,3 +68,7 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 - 存储：`apps/server/internal/store/skill_repositories.go`；`apps/server/internal/sqlitestore/skills_catalog.go`、`skill_versions.go`、`skill_bundles.go`、`skill_promotion.go`、`skill_repositories.go`。
 - Worker：`packages/worker/src/skill-*.ts`、`official-skills.ts`、`managed-tools.ts`、`session-policy.ts`，daemon 处理 `packages/worker/src/daemon/handlers/skills.ts`；随包 Skill `packages/worker/skills/foundry/`。
 - Web：`apps/web/src/features/skill-library/`、`apps/web/src/features/skills/`、`apps/web/src/features/devices/skill-search.tsx`、`apps/web/src/features/chat/composer-slash.ts`。
+
+## 2026-10-23 启动准备优化
+
+实现与部署状态见 [DEV-038](devlog/DEV-038-skill-preparation.md)。新 Worker 可用 Server 下发的 revision 内容摘要验证展开缓存，缓存命中跳过 ZIP 解包；会话目录的完整性检查和版本隔离保留。后台准备由所选版本变化与设备连接触发，不改变授权清单。二级目录只影响初始展示，成员仍可被用户精确指定；正文继续按需读取。旧 Worker 或缺少摘要的旧清单走兼容路径。

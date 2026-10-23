@@ -83,6 +83,8 @@ type SessionSkillRef struct {
 	Name     string `json:"name"`
 	Checksum string `json:"checksum"`
 	ByteSize int64  `json:"byteSize"`
+	// SourceDigest authenticates the expanded files independently of ZIP encoding.
+	SourceDigest string `json:"sourceDigest,omitempty"`
 	// Bundle names the bundle the skill came with, so a session can be told
 	// about a large bundle as one entry instead of skill by skill.
 	Bundle *SessionSkillBundle `json:"bundle,omitempty"`

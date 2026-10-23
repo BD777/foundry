@@ -435,6 +435,7 @@ export const daemonCapabilities = [
   "worker_update",
   "worker_update_status",
   "background_skill_scan",
+  "skill_content_cache_v1",
   "workspace_draft_skills_v1",
   "tool_install",
   "tool_sources",

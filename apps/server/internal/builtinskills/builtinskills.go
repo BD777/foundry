@@ -27,10 +27,11 @@ type Skill struct {
 	Name        string
 	Description string
 	// Source names where the skill comes from, for people to see.
-	Source   string
-	Revision int
-	Package  []byte
-	Checksum string
+	Source       string
+	Revision     int
+	Package      []byte
+	Checksum     string
+	SourceDigest string
 	// Manifest is its SKILL.md as agents read it.
 	Manifest string
 }
@@ -88,17 +89,22 @@ func mustBuild() []Skill {
 		if name == "" {
 			name = def.dir
 		}
+		index, err := skillarchive.Inspect(pkg)
+		if err != nil {
+			panic(err)
+		}
 		sum := sha256.Sum256(pkg)
 		out = append(out, Skill{
-			ID:          "builtin-" + def.runtime + "-" + name,
-			Runtime:     def.runtime,
-			Name:        name,
-			Description: description,
-			Source:      def.source,
-			Revision:    def.revision,
-			Package:     pkg,
-			Checksum:    hex.EncodeToString(sum[:]),
-			Manifest:    string(manifest),
+			ID:           "builtin-" + def.runtime + "-" + name,
+			Runtime:      def.runtime,
+			Name:         name,
+			Description:  description,
+			Source:       def.source,
+			Revision:     def.revision,
+			Package:      pkg,
+			Checksum:     hex.EncodeToString(sum[:]),
+			SourceDigest: index.SourceDigest,
+			Manifest:     string(manifest),
 		})
 	}
 	return out

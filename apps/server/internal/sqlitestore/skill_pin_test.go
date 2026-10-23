@@ -35,6 +35,10 @@ func TestWorkspaceSkillPinHoldsARevision(t *testing.T) {
 		if err != nil || len(refs) != 1 {
 			t.Fatalf("refs %+v, %v", refs, err)
 		}
+		index, err := db.GetSkillRevisionIndex(ctx, skill.ID, refs[0].Revision)
+		if err != nil || refs[0].SourceDigest == "" || refs[0].SourceDigest != index.SourceDigest {
+			t.Fatalf("pinned revision digest mismatch: %+v, %v", refs[0], err)
+		}
 		return refs[0].Revision
 	}
 	if got := revision(); got != 2 {

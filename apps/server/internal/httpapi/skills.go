@@ -46,11 +46,12 @@ func withBuiltinSkills(refs []store.SessionSkillRef, runtime string) []store.Ses
 	for _, skill := range builtins {
 		names[strings.ToLower(skill.Name)] = true
 		out = append(out, store.SessionSkillRef{
-			SkillID:  skill.ID,
-			Revision: skill.Revision,
-			Name:     skill.Name,
-			Checksum: skill.Checksum,
-			ByteSize: int64(len(skill.Package)),
+			SkillID:      skill.ID,
+			Revision:     skill.Revision,
+			Name:         skill.Name,
+			Checksum:     skill.Checksum,
+			SourceDigest: skill.SourceDigest,
+			ByteSize:     int64(len(skill.Package)),
 		})
 	}
 	for _, ref := range refs {

@@ -131,6 +131,7 @@ var inboundHandlers = map[string]inboundHandler{
 					return err
 				}
 				c.reply(registeredEnvelope(envelope.ID))
+				c.hub.queueSkillPreparation()
 				go c.dispatchQueuedAgentSessions(reply.Registration.Workspace.ID)
 				go c.claimAndSend()
 			}
