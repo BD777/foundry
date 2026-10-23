@@ -283,12 +283,14 @@ export async function executeAgentSession(
       cancel: () => preparing.abort(new AgentSessionCanceledError()),
     });
     let managedSkills: ManagedSkillRuntime;
+    let lastSkillProgress = Date.now();
+    let lastSkillDownload = 0;
     try {
       if (takeQueuedSessionCancel(session.id, session.input?.id))
         preparing.abort(new AgentSessionCanceledError());
       await emit(
         "Preparing skills",
-        `Loading ${session.skillRefs?.length ?? 0} verified Skill packages before agent startup.`,
+        `Checking ${session.skillRefs?.length ?? 0} selected Skill revisions; prepared versions are reused.`,
       );
       managedSkills = await materializeSessionSkills(
         session.skillRefs ?? [],
@@ -296,6 +298,28 @@ export async function executeAgentSession(
         workspacePath,
         {
           signal: preparing.signal,
+          onDownload: async (ref) => {
+            if (Date.now() - lastSkillDownload < 1500) return;
+            lastSkillDownload = Date.now();
+            await emit(
+              "Downloading skill",
+              `Preparing missing version: ${ref.name}, revision ${ref.revision}.`,
+            );
+          },
+          onProgress: async (stats) => {
+            if (Date.now() - lastSkillProgress < 1500) return;
+            lastSkillProgress = Date.now();
+            await emit(
+              "Preparing skills",
+              `${stats.completed}/${stats.total} ready; ${stats.expandedCache} prepared versions reused, ${stats.archiveCache} local archives expanded, ${stats.downloaded} downloaded.`,
+            );
+          },
+          onComplete: async (stats) => {
+            await emit(
+              "Skills ready",
+              `${stats.total} selected revisions ready in ${Math.round(stats.elapsedMs)} ms; ${stats.expandedCache} prepared versions reused, ${stats.archiveCache} local archives expanded, ${stats.downloaded} downloaded. Timing (ms): verification=${Math.round(stats.verifyMs)}, download=${Math.round(stats.downloadMs)}, expansion=${Math.round(stats.unpackMs)}, session tree=${Math.round(stats.snapshotMs)}.`,
+            );
+          },
           onRetry: (message) =>
             emit("Skill download retry", message, "warning"),
         },

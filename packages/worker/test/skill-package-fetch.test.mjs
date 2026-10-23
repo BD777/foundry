@@ -133,16 +133,14 @@ test("canceling one session cannot abort another session's download of the same 
   const { ref, bytes, archive } = fixture();
   const controller = new AbortController();
   let calls = 0;
-  let finishOther;
+  let finishOther, downloadSignal;
   t.mock.method(globalThis, "fetch", async (_url, { signal }) => {
     calls++;
-    if (calls === 1)
-      return new Promise((_resolve, reject) =>
-        signal.addEventListener("abort", () => reject(signal.reason), {
-          once: true,
-        }),
-      );
-    return new Promise((resolve) => {
+    downloadSignal = signal;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), {
+        once: true,
+      });
       finishOther = () => resolve(new Response(bytes));
     });
   });
@@ -159,9 +157,10 @@ test("canceling one session cannot abort another session's download of the same 
     "/tmp",
   );
   await tick();
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   controller.abort();
   await assert.rejects(first);
+  assert.equal(downloadSignal.aborted, false);
   finishOther();
   await second;
   assert.ok(readFileSync(archive).equals(bytes));

@@ -24,6 +24,7 @@ import type {
   AgentProfileProjection,
   ProfileDefinition,
 } from "./profiles.js";
+import type { SessionSkillRef } from "./skills.js";
 import type { AgentSession } from "./session.js";
 
 export const daemonMessageTypes = {
@@ -140,6 +141,7 @@ export const daemonMessageTypes = {
   replyChunk: "reply_chunk",
   runSession: "run_session",
   scanSkills: "scan_skills",
+  prepareSkills: "prepare_skills",
   sessionCanceled: "session_canceled",
   sessionBlocked: "session_blocked",
   sessionResumed: "session_resumed",
@@ -534,6 +536,11 @@ export interface FetchSkillRepositoryPayload {
   subpath?: string;
   registry?: string;
   uploadPath: string;
+}
+
+/** Disposable prewarm; it never grants a session access to these files. */
+export interface PrepareSkillsPayload {
+  refs: SessionSkillRef[];
 }
 
 /** scan_skills */

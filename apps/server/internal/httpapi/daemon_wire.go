@@ -86,6 +86,7 @@ const (
 	wsAgentModelsListedType        = "agent_models_listed"
 	wsReadProviderKeyType          = "read_provider_key"
 	wsProviderKeyReadType          = "provider_key_read"
+	wsPrepareSkillsType            = "prepare_skills"
 	wsScanSkillsType               = "scan_skills"
 	wsSkillsScannedType            = "skills_scanned"
 	wsReadSkillContentType         = "read_skill_content"

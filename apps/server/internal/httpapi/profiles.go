@@ -137,6 +137,9 @@ func normalizeContextWindows(input *store.SaveProfileInput) string {
 // workspace's data; "" is what every workspace's view shows.
 func (s *Server) projectionsChanged(workspaceID string, resources ...string) {
 	s.dataChanges.changed(workspaceID, resources...)
+	if skillPreparationChanged(resources) {
+		s.hub.queueSkillPreparation()
+	}
 }
 
 func (s *Server) handleListProfiles(w http.ResponseWriter, r *http.Request) {

@@ -8,9 +8,10 @@
  *     skill-indexes/<id>.md        (one per large bundle, see skillCatalog)
  *
  * Packages are fetched from the server once per revision, checksum verified,
- * retained as checksum-verified archives and unpacked with the zip safety
- * rules in skill-zip. Every reuse verifies the full generated tree against
- * those archives, including scripts, indexes and plugin metadata. Sets get copies,
+ * retained as checksum-verified archives. Expanded caches are authenticated
+ * by the server revision sourceDigest on every reuse; legacy refs use ZIPs.
+ * Every reuse verifies the generated tree against authenticated content,
+ * including scripts, indexes and plugin metadata. Sets get copies,
  * not links: a sandboxed agent may read the skill sets only. Nothing here
  * touches the user's own skill directories.
  */
@@ -23,21 +24,14 @@ import {
   materializeSkillSnapshot,
   type SnapshotFile,
 } from "./skill-snapshots.js";
-import { writeFileAtomic } from "./storage.js";
 import type {
   SessionSkillBundle,
   SessionSkillRef,
 } from "@bd777/foundry-protocol";
 import {
-  fetchSkillPackage,
-  type SkillPackageOptions,
-} from "./skill-package-fetch.js";
-import {
-  SKILL_PACKAGE_MAX_BYTES,
-  SKILL_PACKAGE_MAX_FILES,
-} from "./skill-scanner.js";
-import { foundryStatePath } from "./state-root.js";
-import { unpackZip } from "./skill-zip.js";
+  prepareSkillContent,
+  type SkillContentOptions,
+} from "./skill-content-cache.js";
 
 export interface ManagedSkill {
   name: string;
@@ -114,53 +108,68 @@ function setHash(refs: SessionSkillRef[]): string {
   return hash.digest("hex");
 }
 
-async function verifiedSkillEntries(
+export interface SkillPreparationStats {
+  total: number;
+  completed: number;
+  expandedCache: number;
+  archiveCache: number;
+  downloaded: number;
+  verifyMs: number;
+  downloadMs: number;
+  unpackMs: number;
+  snapshotMs: number;
+  elapsedMs: number;
+}
+export interface SkillPreparationOptions extends SkillContentOptions {
+  onProgress?: (stats: SkillPreparationStats) => void | Promise<void>;
+  onComplete?: (stats: SkillPreparationStats) => void | Promise<void>;
+}
+
+/** Prepare reusable package content without constructing a session allowlist. */
+export async function prepareSkillContents(
+  refs: SessionSkillRef[],
   serverURL: string,
-  ref: SessionSkillRef,
-  archiveReads: Map<string, Promise<SnapshotFile[]>>,
-  options: SkillPackageOptions,
-): Promise<SnapshotFile[]> {
-  options.signal?.throwIfAborted();
-  if (!/^[0-9a-f]{64}$/.test(ref.checksum))
-    throw new Error(`invalid skill checksum for ${ref.skillId}`);
-  const pending = archiveReads.get(ref.checksum);
-  if (pending) return pending;
-  const read = (async () => {
-    const archive = foundryStatePath("skill-archives", `${ref.checksum}.zip`);
-    let zip: Buffer | undefined;
-    try {
-      const cached = readFileSync(archive);
-      if (
-        cached.length === ref.byteSize &&
-        createHash("sha256").update(cached).digest("hex") === ref.checksum
-      )
-        zip = cached;
-    } catch {
-      /* Legacy caches did not retain their verified archive. */
-    }
-    if (!zip) {
-      zip = await fetchSkillPackage(serverURL, ref, options);
-      options.signal?.throwIfAborted();
-      writeFileAtomic(archive, zip);
-    }
-    const entries = unpackZip(zip, {
-      allowLegacyCrc: true,
-      maxBytes: SKILL_PACKAGE_MAX_BYTES,
-      maxFiles: SKILL_PACKAGE_MAX_FILES,
-    });
-    if (!entries.some((entry) => entry.path === "SKILL.md"))
-      throw new Error(
-        `promoted skill ${ref.skillId} is missing a root SKILL.md`,
-      );
-    return entries;
-  })();
-  archiveReads.set(ref.checksum, read);
-  try {
-    return await read;
-  } finally {
-    if (archiveReads.get(ref.checksum) === read)
-      archiveReads.delete(ref.checksum);
-  }
+  options: SkillPreparationOptions = {},
+) {
+  const started = performance.now();
+  const stats: SkillPreparationStats = {
+    total: refs.length,
+    completed: 0,
+    expandedCache: 0,
+    archiveCache: 0,
+    downloaded: 0,
+    verifyMs: 0,
+    downloadMs: 0,
+    unpackMs: 0,
+    snapshotMs: 0,
+    elapsedMs: 0,
+  };
+  const packages = await mapConcurrent(
+    refs,
+    fetchConcurrency,
+    async (ref, signal) => {
+      const result = await prepareSkillContent(serverURL, ref, {
+        ...options,
+        signal,
+      });
+      stats.completed++;
+      stats[
+        result.source === "expanded-cache"
+          ? "expandedCache"
+          : result.source === "archive-cache"
+            ? "archiveCache"
+            : "downloaded"
+      ]++;
+      stats.verifyMs += result.verifyMs;
+      stats.downloadMs += result.downloadMs;
+      stats.unpackMs += result.unpackMs;
+      stats.elapsedMs = performance.now() - started;
+      await options.onProgress?.({ ...stats });
+      return result.files;
+    },
+    options.signal,
+  );
+  return { packages, stats };
 }
 
 /** Revisions fetched at once when a set needs several. */
@@ -324,7 +333,7 @@ export async function materializeSessionSkills(
   refs: SessionSkillRef[] | undefined,
   serverURL: string,
   workspaceCwd: string,
-  options: SkillPackageOptions = {},
+  options: SkillPreparationOptions = {},
 ): Promise<ManagedSkillRuntime> {
   options.signal?.throwIfAborted();
   const ordered = [...(refs ?? [])].sort(
@@ -351,21 +360,15 @@ export async function materializeSessionSkills(
     seenNames.add(name.toLowerCase());
   }
 
-  // Share immutable disk archives, not cancelable network operations between
-  // sessions. Canceling this preparation must leave another session alone.
-  const archiveReads = new Map<string, Promise<SnapshotFile[]>>();
-  const packages = await mapConcurrent(
+  const started = performance.now();
+  const { packages, stats } = await prepareSkillContents(
     ordered,
-    fetchConcurrency,
-    (ref, signal) =>
-      verifiedSkillEntries(serverURL, ref, archiveReads, {
-        ...options,
-        signal,
-      }),
-    options.signal,
+    serverURL,
+    options,
   );
   options.signal?.throwIfAborted();
-  return materializeSkillSnapshot(setHash(ordered), (dir) => {
+  const snapshotStarted = performance.now();
+  const runtime = await materializeSkillSnapshot(setHash(ordered), (dir) => {
     const files: SnapshotFile[] = [
       {
         path: ".claude-plugin/plugin.json",
@@ -402,4 +405,8 @@ export async function materializeSessionSkills(
     );
     return { files, value };
   });
+  stats.snapshotMs = performance.now() - snapshotStarted;
+  stats.elapsedMs = performance.now() - started;
+  await options.onComplete?.({ ...stats });
+  return runtime;
 }

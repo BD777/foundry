@@ -173,12 +173,13 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 		args = append(args, id)
 	}
 	rows, err := s.reader().QueryContext(ctx, `
-		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size,
+		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size, COALESCE(i.source_digest, ''),
 			repo.id, CASE WHEN repo.name <> '' THEN repo.name ELSE repo.label END, repo.description, repo.version
 		FROM skill_repository_skills k
 		JOIN skill_repositories repo ON repo.id = k.repository_id AND repo.mode = 'bundle'
 		JOIN promoted_skills ps ON ps.id = k.skill_id
 		JOIN promoted_skill_revisions r ON r.skill_id = ps.id AND r.revision = ps.latest_revision
+		LEFT JOIN skill_revision_index i ON i.skill_id = r.skill_id AND i.revision = r.revision AND i.error = ''
 		WHERE k.retired = 0 AND k.repository_id IN (`+placeholders+`)
 		ORDER BY ps.name`, args...)
 	if err != nil {
@@ -189,7 +190,7 @@ func (s *Store) ResolveBundleSkills(ctx context.Context, repositoryIDs []string)
 	for rows.Next() {
 		var ref store.SessionSkillRef
 		var bundle store.SessionSkillBundle
-		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize,
+		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize, &ref.SourceDigest,
 			&bundle.ID, &bundle.Name, &bundle.Description, &bundle.Version); err != nil {
 			return nil, err
 		}

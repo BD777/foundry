@@ -736,11 +736,12 @@ func (s *Store) ListWorkspaceSkillExclusions(ctx context.Context, workspaceID st
 // revisions. An empty slice means the runtime must expose no skills.
 func (s *Store) ResolveSessionSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
 	rows, err := s.reader().QueryContext(ctx, `
-		SELECT ps.id, r.revision, ps.name, r.checksum, r.byte_size
+		SELECT ps.id, r.revision, ps.name, r.checksum, r.byte_size, COALESCE(i.source_digest, '')
 		FROM workspace_skill_bindings b
 		JOIN promoted_skills ps ON ps.id = b.skill_id
 		JOIN promoted_skill_revisions r ON r.skill_id = ps.id
 			AND r.revision = CASE WHEN b.pinned_revision > 0 THEN b.pinned_revision ELSE ps.latest_revision END
+		LEFT JOIN skill_revision_index i ON i.skill_id = r.skill_id AND i.revision = r.revision AND i.error = ''
 		WHERE b.workspace_id = ?
 		ORDER BY ps.name`, workspaceID)
 	if err != nil {
@@ -750,7 +751,7 @@ func (s *Store) ResolveSessionSkills(ctx context.Context, workspaceID string) ([
 	result := []store.SessionSkillRef{}
 	for rows.Next() {
 		var ref store.SessionSkillRef
-		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize); err != nil {
+		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize, &ref.SourceDigest); err != nil {
 			return nil, fmt.Errorf("scan session skill ref: %w", err)
 		}
 		result = append(result, ref)
@@ -894,13 +895,14 @@ func (s *Store) SetUserDefaultSkills(ctx context.Context, userID string, skillID
 // workspace's device to their latest revisions.
 func (s *Store) ResolveDefaultSkills(ctx context.Context, workspaceID string) ([]store.SessionSkillRef, error) {
 	rows, err := s.reader().QueryContext(ctx, `
-		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size
+		SELECT ps.id, ps.latest_revision, ps.name, r.checksum, r.byte_size, COALESCE(i.source_digest, '')
 		FROM workspaces w
 		JOIN device_identities di ON di.device_id = json_extract(w.payload_json, '$.deviceId')
 			AND di.revoked_at IS NULL
 		JOIN user_default_skills d ON d.user_id = di.owner_user_id
 		JOIN promoted_skills ps ON ps.id = d.skill_id
 		JOIN promoted_skill_revisions r ON r.skill_id = ps.id AND r.revision = ps.latest_revision
+		LEFT JOIN skill_revision_index i ON i.skill_id = r.skill_id AND i.revision = r.revision AND i.error = ''
 		WHERE w.id = ?
 		ORDER BY ps.name`, workspaceID)
 	if err != nil {
@@ -910,7 +912,7 @@ func (s *Store) ResolveDefaultSkills(ctx context.Context, workspaceID string) ([
 	refs := []store.SessionSkillRef{}
 	for rows.Next() {
 		var ref store.SessionSkillRef
-		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize); err != nil {
+		if err := rows.Scan(&ref.SkillID, &ref.Revision, &ref.Name, &ref.Checksum, &ref.ByteSize, &ref.SourceDigest); err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)

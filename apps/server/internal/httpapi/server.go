@@ -230,6 +230,7 @@ func NewServerWithOptions(store Backend, options ServerOptions) *Server {
 		server.kickPendingChatQueues(ctx)
 		// Rescans skills until the device goes; it must not hold up the rest.
 		go server.keepDeviceSkillsScanned(ctx, deviceID, capabilities)
+		server.hub.queueSkillPreparation()
 		server.resourceLeasesDeviceConnected(ctx, deviceID, capabilities)
 		// The assistant hears what waited for the computer.
 		server.assistantDeviceBack(ctx, deviceID)

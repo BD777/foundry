@@ -161,6 +161,8 @@ export const workerModules = {
       "skill-files",
       "skill-isolation",
       "skill-materializer",
+      "skill-content-cache",
+      "skill-prewarm",
       "skill-package-fetch",
       "skill-snapshots",
       "workspace-draft-skills",

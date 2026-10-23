@@ -370,6 +370,20 @@ test("a large bundle is one catalog entry with an index of its skills", async (t
       /foundry-absent-tool \(needed by svc-0000, .* and 295 more\)/,
     );
   }
+  // A folded entry remains directly selectable in both runtime paths;
+  // naming one does not insert its siblings' method bodies into the prompt.
+  const { validateWorkspaceSkillPrompt, claudeManagedPrompt } =
+    await import("../dist/skill-isolation.js");
+  assert.doesNotThrow(() =>
+    validateWorkspaceSkillPrompt("$svc-0299 inspect", catalog),
+  );
+  assert.doesNotThrow(() =>
+    validateWorkspaceSkillPrompt("/svc-0299 inspect", catalog),
+  );
+  assert.equal(
+    claudeManagedPrompt("/svc-0299 inspect", catalog),
+    "/foundry-workspace:svc-0299 inspect",
+  );
   // Every skill stays invocable in Claude.
   assert.equal(
     claudeSessionOptions(catalog).skills.length,

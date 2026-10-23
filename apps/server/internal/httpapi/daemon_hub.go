@@ -22,9 +22,12 @@ type DaemonHub struct {
 	// assistantRun is what a run of the session needs as the person's
 	// assistant (personal_agent_instructions.go); ok is false for any other
 	// session.
-	assistantRun func(ctx context.Context, session store.AgentSession) (run assistantRun, ok bool, err error)
-	skillScans   map[string]*skillScan
-	skillScansMu sync.Mutex
+	assistantRun     func(ctx context.Context, session store.AgentSession) (run assistantRun, ok bool, err error)
+	skillWarmMu      sync.Mutex
+	skillWarmDirty   bool
+	skillWarmRunning bool
+	skillScans       map[string]*skillScan
+	skillScansMu     sync.Mutex
 	// skillScanAnswers keeps each device's last scan answer (skills.go).
 	skillScanAnswers keptSkillScans
 	// onDeviceConnected runs once per daemon hello, until that socket closes.

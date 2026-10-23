@@ -104,6 +104,11 @@ func (s *Server) resolveSkillTrial(ctx context.Context, input store.CreateAgentS
 		refs[found].Revision = pkg.Revision
 		refs[found].Checksum = pkg.Checksum
 		refs[found].ByteSize = pkg.ByteSize
+		index, err := s.store.GetSkillRevisionIndex(ctx, reference.SkillID, pkg.Revision)
+		if err != nil {
+			return nil, err
+		}
+		refs[found].SourceDigest = index.SourceDigest
 	}
 	excludedChecksums := map[string]bool{}
 	for _, ref := range refs {
