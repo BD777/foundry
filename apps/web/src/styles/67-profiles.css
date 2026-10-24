@@ -410,6 +410,15 @@
   line-height: 1.5;
 }
 
+.fdy-profile-field .fdy-profile-field-error {
+  color: var(--fdy-error-text);
+}
+
+.fdy-profile-field .fdy-profile-endpoint-fix {
+  color: var(--fdy-ink-muted);
+  overflow-wrap: anywhere;
+}
+
 .fdy-profile-select {
   width: 100%;
   min-width: 0;

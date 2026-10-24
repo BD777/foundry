@@ -16,6 +16,13 @@ What a session's `status`, `error`, `lastError` and events mean.
 - "Session canceled" (a warning) means someone stopped it.
 - `blocked` means its device reported a wait, such as a rate-limited model; it
   is still active and can be steered or stopped.
+- "There's an issue with the selected model" or 404/401 from a model
+  service: `list_profiles` on the session's device shows the profile its
+  summary names, with its `baseUrl`, models and whether a key is stored, and
+  `list_models` its endpoint's catalog. Claude Code appends `/v1/messages` to
+  the base URL, so a Claude base ends without `/v1`; a Codex base ends with
+  its version (`/v1`). Foundry corrects these when a service is saved. Do not
+  send requests to the endpoint yourself; ask the person to fix the service.
 - `device.online: false` or "local daemon is not connected": the device's
   worker is offline; `list_resources` shows which devices are online.
 - A long gap between the last events and `completedAt` is a wait, not work.

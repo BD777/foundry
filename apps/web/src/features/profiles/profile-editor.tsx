@@ -1,6 +1,9 @@
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { ProfileDefinition } from "@bd777/foundry-protocol";
+import {
+  normalizeProviderBaseUrl,
+  type ProfileDefinition,
+} from "@bd777/foundry-protocol";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { ConfirmButton } from "../../components/ui/confirm-button";
@@ -67,6 +70,18 @@ export function ProfileEditor({
       ? onReadCatalogWindows
       : undefined;
   const windowsInvalid = invalidContextWindows(draft).length > 0;
+  // What the server will save, by the same rules: a URL in the other
+  // runtime's form or with a request path is corrected, an unusable one is
+  // refused before Save.
+  const endpoint = draft.baseUrl.trim()
+    ? normalizeProviderBaseUrl(draft.runtime, draft.baseUrl)
+    : undefined;
+  const endpointError =
+    endpoint && "error" in endpoint ? endpoint.error : undefined;
+  const endpointFix =
+    endpoint && "baseUrl" in endpoint && endpoint.corrections.length > 0
+      ? endpoint
+      : undefined;
 
   // An unsaved profile has nothing to report yet; a saved one reports how
   // usable it is, from the same resolver the Device page and the list use.
@@ -122,6 +137,7 @@ export function ProfileEditor({
           <label className="fdy-profile-field">
             <span>{t("editor.baseUrl")}</span>
             <TextInput
+              aria-invalid={endpointError ? true : undefined}
               aria-label={t("editor.baseUrlLabel")}
               onChange={(event) =>
                 onChange({ baseUrl: event.currentTarget.value })
@@ -134,6 +150,21 @@ export function ProfileEditor({
               tone="boxed"
               value={draft.baseUrl}
             />
+            {endpointError ? (
+              <small className="fdy-profile-field-error" role="alert">
+                {t(`editor.baseUrlError.${endpointError}`)}
+              </small>
+            ) : null}
+            {endpointFix ? (
+              <small className="fdy-profile-endpoint-fix" role="status">
+                {t("editor.baseUrlSavedAs", { url: endpointFix.baseUrl })}{" "}
+                {endpointFix.corrections
+                  .map((correction) =>
+                    t(`editor.baseUrlCorrection.${correction}`),
+                  )
+                  .join(" ")}
+              </small>
+            ) : null}
             <small>
               {t("editor.protocolHint", {
                 // i18n-ignore: runtime product names
@@ -266,6 +297,7 @@ export function ProfileEditor({
           disabled={
             busy ||
             windowsInvalid ||
+            !!endpointError ||
             !draft.label.trim() ||
             !draft.baseUrl.trim()
           }

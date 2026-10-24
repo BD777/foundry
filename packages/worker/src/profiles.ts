@@ -5,18 +5,19 @@ import { nativeCli } from "./native-cli.js";
 
 import { existsSync, readFileSync } from "node:fs";
 import { foundryStatePath } from "./state-root.js";
-import type {
-  AgentConfigScope,
-  AgentConnectionType,
-  AgentProfileProjection,
-  AgentProjection,
-  AgentSession,
-  DeviceProjection,
-  ProfileDefinition,
-  ProfileOrigin,
-  ProviderHealth,
-  SecretPlacement,
-  UpsertAgentProfilePayload,
+import {
+  normalizeProviderBaseUrl,
+  type AgentConfigScope,
+  type AgentConnectionType,
+  type AgentProfileProjection,
+  type AgentProjection,
+  type AgentSession,
+  type DeviceProjection,
+  type ProfileDefinition,
+  type ProfileOrigin,
+  type ProviderHealth,
+  type SecretPlacement,
+  type UpsertAgentProfilePayload,
 } from "@bd777/foundry-protocol";
 import { hardenPrivateFile, writeJSON } from "./storage.js";
 import { readOptionalText, safeID } from "./utils.js";
@@ -645,6 +646,21 @@ export function configuredProviderKey(profileId: string): {
   return providerKey(profile);
 }
 
+/**
+ * The endpoint a run calls. The server corrects a base URL when it is saved;
+ * one saved before that (a Claude base ending in `/v1`, a pasted
+ * `/v1/messages`) is repaired here. A bare Codex host is left as saved: it
+ * may answer without a version.
+ */
+function runBaseUrl(profile: AgentProfileLocalConfig): string {
+  const raw = profile.baseUrl?.trim() ?? "";
+  if (!raw) return "";
+  const result = normalizeProviderBaseUrl(profile.runtime, raw, {
+    addMissingVersion: false,
+  });
+  return "baseUrl" in result ? result.baseUrl : raw;
+}
+
 export function profileRuntimeEnvironment(
   profile: AgentProfileLocalConfig,
   session?: AgentSession,
@@ -666,14 +682,15 @@ export function profileRuntimeEnvironment(
       env.OPENAI_API_KEY = profile.apiKey.trim();
     }
   }
-  if (ownEndpoint && profile.baseUrl?.trim()) {
+  const baseUrl = ownEndpoint ? runBaseUrl(profile) : "";
+  if (baseUrl) {
     if (profile.runtime === "claude") {
-      env.ANTHROPIC_BASE_URL = profile.baseUrl.trim();
-      env.ANTHROPIC_API_BASE_URL = profile.baseUrl.trim();
+      env.ANTHROPIC_BASE_URL = baseUrl;
+      env.ANTHROPIC_API_BASE_URL = baseUrl;
     } else {
-      env.OPENAI_BASE_URL = profile.baseUrl.trim();
-      env.OPENAI_API_BASE = profile.baseUrl.trim();
-      env.CODEX_BASE_URL = profile.baseUrl.trim();
+      env.OPENAI_BASE_URL = baseUrl;
+      env.OPENAI_API_BASE = baseUrl;
+      env.CODEX_BASE_URL = baseUrl;
     }
   }
   if (model) {

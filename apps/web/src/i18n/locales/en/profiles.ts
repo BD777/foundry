@@ -101,6 +101,23 @@ export const profiles = {
     runtimeLabel: "Profile runtime",
     baseUrl: "Base URL",
     baseUrlLabel: "Profile base URL",
+    baseUrlSavedAs: "Will be saved as {{url}}.",
+    baseUrlCorrection: {
+      scheme_added: "No scheme was typed, so one was added.",
+      endpoint_path_removed:
+        "The request path was removed; the runtime adds its own.",
+      version_removed:
+        "/v1 was removed: Claude Code appends /v1/messages itself.",
+      version_added: "/v1 was added: Codex calls <base>/responses.",
+    },
+    baseUrlError: {
+      empty: "Enter the provider's base URL.",
+      invalid_url: "Enter a URL such as https://gateway.example.com.",
+      unsupported_scheme: "The URL must start with https:// or http://.",
+      credentials_in_url:
+        "Remove the user name or key from the URL; put the key in API key.",
+      query_or_fragment: "Remove the ?query or #fragment from the URL.",
+    },
     protocolHint:
       "{{runtime}} protocol is selected from the runtime. Provider type does not need separate configuration.",
     apiKey: "API key · Optional",
