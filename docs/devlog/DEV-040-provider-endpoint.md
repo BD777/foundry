@@ -56,3 +56,6 @@
 - AWS 测试修复后（见 DEV-037）CI 继续执行到 Go 测试，`TestFoundrySkillPackageHasARecordedRevision` 失败：本项给 `references/diagnosing.md` 新增了模型服务排障条目，但内置 Foundry Skill 仍为 revision 9，包校验和 `7f6db7f8…` 未登记。
 - 修复：按 `builtinskills.go` 约定（目录变更即升版本，Worker 才会重新拉取）将 claude/codex 两份 Foundry Skill 升到 revision 10，并在测试中登记新校验和。`go test ./internal/builtinskills/` 通过。
 - 影响：已部署的 dev Server 以 revision 9 下发新内容，已缓存 revision 9 的 Worker 不会重新拉取该条目；合入后需重新部署 Server 才会生效（结果见下）。
+- 合入：PR #144 两项 `verify`（run 40105726184 / 40105731293，head `773aca8`）通过后以 merge commit `3081b85` 合入 main，本地 main 已快进。
+- 部署：从 `3081b85` 构建 Server，SHA256 `3579f079…a8765f`；PM2 `foundry-server` 重启后 PID 3917181，实际加载的可执行文件 SHA256 与构建一致，本机 `/healthz` ok（startedAt `2026-10-24T15:23:16Z`），公网 `/healthz` 200，停机前断开的 6 个 daemon 连接均已重连。旧 binary（`1711d38e…`）备份在 `~/.foundry/server/releases/pr144-merge/previous`。Web 与 Worker 无变更，未重新部署。
+- 未验证：各设备 Worker 是否已拉取 revision 10（下次需要内置 Skill 时按版本号重新获取）。
