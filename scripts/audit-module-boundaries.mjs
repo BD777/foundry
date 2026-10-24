@@ -312,6 +312,7 @@ export const workerModules = {
       "connectors/feishu-gateway-forwarder",
       "connectors/device-held",
       "connectors/bytedcli",
+      "connectors/aws",
     ],
   },
   "agent-surface": {

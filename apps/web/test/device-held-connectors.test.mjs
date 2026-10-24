@@ -704,3 +704,125 @@ test("a lost initial receipt retries the same request id and shows preparation a
   assert.match(document.body.textContent, /Checking the existing login/);
   await page.unmount();
 });
+
+test("AWS uses local setup instructions, checks status and offers no unsupported auth/install actions", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "device" },
+    authentication: "local",
+  };
+  let checks = 0;
+  for (const status of ["not_installed", "signed_out", "ready", "error"]) {
+    routes = {
+      "GET /api/connectors/devices": () => [
+        200,
+        {
+          connectors: [aws],
+          devices: [
+            device("dev_aws", "AWS device", [
+              state("dev_aws", {
+                kind: "aws",
+                status,
+                installed: status !== "not_installed",
+                signedIn: status === "ready",
+                identity: "AWS role",
+                expiresAt: undefined,
+              }),
+            ]),
+          ],
+        },
+      ],
+      "POST /api/devices/dev_aws/connectors/aws/check": () => {
+        checks++;
+        return [
+          200,
+          state("dev_aws", {
+            kind: "aws",
+            status,
+            signedIn: status === "ready",
+          }),
+        ];
+      },
+    };
+    const page = await render(ConnectorsFeature, { ...props, tab: "aws" });
+    assert.match(page.container.textContent, /aws configure sso/);
+    assert.match(page.container.textContent, /AWS_PROFILE/);
+    const actions = [...page.container.querySelectorAll("button")].map((x) =>
+      x.textContent.trim(),
+    );
+    assert.ok(
+      !actions.some((x) => ["Install", "Sign in", "Sign out"].includes(x)),
+    );
+    await page.click(page.button("Check again"));
+    assert.equal(
+      checks,
+      ["not_installed", "signed_out", "ready", "error"].indexOf(status) + 1,
+    );
+    await page.unmount();
+  }
+});
+
+test("AWS workspace binding rechecks credentials and binds without starting a login", async () => {
+  const aws = {
+    kind: "aws",
+    label: "AWS CLI",
+    holding: "device_held",
+    adapter: "aws",
+    tool: { command: "aws", source: "device" },
+    authentication: "local",
+  };
+  const current = state("dev_aws", { kind: "aws", expiresAt: undefined });
+  let fresh = current;
+  let bindings = [];
+  const view = () => ({
+    workspaceId: "ws_aws",
+    defaultDeviceId: "dev_aws",
+    executionDevices: [{ deviceId: "dev_aws", name: "AWS device" }],
+    connectors: [aws],
+    devices: [device("dev_aws", "AWS device", [current])],
+    bindings,
+  });
+  requests.length = 0;
+  routes = {
+    "GET /api/workspaces/ws_aws/external-accounts": () => [
+      200,
+      { workspaceId: "ws_aws", accounts: [], bindings: [] },
+    ],
+    "GET /api/workspaces/ws_aws/device-connectors": () => [200, view()],
+    "POST /api/devices/dev_aws/connectors/aws/check": () => [200, fresh],
+    "PUT /api/workspaces/ws_aws/device-connectors": (body) => {
+      bindings = body.bindings.map((b) => ({
+        ...b,
+        workspaceId: "ws_aws",
+        grantedBy: "alice",
+      }));
+      return [200, view()];
+    },
+  };
+  const page = await render(WorkspaceConnectorsFeature, {
+    workspaceId: "ws_aws",
+    currentUserId: "alice",
+    onNotice: () => {},
+  });
+  await page.click(page.button("Use existing login"));
+  assert.deepEqual(
+    bindings.map(({ kind, deviceId, members }) => ({
+      kind,
+      deviceId,
+      members,
+    })),
+    [{ kind: "aws", deviceId: "dev_aws", members: false }],
+  );
+  assert.ok(!requests.some((r) => r.path.includes("sign-in")));
+  assert.equal(document.querySelector("[role=dialog]"), null);
+  await page.click(page.button("Remove binding"));
+  fresh = { ...current, signedIn: false, status: "signed_out" };
+  await page.click(page.button("Use existing login"));
+  assert.equal(bindings.length, 0);
+  assert.match(page.container.textContent, /Configure or renew AWS CLI/);
+  assert.ok(!requests.some((r) => r.path.includes("sign-in")));
+  await page.unmount();
+});

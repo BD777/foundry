@@ -17,6 +17,8 @@
 
 2026-10-23 Skill 启动：[DEV-038 启动准备复用](DEV-038-skill-preparation.md)。代码、自验、dev Server/daemon 与实际执行宿主切换完成；两项既有服务已恢复并核验 running。真实会话13个 Skill 准备69ms、全部复用且零下载/解包；人工验收待确认。
 
+2026-10-23 AWS CLI：[DEV-037 设备连接器](DEV-037-aws-cli-connector.md)。代码与相关检查完成，dev Server/Web 和 Worker daemon 已更新；实际执行宿主因活动工作保留旧版，待空闲切换或获准维护。真实 AWS 账户与人工验收待确认。
+
 2026-10-23 发送恢复：[DEV-036 诊断测试覆盖工作区登记表](DEV-036-workspace-registry-recovery.md)。sg-chaos 五个工作区登记已恢复，Web `390c82e7c4f2c855` 已部署，相关检查与浏览器错误态通过；用户原账号实际收发待验收。
 
 2026-10-20 运维恢复：[DEV-026 磁盘满导致 dev API 502](DEV-026-disk-full.md)。已清理约 17 GiB 构建缓存，健康检查与实际 daemon API 请求恢复；人工验收待确认。

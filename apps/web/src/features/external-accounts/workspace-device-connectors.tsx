@@ -211,8 +211,29 @@ export function WorkspaceDeviceConnectors({
         const usable =
           state?.signedIn &&
           (state.status === "ready" || state.status === "expiring");
-        const authorize = () =>
-          device &&
+        const authorize = async () => {
+          if (!device) return;
+          if (descriptor?.authentication === "local") {
+            setBusy(true);
+            setError("");
+            try {
+              const fresh = await checkDeviceConnector(device.deviceId, kind);
+              showState(device.deviceId, fresh);
+              if (
+                fresh.signedIn &&
+                (fresh.status === "ready" || fresh.status === "expiring")
+              ) {
+                await save(kind, device, true);
+              } else {
+                setError(t("workspace.localAuthentication", { name: label }));
+              }
+            } catch (cause) {
+              setError(errorText(cause));
+            } finally {
+              setBusy(false);
+            }
+            return;
+          }
           setSigningIn({
             deviceId: device.deviceId,
             deviceName: duplicateDeviceName
@@ -221,6 +242,7 @@ export function WorkspaceDeviceConnectors({
             kind,
             label,
           });
+        };
         return (
           <Panel
             aria-label={label}
@@ -306,6 +328,7 @@ export function WorkspaceDeviceConnectors({
                           {t("workspace.useExisting")}
                         </Button>
                       ) : reachable &&
+                        descriptor?.authentication !== "local" &&
                         (state?.status === "signed_out" ||
                           state?.status === "expired") ? (
                         <Button
@@ -376,6 +399,11 @@ export function WorkspaceDeviceConnectors({
                 </li>
               </ul>
             )}
+            {descriptor?.authentication === "local" ? (
+              <p className="fdy-xacc-muted">
+                {t("workspace.localAuthentication", { name: label })}
+              </p>
+            ) : null}
             {descriptor && device ? (
               <DeviceAuthorizationGroups
                 connector={descriptor}

@@ -74,7 +74,11 @@ func TestCatalogDescribesFeishuAndBytedcli(t *testing.T) {
 		bytedcli.IsolationEnv["BYTEDCLI_PROFILE"] == "" {
 		t.Fatalf("bytedcli = %+v", bytedcli)
 	}
-	if held := catalog.DeviceHeld(); len(held) != 1 || held[0].Kind != "bytedcli" {
+	aws, ok := catalog.Lookup("aws")
+	if !ok || aws.Tool.Command != "aws" || aws.Tool.Source != "device" || aws.Authentication != "local" || aws.IsolationEnv["AWS_PROFILE"] == "" {
+		t.Fatalf("aws = %+v", aws)
+	}
+	if held := catalog.DeviceHeld(); len(held) != 2 || held[0].Kind != "aws" || held[1].Kind != "bytedcli" {
 		t.Fatalf("device-held = %+v", held)
 	}
 }
@@ -218,7 +222,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "" {
 		t.Fatalf("owner, unbound = %q", got)
 	}
-	if got := uses(member); got != "bytedcli:none" {
+	if got := uses(member); got != "aws:none,bytedcli:none" {
 		t.Fatalf("member, unbound = %q", got)
 	}
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev"}}, owns); err != nil {
@@ -227,7 +231,7 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if got := uses(session); got != "bytedcli:device_login" {
 		t.Fatalf("owner, bound = %q", got)
 	}
-	if got := uses(member); got != "bytedcli:none" {
+	if got := uses(member); got != "aws:none,bytedcli:none" {
 		t.Fatalf("member, bound to the owner only = %q", got)
 	}
 	if got := uses(sandboxed); got != "" {
@@ -236,12 +240,31 @@ func TestSessionUsesFollowTheBindings(t *testing.T) {
 	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "bytedcli", DeviceID: "dev", Members: true}}, owns); err != nil {
 		t.Fatal(err)
 	}
-	if got := uses(member); got != "bytedcli:device_login" {
+	if got := uses(member); got != "aws:none,bytedcli:device_login" {
 		t.Fatalf("member, members allowed = %q", got)
 	}
 	elsewhere := session
 	elsewhere.DeviceID = "dev2"
 	if got := uses(elsewhere); got != "" {
 		t.Fatalf("the owner's session on another device = %q", got)
+	}
+}
+
+func TestAWSBindingsUseTheDeviceCredentialChain(t *testing.T) {
+	st := newMemoryStore()
+	devices := NewDeviceHeld(st, DefaultCatalog())
+	ctx := context.Background()
+	if err := devices.SetBindings(ctx, "ws", "owner", []store.DeviceConnectorBindingInput{{Kind: "aws", DeviceID: "dev"}}, func(id string) bool { return id == "dev" }); err != nil {
+		t.Fatal(err)
+	}
+	session := store.AgentSession{WorkspaceID: "ws", DeviceID: "dev", CreatedByUserID: "owner"}
+	uses, err := devices.SessionUses(ctx, session, "owner")
+	if err != nil || len(uses) != 1 || uses[0].Kind != "aws" || uses[0].Command != "aws" || uses[0].Access != "device_login" {
+		t.Fatalf("uses=%+v err=%v", uses, err)
+	}
+	session.CreatedByUserID = "member"
+	uses, err = devices.SessionUses(ctx, session, "owner")
+	if err != nil || len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_EC2_METADATA_DISABLED"] != "true" {
+		t.Fatalf("uses=%+v err=%v", uses, err)
 	}
 }

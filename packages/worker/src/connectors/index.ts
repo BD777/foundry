@@ -6,6 +6,7 @@ import type {
   ExternalAccountMaterial,
 } from "@bd777/foundry-protocol";
 import { prepareCloudflareSession } from "./cloudflare.js";
+import { awsAdapter } from "./aws.js";
 import { bytedcliAdapter } from "./bytedcli.js";
 import { DeviceHeldConnectors } from "./device-held.js";
 import {
@@ -29,7 +30,7 @@ import {
 
 /** The device-held connectors' adapters, by the catalog's adapter name. */
 export const deviceHeldConnectors = new DeviceHeldConnectors({
-  adapters: { bytedcli: bytedcliAdapter },
+  adapters: { bytedcli: bytedcliAdapter, aws: awsAdapter },
 });
 
 const environmentBySession = new Map<string, NodeJS.ProcessEnv>();

@@ -64,6 +64,7 @@ const DaemonCapabilityConnectorAuthorization = "connector_authorization_v1"
 
 // ConnectorDescriptor is one connector, as data (internal/connectors/catalog.json).
 type ConnectorDescriptor struct {
+	Authentication      string                        `json:"authentication,omitempty"`
 	AuthorizationGroups []ConnectorAuthorizationGroup `json:"authorizationGroups,omitempty"`
 	Kind                string                        `json:"kind"`
 	Label               string                        `json:"label"`

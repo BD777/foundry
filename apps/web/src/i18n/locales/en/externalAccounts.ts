@@ -57,7 +57,7 @@ export const externalAccounts = {
   page: {
     title: "Connectors",
     intro:
-      "External services your sessions use as you. Each tab says where its sign-in is kept: Feishu's on the server, bytedcli's on each of your devices. Only sessions in workspaces you bound it to use it.",
+      "External services your sessions use as you. Each tab explains where credentials are kept and how to connect. Workspace bindings control which connections are provided to sessions.",
     tabs: "Connector types",
     loading: "Loading Feishu accounts…",
     loadFailed: "Could not load Feishu accounts: {{error}}",
@@ -73,6 +73,7 @@ export const externalAccounts = {
     workspaces_other: "Bound to {{count}} workspaces",
   },
   providers: {
+    aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "Feishu",
     bytedcli: "bytedcli",
@@ -266,8 +267,12 @@ export const externalAccounts = {
     error: "Could not read",
   },
   deviceHeld: {
+    setup: {
+      aws: "Install AWS CLI using AWS’s official installer on the device. Configure credentials in its terminal (for SSO: aws configure sso, then aws sso login), then select Check again. Named profiles must be selected in the worker’s AWS_PROFILE environment. Authentication and sign-out are managed in the terminal. Bind the device under Workspace → Connectors to use it in sessions.",
+    },
     offlineUnknown: "Device offline",
     intro: {
+      aws: "AWS CLI uses this device’s native credential chain (AWS_PROFILE or default, environment credentials, SSO or device roles). Foundry checks the current identity with STS; credentials stay on the device. This does not verify permissions for other AWS services.",
       bytedcli:
         "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Sign in on the devices you own here; a workspace then chooses which device's sign-in its sessions use.",
       default:
@@ -370,6 +375,8 @@ export const externalAccounts = {
     failed: "The sign-in did not finish: {{error}}",
   },
   workspace: {
+    localAuthentication:
+      "Configure or renew {{name}} credentials in the device terminal, then check again. Manage connectors has setup instructions.",
     appUnavailable:
       "This account’s app is unavailable. Manage it in Connectors.",
     executionDevice: "Execution device",
@@ -397,7 +404,7 @@ export const externalAccounts = {
     useDevice: "Sessions on {{device}} use its {{name}} sign-in",
     members: "Also sessions other members start on {{device}}",
     membersHint:
-      "They act as you in ByteDance services. Leave off unless you mean to lend your sign-in.",
+      "They use your identity and permissions in this service. Leave off unless you mean to lend your sign-in.",
     noDevices:
       "None of your devices has {{name}} yet. Set it up from Manage connectors.",
     devicesLoadFailed: "Could not load the devices' sign-ins: {{error}}",

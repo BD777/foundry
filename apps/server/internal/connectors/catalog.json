@@ -56,5 +56,20 @@
       "package": "cf",
       "registry": "npmjs"
     }
+  },
+  {
+    "kind": "aws",
+    "label": "AWS CLI",
+    "holding": "device_held",
+    "adapter": "aws",
+    "tool": {
+      "command": "aws",
+      "source": "device"
+    },
+    "authentication": "local",
+    "isolationEnv": {
+      "AWS_PROFILE": "foundry-no-login",
+      "AWS_EC2_METADATA_DISABLED": "true"
+    }
   }
 ]
