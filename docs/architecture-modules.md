@@ -1,10 +1,10 @@
 # 模块化架构与开发切分
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 状态：设计，2026-09-25 确定方向。本文是**系统框架的代码模块划分**与依赖规则，并保留内核优先
-阶段按 milestone 切分开发的记录（§4–§6，该阶段已于 2026-10-04 结束）。此后 Roadmap 按
-产品模块组织、不再编号，产品模块与本文代码模块的对应见 §3.2。现状描述基于 `0649fe7`
+阶段按 milestone 切分开发的记录（§4–§6，该阶段已于 2026-10-04 结束）。此后 [Roadmap](roadmap.md) 按
+产品模块组织，产品模块与本文代码模块的对应见 §3.2。现状描述基于 `0649fe7`
 的源码阅读（code-evidence，路径已附），未重新运行服务。
 
 ## 1. 为什么要切
@@ -165,22 +165,23 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 
 ## 3.2 产品模块与代码模块
 
-README Roadmap 与[模块图](assets/architecture.svg)按产品模块组织，每个产品模块有一份主文档
+[Roadmap](roadmap.md) 与[模块图](assets/architecture.svg)按产品模块组织，每个产品模块有一份主文档
 （见[文档索引](README.md#modules)）。它们与上表代码模块的对应：
 
-| 产品模块         | 代码模块                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| 渠道             | 入口中的飞书 Bot（`internal/feishu`；事件分发 `internal/feishuevents` 与连接器共用） |
-| Chats            | Chat                                                                                 |
-| Issues           | Issue Loop、Material Store；候选存储与 Git 目前主要服务于它                          |
-| Agent 能力面     | Agent 能力面                                                                         |
-| 执行内核         | Session Runtime、Sandbox                                                             |
-| Resources        | Resource Pool                                                                        |
-| Skills           | Skills                                                                               |
-| 模型与账号       | Harness Profiles                                                                     |
-| 连接器           | 连接器                                                                               |
-| 设备与 Workspace | Device & Transport、Workspace Registry                                               |
-| 身份与共享       | Identity & Access                                                                    |
+| 产品模块           | 代码模块                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| 渠道               | 入口中的飞书 Bot（`internal/feishu`；事件分发 `internal/feishuevents` 与连接器共用）                      |
+| Chats              | Chat                                                                                                      |
+| Issues             | Issue Loop、Material Store；候选存储与 Git 目前主要服务于它                                               |
+| 工作流平台（规划） | 候选存储与 Git、Material Store 与新增的合入队列，从 Issue Loop 中独立出来（[设计](workflow-platform.md)） |
+| Agent 能力面       | Agent 能力面                                                                                              |
+| 执行内核           | Session Runtime、Sandbox                                                                                  |
+| Resources          | Resource Pool                                                                                             |
+| Skills             | Skills                                                                                                    |
+| 模型与账号         | Harness Profiles                                                                                          |
+| 连接器             | 连接器                                                                                                    |
+| 设备与 Workspace   | Device & Transport、Workspace Registry                                                                    |
+| 身份与共享         | Identity & Access                                                                                         |
 
 平台基础与 Web 不对应单独的产品模块。
 
@@ -188,8 +189,8 @@ README Roadmap 与[模块图](assets/architecture.svg)按产品模块组织，�
 
 > 这一阶段从 2026-09-26 持续到 2026-10-04：M1–M4 完成；M5（Issue 流程扩展）除"飞书中的
 > Issue"待真实群验收外完成，包括 loop graph 与准出规则、人工介入（Blocked）、证据与验证、
-> 接受与合入、开源首发。之后 Roadmap 改为按产品模块组织、不再编号，未完成项归入各模块的
-> "下一步"。以下保留当时的切分与决定。
+> 接受与合入、开源首发。之后 Roadmap 改为按产品模块组织，未完成项现在统一在
+> [roadmap.md](roadmap.md)。以下保留当时的切分与决定。
 
 每个 milestone：一个模块的协议 + 迁移现有调用方 + 删除重复实现 + 一个端到端使用场景。
 模块自身的契约测试通过但场景未跑通，不算完成。

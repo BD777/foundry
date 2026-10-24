@@ -1,10 +1,32 @@
 # 连接器
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。连接器分两种：**Server 持有型**（目前是飞书：Server 保管外部应用的密钥和个人登录，会话经 Server 的网关调用，设备上不留真实凭据；Agent 用 `feishu-cli`，配合 Workspace 的 `feishu-cli-*` Skill）和**设备持有型**（bytedcli 与 AWS CLI：登录由 CLI 自己保存在那台设备上，从不离开设备；Foundry 只负责检测、安装与升级、经 Foundry 登录、状态与到期提醒，以及哪些会话可以使用）。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于“模型与账号”）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab：飞书管理应用和账号，设备持有型按设备列出状态与登录方式）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的 bytedcli 登录，并显示其他成员的绑定。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。目前有四种：**Server 持有型**的飞书（`feishu-cli`）与 Cloudflare（`cf`），由 Server 保管密钥与个人登录，会话经 Server 的网关调用，设备上只有可撤销的替身；**设备持有型**的 bytedcli 与 AWS CLI，登录由 CLI 自己保存在那台设备上，从不离开设备，Foundry 只负责检测、安装、登录入口、状态与到期提醒，以及哪些会话可以使用。统一的抽象见下文[连接器抽象](#连接器抽象)。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于[模型与账号](models-and-accounts.md)）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的登录，并显示其他成员的绑定。待办统一在 [Roadmap · 连接器](roadmap.md#连接器)。
 
 ## 设计
+
+### 连接器抽象
+
+所有连接器都按同一组概念描述；新连接器只回答这几个问题，不新增一套流程。“已实现”指 main 上的代码，不代表每种连接器都经过真实第三方账号验收。
+
+| 概念                                  | 含义                                                                                                                                                        | 现状                                                                                                                                                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 连接器类型（kind）                    | 一种外部服务及其 CLI，一条 `catalog.json` 描述数据加一个小适配器                                                                                            | 已实现：feishu、cloudflare、bytedcli、aws                                                                                                                                                                |
+| 持有方式（holding）                   | 凭据在哪里：`server_held`（Server secret store，会话经网关）或 `device_held`（只在设备上，CLI 自己保存）                                                    | 已实现两种                                                                                                                                                                                               |
+| 身份（account / login）               | 一个人在该服务上的一份登录：Server 持有型是 `external_accounts` 中的账号，设备持有型是某台设备上的一份原生登录                                              | 已实现；同一类型可以有多个账号（例如同一个人在两个飞书租户下的两个账号）                                                                                                                                 |
+| 登录方式（authentication）            | 经 Foundry 发起（设备码、OAuth、CLI 的 `--begin/--complete`），或 `local`：在设备终端自行管理，Foundry 只检查状态                                           | 已实现；AWS 为 `local`                                                                                                                                                                                   |
+| Profile（同一账号下的多个身份或范围） | 一份登录下可选的子身份或资源范围：AWS 命名 profile、bytedcli 站点、Cloudflare 账号下的 zone                                                                 | **部分实现**：Cloudflare 的 Workspace 只能用自己选定的 zone（`connectors/cloudflare_gateway.go`）；AWS profile 只能经 Worker 的 `AWS_PROFILE` 整体选择；bytedcli 只读默认站点。按 profile 单独绑定是待办 |
+| 附加授权组（authorization group）     | 同一账号下某个子系统需要的另一份凭据或授权，单独发起、单独显示状态：例如 bytedcli 的 Meego 网页会话（`authorizationGroups`，凭据类型 `native_web_session`） | 已实现框架与 bytedcli 的一组；真实授权完成待本人验证（[DEV-029](devlog/DEV-029-connector-authorization.md)）                                                                                             |
+| Workspace 绑定                        | 本人把自己的某份登录（以后是某个 profile）绑定到 Workspace，可选允许其他成员在那台设备上的会话使用                                                          | 已实现：`external_account_bindings`、`device_connector_bindings`                                                                                                                                         |
+| 会话使用                              | 会话启动时按资格规则下发工具配置与说明；不可用的会话得到隔离变量                                                                                            | 已实现：`externalaccounts.Eligible`、`connectors.DeviceEligible`                                                                                                                                         |
+
+几条约束对所有连接器成立：
+
+- **凭据不跟着会话走。** Server 持有型只给会话可撤销的替身；设备持有型的凭据只在那台设备上。会话说明告诉 Agent 不要自己登录、登出或导出凭据。
+- **资格每次重新检查。** 本人发起、会话在可用的设备上、绑定存在、不是沙箱角色；网关对每个请求重新检查。
+- **隔离变量只防误用。** 未沙箱的会话以设备用户运行，能自己去掉隔离变量；这不是安全边界（见[安全边界](security.md#known-risk-the-device-credential-is-readable-by-unsandboxed-agents)）。
+- **附加授权与 profile 不扩大基础登录的范围。** 它们是同一账号下显式、可单独撤销的部分，状态与到期分别显示。
 
 ### 模块边界
 
@@ -92,7 +114,7 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 
 **未实现 / 已知缺口**
 
-- Server 持有型只有飞书。存储里旧的 `device_local` 凭据模式仍无人使用；设备持有型不走 `external_accounts`，而是 `internal/connectors`。
+- Server 持有型有飞书与 Cloudflare（Cloudflare 见下文）。存储里旧的 `device_local` 凭据模式仍无人使用；设备持有型不走 `external_accounts`，而是 `internal/connectors`。
 - bytedcli 只读默认站点（`BYTEDCLI_CLOUD_SITE` 或 cn）的登录，其他站点（i18n-*、us-ttp、eu-ttp）的登录 Foundry 不显示，也不提供按站点登录；`--session` 浏览器会话类登录也不经 Foundry。
 - 设备持有型的“不能用”只防误用：未沙箱的会话以设备用户身份运行，能自己去掉 `BYTEDCLI_PROFILE` 读到设备所有者的登录（与设备凭证的已知风险相同）；旧 Worker 不认识 `device_connectors`，它上面的他人会话不受隔离。
 - 设备绑定的增删没有审计记录（飞书账号的绑定有）；没有后台定时检查，状态只在打开页面、手动检查或操作后更新，到期提醒只在 Connectors 页显示。
@@ -117,6 +139,10 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 模块重构后（2026-10-15）飞书的既有测试不改断言全部通过，包括用真实 `feishu-cli` 跑的合同测试（只改了被移动文件的路径与会话派发的调用方式）。
 - bytedcli（2026-10-15）：状态与登录输出的形状取自 MacBook 上真实的 bytedcli 0.170.0（经计算租约只读运行 `auth status --json`；一次性 `--profile foundry-test-1` 上的 `--begin`，未完成，用后删除），整理为 `packages/worker/test/fixtures/bytedcli-outputs.json`（姓名与邮箱已替换）；用假 bytedcli 测试 Worker 的状态、登录、拒绝、过期、登出、安装与会话说明（`connectors-device-held.test.mjs`），Server 测试经假 Worker 的整条链路与权限（`httpapi/connectors_test.go`）、目录与资格规则（`connectors/connectors_test.go`），Web 测试 `device-held-connectors.test.mjs`。在 scratch stack 上用假 bytedcli 实测：网络不通的设备显示“不提供”；用只换掉 `/etc/hosts` 的 bwrap 让 Worker 的网络检查通过后，Connectors 页键盘发起登录、二维码与链接、批准后完成，亮色、暗色、窄屏都检查过；Workspace 绑定后真实 Claude 会话的说明里出现 bytedcli 那一行。真实 bytedcli 的完整登录没有经 Foundry 跑过（规定不在本人的默认 profile 上登录）。
 
+## Cloudflare（#141）
+
+Cloudflare 是第二个 Server 持有型连接器，入口为 `/connectors/cloudflare`。Server 经 Cloudflare 官方 MCP 授权服务器的 OAuth（Authorization Code + PKCE，动态注册的公开客户端；第三方不支持设备码）取得授权，范围默认只读（`account:read`、`zone.read`、`dns.read`、`ssl-and-certificates.read`，见 `externalaccounts/cloudflare.go`）；凭据封存在 Server。授权后在 Connectors 中为该账号选择可用的 zone 与 Workspace，会话经 Server 的 Cloudflare 网关或 Foundry MCP 的 Cloudflare 工具（`connectors/cloudflare_gateway.go`）只能读到选定的 zone，Worker 侧适配器为 `packages/worker/src/connectors/cloudflare.ts`。写权限按具体计划增量申请，尚未开放。本人的真实批准与真实资源核验待完成，见 [DEV-035](devlog/DEV-035-cloudflare-connector.md)。
+
 ## AWS CLI（2026-10-23）
 
 AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；在 Workspace Connectors 绑定设备后下发会话使用说明。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。登录、续登、退出和安装在设备终端管理，页面仅提供状态检查；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者未绑定的会话仍沿用既有设备权限语义，其他成员未获授权的会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
@@ -125,12 +151,7 @@ AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；在 Workspac
 
 ## 后续
 
-Roadmap 没有为连接器列出下一步。已知可做的方向，都还没有排期：
-
-- 新的 Server 持有型连接器按 `externalaccounts.Provider` 接入；新的设备持有型连接器加一条 `catalog.json` 数据和一个 Worker 适配器。
-- bytedcli 多站点登录；设备绑定变更的审计；后台检查到期并经渠道提醒本人。
-- 把账号授权给协作者的会话使用（P3）。
-- 在 Web 上查看网关审计。
+待办、依赖与完成标准统一维护在 [Roadmap · 连接器](roadmap.md#连接器)，本页不再单独列清单。
 
 ## 代码位置
 

@@ -1,6 +1,6 @@
 # Evidence & Verify v1
 
-[Roadmap](../README.md#roadmap) · [Issue 工作流](issue-workflow.md#evidence-and-verify) · [完整字段表](evidence-and-verify-v1-fields.md)
+[Roadmap · Issues](roadmap.md#issues) · [Issue 工作流](issue-workflow.md#evidence-and-verify) · [完整字段表](evidence-and-verify-v1-fields.md)
 
 Evidence & Verify v1 的业务契约与支持范围。设计背景来自已归档的 [0908 Plan](archive/workspace-ai-product-plan-2026-09-08.md) 第 7–9、11–12、20 节及六态 Issue 生命周期；两者冲突时以本文的 v1 取舍为准。
 

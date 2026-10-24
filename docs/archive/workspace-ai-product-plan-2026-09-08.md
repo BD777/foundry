@@ -7,7 +7,7 @@ status: "决策基线 + 执行草案"
 source: "本次完整产品设计对话；外部技术与产品信息补充核查"
 ---
 
-> **归档文档。** 这是 2026-09-08 的产品规划原文，保留当时的讨论与草案，不描述当前行为。目标形态已由 [Workspace 与 Sandbox 总纲](../workspace-sandbox-overview.md) 取代；当前能力与计划见 [README Roadmap](../../README.md#roadmap)和[各模块文档](../README.md#modules)。文中的字段、协议、角色和策略不因出现在本文就视为已批准。
+> **归档文档。** 这是 2026-09-08 的产品规划原文，保留当时的讨论与草案，不描述当前行为。目标形态已由 [Workspace 与 Sandbox 总纲](../workspace-sandbox-overview.md) 取代；当前能力与计划见 [Roadmap](../roadmap.md)和[各模块文档](../README.md#modules)。文中的字段、协议、角色和策略不因出现在本文就视为已批准。
 
 # Workspace 驱动的 AI 工作流平台
 

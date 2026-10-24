@@ -1,25 +1,29 @@
 %% Source of architecture.svg: render with Mermaid 11+ (block-beta) and save the SVG next to this file.
+%% Dashed boxes are planned; see docs/roadmap.md for each module's status and next steps.
 block-beta
   columns 15
   L1["入口"]:3 WEB["Web"]:4 CHN["渠道<br/>飞书 Bot"]:4 EXT["外部 Agent<br/>经 foundry CLI / MCP"]:4
-  L2["Personal Agent<br/>未开始 · 本身是一个 Workspace"]:3 PA1["快速响应<br/>与人交互"]:4 PA2["Dispatch<br/>落到已有 Workspace 或新建"]:4 PA3["Workspace 索引<br/>渐进式披露"]:4
-  L3["工作流<br/>每个 Workspace 内"]:3 CHAT["Chats<br/>在 Workspace 中直接对话"]:4 ISS["Issues<br/>准出 → 候选 → 验证 → 接受 → 合入"]:8
+  L2["Personal Agent<br/>测试中 · 本身是一个 Workspace"]:3 PA1["快速响应<br/>与人交互"]:4 PA2["Dispatch<br/>落到已有 Workspace 或新建"]:4 PA3["Workspace 索引<br/>渐进式披露"]:4
+  L3["工作流<br/>每个 Workspace 内"]:3 CHAT["Chats<br/>在 Workspace 中直接对话"]:4 ISS["Issues · 内置工作流<br/>准出 → 执行 → 判定 → 接受"]:8
+  L3P["工作流平台<br/>规划 · 现由 Issues 实现"]:3 CAND["候选 Workspace<br/>隔离副本与写边界"]:4 MQ["合入队列<br/>每个 Workspace 逐个合入"]:4 EVD["证据与判定<br/>材料库 · 独立判定"]:4
   L4["Agent 能力面"]:3 MCP["Foundry MCP / CLI<br/>Agent 调用 Foundry 的唯一接口"]:12
   L5["执行内核"]:3 SR["Session Runtime<br/>启动原生 Claude Code / Codex"]:6 SB["Sandbox<br/>macOS Seatbelt / Linux bubblewrap"]:6
-  L6["能力供给"]:3 RES["Resources"]:3 SK["Skills"]:3 MOD["模型与账号"]:3 CON["连接器"]:3
+  L6["能力供给"]:3 RES["Resources"]:3 SK["Skills"]:3 MOD["模型与账号"]:3 CON["连接器<br/>Server 持有 · 设备持有"]:3
   L7["基础"]:3 DEV["设备与 Workspace"]:6 ID["身份与共享"]:6
   classDef layer fill:none,stroke:none,color:#24292f,font-weight:bold
   classDef entry fill:#e7f0fd,stroke:#4a7fd6,color:#1b2a41
-  classDef vision fill:#fff3e0,stroke:#e08a00,stroke-width:2px,stroke-dasharray:6 4,color:#5a3600
+  classDef assistant fill:#fff3e0,stroke:#e08a00,color:#5a3600
   classDef flow fill:#e6f5ec,stroke:#2f9e5b,color:#173d26
+  classDef planned fill:#f4fbf6,stroke:#2f9e5b,stroke-width:2px,stroke-dasharray:6 4,color:#173d26
   classDef agent fill:#efe9fb,stroke:#7c5cd6,color:#2d2152
   classDef kernel fill:#e3f4f5,stroke:#1f9aa1,color:#11393b
   classDef supply fill:#fbe9f2,stroke:#c94a8c,color:#4a1a33
   classDef base fill:#eef0f3,stroke:#6b7280,color:#1f2937
-  class L1,L2,L3,L4,L5,L6,L7 layer
+  class L1,L2,L3,L3P,L4,L5,L6,L7 layer
   class WEB,CHN,EXT entry
-  class PA1,PA2,PA3 vision
+  class PA1,PA2,PA3 assistant
   class CHAT,ISS flow
+  class CAND,MQ,EVD planned
   class MCP agent
   class SR,SB kernel
   class RES,SK,MOD,CON supply

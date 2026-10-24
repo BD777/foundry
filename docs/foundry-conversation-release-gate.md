@@ -1,6 +1,6 @@
 # Foundry 对话式 Issue · 功能准出标准
 
-[项目 Roadmap](../README.md#roadmap) · [Issue 工作流](issue-workflow.md)
+[Roadmap](roadmap.md) · [Issue 工作流](issue-workflow.md)
 
 这是 **Foundry 产品功能的准出标准**：对话式 Issue、Evidence & Verify 与 Accept 相关的
 产品改动，在宣称可用之前必须满足下面的 G1–G5。它不是某个测试 Issue 自身的验收契约。

@@ -1,6 +1,6 @@
 # Personal Agent
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 > **2026-10-21 实施修订：** 当前方案与边界见 [DEV-023 修订设计](devlog/DEV-023-personal-agent.md) 和 [实施/验收矩阵](devlog/DEV-023-implementation.md)。下文保留 2026-10-15 的设计基线，不代表每一段均为当前行为。记忆正文现在由独立可选设备上的 Memory / 领域 Workspace 单写持有，Server 保存控制记录、索引与授权；离线写入、迁移、角色配置和停止范围以修订文档及实际回执为准。侧栏布局随后按 Workspace、Assistant 与全局管理的作用域调整。
 
@@ -457,7 +457,7 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 
 ## 后续
 
-按下面的工作包实现；文件归属互不重叠，可并行。
+下面的工作包已全部实现（见[实现边界](#实现边界)），保留为当时的分工记录。当前待办见 [Roadmap · Personal Agent](roadmap.md#personal-agent)。
 
 **阶段 1：契约（先做，单独一个包）**
 

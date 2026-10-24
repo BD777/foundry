@@ -16,9 +16,9 @@ document's implementation boundary. Always inspect the current working tree and
    code lives.
 2. [Workspace and Sandbox overview](docs/workspace-sandbox-overview.md) for the
    target shape.
-3. [README Roadmap](README.md#roadmap) for the module diagram and each module's
-   current capability and next steps; [English](docs/README.en.md#roadmap)
-   mirrors it.
+3. [Roadmap](docs/roadmap.md) for the module diagram and each module's current
+   capability, next steps and completion criteria (the README shows the diagram
+   and a one-line summary per module).
 4. The [documentation index](docs/README.md#modules) for the owning document of
    the module you are changing; read its implementation boundary first.
 5. [Module architecture](docs/architecture-modules.md) for layer rules and
@@ -38,9 +38,10 @@ document's implementation boundary. Always inspect the current working tree and
 
 ## Product decisions to preserve
 
-- The README Roadmap is organized by module without milestone numbers; it is
-  the only roadmap. Module documents hold design, implementation boundary and
-  next steps without duplicate checklists elsewhere.
+- [docs/roadmap.md](docs/roadmap.md) is the only roadmap and to-do list,
+  organized by the module diagram with stable item IDs. Module documents hold
+  design and implementation boundary; the devlog holds execution records for
+  started items. Neither keeps its own checklist.
 - Chats reuse the native Claude Code / Codex harnesses; one Foundry session is
   one native session.
 - Users work with Issues; internal Runs, attempts, sessions and evidence
@@ -50,9 +51,9 @@ document's implementation boundary. Always inspect the current working tree and
   ([Issue conversation and status](docs/issue-conversation-design.md)).
 - Workspace capability accumulation is a property of the Issue loop, not an
   independent feature.
-- A Personal Agent layer, when built, is itself a workspace holding an index of
-  the other workspaces; it dispatches and responds, and never becomes a second
-  source of truth.
+- The Personal Agent (built, under testing) is itself a workspace holding an
+  index of the other workspaces; it dispatches and responds, and never becomes
+  a second source of truth.
 
 ## Trust Boundary
 

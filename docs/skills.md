@@ -1,6 +1,6 @@
 # Skills
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：从设备和 git / npm 来源收进 Server 的 Skill 库，按不可变版本保存；Workspace 选用并可固定版本，个人默认 Skill 补到本人设备上的 Workspace；会话启动时把选定版本物化到设备上，并让会话只看到这些 Skill、它所用 Agent 的官方 Skill 和 Foundry 内置 Skill。它不负责会话怎么启动（执行内核的 Session Runtime 接收物化结果）、Skill 内容是否正确（由人发布时判断），也不替 Skill 准备运行环境，只有 bundle 声明的工具在人点击后由设备安装。在分层图中属于“能力供给”层：依赖“设备与 Workspace”（扫描、物化、程序检测都在设备上做）和“身份与共享”（库由 Admin 管理，Workspace 选用要求 Maintainer）；被执行内核和“Agent 能力面”使用（内置 `foundry` Skill 讲 Foundry MCP 工具的事实）。
 
@@ -56,10 +56,12 @@ Skills 负责会话能用哪些 Skill（含 `SKILL.md` 的工作方法包）：�
 
 ## 后续
 
+状态、依赖与完成标准见 [Roadmap · Skills](roadmap.md#skills)（SK-1–SK-4）；本节只保留设计要点。
+
 - **已实现并自验：** [Workspace 草稿试用、隔离补全与启动准备](session-isolation-design.md)。已支持受管草稿快照、刷新、固定版本 include/exclude/previous 试验，以及缓存内容复核、精确挂载和共享启动准备。正式发布仍是独立动作；原生子 Agent 的 Skill 隔离尚未独立验证，因此试验使用 Foundry 独立会话。完整范围与平台局限见 [DEV-006/007 交付记录](devlog/DEV-006-007-isolation-drafts.md)；准出与源码合入见 [DEV-025](devlog/DEV-025-release-closure.md)。
-- **下一步：** 从 Foundry 安装 Skill 缺失的程序，沿用 bundle 工具的安装路径（按设备、人点击、https 与校验）。
-- **下一步：** 私有仓库：让 Server 也能读需要凭据的来源，不依赖某台设备在线；凭据按[安全边界](security.md)的 sealed secret 规则保存。
-- **探索：** 自动提炼与推荐 Skill：从会话中提炼可复用的方法成为 Workspace 草稿，或按 Workspace 推荐库中已有的 Skill；产物仍经人发布进库。
+- 从 Foundry 安装 Skill 缺失的程序，沿用 bundle 工具的安装路径（按设备、人点击、https 与校验）。
+- 私有仓库：让 Server 也能读需要凭据的来源，不依赖某台设备在线；凭据按[安全边界](security.md)的 sealed secret 规则保存。
+- 自动提炼与推荐 Skill：从会话中提炼可复用的方法成为 Workspace 草稿，或按 Workspace 推荐库中已有的 Skill；产物仍经人发布进库。
 
 ## 代码位置
 

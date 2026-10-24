@@ -1,6 +1,6 @@
 # Resources
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 Resources 负责设备上**已有**、会话可以使用的能力：发现、登记、列出，按会话租用、操作、释放与回收，并经 Server 让一台设备上的会话使用另一台设备上的资源。它不负责执行容量（执行内核）、Agent 原生工具本身（Shell、文件读写由 Claude Code / Codex 提供）、证据判定（[Evidence & Verify](evidence-and-verify-v1.md)）、外部账号（连接器），也不替设备安装软件：Foundry 不自带、不下载资源，cua-driver 只在设备所有者点击后用其官方安装器安装。在分层图中属于“能力供给”层：依赖“设备与 Workspace”（Worker 连接、设备在线状态）和“身份与共享”（设备归属、按调用方过滤可见范围）；被“Agent 能力面”的 Foundry MCP 工具和工作流中的 Chats 使用（Issue 内的会话目前不能租用）。
 
@@ -71,9 +71,11 @@ Tool Use 指 Agent 操作工具并采集真实材料；资源调度管多个会�
 
 ## 后续
 
-- **下一步：** 模拟器、真机接入同一生命周期（申请 → 使用 → 释放 → 清理）：在类型表中加 spec、在 Worker 加 provider（`packages/worker/src/resources/provider.ts` 头部写明扩展方式），沿用 fencing 与重置确认。
-- **下一步：** 资源操作接上证据契约：选定场景的操作结果能对应到 Issue、候选与环境，供 Evidence / Verify 引用。
-- **探索：多台机器共享执行与验证资源，支持异地验证（Build here, verify there）。** 在一台机器构建，在另一台具备所需环境的机器验证。compute 租约与 `remote-check.sh` 已能把改动放到另一台设备上运行检查；可信的异地验证还缺跨设备的构建或材料传输、环境身份与版本关联、断线恢复。完成标准：证据可追溯到正确的候选、构建和验证环境，旧构建或错误环境不会被当作有效成功；断线不造成重复占用或未经授权的操作。先选一个真实场景验证，不一次抽象所有设备。
+状态、依赖与完成标准见 [Roadmap · Resources](roadmap.md#resources)（RES-1–RES-3）；本节只保留设计要点。
+
+- 模拟器、真机接入同一生命周期（申请 → 使用 → 释放 → 清理）：在类型表中加 spec、在 Worker 加 provider（`packages/worker/src/resources/provider.ts` 头部写明扩展方式），沿用 fencing 与重置确认。
+- 资源操作接上证据契约：选定场景的操作结果能对应到 Issue、候选与环境，供 Evidence / Verify 引用。
+- **多台机器共享执行与验证资源，支持异地验证（Build here, verify there）。** 在一台机器构建，在另一台具备所需环境的机器验证。compute 租约与 `remote-check.sh` 已能把改动放到另一台设备上运行检查；可信的异地验证还缺跨设备的构建或材料传输、环境身份与版本关联、断线恢复。完成标准：证据可追溯到正确的候选、构建和验证环境，旧构建或错误环境不会被当作有效成功；断线不造成重复占用或未经授权的操作。先选一个真实场景验证，不一次抽象所有设备。
 
 ## 代码位置
 

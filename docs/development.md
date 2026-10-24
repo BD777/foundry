@@ -4,9 +4,10 @@
 
 Use `git log` and `git show` to trace delivered changes. Commit messages should explain
 the problem, resulting behavior and relevant validation, including any unverified limits.
-Keep durable decisions in the owning design document, future work in the README Roadmap,
-and reproducible acceptance checks in the [regression cases](../cases/README.md). Do not
-duplicate commit history in a separate chronological development log.
+Keep durable decisions in the owning design document, future work in the [Roadmap](roadmap.md),
+and reproducible acceptance checks in the [regression cases](../cases/README.md). Execution
+records for started items (investigation, deployment evidence, acceptance) go in the
+[devlog](devlog/README.md) as `AGENTS.md` requires; do not copy commit history there.
 
 ## Component themes
 

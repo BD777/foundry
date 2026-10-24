@@ -1,6 +1,6 @@
 # 执行内核：Session Runtime 与 Sandbox
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 执行内核是 Worker 一侧的两个模块：**Session Runtime** 以统一方式启动原生 Claude Code / Codex 会话，负责事件流、steer、取消、存活判断与重启后的恢复；**Sandbox** 按隔离 profile 包装进程，只施加写边界并隐藏 Foundry 自己的治理状态。它不负责流程语义（谁、何时启动会话，结果算不算数，由 Chats、Issues 与 Agent 能力面决定），也不负责凭据从哪里来（[模型与账号](models-and-accounts.md)）、启用哪些 Skill（[Skills](skills.md)）、资源的发现与租约（[Resources](resources.md)）。在分层图中它位于 Agent 能力面之下、能力供给之上：被 Chats、Issues 和经 Foundry MCP 派出的会话使用，依赖能力供给各模块与[设备与 Workspace](devices-and-workspaces.md)（派发通道与 Workspace 路径）。依赖方向由 `pnpm audit:modules`（`scripts/audit-module-boundaries.mjs`）检查，Worker 违例基线为零（`scripts/module-boundaries-baseline.json`）。
 
@@ -69,7 +69,7 @@
 
 配置来源隔离、公共启动准备的封装重构及已知回归修复，见[会话隔离与 Workspace Skill 草稿方案](session-isolation-design.md)（实施中；[第一批范围与验证](session-isolation-implementation-20261019.md)、[草稿与生命周期接续验证](session-isolation-drafts-20261019.md)）。方案保留普通执行和独立判定两个入口，共用配置、凭据和材料准备，不改变现有 Chat 文件权限边界。
 
-与 [Roadmap](../README.md#roadmap) 一致，下一步是 Sandbox 隔离补全：
+状态、依赖与完成标准见 [Roadmap · 执行内核](roadmap.md#执行内核)（EK-1–EK-3）；以下是 Sandbox 隔离补全的设计要点：
 
 - **Docker 容器隔离**：作为第三种 `SandboxBackend`，按 Workspace 选择，面向 Linux 服务器、团队共用机器与需要可复现环境的项目；独立根文件系统与资源限额。取舍（只能用镜像里的工具链、macOS 上经虚拟机运行、worktree 的 `.git` 路径挂载、容器内 Worker 需要宿主 docker.sock）见[模块化架构 §5.1](architecture-modules.md#51-sandbox)。
 - **凭据不以明文交给 Agent**：模型与内部服务的凭据留在设备或受控的密钥存储中（[总纲 §4.1](workspace-sandbox-overview.md#41-隔离)），并收口上面"不在沙箱里的会话能读设备凭据"的已知风险。
