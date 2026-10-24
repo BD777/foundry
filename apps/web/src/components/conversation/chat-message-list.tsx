@@ -116,6 +116,11 @@ function messagesEqual(left: ChatMessageItem, right: ChatMessageItem): boolean {
       left.editText === right.editText &&
       left.idea === right.idea &&
       left.recoverable === right.recoverable &&
+      left.failureDiagnostic?.location === right.failureDiagnostic?.location &&
+      left.failureDiagnostic?.guidance === right.failureDiagnostic?.guidance &&
+      left.failureDiagnostic?.observation ===
+        right.failureDiagnostic?.observation &&
+      left.failureDiagnostic?.details === right.failureDiagnostic?.details &&
       left.streaming === right.streaming &&
       left.sentBy?.sessionId === right.sentBy?.sessionId &&
       left.sentBy?.label === right.sentBy?.label &&
@@ -200,9 +205,20 @@ export const ChatMessageRow = memo(
         <Alert
           tone={message.recoverable ? "warning" : "error"}
           title={displayTitle(message.title) ?? t("message.failed")}
-          details={diagnostic.details}
+          details={message.failureDiagnostic?.details ?? diagnostic.details}
         >
-          <p>{diagnostic.summary}</p>
+          <div className="fdy-chat-failure-copy">
+            {message.failureDiagnostic?.location ? (
+              <p>{message.failureDiagnostic.location}</p>
+            ) : null}
+            <p>{diagnostic.summary}</p>
+            {message.failureDiagnostic?.observation ? (
+              <p>{message.failureDiagnostic.observation}</p>
+            ) : null}
+            {message.failureDiagnostic ? (
+              <p>{message.failureDiagnostic.guidance}</p>
+            ) : null}
+          </div>
         </Alert>
       );
     }

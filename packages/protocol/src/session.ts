@@ -1,6 +1,7 @@
 // Agent sessions: their inputs, transcript events, timers, background work,
 // subagents, usage and recorded files.
 
+import type { WorkerFailure } from "./worker-failure.js";
 import type { ChatAttachment, TranscriptMessage } from "./chat.js";
 import type { RunStatus } from "./issue.js";
 import type {
@@ -272,6 +273,7 @@ export interface AgentBackgroundTaskOutput {
 }
 
 export interface AgentSessionEventMetadata {
+  workerFailure?: WorkerFailure;
   nativeAccountError?: "account_on_hold";
   nativeAccountInputId?: string;
   /** A Claude background task's own output log, on its end event. */

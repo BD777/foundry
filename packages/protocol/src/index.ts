@@ -60,3 +60,5 @@ export * from "./knowledge-vault.js";
 export * from "./personal-agent-maintenance.js";
 
 export * from "./service-tunnels.js";
+
+export * from "./worker-failure.js";

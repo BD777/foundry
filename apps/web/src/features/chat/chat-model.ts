@@ -31,6 +31,8 @@ import {
   type TranscriptEntry,
 } from "./transcript-projection";
 
+import { agentSessionFailureMessage } from "./chat-failure";
+
 export * from "./chat-session-model";
 export * from "./chat-types";
 
@@ -530,11 +532,16 @@ function chatMessagesForSession(
     });
   }
   if (terminalError) {
-    const failure = agentSessionFailureMessage(session, terminalError);
+    const failure = agentSessionFailureMessage(
+      session,
+      terminalError,
+      context.devices,
+    );
     messages.push({
       id: `agent-session:${session.id}:failure`,
       kind: "failure",
       recoverable: failure.recoverable,
+      failureDiagnostic: failure.failureDiagnostic,
       role: "bot",
       text: failure.text,
       title: failure.title,
@@ -578,36 +585,6 @@ function processedTitle(duration: string | undefined): string {
   return duration
     ? i18n.t("chat:transcript.processedIn", { duration })
     : i18n.t("chat:transcript.processed");
-}
-
-function agentSessionFailureMessage(
-  session: AgentSession,
-  error: string,
-): {
-  recoverable: boolean;
-  text: string;
-  title: string;
-} {
-  const maxTurnsMatch = error.match(
-    /maximum number of turns(?:\s*\((\d+)\))?/i,
-  );
-  if (maxTurnsMatch) {
-    const turns = maxTurnsMatch[1]
-      ? i18n.t("chat:failure.turns", { count: Number(maxTurnsMatch[1]) })
-      : i18n.t("chat:failure.allowedTurns");
-    return {
-      recoverable: Boolean(session.nativeSessionId),
-      text: session.nativeSessionId
-        ? i18n.t("chat:failure.maxTurnsResumable", { turns })
-        : i18n.t("chat:failure.maxTurnsLost", { turns }),
-      title: i18n.t("chat:failure.maxTurnsTitle"),
-    };
-  }
-  return {
-    recoverable: false,
-    text: error,
-    title: i18n.t("chat:failure.title"),
-  };
 }
 
 function chatMessagesForThread(

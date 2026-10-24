@@ -21,6 +21,7 @@ import type {
 import type { ProcessDisplayItem } from "../../components/conversation/chat-process-display";
 import type {
   ConversationFileReference,
+  FailureDiagnostic,
   StepUsage,
 } from "../../components/conversation/conversation-types";
 
@@ -59,6 +60,7 @@ export interface ChatViewMessage {
   kind?: "boundary" | "failure" | "message" | "process" | "tool" | "waiting";
   processItems?: ProcessDisplayItem[];
   recoverable?: boolean;
+  failureDiagnostic?: FailureDiagnostic;
   role: "user" | "bot";
   runtime?: Exclude<WorkerRuntimeId, "mock">;
   /** A user message another session sent: that session's id. */

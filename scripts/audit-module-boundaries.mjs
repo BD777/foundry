@@ -265,6 +265,7 @@ export const workerModules = {
       "session-ambient",
       "session-artifacts",
       "session-helpers",
+      "worker-failure",
       "session-files",
       "workspace-files",
       "session-file-diffs",

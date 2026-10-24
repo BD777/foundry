@@ -374,6 +374,49 @@ export const chat = {
     backgroundContinuedAt: "Claude continued after background work · {{when}}",
   },
   failure: {
+    worker: {
+      execution_host_stopped: {
+        title: "Run interrupted on the device",
+        summary:
+          "The service running this task restarted and the interrupted execution ended. This error report does not include why the service exited.",
+      },
+      disk_full: {
+        title: "The device ran out of disk space",
+        summary:
+          "The execution device reported ENOSPC while writing data, so this run could not complete.",
+      },
+      model_rate_limit: {
+        title: "The model provider rate-limited this run",
+        summary:
+          "The model provider rejected a request because a usage limit was reached.",
+      },
+      skill_preparation_timeout: {
+        title: "Skill preparation timed out on the device",
+        summary:
+          "The device could not finish preparing workspace Skills within the time limit.",
+      },
+    },
+    location: {
+      namedDevice: "Execution device: {{device}}",
+      device: "Location: execution device",
+      provider: "Location: model provider",
+      runtime: "Location: agent runtime",
+    },
+    recovery: {
+      inspect_device:
+        "Check the device’s Worker logs and available disk space. After resolving the issue, send “continue” to start another execution; this run will not retry automatically.",
+      free_space:
+        "Free disk space on the execution device and check what is consuming it. Then send “continue” to resume the task; this run will not retry automatically.",
+      wait_for_quota:
+        "Wait for the provider’s quota to recover, or choose another available model or connection, then send “continue”.",
+      check_skills:
+        "Check the device’s disk space and workspace Skill package sizes. Resolve the preparation problem, then send “continue”.",
+      continue_turn: "Send “continue” to continue the task.",
+      inspect_details:
+        "Share this error when reporting the problem, and check the task’s current state before retrying.",
+    },
+    diskObservation:
+      "Before the interruption, this turn reported that the device was out of disk space. This is evidence to investigate, not a confirmed cause of the service exit.",
     title: "Run failed",
     maxTurnsTitle: "This run reached its turn limit",
     turns_one: "{{count}} turn",

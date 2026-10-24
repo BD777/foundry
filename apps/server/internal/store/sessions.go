@@ -20,9 +20,17 @@ type AgentSessionEvent struct {
 	Message   *TranscriptMessage         `json:"message,omitempty"`
 }
 
+// WorkerFailure is a versioned diagnosis; the server preserves it without guessing causes.
+type WorkerFailure struct {
+	Version int    `json:"version"`
+	Code    string `json:"code"`
+	InputID string `json:"inputId,omitempty"`
+}
+
 type AgentSessionEventMetadata struct {
-	NativeAccountError   string `json:"nativeAccountError,omitempty"`
-	NativeAccountInputID string `json:"nativeAccountInputId,omitempty"`
+	WorkerFailure        *WorkerFailure `json:"workerFailure,omitempty"`
+	NativeAccountError   string         `json:"nativeAccountError,omitempty"`
+	NativeAccountInputID string         `json:"nativeAccountInputId,omitempty"`
 	// TaskOutputFile is a Claude background task's own output log. Workers
 	// before it sent that path, and every changed workspace file, as
 	// outputFile; that key is no longer read, so those guesses stay hidden.

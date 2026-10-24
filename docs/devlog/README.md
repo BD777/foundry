@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-23 错误展示：[DEV-039 Worker 错误诊断与恢复建议](DEV-039-worker-failure.md)。统一分类、Worker 上报、事件持久化与中英文展示已验证，dev Server/Web 已部署；Worker 包与本机 daemon 已更新，活动执行宿主保留旧版。旧错误展示已生效，人工验收待确认。
+
 2026-10-23 Skill 启动：[DEV-038 启动准备复用](DEV-038-skill-preparation.md)。代码、自验、dev Server/daemon 与实际执行宿主切换完成；两项既有服务已恢复并核验 running。真实会话13个 Skill 准备69ms、全部复用且零下载/解包；人工验收待确认。
 
 2026-10-23 AWS CLI：[DEV-037 设备连接器](DEV-037-aws-cli-connector.md)。代码与相关检查完成，dev Server/Web 和 Worker daemon 已更新；实际执行宿主因活动工作保留旧版，待空闲切换或获准维护。真实 AWS 账户与人工验收待确认。
