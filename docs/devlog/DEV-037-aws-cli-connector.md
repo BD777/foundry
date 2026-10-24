@@ -40,3 +40,10 @@
 ## 2026-10-24 合入前 review
 
 - 还原 `catalog.json` 中被重新序列化成 `\u` 转义的 Meego 中文标签（语义不变，避免噪音 diff）。其余实现无需修改；合入前全量变更检查通过，随 DEV-036/039/040 一并合入主干。
+
+## 2026-10-24 PR #144 CI 修复
+
+- 现象：CI run 40103179806 / 40103175706 中 `connectors-aws.test.mjs:145` 期望 `ready`，实际 `signed_out`。
+- 原因：测试问题，非产品缺陷。连接器按 node 所在目录 → PATH → Foundry 工具目录查找命令（设备自装优先，符合设计）；GitHub runner 镜像自带无凭据的 `aws`，于是先于测试假 CLI 被执行，正确返回未登录。本机未装 `aws`，所以本地通过。bytedcli 测试有同类隐患（主机装有 bytedcli 时 4 项失败）。
+- 修复：新增 `packages/worker/test/fixtures/host-tools.mjs` 的 `hideHostTools`，在两个连接器测试文件内把 PATH 指向空目录并在结束后恢复；若命令与 node 同目录（无法隐藏）则明确失败。新增“PATH 上的 AWS CLI 优先于 Foundry 工具目录”回归测试，固定产品查找顺序。产品代码未改，无需重新部署。
+- 验证（隔离 runner `scripts/run-worker-tests.mjs`）：两文件 19/19 通过；PATH 上放置返回 “Unable to locate credentials” 的假 `aws` 时，旧测试复现 CI 的 `signed_out`≠`ready`，新测试 19/19 通过；PATH 上放置假 `bytedcli` 时，旧文件 4 项失败，新文件 14/14 通过。

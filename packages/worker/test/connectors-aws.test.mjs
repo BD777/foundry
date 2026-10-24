@@ -11,6 +11,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { awsAdapter, parseAWSIdentity } from "../dist/connectors/aws.js";
 import { DeviceHeldConnectors } from "../dist/connectors/device-held.js";
+import { hideHostTools } from "./fixtures/host-tools.mjs";
+
+hideHostTools(["aws"]);
 
 const descriptor = JSON.parse(
   readFileSync(
@@ -187,4 +190,41 @@ test("AWS device dispatch checks a subprocess, caches state, refuses installatio
     runtime.sessionSetup([{ ...use, access: "none" }]).environment,
     isolated.environment,
   );
+});
+
+test("an AWS CLI on PATH is preferred to Foundry's tool folders", async (t) => {
+  // The device's own install wins, as on the CI image that ships aws.
+  const root = mkdtempSync(join(tmpdir(), "fdy-aws-host-"));
+  t.after(() => rmSync(root, { force: true, recursive: true }));
+  const tool = (folder, body) => {
+    mkdirSync(join(root, folder));
+    writeFileSync(
+      join(root, folder, "aws"),
+      `#!${process.execPath}\nif (process.argv[2] === '--version') console.log('aws-cli/2.38.2 Python/3.13'); else ${body}\n`,
+      { mode: 0o755 },
+    );
+    return join(root, folder);
+  };
+  const host = tool(
+    "host",
+    "{ console.error('Unable to locate credentials'); process.exit(255); }",
+  );
+  const extra = tool("extra", `console.log(${JSON.stringify(ok.stdout)});`);
+  const previous = process.env.PATH;
+  process.env.PATH = host;
+  t.after(() => {
+    process.env.PATH = previous;
+  });
+  const runtime = new DeviceHeldConnectors({
+    adapters: { aws: awsAdapter },
+    managedBin: () => join(root, "managed"),
+    toolDirs: [extra],
+  });
+  const { state } = await runtime.handle({
+    action: "status",
+    connector: descriptor,
+    fresh: true,
+  });
+  assert.equal(state.status, "signed_out");
+  assert.equal(state.installSource, "device");
 });
