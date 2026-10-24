@@ -50,3 +50,9 @@
 ## 2026-10-24 进展
 
 - 代码、自验、dev Server/Web 部署、Worker 发布及本机 daemon 更新已完成；代码未提交，人工验收待确认。
+
+## 2026-10-24 PR #144 CI：Foundry Skill 版本号
+
+- AWS 测试修复后（见 DEV-037）CI 继续执行到 Go 测试，`TestFoundrySkillPackageHasARecordedRevision` 失败：本项给 `references/diagnosing.md` 新增了模型服务排障条目，但内置 Foundry Skill 仍为 revision 9，包校验和 `7f6db7f8…` 未登记。
+- 修复：按 `builtinskills.go` 约定（目录变更即升版本，Worker 才会重新拉取）将 claude/codex 两份 Foundry Skill 升到 revision 10，并在测试中登记新校验和。`go test ./internal/builtinskills/` 通过。
+- 影响：已部署的 dev Server 以 revision 9 下发新内容，已缓存 revision 9 的 Worker 不会重新拉取该条目；合入后需重新部署 Server 才会生效（结果见下）。
