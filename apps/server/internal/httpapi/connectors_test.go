@@ -77,6 +77,8 @@ func (w *fakeConnectorWorker) serve() {
 		w.actions = append(w.actions, request.Action)
 		reply := store.ConnectorReplyPayload{}
 		switch {
+		case request.Connector.Kind == "aws" && request.Action == "status":
+			reply.State = &store.DeviceConnectorState{Kind: "aws", Status: store.DeviceConnectorNotInstalled}
 		case request.Connector.Kind != "bytedcli" || request.Connector.Holding != store.ConnectorDeviceHeld:
 			reply.Error = "unexpected connector"
 		case request.Action == "status":
@@ -136,13 +138,16 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	// reminder, and lists only the person's own devices.
 	var view store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK), &view)
-	if len(view.Connectors) != 1 || view.Connectors[0].Kind != "bytedcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
+	if len(view.Connectors) != 2 || view.Connectors[0].Kind != "aws" || view.Connectors[1].Kind != "bytedcli" || view.Connectors[0].Holding != store.ConnectorDeviceHeld {
 		t.Fatalf("connectors = %+v", view.Connectors)
 	}
-	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || !view.Devices[0].Supported || len(view.Devices[0].States) != 1 {
+	if len(view.Devices) != 1 || view.Devices[0].DeviceID != "dev_alice" || !view.Devices[0].Online || !view.Devices[0].Supported || len(view.Devices[0].States) != 2 {
 		t.Fatalf("devices = %+v", view.Devices)
 	}
 	state := view.Devices[0].States[0]
+	if state.Kind != "bytedcli" {
+		state = view.Devices[0].States[1]
+	}
 	if state.Status != store.DeviceConnectorExpiring || state.Identity != "someone" || strings.Join(state.Sites, ",") != "cn" || state.ExpiringSince == "" {
 		t.Fatalf("state = %+v", state)
 	}
@@ -151,8 +156,8 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	}
 	// A second view within the stale window does not ask the device again.
 	call(f.alice, http.MethodGet, "/api/connectors/devices?refresh=1", "", http.StatusOK)
-	if got := worker.count("status"); got != 1 {
-		t.Fatalf("status reads = %d, want 1", got)
+	if got := worker.count("status"); got != 2 {
+		t.Fatalf("status reads = %d, want 2", got)
 	}
 	var bobView store.DeviceConnectorsView
 	_ = json.Unmarshal(call(f.bob, http.MethodGet, "/api/connectors/devices", "", http.StatusOK), &bobView)
@@ -256,7 +261,7 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	bobs := session
 	bobs.CreatedByUserID = f.bobID
 	uses = f.server.hub.sessionConnectors(ctx, bobs, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
-	if len(uses) != 1 || uses[0].Access != "none" || uses[0].IsolationEnv["BYTEDCLI_PROFILE"] == "" {
+	if len(uses) != 2 || uses[0].Kind != "aws" || uses[0].Access != "none" || uses[0].IsolationEnv["AWS_PROFILE"] == "" || uses[1].Access != "none" || uses[1].IsolationEnv["BYTEDCLI_PROFILE"] == "" {
 		t.Fatalf("bob's session on alice's device = %+v", uses)
 	}
 

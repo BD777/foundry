@@ -27,6 +27,8 @@ type SendFailure =
   | "deviceRemoved"
   | "daemonOffline"
   | "deviceBusy"
+  | "workspaceNotServed"
+  | "workspaceFolderMissing"
   | "conflict"
   | "unauthorized"
   | "rateLimited"
@@ -58,6 +60,12 @@ export function chatSendFailureMessage(reason: unknown): string {
       return withRetry("deviceRemoved");
     }
     if (status === 409) {
+      if (bodyIncludes(reason, /no longer serves this folder/i)) {
+        return withRetry("workspaceNotServed");
+      }
+      if (bodyIncludes(reason, /folder .* no longer exists on/i)) {
+        return withRetry("workspaceFolderMissing");
+      }
       if (bodyIncludes(reason, /daemon|not connected|offline/i)) {
         return withRetry("daemonOffline");
       }

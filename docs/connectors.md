@@ -2,7 +2,7 @@
 
 [项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
 
-连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。连接器分两种：**Server 持有型**（目前是飞书：Server 保管外部应用的密钥和个人登录，会话经 Server 的网关调用，设备上不留真实凭据；Agent 用 `feishu-cli`，配合 Workspace 的 `feishu-cli-*` Skill）和**设备持有型**（目前是 bytedcli：登录由 CLI 自己保存在那台设备上，从不离开设备；Foundry 只负责检测、安装与升级、经 Foundry 登录、状态与到期提醒，以及哪些会话可以使用）。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于“模型与账号”）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab：飞书管理应用和账号，bytedcli 按设备列出状态与登录）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的 bytedcli 登录，并显示其他成员的绑定。
+连接器负责 Agent 在会话里以某个人的身份使用的外部服务和它们的命令行工具。连接器分两种：**Server 持有型**（目前是飞书：Server 保管外部应用的密钥和个人登录，会话经 Server 的网关调用，设备上不留真实凭据；Agent 用 `feishu-cli`，配合 Workspace 的 `feishu-cli-*` Skill）和**设备持有型**（bytedcli 与 AWS CLI：登录由 CLI 自己保存在那台设备上，从不离开设备；Foundry 只负责检测、安装与升级、经 Foundry 登录、状态与到期提醒，以及哪些会话可以使用）。它不负责人从飞书找到 Foundry（那是[渠道](channels.md)，渠道的 Bot 运行在这里的一个飞书应用上），也不负责 Claude / Codex 的登录与模型服务（属于“模型与账号”）。在分层图中属于“能力供给”层：依赖“身份与共享”（账号归属、Workspace 角色）和“设备与 Workspace”（设备凭证、设备归属、会话所在设备）；被执行内核（会话启动时下发的连接器）、Agent 能力面（`feishu_events` 工具）和渠道使用。Web 里的位置有两处：全局的 Connectors 页（`/connectors/<kind>`，每种连接器一个 Tab：飞书管理应用和账号，设备持有型按设备列出状态与登录方式）；Workspace 的 Connectors 页（`/workspace/connectors`）选择这个 Workspace 的会话可以使用自己的哪些账号、哪台设备上的 bytedcli 登录，并显示其他成员的绑定。
 
 ## 设计
 
@@ -116,6 +116,12 @@ Worker 为每个会话、每个账号写一份 Foundry 管理的 `feishu-cli` pr
 - 扫码新建应用在真实飞书上的检查：到 2026-10-13 仍列为待本人确认，这次整理没有找到运行记录。
 - 模块重构后（2026-10-15）飞书的既有测试不改断言全部通过，包括用真实 `feishu-cli` 跑的合同测试（只改了被移动文件的路径与会话派发的调用方式）。
 - bytedcli（2026-10-15）：状态与登录输出的形状取自 MacBook 上真实的 bytedcli 0.170.0（经计算租约只读运行 `auth status --json`；一次性 `--profile foundry-test-1` 上的 `--begin`，未完成，用后删除），整理为 `packages/worker/test/fixtures/bytedcli-outputs.json`（姓名与邮箱已替换）；用假 bytedcli 测试 Worker 的状态、登录、拒绝、过期、登出、安装与会话说明（`connectors-device-held.test.mjs`），Server 测试经假 Worker 的整条链路与权限（`httpapi/connectors_test.go`）、目录与资格规则（`connectors/connectors_test.go`），Web 测试 `device-held-connectors.test.mjs`。在 scratch stack 上用假 bytedcli 实测：网络不通的设备显示“不提供”；用只换掉 `/etc/hosts` 的 bwrap 让 Worker 的网络检查通过后，Connectors 页键盘发起登录、二维码与链接、批准后完成，亮色、暗色、窄屏都检查过；Workspace 绑定后真实 Claude 会话的说明里出现 bytedcli 那一行。真实 bytedcli 的完整登录没有经 Foundry 跑过（规定不在本人的默认 profile 上登录）。
+
+## AWS CLI（2026-10-23）
+
+AWS CLI 是设备持有型连接器，入口为 `/connectors/aws`；在 Workspace Connectors 绑定设备后下发会话使用说明。Foundry 检测已有 `aws`，用限时 STS GetCallerIdentity 核验身份，沿用 Worker 原生凭据链；密钥与 SSO 缓存不离开设备。登录、续登、退出和安装在设备终端管理，页面仅提供状态检查；命名 profile 通过 Worker 的 `AWS_PROFILE` 选择。设备所有者未绑定的会话仍沿用既有设备权限语义，其他成员未获授权的会话覆盖 AWS 凭据链环境变量。未沙箱进程可主动绕过环境变量，因此这不是系统安全边界。
+
+目录支持 `tool.source: "device"`（外部安装）和 `authentication: "local"`（终端管理）；适配器为 `packages/worker/src/connectors/aws.ts`。错误输出只映射为固定说明，不回传原始 stderr；网络失败不会当作退出登录。STS 成功不代表拥有业务权限，不推断凭据到期时间。网页 SSO、多个 profile 的单独绑定与托管 AWS 安装尚未实现。验证与部署见 [DEV-037](devlog/DEV-037-aws-cli-connector.md)。
 
 ## 后续
 

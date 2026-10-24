@@ -288,6 +288,10 @@ export const chat: Translation<typeof en> = {
     unavailable: "此 Agent 或模型服务已不可用，请选择其他 Agent 后重试。",
     deviceRemoved: "此设备已从 Foundry 移除，请重新配对设备后再发送。",
     daemonOffline: "本地 daemon 未连接，请重新连接后重试。",
+    workspaceNotServed:
+      "设备已不再提供此工作区。请在工作区页面重新添加该文件夹，然后重试。",
+    workspaceFolderMissing:
+      "设备上的工作区文件夹已不存在。请在工作区页面使用“定位文件夹”，然后重试。",
     deviceBusy: "设备正忙于其他操作，请等待完成后重试。",
     conflict: "发送与设备当前状态冲突，请检查连接后重试。",
     unauthorized: "此 Agent 无权访问该工作区，请选择有权限的 Agent 后重试。",
@@ -346,6 +350,46 @@ export const chat: Translation<typeof en> = {
     backgroundContinuedAt: "后台任务结束后 Claude 继续 · {{when}}",
   },
   failure: {
+    worker: {
+      execution_host_stopped: {
+        title: "执行设备上的任务已中断",
+        summary:
+          "运行任务的服务发生了重启，本次执行已结束。当前错误报告未包含服务退出的具体原因。",
+      },
+      disk_full: {
+        title: "执行设备磁盘空间不足",
+        summary:
+          "执行设备写入数据时报告 ENOSPC（磁盘空间不足），本次运行未能完成。",
+      },
+      model_rate_limit: {
+        title: "模型服务触发用量限制",
+        summary: "模型服务因用量达到限制而拒绝了本次请求。",
+      },
+      skill_preparation_timeout: {
+        title: "设备上的技能准备超时",
+        summary: "执行设备未能在规定时间内完成工作区技能的准备。",
+      },
+    },
+    location: {
+      namedDevice: "执行设备：{{device}}",
+      device: "故障位置：执行设备",
+      provider: "故障位置：模型服务",
+      runtime: "故障位置：Agent 运行时",
+    },
+    recovery: {
+      inspect_device:
+        "请检查该设备的 Worker 日志和剩余磁盘空间。解决问题后发送“继续”，启动下一次执行；本次任务不会自动重试。",
+      free_space:
+        "请释放执行设备的磁盘空间，并排查持续占用空间的来源，再发送“继续”恢复任务；本次任务不会自动重试。",
+      wait_for_quota:
+        "等待模型服务额度恢复，或选择其他可用模型、连接后，再发送“继续”。",
+      check_skills:
+        "请检查执行设备的磁盘空间及工作区技能包大小，解决准备问题后再发送“继续”。",
+      continue_turn: "发送“继续”以继续任务。",
+      inspect_details: "反馈问题时请附上这条错误；重试前先核对任务的当前状态。",
+    },
+    diskObservation:
+      "本轮中断前曾报告设备磁盘空间不足。这是排查线索，尚不能确认它就是服务退出的原因。",
     title: "执行失败",
     maxTurnsTitle: "本轮已达到执行上限",
     turns_one: "{{count}} 个 turn",

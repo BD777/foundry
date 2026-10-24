@@ -37,7 +37,7 @@ var (
 )
 
 // ParseCatalog reads and checks a catalog: kinds unique and well formed, a
-// known holding, a tool command, a device-held connector installable from
+// known holding, a tool command, a device-held connector installed locally or from
 // npm, requirements a worker can check, isolation a plain variable.
 func ParseCatalog(data []byte) (*Catalog, error) {
 	var descriptors []store.ConnectorDescriptor
@@ -75,11 +75,23 @@ func checkDescriptor(descriptor store.ConnectorDescriptor) error {
 			return fmt.Errorf("a server-held connector declares no device requirement or isolation")
 		}
 	case store.ConnectorDeviceHeld:
-		if descriptor.Tool.Source != "npm" || descriptor.Tool.Package == "" || descriptor.Tool.Registry == "" {
-			return fmt.Errorf("a device-held connector installs from npm and names its registry")
+		switch descriptor.Tool.Source {
+		case "npm":
+			if descriptor.Tool.Package == "" || descriptor.Tool.Registry == "" {
+				return fmt.Errorf("an npm connector names its package and registry")
+			}
+		case "device":
+			if descriptor.Tool.Package != "" || descriptor.Tool.Registry != "" {
+				return fmt.Errorf("a device-installed tool declares no npm package or registry")
+			}
+		default:
+			return fmt.Errorf("a device-held connector installs from npm or the device")
 		}
 	default:
 		return fmt.Errorf("holding must be %s or %s", store.ConnectorServerHeld, store.ConnectorDeviceHeld)
+	}
+	if descriptor.Authentication != "" && (descriptor.Authentication != "local" || descriptor.Holding != store.ConnectorDeviceHeld) {
+		return fmt.Errorf("local authentication is only supported for device-held connectors")
 	}
 	for _, requirement := range descriptor.Requires {
 		if requirement.Kind != "tcp_reachable" || requirement.Label == "" || requirement.Port <= 0 || requirement.Port > 65535 {

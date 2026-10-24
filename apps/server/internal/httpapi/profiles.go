@@ -45,9 +45,11 @@ func deviceLocalConnectionType(connectionType string) bool {
 	}
 }
 
-// normalizeProfileInput trims the input in place and returns the first
-// validation failure as a message, or "" when the input is usable.
-func normalizeProfileInput(input *store.SaveProfileInput) string {
+// normalizeProfileInput trims the input in place, puts its base URL in the
+// runtime's form (provider_endpoint.go) and returns the first validation
+// failure as a message, or "" when the input is usable. addMissingVersion
+// gives a bare Codex host /v1; a promotion keeps the endpoint its device runs.
+func normalizeProfileInput(input *store.SaveProfileInput, addMissingVersion bool) string {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Runtime = strings.TrimSpace(input.Runtime)
 	input.Label = strings.TrimSpace(input.Label)
@@ -79,9 +81,11 @@ func normalizeProfileInput(input *store.SaveProfileInput) string {
 	if message := normalizeContextWindows(input); message != "" {
 		return message
 	}
-	if input.BaseURL == "" {
-		return "baseUrl is required for custom profiles"
+	baseURL, _, code := normalizeProviderBaseURL(input.Runtime, input.BaseURL, addMissingVersion)
+	if code != "" {
+		return endpointErrorMessages[code]
 	}
+	input.BaseURL = baseURL
 	return ""
 }
 
@@ -209,7 +213,7 @@ func (s *Server) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request, input store.SaveProfileInput, status int) {
 	credential := strings.TrimSpace(input.APIKey)
 	input.APIKey = ""
-	if message := normalizeProfileInput(&input); message != "" {
+	if message := normalizeProfileInput(&input, true); message != "" {
 		writeError(w, http.StatusBadRequest, message)
 		return
 	}
@@ -330,7 +334,7 @@ func (s *Server) handlePromoteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	saveInput.OwnerUserID = actorFromContext(ctx).AccountID()
-	if message := normalizeProfileInput(&saveInput); message != "" {
+	if message := normalizeProfileInput(&saveInput, false); message != "" {
 		writeError(w, http.StatusBadRequest, message)
 		return
 	}
@@ -800,7 +804,7 @@ func (h *DaemonHub) endpointTwinProfile(
 		}
 		if profile.Runtime != local.Runtime ||
 			profile.ConnectionType != local.ConnectionType ||
-			profile.BaseURL != local.BaseURL ||
+			!sameProviderEndpoint(profile.Runtime, profile.BaseURL, local.BaseURL) ||
 			deviceLocalConnectionType(profile.ConnectionType) {
 			continue
 		}
@@ -1016,7 +1020,7 @@ func markPromotedDeviceProfile(rows []store.AgentProfileProjection, deviceID str
 		}
 		sameEndpoint := row.Runtime == profile.Runtime &&
 			row.BaseURL != "" &&
-			row.BaseURL == profile.BaseURL
+			sameProviderEndpoint(profile.Runtime, row.BaseURL, profile.BaseURL)
 		promotedFrom := profile.PromotedFrom != nil &&
 			profile.PromotedFrom.DeviceID == deviceID &&
 			profile.PromotedFrom.ProfileID == row.ID

@@ -51,7 +51,7 @@ export const externalAccounts: Translation<typeof en> = {
   page: {
     title: "连接器",
     intro:
-      "会话以你的身份使用的外部服务。每个标签页说明登录保存在哪里：飞书的在服务器上，bytedcli 的在你的每台设备上。只有绑定了它的工作区里的会话才会使用。",
+      "会话以你的身份使用的外部服务。每个标签页说明凭据保存在哪里以及如何连接。工作区绑定决定向会话提供哪些连接。",
     tabs: "连接器类型",
     loading: "正在加载飞书账号…",
     loadFailed: "无法加载飞书账号：{{error}}",
@@ -66,6 +66,7 @@ export const externalAccounts: Translation<typeof en> = {
     workspaces_other: "已绑定 {{count}} 个工作区",
   },
   providers: {
+    aws: "AWS CLI",
     cloudflare: "Cloudflare",
     feishu: "飞书",
     bytedcli: "bytedcli",
@@ -249,8 +250,12 @@ export const externalAccounts: Translation<typeof en> = {
     error: "无法读取",
   },
   deviceHeld: {
+    setup: {
+      aws: "请在设备上通过 AWS 官方安装程序安装 AWS CLI，并在终端配置凭据（SSO：先 aws configure sso，再 aws sso login），随后点击“重新检查”。命名 profile 需通过 Worker 环境中的 AWS_PROFILE 选择。登录和退出均在设备终端管理；在工作区 → 连接器中绑定设备后，会话即可使用。",
+    },
     offlineUnknown: "设备离线",
     intro: {
+      aws: "AWS CLI 使用设备原生凭据链（AWS_PROFILE 或 default、环境变量凭据、SSO 或设备角色）。Foundry 通过 STS 核验当前身份，凭据留在设备上；核验成功不代表拥有其他 AWS 服务的权限。",
       bytedcli:
         "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。在这里为你的设备登录；工作区再选择会话使用哪台设备的登录。",
       default:
@@ -346,6 +351,8 @@ export const externalAccounts: Translation<typeof en> = {
     failed: "登录未完成：{{error}}",
   },
   workspace: {
+    localAuthentication:
+      "请在设备终端配置或续登 {{name}}，随后重新检查。“管理连接器”中提供配置说明。",
     appUnavailable: "此账号的应用不可用，请在“管理连接器”中处理。",
     executionDevice: "执行设备",
     executionHint: "此设置仅适用于在所选设备上执行的会话。",
@@ -370,7 +377,7 @@ export const externalAccounts: Translation<typeof en> = {
     useDevice: "{{device}} 上的会话使用它的 {{name}} 登录",
     members: "其他成员在 {{device}} 上发起的会话也可以使用",
     membersHint:
-      "他们会以你的身份访问字节跳动的服务。除非你确实要借出登录，否则不要开启。",
+      "他们会使用你在此服务中的身份和权限。除非你确实要借出登录，否则不要开启。",
     noDevices: "你的设备上还没有 {{name}}。请在“管理连接器”中设置。",
     devicesLoadFailed: "无法加载设备的登录：{{error}}",
     deviceBound: "此工作区在 {{device}} 上的会话将使用它的 {{name}} 登录。",

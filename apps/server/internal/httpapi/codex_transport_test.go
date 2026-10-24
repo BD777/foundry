@@ -87,15 +87,15 @@ func TestCodexTransportLearnedFromTheSessionThatRanIt(t *testing.T) {
 
 func TestProfileCodexTransportChoice(t *testing.T) {
 	input := store.SaveProfileInput{Runtime: "codex", Label: "G", AuthMode: "custom", BaseURL: "https://g/v1"}
-	if message := normalizeProfileInput(&input); message != "" || input.CodexTransport != store.CodexTransportAuto {
+	if message := normalizeProfileInput(&input, true); message != "" || input.CodexTransport != store.CodexTransportAuto {
 		t.Fatalf("empty is auto on a compatible Codex endpoint: %q %q", message, input.CodexTransport)
 	}
 	input.CodexTransport = "carrier-pigeon"
-	if message := normalizeProfileInput(&input); message == "" {
+	if message := normalizeProfileInput(&input, true); message == "" {
 		t.Fatal("an unknown transport was accepted")
 	}
 	claude := store.SaveProfileInput{Runtime: "claude", Label: "C", AuthMode: "custom", BaseURL: "https://c", CodexTransport: "https"}
-	if message := normalizeProfileInput(&claude); message != "" || claude.CodexTransport != "" {
+	if message := normalizeProfileInput(&claude, true); message != "" || claude.CodexTransport != "" {
 		t.Fatalf("a Claude profile keeps no Codex transport: %q %q", message, claude.CodexTransport)
 	}
 }

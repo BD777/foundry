@@ -15,6 +15,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   daemonMessageTypes,
+  executionHostStoppedError,
   type RunSessionPayload,
 } from "@bd777/foundry-protocol";
 import {
@@ -60,6 +61,8 @@ import {
 } from "../session-work/supervisor.js";
 import { executionHostPaths } from "./paths.js";
 import { prepareExecutionSocket, runtimeStamp } from "./service.js";
+
+import { reportWorkerFailure } from "../worker-failure.js";
 
 interface Claim {
   sessionId: string;
@@ -118,12 +121,14 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   await superviseAgentProcesses();
   for (const claim of Object.values(claims))
     if (claim.status === "active") {
-      transport.send(daemonMessageTypes.sessionCompleted, {
-        sessionId: claim.sessionId,
-        inputId: claim.inputId,
-        error:
-          "The execution host stopped. Its previous execution processes were stopped; retry explicitly to start a new execution.",
-      });
+      reportWorkerFailure(
+        transport,
+        {
+          id: claim.sessionId,
+          input: { id: claim.inputId },
+        },
+        executionHostStoppedError,
+      );
       claim.status = "completed";
     }
   persistClaims();
@@ -356,14 +361,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
                           payload,
                         );
                     } catch (error) {
-                      transport.send(daemonMessageTypes.sessionCompleted, {
-                        sessionId: session.id,
-                        inputId,
-                        error:
-                          error instanceof Error
-                            ? error.message
-                            : String(error),
-                      });
+                      reportWorkerFailure(transport, session, error);
                     } finally {
                       claims[key]!.status = "completed";
                       persistClaims();

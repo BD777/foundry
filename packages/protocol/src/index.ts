@@ -42,6 +42,7 @@ export * from "./personal-agent-list.js";
 export * from "./personal-agent-inbox.js";
 export * from "./personal-agent-runtime.js";
 export * from "./profiles.js";
+export * from "./provider-endpoint.js";
 export * from "./session.js";
 export * from "./session-work.js";
 export * from "./work-schedule.js";
@@ -60,3 +61,5 @@ export * from "./knowledge-vault.js";
 export * from "./personal-agent-maintenance.js";
 
 export * from "./service-tunnels.js";
+
+export * from "./worker-failure.js";

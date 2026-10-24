@@ -18,19 +18,27 @@ func (s *Server) handleListAgentProfiles(w http.ResponseWriter, r *http.Request)
 		// A session token only ever sees its own device's profiles.
 		deviceID = actor.Identity.DeviceID
 	}
+	items, err := s.deviceAgentProfiles(ctx, actor, deviceID)
+	writeResult(w, items, err)
+}
+
+// deviceAgentProfiles are the profiles a device runs, as the caller sees
+// them: what the device reported, and the model services set up in Foundry
+// that the caller owns and assigned to it (origin "server", with their base
+// URL; never a key). "" lists every device the caller sees.
+func (s *Server) deviceAgentProfiles(ctx context.Context, actor Actor, deviceID string) ([]store.AgentProfileProjection, error) {
 	view, err := s.visibilityFor(ctx, actor)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return nil, err
 	}
 	items, err := s.store.ListAgentProfiles(ctx, deviceID)
 	if err != nil {
-		writeResult(w, nil, err)
-		return
+		return nil, err
 	}
 	items = filterByDevice(view, s.overlayServerCredential(ctx, items),
 		func(item store.AgentProfileProjection) string { return item.DeviceID })
 
+	// The device's own rows still answer when the server's cannot be read.
 	devices, err := s.store.ListDevices(ctx)
 	if err == nil {
 		profiles, err := s.store.ListProfiles(ctx)
@@ -44,7 +52,7 @@ func (s *Server) handleListAgentProfiles(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-	writeResult(w, items, nil)
+	return items, nil
 }
 
 func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +79,14 @@ func (s *Server) handleCreateAgentProfile(w http.ResponseWriter, r *http.Request
 	if strings.TrimSpace(input.Runtime) == "" || strings.TrimSpace(input.Label) == "" {
 		writeError(w, http.StatusBadRequest, "runtime and label are required")
 		return
+	}
+	if strings.TrimSpace(input.BaseURL) != "" && !deviceLocalConnectionType(input.ConnectionType) {
+		baseURL, _, code := normalizeProviderBaseURL(strings.TrimSpace(input.Runtime), input.BaseURL, true)
+		if code != "" {
+			writeError(w, http.StatusBadRequest, endpointErrorMessages[code])
+			return
+		}
+		input.BaseURL = baseURL
 	}
 	// Never fall back to "any connected daemon": the profile is written on
 	// the named device, which the caller must own.

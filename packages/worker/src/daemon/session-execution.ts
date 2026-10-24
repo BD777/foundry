@@ -55,7 +55,7 @@ import {
 } from "../skill-materializer.js";
 import type { ReliableSessionTransport } from "../transport.js";
 import { verificationExecution } from "../verification-session.js";
-import { errorMessage } from "../utils.js";
+import { reportWorkerFailure } from "../worker-failure.js";
 
 /** Where a dispatched session runs and keeps its state. */
 export interface SessionExecution {
@@ -403,13 +403,8 @@ export async function executeAgentSession(
       await emit("Session canceled", "Canceled by user.", "warning");
       return;
     }
-    const message = errorMessage(error);
-    await emit("Session failed", message, "error");
-    transport.send(daemonMessageTypes.sessionCompleted, {
-      sessionId: session.id,
-      inputId: session.input?.id,
-      error: message,
-    });
+    flushPendingResponse();
+    reportWorkerFailure(transport, session, error);
   } finally {
     flushPendingResponse();
     unregisterAmbient();

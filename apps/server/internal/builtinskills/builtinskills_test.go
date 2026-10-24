@@ -12,10 +12,11 @@ import (
 // bundled file changes, not just SKILL.md, for both native runtimes.
 func TestFoundrySkillPackageHasARecordedRevision(t *testing.T) {
 	revisions := map[int]string{
-		9: "a7b7aa0c4b78df946c2c33834b7e7789443b65b89b5490b57b2852b04575ba19",
-		8: "0e377373c1133ad32346039809a1969fa532dc11a8ece400d33060daed7cb43e",
-		7: "c2751ade1b3f42c8006dfd355e080c374ab5fba0ac1976c728a8810a87981f97",
-		6: "4d8b1ae40dd7c7531e860e513a1d53cf535ffb0052815e10d5772f992366858f",
+		10: "7f6db7f886625443a44a69255370fd6cc3e95395232dc518c0f330adeded3a8f",
+		9:  "a7b7aa0c4b78df946c2c33834b7e7789443b65b89b5490b57b2852b04575ba19",
+		8:  "0e377373c1133ad32346039809a1969fa532dc11a8ece400d33060daed7cb43e",
+		7:  "c2751ade1b3f42c8006dfd355e080c374ab5fba0ac1976c728a8810a87981f97",
+		6:  "4d8b1ae40dd7c7531e860e513a1d53cf535ffb0052815e10d5772f992366858f",
 	}
 	claude, _ := Lookup("builtin-claude-foundry")
 	codex, _ := Lookup("builtin-codex-foundry")

@@ -100,6 +100,9 @@ export interface DeviceHeldAdapter {
     continuation: unknown,
   ): Promise<SignInStep>;
 
+  /** Native credential-chain isolation, applied even when the CLI is absent. */
+  isolationEnvironment?(): NodeJS.ProcessEnv;
+
   /** The session-notes line for a session given the connector. */
   sessionNote(
     use: DeviceConnectorUse,
@@ -772,6 +775,7 @@ export class DeviceHeldConnectors {
       if (use.access === "none") {
         for (const [name, value] of Object.entries(use.isolationEnv ?? {}))
           if (/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) environment[name] = value;
+        Object.assign(environment, adapter.isolationEnvironment?.());
       } else if (use.access !== "device_login") continue;
       const located = this.locate(use.command);
       if (!located) continue;

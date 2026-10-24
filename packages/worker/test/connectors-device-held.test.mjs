@@ -27,8 +27,10 @@ import {
   auditWorker,
   workerModules,
 } from "../../../scripts/audit-module-boundaries.mjs";
+import { hideHostTools } from "./fixtures/host-tools.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+hideHostTools(["bytedcli"]);
 const outputs = JSON.parse(
   readFileSync(join(here, "fixtures", "bytedcli-outputs.json"), "utf8"),
 );

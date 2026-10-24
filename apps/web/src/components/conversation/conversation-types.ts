@@ -196,6 +196,7 @@ export interface ChatMessageItem {
   processItems?: ProcessDisplayItem[];
   onTurnIntoIssue?: () => void;
   recoverable?: boolean;
+  failureDiagnostic?: FailureDiagnostic;
   role: "user" | "bot";
   runtime?: Exclude<RuntimeKind, "mock">;
   statusLabel?: ReactNode;
@@ -226,4 +227,14 @@ export interface StepUsage {
   inputTokens: number;
   cacheReadTokens: number;
   outputTokens: number;
+}
+
+/** Localized failure presentation; no classification rules in the renderer. */
+export interface FailureDiagnostic {
+  /** Where it failed; absent when the error does not say. */
+  location?: string;
+  guidance: string;
+  observation?: string;
+  /** The original error when the message replaces it; else the row's own. */
+  details?: string;
 }

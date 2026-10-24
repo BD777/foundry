@@ -305,8 +305,8 @@
   },
   {
     "name": "list_profiles",
-    "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: the calling session's device by default, or another device hosting a workspace you reach (see list_workspaces). A profile belongs to its device.",
-    "summary": "Lists the agent profiles (runtime, model, status) a session can start with on one device.",
+    "description": "List the agent profiles you can dispatch to (id, runtime, model, status) on one device: the calling session's device by default, or another device hosting a workspace you reach (see list_workspaces). They are the device's own logins and endpoints (origin device) and the model services your person set up in Foundry and assigned to it (origin server). A compatible endpoint shows its baseUrl, models and whether a key is stored (serverCredential), never the key. Use it to diagnose a session's provider: its summary names the profile. A profile belongs to its device.",
+    "summary": "Lists the agent profiles and assigned model services (runtime, endpoint, models, status) on one device.",
     "limits": [
       "The calling session's device, or another device hosting a workspace the agent reaches."
     ],

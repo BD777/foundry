@@ -191,6 +191,15 @@ export function DeviceHeldConnector({
           {checking ? t("deviceHeld.checking") : t("deviceHeld.checkAll")}
         </Button>
       </div>
+      {connector.authentication === "local" ? (
+        <p className="fdy-xacc-muted">
+          {t(`deviceHeld.setup.${kind}`, {
+            defaultValue: t("workspace.localAuthentication", {
+              name: connector.label,
+            }),
+          })}
+        </p>
+      ) : null}
       {reminders.map((device) => {
         const state = stateOf(device, kind)!;
         return (
@@ -209,7 +218,11 @@ export function DeviceHeldConnector({
             tone="warning"
           >
             <Button
-              disabled={!device.online || !device.supported}
+              disabled={
+                !device.online ||
+                !device.supported ||
+                connector.authentication === "local"
+              }
               onClick={() => signIn(device)}
               size="sm"
               variant="primary"
@@ -368,7 +381,7 @@ function DeviceRow({
           },
         ]
       : []),
-    ...(reachable && upgrade
+    ...(reachable && connector.tool.source === "npm" && upgrade
       ? [
           {
             key: "upgrade",
@@ -377,7 +390,7 @@ function DeviceRow({
           },
         ]
       : []),
-    ...(reachable && state?.signedIn
+    ...(reachable && connector.authentication !== "local" && state?.signedIn
       ? [
           {
             key: "sign-out",
@@ -396,10 +409,12 @@ function DeviceRow({
       : []),
   ];
   const primary =
-    !reachable || !state
+    !reachable || !state || connector.authentication === "local"
       ? undefined
       : status === "not_installed"
-        ? { label: t("deviceHeld.install"), run: onInstall }
+        ? connector.tool.source === "npm"
+          ? { label: t("deviceHeld.install"), run: onInstall }
+          : undefined
         : status === "signed_out" || status === "expired"
           ? { label: t("deviceHeld.signIn"), run: onSignIn }
           : status === "expiring"

@@ -1,0 +1,173 @@
+[
+  {
+    "name": "claude: the reported case, a /v1 base",
+    "runtime": "claude",
+    "input": "https://astergate.cc/v1",
+    "baseUrl": "https://astergate.cc",
+    "corrections": ["version_removed"]
+  },
+  {
+    "name": "claude: already right",
+    "runtime": "claude",
+    "input": "https://astergate.cc",
+    "baseUrl": "https://astergate.cc",
+    "corrections": []
+  },
+  {
+    "name": "claude: trailing slashes are cosmetic",
+    "runtime": "claude",
+    "input": "  https://astergate.cc/v1/// ",
+    "baseUrl": "https://astergate.cc",
+    "corrections": ["version_removed"]
+  },
+  {
+    "name": "claude: the full messages endpoint",
+    "runtime": "claude",
+    "input": "https://api.example.com/v1/messages",
+    "baseUrl": "https://api.example.com",
+    "corrections": ["endpoint_path_removed", "version_removed"]
+  },
+  {
+    "name": "claude: the models endpoint",
+    "runtime": "claude",
+    "input": "https://api.example.com/V1/Models",
+    "baseUrl": "https://api.example.com",
+    "corrections": ["endpoint_path_removed", "version_removed"]
+  },
+  {
+    "name": "claude: a gateway mounted under a path keeps it",
+    "runtime": "claude",
+    "input": "https://open.example.cn/api/anthropic",
+    "baseUrl": "https://open.example.cn/api/anthropic",
+    "corrections": []
+  },
+  {
+    "name": "claude: a mounted gateway with /v1",
+    "runtime": "claude",
+    "input": "https://openrouter.example/api/v1",
+    "baseUrl": "https://openrouter.example/api",
+    "corrections": ["version_removed"]
+  },
+  {
+    "name": "claude: no scheme",
+    "runtime": "claude",
+    "input": "astergate.cc/v1",
+    "baseUrl": "https://astergate.cc",
+    "corrections": ["scheme_added", "version_removed"]
+  },
+  {
+    "name": "claude: loopback without scheme is http",
+    "runtime": "claude",
+    "input": "localhost:4000",
+    "baseUrl": "http://localhost:4000",
+    "corrections": ["scheme_added"]
+  },
+  {
+    "name": "claude: scheme case is normalized, host case kept",
+    "runtime": "claude",
+    "input": "HTTPS://Gateway.Example.com",
+    "baseUrl": "https://Gateway.Example.com",
+    "corrections": []
+  },
+  {
+    "name": "claude: /v1 inside the path stays",
+    "runtime": "claude",
+    "input": "https://example.com/v1/proxy",
+    "baseUrl": "https://example.com/v1/proxy",
+    "corrections": []
+  },
+  {
+    "name": "codex: already right",
+    "runtime": "codex",
+    "input": "https://api.example.com/v1",
+    "baseUrl": "https://api.example.com/v1",
+    "corrections": []
+  },
+  {
+    "name": "codex: a bare host gets /v1",
+    "runtime": "codex",
+    "input": "https://api.example.com/",
+    "baseUrl": "https://api.example.com/v1",
+    "corrections": ["version_added"]
+  },
+  {
+    "name": "codex: a bare host is left alone when repairing",
+    "runtime": "codex",
+    "input": "https://api.example.com",
+    "addMissingVersion": false,
+    "baseUrl": "https://api.example.com",
+    "corrections": []
+  },
+  {
+    "name": "codex: the responses endpoint",
+    "runtime": "codex",
+    "input": "https://api.example.com/v1/responses",
+    "baseUrl": "https://api.example.com/v1",
+    "corrections": ["endpoint_path_removed"]
+  },
+  {
+    "name": "codex: the chat completions endpoint",
+    "runtime": "codex",
+    "input": "https://api.example.com/v1/chat/completions",
+    "baseUrl": "https://api.example.com/v1",
+    "corrections": ["endpoint_path_removed"]
+  },
+  {
+    "name": "codex: a host typed with its request path names its base",
+    "runtime": "codex",
+    "input": "https://api.example.com/responses",
+    "baseUrl": "https://api.example.com",
+    "corrections": ["endpoint_path_removed"]
+  },
+  {
+    "name": "codex: another version is kept",
+    "runtime": "codex",
+    "input": "https://ark.example.com/api/v3",
+    "baseUrl": "https://ark.example.com/api/v3",
+    "corrections": []
+  },
+  {
+    "name": "codex: loopback bare host",
+    "runtime": "codex",
+    "input": "127.0.0.1:11434",
+    "baseUrl": "http://127.0.0.1:11434/v1",
+    "corrections": ["scheme_added", "version_added"]
+  },
+  { "name": "empty", "runtime": "claude", "input": "   ", "error": "empty" },
+  {
+    "name": "whitespace inside",
+    "runtime": "claude",
+    "input": "https://exa mple.com",
+    "error": "invalid_url"
+  },
+  {
+    "name": "no host",
+    "runtime": "codex",
+    "input": "https:///v1",
+    "error": "invalid_url"
+  },
+  {
+    "name": "unsupported scheme",
+    "runtime": "codex",
+    "input": "ftp://example.com",
+    "error": "unsupported_scheme"
+  },
+  {
+    "name": "credentials in the URL",
+    "runtime": "claude",
+    "input": "https://user:sk-secret@example.com",
+    "error": "credentials_in_url"
+  },
+  {
+    "name": "query string",
+    "runtime": "codex",
+    "input": "https://example.com/v1?api-version=1",
+    "error": "query_or_fragment"
+  },
+  {
+    "name": "fragment",
+    "runtime": "claude",
+    "input": "https://example.com/#docs",
+    "error": "query_or_fragment"
+  }
+]

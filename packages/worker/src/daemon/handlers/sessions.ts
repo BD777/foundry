@@ -1,4 +1,5 @@
 import { executionHostClient } from "../../execution-host/client.js";
+import { reportWorkerFailure } from "../../worker-failure.js";
 import {
   daemonMessageTypes,
   type ProtocolEnvelope,
@@ -294,12 +295,7 @@ function scheduleAgentSession(
           payload,
         );
       } catch (error) {
-        const message = errorMessage(error);
-        ctx.sessionTransport.send(daemonMessageTypes.sessionCompleted, {
-          sessionId: payload.session.id,
-          inputId: payload.session.input?.id,
-          error: message,
-        });
+        reportWorkerFailure(ctx.sessionTransport, payload.session, error);
       } finally {
         ctx.sessionExecutions.complete(payload.session.id, inputId);
         if (ctx.once) {

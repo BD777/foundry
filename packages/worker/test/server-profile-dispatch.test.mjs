@@ -61,8 +61,39 @@ test("a dispatched definition runs on its own endpoint with no local row", () =>
   // the key can only ever reach the profile's own base URL.
   const env = profileRuntimeEnvironment(profile);
   assert.equal(env.ANTHROPIC_AUTH_TOKEN, "server-key");
-  assert.equal(env.ANTHROPIC_BASE_URL, definition.baseUrl);
+  // Saved before the server corrected it: Claude Code appends /v1/messages
+  // itself, so the run calls the base without /v1.
+  assert.equal(env.ANTHROPIC_BASE_URL, "https://relay.example");
   assert.equal(env.ANTHROPIC_MODEL, definition.model);
+});
+
+test("a run repairs an endpoint saved in the wrong form and keeps a working one", () => {
+  const run = (runtime, baseUrl) =>
+    profileRuntimeEnvironment({
+      id: "prof_endpoint",
+      runtime,
+      label: "Endpoint",
+      connectionType:
+        runtime === "claude" ? "anthropic_compatible" : "openai_compatible",
+      baseUrl,
+    });
+  assert.equal(
+    run("claude", "https://astergate.cc/v1/messages").ANTHROPIC_BASE_URL,
+    "https://astergate.cc",
+  );
+  assert.equal(
+    run("claude", "https://gateway.example/api/anthropic").ANTHROPIC_BASE_URL,
+    "https://gateway.example/api/anthropic",
+  );
+  assert.equal(
+    run("codex", "https://relay.example/v1/responses").OPENAI_BASE_URL,
+    "https://relay.example/v1",
+  );
+  // A bare Codex host saved before may answer without a version.
+  assert.equal(
+    run("codex", "https://relay.example").OPENAI_BASE_URL,
+    "https://relay.example",
+  );
 });
 
 test("an unresolvable profile id fails instead of falling back to local login", () => {

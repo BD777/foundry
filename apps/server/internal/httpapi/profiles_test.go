@@ -139,6 +139,38 @@ func TestProfileWriteValidation(t *testing.T) {
 		}`, http.StatusBadRequest)
 	})
 
+	t.Run("baseUrl is corrected to the runtime's form", func(t *testing.T) {
+		server := NewServer(newSecretTestStore(t))
+		for _, tc := range []struct{ runtime, input, want string }{
+			{"claude", "https://astergate.cc/v1", "https://astergate.cc"},
+			{"claude", "api.example.com/v1/messages", "https://api.example.com"},
+			{"codex", "https://api.example.com/v1/responses", "https://api.example.com/v1"},
+			{"codex", "https://api.example.com", "https://api.example.com/v1"},
+		} {
+			profile := decodeProfileForTest(t, requestForTest(t, server, http.MethodPost, "/api/profiles",
+				`{"runtime":"`+tc.runtime+`","label":"Relay","baseUrl":"`+tc.input+`"}`, http.StatusCreated))
+			if profile.BaseURL != tc.want {
+				t.Fatalf("%s %s saved as %q, want %q", tc.runtime, tc.input, profile.BaseURL, tc.want)
+			}
+		}
+	})
+
+	t.Run("an unusable baseUrl is refused with the reason", func(t *testing.T) {
+		server := NewServer(newSecretTestStore(t))
+		for input, reason := range map[string]string{
+			"ftp://relay.internal":               "must start with https://",
+			"https://user:sk-1@relay.internal":   "must not carry credentials",
+			"https://relay.internal/v1?key=sk-1": "must not carry a query string",
+			"https://relay internal":             "must be a URL",
+		} {
+			response := requestForTest(t, server, http.MethodPost, "/api/profiles",
+				`{"runtime":"claude","label":"Relay","baseUrl":"`+input+`"}`, http.StatusBadRequest)
+			if !strings.Contains(response.Body.String(), reason) {
+				t.Fatalf("%s refused with %s, want %q", input, response.Body.String(), reason)
+			}
+		}
+	})
+
 	t.Run("label and runtime are required", func(t *testing.T) {
 		server := NewServer(newSecretTestStore(t))
 		requestForTest(t, server, http.MethodPost, "/api/profiles", `{
@@ -313,7 +345,8 @@ func TestPromoteProfileAdoptsSealedCredential(t *testing.T) {
 	if !promoted.HasCredential {
 		t.Fatal("promoted profile lost its credential")
 	}
-	if promoted.BaseURL != "https://relay.internal/v1" || promoted.Model != "claude-sonnet" {
+	// The device's Claude base ended in /v1, which Claude Code appends itself.
+	if promoted.BaseURL != "https://relay.internal" || promoted.Model != "claude-sonnet" {
 		t.Fatalf("promoted profile = %+v", promoted)
 	}
 

@@ -27,8 +27,8 @@ export interface ConnectorRequirement {
 /** The program a connector's sessions use and how Foundry installs it. */
 export interface ConnectorTool {
   command: string;
-  /** "npm": an npm package through the managed-tools path. */
-  source?: "npm";
+  /** "device": installed outside Foundry; "npm": a managed package. */
+  source?: "npm" | "device";
   package?: string;
   /** Where the package comes from; "device" is the device's own npm settings. */
   registry?: string;
@@ -66,6 +66,8 @@ export interface ConnectorDescriptor {
   /** The code adapter that handles this connector's quirks. */
   adapter: string;
   tool: ConnectorTool;
+  /** Local authentication is managed in the device terminal, not by Foundry. */
+  authentication?: "local";
   requires?: ConnectorRequirement[];
   /** A device-held login this close to its expiry is "expiring". */
   expiryReminderDays?: number;

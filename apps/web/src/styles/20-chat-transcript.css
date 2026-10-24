@@ -727,3 +727,9 @@
   line-height: 1.45;
   text-align: center;
 }
+
+/* Failure explanations separate location, observation and next action. */
+.fdy-chat-failure-copy {
+  display: grid;
+  gap: 8px;
+}

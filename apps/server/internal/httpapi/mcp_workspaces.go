@@ -165,7 +165,7 @@ func mcpDeviceID(actor Actor, args map[string]json.RawMessage) string {
 }
 
 func (s *Server) listProfilesForMCP(call mcpCall) (string, error) {
-	profiles, err := s.store.ListAgentProfiles(call.r.Context(), mcpDeviceID(call.actor, call.args))
+	profiles, err := s.deviceAgentProfiles(call.r.Context(), call.actor, mcpDeviceID(call.actor, call.args))
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +182,7 @@ func (s *Server) listProfilesForMCP(call mcpCall) (string, error) {
 }
 
 func (s *Server) listModelsForMCP(call mcpCall) (string, error) {
-	profiles, err := s.store.ListAgentProfiles(call.r.Context(), mcpDeviceID(call.actor, call.args))
+	profiles, err := s.deviceAgentProfiles(call.r.Context(), call.actor, mcpDeviceID(call.actor, call.args))
 	if err != nil {
 		return "", err
 	}
