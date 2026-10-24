@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import test, { after } from "node:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
+const diagnosticState = mkdtempSync(join(tmpdir(), "diagnostics-state-"));
+process.env.FOUNDRY_STATE_ROOT = diagnosticState;
+process.env.FOUNDRY_TOOLS_ROOT = join(diagnosticState, "tools");
+after(() => rmSync(diagnosticState, { recursive: true, force: true }));
+
+const {
   dropsCheck,
   missingWorkspaces,
   redactLogLine,
   runDiagnostics,
   runRepair,
-} from "../dist/diagnostics.js";
-import { readRegistry, writeRegistry } from "../dist/workspaces.js";
+} = await import("../dist/diagnostics.js");
+const { readRegistry, writeRegistry } = await import("../dist/workspaces.js");
 
 test("log lines leave the device without secrets", () => {
   const line = redactLogLine(

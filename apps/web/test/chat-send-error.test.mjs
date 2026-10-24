@@ -44,6 +44,26 @@ test("network failure maps to a reachability hint", () => {
   );
 });
 
+test("409 workspace failures explain recovery without exposing server details", () => {
+  const unserved = chatSendFailureMessage(
+    httpError(
+      409,
+      "private-device no longer serves this folder; add it again from the Workspaces page",
+    ),
+  );
+  assert.match(unserved, /Add its folder again/);
+  assert.match(unserved, /kept/);
+  assert.doesNotMatch(unserved, /private-device/);
+  const missing = chatSendFailureMessage(
+    httpError(
+      409,
+      "The folder /private/folder no longer exists on private-device (moved, renamed or deleted).",
+    ),
+  );
+  assert.match(missing, /Locate folder/);
+  assert.doesNotMatch(missing, /private/);
+});
+
 test("500 and arbitrary server text are never surfaced", () => {
   const secret = "500 internal: stack at /srv/secret.ts token=AKIA-PRIVATE";
   const message = chatSendFailureMessage(httpError(500, secret));

@@ -303,6 +303,10 @@ export const chat = {
     deviceRemoved:
       "This device was removed from Foundry. Re-pair the device before sending.",
     daemonOffline: "The local daemon is not connected. Reconnect it and retry.",
+    workspaceNotServed:
+      "The device no longer serves this workspace. Add its folder again from the Workspaces page, then retry.",
+    workspaceFolderMissing:
+      "The workspace folder is missing on the device. Use Locate folder on the Workspaces page, then retry.",
     deviceBusy:
       "The device is busy with another action. Wait for it to finish and retry.",
     conflict:

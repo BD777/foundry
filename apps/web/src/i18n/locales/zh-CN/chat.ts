@@ -288,6 +288,10 @@ export const chat: Translation<typeof en> = {
     unavailable: "此 Agent 或模型服务已不可用，请选择其他 Agent 后重试。",
     deviceRemoved: "此设备已从 Foundry 移除，请重新配对设备后再发送。",
     daemonOffline: "本地 daemon 未连接，请重新连接后重试。",
+    workspaceNotServed:
+      "设备已不再提供此工作区。请在工作区页面重新添加该文件夹，然后重试。",
+    workspaceFolderMissing:
+      "设备上的工作区文件夹已不存在。请在工作区页面使用“定位文件夹”，然后重试。",
     deviceBusy: "设备正忙于其他操作，请等待完成后重试。",
     conflict: "发送与设备当前状态冲突，请检查连接后重试。",
     unauthorized: "此 Agent 无权访问该工作区，请选择有权限的 Agent 后重试。",
