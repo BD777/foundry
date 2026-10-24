@@ -1,6 +1,6 @@
-# Session 间协作（CHAT-01）：Agent 编排与设备侧鉴权
+# Session 间协作：Agent 编排与设备侧鉴权
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md) ·
+[Roadmap](roadmap.md) · [文档索引](README.md) ·
 上游需求：[Chat 体验 · Session 间协作](chat-experience.md#session-collaboration)
 
 状态：P0–P2 已交付（见[实现边界](#实现边界)）。代码权威优先于本文，验收以测试为准。

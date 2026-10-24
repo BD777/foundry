@@ -1,6 +1,6 @@
 # 设备与 Workspace
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 本模块是分层图的基础层，负责两件事：**设备**如何加入并保持连接（配对、Daemon 出站 WebSocket、登录时启动的服务、Worker 的安装与更新），以及 **Workspace** 作为"某台设备上的一个目录"的身份、登记、改名、移除与选择。它不负责账号、角色与共享（[身份与共享](accounts-permissions-design.md)，本模块依赖它：设备凭证属于账号，Workspace 操作按角色授权），也不负责会话如何启动与隔离（[执行内核](execution-kernel.md)）或设备上的资源、模型登录与 Skill（能力供给各模块）。几乎所有上层都依赖它：执行内核经这里的通道派发会话，Resources、Skills、模型与账号按设备上报，Chats 与 Issues 在 Workspace 中工作。
 
@@ -88,7 +88,7 @@
 
 ## 后续
 
-与 [Roadmap](../README.md#roadmap) 一致，本模块下一步只有探索项。设备密钥对认证随[身份与共享](accounts-permissions-design.md)推进，容器隔离随[执行内核](execution-kernel.md)推进。
+状态、依赖与完成标准见 [Roadmap · 设备与 Workspace](roadmap.md#设备与-workspace)；本节只保留设计要点。设备密钥对认证随[身份与共享](accounts-permissions-design.md)推进，容器隔离随[执行内核](execution-kernel.md)推进。
 
 <a id="cloud-workspace"></a>
 

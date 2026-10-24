@@ -1,6 +1,6 @@
 # Issue 对话与状态
 
-[Roadmap](../README.md#roadmap) · [Issue 工作流](issue-workflow.md)
+[Roadmap · Issues](roadmap.md#issues) · [Issue 工作流](issue-workflow.md)
 
 用户以 Issue 作为持续工作单元。没有独立的 Runs 导航，旧 `/runs` 地址落到 Issues 视图；执行记录、原生会话 ID、事件和历史仍在内部保留，用来恢复候选与串联对话。
 

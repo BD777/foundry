@@ -1,8 +1,8 @@
 # Issue 工作流设计
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
-本文说明 Issue 从目标、候选执行到验证、接受与合入的设计。完成状态统一维护在 README 的 Roadmap，已实现边界见下文[实现边界](#实现边界)。设计背景来自已归档的 [0908 Plan](archive/workspace-ai-product-plan-2026-09-08.md) 与后续讨论；Plan 中的状态名、字段、角色和策略草案以本文及对应实现为准。
+本文说明 Issue 从目标、候选执行到验证、接受与合入的设计。待办与状态统一维护在 [Roadmap · Issues](roadmap.md#issues)，已实现边界见下文[实现边界](#实现边界)。设计背景来自已归档的 [0908 Plan](archive/workspace-ai-product-plan-2026-09-08.md) 与后续讨论；Plan 中的状态名、字段、角色和策略草案以本文及对应实现为准。
 
 Issue 引擎（准出条件 → 候选执行 → 证据与验证 → 接受 → 合入）已在主干；Web 的 Issues 入口已于 2026-10-01 重新开放。本文描述目标行为，每节注明已有基础与剩余工作，不是实现完成声明。功能准出以[对话式准出标准](foundry-conversation-release-gate.md)为准。
 
@@ -137,8 +137,8 @@ Workspace Skills 已可用：Skill 由设备扫描或跟随 git 仓库进入服�
 
 ## 后续
 
-Issue 暂停新功能，等真实使用的反馈再定。以下是探索方向，都未排期：
+Issue 暂停新功能，等真实使用的反馈再定。以下探索方向的状态与完成标准见 [Roadmap · Issues](roadmap.md#issues)：
 
 - **CI 结果作为反馈来源**：候选在 CI 上的结果带着来源记录回到 Issue。
 - **同一 Issue 的多个 Agent**：不同步骤交给不同的 Agent 或 Harness，对用户仍是一段对话，见 [Issue Multi-Agent](#issue-multi-agent)。
-- **Workflow 插件化**：准出条件 → 执行 → 验证 → 接受这一套本质上是一种 Workflow。每个人组织工作的方式不同，Foundry 不应把一种流程强加给所有人。设想是先把本体（Workspace、Sandbox、会话、账号与入口）做稳，再把 Workflow 做成插件：Issue 作为内置 Workflow 随产品提供，同时开放扩展接口，例如在侧边栏增加 Tab、定义自己的 Workflow 与视图。无论 Issue 最终是内置插件还是内置功能，它的语义和完成标准都不变。插件接口的形态、权限边界和参考对象尚未调研；出现具体需求前，不建立通用插件框架。
+- **Workflow 插件化**：准出条件 → 执行 → 验证 → 接受这一套本质上是一种 Workflow。每个人组织工作的方式不同，Foundry 不应把一种流程强加给所有人。设想是先把本体（Workspace、Sandbox、会话、账号与入口）做稳，再把 Workflow 做成插件：Issue 作为内置 Workflow 随产品提供，同时开放扩展接口，例如在侧边栏增加 Tab、定义自己的 Workflow 与视图。无论 Issue 最终是内置插件还是内置功能，它的语义和完成标准都不变。插件接口的形态、权限边界和参考对象尚未调研；出现具体需求前，不建立通用插件框架。拆分评估与分步设计见[工作流平台](workflow-platform.md)：先把候选 Workspace、合入队列、证据与判定抽成平台能力，再让 Issue 成为内置工作流。

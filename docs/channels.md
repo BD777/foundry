@@ -1,6 +1,6 @@
 # 渠道
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 渠道是人在 Web 之外找到 Foundry 的入口。目前只有飞书 Bot：人在飞书群或单聊里 @ 机器人提出需求，Foundry 在配对的 Workspace 里开一个 Chat 会话（或一个 Issue），进展以卡片回到同一个话题。渠道只做协议转换和路由：会话、Issue 的语义在 Server 的工作流里，权限判断沿用[身份与共享](accounts-permissions-design.md)。它不负责 Agent 在会话里使用飞书（读写文档、以本人或 Bot 身份发消息），那是[连接器](connectors.md)；它也不保管飞书应用的密钥，Bot 运行在连接器里的一个飞书应用上。在分层图中属于“入口”层：依赖工作流（Chats、Issues）、连接器（应用与密钥、每个应用一条长连接）和身份与共享（绑定账号与 Workspace 角色）；没有模块依赖它。Web 里的位置是 Workspace 的 Channels 页（`/workspace/channels`），网页对话始终可用，其余每种渠道一节。
 
@@ -71,6 +71,8 @@
 - 重建后的 Bot：dev 库里有一个 2026-10-12 迁移后在真实飞书完成配对的会话，库中没有话题记录。在这次文档整理中没有找到真实群里话题会话或流式卡片的运行记录；[实机回归](live-regression.md)也把“飞书续聊”列为未实测。
 
 ## 后续
+
+状态、依赖与完成标准见 [Roadmap · 渠道](roadmap.md#渠道)（CH-1–CH-3）；本节只保留设计要点。
 
 - **飞书中的 Issue 真实群验收**：在真实群里走一遍发起、澄清、`/confirm`、执行者提问与回答、等待验收、Web 接受，确认每个阶段都回到话题。
 - **按发送者本人授权**：建立飞书用户与 Foundry 账号的绑定、校验和解绑流程，按发送者本人的权限处理操作和消息可见范围；未绑定的人不能触发执行，群成员身份本身不授予 Workspace 或 Accept 权限，解绑后旧映射失效（[账号与权限设计 §8、§9 P3](accounts-permissions-design.md)）。IM 内是否直接 Accept 仍待决定，复杂审阅回到 Web。

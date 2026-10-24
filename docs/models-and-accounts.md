@@ -1,6 +1,6 @@
 # 模型与账号
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 模型与账号负责 Agent 用**什么模型、以谁的身份**运行：设备上 Claude Code / Codex 的官方登录、缺少程序时按官方方式安装、Server 上保存的“模型服务”（远程 API 或网关的端点与密钥）、每台设备能用哪些模型服务，以及模型目录。它不负责会话怎么启动和运行（执行内核的 Session Runtime 接收选定的 profile），也不负责 Agent 使用的外部账号（飞书等属于连接器，见[连接器](connectors.md)）。Foundry 从不直接调用模型推理接口：所有推理都经 Agent 自己的 SDK / CLI（[AGENTS.md](../AGENTS.md) “Agent provider access”）。在分层图中属于“能力供给”层：依赖“设备与 Workspace”（登录、安装、目录读取都发生在设备上）和“身份与共享”（模型服务归属到人、设备归属决定谁能管理登录）；被执行内核（启动会话时带上完整 profile）和“Agent 能力面”（MCP `list_profiles` / `list_models`）使用。
 
@@ -65,7 +65,7 @@
 
 ## 后续
 
-Roadmap 暂无排期的下一步。已知缺口中的 Claude 在线有效性取决于官方 SDK 是否提供读取方式，在此之前保持“本地登录，在线有效性未验证”的表述。
+待办见 [Roadmap · 模型与账号](roadmap.md#模型与账号)。已知缺口中的 Claude 在线有效性取决于官方 SDK 是否提供读取方式，在此之前保持“本地登录，在线有效性未验证”的表述。
 
 ## 代码位置
 

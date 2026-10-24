@@ -2,7 +2,7 @@
 
 Date: 2026-07-03
 
-This note surveyed managed-agent products to understand their core logic, functional boundary, and what Foundry should borrow or deliberately avoid. The original pass also covered several non-public products; those analyses are omitted from this public copy, and their lessons appear below only as generic patterns. The Foundry implications (sections 6–9) are early positioning notes: current design lives in the [Workspace and Sandbox overview](../workspace-sandbox-overview.md) and the [README Roadmap](../../README.md#roadmap).
+This note surveyed managed-agent products to understand their core logic, functional boundary, and what Foundry should borrow or deliberately avoid. The original pass also covered several non-public products; those analyses are omitted from this public copy, and their lessons appear below only as generic patterns. The Foundry implications (sections 6–9) are early positioning notes: current design lives in the [Workspace and Sandbox overview](../workspace-sandbox-overview.md) and the [Roadmap](../roadmap.md).
 
 ## 1. Executive Summary
 

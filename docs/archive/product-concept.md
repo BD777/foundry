@@ -2,7 +2,7 @@
 
 Created: 2026-07-03
 
-> **Archived planning document.** This is the early (2026-07-03) product concept, kept verbatim. It is superseded by the [Workspace and Sandbox overview](../workspace-sandbox-overview.md), the [README Roadmap](../../README.md#roadmap) and the topic docs, and does not describe current behaviour. In particular, wording such as "infer the executable issue contract" is replaced by the current flow: the Agent only proposes a contract draft and the human confirms an exact revision/digest before any execution ([Issue conversation](../issue-conversation-design.md), [Evidence & Verify v1](../evidence-and-verify-v1.md)). The filesystem-native Workspace and "Workspace evolves. Skills accumulate. Workers do not remember." remain current principles.
+> **Archived planning document.** This is the early (2026-07-03) product concept, kept verbatim. It is superseded by the [Workspace and Sandbox overview](../workspace-sandbox-overview.md), the [Roadmap](../roadmap.md) and the topic docs, and does not describe current behaviour. In particular, wording such as "infer the executable issue contract" is replaced by the current flow: the Agent only proposes a contract draft and the human confirms an exact revision/digest before any execution ([Issue conversation](../issue-conversation-design.md), [Evidence & Verify v1](../evidence-and-verify-v1.md)). The filesystem-native Workspace and "Workspace evolves. Skills accumulate. Workers do not remember." remain current principles.
 
 ## One-Line Definition
 

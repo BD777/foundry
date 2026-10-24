@@ -1,6 +1,6 @@
 # 多仓 Issue 执行环境与 Workspace Accept
 
-[项目 Roadmap](../README.md#roadmap) · [Issue 工作流](issue-workflow.md)
+[Roadmap](roadmap.md) · [Issue 工作流](issue-workflow.md)
 
 本文说明 Issue 候选环境（多仓 worktree）、执行约束、调度与 Workspace Accept 的设计。已实现，支持 macOS 与具备 bubblewrap / user namespace 能力的 Linux；实际操作边界见[第 12 节](#12-第一版实现与操作边界)。Evidence 的 Agent 阶段会话（澄清与判定）与 Accept/集成目前只在 macOS 开通，边界以 [Evidence v1 §9](evidence-and-verify-v1.md#9-尚需收口的实施项) 为准。
 

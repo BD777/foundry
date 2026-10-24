@@ -1,7 +1,7 @@
 # 账号与权限：资源归属到人与 Workspace 共享
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md) ·
-上游需求：[Roadmap · 身份与共享](../README.md#roadmap) ·
+[Roadmap](roadmap.md) · [文档索引](README.md) ·
+上游需求：[Roadmap · 身份与共享](roadmap.md#身份与共享) ·
 [0908 Plan §20](archive/workspace-ai-product-plan-2026-09-08.md) ·
 当前行为：[安全边界 · Accounts](security.md#accounts)
 

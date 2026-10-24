@@ -1,6 +1,6 @@
 # Chats：轻量 Web UI 与原生 Harness
 
-[项目 Roadmap](../README.md#roadmap) · [文档索引](README.md)
+[Roadmap](roadmap.md) · [文档索引](README.md)
 
 ## 交付目标
 
@@ -10,7 +10,7 @@
 
 ## 设计与已有基础
 
-Web 负责输入、阅读和会话管理；Daemon 在执行设备上经 Claude Agent SDK / Codex SDK 驱动设备自己的 Claude Code / Codex，没有 CLI 回退。Worker Pool / 执行槽位管理可用容量，执行与凭据留在设备侧。
+Web 负责输入、阅读和会话管理；Daemon 在执行设备上经 Claude Agent SDK / Codex app-server 驱动设备自己的 Claude Code / Codex，没有 CLI 回退。Worker Pool / 执行槽位管理可用容量，执行与凭据留在设备侧。
 
 Chat 页面已经支持消息输入、流式回复、附件、模型与运行参数配置；原生会话发现、历史读取与继续对话；分组、搜索和重命名；长对话阅读、轮次导航、排队输入、steer 与取消。
 
@@ -20,15 +20,22 @@ Chat 和 Issue 都使用完整的 `components/conversation/Conversation`：输�
 
 ## 后续工作与完成口径
 
-纯 Chat 保持体验优化与恢复回归。Tool Use 需要继续完善调用过程、结果阅读和人工交互，并保留真实工具输出及其任务关联；其设计、依赖和完成标准统一维护在[基础 Tool Use](resources.md#tool-use-与证据契约)，本页不再重复维护任务清单。Browser、Computer Use、Simulator 等按场景接入操作与证据采集；多个 Issue 对这些环境的分配与竞争由[共享资源调度](resources.md#共享资源调度)统一管理。
+纯 Chat 的范围已基本交付，接近 Codex App 是持续体验目标；工具调用的呈现与证据由[基础 Tool Use](resources.md#tool-use-与证据契约)负责。可用性改进与跟随原生能力的待办统一在 [Roadmap · Chats](roadmap.md#chats)，本页不再单独列清单。
 
-Roadmap 中的 Chats 表示上述纯对话范围已基本交付，接近 Codex App 是持续体验目标；Session 间协作（CHAT-01）已单独交付。具体改动在实现时按场景拆分，验证实时对话、历史阅读和中断恢复。
+## 跟随原生 Agent 演进
+
+Chats 是原生 Claude Code / Codex 的轻量 Web 外壳，不是另一个 Agent。原生 Harness 每月都在增加能力（后台任务、子 Agent、计划模式、Hooks、Skills、MCP、新的权限模式），Foundry 的做法是：
+
+- **先用原生的，不做平行实现。** 一个 Foundry 会话就是一个原生会话（[会话模型](session-model.md)）；原生已有的能力直接透传或投影到 Web，不在 Foundry 里重做一份逻辑。Foundry 只补原生没有、且离开单机终端才需要的部分：多设备派发、Server 侧排队、跨标签页的事件流、会话产出与 diff、编排与分组。
+- **按适配层吸收差异。** Claude 与 Codex 的事件、steer 与工具形态不同，差异只放在 Worker 的 `runner/` 适配与 Web 的 transcript 适配层（[共享对话管线](chat-transcript-design.md)）；页面使用统一的对话契约。某个能力只有一家支持时如实标注（例如 Codex 不能 steer 进行中的一轮，消息排到下一轮）。
+- **版本跟随官方 stable。** Worker 的更新控制器（`packages/worker/src/agent-runtime/update-controller.ts`）为两种 Agent 跟随官方 stable 版本，更新不换账号、配置来源与 Workspace，不打断执行中的会话；设计见 [Agent 执行依赖统一与自动更新](research/agent-runtime-unification-and-updates.md)。
+- **新能力的接入顺序。** 原生发布新能力 → 登记到 [Roadmap · CHAT-1](roadmap.md#chats) → 确认它在 SDK / app-server 事件中的形态 → 先让 transcript 正确显示（不丢、不重复、不显示成错误）→ 需要时再加 Web 操作。原生能力改变语义时（例如后台任务的结束时机），以原生为准修改 Foundry 的投影，并更新本页的实现边界。
 
 <a id="session-collaboration"></a>
 
 ## Session 间协作
 
-Roadmap：**CHAT-01** · 已交付。设计、鉴权与验收见[会话编排设计](session-orchestration-design.md)。
+已交付。设计、鉴权与验收见[会话编排设计](session-orchestration-design.md)。
 
 - 当前 session 的 Agent 能创建另一个 session 并交付任务，也能向它发送 steer 补充或调整正在执行的任务（通过 `foundry` CLI / MCP）。
 - 新 session 默认加入当前 session 所在分组；当前 session 未分组时，自动创建分组并将两者一起放入（[血缘与自动入组](session-orchestration-design.md#5-血缘与自动入组)）。
