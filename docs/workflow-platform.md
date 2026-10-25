@@ -1,11 +1,13 @@
 # 工作流与平台能力：Issue 作为一种工作流
 
-[Roadmap · 工作流平台](roadmap.md#工作流平台) · [文档索引](README.md)
+[Roadmap · 自定义工作流](roadmap.md#自定义工作流) · [Roadmap · 隔离与合入](roadmap.md#隔离与合入) · [文档索引](README.md)
 
 状态：**设计提案**（2026-10-24），未实现，也未排期。现状描述基于 main `3081b85` 的源码阅读，路径已附。
 Issue 本身的语义（准出条件、六态、证据与接受规则）仍以 [Issue 工作流设计](issue-workflow.md) 为准，本文只讨论它在平台中的位置。
 
 ## 结论
+
+2026-10-26 本人确认的分层：**基础能力是 Foundry 的核心，工作流是基础能力的组合**（见 [Roadmap · 架构](roadmap.md#架构)）。Chats 是让 Workspace 演进的最直接路径，改动直接写入、由人把关；Issues 在此之上组合隔离、验证与接受；以后用户可以用基础能力搭自己的工作流（插件，尚未设计实现）。候选基于 Git worktree 是既定选择：Git 是版本工具，不限于代码，文稿、研究等项目同样适用，worktree 也不做整份复制。下面的分析在此前提下进行。
 
 **拆分成立，但顺序是“先把平台能力抽出来，再开放工作流扩展”，现在不建通用插件框架。**
 
@@ -44,13 +46,13 @@ flowchart TB
         ISS["Issues<br/>内置工作流：准出 → 执行 → 判定 → 接受"]
         NEXT["以后的工作流<br/>隔离 Chat · CI 反馈 · 多 Agent 步骤"]
     end
-    subgraph WP["工作流平台"]
+    subgraph WP["基础能力：隔离与合入 · 验证"]
         CAND["候选 Workspace<br/>隔离副本 · 快照 · 对齐"]
         QUEUE["合入队列<br/>每个 Workspace 一条"]
         EVID["证据与判定<br/>材料库 · 采集器 · 独立判定"]
         HOST["工作流宿主<br/>注册 · 路由 · 工具 · 入口"]
     end
-    KERNEL["执行内核<br/>Session Runtime · Sandbox"]
+    KERNEL["基础能力：执行<br/>原生 Agent 会话 · Sandbox"]
     ISS --> CAND
     ISS --> QUEUE
     ISS --> EVID
@@ -124,7 +126,7 @@ tools }`；状态机仍是显式表（Issue 即 `store/issue_loop.go`）。
 
 - **数据**：WF-1 不改表；WF-2 新增队列表，旧接受记录不迁移，只在新请求上使用。journal 格式不变。
 - **协议**：Server 同时支持新旧消息，直到最低 Worker 版本提升；旧 Worker 上不提供第二个使用方。
-- **归属**：候选、队列、证据与判定由“工作流平台”模块负责（代码上属于[模块架构](architecture-modules.md#3-模块清单)中的
+- **归属**：候选、队列、证据与判定由基础能力中的“隔离与合入”“验证”两组模块负责（代码上属于[模块架构](architecture-modules.md#3-模块清单)中的
   候选存储与 Git、Material Store，以及新增的队列）；Issue 的语义、页面与准出标准仍由 Issues 模块负责。
 - **不做**：不把 Chat 默认改为候选模式（Chat 直接在 Workspace 中工作是既定设计，见[执行内核](execution-kernel.md#sandbox)）；
   不建动态插件加载；不把外部副作用纳入合入队列（部署、发消息等仍需执行当时单独授权）。

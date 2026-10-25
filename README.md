@@ -1,80 +1,68 @@
-<p>
-  <img src="apps/web/public/foundry-icon.png" alt="Foundry 层叠石图标" width="128" height="128" />
+<h1 align="center">
+  <img src="apps/web/public/foundry-icon.png" alt="" width="48" height="48" align="absmiddle" />
+  Foundry
+</h1>
+
+<p align="center"><strong>以 Workspace 为唯一真相源，让 Agent 并发工作，经验证与人工接受，推动项目成果与工作能力共同演进。</strong></p>
+
+<p align="center">简体中文 | <a href="docs/README.en.md">English</a></p>
+
+<p align="center"><a href="#快速开始">快速开始</a> · <a href="#文档">文档</a> · <a href="#roadmap">路线图</a> · <a href="https://github.com/BD777/foundry/issues">反馈问题</a></p>
+
+Foundry 是一个围绕 Workspace 演进的 AI 工作平台：在你自己的设备上运行原生 Claude Code / Codex，让 Agent 在同一个项目中并发工作，被接受的成果回到 Workspace，成为下一次工作的起点。
+
+## Foundry 是什么
+
+**任何项目都需要一个 Workspace。** 写代码、写小说、做研究、整理文档，Agent 都要从项目当前的状态开始工作。Workspace 是项目的唯一真相源，也是 Agent 的上下文：其中既有成果（代码、文稿、数据），也有方法（Skill、工具与规则）。每一次被接受的改动都让 Workspace 前进一步，下一次工作就站在更好的上下文上。Foundry 要做的，是让这种演进可以由多个 Agent 安全、持续地推动。
+
+<p align="center">
+  <img src="docs/assets/architecture.svg" alt="Foundry 架构：入口、Personal Agent、工作流建立在基础能力之上，全部围绕 Workspace 演进" width="900" />
 </p>
 
-# Foundry
+- **基础能力是 Foundry 的核心。** 执行（原生 Agent 会话、多设备、Foundry MCP / CLI）、隔离与合入（Git worktree 候选、Sandbox、合入队列与冲突解决）、验证（证据、独立判定、人工接受）、能力供给（Resources、Skills、模型、连接器、渠道）与信任（身份、角色、凭据边界）。
+- **工作流是基础能力的组合。** **Chats** 是最直接的路径：Agent 直接改 Workspace，隔离与验证由人自己把关，这也是最常用的方式。**Issues** 在此之上组合隔离、证据、人工接受与合入，是一条可信交付流程。以后可以用同样的基础能力搭自己的工作流（插件，尚在设计）。
+- **Personal Agent 在工作流之上。** 人只说想要什么，它判断落到哪个 Workspace、按需新建，再派出并监督那里的会话。
+- **入口**：Web、外部 Agent（经 `foundry` CLI / MCP）与 IM 渠道（飞书 Bot）。
 
-**以 Workspace 为唯一真相源，让 Agent 并发工作，经验证与人工接受，推动项目成果与工作能力共同演进。**
-
-简体中文 | [English](docs/README.en.md)
-
-[快速开始](#快速开始) · [文档](#文档) · [路线图](#roadmap) · [反馈问题](https://github.com/BD777/foundry/issues)
-
-Foundry 是一个让 Agent 围绕同一项目协作的 AI 工作平台。你提出目标，Agent 可以同时开发功能、整理文档、完善测试；经过验证并由你接受的成果回到 Workspace，成为下一次工作的基础。
-
-## 工作方式
-
-Workspace 保存项目的内容，也保存 Agent 使用的技能、工具和规则。下面这张图展示了它如何在一次次工作中持续演进：
-
-```mermaid
-flowchart TD
-    W["Workspace · 唯一真相源<br/>项目内容与资产 · 技能、工具与规则"]
-    I["人提出 Issue<br/>明确目标与完成条件"]
-
-    subgraph P["Agent 在隔离环境中并发工作"]
-        A["Issue A<br/>开发功能"]
-        B["Issue B<br/>整理文档"]
-        C["Issue C<br/>完善测试"]
-    end
-
-    K["Blocked · 暂停推进<br/>信息、权限或系统问题"]
-    V["Verify · 逐项验证<br/>检查完成条件，提供证据"]
-    H["人工审阅 · Accept<br/>决定是否接受成果"]
-    M["对齐最新状态并复验<br/>合入已接受的变更"]
-
-    W --> I
-    I --> A
-    I --> B
-    I --> C
-    A -.->|需要人介入| K
-    K -.->|答复后继续原 Issue| A
-    A --> V
-    B --> V
-    C --> V
-    V --> H
-    H -->|接受| M
-    M -->|积累成果与方法，推动下一轮工作| W
-```
-
-Blocked 必须带具体原因，例如 Needs input、Needs permission、System error；解决后继续原 Issue，其他 Issue 可照常推进。图中以 Issue A 示意这一分支。短暂自动重试和容量等待仍可作为执行进度，执行确实无法继续时进入 Blocked。
-
-每项 Issue 独立验证、审阅与接受；需要修改时，反馈回到该 Issue 继续推进。Verify 优先使用确定性检查，并保留需要模型或人工判断的依据；Accept 由人决定。**已接受的项目状态以 Workspace 为准，产品成果与可复用的工作能力在这里共同积累。**
+隔离、合入与证据目前由 Issues 实现，正在抽成独立的基础能力，让其他工作流也能使用（[设计](docs/workflow-platform.md)）。
 
 ## Roadmap
 
-各模块现在能做什么、接下来做什么、完成标准与依赖，统一维护在 **[docs/roadmap.md](docs/roadmap.md)**（唯一的 Roadmap 与待办清单）。目标形态见 [Workspace 与 Sandbox 总纲](docs/workspace-sandbox-overview.md)。
+各层模块现在能做什么。每个模块的待办、依赖与完成标准只在 **[docs/roadmap.md](docs/roadmap.md)** 维护，模块名链接到对应小节。
 
-<p align="center">
-  <img src="docs/assets/architecture.svg" alt="Foundry 模块分层：入口、Personal Agent、工作流、工作流平台（规划）、Agent 能力面、执行内核、能力供给、基础" width="900" />
-</p>
+### 工作流
 
-上层依赖下层，下层不知道上层；虚线框是规划中的部分。Chats 直接在 Workspace 中工作，不经 Sandbox；Issues 在候选中工作，经接受后合入；外部 Agent 经 `foundry` CLI / MCP 直接使用 Agent 能力面。图的源文件是 [architecture.mmd](docs/assets/architecture.mmd)。
+- **[Chats](docs/roadmap.md#chats)**：直接在所选 Workspace 中对话；附件、Server 侧排队、steer、中断恢复、会话产出与 diff、后台任务、分组与检索。设计：[chat-experience.md](docs/chat-experience.md)
+- **[Issues](docs/roadmap.md#issues)**：准出条件 → 候选中执行 → 证据与独立判定 → 人接受 → 合入；Claude 与 Codex、macOS 与 Linux 都跑通过真实闭环，新功能暂停等真实使用反馈。设计：[issue-workflow.md](docs/issue-workflow.md)
+- **[自定义工作流](docs/roadmap.md#自定义工作流)**：规划中，未实现。设计：[workflow-platform.md](docs/workflow-platform.md)
 
-| 模块                                                 | 现在                                                                                                                    | 设计文档                                                                |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [渠道](docs/roadmap.md#渠道)                         | 飞书 Bot：群或单聊配对到 Workspace，话题对应会话，流式卡片，附件                                                        | [channels.md](docs/channels.md)                                         |
-| [Personal Agent](docs/roadmap.md#personal-agent)     | 测试中：自动路由与新建 / 调整 Workspace、派出并监督会话、飞书单聊入口                                                   | [personal-agent.md](docs/personal-agent.md)                             |
-| [Chats](docs/roadmap.md#chats)                       | 一个会话就是一个原生 Claude Code / Codex 会话：附件、排队、steer、恢复、产出与 diff、后台任务、分组与检索               | [chat-experience.md](docs/chat-experience.md)                           |
-| [Issues](docs/roadmap.md#issues)                     | 准出条件 → 候选中执行 → 证据与独立判定 → 人接受 → 合入；新功能暂停，等真实使用反馈                                      | [issue-workflow.md](docs/issue-workflow.md)                             |
-| [工作流平台](docs/roadmap.md#工作流平台)             | 规划：把候选 Workspace、合入队列、证据与判定从 Issues 中抽成平台能力                                                    | [workflow-platform.md](docs/workflow-platform.md)                       |
-| [Agent 能力面](docs/roadmap.md#agent-能力面)         | 同一套 Foundry MCP / CLI：派出、观察、steer、交接会话，租用资源，使用连接器                                             | [session-orchestration-design.md](docs/session-orchestration-design.md) |
-| [执行内核](docs/roadmap.md#执行内核)                 | Session Runtime 统一启动原生会话；Sandbox 在 macOS 与 Linux 实现同一接口，其他系统 fail closed                          | [execution-kernel.md](docs/execution-kernel.md)                         |
-| [Resources](docs/roadmap.md#resources)               | Computer Use 与远程命令可租用、排队、回收，可跨设备；浏览器按需启动                                                     | [resources.md](docs/resources.md)                                       |
-| [Skills](docs/roadmap.md#skills)                     | Skill 库与不可变版本、Workspace 选用与固定、个人默认、草稿试用、所需程序检测                                            | [skills.md](docs/skills.md)                                             |
-| [模型与账号](docs/roadmap.md#模型与账号)             | 设备原生登录与官方安装、模型服务（API 或网关）、模型目录                                                                | [models-and-accounts.md](docs/models-and-accounts.md)                   |
-| [连接器](docs/roadmap.md#连接器)                     | Server 持有型（飞书、Cloudflare）与设备持有型（bytedcli、AWS CLI），按 Workspace 绑定，设备上不留 Server 持有的真实凭据 | [connectors.md](docs/connectors.md)                                     |
-| [设备与 Workspace](docs/roadmap.md#设备与-workspace) | Daemon 主动连接、配对与自动更新、多设备多 Workspace、跨设备会话、[Docker 部署](deploy/README.md)                        | [devices-and-workspaces.md](docs/devices-and-workspaces.md)             |
-| [身份与共享](docs/roadmap.md#身份与共享)             | 所有接口要求登录；按 Viewer / Member / Maintainer / Owner 共享 Workspace，撤销立即生效                                  | [accounts-permissions-design.md](docs/accounts-permissions-design.md)   |
+### 基础能力
+
+- **执行**
+  - [原生 Agent 会话](docs/roadmap.md#原生-agent-会话)：一个会话就是设备上的一个原生会话，事件流、steer、取消与恢复，跟随官方 stable 更新。设计：[execution-kernel.md](docs/execution-kernel.md)
+  - [设备与 Daemon](docs/roadmap.md#设备与-daemon)：Daemon 主动连接、配对与自动更新，多设备多 Workspace，跨设备会话，[Docker 部署](deploy/README.md)。设计：[devices-and-workspaces.md](docs/devices-and-workspaces.md)
+  - [Foundry MCP / CLI](docs/roadmap.md#foundry-mcp--cli)：Agent 调用 Foundry 的唯一接口：派出、观察、steer、交接会话，租用资源，使用连接器。设计：[session-orchestration-design.md](docs/session-orchestration-design.md)
+- **隔离与合入**
+  - [候选与 Sandbox](docs/roadmap.md#候选与-sandbox)：每项任务一份 Git worktree 候选；Sandbox 在 macOS 与 Linux 实现同一接口，只许写候选，其他系统 fail closed。
+  - [合入队列与冲突解决](docs/roadmap.md#合入队列与冲突解决)：接受后逐个合入；Workspace 已前进时在候选中对齐，冲突交给 Agent 解决并重新验证。
+- **验证**
+  - [证据与判定](docs/roadmap.md#证据与判定)：对候选实际运行检查并保存原始材料，程序或独立只读 Agent 逐条判断，人基于证据接受。设计：[evidence-and-verify-v1.md](docs/evidence-and-verify-v1.md)
+- **能力供给**
+  - [Resources](docs/roadmap.md#resources)：Computer Use 与远程命令独占租用、排队与回收，可跨设备；浏览器按需启动。设计：[resources.md](docs/resources.md)
+  - [Skills](docs/roadmap.md#skills)：Skill 库与不可变版本，Workspace 选用与固定，个人默认，草稿试用。设计：[skills.md](docs/skills.md)
+  - [模型与账号](docs/roadmap.md#模型与账号)：设备原生登录与官方安装，模型服务（API 或网关）。设计：[models-and-accounts.md](docs/models-and-accounts.md)
+  - [连接器](docs/roadmap.md#连接器)：Server 持有型（飞书、Cloudflare）与设备持有型（bytedcli、AWS CLI），按 Workspace 绑定。设计：[connectors.md](docs/connectors.md)
+  - [渠道](docs/roadmap.md#渠道)：飞书 Bot 把群或单聊配对到 Workspace，话题对应会话，流式卡片与附件。设计：[channels.md](docs/channels.md)
+- **信任**
+  - [身份与共享](docs/roadmap.md#身份与共享)：所有接口要求登录，按 Viewer / Member / Maintainer / Owner 共享 Workspace，撤销立即生效。设计：[accounts-permissions-design.md](docs/accounts-permissions-design.md)
+
+### Workspace
+
+- **[Workspace](docs/roadmap.md#workspace)**：设备上的一个目录，可包含任意深度的多个 Git 仓库；Foundry 不改动它，没有 Git 的目录在第一次需要候选时经本人确认初始化。
+
+### Personal Agent
+
+- **[Personal Agent](docs/roadmap.md#personal-agent)**：测试中（2026-10-15 起本人在 dev 试用），路由准确率仍在提升；Web 首页与飞书单聊入口。设计：[personal-agent.md](docs/personal-agent.md)
 
 ## 快速开始
 

@@ -42,6 +42,14 @@ document's implementation boundary. Always inspect the current working tree and
   organized by the module diagram with stable item IDs. Module documents hold
   design and implementation boundary; the devlog holds execution records for
   started items. Neither keeps its own checklist.
+- Foundations (execution, isolation and integration, verification, capability
+  supply, trust) are Foundry's core; workflows combine them, and everything
+  evolves one workspace (owner decision 2026-10-26). Chats are the raw path:
+  they write to the workspace directly and the person handles review; Issues add
+  isolation, evidence, acceptance and integration. User-built workflows
+  (plugins) are a design direction, not implemented.
+- Candidates are Git worktrees; Git is the versioning tool for any kind of
+  workspace, not only code.
 - Chats reuse the native Claude Code / Codex harnesses; one Foundry session is
   one native session.
 - Users work with Issues; internal Runs, attempts, sessions and evidence

@@ -476,7 +476,7 @@ You: update_list add, with at and remind. Reply: "I'll remind you tomorrow at 9:
 | **WP-P 提示词与 Skill**              | `internal/personalagent/prompt/`（`system.md`、版本号、填充）、Foundry Skill 两份副本（`packages/worker/skills/foundry/`、`apps/server/internal/builtinskills/foundry/`）中关于助理的事实                                                                                                                                                                                                                            | 提示词与 §12 一致；两份 Skill 逐字节相同；评测中禁用词为 0                                                                                                                    |
 | **WP-E 评测**                        | `~/.foundry/pa-eval/set/`、`scripts/pa-eval-build.mjs`、`scripts/pa-eval-run.mjs`、`cases/personal-agent/`                                                                                                                                                                                                                                                                                                           | 从 dev 数据导出、脱敏的评测集；在 scratch stack 上一条命令跑完并输出 §13 指标                                                                                                 |
 
-**阶段 3：集成与验收**：在 dev 上为本人安家并迁移，跑完 A1–A11，指标达到 §13；本文实现边界、`docs/assets/architecture.mmd`（及重新渲染的 SVG）与 Roadmap 同步更新。
+**阶段 3：集成与验收**：在 dev 上为本人安家并迁移，跑完 A1–A11，指标达到 §13；本文实现边界、`docs/assets/architecture.svg`（当时由 Mermaid 源文件渲染，现由 `architecture.mjs` 生成）与 Roadmap 同步更新。
 
 **探索（不在上面的包里）**：没有自己电脑的人：由管理员指定的共享执行端安放助理，前提是非所有者的会话在 Sandbox 中运行（随[执行内核](execution-kernel.md)的聊天会话隔离推进）；多语言之外的语音入口；按评测结果放宽默认策略。
 
