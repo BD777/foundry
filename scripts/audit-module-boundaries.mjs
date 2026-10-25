@@ -262,6 +262,7 @@ export const workerModules = {
       "runner/profile-command",
       "runner/turn-directory",
       "sdk-messages",
+      "claude-narration",
       "session-ambient",
       "session-artifacts",
       "session-helpers",

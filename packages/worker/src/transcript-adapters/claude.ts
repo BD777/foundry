@@ -1,5 +1,6 @@
 import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
+import { claudeNarrationMessage } from "../claude-narration.js";
 import {
   record,
   string,
@@ -26,6 +27,11 @@ export function claudeTranscriptRecord(
       const blockId = `${id}:${index}`;
       if (block.type === "text")
         return [{ id: blockId, kind: role, text: string(block.text) }];
+      const narration =
+        role === "assistant"
+          ? claudeNarrationMessage(envelope, block, index, fallbackId)
+          : undefined;
+      if (narration) return [narration];
       if (block.type === "thinking")
         return [
           {

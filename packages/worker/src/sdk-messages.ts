@@ -6,6 +6,8 @@
  */
 
 import { claudeRequestUsage, claudeSubagentUsage } from "./turn-usage.js";
+import { claudeNarrationMessage } from "./claude-narration.js";
+import { record as jsonRecord } from "./json-values.js";
 import type {
   AgentSessionEvent,
   AgentSessionEventMetadata,
@@ -275,6 +277,20 @@ function nativeHoldMetadata(
     : undefined;
 }
 
+/** A completed SDK frame can contain multiple independent content blocks. */
+export function claudeProcessEvents(message: unknown): ClaudeProcessEvent[] {
+  const record = jsonRecord(message);
+  if (
+    record.type === "assistant" &&
+    !isForwardedClaudeSubagentMessage(message) &&
+    !claudeApiErrorMessage(message)
+  ) {
+    return claudeAssistantProcessEvents(record);
+  }
+  const event = claudeProcessEvent(message);
+  return event ? [event] : [];
+}
+
 export function claudeProcessEvent(
   message: unknown,
 ): ClaudeProcessEvent | undefined {
@@ -301,11 +317,7 @@ export function claudeProcessEvent(
     };
   }
   if (record.type === "assistant") {
-    const event = claudeAssistantProcessEvent(record.message);
-    const requestUsage = claudeRequestUsage(message);
-    if (event?.message && requestUsage)
-      event.message.requestUsage = requestUsage;
-    return event;
+    return claudeAssistantProcessEvents(record)[0];
   }
   if (record.type === "tool_progress") {
     const name = sdkString(record.tool_name) || "tool";
@@ -473,25 +485,34 @@ export function claudeSystemProcessEvent(
 export function claudeAssistantProcessEvent(
   message: unknown,
 ): ClaudeProcessEvent | undefined {
-  if (!message || typeof message !== "object") {
-    return undefined;
-  }
-  const content = (message as Record<string, unknown>).content;
-  if (!Array.isArray(content)) {
-    return undefined;
-  }
-  for (const block of content) {
+  return claudeAssistantProcessEvents({ message })[0];
+}
+
+function claudeAssistantProcessEvents(
+  envelope: Record<string, unknown>,
+): ClaudeProcessEvent[] {
+  const content = jsonRecord(envelope.message).content;
+  if (!Array.isArray(content)) return [];
+  const requestUsage = claudeRequestUsage(envelope);
+  return content.flatMap((block, index): ClaudeProcessEvent[] => {
+    const narration = claudeNarrationMessage(envelope, block, index);
     // A written tool call now runs; its result (a user message) finishes it.
     const running =
       Boolean(block) &&
       typeof block === "object" &&
       (block as Record<string, unknown>).type === "tool_use";
-    const event = claudeContentBlockProcessEvent(block, !running);
-    if (event) {
-      return event;
-    }
-  }
-  return undefined;
+    const event = narration
+      ? {
+          label: processLabels.commentary,
+          detail: narration.text,
+          message: narration,
+        }
+      : claudeContentBlockProcessEvent(block, !running);
+    if (!event) return [];
+    if (event.message && requestUsage)
+      event.message.requestUsage = requestUsage;
+    return [event];
+  });
 }
 
 export function claudeStreamProcessEvent(
