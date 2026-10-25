@@ -32,6 +32,10 @@ flowchart LR
 
 其中最容易混淆的是两种 Context。Workspace Context 是项目级的，回答"项目现在是什么"，它是每次验收后真正被更新的对象。Agent Context Window 是任务级的，回答"这一次执行能否可靠、连续地完成"，它是一种珍贵的执行资源——不要把 Agent 的可靠注意力浪费在反复解释背景、频繁切换任务和无意义的过程汇报上。具体如何维护任务级上下文，交给成熟的 Agent Runtime；产品要做的是给它一个边界清楚、可以连续推进、能够形成验收结果的任务。
 
+## 不只是代码
+
+项目可以是一个代码仓库，也可以是一部小说、一项研究或一套文档。它们都需要一个 Workspace：Agent 从这里得到上下文，被接受的成果和方法回到这里。Foundry 用 Git 做版本与候选的工具（Git 不限于代码），在此之上提供隔离、合入、验证等基础能力；具体用哪条路径推动演进由工作流决定：直接对话（Chats）最轻，由人自己把关；Issue 最完整，带准出条件、证据与接受。
+
 ## 与总纲的对应
 
-本文讲理念；具体的对象、流程与术语以 [Workspace 与 Sandbox 总纲](workspace-sandbox-overview.md) 为准。两者的对应关系：项目及其 Workspace Context 即 **Workspace**；边界清楚的任务即 **Issue**，其验收标准即 **准出条件**；可验收结果即 Sandbox 中的 **候选** 与 **证据**；人验收即 **接受**，更新项目基线即 **合入**。
+本文讲理念；具体的对象、流程与术语以 [Workspace 与 Sandbox 总纲](workspace-sandbox-overview.md) 为准。两者的对应关系（以 Issue 这条最完整的工作流为例）：项目及其 Workspace Context 即 **Workspace**；边界清楚的任务即 **Issue**，其验收标准即 **准出条件**；可验收结果即 Sandbox 中的 **候选** 与 **证据**；人验收即 **接受**，更新项目基线即 **合入**。

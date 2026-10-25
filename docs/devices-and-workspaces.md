@@ -88,7 +88,7 @@
 
 ## 后续
 
-状态、依赖与完成标准见 [Roadmap · 设备与 Workspace](roadmap.md#设备与-workspace)；本节只保留设计要点。设备密钥对认证随[身份与共享](accounts-permissions-design.md)推进，容器隔离随[执行内核](execution-kernel.md)推进。
+状态、依赖与完成标准见 [Roadmap · 设备与 Daemon](roadmap.md#设备与-daemon) 与 [Roadmap · Workspace](roadmap.md#workspace)；本节只保留设计要点。设备密钥对认证随[身份与共享](accounts-permissions-design.md)推进，容器隔离随[执行内核](execution-kernel.md)推进。
 
 <a id="cloud-workspace"></a>
 

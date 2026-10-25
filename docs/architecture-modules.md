@@ -165,23 +165,28 @@ Server 的 `httpapi` 是单个 Go 包，模块之间没有编译期边界，这�
 
 ## 3.2 产品模块与代码模块
 
-[Roadmap](roadmap.md) 与[模块图](assets/architecture.svg)按产品模块组织，每个产品模块有一份主文档
-（见[文档索引](README.md#modules)）。它们与上表代码模块的对应：
+[Roadmap](roadmap.md) 与[架构图](assets/architecture.svg)按产品模块组织：基础能力是核心，工作流是基础能力的组合，
+全部围绕 Workspace（2026-10-26 本人确认）。每个产品模块有一份主文档（见[文档索引](README.md#modules)）。它们与上表代码模块的对应：
 
-| 产品模块           | 代码模块                                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------------------------- |
-| 渠道               | 入口中的飞书 Bot（`internal/feishu`；事件分发 `internal/feishuevents` 与连接器共用）                      |
-| Chats              | Chat                                                                                                      |
-| Issues             | Issue Loop、Material Store；候选存储与 Git 目前主要服务于它                                               |
-| 工作流平台（规划） | 候选存储与 Git、Material Store 与新增的合入队列，从 Issue Loop 中独立出来（[设计](workflow-platform.md)） |
-| Agent 能力面       | Agent 能力面                                                                                              |
-| 执行内核           | Session Runtime、Sandbox                                                                                  |
-| Resources          | Resource Pool                                                                                             |
-| Skills             | Skills                                                                                                    |
-| 模型与账号         | Harness Profiles                                                                                          |
-| 连接器             | 连接器                                                                                                    |
-| 设备与 Workspace   | Device & Transport、Workspace Registry                                                                    |
-| 身份与共享         | Identity & Access                                                                                         |
+| 产品层 · 模块                   | 代码模块                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| 工作流 · Chats                  | Chat                                                                                 |
+| 工作流 · Issues                 | Issue Loop                                                                           |
+| 工作流 · 自定义工作流（规划）   | 工作流宿主，尚未存在（[设计](workflow-platform.md)）                                 |
+| 执行 · 原生 Agent 会话          | Session Runtime                                                                      |
+| 执行 · 设备与 Daemon            | Device & Transport、Workspace Registry                                               |
+| 执行 · Foundry MCP / CLI        | Agent 能力面                                                                         |
+| 隔离与合入 · 候选与 Sandbox     | Sandbox、候选存储与 Git（目前以 Issue 命名）                                         |
+| 隔离与合入 · 合入队列与冲突解决 | 目前在 Issue Loop 与候选存储内（`workspace-acceptance.ts`、`candidate-refresh.ts`）  |
+| 验证 · 证据与判定               | Material Store，判定与采集目前在 Issue Loop 内                                       |
+| 能力供给 · Resources            | Resource Pool                                                                        |
+| 能力供给 · Skills               | Skills                                                                               |
+| 能力供给 · 模型与账号           | Harness Profiles                                                                     |
+| 能力供给 · 连接器               | 连接器                                                                               |
+| 能力供给 · 渠道                 | 入口中的飞书 Bot（`internal/feishu`；事件分发 `internal/feishuevents` 与连接器共用） |
+| 信任 · 身份与共享               | Identity & Access                                                                    |
+| Workspace                       | Workspace Registry、候选存储与 Git                                                   |
+| Personal Agent                  | `internal/personalagent`、`internal/workspacedigest`                                 |
 
 平台基础与 Web 不对应单独的产品模块。
 

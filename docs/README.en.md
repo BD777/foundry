@@ -1,80 +1,68 @@
-<p>
-  <img src="../apps/web/public/foundry-icon.png" alt="Foundry stacked stones icon" width="128" height="128" />
+<h1 align="center">
+  <img src="../apps/web/public/foundry-icon.png" alt="" width="48" height="48" align="absmiddle" />
+  Foundry
+</h1>
+
+<p align="center"><strong>A workspace as the single source of truth, where agents work concurrently and verified, human-accepted contributions advance both the project and its working capabilities.</strong></p>
+
+<p align="center"><a href="../README.md">简体中文</a> | English</p>
+
+<p align="center"><a href="#quick-start">Quick start</a> · <a href="#documentation">Documentation</a> · <a href="#roadmap">Roadmap</a> · <a href="https://github.com/BD777/foundry/issues">Report an issue</a></p>
+
+Foundry is an AI work platform built around workspace evolution: it runs the native Claude Code / Codex on your own devices, lets agents work concurrently in one project, and returns accepted results to the workspace as the starting point for the next task.
+
+## What Foundry is
+
+**Every project needs a workspace.** Writing code, a novel, research or documentation, an agent starts from the project's current state. The workspace is the project's single source of truth and the agent's context: it holds results (code, text, data) and methods (skills, tools and rules). Every accepted change moves the workspace forward, so the next task starts from better context. Foundry exists to let several agents drive that evolution safely and continuously.
+
+<p align="center">
+  <img src="assets/architecture.svg" alt="Foundry architecture (labels in Chinese): entries, Personal Agent and workflows built on foundations, all evolving one workspace" width="900" />
 </p>
 
-# Foundry
+- **Foundations are the core of Foundry.** Execution (native agent sessions, multiple devices, Foundry MCP / CLI), isolation and integration (Git worktree candidates, Sandbox, integration queue and conflict resolution), verification (evidence, independent judgment, human acceptance), capability supply (resources, skills, models, connectors, channels) and trust (identity, roles, credential boundaries).
+- **Workflows combine foundations.** **Chats** are the most direct path: the agent edits the workspace directly and the person handles isolation and review; it is also the most used. **Issues** add isolation, evidence, human acceptance and integration on top, as a trusted delivery flow. Later, people will be able to build their own workflows from the same foundations (plugins, still being designed).
+- **Personal Agent sits above workflows.** You say what you want; it decides which workspace it belongs in, creates one if needed, and dispatches and supervises sessions there.
+- **Entries**: the web app, external agents (through the `foundry` CLI / MCP) and IM channels (the Feishu bot).
 
-**A workspace as the single source of truth, where agents work concurrently and verified, human-accepted contributions advance both the project and its working capabilities.**
-
-[简体中文](../README.md) | English
-
-[Quick start](#quick-start) · [Documentation](#documentation) · [Roadmap](#roadmap) · [Report an issue](https://github.com/BD777/foundry/issues)
-
-Foundry is an AI work platform where agents collaborate around a shared project. You set the goals; agents can develop features, organize documentation and improve tests concurrently. Verified results that you accept return to the workspace as the foundation for the next task.
-
-## How it works
-
-The workspace holds the project's content alongside the skills, tools and rules agents use. This diagram shows how it evolves through successive contributions:
-
-```mermaid
-flowchart TD
-    W["Workspace · Single source of truth<br/>Project content and assets · Skills, tools and rules"]
-    I["People define Issues<br/>Goals and completion criteria"]
-
-    subgraph P["Agents work concurrently in isolated environments"]
-        A["Issue A<br/>Develop a feature"]
-        B["Issue B<br/>Organize documentation"]
-        C["Issue C<br/>Improve tests"]
-    end
-
-    K["Blocked · Cannot continue<br/>Input, permission or system error"]
-    V["Verify · Check each Issue<br/>Evaluate criteria and provide evidence"]
-    H["Human review · Accept<br/>Decide whether to accept results"]
-    M["Align with the latest state and revalidate<br/>Integrate accepted changes"]
-
-    W --> I
-    I --> A
-    I --> B
-    I --> C
-    A -.->|Human input needed| K
-    K -.->|Resume the same Issue after a response| A
-    A --> V
-    B --> V
-    C --> V
-    V --> H
-    H -->|Accept| M
-    M -->|Accumulate results and methods for the next task| W
-```
-
-Blocked carries a specific reason, such as Needs input, Needs permission or System error. Once resolved, the same Issue continues while other Issues progress independently. Issue A illustrates this branch. Temporary retries and capacity waits may remain execution progress; an execution that cannot continue becomes Blocked.
-
-Each Issue is verified, reviewed and accepted independently. Feedback returns to the same Issue for further work. Verify prioritizes deterministic checks and retains the basis for model or human judgments; people decide whether to Accept. **The workspace is authoritative for the accepted project state, accumulating both product results and reusable working capabilities.**
+Isolation, integration and evidence are implemented inside Issues today and are being extracted into standalone foundations so other workflows can use them ([design](workflow-platform.md), Chinese).
 
 ## Roadmap
 
-What each module does now, what comes next, completion criteria and dependencies are maintained in one place: **[roadmap.md](roadmap.md)** (Chinese), the only roadmap and to-do list. The target shape is described in the [Workspace and Sandbox overview](workspace-sandbox-overview.md) (Chinese).
+What each layer's modules do now. Each module's to-dos, dependencies and completion criteria live only in **[roadmap.md](roadmap.md)** (Chinese); module names link to their section. Design documents are in Chinese.
 
-<p align="center">
-  <img src="assets/architecture.svg" alt="Foundry module layers: entries, Personal Agent, workflows, workflow platform (planned), agent surface, execution kernel, capability supply, foundation" width="900" />
-</p>
+### Workflows
 
-Upper layers depend on lower ones, never the reverse; dashed boxes are planned. Chats work directly in the workspace without the Sandbox; Issues work in a candidate and are integrated after acceptance; external agents use the agent surface through the `foundry` CLI / MCP. The diagram source is [architecture.mmd](assets/architecture.mmd).
+- **[Chats](roadmap.md#chats)**: talk directly in the selected workspace; attachments, server-side queue, steering, recovery, outputs and diffs, background tasks, groups and search. Design: [chat-experience.md](chat-experience.md)
+- **[Issues](roadmap.md#issues)**: criteria → work in a candidate → evidence and independent judgment → human acceptance → integration; real loops passed with Claude and Codex on macOS and Linux; new features paused until real-use feedback. Design: [issue-workflow.md](issue-workflow.md)
+- **[Custom workflows](roadmap.md#自定义工作流)**: planned, not implemented. Design: [workflow-platform.md](workflow-platform.md)
 
-| Module                                                | Works now                                                                                                                                               | Design (Chinese)                                                   |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [Channels](roadmap.md#渠道)                           | Feishu bot: groups or direct chats pair to a workspace, threads map to sessions, streaming cards, attachments                                           | [channels.md](channels.md)                                         |
-| [Personal Agent](roadmap.md#personal-agent)           | Under testing: automatic routing, creating / adjusting workspaces, dispatching and supervising sessions, Feishu direct chat                             | [personal-agent.md](personal-agent.md)                             |
-| [Chats](roadmap.md#chats)                             | One session is one native Claude Code / Codex session: attachments, queue, steering, recovery, outputs and diffs, background tasks, groups and search   | [chat-experience.md](chat-experience.md)                           |
-| [Issues](roadmap.md#issues)                           | Criteria → work in a candidate → evidence and independent judgment → human acceptance → integration; new features paused until real-use feedback        | [issue-workflow.md](issue-workflow.md)                             |
-| [Workflow platform](roadmap.md#工作流平台)            | Planned: extract candidate workspaces, the integration queue and evidence/judgment from Issues into platform capabilities                               | [workflow-platform.md](workflow-platform.md)                       |
-| [Agent surface](roadmap.md#agent-能力面)              | One Foundry MCP / CLI: dispatch, observe, steer and hand off sessions, lease resources, use connectors                                                  | [session-orchestration-design.md](session-orchestration-design.md) |
-| [Execution kernel](roadmap.md#执行内核)               | Session Runtime starts native sessions; the Sandbox implements one interface on macOS and Linux and fails closed elsewhere                              | [execution-kernel.md](execution-kernel.md)                         |
-| [Resources](roadmap.md#resources)                     | Computer Use and remote commands are leased, queued and reclaimed, also across devices; browsers start on demand                                        | [resources.md](resources.md)                                       |
-| [Skills](roadmap.md#skills)                           | Skill library with immutable versions, per-workspace selection and pinning, personal defaults, draft trials, required-program checks                    | [skills.md](skills.md)                                             |
-| [Models and accounts](roadmap.md#模型与账号)          | The device's native logins and official installs, model services (API or gateway), model catalogs                                                       | [models-and-accounts.md](models-and-accounts.md)                   |
-| [Connectors](roadmap.md#连接器)                       | Server-held (Feishu, Cloudflare) and device-held (bytedcli, AWS CLI), bound per workspace; no server-held secret on the device                          | [connectors.md](connectors.md)                                     |
-| [Devices and workspaces](roadmap.md#设备与-workspace) | The daemon connects out, pairing and automatic updates, several devices and workspaces, cross-device sessions, [Docker deployment](../deploy/README.md) | [devices-and-workspaces.md](devices-and-workspaces.md)             |
-| [Identity and sharing](roadmap.md#身份与共享)         | Sign-in required everywhere; workspaces shared as Viewer / Member / Maintainer / Owner, with immediate revocation                                       | [accounts-permissions-design.md](accounts-permissions-design.md)   |
+### Foundations
+
+- **Execution**
+  - [Native agent sessions](roadmap.md#原生-agent-会话): one session is one native session on a device; event stream, steering, cancel and recovery; follows official stable releases. Design: [execution-kernel.md](execution-kernel.md)
+  - [Devices and daemon](roadmap.md#设备与-daemon): the daemon connects out, pairing and automatic updates, several devices and workspaces, cross-device sessions, [Docker deployment](../deploy/README.md). Design: [devices-and-workspaces.md](devices-and-workspaces.md)
+  - [Foundry MCP / CLI](roadmap.md#foundry-mcp--cli): the only interface agents use to call Foundry: dispatch, observe, steer and hand off sessions, lease resources, use connectors. Design: [session-orchestration-design.md](session-orchestration-design.md)
+- **Isolation and integration**
+  - [Candidates and Sandbox](roadmap.md#候选与-sandbox): one Git worktree candidate per task; the Sandbox implements one interface on macOS and Linux, allows writes only to the candidate, and fails closed elsewhere.
+  - [Integration queue and conflicts](roadmap.md#合入队列与冲突解决): accepted candidates are integrated one at a time; when the workspace has moved on, the candidate is aligned first and the agent resolves conflicts and re-verifies.
+- **Verification**
+  - [Evidence and judgment](roadmap.md#证据与判定): real checks on the candidate with raw materials kept; programs or an independent read-only agent judge each criterion; a person accepts based on the evidence. Design: [evidence-and-verify-v1.md](evidence-and-verify-v1.md)
+- **Capability supply**
+  - [Resources](roadmap.md#resources): Computer Use and remote commands leased exclusively, queued and reclaimed, also across devices; browsers on demand. Design: [resources.md](resources.md)
+  - [Skills](roadmap.md#skills): skill library with immutable versions, per-workspace selection and pinning, personal defaults, draft trials. Design: [skills.md](skills.md)
+  - [Models and accounts](roadmap.md#模型与账号): the device's native logins and official installs, model services (API or gateway). Design: [models-and-accounts.md](models-and-accounts.md)
+  - [Connectors](roadmap.md#连接器): server-held (Feishu, Cloudflare) and device-held (bytedcli, AWS CLI), bound per workspace. Design: [connectors.md](connectors.md)
+  - [Channels](roadmap.md#渠道): the Feishu bot pairs groups or direct chats to a workspace, threads map to sessions, streaming cards and attachments. Design: [channels.md](channels.md)
+- **Trust**
+  - [Identity and sharing](roadmap.md#身份与共享): sign-in required everywhere; workspaces shared as Viewer / Member / Maintainer / Owner, with immediate revocation. Design: [accounts-permissions-design.md](accounts-permissions-design.md)
+
+### Workspace
+
+- **[Workspace](roadmap.md#workspace)**: a folder on a device that may contain Git repositories at any depth; Foundry leaves it unchanged, and a folder without Git is initialized only after the person confirms, the first time a candidate is needed.
+
+### Personal Agent
+
+- **[Personal Agent](roadmap.md#personal-agent)**: under testing (tried on dev by the owner since 2026-10-15), routing accuracy still improving; web home and Feishu direct-chat entry. Design: [personal-agent.md](personal-agent.md)
 
 ## Quick start
 
