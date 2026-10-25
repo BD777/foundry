@@ -47,7 +47,9 @@ func TestAContinuedNativeChatImportsItsEarlierHistoryOldestFirst(t *testing.T) {
 		t.Fatalf("transcript = %v", got)
 	}
 
-	second := []store.TranscriptMessage{{ID: "u2", Kind: "user", Text: "second"}, {ID: "a2", Kind: "assistant", Text: "answer two"}}
+	// The page's last step is also the first adoption copied (Codex logs a
+	// step twice on adjacent lines): it is not shown twice.
+	second := []store.TranscriptMessage{{ID: "u2", Kind: "user", Text: "second"}, {ID: "a2", Kind: "assistant", Text: "answer two"}, {ID: "u3", Kind: "user", Text: "third"}}
 	if err := db.ImportNativeHistory(ctx, session.ID, history, second, 2000); err != nil {
 		t.Fatal(err)
 	}

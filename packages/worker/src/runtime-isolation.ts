@@ -129,15 +129,21 @@ function accountIdentity(
  * session's generated Codex home carries them as its AGENTS.md instead.
  */
 function codexWorkspaceInstructions(workspacePath: string): string {
+  const limit = 128 * 1024;
   for (const name of ["AGENTS.override.md", "AGENTS.md"]) {
+    let text: string;
     try {
-      const text = readFileSync(resolve(workspacePath, name), "utf8").trim();
-      if (Buffer.byteLength(text) > 128 * 1024)
-        throw new Error(`Workspace instruction ${name} exceeds 128 KiB.`);
-      if (text) return `Workspace instructions (${name}):\n${text}`;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      text = readFileSync(resolve(workspacePath, name), "utf8").trim();
+    } catch {
+      // Missing or unreadable, as Codex itself would skip it: the session
+      // still starts.
+      continue;
     }
+    if (!text) continue;
+    // Codex itself cuts project instructions short (project_doc_max_bytes)
+    // rather than refuse to start.
+    const kept = Buffer.from(text).subarray(0, limit).toString("utf8");
+    return `Workspace instructions (${name}${kept.length < text.length ? ", first 128 KiB" : ""}):\n${kept}`;
   }
   return "";
 }

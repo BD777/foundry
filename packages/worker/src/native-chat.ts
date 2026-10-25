@@ -65,6 +65,9 @@ const nativeSessionHeaderByteLimit = 256 * 1024;
 const nativeSessionTranscriptByteLimit = 1024 * 1024;
 // One log line larger than this (a pasted image, say) is left out of a page.
 const nativeLogLineLimit = 16 * 1024 * 1024;
+// A chat's latest part, or a page, reaches back up to this far for a step
+// to show: a long run of tool output or bookkeeping is not a whole page.
+const nativeLogReachLimit = 8 * 1024 * 1024;
 
 export async function nativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
@@ -134,15 +137,56 @@ export async function nativeChatHistory(
   );
   if (!path) throw new Error("This native chat's log is not on this device.");
   const size = statSync(path).size;
-  const page = await readLogWindow(
+  const page = await readShownWindow(
     path,
     Math.min(before, size),
+    provider,
+    (transcript) => transcript.length > 0,
+  );
+  return { transcript: page.transcript, before: page.start };
+}
+
+/**
+ * readLogWindow, reaching further back (up to nativeLogReachLimit) while
+ * what the window shows does not satisfy `enough`.
+ */
+async function readShownWindow(
+  sessionPath: string,
+  end: number,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  enough: (transcript: NonNullable<ChatThread["transcript"]>) => boolean,
+): Promise<LogWindow & { transcript: NonNullable<ChatThread["transcript"]> }> {
+  let window = await readLogWindow(
+    sessionPath,
+    end,
     nativeSessionTranscriptByteLimit,
   );
-  return {
-    transcript: nativeChatTranscript(page.lines, provider, page.offsets),
-    before: page.start,
-  };
+  let transcript = nativeChatTranscript(window.lines, provider, window.offsets);
+  while (
+    window.start > 0 &&
+    end - window.start < nativeLogReachLimit &&
+    !enough(transcript)
+  ) {
+    const older = await readLogWindow(
+      sessionPath,
+      window.start,
+      nativeSessionTranscriptByteLimit,
+    );
+    window = {
+      lines: [...older.lines, ...window.lines],
+      offsets: [...older.offsets, ...window.offsets],
+      start: older.start,
+    };
+    transcript = nativeChatTranscript(window.lines, provider, window.offsets);
+  }
+  return { ...window, transcript };
+}
+
+/** A transcript holds a turn of the conversation, not only its steps. */
+function holdsTurn(transcript: NonNullable<ChatThread["transcript"]>): boolean {
+  return transcript.some(
+    (message) => message.kind === "user" || message.kind === "assistant",
+  );
 }
 
 async function nativeChatLogPath(
@@ -582,10 +626,11 @@ async function parseCodexSessionCandidate(
   }
 
   const preview = codexSessionPreview(lines) || "Codex native session";
-  const latest = await readLogWindow(
+  const latest = await readShownWindow(
     sessionPath,
     stat.size,
-    nativeSessionTranscriptByteLimit,
+    "codex",
+    holdsTurn,
   );
   const { activityAt: tailActivity, ...recap } = nativeChatRecap(
     latest.lines,
@@ -596,7 +641,7 @@ async function parseCodexSessionCandidate(
   if (!activityAt) return undefined;
   return {
     handoffContext: codexSessionHandoffContext(lines),
-    transcript: nativeChatTranscript(latest.lines, "codex", latest.offsets),
+    transcript: latest.transcript,
     ...(latest.start > 0 ? { transcriptBefore: latest.start } : {}),
     ...recap,
     id,
@@ -648,10 +693,11 @@ async function parseClaudeSessionCandidate(
 
   const lines = headerLines;
   const preview = claudeSessionPreview(lines) || "Claude native session";
-  const latest = await readLogWindow(
+  const latest = await readShownWindow(
     sessionPath,
     stat.size,
-    nativeSessionTranscriptByteLimit,
+    "claude",
+    holdsTurn,
   );
   const { activityAt: tailActivity, ...recap } = nativeChatRecap(
     latest.lines,
@@ -662,7 +708,7 @@ async function parseClaudeSessionCandidate(
   if (!activityAt) return undefined;
   return {
     handoffContext: claudeSessionHandoffContext(lines),
-    transcript: nativeChatTranscript(latest.lines, "claude", latest.offsets),
+    transcript: latest.transcript,
     ...(latest.start > 0 ? { transcriptBefore: latest.start } : {}),
     ...recap,
     id,
