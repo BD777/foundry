@@ -75,6 +75,7 @@ var inboundHandlers = map[string]inboundHandler{
 	wsRepairDoneType:               answer[wsRepairDone],
 	wsNativeAccountInspectedType:   answer[wsNativeAccountInspectionResult],
 	wsSubagentTranscriptReadType:   answer[wsSubagentTranscriptReadPayload],
+	wsNativeHistoryReadType:        answer[wsNativeHistoryReadPayload],
 	wsSessionFileReadType:          answer[wsSessionFileReadPayload],
 	wsSessionFileDiffReadType:      answer[wsSessionFileDiffReadPayload],
 	wsBackgroundTaskOutputReadType: answer[wsBackgroundTaskOutputReadPayload],

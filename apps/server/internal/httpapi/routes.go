@@ -552,6 +552,7 @@ func (s *Server) routeTable() []route {
 		fn("POST /api/chats/{id}/title", s.handleRenameChat, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("POST /api/chats/{id}/recap-title", s.handleRecapChatTitle, workspaceRole(member, chatOrSessionWorkspace("id"))),
 		fn("GET /api/chats/{id}", s.handleGetChat, workspaceRole(viewer, chatWorkspace("id"))),
+		fn("GET /api/chats/{id}/history", s.handleGetChatHistory, workspaceRole(viewer, chatWorkspace("id"))),
 		// A chat's queued messages. Changing them takes control of the chat:
 		// its starter or a maintainer (in handler).
 		fn("GET /api/chats/{id}/queue", s.handleGetChatQueue, workspaceRole(viewer, chatOrSessionWorkspace("id"))),

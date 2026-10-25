@@ -21,9 +21,11 @@ import {
 import type {
   AgentProfileProjection,
   ChatThread,
+  NativeHistoryReadPayload,
   WorkerRuntimeId,
   WorkspaceProjection,
 } from "@bd777/foundry-protocol";
+import type { FileHandle } from "node:fs/promises";
 
 interface CodexSessionIndexEntry {
   id: string;
@@ -41,6 +43,7 @@ interface NativeChatCandidate {
   preview: string;
   handoffContext?: string;
   transcript?: ChatThread["transcript"];
+  transcriptBefore?: number;
   answerRevision?: string;
   recentMessages?: ChatThread["recentMessages"];
   status?: ChatThread["status"];
@@ -57,7 +60,11 @@ interface NativeChatCacheEntry {
 const codexNativeChatCache = new Map<string, NativeChatCacheEntry>();
 const claudeNativeChatCache = new Map<string, NativeChatCacheEntry>();
 const nativeSessionHeaderByteLimit = 256 * 1024;
+// A chat carries its log's latest part of about this size; older parts are
+// read a page of this size at a time when someone scrolls up to them.
 const nativeSessionTranscriptByteLimit = 1024 * 1024;
+// One log line larger than this (a pasted image, say) is left out of a page.
+const nativeLogLineLimit = 16 * 1024 * 1024;
 
 export async function nativeChatThreadsForWorkspace(
   workspace: WorkspaceProjection,
@@ -84,6 +91,9 @@ export async function nativeChatThreadsForWorkspace(
         id: `native_${candidate.provider}_${candidate.id}`,
         handoffContext: candidate.handoffContext,
         transcript: candidate.transcript,
+        ...(candidate.transcriptBefore
+          ? { transcriptBefore: candidate.transcriptBefore }
+          : {}),
         answerRevision: candidate.answerRevision,
         recentMessages: candidate.recentMessages,
         status: candidate.status,
@@ -102,6 +112,72 @@ export async function nativeChatThreadsForWorkspace(
         workspaceId: workspace.id,
       };
     });
+}
+
+/**
+ * The page of a native chat's log that ends at byte `before`, for someone
+ * scrolling back: only a log of this workspace, found by its id among the
+ * logs the chat list reads.
+ */
+export async function nativeChatHistory(
+  workspacePath: string,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  nativeSessionId: string,
+  before: number,
+): Promise<NativeHistoryReadPayload> {
+  if (!Number.isSafeInteger(before) || before <= 0)
+    throw new Error("before must be a positive byte offset");
+  const path = await nativeChatLogPath(
+    resolve(workspacePath),
+    provider,
+    nativeSessionId,
+  );
+  if (!path) throw new Error("This native chat's log is not on this device.");
+  const size = statSync(path).size;
+  const page = await readLogWindow(
+    path,
+    Math.min(before, size),
+    nativeSessionTranscriptByteLimit,
+  );
+  return {
+    transcript: nativeChatTranscript(page.lines, provider, page.offsets),
+    before: page.start,
+  };
+}
+
+async function nativeChatLogPath(
+  workspacePath: string,
+  provider: Exclude<WorkerRuntimeId, "mock">,
+  id: string,
+): Promise<string | undefined> {
+  const [homes, folder, depth, cache, parse] =
+    provider === "codex"
+      ? ([
+          codexHomeCandidates(),
+          "sessions",
+          codexSessionDepth,
+          codexNativeChatCache,
+          parseCodexSessionCandidate,
+        ] as const)
+      : ([
+          claudeHomeCandidates(),
+          "projects",
+          claudeSessionDepth,
+          claudeNativeChatCache,
+          parseClaudeSessionCandidate,
+        ] as const);
+  for (const home of homes) {
+    // Both runtimes name a log after its session id.
+    const paths = (await jsonlFiles(resolve(home, folder), 2500, depth)).filter(
+      (path) => basename(path).includes(id),
+    );
+    for (const path of paths) {
+      const candidate = await cachedNativeChatCandidate(cache, path, parse);
+      if (candidate?.id === id && candidate.workspacePath === workspacePath)
+        return path;
+    }
+  }
+  return undefined;
 }
 
 function nativeProfileForRuntime(
@@ -379,41 +455,100 @@ async function readSessionPrefixLines(
   }
 }
 
-async function readSessionTailLines(
+/** Complete lines of a log and the byte offset each starts at. */
+interface LogWindow {
+  lines: string[];
+  offsets: number[];
+  /** Where the first line starts: the next older window ends here. */
+  start: number;
+}
+
+/**
+ * The complete lines of a log that end at `end` (a line boundary, or the
+ * log's size), about `byteLimit` bytes of them. A window always holds at
+ * least the line ending at `end`, however long, unless it is longer than
+ * nativeLogLineLimit: then the window is empty and starts where that line
+ * does, so paging goes on past it.
+ */
+async function readLogWindow(
   sessionPath: string,
-  fileSize: number,
-): Promise<string[]> {
-  const length = Math.min(fileSize, nativeSessionTranscriptByteLimit);
-  const start = fileSize - length;
+  end: number,
+  byteLimit: number,
+): Promise<LogWindow> {
   const file = await openFile(sessionPath, "r");
   try {
-    const buffer = Buffer.allocUnsafe(length);
-    const { bytesRead } = await file.read(buffer, 0, length, start);
-    const lines = buffer.toString("utf8", 0, bytesRead).split(/\r?\n/);
-    if (start > 0) lines.shift();
-    return lines.filter(Boolean);
+    let start = Math.max(0, end - byteLimit);
+    if (start > 0) {
+      const boundary = await lineStartFrom(file, start, end);
+      start = boundary < end ? boundary : await lineStartBefore(file, end);
+    }
+    if (end - start > nativeLogLineLimit)
+      return { lines: [], offsets: [], start };
+    const buffer = Buffer.allocUnsafe(end - start);
+    const { bytesRead } = await file.read(buffer, 0, end - start, start);
+    const lines: string[] = [];
+    const offsets: number[] = [];
+    let from = 0;
+    while (from < bytesRead) {
+      const newline = buffer.indexOf(0x0a, from);
+      const to = newline < 0 || newline >= bytesRead ? bytesRead : newline;
+      const line = buffer.toString("utf8", from, to).replace(/\r$/, "");
+      if (line) {
+        lines.push(line);
+        offsets.push(start + from);
+      }
+      from = to + 1;
+    }
+    return { lines, offsets, start };
   } finally {
     await file.close();
   }
+}
+
+const scanChunk = 64 * 1024;
+
+/** The first line start at or after `position`, or `end` when none is. */
+async function lineStartFrom(
+  file: FileHandle,
+  position: number,
+  end: number,
+): Promise<number> {
+  const buffer = Buffer.allocUnsafe(scanChunk);
+  // A line starts at `position` when the byte before it ends a line.
+  for (let at = position - 1; at < end; at += scanChunk) {
+    const length = Math.min(scanChunk, end - at);
+    const { bytesRead } = await file.read(buffer, 0, length, at);
+    const newline = buffer.subarray(0, bytesRead).indexOf(0x0a);
+    if (newline >= 0) return at + newline + 1;
+    if (bytesRead < length) break;
+  }
+  return end;
+}
+
+/** Where the line that ends at `end` starts. */
+async function lineStartBefore(file: FileHandle, end: number): Promise<number> {
+  const buffer = Buffer.allocUnsafe(scanChunk);
+  // The byte before `end` is that line's own newline.
+  let to = end - 1;
+  while (to > 0) {
+    const at = Math.max(0, to - scanChunk);
+    const { bytesRead } = await file.read(buffer, 0, to - at, at);
+    const newline = buffer.subarray(0, bytesRead).lastIndexOf(0x0a);
+    if (newline >= 0) return at + newline + 1;
+    to = at;
+  }
+  return 0;
 }
 
 async function parseCodexSessionCandidate(
   sessionPath: string,
   stat: Stats,
 ): Promise<NativeChatCandidate | undefined> {
-  const headerLines = await readSessionPrefixLines(
+  const lines = await readSessionPrefixLines(
     sessionPath,
     stat.size,
     nativeSessionHeaderByteLimit,
   );
-  const lines =
-    stat.size > nativeSessionHeaderByteLimit
-      ? await readSessionPrefixLines(
-          sessionPath,
-          stat.size,
-          nativeSessionTranscriptByteLimit,
-        )
-      : headerLines;
   if (lines.length === 0) {
     return undefined;
   }
@@ -447,10 +582,13 @@ async function parseCodexSessionCandidate(
   }
 
   const preview = codexSessionPreview(lines) || "Codex native session";
+  const latest = await readLogWindow(
+    sessionPath,
+    stat.size,
+    nativeSessionTranscriptByteLimit,
+  );
   const { activityAt: tailActivity, ...recap } = nativeChatRecap(
-    stat.size <= nativeSessionTranscriptByteLimit
-      ? lines
-      : await readSessionTailLines(sessionPath, stat.size),
+    latest.lines,
     "codex",
     stat.mtime,
   );
@@ -458,11 +596,8 @@ async function parseCodexSessionCandidate(
   if (!activityAt) return undefined;
   return {
     handoffContext: codexSessionHandoffContext(lines),
-    transcript: nativeChatTranscript(
-      lines,
-      "codex",
-      stat.size > nativeSessionTranscriptByteLimit,
-    ),
+    transcript: nativeChatTranscript(latest.lines, "codex", latest.offsets),
+    ...(latest.start > 0 ? { transcriptBefore: latest.start } : {}),
     ...recap,
     id,
     preview,
@@ -511,19 +646,15 @@ async function parseClaudeSessionCandidate(
     return undefined;
   }
 
-  const lines =
-    stat.size > nativeSessionHeaderByteLimit
-      ? await readSessionPrefixLines(
-          sessionPath,
-          stat.size,
-          nativeSessionTranscriptByteLimit,
-        )
-      : headerLines;
+  const lines = headerLines;
   const preview = claudeSessionPreview(lines) || "Claude native session";
+  const latest = await readLogWindow(
+    sessionPath,
+    stat.size,
+    nativeSessionTranscriptByteLimit,
+  );
   const { activityAt: tailActivity, ...recap } = nativeChatRecap(
-    stat.size <= nativeSessionTranscriptByteLimit
-      ? lines
-      : await readSessionTailLines(sessionPath, stat.size),
+    latest.lines,
     "claude",
     stat.mtime,
   );
@@ -531,11 +662,8 @@ async function parseClaudeSessionCandidate(
   if (!activityAt) return undefined;
   return {
     handoffContext: claudeSessionHandoffContext(lines),
-    transcript: nativeChatTranscript(
-      lines,
-      "claude",
-      stat.size > nativeSessionTranscriptByteLimit,
-    ),
+    transcript: nativeChatTranscript(latest.lines, "claude", latest.offsets),
+    ...(latest.start > 0 ? { transcriptBefore: latest.start } : {}),
     ...recap,
     id,
     preview,

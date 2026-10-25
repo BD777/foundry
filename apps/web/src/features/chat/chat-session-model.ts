@@ -298,6 +298,9 @@ export function profileTransitionNoteForSend(input: {
     });
   }
   if (input.selectedChat) {
+    // Continuing a native chat with the profile it ran under changes nothing.
+    if (chatMatchesAgentProfile(input.selectedChat, input.agent))
+      return undefined;
     return i18n.t("chat:session.nativeImported", {
       from: profileLabelForChat(input.selectedChat),
       to: targetLabel,

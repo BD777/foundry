@@ -717,7 +717,8 @@ func chatPayload(value store.ChatThread, current string, found bool) (store.Chat
 		var previous store.ChatThread
 		if json.Unmarshal([]byte(current), &previous) == nil &&
 			previous.HandoffContext == value.HandoffContext && previous.AnswerRevision == value.AnswerRevision {
-			value.Transcript = previous.Transcript
+			// The kept transcript keeps where in the log it starts.
+			value.Transcript, value.TranscriptBefore = previous.Transcript, previous.TranscriptBefore
 		}
 	}
 	payload, err := encode(value)

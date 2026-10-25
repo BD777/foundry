@@ -38,6 +38,7 @@ import {
 import { liveThreadSchedule, threadScheduleWakes } from "./chat-schedule-model";
 import { chatDetailHydrationId } from "./chat-hydration-policy";
 import { useChatTranscript } from "./use-chat-transcript";
+import { useNativeChatHistory } from "./use-native-chat-history";
 import { useChatSelection } from "./use-chat-selection";
 import { selectedChatNotices } from "./chat-thread-notice";
 import { ChatTranscriptHistory } from "./chat-transcript-history";
@@ -183,6 +184,11 @@ export function useChatFeature({
     return selectedChatSummary;
   }, [chatDetail, selectedChatSummary]);
   const conversationThreadKey = `${workspaceId}:${selectedThread?.id ?? selectedChat?.id ?? "new"}`;
+  // An open native chat pages back through its device instead.
+  const nativeHistory = useNativeChatHistory(
+    selectedThread ? undefined : selectedChat,
+  );
+  const history = selectedThread || !selectedChat ? transcript : nativeHistory;
 
   const notify = useCallback(
     (message: string): Promise<void> =>
@@ -316,7 +322,7 @@ export function useChatFeature({
   const projection = useMemo(
     () =>
       chatViewMessages({
-        chat: selectedChat,
+        chat: nativeHistory.chat ?? selectedChat,
         devices,
         outbox: outbox.entries,
         suppressedResponseFingerprints: subagents.responseFingerprints,
@@ -324,6 +330,7 @@ export function useChatFeature({
       }),
     [
       devices,
+      nativeHistory.chat,
       outbox.entries,
       selectedChat,
       selectedThread,
@@ -432,15 +439,15 @@ export function useChatFeature({
       parentLink?.workspaceId,
     ],
   );
-  const history = useMemo(
+  const historyRow = useMemo(
     () => (
       <ChatTranscriptHistory
-        onLoadEarlier={transcript.loadEarlier}
+        onLoadEarlier={history.loadEarlier}
         onRetry={transcript.retry}
-        state={transcript.state}
+        state={history.state}
       />
     ),
-    [transcript.loadEarlier, transcript.retry, transcript.state],
+    [history.loadEarlier, history.state, transcript.retry],
   );
 
   const notices = selectedChatNotices({
@@ -497,8 +504,8 @@ export function useChatFeature({
         .map((session) => `${session.id}:${session.status}`)
         .join("|")}
       contextCard={notices.linked ? undefined : panelCard}
-      history={history}
-      onReachHistoryStart={transcript.loadEarlier}
+      history={historyRow}
+      onReachHistoryStart={history.loadEarlier}
       onContextPanelVisibleChange={setContextPanelVisible}
       onRetrySubagents={subagents.failed ? subagents.retry : undefined}
       backgroundWork={backgroundWork}

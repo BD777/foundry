@@ -26,6 +26,8 @@ const (
 	wsFileReadType                 = "file_read"
 	wsReadSubagentTranscriptType   = "read_subagent_transcript"
 	wsSubagentTranscriptReadType   = "subagent_transcript_read"
+	wsReadNativeHistoryType        = "read_native_history"
+	wsNativeHistoryReadType        = "native_history_read"
 	wsReadSessionUsageType         = "read_session_usage"
 	wsSessionUsageReadType         = "session_usage_read"
 	wsReadSessionFileType          = "read_session_file"

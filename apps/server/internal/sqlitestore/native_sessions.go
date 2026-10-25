@@ -303,9 +303,15 @@ func (s *Store) adoptNativeChat(ctx context.Context, session *store.AgentSession
 	}
 	runtime := nativeRuntime{provider: chat.Provider, deviceID: session.DeviceID}
 	if chat.Provider == session.Provider {
-		return s.attachNativeSession(ctx, session, chat.NativeSessionID, "")
+		if err := s.attachNativeSession(ctx, session, chat.NativeSessionID, ""); err != nil {
+			return err
+		}
+		return s.keepNativeHistory(ctx, session.ID, chat.Provider, chat.NativeSessionID, chat.TranscriptBefore)
 	}
 	if _, err := s.claimNativeSession(ctx, session.ID, runtime, chat.NativeSessionID, "", true); err != nil {
+		return err
+	}
+	if err := s.keepNativeHistory(ctx, session.ID, chat.Provider, chat.NativeSessionID, chat.TranscriptBefore); err != nil {
 		return err
 	}
 	conversation, err := s.sessionConversation(ctx, session.ID, "", session.Input.ID, true)
@@ -719,6 +725,9 @@ func (s *Store) migrateNativeSessions(ctx context.Context) error {
 			if _, err := tx.conn().ExecContext(ctx, statement); err != nil {
 				return fmt.Errorf("migrate native sessions: %w", err)
 			}
+		}
+		if err := tx.nativeHistoryColumn(ctx); err != nil {
+			return err
 		}
 		if err := tx.migrateActivityColumns(ctx); err != nil {
 			return err

@@ -429,6 +429,7 @@ export const daemonCapabilities = [
   "context_files_v1",
   "role_run_budgets_v1",
   "exact_input_cancel_v1",
+  "native_history_v1",
   "codex_active_steer",
   "issue_sessions",
   "issue_clarification",

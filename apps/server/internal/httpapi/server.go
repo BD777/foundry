@@ -39,6 +39,7 @@ type Backend interface {
 	store.SessionInputCompletionStore
 	store.SessionEventWindowStore
 	store.SessionEventCatchUpStore
+	store.NativeHistoryStore
 	store.SessionStateStore
 	store.SessionInspectionStore
 	store.SessionTimerStore

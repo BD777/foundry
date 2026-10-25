@@ -13,7 +13,7 @@
 // otherwise. Keep them flat (no inline object types, no `extends`) so the
 // audit can read them.
 
-import type { ChatAttachment } from "./chat.js";
+import type { ChatAttachment, TranscriptMessage } from "./chat.js";
 import type { AgentRuntimeSettings, DeviceRepairAction } from "./device.js";
 import type { ExternalAccountMaterial } from "./external-accounts.js";
 import type { DeviceConnectorUse } from "./connectors.js";
@@ -80,6 +80,8 @@ export const daemonMessageTypes = {
   workspaceSkillsRefreshed: "workspace_skills_refreshed",
   readSkillContent: "read_skill_content",
   readSubagentTranscript: "read_subagent_transcript",
+  /** Server asks: the part of a native chat's log before a byte offset. */
+  readNativeHistory: "read_native_history",
   readSessionUsage: "read_session_usage",
   readSessionFile: "read_session_file",
   sessionFileRead: "session_file_read",
@@ -167,6 +169,7 @@ export const daemonMessageTypes = {
   workspaceRelinked: "workspace_relinked",
   steerSession: "steer_session",
   subagentTranscriptRead: "subagent_transcript_read",
+  nativeHistoryRead: "native_history_read",
   subagentsListed: "subagents_listed",
   skillsScanned: "skills_scanned",
   upsertAgentProfile: "upsert_agent_profile",
@@ -287,6 +290,22 @@ export interface ReadSubagentTranscriptPayload {
   sessionId: string;
   taskId: string;
   workspaceId: string;
+}
+
+/** read_native_history */
+export interface ReadNativeHistoryPayload {
+  workspaceId: string;
+  provider: "claude" | "codex";
+  nativeSessionId: string;
+  /** Byte offset in the native log: the page ends where this starts. */
+  before: number;
+}
+
+/** native_history_read: the page, and where it starts (0 at the log's start). */
+export interface NativeHistoryReadPayload {
+  transcript: TranscriptMessage[];
+  before: number;
+  error?: string;
 }
 
 /** read_session_file */

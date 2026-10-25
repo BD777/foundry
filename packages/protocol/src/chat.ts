@@ -153,6 +153,12 @@ export interface ChatThread {
   preview: string;
   handoffContext?: string;
   transcript?: TranscriptMessage[];
+  /**
+   * Byte offset in the native log where `transcript` starts when it holds
+   * only the latest part; what comes before is read from the device a page
+   * at a time (read_native_history). Absent when it starts at the log's start.
+   */
+  transcriptBefore?: number;
   answerRevision?: string;
   recentMessages?: ChatRecapMessage[];
   status?: RunStatus;

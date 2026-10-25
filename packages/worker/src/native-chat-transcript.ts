@@ -1,4 +1,3 @@
-import { processLabels } from "@bd777/foundry-protocol";
 import type { TranscriptMessage } from "@bd777/foundry-protocol";
 import { codexTranscriptRecord } from "./transcript-adapters/codex.js";
 import { claudeTranscriptRecord } from "./transcript-adapters/claude.js";
@@ -12,11 +11,16 @@ const adapters = {
   claude: claudeTranscriptRecord,
 };
 
-/** Provider adapters preserve semantics; this reader only reconciles log mirrors. */
+/**
+ * Provider adapters preserve semantics; this reader only reconciles log
+ * mirrors. `offsets` are the lines' byte offsets in the log: steps without
+ * an id of their own are named by them, so every page of one log names a
+ * step the same way.
+ */
 export function nativeChatTranscript(
   lines: string[],
   provider: keyof typeof adapters,
-  truncated = false,
+  offsets?: readonly number[],
 ): TranscriptMessage[] {
   const messages: TranscriptMessage[] = [];
   const byId = new Map<string, number>();
@@ -25,6 +29,7 @@ export function nativeChatTranscript(
   let codexCallStart = 0;
   let codexTotal = -1;
   for (const [index, line] of lines.entries()) {
+    const position = offsets?.[index] ?? index;
     let envelope;
     try {
       envelope = record(JSON.parse(line));
@@ -52,7 +57,7 @@ export function nativeChatTranscript(
       ) {
         codexTotal = grown;
         const usage = {
-          requestId: `codex:${index}`,
+          requestId: `codex:${position}`,
           inputTokens: Number(last.input_tokens) || 0,
           cacheReadTokens: Number(last.cached_input_tokens) || 0,
           cacheWriteTokens: Number(last.cache_write_input_tokens) || 0,
@@ -63,7 +68,7 @@ export function nativeChatTranscript(
         codexCallStart = messages.length;
       }
     }
-    for (const item of adapters[provider](envelope, `line-${index}`)) {
+    for (const item of adapters[provider](envelope, `line-${position}`)) {
       if (requestUsage) item.requestUsage = requestUsage;
       if (!item.text.trim()) continue;
       const timestamp =
@@ -107,12 +112,6 @@ export function nativeChatTranscript(
     (provider === "claude" ? claudeNativeUsage : codexNativeUsage)(envelopes)
       .turns,
   );
-  if (truncated)
-    messages.push({
-      id: "unloaded-tail",
-      kind: "boundary",
-      text: processLabels.transcriptTailUnloaded,
-    });
   return messages.map(redactTranscriptMessage);
 }
 
