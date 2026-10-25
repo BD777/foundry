@@ -22,11 +22,14 @@ type ChatThread struct {
 	Preview            string              `json:"preview"`
 	HandoffContext     string              `json:"handoffContext,omitempty"`
 	Transcript         []TranscriptMessage `json:"transcript,omitempty"`
-	AnswerRevision     string              `json:"answerRevision,omitempty"`
-	RecentMessages     []ChatRecapMessage  `json:"recentMessages,omitempty"`
-	Status             string              `json:"status,omitempty"`
-	Readonly           bool                `json:"readonly"`
-	UpdatedLabel       string              `json:"updatedLabel"`
+	// TranscriptBefore is the byte offset in the native log where
+	// Transcript starts when it holds only the log's latest part.
+	TranscriptBefore int64              `json:"transcriptBefore,omitempty"`
+	AnswerRevision   string             `json:"answerRevision,omitempty"`
+	RecentMessages   []ChatRecapMessage `json:"recentMessages,omitempty"`
+	Status           string             `json:"status,omitempty"`
+	Readonly         bool               `json:"readonly"`
+	UpdatedLabel     string             `json:"updatedLabel"`
 }
 
 type ChatRecapMessage struct {

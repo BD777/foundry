@@ -176,13 +176,30 @@ test("Claude mixed content preserves thinking, tools, tool results and answer", 
   assert.equal(messages[3].text, "File content");
 });
 
-test("a bounded read explicitly marks unloaded history", () => {
-  const messages = nativeChatTranscript(
-    [message("assistant", "Answer")],
+test("steps without ids are named by their place in the log", () => {
+  const line = JSON.stringify({
+    type: "response_item",
+    payload: {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Answer" }],
+    },
+  });
+  const whole = nativeChatTranscript(
+    [line, line.replace("Answer", "Later")],
     "codex",
-    true,
+    [0, 4096],
   );
-  assert.equal(messages.at(-1).kind, "boundary");
+  const page = nativeChatTranscript(
+    [line.replace("Answer", "Later")],
+    "codex",
+    [4096],
+  );
+  assert.equal(
+    page[0].id,
+    whole[1].id,
+    "a page names a step as the whole log does",
+  );
 });
 
 test("identical tool executions with different IDs are not deduplicated", () => {

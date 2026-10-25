@@ -6,6 +6,7 @@ import type {
   ChatThread,
   ChatTitle,
   EditChatQueueItemInput,
+  TranscriptMessage,
   EnqueueChatMessageInput,
 } from "@bd777/foundry-protocol";
 import type { UploadChatAttachmentsInput } from "../api-types";
@@ -85,6 +86,25 @@ export function getChat(
   options: RequestOptions = {},
 ): Promise<ChatThread> {
   return request("GET", `/api/chats/${encodeURIComponent(chatId)}`, options);
+}
+
+/** A page of a native chat's earlier log, read from its device. */
+export interface NativeChatHistoryPage {
+  transcript: TranscriptMessage[];
+  /** Where the page starts in the log; 0 at the log's start. */
+  before: number;
+}
+
+export function getNativeChatHistory(
+  chatId: string,
+  before: number,
+  options: RequestOptions = {},
+): Promise<NativeChatHistoryPage> {
+  return request(
+    "GET",
+    `/api/chats/${encodeURIComponent(chatId)}/history?before=${before}`,
+    options,
+  );
 }
 
 export function uploadChatAttachments(

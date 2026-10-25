@@ -15,6 +15,8 @@
 
 ## 当前事项总表
 
+2026-10-26 原生会话：[DEV-041 原生会话完整历史、Codex 工作区指令与插件缓存](DEV-041-native-history.md)。原生对话只读日志前 1 MiB 的问题改为“最新部分 + 向前翻页”，接管后的会话逐页导入到开头；Foundry 的 Codex 会话此前从未加载工作区 `AGENTS.md`（untrusted 项目），现经生成的 Codex home 提供；关闭 Codex 插件市场克隆（每会话约 100 MB）。dev Server/Web 已部署，Worker 已发布，cottoncpp 已更新，`sess_1792942466521638962` 已修复；已按用户夜间窗口授权直接推送 main，人工验收待确认。
+
 2026-10-24 文档：[DEV-017 Roadmap 按模块重组](DEV-017-roadmap-restructure.md)。唯一 Roadmap 移到 `docs/roadmap.md`，按模块图组织并带完成标准；连接器抽象、Chats 跟随原生演进与工作流平台拆分设计已写入对应文档；模块图更新。合入状态见事项记录。
 
 2026-10-24 模型服务：[DEV-040 Base URL 校验纠正与 MCP 可见性](DEV-040-provider-endpoint.md)。保存时纠正 Claude `/v1` 等常见错误，并拒绝无效地址；MCP `list_profiles` 可查看模型服务的端点。经 PR #144 合入 main（`3081b85`），dev Server 已按合入版本重新部署（Foundry Skill 升到 revision 10）；Worker 已发布，本机 daemon 已更新，活动执行宿主保留旧版。人工验收待确认。

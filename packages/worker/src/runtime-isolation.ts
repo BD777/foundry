@@ -122,6 +122,26 @@ function accountIdentity(
   }
 }
 
+/**
+ * What a trusted Codex project would read at the workspace root (an
+ * override first). Foundry keeps the project untrusted, so its own
+ * .codex/config.toml stays out, and Codex then skips these files too: the
+ * session's generated Codex home carries them as its AGENTS.md instead.
+ */
+function codexWorkspaceInstructions(workspacePath: string): string {
+  for (const name of ["AGENTS.override.md", "AGENTS.md"]) {
+    try {
+      const text = readFileSync(resolve(workspacePath, name), "utf8").trim();
+      if (Buffer.byteLength(text) > 128 * 1024)
+        throw new Error(`Workspace instruction ${name} exceeds 128 KiB.`);
+      if (text) return `Workspace instructions (${name}):\n${text}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return "";
+}
+
 export function isolatedCodexEnvironment(
   profile: AgentProfileLocalConfig,
   env: NodeJS.ProcessEnv,
@@ -159,13 +179,25 @@ export function isolatedCodexEnvironment(
         link = resolve(home, name);
       historyLink(link, target);
     }
-    // Untrusted disables project .codex/config.toml, not AGENTS.md instructions.
-    // No model catalog, provider, hooks, MCP or features are imported from the CLI.
+    // Untrusted keeps the project's .codex/config.toml out, and with it
+    // Codex skips the project's AGENTS.md: this home's own AGENTS.md, which
+    // Codex reads for any project, carries the workspace's instructions.
+    // No model catalog, provider, hooks, MCP, plugins or features are
+    // imported from the CLI; with plugins off Codex also stops cloning its
+    // plugin marketplace (about 100 MB) into every generated home.
     writeFileAtomic(
       resolve(home, "config.toml"),
-      `sqlite_home = ${JSON.stringify(resolve(sources.dataHome))}\ncli_auth_credentials_store = "ephemeral"\n[features]\nmemories = false\n[projects.${JSON.stringify(projectPath(workspacePath))}]\ntrust_level = "untrusted"\n`,
+      `sqlite_home = ${JSON.stringify(resolve(sources.dataHome))}\ncli_auth_credentials_store = "ephemeral"\n[features]\nmemories = false\nplugins = false\n[projects.${JSON.stringify(projectPath(workspacePath))}]\ntrust_level = "untrusted"\n`,
       { hardenParent: false, fsync: false },
     );
+    const instructions = codexWorkspaceInstructions(workspacePath);
+    const agentsFile = resolve(home, "AGENTS.md");
+    if (instructions)
+      writeFileAtomic(agentsFile, `${instructions}\n`, {
+        hardenParent: false,
+        fsync: false,
+      });
+    else rmSync(agentsFile, { force: true });
     const { FOUNDRY_CODEX_AUTH_SOURCE: _previousAuthSource, ...base } = env;
     return recordPaths(
       {

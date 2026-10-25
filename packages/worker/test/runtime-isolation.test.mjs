@@ -8,6 +8,7 @@ import {
   existsSync,
   rmSync,
   realpathSync,
+  symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -129,6 +130,42 @@ test("Codex official login hands off access tokens only and rejects account chan
     () => client.onRequest("account/chatgptAuthTokens/refresh", {}),
     /account changed/,
   );
+});
+
+test("a Codex home carries the untrusted workspace's AGENTS.md and no plugins", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "codex-instructions-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = join(root, "native"),
+    workspace = join(root, "workspace");
+  mkdirSync(source);
+  mkdirSync(workspace);
+  // A workspace that keeps its rules in CLAUDE.md and links AGENTS.md to it.
+  writeFileSync(join(workspace, "CLAUDE.md"), "WORKSPACE_RULE");
+  symlinkSync("CLAUDE.md", join(workspace, "AGENTS.md"));
+  const profile = { runtime: "codex", connectionType: "local_login" };
+  const prepare = () =>
+    isolatedCodexEnvironment(
+      profile,
+      { HOME: root, CODEX_HOME: source },
+      workspace,
+      "sess_instructions",
+    );
+  const env = prepare();
+  const config = readFileSync(join(env.CODEX_HOME, "config.toml"), "utf8");
+  assert(config.includes('trust_level = "untrusted"'));
+  assert(config.includes("plugins = false"));
+  assert.equal(
+    readFileSync(join(env.CODEX_HOME, "AGENTS.md"), "utf8"),
+    "Workspace instructions (AGENTS.md):\nWORKSPACE_RULE\n",
+  );
+  writeFileSync(join(workspace, "AGENTS.override.md"), "OVERRIDE_RULE");
+  assert.match(
+    readFileSync(join(prepare().CODEX_HOME, "AGENTS.md"), "utf8"),
+    /^Workspace instructions \(AGENTS\.override\.md\):\nOVERRIDE_RULE/,
+  );
+  rmSync(join(workspace, "AGENTS.override.md"));
+  rmSync(join(workspace, "AGENTS.md"));
+  assert.equal(existsSync(join(prepare().CODEX_HOME, "AGENTS.md")), false);
 });
 
 test("Claude settings and integrations are explicit while workspace instruction files remain admitted", (t) => {

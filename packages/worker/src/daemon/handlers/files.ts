@@ -22,7 +22,9 @@ import {
   type ReadSessionFileDiffPayload,
   type ReadSessionFilePayload,
   type ReadSubagentTranscriptPayload,
+  type ReadNativeHistoryPayload,
 } from "@bd777/foundry-protocol";
+import { nativeChatHistory } from "../../native-chat.js";
 import {
   claudeBackgroundTaskLog,
   claudeBackgroundTaskOutput,
@@ -91,6 +93,7 @@ export function registerFileHandlers(dispatch: DaemonDispatch): void {
     .on(daemonMessageTypes.stopBackgroundTask, onStopBackgroundTask)
     .on(daemonMessageTypes.readSessionUsage, onReadSessionUsage)
     .on(daemonMessageTypes.readSubagentTranscript, onReadSubagentTranscript)
+    .on(daemonMessageTypes.readNativeHistory, onReadNativeHistory)
     .on(daemonMessageTypes.listSubagents, onListSubagents)
     .on(daemonMessageTypes.listDirectories, onListDirectories)
     .on(daemonMessageTypes.listWorkspaceTree, onListWorkspaceTree);
@@ -336,6 +339,37 @@ function onReadSubagentTranscript(
         ctx.roster.folderFor(payload.workspaceId),
         payload.sessionId,
         payload.taskId,
+      ),
+    failed,
+  );
+}
+
+function onReadNativeHistory(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  const payload = envelope.payload as ReadNativeHistoryPayload | undefined;
+  const failed = (error: string) => ({ transcript: [], before: 0, error });
+  if (
+    !payload?.workspaceId ||
+    !payload.nativeSessionId ||
+    (payload.provider !== "codex" && payload.provider !== "claude")
+  ) {
+    sendWebSocket(
+      ctx.socket,
+      daemonMessageTypes.nativeHistoryRead,
+      failed("workspaceId, provider and nativeSessionId are required"),
+      envelope.id,
+    );
+    return;
+  }
+  return reply(
+    ctx,
+    envelope,
+    daemonMessageTypes.nativeHistoryRead,
+    () =>
+      nativeChatHistory(
+        ctx.roster.folderFor(payload.workspaceId),
+        payload.provider,
+        payload.nativeSessionId,
+        payload.before,
       ),
     failed,
   );

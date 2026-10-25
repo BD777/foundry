@@ -63,7 +63,7 @@ func (s *Server) handleGetAgentSession(w http.ResponseWriter, r *http.Request) {
 	item = s.presentSession(r.Context(), item)
 	if err == nil && sessionEventsRequested(r) {
 		if windowed {
-			page, pageErr := windowSessionEvents(r.Context(), s.store, item, window)
+			page, pageErr := s.sessionEventWindow(r.Context(), item, window)
 			if pageErr != nil {
 				writeEventWindowError(w, pageErr)
 				return
@@ -107,7 +107,7 @@ func (s *Server) handleGetAgentSessionThread(w http.ResponseWriter, r *http.Requ
 	// Each session's newest events: older ones are paged per session.
 	pages := make([]windowedAgentSession, 0, len(items))
 	for _, item := range items {
-		page, err := windowSessionEvents(r.Context(), s.store, item, window)
+		page, err := s.sessionEventWindow(r.Context(), item, window)
 		if err != nil {
 			writeEventWindowError(w, err)
 			return
