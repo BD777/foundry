@@ -56,5 +56,5 @@
 ## 2026-10-26 进展
 
 - 调查、代码、自验、dev Server/Web 部署、Worker 发布及 cottoncpp 更新、本会话修复已完成。人工验收待确认。
-- 提交：用户 2026-10-26 授权在夜间窗口（22:00–次日 09:00）直接提交并推送 main；以单个提交推送到 main，部署的 binary 与该提交内容一致。
+- 提交：用户 2026-10-26 授权在夜间窗口（22:00–次日 09:00）直接提交并推送 main。main 受保护（需 `verify` 通过），直接推送被拒，改走 PR #146：首轮 CI 因 `daemon-dispatch.test.mjs` 未登记新消息类型 `read_native_history` 失败，补登记（`ca925a5`）后两项 `verify` 通过，01:45 以 merge commit `3160507` 合入 main。部署的 Server/Web/Worker 构建自 `8e5db23` 的内容，与合入代码一致（`ca925a5` 只改测试）。
 - 未更新：sg-chaos 本机 daemon（运行本调查会话，避免中断）及其他设备，按各自更新生效。

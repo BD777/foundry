@@ -15,7 +15,7 @@
 
 ## 当前事项总表
 
-2026-10-26 原生会话：[DEV-041 原生会话完整历史、Codex 工作区指令与插件缓存](DEV-041-native-history.md)。原生对话只读日志前 1 MiB 的问题改为“最新部分 + 向前翻页”，接管后的会话逐页导入到开头；Foundry 的 Codex 会话此前从未加载工作区 `AGENTS.md`（untrusted 项目），现经生成的 Codex home 提供；关闭 Codex 插件市场克隆（每会话约 100 MB）。dev Server/Web 已部署，Worker 已发布，cottoncpp 已更新，`sess_1792942466521638962` 已修复；已按用户夜间窗口授权直接推送 main，人工验收待确认。
+2026-10-26 原生会话：[DEV-041 原生会话完整历史、Codex 工作区指令与插件缓存](DEV-041-native-history.md)。原生对话只读日志前 1 MiB 的问题改为“最新部分 + 向前翻页”，接管后的会话逐页导入到开头；Foundry 的 Codex 会话此前从未加载工作区 `AGENTS.md`（untrusted 项目），现经生成的 Codex home 提供；关闭 Codex 插件市场克隆（每会话约 100 MB）。dev Server/Web 已部署，Worker 已发布，cottoncpp 已更新，`sess_1792942466521638962` 已修复；经 PR #146 合入 main（`3160507`），人工验收待确认。
 
 2026-10-24 文档：[DEV-017 Roadmap 按模块重组](DEV-017-roadmap-restructure.md)。唯一 Roadmap 移到 `docs/roadmap.md`，按模块图组织并带完成标准；连接器抽象、Chats 跟随原生演进与工作流平台拆分设计已写入对应文档；模块图更新。合入状态见事项记录。
 
