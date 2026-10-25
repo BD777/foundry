@@ -19,6 +19,7 @@ import {
   claudeNativeSessionId,
   claudePartialText,
   claudeProcessEvent,
+  claudeProcessEvents,
   claudeTaskLifecycleChange,
   claudeTaskNotificationBookkeeping,
   isForwardedClaudeSubagentMessage,
@@ -346,6 +347,10 @@ async function handleClaudeContinuationMessage(
     return;
   }
   if (record.type === "assistant") {
+    for (const event of claudeProcessEvents(message)) {
+      if (event.message?.kind === "commentary")
+        emitForClaudeRuntime(runtime, event);
+    }
     const continuation = claudeContinuation(runtime);
     const text = claudeMessageText(message);
     if (text) {
@@ -411,8 +416,7 @@ async function routeActiveClaudeMessage(
     return;
   }
   updateActiveClaudeTurnTasks(turn, message);
-  const processEvent = claudeProcessEvent(message);
-  if (processEvent) {
+  for (const processEvent of claudeProcessEvents(message)) {
     await turn.emit(
       processEvent.label,
       processEvent.detail,

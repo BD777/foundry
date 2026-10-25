@@ -86,6 +86,27 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 			WHERE session_id = ?`, sessionID).Scan(&oldest); err != nil {
 			return err
 		}
+		// Codex logs a step twice on adjacent lines; a pair across a page's
+		// edge is already held, possibly from the part adoption copied.
+		held := map[string]bool{}
+		if err := scanRows(ctx, tx.conn(), `SELECT COALESCE(json_extract(payload_json, '$.message.id'), '') FROM agent_session_events
+			WHERE session_id = ? AND json_extract(payload_json, '$.label') = 'Native transcript'`, func(rows *sql.Rows) error {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			held[id] = true
+			return nil
+		}, sessionID); err != nil {
+			return err
+		}
+		fresh := page[:0:0]
+		for _, message := range page {
+			if !held[message.ID] {
+				fresh = append(fresh, message)
+			}
+		}
+		page = fresh
 		first := time.Now().UTC()
 		if oldest != "" {
 			if first, err = time.Parse(time.RFC3339Nano, oldest); err != nil {
@@ -107,7 +128,6 @@ func (s *Store) ImportNativeHistory(ctx context.Context, sessionID string, histo
 			if err != nil {
 				return err
 			}
-			// A step a page shares with the part imported before keeps its place.
 			if _, err := tx.conn().ExecContext(ctx, `INSERT INTO agent_session_events
 				(id, session_id, level, payload_json, created_at, state_key) VALUES (?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO NOTHING`,
