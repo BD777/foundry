@@ -475,6 +475,7 @@ var actionLabels = map[string]string{
 	store.PersonalAgentActionUnbindConnector:    "take one of their accounts away from a project",
 	store.PersonalAgentActionArchive:            "archive a project",
 	store.PersonalAgentActionRestore:            "restore an archived project",
+	store.PersonalAgentActionArchiveSession:     "archive or restore up to 3 chats (a folder or more chats: the person confirms first)",
 }
 
 func decisionLabel(decision string) string {
