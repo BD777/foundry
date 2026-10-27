@@ -30,6 +30,19 @@ func (r *fakeRouter) Operate(context.Context, string, store.ResourceOperateReque
 	return store.ResourceOperateResult{}, nil
 }
 
+// lastAt waits briefly for a reset of generation: resets are routed just
+// after the lease changes commit, so a test that saw the commit may be early.
+func (r *fakeRouter) lastAt(generation int64) store.ResourceResetRequest {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		reset := r.last()
+		if reset.Generation >= generation || time.Now().After(deadline) {
+			return reset
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (r *fakeRouter) last() store.ResourceResetRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -480,7 +493,7 @@ func TestParkedLeaseYieldsAfterReset(t *testing.T) {
 	if got := f.lease(first.ID); got.State != store.LeaseYielded {
 		t.Fatalf("parked lease = %+v", got)
 	}
-	reset := f.router.last()
+	reset := f.router.lastAt(2)
 	if reset.Generation != 2 || !strings.Contains(reset.Reason, "yielded") {
 		t.Fatalf("reset = %+v", reset)
 	}

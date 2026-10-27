@@ -198,8 +198,9 @@ test("pausing a supervised process that already failed confirms without a live p
   });
   await processes.start(item, tmpdir());
   const deadline = Date.now() + 5000;
+  // "unknown" until the exit is recorded: the process can be gone first.
   while (
-    (await processes.inspect(item)).status === "running" &&
+    ["running", "unknown"].includes((await processes.inspect(item)).status) &&
     Date.now() < deadline
   )
     await new Promise((resolve) => setTimeout(resolve, 50));
