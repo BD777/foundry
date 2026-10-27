@@ -1,0 +1,13 @@
+.fdy-chat-images-fixture {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.fdy-chat-images-fixture h1 {
+  font-size: 22px;
+}
+
+.fdy-chat-images-fixture article {
+  max-width: 660px;
+}

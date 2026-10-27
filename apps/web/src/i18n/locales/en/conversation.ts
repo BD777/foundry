@@ -1,5 +1,22 @@
 /** The conversation surface shared by Chats and Issues: transcript, process rows, queue and composer. */
 export const conversation = {
+  image: {
+    loadingOriginal: "Loading original image…",
+    progress: "{{received}} / {{total}} received",
+    progressUnknown: "{{received}} received",
+    previewHint: "Preview · open image for the original",
+    downloadOriginal: "Download original",
+    loading: "Loading image from device…",
+    retrying: "Image read interrupted. Retrying once…",
+    failed: "Image could not be loaded",
+    offline: "The device is offline. Reconnect it, then retry.",
+    slow: "The device took too long to send the image. Try again.",
+    missing: "The image was not found on the device.",
+    unavailable:
+      "The image could not be read. Check the device connection and retry.",
+    retry: "Retry image",
+    preview: "Preview {{name}}",
+  },
   diagram: {
     error: "This diagram could not be rendered. Its source is shown below.",
     retry: "Retry diagram",

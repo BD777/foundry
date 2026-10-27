@@ -182,6 +182,7 @@ func (s *Server) handleListWorkspaceFiles(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleReadWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
 	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	if workspaceID == "" || path == "" {

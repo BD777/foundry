@@ -8,6 +8,7 @@ import { setSessionTurnSink } from "../../session-state.js";
 import { sessionTimers } from "../../session-timers.js";
 import { serverFeatures } from "../../transport.js";
 import type { DaemonDispatch } from "../dispatch.js";
+import { configureAttachmentPreviewPush } from "../attachment-previews.js";
 import { serveResources } from "./resources.js";
 
 /** The server's answers about the connection itself, and its session timers. */
@@ -28,7 +29,11 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       }
     })
     .on(daemonMessageTypes.ack, (envelope, ctx) => {
-      ctx.sessionTransport.acknowledge(envelope.id);
+      const seq = (envelope.payload as { replyChunkSeq?: number } | undefined)
+        ?.replyChunkSeq;
+      if (typeof seq === "number")
+        ctx.sessionTransport.acknowledgePiece(envelope.id, seq, ctx.socket);
+      else ctx.sessionTransport.acknowledge(envelope.id);
     })
     .on(daemonMessageTypes.registrationNeeded, (envelope, ctx) => {
       // A registration left out sections the server does not have (it
@@ -42,6 +47,17 @@ export function registerConnectionHandlers(dispatch: DaemonDispatch): void {
       // one that takes news of workspace folders gone or back.
       const features = serverFeatures(envelope.payload);
       ctx.sessionTransport.bind(ctx.socket, features);
+      configureAttachmentPreviewPush(
+        ctx.serverURL,
+        Array.isArray((envelope.payload as { features?: unknown })?.features) &&
+          (envelope.payload as { features: string[] }).features.includes(
+            "attachment_preview_push",
+          ),
+        (folder) => {
+          const id = ctx.roster.workspaceIdForFolder(folder);
+          return id ? { id, path: ctx.roster.pathFor(id) } : undefined;
+        },
+      );
       ctx.roster.serverTakesFolders = features.workspaceFolders === true;
       if (ctx.roster.serverTakesFolders) ctx.roster.checkFolders();
       serveResources(ctx, features.resources === true);

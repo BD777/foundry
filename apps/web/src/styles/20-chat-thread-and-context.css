@@ -168,10 +168,6 @@
   color: inherit;
 }
 
-.fdy-chat-file-reference svg {
-  align-self: center;
-}
-
 /* Not written yet: still a link, quieter, its clock icon says why. */
 .fdy-chat-file-reference[data-pending="true"] {
   color: var(--fdy-ink-muted);

@@ -5,6 +5,12 @@ import {
 import type { ContextPatchCommand } from "@bd777/foundry-protocol";
 import { knowledgeCommand, KnowledgeFileError } from "../../knowledge/files.js";
 import type { KnowledgeCommand } from "@bd777/foundry-protocol";
+import {
+  enqueueAttachmentPreview,
+  noteInteractiveImageRead,
+} from "../attachment-previews.js";
+import { readAttachmentPreviewChunk } from "../../image-previews.js";
+import { fileDownloadErrorCode } from "../../file-downloads.js";
 import { executionHostClient } from "../../execution-host/client.js";
 import {
   daemonMessageTypes,
@@ -30,7 +36,11 @@ import {
   claudeBackgroundTaskOutput,
   stopClaudeBackgroundTask,
 } from "../../runner/active-runtimes.js";
-import { readSessionFile, readSessionFileDiff } from "../../session-files.js";
+import {
+  readSessionFile,
+  readSessionFileChunk,
+  readSessionFileDiff,
+} from "../../session-files.js";
 import { readSessionUsage } from "../../session-usage.js";
 import { duringActivity } from "../../stall-monitor.js";
 import {
@@ -49,6 +59,7 @@ import {
 import {
   safeDirectoryListing,
   safeWorkspaceFileRead,
+  readWorkspaceFileDownload,
   safeWorkspaceTreeListing,
 } from "../../workspace-files.js";
 import type { DaemonContext } from "../context.js";
@@ -111,37 +122,60 @@ function onAttachmentWrite(envelope: ProtocolEnvelope, ctx: DaemonContext) {
         abortAttachmentUpload(workspacePath, payload.relativePath);
         return { size: 0 };
       }
-      return writeAttachmentChunk({
+      const written = writeAttachmentChunk({
         workspacePath,
         relativePath: payload.relativePath,
         offset: payload.offset,
         data: Buffer.from(payload.dataBase64 ?? "", "base64"),
         final: payload.final === true,
       });
+      if (payload.final)
+        enqueueAttachmentPreview(
+          ctx.serverURL,
+          written.path,
+          payload.workspaceId,
+        );
+      return written;
     },
     attachmentError,
   );
 }
 
 function onAttachmentRead(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  noteInteractiveImageRead();
   const payload = envelope.payload as AttachmentReadPayload;
   return reply(
     ctx,
     envelope,
     daemonMessageTypes.attachmentChunkRead,
-    () => {
+    async () => {
       const read =
         payload.scope === "workspace"
           ? readWorkspaceFileChunk
           : readAttachmentImageChunk;
-      const chunk = read({
-        workspacePath: ctx.roster.folderFor(payload.workspaceId),
-        path: payload.path,
-        offset: payload.offset,
-        maxBytes: payload.maxBytes,
-      });
+      const chunk = await (payload.scope !== "workspace" && payload.variant
+        ? readAttachmentPreviewChunk(
+            {
+              workspacePath: ctx.roster.folderFor(payload.workspaceId),
+              path: payload.path,
+              offset: payload.offset,
+              maxBytes: payload.maxBytes,
+              chunkBytes: payload.chunkBytes,
+            },
+            payload.variant,
+          )
+        : read({
+            workspacePath: ctx.roster.folderFor(payload.workspaceId),
+            path: payload.path,
+            offset: payload.offset,
+            maxBytes: payload.maxBytes,
+            chunkBytes: payload.chunkBytes,
+          }));
       return {
         size: chunk.size,
+        ...("realPath" in chunk
+          ? { realPath: chunk.realPath, revision: chunk.revision }
+          : {}),
         mimeType: chunk.mimeType,
         dataBase64: chunk.data.toString("base64"),
       };
@@ -151,6 +185,7 @@ function onAttachmentRead(envelope: ProtocolEnvelope, ctx: DaemonContext) {
 }
 
 function onReadFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  noteInteractiveImageRead();
   const payload = envelope.payload as ReadFilePayload | undefined;
   if (!payload?.path) {
     console.error("Received read_file without a path payload.");
@@ -161,31 +196,48 @@ function onReadFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
     envelope,
     daemonMessageTypes.fileRead,
     () =>
-      safeWorkspaceFileRead(ctx.roster.folderFor(payload.workspaceId), payload),
-    (message) => ({
+      payload.download
+        ? readWorkspaceFileDownload(ctx.roster.folderFor(payload.workspaceId), {
+            ...payload,
+            download: payload.download,
+          })
+        : safeWorkspaceFileRead(
+            ctx.roster.folderFor(payload.workspaceId),
+            payload,
+          ),
+    (message, error) => ({
       workspaceId: payload.workspaceId,
       path: payload.path,
       content: "",
       truncated: false,
       error: message,
+      code: payload.download ? fileDownloadErrorCode(error) : undefined,
     }),
   );
 }
 
 function onReadSessionFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  noteInteractiveImageRead();
   const payload = (envelope.payload ?? {}) as Partial<ReadSessionFilePayload>;
   return reply(
     ctx,
     envelope,
     daemonMessageTypes.sessionFileRead,
     () => ({
-      ...readSessionFile({
-        workspacePath: ctx.roster.folderFor(payload.workspaceId ?? ""),
-        sessionId: payload.sessionId ?? "",
-        path: payload.path ?? "",
-      }),
+      ...(payload.download
+        ? readSessionFileChunk({
+            workspacePath: ctx.roster.folderFor(payload.workspaceId ?? ""),
+            sessionId: payload.sessionId ?? "",
+            path: payload.path ?? "",
+            download: payload.download,
+          })
+        : readSessionFile({
+            workspacePath: ctx.roster.folderFor(payload.workspaceId ?? ""),
+            sessionId: payload.sessionId ?? "",
+            path: payload.path ?? "",
+          })),
     }),
-    (message) => ({
+    (message, error) => ({
       sessionId: payload.sessionId ?? "",
       path: payload.path ?? "",
       origin: "tool",
@@ -194,11 +246,13 @@ function onReadSessionFile(envelope: ProtocolEnvelope, ctx: DaemonContext) {
       truncated: false,
       changedSinceRecorded: false,
       error: message,
+      code: payload.download ? fileDownloadErrorCode(error) : undefined,
     }),
   );
 }
 
 function onReadSessionFileDiff(envelope: ProtocolEnvelope, ctx: DaemonContext) {
+  noteInteractiveImageRead();
   const payload = (envelope.payload ??
     {}) as Partial<ReadSessionFileDiffPayload>;
   return reply(

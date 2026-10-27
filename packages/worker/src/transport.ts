@@ -36,6 +36,8 @@ interface PendingSessionEnvelope {
   resent: boolean;
   /** Unacknowledged when the socket it goes on was bound (see send-meter). */
   replay: boolean;
+  /** Progress of a large reliable envelope on this socket. */
+  piece?: { sent: number; seq: number };
 }
 
 /** What the outbox holds, as the worker's heartbeat reports it. */
@@ -88,6 +90,8 @@ export interface ReliableSessionTransportOptions {
 export interface ServerFeatures {
   /** Large envelopes may go in pieces (reply_chunk). */
   replyChunks?: boolean;
+  /** Each bulk piece waits for a remote credit, keeping the TCP queue short. */
+  replyChunkAck?: boolean;
   /** It takes workspace_folders news (folders gone or back). */
   workspaceFolders?: boolean;
   /** It takes resources_report (the device's resource inventory). */
@@ -104,6 +108,8 @@ export function serverFeatures(payload: unknown): ServerFeatures {
       : undefined;
   return {
     replyChunks: Array.isArray(features) && features.includes("reply_chunks"),
+    replyChunkAck:
+      Array.isArray(features) && features.includes("reply_chunk_ack"),
     workspaceFolders:
       Array.isArray(features) && features.includes("workspace_folders"),
     resources: Array.isArray(features) && features.includes("resources_v1"),
@@ -114,6 +120,7 @@ export function serverFeatures(payload: unknown): ServerFeatures {
 
 /** A large envelope going out in pieces. */
 interface PiecedEnvelope {
+  interactive?: boolean;
   id: string;
   data: string;
   /** Characters of data already sent. */
@@ -137,6 +144,19 @@ const urgentSessionMessageTypes = new Set<string>([
 
 // At 10 KB/s (a slow uplink) 64 KB is ~6 s ahead of any reply.
 const defaultHighWaterMarkBytes = 64 * 1024;
+const bulkPieceChars = 4096;
+const interactiveReplyTypes = new Set<string>([
+  daemonMessageTypes.attachmentChunkRead,
+  daemonMessageTypes.fileRead,
+  daemonMessageTypes.sessionFileRead,
+  daemonMessageTypes.sessionFileDiffRead,
+]);
+const directControlTypes = new Set<string>([
+  daemonMessageTypes.heartbeat,
+  daemonMessageTypes.readyForIssue,
+  daemonMessageTypes.sessionSteered,
+  daemonMessageTypes.sessionCanceled,
+]);
 const defaultDrainCheckMs = 250;
 const defaultFailureRetryMs = 1000;
 const maxFailureRetryMs = 60_000;
@@ -157,6 +177,36 @@ const piecingOutboxes = new WeakMap<
   WebSocketSender,
   ReliableSessionTransport
 >();
+
+/** A byte-bounded bulk frame, including JSON escaping and Unicode. */
+function envelopePiece(
+  id: string,
+  source: string,
+  sent: number,
+  seq: number,
+  characters: number,
+  maxBytes?: number,
+) {
+  let end = Math.min(sent + characters, source.length);
+  for (;;) {
+    const last = source.charCodeAt(end - 1);
+    if (end < source.length && last >= 0xd800 && last <= 0xdbff) end--;
+    if (end === sent) end = sent + (source.codePointAt(sent)! > 0xffff ? 2 : 1);
+    const data = JSON.stringify({
+      type: daemonMessageTypes.replyChunk,
+      payload: {
+        id,
+        seq,
+        ...(end === source.length ? { last: true } : {}),
+        data: source.slice(sent, end),
+      },
+    });
+    const bytes = Buffer.byteLength(data);
+    if (!maxBytes || bytes <= maxBytes) return { end, data };
+    end =
+      sent + Math.max(1, Math.floor(((end - sent) * (maxBytes - 256)) / bytes));
+  }
+}
 
 /**
  * Reliable, reconnectable outbox for agent-session lifecycle traffic.
@@ -190,7 +240,10 @@ const piecingOutboxes = new WeakMap<
  * goes as reply_chunk pieces instead, written like events while the socket
  * has room, taking turns with the events and with other large envelopes, so
  * urgent lifecycle messages and small replies are never behind more than
- * the high-water mark and one piece. Pieces belong to their socket: like
+ * the high-water mark and one piece. With reply_chunk_ack, bulk traffic
+ * instead has one 4 KiB piece outstanding until remote receipt; kernel
+ * acceptance alone cannot fill the TCP queue. Interactive file replies go
+ * ahead of scans and session snapshots. Pieces belong to their socket: like
  * the request they answer, they are dropped with it.
  */
 export class ReliableSessionTransport {
@@ -223,6 +276,8 @@ export class ReliableSessionTransport {
   private pumpScheduled = false;
   private sequence = 0;
   private socket?: WebSocketSender;
+  private pacedBulk = false;
+  private bulkCredit?: { id: string; seq?: number };
 
   constructor(private readonly options: ReliableSessionTransportOptions = {}) {
     this.highWaterMarkBytes =
@@ -245,6 +300,7 @@ export class ReliableSessionTransport {
    * them.
    */
   bind(socket: WebSocketSender, features: ServerFeatures = {}): void {
+    this.pacedBulk = features.replyChunkAck === true;
     if (features.replyChunks) piecingOutboxes.set(socket, this);
     else piecingOutboxes.delete(socket);
     if (this.socket === socket) {
@@ -257,6 +313,7 @@ export class ReliableSessionTransport {
     this.socket = socket;
     // What was going out in pieces answered the old connection's requests.
     this.pieced.length = 0;
+    this.bulkCredit = undefined;
     // A new connection carries everything unacknowledged again, in order.
     this.clearFailureRetries();
     this.urgent.clear();
@@ -266,6 +323,7 @@ export class ReliableSessionTransport {
       entry.writtenAt = undefined;
       entry.resent = false;
       entry.replay = true;
+      entry.piece = undefined;
       (entry.urgent ? this.urgent : this.queued).add(id);
     }
     this.pump();
@@ -275,6 +333,7 @@ export class ReliableSessionTransport {
     if (this.socket === socket) {
       piecingOutboxes.delete(socket);
       this.pieced.length = 0;
+      this.bulkCredit = undefined;
       this.socket = undefined;
       this.clearDrainCheck();
       this.clearAnswerCheck();
@@ -301,7 +360,10 @@ export class ReliableSessionTransport {
     if (coalesceKey) {
       const previousId = this.coalescedEnvelopeIds.get(coalesceKey);
       if (previousId) {
-        this.forget(previousId);
+        // Finish an envelope already started in pieces: abandoning it would
+        // leave an incomplete assembly on the server. Newer unsent snapshots
+        // still coalesce while this one drains.
+        if (!this.pending.get(previousId)?.piece) this.forget(previousId);
       }
       this.coalescedEnvelopeIds.set(coalesceKey, id);
     }
@@ -321,7 +383,31 @@ export class ReliableSessionTransport {
     return id;
   }
 
+  acknowledgePiece(
+    id: string | undefined,
+    seq: number,
+    socket?: WebSocketSender,
+  ): void {
+    if (socket && socket !== this.socket) return;
+    if (
+      this.bulkCredit &&
+      this.bulkCredit.id === id &&
+      this.bulkCredit.seq === seq
+    ) {
+      this.bulkCredit = undefined;
+      this.pump();
+    }
+  }
+
   acknowledge(id: string | undefined): void {
+    if (
+      this.bulkCredit &&
+      this.bulkCredit.id === id &&
+      this.bulkCredit.seq === undefined
+    ) {
+      this.bulkCredit = undefined;
+      this.pump();
+    }
     const entry = id ? this.pending.get(id) : undefined;
     if (!id || !entry) {
       return;
@@ -342,6 +428,7 @@ export class ReliableSessionTransport {
    * whether the id was one of this outbox's messages.
    */
   retryAfterError(id: string | undefined): boolean {
+    if (this.bulkCredit?.id === id) this.bulkCredit = undefined;
     const entry = id ? this.pending.get(id) : undefined;
     if (!id || !entry) {
       return false;
@@ -387,14 +474,26 @@ export class ReliableSessionTransport {
    * socket is not the bound one or its server does not take pieces: send it
    * whole.
    */
-  sendInPieces(socket: WebSocketSender, id: string, data: string): boolean {
-    if (
-      data.length <= this.pieceChars ||
-      socket !== this.socket ||
-      piecingOutboxes.get(socket) !== this
-    )
+  sendInPieces(
+    socket: WebSocketSender,
+    id: string,
+    data: string,
+    type?: string,
+  ): boolean {
+    const interactive =
+      interactiveReplyTypes.has(type ?? "") ||
+      directControlTypes.has(type ?? "");
+    if (socket !== this.socket || piecingOutboxes.get(socket) !== this)
       return false;
-    this.pieced.push({ id, data, sent: 0, seq: 0 });
+    if (data.length <= this.pieceChars && (!this.pacedBulk || interactive))
+      return false;
+    this.pieced.push({
+      id,
+      data,
+      sent: 0,
+      seq: 0,
+      interactive,
+    });
     this.pump();
     return true;
   }
@@ -483,13 +582,35 @@ export class ReliableSessionTransport {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    for (const id of this.urgent) {
-      if (!this.write(socket, id)) {
+    // Interactive replies overtake queued scans/snapshots. Only one small
+    // bulk piece may be awaiting remote receipt, even if the OS accepted it.
+    while (this.pieced.some((entry) => entry.interactive)) {
+      if ((socket.bufferedAmount ?? 0) >= this.highWaterMarkBytes) {
+        this.scheduleDrainCheck();
         return;
       }
-      this.urgent.delete(id);
+      const index = this.pieced.findIndex((entry) => entry.interactive);
+      this.pieced.unshift(this.pieced.splice(index, 1)[0]!);
+      if (!this.writePiece(socket)) return;
+    }
+    for (const id of this.urgent) {
+      if (
+        this.pending.get(id)?.piece &&
+        (socket.bufferedAmount ?? 0) >= this.highWaterMarkBytes
+      ) {
+        this.scheduleDrainCheck();
+        return;
+      }
+      const written = this.write(socket, id);
+      if (!written) return;
+      if (written === "complete") this.urgent.delete(id);
+      else {
+        this.scheduleDrainCheck();
+        return;
+      }
     }
     while (this.queued.size > 0 || this.pieced.length > 0) {
+      if (this.pacedBulk && this.bulkCredit) return;
       if ((socket.bufferedAmount ?? 0) >= this.highWaterMarkBytes) {
         this.scheduleDrainCheck();
         return;
@@ -505,10 +626,9 @@ export class ReliableSessionTransport {
         continue;
       }
       const id = this.queued.values().next().value as string;
-      if (!this.write(socket, id)) {
-        return;
-      }
-      this.queued.delete(id);
+      const written = this.write(socket, id);
+      if (!written) return;
+      if (written === "complete") this.queued.delete(id);
       this.pieceTurn = true;
     }
     this.clearDrainCheck();
@@ -517,30 +637,25 @@ export class ReliableSessionTransport {
   /** Writes the next piece of the first large envelope, which then waits its turn. */
   private writePiece(socket: WebSocketSender): boolean {
     const envelope = this.pieced[0]!;
-    let end = Math.min(envelope.sent + this.pieceChars, envelope.data.length);
-    // A piece ends between characters, never inside a surrogate pair.
-    const last = envelope.data.charCodeAt(end - 1);
-    if (end < envelope.data.length && last >= 0xd800 && last <= 0xdbff) {
-      end -= 1;
-    }
-    const piece: ProtocolEnvelope = {
-      type: daemonMessageTypes.replyChunk,
-      payload: {
-        id: envelope.id,
-        seq: envelope.seq,
-        ...(end === envelope.data.length ? { last: true } : {}),
-        data: envelope.data.slice(envelope.sent, end),
-      },
-    };
+    const { end, data } = envelopePiece(
+      envelope.id,
+      envelope.data,
+      envelope.sent,
+      envelope.seq,
+      this.pieceChars,
+      this.pacedBulk && !envelope.interactive ? bulkPieceChars : undefined,
+    );
     const meter = socketMeter(socket);
     try {
-      socket.send(JSON.stringify(piece), () => {
+      socket.send(data, () => {
         meter?.progress();
         this.pumpSoon();
       });
     } catch {
       return false;
     }
+    if (this.pacedBulk && !envelope.interactive)
+      this.bulkCredit = { id: envelope.id, seq: envelope.seq };
     this.pieced.shift();
     envelope.sent = end;
     envelope.seq += 1;
@@ -548,23 +663,58 @@ export class ReliableSessionTransport {
     return true;
   }
 
-  private write(socket: WebSocketSender, id: string): boolean {
+  private write(
+    socket: WebSocketSender,
+    id: string,
+  ): "complete" | "partial" | false {
     const entry = this.pending.get(id);
-    if (!entry) {
-      return true;
-    }
+    if (!entry) return "complete";
     const meter = socketMeter(socket);
+    let data = entry.data;
+    let progress: { sent: number; seq: number } | undefined;
+    if (
+      piecingOutboxes.get(socket) === this &&
+      (data.length > this.pieceChars ||
+        (this.pacedBulk &&
+          !entry.urgent &&
+          Buffer.byteLength(data) > bulkPieceChars))
+    ) {
+      const piece = entry.piece ?? { sent: 0, seq: 0 };
+      const framed = envelopePiece(
+        id,
+        data,
+        piece.sent,
+        piece.seq,
+        this.pieceChars,
+        this.pacedBulk && !entry.urgent ? bulkPieceChars : undefined,
+      );
+      progress = { sent: framed.end, seq: piece.seq + 1 };
+      data = framed.data;
+    }
     try {
-      // The socket took it once the callback runs: room for the next.
-      socket.send(entry.data, () => {
+      // Reliable events need the same bounded frames as RPC replies. A large
+      // transcript snapshot must not hold up file reads or heartbeats.
+      socket.send(data, () => {
         meter?.progress();
         this.pumpSoon();
       });
-      meter?.sent(entry.type, Buffer.byteLength(entry.data), entry.replay);
-      entry.replay = false;
+      if (this.pacedBulk && !entry.urgent)
+        this.bulkCredit = {
+          id,
+          ...(progress ? { seq: progress.seq - 1 } : {}),
+        };
+      if (!entry.piece) {
+        meter?.sent(entry.type, Buffer.byteLength(entry.data), entry.replay);
+        entry.replay = false;
+      }
+      if (progress) {
+        entry.piece = progress;
+        if (progress.sent < entry.data.length) return "partial";
+      }
+      entry.piece = undefined;
       entry.writtenAt = this.now();
       this.scheduleAnswerCheck();
-      return true;
+      return "complete";
     } catch {
       return false;
     }
@@ -573,7 +723,9 @@ export class ReliableSessionTransport {
   private pumpSoon(): void {
     if (
       this.pumpScheduled ||
-      (this.queued.size === 0 && this.pieced.length === 0)
+      (this.urgent.size === 0 &&
+        this.queued.size === 0 &&
+        this.pieced.length === 0)
     ) {
       return;
     }
@@ -747,7 +899,9 @@ export function sendWebSocket(
   const data = JSON.stringify(envelope);
   const meter = socketMeter(socket);
   meter?.sent(type, Buffer.byteLength(data));
-  if (piecingOutboxes.get(socket)?.sendInPieces(socket, envelopeId, data)) {
+  if (
+    piecingOutboxes.get(socket)?.sendInPieces(socket, envelopeId, data, type)
+  ) {
     return;
   }
   if (meter) socket.send(data, () => meter.progress());

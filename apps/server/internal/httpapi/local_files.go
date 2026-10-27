@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -226,53 +228,211 @@ func sanitizeAttachmentName(name string) string {
 // workspace's device resolves links, checks the path stays within the
 // attachments and that the file is an image; the server streams its chunks.
 func (s *Server) handleLocalImageFile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Vary", "Cookie, Authorization")
+	w.Header().Set("Cache-Control", "no-store")
 	requestedPath := strings.TrimSpace(r.URL.Query().Get("path"))
 	if requestedPath == "" || !filepath.IsAbs(requestedPath) || filepath.Clean(requestedPath) != requestedPath {
 		writeError(w, http.StatusBadRequest, "absolute image path is required")
 		return
 	}
+	// This authorization always precedes cache lookup and conditional 304.
 	workspace, err := s.attachmentWorkspace(r, requestedPath)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "image not found")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), localImageTimeout)
-	defer cancel()
-	readChunk := func(offset int64) (attachmentChunk, error) {
-		chunkCtx, cancelChunk := context.WithTimeout(ctx, localImageChunkTimeout)
-		defer cancelChunk()
-		return s.hub.ReadAttachmentImageChunk(chunkCtx, workspace, requestedPath, offset, maxLocalImageBytes)
+	variant := r.URL.Query().Get("variant")
+	if variant != "preview" && variant != "placeholder" {
+		variant = ""
 	}
-	chunk, err := readChunk(0)
-	if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
-		writeError(w, http.StatusGatewayTimeout, "the device did not send the image within "+localImageChunkTimeout.String())
+	alias := attachmentImageAlias(workspace, requestedPath, variant)
+	if r.URL.Query().Get("refresh") == "1" {
+		s.attachmentImages.invalidate(alias)
+	}
+	if variant == "" {
+		s.streamAttachmentOriginal(w, r, workspace, requestedPath, alias)
 		return
 	}
+	image, err := s.attachmentImages.read(r.Context(), alias, workspace.DeviceID, func(ctx context.Context) (*cachedAttachmentImage, error) {
+		return s.loadAttachmentImage(ctx, workspace, requestedPath, variant)
+	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusGatewayTimeout, "the device did not send the image within "+localImageChunkTimeout.String())
+			return
+		}
+		if errors.Is(err, ErrLocalDaemonNotConnected) || errors.Is(err, errAttachmentReadsBusy) {
+			w.Header().Set("Retry-After", "1")
+		}
 		writeError(w, attachmentReadStatus(err), err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", chunk.MIMEType)
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Length", strconv.FormatInt(chunk.Size, 10))
-	for offset := int64(0); ; {
+	if writeAttachmentImageHeaders(w, r, image, len(image.data)) {
+		_, _ = w.Write(image.data)
+	}
+
+}
+
+// Originals stream as they arrive; only complete, revision-consistent bytes
+// enter the cache. Cancellation stops further RPCs rather than prefetching a
+// large original after the viewer leaves.
+func (s *Server) streamAttachmentOriginal(w http.ResponseWriter, r *http.Request, workspace store.WorkspaceProjection, path, alias string) {
+	if image := s.attachmentImages.get(alias); image != nil {
+		if writeAttachmentImageHeaders(w, r, image, len(image.data)) {
+			_, _ = w.Write(image.data)
+		}
+		return
+	}
+	if !s.attachmentImages.beginOriginal() {
+		w.Header().Set("Retry-After", "1")
+		writeError(w, 503, errAttachmentReadsBusy.Error())
+		return
+	}
+	defer s.attachmentImages.endOriginal()
+	ctx, cancel := context.WithTimeout(r.Context(), localImageTimeout)
+	defer cancel()
+	read := func(ctx context.Context, offset int64) (attachmentChunk, error) {
+		chunkCtx, done := context.WithTimeout(ctx, localImageChunkTimeout)
+		defer done()
+		return s.hub.readAttachmentChunk(chunkCtx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxLocalImageBytes, ChunkBytes: 4096})
+	}
+	first, err := read(ctx, 0)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
+			w.Header().Set("Retry-After", "1")
+			writeError(w, 504, "the device did not send the image within "+localImageChunkTimeout.String())
+		} else {
+			if errors.Is(err, ErrLocalDaemonNotConnected) {
+				w.Header().Set("Retry-After", "1")
+			}
+			writeError(w, attachmentReadStatus(err), err.Error())
+		}
+		return
+	}
+	size := first.Size
+	step := int64(len(first.Data))
+	if size <= 0 || size > maxLocalImageBytes || step <= 0 || step > size || !strings.HasPrefix(first.MIMEType, "image/") {
+		writeError(w, 502, errInvalidAttachmentImage.Error())
+		return
+	}
+	image := &cachedAttachmentImage{mime: first.MIMEType, realPath: first.RealPath, revision: first.Revision}
+	if image.realPath != "" && image.revision != "" {
+		image.etag = fmt.Sprintf("W/\"%x\"", sha256.Sum256([]byte(image.realPath+"\x00"+image.revision)))
+	}
+	w.Header().Set("X-Accel-Buffering", "no")
+	if !writeAttachmentImageHeaders(w, r, image, int(size)) {
+		return
+	}
+	image.data = make([]byte, size)
+	consume := func(offset int64, chunk attachmentChunk) error {
+		if chunk.Size != size || chunk.MIMEType != image.mime || chunk.RealPath != image.realPath || chunk.Revision != image.revision || len(chunk.Data) != int(min(step, size-offset)) {
+			return errInvalidAttachmentImage
+		}
+		copy(image.data[offset:], chunk.Data)
+		if offset+int64(len(chunk.Data)) == size {
+			s.attachmentImages.put(alias, workspace.DeviceID, image)
+		}
 		if _, err := w.Write(chunk.Data); err != nil {
-			return
+			return err
 		}
-		offset += int64(len(chunk.Data))
-		if offset >= chunk.Size || len(chunk.Data) == 0 {
-			return
+		if flush, ok := w.(http.Flusher); ok {
+			flush.Flush()
 		}
-		if chunk, err = readChunk(offset); err != nil {
-			return
+		return nil
+	}
+	if err = consume(0, first); err != nil {
+		return
+	}
+	if err = pipelineFileChunks(ctx, step, step, &size, read, consume); err != nil {
+		return
+	}
+}
+func writeAttachmentImageHeaders(w http.ResponseWriter, r *http.Request, image *cachedAttachmentImage, size int) bool {
+	w.Header().Set("Cache-Control", "private, max-age=300, must-revalidate")
+	if image.etag != "" {
+		w.Header().Set("ETag", image.etag)
+	}
+	w.Header().Set("Content-Type", image.mime)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	for _, tag := range strings.Split(r.Header.Get("If-None-Match"), ",") {
+		tag = strings.TrimSpace(tag)
+		if tag == "*" || (image.etag != "" && strings.TrimPrefix(tag, "W/") == strings.TrimPrefix(image.etag, "W/")) {
+			w.WriteHeader(304)
+			return false
 		}
 	}
+	w.Header().Set("Content-Length", strconv.Itoa(size))
+	if r.Method == http.MethodHead {
+		w.WriteHeader(200)
+		return false
+	}
+	return true
+}
+
+func (s *Server) loadAttachmentImage(ctx context.Context, workspace store.WorkspaceProjection, path string, variant string) (*cachedAttachmentImage, error) {
+	read := func(ctx context.Context, offset int64) (attachmentChunk, error) {
+		chunkCtx, done := context.WithTimeout(ctx, localImageChunkTimeout)
+		defer done()
+		return s.hub.readAttachmentChunk(chunkCtx, workspace, wsAttachmentReadPayload{WorkspaceID: workspace.ID, Path: path, Offset: offset, MaxBytes: maxLocalImageBytes, Variant: variant})
+	}
+	var image *cachedAttachmentImage
+	size := int64(maxLocalImageBytes)
+	consume := func(offset int64, chunk attachmentChunk) error {
+		if offset == 0 {
+			if chunk.Size <= 0 || chunk.Size > maxLocalImageBytes || !strings.HasPrefix(chunk.MIMEType, "image/") {
+				return errInvalidAttachmentImage
+			}
+			size = chunk.Size
+			image = &cachedAttachmentImage{data: make([]byte, size), mime: chunk.MIMEType, realPath: chunk.RealPath, revision: chunk.Revision}
+		}
+		if chunk.Size != size || chunk.MIMEType != image.mime || chunk.Revision != image.revision || chunk.RealPath != image.realPath || offset+int64(len(chunk.Data)) > size || len(chunk.Data) == 0 {
+			return errInvalidAttachmentImage
+		}
+		copy(image.data[offset:], chunk.Data)
+		return nil
+	}
+	// The negotiated reader has a fixed 64 KiB block size. Start four requests
+	// immediately, including offset zero, so a two-block image costs one RTT.
+	if connection := s.hub.connectionFor(workspace.DeviceID); connection != nil && connection.hasCapability("attachment_image_v2") && variant == "" {
+		err := pipelineFileChunks(ctx, 0, 64*1024, &size, read, func(offset int64, chunk attachmentChunk) error {
+			if err := consume(offset, chunk); err != nil {
+				return err
+			}
+			if len(chunk.Data) != int(min(int64(64*1024), size-offset)) {
+				return errInvalidAttachmentImage
+			}
+			return nil
+		})
+		return image, err
+	}
+	first, err := read(ctx, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err = consume(0, first); err != nil {
+		return nil, err
+	}
+	step := int64(len(first.Data))
+	err = pipelineFileChunks(ctx, step, step, &size, read, func(offset int64, chunk attachmentChunk) error {
+		if err := consume(offset, chunk); err != nil {
+			return err
+		}
+		if len(chunk.Data) != int(min(step, size-offset)) {
+			return errInvalidAttachmentImage
+		}
+		return nil
+	})
+	return image, err
 }
 
 func attachmentReadStatus(err error) int {
 	var refusal attachmentRefusal
 	switch {
+	case errors.Is(err, errInvalidAttachmentImage), errors.As(err, &refusal) && refusal.code == "changed":
+		return http.StatusBadGateway
+	case errors.Is(err, errAttachmentReadsBusy):
+		return http.StatusServiceUnavailable
 	case errors.Is(err, ErrLocalDaemonNotConnected):
 		return http.StatusConflict
 	case errors.As(err, &refusal) && refusal.code == "too_large":

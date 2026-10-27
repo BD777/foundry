@@ -2,6 +2,22 @@ import type { conversation as en } from "../en/conversation";
 import type { Translation } from "../../translation";
 
 export const conversation: Translation<typeof en> = {
+  image: {
+    loadingOriginal: "正在读取原图…",
+    progress: "已接收 {{received}} / {{total}}",
+    progressUnknown: "已接收 {{received}}",
+    previewHint: "预览图 · 点开可查看原图",
+    downloadOriginal: "下载原图",
+    loading: "正在从设备加载图片…",
+    retrying: "图片读取中断，正在自动重试一次…",
+    failed: "图片加载失败",
+    offline: "设备已离线，请重新连接设备后重试。",
+    slow: "设备发送图片超时，请重试。",
+    missing: "设备上未找到这张图片。",
+    unavailable: "无法读取图片，请检查设备连接后重试。",
+    retry: "重试图片",
+    preview: "预览 {{name}}",
+  },
   diagram: {
     error: "图表暂时无法渲染，以下是原始代码。",
     retry: "重试渲染",
