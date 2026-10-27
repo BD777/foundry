@@ -33,3 +33,7 @@
 ## 人工验收
 
 待确认。建议：在一台未安装 `bwrap` 的 Linux 设备（已更新到 `0.5.7-dev.81` 及以上）的工作区发起 `create_session` + `verification`，应在创建时被拒绝并提示安装 bubblewrap；`foundry-worker doctor` 的 `runtime.sandbox` 显示 warn。安装后约 1 分钟内无需重启即可发起验证会话。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。

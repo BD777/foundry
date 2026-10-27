@@ -123,3 +123,7 @@ sg-chaos 在 09:48 UTC 的活动 claim 仅本会话。为让执行引擎自然�
 **控制回执不等于启动成功**：两者最终均 exit 1 / failed。旧临时目录 `/tmp/fdy-iirZAF/foundry-scratch/isolation-dev006-007` 已不存在：Server 缺少 `instance.env`，Worker 缺少旧 runtime 的 `dist/cli.js`。daemon 日志记录清理了 idle session `sess_1792389561205511349` 的 `/tmp/fdy-iirZAF`。本次切换脚本没有删除目录，但旧测试环境依赖会话临时目录，无法按原命令恢复；没有重建替代环境或声称已恢复。该限制不影响 Limen 接入。
 
 本次恢复核验唤醒 `work_1776607c74a57c445ba93f24924e004b` 已禁用后续运行，revision 2；pause 回执 `wop_13b017ba65bd6daee9bdbd3ec86d4ad0` **verified**。此前的复核唤醒仍保持 paused，不循环创建提醒。未新建 Foundry 验收聊天，人工界面验收仍由用户完成。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。

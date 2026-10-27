@@ -90,3 +90,7 @@ DEV-051 在 byte-dev 旧 ffmpeg 验证后发布最终兼容包 `0.5.7-dev.81.gac
 ## 2026-10-27 提交前修复
 
 - 在设有 `HTTPS_PROXY` 的 shell（编排会话的沙箱）中跑 Worker 测试，3 个用例（skill 包下载诊断、自更新放弃、连接失败收尾）的回环请求被调用方代理接走而失败。测试启动器 `packages/worker/scripts/run-worker-tests.mjs` 现在像清除 `FOUNDRY_*` 一样清除 `HTTP(S)_PROXY`/`ALL_PROXY`/`NO_PROXY`（任意大小写）；代理用例自行设置。复跑 23/23 通过。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。

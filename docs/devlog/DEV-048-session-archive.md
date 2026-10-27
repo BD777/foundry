@@ -126,3 +126,7 @@ Worker 复核修正已发布 `.1793079469` 并通过同一 Devices 自更新流�
 ## 2026-10-27 CI 修复
 
 - `archive_session` 补上 CLI 命令 `foundry session archive <sessionId> [--workspace] [--sessions a,b] [--group] [--restore]`（每个 MCP 工具都需有 CLI 命令，`foundry-skill.test.mjs`）。随下一次 Worker 发布生效。
+
+## 提交
+
+- 2026-10-27 夜间窗口经 PR #150 合并到 main（merge `60496ca`），本事项一个提交；多事项共用文件随最后改动它的事项提交。CI 首轮暴露的 Node 22 / 无 Claude CLI / 测试竞态问题在同一 PR 内修复。
