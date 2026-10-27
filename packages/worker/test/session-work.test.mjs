@@ -191,6 +191,23 @@ test("a real supervised process starts and stops under its recorded identity", a
   );
 });
 
+test("pausing a supervised process that already failed confirms without a live process", async (t) => {
+  const processes = new WorkProcesses(scratch(t));
+  const item = work({
+    spec: { argv: [process.execPath, "-e", "process.exit(1)"] },
+  });
+  await processes.start(item, tmpdir());
+  const deadline = Date.now() + 5000;
+  while (
+    (await processes.inspect(item)).status === "running" &&
+    Date.now() < deadline
+  )
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal((await processes.inspect(item)).status, "failed");
+  await processes.pause(item);
+  assert.equal((await processes.inspect(item)).status, "failed");
+});
+
 test("the bounded recovery context retains old enabled and pending work after compaction", () => {
   const context = sessionWorkContext(
     [

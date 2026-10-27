@@ -206,9 +206,12 @@ export class WorkProcesses {
   }
   async pause(item: SessionWork): Promise<void> {
     const r = this.records[item.id];
-    if (!r) return; // Pausing a not-yet-started definition prevents its start.
-    if (processIdentity(r.pid)?.startTime !== r.startTime)
+    if (!r || r.stopped) return; // A paused definition is not (re)started.
+    if (processIdentity(r.pid)?.startTime !== r.startTime) {
+      // It already exited, e.g. a service that failed: nothing to suspend.
+      if (this.groupMembers(r.pid).length === 0) return;
       throw new Error("No live supervised process to pause");
+    }
     signalProcessGroup(r.pid, "SIGSTOP");
     if (!this.groupSuspended(r.pid))
       throw new Error("Process group suspension was not verified");
