@@ -20,7 +20,7 @@ import {
 import { sessionTimers } from "../session-timers.js";
 import {
   workContext,
-  sessionWork,
+  observedSessionWork,
   managedWorkEnabled,
   recordWorkToolStarting,
   recordWorkToolCompleted,
@@ -142,7 +142,7 @@ function installClaudeRuntimeObservers(
           tasks,
         ),
       timersObserved: (tasks) =>
-        sessionWork().observeTimers(
+        observedSessionWork()?.observeTimers(
           runtime.foundrySessionId,
           tasks,
           nativeCli("claude").version || "unknown",

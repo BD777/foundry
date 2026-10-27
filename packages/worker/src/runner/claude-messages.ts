@@ -7,7 +7,7 @@ import {
   type SessionFileReference,
 } from "@bd777/foundry-protocol";
 import { timerFireEvent } from "../agent-timers.js";
-import { sessionWork } from "../session-work/supervisor.js";
+import { observedSessionWork } from "../session-work/supervisor.js";
 import { redactSecrets } from "../secret-redaction.js";
 import { executionSessionsRoot } from "../session-artifacts.js";
 import { SessionTurnFiles } from "../session-files.js";
@@ -102,28 +102,28 @@ export function emitForClaudeRuntime(
   },
 ): void {
   if (event.metadata?.timerFire?.origin === "scheduled")
-    sessionWork().observeTimerRun(
+    observedSessionWork()?.observeTimerRun(
       runtime.foundrySessionId,
       event.metadata.timerFire,
       event.level === "error",
       runtime.nativeSessionId,
     );
   if (event.metadata?.timerSnapshot)
-    sessionWork().observeTimers(
+    observedSessionWork()?.observeTimers(
       runtime.foundrySessionId,
       event.metadata.timerSnapshot,
       nativeCli("claude").version || "unknown",
       runtime.nativeSessionId,
     );
   if (event.metadata?.backgroundTaskSnapshot)
-    sessionWork().observeBackground(
+    observedSessionWork()?.observeBackground(
       runtime.foundrySessionId,
       event.metadata.backgroundTaskSnapshot,
       nativeCli("claude").version || "unknown",
       runtime.nativeSessionId,
     );
   if (event.metadata?.taskId)
-    sessionWork().observeAgent(
+    observedSessionWork()?.observeAgent(
       runtime.foundrySessionId,
       event,
       nativeCli("claude").version || "unknown",
