@@ -15,6 +15,10 @@
 
 ## 当前事项总表
 
+2026-10-28 外部连接用量：[DEV-058 外部连接的用量展示](DEV-058-external-connection-usage.md)。订阅看板只覆盖本地订阅登录；外部连接每回合的 token 与标价估算已记录在 `turnUsage`，可按连接聚合展示。额度百分比 Foundry 单方面拿不到（SDK `get_usage` 经 helper 代理不会被转发，协议 v1 无 usage 动词），可行来源为被动记录 CLI 的 `rate_limit_event`（网关是否透传待实测）和协议新增的 helper 自答 `usage` 请求（需 helper 维护方实现）。[调研与设计](../research/DEV-058-external-connection-usage.md)。状态：已关闭（用户决定不实施：Limen 官方未提供用量前不做，也不做 Foundry 侧统计）。
+
+2026-10-28 链接按钮对齐：[DEV-056 链接按钮与上方文字左对齐](DEV-056-link-button-alignment.md)。共享 `link` 变体去掉尺寸带来的左右内边距和边框，归档 Toast 的 Undo 及列表/说明中的链接与同列文字左对齐；5 处原本借内边距作间距的调用改用 `size="inline"` + 空格，或新增的会话链接列表 gap。首次发布 `bf02cf6e76e0debc` 漏带 `VITE_API_BASE_URL=`，10-28 00:22–00:34 dev 所有 API 指向用户本机，已回滚。之后加上生产默认同源与 `scripts/deploy-web-dev.sh` 发布防护，经该脚本发布 `f90e5a18c022a3d3`，真实浏览器 API 均同源；人工验收待确认。
+
 2026-10-27 设备网络：[DEV-053 Worker 代理](DEV-053-worker-proxy.md)。支持 HTTP(S)/SOCKS5/SOCKS5h、认证、NO_PROXY、owner-only 持久配置、自动重连、doctor 与设备诊断；覆盖 Worker↔Server HTTP/WS、CLI/MCP、连接器转发及安装/自更新下载，模型请求环境保持原样。真实代理集成、dev 合成会话/MCP/256 KiB 文件传输与浏览器诊断通过；联合 Worker `.1793104558` 已发布，byte-dev-sg daemon/执行宿主均核实加载。真实设备代理未改，人工验收待确认；检查与清理回执见条目。已随 PR #150 合并（merge `60496ca`，2026-10-27 夜间窗口）。
 
 2026-10-27 设备连接器：[DEV-052 本人会话自动使用设备登录](DEV-052-device-connector-auto.md)。本人非沙箱会话自动使用设备有效登录，成员仍需显式共享；补 Meego 子授权状态持久化与会话说明。Go 全树/区域测试、29 Web 测试、11 audits 与 9 个浏览器场景通过；dev Server/Web `069a4d3a7c0f6c77` 已部署、Worker `.1793088606` 已发布。byte-dev daemon 已更新，繁忙执行宿主仍 dev.53，待安全切换。已随 PR #150 合并（merge `60496ca`，2026-10-27 夜间窗口）。

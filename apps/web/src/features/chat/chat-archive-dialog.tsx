@@ -298,6 +298,7 @@ export function ChatArchiveDialog({
           <Alert tone="error" title={t("archive.failed")}>
             {error}{" "}
             <Button
+              size="inline"
               variant="link"
               disabled={operating}
               onClick={() => setAttempt((value) => value + 1)}

@@ -78,13 +78,17 @@ export function ChatArchiveBanner({
             {t(`archive.native.${target.state}`)}
             {target.error ? ` · ${target.error}` : ""}
             {target.state === "failed" ? (
-              <Button
-                variant="link"
-                disabled={busy || readOnly || retrying}
-                onClick={() => void retry()}
-              >
-                {t("archive.retry")}
-              </Button>
+              <>
+                {" "}
+                <Button
+                  size="inline"
+                  variant="link"
+                  disabled={busy || readOnly || retrying}
+                  onClick={() => void retry()}
+                >
+                  {t("archive.retry")}
+                </Button>
+              </>
             ) : null}
           </li>
         ))}
