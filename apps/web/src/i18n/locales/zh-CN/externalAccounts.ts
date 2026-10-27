@@ -251,13 +251,13 @@ export const externalAccounts: Translation<typeof en> = {
   },
   deviceHeld: {
     setup: {
-      aws: "请在设备上通过 AWS 官方安装程序安装 AWS CLI，并在终端配置凭据（SSO：先 aws configure sso，再 aws sso login），随后点击“重新检查”。命名 profile 需通过 Worker 环境中的 AWS_PROFILE 选择。登录和退出均在设备终端管理；在工作区 → 连接器中绑定设备后，会话即可使用。",
+      aws: "请在设备上通过 AWS 官方安装程序安装 AWS CLI，并在终端配置凭据（SSO：先 aws configure sso，再 aws sso login），随后点击“重新检查”。命名 profile 需通过 Worker 环境中的 AWS_PROFILE 选择。登录和退出均在设备终端管理；你在该设备上的会话会自动使用有效登录。",
     },
     offlineUnknown: "设备离线",
     intro: {
       aws: "AWS CLI 使用设备原生凭据链（AWS_PROFILE 或 default、环境变量凭据、SSO 或设备角色）。Foundry 通过 STS 核验当前身份，凭据留在设备上；核验成功不代表拥有其他 AWS 服务的权限。",
       bytedcli:
-        "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。在这里为你的设备登录；工作区再选择会话使用哪台设备的登录。",
+        "bytedcli 把字节跳动的登录保存在每台设备上，Foundry 不会把它复制到任何地方。你在该设备上的会话会自动使用有效登录；如需共享给其他成员，请在工作区 → 连接器中开启。",
       default:
         "{{name}} 把登录保存在每台设备上，Foundry 不会把它复制到任何地方。",
     },
@@ -351,6 +351,7 @@ export const externalAccounts: Translation<typeof en> = {
     failed: "登录未完成：{{error}}",
   },
   workspace: {
+    ownerAvailable: "你在 {{device}} 上的会话可直接使用",
     localAuthentication:
       "请在设备终端配置或续登 {{name}}，随后重新检查。“管理连接器”中提供配置说明。",
     appUnavailable: "此账号的应用不可用，请在“管理连接器”中处理。",
@@ -361,21 +362,23 @@ export const externalAccounts: Translation<typeof en> = {
     lastRead: "{{when}}读取的本地登录；尚未验证服务访问。",
     useExisting: "使用现有登录",
     authorize: "授权并在此使用",
+    signInDevice: "在设备上登录",
     enabled: "已在此启用",
     removeBinding: "移除绑定",
     retryBinding: "重试保存绑定",
+    retrySharing: "重试修改共享",
     nativeBoundary:
-      "移除绑定不会阻止你自己的本机 CLI 登录。其他设备的登录请在“管理连接器”中查看。",
+      "你自己的会话会自动使用该设备上的有效登录。共享仅适用于此工作区和设备；关闭共享后你自己仍可使用。设备登录请在“管理连接器”中查看。",
 
     rule: "飞书账号遵循工作区授权；设备登录仅适用于对应的执行设备。",
     binding: {
       feishu:
         "绑定后，你在此工作区的会话里的 feishu-cli 以你的身份在飞书中工作。",
       bytedcli:
-        "在你绑定的设备上，此工作区的会话用那台设备自己的 bytedcli 登录；登录不会离开设备。",
+        "你自己的会话自动使用执行设备上的有效 bytedcli 登录；登录不会离开设备。",
     },
     useDevice: "{{device}} 上的会话使用它的 {{name}} 登录",
-    members: "其他成员在 {{device}} 上发起的会话也可以使用",
+    members: "共享给其他成员在 {{device}} 上发起的会话",
     membersHint:
       "他们会使用你在此服务中的身份和权限。除非你确实要借出登录，否则不要开启。",
     noDevices: "你的设备上还没有 {{name}}。请在“管理连接器”中设置。",

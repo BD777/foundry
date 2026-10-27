@@ -251,8 +251,23 @@ func TestDeviceHeldConnectorThroughTheDevice(t *testing.T) {
 	alice, _ := f.server.store.GetUser(ctx, f.aliceID)
 	aliceDevice := Actor{Kind: ActorDaemon, DeviceID: "dev_alice", Account: &alice}
 	uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
+	if len(uses) != 0 {
+		t.Fatalf("signed-out owner got a login: %+v", uses)
+	}
+	_, err := f.server.connectors.Devices.Record(ctx, "dev_alice", store.DeviceConnectorState{Kind: "bytedcli", Status: store.DeviceConnectorReady, SignedIn: true, Identity: "someone"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Removing the legacy owner-only binding leaves the owner's login available.
+	call(f.alice, http.MethodPut, "/api/workspaces/ws_alice/device-connectors", `{"bindings":[]}`, http.StatusOK)
+	uses = f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)).DeviceConnectors
 	if len(uses) != 1 || uses[0].Access != "device_login" || uses[0].Command != "bytedcli" || len(uses[0].IsolationEnv) != 0 {
 		t.Fatalf("uses = %+v", uses)
+	}
+	verifier := session
+	verifier.Source = "verification"
+	if got := f.server.hub.sessionConnectors(ctx, verifier, aliceDevice, declares(store.DaemonCapabilityDeviceConnectors)); len(got.DeviceConnectors) != 0 {
+		t.Fatalf("verifier got connectors: %+v", got)
 	}
 	if uses := f.server.hub.sessionConnectors(ctx, session, aliceDevice, declares()).DeviceConnectors; len(uses) != 0 {
 		t.Fatalf("an old worker got device connectors: %+v", uses)

@@ -431,7 +431,7 @@ test("a denied sign-in says so and can start again; sign-out asks first", async 
   await page.unmount();
 });
 
-test("the workspace tab binds the person's own devices and lends to members only when asked", async () => {
+test("the workspace tab automatically offers the owner login and shares only when asked", async () => {
   requests.length = 0;
   const notices = [];
   const view = (bindings) => ({
@@ -496,33 +496,36 @@ test("the workspace tab binds the person's own devices and lends to members only
     '[role=region][aria-label="bytedcli"]',
   );
   assert.match(section.textContent, /Login on macbook/);
-  assert.match(section.textContent, /Use existing login/);
+  assert.match(section.textContent, /Available to your sessions on macbook/);
+  assert.equal(section.textContent.includes("Use existing login"), false);
   assert.equal(section.textContent.includes("sg-chaos"), false);
   assert.equal(section.textContent.includes("bob-mac"), false);
   assert.equal(section.textContent.includes("someone@"), false);
-  let boxes = section.querySelectorAll("input[type=checkbox]");
-  assert.equal(boxes.length, 0);
-  await tab.click(tab.button("Use existing login", section));
-  assert.deepEqual(requests.at(-1), {
-    method: "PUT",
-    path: "/api/workspaces/ws_1/device-connectors",
-    body: {
-      bindings: [{ kind: "bytedcli", deviceId: "dev_mac", members: false }],
-    },
-  });
-  assert.match(
-    notices.at(-1),
-    /Sessions here on macbook use its bytedcli sign-in/,
+  assert.ok(
+    !requests.some((r) => r.method === "PUT" || r.path.includes("sign-in")),
+    "loading a ready login requires no authorization or binding write",
   );
-  boxes = tab.container
-    .querySelector('[role=region][aria-label="bytedcli"]')
-    .querySelectorAll("input[type=checkbox]");
-  assert.equal(boxes.length, 1, "lending to members is offered once bound");
-  assert.equal(boxes[0].checked, false);
-  await tab.click(boxes[0]);
+  let box = section.querySelector("input[type=checkbox]");
+  assert.equal(box.checked, false);
+  await tab.click(box);
   assert.deepEqual(requests.at(-1).body, {
     bindings: [{ kind: "bytedcli", deviceId: "dev_mac", members: true }],
   });
+  assert.match(notices.at(-1), /Other members' sessions on macbook/);
+  box = tab.container.querySelector(
+    '[role=region][aria-label="bytedcli"] input[type=checkbox]',
+  );
+  await tab.click(box);
+  assert.deepEqual(requests.at(-1).body, { bindings: [] });
+  assert.match(
+    tab.container.textContent,
+    /Available to your sessions on macbook/,
+  );
+  assert.ok(
+    bindings.some((b) => b.grantedBy === "u_bob"),
+    "another member's binding survives",
+  );
+  assert.ok(!requests.some((r) => r.path.includes("sign-in")));
   await tab.unmount();
 });
 
@@ -550,7 +553,15 @@ test("a viewer cannot change device bindings", async () => {
     readOnlyReason: "You are a Viewer here; this needs Maintainer.",
     onNotice: () => {},
   });
-  assert.equal(tab.button("Use existing login").disabled, true);
+  assert.equal(
+    tab.container.querySelector('[aria-label="bytedcli"] input[type=checkbox]')
+      .disabled,
+    true,
+  );
+  assert.match(
+    tab.container.textContent,
+    /Available to your sessions on macbook/,
+  );
   await tab.unmount();
 });
 
@@ -765,7 +776,7 @@ test("AWS uses local setup instructions, checks status and offers no unsupported
   }
 });
 
-test("AWS workspace binding rechecks credentials and binds without starting a login", async () => {
+test("AWS workspace owner login is automatic and sharing never starts a login", async () => {
   const aws = {
     kind: "aws",
     label: "AWS CLI",
@@ -775,7 +786,6 @@ test("AWS workspace binding rechecks credentials and binds without starting a lo
     authentication: "local",
   };
   const current = state("dev_aws", { kind: "aws", expiresAt: undefined });
-  let fresh = current;
   let bindings = [];
   const view = () => ({
     workspaceId: "ws_aws",
@@ -792,7 +802,6 @@ test("AWS workspace binding rechecks credentials and binds without starting a lo
       { workspaceId: "ws_aws", accounts: [], bindings: [] },
     ],
     "GET /api/workspaces/ws_aws/device-connectors": () => [200, view()],
-    "POST /api/devices/dev_aws/connectors/aws/check": () => [200, fresh],
     "PUT /api/workspaces/ws_aws/device-connectors": (body) => {
       bindings = body.bindings.map((b) => ({
         ...b,
@@ -807,22 +816,53 @@ test("AWS workspace binding rechecks credentials and binds without starting a lo
     currentUserId: "alice",
     onNotice: () => {},
   });
-  await page.click(page.button("Use existing login"));
-  assert.deepEqual(
-    bindings.map(({ kind, deviceId, members }) => ({
-      kind,
-      deviceId,
-      members,
-    })),
-    [{ kind: "aws", deviceId: "dev_aws", members: false }],
-  );
+  const section = page.container.querySelector('[aria-label="AWS CLI"]');
+  assert.match(section.textContent, /Available to your sessions on AWS device/);
+  assert.ok(!requests.some((r) => r.method === "POST" || r.method === "PUT"));
+  await page.click(section.querySelector("input[type=checkbox]"));
+  assert.equal(bindings[0].members, true);
   assert.ok(!requests.some((r) => r.path.includes("sign-in")));
-  assert.equal(document.querySelector("[role=dialog]"), null);
-  await page.click(page.button("Remove binding"));
-  fresh = { ...current, signedIn: false, status: "signed_out" };
-  await page.click(page.button("Use existing login"));
+  await page.click(section.querySelector("input[type=checkbox]"));
   assert.equal(bindings.length, 0);
-  assert.match(page.container.textContent, /Configure or renew AWS CLI/);
-  assert.ok(!requests.some((r) => r.path.includes("sign-in")));
+  assert.match(section.textContent, /Available to your sessions/);
+  await page.unmount();
+});
+
+test("expired workspace login offers sign-in and completion does not create an owner binding", async () => {
+  let current = state("dev_mac", { status: "expired", expiresAt: iso(-day) });
+  requests.length = 0;
+  routes = {
+    "GET /api/workspaces/ws_1/external-accounts": () => [
+      200,
+      { workspaceId: "ws_1", accounts: [], bindings: [] },
+    ],
+    "GET /api/workspaces/ws_1/device-connectors": () => [
+      200,
+      {
+        workspaceId: "ws_1",
+        defaultDeviceId: "dev_mac",
+        executionDevices: [{ deviceId: "dev_mac", name: "MacBook" }],
+        connectors: [bytedcli],
+        bindings: [],
+        devices: [device("dev_mac", "MacBook", [current])],
+      },
+    ],
+    "POST /api/devices/dev_mac/connectors/bytedcli/sign-in": () => [
+      202,
+      { status: "complete", operationId: "renew", state: state("dev_mac") },
+    ],
+  };
+  const page = await render(WorkspaceConnectorsFeature, {
+    workspaceId: "ws_1",
+    currentUserId: "u_me",
+    onNotice: () => {},
+  });
+  const section = page.container.querySelector('[aria-label="bytedcli"]');
+  assert.doesNotMatch(section.textContent, /Available to your sessions/);
+  assert.equal(section.querySelector("input[type=checkbox]"), null);
+  await page.click(page.button("Sign in on device", section));
+  assert.match(section.textContent, /Available to your sessions on MacBook/);
+  assert.ok(!requests.some((r) => r.method === "PUT"));
+  assert.equal(document.querySelector("[role=dialog]"), null);
   await page.unmount();
 });

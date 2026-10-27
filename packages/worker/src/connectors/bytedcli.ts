@@ -322,7 +322,16 @@ export const bytedcliAdapter: DeviceHeldAdapter = {
           .filter(Boolean)
           .join(", ")
       : "its sign-in status was not read yet";
-    return `- ${use.label} (\`${command}\`, ByteDance's internal CLI) is available to this session with this device's own sign-in (${who}); the credential stays on this device. Use it as it is, without --profile. Do not run \`${use.command} auth login\`, \`auth logout\`, \`auth clear\`, \`auth export\`, \`auth import\` or \`auth set-*\`. This is the base ByteCloud login, not proof of every sub-service authorization. Meego GoAPI requires its separate native Feishu Web session; Foundry server-held Feishu OAuth does not supply it. If a service reports missing authorization (including MEEGO_GOAPI_AUTH_REQUIRED), ask the person to authorize that capability in Foundry (Connectors → ${use.label}), preserving the existing base login. Never repeat a business write to test authorization.`;
+    const meego = use.state?.authorizations?.find(
+      (a) => a.id === "feishu_web_session" && a.revision === 1,
+    );
+    const capability =
+      meego?.status === "ready"
+        ? "Meego GoAPI native Feishu Web session: ready (local credential state, business permissions untested). Use the existing session; no new authorization is needed."
+        : meego?.status === "needs_auth" || meego?.status === "expired"
+          ? `Meego GoAPI native Feishu Web session: ${meego.status === "expired" ? "expired" : "missing"}. If the task needs Meego GoAPI, ask the person to authorize only the Meego Web session in Foundry (Connectors → ${use.label} → Meego Web session).`
+          : "Meego GoAPI native Feishu Web session: status unverified. Check its status with a read-only native CLI command before asking for authorization; unverified does not mean missing.";
+    return `- ${use.label} (\`${command}\`, ByteDance's internal CLI) is available to this session with this device's own sign-in (${who}); the credential stays on this device. Use it as it is, without --profile. Do not run \`${use.command} auth login\`, \`auth logout\`, \`auth clear\`, \`auth export\`, \`auth import\` or \`auth set-*\`. This is the base ByteCloud login. ${capability} Foundry server-held Feishu OAuth does not supply Meego's native Web session. If a service actually reports missing authorization (including MEEGO_GOAPI_AUTH_REQUIRED), name that exact sub-authorization when asking the person to authorize it in Foundry, preserving the existing base login. Never repeat a business write to test authorization.`;
   },
 };
 

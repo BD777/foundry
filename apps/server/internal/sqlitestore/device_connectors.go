@@ -47,7 +47,8 @@ func (s *Store) setupDeviceConnectors(ctx context.Context) error {
 			return fmt.Errorf("migrate sqlite device connectors: %w", err)
 		}
 	}
-	return nil
+	return s.ensureColumn(ctx, "device_connector_states", "authorizations",
+		`ALTER TABLE device_connector_states ADD COLUMN authorizations TEXT NOT NULL DEFAULT '[]'`)
 }
 
 func (s *Store) SaveDeviceConnectorState(ctx context.Context, state store.DeviceConnectorState) error {
@@ -67,23 +68,28 @@ func (s *Store) saveDeviceConnectorState(ctx context.Context, state store.Device
 	if err != nil {
 		return err
 	}
+	authorizations, err := json.Marshal(state.Authorizations)
+	if err != nil {
+		return err
+	}
 	if state.CheckedAt == "" {
 		state.CheckedAt = formatTime(time.Now())
 	}
 	_, err = s.conn().ExecContext(ctx, `INSERT INTO device_connector_states
 		(device_id, kind, status, status_detail, installed, version, install_source, latest_version,
-		 signed_in, identity, sites, expires_at, checked_at, expiring_since)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(device_id, kind) DO UPDATE SET
 			status = excluded.status, status_detail = excluded.status_detail,
 			installed = excluded.installed, version = excluded.version,
 			install_source = excluded.install_source, latest_version = excluded.latest_version,
 			signed_in = excluded.signed_in, identity = excluded.identity, sites = excluded.sites,
 			expires_at = excluded.expires_at, checked_at = excluded.checked_at,
-			expiring_since = excluded.expiring_since`,
+			expiring_since = excluded.expiring_since,
+			authorizations = excluded.authorizations`,
 		state.DeviceID, state.Kind, state.Status, state.StatusDetail, state.Installed, state.Version,
 		state.InstallSource, state.LatestVersion, state.SignedIn, state.Identity, string(sites),
-		state.ExpiresAt, state.CheckedAt, state.ExpiringSince)
+		state.ExpiresAt, state.CheckedAt, state.ExpiringSince, string(authorizations))
 	if err != nil {
 		return fmt.Errorf("save device connector state: %w", err)
 	}
@@ -101,7 +107,7 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 		args = append(args, id)
 	}
 	rows, err := s.reader().QueryContext(ctx, `SELECT device_id, kind, status, status_detail, installed, version,
-		install_source, latest_version, signed_in, identity, sites, expires_at, checked_at, expiring_since
+		install_source, latest_version, signed_in, identity, sites, expires_at, checked_at, expiring_since, authorizations
 		FROM device_connector_states WHERE device_id IN (`+placeholders+`) ORDER BY device_id, kind`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list device connector states: %w", err)
@@ -109,14 +115,17 @@ func (s *Store) ListDeviceConnectorStates(ctx context.Context, deviceIDs []strin
 	defer rows.Close()
 	for rows.Next() {
 		var state store.DeviceConnectorState
-		var sites string
+		var sites, authorizations string
 		if err := rows.Scan(&state.DeviceID, &state.Kind, &state.Status, &state.StatusDetail, &state.Installed,
 			&state.Version, &state.InstallSource, &state.LatestVersion, &state.SignedIn, &state.Identity, &sites,
-			&state.ExpiresAt, &state.CheckedAt, &state.ExpiringSince); err != nil {
+			&state.ExpiresAt, &state.CheckedAt, &state.ExpiringSince, &authorizations); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(sites), &state.Sites); err != nil {
 			state.Sites = nil
+		}
+		if err := json.Unmarshal([]byte(authorizations), &state.Authorizations); err != nil {
+			state.Authorizations = nil
 		}
 		states = append(states, state)
 	}

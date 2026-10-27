@@ -319,12 +319,13 @@ worker `packages/worker/src/connectors/device-held.ts`).
   refused. Install goes through the managed-tools path (npm, no install
   scripts, the device's own npm settings); sign-out runs only on the
   owner's confirmed request.
-- Lending to sessions: a session may use the device's login only while
-  `connectors.DeviceEligible` holds: the session runs on that device, the
-  device's owner bound that device's login to the session's workspace, and
-  the session was started by the device's owner or the binding explicitly
-  allows other members' sessions. Issue executions and clarifications get
-  nothing. A session someone else started on the device, when not allowed,
+- Session access: the device owner's own unsandboxed sessions on that
+  device automatically receive a login reported as signed in and ready or
+  expiring, with expiry recalculated at dispatch. Other members still need
+  a matching workspace/device/owner binding with `members=true`, checked by
+  `connectors.DeviceEligible`, and a usable login. Issue executions,
+  clarifications and verification sessions get nothing. A session someone
+  else started on the device, when not allowed or the login is unavailable,
   gets the connector's isolation (`BYTEDCLI_PROFILE` on an empty profile),
   which prevents accidental use only: an unsandboxed session runs as the
   device's user (see the device-credential risk above).

@@ -268,13 +268,13 @@ export const externalAccounts = {
   },
   deviceHeld: {
     setup: {
-      aws: "Install AWS CLI using AWS’s official installer on the device. Configure credentials in its terminal (for SSO: aws configure sso, then aws sso login), then select Check again. Named profiles must be selected in the worker’s AWS_PROFILE environment. Authentication and sign-out are managed in the terminal. Bind the device under Workspace → Connectors to use it in sessions.",
+      aws: "Install AWS CLI using AWS’s official installer on the device. Configure credentials in its terminal (for SSO: aws configure sso, then aws sso login), then select Check again. Named profiles must be selected in the worker’s AWS_PROFILE environment. Authentication and sign-out are managed in the terminal. Your sessions on that device can use its ready login automatically.",
     },
     offlineUnknown: "Device offline",
     intro: {
       aws: "AWS CLI uses this device’s native credential chain (AWS_PROFILE or default, environment credentials, SSO or device roles). Foundry checks the current identity with STS; credentials stay on the device. This does not verify permissions for other AWS services.",
       bytedcli:
-        "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Sign in on the devices you own here; a workspace then chooses which device's sign-in its sessions use.",
+        "bytedcli keeps its ByteDance sign-in on each device, and Foundry never copies it anywhere. Your sessions on that device can use its ready login automatically. Share it with other workspace members from Workspace → Connectors.",
       default:
         "{{name}} keeps its sign-in on each device, and Foundry never copies it anywhere.",
     },
@@ -375,6 +375,7 @@ export const externalAccounts = {
     failed: "The sign-in did not finish: {{error}}",
   },
   workspace: {
+    ownerAvailable: "Available to your sessions on {{device}}",
     localAuthentication:
       "Configure or renew {{name}} credentials in the device terminal, then check again. Manage connectors has setup instructions.",
     appUnavailable:
@@ -388,21 +389,23 @@ export const externalAccounts = {
       "Local login read {{when}}; service access has not been verified.",
     useExisting: "Use existing login",
     authorize: "Authorize and use here",
+    signInDevice: "Sign in on device",
     enabled: "Enabled here",
     removeBinding: "Remove binding",
     retryBinding: "Retry saving binding",
+    retrySharing: "Retry sharing change",
     nativeBoundary:
-      "Removing this binding does not block your own local CLI login. Other devices’ logins are managed in Connectors.",
+      "Your own sessions use this device’s ready login automatically. Sharing applies only to this workspace and device; turning it off keeps your own access. Manage device logins in Connectors.",
 
     rule: "Feishu accounts follow their workspace grants. Device logins apply only on their execution device.",
     binding: {
       feishu:
         "A bound account lets feishu-cli in your sessions here work in Feishu as you.",
       bytedcli:
-        "Sessions here on a device you bind use bytedcli with that device's own sign-in; it never leaves the device.",
+        "Your sessions use bytedcli with their execution device’s ready login automatically; it never leaves the device.",
     },
     useDevice: "Sessions on {{device}} use its {{name}} sign-in",
-    members: "Also sessions other members start on {{device}}",
+    members: "Share with sessions other members start on {{device}}",
     membersHint:
       "They use your identity and permissions in this service. Leave off unless you mean to lend your sign-in.",
     noDevices:

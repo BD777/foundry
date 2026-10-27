@@ -786,7 +786,16 @@ export class DeviceHeldConnectors {
         findCommand(use.command) === located.path
           ? use.command
           : located.path;
-      notes.push(adapter.sessionNote(use, command, this.lastReading(use.kind)));
+      // Execution hosts do not share the daemon's status cache. Carry the
+      // server's device reading into the note, including capability state.
+      const state = use.state ?? this.states.get(use.kind)?.state;
+      notes.push(
+        adapter.sessionNote(
+          { ...use, state },
+          command,
+          state ?? this.lastReading(use.kind),
+        ),
+      );
     }
     return { environment, notes };
   }
