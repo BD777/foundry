@@ -1,3 +1,4 @@
+import { serverWebSocketAgent } from "./server-proxy.js";
 import { isProtectedHTTPPort } from "./protected-http-ports.js";
 import { createConnection } from "node:net";
 import { Transform } from "node:stream";
@@ -54,6 +55,7 @@ export function openServiceTunnel(
   remote.protocol = remote.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(remote, {
     headers: options.headers,
+    agent: serverWebSocketAgent(remote),
     perMessageDeflate: false,
     maxPayload: 64 * 1024,
     handshakeTimeout: 8000,

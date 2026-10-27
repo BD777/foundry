@@ -1,3 +1,4 @@
+import { serverFetch } from "./server-proxy.js";
 // HTTP requests from the worker to the Foundry server, with the device
 // credential header. Depends on config only for that credential.
 
@@ -25,7 +26,7 @@ export async function postJSON<T>(
   path: string,
   body: unknown,
 ): Promise<T | undefined> {
-  const response = await fetch(`${serverURL}${path}`, {
+  const response = await serverFetch(`${serverURL}${path}`, {
     method: "POST",
     headers: daemonRequestHeaders(true),
     body: JSON.stringify(body),
@@ -42,7 +43,7 @@ export async function postJSON<T>(
 }
 
 export async function getJSON<T>(serverURL: string, path: string): Promise<T> {
-  const response = await fetch(`${serverURL}${path}`, {
+  const response = await serverFetch(`${serverURL}${path}`, {
     headers: daemonRequestHeaders(false),
   });
   if (!response.ok) {
@@ -56,7 +57,7 @@ export async function getJSON<T>(serverURL: string, path: string): Promise<T> {
 export async function ensureServerReachable(serverURL: string): Promise<void> {
   const healthURL = new URL("/healthz", serverURL).toString();
   try {
-    const response = await fetch(healthURL);
+    const response = await serverFetch(healthURL);
     if (!response.ok) {
       throw new Error(`health check returned ${response.status}`);
     }

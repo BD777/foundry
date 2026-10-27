@@ -122,6 +122,60 @@ const connectOptions: CliOptionContract[] = [
 
 export const cliCommands: CliCommandContract[] = [
   {
+    id: "proxy-set",
+    path: ["proxy", "set"],
+    brief: "Set the worker's Foundry-server proxy.",
+    description:
+      "Persists an owner-only proxy for server HTTP/WebSocket traffic. Precedence: setting > FOUNDRY_PROXY > HTTPS_PROXY > ALL_PROXY > HTTP_PROXY. Agent model traffic is unchanged. The daemon reconnects automatically.",
+    arguments: [
+      {
+        name: "url",
+        description: "http(s):// or socks5(h)://[user:password@]host:port",
+        required: true,
+      },
+    ],
+    options: [
+      {
+        name: "--no-proxy",
+        type: "string",
+        description:
+          "Comma-separated bypass hosts, domain suffixes and optional ports; defaults to NO_PROXY",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker proxy set socks5h://127.0.0.1:1080",
+        description: "Use SOCKS5 with remote DNS.",
+      },
+    ],
+  },
+  {
+    id: "proxy-show",
+    path: ["proxy", "show"],
+    brief: "Show the effective proxy without credentials.",
+    description:
+      "Shows the effective route to the configured server, source and bypass list. No credentials are printed.",
+    examples: [
+      {
+        command: "foundry-worker proxy show",
+        description: "Inspect the route.",
+      },
+    ],
+  },
+  {
+    id: "proxy-clear",
+    path: ["proxy", "clear"],
+    brief: "Clear the saved worker proxy.",
+    description:
+      "Removes the saved proxy; environment settings apply again. The daemon reconnects automatically.",
+    examples: [
+      {
+        command: "foundry-worker proxy clear",
+        description: "Return to environment configuration.",
+      },
+    ],
+  },
+  {
     id: "workspace-scan",
     path: ["workspace", "scan"],
     brief: "Discover Git repositories in a workspace.",
@@ -245,6 +299,17 @@ export const cliCommands: CliCommandContract[] = [
     ],
     id: "install",
     options: [
+      {
+        name: "--proxy",
+        type: "string",
+        description:
+          "Persist a Foundry-server proxy before pairing and downloading packages (HTTP, HTTPS, SOCKS5, SOCKS5h)",
+      },
+      {
+        name: "--no-proxy",
+        type: "string",
+        description: "Persist proxy bypass hosts with --proxy",
+      },
       serverOption,
       pairingTokenOption,
       shareSystemAccountOption,
@@ -634,6 +699,117 @@ export const cliCommands: CliCommandContract[] = [
     path: ["providers"],
   },
   {
+    id: "connection-check",
+    path: ["connection", "check"],
+    brief: "Check an external model connection with one native agent turn.",
+    description:
+      "Explicitly sends a short prompt through the configured native Claude SDK/CLI, records the result, and makes a passed external connection available in Foundry. Uses model quota; never runs automatically.",
+    arguments: [
+      {
+        name: "profile-id",
+        required: true,
+        description:
+          "External profile id in this device's agent-profiles.local.json.",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker connection check company_connection",
+        description: "Validate the installed connection and report the result.",
+      },
+    ],
+  },
+  {
+    id: "connection-add",
+    path: ["connection", "add"],
+    brief:
+      "Register or update an external model connection (for gateway installers).",
+    description:
+      "Writes one connectionType external profile to this device's agent-profiles.local.json, validated as the runtime will use it, and keeps every other profile. Running it again with the same input changes nothing; a changed helper, identity or model resets the connection to unchecked. Refuses an id that belongs to another kind of profile. Prints one JSON line; exit 0 ok, 2 invalid input, 3 id conflict. Values that begin with '-' are passed as --arg=<value>. Never runs a check.",
+    arguments: [
+      {
+        name: "profile-id",
+        required: true,
+        description:
+          "Connection id: lowercase letters, digits and underscores.",
+      },
+    ],
+    options: [
+      { description: "Name shown in Foundry", name: "--label", type: "string" },
+      {
+        description: "Absolute path of the gateway's connection helper",
+        name: "--executable",
+        type: "string",
+      },
+      {
+        description: "Literal helper argument, never shell text (repeatable)",
+        name: "--arg",
+        type: "string",
+      },
+      {
+        description: "Non-secret connection identity the helper verifies",
+        name: "--identity",
+        type: "string",
+      },
+      { description: "Default model", name: "--model", type: "string" },
+      {
+        description: "Comma-separated models offered (the default is added)",
+        name: "--models",
+        type: "string",
+      },
+    ],
+    examples: [
+      {
+        command:
+          "foundry-worker connection add company_connection --label 'Company connection' --executable /opt/company/connection-helper --arg work --identity acct-1234 --model sonnet --models sonnet,opus,haiku",
+        description: "What a gateway installer runs after onboarding.",
+        label: "RECOMMENDED",
+      },
+    ],
+  },
+  {
+    id: "connection-remove",
+    path: ["connection", "remove"],
+    brief: "Remove an external model connection from this device.",
+    description:
+      "Deletes one connectionType external profile and its check result; other profiles are untouched. Prints one JSON line; exit 0 ok, 3 not an external connection, 4 not found.",
+    arguments: [
+      {
+        name: "profile-id",
+        required: true,
+        description: "External connection id to remove.",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker connection remove company_connection",
+        description: "What a gateway uninstaller runs.",
+      },
+    ],
+  },
+  {
+    id: "connection-list",
+    path: ["connection", "list"],
+    brief: "List external model connections registered on this device.",
+    description:
+      "Shows each external connection, whether its helper is executable, and its last explicit check. Never runs a check.",
+    options: [
+      {
+        defaultValue: "false",
+        description: "Print a JSON array",
+        name: "--json",
+        type: "bool",
+      },
+    ],
+    examples: [
+      {
+        command: "foundry-worker connection list --json",
+        description: "Machine-readable list for installers.",
+        label: "RECOMMENDED",
+      },
+    ],
+  },
+  {
     brief: "List locally registered workspaces.",
     description:
       "Prints registered workspace names, baselines, and local paths. Output is line-oriented for shell pipelines.",
@@ -846,7 +1022,11 @@ export function parseCliInvocation(args: string[]): ParsedCliInvocation {
     }
 
     const value = inlineValue ?? commandArgs[index + 1];
-    if (value === undefined || value.startsWith("-")) {
+    // A value that begins with "-" can still be given inline (--arg=--port).
+    if (
+      value === undefined ||
+      (inlineValue === undefined && value.startsWith("-"))
+    ) {
       throw argumentError({
         code: "E1002",
         description: `${option.name} requires a ${option.type} value.`,
@@ -930,7 +1110,11 @@ function validateOptionValue(
       throw invalidOptionValue(command, option, value);
     }
   }
-  if (option.type === "string" && value.trim() === "") {
+  if (
+    option.type === "string" &&
+    value.trim() === "" &&
+    option.name !== "--no-proxy"
+  ) {
     throw invalidOptionValue(command, option, value);
   }
 }

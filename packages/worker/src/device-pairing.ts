@@ -1,3 +1,4 @@
+import { serverFetch } from "./server-proxy.js";
 /**
  * Device identity against the server: hashes of the machine, of the system
  * account the worker runs as and of this worker's own state (never the raw
@@ -213,7 +214,7 @@ export async function pairDevice(
     deviceId: device.id,
   };
   const post = (body: object) =>
-    fetch(`${serverURL}/api/daemon/pair`, {
+    serverFetch(`${serverURL}/api/daemon/pair`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

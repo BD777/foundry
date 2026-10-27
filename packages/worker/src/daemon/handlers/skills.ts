@@ -1,3 +1,4 @@
+import { serverFetch } from "../../server-proxy.js";
 import { dirname } from "node:path";
 import { SkillPrewarmer } from "../../skill-prewarm.js";
 import type WebSocket from "ws";
@@ -53,7 +54,7 @@ async function uploadRepositoryFiles(
     !/^\/api\/daemon\/skill-repository-fetches\/[A-Za-z0-9-]+$/.test(uploadPath)
   )
     throw new Error("the server named an unexpected upload address");
-  const response = await fetch(`${serverURL}${uploadPath}`, {
+  const response = await serverFetch(`${serverURL}${uploadPath}`, {
     method: "POST",
     headers: { ...daemonRequestHeaders(false), "Content-Type": contentType },
     body: new Uint8Array(body),

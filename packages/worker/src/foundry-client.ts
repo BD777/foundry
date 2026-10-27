@@ -1,3 +1,4 @@
+import { serverWebSocketAgent, serverTransportError } from "./server-proxy.js";
 /**
  * Client of the server's Foundry tools (`/api/mcp`), shared by the `foundry
  * mcp` stdio bridge and the `foundry` CLI: both reach Foundry only through
@@ -189,6 +190,7 @@ function postJSON(
     const request = send(
       url,
       {
+        agent: serverWebSocketAgent(url),
         method: "POST",
         headers: { ...headers, "Content-Length": Buffer.byteLength(body) },
       },
@@ -204,7 +206,7 @@ function postJSON(
         );
       },
     );
-    request.on("error", reject);
+    request.on("error", (error) => reject(serverTransportError(error, url)));
     request.end(body);
   });
 }

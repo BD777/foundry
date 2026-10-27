@@ -350,9 +350,9 @@ export const devices: Translation<typeof en> = {
     },
     proxy: {
       none: "没有设置代理",
-      set: "环境变量设置了代理 {{proxy}}",
+      set: "代理 {{proxy}}",
       advice:
-        "worker 的长连接不走这个代理。如果这个网络只能通过它访问服务器，连接会一直失败。",
+        "请在设备上检查 worker 的代理地址、认证信息及 NO_PROXY 绕过列表。",
     },
     eventLoop: {
       uptime: "已运行 {{uptimeMinutes}} 分钟",

@@ -1,3 +1,4 @@
+import { startServerMcpForwarder } from "../server-mcp-forwarder.js";
 import { foundryStatePath } from "../state-root.js";
 import { collectSkillSnapshotGarbage } from "../skill-snapshots.js";
 import { reapPrivateInputOwners } from "../private-input-owners.js";
@@ -15,6 +16,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   daemonMessageTypes,
+  nativeArchiveCapability,
   executionHostStoppedError,
   type RunSessionPayload,
 } from "@bd777/foundry-protocol";
@@ -70,6 +72,7 @@ interface Claim {
   status: "active" | "completed";
 }
 export async function serveExecutionHost(serverURL: string): Promise<void> {
+  await startServerMcpForwarder(serverURL);
   const paths = executionHostPaths();
   prepareExecutionSocket();
   const entry = fileURLToPath(new URL("./main.js", import.meta.url));
@@ -172,6 +175,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
   const snapshot = () => ({
     protocol: 1,
     capabilities: [
+      nativeArchiveCapability,
       "cloudflare_gateway_v1",
       "service_tunnels_v1",
       "idle_upgrade",
@@ -179,6 +183,7 @@ export async function serveExecutionHost(serverURL: string): Promise<void> {
       "workspace_draft_skills_v1",
       "role_run_budgets_v1",
       "exact_input_cancel_v1",
+      "external_connection_v1",
     ],
     entry,
     runtimeStamp: stamp,

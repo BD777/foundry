@@ -1,3 +1,4 @@
+import { serverWebSocketAgent, serverTransportError } from "../server-proxy.js";
 import { protectHTTPPort } from "../protected-http-ports.js";
 import {
   createServer,
@@ -98,6 +99,7 @@ export async function startFeishuGatewayForwarder(
   let host = "";
 
   const target = (incoming: IncomingMessage) => ({
+    agent: serverWebSocketAgent(server),
     protocol: server.protocol,
     hostname: server.hostname,
     port: server.port,
@@ -117,7 +119,13 @@ export async function startFeishuGatewayForwarder(
       );
       return;
     }
-    const requestOptions = target(incoming);
+    let requestOptions;
+    try {
+      requestOptions = target(incoming);
+    } catch {
+      failure(response, "worker proxy configuration is unavailable");
+      return;
+    }
     if (options.authorizeHeaders) {
       try {
         Object.assign(
@@ -149,7 +157,7 @@ export async function startFeishuGatewayForwarder(
       answer.on("error", () => response.destroy());
     });
     outgoing.on("error", (error) => {
-      log(`Feishu forwarder: ${error.message}`);
+      log(`Feishu forwarder: ${serverTransportError(error, server).message}`);
       failure(response, "the Foundry server could not be reached");
     });
     incoming.pipe(outgoing);
@@ -162,7 +170,13 @@ export async function startFeishuGatewayForwarder(
       client.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       return;
     }
-    const requestOptions = target(incoming);
+    let requestOptions;
+    try {
+      requestOptions = target(incoming);
+    } catch {
+      client.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+      return;
+    }
     requestOptions.headers.connection = "Upgrade";
     requestOptions.headers.upgrade = incoming.headers.upgrade ?? "websocket";
     const outgoing = send(requestOptions);
@@ -202,7 +216,7 @@ export async function startFeishuGatewayForwarder(
       answer.pipe(client);
     });
     outgoing.on("error", (error) => {
-      log(`Feishu forwarder: ${error.message}`);
+      log(`Feishu forwarder: ${serverTransportError(error, server).message}`);
       client.destroy();
     });
     client.on("error", () => outgoing.destroy());

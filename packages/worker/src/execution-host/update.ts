@@ -1,3 +1,4 @@
+import { serverFetch } from "../server-proxy.js";
 import { executionServiceIsSeparate } from "./service.js";
 /** First migration cannot transplant a live SDK out of its old worker. */
 import { spawnSync } from "node:child_process";
@@ -68,7 +69,7 @@ async function activeSessions(): Promise<string[]> {
     );
   const active: string[] = [];
   for (const workspace of readRegistry()) {
-    const response = await fetch(
+    const response = await serverFetch(
       `${serverURL}/api/daemon/chats/running?workspaceId=${encodeURIComponent(workspace.id)}`,
       {
         headers: daemonRequestHeaders(false),

@@ -32,6 +32,24 @@
 - **目录被移动或删除**：Worker 上报自己服务的与丢失的目录，不再服务的 Workspace 标为不可用、保留历史并提供 "Add again"，派发到它的会话立即以明确的消息失败（2026-10-10，#118；`workspace_availability.go`）；Locate 把 Workspace 指向新位置，id 不变，聊天、会话、Issue、设置、飞书路由与连接器绑定随之保留（`workspace_relink.go`、`workspace-folders.ts`）。
 - **选择规则**（[AGENTS.md](../AGENTS.md) 的 UI 原则）：Workspaces 页（`/locations`，侧边栏的位置入口）按设备分组列出 Workspace，Switch 是唯一改变当前位置的动作；浏览设备从不改变当前位置；设备与 Workspace 只在明确选择成功后一起提交，取消或失败保留原上下文。Devices 页（`/devices/<id>/<section>`：resources、agents、skills、settings、diagnostics）管理机器，链接到该设备在 `/locations/<id>` 的分组（`apps/web/src/app/navigation.ts`）。
 
+### Worker 到服务器的代理
+
+`foundry-worker proxy set <url> [--no-proxy <list>]` 保存设备自己的服务器代理；支持 `http://`、`https://`、`socks5://`（本地 DNS）及 `socks5h://`（代理端 DNS），可带 `user:password@`。URL 不接受路径、query 或 fragment，密码中的特殊字符需 URL 编码。配置存放在当前状态根的 `worker-proxy.json`，文件权限为 `0600`，与配对凭据分开，首次安装前也能保存。
+
+```bash
+~/.foundry/bin/foundry-worker proxy set socks5h://127.0.0.1:1080
+~/.foundry/bin/foundry-worker proxy set http://proxy.example:3128 --no-proxy 'localhost,127.0.0.1,.internal'
+~/.foundry/bin/foundry-worker proxy show
+~/.foundry/bin/foundry-worker doctor
+~/.foundry/bin/foundry-worker proxy clear
+```
+
+优先级是已保存配置 > `FOUNDRY_PROXY` > `HTTPS_PROXY` / `https_proxy` > `ALL_PROXY` / `all_proxy` > `HTTP_PROXY` / `http_proxy`。环境变量 URL 也需包含 scheme。绕过列表采用已保存的 `--no-proxy`，否则 `NO_PROXY` / `no_proxy`；支持逗号或空白分隔的精确主机、`.example.com` / `*.example.com` 后缀、可选端口、方括号 IPv6 和 `*`（全部直连）。`--no-proxy ''` 可清空绕过列表。`proxy clear` 恢复环境变量回退，不会删除环境变量；显示有效配置时不会输出用户名或密码。
+
+设置仅作用于 Worker 到 Foundry Server 的 HTTP、控制及服务隧道 WebSocket、配对/注册、Skill 包/附件与文件传输、Foundry CLI/MCP、连接器网关转发及安装/自更新包下载。不会设置全局网络代理，不会改变 Agent 自己的模型服务请求环境。下载到本地临时文件后才交给 npm 安装，故 SOCKS5 不依赖 npm 自身的代理支持；npm registry 上的第三方依赖仍由 npm 自己的网络配置决定。最初的 npx 引导发生在 Worker 启动之前，需要 npx 能联网，或使用已下载的包/已有 Worker 命令。
+
+修改配置后控制连接自动重连，可靠 outbox 会重放未确认事件；执行宿主按请求读配置，无需为代理设置重启，正在运行的会话继续。失败连接保留原有 1–30 秒退避；代理不可用时不会悄悄直连。`doctor` 经有效路由访问 `/healthz`，输出脱敏地址和耗时；Devices → 诊断同样显示实际代理与服务器/控制连接延迟。HTTPS 代理与目标服务器均保留证书校验，凭据只用于代理认证，不进入服务器注册或诊断。
+
 ### 多设备与跨设备会话
 
 - 一个账号可有多台设备，一台设备可有多个 Workspace。别人只能看到托管了自己可见 Workspace 的设备，看不到它的执行设置（[安全边界 · Accounts](security.md#accounts)）。每台设备的并发上限 `maxConcurrentTasks` 默认 4、范围 1–16（`task-scheduler.ts`）。
@@ -110,3 +128,5 @@
 - Workspace：`packages/worker/src/workspaces.ts`、`workspace-registration.ts`、`workspace-folders.ts`、`daemon/workspace-roster.ts`、`daemon/handlers/workspaces.ts`；`apps/server/internal/httpapi/workspaces_http.go`、`workspace_relink.go`、`workspace_availability.go`；`apps/server/internal/sqlitestore/workspace_deletions.go`
 - Web：`apps/web/src/features/workspaces/`、`apps/web/src/features/devices/`、`apps/web/src/app/navigation.ts`
 - 部署与开发栈：`deploy/`、`scripts/dev-stack.mjs`、`scripts/scratch-stack.sh`；数据放在哪里见[存储策略](storage-strategy.md)
+
+原生 Claude/Codex HTTP MCP 通过执行宿主内的环回转发器访问 `/api/mcp`，逐请求应用服务器代理；只转发会话自身的认证，不注入设备凭据，不开放其他 API 路径。模型请求的环境和目标保持原样。
