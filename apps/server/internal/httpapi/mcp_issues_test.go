@@ -174,8 +174,8 @@ func TestVerifierToolsAndDevice(t *testing.T) {
 		return conn
 	}
 	older := connect([]string{})
-	if text, isError := orchestrator("create_session", map[string]any{"prompt": "check", "verification": true}); !isError || !strings.Contains(text, "Studio runs an older worker") {
-		t.Fatalf("a verifier on an older worker = %q", text)
+	if text, isError := orchestrator("create_session", map[string]any{"prompt": "check", "verification": true}); !isError || !strings.Contains(text, "Studio cannot run a verifier's commands in a read-only sandbox") {
+		t.Fatalf("a verifier on a device without its sandbox = %q", text)
 	}
 	older.Close()
 	current := connect([]string{store.DaemonCapabilityVerificationSessions})

@@ -42,6 +42,7 @@ export const bubblewrapBackend: SandboxBackend = {
     "offline_command",
     "loopback_service",
   ],
+  ready: bubblewrapReady,
   launch(profile, command, args) {
     switch (profile.kind) {
       case "writable_tree":
@@ -79,14 +80,13 @@ function seal(masks: string[]): string[] {
   return [...masks, "/"].flatMap((path) => ["--remount-ro", path]);
 }
 
-/** The bwrap executable, after checking that user namespaces work here. */
-function bubblewrap(): string {
-  const executable = ["/usr/bin/bwrap", "/bin/bwrap"].find(existsSync);
-  if (!executable)
-    throw new SandboxError(
-      "backend_missing",
-      "requires bubblewrap (bwrap); install it and enable user namespaces",
-    );
+/** The installed bwrap, if any. */
+function bubblewrapExecutable(): string | undefined {
+  return ["/usr/bin/bwrap", "/bin/bwrap"].find(existsSync);
+}
+
+/** Why bwrap cannot create the namespaces every profile uses, or undefined. */
+function bubblewrapProbe(executable: string): string | undefined {
   const probe = spawnSync(
     executable,
     [
@@ -105,12 +105,47 @@ function bubblewrap(): string {
     ],
     { encoding: "utf8", timeout: 5000 },
   );
-  if (probe.status !== 0)
+  if (probe.status === 0) return undefined;
+  return (
+    probe.stderr?.trim() || probe.error?.message || "bubblewrap probe failed"
+  );
+}
+
+/** The bwrap executable, after checking that user namespaces work here. */
+function bubblewrap(): string {
+  const executable = bubblewrapExecutable();
+  if (!executable)
     throw new SandboxError(
-      "user_namespaces_unavailable",
-      probe.stderr?.trim() || probe.error?.message || "bubblewrap probe failed",
+      "backend_missing",
+      "requires bubblewrap (bwrap); install it and enable user namespaces",
     );
+  const failure = bubblewrapProbe(executable);
+  if (failure) throw new SandboxError("user_namespaces_unavailable", failure);
   return executable;
+}
+
+const readyProbeTtlMs = 60_000;
+let readyProbe: { executable: string; ok: boolean; at: number } | undefined;
+
+/**
+ * Whether bwrap is installed and its probe passes. Heartbeats ask every 25s,
+ * so a probe result is reused for a minute: installing bwrap or enabling
+ * user namespaces is noticed without restarting the worker.
+ */
+function bubblewrapReady(): boolean {
+  const executable = bubblewrapExecutable();
+  if (!executable) return false;
+  const now = Date.now();
+  if (
+    readyProbe?.executable !== executable ||
+    now - readyProbe.at >= readyProbeTtlMs
+  )
+    readyProbe = {
+      executable,
+      ok: bubblewrapProbe(executable) === undefined,
+      at: now,
+    };
+  return readyProbe.ok;
 }
 
 /**

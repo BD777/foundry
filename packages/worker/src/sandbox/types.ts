@@ -108,6 +108,8 @@ export interface SandboxBackend {
   readonly id: string;
   /** Kinds this backend has verified implementations for. */
   readonly kinds: readonly SandboxKind[];
+  /** Whether it can launch on this host now; absent means always. */
+  ready?(): boolean;
   launch(
     profile: SandboxProfile,
     command: string,

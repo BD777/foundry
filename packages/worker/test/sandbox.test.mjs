@@ -21,6 +21,7 @@ import {
   sandboxAvailable,
   sandboxLaunch,
   sandboxLauncher,
+  sandboxReady,
 } from "../dist/sandbox/index.js";
 import { seatbeltBackend } from "../dist/sandbox/darwin.js";
 
@@ -59,6 +60,34 @@ test("each profile kind declares its verified platforms", () => {
   ])
     assert.equal(sandboxAvailable(kind, "win32"), false);
 });
+
+test(
+  "Linux readiness requires a bwrap that can create namespaces",
+  { skip: process.platform !== "linux" },
+  () => {
+    const executable = ["/usr/bin/bwrap", "/bin/bwrap"].find(existsSync);
+    const works =
+      executable !== undefined &&
+      spawnSync(executable, [
+        "--ro-bind",
+        "/",
+        "/",
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--",
+        "/bin/true",
+      ]).status === 0;
+    // A platform with a backend is not enough: without a working bwrap the
+    // worker must not announce verifiers it cannot launch.
+    assert.equal(sandboxAvailable("readonly_agent"), true);
+    assert.equal(sandboxReady("readonly_agent"), works);
+  },
+);
 
 test(
   "Linux loopback service reaches nothing on the host and is reached only through its socket",
