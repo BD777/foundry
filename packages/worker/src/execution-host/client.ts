@@ -19,6 +19,7 @@ import type {
 } from "@bd777/foundry-protocol";
 import { ControlOutcomeUnknownError } from "../session-control.js";
 import { processIdentity } from "../agent-processes.js";
+import { profileConfigForSession } from "../profiles.js";
 import type { ReliableSessionTransport } from "../transport.js";
 import type { SessionExecutionRegistry } from "../session-state.js";
 import { executionHostPaths } from "./paths.js";
@@ -359,6 +360,16 @@ export class ExecutionHostClient {
     await this.upgradeIfIdle(snapshot);
   }
   async run(workspacePath: string, payload: RunSessionPayload): Promise<void> {
+    if (
+      profileConfigForSession(workspacePath, payload.session, payload.profile)
+        .connectionType === "external"
+    ) {
+      await this.refresh();
+      if (!this.supportsCapability("external_connection_v1"))
+        throw new Error(
+          "External connections need the updated execution host. It will switch when this device's active work finishes; no other account was used.",
+        );
+    }
     await this.command({ method: "run", workspacePath, payload });
     await this.refresh();
   }

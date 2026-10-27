@@ -1,4 +1,5 @@
 import type {
+  AgentProfileCheck,
   DeviceDiagnostics,
   DevicePairingStatus,
   DeviceProjection,
@@ -91,6 +92,33 @@ export function inspectDeviceAccount(
     `${devicePath(deviceId)}/accounts/${runtime}/inspect`,
     { body: { source, ...selection } },
   );
+}
+
+function externalConnectionPath(deviceId: string, profileId: string): string {
+  return `${devicePath(deviceId)}/external-connections/${encodeURIComponent(profileId)}`;
+}
+
+/**
+ * Explicitly check one external connection on its device: a short native
+ * conversation that uses model quota. Never called automatically.
+ */
+export function checkExternalConnection(
+  deviceId: string,
+  profileId: string,
+): Promise<AgentProfileCheck> {
+  return request(
+    "POST",
+    `${externalConnectionPath(deviceId, profileId)}/check`,
+    { body: {} },
+  );
+}
+
+/** Remove one external connection from its device; nothing else changes. */
+export function removeExternalConnection(
+  deviceId: string,
+  profileId: string,
+): Promise<{ removed: boolean; profileId: string }> {
+  return request("DELETE", externalConnectionPath(deviceId, profileId));
 }
 
 /** The server URL a worker on another machine should use. */

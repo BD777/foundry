@@ -141,6 +141,7 @@ export const agents = {
       mixed: "Mixed",
     },
     connectionType: {
+      external: "External connection",
       anthropic_compatible: "Anthropic-compatible",
       custom_command: "Custom command",
       env: "Environment",
@@ -148,6 +149,7 @@ export const agents = {
       openai_compatible: "OpenAI-compatible",
     },
     promotionBlock: {
+      external: "Managed by a connection helper installed on this device.",
       notSignedIn:
         "Not signed in yet. Official logins are per machine and never move to the server.",
       signedIn:

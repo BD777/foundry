@@ -12,6 +12,7 @@ import { RowMenu } from "../../components/ui/row-menu";
 import { RuntimeMark } from "../../components/ui/runtime-mark";
 import { i18n } from "../../i18n";
 import { navigateToModelProvider } from "../../lib/in-app-navigation";
+import { DeviceExternalConnections } from "./device-external-connections";
 import { PromoteProviderDialog } from "./promote-provider-dialog";
 
 /** Host and path, which is what tells two providers on one gateway apart. */
@@ -33,7 +34,8 @@ export function deviceProviders(
     (row) =>
       row.origin === "device" &&
       (row.connectionType === "openai_compatible" ||
-        row.connectionType === "anthropic_compatible"),
+        row.connectionType === "anthropic_compatible" ||
+        row.connectionType === "external"),
   );
 }
 
@@ -58,13 +60,15 @@ export function DeviceProviders({
 }) {
   const { t } = useTranslation("profiles");
   const [promoting, setPromoting] = useState<AgentProfileProjection>();
-  const rows = deviceProviders(profiles);
+  const all = deviceProviders(profiles);
+  const external = all.filter((row) => row.connectionType === "external");
+  const rows = all.filter((row) => row.connectionType !== "external");
   const usable = rows.filter((row) => row.status === "healthy");
   const pending = rows.filter((row) => row.check?.status === "pending");
   const failing = rows.filter(
     (row) => row.status !== "healthy" && row.check?.status !== "pending",
   );
-  if (!rows.length) return null;
+  if (!all.length) return null;
   // The Model provider this row was promoted into, by its recorded source.
   // Promoting again updates that one; a server profile that only shares the
   // endpoint (promotedProfileId) is linked but not updated.
@@ -82,6 +86,11 @@ export function DeviceProviders({
           <p>{t("providers.intro", { device: device.label })}</p>
         </div>
       </header>
+      <DeviceExternalConnections
+        device={device}
+        rows={external}
+        onRefresh={onRefresh}
+      />
       {usable.length ? (
         <div className="fdy-management-list">
           {usable.map((row) => {

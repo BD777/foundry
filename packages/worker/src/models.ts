@@ -49,6 +49,14 @@ export async function listAgentModelsConfig(
   const profile = profileConfigFromInput(input);
   const baseUrl = profile.baseUrl?.trim();
   const isLogin = profile.connectionType === "local_login";
+  if (profile.connectionType === "external")
+    return (
+      profile.models?.length
+        ? profile.models
+        : profile.model
+          ? [profile.model]
+          : []
+    ).map((id) => ({ id }));
   if (profile.runtime === "codex" && isLogin) return nativeCatalog.codex();
   if (profile.runtime === "codex" && !baseUrl) {
     return listCodexLocalModels();

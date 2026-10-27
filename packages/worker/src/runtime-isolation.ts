@@ -237,6 +237,28 @@ export function isolatedClaudeEnvironment(
   ownerId = env.FOUNDRY_SESSION_ID?.trim() || `metadata:${process.pid}`,
 ): NodeJS.ProcessEnv {
   if (profile.command) return env;
+  if (
+    profile.connectionType === "external" &&
+    profile.preparedExternalConfigHome
+  ) {
+    const path = profile.preparedExternalConfigHome;
+    const record = JSON.parse(
+      readFileSync(resolve(path, ".foundry-native-execution.json"), "utf8"),
+    ) as NativeExecutionPaths;
+    if (
+      env.CLAUDE_CONFIG_DIR !== path ||
+      record.version !== 1 ||
+      record.runtime !== "claude" ||
+      record.configHome !== path ||
+      record.ownerId !== ownerId ||
+      record.workspacePath !== workspacePath
+    )
+      throw new Error(
+        "Prepared external configuration does not belong to this execution.",
+      );
+    preparedPaths.set(env, record);
+    return env;
+  }
   const sources = nativeSourcePaths("claude", env);
   const source = resolve(sources.credentialHome);
   const sourceGlobal = sources.globalConfigHome;

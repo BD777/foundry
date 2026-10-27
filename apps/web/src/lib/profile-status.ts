@@ -180,6 +180,8 @@ export function promotionBlockReason(
   if (connectionType === "custom_command") {
     return i18n.t("agents:profileStatus.promotionBlock.customCommand");
   }
+  if (connectionType === "external")
+    return i18n.t("agents:profileStatus.promotionBlock.external");
 
   return undefined;
 }
@@ -245,3 +247,24 @@ export function profileBadge(
 export function authModeLabel(mode: ProviderHealth["authMode"]): string {
   return i18n.t(`agents:profileStatus.authMode.${mode}`);
 }
+
+export type ExternalConnectionState =
+  "helper_missing" | "unchecked" | "failed" | "ready";
+
+/**
+ * Where a device's external connection stands, as its worker reports it: a
+ * helper that is not executable there has no check at all; otherwise only a
+ * passed explicit check makes it ready.
+ */
+export function externalConnectionState(
+  row: Pick<AgentProfileProjection, "status" | "check">,
+): ExternalConnectionState {
+  if (row.status === "healthy") return "ready";
+  if (row.check?.status === "failed") return "failed";
+  if (row.check?.status === "pending") return "unchecked";
+  return "helper_missing";
+}
+
+/** The worker capability the Devices page needs to check or remove one. */
+export const externalConnectionManageCapability =
+  "external_connection_manage_v1";

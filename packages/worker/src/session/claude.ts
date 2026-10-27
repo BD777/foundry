@@ -1,3 +1,4 @@
+import { selectedExternalConnection } from "../external-connection.js";
 import { claudeWorkspaceInstructions } from "../workspace-instructions.js";
 import { loadClaudeSdk } from "../agent-runtime/claude-sdk.js";
 import { mkdirSync } from "node:fs";
@@ -94,6 +95,7 @@ export const claudeHarness: HarnessAdapter = {
           pathToClaudeCodeExecutable: sandboxedExecutable(
             resolveClaudeCommand(),
           ),
+          connectionAdapter: selectedExternalConnection(profile),
           model,
           systemPrompt: [
             spec.systemPrompt,

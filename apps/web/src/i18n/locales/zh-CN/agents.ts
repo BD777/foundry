@@ -140,6 +140,7 @@ export const agents: Translation<typeof en> = {
       mixed: "混合",
     },
     connectionType: {
+      external: "外部连接",
       anthropic_compatible: "Anthropic 兼容",
       custom_command: "自定义命令",
       env: "环境变量",
@@ -147,6 +148,7 @@ export const agents: Translation<typeof en> = {
       openai_compatible: "OpenAI 兼容",
     },
     promotionBlock: {
+      external: "由这台设备上安装的连接适配器管理。",
       notSignedIn: "尚未登录。官方登录只属于本机，不会迁移到服务器。",
       signedIn: "已在本机登录。官方登录只属于本机，不会迁移到服务器。",
       env: "依赖只存在于本机的环境变量。",

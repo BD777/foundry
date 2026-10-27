@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   authModeLabel,
+  externalConnectionState,
   profileBadge,
   promotionBlockReason,
   resolveServerProfileStatus,
@@ -270,4 +271,39 @@ test("a working profile earns no badge, and a broken one says why", () => {
     label: "Unavailable",
     tone: "error",
   });
+});
+
+test("external connections stay on their configured device", () => {
+  assert.match(
+    promotionBlockReason("external"),
+    /connection helper installed on this device/,
+  );
+});
+
+test("an external connection's state follows its worker's report", () => {
+  assert.equal(
+    externalConnectionState({ status: "unavailable" }),
+    "helper_missing",
+  );
+  assert.equal(
+    externalConnectionState({
+      status: "unavailable",
+      check: { status: "pending" },
+    }),
+    "unchecked",
+  );
+  assert.equal(
+    externalConnectionState({
+      status: "unavailable",
+      check: { status: "failed", message: "refused" },
+    }),
+    "failed",
+  );
+  assert.equal(
+    externalConnectionState({
+      status: "healthy",
+      check: { status: "passed", checkedAt: "2026-10-26T00:00:00Z" },
+    }),
+    "ready",
+  );
 });
